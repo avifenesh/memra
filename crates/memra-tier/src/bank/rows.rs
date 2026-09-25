@@ -92,21 +92,33 @@ pub fn plan_reads(
 
 /// One chunk per explicit pump; output stays private until every chunk verifies.
 pub(crate) struct ReadWork {
-    pub outputs: Vec<Vec<u8>>,
+    pub outputs: Vec<HostBytes>,
     extent: usize,
     offset: u64,
 }
 impl ReadWork {
-    pub fn new(records: &[(BankId, CatalogRecord)]) -> Result<Self> {
+    /// Day 47: with a `HostBufferSource` each output is a buffer from it (an exhausted source
+    /// refuses `Capacity`); without one, a zero-filled heap `Vec` as before.
+    pub fn new(
+        records: &[(BankId, CatalogRecord)],
+        mut buffers: Option<&mut (dyn HostBufferSource + 'static)>,
+    ) -> Result<Self> {
         let outputs = records
             .iter()
             .map(|(_, r)| {
                 let len =
                     usize::try_from(r.layout.storage_bytes()?).map_err(|_| Error::Capacity)?;
+                if let Some(source) = buffers.as_deref_mut() {
+                    let buffer = source.take(len).ok_or(Error::Capacity)?;
+                    if buffer.as_slice().len() != len {
+                        return Err(Error::Capacity);
+                    }
+                    return Ok(HostBytes::Pooled(buffer));
+                }
                 let mut bytes = Vec::new();
                 bytes.try_reserve_exact(len).map_err(|_| Error::Capacity)?;
                 bytes.resize(len, 0);
-                Ok(bytes)
+                Ok(HostBytes::Heap(bytes))
             })
             .collect::<Result<_>>()?;
         Ok(Self {
@@ -125,6 +137,20 @@ impl ReadWork {
         let Some(extent) = plan.extents.get(self.extent) else {
             return Ok(true);
         };
+        // Day 47: an extent that is exactly one output's single segment is read straight into
+        // that output (no slot, no assembly copy). The bytes and their position are the same.
+        if self.offset == 0
+            && extent.len <= policy.slot_bytes
+            && let Some(index) = records.iter().position(|(_, r)| {
+                matches!(r.layout.segments.as_slice(), [s] if s.tensor.as_ref() == Some(&extent.tensor)
+                    && s.offset == extent.offset
+                    && s.storage_bytes == extent.len)
+            })
+        {
+            reader.read_exact(&extent.tensor, extent.offset, self.outputs[index].bytes_mut())?;
+            self.extent += 1;
+            return Ok(self.extent == plan.extents.len());
+        }
         let position = extent.offset + self.offset;
         let n = (extent.len - self.offset).min(policy.slot_bytes);
         let mut slot = Vec::new();
@@ -141,7 +167,7 @@ impl ReadWork {
                     if lo < hi {
                         let from = (lo - position) as usize;
                         let to = base + (lo - s.offset) as usize;
-                        output[to..to + (hi - lo) as usize]
+                        output.bytes_mut()[to..to + (hi - lo) as usize]
                             .copy_from_slice(&slot[from..from + (hi - lo) as usize]);
                     }
                 }

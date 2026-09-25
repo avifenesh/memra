@@ -1,0 +1,5 @@
+DAY51 G3 rig=pro-single runs=30 integrity=FAIL failed=o1-on-r1 trace lines 22077 misses 0; o1-on-r2 trace lines 22077 misses 0; o1-on-r3 trace lines 22077 misses 0; o1-on-r4 trace lines 22077 misses 0; o1-on-r5 trace lines 22077 misses 0; o2-on-r1 trace lines 22077 misses 0; o2-on-r2 trace lines 22077 misses 0; o2-on-r3 trace lines 22077 misses 0; o2-on-r4 trace lines 22077 misses 0; o2-on-r5 trace lines 22077 misses 0
+DAY51 DECIDE rig=pro-single gen-only decode: off=0.311 on=0.277 ref=0.255 (N=10 each) on_minus_off pooled=-0.0345 o1=-0.0340 o2=-0.0350 noise=0.0010 ratio=0.889 (o1 0.891, o2 0.887) -> door_wins
+DAY51 DECIDE rig=pro-single steady window: off=0.251 on=0.240 ref=0.226 (N=10 each) on_minus_off pooled=-0.0110 o1=-0.0110 o2=-0.0110 noise=0.0013 ratio=0.956 (o1 0.956, o2 0.956) -> door_wins
+DAY51 READING rig=pro-single on install_s median=9.91 ref_minus_off gen=-0.0560 ref_minus_on gen=-0.0215
+DAY51 VERDICT rig=pro-single integrity=FAIL -> void

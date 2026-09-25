@@ -41,6 +41,7 @@
 #include <cuda_bf16.h>
 #include <cuda_fp8.h>
 #include <cuda_runtime.h>
+#include <atomic>
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
@@ -4058,6 +4059,234 @@ __global__ void dsv4_gemv_fp8_m_kernel(const uint8_t* __restrict__ w,
     }
 }
 
+// The GEMV's halving tree over a tile's 128 partials per output, red[v] += red[v + off] for
+// off = 64, 32, ..., 1. Levels 64 and 32 go through shared memory; the last 32 leaves of every
+// output are spread over the four warps, where shfl_down(val, off) hands lane l the value of lane
+// l + off, the same pair. `red` holds TT * TN * 64 floats.
+template <int TT, int TN>
+__device__ __forceinline__ void dsv4_tile_tree(float (&part)[TT][TN], float* red, float* y, int m,
+                                               int n, int ystride, int t0, int n0) {
+    const int v = threadIdx.x;
+    float* tile_red = red;
+    constexpr int NO = TT * TN;
+    if (v >= 64) {
+#pragma unroll
+        for (int t = 0; t < TT; t++)
+#pragma unroll
+            for (int r = 0; r < TN; r++) tile_red[(t * TN + r) * 64 + (v - 64)] = part[t][r];
+    }
+    __syncthreads();
+    if (v < 64) {
+#pragma unroll
+        for (int t = 0; t < TT; t++)
+#pragma unroll
+            for (int r = 0; r < TN; r++) part[t][r] += tile_red[(t * TN + r) * 64 + v];
+    }
+    __syncthreads();
+    if (v >= 32 && v < 64) {
+#pragma unroll
+        for (int t = 0; t < TT; t++)
+#pragma unroll
+            for (int r = 0; r < TN; r++) tile_red[(t * TN + r) * 32 + (v - 32)] = part[t][r];
+    }
+    __syncthreads();
+    if (v < 32) {
+#pragma unroll
+        for (int t = 0; t < TT; t++)
+#pragma unroll
+            for (int r = 0; r < TN; r++) part[t][r] += tile_red[(t * TN + r) * 32 + v];
+    }
+    __syncthreads();
+    if (v < 32) {
+#pragma unroll
+        for (int t = 0; t < TT; t++)
+#pragma unroll
+            for (int r = 0; r < TN; r++) tile_red[(t * TN + r) * 32 + v] = part[t][r];
+    }
+    __syncthreads();
+    const int lane = v & 31, warp = v >> 5;
+    for (int i = warp; i < NO; i += 4) {
+        float val = tile_red[i * 32 + lane];
+#pragma unroll
+        for (int off = 16; off > 0; off >>= 1) val += __shfl_down_sync(0xffffffffu, val, off);
+        const int t = t0 + i / TN, row = n0 + i % TN;
+        if (lane == 0 && t < m && row < n) y[(long)t * ystride + row] = val;
+    }
+}
+
+// ---- prefill dense tile (memra #472, #700): the FP8 GEMV's arithmetic over a tile of token rows
+// and output rows. `dsv4_gemv_fp8_m_kernel` runs one block per output row, and every block reads all
+// of its token rows' activations, so at prefill widths the activation stream carries a factor of n.
+// Here a block of 128 threads covers TT token rows x TN output rows. Thread v owns exactly the
+// GEMV's k-slices, `v*8 + j*1024` for j ascending with the 8 elements ascending, decodes each
+// weight to the same `e4m3 * block scale` float and adds `w * x` into its own partial for every
+// (token, output) pair of the tile. Every output's 128 partials then take the GEMV's halving tree.
+// So each y[t][n] is the GEMV's bits, while an activation chunk is read once per TN outputs and a
+// weight chunk once per TT tokens. -fmad=false applies to this file as to the GEMV.
+template <int TT, int TN>
+__global__ void __launch_bounds__(128) dsv4_gemm_fp8_tile_kernel(
+        const uint8_t* __restrict__ w, const float* __restrict__ sc, int sc_cols,
+        const uint16_t* __restrict__ x, float* __restrict__ y, int m, int n, int k, int xstride,
+        int ystride) {
+    __shared__ float e4m3_tab[256];
+    extern __shared__ float tile_red[];  // [TT * TN][64], reused for the 32-leaf stage
+    const int v = threadIdx.x;
+    for (int i = v; i < 256; i += 128) e4m3_tab[i] = dsv4_e4m3((uint8_t)i);
+    __syncthreads();
+    const int n0 = blockIdx.x * TN, t0 = blockIdx.y * TT;
+    float part[TT][TN];
+#pragma unroll
+    for (int t = 0; t < TT; t++)
+#pragma unroll
+        for (int r = 0; r < TN; r++) part[t][r] = 0.0f;
+    for (int c = v * 8; c < k; c += 1024) {
+        float wv[TN][8];
+#pragma unroll
+        for (int r = 0; r < TN; r++) {
+            const int row = n0 + r;
+            if (row < n) {
+                const uint2 wr = *(const uint2*)(w + (long)row * k + c);
+                const float s = sc[(long)(row >> 7) * sc_cols + (c >> 7)];
+                const unsigned wb[2] = {wr.x, wr.y};
+#pragma unroll
+                for (int j = 0; j < 4; j++) {
+                    wv[r][2 * j] = e4m3_tab[(wb[j >> 1] >> (((j & 1) * 2) * 8)) & 0xFFu] * s;
+                    wv[r][2 * j + 1] = e4m3_tab[(wb[j >> 1] >> (((j & 1) * 2 + 1) * 8)) & 0xFFu] * s;
+                }
+            } else {
+#pragma unroll
+                for (int e = 0; e < 8; e++) wv[r][e] = 0.0f;
+            }
+        }
+#pragma unroll
+        for (int t = 0; t < TT; t++) {
+            if (t0 + t >= m) break;
+            const uint4 xv = *(const uint4*)(x + (long)(t0 + t) * xstride + c);
+            const unsigned xw[4] = {xv.x, xv.y, xv.z, xv.w};
+            float xf[8];
+#pragma unroll
+            for (int j = 0; j < 4; j++) {
+                xf[2 * j] = __uint_as_float((xw[j] & 0xFFFFu) << 16);
+                xf[2 * j + 1] = __uint_as_float(xw[j] & 0xFFFF0000u);
+            }
+#pragma unroll
+            for (int r = 0; r < TN; r++) {
+                float acc = part[t][r];
+#pragma unroll
+                for (int e = 0; e < 8; e++) acc += wv[r][e] * xf[e];
+                part[t][r] = acc;
+            }
+        }
+    }
+    dsv4_tile_tree<TT, TN>(part, tile_red, y, m, n, ystride, t0, n0);
+}
+
+// Gate seam: 0 forces the per-32-row GEMV loop for prefill widths, so a gate can compare the two in
+// one process. Not an environment door; serving always takes the tile.
+static std::atomic<int> g_dsv4_gemm_fp8_tile_on{1};
+static std::atomic<unsigned long long> g_dsv4_gemm_fp8_tile_launches{0};
+extern "C" int memra_dsv4_gemm_fp8_tile_set_for_gate(int on) {
+    return g_dsv4_gemm_fp8_tile_on.exchange(on ? 1 : 0);
+}
+extern "C" unsigned long long memra_dsv4_gemm_fp8_tile_launches(void) {
+    return g_dsv4_gemm_fp8_tile_launches.load(std::memory_order_relaxed);
+}
+
+
+template <int TT, int TN>
+static void dsv4_gemm_fp8_tile_launch(const void* w_codes, const float* sc_f32, int sc_cols,
+                                      const void* x_bf16, float* y, int m, int n, int k,
+                                      int xstride, int ystride, cudaStream_t stream) {
+    const size_t smem = (size_t)TT * TN * 64 * sizeof(float);
+    static bool attr = false;
+    if (!attr) {
+        cudaFuncSetAttribute(dsv4_gemm_fp8_tile_kernel<TT, TN>,
+                             cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
+        attr = true;
+    }
+    dim3 grid((unsigned)((n + TN - 1) / TN), (unsigned)((m + TT - 1) / TT));
+    dsv4_gemm_fp8_tile_kernel<TT, TN><<<grid, 128, smem, stream>>>(
+        (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y, m, n, k, xstride,
+        ystride);
+}
+
+// The f32-island dots (`dsv4_dots_f32acc_mrow_kernel`) over the same tile: thread v owns the
+// dots kernel's chunks `v*8 + j*1024`, adds `x * w` for the 8 elements ascending with the weight
+// widened from bf16 or read as f32, then every output takes the same halving tree.
+template <int TT, int TN>
+__global__ void __launch_bounds__(128) dsv4_dots_f32acc_tile_kernel(
+        const float* __restrict__ x, const void* __restrict__ w, int w_is_bf16,
+        float* __restrict__ y, int m, int k, int n) {
+    extern __shared__ float tile_red[];
+    const int v = threadIdx.x;
+    const int n0 = blockIdx.x * TN, t0 = blockIdx.y * TT;
+    float part[TT][TN];
+#pragma unroll
+    for (int t = 0; t < TT; t++)
+#pragma unroll
+        for (int r = 0; r < TN; r++) part[t][r] = 0.0f;
+    for (int c = v * 8; c < k; c += 1024) {
+        float wv[TN][8];
+#pragma unroll
+        for (int r = 0; r < TN; r++) {
+            const int row = n0 + r;
+            if (row >= n) {
+#pragma unroll
+                for (int e = 0; e < 8; e++) wv[r][e] = 0.0f;
+            } else if (w_is_bf16) {
+                const uint4 wr = *(const uint4*)((const uint16_t*)w + (long)row * k + c);
+                const unsigned ww[4] = {wr.x, wr.y, wr.z, wr.w};
+#pragma unroll
+                for (int q2 = 0; q2 < 4; q2++) {
+                    wv[r][2 * q2] = __uint_as_float((ww[q2] & 0xFFFFu) << 16);
+                    wv[r][2 * q2 + 1] = __uint_as_float(ww[q2] & 0xFFFF0000u);
+                }
+            } else {
+                const float4 wa = *(const float4*)((const float*)w + (long)row * k + c);
+                const float4 wb = *(const float4*)((const float*)w + (long)row * k + c + 4);
+                wv[r][0] = wa.x; wv[r][1] = wa.y; wv[r][2] = wa.z; wv[r][3] = wa.w;
+                wv[r][4] = wb.x; wv[r][5] = wb.y; wv[r][6] = wb.z; wv[r][7] = wb.w;
+            }
+        }
+#pragma unroll
+        for (int t = 0; t < TT; t++) {
+            if (t0 + t >= m) break;
+            const float* xr = x + (long)(t0 + t) * k + c;
+            const float4 xa = *(const float4*)xr;
+            const float4 xb = *(const float4*)(xr + 4);
+            const float xs[8] = {xa.x, xa.y, xa.z, xa.w, xb.x, xb.y, xb.z, xb.w};
+#pragma unroll
+            for (int r = 0; r < TN; r++) {
+                float acc = part[t][r];
+#pragma unroll
+                for (int e = 0; e < 8; e++) acc += xs[e] * wv[r][e];
+                part[t][r] = acc;
+            }
+        }
+    }
+    dsv4_tile_tree<TT, TN>(part, tile_red, y, m, n, n, t0, n0);
+}
+
+static int dsv4_dots_f32acc_tile(const float* x, const void* w, int w_is_bf16, float* y, int m,
+                                 int k, int n, cudaStream_t stream) {
+    constexpr int TT = 8, TN = 8;
+    const size_t smem = (size_t)TT * TN * 64 * sizeof(float);
+    dim3 grid((unsigned)((n + TN - 1) / TN), (unsigned)((m + TT - 1) / TT));
+    dsv4_dots_f32acc_tile_kernel<TT, TN><<<grid, 128, smem, stream>>>(x, w, w_is_bf16, y, m, k, n);
+    g_dsv4_gemm_fp8_tile_launches.fetch_add(1, std::memory_order_relaxed);
+    return 0;
+}
+
+static int dsv4_gemm_fp8_tile(const void* w_codes, const float* sc_f32, int sc_cols,
+                              const void* x_bf16, float* y, int m, int n, int k, int xstride,
+                              int ystride, cudaStream_t stream) {
+    // 8 token rows x 8 output rows: the sweep's winner on 4 of 5 DSv4 shapes (16x4, 16x8 and 32x4
+    // were measured and deleted; research/dsv4f-bringup-20260923/prefill-tile/RESULTS.md).
+    dsv4_gemm_fp8_tile_launch<8, 8>(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride, ystride, stream);
+    g_dsv4_gemm_fp8_tile_launches.fetch_add(1, std::memory_order_relaxed);
+    return 0;
+}
+
 #include "dsv4_dense_m1_exact_tail.cuh"
 
 // Defined in cu/dsv4_dense_cutlass.cu, compiled only under MEMRA_DSV4_CUTLASS.
@@ -4115,6 +4344,18 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
         dsv4_dense_exact_tail_fp8_admits(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k))
         return memra_dsv4_dense_exact_tail_fp8(w_codes, sc_f32, sc_cols, x_bf16,
             y, m, n, k, xstride, ystride, stream_v);
+    // The exact tile takes prefill widths unless the tensor-core path (#472) is linked: a
+    // MEMRA_DSV4_CUTLASS build keeps the per-32-row recursion below, whose chunks are the only
+    // shape that path admits, so its class choice stays exactly what it was.
+    if (m > DSV4_TMAX && !memra_dsv4_dense_cutlass_fp8 &&
+        g_dsv4_gemm_fp8_tile_on.load(std::memory_order_relaxed)) {
+        dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, n, k);
+        int rc = dsv4_gemm_fp8_tile(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k, xstride, ystride,
+                                    stream);
+        if (rc != 0) return rc;
+        DSV4_ERR();
+        return 0;
+    }
     if (m > DSV4_TMAX) {
         const uint16_t* x = (const uint16_t*)x_bf16;
         int launches = 0;
@@ -4419,6 +4660,13 @@ extern "C" int memra_dsv4_dots_f32acc_mrow(const float* x, const void* w, int w_
     if (dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
         dsv4_dense_exact_tail_dots_admits(x, w, w_is_bf16, y, s, n, k))
         return memra_dsv4_dense_exact_tail_dots(x, w, w_is_bf16, y, s, n, k, stream_v);
+    if (s > DSV4_TMAX && g_dsv4_gemm_fp8_tile_on.load(std::memory_order_relaxed)) {
+        dsv4_dense_census_note(DSV4_DENSE_ENTRY_DOTS_F32ACC, s, n, k);
+        int rc = dsv4_dots_f32acc_tile(x, w, w_is_bf16, y, s, k, n, stream);
+        if (rc != 0) return rc;
+        DSV4_ERR();
+        return 0;
+    }
     if (s > DSV4_TMAX) {
         int launches = 0;
         for (int base = 0; base < s; base += DSV4_TMAX) {
@@ -7347,4 +7595,380 @@ extern "C" int memra_dsv4_replay_compressor_emit(float* pending_kv,float* pendin
         DSV4_ERR();
     }
     return 0;
+}
+
+// ---- Fused one-token MoE (memra #17 lane, research/dsv4f-bringup-20260923/moe-fused/).
+// The served t=1 grouped chain is 16 launches per layer: act_quant x, route count/prefix/
+// scatter, the x FP8-QAT half mirror, the gate and up stream visitors, two scale_rows, the
+// weighted SwiGLU, act_quant h, the h mirror, the down visitor, scale_rows, the slot scatter
+// and combine_rows_m. These two kernels compute the same program in two launches:
+//   gu:   x mirror (act_quant + fp8_gather_half, inline) -> gate and up of every selected
+//         slot (the one-token stream visitor's body, op for op) -> macro1/macro3 -> SwiGLU
+//         with the slot's route weight, into h[slot].
+//   down: h mirror -> down -> macro2 into contribution[slot], then the last CTA of each
+//         column tile sums the slots in `order`, combine_rows_m's order, into y.
+// Every f32 op is the reference kernel's op in the reference order, and this TU is built
+// -fmad=false like the reference, so h, contribution and y are bit-identical to the chain.
+// A slot naming no live expert ORs 0x1 into `fault` (the route prefix's bit) and yields 0;
+// a lossy x or h mirror ORs 0x2 or 0x4 (the gather mirrors' bits).
+#include "moe_kq_prims.cuh"
+
+template<int CODE, int SCB> struct Dsv4M1Pitch {
+    static constexpr int raw = (CODE + SCB + 15) / 16 * 16;
+    static constexpr int value = ((raw / 16) & 1) ? raw : raw + 16;   // odd 16-B units: conflict-free
+};
+// One warp owns an n8 column tile; a stage holds KC k of its 8 rows (CODE code bytes, then
+// SCB scale bytes, per row).
+template<int KC, int STAGES> struct Dsv4M1Ring {
+    static constexpr int CODE = KC / 2, SCB = KC / 16, PITCH = Dsv4M1Pitch<CODE, SCB>::value;
+    static constexpr int STAGE = 8 * PITCH, BYTES = STAGES * STAGE;
+};
+
+template<int KC, int STAGES>
+__device__ __forceinline__ void dsv4_m1_issue(unsigned char* ring, const uint8_t* wq0,
+                                              const uint8_t* ws0, long row_bytes, int sc_row,
+                                              int nch, int c, int lane, bool live) {
+    using R = Dsv4M1Ring<KC, STAGES>;
+    constexpr int CODE = R::CODE, SCB = R::SCB, PITCH = R::PITCH;
+    if (live && c < nch) {
+        unsigned char* st = ring + (c % STAGES) * R::STAGE;
+        constexpr int PPR = CODE / 16;
+#pragma unroll
+        for (int i = 0; i < (8 * PPR + 31) / 32; i++) {
+            const int p = i * 32 + lane;
+            if (8 * PPR % 32 == 0 || p < 8 * PPR) {
+                const int row = p / PPR, off = (p % PPR) * 16;
+                sk_cp16(st + row * PITCH + off,
+                        wq0 + (size_t)row * row_bytes + (size_t)c * CODE + off);
+            }
+        }
+        if constexpr (SCB >= 16) {
+            constexpr int SPR = SCB / 16;
+            if (lane < 8 * SPR) {
+                const int row = lane / SPR, off = (lane % SPR) * 16;
+                sk_cp16(st + row * PITCH + CODE + off,
+                        ws0 + (size_t)row * sc_row + (size_t)c * SCB + off);
+            }
+        } else {
+            if (lane < 8)
+                kqs_cp8(st + lane * PITCH + CODE, ws0 + (size_t)lane * sc_row + (size_t)c * SCB);
+        }
+    }
+    asm volatile("cp.async.commit_group;" ::: "memory");
+}
+
+// The main loop after the STAGES-1 prologue issues. As is the swizzled half row. The inner
+// body is moe_kq_m1_stream_kernel's, 128 k at a time, so the MMA sequence and its f32
+// accumulation order are the visitor's.
+template<int KC, int STAGES>
+__device__ __forceinline__ void dsv4_m1_dot(float (&acc)[4], unsigned char* ring,
+                                            const uint32_t* As, const uint8_t* wq0,
+                                            const uint8_t* ws0, long row_bytes, int sc_row,
+                                            int nch, int lane) {
+    using R = Dsv4M1Ring<KC, STAGES>;
+    constexpr int CODE = R::CODE, PITCH = R::PITCH;
+    const int gq = lane >> 2, t = lane & 3;
+    const uint32_t pick = (uint32_t)t | ((uint32_t)(t + 4) << 4);
+    for (int c = 0; c < nch; c++) {
+        dsv4_m1_issue<KC, STAGES>(ring, wq0, ws0, row_bytes, sc_row, nch, c + STAGES - 1, lane,
+                                  true);
+        asm volatile("cp.async.wait_group %0;" ::"n"(STAGES - 1) : "memory");
+        __syncwarp();
+        const unsigned char* rowb = ring + (c % STAGES) * R::STAGE + gq * PITCH;
+#pragma unroll
+        for (int s = 0; s < KC / 128; s++) {
+            const unsigned char* rowp = rowb + s * 64;
+            const uint2 scw = *reinterpret_cast<const uint2*>(rowb + CODE + s * 8);
+            const uint32_t sw[2] = {kqs_e4m3fn_clear_nan(scw.x), kqs_e4m3fn_clear_nan(scw.y)};
+            const uint2* ap =
+                reinterpret_cast<const uint2*>(As) + ((size_t)c * (KC / 16) + s * 8) * 4 + t;
+#pragma unroll
+            for (int q = 0; q < 4; q++) {
+                const uint4 v = *reinterpret_cast<const uint4*>(rowp + q * 16);
+                const uint32_t s01 = kqs_e4m3x2_f16x2(q & 1 ? sw[q >> 1] >> 16 : sw[q >> 1]);
+#pragma unroll
+                for (int h = 0; h < 2; h++) {
+                    const uint32_t x = __byte_perm(h ? v.z : v.x, h ? v.w : v.y, pick);
+                    const uint32_t s2 = __byte_perm(s01, 0u, h ? 0x3232u : 0x1010u);
+                    uint32_t b0, b1;
+                    kqs_e2m1_f16x4(x, b0, b1);
+                    b0 = kqs_hmul2(b0, s2);
+                    b1 = kqs_hmul2(b1, s2);
+                    const uint2 a2 = ap[(q * 2 + h) * 4];
+                    const unsigned a[4] = {a2.x, a2.x, a2.y, a2.y};
+                    sk_mma(acc, a, b0, b1);
+                }
+            }
+        }
+        __syncwarp();
+    }
+    asm volatile("cp.async.wait_group 0;" ::: "memory");
+}
+
+__device__ __forceinline__ int dsv4_m1_swz(int w) {
+    return (w & ~7) | ((w & 3) << 1) | ((w >> 2) & 1);
+}
+
+__device__ __forceinline__ float dsv4_warp_max(float v) {
+#pragma unroll
+    for (int o = 16; o; o >>= 1) v = fmaxf(v, __shfl_xor_sync(0xffffffffu, v, o));
+    return v;
+}
+
+// dsv4_act_quant_fp8_kernel then dsv4_fp8_gather_half_kernel on one row, written straight into
+// the swizzled half staging of the stream body. A max is exact in any order, so the warp
+// reductions give those kernels' group amax and row scale. Returns this thread's lossy flag.
+template<int NW>
+__device__ __forceinline__ bool dsv4_moe_fused_mirror(const float* __restrict__ xrow, int cols,
+                                                      uint32_t* As, float* s_scale, float* s_rs,
+                                                      int warp, int lane) {
+    const int groups = cols / 128;
+    for (int g = warp; g < groups; g += NW) {
+        const float4 v = reinterpret_cast<const float4*>(xrow + (size_t)g * 128)[lane];
+        float a = 0.0f;
+        a = fmaxf(a, fabsf(v.x));
+        a = fmaxf(a, fabsf(v.y));
+        a = fmaxf(a, fabsf(v.z));
+        a = fmaxf(a, fabsf(v.w));
+        float amax = dsv4_warp_max(a);
+        amax = fmaxf(amax, 1e-4f);
+        const float inv = (float)(1.0 / 448.0);
+        if (lane == 0) s_scale[g] = dsv4_pow2_ceil(amax * inv);
+    }
+    __syncthreads();
+    if (warp == 0) {
+        float m = 0.0f;
+        for (int g = lane; g < groups; g += 32) m = fmaxf(m, s_scale[g]);
+        m = dsv4_warp_max(m);
+        if (lane == 0) *s_rs = ldexpf(m, -7);
+    }
+    __syncthreads();
+    const float rs = *s_rs;
+    bool bad = !(rs > 0.0f) || !isfinite(rs);
+    for (int g = warp; g < groups; g += NW) {
+        const float4 v = reinterpret_cast<const float4*>(xrow + (size_t)g * 128)[lane];
+        const float s = s_scale[g];
+        const float xv[4] = {v.x, v.y, v.z, v.w};
+        uint32_t hb[4];
+#pragma unroll
+        for (int j = 0; j < 4; j++) {
+            float q = fminf(fmaxf(xv[j] / s, -448.0f), 448.0f);
+            uint8_t c = (uint8_t)__nv_cvt_float_to_fp8(q, __NV_SATFINITE, __NV_E4M3);
+            if ((c & 0x7F) == 0) c = 0;
+            float val = dsv4_e4m3(c) * s;
+            __half h = __float2half_rn(val / rs);
+            float back = __half2float(h) * rs;
+            if ((c & 127) == 127 || !isfinite(val) ||
+                __float_as_uint(back) != __float_as_uint(val))
+                bad = true;
+            hb[j] = __half_as_ushort(h);
+        }
+        const int w0 = (g * 128 + lane * 4) / 2;
+        As[dsv4_m1_swz(w0)] = hb[0] | (hb[1] << 16);
+        As[dsv4_m1_swz(w0 + 1)] = hb[2] | (hb[3] << 16);
+    }
+    return bad;
+}
+
+constexpr int DSV4_MOE_FUSED_WARPS = 4, DSV4_MOE_FUSED_KC = 256, DSV4_MOE_FUSED_STAGES = 2;
+
+// grid (out_f / (8*WP), topk), block (32, 2*WP): warps [0,WP) gate, [WP,2WP) up, same columns.
+template<int WP, int KC, int STAGES>
+static __global__ void __launch_bounds__(2 * WP * 32)
+dsv4_moe_fused_gu_kernel(const unsigned long long* __restrict__ table, int n_expert,
+                         const int* __restrict__ sel, const float* __restrict__ selw,
+                         const float* __restrict__ scale2, const float* __restrict__ xf,
+                         float* __restrict__ H, int in_f, int out_f, float limit, long row_bytes,
+                         int* __restrict__ fault) {
+    using R = Dsv4M1Ring<KC, STAGES>;
+    extern __shared__ __align__(16) unsigned char fz_smem[];
+    __shared__ float s_scale[64];
+    __shared__ float s_rs;
+    __shared__ float s_up[WP][4][2];
+    uint32_t* As = reinterpret_cast<uint32_t*>(fz_smem);
+    const int p = blockIdx.y, lane = threadIdx.x, warp = threadIdx.y;
+    const int e = sel[p];
+    const bool valid = e >= 0 && e < n_expert;
+    const bool up = warp >= WP;
+    const int proj = up ? 2 : 0;
+    const int n0 = (blockIdx.x * WP + (up ? warp - WP : warp)) * 8;
+    unsigned char* ring = fz_smem + (size_t)in_f * 2 + (size_t)warp * R::BYTES;
+    const int nch = in_f / KC, sc_row = in_f / 16;
+    const uint8_t* wq0 = nullptr;
+    const uint8_t* ws0 = nullptr;
+    if (valid) {
+        wq0 = (const uint8_t*)table[(size_t)(2 * proj) * n_expert + e] + (size_t)n0 * row_bytes;
+        ws0 = (const uint8_t*)table[(size_t)(2 * proj + 1) * n_expert + e] + (size_t)n0 * sc_row;
+    }
+    // Weight prologue first, so the first stages stream while the x mirror runs.
+#pragma unroll
+    for (int c = 0; c < STAGES - 1; c++)
+        dsv4_m1_issue<KC, STAGES>(ring, wq0, ws0, row_bytes, sc_row, nch, c, lane, valid);
+    const bool bad =
+        dsv4_moe_fused_mirror<2 * WP>(xf, in_f, As, s_scale, &s_rs, warp, lane);
+    const bool any_bad = __syncthreads_or(bad);
+    const bool first = lane == 0 && warp == 0;
+    if (first && fault && any_bad && blockIdx.x == 0) atomicOr(fault, 2);
+    const int gq = lane >> 2, t = lane & 3;
+    if (!valid) {
+        asm volatile("cp.async.wait_group 0;" ::: "memory");
+        if (first && fault && blockIdx.x == 0) atomicOr(fault, 1);
+        if (!up && gq == 0) {
+            float* hrow = H + (size_t)p * out_f + n0 + 2 * t;
+            hrow[0] = 0.0f;
+            hrow[1] = 0.0f;
+        }
+        return;
+    }
+    float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    dsv4_m1_dot<KC, STAGES>(acc, ring, As, wq0, ws0, row_bytes, sc_row, nch, lane);
+    if (up && gq == 0) {
+        s_up[warp - WP][t][0] = acc[0];
+        s_up[warp - WP][t][1] = acc[1];
+    }
+    __syncthreads();
+    if (!up && gq == 0) {
+        // The visitor's y = acc*row_scale, scale_rows' y *= macro, then dsv4_swiglu_kernel.
+        const float rs = s_rs;
+        const float mg = scale2[e * 3], mu = scale2[e * 3 + 2], w = selw[p];
+        float* hrow = H + (size_t)p * out_f + n0 + 2 * t;
+#pragma unroll
+        for (int j = 0; j < 2; j++) {
+            float gv = acc[j] * rs;
+            gv *= mg;
+            float uv = s_up[warp][t][j] * rs;
+            uv *= mu;
+            float u = fminf(fmaxf(uv, -limit), limit);
+            float g = fminf(gv, limit);
+            float h = g * dsv4_sigmoid(g) * u;
+            h *= w;
+            hrow[j] = h;
+        }
+    }
+}
+
+// grid (out_f / (8*WARPS), topk), block (32, WARPS). Contribution rows are original slots (the
+// scatter's target); the last CTA to finish a column tile sums them in `order` into y and
+// resets its tile counter, so `tile_cnt` needs zeroing once, at allocation.
+template<int WARPS, int KC, int STAGES>
+static __global__ void __launch_bounds__(WARPS * 32)
+dsv4_moe_fused_down_kernel(const unsigned long long* __restrict__ table, int n_expert,
+                           const int* __restrict__ sel, const float* __restrict__ scale2,
+                           const float* __restrict__ H, float* __restrict__ C,
+                           const int* __restrict__ order, float* __restrict__ Y,
+                           int* __restrict__ tile_cnt, int topk, int in_f, int out_f,
+                           long row_bytes, int* __restrict__ fault) {
+    using R = Dsv4M1Ring<KC, STAGES>;
+    extern __shared__ __align__(16) unsigned char fz_smem[];
+    __shared__ float s_scale[64];
+    __shared__ float s_rs;
+    __shared__ int s_last;
+    uint32_t* As = reinterpret_cast<uint32_t*>(fz_smem);
+    const int p = blockIdx.y, lane = threadIdx.x, warp = threadIdx.y;
+    const int e = sel[p];
+    const bool valid = e >= 0 && e < n_expert;
+    const int n0 = (blockIdx.x * WARPS + warp) * 8;
+    unsigned char* ring = fz_smem + (size_t)in_f * 2 + (size_t)warp * R::BYTES;
+    const int nch = in_f / KC, sc_row = in_f / 16;
+    const uint8_t* wq0 = nullptr;
+    const uint8_t* ws0 = nullptr;
+    if (valid) {
+        wq0 = (const uint8_t*)table[(size_t)2 * n_expert + e] + (size_t)n0 * row_bytes;
+        ws0 = (const uint8_t*)table[(size_t)3 * n_expert + e] + (size_t)n0 * sc_row;
+    }
+#pragma unroll
+    for (int c = 0; c < STAGES - 1; c++)
+        dsv4_m1_issue<KC, STAGES>(ring, wq0, ws0, row_bytes, sc_row, nch, c, lane, valid);
+    const bool bad = dsv4_moe_fused_mirror<WARPS>(H + (size_t)p * in_f, in_f, As, s_scale, &s_rs,
+                                                  warp, lane);
+    const bool any_bad = __syncthreads_or(bad);
+    const int tid = warp * 32 + lane;
+    if (tid == 0 && fault && any_bad && blockIdx.x == 0) atomicOr(fault, 4);
+    const int gq = lane >> 2, t = lane & 3;
+    float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    if (valid)
+        dsv4_m1_dot<KC, STAGES>(acc, ring, As, wq0, ws0, row_bytes, sc_row, nch, lane);
+    else
+        asm volatile("cp.async.wait_group 0;" ::: "memory");
+    if (gq == 0) {
+        float* c = C + (size_t)p * out_f + n0 + 2 * t;
+        if (valid) {
+            const float rs = s_rs, m2 = scale2[e * 3 + 1];
+            float y0 = acc[0] * rs, y1 = acc[1] * rs;
+            y0 *= m2;
+            y1 *= m2;
+            c[0] = y0;
+            c[1] = y1;
+        } else {
+            c[0] = 0.0f;
+            c[1] = 0.0f;
+        }
+        __threadfence();
+    }
+    __syncthreads();
+    if (tid == 0) s_last = atomicAdd(&tile_cnt[blockIdx.x], 1) == (int)gridDim.y - 1;
+    __syncthreads();
+    if (s_last) {
+        __threadfence();
+        const int cols = WARPS * 8, col0 = blockIdx.x * cols;
+        for (int i = tid; i < cols; i += WARPS * 32) {
+            float a = 0.0f;
+            for (int k = 0; k < topk; k++) a += __ldcg(C + (size_t)order[k] * out_f + col0 + i);
+            Y[col0 + i] = a;
+        }
+        if (tid == 0) tile_cnt[blockIdx.x] = 0;
+    }
+}
+
+static std::atomic<unsigned long long> g_dsv4_moe_fused_dispatches{0};
+
+static bool dsv4_moe_fused_shape_ok(int n_expert, int topk, int in_f, int out_f, int cols_per_cta) {
+    return n_expert > 0 && topk > 0 && topk <= 65535 && in_f % DSV4_MOE_FUSED_KC == 0 &&
+           in_f / 128 <= 64 && out_f % cols_per_cta == 0;
+}
+
+// One token: x is [in_f] f32 (the MoE input row), h is [topk][out_f]. out_f = moe_inter.
+extern "C" int memra_dsv4_moe_fused_gu(const unsigned long long* table, int n_expert,
+                                       const int* sel, const float* selw, const float* scale2,
+                                       const float* xf, float* h, int topk, int in_f, int out_f,
+                                       float limit, int* fault, void* stream_v) {
+    constexpr int WP = DSV4_MOE_FUSED_WARPS, KC = DSV4_MOE_FUSED_KC, ST = DSV4_MOE_FUSED_STAGES;
+    if (!table || !sel || !selw || !scale2 || !xf || !h ||
+        !dsv4_moe_fused_shape_ok(n_expert, topk, in_f, out_f, 8 * WP))
+        return 40004;
+    const size_t smem = (size_t)in_f * 2 + (size_t)2 * WP * Dsv4M1Ring<KC, ST>::BYTES;
+    if (smem > 48 * 1024) return 40004;
+    dsv4_moe_fused_gu_kernel<WP, KC, ST>
+        <<<dim3((unsigned)(out_f / (8 * WP)), (unsigned)topk), dim3(32, 2 * WP), smem,
+           (cudaStream_t)stream_v>>>(table, n_expert, sel, selw, scale2, xf, h, in_f, out_f,
+                                     limit, (long)(in_f / 2), fault);
+    DSV4_ERR();
+    g_dsv4_moe_fused_dispatches.fetch_add(1, std::memory_order_relaxed);
+    return 0;
+}
+
+// One token: h is [topk][in_f] (in_f = moe_inter), contribution [topk][out_f], y [out_f];
+// tile_cnt holds out_f / 32 zeroed counters.
+extern "C" int memra_dsv4_moe_fused_down(const unsigned long long* table, int n_expert,
+                                         const int* sel, const float* scale2, const float* h,
+                                         float* contrib, const int* order, float* y,
+                                         int* tile_cnt, int topk, int in_f, int out_f, int* fault,
+                                         void* stream_v) {
+    constexpr int W = DSV4_MOE_FUSED_WARPS, KC = DSV4_MOE_FUSED_KC, ST = DSV4_MOE_FUSED_STAGES;
+    if (!table || !sel || !scale2 || !h || !contrib || !order || !y || !tile_cnt ||
+        !dsv4_moe_fused_shape_ok(n_expert, topk, in_f, out_f, 8 * W))
+        return 40004;
+    const size_t smem = (size_t)in_f * 2 + (size_t)W * Dsv4M1Ring<KC, ST>::BYTES;
+    if (smem > 48 * 1024) return 40004;
+    dsv4_moe_fused_down_kernel<W, KC, ST>
+        <<<dim3((unsigned)(out_f / (8 * W)), (unsigned)topk), dim3(32, W), smem,
+           (cudaStream_t)stream_v>>>(table, n_expert, sel, scale2, h, contrib, order, y,
+                                     tile_cnt, topk, in_f, out_f, (long)(in_f / 2), fault);
+    DSV4_ERR();
+    g_dsv4_moe_fused_dispatches.fetch_add(1, std::memory_order_relaxed);
+    return 0;
+}
+
+extern "C" unsigned long long memra_dsv4_moe_fused_dispatches() {
+    return g_dsv4_moe_fused_dispatches.load(std::memory_order_relaxed);
 }

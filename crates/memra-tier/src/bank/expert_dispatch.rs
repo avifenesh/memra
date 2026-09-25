@@ -45,6 +45,16 @@ pub trait ExpertDispatchBank {
     fn validate(&self, local: ExpertDispatchId, bytes: usize) -> Result<()>;
     fn demand(&mut self, local: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand>;
     fn finish(&mut self, demand: ExpertDemand) -> Result<()>;
+    /// The log-only stage clock's `key=value` line, `None` when no clock is installed
+    /// (the `--expert-bank-stages` diagnostic; `research/spill-c-20260919/DAY40.md`).
+    fn stage_report(&self) -> Option<String> {
+        None
+    }
+    /// Day 50: whether the record behind `local` is resident in the host tier now (a prefetch
+    /// takes only host-resident records, so it never reads storage on the owner thread).
+    fn host_resident(&self, _local: ExpertDispatchId) -> Result<bool> {
+        Ok(false)
+    }
 }
 
 pub struct SlruExpertDispatch<H: Hotness<ExpertDomain>, R: ExactReader> {
@@ -91,6 +101,17 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> SlruExpertDispatch<H, R> {
     pub fn into_bank(self) -> BankService<ExpertDomain, H, R> {
         self.bank
     }
+    /// Offer one record the host fill read and checksummed off the owner thread (day 45):
+    /// `BankService::admit_filled` under this dispatch's request.
+    pub fn admit_filled(
+        &mut self,
+        local: ExpertDispatchId,
+        bytes: HostBytes,
+        digest: Digest,
+    ) -> Result<FillOutcome> {
+        let id = self.ids.get(&local).ok_or(Error::NotFound)?.clone();
+        self.bank.admit_filled(&id, bytes, digest, &self.request)
+    }
 }
 impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpertDispatch<H, R> {
     fn validate(&self, local: ExpertDispatchId, bytes: usize) -> Result<()> {
@@ -130,6 +151,16 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpert
             self.bank.collect_evicted()?;
         }
         result
+    }
+    fn stage_report(&self) -> Option<String> {
+        self.bank.stage_times().map(BankStageTimes::line)
+    }
+    fn host_resident(&self, local: ExpertDispatchId) -> Result<bool> {
+        let id = self.ids.get(&local).ok_or(Error::NotFound)?;
+        Ok(self
+            .bank
+            .slru_policy()
+            .is_some_and(|policy| policy.resident(id).is_some()))
     }
     fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
         self.bank.finish_host_use(&demand.ticket)?;

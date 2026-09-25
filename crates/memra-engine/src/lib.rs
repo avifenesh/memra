@@ -510,6 +510,32 @@ pub fn dsv4_moe_m1_stream_dispatches() -> u64 {
     unsafe { mmq_ffi::memra_moe_kq_m1_stream_dispatches() }
 }
 
+/// DSV4 fused one-token MoE (memra #17 lane, `research/dsv4f-bringup-20260923/moe-fused/`).
+/// Two launches replace the grouped chain's 16 on the plain one-token step when the checks
+/// are deferred to the step-end fault word, bit-identical to that chain. Like the stream
+/// visitor above it is the code, not a door: there is no environment read, and the gate
+/// override runs the unfused chain in one loaded model.
+static DSV4_MOE_FUSED_OVERRIDE: AtomicI8 = AtomicI8::new(-1);
+
+pub fn dsv4_moe_fused_on() -> bool {
+    DSV4_MOE_FUSED_OVERRIDE.load(Ordering::Acquire) != 0
+}
+
+pub fn set_dsv4_moe_fused_for_gate(enabled: bool) -> bool {
+    let previous = dsv4_moe_fused_on();
+    DSV4_MOE_FUSED_OVERRIDE.store(enabled as i8, Ordering::Release);
+    previous
+}
+
+pub fn clear_dsv4_moe_fused_for_gate() {
+    DSV4_MOE_FUSED_OVERRIDE.store(-1, Ordering::Release);
+}
+
+/// Snapshot of the CUDA-side successful enqueue receipt for both fused MoE launchers.
+pub fn dsv4_moe_fused_dispatches() -> u64 {
+    unsafe { dsv4_ffi::memra_dsv4_moe_fused_dispatches() }
+}
+
 /// Snapshot of the CUDA-side successful enqueue receipt for the multi-row streaming visitor,
 /// which small multi-row steps (verify rounds) take under the same switch.
 pub fn dsv4_moe_mrow_stream_dispatches() -> u64 {
@@ -1825,6 +1851,14 @@ pub struct Engine {
     /// MEMRA_MOE_CACHE. `Mutex` makes it multi-agent safe (§E.2); the lock covers only lookup/admit/
     /// memcpy-issue (µs), NOT the GEMM, so streams still overlap. `None` => cache disabled.
     moe_cache: Mutex<Option<crate::moe_cache::MoeSlotCache>>,
+    /// The MoE slot cache door's load option (`research/spill-c-20260919/DAY44.md`): when set
+    /// before a model loads, stacked expert banks load as views of the artifact's own mapping
+    /// (`HostBuf::Mmap`) instead of a pinned copy the door never reads. Only the gate binaries
+    /// set it, and only with `--experts-via-tier`; false is every loader path as before.
+    expert_host_mapped: std::sync::atomic::AtomicBool,
+    /// DAY50: the MoE slot cache door is installed and prefetches the next routed expert through
+    /// its owner. Set only by the door's installer; false keeps the legacy prefetch condition.
+    expert_bank_prefetch: std::sync::atomic::AtomicBool,
     /// CALIBRATED-A4 CLIPPING DIAGNOSTIC (research/qwen-fp4-activation-mint-20260909). `None`
     /// while serving, so the quantizer takes a null pointer and does no atomics. When a
     /// diagnostic run enables it, this is a device buffer of 4 u64 per program slot
@@ -3747,6 +3781,8 @@ impl Engine {
             router,
             sample,
             moe_cache: Mutex::new(None),
+            expert_host_mapped: std::sync::atomic::AtomicBool::new(false),
+            expert_bank_prefetch: std::sync::atomic::AtomicBool::new(false),
             a4_clip_stats: Mutex::new(None),
             w8_mirrors: Mutex::new(std::collections::HashMap::new()),
             w8_act: Mutex::new(std::collections::HashMap::new()),
@@ -6601,6 +6637,43 @@ impl Engine {
 
     /// Snapshot the MoE cache counters (hits, misses, staged_bytes, n_slots) for the §D.4 PCIe gate.
     /// Returns None if the cache was never built (disabled or no MoE forward ran).
+    /// Set the MoE slot cache door's load option before a model loads (DAY44): stacked expert
+    /// banks load as views of the artifact's mapping, never a pinned copy. Gate binaries only.
+    pub fn set_expert_host_mapped(&self, mapped: bool) {
+        self.expert_host_mapped
+            .store(mapped, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// DAY50: set by the door's installer once the bank is installed.
+    pub(crate) fn set_expert_bank_prefetch(&self, on: bool) {
+        self.expert_bank_prefetch
+            .store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// DAY50: whether the door prefetches through its owner (the forward's prefetch condition).
+    pub(crate) fn expert_bank_prefetch(&self) -> bool {
+        self.expert_bank_prefetch
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Whether the door's mapped-expert load option is set (DAY44).
+    pub(crate) fn expert_host_mapped(&self) -> bool {
+        self.expert_host_mapped
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// The MoE slot cache door's stage line (`--expert-bank-stages`,
+    /// `research/spill-c-20260919/DAY40.md`): `Ok(None)` without the door or the flag. Never
+    /// builds a cache; the bank half is read through the proxy on the owner thread.
+    pub(crate) fn expert_bank_stage_line(
+        &self,
+    ) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        match self.moe_cache.lock().unwrap().as_mut() {
+            Some(cache) => cache.bank_stage_line(),
+            None => Ok(None),
+        }
+    }
+
     pub fn moe_cache_stats(&self) -> Option<(u64, u64, u64, usize)> {
         let guard = self.moe_cache.lock().unwrap();
         guard

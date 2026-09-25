@@ -22,6 +22,11 @@ pub struct Governor {
     service_sequence: u64,
     evicted_floor: u64,
     charged_tenants: HashMap<(u64, u64), Digest>,
+    /// Outstanding charges per tenant, kept with `charged_tenants` on every reserve and
+    /// release, so `prune_fairness` reads the charged tenants in O(distinct tenants) instead of
+    /// O(outstanding charges) (a host bank of 17k cached records holds 17k charges of one tenant;
+    /// `research/spill-c-20260919/DAY43.md` section 1a).
+    charged_count: HashMap<Digest, usize>,
     next: u64,
 }
 impl Governor {
@@ -50,6 +55,7 @@ impl Governor {
             service_sequence: 0,
             evicted_floor: 0,
             charged_tenants: HashMap::new(),
+            charged_count: HashMap::new(),
             next: 0,
         })
     }
@@ -86,7 +92,7 @@ impl Governor {
             .queue
             .iter()
             .map(|(_, r)| r.tenant)
-            .chain(self.charged_tenants.values().copied())
+            .chain(self.charged_count.keys().copied())
             .collect();
         let mut idle: Vec<_> = self
             .last_served
@@ -171,6 +177,7 @@ impl Governor {
         let lease = self.issuer.issue(r.bytes.clone())?;
         self.used = next;
         self.charged_tenants.insert(lease.id(), r.tenant);
+        *self.charged_count.entry(r.tenant).or_insert(0) += 1;
         Ok(lease)
     }
 }
@@ -196,7 +203,14 @@ impl BudgetGovernor for Governor {
         // Capability validation precedes accounting, including foreign/double release.
         self.issuer.release(l)?;
         self.used = self.used.checked_sub(l.bytes())?;
-        self.charged_tenants.remove(&l.id());
+        if let Some(tenant) = self.charged_tenants.remove(&l.id())
+            && let Some(count) = self.charged_count.get_mut(&tenant)
+        {
+            *count -= 1;
+            if *count == 0 {
+                self.charged_count.remove(&tenant);
+            }
+        }
         self.prune_fairness();
         Ok(())
     }
@@ -254,5 +268,74 @@ mod tests {
         g.release(&a).unwrap();
         g.release(&c).unwrap();
         assert!(g.last_served.len() <= 2);
+    }
+
+    /// Day 43 (`research/spill-c-20260919/DAY43.md` section 1a): the per-tenant charge count
+    /// names exactly the tenants the old prune derived from every outstanding charge, after every
+    /// operation of a randomized reserve, release, enqueue, dispatch and cancel trace, so
+    /// `last_served` and `evicted_floor` evolve as before.
+    #[test]
+    fn charged_count_names_the_same_tenants_as_every_outstanding_charge() {
+        let mut cap = TierBudget::zero(1);
+        cap.pageable = 1_000;
+        let mut g = Governor::new(cap, TierBudget::zero(1), 3, 0, Arc::new(|| 0)).unwrap();
+        let mut seed = 0x51f1_5ea5_eed5_u64;
+        let mut rand = move |n: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % n
+        };
+        let mut charges: Vec<ChargedLease> = Vec::new();
+        let mut queued: Vec<u64> = Vec::new();
+        for step in 0..20_000 {
+            let mut bytes = TierBudget::zero(1);
+            bytes.pageable = 1 + rand(7);
+            let request = BudgetRequest {
+                bytes,
+                priority: if rand(4) == 0 {
+                    Priority::MandatoryActive
+                } else {
+                    Priority::Demand
+                },
+                deadline: Deadline(10),
+                tenant: [rand(6) as u8; 32],
+            };
+            match rand(5) {
+                0 | 1 => {
+                    if let Ok(charge) = g.reserve(&request) {
+                        charges.push(charge);
+                    }
+                }
+                2 if !charges.is_empty() => {
+                    let charge = charges.swap_remove(rand(charges.len() as u64) as usize);
+                    g.release(&charge).unwrap();
+                }
+                3 => {
+                    if let Ok(id) = g.enqueue(request) {
+                        queued.push(id);
+                    }
+                }
+                _ => match g.dispatch().unwrap() {
+                    Some(QueueOutcome::Admitted(id, charge)) => {
+                        queued.retain(|&q| q != id);
+                        charges.push(charge);
+                    }
+                    Some(QueueOutcome::Expired(id)) => queued.retain(|&q| q != id),
+                    None if !queued.is_empty() && rand(3) == 0 => {
+                        let id = queued.swap_remove(rand(queued.len() as u64) as usize);
+                        g.cancel_queued(id).unwrap();
+                    }
+                    None => {}
+                },
+            }
+            let old: HashSet<Digest> = g.charged_tenants.values().copied().collect();
+            let new: HashSet<Digest> = g.charged_count.keys().copied().collect();
+            assert_eq!(old, new, "charged tenants differ at step {step}");
+            for (tenant, &count) in &g.charged_count {
+                let n = g.charged_tenants.values().filter(|t| *t == tenant).count();
+                assert_eq!(n, count, "charge count differs at step {step}");
+            }
+        }
     }
 }

@@ -147,7 +147,9 @@ Findings that shape the slice:
    trunk planes only (`11178-11262`); under the door the contract checksums this slice adds are the
    only byte attestation of the draft plane. Extending the digest (`memra-prefix-split-state-v3`)
    would change the digest strings the OFF arm prints in `VERIFY FAILED` lines, so it is not part
-   of this slice; recorded here as the follow-up it is.
+   of this slice; recorded here as the follow-up it is. Landed as verify digest v3 on C day 53 (`DAY53.md`,
+   `OWED.md` C6): v3 composes the unchanged v2 trunk digest with the draft plane, the hidden row, the logits
+   and the DFlash tail, the strings are program-tagged, and the failure gate has a red arm per plane.
 3. **Chain width and trim do not enter the plane.** With `MEMRA_MTP_HEADS > 1` only head 0's
    scratch plane is published (`draft_plane_ref` returns `scratch.kv`; `mtp_extra`,
    `hybrid.rs:3884`, is not part of the entry). `MEMRA_FRSPEC_TRIM` changes the draft lm_head rows
@@ -693,15 +695,18 @@ attributed by any cell. Both are named as open for the review; nothing is inferr
    and is otherwise equal at steady state, which is what a pricing would weigh. Scoped by ruling 28 (lead,
    integ27): the handoff stays scoped until this review, where the budget question (one pinned budget or two)
    is decided with the door. Unchanged days 22 and 23.
-2. **The DFlash tail slice.** No drafter artifact identity is derivable from a GGUF digest and no gate boots a
-   DFlash drafter on the card; no cell exists. Day 20 (`DAY20.md`, memra#365) bounded the STANDALONE
+2. **The DFlash tail slice.** Code and gate arm landed C day 56 (`DAY56.md`, `OWED.md` C5): the tail class, the
+   tail program from the drafter's byte manifest, `Role::Tail` segments and the receipt line, the identity gate's
+   drafter arm; its RTX 5090 and target-card cells are recorded there when they run. Until day 56: no drafter
+   artifact identity is derivable from a GGUF digest and no gate boots a DFlash drafter on the card; no cell exists. Day 20 (`DAY20.md`, memra#365) bounded the STANDALONE
    whole-prompt tap sink (the prefill tap buffer in `generate_spec_dspark` and `generate_spec_dflash`), a
    prime-time allocation shape; the tail slice is the host tier's image of the draft KV TAIL (`dspark_draft`)
    under the door, whose two blockers day 20 did not touch. Day 20 did record the export directory's byte
    manifest (`config.json` and `model.safetensors` sha256, equal to #370's `qualification.json`), which is
    the identity input the slice would bind; nothing binds it. Pre-registered; the cell is not pre-registered
    in a runnable shape because its gate (a DFlash drafter booted on the card) does not exist.
-3. **Verify digest v3** (the draft plane inside `MEMRA_KV_HOST_VERIFY`): not landed; the day-14 finding 4 item.
+3. **Verify digest v3** (the draft plane inside `MEMRA_KV_HOST_VERIFY`): code and gate cells landed C day 53
+   (`DAY53.md`); its RTX 5090 and target-card gate receipts are recorded there when they run.
 4. RESOLVED day 21 (`7efab005d`): the pool-full failure-gate line was the gate's; day 22 added the whole-budget
    arm as a run receipt and the fault gate's floor receipt.
 5. **The RTX 5090 class pair.** RESOLVED day 31 (`DAY31.md`, `rtx5090-day31/pair/`): the day-16 `wc-cell` shape
@@ -998,3 +1003,10 @@ promote-on arm (`-5.0/0.8`, `-5.1/0.8`). On b2 every copy-complete line carries 
 ledger's pre-submit reads `1.15` to `1.17` ms against b1's `42.44` to `43.71`, and its helper `hashed_in` `104.8` to
 `107.3` against `73.2` to `73.3` (described, not attributed). Promote tick 2 is `not_defined` on b1 and b2. Every cell
 `executed-not-qualified`. The question of this section is unchanged and still not answered here.
+
+DAY 42: no card ran. Lane A days 31 to 36 and rulings 44, 47, 49 and 53 are read into the decision packet
+(`DOOR-DECISION-PACKET.md`, the day-42 update; `DAY42.md`), every quoted line checked present in its receipt file
+(`day42-cpu/packet-lines.log`, `DAY42 PACKET LINES checked=68 missing=0 -> PASS`). Move 2 owed item 1's H2D half
+(ruling 47) and D2D half (ruling 53) are closed; its strong-form receipt, hash 1 on the owner thread and the fill on
+slower CPUs stay owed. The 9B entry's split by class is read (`DAY41.md`, `DAY41 9B SPLIT plain_tuples=1 -> PASS`).
+The question itself is unchanged and still not answered here.

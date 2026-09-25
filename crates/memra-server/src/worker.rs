@@ -981,7 +981,19 @@ fn dspark_hit_is_restorable_with(
     if !entry_has_tail || entry_toks == 0 || entry_toks > prompt_toks {
         return false;
     }
-    entry_toks == prompt_toks || partial_on
+    // lane/spill-c-20260919 day 56 (DAY56.md section 2b): a strict-prefix restore primes its
+    // suffix through `prime_cache`, which refuses a suffix shorter than `PRIME_MIN_T`
+    // (`dspark resume suffix N < PRIME_MIN_T 16 ... serve this turn cold`); admitting one here
+    // failed the request with HTTP 500 instead of serving it cold. Such a hit is not restorable.
+    // C day 56 section 2c: and the carrier must end on the GDN prime grid. A suffix prime that
+    // starts off the grid materializes recurrent state the cold monolithic prime never computes
+    // (`grid_align_boundary`'s measured law), so an off-grid strict-prefix restore is a second
+    // numeric program for the request (measured: the restored text left the cold text at its
+    // 24th character, `DAY56.md` section 2c). Such a hit serves cold.
+    entry_toks == prompt_toks
+        || (partial_on
+            && prompt_toks - entry_toks >= memra_engine::hybrid_forward::PRIME_MIN_T
+            && entry_toks.is_multiple_of(memra_engine::Engine::gdn_chunk_size()))
 }
 
 fn dspark_prefix_capture_requested(
@@ -4560,14 +4572,16 @@ impl HostTierDraftSource {
 enum HostTierEntryClass {
     Plain,
     MtpDraft,
+    /// C day 56 (`DAY56.md`, OWED C5): an entry published by a DSPARK session, carrying the
+    /// DFlash drafter's KV tail, bound to the model's tail program (`host_tier_tail_program`).
+    DflashTail,
 }
 
 /// Classify an entry by the planes it carries, refusing BY NAME every plane outside the
-/// contract-routed surface: GLM state (TP shards, latent planes) and the DFlash draft tail (no
-/// drafter artifact identity is derivable from a GGUF digest in this slice). The refusal text
-/// is what the caller prints under `(contracts door)`; nothing is skipped silently. The tail
-/// refusal outranks a draft plane on purpose: two spec programs never coexist on one model (the
-/// boot guard refuses the combination) and this function does not guess which one won.
+/// contract-routed surface: GLM state (TP shards, latent planes), and an entry carrying both an
+/// MTP draft plane and a DFlash tail (two spec programs never coexist on one model: the boot
+/// guard refuses the combination, and this function does not guess which one won). The refusal
+/// text is what the caller prints under `(contracts door)`; nothing is skipped silently.
 fn host_tier_entry_class(
     glm: bool,
     mtp_draft: bool,
@@ -4576,17 +4590,95 @@ fn host_tier_entry_class(
     if glm {
         return Err("entry carries TP or latent (GLM) planes outside the contract-routed surface");
     }
-    if dflash_tail {
-        return Err(
-            "entry carries a DFlash draft tail outside the contract-routed surface (no drafter \
-             artifact identity in this slice)",
-        );
-    }
-    Ok(if mtp_draft {
-        HostTierEntryClass::MtpDraft
-    } else {
-        HostTierEntryClass::Plain
+    Ok(match (mtp_draft, dflash_tail) {
+        (true, true) => {
+            return Err(
+                "entry carries both an MTP draft plane and a DFlash draft tail (two spec \
+                 programs on one model)",
+            );
+        }
+        (false, true) => HostTierEntryClass::DflashTail,
+        (true, false) => HostTierEntryClass::MtpDraft,
+        (false, false) => HostTierEntryClass::Plain,
     })
+}
+
+/// The numeric class of a TAIL-BEARING image (C day 56): the plain class plus the DFlash
+/// drafter's f32 KV tail rows. Distinct from the plain and draft classes by construction.
+fn host_tier_tail_numeric_class() -> String {
+    format!("{}+dflash-tail-f32", host_tier_numeric_class())
+}
+
+/// What names one attached DFlash drafter's program (C day 56): the byte manifest of the files
+/// `DflashDraft::load` reads (`config.json`, `model.safetensors`, each by streaming SHA-256), the
+/// drafter's `DflashCfg` in its `Debug` form, and its numeric knobs (every `MEMRA_DFLASH_*` and
+/// `MEMRA_DSPARK_*` variable set at boot but `MEMRA_DSPARK_DRAFT`, whose bytes the manifest
+/// names; sorted `NAME=value`, joined by `;`; over-inclusive on purpose, fail closed).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HostTierTailSource {
+    manifest: String,
+    cfg_debug: String,
+    knobs: String,
+}
+impl HostTierTailSource {
+    fn from_export(
+        dir: &std::path::Path,
+        cfg_debug: String,
+        env: impl IntoIterator<Item = (String, String)>,
+    ) -> Result<Self, String> {
+        let mut manifest = Vec::new();
+        for name in ["config.json", "model.safetensors"] {
+            let path = dir.join(name);
+            let path = path
+                .to_str()
+                .ok_or_else(|| format!("drafter export path {path:?} is not UTF-8"))?;
+            manifest.push(format!("{name}={}", sha256_file_hex(path)?));
+        }
+        Ok(Self {
+            manifest: manifest.join(";"),
+            cfg_debug,
+            knobs: host_tier_tail_knobs(env),
+        })
+    }
+}
+
+/// The drafter's numeric knobs from an environment listing (C day 56, `HostTierTailSource`).
+fn host_tier_tail_knobs(env: impl IntoIterator<Item = (String, String)>) -> String {
+    let mut knobs: Vec<String> = env
+        .into_iter()
+        .filter(|(k, _)| {
+            (k.starts_with("MEMRA_DFLASH_") || k.starts_with("MEMRA_DSPARK_"))
+                && k != "MEMRA_DSPARK_DRAFT"
+        })
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect();
+    knobs.sort();
+    knobs.join(";")
+}
+
+/// The tail-bearing program of one model (C day 56): the plain base with the drafter folded into
+/// `artifact` (the trunk digest framed with the drafter's byte manifest), `serialized_plan` (the
+/// plan text framed with the drafter's config and knobs) and `numeric`
+/// (`host_tier_tail_numeric_class`). Every other field is the plain field.
+fn host_tier_tail_program(
+    plain: &memra_engine::cache::record::ProgramIdentity,
+    artifact_sha256_hex: &str,
+    plan_debug: &str,
+    source: &HostTierTailSource,
+) -> memra_engine::cache::record::ProgramIdentity {
+    use memra_engine::cache::record::digest;
+    let mut program = plain.clone();
+    program.artifact = digest(
+        "artifact-sha256+dflash-tail",
+        &host_tier_framed_pair(artifact_sha256_hex, &source.manifest),
+    );
+    // Three length-framed parts: the pair's framing extended by one more part.
+    let mut plan = host_tier_framed_pair(plan_debug, &source.cfg_debug);
+    plan.extend((source.knobs.len() as u64).to_le_bytes());
+    plan.extend(source.knobs.as_bytes());
+    program.serialized_plan = digest("plan-debug+dflash-tail", &plan);
+    program.numeric = digest("numeric", host_tier_tail_numeric_class().as_bytes());
+    program
 }
 
 /// Length-framed pair for a contract digest: never hash an ambiguous concatenation.
@@ -4660,6 +4752,28 @@ fn host_tier_shape_metadata(
         for n in [len, k_tok_bytes, v_tok_bytes] {
             metadata.extend((n as u64).to_le_bytes());
         }
+    }
+    metadata
+}
+
+/// C day 56: the tail framing a DFlash tail image appends to its `host-prefix-shape-v2` blob
+/// (under the encoding `host-prefix-shape-v2+dflash-tail-v1`): the geometry `export_tail` wrote,
+/// the layer count, and each layer's K and V byte counts, all as u64.
+fn host_tier_tail_shape_metadata(
+    base: usize,
+    rows: usize,
+    len: usize,
+    row_bytes: usize,
+    floor: usize,
+    layers: &[(usize, usize)],
+) -> Vec<u8> {
+    let mut metadata = vec![1u8];
+    for n in [base, rows, len, row_bytes, floor, layers.len()] {
+        metadata.extend((n as u64).to_le_bytes());
+    }
+    for (k, v) in layers {
+        metadata.extend((*k as u64).to_le_bytes());
+        metadata.extend((*v as u64).to_le_bytes());
     }
     metadata
 }
@@ -4774,6 +4888,7 @@ fn host_tier_context(
     loaded: &HashMap<String, LoadedModel>,
     models: &[(String, String, Option<String>)],
     vision_tower_loaded: bool,
+    tails: &HashMap<String, HostTierTailSource>,
 ) -> Result<HostTierContext, String> {
     host_tier_arena_refusal(hpx.arena.is_some())?;
     if vision_tower_loaded {
@@ -4856,11 +4971,29 @@ fn host_tier_context(
                  draft-bearing entries are refused by name"
             ),
         }
+        // C day 56: the tail program, one per model with a DFlash drafter attached.
+        let tail = tails.get(name).map(|source| {
+            let sha = |text: &str| {
+                let mut h = Sha256::new();
+                h.update(text.as_bytes());
+                format!("{:x}", h.finalize())
+            };
+            eprintln!(
+                "[prefix-host] contracts door: model {name} DFlash tail program \
+                 drafter_manifest={} dflash_cfg_sha256={} knobs=[{}] numeric={}",
+                source.manifest,
+                sha(&source.cfg_debug),
+                source.knobs,
+                host_tier_tail_numeric_class(),
+            );
+            host_tier_tail_program(&base, &artifact, &plan, source)
+        });
         programs.insert(
             name.clone(),
             HostTierPrograms {
                 plain: base,
                 draft,
+                tail,
                 generation,
             },
         );
@@ -5009,9 +5142,11 @@ fn parse_kv_host_tenant_pct(raw: Option<&str>) -> usize {
     }
 }
 
-/// MEMRA_KV_HOST_VERIFY (default 0 = off): sha256 the demoted entry's logical trunk state
-/// (`prefix_entry_state_digest` over KV planes + conv/ssm) at demote and re-verify it on the
-/// re-materialized device entry at promote; a mismatch drops the host entry and serves cold.
+/// MEMRA_KV_HOST_VERIFY (default 0 = off): sha256 the demoted entry's logical state at demote
+/// (`host_roundtrip_digest`: since day 53 of lane/spill-c-20260919 the v3 digest, the trunk's
+/// KV planes, conv/ssm and latent plus the draft plane, boundary rows and DFlash tail) and
+/// re-verify it on the re-materialized device entry at promote; a mismatch drops the host
+/// entry and serves cold.
 /// Gate/diagnostic arm ONLY: the digest D2Hs every plane byte on both sides of the round
 /// trip, far too slow always-on for GB-class entries.
 fn kv_host_verify_on() -> bool {
@@ -5024,8 +5159,11 @@ fn kv_host_verify_on() -> bool {
 /// loud-failures-fail-quietly law). Values: `alloc-fail` = every pinned host alloc reports
 /// failure, exercising the loud latch-off with no pageable fallback; `flip-demote` = flip
 /// one K byte of the first demoted plane AFTER the demote digest is recorded, exercising the
-/// MEMRA_KV_HOST_VERIFY promote mismatch. Unset (the default) = off. NEVER set on a serving
-/// box: `flip-demote` intentionally corrupts host-tier bytes.
+/// MEMRA_KV_HOST_VERIFY promote mismatch; `flip-demote-draft`, `flip-demote-hidden`,
+/// `flip-demote-logits` (lane/spill-c-20260919 day 53, verify digest v3) = the same for the
+/// draft K plane, the boundary hidden row and the boundary logits, on the legacy copy path
+/// only. Unset (the default) = off. NEVER set on a serving box: the flips intentionally corrupt
+/// host-tier bytes.
 fn kv_host_fault() -> &'static str {
     static F: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     F.get_or_init(|| std::env::var("MEMRA_KV_HOST_FAULT").unwrap_or_default())
@@ -9804,6 +9942,8 @@ impl HostStaging {
 struct HostTierPrograms {
     plain: memra_engine::cache::record::ProgramIdentity,
     draft: Option<memra_engine::cache::record::ProgramIdentity>,
+    /// C day 56: the tail-bearing program, for a model with a DFlash drafter attached.
+    tail: Option<memra_engine::cache::record::ProgramIdentity>,
     generation: Arc<()>,
 }
 impl HostTierContext {
@@ -9870,6 +10010,10 @@ impl HostTierContext {
             HostTierEntryClass::MtpDraft => programs.draft.as_ref().ok_or(
                 "tier draft program identity missing: the model has no MTP head, so a \
                  draft-bearing entry cannot name its program",
+            )?,
+            HostTierEntryClass::DflashTail => programs.tail.as_ref().ok_or(
+                "tier DFlash tail program identity missing: no drafter is attached to the \
+                 model, so a tail-bearing entry cannot name its program",
             )?,
         };
         let mut program = base.clone();
@@ -10095,10 +10239,24 @@ impl HostPrefixCache {
         if let Some(p) = &entry.draft {
             geometry(p, "MTP draft plane")?;
         }
+        // C day 56: the DFlash tail's geometry, `export_tail`'s rule: every layer's K and V hold
+        // `rows * row_bytes` bytes and the rows end at the tail's logical length.
+        if let Some(t) = &entry.dspark_draft {
+            let want = t.rows.checked_mul(t.row_bytes);
+            if t.layers.is_empty()
+                || t.rows == 0
+                || t.base.checked_add(t.rows) != Some(t.len)
+                || t.layers
+                    .iter()
+                    .any(|(k, v)| Some(k.len() * 4) != want || Some(v.len() * 4) != want)
+            {
+                return Err("tier DFlash tail geometry mismatch".into());
+            }
+        }
         // Capture presence/length/order metadata as well as every payload. No raw pointers,
         // padding, codec, alternate attention program or old handoff identity is imported.
         let plane_geometry = |p: &HostPlane| (p.len, p.k_tok_bytes, p.v_tok_bytes);
-        let metadata = host_tier_shape_metadata(
+        let mut metadata = host_tier_shape_metadata(
             entry.pos,
             &entry
                 .conv
@@ -10117,6 +10275,25 @@ impl HostPrefixCache {
                 .collect::<Vec<_>>(),
             entry.draft.as_ref().map(plane_geometry),
         );
+        // C day 56: a tail image frames its tail after the v2 blob under its own encoding; plain
+        // and draft images keep `host-prefix-shape-v2` byte for byte.
+        let shape_encoding: &[u8] = match &entry.dspark_draft {
+            Some(t) => {
+                metadata.extend(host_tier_tail_shape_metadata(
+                    t.base,
+                    t.rows,
+                    t.len,
+                    t.row_bytes,
+                    t.floor,
+                    &t.layers
+                        .iter()
+                        .map(|(k, v)| (k.len() * 4, v.len() * 4))
+                        .collect::<Vec<_>>(),
+                ));
+                b"host-prefix-shape-v2+dflash-tail-v1"
+            }
+            None => b"host-prefix-shape-v2",
+        };
         // WP-A day 35 (`DAY35.md` design M'): a KV plane's re-hash (hash 2) is the helper's digest
         // over a view of the lease when one came back (the same `checksum` program over the same
         // bytes, taken after the `flip-demote` point); without one it runs here, as before. Either
@@ -10204,14 +10381,54 @@ impl HostPrefixCache {
                 lease_pre(HostLeaseSlot::DraftV),
             )?;
         }
-        add(
-            Role::Transaction,
-            1,
-            b"host-prefix-shape-v2",
-            &metadata,
-            None,
-            None,
-        )?;
+        // C day 56: the DFlash tail, per draft layer a K and a V segment under `Role::Tail`,
+        // checksummed here on the owner thread (the tail is not handed to the hash helper).
+        let tail_t0 = Instant::now();
+        if let Some(t) = &entry.dspark_draft {
+            for (k, v) in &t.layers {
+                add(
+                    Role::Tail,
+                    t.row_bytes as u64,
+                    b"dflash-tail-k-f32",
+                    f32s_as_bytes(k),
+                    None,
+                    None,
+                )?;
+                add(
+                    Role::Tail,
+                    t.row_bytes as u64,
+                    b"dflash-tail-v-f32",
+                    f32s_as_bytes(v),
+                    None,
+                    None,
+                )?;
+            }
+        }
+        let tail_hash_ms = tail_t0.elapsed().as_secs_f64() * 1e3;
+        add(Role::Transaction, 1, shape_encoding, &metadata, None, None)?;
+        // The tail's receipt (DAY19 Task 3's rule, `DAY56.md` design d): its segments and their
+        // checksums, printed once the identity binds below.
+        let tail_receipt = entry.dspark_draft.as_ref().map(|t| {
+            let mut h = Sha256::new();
+            let (mut segments, mut bytes) = (0usize, 0u64);
+            for (segment, sum) in layout.segments.iter().zip(&checksums) {
+                if segment.role == Role::Tail {
+                    h.update(sum);
+                    segments += 1;
+                    bytes += segment.valid_bytes;
+                }
+            }
+            format!(
+                "[prefix-host] contracts door tail bound: {} draft layers, {segments} Role::Tail \
+                 segments ({bytes} B, hashed in {tail_hash_ms:.1} ms on the owner thread), \
+                 tail_checksums_sha256={:x} ({} tokens, model {}{})",
+                t.layers.len(),
+                h.finalize(),
+                entry.toks.len(),
+                entry.pool_key.0,
+                ns_suffix(&entry.pool_key.1)
+            )
+        });
         let id = KvBlockId::new(&program, [0; 32], &entry.toks, 0, 0, tier.device, 0)
             .map_err(|e| format!("{e:?}"))?;
         let bundle = StateBundle {
@@ -10232,6 +10449,9 @@ impl HostPrefixCache {
             .map_err(|e| format!("tier image identity refused: {e:?}"))?;
         entry._tier_metadata_charge = metadata_charge;
         entry._tier_metadata = metadata;
+        if let Some(line) = tail_receipt {
+            eprintln!("{line}");
+        }
         Ok(())
     }
 }
@@ -10466,6 +10686,13 @@ struct PendingDemote {
     hashing: Option<PendingHashing>,
     /// What the owner thread held for this demote, by segment (the ledger line at publication).
     owner: DemoteOwnerLedger,
+    /// WP-A day 38 (`DAY38.md` design P): the request ids the admission probe PARKED on this entry
+    /// while it was in its COPY phase (the day-29 `Hashing` park's shape, extended); they ride into
+    /// `PendingHashing.parked` when the copy settles, and a demote that ends unpublished names them
+    /// (they re-admit to whatever the tick top leaves: a cold prime). A count, not a state the
+    /// request owns.
+    parked: Vec<String>,
+    reparks: u32,
 }
 
 /// WP-A day 28 (memra#536 Move 1 owed item 2, lead ruling 39, `research/spill-a-20260919/DAY28.md`):
@@ -10766,12 +10993,21 @@ fn host_hash_restore_payload(e: &mut HostPrefixEntry, p: HostHashPayload) -> Res
 enum HostHashFault {
     HelperGone,
     NeverLands,
+    /// WP-A day 41 (`DAY41.md`, OWED item 5): design K's three promote-side arms, each keyed on
+    /// the helper's FIRST `Sources` job (a demote's `Hash` jobs before it run clean): the helper
+    /// exits on it, hashes it and discards the reply, or replies with the job's `seq + 1`.
+    SourcesGone,
+    SourcesNeverLand,
+    SourcesForeignReply,
 }
 impl HostHashFault {
     fn from_door(fault: &str) -> Option<Self> {
         match fault {
             "hash-helper-gone" => Some(Self::HelperGone),
             "hash-never-lands" => Some(Self::NeverLands),
+            "sources-helper-gone" => Some(Self::SourcesGone),
+            "sources-never-land" => Some(Self::SourcesNeverLand),
+            "sources-foreign-reply" => Some(Self::SourcesForeignReply),
             _ => None,
         }
     }
@@ -10818,6 +11054,41 @@ impl HostHashWorker {
                     let job = match job {
                         HostHelperJob::Hash(job) => job,
                         HostHelperJob::Sources(job) => {
+                            // WP-A day 41 (OWED item 5): the Sources-keyed red arms, one-shot.
+                            let sources_fault = match fault {
+                                Some(
+                                    f @ (HostHashFault::SourcesGone
+                                    | HostHashFault::SourcesNeverLand
+                                    | HostHashFault::SourcesForeignReply),
+                                ) => {
+                                    fault = None;
+                                    eprintln!(
+                                        "[prefix-host] hash helper fault (MEMRA_KV_HOST_FAULT={}): \
+                                         the Sources job of ticket seq={} ({} views) {}",
+                                        match f {
+                                            HostHashFault::SourcesGone => "sources-helper-gone",
+                                            HostHashFault::SourcesNeverLand => "sources-never-land",
+                                            _ => "sources-foreign-reply",
+                                        },
+                                        job.seq,
+                                        job.views.len(),
+                                        match f {
+                                            HostHashFault::SourcesGone => {
+                                                "is dropped and the helper exits"
+                                            }
+                                            HostHashFault::SourcesNeverLand => {
+                                                "is hashed and its reply discarded"
+                                            }
+                                            _ => "is answered as seq + 1",
+                                        }
+                                    );
+                                    Some(f)
+                                }
+                                _ => None,
+                            };
+                            if sources_fault == Some(HostHashFault::SourcesGone) {
+                                return;
+                            }
                             // WP-A day 34: the promote's H2D completion checksums, off the tick.
                             let t = Instant::now();
                             let bytes = job.views.iter().map(|v| v.len()).sum();
@@ -10830,11 +11101,21 @@ impl HostHashWorker {
                                 })
                                 .collect();
                             let reply = HostSourcesReply {
-                                seq: job.seq,
+                                seq: if sources_fault == Some(HostHashFault::SourcesForeignReply) {
+                                    job.seq.wrapping_add(1)
+                                } else {
+                                    job.seq
+                                },
                                 digests,
                                 bytes,
                                 helper_ms: t.elapsed().as_secs_f64() * 1e3,
                             };
+                            if sources_fault == Some(HostHashFault::SourcesNeverLand) {
+                                // The reply is discarded: its views drop here and never come back
+                                // to the engine, which keeps their sources (a leak, never a free).
+                                drop(reply);
+                                continue;
+                            }
                             if sources_tx.send(reply).is_err() {
                                 return;
                             }
@@ -11343,6 +11624,16 @@ enum HostContractFault {
     /// H2D spans refused: ...`), the host entry stay, the tier stay on, and the next promote
     /// complete with its spans.
     PromoteSpanAttach,
+    /// WP-A day 38 (`DAY38.md` design G, the device receipt's red arm): the off-tick demote's first
+    /// KV item's DEVICE source has one byte flipped on the copy stream after its receipt digest and
+    /// before its copy (`CudaTransfers::inject_d2h_source_flip`); the landed bytes then differ from
+    /// the receipt and the bind must refuse the image (nothing published, the tier on).
+    D2hSourceFlip,
+    /// WP-A day 38 (P's red arm): the off-tick demote is held unlanded for `D2H_DELAY_FAULT_NS` on
+    /// the host (`CudaTransfers::inject_d2h_delay`, a host-side hold since design G''', DAY38
+    /// section 14; no stream runs a spin), so a request hitting the entry arrives in its copy phase
+    /// and must park until the publication, then promote.
+    D2hDelay,
 }
 impl HostContractFault {
     fn from_door(fault: &str) -> Option<Self> {
@@ -11357,12 +11648,21 @@ impl HostContractFault {
             "d2d-delay-restore" => Some(Self::D2dDelayRestore),
             "contract-spans" => Some(Self::SpanAttach),
             "contract-promote-spans" => Some(Self::PromoteSpanAttach),
+            "d2h-source-flip" => Some(Self::D2hSourceFlip),
+            "d2h-delay" => Some(Self::D2hDelay),
             _ => None,
         }
     }
     /// The demote (D2H) side, as opposed to the promote (H2D) side.
     fn is_demote(self) -> bool {
-        matches!(self, Self::PreSubmit | Self::PostPublish | Self::SpanAttach)
+        matches!(
+            self,
+            Self::PreSubmit
+                | Self::PostPublish
+                | Self::SpanAttach
+                | Self::D2hSourceFlip
+                | Self::D2hDelay
+        )
     }
     /// A Move 1 fault (the D2H or H2D route), as opposed to a D2D fault (day 22).
     fn is_move1(self) -> bool {
@@ -11673,6 +11973,30 @@ fn host_kv_planes_submit_contract(
             })
         })
         .collect();
+    // WP-A day 38 (`DAY38.md` design G and P): the two one-shot red arms ride the device receipt,
+    // armed for exactly this batch.
+    if t.d2h_receipts_on_device() {
+        match fault {
+            Some(HostContractFault::D2hSourceFlip) => {
+                t.inject_d2h_source_flip();
+                eprintln!(
+                    "[prefix-host] demote fault armed (MEMRA_KV_HOST_FAULT=d2h-source-flip): one byte \
+                     of the first KV item's device source flips after its receipt digest and before \
+                     its copy; the bind must refuse the image"
+                );
+            }
+            Some(HostContractFault::D2hDelay) => {
+                t.inject_d2h_delay(memra_engine::tier_transfer::D2H_DELAY_FAULT_NS);
+                eprintln!(
+                    "[prefix-host] demote fault armed (MEMRA_KV_HOST_FAULT=d2h-delay): the demote \
+                     is held unlanded for {} ms on the host (no stream is held); a hit arriving in \
+                     the copy phase must park until the publication",
+                    memra_engine::tier_transfer::D2H_DELAY_FAULT_NS / 1_000_000
+                );
+            }
+            _ => {}
+        }
+    }
     let ticket = match t.submit_batch(ops) {
         Ok(batch)
             if batch
@@ -11907,6 +12231,16 @@ fn host_kv_planes_settle_contract(
                 .into(),
         ));
     }
+    // WP-A day 38 (`DAY38.md` design G): where hash 1 ran, for the receipt line (log only; the
+    // kernels' copy-stream time is read without a wait, the batch has landed).
+    let receipt_place = if t.d2h_receipts_on_device() {
+        match t.d2h_receipt_gpu_ms(&ticket) {
+            Some(ms) => format!("; receipts on the copy stream (source digests, {ms:.2}ms)"),
+            None => "; receipts on the copy stream (source digests)".to_string(),
+        }
+    } else {
+        String::new()
+    };
     // WP-A day 30 (memra#536 Move 2 owed item 1, the D2H half): `producer_done` covers the f32
     // spans with the items. Take them back FIRST, so every source is in its slot of `dead`
     // before any refusal below unwinds the entry, and the landed staging travels to the helper.
@@ -12124,7 +12458,7 @@ fn host_kv_planes_settle_contract(
     eprintln!(
         "[prefix-host] contracts door D2H receipt: ticket issuer={} seq={} epochs={}/{}/{} \
          items={} ({kv_planes} KV planes{}) complete={complete} require=ok \
-         checksums_sha256={} retired acknowledged{}",
+         checksums_sha256={} retired acknowledged{}{receipt_place}",
         ticket.issuer,
         ticket.sequence,
         ticket.epochs.state,
@@ -13696,6 +14030,9 @@ fn host_entry_from_device(
             _ => None,
         });
     }
+    // Day 53: the legacy copy path (no contract route took any plane), where the verify digest
+    // is the only byte attestation and the v3 red arms apply.
+    let legacy_copy = contract_draft.is_none() && pending.is_none();
     let draft = match contract_draft {
         Some(draft) => draft,
         None => match &dead.draft {
@@ -13725,7 +14062,7 @@ fn host_entry_from_device(
         }
         _ => None,
     };
-    let entry = HostPrefixEntry {
+    let mut entry = HostPrefixEntry {
         _tier_charge: None,
         _tier_metadata_charge: None,
         _tier_metadata: Vec::new(),
@@ -13773,10 +14110,60 @@ fn host_entry_from_device(
             .into());
         }
     }
+    if legacy_copy {
+        apply_flip_plane_faults(&mut entry)?;
+    }
     Ok(match pending {
         Some(pending) => HostImage::Demoting(entry, pending),
         None => HostImage::Whole(entry),
     })
+}
+
+/// The verify digest v3's red arms (lane/spill-c-20260919 day 53, see `kv_host_fault`): the first
+/// byte of the host copy's draft K plane, boundary hidden row or boundary logits row flipped AFTER
+/// the demote digest was recorded, so `MEMRA_KV_HOST_VERIFY` has a real mismatch to catch in each
+/// plane v2 was blind to. Called on the legacy copy path only; an image without the plane gets no
+/// flip and no line.
+fn apply_flip_plane_faults(entry: &mut HostPrefixEntry) -> Result<(), String> {
+    let which = match kv_host_fault() {
+        "flip-demote-draft" => {
+            let Some(plane) = entry.draft.as_mut().filter(|p| p.len * p.k_tok_bytes > 0) else {
+                return Ok(());
+            };
+            plane.k.flip_first_byte()?;
+            "draft K"
+        }
+        "flip-demote-hidden" if flip_first_f32_byte(&mut entry.last_h) => "hidden",
+        "flip-demote-logits" if flip_first_f32_byte(&mut entry.last_logits) => "logits",
+        _ => return Ok(()),
+    };
+    eprintln!(
+        "[prefix-host] FAULT: flipped one demoted {which} byte (MEMRA_KV_HOST_FAULT={})",
+        kv_host_fault()
+    );
+    Ok(())
+}
+
+/// Flips the first (little-endian low) byte of a host f32 row; `false` for an empty row. A heap
+/// row is shared and immutable, so the fault replaces it with a flipped copy.
+fn flip_first_f32_byte(row: &mut HostF32) -> bool {
+    match row {
+        HostF32::Heap(words) => {
+            let mut flipped = words.as_ref().clone();
+            let Some(first) = flipped.first_mut() else {
+                return false;
+            };
+            *first = f32::from_bits(first.to_bits() ^ 0xff);
+            *words = Arc::new(flipped);
+        }
+        HostF32::Pinned(buf) => {
+            let Some(first) = buf.as_mut_slice().first_mut() else {
+                return false;
+            };
+            *first ^= 0xff;
+        }
+    }
+    true
 }
 
 /// The `flip-demote` fault (see `kv_host_fault`): one K byte of the first demoted plane flipped
@@ -13900,9 +14287,10 @@ fn evict_all_demoting(
 /// what makes a demote racing the next request lose cleanly.
 fn host_roundtrip_digest(engine: &Engine, entry: &PrefixEntry) -> Result<String, String> {
     if entry.tp.is_some() || entry.latent.iter().any(Option::is_some) {
-        host_glm::digest(entry)
+        host_glm::digest(entry).map(|hex| format!("{VERIFY_PROGRAM_GLM_V1}:{hex}"))
     } else {
-        prefix_entry_state_digest(engine, entry, entry.pos).map_err(|e| e.to_string())
+        // Day 53: v3, the trunk digest plus the draft plane, the boundary rows and the tail.
+        prefix_entry_roundtrip_digest(engine, entry).map_err(|e| e.to_string())
     }
 }
 
@@ -14084,6 +14472,8 @@ fn host_demote_prefix_ref(
                     presubmit_ms: t0.elapsed().as_secs_f64() * 1e3,
                     ..DemoteOwnerLedger::default()
                 },
+                parked: Vec::new(),
+                reparks: 0,
             });
             // The line carries no "(contracts door): " marker: that form is the door's REFUSAL
             // shape and the fault gate counts it (`no_extra_refusal`); a submission is not one.
@@ -14213,7 +14603,24 @@ fn host_demote_settle_with(
         ContractWait,
     ) -> Result<ContractSettle, HostContractFailure>,
 ) -> Option<HostDemoteOutcome> {
-    host_demote_settle_with_deadline(host, wait, why, settle, HOST_HASH_DEADLINE)
+    // WP-A day 38 (P): the requests parked on the entry's COPY phase, named when the demote ends
+    // unpublished in this settle (the `Hashing` phase names its own at its latch).
+    let copy_parked = host
+        .demoting
+        .as_ref()
+        .filter(|d| d.hashing.is_none())
+        .map_or(0, |d| d.parked.len());
+    let outcome = host_demote_settle_with_deadline(host, wait, why, settle, HOST_HASH_DEADLINE);
+    if copy_parked > 0
+        && host.demoting.is_none()
+        && !matches!(outcome, Some(HostDemoteOutcome::Demoted))
+    {
+        eprintln!(
+            "[prefix-host] {copy_parked} request(s) parked on the Demoting entry's copy phase \
+             re-admit to a cold prime (the demote ended unpublished: {outcome:?})"
+        );
+    }
+    outcome
 }
 
 /// The driver with the hash deadline injected (the CPU `hash-never-lands` cells use a short one).
@@ -14385,8 +14792,11 @@ fn host_demote_settle_with_deadline(
             if payloads.is_empty() {
                 eprintln!(
                     "[prefix-host] demote published off the tick: ticket seq={seq} complete after {} \
-                     poll(s), {copy_ms:.1}ms from submission to completion ({mode})",
-                    pending.polls
+                     poll(s), {copy_ms:.1}ms from submission to completion ({mode}); {} hit(s) \
+                     parked on the Demoting entry ({} re-park(s))",
+                    pending.polls,
+                    pending.parked.len(),
+                    pending.reparks
                 );
                 return Some(host_demote_publish(
                     host,
@@ -14472,13 +14882,14 @@ fn host_demote_settle_with_deadline(
             );
             pending.dead = Some(dead);
             pending.owner.copy_settle_ms += held.elapsed().as_secs_f64() * 1e3;
+            // WP-A day 38 (P): the copy phase's parked ids ride into the `Hashing` phase.
             let hashing = PendingHashing {
                 seq,
                 payloads: n,
                 bytes,
                 handed: Instant::now(),
-                parked: Vec::new(),
-                reparks: 0,
+                parked: std::mem::take(&mut pending.parked),
+                reparks: std::mem::take(&mut pending.reparks),
                 leases: Some(leases),
             };
             match wait {
@@ -15531,23 +15942,34 @@ fn host_promote_finish(
     };
     if let Some(expected) = expected_digest {
         match host_roundtrip_digest(engine, &e) {
-            Ok(actual) if actual == expected => {
+            Ok(actual) => {
+                let failed = match verify_digest_check(&expected, &actual) {
+                    VerifyDigestCheck::Match => None,
+                    VerifyDigestCheck::Mismatch => Some(format!(
+                        "promoted digest {actual} != demote digest {expected} ({host_len} tokens)"
+                    )),
+                    // Day 53: a digest carried from another binary's program (a handoff file)
+                    // cannot attest these bytes either way; typed, and dropped as a mismatch.
+                    VerifyDigestCheck::Program(carried, ours) => Some(format!(
+                        "carried digest program {carried} != this binary's {ours} (a handoff \
+                         written by another binary; {host_len} tokens)"
+                    )),
+                };
+                if let Some(why) = failed {
+                    host.digest_mismatches += 1;
+                    if let Some(hi) = host_entry_index_by_id(host, pool_key, host_id) {
+                        host.remove_at(pool_key, hi);
+                    }
+                    eprintln!(
+                        "[prefix-host] VERIFY FAILED: {why}; host entry dropped, cold path serves"
+                    );
+                    set_memo(host);
+                    return None;
+                }
                 eprintln!(
                     "[prefix-host] verify ok: promoted state digest matches demote digest \
                      ({host_len} tokens)"
                 );
-            }
-            Ok(actual) => {
-                host.digest_mismatches += 1;
-                if let Some(hi) = host_entry_index_by_id(host, pool_key, host_id) {
-                    host.remove_at(pool_key, hi);
-                }
-                eprintln!(
-                    "[prefix-host] VERIFY FAILED: promoted digest {actual} != demote digest \
-                     {expected} ({host_len} tokens); host entry dropped, cold path serves"
-                );
-                set_memo(host);
-                return None;
             }
             Err(err) => {
                 eprintln!("[prefix-host] verify digest failed ({err}); promote refused");
@@ -15638,20 +16060,29 @@ fn host_promote_probe_decision(
 }
 
 /// WP-A day 29 (memra#536 Move 1 owed item 2a, lead ruling 40, `research/spill-a-20260919/DAY29.md`
-/// section 1.1): does this request's prompt hit the one `Demoting` entry while it is in its
-/// `Hashing` phase? Pure over the host state: the entry's heap payloads are on the hash helper
-/// (`hashing` is `Some`; a copy-phase `Demoting` entry keeps the day-17 rule, a hit on it is a
-/// cold prime), its pool key is the request's, its token key exactly prefixes the prompt under the
-/// host `lookup` rules, and it is deeper than the request's device hit (the promote candidate's
-/// own rule). Returns the hit's depth and the ticket.
-fn host_hashing_hit(
+/// section 1.1), extended on day 38 (`DAY38.md` design P): does this request's prompt hit the one
+/// `Demoting` entry, in EITHER phase (its copy on the copy stream, or its heap payloads on the hash
+/// helper)? Pure over the host state: the entry's pool key is the request's, its token key exactly
+/// prefixes the prompt under the host `lookup` rules, and it is deeper than the request's device
+/// hit (the promote candidate's own rule). Returns the hit's depth, the ticket, and whether the
+/// entry is in its `Hashing` phase. Day 17's rule (a copy-phase hit is a cold prime) is retired:
+/// under design G a large entry's copy phase carries its receipt kernel, and a hit there waits for
+/// the publication instead of re-priming.
+fn host_demoting_hit(
     host: &HostPrefixCache,
     pool_key: &PoolKey,
     prompt: &[u32],
     device_best_len: usize,
-) -> Option<(usize, u64)> {
+) -> Option<(usize, u64, bool)> {
     let pending = host.demoting.as_ref()?;
-    let hashing = pending.hashing.as_ref()?;
+    let (seq, hashing) = match (&pending.hashing, &pending.contract) {
+        (Some(h), _) => (h.seq, true),
+        // A copy that has not landed within the helper's deadline parks nothing more: the request
+        // primes cold, so no park outlives a copy that never lands (the `Hashing` phase has the
+        // same bound through its own deadline latch).
+        (None, Some(c)) if c.submitted.elapsed() < HOST_HASH_DEADLINE => (c.ticket.sequence, false),
+        _ => return None,
+    };
     let toks = &pending.image.toks;
     let n = toks.len();
     (pending.image.pool_key == *pool_key
@@ -15659,25 +16090,49 @@ fn host_hashing_hit(
         && n <= prompt.len()
         && n > device_best_len
         && prompt[..n] == toks[..])
-        .then_some((n, hashing.seq))
+        .then_some((n, seq, hashing))
 }
 
-/// WP-A day 29 (ruling 40): PARK the request whose prompt hits the `Hashing` entry: record its id
-/// on the entry (the first park of an id prints the typed line naming the entry and the phase; a
-/// re-park counts silently, the `ParkAgain` shape) and answer `true` so the probe's caller requeues
-/// it. Nothing is hashed, waited on or submitted here: the tick-top poll lands the digests and
-/// publishes, and the re-admitted request takes the promote park to a device hit. Returns `false`
-/// when the prompt does not hit the `Hashing` entry.
-fn host_hashing_park(
+/// WP-A day 29 (ruling 40), extended on day 38 (P): PARK the request whose prompt hits the
+/// `Demoting` entry: record its id on the entry (the first park of an id prints the typed line
+/// naming the entry and the phase; a re-park counts silently, the `ParkAgain` shape) and answer
+/// `true` so the probe's caller requeues it. Nothing is hashed, waited on or submitted here: the
+/// tick-top polls land the copy and the digests and publish, and the re-admitted request takes the
+/// promote park to a device hit. Returns `false` when the prompt does not hit the entry.
+fn host_demoting_park(
     host: &mut HostPrefixCache,
     pool_key: &PoolKey,
     prompt: &[u32],
     device_best_len: usize,
     request_id: &str,
 ) -> bool {
-    let Some((n, seq)) = host_hashing_hit(host, pool_key, prompt, device_best_len) else {
+    let Some((n, seq, hashing_phase)) = host_demoting_hit(host, pool_key, prompt, device_best_len)
+    else {
         return false;
     };
+    if !hashing_phase {
+        let Some(pending) = host.demoting.as_mut() else {
+            return false;
+        };
+        if pending.parked.iter().any(|id| id == request_id) {
+            pending.reparks += 1;
+            return true;
+        }
+        pending.parked.push(request_id.to_string());
+        let submitted_ms = pending
+            .contract
+            .as_ref()
+            .map_or(0.0, |c| c.submitted.elapsed().as_secs_f64() * 1e3);
+        eprintln!(
+            "[prefix-host] hit parked on a Demoting entry in its copy phase: request {request_id} \
+             ({} tokens) hits the Demoting entry's {n} tokens (ticket seq={seq}, submitted \
+             {submitted_ms:.1}ms ago); the request waits for the publication (model {}{})",
+            prompt.len(),
+            pool_key.0,
+            ns_suffix(&pool_key.1)
+        );
+        return true;
+    }
     let Some(hashing) = host.demoting.as_mut().and_then(|p| p.hashing.as_mut()) else {
         return false;
     };
@@ -15748,7 +16203,7 @@ fn host_promote_park_probe(
     // decided BEFORE the promote decision so a published candidate's `Submit` cannot `Block`-settle
     // the entry for a request whose own prompt hits it; the re-admission finds the entry published
     // and takes the promote park to a device hit (`DAY29.md` section 1.2).
-    if host_hashing_park(host, &pool_key, prompt, device_best_len, &req.request_id) {
+    if host_demoting_park(host, &pool_key, prompt, device_best_len, &req.request_id) {
         return true;
     }
     let hi = match host_promote_probe_decision(host, &pool_key, prompt, device_best_len) {
@@ -20304,6 +20759,108 @@ fn prefix_entry_state_digest(
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+/// Program tags of the `MEMRA_KV_HOST_VERIFY` round-trip digest (lane/spill-c-20260919 day 53,
+/// verify digest v3): the string a demote records and a promote compares is `<tag>:<hex>`, so a
+/// digest carried from another binary's program (a handoff file) is a typed refusal, not a
+/// false byte-corruption alarm. An untagged string is a pre-v3 binary's.
+const VERIFY_PROGRAM_SPLIT_V3: &str = "split-state-v3";
+const VERIFY_PROGRAM_GLM_V1: &str = "host-prefix-state-v1";
+
+/// The program tag of a verify digest string, `untagged` for a pre-v3 string.
+fn verify_digest_program(digest: &str) -> &str {
+    digest.split_once(':').map_or("untagged", |(tag, _)| tag)
+}
+
+/// How a promoted entry's verify digest compares with the one its demote recorded.
+#[derive(Debug, PartialEq, Eq)]
+enum VerifyDigestCheck<'a> {
+    Match,
+    /// Same program, different bytes: the loud `VERIFY FAILED` of a corrupted round trip.
+    Mismatch,
+    /// The carried digest was computed by another program (`carried`, `ours`).
+    Program(&'a str, &'a str),
+}
+
+fn verify_digest_check<'a>(expected: &'a str, actual: &'a str) -> VerifyDigestCheck<'a> {
+    let (carried, ours) = (
+        verify_digest_program(expected),
+        verify_digest_program(actual),
+    );
+    if carried != ours {
+        VerifyDigestCheck::Program(carried, ours)
+    } else if expected == actual {
+        VerifyDigestCheck::Match
+    } else {
+        VerifyDigestCheck::Mismatch
+    }
+}
+
+/// Verify digest v3 (lane/spill-c-20260919 day 53, `DAY53.md`): the `MEMRA_KV_HOST_VERIFY`
+/// round-trip digest of a non-GLM entry. v2 (`prefix_entry_state_digest`) covers the trunk only
+/// and cannot grow (the HIRADIX restore oracle compares it with a restored `Cache`, which holds
+/// none of the rest), so v3 is composed: the v2 string at the boundary, then every other plane a
+/// round trip carries and a restore consumes: the MTP draft plane's logical window, the boundary
+/// hidden row, the boundary logits, the DFlash tail (whole layer buffers, which the round trip
+/// copies whole).
+fn prefix_entry_roundtrip_digest(
+    engine: &Engine,
+    entry: &PrefixEntry,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let trunk = prefix_entry_state_digest(engine, entry, entry.pos)?;
+    let mut hasher = Sha256::new();
+    hasher.update(b"memra-prefix-split-state-v3");
+    hasher.update(trunk.as_bytes());
+    match &entry.draft {
+        Some(plane) => {
+            hasher.update([1]);
+            digest_usize(&mut hasher, plane.len);
+            digest_usize(&mut hasher, plane.k_tok_bytes);
+            digest_usize(&mut hasher, plane.v_tok_bytes);
+            let kb = plane
+                .len
+                .checked_mul(plane.k_tok_bytes)
+                .ok_or("entry digest draft K byte count overflow")?;
+            let vb = plane
+                .len
+                .checked_mul(plane.v_tok_bytes)
+                .ok_or("entry digest draft V byte count overflow")?;
+            if plane.k.len() < kb || plane.v.len() < vb {
+                return Err("entry digest draft plane is truncated".into());
+            }
+            let k = engine.dtoh_u8_view(&plane.k.slice(0..kb))?;
+            let v = engine.dtoh_u8_view(&plane.v.slice(0..vb))?;
+            digest_usize(&mut hasher, k.len());
+            hasher.update(&k);
+            digest_usize(&mut hasher, v.len());
+            hasher.update(&v);
+        }
+        None => hasher.update([0]),
+    }
+    digest_f32_plane(&mut hasher, &entry.last_h);
+    digest_f32_plane(&mut hasher, &entry.last_logits);
+    match &entry.dspark_draft {
+        Some(tail) => {
+            hasher.update([1]);
+            for x in [
+                tail.base,
+                tail.rows,
+                tail.len,
+                tail.row_bytes,
+                tail.floor,
+                tail.layers.len(),
+            ] {
+                digest_usize(&mut hasher, x);
+            }
+            for (k, v) in &tail.layers {
+                digest_f32_plane(&mut hasher, &engine.dtoh(k)?);
+                digest_f32_plane(&mut hasher, &engine.dtoh(v)?);
+            }
+        }
+        None => hasher.update([0]),
+    }
+    Ok(format!("{VERIFY_PROGRAM_SPLIT_V3}:{:x}", hasher.finalize()))
+}
+
 /// Same digest over the actual freshly-restored Cache. Device `len_d` mirrors are read and must
 /// equal the split before a digest can be reported.
 fn prefix_cache_state_digest(
@@ -22693,6 +23250,8 @@ pub fn run(
     // model name at Cmd dispatch; caps merged into the ready handoff below.
     let mut dsv4_routes: HashMap<String, std::sync::mpsc::Sender<Box<Request>>> = HashMap::new();
     let mut dsv4_caps: HashMap<String, ModelCaps> = HashMap::new();
+    // Each loaded dsv4 route's serving lanes (memra #667), for its post-load contract.
+    let mut dsv4_lanes: HashMap<String, usize> = HashMap::new();
     // REMOVED-DOORS REFUSAL (2026-08-29). Env-only, so it runs BEFORE any model load: the
     // old step37-scoped refusal needed the loaded model's class and therefore paid a full
     // multi-minute checkpoint load before refusing; this one needs nothing but the
@@ -22717,7 +23276,8 @@ pub fn run(
         for (name, path, _) in &models {
             let p = std::path::Path::new(path);
             if p.is_dir() && crate::dsv4_serve::is_dsv4_dir(p) {
-                planned.register(crate::dsv4_serve::contract(name));
+                // The lane count is the load's; the planned check reads armed policies only.
+                planned.register(crate::dsv4_serve::contract(name, 1));
             } else {
                 planned.register(crate::route_contract::RouteContract::hybrid_worker(
                     name,
@@ -22762,7 +23322,10 @@ pub fn run(
             // The route's own books (memra#500, #501): its load is get-or-create so tickets
             // outstanding across a respawn stay counted; its health record is fresh per spawn
             // so a predecessor's exit latch cannot mark this thread dead.
-            let cap = crate::dsv4_serve::contract(name).capacity.concurrency();
+            dsv4_lanes.insert(name.clone(), dm.sessions);
+            let cap = crate::dsv4_serve::contract(name, dm.sessions)
+                .capacity
+                .concurrency();
             let load = crate::route_telemetry::register(name, cap);
             let route_health = health.register_route(name, load.clone());
             dsv4_routes.insert(
@@ -23133,7 +23696,10 @@ pub fn run(
     let hybrid_sessions = crate::route_contract::hybrid_interactive_cap();
     for name in &order {
         if dsv4_routes.contains_key(name) {
-            route_registry.register(crate::dsv4_serve::contract(name));
+            route_registry.register(crate::dsv4_serve::contract(
+                name,
+                dsv4_lanes.get(name).copied().unwrap_or(1),
+            ));
         } else if loaded.contains_key(name) {
             route_registry.register(crate::route_contract::RouteContract::hybrid_worker(
                 name,
@@ -23699,7 +24265,47 @@ pub fn run(
     }
     if kv_host_contracts && hpx.budget > 0 {
         let vision_loaded = vision_tower.is_some() || gemma_tower.is_some() || glm5_tower.is_some();
-        match host_tier_context(&engine, &hpx, &loaded, &models, vision_loaded) {
+        // C day 56: every attached DFlash drafter names its tail program by the export
+        // directory's byte manifest (the same directory the drafter loaded from).
+        let mut tails = HashMap::new();
+        if !dspark_drafts.is_empty() {
+            let spec = std::env::var("MEMRA_DSPARK_DRAFT").unwrap_or_default();
+            let dir = match memra_gguf::hf::resolve_arg(&spec) {
+                Ok(dir) => dir,
+                Err(err) => {
+                    let _ = ready_tx.send(Err(format!(
+                        "MEMRA_KV_HOST_CONTRACTS=1: MEMRA_DSPARK_DRAFT={spec:?}: {err}"
+                    )));
+                    return;
+                }
+            };
+            for (name, d) in &dspark_drafts {
+                let cfg_debug = format!(
+                    "{:?};markov={};confidence={};rope_yarn={};dflash2={}",
+                    d.cfg,
+                    d.markov.is_some(),
+                    d.confidence.is_some(),
+                    d.rope_yarn.is_some(),
+                    d.dflash2.is_some()
+                );
+                match HostTierTailSource::from_export(
+                    std::path::Path::new(&dir),
+                    cfg_debug,
+                    std::env::vars(),
+                ) {
+                    Ok(source) => {
+                        tails.insert(name.clone(), source);
+                    }
+                    Err(err) => {
+                        let _ = ready_tx.send(Err(format!(
+                            "MEMRA_KV_HOST_CONTRACTS=1: model {name} drafter manifest: {err}"
+                        )));
+                        return;
+                    }
+                }
+            }
+        }
+        match host_tier_context(&engine, &hpx, &loaded, &models, vision_loaded, &tails) {
             Ok(tier) => {
                 eprintln!(
                     "[prefix-host] contracts door ON (MEMRA_KV_HOST_CONTRACTS=1): {} model \
@@ -26239,7 +26845,7 @@ pub fn run(
             && parked_on_promote == queue.len()
             && (hpx.promoting.as_ref().is_some_and(|p| !p.ready)
                 || hpx.restoring.as_ref().is_some_and(|r| !r.ready)
-                || hpx.demoting.as_ref().is_some_and(|d| d.hashing.is_some()))
+                || hpx.demoting.is_some())
         {
             match rx.recv_timeout(Duration::from_millis(2)) {
                 Ok(cmd) => handle_cmd(
@@ -37701,13 +38307,28 @@ mod tests {
             !r(60, 100, true, false),
             "door shut must keep the pre-lane refusal"
         );
+        let grid = memra_engine::Engine::gdn_chunk_size();
         assert!(
-            r(60, 100, true, true),
-            "door open must admit a strict-prefix carrier"
+            r(2 * grid, 2 * grid + 40, true, true),
+            "door open must admit a grid-aligned strict-prefix carrier"
         );
+        // C day 56 section 2c: an off-grid carrier is a second numeric program; it serves cold
+        assert!(!r(2 * grid + 1, 2 * grid + 41, true, true));
+        assert!(!r(60, 100, true, true));
         // no tail: never restorable, the drafter cannot be re-armed from trunk planes alone
         assert!(!r(100, 100, false, true));
         assert!(!r(60, 100, false, true));
+        // a suffix shorter than PRIME_MIN_T is not restorable (C day 56: it failed the request
+        // with HTTP 500); at PRIME_MIN_T it is
+        let min = memra_engine::hybrid_forward::PRIME_MIN_T;
+        assert!(
+            !r(2 * grid, 2 * grid + min - 1, true, true),
+            "a sub-minimum suffix serves cold"
+        );
+        assert!(
+            r(2 * grid, 2 * grid + min, true, true),
+            "a PRIME_MIN_T suffix restores"
+        );
         // degenerate lengths are refused in both arms
         assert!(!r(0, 100, true, true));
         assert!(
@@ -45778,6 +46399,7 @@ mod tests {
                 super::HostTierPrograms {
                     plain: base,
                     draft: Some(draft),
+                    tail: None,
                     generation,
                 },
             )]),
@@ -45831,6 +46453,8 @@ mod tests {
             polls: 0,
             hashing: None,
             owner: super::DemoteOwnerLedger::default(),
+            parked: Vec::new(),
+            reparks: 0,
         });
     }
 
@@ -48040,6 +48664,8 @@ mod tests {
                 leases: None,
             }),
             owner: super::DemoteOwnerLedger::default(),
+            parked: Vec::new(),
+            reparks: 0,
         });
         bytes
     }
@@ -48081,34 +48707,40 @@ mod tests {
         let prompt: Vec<u32> = (100..170).collect();
         // The pure decision: depth and ticket of the hit; every miss shape answers None.
         assert_eq!(
-            super::host_hashing_hit(&host, &key, &prompt, 0),
-            Some((64, 5))
+            super::host_demoting_hit(&host, &key, &prompt, 0),
+            Some((64, 5, true))
         );
         assert_eq!(
-            super::host_hashing_hit(&host, &key, &prompt, 63),
-            Some((64, 5))
+            super::host_demoting_hit(&host, &key, &prompt, 63),
+            Some((64, 5, true))
         );
-        assert_eq!(super::host_hashing_hit(&host, &key, &prompt, 64), None);
+        assert_eq!(super::host_demoting_hit(&host, &key, &prompt, 64), None);
         let shorter: Vec<u32> = (100..150).collect();
-        assert_eq!(super::host_hashing_hit(&host, &key, &shorter, 0), None);
+        assert_eq!(super::host_demoting_hit(&host, &key, &shorter, 0), None);
         let other_prompt: Vec<u32> = (200..270).collect();
-        assert_eq!(super::host_hashing_hit(&host, &key, &other_prompt, 0), None);
+        assert_eq!(
+            super::host_demoting_hit(&host, &key, &other_prompt, 0),
+            None
+        );
         let other_key = ("m".to_string(), "ns2".to_string());
-        assert_eq!(super::host_hashing_hit(&host, &other_key, &prompt, 0), None);
+        assert_eq!(
+            super::host_demoting_hit(&host, &other_key, &prompt, 0),
+            None
+        );
         // The park: once per id with the typed line, re-parks counted, a miss unparked.
-        assert!(super::host_hashing_park(
+        assert!(super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-1"
         ));
-        assert!(super::host_hashing_park(
+        assert!(super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-1"
         ));
-        assert!(super::host_hashing_park(
+        assert!(super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-2"
         ));
-        assert!(!super::host_hashing_park(
+        assert!(!super::host_demoting_park(
             &mut host, &key, &shorter, 0, "req-3"
         ));
-        assert!(!super::host_hashing_park(
+        assert!(!super::host_demoting_park(
             &mut host, &key, &prompt, 64, "req-4"
         ));
         {
@@ -48162,23 +48794,55 @@ mod tests {
         assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
         assert!(host.demoting.is_none());
         assert!(host.armed(), "a bind refusal is not a latch");
-        assert_eq!(super::host_hashing_hit(&host, &key, &prompt, 0), None);
-        assert!(!super::host_hashing_park(
+        assert_eq!(super::host_demoting_hit(&host, &key, &prompt, 0), None);
+        assert!(!super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-1"
         ));
-        // A copy-phase Demoting entry (the day-17 window) is a miss for the park too.
+        // WP-A day 38 (`DAY38.md` design P): a copy-phase Demoting entry parks the request too (the
+        // day-17 cold-prime rule is retired): the id on the pending demote, re-parks counted, the
+        // hashing phase untouched; past the copy's deadline the hit parks nothing more.
         let (mut host, key) = cpu_door_host();
         cpu_pending_demote(&mut host, &key);
         assert!(host.demoting.as_ref().unwrap().hashing.is_none());
-        assert_eq!(super::host_hashing_hit(&host, &key, &prompt, 0), None);
-        assert!(!super::host_hashing_park(
+        assert_eq!(
+            super::host_demoting_hit(&host, &key, &prompt, 0),
+            Some((64, 1, false))
+        );
+        assert_eq!(super::host_demoting_hit(&host, &key, &prompt, 64), None);
+        assert!(super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-5"
+        ));
+        assert!(super::host_demoting_park(
+            &mut host, &key, &prompt, 0, "req-5"
+        ));
+        assert!(!super::host_demoting_park(
+            &mut host, &key, &shorter, 0, "req-7"
+        ));
+        {
+            let pending = host.demoting.as_ref().unwrap();
+            assert_eq!(pending.parked, vec!["req-5".to_string()]);
+            assert_eq!(pending.reparks, 1);
+            assert!(pending.hashing.is_none());
+        }
+        // A copy older than the helper's deadline parks nothing more (the request primes cold).
+        host.demoting
+            .as_mut()
+            .unwrap()
+            .contract
+            .as_mut()
+            .unwrap()
+            .submitted = std::time::Instant::now()
+            - super::HOST_HASH_DEADLINE
+            - std::time::Duration::from_millis(1);
+        assert_eq!(super::host_demoting_hit(&host, &key, &prompt, 0), None);
+        assert!(!super::host_demoting_park(
+            &mut host, &key, &prompt, 0, "req-8"
         ));
         // The latch with parked requests: the state is consumed, the tier off, the parked request
         // re-admits to the probe's first line (`armed()` false) and primes cold.
         let (mut host, key, _jobs, replies) = cpu_door_host_with_channels();
         cpu_pending_hashing(&mut host, &key, 6);
-        assert!(super::host_hashing_park(
+        assert!(super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-6"
         ));
         drop(replies);
@@ -48191,7 +48855,7 @@ mod tests {
         assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
         assert!(host.demoting.is_none());
         assert!(!host.armed());
-        assert!(!super::host_hashing_park(
+        assert!(!super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-6"
         ));
     }
@@ -48588,25 +49252,23 @@ mod tests {
             let lo = i.saturating_sub(1500);
             assert!(!code[lo..i + 400].contains("host_demote_settle_pending("), "a trim meets no Demoting entry (day 17), so no Hashing entry either");
         }
-        // WP-A day 29 (ruling 40): the parked-only wait is guarded on a Hashing entry too (a
-        // request parked on it is the promote park's shape); the orphan grace still reads no
-        // demote state (a request parked on a Hashing entry owns nothing to expire).
+        // WP-A day 29 (ruling 40), day 38 (P): the parked-only wait is guarded on a Demoting
+        // entry of either phase (a request parked on it is the promote park's shape); the orphan
+        // grace still reads no demote state (a parked request owns nothing to expire).
         let park_wait = code.find("&& parked_on_promote == queue.len()").unwrap();
-        assert!(
-            code[park_wait..park_wait + 600]
-                .contains("|| hpx.demoting.as_ref().is_some_and(|d| d.hashing.is_some())")
-        );
+        assert!(code[park_wait..park_wait + 600].contains("|| hpx.demoting.is_some())"));
         let orphan = body("fn host_restore_expire_ready(");
         assert!(!orphan.contains("demoting"));
-        // WP-A day 29: the probe decides the Hashing park BEFORE the promote decision, with the
-        // request still in hand, and answers the caller's one park arm; the decision is pure over
-        // the host state and requires the Hashing phase (a copy-phase Demoting entry is a miss).
+        // WP-A day 29, day 38 (P): the probe decides the Demoting park BEFORE the promote
+        // decision, with the request still in hand, and answers the caller's one park arm; the
+        // decision is pure over the host state and covers both phases (a copy past the helper's
+        // deadline parks nothing).
         let probe = body("fn host_promote_park_probe(");
         let park = probe
             .find(
-                "if host_hashing_park(host, &pool_key, prompt, device_best_len, &req.request_id) {",
+                "if host_demoting_park(host, &pool_key, prompt, device_best_len, &req.request_id) {",
             )
-            .expect("the Hashing park in the probe");
+            .expect("the Demoting park in the probe");
         let decision = probe
             .find("let hi = match host_promote_probe_decision(")
             .unwrap();
@@ -48615,21 +49277,32 @@ mod tests {
             "the Hashing park precedes the promote decision"
         );
         assert!(probe[park..park + 200].contains("return true;"));
-        let hit = body("fn host_hashing_hit(");
-        assert!(hit.contains("let hashing = pending.hashing.as_ref()?;"));
+        let hit = body("fn host_demoting_hit(");
+        assert!(hit.contains("(Some(h), _) => (h.seq, true),"));
+        assert!(hit.contains("(None, Some(c)) if c.submitted.elapsed() < HOST_HASH_DEADLINE"));
         assert!(hit.contains("&& n > device_best_len"));
         assert!(hit.contains("&& prompt[..n] == toks[..]"));
-        let park_fn = body("fn host_hashing_park(");
+        let park_fn = body("fn host_demoting_park(");
         assert!(park_fn.contains("hit parked on a Hashing entry: request {request_id}"));
+        assert!(
+            park_fn
+                .contains("hit parked on a Demoting entry in its copy phase: request {request_id}")
+        );
         assert!(
             !park_fn.contains("hasher.") && !park_fn.contains("settle"),
             "the park never touches the helper and never settles"
         );
         assert_eq!(
-            code.matches("host_hashing_park(").count(),
+            code.matches("host_demoting_park(").count(),
             2,
             "the definition and one park site: the admission probe"
         );
+        // Day 38 (P): the copy phase's parked ids ride into the Hashing phase, and a demote that
+        // ends unpublished names them.
+        assert!(code.contains("parked: std::mem::take(&mut pending.parked),"));
+        assert!(code.contains("reparks: std::mem::take(&mut pending.reparks),"));
+        let with = body("fn host_demote_settle_with(");
+        assert!(with.contains("request(s) parked on the Demoting entry's copy phase"));
         // The ledger line carries the parked count; the latch tail names the parked requests.
         assert!(hashing_fn.contains("{parked_hits} hit(s) parked on \\\n             the Hashing entry ({reparks} re-park(s))"));
         assert!(hashing_fn.contains("request(s) parked on the Hashing entry re-admit to a"));
@@ -49123,6 +49796,93 @@ mod tests {
         }
     }
 
+    /// WP-A day 38 (`DAY38.md` designs G and P): the two new fault values are one-shot, demote side,
+    /// Move 1 faults; the demote route arms them for exactly its own batch, before the submission,
+    /// and only when the transfer engine takes device receipts; the receipt line names where hash 1
+    /// ran.
+    #[test]
+    fn day38_the_device_receipt_faults_are_armed_before_the_submission() {
+        use super::HostContractFault as F;
+        for (door, f) in [
+            ("d2h-source-flip", F::D2hSourceFlip),
+            ("d2h-delay", F::D2hDelay),
+        ] {
+            assert_eq!(F::from_door(door), Some(f));
+            assert!(f.is_demote() && f.is_move1(), "{door}");
+        }
+        let src = include_str!("worker.rs");
+        let body = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        let at = body.find("fn host_kv_planes_submit_contract(").unwrap();
+        let route = &body[at..at + body[at..].find("\n}\n").unwrap()];
+        let armed = route.find("if t.d2h_receipts_on_device() {").unwrap();
+        let flip = route.find("t.inject_d2h_source_flip();").unwrap();
+        let delay = route
+            .find("t.inject_d2h_delay(memra_engine::tier_transfer::D2H_DELAY_FAULT_NS);")
+            .unwrap();
+        let submit = route
+            .find("let ticket = match t.submit_batch(ops) {")
+            .unwrap();
+        assert!(armed < flip && flip < submit && delay < submit);
+        assert!(route.find("let fault = tier.take_fault(true);").unwrap() < armed);
+        let at = body.find("fn host_kv_planes_settle_contract(").unwrap();
+        let settle = &body[at..at + body[at..].find("\n}\n").unwrap()];
+        assert!(settle.contains("; receipts on the copy stream (source digests"));
+        assert!(settle.contains("retired acknowledged{}{receipt_place}"));
+    }
+
+    /// WP-A day 41 (`DAY41.md`, OWED item 5): the three Sources-keyed helper faults parse from the
+    /// existing door, are not contract faults, and each is keyed on the FIRST Sources job: a Hash job
+    /// before it runs clean (its reply lands), the Sources job takes the fault once, and a second
+    /// Sources job after a discarded or foreign reply runs clean.
+    #[test]
+    fn day41_the_sources_faults_key_on_the_first_sources_job() {
+        use super::HostHashFault as H;
+        for (door, want) in [
+            ("sources-helper-gone", H::SourcesGone),
+            ("sources-never-land", H::SourcesNeverLand),
+            ("sources-foreign-reply", H::SourcesForeignReply),
+        ] {
+            assert_eq!(H::from_door(door), Some(want));
+            assert_eq!(super::HostContractFault::from_door(door), None, "{door}");
+        }
+        let src = include_str!("worker.rs");
+        let production = &src[..src.find("\nmod tests {").unwrap()];
+        let at = production
+            .find("    fn spawn(fault: Option<HostHashFault>)")
+            .unwrap();
+        let spawn = &production[at..at + production[at..].find("\n    }\n").unwrap()];
+        let sources = spawn.find("HostHelperJob::Sources(job) => {").unwrap();
+        let gone = spawn
+            .find("if sources_fault == Some(HostHashFault::SourcesGone) {")
+            .unwrap();
+        let hashed = spawn[sources..].find("let d = v.digest();").unwrap() + sources;
+        let discard = spawn
+            .find("if sources_fault == Some(HostHashFault::SourcesNeverLand) {")
+            .unwrap();
+        let send = spawn.find("if sources_tx.send(reply).is_err() {").unwrap();
+        assert!(sources < gone && gone < hashed && hashed < discard && discard < send);
+        assert!(spawn.contains("job.seq.wrapping_add(1)"));
+        // One shot: the fault is cleared when a Sources job takes it.
+        let cleared = spawn[sources..].find("fault = None;").unwrap() + sources;
+        assert!(cleared < gone);
+        // Behaviour: under each Sources fault a Hash job runs clean (its reply lands).
+        for f in [H::SourcesGone, H::SourcesNeverLand, H::SourcesForeignReply] {
+            let helper = super::HostHashWorker::spawn(Some(f)).unwrap();
+            helper
+                .submit(super::HostHashJob {
+                    seq: 9,
+                    payloads: Vec::new(),
+                    leases: Vec::new(),
+                })
+                .unwrap();
+            let reply = helper
+                .reply_within(std::time::Duration::from_secs(5))
+                .unwrap()
+                .expect("a Hash job's reply lands under a Sources fault");
+            assert_eq!(reply.seq, 9, "{f:?}");
+            helper.close("test", std::time::Duration::from_secs(5));
+        }
+    }
     /// WP-A day 36 (`DAY36.md` section 1, log only): the restore's recurrent copy is timed around
     /// step 1 exactly (the two owner-stream events and the host timer bracket the copy loop, both
     /// before the producer fence), and the landing reads the owner-stream time only when the end
@@ -49378,6 +50138,7 @@ mod tests {
                 super::HostTierPrograms {
                     plain: base,
                     draft: Some(draft),
+                    tail: None,
                     generation,
                 },
             )]),
@@ -49463,6 +50224,165 @@ mod tests {
     fn gpu_used(host: &super::HostPrefixCache) -> (u64, u64, u64) {
         let used = host.tier.as_ref().unwrap().governor.lock().unwrap().used();
         (used.pinned, used.inflight, used.device.iter().sum())
+    }
+
+    /// Day 53 of lane/spill-c-20260919 (verify digest v3): the tag parse and the three-way
+    /// compare the promote runs.
+    #[test]
+    fn verify_digest_check_types_program_and_byte_mismatches() {
+        use super::{VerifyDigestCheck, verify_digest_check, verify_digest_program};
+        assert_eq!(verify_digest_program("split-state-v3:ab"), "split-state-v3");
+        assert_eq!(
+            verify_digest_program("host-prefix-state-v1:ab"),
+            "host-prefix-state-v1"
+        );
+        assert_eq!(verify_digest_program("0123abcd"), "untagged");
+        assert_eq!(
+            verify_digest_check("split-state-v3:ab", "split-state-v3:ab"),
+            VerifyDigestCheck::Match
+        );
+        assert_eq!(
+            verify_digest_check("split-state-v3:ab", "split-state-v3:cd"),
+            VerifyDigestCheck::Mismatch
+        );
+        assert_eq!(
+            verify_digest_check("0123abcd", "split-state-v3:0123abcd"),
+            VerifyDigestCheck::Program("untagged", "split-state-v3")
+        );
+        assert_eq!(
+            verify_digest_check("host-prefix-state-v1:ab", "split-state-v3:ab"),
+            VerifyDigestCheck::Program("host-prefix-state-v1", "split-state-v3")
+        );
+    }
+
+    /// Day 53: the fault's f32 flip changes exactly the first byte of a heap row and leaves an
+    /// empty row alone (the pinned arm is the same byte through `as_mut_slice`).
+    #[test]
+    fn verify_digest_v3_row_flip_touches_one_byte() {
+        let mut row = super::HostF32::Heap(Arc::new(vec![1.5f32, -2.0]));
+        assert!(super::flip_first_f32_byte(&mut row));
+        assert_eq!(row[0].to_bits(), 1.5f32.to_bits() ^ 0xff);
+        assert_eq!(row[1], -2.0);
+        let mut empty = super::HostF32::Heap(Arc::new(Vec::new()));
+        assert!(!super::flip_first_f32_byte(&mut empty));
+    }
+
+    /// Day 53 source census: the verify arm's non-GLM digest is v3; the v2 body is the base
+    /// tree's byte for byte (SHA-256 of its text pinned from `094c46b24`, so the split trace and
+    /// the HIRADIX restore oracle keep their program); the v3 red arms are called once, behind the
+    /// legacy-copy condition, in the whole-image build.
+    #[test]
+    fn verify_digest_v3_census() {
+        use sha2::Digest as _;
+        let src = include_str!("worker.rs");
+        let code = &src[..src
+            .find("#[cfg(test)]\nmod tests {")
+            .expect("the test module")];
+        let body = |start: &str| -> &str {
+            let a = code.find(start).unwrap_or_else(|| panic!("{start}"));
+            &code[a..a + code[a..].find("\n}\n").expect("the function ends") + 3]
+        };
+        let roundtrip = body("fn host_roundtrip_digest(");
+        assert!(roundtrip.contains("prefix_entry_roundtrip_digest(engine, entry)"));
+        assert!(!roundtrip.contains("prefix_entry_state_digest("));
+        let v2 = body("fn prefix_entry_state_digest(");
+        assert_eq!(
+            format!("{:x}", sha2::Sha256::digest(v2.as_bytes())),
+            "6cd83ed3d42eefc9ba30d2463f8044226ccd113bec94d93783200079cf5f036c",
+            "the v2 digest's text moved"
+        );
+        let v3 = body("fn prefix_entry_roundtrip_digest(");
+        assert!(v3.contains("prefix_entry_state_digest(engine, entry, entry.pos)?"));
+        assert_eq!(code.matches("apply_flip_plane_faults(").count(), 2);
+        let image = body("fn host_entry_from_device(");
+        let cond = image
+            .find("let legacy_copy = contract_draft.is_none() && pending.is_none();")
+            .expect("the legacy-copy condition");
+        let call = image
+            .find("    if legacy_copy {\n        apply_flip_plane_faults(&mut entry)?;\n    }")
+            .expect("the guarded call");
+        assert!(cond < call);
+    }
+
+    /// Day 53, GPU-only: a 4-token entry with a trunk plane, a draft plane, a hidden row, logits
+    /// and a one-layer DFlash tail; `flip` changes one byte of one of them.
+    fn v3_entry(engine: &Engine, flip: &str) -> super::PrefixEntry {
+        let (mut trunk, _) = gpu_plane(engine, 4, 34, 24, 3);
+        let (mut draft, _) = gpu_plane(engine, 4, 34, 24, 9);
+        let stream = engine.stream();
+        let bump = |p: &mut super::PrefixPlane| {
+            let mut k = stream.clone_dtoh(&p.k).unwrap();
+            k[0] ^= 0xff;
+            p.k = stream.clone_htod(&k).unwrap();
+        };
+        match flip {
+            "trunk" => bump(&mut trunk),
+            "draft" => bump(&mut draft),
+            _ => {}
+        }
+        let word = |base: f32, n: usize, hit: bool| -> Vec<f32> {
+            let mut v: Vec<f32> = (0..n).map(|i| base + i as f32).collect();
+            if hit {
+                v[0] = f32::from_bits(v[0].to_bits() ^ 0xff);
+            }
+            v
+        };
+        let tail_k = stream.clone_htod(&word(0.25, 16, flip == "tail")).unwrap();
+        let tail_v = stream.clone_htod(&word(0.75, 16, false)).unwrap();
+        super::PrefixEntry {
+            _tier_charge: None,
+            layout_version: super::PREFIX_ENTRY_LAYOUT_VERSION,
+            pool_key: ("m".into(), String::new()),
+            toks: (0..4).collect(),
+            kv: vec![Some(trunk)],
+            conv: vec![None],
+            ssm: vec![None],
+            latent: vec![None],
+            tp: None,
+            pos: 4,
+            last_logits: word(-1.0, 8, flip == "logits"),
+            draft: Some(draft),
+            dspark_draft: Some(memra_engine::dflash::DflashKvTail {
+                layers: vec![(tail_k, tail_v)],
+                base: 0,
+                rows: 4,
+                len: 4,
+                row_bytes: 16,
+                floor: 0,
+            }),
+            last_h: word(2.0, 8, flip == "hidden"),
+            bytes: 0,
+            last_use: std::time::Instant::now(),
+            id: 0,
+            pins: 0,
+        }
+    }
+
+    /// Day 53, GPU-only: v3 is equal on identical bytes and moves on one byte of each of the five
+    /// planes; v2 moves on the trunk byte only (the day-14 finding, now a test).
+    #[test]
+    #[ignore = "requires one CUDA device; run under the rig lock"]
+    fn verify_digest_v3_covers_every_round_tripped_plane_and_v2_stays_trunk_only() {
+        let engine = Engine::new(0).expect("device0");
+        let v3 = |e: &super::PrefixEntry| super::prefix_entry_roundtrip_digest(&engine, e).unwrap();
+        let v2 = |e: &super::PrefixEntry| super::prefix_entry_state_digest(&engine, e, 4).unwrap();
+        let base = v3_entry(&engine, "");
+        let (base3, base2) = (v3(&base), v2(&base));
+        assert!(base3.starts_with("split-state-v3:"), "{base3}");
+        assert_eq!(
+            v3(&v3_entry(&engine, "")),
+            base3,
+            "identical bytes, one digest"
+        );
+        for flip in ["trunk", "draft", "hidden", "logits", "tail"] {
+            let e = v3_entry(&engine, flip);
+            assert_ne!(v3(&e), base3, "v3 is blind to one {flip} byte");
+            assert_eq!(
+                v2(&e) == base2,
+                flip != "trunk",
+                "v2 must move on the trunk byte and only there ({flip})"
+            );
+        }
     }
 
     /// Review finding 1 on PR #599: a refusal BEFORE any op is submitted must return every
@@ -51556,25 +52476,132 @@ mod tests {
     // failure gates under the default spec environment, OFF then ON).
 
     #[test]
-    fn host_tier_entry_class_admits_plain_and_mtp_draft_and_refuses_glm_and_dflash_by_name() {
-        use super::HostTierEntryClass::{MtpDraft, Plain};
+    fn host_tier_entry_class_admits_plain_mtp_draft_and_dflash_tail_and_refuses_glm_and_both_by_name()
+     {
+        // C day 56 (`DAY56.md` design a): the DFlash tail is its own class; GLM state and an entry
+        // carrying both spec programs' planes are refused by name.
+        use super::HostTierEntryClass::{DflashTail, MtpDraft, Plain};
         assert_eq!(super::host_tier_entry_class(false, false, false), Ok(Plain));
         assert_eq!(
             super::host_tier_entry_class(false, true, false),
             Ok(MtpDraft)
         );
+        assert_eq!(
+            super::host_tier_entry_class(false, false, true),
+            Ok(DflashTail)
+        );
         let glm = super::host_tier_entry_class(true, false, false).unwrap_err();
         assert!(glm.contains("TP or latent (GLM) planes"), "{glm}");
-        let tail = super::host_tier_entry_class(false, false, true).unwrap_err();
-        assert!(tail.contains("DFlash draft tail"), "{tail}");
-        assert!(
-            tail.contains("no drafter artifact identity"),
-            "the refusal names what is missing: {tail}"
-        );
         // A tail beside a draft plane cannot exist (the boot guard refuses two spec programs on
         // one model); the class function refuses rather than guessing which one won.
-        assert_eq!(super::host_tier_entry_class(false, true, true), Err(tail));
+        let both = super::host_tier_entry_class(false, true, true).unwrap_err();
+        assert!(
+            both.contains("both an MTP draft plane and a DFlash draft tail"),
+            "{both}"
+        );
         assert_eq!(super::host_tier_entry_class(true, true, true), Err(glm));
+        assert_eq!(super::host_tier_entry_class(true, false, true), Err(glm));
+    }
+
+    /// C day 56: the tail program is a pure function of its sources, differs from the plain and
+    /// draft programs in exactly artifact, plan and numeric, and moves with each source part.
+    #[test]
+    fn host_tier_tail_program_is_a_pure_function_of_the_drafter_sources() {
+        let plain = super::host_tier_program_base("aa", "plan", Some("{{ t }}"));
+        let source = |manifest: &str, cfg: &str, knobs: &str| super::HostTierTailSource {
+            manifest: manifest.into(),
+            cfg_debug: cfg.into(),
+            knobs: knobs.into(),
+        };
+        let base = source("config.json=1;model.safetensors=2", "cfg", "");
+        let tail = super::host_tier_tail_program(&plain, "aa", "plan", &base);
+        assert_eq!(
+            tail,
+            super::host_tier_tail_program(&plain, "aa", "plan", &base.clone())
+        );
+        assert_ne!(tail.artifact, plain.artifact);
+        assert_ne!(tail.serialized_plan, plain.serialized_plan);
+        assert_ne!(tail.numeric, plain.numeric);
+        for field in [
+            (tail.stream, plain.stream),
+            (tail.tokenizer, plain.tokenizer),
+            (tail.template, plain.template),
+            (tail.adapter, plain.adapter),
+            (tail.modality, plain.modality),
+            (tail.position, plain.position),
+        ] {
+            assert_eq!(field.0, field.1);
+        }
+        let draft = super::host_tier_draft_program(
+            &plain,
+            "aa",
+            "plan",
+            &super::HostTierDraftSource::Embedded,
+        );
+        assert_ne!(tail.artifact, draft.artifact);
+        assert_ne!(tail.serialized_plan, draft.serialized_plan);
+        assert_ne!(tail.numeric, draft.numeric);
+        let moved = [
+            source("config.json=1;model.safetensors=3", "cfg", ""),
+            source("config.json=1;model.safetensors=2", "cfg2", ""),
+            source(
+                "config.json=1;model.safetensors=2",
+                "cfg",
+                "MEMRA_DFLASH_PREC=bf16",
+            ),
+        ];
+        for other in &moved {
+            let p = super::host_tier_tail_program(&plain, "aa", "plan", other);
+            assert_ne!(p, tail, "{other:?} must name another program");
+        }
+        // The knob list: only the drafter's families, never the export path, sorted.
+        let knobs = super::host_tier_tail_knobs([
+            ("MEMRA_DSPARK_DRAFT".to_string(), "/x".to_string()),
+            ("MEMRA_DFLASH_PREC".to_string(), "q4".to_string()),
+            ("MEMRA_DSPARK_SPEC".to_string(), "1".to_string()),
+            ("MEMRA_KV_HOST_MB".to_string(), "8192".to_string()),
+        ]);
+        assert_eq!(knobs, "MEMRA_DFLASH_PREC=q4;MEMRA_DSPARK_SPEC=1");
+    }
+
+    /// C day 56: a tail image's shape blob is the v2 blob with the tail framed after it; the
+    /// framing names every geometry field and each layer's byte counts.
+    #[test]
+    fn host_tier_tail_shape_frames_the_geometry_after_the_v2_blob() {
+        let v2 = super::host_tier_shape_metadata(4, &[None], &[None], &[Some((4, 34, 24))], None);
+        let tail = super::host_tier_tail_shape_metadata(0, 4, 4, 64, 0, &[(256, 256)]);
+        assert_eq!(tail[0], 1);
+        assert_eq!(tail.len(), 1 + 6 * 8 + 2 * 8);
+        let other = super::host_tier_tail_shape_metadata(0, 4, 4, 64, 0, &[(256, 256), (256, 256)]);
+        assert_ne!(tail, other);
+        let mut framed = v2.clone();
+        framed.extend(&tail);
+        assert!(framed.starts_with(&v2) && framed.len() > v2.len());
+    }
+
+    /// C day 56 census: the tail class resolves through `program()` to the tail program, and the
+    /// bind's tail segments and its receipt line sit where DAY56 registers them.
+    #[test]
+    fn host_tier_dflash_tail_census() {
+        let src = include_str!("worker.rs");
+        let code = &src[..src
+            .find("#[cfg(test)]\nmod tests {")
+            .expect("the test module")];
+        let program = &code[code.find("    fn program(\n").expect("program()")..];
+        let program = &program[..program.find("\n    }\n").unwrap()];
+        assert!(program.contains("HostTierEntryClass::DflashTail => programs.tail.as_ref()"));
+        let bind = &code[code.find("    fn bind_tier_image(").expect("bind")..];
+        let bind = &bind[..bind.find("\n    }\n").unwrap()];
+        let geometry = bind.find("tier DFlash tail geometry mismatch").unwrap();
+        let segments = bind.find("b\"dflash-tail-k-f32\"").unwrap();
+        let transaction = bind
+            .find("add(Role::Transaction, 1, shape_encoding, &metadata, None, None)?;")
+            .unwrap();
+        let bound = bind.find("._tier_identity\n            .bind(").unwrap();
+        let line = bind.rfind("eprintln!(\"{line}\");").unwrap();
+        assert!(
+            geometry < segments && segments < transaction && transaction < bound && bound < line
+        );
     }
 
     #[test]
@@ -52191,9 +53218,9 @@ mod tests {
             "the wait is guarded on a not-ready Restoring request too (revuto round 2 on #638)"
         );
         assert!(
-            code[handoff + wait..handoff + wait + 400]
-                .contains("hpx.demoting.as_ref().is_some_and(|d| d.hashing.is_some())"),
-            "the wait is guarded on a Hashing entry too (WP-A day 29, ruling 40)"
+            code[handoff + wait..handoff + wait + 400].contains("|| hpx.demoting.is_some())"),
+            "the wait is guarded on a Demoting entry of either phase too (WP-A day 29, ruling 40; \
+             day 38, P)"
         );
         let recv = code[handoff + wait + guard..]
             .find("rx.recv_timeout(Duration::from_millis(2))")

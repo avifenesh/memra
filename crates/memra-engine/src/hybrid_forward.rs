@@ -14714,9 +14714,11 @@ impl HybridModel {
                     }
                 } else if cache_dispatch
                     && !cpu_hybrid
-                    && moe_prefetch_enabled()
+                    && (moe_prefetch_enabled() || e.expert_bank_prefetch())
                     && j + 1 < sel.len()
                 {
+                    // DAY50: under the MoE slot cache door the prefetch takes its lease through
+                    // the owner; without the door `expert_bank_prefetch` is false.
                     let next = sel[j + 1] as usize;
                     Self::moe_prefetch_expert(e, il, next, m, max_block, &keep)?;
                 }

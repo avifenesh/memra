@@ -1,0 +1,10 @@
+START utc=2026-09-24T02:33:35Z bin=/root/lane/target-brow/release/memra-server env=
+READY after=128s port=35773
+CELL warmup c=1 ok=1/1 agg=39.20 tok/s decode_p50=57.12 tok/s ttft_p50=273 ms tpot_p50=17.51 ms errs=[]
+CELL greedy-c1 c=1 ok=8/8 agg=54.52 tok/s decode_p50=56.90 tok/s ttft_p50=211 ms tpot_p50=17.58 ms errs=[]
+CELL greedy-c2 c=2 ok=8/8 agg=85.15 tok/s decode_p50=44.97 tok/s ttft_p50=338 ms tpot_p50=22.23 ms errs=[]
+CELL greedy-c4 c=4 ok=8/8 agg=84.91 tok/s decode_p50=44.97 tok/s ttft_p50=6291 ms tpot_p50=22.24 ms errs=[]
+CELL sampled-c2 c=2 ok=8/8 agg=72.75 tok/s decode_p50=38.12 tok/s ttft_p50=352 ms tpot_p50=26.23 ms errs=[]
+CELL sampled-c4 c=4 ok=8/8 agg=72.52 tok/s decode_p50=38.07 tok/s ttft_p50=7323 ms tpot_p50=26.27 ms errs=[]
+CELLS_DONE utc=2026-09-24T02:38:07Z
+TERMINAL rc=0 utc=2026-09-24T02:38:14Z

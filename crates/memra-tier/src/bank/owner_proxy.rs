@@ -2,7 +2,7 @@
 //! their Rc-backed leases never enter a cache/PP worker's Send/Sync object graph.
 //! This is deliberately NOT an RPC implementation: a migrated worker refuses
 //! WrongOwner instead of staging on an arbitrary thread or silently falling back.
-use super::{ExpertDemand, ExpertDispatchBank, ExpertDispatchId, dispatch_id};
+use super::{ExpertDemand, ExpertDispatchBank, ExpertDispatchId, HostBuffer, dispatch_id};
 use crate::contracts::{Digest, Epochs, Error, Result};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -154,6 +154,16 @@ impl ExpertBankProxy {
     pub fn validate(&self, id: ExpertDispatchId, bytes: usize) -> Result<()> {
         self.access(|e| e.bank.as_ref().ok_or(Error::NotFound)?.validate(id, bytes))
     }
+    /// Day 50: whether the record is resident in the host tier (`ExpertDispatchBank::host_resident`),
+    /// read on the owner thread.
+    pub fn host_resident(&self, id: ExpertDispatchId) -> Result<bool> {
+        self.access(|e| e.bank.as_ref().ok_or(Error::NotFound)?.host_resident(id))
+    }
+    /// The registered bank's stage clock line (`ExpertDispatchBank::stage_report`), read on
+    /// the owner thread like every other call; `Ok(None)` when no clock is installed.
+    pub fn stage_report(&self) -> Result<Option<String>> {
+        self.access(|e| Ok(e.bank.as_ref().ok_or(Error::NotFound)?.stage_report()))
+    }
     pub fn demand(&self, id: ExpertDispatchId, bytes: usize) -> Result<ExpertLeaseToken> {
         self.access(|e| {
             if e.pending.len() >= e.limit {
@@ -195,8 +205,13 @@ impl ExpertBankProxy {
         self.access(|e| {
             let demand = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?;
             require(demand, token)?;
-            let bytes = demand.lease.resource::<Vec<u8>>()?;
-            Ok(f(&bytes))
+            // A heap `Vec` (no buffer source) or a pooled buffer (day 47): the same bytes lent
+            // the same way; the borrow ends before this returns.
+            if let Ok(bytes) = demand.lease.resource::<Vec<u8>>() {
+                return Ok(f(&bytes));
+            }
+            let buffer = demand.lease.resource::<Box<dyn HostBuffer>>()?;
+            Ok(f(buffer.as_slice()))
         })
     }
     /// Explicit completion observation by the CUDA owner, never Drop. On error

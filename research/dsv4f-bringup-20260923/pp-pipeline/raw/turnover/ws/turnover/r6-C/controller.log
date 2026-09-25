@@ -1,0 +1,9 @@
+START utc=2026-09-24T08:32:04Z bin=/root/lane/target-pctl/release/memra-server env=MEMRA_TIMEOUT_MS_MAX=900000
+READY after=126s port=46053
+CELL warmup c=1 ok=1/1 agg=39.83 tok/s decode_p50=57.09 tok/s ttft_p50=260 ms tpot_p50=17.52 ms errs=[]
+CELL ts1 c=4 ok=192/192 agg=52.13 tok/s decode_p50=35.06 tok/s ttft_p50=1548 ms tpot_p50=28.52 ms errs=[]
+CELL tg1 c=4 ok=192/192 agg=57.98 tok/s decode_p50=40.61 tok/s ttft_p50=1400 ms tpot_p50=24.62 ms errs=[]
+CELL ts2 c=4 ok=192/192 agg=52.13 tok/s decode_p50=35.01 tok/s ttft_p50=1530 ms tpot_p50=28.56 ms errs=[]
+CELL tg2 c=4 ok=192/192 agg=57.98 tok/s decode_p50=40.56 tok/s ttft_p50=1400 ms tpot_p50=24.65 ms errs=[]
+CELLS_DONE utc=2026-09-24T08:41:39Z
+TERMINAL rc=0 utc=2026-09-24T08:41:46Z

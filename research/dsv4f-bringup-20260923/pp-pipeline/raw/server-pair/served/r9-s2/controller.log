@@ -1,0 +1,10 @@
+START utc=2026-09-23T22:26:34Z bin=/root/lane/target-pipe/release/memra-server env=MEMRA_DSV4_SESSIONS=2
+READY after=112s port=38873
+CELL warmup c=1 ok=1/1 agg=34.29 tok/s decode_p50=46.70 tok/s ttft_p50=269 ms tpot_p50=21.41 ms errs=[]
+CELL greedy-c1 c=1 ok=8/8 agg=44.58 tok/s decode_p50=46.31 tok/s ttft_p50=235 ms tpot_p50=21.59 ms errs=[]
+CELL greedy-c2 c=2 ok=8/8 agg=66.02 tok/s decode_p50=34.59 tok/s ttft_p50=373 ms tpot_p50=28.91 ms errs=[]
+CELL greedy-c4 c=4 ok=8/8 agg=66.80 tok/s decode_p50=34.95 tok/s ttft_p50=7915 ms tpot_p50=28.61 ms errs=[]
+CELL sampled-c2 c=2 ok=8/8 agg=60.74 tok/s decode_p50=31.69 tok/s ttft_p50=365 ms tpot_p50=31.56 ms errs=[]
+CELL sampled-c4 c=4 ok=8/8 agg=60.62 tok/s decode_p50=31.58 tok/s ttft_p50=8716 ms tpot_p50=31.67 ms errs=[]
+CELLS_DONE utc=2026-09-23T22:31:22Z
+TERMINAL rc=0 utc=2026-09-23T22:31:25Z

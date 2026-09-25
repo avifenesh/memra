@@ -1,0 +1,11 @@
+
+running 2 tests
+HOLD READING cell=d2h_span_batch first_item_seen_ms=15.93 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=d2h_span_batch htod-pageable@-43.37+0.41 pinned-alloc@-42.94+2.23 htod-pageable@-40.71+0.38 pinned-alloc@-40.33+3.67 htod-pageable@-36.65+0.31 pinned-alloc@-36.34+2.73 delay@0.00+0.03 htod-pageable@0.04+0.25 pinned-alloc@0.28+2.22 htod-pageable@2.51+0.37 pinned-alloc@2.88+3.05 htod-pageable@5.93+0.38 pinned-alloc@6.32+1.70 submit@8.02+0.03 htod-pageable@8.06+0.22 pinned-alloc@8.28+1.51 htod-pageable@9.79+0.35 pinned-alloc@10.14+2.38 htod-pageable@12.52+0.33 pinned-alloc@12.85+3.06 submit-busy@15.91+0.01
+HOLD READING cell=h2d_span_batch first_item_seen_ms=12.83 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=h2d_span_batch pinned-alloc@-53.10+2.58 pinned-write@-50.51+0.32 device-alloc@-50.19+0.02 pinned-alloc@-50.17+3.71 pinned-write@-46.45+0.54 device-alloc@-45.91+0.02 pinned-alloc@-45.89+2.51 pinned-write@-43.38+0.38 device-alloc@-43.00+0.02 pinned-alloc@-11.35+0.86 pinned-write@-10.49+0.24 device-alloc@-10.25+0.03 pinned-alloc@-10.22+2.92 device-alloc@-7.30+0.04 pinned-alloc@-7.26+3.39 pinned-write@-3.87+0.46 device-alloc@-3.41+0.02 delay@0.00+0.01 pinned-alloc@0.02+2.70 pinned-write@2.72+0.30 device-alloc@3.02+0.02 pinned-alloc@3.04+3.05 pinned-write@6.12+0.51 device-alloc@6.64+0.02 pinned-alloc@6.66+1.13 pinned-write@7.79+0.38 device-alloc@8.17+0.01 submit@8.19+0.05 pinned-alloc@8.23+0.86 pinned-write@9.10+0.28 device-alloc@9.38+0.01 pinned-alloc@9.39+1.40 pinned-write@10.79+0.52 device-alloc@11.32+0.01 pinned-alloc@11.32+1.10 pinned-write@12.42+0.38 device-alloc@12.81+0.01 submit-busy@12.82+0.01
+test tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+test tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 585 filtered out; finished in 0.75s
+

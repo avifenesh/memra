@@ -1,0 +1,22 @@
+2026-09-24T11:59:59Z
+pid, used_gpu_memory [MiB]
+198695, 86934 MiB
+198695, 83350 MiB
+State:	S (sleeping)
+Threads:	52
+      2 199127 dsv4-serve-dsv4 R 0
+      1 198747 cuda00003800010 S do_poll.constprop.0
+      1 198750 cuda-EvtHandlr S do_poll.constprop.0
+      1 198751 memra-gpu-worke S do_poll.constprop.0
+      1 198756 cuda-EvtHandlr S do_poll.constprop.0
+      1 198738 tokio-rt-worker S ep_poll
+      1 198695 memra-server S futex_wait_queue
+     39 198701 tokio-rt-worker S futex_wait_queue
+      3 198744 memra-gpu-worke S futex_wait_queue
+      1 198742 memra-gpu-watch S hrtimer_nanosleep
+      1 198741 memra-xid-tail S pipe_read
+reqs_logged=1
+[meter] admit id=chatcmpl-767ce27b32f00d4bd36073357f893603 tenant=default lane=interactive model="dsv4f"
+[meter] admit id=chatcmpl-8358d16b5d10f069ea2473ec6bf3a911 tenant=default lane=interactive model="dsv4f"
+[meter] admit id=chatcmpl-cdc9b323eb6e30a0f21ef5cbe5bc7fe1 tenant=default lane=interactive model="dsv4f"
+[meter] admit id=chatcmpl-438080c25607d85c606c208e62501629 tenant=default lane=interactive model="dsv4f"
