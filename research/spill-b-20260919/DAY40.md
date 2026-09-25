@@ -56,3 +56,53 @@ section 2.
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
+
+### 2.1 The target card (the third sitting, one RTX PRO 6000 Blackwell Workstation Edition at 600 W, 2026-09-25 06:53 to 12:06Z)
+
+`S40` = `b46ae200e`, sha256 `c3387e1b...b51d20a0`, built on the box; receipts at `pro-single-day40/box/` (the box
+manifest checked, the binary by hash only). `day34-compare.py` and `day40-read.py` ran on the box; the verdict lines
+are in `SUMMARY.txt` and `READINGS.txt`. Verbatim, the door line and the readings:
+
+```
+DAY34 V-DOOR card=pro6000 boots=8 excluded=0 v_crash_all=True v_id_all=True v_alloc_all=True v_trunc_band_all=True v_trunc_conserved_all=True v_retry_all=True v_oom_all=True g_book_all=True park_all=True -> PASS
+== SELECT (stated, not chosen)
+DAY34 SELECT card=pro6000 R1_smallest_zero_truncation=none admissible=[2048, 8192, 32768] inadmissible=[] truncating=['2048:10', '8192:10', '32768:8']
+DAY34 SELECT card=pro6000 R2_smallest_v_ge_max_natural_G=none of [2048, 8192, 32768] (max_natural_G=193178)
+DAY34 SELECT card=pro6000 R3_registry=32768 R4_survey=context
+== V-CONC / V-RETRY
+DAY34 V-CONC card=pro6000 order=O1 arm=off window_ms=152236 B=64 status={200: 64} finish={'stop': 64}
+DAY34 V-CONC card=pro6000 order=O1 arm=on2048 window_ms=120070 B=64 status={200: 64} finish={'stop': 61, 'length': 3}
+DAY34 V-CONC card=pro6000 order=O1 arm=on8192 window_ms=125170 B=64 status={200: 64} finish={'stop': 64}
+DAY34 V-CONC card=pro6000 order=O1 arm=on32768 window_ms=92288 B=64 status={429: 18, 200: 46} finish={'stop': 46}
+DAY34 V-CONC card=pro6000 order=O2 arm=off window_ms=150557 B=64 status={200: 64} finish={'stop': 64}
+DAY34 V-CONC card=pro6000 order=O2 arm=on2048 window_ms=117524 B=64 status={200: 64} finish={'stop': 61, 'length': 3}
+DAY34 V-CONC card=pro6000 order=O2 arm=on8192 window_ms=125281 B=64 status={200: 64} finish={'stop': 64}
+DAY34 V-CONC card=pro6000 order=O2 arm=on32768 window_ms=79668 B=64 status={429: 18, 200: 46} finish={'stop': 46}
+DAY40 READING card=pro6000 boot=O1-off burst_status={200: 64} admit_mem_lines_in_burst=0 seed_cap_bound_lines=0 max_cap_cut_bytes=0 peak_pending_prime=None
+DAY40 READING card=pro6000 boot=O1-on2048 burst_status={200: 64} admit_mem_lines_in_burst=64 seed_cap_bound_lines=49 max_cap_cut_bytes=9568841728 peak_pending_prime=(9755701248, '40816668672', 'admit')
+DAY40 READING card=pro6000 boot=O1-on32768 burst_status={200: 46, 429: 18} admit_mem_lines_in_burst=82 seed_cap_bound_lines=26 max_cap_cut_bytes=5179748352 peak_pending_prime=(7088517120, '29637623808', 'defer')
+DAY40 READING card=pro6000 boot=O1-on8192 burst_status={200: 64} admit_mem_lines_in_burst=64 seed_cap_bound_lines=49 max_cap_cut_bytes=9766656000 peak_pending_prime=(9755701248, '40829607936', 'admit')
+DAY40 READING card=pro6000 boot=O2-off burst_status={200: 64} admit_mem_lines_in_burst=0 seed_cap_bound_lines=0 max_cap_cut_bytes=0 peak_pending_prime=None
+DAY40 READING card=pro6000 boot=O2-on2048 burst_status={200: 64} admit_mem_lines_in_burst=64 seed_cap_bound_lines=49 max_cap_cut_bytes=9766656000 peak_pending_prime=(9755701248, '40831524864', 'admit')
+DAY40 READING card=pro6000 boot=O2-on32768 burst_status={200: 46, 429: 18} admit_mem_lines_in_burst=82 seed_cap_bound_lines=26 max_cap_cut_bytes=5179748352 peak_pending_prime=(7088517120, '29646729216', 'defer')
+DAY40 READING card=pro6000 boot=O2-on8192 burst_status={200: 64} admit_mem_lines_in_burst=64 seed_cap_bound_lines=49 max_cap_cut_bytes=9766656000 peak_pending_prime=(9755701248, '40833921024', 'admit')
+```
+
+- **Every DAY34 1.6 term PASS on all eight boots** (V-CRASH, V-ID, V-TRUNC band and conservation, V-ALLOC, V-RETRY,
+  V-OOM, G-BOOK, PARK), and `V-DOOR ... -> PASS`. Every cell stays `executed-not-qualified`.
+- **SELECT, stated as the rules read, not chosen:** R1 selects none (every arm truncates: 10, 10 and 8 rows at 2,048,
+  8,192 and 32,768); R2 selects none (the largest natural completion is 193,178 tokens, above every value); R3's
+  registry value is 32,768; R4 is the survey (context).
+- **The seed cap bound** on every ON boot: 49 of 64 burst lines at `on2048` and `on8192`, 26 of 82 at `on32768`; the
+  largest cut 9.77 GB (5.18 GB at `on32768`).
+- **The prime booking:** the burst's peak `pending_prime` 9.76 GB (7.09 GB at `on32768`) against `pending_prime_v1`
+  40.8 GB (29.6 GB).
+- **Against day 36 (target card):** `off`, `on2048` and `on8192` admit 64 of 64 on both days; `on32768` admits 46 and
+  refuses 18 in both orders here, against 44 and 20 on day 36. The final booking admits two more sessions at
+  `on32768`.
+- **FAULTS.txt on the box is a traceback** (`FileNotFoundError: ... b-day40/boots/server.log.gz`): my chain passed the
+  boots root to `day31-faults.py` instead of each boot's directory. The lister, not a verdict, ran locally on the
+  mirrored boots (`FAULTS-local.txt`): no panic, respawn, fatal or engine error on any boot; the only non-200 rows are
+  the 18 typed 429s at `on32768` in each order.
+
+The 5090 half is queued in `rtx5090-queue-e.sh`.

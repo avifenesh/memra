@@ -328,3 +328,69 @@ DAY42 READING card=pro6000 boot=fault-sources-helper-gone tenant_gap_ms_in_burst
   `plan 0 demote + 0 drop` lines on `offtick-O1`).
 
 Addendum E (1.12) revises the arm so its demote set is the flush's, not an arrival's.
+
+### 2.3 Addenda E and F on the target card (the sixth sitting, one RTX PRO 6000 Blackwell Workstation Edition at 600 W, 2026-09-25 19:29 to 19:59Z)
+
+The binary is `0cf59870a` (addenda E and F), sha256 `81eaacca...0417f0e`, built on the box by `build-arms.sh`; the
+receipts are mirrored at `pro-single-day42/box-e/` (206 files, the box manifest checked, the binary by hash only).
+The reader is addendum E's (the corrected source-flip reading). Verbatim:
+
+```
+DAY42 F3 card=pro6000 boot=ontick-O1 oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 17, 429: 47} counts={'ontick_demoted': 2, 'plans': 0, 'submitted': 0, 'published': 24, 'landing_defers': 0, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=offtick-O1 oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 15, 429: 49} counts={'ontick_demoted': 0, 'plans': 1, 'submitted': 10, 'published': 34, 'landing_defers': 49, 'landing_refusals': 49} -> PASS
+DAY42 F3 card=pro6000 boot=offtick-O2 oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 16, 429: 48} counts={'ontick_demoted': 0, 'plans': 2, 'submitted': 22, 'published': 32, 'landing_defers': 49, 'landing_refusals': 48} -> PASS
+DAY42 F3 card=pro6000 boot=ontick-O2 oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 17, 429: 47} counts={'ontick_demoted': 2, 'plans': 0, 'submitted': 0, 'published': 24, 'landing_defers': 0, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=ontick-nocontracts oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 17, 429: 47} counts={'ontick_demoted': 2, 'plans': 0, 'submitted': 0, 'published': 25, 'landing_defers': 0, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=fault-d2h-delay oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 16, 429: 48} counts={'ontick_demoted': 0, 'plans': 2, 'submitted': 22, 'published': 32, 'landing_defers': 49, 'landing_refusals': 48} -> PASS
+DAY42 F3 card=pro6000 boot=fault-d2h-source-flip oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 16, 429: 48} counts={'ontick_demoted': 0, 'plans': 2, 'submitted': 22, 'published': 31, 'landing_defers': 49, 'landing_refusals': 48} -> PASS
+DAY42 F3 card=pro6000 boot=fault-sources-helper-gone oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 16, 429: 48} counts={'ontick_demoted': 0, 'plans': 2, 'submitted': 22, 'published': 22, 'landing_defers': 49, 'landing_refusals': 48} -> PASS
+DAY42 P0 card=pro6000 boot=ontick-O1 warm_published_before_burst=24 memory_verdict_lines=95 flush_runs=2 -> EXERCISED
+DAY42 P0 card=pro6000 boot=offtick-O1 warm_published_before_burst=24 memory_verdict_lines=98 flush_runs=1 -> EXERCISED
+DAY42 P0 card=pro6000 boot=offtick-O2 warm_published_before_burst=24 memory_verdict_lines=97 flush_runs=2 -> EXERCISED
+DAY42 P0 card=pro6000 boot=ontick-O2 warm_published_before_burst=24 memory_verdict_lines=95 flush_runs=2 -> EXERCISED
+DAY42 P0 card=pro6000 boot=ontick-nocontracts warm_published_before_burst=24 memory_verdict_lines=95 flush_runs=2 -> EXERCISED
+DAY42 P0 card=pro6000 boot=fault-d2h-delay warm_published_before_burst=24 memory_verdict_lines=97 flush_runs=2 -> EXERCISED
+DAY42 P0 card=pro6000 boot=fault-d2h-source-flip warm_published_before_burst=24 memory_verdict_lines=97 flush_runs=2 -> EXERCISED
+DAY42 P0 card=pro6000 boot=fault-sources-helper-gone warm_published_before_burst=24 memory_verdict_lines=97 flush_runs=2 -> EXERCISED
+DAY42 F1 card=pro6000 order=O1 rows=52 arm_differ=[] cold_differ=[] -> PASS
+DAY42 F2 card=pro6000 order=O1 ontick={'ontick_demoted': 2, 'plans': 0, 'submitted': 0, 'published': 24, 'landing_defers': 0, 'landing_refusals': 0} offtick={'ontick_demoted': 0, 'plans': 1, 'submitted': 10, 'published': 34, 'landing_defers': 49, 'landing_refusals': 49} -> PASS
+DAY42 F1 card=pro6000 order=O2 rows=52 arm_differ=[] cold_differ=[] -> PASS
+DAY42 F2 card=pro6000 order=O2 ontick={'ontick_demoted': 2, 'plans': 0, 'submitted': 0, 'published': 24, 'landing_defers': 0, 'landing_refusals': 0} offtick={'ontick_demoted': 0, 'plans': 2, 'submitted': 22, 'published': 32, 'landing_defers': 49, 'landing_refusals': 48} -> PASS
+DAY42 F4 card=pro6000 boot=fault-d2h-delay burst=64 all_200_or_429=True landing_refusals=48 armed=True -> PASS
+DAY42 F4 card=pro6000 boot=fault-d2h-source-flip burst=64 all_200_or_429=True armed=True submitted=22 published=31 first_outcome_after_arm='demote failed (tier image Key plane checksum differs from it' -> PASS
+DAY42 F4 card=pro6000 boot=fault-sources-helper-gone burst=64 all_200_or_429=True latch_lines=1 -> PASS
+DAY42 READING card=pro6000 boot=ontick-O1 tenant_gap_ms_in_burst N=276 p50=51.3 p99=8932.1 max=8932.4 burst_ttft_ms N=17 p50=11835.0 p95=14369.7 demoted_MB=9005 warmth_hits=10/24
+DAY42 READING card=pro6000 boot=offtick-O1 tenant_gap_ms_in_burst N=268 p50=50.8 p99=4059.3 max=4059.8 burst_ttft_ms N=15 p50=7892.6 p95=7897.5 demoted_MB=11192 warmth_hits=10/24
+DAY42 READING card=pro6000 boot=offtick-O2 tenant_gap_ms_in_burst N=440 p50=50.6 p99=2954.2 max=3957.7 burst_ttft_ms N=16 p50=6910.9 p95=8708.6 demoted_MB=10755 warmth_hits=10/24
+DAY42 READING card=pro6000 boot=ontick-O2 tenant_gap_ms_in_burst N=276 p50=51.5 p99=9015.6 max=9016.0 burst_ttft_ms N=17 p50=11977.3 p95=14536.4 demoted_MB=9005 warmth_hits=10/24
+DAY42 READING card=pro6000 boot=ontick-nocontracts tenant_gap_ms_in_burst N=276 p50=54.1 p99=5403.1 max=5403.9 burst_ttft_ms N=17 p50=8365.2 p95=10351.5 demoted_MB=9422 warmth_hits=10/24
+DAY42 READING card=pro6000 boot=fault-d2h-delay tenant_gap_ms_in_burst N=440 p50=52.5 p99=3502.6 max=3942.0 burst_ttft_ms N=16 p50=7444.7 p95=8760.3 demoted_MB=10755 warmth_hits=10/24
+DAY42 READING card=pro6000 boot=fault-d2h-source-flip tenant_gap_ms_in_burst N=440 p50=52.5 p99=3506.6 max=3936.0 burst_ttft_ms N=16 p50=7442.0 p95=8765.6 demoted_MB=10338 warmth_hits=9/24
+DAY42 READING card=pro6000 boot=fault-sources-helper-gone tenant_gap_ms_in_burst N=440 p50=52.5 p99=3505.8 max=3932.0 burst_ttft_ms N=16 p50=7434.5 p95=8750.4 demoted_MB=6788 warmth_hits=0/24
+```
+
+- **P0: EXERCISED on all eight boots** (24 warm entries before the burst, 95 to 98 memory verdict lines).
+- **F1 PASS in both orders** (52 rows, no arm or cold differences). **F2 PASS in both orders**: `ontick` demoted on the
+  tick; `offtick` planned once or twice per boot (`plan 10 demote + 18 drop (3828MB demote budget, 0MB already coming)`),
+  submitted 10 and 22 demotes off the tick through the worker queue, and no on-tick demote ran. The 187 empty plan
+  lines of 2.2 are gone (plans 1 and 2). **F3 PASS on all eight.**
+- **F4 PASS on all three faults.** `d2h-delay` PASS; `d2h-source-flip` PASS on addendum E's reading
+  (`first_outcome_after_arm='demote failed (tier image Key plane checksum differs from it...'`); `sources-helper-gone`
+  PASS (one latch line).
+- **Readings (the price, target card).** The tenants' largest inter-token gap inside the burst: 8,932 and 9,016 ms on
+  `ontick`, 4,060 and 3,958 ms on `offtick`. Burst TTFT p50: 11,835 and 11,977 ms on `ontick` (N=17 each), 7,893 and
+  6,911 ms on `offtick` (N=15 and N=16). Demoted bytes: 9,005 MB against 11,192 and 10,755 MB. **Warmth kept: 10 of
+  24 on both arms in both orders** (2.2: 1 of 24 on `offtick`); the queue fixed the per-arrival defect. `ontick-nocontracts`
+  (today's on-tick flush without the contract route) reads 5,404 ms max gap, TTFT p50 8,365 ms, 10 of 24.
+  Faults: 10 of 24 under `d2h-delay`, 9 of 24 under `d2h-source-flip` (the flipped demote published nothing, as
+  designed), 0 of 24 under `sources-helper-gone` (the tier latched off).
+- **Admitted counts differ.** `offtick` admitted 15 and 16 of 64 against `ontick`'s 17: 49 and 48 arrivals deferred on
+  the landing (`reason=reclaim-landing`) and were refused at the defer budget (`reason=reclaim-landing-timeout`), where
+  `ontick` refused 47 at once. The queue lands one demote at a time, so fewer bytes were free inside the budget than
+  the on-tick flush freed in one tick. A reading, not a clause.
+- **Time to the 429 (a local reading of the mirrored client rows, not registered):** `ontick` 15.9 and 16.0 s p50
+  (N=47), `offtick` 9.4 and 11.2 s p50 (N=49 and 48), every `Retry-After: 1`
+  (`pro-single-day42/box-e/time-to-429-local.txt`). The refused arrivals wait less on the off-tick arm, not more.
+
+Nothing here moves a default: `MEMRA_ADMIT_RECLAIM_OFFTICK` stays default-OFF (decide-by 2026-10-09) and the verdict is
+the owner's. The 5090 half runs from `rtx5090-queue-f.sh` on `target/day42e`.

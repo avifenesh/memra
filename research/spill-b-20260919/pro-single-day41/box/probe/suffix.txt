@@ -1,0 +1,52 @@
+/longdepth-20260809/RESULTS.md)).
+- Explicit `max_tokens` is enforced exactly: token events, usage and scheduler accounting
+  follow visible token IDs rather than speculative rounds
+  ([receipt](../research/honesty-20260809/RESULTS.md)).
+- Plain-decode session affinity checkpoints and resumes rewritten conversation histories,
+  so later turns prime the new suffix instead of an ever-growing history
+  ([receipt](../research/affinity-20260809/RESULTS.md)).
+- New admissions can end an in-flight speculative burst at its next round boundary instead of
+  waiting for the whole burst; request-sized KV allocation remains VRAM-aware
+  ([receipt](../research/admission-20260806/VERDICT.md)).
+- Cache boundaries were hardened: release builds retire prefix pins and client cache salts are
+  bounded and validated ([receipt](../research/pinfix-20260809/RESULTS.md)).
+- `/v1/models` advertises the parameters each loaded model actually supports
+  ([gateway contract](#gateway-listing-surface)), and as of v0.86.3 renders
+  pricing from the same `MEMRA_MODEL_METADATA` entry the request ledger bills from
+  (cache prices under `input_cache_read`/`input_cache_write`) plus the declared input
+  modalities in the modality string (`text+image+video->text`) — previously a priced,
+  vision-serving endpoint reported a hardcoded `"0"` text-only stub.
+- v0.87.0 adds the router-marketplace provider contract (v2) to the same catalog:
+  `contract_version`, a `[provider]` metadata block (status URL, contacts, regions) with the
+  server-truth error contract (429/503 + `Retry-After`, `insufficient_balance` quota code,
+  `x-request-id` echo), per-model lifecycle and reliability-timeout blocks, capability
+  booleans, and per-1M-token decimal-string prices computed by exact decimal shift from the
+  billed per-token metadata.
+- Step-3.7-Flash PP-2 decodes in one numeric class at every batch width: a greedy request
+  returns the same bytes whether it decodes solo, joins a batch mid-generation, or starts
+  batched. The transition matrix that proved and closed the load-history divergence is the
+  receipt ([isolation](../research/p0iso-20260810/RESULTS.md),
+  [fix](../research/b1fix-20260810/RESULTS.md)).
+- Grouped expert prefill (`MEMRA_MOE_GROUPED=1`) looked promotable on two-card Step serving in August
+  2026 — 4k streaming TTFT 10.96 s -> 7.26 s, N=5 per arm
+  ([receipt](../research/grouped-serve-20260810/RESULTS.md)) — but a re-sweep on an RTX PRO 6000 pair
+  **withdrew it**: the arm is slower there (2,687.5 vs 8,193.7 tok/s resident-KAT transfer, 0/5 paired
+  wins) and it fails the Q35 mixed c=4 exact-token gate, truncating every request in the cell
+  ([receipt](../research/groupedregate-20260813/RESULTS.md)). It stays off by default and should not be
+  enabled; see `MEMRA_MOE_GROUPED` in [docs/FLAGS.md](FLAGS.md).
+- An opt-in SWA ring (`MEMRA_SWA_RING=1`) right-sizes sliding-window KV for Step sessions:
+  the 262k session KV component drops 3.6x — measured 2 -> 12 concurrent 262k sessions
+  before the first defer; lapped checkpoints decline safely
+  ([receipt](../research/kv256-20260809/RESULTS.md),
+  [flag-on validation](../research/ringval-20260810/RESULTS.md)).
+- A B=1 decode specialization for Step models recovers most of the one-class contract's
+  cost: +4.4% sustained c=1 decode with byte-identical output (the batched walk was issuing
+  90 arithmetic-free device copies per token at B=1)
+  ([receipt](../research/eagerpar-20260810/RESULTS.md)).
+- A host-staged PP boundary fallback (`MEMRA_PP_HOST_BOUNCE=1`, default off) serves
+  byte-correct on hosts whose GPU peer-copy path reports success but does not preserve
+  bytes — a failure mode a capability flag or bandwidth test does not reveal. Peer paths
+  should be byte-probed at provisioning
+  ([receipt](../research/hostbounce-20260810/RESULTS.md)).
+- Graceful shutdown joins the GPU worker thread before exit, closing a restart race where
+  a new server could boot while the old worker still held device state.

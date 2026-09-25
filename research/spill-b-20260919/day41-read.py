@@ -152,9 +152,12 @@ for route in ("plain", "spec"):
         tt = [x["ttft_ms"] for x in v if x["ttft_ms"] is not None]
         cached = [x.get("cached_tokens") or 0 for x in v]
         t = log(n)
+        # DAY41 2.x: the box's read crashed here (a raw-string regex inside the f-string read as a
+        # bad character range on python 3.12); the patterns are compiled outside it, no reading changes.
+        hit_lines = len(re.findall(r"\[prefix-cache\] hit", t))
+        fanout_lines = len(re.findall(r"fanout", t))
         say(f"DAY41 FX card={card} boot={n} ok={len(v)} ttft_ms p50={pct(tt, .5):.1f} p95={pct(tt, .95):.1f} "
-            f"cached_tokens_sum={sum(cached)} prefix_hit_lines={len(re.findall(r'\\[prefix-cache\\] hit', t))} "
-            f"fanout_lines={len(re.findall(r'fanout', t))}")
+            f"cached_tokens_sum={sum(cached)} prefix_hit_lines={hit_lines} fanout_lines={fanout_lines}")
 
 with open(os.path.join(root, "SUMMARY.txt"), "w") as fh:
     fh.write("\n".join(out) + "\n")

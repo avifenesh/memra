@@ -1,0 +1,70 @@
+1790351632350 [server] build: memra-0.138.0-adf031041997 (id: source-tree, git: 99812fe38fd4)
+1790351632350 [server] starting; models config = [("q38", "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1790351632351 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1790351632351 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1790351632551 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1790351632619 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1790351632619 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1790351632619 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1790351632619 [worker] loading model "q38" <- /root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1790351632657 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1790351637732 [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+1790351637732 [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1790351637732 [route-contract] model="q38" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1790351637732 [worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1790351637733 [prefix-cache] on: budget 15883MB (15883042816 B, derived: 2 x 7941521408 B max entry for model "q38" at served ctx 262144 (from checkpoint; MEMRA_CTX unset), requested 15883042816 B; boot driver free 86518267904 B, post-reserve clamp 84907655168 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+1790351637733 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1790351637733 [admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+1790351637733 [admit-predict] shadow armed: budget_bytes=69034831872 budget_src=derived(effective_free_bytes=86528487424 - prefix_cache_budget_bytes=15883042816 - admission_reserve_bytes=1610612736) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+1790351637733 [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1790351637733 [kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+1790351637733 [server] worker ready; serving models: ["q38"]
+1790351637734 [server] listening on http://127.0.0.1:18526
+1790351638053 [meter] admit id=cmpl-4ca25c3b09a584e30fe11a19fea019f6 tenant=default lane=interactive model="q38"
+1790351638053 [admission] request cost: model="q38" ctx=4240 path=plain = 29696 B/token x ctx + 1964MB prefill-workspace + 0MB fixed = 2090MB
+1790351638053 [admit-predict] id=cmpl-4ca25c3b09a584e30fe11a19fea019f6 tenant="fx" model="q38" verdict=admit reason=maxtok-fallback prompt=4160 predicted_completion=16 kv_hat=2088493056 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=69034831872 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790351638053 [meter] admit id=cmpl-ce1d3553fee3d191623b572beb194d49 tenant=default lane=interactive model="q38"
+1790351638053 [meter] admit id=cmpl-d75f22664e65d018dedf7c6b020796d8 tenant=default lane=interactive model="q38"
+1790351638055 [spec-k] model="q38" tenant="fx" K=0 source=concurrency prompt=4160 cached=0 lcp=0 active=1 wave=3 placement=single-or-non-pp2
+1790351638055 [admission] fixed residual high-water: model="q38" 316MB (observed 440MB at ctx 4184 path=plain)
+1790351638055 [admission] request cost: model="q38" ctx=4240 path=plain = 29696 B/token x ctx + 1964MB prefill-workspace + 316MB fixed = 2406MB
+1790351638055 [admit-predict] id=cmpl-ce1d3553fee3d191623b572beb194d49 tenant="fx" model="q38" verdict=admit reason=maxtok-fallback prompt=4160 predicted_completion=16 kv_hat=2404147028 booked_bytes=2088493056 booked_real=2090156032 inflight=1 cap=64 budget_bytes=69034831872 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790351638056 [meter] admit id=cmpl-13e4e5045cea4774127c150424ca6a94 tenant=default lane=interactive model="q38"
+1790351638056 [meter] admit id=cmpl-554a535a743e9ffc7fade5fbb1519704 tenant=default lane=interactive model="q38"
+1790351638057 [meter] admit id=cmpl-c0d0378a3bd1059380cc3acaf500abbe tenant=default lane=interactive model="q38"
+1790351638057 [spec-k] model="q38" tenant="fx" K=0 source=concurrency prompt=4160 cached=0 lcp=0 active=2 wave=6 placement=single-or-non-pp2
+1790351638057 [admit-predict] id=cmpl-d75f22664e65d018dedf7c6b020796d8 tenant="fx" model="q38" verdict=admit reason=maxtok-fallback prompt=4160 predicted_completion=16 kv_hat=2404147028 booked_bytes=4492640084 booked_real=4495966036 inflight=2 cap=64 budget_bytes=69034831872 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790351638057 [meter] admit id=cmpl-bfc436a3b66c445da48ccfb940ce90b5 tenant=default lane=interactive model="q38"
+1790351638057 [meter] admit id=cmpl-69033b0e04acb59676cadb13c0ee9ee8 tenant=default lane=interactive model="q38"
+1790351638059 [spec-k] model="q38" tenant="fx" K=0 source=concurrency prompt=4160 cached=0 lcp=0 active=3 wave=8 placement=single-or-non-pp2
+1790351638370 [prefix-cache] insert (in-batch fanout): 1024 tokens, 187.3MB (resident 187.3MB / 15883MB, model q38, ns "fx")
+1790351638370 [prefix-dedup] B=3 prefix=1024 saved=2048 hash=99159bc8203a2def in 310.9ms retained=true (model q38, ns "fx")
+1790351638370 [admit-predict] id=cmpl-13e4e5045cea4774127c150424ca6a94 tenant="fx" model="q38" verdict=admit reason=maxtok-fallback prompt=4160 predicted_completion=16 kv_hat=2404147028 booked_bytes=6896787112 booked_real=6901776040 inflight=3 cap=64 budget_bytes=69034831872 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790351638371 [prefix-cache] hit: 1024 of 4160 prompt tokens from cache (model q38)
+1790351638371 [spec-k] model="q38" tenant="fx" K=0 source=concurrency prompt=4160 cached=1024 lcp=1024 active=4 wave=8 placement=single-or-non-pp2
+1790351638371 [prefix-cache] source lease released after restore fence (entry 1024 tokens, model q38)
+1790351638371 [admit-predict] id=cmpl-554a535a743e9ffc7fade5fbb1519704 tenant="fx" model="q38" verdict=admit reason=maxtok-fallback prompt=4160 predicted_completion=16 kv_hat=2404147028 booked_bytes=9300934140 booked_real=9307586044 inflight=4 cap=64 budget_bytes=69034831872 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790351638374 [prefix-cache] hit: 1024 of 4160 prompt tokens from cache (model q38)
+1790351638374 [spec-k] model="q38" tenant="fx" K=0 source=concurrency prompt=4160 cached=1024 lcp=1024 active=5 wave=8 placement=single-or-non-pp2
+1790351638374 [prefix-cache] source lease released after restore fence (entry 1024 tokens, model q38)
+1790351638374 [admit-predict] id=cmpl-c0d0378a3bd1059380cc3acaf500abbe tenant="fx" model="q38" verdict=admit reason=maxtok-fallback prompt=4160 predicted_completion=16 kv_hat=2404147028 booked_bytes=11705081168 booked_real=11713396048 inflight=5 cap=64 budget_bytes=69034831872 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790351638376 [prefix-cache] hit: 1024 of 4160 prompt tokens from cache (model q38)
+1790351638376 [spec-k] model="q38" tenant="fx" K=0 source=concurrency prompt=4160 cached=1024 lcp=1024 active=6 wave=8 placement=single-or-non-pp2
+1790351638376 [prefix-cache] source lease released after restore fence (entry 1024 tokens, model q38)
+1790351638376 [admit-predict] id=cmpl-bfc436a3b66c445da48ccfb940ce90b5 tenant="fx" model="q38" verdict=admit reason=maxtok-fallback prompt=4160 predicted_completion=16 kv_hat=2404147028 booked_bytes=14109228196 booked_real=14119206052 inflight=6 cap=64 budget_bytes=69034831872 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790351638378 [prefix-cache] hit: 1024 of 4160 prompt tokens from cache (model q38)
+1790351638378 [spec-k] model="q38" tenant="fx" K=0 source=concurrency prompt=4160 cached=1024 lcp=1024 active=7 wave=8 placement=single-or-non-pp2
+1790351638378 [prefix-cache] source lease released after restore fence (entry 1024 tokens, model q38)
+1790351638378 [admit-predict] id=cmpl-69033b0e04acb59676cadb13c0ee9ee8 tenant="fx" model="q38" verdict=admit reason=maxtok-fallback prompt=4160 predicted_completion=16 kv_hat=2404147028 booked_bytes=16513375224 booked_real=16525016056 inflight=7 cap=64 budget_bytes=69034831872 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790351638380 [prefix-cache] hit: 1024 of 4160 prompt tokens from cache (model q38)
+1790351638380 [spec-k] model="q38" tenant="fx" K=0 source=concurrency prompt=4160 cached=1024 lcp=1024 active=8 wave=8 placement=single-or-non-pp2
+1790351638381 [prefix-cache] source lease released after restore fence (entry 1024 tokens, model q38)
+1790351644782 [prefix-cache] insert (seed): 4160 tokens, 280.4MB (resident 467.7MB / 15883MB, model q38, ns "fx")
+1790351644848 [prefix-cache] insert (seed): 4160 tokens, 280.4MB (resident 748.2MB / 15883MB, model q38, ns "fx")
+1790351644916 [prefix-cache] insert (seed): 4160 tokens, 280.4MB (resident 1028.6MB / 15883MB, model q38, ns "fx")
+1790351644983 [prefix-cache] insert (seed): 4160 tokens, 280.4MB (resident 1309.0MB / 15883MB, model q38, ns "fx")
+1790351645050 [prefix-cache] insert (seed): 4160 tokens, 280.4MB (resident 1589.4MB / 15883MB, model q38, ns "fx")
+1790351645052 [fa-pool] grow #0 dev=0 o_len 0 -> 3244032 ml_len 0 -> 12672 (retired kept, zero=false)
+1790351645361 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1790351645361 [server] drain complete in 0.0s; exiting
+1790351645423 [server] GPU worker shutdown complete

@@ -1,0 +1,14 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 layers)
+[fa-pool] grow #0 dev=0 o_len 0 -> 595968 ml_len 0 -> 2328 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 595968 -> 1191936 ml_len 2328 -> 4656 (retired kept, zero=false)
+primepath: T=6464 (prompt 6144 + hist 256 + suffix 64) chat=false splits=[] steps=48 structured-row=0.5 structured-margin=0.5
+arm mono2: logits EXACT | rows_diff 0/6464 first -1 | row_maxdiff p50 0.000e0 p99 0.000e0 max 0.000e0 | final_logit_maxdiff 0.000e0 | stream identical
+verdict mono2: EXACT
+arm hist: logits DIFFER | rows_diff n/a (decode-history arm) | row_maxdiff p50 0.000e0 p99 0.000e0 max 0.000e0 | final_logit_maxdiff 2.884e-1 | flip step 11: margin_ref 4.679e-2 (p4.1 of 49 ref margins) margin_arm 3.299e-2 delta_at_ids 7.699e-2/2.789e-3
+verdict hist: NEAR-TIE-CLASS
+cost hist: suffix_rows 65 wall_ms 666.2 (prime + 48 greedy steps)
+arm rewind: logits EXACT | rows_diff n/a (decode-history arm) | row_maxdiff p50 0.000e0 p99 0.000e0 max 0.000e0 | final_logit_maxdiff 0.000e0 | stream identical
+verdict rewind: EXACT
+cost rewind: checkpoint 6112 suffix_rows 352 (re-primed 288 over hist) wall_ms 697.8 (prime + 48 greedy steps)
+exit=0

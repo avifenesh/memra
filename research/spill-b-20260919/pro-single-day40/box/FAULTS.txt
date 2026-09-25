@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/root/wt-b/research/spill-b-20260919/day31-faults.py", line 19, in <module>
+    gzip.open(lp + ".gz", "rt", encoding="utf-8", errors="replace")
+  File "/usr/lib/python3.12/gzip.py", line 61, in open
+    binary_file = GzipFile(filename, gz_mode, compresslevel)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/gzip.py", line 192, in __init__
+    fileobj = self.myfileobj = builtins.open(filename, mode or 'rb')
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/root/spill-receipts/b-day40/boots/server.log.gz'
