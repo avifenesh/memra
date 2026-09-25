@@ -142,8 +142,12 @@ the idle loop drips it at a 1 ms wait). So B2 needs one instrument and one drive
     `MEMRA_MAX_SESSIONS=4`, `MEMRA_PREFIX_CACHE_MB=1024` (device budget small so entries demote),
     `MEMRA_KV_HOST_MB=16384`, `MEMRA_KV_HOST_HANDOFF=<P>/b2/handoff.bin`, greedy requests
     (`max_tokens=48`, `temperature=0`);
-  - prompts: `m1-prereg/b2-prompts.jsonl`, 96 distinct deterministic synthetic prompts of about
-    7,000 tokens, hash in the file's manifest; probes are prompts 1 to 4 plus a fixed suffix;
+  - prompts: 128 distinct deterministic synthetic prompts of 6,500 plain words, generated on the
+    box by `m1-b2-prompts.py` and checked against `m1-prereg/b2-prompts.manifest.json`; probes are
+    prompts 1 to 4 plus a fixed suffix. (Amended the same day, before any run: the first
+    registration said 96 prompts of about 7,000 tokens; the artifact's own tokenizer measured
+    4,531 tokens for 4,500 words, too little to reach 8 GiB with margin. 6,500 words measure
+    6,526 to 6,535 tokens with the probe suffix, inside the 8,144-token budget);
   - reference: one stock `memra-server` boot with `MEMRA_KV_HOST_MB=0` and no handoff gives the
     probes' cold texts;
   - cycle (N = 5 per size, sizes 1 GiB and 8 GiB of `prefix_host_bytes` plus the drain-demoted
