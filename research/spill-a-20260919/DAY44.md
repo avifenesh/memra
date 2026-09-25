@@ -41,3 +41,34 @@ core, 14.28 GB/s there); T=12 well inside it; (a) holds; (b) holds with a smalle
 already fits (the day-35 5090 shape).
 
 **Budget.** 0.2 agent-day to prepare (this commit); about 2.5 hours of card time.
+
+## 2. The 9950X-class host, as it ran (`pro-single-t9950/box/`, the S2 sitting's box)
+
+- Host (`host-shape.txt`): `Model name: AMD Ryzen 9 9950X3D2 16-Core Processor` (the X3D2 part of the class; recorded as
+  it reads), 16 cores, 2 threads per core, 32 CPUs (`available_parallelism=30` in the probe), 124 GB; one RTX PRO 6000
+  Blackwell Workstation Edition. The build's host-class check passed.
+- Build attempt 1 (in `run-all.sh`) refused the hk patch (`rc=2 (hk patch)`: `git apply -3` merges through the index,
+  which the arms' crate diff had not been applied to; the build script fixed in `9b3c4e82c`, attempt 1's logs in
+  `build-attempt1/`); attempt 2 (in `run-all-2.sh`) `rc=0`: ft `167743d0c3e7ecc4..`, f1 `0521e322ee66a1cc..`, hk
+  `6bd4267508077dcd..`. Mirrored 738 of 738 files against the box's manifest, mismatched 0.
+- **The survey and section 1's rule** (`fill/survey.log`, every run bitwise): 27B `threads=1 .. median=6.429`, `threads=2
+  .. 5.310`, `threads=4 .. 4.757`, `threads=8 .. 4.793`, `threads=12 .. 4.591 .. gbps=34.18`; `SPANS shape=27B .. median=3.045`;
+  9B `threads=1 .. 1.069`, `threads=12 .. 0.679`. The budget is 13.1 - 3.045 - 1.0 = 9.06 ms: every T fits, T=1
+  included (BOX7's T=1 read 10.985). **T alone is picked for this host class.**
+- **(a) and (b), verbatim** (`item3/reading-day39-target.log`, 40 boots): `DAY39 T CLAUSE (a) ft steady promotes N=90
+  polls==1 90 rule N=90 and >=80 -> PASS`; `DAY39 T CLAUSE (b) order=o1 metric=e2e hk=114.39 ft=102.16 hk-minus-ft=+12.23
+  pair-noise=0.64 .. -> CLEARS`, `metric=pin hk=25.70 ft=13.50 hk-minus-ft=+12.20 pair-noise=0.10 .. -> CLEARS`, `order=o2
+  metric=e2e .. hk-minus-ft=+12.18 pair-noise=0.23 .. -> CLEARS`, `metric=pin .. +12.20 .. -> CLEARS`; **`DAY39 T TARGET
+  (a) and (b) -> PASS`**. Readings: F1 against FT `f1-minus-ft=-0.00` and `-0.11` ms e2e, `+0.00` PIN (T costs nothing
+  and gains nothing where one thread already fits); `on_minus_off` -3.0 to -3.2 ms for ft and f1, +9.1 to +9.2 for hk.
+- **(c)**: the gates on ft's binary with the arms' tree's tools, each `.exit` 0 (identity x4, failure x2, the fault gate
+  default and plain, twin x2, the hit gate x2). The unit cells' attempt 1 read `server-cpu=101`: one failure,
+  `build_identity_tests::build_id_is_rederivable_from_the_source_tree` (`baked fingerprint disagrees with a re-derivation
+  over 679 files`), because ft's test binary was built on the arms' crates and run in the tip's working tree, whose
+  crates are S3's; the test re-derives the id from the working tree by design. Attempt 2 ran the same cell with the arms'
+  crates checked out (`unit-attempt2-tree.txt`: `8 files changed`, then the tree back, `0` dirty): `unit-cells
+  engine-parallel=0 engine-serial=0 door=0 server-cpu=0 engine-cpu=0` (`911 passed`). Attempt 1 kept as
+  `unit-attempt1-tip-tree/`.
+
+**Decision, by DAY39 section 5's rule for this host class: (a), (b) and (c) pass; T is kept for the 9950X class and
+item 3 closes.**

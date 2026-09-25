@@ -60,8 +60,9 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Status: **closed for the slower-CPU host class** (DAY39 section 7: BOX7, `polls==1 90` of 90, HK - FT +12.64 /
   +12.55 ms e2e and +12.70 ms PIN against pair noise 0.10 to 0.23, every gate green; the 5090's (e) PASS, section 6).
   Design T is `0153316d4` (the fill split across `min(12, cpus / 2)` threads), the door's fill program (ruling 54).
-  Owed: the 9950X-class host reading (the same cell on that host class; it needs a 9950X-class target host):
-  **pre-registered** (DAY44 section 1; sitting `pro-single-t9950/`, which checks the host class first).
+  The 9950X-class reading (DAY44 section 2, an `AMD Ryzen 9 9950X3D2` host): `DAY39 T TARGET (a) and (b) -> PASS`, the
+  gates and the unit cells green (attempt 2 on the arms' tree); every T fits there, T=1 included. **Item 3 closed for
+  both host classes.**
 
 ### 4. The strong-form receipt of the recurrent spans (both directions)
 

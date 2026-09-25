@@ -1,0 +1,7 @@
+DAY42 READING mode=promote order=o1 arm=g4 e2e N=50 median=102.29 min=101.84 max=103.76 | wall N=50 median=150.30 min=149.80 max=175.30 | copy-settle N=50 median=0.23 min=0.21 max=0.30 | owner-held N=50 median=1.08 min=0.98 max=1.64 | pin N=45 median=13.50 min=13.40 max=15.40 | steady polls [1] (counts [45])
+DAY42 READING mode=promote order=o1 arm=s2 e2e N=50 median=102.54 min=102.00 max=116.46 | wall N=50 median=150.95 min=150.50 max=176.90 | copy-settle N=50 median=0.26 min=0.25 max=0.43 | owner-held N=50 median=1.13 min=1.09 max=1.72 | pin N=45 median=13.60 min=13.50 max=26.30 | steady polls [1, 2] (counts [38, 7])
+DAY42 READING mode=promote order=o2 arm=g4 e2e N=50 median=102.30 min=101.75 max=104.13 | wall N=50 median=150.30 min=149.80 max=175.30 | copy-settle N=50 median=0.23 min=0.21 max=0.25 | owner-held N=50 median=1.08 min=1.05 max=1.59 | pin N=45 median=13.50 min=13.40 max=14.10 | steady polls [1] (counts [45])
+DAY42 READING mode=promote order=o2 arm=s2 e2e N=50 median=102.53 min=101.99 max=114.51 | wall N=50 median=150.90 min=150.50 max=175.80 | copy-settle N=50 median=0.26 min=0.25 max=0.28 | owner-held N=50 median=1.12 min=1.08 max=1.71 | pin N=45 median=13.60 min=13.50 max=25.90 | steady polls [1, 2] (counts [42, 3])
+DAY42 S2 D order=o1 pin g4=13.50 s2=13.60 s2-minus-g4=+0.10 rule <=+1.0 | e2e g4=102.29 s2=102.54 s2-minus-g4=+0.26 rule <=+1.0 -> PASS
+DAY42 S2 D order=o2 pin g4=13.50 s2=13.60 s2-minus-g4=+0.10 rule <=+1.0 | e2e g4=102.30 s2=102.53 s2-minus-g4=+0.23 rule <=+1.0 -> PASS
+DAY42 S2 PROMOTE -> PASS
