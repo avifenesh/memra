@@ -102,6 +102,12 @@ verdict stands as `none_tracks`, and no bound moves.
   register chain, an L1 chase and an L2 chase (each counted in core cycles) with DRAM latency (counted in
   nanoseconds) unchanged is what a lower effective core clock gives: about 1.4 times, near 4.1 GHz for a core the
   cpufreq sysfs reported at about 5.72 GHz in DAY66's cell.
+  **Corrected in `DAY70.md` section 2:** the DRAM chase runs about a second after the compute chain, when the slow
+  state is over in most slow boots; in the two boots whose slow state lasted through it (`o1-i15-r1`, `o2-i15-r1`)
+  `dram_ns` reads 150.4 and 150.3 against REF's 87.8 to 92.6, so DRAM latency is not unchanged in the slow state and
+  this bullet's "lower effective core clock" reading does not follow. The next bullet's "about 0.4 s later" is also
+  wrong: the probe line prints 1.56 s after the window line in `o1-i15-r1`, so `compute2_ns` runs about 1.5 s after
+  the first chain.
 - `compute2_ns`, the same chain about 0.4 s later (after the DRAM chase), reads 1.049 or 1.050 in 9 of the 10 slow
   boots and 1.209 in the tenth (`o1-i15-r1`); in the fast boot `o2-i15-r1` it stays 1.464. The slow state ends during the probe in most slow
   boots: it is a transient of the core, not a property fixed for the process. It also appeared after a fast decode
