@@ -19,7 +19,7 @@ def main():
     for v in visits:
         if v["arm"] not in arms:
             arms.append(v["arm"])
-    print("| Arm | Scored | Decode tok/s median (min to max) | Device read GB per visit | Artifact resident at end | Worker read s | Owner wait s | Verdict vs worker16 |")
+    print("| Arm | Scored | Decode tok/s median (min to max) | Device read GB per visit | Artifact resident at end | Read s (worker or blocking) | Owner wait s | Verdict vs worker16 |")
     print("|---|---|---|---|---|---|---|---|")
     for arm in arms:
         vs = [v for v in visits if v["arm"] == arm]
@@ -28,7 +28,7 @@ def main():
         dev = [v["contamination"]["device_read_bytes"] / 1e9 for v in sc if v.get("contamination")]
         res = [v["residency_end"][0] / v["residency_end"][1] for v in sc if v["residency_end"][1]]
         drops = [v["parsed"]["drop"] for v in sc if v["parsed"].get("drop")]
-        wr = [int(x[8]) / 1e9 for x in drops]
+        wr = [(int(x[8]) or int(x[9])) / 1e9 for x in drops]  # worker read, or blocking demand read
         wt = [int(x[10]) / 1e9 for x in drops]
         verdict = (summary.get("arms", {}).get(arm) or {})
         vtxt = "baseline" if arm == "worker16" else (
