@@ -201,6 +201,9 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Acceptance: none registered (the owner's hold priced at a host eviction with known copy-stream and receipt-stream work
   queued, then a design that frees no pinned memory on the serving path, for example the leases returned to a pool the
   governor still charges).
+- Also read (DAY51 section 3 reading 5, BOX22, a 9950X host, the base arm): each publication that replaces a host
+  entry of the same prompt holds the owner 9.36 to 9.39 ms in `take-back bind and publish` (the replaced entry's heap
+  payloads and 32 pinned leases freed on the owner thread) in the chain cell's shape.
 - Status: open.
 
 ### 15. The D2H receipt kernel's price at long entries (found by DAY38 section 17)
@@ -229,7 +232,7 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 
 ### Order of work from day 51 (the lead's order after integ62)
 
-Item 17 first (item 8's remedy), then items 10 to 14 (item 10 per publisher; item 19 designed with item 14, one lease
+Item 17 first (item 8's remedy; P refuted on day 51, its revision owed), then items 10 to 14 (item 10 per publisher; item 19 designed with item 14, one lease
 design for both directions), then items 18 and 20; the three 5090 cells (item 4's and item 6's halves, item 16) when
 the card is reset.
 
@@ -240,8 +243,12 @@ the card is reset.
   DAY49 section 1 ("the improvement that removes the first touch ... is pre-registered as its own design before its
   code, with its own price clauses").
 - Acceptance: DAY51 section 1, (a) to (g).
-- Status: **built** (DAY51 sections 1 and 2: design P, a pre-touched payload reserve on the hash helper, `d82738c14`;
-  CPU cells green); the target sitting `pro-single-p/` prepared, NEED TARGET CARD (the 9950X class).
+- Status: **open, design P refuted and reverted** (`a089a5c25`). P (DAY51, `d82738c14`) passed (a) to (f) on the
+  target card (BOX22, a 9950X host: the copy -15.2 ms with no faults, the publication -12.4 ms, one poll earlier) and
+  FAILED (g) in both orders (DAY51 section 3: `DAY51 P (g) cell=chain order=o1 chain p-minus-base=+1.40 rule <=+1.00
+  .. -> FAIL`, o2 +1.54); the chain's extra millisecond sits in the publication's `take-back bind and publish` segment
+  (+0.89 / +1.07 ms), unplaced within it. Owed: the revision, pre-registered anew before its code (a reserve that
+  refills only while the copy would fault, after a split of the publication segment places the chain's millisecond).
 
 ### 18. S4's H2D destination digests ride the promote's landing (found by DAY50)
 
@@ -257,7 +264,8 @@ the card is reset.
 - Source: DAY49 section 3 readings 2 and 3: a long (5122-token) demote's pre-submit holds the owner 19.66 ms, 19.26 of
   it allocating its 32 pinned KV destinations (151.1 MB, 36896 minor faults) fresh on every demote while no entry frees;
   the first demote of every context holds it about 20 ms allocating the staging set (`spans 19.74` and `20.43 ms`).
-  Both are the tenant's tick.
+  Both are the tenant's tick. On BOX22 (a 9950X host, DAY51 section 3 reading 5) the chain's long pre-submit reads 25.8
+  to 26.0 ms, 25.3 to 25.5 of it in the leases.
 - Acceptance: none registered (the owner's hold priced at a long demote and at the first demote, then a design that
   allocates no pinned memory on the owner thread's serving path, pre-registered with item 14's: one lease design for
   both directions).
