@@ -1626,6 +1626,10 @@ pub struct Request {
     /// reset the budget forever and bound nothing. `None` off the door and until the first
     /// memory defer.
     pub(crate) memory_defer_since: Option<Instant>,
+    /// WP-B day 42 (`MEMRA_ADMIT_RECLAIM_OFFTICK`): this arrival's off-tick reclaim plan, made at
+    /// its first reclaim pass (`research/spill-b-20260919/DAY42.md` 1.2); `None` otherwise and on
+    /// a park replay (a replayed arrival plans again).
+    pub(crate) reclaim_offtick: Option<ReclaimOffTick>,
     /// Optional provider-declared prompt ceiling. The HTTP layer copies this from the
     /// model metadata; the worker enforces it after rendering/tokenization, before cache
     /// lookup, admission accounting, or any GPU work.
@@ -14344,6 +14348,174 @@ fn host_demote_prefix_entry(engine: &Engine, host: &mut HostPrefixCache, mut dea
     // Otherwise `dead` drops here whatever happened: it was already evicted from the device tier.
 }
 
+/// MEMRA_ADMIT_RECLAIM_OFFTICK (default unset = OFF; WP-B day 42, O12): under
+/// `MEMRA_ADMIT_BY_MEMORY` and the host tier's contracts door, the admission reclaim flush drops
+/// its drop set at once and demotes its demote set off the tick, one landing at a time, and the
+/// arrival defers on the landings within the door's defer budget
+/// (`research/spill-b-20260919/DAY42.md` 1.2). Unset, today's on-tick flush runs.
+fn admit_reclaim_offtick_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        let on = std::env::var("MEMRA_ADMIT_RECLAIM_OFFTICK").as_deref() == Ok("1");
+        if on {
+            eprintln!(
+                "[admit-mem] MEMRA_ADMIT_RECLAIM_OFFTICK=1: the reclaim flush demotes off the tick \
+                 and the arrival waits on the landings (DAY42 door; needs MEMRA_ADMIT_BY_MEMORY=1 \
+                 and MEMRA_KV_HOST_CONTRACTS=1)"
+            );
+        }
+        on
+    })
+}
+
+/// One arrival's off-tick reclaim plan (DAY42 1.2): the demote set's entry ids, oldest first,
+/// not yet submitted, and the counts its receipts print.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReclaimOffTick {
+    demote_ids: std::collections::VecDeque<u64>,
+    planned: usize,
+    submitted: usize,
+}
+
+/// The plan, pure over the evictable entries oldest first as `(id, bytes)`: today's demote rule
+/// (`evict_all_demoting` demotes while the bytes demoted so far are under the budget) picks the
+/// demote set, and every other evictable entry is the drop set today's flush also drops.
+fn reclaim_offtick_plan(oldest_first: &[(u64, u64)], budget: u64) -> (Vec<u64>, Vec<u64>) {
+    let (mut demote, mut drop, mut planned) = (Vec::new(), Vec::new(), 0u64);
+    for &(id, bytes) in oldest_first {
+        if planned < budget {
+            demote.push(id);
+            planned = planned.saturating_add(bytes);
+        } else {
+            drop.push(id);
+        }
+    }
+    (demote, drop)
+}
+
+/// One admission pass's step for an arrival with a plan (DAY42 1.2), pure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReclaimStep {
+    /// It fits: admit now; the plan's unsubmitted entries stay resident.
+    Admit,
+    /// The demote slot is free and the plan has entries: submit the next one.
+    Submit,
+    /// Short, a landing is in flight (the slot is held), inside the defer budget: wait.
+    Wait,
+    /// Short and past the defer budget while a landing is in flight: the typed refusal.
+    Refuse,
+    /// Short, the slot free and the plan empty: the ladder continues as today.
+    Exhausted,
+}
+
+fn reclaim_offtick_step(
+    fits: bool,
+    slot_busy: bool,
+    plan_left: usize,
+    waited_ms: u64,
+    defer_budget_ms: u64,
+) -> ReclaimStep {
+    if fits {
+        ReclaimStep::Admit
+    } else if slot_busy {
+        if defer_budget_ms > 0 && waited_ms >= defer_budget_ms {
+            ReclaimStep::Refuse
+        } else {
+            ReclaimStep::Wait
+        }
+    } else if plan_left > 0 {
+        ReclaimStep::Submit
+    } else {
+        ReclaimStep::Exhausted
+    }
+}
+
+/// Where an evictable entry with `id` sits, if it is still evictable.
+fn px_find_evictable(px: &PrefixCache, id: u64) -> Option<(PoolKey, usize)> {
+    px.lru
+        .values()
+        .find(|(key, i)| {
+            px.entries
+                .get(key)
+                .and_then(|row| row.get(*i))
+                .is_some_and(|e| e.id == id)
+        })
+        .cloned()
+}
+
+/// The off-tick flush's pass for one arrival (DAY42 1.2): at the first pass the plan is made and
+/// the drop set removed; at every pass, when the tier's demote slot is free and the plan has
+/// entries, the next entry leaves the device index on the sink's off-tick route (a refusal drops
+/// it and the next is tried). Returns the entries removed from the device index this pass.
+fn reclaim_offtick_pass(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    req: &mut Request,
+    budget: u64,
+) -> usize {
+    let mut removed = 0usize;
+    if req.reclaim_offtick.is_none() {
+        let oldest: Vec<(u64, u64)> = px
+            .lru
+            .values()
+            .filter_map(|(key, i)| px.entries.get(key).and_then(|row| row.get(*i)))
+            .map(|e| (e.id, e.bytes as u64))
+            .collect();
+        let (demote, drop) = reclaim_offtick_plan(&oldest, budget);
+        for id in &drop {
+            if let Some((key, i)) = px_find_evictable(px, *id)
+                && px.remove_at(&key, i).is_some()
+            {
+                removed += 1;
+            }
+        }
+        eprintln!(
+            "[admit-mem] reclaim off-tick: plan {} demote + {} drop ({:.0}MB demote budget) for {}",
+            demote.len(),
+            drop.len(),
+            budget as f64 / 1e6,
+            req.request_id
+        );
+        req.reclaim_offtick = Some(ReclaimOffTick {
+            planned: demote.len(),
+            demote_ids: demote.into(),
+            submitted: 0,
+        });
+    }
+    let plan = req
+        .reclaim_offtick
+        .as_mut()
+        .expect("the plan was made above");
+    while hpx.demoting.is_none() {
+        let Some(id) = plan.demote_ids.pop_front() else {
+            break;
+        };
+        let Some((key, i)) = px_find_evictable(px, id) else {
+            continue; // leased, hit or evicted meanwhile: not ours to move
+        };
+        let Some(dead) = px.remove_at(&key, i) else {
+            continue;
+        };
+        removed += 1;
+        let bytes = dead.bytes;
+        host_demote_prefix_entry(engine, hpx, dead);
+        if hpx.demoting.is_some() {
+            plan.submitted += 1;
+            eprintln!(
+                "[admit-mem] reclaim off-tick: submitted {} of {} ({:.0}MB) for {}",
+                plan.submitted,
+                plan.planned,
+                bytes as f64 / 1e6,
+                req.request_id
+            );
+        }
+        // A refusal dropped the entry (its bytes free now); the next is tried in this pass.
+    }
+    px.evictions += removed as u64;
+    removed
+}
+
 /// MEMORY-ADMISSION FLUSH (memra#365, door `MEMRA_ADMIT_BY_MEMORY`): the admission reclaim
 /// ladder's device-prefix flush, DEMOTING into the pinned host tier instead of dropping.
 ///
@@ -26029,6 +26201,12 @@ pub fn run(
                                         admit_memory_cfg.defer_budget_ms,
                                     ),
                                 );
+                                // WP-B day 42 (MEMRA_ADMIT_RECLAIM_OFFTICK): with the contracts
+                                // door's off-tick route, the demote set leaves the tick and the
+                                // arrival waits on its landings; unset, today's flush.
+                                let offtick_arm = admit_reclaim_offtick_on()
+                                    && hpx.tier.is_some()
+                                    && (budget > 0 || req.reclaim_offtick.is_some());
                                 // WP-A day 20: a `Capturing` entry settles first (publish or
                                 // drop), so the reclaim's accounting never meets a half-written
                                 // entry; then the reclaim runs over the published set.
@@ -26045,10 +26223,26 @@ pub fn run(
                                     ContractWait::Block,
                                     "the admission reclaim",
                                 );
-                                evict_all_demoting(&engine, &mut px, &mut hpx, budget)
+                                if offtick_arm {
+                                    (
+                                        reclaim_offtick_pass(
+                                            &engine, &mut px, &mut hpx, &mut req, budget,
+                                        ),
+                                        0,
+                                        0,
+                                    )
+                                } else {
+                                    evict_all_demoting(&engine, &mut px, &mut hpx, budget)
+                                }
                             } else {
                                 (px.evict_all(), 0, 0)
                             };
+                        // The arrival waits on a landing while its plan is live (DAY42 1.2): the
+                        // parked-session ladder is not climbed for bytes already on their way.
+                        let reclaim_landing = req
+                            .reclaim_offtick
+                            .as_ref()
+                            .is_some_and(|p| !p.demote_ids.is_empty() || hpx.demoting.is_some());
                         if demoted_prefix > 0 {
                             eprintln!(
                                 "[admit-mem] reclaim demoted {demoted_prefix} of \
@@ -26082,7 +26276,7 @@ pub fn run(
                         let mut evicted_plain = 0usize;
                         let mut evicted_spec = 0usize;
                         let mut evicted_dspark = 0usize;
-                        while !headroom.sufficient(required) {
+                        while !reclaim_landing && !headroom.sufficient(required) {
                             match evict_oldest_parked(
                                 &mut reuse,
                                 &mut spec_reuse,
@@ -26518,12 +26712,39 @@ pub fn run(
                                     0
                                 },
                             };
-                            let verdict = crate::admit_memory::decide(
+                            let mut verdict = crate::admit_memory::decide(
                                 need,
                                 &tiers,
                                 waited_ms,
                                 admit_memory_cfg.defer_budget_ms,
                             );
+                            // WP-B day 42: an arrival whose off-tick reclaim is still landing
+                            // waits on it inside the door's budget, then gets the typed refusal.
+                            let mut defer_reason: Option<&'static str> = None;
+                            if req.reclaim_offtick.is_some() {
+                                let short_by = need.saturating_sub(device_free);
+                                match reclaim_offtick_step(
+                                    false,
+                                    hpx.demoting.is_some(),
+                                    req.reclaim_offtick
+                                        .as_ref()
+                                        .map_or(0, |p| p.demote_ids.len()),
+                                    waited_ms,
+                                    admit_memory_cfg.defer_budget_ms,
+                                ) {
+                                    ReclaimStep::Wait | ReclaimStep::Submit => {
+                                        verdict =
+                                            crate::admit_memory::MemoryVerdict::Defer { short_by };
+                                        defer_reason = Some("reclaim-landing");
+                                    }
+                                    ReclaimStep::Refuse => {
+                                        verdict =
+                                            crate::admit_memory::MemoryVerdict::Refuse { short_by };
+                                        defer_reason = Some("reclaim-landing-timeout");
+                                    }
+                                    ReclaimStep::Admit | ReclaimStep::Exhausted => {}
+                                }
+                            }
                             let refusing = matches!(
                                 verdict,
                                 crate::admit_memory::MemoryVerdict::Refuse { .. }
@@ -26565,6 +26786,7 @@ pub fn run(
                                             cap: cap as u64,
                                             waited_ms,
                                             retry_after_s,
+                                            reason: defer_reason,
                                         }
                                     )
                                 );
@@ -26580,6 +26802,16 @@ pub fn run(
                         }
                         vram_defers += 1;
                         n_vram_defers += 1;
+                        // WP-B day 42: an arrival waiting on its off-tick reclaim's landing is parked
+                        // on the in-flight demote, so it joins the parked-only bounded wait (the
+                        // guard's `hpx.demoting.is_some()` arm) instead of spinning the owner.
+                        if req
+                            .reclaim_offtick
+                            .as_ref()
+                            .is_some_and(|p| !p.demote_ids.is_empty() || hpx.demoting.is_some())
+                        {
+                            parked_on_promote += 1;
+                        }
                         requeue.push_back(req); // waits (FIFO), never rejected
                         continue;
                     }
@@ -26624,6 +26856,7 @@ pub fn run(
                                 cap: cap as u64,
                                 waited_ms: crate::admit_memory::waited_ms(req.memory_defer_since),
                                 retry_after_s: None,
+                                reason: None,
                             })
                         );
                     }
@@ -30950,6 +31183,7 @@ fn park_requeue(loaded: &HashMap<String, LoadedModel>, s: &Session) -> Option<Bo
         // logged, and the latch rides along so re-admission cannot log a second row.
         admit_predict_logged: s.admit_predict_logged,
         memory_defer_since: s.memory_defer_since,
+        reclaim_offtick: None,
         max_prompt_tokens: p.max_prompt_tokens,
         cache_ns: s.cache_ns.clone(),
         affinity: s.affinity.clone(),
@@ -38756,6 +38990,7 @@ mod tests {
             request_id: String::new(),
             admit_predict_logged: false,
             memory_defer_since: None,
+            reclaim_offtick: None,
             ttft: None,
             images: Vec::new(),
             gemma_images: Vec::new(),
@@ -39204,6 +39439,7 @@ mod tests {
             request_id: String::new(),
             admit_predict_logged: false,
             memory_defer_since: None,
+            reclaim_offtick: None,
             images: Vec::new(),
             gemma_images: Vec::new(),
             glm5_images: Vec::new(),
@@ -54436,6 +54672,112 @@ mod tests {
         ));
     }
 
+    /// WP-B day 42 (DAY42 1.3): the off-tick flush's plan keeps today's demote rule and drop set.
+    #[test]
+    fn reclaim_offtick_plan_keeps_todays_demote_rule_and_drop_set() {
+        let e = [(1, 300), (2, 300), (3, 300), (4, 300)];
+        // Demote while the bytes planned so far are under the budget (today's rule overshoots by
+        // at most one entry), everything else drops.
+        assert_eq!(
+            super::reclaim_offtick_plan(&e, 500),
+            (vec![1, 2], vec![3, 4])
+        );
+        assert_eq!(
+            super::reclaim_offtick_plan(&e, 600),
+            (vec![1, 2], vec![3, 4])
+        );
+        assert_eq!(
+            super::reclaim_offtick_plan(&e, 601),
+            (vec![1, 2, 3], vec![4])
+        );
+        assert_eq!(
+            super::reclaim_offtick_plan(&e, 0),
+            (vec![], vec![1, 2, 3, 4])
+        );
+        assert_eq!(
+            super::reclaim_offtick_plan(&e, 1 << 40),
+            (vec![1, 2, 3, 4], vec![])
+        );
+        assert_eq!(super::reclaim_offtick_plan(&[], 500), (vec![], vec![]));
+    }
+
+    /// DAY42 1.3: one pass's step over every arm, the budget's edge and a slot held by another
+    /// route's demote.
+    #[test]
+    fn reclaim_offtick_step_waits_on_the_landing_inside_the_budget() {
+        use super::ReclaimStep::*;
+        use super::reclaim_offtick_step as step;
+        assert_eq!(
+            step(true, true, 3, 99_999, 8_000),
+            Admit,
+            "a fit admits whatever else holds"
+        );
+        assert_eq!(step(false, false, 2, 0, 8_000), Submit);
+        assert_eq!(
+            step(false, true, 2, 7_999, 8_000),
+            Wait,
+            "a slot held by any route: wait"
+        );
+        assert_eq!(
+            step(false, true, 0, 7_999, 8_000),
+            Wait,
+            "the last landing still in flight"
+        );
+        assert_eq!(
+            step(false, true, 2, 8_000, 8_000),
+            Refuse,
+            "the budget's edge refuses"
+        );
+        assert_eq!(
+            step(false, true, 2, 1 << 40, 0),
+            Wait,
+            "a zero budget keeps the unbounded wait"
+        );
+        assert_eq!(
+            step(false, false, 0, 0, 8_000),
+            Exhausted,
+            "an empty plan climbs the ladder"
+        );
+    }
+
+    /// DAY42 1.3: the arm is read only at the reclaim site with both doors; the pass submits one
+    /// demote per free slot; the waiting arrival skips the parked-session ladder and joins the
+    /// parked-only wait; the defer site names the reason.
+    #[test]
+    fn reclaim_offtick_is_armed_only_at_the_reclaim_site() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let call = format!("admit_reclaim_offtick_on{}", "()");
+        assert_eq!(
+            live.matches(call.as_str()).count(),
+            2,
+            "the definition and the reclaim site"
+        );
+        assert!(live.contains(
+            "let offtick_arm = admit_reclaim_offtick_on() && hpx.tier.is_some() && (budget > 0 || req.reclaim_offtick.is_some());"
+        ));
+        // The site sits inside the armed branch, so unarmed it is today's `px.evict_all()`.
+        assert!(live.contains(
+            "if offtick_arm { ( reclaim_offtick_pass( &engine, &mut px, &mut hpx, &mut req, budget, ), 0, 0, ) } else { evict_all_demoting(&engine, &mut px, &mut hpx, budget) }"
+        ));
+        let site = live
+            .find("reclaim_offtick_pass( &engine, &mut px, &mut hpx, &mut req, budget, )")
+            .unwrap();
+        let armed = live[..site].rfind("if admit_memory_cfg.armed {").unwrap();
+        assert!(site - armed < 3000);
+        // One submission per free slot: the pass loops only while the slot is free.
+        assert!(live.contains("while hpx.demoting.is_none() { let Some(id) = plan.demote_ids.pop_front() else { break; };"));
+        assert!(live.contains("host_demote_prefix_entry(engine, hpx, dead);"));
+        // The waiting arrival does not climb the parked-session ladder, and it parks.
+        assert!(live.contains("while !reclaim_landing && !headroom.sufficient(required) {"));
+        assert!(live.contains(
+            "{ parked_on_promote += 1; } requeue.push_back(req); // waits (FIFO), never rejected"
+        ));
+        assert!(live.contains("defer_reason = Some(\"reclaim-landing\");"));
+        assert!(live.contains("defer_reason = Some(\"reclaim-landing-timeout\");"));
+    }
+
     /// WP-B day 41 (DAY41 1.5): the grid-rewind door is read at the two arming sites and the two
     /// pools' exact and text hits, and nowhere else; each pool's rewind is the path's own restore.
     #[test]
@@ -54972,6 +55314,7 @@ mod tests {
             request_id: String::new(),
             admit_predict_logged: false,
             memory_defer_since: None,
+            reclaim_offtick: None,
             images: Vec::new(),
             gemma_images: Vec::new(),
             glm5_images: Vec::new(),
