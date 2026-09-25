@@ -30,6 +30,8 @@ ap.add_argument("--lengths", default="6144,30720")
 ap.add_argument("--shapes", default="X,A")
 ap.add_argument("--timeout-s", type=int, default=3600)
 ap.add_argument("--turn4", action="store_true", help="the fault boots (addendum B): a fourth shape-X turn")
+ap.add_argument("--max-ctx-pad", type=int, default=512,
+                help="shape Xp (addendum D): every turn sends max_ctx = L + this, so a plain-parked entry fits the next turn")
 ap.add_argument("--serving-md", default=os.path.join(os.path.dirname(__file__), "..", "..", "docs", "SERVING.md"))
 a = ap.parse_args()
 lengths = [int(x) for x in a.lengths.split(",")]
@@ -88,6 +90,7 @@ rows = []
 
 
 def run(tag, shape, turn, cold, L, rep, path, body, headers=None):
+    """Returns the completion text (None on an error)."""
     before = metrics()
     t0 = int(time.time() * 1000)
     status, usage, finish, content, err = None, None, None, None, None
@@ -111,17 +114,31 @@ def run(tag, shape, turn, cold, L, rep, path, body, headers=None):
     row = dict(tag=tag, shape=shape, turn=turn, cold=cold, length=L, rep=rep, status=status, usage=usage,
                finish_reason=finish, submit_ms=t0, done_ms=t1, error=err,
                content_sha256=None if content is None else hashlib.sha256(content.encode()).hexdigest(),
-               content_chars=None if content is None else len(content), metrics_before=before, metrics_after=after)
+               content_chars=None if content is None else len(content), metrics_before=before, metrics_after=after,
+               prompt_sha256=hashlib.sha256(json.dumps(body.get("prompt_ids") or body.get("messages"),
+                                                       sort_keys=True).encode()).hexdigest(),
+               max_ctx=body.get("max_ctx"))
     rows.append(row)
     with open(os.path.join(a.out, "client.jsonl"), "a") as f:
         f.write(json.dumps(row, sort_keys=True) + "\n")
     print(f"{tag} status={status} finish={finish} G={(usage or {}).get('completion_tokens')} "
           f"cached={((usage or {}).get('prompt_tokens_details') or {}).get('cached_tokens')} ms={t1 - t0}", flush=True)
+    return content
 
 
-def completion(ids_, max_tokens, salt):
-    return {"model": a.model, "prompt_ids": ids_, "max_tokens": max_tokens, "temperature": 0, "stream": False,
+def completion(ids_, max_tokens, salt, max_ctx=None):
+    body = {"model": a.model, "prompt_ids": ids_, "max_tokens": max_tokens, "temperature": 0, "stream": False,
             "cache_salt": salt}
+    if max_ctx is not None:
+        body["max_ctx"] = max_ctx
+    return body
+
+
+def tokenize_text(text):
+    if not text:
+        return []
+    _, t = post("/v1/tokenize", {"model": a.model, "prompt": text, "add_special_tokens": False})
+    return t["tokens"]
 
 
 def chat(messages, max_tokens, salt):
@@ -145,6 +162,26 @@ for L in lengths:
             for turn, p, mt in turns:
                 run(f"X-{L}-r{rep}-t{turn}-cold", "X", turn, True, L, rep, "/v1/completions",
                     completion(p, mt, f"xc-{L}-{rep}-{turn}"))
+        if "Xp" in shapes:
+            # Addendum D: each turn extends the previous turn's committed ids (its prompt plus its completion,
+            # tokenized) with stream ids to 64 new tokens, under a request-supplied max_ctx on every turn.
+            cap = L + a.max_ctx_pad
+            ns = f"xp-{L}-{rep}"
+            p = ids(off, L)
+            nxt = off + L
+            plan = [(1, 1), (2, 1), (3, 32)] + ([(4, 32)] if a.turn4 else [])
+            prompts = []
+            for turn, mt in plan:
+                prompts.append((turn, p, mt))
+                text = run(f"Xp-{L}-r{rep}-t{turn}", "Xp", turn, False, L, rep, "/v1/completions",
+                           completion(p, mt, ns, cap))
+                g = tokenize_text(text)
+                fill = max(1, 64 - len(g))
+                p = p + g + ids(nxt, fill)
+                nxt += fill
+            for turn, pp, mt in prompts:
+                run(f"Xp-{L}-r{rep}-t{turn}-cold", "Xp", turn, True, L, rep, "/v1/completions",
+                    completion(pp, mt, f"xpc-{L}-{rep}-{turn}", cap))
         if "A" in shapes:
             _, dt = post("/v1/detokenize", {"model": a.model, "tokens": ids(off, L)})
             body_text = dt.get("text") or dt.get("prompt") or ""
