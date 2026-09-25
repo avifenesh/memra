@@ -1,0 +1,19 @@
+== host-tier ON boot (MEMRA_KV_HOST_MB=8192, verify on) ==
+Traceback (most recent call last):
+  File [35m"<stdin>"[0m, line [35m4[0m, in [35m<module>[0m
+  File [35m"/usr/lib/python3.14/urllib/request.py"[0m, line [35m187[0m, in [35murlopen[0m
+    return [31mopener.open[0m[1;31m(url, data, timeout)[0m
+           [31m~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^[0m
+  File [35m"/usr/lib/python3.14/urllib/request.py"[0m, line [35m493[0m, in [35mopen[0m
+    response = meth(req, response)
+  File [35m"/usr/lib/python3.14/urllib/request.py"[0m, line [35m602[0m, in [35mhttp_response[0m
+    response = self.parent.error(
+        'http', request, response, code, msg, hdrs)
+  File [35m"/usr/lib/python3.14/urllib/request.py"[0m, line [35m531[0m, in [35merror[0m
+    return [31mself._call_chain[0m[1;31m(*args)[0m
+           [31m~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^[0m
+  File [35m"/usr/lib/python3.14/urllib/request.py"[0m, line [35m464[0m, in [35m_call_chain[0m
+    result = func(*args)
+  File [35m"/usr/lib/python3.14/urllib/request.py"[0m, line [35m611[0m, in [35mhttp_error_default[0m
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+[1;35murllib.error.HTTPError[0m: [35mHTTP Error 500: Internal Server Error[0m

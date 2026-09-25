@@ -1829,9 +1829,13 @@ before any bank demand:
   names equal the former literal `blk.N.ffn_{gate,up,down}_exps.weight` spelling on a
   qwen3_5_moe plan with an MTP block, plus one test per refusal).
 - `--expert-bank-host-bytes=N` (default 256 MiB) sets the host bank budget. `host_bank_budget`
-  refuses `experts-via-tier host bank budget cannot hold one expert record` below one record
-  and `experts-via-tier host bank budget exceeds qualification ceiling` above 256 MiB, each
-  suffixed `(requested N, minimum M, ceiling C)`, and caps the bank at 16 records.
+  plans it into one SLRU class per exact record size of the catalog (slots proportional to each
+  size's record count, capped at it) and refuses `experts-via-tier host bank budget cannot hold
+  one expert record` below one record of the largest size and `experts-via-tier host bank
+  budget exceeds the machine ceiling` above three quarters of the host's `MemAvailable` read at
+  install, each suffixed `(requested N, minimum M, ceiling C)`; an unreadable `MemAvailable`
+  refuses too. The installer prints `[experts-via-tier] host_bank_plan requested= planned=
+  classes= records_held= ceiling=` (day 43, `research/spill-c-20260919/DAY43.md`).
 - `--expert-bank-gpu-bytes=N` fixes the GPU slot count before any allocation
   (`MoeSlotCache::with_exact_slots`, never clamps). `gpu_bank_budget` refuses
   `experts-via-tier GPU bank budget cannot hold the eight-slot minimum` below eight slots and
@@ -2041,7 +2045,10 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   `tools/kv-host-contract-fault-gate.sh` cells `span-refusal` (`MEMRA_KV_HOST_FAULT=contract-spans`, the
   demote's D2H span attach refused after every span was built) and `promote-span-refusal`
   (`MEMRA_KV_HOST_FAULT=contract-promote-spans`, the promote's H2D span attach refused after every span was
-  built; since day 33 the staging is filled by a host function on the copy stream ahead of the copies).
+  built; since day 33 the staging is filled by a host function on the copy stream ahead of the copies, and since
+  day 39 that fill is split across `min(12, cpus / 2)` scoped threads inside it, one thread under 8 MiB; CPU
+  cells `day39_fill_shares_cover_every_byte_once` and `day39_threaded_fill_is_bitwise_the_planes`, and the
+  native filled-batch cell runs its fill on three threads with a cut inside a plane).
   Each is two boots, door ON with the one-shot fault and door OFF as the byte reference, and asserts one typed refusal naming `N f32 spans handed back` with N the span
   count of the next receipt of the same direction, one `tier span staging:` fill in the boot, the next
   demote or promote landing its spans and publishing, no latch, quarantine, leak or other refusal, and the
@@ -2050,10 +2057,33 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   `option_c_spans_ride_the_promote_ticket_and_land_bitwise` (the promoted planes read bitwise equal to the
   resident bytes) and `option_c_span_postpublish_refusal_returns_the_staging_to_the_set`; engine cells
   `d2h_span_batch_lands_with_its_ticket_on_the_copy_stream`, `h2d_span_batch_lands_with_its_ticket_on_the_copy_stream`
-  and (day 33) `h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies` (run with `--test-threads=1`: run in parallel in one process on the local RTX 5090 the H2D cell failed
-  once with `a batch with a running span has not landed`; the two cells share the primary context and each
-  holds its copy stream 300 ms; the serial run was green 3 of 3; the cause is not isolated). Evidence:
-  `research/spill-a-20260919/DAY31.md`, `DAY32.md`, `DAY33.md`.
+  and (day 33) `h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies`. Since WP-A day 37 every native
+  cell of `tier_transfer.rs` takes its own non-primary context from a process-lifetime pool (`cell_context()`,
+  census `native_cells_own_their_context`), so the cells run in parallel in one process: on the shared primary
+  context a pinned free, a synchronous device free or a module load on one cell's thread held every other cell's
+  driver calls until the context drained, and a cell whose first poll came after its own 300 ms hold failed
+  `a batch with a running span has not landed` (reproduced 17 of 20 and 20 of 20 runs; fixed 100 of 100 in
+  parallel, the red arm failing both rule-2 checks). Evidence: `research/spill-a-20260919/DAY31.md`, `DAY32.md`,
+  `DAY33.md`, `DAY37.md`.
+- The DFlash tail class of the contracts door (lane/spill-c-20260919 day 56, `research/spill-c-20260919/DAY56.md`,
+  the rule of `DAY19.md` Task 3): `tools/kv-host-spill-identity-gate.sh`'s drafter arm (the caller sets
+  `MEMRA_DSPARK_SPEC=1 MEMRA_DSPARK_DRAFT=<export dir> MEMRA_DSPARK_PREFIX_RESTORE=1`) requires the ON boot's
+  `[prefix-cache] DSPARK restore:` line and, door ON, the `contracts door tail bound:` receipt and no `refused
+  (contracts door)` line; door OFF against door ON on the 27B with the DFlash2 drafter. CPU cells (`worker::tests`):
+  `host_tier_entry_class_admits_plain_mtp_draft_and_dflash_tail_and_refuses_glm_and_both_by_name`,
+  `host_tier_tail_program_is_a_pure_function_of_the_drafter_sources`,
+  `host_tier_tail_shape_frames_the_geometry_after_the_v2_blob`, `host_tier_dflash_tail_census`.
+- Verify digest v3 (lane/spill-c-20260919 day 53, `research/spill-c-20260919/DAY53.md`): `MEMRA_KV_HOST_VERIFY`'s
+  round-trip digest covers the MTP draft plane, the boundary hidden row, the boundary logits and the DFlash tail
+  beside the unchanged v2 trunk digest. `tools/kv-host-spill-failure-gate.sh` cells `digest-draft`,
+  `digest-hidden`, `digest-logits` (`MEMRA_KV_HOST_FAULT=flip-demote-{draft,hidden,logits}`, door OFF): spec
+  entries must refuse the promote `VERIFY FAILED: promoted digest`, zero promotions, r3 byte-equal to the pool-full
+  reference; under `MEMRA_SERVE_SPEC=0` the draft and hidden cells, and under `MEMRA_KV_HOST_CONTRACTS=1` all three,
+  must flip nothing and promote with `verify ok`.
+  CPU cells (`worker::tests`): `verify_digest_check_types_program_and_byte_mismatches`,
+  `verify_digest_v3_row_flip_touches_one_byte`, `verify_digest_v3_census` (v2's text pinned by SHA-256, the red
+  arms only behind the legacy copy path); GPU cell `verify_digest_v3_covers_every_round_tripped_plane_and_v2_stays_trunk_only`
+  (`#[ignore]` without a device: v3 moves on one byte of each of five planes, v2 on the trunk byte only).
 - The promote's KV completion checksums on the hash helper (WP-A day 34, `research/spill-a-20260919/DAY34.md`,
   `memra_tier::conformance::h2d_deferred_checksum_lands_with_its_digests`): under the door the off-tick promote
   defers its H2D items' checksums (`CudaTransfers::defer_h2d_checksums`), the helper digests each item's host
@@ -2073,6 +2103,50 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   `option_b_off_tick_demote_hashes_ride_the_helper_and_a_changed_lease_is_refused` (through the production sink: the
   clean arm's receipts are the checksums of the lease bytes; a byte changed after hash 1 is refused at the bind,
   nothing published). The failure gate's `digest` cell's bind line is the helper's re-hash seeing the flipped byte.
+- The demote's D2H receipt on the device and the copy-phase park (WP-A day 38, `research/spill-a-20260919/DAY38.md`
+  designs G4 and P, `memra_tier::conformance::d2h_device_receipt_lands_with_the_source_digest`): under the door the
+  copy stream digests every D2H item's DEVICE source with the receipt program (`d2h_receipt_sha256`) ahead of its copy, the
+  item lands with that digest (hash 1 leaves the owner thread), and the bind's re-hash of the landed bytes witnesses
+  landed equal to source; a hit on a `Demoting` entry parks in either phase. CPU binding `d2h_device_receipt_bindings`
+  (with its red arm: an item that lands on its copy alone); engine census `d2h_device_receipt_rules_are_as_stated` and
+  native cells `d2h_device_receipt_lands_with_the_source_digest` (every receipt bitwise the CPU program over its source
+  and over its landed bytes) and `d2h_source_flip_is_witnessed_by_the_landed_bytes` (the flip's red arm); the fault
+  gate's `source-flip` cell (`MEMRA_KV_HOST_FAULT=d2h-source-flip`: one typed bind refusal, nothing published, r1 to
+  r4 byte-equal to door OFF) and `copy-phase-hit` cell (`MEMRA_KV_HOST_FAULT=d2h-delay`, a host-side 3 s hold of the
+  demote's landing since design G''': one copy-phase park, the publication, a promote instead of a cold prime, r1 to r4
+  byte-equal to door OFF); the day-29 park test extended to the copy phase
+  (`hashing_hit_parks_the_request_once_per_id_and_a_miss_does_not`). Design G4 (DAY38 section 17): every piece of side
+  work on ONE stream beside the owner's, the copy stream (the D2H receipt ahead of the copies, the D2D classes, the H2D
+  items, spans and fills); engine census `one_side_stream_beside_the_owner`, the tenant's decode hump cell
+  `day38-hump-reading.py` (sections 13e to 16: a second side stream running kernels moved every later owner kernel
+  boundary, on BOX7 with kernels on both side streams and on the 5090 even with the copy stream kernel-free).
+- The span receipts (WP-A day 48, `research/spill-a-20260919/DAY48.md` design S4: day 46's S3, day 42's S2 revising
+  day 40's design S, with the digests' grid bounded, `day46_span_digest_grids_leave_room_for_the_owner`, and the release
+  paths draining the owner stream only, `day48_release_paths_drain_the_owner_stream_only` and the native
+  `day48_a_take_back_waits_for_its_own_lease_only`;
+  `memra_tier::conformance::span_receipt`): the four-lane digest of every D2H f32 span's device source (one batched
+  launch ahead of the copies) and landed staging (one batched launch at the hand-off to the hash helper, off the
+  landing) and of every H2D span's device destination (one batched launch after the copies), on the copy stream; the
+  demote publishes only after its span receipt is observed and only spans whose pair agrees, and keeps each source
+  digest with the entry; the promote only spans whose destination digest equals it; the staging under a sealed receipt
+  travels guarded (a leak, never a free, before the observation). CPU binding `span_receipt_bindings` (three red arms:
+  a caller that publishes before the receipt is observed, an H2D batch landed on its copies alone, a caller that
+  publishes a differing span); engine census `span_receipt_rules_are_as_stated`; server census
+  `day42_the_span_receipt_is_required_before_the_publication`; native cells `span_receipt_digests_are_the_program_per_span`
+  (the batched kernel bitwise against the CPU oracle) and `d2h_span_batch_lands_with_its_ticket_on_the_copy_stream`
+  (the take, the seal's refusals, the pairs, the `span-flip-landed` arm with span 0 alone differing, the abandon and
+  displacement reaps); the fault gate's `span-flip-landed` and `span-flip-resident` cells (one typed refusal each, r1
+  to r4 byte-equal to door OFF).
+- The agent-pause demote off the tick (WP-A day 47, `research/spill-a-20260919/DAY47.md` design V, OWED item 6):
+  `tools/kv-host-pause-demote-gate.sh` (a tool conversation whose turn 1 must end in a tool call; `clean`, `race`
+  under `d2h-delay` and `failure` under `contract-presubmit`, each in the plain and the default boot, every turn
+  byte-equal to a door-OFF pause-OFF reference); CPU cells `day47_the_pause_sweep_demotes_off_the_tick` and
+  `day47_the_demote_shell_reinstates_only_unpublished_shells`; the pause stall cell (`stall_cell.py --mode pause`,
+  `day47-reading.py`).
+- Design K's promote-side fail-closed arms (WP-A day 41, `research/spill-a-20260919/DAY41.md`): the fault gate's
+  `sources-helper-gone`, `sources-never-land` and `sources-foreign-reply` cells (the hash helper's first `Sources` job
+  takes the fault; one typed latch in the arm's own words, no promote publication, the helper joined, r1 to r4
+  byte-equal to door OFF) and the CPU cell `day41_the_sources_faults_key_on_the_first_sources_job`.
 - The hit gate's door arm (C day 27, `tools/spec-on-cache-hit-gate.sh qwen`): the door batteries run the
   hit gate twice, door OFF (`MEMRA_KV_HOST_CONTRACTS` unset) and door ON (`MEMRA_KV_HOST_CONTRACTS=1`).
   Until day 27 the ON arm booted with no `MEMRA_KV_HOST_MB`, so the server built no program identity

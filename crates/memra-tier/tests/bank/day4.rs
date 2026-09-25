@@ -410,14 +410,53 @@ fn slru_banked_residency_serial_trace_matches_oracle_and_releases_charge() {
 
 #[test]
 fn banked_residency_budget_refuses_instead_of_rounding_up() {
-    use engine_bridge::host_bank_slots;
+    // Day 43: the host tier is planned per record size; the 16-record clamp and the 256 MiB
+    // ceiling are gone, a budget above the machine ceiling or below one record is refused.
+    use engine_bridge::{host_bank_ceiling, host_bank_plan};
+    const G: u64 = 450_560;
+    const D: u64 = 557_056;
+    const M: u64 = 860_160;
+    let sizes: Vec<u64> = std::iter::repeat_n(G, 200)
+        .chain(std::iter::repeat_n(D, 100))
+        .chain(std::iter::repeat_n(M, 4))
+        .collect();
+    let ceiling = 1 << 40;
     assert_eq!(
-        host_bank_slots(0, 860160),
+        host_bank_plan(0, &sizes, ceiling),
         Err("experts-via-tier host bank budget cannot hold one expert record")
     );
-    assert_eq!(host_bank_slots(860159, 860160), host_bank_slots(0, 860160));
-    assert_eq!(host_bank_slots(860160, 860160), Ok(1));
-    assert_eq!(host_bank_slots(256 * 1024 * 1024, 860160), Ok(16));
-    assert!(host_bank_slots(256 * 1024 * 1024 + 1, 860160).is_err());
-    assert!(host_bank_slots(1, 0).is_err());
+    assert_eq!(
+        host_bank_plan(M - 1, &sizes, ceiling),
+        host_bank_plan(0, &sizes, ceiling)
+    );
+    // Exactly one largest record: the largest class gets its one slot.
+    let one = host_bank_plan(M, &sizes, ceiling).unwrap();
+    assert_eq!(one.classes, vec![(M, 1)]);
+    assert_eq!((one.planned_bytes, one.records_held), (M, 1));
+    // The old 256 MiB default now holds records, not sixteen max-size slots.
+    let default = host_bank_plan(256 * 1024 * 1024, &sizes, ceiling).unwrap();
+    assert!(default.records_held > 16, "{default:?}");
+    assert!(default.planned_bytes <= 256 * 1024 * 1024);
+    assert!(default.classes.windows(2).all(|w| w[0].0 < w[1].0));
+    assert!(default.classes.iter().any(|&(bytes, _)| bytes == M));
+    // A budget over the whole bank holds every record, and no class exceeds its records.
+    let all = host_bank_plan(1 << 36, &sizes, ceiling).unwrap();
+    assert_eq!(all.classes, vec![(G, 200), (D, 100), (M, 4)]);
+    assert_eq!(all.records_held, 304);
+    assert_eq!(all.planned_bytes, 200 * G + 100 * D + 4 * M);
+    // Above the machine ceiling: refused, never clamped.
+    assert_eq!(
+        host_bank_plan(ceiling + 1, &sizes, ceiling),
+        Err("experts-via-tier host bank budget exceeds the machine ceiling")
+    );
+    assert_eq!(
+        host_bank_plan(M, &[], ceiling),
+        Err("experts-via-tier host bank has no expert record")
+    );
+    // The ceiling is three quarters of MemAvailable; anything else is unknown, not unlimited.
+    let meminfo = "MemTotal:       62914560 kB\nMemFree:  1024 kB\nMemAvailable:   41943040 kB\n";
+    assert_eq!(host_bank_ceiling(meminfo), Some(41_943_040 * 1024 / 4 * 3));
+    assert_eq!(host_bank_ceiling("MemTotal: 1 kB\n"), None);
+    assert_eq!(host_bank_ceiling("MemAvailable: x kB\n"), None);
+    assert_eq!(host_bank_ceiling("MemAvailable: 12 MB\n"), None);
 }

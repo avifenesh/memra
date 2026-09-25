@@ -1,0 +1,40 @@
+diff --git a/crates/memra-engine/src/tier_transfer.rs b/crates/memra-engine/src/tier_transfer.rs
+index 088d1c89b..32f95a6ba 100644
+--- a/crates/memra-engine/src/tier_transfer.rs
++++ b/crates/memra-engine/src/tier_transfer.rs
+@@ -2102,8 +2102,14 @@ impl CudaTransfers {
+     ) -> std::result::Result<(), (Error, Vec<D2hSpan>)> {
+         let admitted = (|| {
+             self.check_thread()?;
+-            let copy = self.copy.clone().ok_or(Error::Unsupported)?;
+             let e = self.entries.get(ticket).ok_or(Error::UnknownTicket)?;
++            // diag7 x25: a device-receipt batch's spans follow its receipt on the receipt stream.
++            let copy = if e.d2h_receipt.is_some() {
++                self.receipt_stream.clone()
++            } else {
++                self.copy.clone()
++            }
++            .ok_or(Error::Unsupported)?;
+             if e.retired {
+                 return Err(Error::AlreadyReleased);
+             }
+@@ -3007,9 +3013,16 @@ impl TransferEngine for CudaTransfers {
+                 // Both directions take the copy stream when one exists (the D2H since day 17, the
+                 // H2D since day 18); every copy under `new` takes the owner stream (the day-16
+                 // program, statement for statement).
+-                let issue: Arc<CudaStream> = match &self.copy {
+-                    Some(copy) => copy.clone(),
+-                    None => self.stream.clone(),
++                // diag7 x25: a device-receipt D2H batch's copies follow its receipt on the receipt
++                // stream (the demote stream); every other copy keeps the copy stream.
++                let issue: Arc<CudaStream> = match (&self.copy, &self.receipt_stream) {
++                    (Some(_), Some(rs))
++                        if direction == CopyDirection::DeviceToHost && entry.d2h_receipt.is_some() =>
++                    {
++                        rs.clone()
++                    }
++                    (Some(copy), _) => copy.clone(),
++                    (None, _) => self.stream.clone(),
+                 };
+                 let off_owner = !Arc::ptr_eq(&issue, &self.stream);
+                 let submit = (|| {

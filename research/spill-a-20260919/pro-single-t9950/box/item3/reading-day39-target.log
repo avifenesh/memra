@@ -1,0 +1,24 @@
+DAY39 READING mode=target order=o1 arm=hk boots=5 e2e N=50 median=114.39 min=113.38 max=115.17 boot-medians [113.88, 114.47, 114.52, 114.49, 114.44] | pin-steady N=45 median=25.70 min=25.50 max=26.30 boot-medians [25.6, 25.7, 25.7, 25.7, 25.6] | steady polls [2] (counts [45]) | helper-ms N=50 median=1.10 min=0.70 max=1.40
+DAY39 READING mode=target order=o1 arm=ft boots=5 e2e N=50 median=102.16 min=101.51 max=103.04 boot-medians [102.0, 102.26, 102.18, 102.17, 102.18] | pin-steady N=45 median=13.50 min=13.40 max=14.00 boot-medians [13.5, 13.5, 13.5, 13.5, 13.5] | steady polls [1] (counts [45]) | helper-ms N=50 median=1.20 min=0.70 max=1.40
+DAY39 READING mode=target order=o1 arm=f1 boots=5 e2e N=50 median=102.16 min=101.49 max=102.93 boot-medians [102.18, 102.21, 102.14, 102.1, 102.28] | pin-steady N=45 median=13.50 min=13.30 max=14.10 boot-medians [13.5, 13.4, 13.4, 13.4, 13.5] | steady polls [1] (counts [45]) | helper-ms N=50 median=1.20 min=0.70 max=1.50
+DAY39 READING mode=target order=o1 arm=off boots=5 e2e N=50 median=105.17 min=104.44 max=130.09 boot-medians [105.18, 105.11, 105.3, 105.32, 105.17] | pin-steady N=45 median=16.80 min=16.30 max=39.90 boot-medians [16.8, 16.6, 17.1, 16.9, 16.8] | steady polls [] (counts []) | helper-ms N=0
+DAY39 READING mode=target order=o2 arm=hk boots=5 e2e N=50 median=114.41 min=113.89 max=115.29 boot-medians [114.44, 114.39, 114.46, 114.39, 114.57] | pin-steady N=45 median=25.70 min=25.50 max=26.30 boot-medians [25.6, 25.6, 25.7, 25.6, 25.7] | steady polls [2] (counts [45]) | helper-ms N=50 median=1.15 min=0.70 max=1.40
+DAY39 READING mode=target order=o2 arm=ft boots=5 e2e N=50 median=102.23 min=101.70 max=105.30 boot-medians [102.27, 102.17, 102.23, 102.17, 102.4] | pin-steady N=45 median=13.50 min=13.40 max=14.10 boot-medians [13.5, 13.5, 13.5, 13.5, 13.6] | steady polls [1] (counts [45]) | helper-ms N=50 median=1.20 min=0.80 max=1.50
+DAY39 READING mode=target order=o2 arm=f1 boots=5 e2e N=50 median=102.12 min=101.62 max=102.96 boot-medians [102.08, 102.26, 102.14, 102.15, 102.02] | pin-steady N=45 median=13.50 min=13.30 max=13.90 boot-medians [13.4, 13.5, 13.5, 13.5, 13.5] | steady polls [1] (counts [45]) | helper-ms N=50 median=1.20 min=0.70 max=1.50
+DAY39 READING mode=target order=o2 arm=off boots=5 e2e N=50 median=105.33 min=104.48 max=130.48 boot-medians [105.48, 105.15, 105.14, 105.64, 105.33] | pin-steady N=45 median=16.70 min=16.40 max=39.70 boot-medians [17.1, 16.5, 16.6, 17.2, 16.8] | steady polls [] (counts []) | helper-ms N=0
+DAY39 1b READING order=o1 arm=hk on=114.4 off=105.2 on_minus_off=+9.2 rule <=+20.0 -> PASS
+DAY39 1b READING order=o1 arm=ft on=102.2 off=105.2 on_minus_off=-3.0 rule <=+20.0 -> PASS
+DAY39 1b READING order=o1 arm=f1 on=102.2 off=105.2 on_minus_off=-3.0 rule <=+20.0 -> PASS
+DAY39 1b READING order=o2 arm=hk on=114.4 off=105.3 on_minus_off=+9.1 rule <=+20.0 -> PASS
+DAY39 1b READING order=o2 arm=ft on=102.2 off=105.3 on_minus_off=-3.1 rule <=+20.0 -> PASS
+DAY39 1b READING order=o2 arm=f1 on=102.1 off=105.3 on_minus_off=-3.2 rule <=+20.0 -> PASS
+DAY39 T CLAUSE (a) ft steady promotes N=90 polls==1 90 rule N=90 and >=80 -> PASS
+DAY39 T CLAUSE (b) order=o1 metric=e2e hk=114.39 ft=102.16 hk-minus-ft=+12.23 pair-noise=0.64 (hk range 0.64, ft range 0.26) rule hk-minus-ft>pair-noise -> CLEARS
+DAY39 T READING order=o1 metric=e2e f1=102.16 ft=102.16 f1-minus-ft=-0.00 pair-noise(f1, ft)=0.26
+DAY39 T CLAUSE (b) order=o1 metric=pin hk=25.70 ft=13.50 hk-minus-ft=+12.20 pair-noise=0.10 (hk range 0.10, ft range 0.00) rule hk-minus-ft>pair-noise -> CLEARS
+DAY39 T READING order=o1 metric=pin f1=13.50 ft=13.50 f1-minus-ft=+0.00 pair-noise(f1, ft)=0.10
+DAY39 T CLAUSE (b) order=o2 metric=e2e hk=114.41 ft=102.23 hk-minus-ft=+12.18 pair-noise=0.23 (hk range 0.18, ft range 0.23) rule hk-minus-ft>pair-noise -> CLEARS
+DAY39 T READING order=o2 metric=e2e f1=102.12 ft=102.23 f1-minus-ft=-0.11 pair-noise(f1, ft)=0.23
+DAY39 T CLAUSE (b) order=o2 metric=pin hk=25.70 ft=13.50 hk-minus-ft=+12.20 pair-noise=0.10 (hk range 0.10, ft range 0.10) rule hk-minus-ft>pair-noise -> CLEARS
+DAY39 T READING order=o2 metric=pin f1=13.50 ft=13.50 f1-minus-ft=+0.00 pair-noise(f1, ft)=0.10
+DAY39 T TARGET (a) and (b) -> PASS (clause (c) is the gates and the unit cells)

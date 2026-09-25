@@ -981,7 +981,19 @@ fn dspark_hit_is_restorable_with(
     if !entry_has_tail || entry_toks == 0 || entry_toks > prompt_toks {
         return false;
     }
-    entry_toks == prompt_toks || partial_on
+    // lane/spill-c-20260919 day 56 (DAY56.md section 2b): a strict-prefix restore primes its
+    // suffix through `prime_cache`, which refuses a suffix shorter than `PRIME_MIN_T`
+    // (`dspark resume suffix N < PRIME_MIN_T 16 ... serve this turn cold`); admitting one here
+    // failed the request with HTTP 500 instead of serving it cold. Such a hit is not restorable.
+    // C day 56 section 2c: and the carrier must end on the GDN prime grid. A suffix prime that
+    // starts off the grid materializes recurrent state the cold monolithic prime never computes
+    // (`grid_align_boundary`'s measured law), so an off-grid strict-prefix restore is a second
+    // numeric program for the request (measured: the restored text left the cold text at its
+    // 24th character, `DAY56.md` section 2c). Such a hit serves cold.
+    entry_toks == prompt_toks
+        || (partial_on
+            && prompt_toks - entry_toks >= memra_engine::hybrid_forward::PRIME_MIN_T
+            && entry_toks.is_multiple_of(memra_engine::Engine::gdn_chunk_size()))
 }
 
 fn dspark_prefix_capture_requested(
@@ -4546,14 +4558,16 @@ impl HostTierDraftSource {
 enum HostTierEntryClass {
     Plain,
     MtpDraft,
+    /// C day 56 (`DAY56.md`, OWED C5): an entry published by a DSPARK session, carrying the
+    /// DFlash drafter's KV tail, bound to the model's tail program (`host_tier_tail_program`).
+    DflashTail,
 }
 
 /// Classify an entry by the planes it carries, refusing BY NAME every plane outside the
-/// contract-routed surface: GLM state (TP shards, latent planes) and the DFlash draft tail (no
-/// drafter artifact identity is derivable from a GGUF digest in this slice). The refusal text
-/// is what the caller prints under `(contracts door)`; nothing is skipped silently. The tail
-/// refusal outranks a draft plane on purpose: two spec programs never coexist on one model (the
-/// boot guard refuses the combination) and this function does not guess which one won.
+/// contract-routed surface: GLM state (TP shards, latent planes), and an entry carrying both an
+/// MTP draft plane and a DFlash tail (two spec programs never coexist on one model: the boot
+/// guard refuses the combination, and this function does not guess which one won). The refusal
+/// text is what the caller prints under `(contracts door)`; nothing is skipped silently.
 fn host_tier_entry_class(
     glm: bool,
     mtp_draft: bool,
@@ -4562,17 +4576,95 @@ fn host_tier_entry_class(
     if glm {
         return Err("entry carries TP or latent (GLM) planes outside the contract-routed surface");
     }
-    if dflash_tail {
-        return Err(
-            "entry carries a DFlash draft tail outside the contract-routed surface (no drafter \
-             artifact identity in this slice)",
-        );
-    }
-    Ok(if mtp_draft {
-        HostTierEntryClass::MtpDraft
-    } else {
-        HostTierEntryClass::Plain
+    Ok(match (mtp_draft, dflash_tail) {
+        (true, true) => {
+            return Err(
+                "entry carries both an MTP draft plane and a DFlash draft tail (two spec \
+                 programs on one model)",
+            );
+        }
+        (false, true) => HostTierEntryClass::DflashTail,
+        (true, false) => HostTierEntryClass::MtpDraft,
+        (false, false) => HostTierEntryClass::Plain,
     })
+}
+
+/// The numeric class of a TAIL-BEARING image (C day 56): the plain class plus the DFlash
+/// drafter's f32 KV tail rows. Distinct from the plain and draft classes by construction.
+fn host_tier_tail_numeric_class() -> String {
+    format!("{}+dflash-tail-f32", host_tier_numeric_class())
+}
+
+/// What names one attached DFlash drafter's program (C day 56): the byte manifest of the files
+/// `DflashDraft::load` reads (`config.json`, `model.safetensors`, each by streaming SHA-256), the
+/// drafter's `DflashCfg` in its `Debug` form, and its numeric knobs (every `MEMRA_DFLASH_*` and
+/// `MEMRA_DSPARK_*` variable set at boot but `MEMRA_DSPARK_DRAFT`, whose bytes the manifest
+/// names; sorted `NAME=value`, joined by `;`; over-inclusive on purpose, fail closed).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HostTierTailSource {
+    manifest: String,
+    cfg_debug: String,
+    knobs: String,
+}
+impl HostTierTailSource {
+    fn from_export(
+        dir: &std::path::Path,
+        cfg_debug: String,
+        env: impl IntoIterator<Item = (String, String)>,
+    ) -> Result<Self, String> {
+        let mut manifest = Vec::new();
+        for name in ["config.json", "model.safetensors"] {
+            let path = dir.join(name);
+            let path = path
+                .to_str()
+                .ok_or_else(|| format!("drafter export path {path:?} is not UTF-8"))?;
+            manifest.push(format!("{name}={}", sha256_file_hex(path)?));
+        }
+        Ok(Self {
+            manifest: manifest.join(";"),
+            cfg_debug,
+            knobs: host_tier_tail_knobs(env),
+        })
+    }
+}
+
+/// The drafter's numeric knobs from an environment listing (C day 56, `HostTierTailSource`).
+fn host_tier_tail_knobs(env: impl IntoIterator<Item = (String, String)>) -> String {
+    let mut knobs: Vec<String> = env
+        .into_iter()
+        .filter(|(k, _)| {
+            (k.starts_with("MEMRA_DFLASH_") || k.starts_with("MEMRA_DSPARK_"))
+                && k != "MEMRA_DSPARK_DRAFT"
+        })
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect();
+    knobs.sort();
+    knobs.join(";")
+}
+
+/// The tail-bearing program of one model (C day 56): the plain base with the drafter folded into
+/// `artifact` (the trunk digest framed with the drafter's byte manifest), `serialized_plan` (the
+/// plan text framed with the drafter's config and knobs) and `numeric`
+/// (`host_tier_tail_numeric_class`). Every other field is the plain field.
+fn host_tier_tail_program(
+    plain: &memra_engine::cache::record::ProgramIdentity,
+    artifact_sha256_hex: &str,
+    plan_debug: &str,
+    source: &HostTierTailSource,
+) -> memra_engine::cache::record::ProgramIdentity {
+    use memra_engine::cache::record::digest;
+    let mut program = plain.clone();
+    program.artifact = digest(
+        "artifact-sha256+dflash-tail",
+        &host_tier_framed_pair(artifact_sha256_hex, &source.manifest),
+    );
+    // Three length-framed parts: the pair's framing extended by one more part.
+    let mut plan = host_tier_framed_pair(plan_debug, &source.cfg_debug);
+    plan.extend((source.knobs.len() as u64).to_le_bytes());
+    plan.extend(source.knobs.as_bytes());
+    program.serialized_plan = digest("plan-debug+dflash-tail", &plan);
+    program.numeric = digest("numeric", host_tier_tail_numeric_class().as_bytes());
+    program
 }
 
 /// Length-framed pair for a contract digest: never hash an ambiguous concatenation.
@@ -4646,6 +4738,28 @@ fn host_tier_shape_metadata(
         for n in [len, k_tok_bytes, v_tok_bytes] {
             metadata.extend((n as u64).to_le_bytes());
         }
+    }
+    metadata
+}
+
+/// C day 56: the tail framing a DFlash tail image appends to its `host-prefix-shape-v2` blob
+/// (under the encoding `host-prefix-shape-v2+dflash-tail-v1`): the geometry `export_tail` wrote,
+/// the layer count, and each layer's K and V byte counts, all as u64.
+fn host_tier_tail_shape_metadata(
+    base: usize,
+    rows: usize,
+    len: usize,
+    row_bytes: usize,
+    floor: usize,
+    layers: &[(usize, usize)],
+) -> Vec<u8> {
+    let mut metadata = vec![1u8];
+    for n in [base, rows, len, row_bytes, floor, layers.len()] {
+        metadata.extend((n as u64).to_le_bytes());
+    }
+    for (k, v) in layers {
+        metadata.extend((*k as u64).to_le_bytes());
+        metadata.extend((*v as u64).to_le_bytes());
     }
     metadata
 }
@@ -4760,6 +4874,7 @@ fn host_tier_context(
     loaded: &HashMap<String, LoadedModel>,
     models: &[(String, String, Option<String>)],
     vision_tower_loaded: bool,
+    tails: &HashMap<String, HostTierTailSource>,
 ) -> Result<HostTierContext, String> {
     host_tier_arena_refusal(hpx.arena.is_some())?;
     if vision_tower_loaded {
@@ -4842,11 +4957,29 @@ fn host_tier_context(
                  draft-bearing entries are refused by name"
             ),
         }
+        // C day 56: the tail program, one per model with a DFlash drafter attached.
+        let tail = tails.get(name).map(|source| {
+            let sha = |text: &str| {
+                let mut h = Sha256::new();
+                h.update(text.as_bytes());
+                format!("{:x}", h.finalize())
+            };
+            eprintln!(
+                "[prefix-host] contracts door: model {name} DFlash tail program \
+                 drafter_manifest={} dflash_cfg_sha256={} knobs=[{}] numeric={}",
+                source.manifest,
+                sha(&source.cfg_debug),
+                source.knobs,
+                host_tier_tail_numeric_class(),
+            );
+            host_tier_tail_program(&base, &artifact, &plan, source)
+        });
         programs.insert(
             name.clone(),
             HostTierPrograms {
                 plain: base,
                 draft,
+                tail,
                 generation,
             },
         );
@@ -4995,9 +5128,11 @@ fn parse_kv_host_tenant_pct(raw: Option<&str>) -> usize {
     }
 }
 
-/// MEMRA_KV_HOST_VERIFY (default 0 = off): sha256 the demoted entry's logical trunk state
-/// (`prefix_entry_state_digest` over KV planes + conv/ssm) at demote and re-verify it on the
-/// re-materialized device entry at promote; a mismatch drops the host entry and serves cold.
+/// MEMRA_KV_HOST_VERIFY (default 0 = off): sha256 the demoted entry's logical state at demote
+/// (`host_roundtrip_digest`: since day 53 of lane/spill-c-20260919 the v3 digest, the trunk's
+/// KV planes, conv/ssm and latent plus the draft plane, boundary rows and DFlash tail) and
+/// re-verify it on the re-materialized device entry at promote; a mismatch drops the host
+/// entry and serves cold.
 /// Gate/diagnostic arm ONLY: the digest D2Hs every plane byte on both sides of the round
 /// trip, far too slow always-on for GB-class entries.
 fn kv_host_verify_on() -> bool {
@@ -5010,8 +5145,11 @@ fn kv_host_verify_on() -> bool {
 /// loud-failures-fail-quietly law). Values: `alloc-fail` = every pinned host alloc reports
 /// failure, exercising the loud latch-off with no pageable fallback; `flip-demote` = flip
 /// one K byte of the first demoted plane AFTER the demote digest is recorded, exercising the
-/// MEMRA_KV_HOST_VERIFY promote mismatch. Unset (the default) = off. NEVER set on a serving
-/// box: `flip-demote` intentionally corrupts host-tier bytes.
+/// MEMRA_KV_HOST_VERIFY promote mismatch; `flip-demote-draft`, `flip-demote-hidden`,
+/// `flip-demote-logits` (lane/spill-c-20260919 day 53, verify digest v3) = the same for the
+/// draft K plane, the boundary hidden row and the boundary logits, on the legacy copy path
+/// only. Unset (the default) = off. NEVER set on a serving box: the flips intentionally corrupt
+/// host-tier bytes.
 fn kv_host_fault() -> &'static str {
     static F: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     F.get_or_init(|| std::env::var("MEMRA_KV_HOST_FAULT").unwrap_or_default())
@@ -8492,6 +8630,10 @@ struct HostPrefixEntry {
     /// MEMRA_KV_HOST_VERIFY=1 arm: `prefix_entry_state_digest` of the device entry at demote,
     /// re-checked against the re-materialized entry at promote. None with the flag off.
     verify_digest: Option<String>,
+    /// WP-A day 40 (`DAY40.md` design S): the device source digest (the four-lane program) of each
+    /// recurrent plane that rode the demote as an f32 span, by slot; the promote's span receipt is
+    /// compared with it. Empty for an image without spans (and for a handoff import).
+    span_digests: Vec<(HostHashSlot, memra_engine::cache::tiered::Digest)>,
     _tier_metadata: Vec<u8>,
     _tier_metadata_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
     _tier_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
@@ -8630,6 +8772,11 @@ struct HostPrefixCache {
     /// instant its current tick began, stamped at the loop top before the tick-top polls; the
     /// promote's timeline (its submission, each settle step) reads it.
     tick_top: Option<(u64, Instant)>,
+    /// WP-A day 47 (`DAY47.md` design V): the parks a published pause snapshot demote releases, and
+    /// the shells of pause shape-2 demotes that ended unpublished; both drained by the run loop's
+    /// tick top, which holds the continuation pool and the device index.
+    park_releases: Vec<ParkRelease>,
+    reinstate: std::rc::Rc<std::cell::RefCell<Vec<PrefixEntry>>>,
     tier: Option<HostTierContext>,
     arena: Option<memra_engine::PinnedHostArena>,
     arena_reserve_ms: f64,
@@ -9389,6 +9536,8 @@ impl HostStaging {
 struct HostTierPrograms {
     plain: memra_engine::cache::record::ProgramIdentity,
     draft: Option<memra_engine::cache::record::ProgramIdentity>,
+    /// C day 56: the tail-bearing program, for a model with a DFlash drafter attached.
+    tail: Option<memra_engine::cache::record::ProgramIdentity>,
     generation: Arc<()>,
 }
 impl HostTierContext {
@@ -9455,6 +9604,10 @@ impl HostTierContext {
             HostTierEntryClass::MtpDraft => programs.draft.as_ref().ok_or(
                 "tier draft program identity missing: the model has no MTP head, so a \
                  draft-bearing entry cannot name its program",
+            )?,
+            HostTierEntryClass::DflashTail => programs.tail.as_ref().ok_or(
+                "tier DFlash tail program identity missing: no drafter is attached to the \
+                 model, so a tail-bearing entry cannot name its program",
             )?,
         };
         let mut program = base.clone();
@@ -9680,10 +9833,24 @@ impl HostPrefixCache {
         if let Some(p) = &entry.draft {
             geometry(p, "MTP draft plane")?;
         }
+        // C day 56: the DFlash tail's geometry, `export_tail`'s rule: every layer's K and V hold
+        // `rows * row_bytes` bytes and the rows end at the tail's logical length.
+        if let Some(t) = &entry.dspark_draft {
+            let want = t.rows.checked_mul(t.row_bytes);
+            if t.layers.is_empty()
+                || t.rows == 0
+                || t.base.checked_add(t.rows) != Some(t.len)
+                || t.layers
+                    .iter()
+                    .any(|(k, v)| Some(k.len() * 4) != want || Some(v.len() * 4) != want)
+            {
+                return Err("tier DFlash tail geometry mismatch".into());
+            }
+        }
         // Capture presence/length/order metadata as well as every payload. No raw pointers,
         // padding, codec, alternate attention program or old handoff identity is imported.
         let plane_geometry = |p: &HostPlane| (p.len, p.k_tok_bytes, p.v_tok_bytes);
-        let metadata = host_tier_shape_metadata(
+        let mut metadata = host_tier_shape_metadata(
             entry.pos,
             &entry
                 .conv
@@ -9702,6 +9869,25 @@ impl HostPrefixCache {
                 .collect::<Vec<_>>(),
             entry.draft.as_ref().map(plane_geometry),
         );
+        // C day 56: a tail image frames its tail after the v2 blob under its own encoding; plain
+        // and draft images keep `host-prefix-shape-v2` byte for byte.
+        let shape_encoding: &[u8] = match &entry.dspark_draft {
+            Some(t) => {
+                metadata.extend(host_tier_tail_shape_metadata(
+                    t.base,
+                    t.rows,
+                    t.len,
+                    t.row_bytes,
+                    t.floor,
+                    &t.layers
+                        .iter()
+                        .map(|(k, v)| (k.len() * 4, v.len() * 4))
+                        .collect::<Vec<_>>(),
+                ));
+                b"host-prefix-shape-v2+dflash-tail-v1"
+            }
+            None => b"host-prefix-shape-v2",
+        };
         // WP-A day 35 (`DAY35.md` design M'): a KV plane's re-hash (hash 2) is the helper's digest
         // over a view of the lease when one came back (the same `checksum` program over the same
         // bytes, taken after the `flip-demote` point); without one it runs here, as before. Either
@@ -9789,14 +9975,54 @@ impl HostPrefixCache {
                 lease_pre(HostLeaseSlot::DraftV),
             )?;
         }
-        add(
-            Role::Transaction,
-            1,
-            b"host-prefix-shape-v2",
-            &metadata,
-            None,
-            None,
-        )?;
+        // C day 56: the DFlash tail, per draft layer a K and a V segment under `Role::Tail`,
+        // checksummed here on the owner thread (the tail is not handed to the hash helper).
+        let tail_t0 = Instant::now();
+        if let Some(t) = &entry.dspark_draft {
+            for (k, v) in &t.layers {
+                add(
+                    Role::Tail,
+                    t.row_bytes as u64,
+                    b"dflash-tail-k-f32",
+                    f32s_as_bytes(k),
+                    None,
+                    None,
+                )?;
+                add(
+                    Role::Tail,
+                    t.row_bytes as u64,
+                    b"dflash-tail-v-f32",
+                    f32s_as_bytes(v),
+                    None,
+                    None,
+                )?;
+            }
+        }
+        let tail_hash_ms = tail_t0.elapsed().as_secs_f64() * 1e3;
+        add(Role::Transaction, 1, shape_encoding, &metadata, None, None)?;
+        // The tail's receipt (DAY19 Task 3's rule, `DAY56.md` design d): its segments and their
+        // checksums, printed once the identity binds below.
+        let tail_receipt = entry.dspark_draft.as_ref().map(|t| {
+            let mut h = Sha256::new();
+            let (mut segments, mut bytes) = (0usize, 0u64);
+            for (segment, sum) in layout.segments.iter().zip(&checksums) {
+                if segment.role == Role::Tail {
+                    h.update(sum);
+                    segments += 1;
+                    bytes += segment.valid_bytes;
+                }
+            }
+            format!(
+                "[prefix-host] contracts door tail bound: {} draft layers, {segments} Role::Tail \
+                 segments ({bytes} B, hashed in {tail_hash_ms:.1} ms on the owner thread), \
+                 tail_checksums_sha256={:x} ({} tokens, model {}{})",
+                t.layers.len(),
+                h.finalize(),
+                entry.toks.len(),
+                entry.pool_key.0,
+                ns_suffix(&entry.pool_key.1)
+            )
+        });
         let id = KvBlockId::new(&program, [0; 32], &entry.toks, 0, 0, tier.device, 0)
             .map_err(|e| format!("{e:?}"))?;
         let bundle = StateBundle {
@@ -9817,6 +10043,9 @@ impl HostPrefixCache {
             .map_err(|e| format!("tier image identity refused: {e:?}"))?;
         entry._tier_metadata_charge = metadata_charge;
         entry._tier_metadata = metadata;
+        if let Some(line) = tail_receipt {
+            eprintln!("{line}");
+        }
         Ok(())
     }
 }
@@ -10008,12 +10237,98 @@ enum ContractSettle {
     Pending(PendingContractDemote),
     /// Every item complete, the receipt required, the planes back, the ticket retired and
     /// acknowledged: the host planes, each carrying its receipt (trunk, then the draft), and
-    /// (WP-A day 30) the landed staging of every f32 span by image slot, empty without spans.
+    /// (WP-A day 30) the landed staging of every f32 span by image slot, empty without spans, and
+    /// (WP-A day 42, `DAY42.md` design S2) the spans' receipt id, unsealed (`None` without spans or
+    /// on an engine without the receipt kernels).
     Done(
         Vec<Option<HostPlane>>,
         Option<HostPlane>,
         Vec<(HostHashSlot, memra_engine::PinnedHostBuf)>,
+        Option<memra_engine::tier_transfer::SpanReceiptId>,
     ),
+}
+
+/// WP-A day 42 (`DAY42.md` design S2, section 1a item 3): whether any device work may still read a
+/// demote's landed span staging (the seal's landed digests), shared by that demote's staging guards
+/// and its `Hashing` state. `true` (quiet) from the take until the seal, `false` from the seal until
+/// the owner thread observes the span receipt, `true` again after that; a seal that fails leaves it
+/// `false` for good.
+#[derive(Clone)]
+struct HostStagingQuiet(Arc<std::sync::atomic::AtomicBool>);
+impl HostStagingQuiet {
+    fn new() -> Self {
+        Self(Arc::new(std::sync::atomic::AtomicBool::new(true)))
+    }
+    fn get(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Acquire)
+    }
+    fn set(&self, quiet: bool) {
+        self.0.store(quiet, std::sync::atomic::Ordering::Release);
+    }
+}
+
+/// WP-A day 42 (`DAY42.md` design S2, section 1a item 3): one landed span's staging on its way to
+/// the hash helper and back. It frees (at drop) or goes back to the set (`into_quiet`) only while
+/// its demote's `HostStagingQuiet` is set; any drop while a device read may be pending (after the
+/// seal, before the owner observed the span receipt) LEAKS the buffer, wherever the guard drops
+/// (the helper gone, a discarded reply, a latch exit): the M' lease guard's rule, so no pinned free
+/// and no reuse runs under the landed digest's read.
+struct HostStagingHeld {
+    buf: Option<memra_engine::PinnedHostBuf>,
+    quiet: HostStagingQuiet,
+}
+impl HostStagingHeld {
+    fn new(buf: memra_engine::PinnedHostBuf, quiet: &HostStagingQuiet) -> Self {
+        Self {
+            buf: Some(buf),
+            quiet: quiet.clone(),
+        }
+    }
+    fn buf(&self) -> &memra_engine::PinnedHostBuf {
+        self.buf
+            .as_ref()
+            .expect("a staging guard holds its buffer until it drops")
+    }
+    fn len(&self) -> usize {
+        self.buf().len()
+    }
+    fn as_f32_slice(&self) -> &[f32] {
+        self.buf().as_f32_slice()
+    }
+    /// The buffer, for the set, only while no device read is pending; `None` otherwise (the guard
+    /// then leaks it at its drop).
+    fn into_quiet(mut self) -> Option<memra_engine::PinnedHostBuf> {
+        if self.quiet.get() {
+            self.buf.take()
+        } else {
+            None
+        }
+    }
+}
+impl Drop for HostStagingHeld {
+    fn drop(&mut self) {
+        if let Some(buf) = self.buf.take()
+            && !self.quiet.get()
+        {
+            std::mem::forget(buf);
+        }
+    }
+}
+
+/// WP-A day 42 (`DAY42.md` design S2): a `Hashing` demote's span receipt. `id` is the engine's
+/// (`None` on an engine without the receipt kernels: no pairs, no check); `slots` the spans' image
+/// slots in attach order; `pairs` each span's (source, landed) digests once the owner observed
+/// the receipt.
+struct HostSpanReceipt {
+    id: Option<memra_engine::tier_transfer::SpanReceiptId>,
+    slots: Vec<HostHashSlot>,
+    quiet: HostStagingQuiet,
+    pairs: Option<
+        Vec<(
+            memra_engine::cache::tiered::Digest,
+            memra_engine::cache::tiered::Digest,
+        )>,
+    >,
 }
 
 /// The image `host_entry_from_device` built: whole (every plane on the host, the pre-door
@@ -10051,6 +10366,97 @@ struct PendingDemote {
     hashing: Option<PendingHashing>,
     /// What the owner thread held for this demote, by segment (the ledger line at publication).
     owner: DemoteOwnerLedger,
+    /// WP-A day 38 (`DAY38.md` design P): the request ids the admission probe PARKED on this entry
+    /// while it was in its COPY phase (the day-29 `Hashing` park's shape, extended); they ride into
+    /// `PendingHashing.parked` when the copy settles, and a demote that ends unpublished names them
+    /// (they re-admit to whatever the tick top leaves: a cold prime). A count, not a state the
+    /// request owns.
+    parked: Vec<String>,
+    reparks: u32,
+    /// WP-A day 47 (`DAY47.md` design V): a pause sweep's shape-1 demote (its boundary snapshot):
+    /// the park it releases once the publication lands (`HostPrefixCache.park_releases`).
+    release: Option<ParkRelease>,
+    /// WP-A day 47 (design V): a pause sweep's shape-2 demote (a resident entry that left the
+    /// device index for it): every exit that drops the shell unpublished reinstates it
+    /// (`HostDemoteShell`).
+    reinstate: bool,
+}
+
+/// WP-A day 47 (`DAY47.md` design V, shape 1): the continuation park a pause sweep's snapshot demote
+/// releases once it publishes: the park in `reuse[pool_key]` whose `fed` equals `tape`, if it is still
+/// there (a session that resumed consumed it, and then nothing is released).
+#[derive(Clone, Debug, PartialEq)]
+struct ParkRelease {
+    pool_key: PoolKey,
+    tape: Vec<u32>,
+}
+
+/// WP-A day 47 (`DAY47.md` design V): a pending demote's source shell while one settle step runs.
+/// A pause sweep's shape-2 demote (`PendingDemote.reinstate`) hands the whole shell to the context's
+/// reinstate queue on every exit that drops it unpublished (a typed refusal, a leaked ticket, a
+/// `Hashing` latch or reply mismatch, an unarmed tier, a refused span pair), and the tick top
+/// re-inserts it into the device index; a shape-1 demote (`PendingDemote.release`) names the kept
+/// park on such an exit. `disarm` on the publication and on a quarantined source (not whole);
+/// `keep` hands the entry back when the demote continues.
+struct HostDemoteShell {
+    entry: Option<PrefixEntry>,
+    reinstate: Option<std::rc::Rc<std::cell::RefCell<Vec<PrefixEntry>>>>,
+    park_kept_note: bool,
+}
+impl HostDemoteShell {
+    fn arm(entry: PrefixEntry, pending: &PendingDemote, host: &HostPrefixCache) -> Self {
+        Self::new(
+            entry,
+            pending.reinstate.then(|| host.reinstate.clone()),
+            pending.release.is_some(),
+        )
+    }
+    fn new(
+        entry: PrefixEntry,
+        reinstate: Option<std::rc::Rc<std::cell::RefCell<Vec<PrefixEntry>>>>,
+        park_kept_note: bool,
+    ) -> Self {
+        Self {
+            entry: Some(entry),
+            reinstate,
+            park_kept_note,
+        }
+    }
+    fn keep(mut self) -> PrefixEntry {
+        self.disarm();
+        self.entry
+            .take()
+            .expect("a demote shell holds its entry until it drops")
+    }
+    fn disarm(&mut self) {
+        self.reinstate = None;
+        self.park_kept_note = false;
+    }
+}
+impl std::ops::Deref for HostDemoteShell {
+    type Target = PrefixEntry;
+    fn deref(&self) -> &PrefixEntry {
+        self.entry
+            .as_ref()
+            .expect("a demote shell holds its entry until it drops")
+    }
+}
+impl std::ops::DerefMut for HostDemoteShell {
+    fn deref_mut(&mut self) -> &mut PrefixEntry {
+        self.entry
+            .as_mut()
+            .expect("a demote shell holds its entry until it drops")
+    }
+}
+impl Drop for HostDemoteShell {
+    fn drop(&mut self) {
+        if self.park_kept_note {
+            eprintln!("[prefix-host] pause demote: host copy did not publish; park kept");
+        }
+        if let (Some(e), Some(q)) = (self.entry.take(), self.reinstate.take()) {
+            q.borrow_mut().push(e);
+        }
+    }
 }
 
 /// WP-A day 28 (memra#536 Move 1 owed item 2, lead ruling 39, `research/spill-a-20260919/DAY28.md`):
@@ -10076,6 +10482,9 @@ struct PendingHashing {
     /// WP-A day 35 (`DAY35.md` design M'): the image's KV planes while the helper reads views of
     /// their leases (the bind's re-hash); `land`ed when the reply arrives, leaked on any other drop.
     leases: Option<HostLeasesOnHelper>,
+    /// WP-A day 42 (`DAY42.md` design S2): the spans' receipt, required before the publication;
+    /// `None` for an image without spans.
+    span: Option<HostSpanReceipt>,
 }
 
 /// The owner thread's held time for one off-tick demote, by segment, in ms: before the submission
@@ -10107,7 +10516,8 @@ enum HostHashSlot {
 struct HostHashPayload {
     slot: HostHashSlot,
     data: HostHeapF32,
-    staged: Option<memra_engine::PinnedHostBuf>,
+    /// WP-A day 42 (design S2): guarded (`HostStagingHeld`).
+    staged: Option<HostStagingHeld>,
 }
 
 /// WP-A day 31 (spill-c DAY38 section 3, the separating line): the hand-off's heap payload count
@@ -10351,12 +10761,21 @@ fn host_hash_restore_payload(e: &mut HostPrefixEntry, p: HostHashPayload) -> Res
 enum HostHashFault {
     HelperGone,
     NeverLands,
+    /// WP-A day 41 (`DAY41.md`, OWED item 5): design K's three promote-side arms, each keyed on
+    /// the helper's FIRST `Sources` job (a demote's `Hash` jobs before it run clean): the helper
+    /// exits on it, hashes it and discards the reply, or replies with the job's `seq + 1`.
+    SourcesGone,
+    SourcesNeverLand,
+    SourcesForeignReply,
 }
 impl HostHashFault {
     fn from_door(fault: &str) -> Option<Self> {
         match fault {
             "hash-helper-gone" => Some(Self::HelperGone),
             "hash-never-lands" => Some(Self::NeverLands),
+            "sources-helper-gone" => Some(Self::SourcesGone),
+            "sources-never-land" => Some(Self::SourcesNeverLand),
+            "sources-foreign-reply" => Some(Self::SourcesForeignReply),
             _ => None,
         }
     }
@@ -10403,6 +10822,41 @@ impl HostHashWorker {
                     let job = match job {
                         HostHelperJob::Hash(job) => job,
                         HostHelperJob::Sources(job) => {
+                            // WP-A day 41 (OWED item 5): the Sources-keyed red arms, one-shot.
+                            let sources_fault = match fault {
+                                Some(
+                                    f @ (HostHashFault::SourcesGone
+                                    | HostHashFault::SourcesNeverLand
+                                    | HostHashFault::SourcesForeignReply),
+                                ) => {
+                                    fault = None;
+                                    eprintln!(
+                                        "[prefix-host] hash helper fault (MEMRA_KV_HOST_FAULT={}): \
+                                         the Sources job of ticket seq={} ({} views) {}",
+                                        match f {
+                                            HostHashFault::SourcesGone => "sources-helper-gone",
+                                            HostHashFault::SourcesNeverLand => "sources-never-land",
+                                            _ => "sources-foreign-reply",
+                                        },
+                                        job.seq,
+                                        job.views.len(),
+                                        match f {
+                                            HostHashFault::SourcesGone => {
+                                                "is dropped and the helper exits"
+                                            }
+                                            HostHashFault::SourcesNeverLand => {
+                                                "is hashed and its reply discarded"
+                                            }
+                                            _ => "is answered as seq + 1",
+                                        }
+                                    );
+                                    Some(f)
+                                }
+                                _ => None,
+                            };
+                            if sources_fault == Some(HostHashFault::SourcesGone) {
+                                return;
+                            }
                             // WP-A day 34: the promote's H2D completion checksums, off the tick.
                             let t = Instant::now();
                             let bytes = job.views.iter().map(|v| v.len()).sum();
@@ -10415,11 +10869,21 @@ impl HostHashWorker {
                                 })
                                 .collect();
                             let reply = HostSourcesReply {
-                                seq: job.seq,
+                                seq: if sources_fault == Some(HostHashFault::SourcesForeignReply) {
+                                    job.seq.wrapping_add(1)
+                                } else {
+                                    job.seq
+                                },
                                 digests,
                                 bytes,
                                 helper_ms: t.elapsed().as_secs_f64() * 1e3,
                             };
+                            if sources_fault == Some(HostHashFault::SourcesNeverLand) {
+                                // The reply is discarded: its views drop here and never come back
+                                // to the engine, which keeps their sources (a leak, never a free).
+                                drop(reply);
+                                continue;
+                            }
                             if sources_tx.send(reply).is_err() {
                                 return;
                             }
@@ -10650,8 +11114,13 @@ struct PendingContractPromote {
     submitted: Instant,
     /// WP-A day 32 (Move 2 owed item 1, the H2D half): the recurrent planes that ride the ticket
     /// as f32 H2D spans, in attach order: the slot and the plane's f32 count (the span's receipt
-    /// term). Empty when no span was attached.
-    spans: Vec<(HostHashSlot, usize)>,
+    /// term). Empty when no span was attached. WP-A day 40 (design S): with the plane's kept
+    /// source digest from its demote, when the entry has one.
+    spans: Vec<(
+        HostHashSlot,
+        usize,
+        Option<memra_engine::cache::tiered::Digest>,
+    )>,
     /// WP-A day 34 (`DAY34.md` design K): `Some` when the KV items' completion checksums are on the
     /// hash helper (the off-tick route); the settle takes the reply before its completion step.
     helper_sums: Option<PendingSources>,
@@ -10928,6 +11397,26 @@ enum HostContractFault {
     /// H2D spans refused: ...`), the host entry stay, the tier stay on, and the next promote
     /// complete with its spans.
     PromoteSpanAttach,
+    /// WP-A day 38 (`DAY38.md` design G, the device receipt's red arm): the off-tick demote's first
+    /// KV item's DEVICE source has one byte flipped on the copy stream after its receipt digest and
+    /// before its copy (`CudaTransfers::inject_d2h_source_flip`); the landed bytes then differ from
+    /// the receipt and the bind must refuse the image (nothing published, the tier on).
+    D2hSourceFlip,
+    /// WP-A day 38 (P's red arm): the off-tick demote is held unlanded for `D2H_DELAY_FAULT_NS` on
+    /// the host (`CudaTransfers::inject_d2h_delay`, a host-side hold since design G''', DAY38
+    /// section 14; no stream runs a spin), so a request hitting the entry arrives in its copy phase
+    /// and must park until the publication, then promote.
+    D2hDelay,
+    /// WP-A day 40 (`DAY40.md` design S, the D2H span receipt's red arm): one byte of the off-tick
+    /// demote's first f32 span's landed staging flips on the copy stream after its copy and before
+    /// its event (design S2, `DAY42.md` section 1a; `CudaTransfers::inject_span_flip_landed`); the
+    /// span receipt's landed digest differs from the source digest and the demote must refuse the
+    /// image (nothing published, the tier on).
+    SpanFlipLanded,
+    /// WP-A day 40 (design S, the H2D span receipt's red arm): the off-tick promote's first span
+    /// is filled from a copy of its resident plane with one byte flipped (the bytes going up differ
+    /// from the demote's); the promote must refuse (the host twins intact, the request cold).
+    SpanFlipResident,
 }
 impl HostContractFault {
     fn from_door(fault: &str) -> Option<Self> {
@@ -10942,12 +11431,24 @@ impl HostContractFault {
             "d2d-delay-restore" => Some(Self::D2dDelayRestore),
             "contract-spans" => Some(Self::SpanAttach),
             "contract-promote-spans" => Some(Self::PromoteSpanAttach),
+            "d2h-source-flip" => Some(Self::D2hSourceFlip),
+            "d2h-delay" => Some(Self::D2hDelay),
+            "span-flip-landed" => Some(Self::SpanFlipLanded),
+            "span-flip-resident" => Some(Self::SpanFlipResident),
             _ => None,
         }
     }
     /// The demote (D2H) side, as opposed to the promote (H2D) side.
     fn is_demote(self) -> bool {
-        matches!(self, Self::PreSubmit | Self::PostPublish | Self::SpanAttach)
+        matches!(
+            self,
+            Self::PreSubmit
+                | Self::PostPublish
+                | Self::SpanAttach
+                | Self::D2hSourceFlip
+                | Self::D2hDelay
+                | Self::SpanFlipLanded
+        )
     }
     /// A Move 1 fault (the D2H or H2D route), as opposed to a D2D fault (day 22).
     fn is_move1(self) -> bool {
@@ -10998,7 +11499,7 @@ fn host_kv_planes_through_contract(
     let pending = host_kv_planes_submit_contract(engine, tier, dead, class)?;
     match host_kv_planes_settle_contract(tier, dead, pending, ContractWait::Block)? {
         // The blocking route attaches no span (`host_spans_submit` is the off-tick route's).
-        ContractSettle::Done(kv, draft, _no_spans) => Ok((kv, draft)),
+        ContractSettle::Done(kv, draft, _no_spans, _no_receipt) => Ok((kv, draft)),
         ContractSettle::Pending(_) => Err(HostContractFailure::SourceQuarantined(
             "tier D2H blocking settle returned a pending ticket".into(),
         )),
@@ -11258,6 +11759,39 @@ fn host_kv_planes_submit_contract(
             })
         })
         .collect();
+    // WP-A day 38 (`DAY38.md` design G and P): the two one-shot red arms ride the device receipt,
+    // armed for exactly this batch.
+    if t.d2h_receipts_on_device() {
+        match fault {
+            Some(HostContractFault::D2hSourceFlip) => {
+                t.inject_d2h_source_flip();
+                eprintln!(
+                    "[prefix-host] demote fault armed (MEMRA_KV_HOST_FAULT=d2h-source-flip): one byte \
+                     of the first KV item's device source flips after its receipt digest and before \
+                     its copy; the bind must refuse the image"
+                );
+            }
+            Some(HostContractFault::SpanFlipLanded) => {
+                t.inject_span_flip_landed();
+                eprintln!(
+                    "[prefix-host] demote fault armed (MEMRA_KV_HOST_FAULT=span-flip-landed): one \
+                     byte of the first f32 span's landed staging flips after its copy and before its \
+                     event, so the landed bytes carry it; the span receipt's landed digest must \
+                     witness it and the demote must refuse the image"
+                );
+            }
+            Some(HostContractFault::D2hDelay) => {
+                t.inject_d2h_delay(memra_engine::tier_transfer::D2H_DELAY_FAULT_NS);
+                eprintln!(
+                    "[prefix-host] demote fault armed (MEMRA_KV_HOST_FAULT=d2h-delay): the demote \
+                     is held unlanded for {} ms on the host (no stream is held); a hit arriving in \
+                     the copy phase must park until the publication",
+                    memra_engine::tier_transfer::D2H_DELAY_FAULT_NS / 1_000_000
+                );
+            }
+            _ => {}
+        }
+    }
     let ticket = match t.submit_batch(ops) {
         Ok(batch)
             if batch
@@ -11492,27 +12026,42 @@ fn host_kv_planes_settle_contract(
                 .into(),
         ));
     }
+    // WP-A day 38 (`DAY38.md` design G): where hash 1 ran, for the receipt line (log only; the
+    // kernels' copy-stream time is read without a wait, the batch has landed).
+    let receipt_place = if t.d2h_receipts_on_device() {
+        match t.d2h_receipt_gpu_ms(&ticket) {
+            Some(ms) => format!("; receipts on the copy stream (source digests, {ms:.2}ms)"),
+            None => "; receipts on the copy stream (source digests)".to_string(),
+        }
+    } else {
+        String::new()
+    };
     // WP-A day 30 (memra#536 Move 2 owed item 1, the D2H half): `producer_done` covers the f32
     // spans with the items. Take them back FIRST, so every source is in its slot of `dead`
     // before any refusal below unwinds the entry, and the landed staging travels to the helper.
     // Day 31 (DAY30 finding 4): every landed staging buffer goes into `staged` before any check,
     // and `staged` puts each one back into the context's set when it drops, so every `return
     // Err` below returns the staging; only the `Done` arm takes it out (`StagedSpans::landed`).
+    // WP-A day 42 (`DAY42.md` design S2): the take hands out the spans' receipt id, unsealed (its
+    // lanes hold the source digests; nothing is enqueued on the staging here), so no exit of this
+    // settle meets a pending device read of the staging; the `Done` arm seals it at the hand-off.
     let mut staged = StagedSpans {
         tier,
         bufs: Vec::with_capacity(spans.len()),
     };
+    let mut span_receipt = None;
     if !spans.is_empty() {
-        let landed = match t.take_d2h_spans(&ticket) {
-            Ok(landed) => landed,
+        let taken = match t.take_d2h_spans(&ticket) {
+            Ok(taken) => taken,
             Err(e) => {
                 return Err(SourceQuarantined(format!(
                     "tier D2H spans not taken back ({e:?}); the transfer engine keeps the spans"
                 )));
             }
         };
-        let mut sources = Vec::with_capacity(landed.len());
-        for span in landed {
+        span_receipt = taken.receipt;
+        let mut sources = Vec::with_capacity(taken.spans.len());
+        for span in taken.spans {
             let memra_engine::tier_transfer::D2hSpan {
                 source,
                 destination,
@@ -11709,7 +12258,7 @@ fn host_kv_planes_settle_contract(
     eprintln!(
         "[prefix-host] contracts door D2H receipt: ticket issuer={} seq={} epochs={}/{}/{} \
          items={} ({kv_planes} KV planes{}) complete={complete} require=ok \
-         checksums_sha256={} retired acknowledged{}",
+         checksums_sha256={} retired acknowledged{}{receipt_place}",
         ticket.issuer,
         ticket.sequence,
         ticket.epochs.state,
@@ -11727,7 +12276,12 @@ fn host_kv_planes_settle_contract(
             )
         },
     );
-    Ok(ContractSettle::Done(kv, draft, staged.landed(&spans)))
+    Ok(ContractSettle::Done(
+        kv,
+        draft,
+        staged.landed(&spans),
+        span_receipt,
+    ))
 }
 
 /// WP-A day 31 (DAY30 finding 4): the landed staging of one settle. Dropped on any refusal, it
@@ -12010,7 +12564,8 @@ fn host_h2d_spans_submit(
     tier: &HostTierContext,
     mut pending: PendingContractPromote,
     staged: &mut HostStagingBack<'_>,
-    fills: Vec<HostHeapF32>,
+    mut fills: Vec<HostHeapF32>,
+    kept: &[(HostHashSlot, memra_engine::cache::tiered::Digest)],
 ) -> Result<PendingContractPromote, HostPromoteFailure> {
     use memra_engine::tier_transfer::H2dSpan;
     let Some(transfers) = &tier.transfers else {
@@ -12021,7 +12576,11 @@ fn host_h2d_spans_submit(
     };
     let mut t = transfers.borrow_mut();
     let mut refused = None;
-    let mut slots: Vec<(HostHashSlot, usize)> = Vec::with_capacity(staged.bufs.len());
+    let mut slots: Vec<(
+        HostHashSlot,
+        usize,
+        Option<memra_engine::cache::tiered::Digest>,
+    )> = Vec::with_capacity(staged.bufs.len());
     let mut spans: Vec<H2dSpan> = Vec::with_capacity(staged.bufs.len());
     for (slot, source) in std::mem::take(&mut staged.bufs) {
         if refused.is_some() {
@@ -12035,7 +12594,8 @@ fn host_h2d_spans_submit(
                     source,
                     destination,
                 });
-                slots.push((slot, len));
+                let kept = kept.iter().find(|(s, _)| *s == slot).map(|(_, d)| *d);
+                slots.push((slot, len, kept));
             }
             Err(e) => {
                 refused = Some(format!(
@@ -12053,6 +12613,23 @@ fn host_h2d_spans_submit(
         && pending.fault == Some(HostContractFault::PromoteSpanAttach)
     {
         refused = Some("injected failure (MEMRA_KV_HOST_FAULT=contract-promote-spans)".into());
+    }
+    // WP-A day 40 (design S): `MEMRA_KV_HOST_FAULT=span-flip-resident` fills the first span from a
+    // copy of its resident plane with one byte flipped, so the bytes going up differ from the
+    // demote's source and the promote's span receipt must refuse them.
+    if refused.is_none()
+        && pending.fault == Some(HostContractFault::SpanFlipResident)
+        && let Some(first) = fills.first_mut()
+    {
+        let mut v: Vec<f32> = first.as_ref().clone();
+        if let Some(x) = v.first_mut() {
+            *x = f32::from_bits(x.to_bits() ^ 0x40);
+        }
+        *first = Arc::new(v);
+        eprintln!(
+            "[prefix-host] promote fault armed (MEMRA_KV_HOST_FAULT=span-flip-resident): the first \
+             span is filled from its resident plane with one byte flipped; the promote must refuse"
+        );
     }
     // WP-A day 33 (design F): the fill rides the copy stream ahead of the copies (one host function).
     let attached = match refused {
@@ -12077,7 +12654,7 @@ fn host_h2d_spans_submit(
         Err(refusal) => refusal,
     };
     let n = back.len();
-    for (&(slot, _), span) in slots.iter().zip(back) {
+    for (&(slot, _, _), span) in slots.iter().zip(back) {
         staged.bufs.push((slot, span.source));
     }
     Err(host_promote_contract_abort(
@@ -12685,19 +13262,52 @@ fn host_kv_planes_settle_promote(
         };
         let count = back.len();
         let mut short = None;
-        for (&(slot, len), span) in spans.iter().zip(back) {
-            let memra_engine::tier_transfer::H2dSpan {
-                source,
-                destination,
-            } = span;
+        let mut differs = None;
+        for (&(slot, len, kept), landed) in spans.iter().zip(back) {
+            let memra_engine::tier_transfer::LandedH2dSpan {
+                span:
+                    memra_engine::tier_transfer::H2dSpan {
+                        source,
+                        destination,
+                    },
+                destination_digest,
+            } = landed;
             if destination.len() != len && short.is_none() {
                 short = Some(format!(
                     "{slot:?} landed {} f32 against {len} submitted",
                     destination.len()
                 ));
             }
+            // WP-A day 40 (`DAY40.md` design S): the span landed on the device must be the
+            // demote's source, digest for digest, before anything is published.
+            if let (Some(kept), Some(landed)) = (kept, destination_digest)
+                && kept != landed
+                && differs.is_none()
+            {
+                differs = Some(slot);
+            }
             staged.bufs.push((slot, source));
             recur.push((slot, destination));
+        }
+        // The KV planes' receipt mismatch's path (the host bytes no longer match what the demote
+        // wrote): the entry leaves and the cold path serves (DAY40 section 3a).
+        if let Some(slot) = differs {
+            let why = format!(
+                "tier image {slot:?} span landed on the device differs from its demote's source"
+            );
+            return Err(
+                match host_promote_contract_abort(
+                    &mut t,
+                    registered,
+                    Some(ticket),
+                    Some(producer),
+                    &sources,
+                    &why,
+                ) {
+                    HostPromoteFailure::Refused(why) => ReceiptMismatch(why),
+                    other => other,
+                },
+            );
         }
         if count != spans.len() || short.is_some() {
             let why = format!(
@@ -13190,7 +13800,7 @@ fn host_entry_from_device(
                     .map_err(|why| format!("tier image {why}"))?;
             let routed = match route {
                 ContractD2h::OnTick => host_kv_planes_through_contract(engine, tier, dead, class)
-                    .map(|(kv, draft)| ContractSettle::Done(kv, draft, Vec::new())),
+                    .map(|(kv, draft)| ContractSettle::Done(kv, draft, Vec::new(), None)),
                 // WP-A day 30: the recurrent f32 planes ride the same ticket as spans.
                 ContractD2h::OffTick => host_kv_planes_submit_contract(engine, tier, dead, class)
                     .and_then(|pending| host_spans_submit(tier, dead, pending))
@@ -13219,7 +13829,7 @@ fn host_entry_from_device(
         _ => None,
     };
     let (mut kv, contract_draft, pending) = match contract_planes {
-        Some(ContractSettle::Done(kv, draft, _no_spans)) => (kv, Some(draft), None),
+        Some(ContractSettle::Done(kv, draft, _no_spans, _no_receipt)) => (kv, Some(draft), None),
         // WP-A day 17: the KV planes are in flight on the copy stream; their slots fill at the
         // settle. `Some(None)` for the draft: the contract owns it, nothing is copied by reference.
         Some(ContractSettle::Pending(pending)) => (
@@ -13281,6 +13891,9 @@ fn host_entry_from_device(
             _ => None,
         });
     }
+    // Day 53: the legacy copy path (no contract route took any plane), where the verify digest
+    // is the only byte attestation and the v3 red arms apply.
+    let legacy_copy = contract_draft.is_none() && pending.is_none();
     let draft = match contract_draft {
         Some(draft) => draft,
         None => match &dead.draft {
@@ -13310,7 +13923,7 @@ fn host_entry_from_device(
         }
         _ => None,
     };
-    let entry = HostPrefixEntry {
+    let mut entry = HostPrefixEntry {
         _tier_charge: None,
         _tier_metadata_charge: None,
         _tier_metadata: Vec::new(),
@@ -13333,6 +13946,7 @@ fn host_entry_from_device(
         last_use: Instant::now(),
         id: 0, // recency identity assigned by HostPrefixCache::insert
         verify_digest,
+        span_digests: Vec::new(),
     };
     if let Some(glm) = &entry.glm {
         let plane_bytes = |p: &HostPlane| p.len * (p.k_tok_bytes + p.v_tok_bytes);
@@ -13358,10 +13972,60 @@ fn host_entry_from_device(
             .into());
         }
     }
+    if legacy_copy {
+        apply_flip_plane_faults(&mut entry)?;
+    }
     Ok(match pending {
         Some(pending) => HostImage::Demoting(entry, pending),
         None => HostImage::Whole(entry),
     })
+}
+
+/// The verify digest v3's red arms (lane/spill-c-20260919 day 53, see `kv_host_fault`): the first
+/// byte of the host copy's draft K plane, boundary hidden row or boundary logits row flipped AFTER
+/// the demote digest was recorded, so `MEMRA_KV_HOST_VERIFY` has a real mismatch to catch in each
+/// plane v2 was blind to. Called on the legacy copy path only; an image without the plane gets no
+/// flip and no line.
+fn apply_flip_plane_faults(entry: &mut HostPrefixEntry) -> Result<(), String> {
+    let which = match kv_host_fault() {
+        "flip-demote-draft" => {
+            let Some(plane) = entry.draft.as_mut().filter(|p| p.len * p.k_tok_bytes > 0) else {
+                return Ok(());
+            };
+            plane.k.flip_first_byte()?;
+            "draft K"
+        }
+        "flip-demote-hidden" if flip_first_f32_byte(&mut entry.last_h) => "hidden",
+        "flip-demote-logits" if flip_first_f32_byte(&mut entry.last_logits) => "logits",
+        _ => return Ok(()),
+    };
+    eprintln!(
+        "[prefix-host] FAULT: flipped one demoted {which} byte (MEMRA_KV_HOST_FAULT={})",
+        kv_host_fault()
+    );
+    Ok(())
+}
+
+/// Flips the first (little-endian low) byte of a host f32 row; `false` for an empty row. A heap
+/// row is shared and immutable, so the fault replaces it with a flipped copy.
+fn flip_first_f32_byte(row: &mut HostF32) -> bool {
+    match row {
+        HostF32::Heap(words) => {
+            let mut flipped = words.as_ref().clone();
+            let Some(first) = flipped.first_mut() else {
+                return false;
+            };
+            *first = f32::from_bits(first.to_bits() ^ 0xff);
+            *words = Arc::new(flipped);
+        }
+        HostF32::Pinned(buf) => {
+            let Some(first) = buf.as_mut_slice().first_mut() else {
+                return false;
+            };
+            *first ^= 0xff;
+        }
+    }
+    true
 }
 
 /// The `flip-demote` fault (see `kv_host_fault`): one K byte of the first demoted plane flipped
@@ -13485,9 +14149,10 @@ fn evict_all_demoting(
 /// what makes a demote racing the next request lose cleanly.
 fn host_roundtrip_digest(engine: &Engine, entry: &PrefixEntry) -> Result<String, String> {
     if entry.tp.is_some() || entry.latent.iter().any(Option::is_some) {
-        host_glm::digest(entry)
+        host_glm::digest(entry).map(|hex| format!("{VERIFY_PROGRAM_GLM_V1}:{hex}"))
     } else {
-        prefix_entry_state_digest(engine, entry, entry.pos).map_err(|e| e.to_string())
+        // Day 53: v3, the trunk digest plus the draft plane, the boundary rows and the tail.
+        prefix_entry_roundtrip_digest(engine, entry).map_err(|e| e.to_string())
     }
 }
 
@@ -13669,6 +14334,10 @@ fn host_demote_prefix_ref(
                     presubmit_ms: t0.elapsed().as_secs_f64() * 1e3,
                     ..DemoteOwnerLedger::default()
                 },
+                parked: Vec::new(),
+                reparks: 0,
+                release: None,
+                reinstate: false,
             });
             // The line carries no "(contracts door): " marker: that form is the door's REFUSAL
             // shape and the fault gate counts it (`no_extra_refusal`); a submission is not one.
@@ -13798,7 +14467,24 @@ fn host_demote_settle_with(
         ContractWait,
     ) -> Result<ContractSettle, HostContractFailure>,
 ) -> Option<HostDemoteOutcome> {
-    host_demote_settle_with_deadline(host, wait, why, settle, HOST_HASH_DEADLINE)
+    // WP-A day 38 (P): the requests parked on the entry's COPY phase, named when the demote ends
+    // unpublished in this settle (the `Hashing` phase names its own at its latch).
+    let copy_parked = host
+        .demoting
+        .as_ref()
+        .filter(|d| d.hashing.is_none())
+        .map_or(0, |d| d.parked.len());
+    let outcome = host_demote_settle_with_deadline(host, wait, why, settle, HOST_HASH_DEADLINE);
+    if copy_parked > 0
+        && host.demoting.is_none()
+        && !matches!(outcome, Some(HostDemoteOutcome::Demoted))
+    {
+        eprintln!(
+            "[prefix-host] {copy_parked} request(s) parked on the Demoting entry's copy phase \
+             re-admit to a cold prime (the demote ended unpublished: {outcome:?})"
+        );
+    }
+    outcome
 }
 
 /// The driver with the hash deadline injected (the CPU `hash-never-lands` cells use a short one).
@@ -13833,7 +14519,7 @@ fn host_demote_settle_with_deadline(
         ));
     }
     pending.polls += 1;
-    let (mut dead, contract) = match (pending.dead.take(), pending.contract.take()) {
+    let (dead, contract) = match (pending.dead.take(), pending.contract.take()) {
         (Some(dead), Some(contract)) => (dead, contract),
         (dead, contract) => {
             // FAIL CLOSED (revuto on #622). Unreachable by construction (the sink attaches the
@@ -13891,6 +14577,9 @@ fn host_demote_settle_with_deadline(
             });
         }
     };
+    // WP-A day 47 (`DAY47.md` design V): the shell under its guard for this step (a pause shape-2
+    // demote reinstates it on every unpublished exit below).
+    let mut dead = HostDemoteShell::arm(dead, &pending, host);
     let seq = contract.ticket.sequence;
     let submitted = contract.submitted;
     // WP-A day 30: the batch's item census for the copy-complete line (KV items plus f32 spans).
@@ -13903,23 +14592,26 @@ fn host_demote_settle_with_deadline(
     };
     match settled {
         Ok(ContractSettle::Pending(contract)) => {
-            pending.dead = Some(dead);
+            pending.dead = Some(dead.keep());
             pending.contract = Some(contract);
             pending.owner.copy_settle_ms += held.elapsed().as_secs_f64() * 1e3;
             host.demoting = Some(pending);
             Some(HostDemoteOutcome::Demoting)
         }
-        Ok(ContractSettle::Done(mut kv, draft, staged)) => {
+        Ok(ContractSettle::Done(mut kv, draft, staged, span_id)) => {
             let copy_ms = submitted.elapsed().as_secs_f64() * 1e3;
             let mode = match wait {
                 ContractWait::Poll => "tick-top poll".to_string(),
                 ContractWait::Block => format!("settled synchronously by {why}"),
             };
             // WP-A day 31: the two exits before the hand-off put the landed staging back (a put
-            // after the latch frees the buffer; its charge released at the latch).
+            // after the latch frees the buffer; its charge released at the latch). Day 42 (design
+            // S2): nothing reads the staging on the device before the seal below, and each exit
+            // before it gives the unsealed span receipt back.
             let unstage =
                 |host: &HostPrefixCache,
                  staged: Vec<(HostHashSlot, memra_engine::PinnedHostBuf)>| {
+                    host_span_receipt_abandon(host, span_id);
                     if let Some(tier) = &host.tier {
                         for (_, buf) in staged {
                             tier.staging_put(buf);
@@ -13948,6 +14640,9 @@ fn host_demote_settle_with_deadline(
             // off (every f32 payload pinned, which the door refuses) publishes here as on day 17.
             let mut payloads = host_hash_take_payloads(&mut pending.image);
             // WP-A day 30: each landed f32 span's staging travels with its slot's (empty) payload.
+            // Day 42 (design S2): guarded, quiet until the seal below.
+            let quiet = HostStagingQuiet::new();
+            let span_slots: Vec<HostHashSlot> = staged.iter().map(|(slot, _)| *slot).collect();
             for (slot, buf) in staged {
                 let Some(p) = payloads
                     .iter_mut()
@@ -13961,26 +14656,36 @@ fn host_demote_settle_with_deadline(
                         "[prefix-host] demote failed ({err}); nothing published; the tier latches \
                          off"
                     );
+                    host_span_receipt_abandon(host, span_id);
                     host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "span slot");
                     host.disable(&err);
                     return Some(HostDemoteOutcome::Failed);
                 };
-                p.staged = Some(buf);
+                p.staged = Some(HostStagingHeld::new(buf, &quiet));
             }
             if payloads.is_empty() {
                 eprintln!(
                     "[prefix-host] demote published off the tick: ticket seq={seq} complete after {} \
-                     poll(s), {copy_ms:.1}ms from submission to completion ({mode})",
-                    pending.polls
+                     poll(s), {copy_ms:.1}ms from submission to completion ({mode}); {} hit(s) \
+                     parked on the Demoting entry ({} re-park(s))",
+                    pending.polls,
+                    pending.parked.len(),
+                    pending.reparks
                 );
-                return Some(host_demote_publish(
+                let release = pending.release.take();
+                let outcome = host_demote_publish(
                     host,
                     &dead,
                     pending.image,
                     pending.host_bytes,
                     pending.t0,
                     None,
-                ));
+                );
+                if outcome == HostDemoteOutcome::Demoted {
+                    dead.disarm();
+                    host_pause_published(host, release, pending.reinstate, &dead);
+                }
+                return Some(outcome);
             }
             let n = payloads.len();
             let bytes: usize = payloads
@@ -14010,12 +14715,56 @@ fn host_demote_settle_with_deadline(
                         "[prefix-host] demote failed ({err}); nothing published; the tier latches \
                          off"
                     );
+                    host_span_receipt_abandon(host, span_id);
                     host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "lease view");
                     host.disable(&err);
                     return Some(HostDemoteOutcome::Failed);
                 }
             };
             let (lease_n, lease_bytes) = (leases.views, leases.bytes);
+            // WP-A day 42 (`DAY42.md` design S2): the hand-off's last step before the job goes out:
+            // the span receipt's landed digests on the copy stream, over each span's staging in
+            // attach order. From here until the owner observes the receipt no guard frees or
+            // returns its staging (`quiet` cleared first); a refused seal latches the tier and its
+            // staging leaks with the guards (a partial enqueue may read it).
+            if let Some(id) = span_id {
+                quiet.set(false);
+                let staging: Vec<&memra_engine::PinnedHostBuf> = span_slots
+                    .iter()
+                    .filter_map(|slot| {
+                        payloads
+                            .iter()
+                            .find(|p| p.slot == *slot)
+                            .and_then(|p| p.staged.as_ref())
+                            .map(HostStagingHeld::buf)
+                    })
+                    .collect();
+                let sealed = match host.tier.as_ref().and_then(|t| t.transfers.as_ref()) {
+                    Some(transfers) => transfers
+                        .borrow_mut()
+                        .seal_d2h_span_receipt(id, &staging)
+                        .map_err(|e| format!("{e:?}")),
+                    None => Err("no transfer engine".to_string()),
+                };
+                drop(staging);
+                if let Err(e) = sealed {
+                    let (kv, draft) = leases.land();
+                    pending.image.kv = kv;
+                    pending.image.draft = draft;
+                    let err = format!(
+                        "tier span receipt seal refused ({e}) for ticket seq={seq} ({span_items} f32 \
+                         spans, {mode})"
+                    );
+                    eprintln!(
+                        "[prefix-host] demote failed ({err}); nothing published; the tier latches \
+                         off"
+                    );
+                    host_span_receipt_abandon(host, span_id);
+                    host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "span seal");
+                    host.disable(&err);
+                    return Some(HostDemoteOutcome::Failed);
+                }
+            }
             let submitted = match host.tier.as_ref() {
                 Some(tier) => tier.hasher.submit(HostHashJob {
                     seq,
@@ -14037,6 +14786,7 @@ fn host_demote_settle_with_deadline(
                 eprintln!(
                     "[prefix-host] demote failed ({err}); nothing published; the tier latches off"
                 );
+                host_span_receipt_abandon(host, span_id);
                 host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "hash helper gone");
                 host.disable(&err);
                 return Some(HostDemoteOutcome::Failed);
@@ -14045,26 +14795,41 @@ fn host_demote_settle_with_deadline(
                 "[prefix-host] demote copy complete off the tick: ticket seq={seq} complete after {} \
                  poll(s), {copy_ms:.1}ms from submission to completion ({mode}); items={} \
                  ({kv_items} KV, {span_items} f32 spans); {n} heap payloads ({:.1}MB) handed to \
-                 the hash helper; {tally}",
+                 the hash helper; {tally}{}",
                 pending.polls,
                 kv_items + span_items,
-                bytes as f64 / 1e6
+                bytes as f64 / 1e6,
+                if span_id.is_some() {
+                    format!(
+                        "; span receipt sealed on the copy stream ({span_items} landed digests), \
+                         required before the publication"
+                    )
+                } else {
+                    String::new()
+                }
             );
             eprintln!(
                 "[prefix-host] demote KV leases on the hash helper: ticket seq={seq}, {lease_n} lease \
                  views ({:.1}MB) for the bind's re-hash",
                 lease_bytes as f64 / 1e6
             );
-            pending.dead = Some(dead);
+            pending.dead = Some(dead.keep());
             pending.owner.copy_settle_ms += held.elapsed().as_secs_f64() * 1e3;
+            // WP-A day 38 (P): the copy phase's parked ids ride into the `Hashing` phase.
             let hashing = PendingHashing {
                 seq,
                 payloads: n,
                 bytes,
                 handed: Instant::now(),
-                parked: Vec::new(),
-                reparks: 0,
+                parked: std::mem::take(&mut pending.parked),
+                reparks: std::mem::take(&mut pending.reparks),
                 leases: Some(leases),
+                span: (!span_slots.is_empty()).then_some(HostSpanReceipt {
+                    id: span_id,
+                    slots: span_slots,
+                    quiet,
+                    pairs: None,
+                }),
             };
             match wait {
                 ContractWait::Poll => {
@@ -14097,6 +14862,8 @@ fn host_demote_settle_with_deadline(
                     HostDemoteOutcome::Failed
                 }
                 HostContractFailure::SourceQuarantined(err) => {
+                    // WP-A day 47 (design V): not whole, so never reinstated.
+                    dead.reinstate = None;
                     eprintln!(
                         "[prefix-host] demote failed ({err}); nothing demoted, and the device \
                          entry is no longer whole: its planes stay with the quarantined transfer \
@@ -14110,6 +14877,101 @@ fn host_demote_settle_with_deadline(
                 }
             })
         }
+    }
+}
+
+/// WP-A day 47 (`DAY47.md` design V): the tick top's drain of the pause sweep's finished off-tick
+/// demotes. Each queued release drops the park in `reuse[pool_key]` whose `fed` equals its tape, if it
+/// is still there; each reinstated shell goes back into the device index (`insert_demoting`: a capacity
+/// eviction it causes demotes through the sink as any insert's does).
+fn host_pause_drain(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    host: &mut HostPrefixCache,
+    reuse: &mut HashMap<PoolKey, Vec<ReuseEntry>>,
+) {
+    for r in std::mem::take(&mut host.park_releases) {
+        let at = reuse
+            .get(&r.pool_key)
+            .and_then(|pool| pause_park_index(pool.iter().map(|e| e.fed.as_slice()), &r.tape));
+        match at {
+            Some(pi) => {
+                let pool = reuse
+                    .get_mut(&r.pool_key)
+                    .expect("park index came from this pool");
+                let fed_len = pool[pi].fed.len();
+                drop(pool.remove(pi));
+                if pool.is_empty() {
+                    reuse.remove(&r.pool_key);
+                }
+                host.pause_demotes += 1;
+                eprintln!(
+                    "[prefix-host] pause demote: plain park released off the tick ({fed_len} fed \
+                     tokens, model {}{})",
+                    r.pool_key.0,
+                    ns_suffix(&r.pool_key.1),
+                );
+            }
+            None => eprintln!(
+                "[prefix-host] pause demote: plain park already gone at the publication (the \
+                 session resumed it); nothing released ({} tokens, model {}{})",
+                r.tape.len(),
+                r.pool_key.0,
+                ns_suffix(&r.pool_key.1),
+            ),
+        }
+    }
+    let back: Vec<PrefixEntry> = std::mem::take(&mut *host.reinstate.borrow_mut());
+    for e in back {
+        let key = e.pool_key.clone();
+        eprintln!(
+            "[prefix-host] pause demote failed: device prefix entry reinstated ({} tokens, model \
+             {}{})",
+            e.toks.len(),
+            key.0,
+            ns_suffix(&key.1),
+        );
+        px.insert_demoting(&key, e, "pause reinstate", engine, host);
+    }
+}
+
+/// WP-A day 47 (`DAY47.md` design V): a pause sweep's demote published: shape 1's park release goes
+/// to the tick top's queue (the continuation pool is the run loop's); shape 2's entry already left
+/// the device index, so its publication is the release, counted here.
+fn host_pause_published(
+    host: &mut HostPrefixCache,
+    release: Option<ParkRelease>,
+    reinstate: bool,
+    dead: &PrefixEntry,
+) {
+    if let Some(r) = release {
+        host.park_releases.push(r);
+    }
+    if reinstate {
+        host.pause_demotes += 1;
+        eprintln!(
+            "[prefix-host] pause demote: device prefix entry released off the tick ({} tokens, \
+             {:.1}MB, model {}{})",
+            dead.toks.len(),
+            dead.bytes as f64 / 1e6,
+            dead.pool_key.0,
+            ns_suffix(&dead.pool_key.1),
+        );
+    }
+}
+
+/// WP-A day 42 (`DAY42.md` design S2): give the engine's span receipt `id` back (a demote that ends
+/// unpublished): an unsealed one drops at once, a sealed one frees once its event is observed. A
+/// no-op for `None`, an id already read, or an engine borrowed elsewhere (the next take displaces it).
+fn host_span_receipt_abandon(
+    host: &HostPrefixCache,
+    id: Option<memra_engine::tier_transfer::SpanReceiptId>,
+) {
+    if let Some(id) = id
+        && let Some(transfers) = host.tier.as_ref().and_then(|t| t.transfers.as_ref())
+        && let Ok(mut t) = transfers.try_borrow_mut()
+    {
+        t.d2h_span_receipt_abandon(id);
     }
 }
 
@@ -14190,8 +15052,11 @@ fn host_demote_settle_hashing(
         ContractWait::Block => format!("settled synchronously by {why}"),
     };
     let (key, toks) = (pending.image.pool_key.clone(), pending.image.toks.len());
+    // WP-A day 42 (design S2): every latch exit gives the span receipt back (a no-op once read).
+    let span_id = hashing.span.as_ref().and_then(|r| r.id);
     let latch = |host: &mut HostPrefixCache, err: String, why: &str| -> HostDemoteOutcome {
         eprintln!("[prefix-host] demote failed ({err}); nothing published; the tier latches off");
+        host_span_receipt_abandon(host, span_id);
         host.waste_pending_reclaim(&key, toks, why);
         host.disable(&err);
         if parked_hits > 0 {
@@ -14213,7 +15078,77 @@ fn host_demote_settle_hashing(
             "no shell",
         );
     };
+    // WP-A day 47 (`DAY47.md` design V): the shell under its guard for this step.
+    let dead = HostDemoteShell::arm(dead, &pending, host);
     let elapsed = handed.elapsed();
+    // WP-A day 42 (`DAY42.md` design S2): the span receipt BEFORE the helper's reply. Pending, the
+    // entry stays `Hashing` under the same deadline; observed, its pairs are kept and every staging
+    // guard of this demote may free or go back to the set (`quiet`); a receipt that never lands or
+    // is refused latches the tier typed. Nothing below runs, so no staging returns, before it.
+    if let Some(r) = hashing.span.as_mut()
+        && r.pairs.is_none()
+        && let Some(id) = r.id
+    {
+        let observed = match host.tier.as_ref().and_then(|t| t.transfers.as_ref()) {
+            None => Err("no transfer engine under a Hashing entry".to_string()),
+            Some(transfers) => {
+                let mut t = transfers.borrow_mut();
+                match wait {
+                    ContractWait::Poll => t.d2h_span_receipt(id),
+                    ContractWait::Block => t.d2h_span_receipt_wait(id).map(Some),
+                }
+                .map_err(|e| format!("{e:?}"))
+            }
+        };
+        let spans = r.slots.len();
+        match observed {
+            Ok(Some(pairs)) if pairs.len() == spans => {
+                r.quiet.set(true);
+                r.pairs = Some(pairs);
+            }
+            Ok(Some(pairs)) => {
+                let got = pairs.len();
+                return latch(
+                    host,
+                    format!(
+                        "tier span receipt mismatch: {got} pairs for {spans} spans (ticket \
+                         seq={seq}, {mode})"
+                    ),
+                    "span receipt mismatch",
+                );
+            }
+            Ok(None) if elapsed < deadline => {
+                pending.dead = Some(dead.keep());
+                pending.owner.hash_polls_ms += held.elapsed().as_secs_f64() * 1e3;
+                pending.hashing = Some(hashing);
+                host.demoting = Some(pending);
+                return HostDemoteOutcome::Demoting;
+            }
+            Ok(None) => {
+                return latch(
+                    host,
+                    format!(
+                        "tier span receipt never landed: ticket seq={seq} waited {:.1}s past the \
+                         hand-off, deadline {}s ({spans} f32 spans, {} poll(s), {mode})",
+                        elapsed.as_secs_f64(),
+                        deadline.as_secs(),
+                        pending.owner.hash_polls
+                    ),
+                    "span receipt never landed",
+                );
+            }
+            Err(e) => {
+                return latch(
+                    host,
+                    format!(
+                        "tier span receipt refused ({e}): ticket seq={seq} ({spans} f32 spans, \
+                         {mode})"
+                    ),
+                    "span receipt refused",
+                );
+            }
+        }
+    }
     let reply = match host.tier.as_ref() {
         None => Err("tier context gone under a Hashing entry".to_string()),
         Some(tier) => match wait {
@@ -14256,7 +15191,7 @@ fn host_demote_settle_hashing(
                     "hash never landed",
                 );
             }
-            pending.dead = Some(dead);
+            pending.dead = Some(dead.keep());
             pending.owner.hash_polls_ms += held.elapsed().as_secs_f64() * 1e3;
             pending.hashing = Some(hashing);
             host.demoting = Some(pending);
@@ -14344,7 +15279,53 @@ fn host_demote_settle_hashing(
         host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "tier latched off");
         return HostDemoteOutcome::Failed;
     }
+    // WP-A day 42 (`DAY42.md` design S2): every landed f32 span witnesses its device source (its
+    // two four-lane digests equal, the receipt observed above) BEFORE any staging goes back to the
+    // set and before anything is published; a difference is a typed refusal, the staging returned,
+    // the tier on. Equal pairs keep each source digest with the entry for the promote's check.
+    let mut span_digests = Vec::new();
+    if let Some(r) = &hashing.span
+        && r.id.is_some()
+    {
+        let Some(pairs) = &r.pairs else {
+            return latch(
+                host,
+                format!(
+                    "tier span receipt unread at the reply (ticket seq={seq}, {mode}): a Hashing \
+                     entry reached its reply before its span receipt"
+                ),
+                "span receipt unread",
+            );
+        };
+        if let Some((slot, _)) = r
+            .slots
+            .iter()
+            .zip(pairs)
+            .find(|(_, (source, landed))| source != landed)
+        {
+            eprintln!(
+                "[prefix-host] demote failed (tier image {slot:?} span landed bytes differ from \
+                 their device source); nothing published"
+            );
+            if let Some(tier) = host.tier.as_ref() {
+                for (mut payload, _, _) in reply.hashed {
+                    if let Some(buf) = payload.staged.take().and_then(HostStagingHeld::into_quiet) {
+                        tier.staging_put(buf);
+                    }
+                }
+            }
+            host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "span receipt");
+            return HostDemoteOutcome::Failed;
+        }
+        span_digests = r
+            .slots
+            .iter()
+            .zip(pairs)
+            .map(|(slot, (source, _))| (*slot, *source))
+            .collect();
+    }
     let mut e = pending.image;
+    e.span_digests = span_digests;
     if let Some((_, _, kv, draft)) = leases_back {
         e.kv = kv;
         e.draft = draft;
@@ -14355,9 +15336,13 @@ fn host_demote_settle_hashing(
     };
     for (mut payload, hashed_bytes, digest) in reply.hashed {
         digests.by_slot.push((payload.slot, hashed_bytes, digest));
-        // WP-A day 30: a span's staging goes back to the context's set; the heap copy stays.
-        if let (Some(staged), Some(tier)) = (payload.staged.take(), host.tier.as_ref()) {
-            tier.staging_put(staged);
+        // WP-A day 30: a span's staging goes back to the context's set; the heap copy stays. Day
+        // 42 (design S2): only through its guard, quiet since the receipt was observed above.
+        if let (Some(buf), Some(tier)) = (
+            payload.staged.take().and_then(HostStagingHeld::into_quiet),
+            host.tier.as_ref(),
+        ) {
+            tier.staging_put(buf);
         }
         if let Err(what) = host_hash_restore_payload(&mut e, payload) {
             return latch(
@@ -14377,6 +15362,11 @@ fn host_demote_settle_hashing(
         pending.t0,
         Some(&digests),
     );
+    let mut dead = dead;
+    if outcome == HostDemoteOutcome::Demoted {
+        dead.disarm();
+        host_pause_published(host, pending.release.take(), pending.reinstate, &dead);
+    }
     if outcome == HostDemoteOutcome::Demoted {
         let publish_ms = publish_t.elapsed().as_secs_f64() * 1e3;
         let owner = pending.owner;
@@ -14406,6 +15396,16 @@ fn host_demote_settle_hashing(
 /// helper.
 fn host_demote_drain_at_shutdown(hpx: &mut HostPrefixCache) {
     if let Some(pending) = hpx.demoting.take() {
+        // WP-A day 42 (design S2): the span receipt goes back (its staging guards leak if it is
+        // still unobserved, the process exit tears down the rest).
+        host_span_receipt_abandon(
+            hpx,
+            pending
+                .hashing
+                .as_ref()
+                .and_then(|h| h.span.as_ref())
+                .and_then(|r| r.id),
+        );
         let phase = if pending.hashing.is_some() {
             "its heap payloads on the hash helper"
         } else if pending.contract.is_some() {
@@ -14441,6 +15441,13 @@ struct PauseCandidate {
     tape: Vec<u32>,
     armed_at: Instant,
     deadline: Instant,
+    /// WP-A day 47 (`DAY47.md` design V, section 1a): the shapes still owed. A fired candidate
+    /// whose shape cannot start (a demote or a promote in flight: starting would Block-settle it)
+    /// stays pending with its owed shapes and is tried again at a later tick; `started` records
+    /// that some shape submitted (a candidate that resolves without one is a cancel).
+    shape1_owed: bool,
+    shape2_owed: bool,
+    started: bool,
 }
 
 /// Bound on outstanding pause candidates: each owns a tape clone (<= ~1 MiB at a 262k
@@ -14517,6 +15524,9 @@ fn arm_pause_candidate(
         tape,
         armed_at: now,
         deadline: now + delay,
+        shape1_owed: true,
+        shape2_owed: true,
+        started: false,
     });
 }
 
@@ -14701,7 +15711,14 @@ fn device_entry_from_host_parts(
                     let pending = if staged.bufs.is_empty() {
                         pending
                     } else {
-                        host_h2d_spans_submit(engine, tier, pending, &mut staged, fills)?
+                        host_h2d_spans_submit(
+                            engine,
+                            tier,
+                            pending,
+                            &mut staged,
+                            fills,
+                            &src.span_digests,
+                        )?
                     };
                     // WP-A day 34 (design K): the last step of the submission, so no submit-side
                     // unwind can meet a view that is out.
@@ -14732,7 +15749,7 @@ fn device_entry_from_host_parts(
     // WP-A day 32: a plane that rides the ticket as a span stays empty here (the settle fills it).
     let spanned: Vec<HostHashSlot> = pending
         .as_ref()
-        .map(|p| p.spans.iter().map(|(slot, _)| *slot).collect())
+        .map(|p| p.spans.iter().map(|(slot, _, _)| *slot).collect())
         .unwrap_or_default();
     let mut conv = Vec::with_capacity(src.conv.len());
     for (i, c) in src.conv.iter().enumerate() {
@@ -15116,23 +16133,34 @@ fn host_promote_finish(
     };
     if let Some(expected) = expected_digest {
         match host_roundtrip_digest(engine, &e) {
-            Ok(actual) if actual == expected => {
+            Ok(actual) => {
+                let failed = match verify_digest_check(&expected, &actual) {
+                    VerifyDigestCheck::Match => None,
+                    VerifyDigestCheck::Mismatch => Some(format!(
+                        "promoted digest {actual} != demote digest {expected} ({host_len} tokens)"
+                    )),
+                    // Day 53: a digest carried from another binary's program (a handoff file)
+                    // cannot attest these bytes either way; typed, and dropped as a mismatch.
+                    VerifyDigestCheck::Program(carried, ours) => Some(format!(
+                        "carried digest program {carried} != this binary's {ours} (a handoff \
+                         written by another binary; {host_len} tokens)"
+                    )),
+                };
+                if let Some(why) = failed {
+                    host.digest_mismatches += 1;
+                    if let Some(hi) = host_entry_index_by_id(host, pool_key, host_id) {
+                        host.remove_at(pool_key, hi);
+                    }
+                    eprintln!(
+                        "[prefix-host] VERIFY FAILED: {why}; host entry dropped, cold path serves"
+                    );
+                    set_memo(host);
+                    return None;
+                }
                 eprintln!(
                     "[prefix-host] verify ok: promoted state digest matches demote digest \
                      ({host_len} tokens)"
                 );
-            }
-            Ok(actual) => {
-                host.digest_mismatches += 1;
-                if let Some(hi) = host_entry_index_by_id(host, pool_key, host_id) {
-                    host.remove_at(pool_key, hi);
-                }
-                eprintln!(
-                    "[prefix-host] VERIFY FAILED: promoted digest {actual} != demote digest \
-                     {expected} ({host_len} tokens); host entry dropped, cold path serves"
-                );
-                set_memo(host);
-                return None;
             }
             Err(err) => {
                 eprintln!("[prefix-host] verify digest failed ({err}); promote refused");
@@ -15223,20 +16251,29 @@ fn host_promote_probe_decision(
 }
 
 /// WP-A day 29 (memra#536 Move 1 owed item 2a, lead ruling 40, `research/spill-a-20260919/DAY29.md`
-/// section 1.1): does this request's prompt hit the one `Demoting` entry while it is in its
-/// `Hashing` phase? Pure over the host state: the entry's heap payloads are on the hash helper
-/// (`hashing` is `Some`; a copy-phase `Demoting` entry keeps the day-17 rule, a hit on it is a
-/// cold prime), its pool key is the request's, its token key exactly prefixes the prompt under the
-/// host `lookup` rules, and it is deeper than the request's device hit (the promote candidate's
-/// own rule). Returns the hit's depth and the ticket.
-fn host_hashing_hit(
+/// section 1.1), extended on day 38 (`DAY38.md` design P): does this request's prompt hit the one
+/// `Demoting` entry, in EITHER phase (its copy on the copy stream, or its heap payloads on the hash
+/// helper)? Pure over the host state: the entry's pool key is the request's, its token key exactly
+/// prefixes the prompt under the host `lookup` rules, and it is deeper than the request's device
+/// hit (the promote candidate's own rule). Returns the hit's depth, the ticket, and whether the
+/// entry is in its `Hashing` phase. Day 17's rule (a copy-phase hit is a cold prime) is retired:
+/// under design G a large entry's copy phase carries its receipt kernel, and a hit there waits for
+/// the publication instead of re-priming.
+fn host_demoting_hit(
     host: &HostPrefixCache,
     pool_key: &PoolKey,
     prompt: &[u32],
     device_best_len: usize,
-) -> Option<(usize, u64)> {
+) -> Option<(usize, u64, bool)> {
     let pending = host.demoting.as_ref()?;
-    let hashing = pending.hashing.as_ref()?;
+    let (seq, hashing) = match (&pending.hashing, &pending.contract) {
+        (Some(h), _) => (h.seq, true),
+        // A copy that has not landed within the helper's deadline parks nothing more: the request
+        // primes cold, so no park outlives a copy that never lands (the `Hashing` phase has the
+        // same bound through its own deadline latch).
+        (None, Some(c)) if c.submitted.elapsed() < HOST_HASH_DEADLINE => (c.ticket.sequence, false),
+        _ => return None,
+    };
     let toks = &pending.image.toks;
     let n = toks.len();
     (pending.image.pool_key == *pool_key
@@ -15244,25 +16281,49 @@ fn host_hashing_hit(
         && n <= prompt.len()
         && n > device_best_len
         && prompt[..n] == toks[..])
-        .then_some((n, hashing.seq))
+        .then_some((n, seq, hashing))
 }
 
-/// WP-A day 29 (ruling 40): PARK the request whose prompt hits the `Hashing` entry: record its id
-/// on the entry (the first park of an id prints the typed line naming the entry and the phase; a
-/// re-park counts silently, the `ParkAgain` shape) and answer `true` so the probe's caller requeues
-/// it. Nothing is hashed, waited on or submitted here: the tick-top poll lands the digests and
-/// publishes, and the re-admitted request takes the promote park to a device hit. Returns `false`
-/// when the prompt does not hit the `Hashing` entry.
-fn host_hashing_park(
+/// WP-A day 29 (ruling 40), extended on day 38 (P): PARK the request whose prompt hits the
+/// `Demoting` entry: record its id on the entry (the first park of an id prints the typed line
+/// naming the entry and the phase; a re-park counts silently, the `ParkAgain` shape) and answer
+/// `true` so the probe's caller requeues it. Nothing is hashed, waited on or submitted here: the
+/// tick-top polls land the copy and the digests and publish, and the re-admitted request takes the
+/// promote park to a device hit. Returns `false` when the prompt does not hit the entry.
+fn host_demoting_park(
     host: &mut HostPrefixCache,
     pool_key: &PoolKey,
     prompt: &[u32],
     device_best_len: usize,
     request_id: &str,
 ) -> bool {
-    let Some((n, seq)) = host_hashing_hit(host, pool_key, prompt, device_best_len) else {
+    let Some((n, seq, hashing_phase)) = host_demoting_hit(host, pool_key, prompt, device_best_len)
+    else {
         return false;
     };
+    if !hashing_phase {
+        let Some(pending) = host.demoting.as_mut() else {
+            return false;
+        };
+        if pending.parked.iter().any(|id| id == request_id) {
+            pending.reparks += 1;
+            return true;
+        }
+        pending.parked.push(request_id.to_string());
+        let submitted_ms = pending
+            .contract
+            .as_ref()
+            .map_or(0.0, |c| c.submitted.elapsed().as_secs_f64() * 1e3);
+        eprintln!(
+            "[prefix-host] hit parked on a Demoting entry in its copy phase: request {request_id} \
+             ({} tokens) hits the Demoting entry's {n} tokens (ticket seq={seq}, submitted \
+             {submitted_ms:.1}ms ago); the request waits for the publication (model {}{})",
+            prompt.len(),
+            pool_key.0,
+            ns_suffix(&pool_key.1)
+        );
+        return true;
+    }
     let Some(hashing) = host.demoting.as_mut().and_then(|p| p.hashing.as_mut()) else {
         return false;
     };
@@ -15333,7 +16394,7 @@ fn host_promote_park_probe(
     // decided BEFORE the promote decision so a published candidate's `Submit` cannot `Block`-settle
     // the entry for a request whose own prompt hits it; the re-admission finds the entry published
     // and takes the promote park to a device hit (`DAY29.md` section 1.2).
-    if host_hashing_park(host, &pool_key, prompt, device_best_len, &req.request_id) {
+    if host_demoting_park(host, &pool_key, prompt, device_best_len, &req.request_id) {
         return true;
     }
     let hi = match host_promote_probe_decision(host, &pool_key, prompt, device_best_len) {
@@ -15423,7 +16484,7 @@ fn host_promote_park_probe(
                 format!(
                     ", {} f32 spans filled on the copy stream ({:.1}MB)",
                     contract.spans.len(),
-                    contract.spans.iter().map(|(_, n)| n * 4).sum::<usize>() as f64 / 1e6
+                    contract.spans.iter().map(|(_, n, _)| n * 4).sum::<usize>() as f64 / 1e6
                 )
             };
             host.promoting = Some(PendingPromote {
@@ -18984,6 +20045,9 @@ fn host_entry_from_owned(
         last_use: Instant::now(),
         id: 0, // recency identity assigned by HostPrefixCache::insert
         verify_digest: e.verify_digest,
+        // WP-A day 40 (design S): the handoff frame carries no span digests; an imported entry's
+        // promote keeps the weak span receipt.
+        span_digests: Vec::new(),
     })
 }
 
@@ -19879,6 +20943,108 @@ fn prefix_entry_state_digest(
         }
     }
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// Program tags of the `MEMRA_KV_HOST_VERIFY` round-trip digest (lane/spill-c-20260919 day 53,
+/// verify digest v3): the string a demote records and a promote compares is `<tag>:<hex>`, so a
+/// digest carried from another binary's program (a handoff file) is a typed refusal, not a
+/// false byte-corruption alarm. An untagged string is a pre-v3 binary's.
+const VERIFY_PROGRAM_SPLIT_V3: &str = "split-state-v3";
+const VERIFY_PROGRAM_GLM_V1: &str = "host-prefix-state-v1";
+
+/// The program tag of a verify digest string, `untagged` for a pre-v3 string.
+fn verify_digest_program(digest: &str) -> &str {
+    digest.split_once(':').map_or("untagged", |(tag, _)| tag)
+}
+
+/// How a promoted entry's verify digest compares with the one its demote recorded.
+#[derive(Debug, PartialEq, Eq)]
+enum VerifyDigestCheck<'a> {
+    Match,
+    /// Same program, different bytes: the loud `VERIFY FAILED` of a corrupted round trip.
+    Mismatch,
+    /// The carried digest was computed by another program (`carried`, `ours`).
+    Program(&'a str, &'a str),
+}
+
+fn verify_digest_check<'a>(expected: &'a str, actual: &'a str) -> VerifyDigestCheck<'a> {
+    let (carried, ours) = (
+        verify_digest_program(expected),
+        verify_digest_program(actual),
+    );
+    if carried != ours {
+        VerifyDigestCheck::Program(carried, ours)
+    } else if expected == actual {
+        VerifyDigestCheck::Match
+    } else {
+        VerifyDigestCheck::Mismatch
+    }
+}
+
+/// Verify digest v3 (lane/spill-c-20260919 day 53, `DAY53.md`): the `MEMRA_KV_HOST_VERIFY`
+/// round-trip digest of a non-GLM entry. v2 (`prefix_entry_state_digest`) covers the trunk only
+/// and cannot grow (the HIRADIX restore oracle compares it with a restored `Cache`, which holds
+/// none of the rest), so v3 is composed: the v2 string at the boundary, then every other plane a
+/// round trip carries and a restore consumes: the MTP draft plane's logical window, the boundary
+/// hidden row, the boundary logits, the DFlash tail (whole layer buffers, which the round trip
+/// copies whole).
+fn prefix_entry_roundtrip_digest(
+    engine: &Engine,
+    entry: &PrefixEntry,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let trunk = prefix_entry_state_digest(engine, entry, entry.pos)?;
+    let mut hasher = Sha256::new();
+    hasher.update(b"memra-prefix-split-state-v3");
+    hasher.update(trunk.as_bytes());
+    match &entry.draft {
+        Some(plane) => {
+            hasher.update([1]);
+            digest_usize(&mut hasher, plane.len);
+            digest_usize(&mut hasher, plane.k_tok_bytes);
+            digest_usize(&mut hasher, plane.v_tok_bytes);
+            let kb = plane
+                .len
+                .checked_mul(plane.k_tok_bytes)
+                .ok_or("entry digest draft K byte count overflow")?;
+            let vb = plane
+                .len
+                .checked_mul(plane.v_tok_bytes)
+                .ok_or("entry digest draft V byte count overflow")?;
+            if plane.k.len() < kb || plane.v.len() < vb {
+                return Err("entry digest draft plane is truncated".into());
+            }
+            let k = engine.dtoh_u8_view(&plane.k.slice(0..kb))?;
+            let v = engine.dtoh_u8_view(&plane.v.slice(0..vb))?;
+            digest_usize(&mut hasher, k.len());
+            hasher.update(&k);
+            digest_usize(&mut hasher, v.len());
+            hasher.update(&v);
+        }
+        None => hasher.update([0]),
+    }
+    digest_f32_plane(&mut hasher, &entry.last_h);
+    digest_f32_plane(&mut hasher, &entry.last_logits);
+    match &entry.dspark_draft {
+        Some(tail) => {
+            hasher.update([1]);
+            for x in [
+                tail.base,
+                tail.rows,
+                tail.len,
+                tail.row_bytes,
+                tail.floor,
+                tail.layers.len(),
+            ] {
+                digest_usize(&mut hasher, x);
+            }
+            for (k, v) in &tail.layers {
+                digest_f32_plane(&mut hasher, &engine.dtoh(k)?);
+                digest_f32_plane(&mut hasher, &engine.dtoh(v)?);
+            }
+        }
+        None => hasher.update([0]),
+    }
+    Ok(format!("{VERIFY_PROGRAM_SPLIT_V3}:{:x}", hasher.finalize()))
 }
 
 /// Same digest over the actual freshly-restored Cache. Device `len_d` mirrors are read and must
@@ -23277,7 +24443,47 @@ pub fn run(
     }
     if kv_host_contracts && hpx.budget > 0 {
         let vision_loaded = vision_tower.is_some() || gemma_tower.is_some() || glm5_tower.is_some();
-        match host_tier_context(&engine, &hpx, &loaded, &models, vision_loaded) {
+        // C day 56: every attached DFlash drafter names its tail program by the export
+        // directory's byte manifest (the same directory the drafter loaded from).
+        let mut tails = HashMap::new();
+        if !dspark_drafts.is_empty() {
+            let spec = std::env::var("MEMRA_DSPARK_DRAFT").unwrap_or_default();
+            let dir = match memra_gguf::hf::resolve_arg(&spec) {
+                Ok(dir) => dir,
+                Err(err) => {
+                    let _ = ready_tx.send(Err(format!(
+                        "MEMRA_KV_HOST_CONTRACTS=1: MEMRA_DSPARK_DRAFT={spec:?}: {err}"
+                    )));
+                    return;
+                }
+            };
+            for (name, d) in &dspark_drafts {
+                let cfg_debug = format!(
+                    "{:?};markov={};confidence={};rope_yarn={};dflash2={}",
+                    d.cfg,
+                    d.markov.is_some(),
+                    d.confidence.is_some(),
+                    d.rope_yarn.is_some(),
+                    d.dflash2.is_some()
+                );
+                match HostTierTailSource::from_export(
+                    std::path::Path::new(&dir),
+                    cfg_debug,
+                    std::env::vars(),
+                ) {
+                    Ok(source) => {
+                        tails.insert(name.clone(), source);
+                    }
+                    Err(err) => {
+                        let _ = ready_tx.send(Err(format!(
+                            "MEMRA_KV_HOST_CONTRACTS=1: model {name} drafter manifest: {err}"
+                        )));
+                        return;
+                    }
+                }
+            }
+        }
+        match host_tier_context(&engine, &hpx, &loaded, &models, vision_loaded, &tails) {
             Ok(tier) => {
                 eprintln!(
                     "[prefix-host] contracts door ON (MEMRA_KV_HOST_CONTRACTS=1): {} model \
@@ -23670,6 +24876,10 @@ pub fn run(
         // primes behind it; a ready restore its request never consumed expires typed.
         host_restore_settle_pending(&mut px, &mut hpx, ContractWait::Poll, "the tick top");
         host_restore_expire_ready(&mut px, &mut hpx);
+        // WP-A day 47 (`DAY47.md` design V): the pause sweep's off-tick demotes, finished. A
+        // published snapshot demote releases its park (if the session did not resume it meanwhile);
+        // a shape-2 entry whose demote ended unpublished goes back into the device index.
+        host_pause_drain(&engine, &mut px, &mut hpx, &mut reuse);
         // Cheap runtime peer validation stays on its copy-count cadence here, between scheduler
         // ticks on the CUDA owner thread. Idle-only rungs remain pending. A mismatch continues on
         // validated host bounce; only inability to arm that staging reaches the panic ladder.
@@ -25724,7 +26934,7 @@ pub fn run(
             && parked_on_promote == queue.len()
             && (hpx.promoting.as_ref().is_some_and(|p| !p.ready)
                 || hpx.restoring.as_ref().is_some_and(|r| !r.ready)
-                || hpx.demoting.as_ref().is_some_and(|d| d.hashing.is_some()))
+                || hpx.demoting.is_some())
         {
             match rx.recv_timeout(Duration::from_millis(2)) {
                 Ok(cmd) => handle_cmd(
@@ -27910,128 +29120,185 @@ pub fn run(
             let now = Instant::now();
             let mut ci = 0;
             while ci < pause_pending.len() {
-                if now < pause_pending[ci].deadline {
+                // WP-A day 47 (`DAY47.md` design V, section 1a): a shape starts only while no demote
+                // and no promote is in flight (starting one would Block-settle it: the stall V
+                // removes); the candidate waits with its owed shapes for a later tick.
+                if now < pause_pending[ci].deadline
+                    || hpx.demoting.is_some()
+                    || hpx.promoting.is_some()
+                {
                     ci += 1;
                     continue;
                 }
-                let cand = pause_pending.swap_remove(ci);
-                let mut demoted = 0u64;
-                // Shape 1: the plain park.
-                if let Some(pi) = pause_park_index(
-                    reuse
-                        .get(&cand.pool_key)
-                        .into_iter()
-                        .flatten()
-                        .map(|e| e.fed.as_slice()),
-                    &cand.tape,
-                ) {
-                    let pool = reuse
-                        .get_mut(&cand.pool_key)
-                        .expect("park index came from this pool");
-                    let park = &pool[pi];
-                    match prefix_snapshot(
-                        &engine,
-                        &park.cache,
-                        &cand.pool_key,
-                        &park.fed,
-                        &park.last_logits,
-                        loaded.get(&cand.pool_key.0).map(|l| &l.model),
+                let mut cand = pause_pending.swap_remove(ci);
+                let mut submitted = false;
+                // Shape 1: the plain park. Its boundary snapshot demotes off the tick; the park
+                // stays until the publication releases it (the tick top's `park_releases` drain).
+                if cand.shape1_owed {
+                    cand.shape1_owed = false;
+                    if let Some(pi) = pause_park_index(
+                        reuse
+                            .get(&cand.pool_key)
+                            .into_iter()
+                            .flatten()
+                            .map(|e| e.fed.as_slice()),
+                        &cand.tape,
                     ) {
-                        Ok(mut entry) => {
-                            match host_demote_prefix_ref(
-                                &engine,
-                                &mut hpx,
-                                &mut entry,
-                                ContractD2h::OnTick,
-                            ) {
-                                HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated => {
-                                    drop(entry); // the boundary copy's device planes free here
-                                    let fed_len = pool[pi].fed.len();
-                                    drop(pool.remove(pi));
-                                    if pool.is_empty() {
-                                        reuse.remove(&cand.pool_key);
+                        let pool = reuse
+                            .get_mut(&cand.pool_key)
+                            .expect("park index came from this pool");
+                        let park = &pool[pi];
+                        match prefix_snapshot(
+                            &engine,
+                            &park.cache,
+                            &cand.pool_key,
+                            &park.fed,
+                            &park.last_logits,
+                            loaded.get(&cand.pool_key.0).map(|l| &l.model),
+                        ) {
+                            Ok(mut entry) => {
+                                let fed_len = pool[pi].fed.len();
+                                match host_demote_prefix_ref(
+                                    &engine,
+                                    &mut hpx,
+                                    &mut entry,
+                                    ContractD2h::OffTick,
+                                ) {
+                                    HostDemoteOutcome::Demoting => {
+                                        if let Some(pending) = hpx.demoting.as_mut() {
+                                            pending.dead = Some(entry);
+                                            pending.release = Some(ParkRelease {
+                                                pool_key: cand.pool_key.clone(),
+                                                tape: cand.tape.clone(),
+                                            });
+                                        }
+                                        eprintln!(
+                                            "[prefix-host] pause demote: plain park snapshot \
+                                             demoting off the tick ({fed_len} fed tokens, model \
+                                             {}{}); the park stays until the publication",
+                                            cand.pool_key.0,
+                                            ns_suffix(&cand.pool_key.1),
+                                        );
+                                        cand.started = true;
+                                        submitted = true;
                                     }
-                                    eprintln!(
-                                        "[prefix-host] pause demote: plain park released \
-                                     ({fed_len} fed tokens, model {}{})",
-                                        cand.pool_key.0,
-                                        ns_suffix(&cand.pool_key.1),
-                                    );
-                                    demoted += 1;
-                                }
-                                HostDemoteOutcome::Failed
-                                | HostDemoteOutcome::Off
-                                | HostDemoteOutcome::SourceQuarantined
-                                | HostDemoteOutcome::Demoting => {
-                                    // The boundary snapshot was a copy; the park itself is intact
-                                    // whatever the transfer kept. `Demoting` is unreachable on the
-                                    // by-reference route (WP-A day 17) and reads as unpublished.
-                                    eprintln!(
-                                        "[prefix-host] pause demote: host copy did not \
-                                     publish; park kept"
-                                    );
+                                    HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated => {
+                                        // Published (a whole image) or evaporated at the submit:
+                                        // the park releases now, as on the tick.
+                                        drop(entry);
+                                        drop(pool.remove(pi));
+                                        if pool.is_empty() {
+                                            reuse.remove(&cand.pool_key);
+                                        }
+                                        eprintln!(
+                                            "[prefix-host] pause demote: plain park released \
+                                             ({fed_len} fed tokens, model {}{})",
+                                            cand.pool_key.0,
+                                            ns_suffix(&cand.pool_key.1),
+                                        );
+                                        hpx.pause_demotes += 1;
+                                        cand.started = true;
+                                    }
+                                    HostDemoteOutcome::Failed
+                                    | HostDemoteOutcome::Off
+                                    | HostDemoteOutcome::SourceQuarantined => {
+                                        // The boundary snapshot was a copy; the park itself is
+                                        // intact whatever the transfer kept.
+                                        eprintln!(
+                                            "[prefix-host] pause demote: host copy did not \
+                                             publish; park kept"
+                                        );
+                                    }
                                 }
                             }
-                        }
-                        Err(err) => eprintln!(
-                            "[prefix-host] pause demote: boundary snapshot refused \
-                             ({err}); park kept"
-                        ),
-                    }
-                }
-                // Shape 2: the deepest resident device prefix entry.
-                if let PausePxDecision::Demote(ei) = pause_px_decision(
-                    px.entries
-                        .get(&cand.pool_key)
-                        .into_iter()
-                        .flatten()
-                        .map(|e| (e.toks.as_slice(), e.last_use, e.pins)),
-                    &cand.tape,
-                    cand.armed_at,
-                ) && let Some(entry) = px
-                    .entries
-                    .get_mut(&cand.pool_key)
-                    .and_then(|pool| pool.get_mut(ei))
-                {
-                    let outcome =
-                        host_demote_prefix_ref(&engine, &mut hpx, entry, ContractD2h::OnTick);
-                    if outcome == HostDemoteOutcome::SourceQuarantined {
-                        // Option B: the transfer engine kept the entry's planes (a quarantined
-                        // completion); the entry is not whole and must not stay resident.
-                        if let Some(dead) = px.remove_at(&cand.pool_key, ei) {
-                            eprintln!(
-                                "[prefix-host] pause demote: device prefix entry DROPPED, its \
-                                 planes stay with a quarantined D2H ({} tokens, model {}{})",
-                                dead.toks.len(),
-                                cand.pool_key.0,
-                                ns_suffix(&cand.pool_key.1),
-                            );
-                            drop(dead);
-                        }
-                    } else if matches!(
-                        outcome,
-                        HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated
-                    ) {
-                        // `remove_at` refuses pinned entries, the second guard behind the
-                        // decision's pin check; a refusal leaves a redundant host twin,
-                        // exactly the promote path's kept-twin state.
-                        if let Some(dead) = px.remove_at(&cand.pool_key, ei) {
-                            eprintln!(
-                                "[prefix-host] pause demote: device prefix entry released \
-                                 ({} tokens, {:.1}MB, model {}{})",
-                                dead.toks.len(),
-                                dead.bytes as f64 / 1e6,
-                                cand.pool_key.0,
-                                ns_suffix(&cand.pool_key.1),
-                            );
-                            drop(dead);
-                            demoted += 1;
+                            Err(err) => eprintln!(
+                                "[prefix-host] pause demote: boundary snapshot refused \
+                                 ({err}); park kept"
+                            ),
                         }
                     }
                 }
-                if demoted > 0 {
-                    hpx.pause_demotes += demoted;
-                } else {
+                // Shape 2: the deepest resident device prefix entry. It leaves the device index
+                // into the sink's route; a failure reinstates it (the tick top's `reinstate`
+                // drain, or here for a refusal before the submit). Owed to a later tick while
+                // shape 1's demote is in flight.
+                if cand.shape2_owed && !submitted {
+                    cand.shape2_owed = false;
+                    if let PausePxDecision::Demote(ei) = pause_px_decision(
+                        px.entries
+                            .get(&cand.pool_key)
+                            .into_iter()
+                            .flatten()
+                            .map(|e| (e.toks.as_slice(), e.last_use, e.pins)),
+                        &cand.tape,
+                        cand.armed_at,
+                    ) && let Some(mut dead) = px.remove_at(&cand.pool_key, ei)
+                    {
+                        let (toks, mb) = (dead.toks.len(), dead.bytes as f64 / 1e6);
+                        match host_demote_prefix_ref(
+                            &engine,
+                            &mut hpx,
+                            &mut dead,
+                            ContractD2h::OffTick,
+                        ) {
+                            HostDemoteOutcome::Demoting => {
+                                if let Some(pending) = hpx.demoting.as_mut() {
+                                    pending.dead = Some(dead);
+                                    pending.reinstate = true;
+                                }
+                                eprintln!(
+                                    "[prefix-host] pause demote: device prefix entry demoting \
+                                     off the tick ({toks} tokens, {mb:.1}MB, model {}{})",
+                                    cand.pool_key.0,
+                                    ns_suffix(&cand.pool_key.1),
+                                );
+                                cand.started = true;
+                            }
+                            HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated => {
+                                eprintln!(
+                                    "[prefix-host] pause demote: device prefix entry released \
+                                     ({toks} tokens, {mb:.1}MB, model {}{})",
+                                    cand.pool_key.0,
+                                    ns_suffix(&cand.pool_key.1),
+                                );
+                                drop(dead);
+                                hpx.pause_demotes += 1;
+                                cand.started = true;
+                            }
+                            HostDemoteOutcome::SourceQuarantined => {
+                                // Option B: the transfer engine kept the entry's planes (a
+                                // quarantined completion); the entry is not whole.
+                                eprintln!(
+                                    "[prefix-host] pause demote: device prefix entry DROPPED, its \
+                                     planes stay with a quarantined D2H ({toks} tokens, model {}{})",
+                                    cand.pool_key.0,
+                                    ns_suffix(&cand.pool_key.1),
+                                );
+                                drop(dead);
+                            }
+                            HostDemoteOutcome::Failed | HostDemoteOutcome::Off => {
+                                eprintln!(
+                                    "[prefix-host] pause demote failed: device prefix entry \
+                                     reinstated ({toks} tokens, model {}{})",
+                                    cand.pool_key.0,
+                                    ns_suffix(&cand.pool_key.1),
+                                );
+                                let key = cand.pool_key.clone();
+                                px.insert_demoting(
+                                    &key,
+                                    dead,
+                                    "pause reinstate",
+                                    &engine,
+                                    &mut hpx,
+                                );
+                            }
+                        }
+                    }
+                }
+                if cand.shape1_owed || cand.shape2_owed {
+                    // A shape is still owed (shape 1's demote is in flight): a later tick.
+                    pause_pending.push(cand);
+                } else if !cand.started {
                     hpx.pause_cancels += 1;
                     eprintln!(
                         "[prefix-host] pause cancelled: nothing demoted for the {}-token \
@@ -36828,13 +38095,28 @@ mod tests {
             !r(60, 100, true, false),
             "door shut must keep the pre-lane refusal"
         );
+        let grid = memra_engine::Engine::gdn_chunk_size();
         assert!(
-            r(60, 100, true, true),
-            "door open must admit a strict-prefix carrier"
+            r(2 * grid, 2 * grid + 40, true, true),
+            "door open must admit a grid-aligned strict-prefix carrier"
         );
+        // C day 56 section 2c: an off-grid carrier is a second numeric program; it serves cold
+        assert!(!r(2 * grid + 1, 2 * grid + 41, true, true));
+        assert!(!r(60, 100, true, true));
         // no tail: never restorable, the drafter cannot be re-armed from trunk planes alone
         assert!(!r(100, 100, false, true));
         assert!(!r(60, 100, false, true));
+        // a suffix shorter than PRIME_MIN_T is not restorable (C day 56: it failed the request
+        // with HTTP 500); at PRIME_MIN_T it is
+        let min = memra_engine::hybrid_forward::PRIME_MIN_T;
+        assert!(
+            !r(2 * grid, 2 * grid + min - 1, true, true),
+            "a sub-minimum suffix serves cold"
+        );
+        assert!(
+            r(2 * grid, 2 * grid + min, true, true),
+            "a PRIME_MIN_T suffix restores"
+        );
         // degenerate lengths are refused in both arms
         assert!(!r(0, 100, true, true));
         assert!(
@@ -44784,6 +46066,7 @@ mod tests {
             last_use: next_instant(),
             id: 0,
             verify_digest: None,
+            span_digests: Vec::new(),
         }
     }
 
@@ -44905,6 +46188,7 @@ mod tests {
                 super::HostTierPrograms {
                     plain: base,
                     draft: Some(draft),
+                    tail: None,
                     generation,
                 },
             )]),
@@ -44958,6 +46242,10 @@ mod tests {
             polls: 0,
             hashing: None,
             owner: super::DemoteOwnerLedger::default(),
+            parked: Vec::new(),
+            reparks: 0,
+            release: None,
+            reinstate: false,
         });
     }
 
@@ -45031,7 +46319,12 @@ mod tests {
                     64,
                     "the shell travels with the pending demote"
                 );
-                Ok(super::ContractSettle::Done(Vec::new(), None, Vec::new()))
+                Ok(super::ContractSettle::Done(
+                    Vec::new(),
+                    None,
+                    Vec::new(),
+                    None,
+                ))
             },
         );
         assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
@@ -46962,7 +48255,14 @@ mod tests {
             &mut host,
             super::ContractWait::Poll,
             "the tick top",
-            |_, _, _, _| Ok(super::ContractSettle::Done(Vec::new(), None, Vec::new())),
+            |_, _, _, _| {
+                Ok(super::ContractSettle::Done(
+                    Vec::new(),
+                    None,
+                    Vec::new(),
+                    None,
+                ))
+            },
         );
         assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
         assert!(host.demoting.is_none());
@@ -47165,8 +48465,13 @@ mod tests {
                 parked: Vec::new(),
                 reparks: 0,
                 leases: None,
+                span: None,
             }),
             owner: super::DemoteOwnerLedger::default(),
+            parked: Vec::new(),
+            reparks: 0,
+            release: None,
+            reinstate: false,
         });
         bytes
     }
@@ -47208,34 +48513,40 @@ mod tests {
         let prompt: Vec<u32> = (100..170).collect();
         // The pure decision: depth and ticket of the hit; every miss shape answers None.
         assert_eq!(
-            super::host_hashing_hit(&host, &key, &prompt, 0),
-            Some((64, 5))
+            super::host_demoting_hit(&host, &key, &prompt, 0),
+            Some((64, 5, true))
         );
         assert_eq!(
-            super::host_hashing_hit(&host, &key, &prompt, 63),
-            Some((64, 5))
+            super::host_demoting_hit(&host, &key, &prompt, 63),
+            Some((64, 5, true))
         );
-        assert_eq!(super::host_hashing_hit(&host, &key, &prompt, 64), None);
+        assert_eq!(super::host_demoting_hit(&host, &key, &prompt, 64), None);
         let shorter: Vec<u32> = (100..150).collect();
-        assert_eq!(super::host_hashing_hit(&host, &key, &shorter, 0), None);
+        assert_eq!(super::host_demoting_hit(&host, &key, &shorter, 0), None);
         let other_prompt: Vec<u32> = (200..270).collect();
-        assert_eq!(super::host_hashing_hit(&host, &key, &other_prompt, 0), None);
+        assert_eq!(
+            super::host_demoting_hit(&host, &key, &other_prompt, 0),
+            None
+        );
         let other_key = ("m".to_string(), "ns2".to_string());
-        assert_eq!(super::host_hashing_hit(&host, &other_key, &prompt, 0), None);
+        assert_eq!(
+            super::host_demoting_hit(&host, &other_key, &prompt, 0),
+            None
+        );
         // The park: once per id with the typed line, re-parks counted, a miss unparked.
-        assert!(super::host_hashing_park(
+        assert!(super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-1"
         ));
-        assert!(super::host_hashing_park(
+        assert!(super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-1"
         ));
-        assert!(super::host_hashing_park(
+        assert!(super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-2"
         ));
-        assert!(!super::host_hashing_park(
+        assert!(!super::host_demoting_park(
             &mut host, &key, &shorter, 0, "req-3"
         ));
-        assert!(!super::host_hashing_park(
+        assert!(!super::host_demoting_park(
             &mut host, &key, &prompt, 64, "req-4"
         ));
         {
@@ -47289,23 +48600,55 @@ mod tests {
         assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
         assert!(host.demoting.is_none());
         assert!(host.armed(), "a bind refusal is not a latch");
-        assert_eq!(super::host_hashing_hit(&host, &key, &prompt, 0), None);
-        assert!(!super::host_hashing_park(
+        assert_eq!(super::host_demoting_hit(&host, &key, &prompt, 0), None);
+        assert!(!super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-1"
         ));
-        // A copy-phase Demoting entry (the day-17 window) is a miss for the park too.
+        // WP-A day 38 (`DAY38.md` design P): a copy-phase Demoting entry parks the request too (the
+        // day-17 cold-prime rule is retired): the id on the pending demote, re-parks counted, the
+        // hashing phase untouched; past the copy's deadline the hit parks nothing more.
         let (mut host, key) = cpu_door_host();
         cpu_pending_demote(&mut host, &key);
         assert!(host.demoting.as_ref().unwrap().hashing.is_none());
-        assert_eq!(super::host_hashing_hit(&host, &key, &prompt, 0), None);
-        assert!(!super::host_hashing_park(
+        assert_eq!(
+            super::host_demoting_hit(&host, &key, &prompt, 0),
+            Some((64, 1, false))
+        );
+        assert_eq!(super::host_demoting_hit(&host, &key, &prompt, 64), None);
+        assert!(super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-5"
+        ));
+        assert!(super::host_demoting_park(
+            &mut host, &key, &prompt, 0, "req-5"
+        ));
+        assert!(!super::host_demoting_park(
+            &mut host, &key, &shorter, 0, "req-7"
+        ));
+        {
+            let pending = host.demoting.as_ref().unwrap();
+            assert_eq!(pending.parked, vec!["req-5".to_string()]);
+            assert_eq!(pending.reparks, 1);
+            assert!(pending.hashing.is_none());
+        }
+        // A copy older than the helper's deadline parks nothing more (the request primes cold).
+        host.demoting
+            .as_mut()
+            .unwrap()
+            .contract
+            .as_mut()
+            .unwrap()
+            .submitted = std::time::Instant::now()
+            - super::HOST_HASH_DEADLINE
+            - std::time::Duration::from_millis(1);
+        assert_eq!(super::host_demoting_hit(&host, &key, &prompt, 0), None);
+        assert!(!super::host_demoting_park(
+            &mut host, &key, &prompt, 0, "req-8"
         ));
         // The latch with parked requests: the state is consumed, the tier off, the parked request
         // re-admits to the probe's first line (`armed()` false) and primes cold.
         let (mut host, key, _jobs, replies) = cpu_door_host_with_channels();
         cpu_pending_hashing(&mut host, &key, 6);
-        assert!(super::host_hashing_park(
+        assert!(super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-6"
         ));
         drop(replies);
@@ -47318,7 +48661,7 @@ mod tests {
         assert_eq!(outcome, Some(super::HostDemoteOutcome::Failed));
         assert!(host.demoting.is_none());
         assert!(!host.armed());
-        assert!(!super::host_hashing_park(
+        assert!(!super::host_demoting_park(
             &mut host, &key, &prompt, 0, "req-6"
         ));
     }
@@ -47667,7 +49010,7 @@ mod tests {
         );
         // A Block settle of the copy continues into the hash wait; a Poll parks the state.
         let done = driver
-            .find("Ok(ContractSettle::Done(mut kv, draft, staged)) => {")
+            .find("Ok(ContractSettle::Done(mut kv, draft, staged, span_id)) => {")
             .unwrap();
         let tail = &driver[done..];
         assert!(tail.contains("ContractWait::Block => Some(host_demote_settle_hashing("));
@@ -47715,25 +49058,23 @@ mod tests {
             let lo = i.saturating_sub(1500);
             assert!(!code[lo..i + 400].contains("host_demote_settle_pending("), "a trim meets no Demoting entry (day 17), so no Hashing entry either");
         }
-        // WP-A day 29 (ruling 40): the parked-only wait is guarded on a Hashing entry too (a
-        // request parked on it is the promote park's shape); the orphan grace still reads no
-        // demote state (a request parked on a Hashing entry owns nothing to expire).
+        // WP-A day 29 (ruling 40), day 38 (P): the parked-only wait is guarded on a Demoting
+        // entry of either phase (a request parked on it is the promote park's shape); the orphan
+        // grace still reads no demote state (a parked request owns nothing to expire).
         let park_wait = code.find("&& parked_on_promote == queue.len()").unwrap();
-        assert!(
-            code[park_wait..park_wait + 600]
-                .contains("|| hpx.demoting.as_ref().is_some_and(|d| d.hashing.is_some())")
-        );
+        assert!(code[park_wait..park_wait + 600].contains("|| hpx.demoting.is_some())"));
         let orphan = body("fn host_restore_expire_ready(");
         assert!(!orphan.contains("demoting"));
-        // WP-A day 29: the probe decides the Hashing park BEFORE the promote decision, with the
-        // request still in hand, and answers the caller's one park arm; the decision is pure over
-        // the host state and requires the Hashing phase (a copy-phase Demoting entry is a miss).
+        // WP-A day 29, day 38 (P): the probe decides the Demoting park BEFORE the promote
+        // decision, with the request still in hand, and answers the caller's one park arm; the
+        // decision is pure over the host state and covers both phases (a copy past the helper's
+        // deadline parks nothing).
         let probe = body("fn host_promote_park_probe(");
         let park = probe
             .find(
-                "if host_hashing_park(host, &pool_key, prompt, device_best_len, &req.request_id) {",
+                "if host_demoting_park(host, &pool_key, prompt, device_best_len, &req.request_id) {",
             )
-            .expect("the Hashing park in the probe");
+            .expect("the Demoting park in the probe");
         let decision = probe
             .find("let hi = match host_promote_probe_decision(")
             .unwrap();
@@ -47742,21 +49083,32 @@ mod tests {
             "the Hashing park precedes the promote decision"
         );
         assert!(probe[park..park + 200].contains("return true;"));
-        let hit = body("fn host_hashing_hit(");
-        assert!(hit.contains("let hashing = pending.hashing.as_ref()?;"));
+        let hit = body("fn host_demoting_hit(");
+        assert!(hit.contains("(Some(h), _) => (h.seq, true),"));
+        assert!(hit.contains("(None, Some(c)) if c.submitted.elapsed() < HOST_HASH_DEADLINE"));
         assert!(hit.contains("&& n > device_best_len"));
         assert!(hit.contains("&& prompt[..n] == toks[..]"));
-        let park_fn = body("fn host_hashing_park(");
+        let park_fn = body("fn host_demoting_park(");
         assert!(park_fn.contains("hit parked on a Hashing entry: request {request_id}"));
+        assert!(
+            park_fn
+                .contains("hit parked on a Demoting entry in its copy phase: request {request_id}")
+        );
         assert!(
             !park_fn.contains("hasher.") && !park_fn.contains("settle"),
             "the park never touches the helper and never settles"
         );
         assert_eq!(
-            code.matches("host_hashing_park(").count(),
+            code.matches("host_demoting_park(").count(),
             2,
             "the definition and one park site: the admission probe"
         );
+        // Day 38 (P): the copy phase's parked ids ride into the Hashing phase, and a demote that
+        // ends unpublished names them.
+        assert!(code.contains("parked: std::mem::take(&mut pending.parked),"));
+        assert!(code.contains("reparks: std::mem::take(&mut pending.reparks),"));
+        let with = body("fn host_demote_settle_with(");
+        assert!(with.contains("request(s) parked on the Demoting entry's copy phase"));
         // The ledger line carries the parked count; the latch tail names the parked requests.
         assert!(hashing_fn.contains("{parked_hits} hit(s) parked on \\\n             the Hashing entry ({reparks} re-park(s))"));
         assert!(hashing_fn.contains("request(s) parked on the Hashing entry re-admit to a"));
@@ -47842,8 +49194,9 @@ mod tests {
             .collect();
         assert_eq!(
             code.join("\n").matches("ContractD2h::OffTick").count(),
-            2,
-            "the sink and the route selector in host_entry_from_device, nobody else"
+            4,
+            "the sink, the route selector in host_entry_from_device and (WP-A day 47, design V) the \
+             pause sweep's two shapes, nobody else"
         );
         // The settle-with driver is the only place that publishes a Demoting image, and it does
         // so through the shared publication function after `Done`.
@@ -47851,7 +49204,7 @@ mod tests {
         // through `host_demote_settle_hashing`, itself through the shared publication function.)
         let driver = body("fn host_demote_settle_with_deadline(");
         let done = driver
-            .find("Ok(ContractSettle::Done(mut kv, draft, staged)) => {")
+            .find("Ok(ContractSettle::Done(mut kv, draft, staged, span_id)) => {")
             .unwrap();
         let publish = driver.find("host_demote_publish(").unwrap();
         assert!(done < publish);
@@ -47884,7 +49237,10 @@ mod tests {
         assert!(entry.contains(
             ".and_then(|pending| host_spans_submit(tier, dead, pending))\n                    .map(ContractSettle::Pending),"
         ));
-        assert!(entry.contains(".map(|(kv, draft)| ContractSettle::Done(kv, draft, Vec::new())),"));
+        assert!(
+            entry
+                .contains(".map(|(kv, draft)| ContractSettle::Done(kv, draft, Vec::new(), None)),")
+        );
         assert!(
             at(entry, "spanned.contains(&HostHashSlot::Conv(i))")
                 < at(entry, "HostF32::down(c, &mut planes)")
@@ -47923,13 +49279,17 @@ mod tests {
         assert!(take < at(settle, "completion.require(&ticket"));
         assert!(take < at(settle, "t.retire_source(&ticket)"));
         assert!(take < at(settle, ".and_then(|_| t.retire(&ticket, Some(consumer)))"));
-        assert!(settle.contains("Ok(ContractSettle::Done(kv, draft, staged.landed(&spans)))"));
+        assert!(settle.contains(
+            "Ok(ContractSettle::Done(\n        kv,\n        draft,\n        staged.landed(&spans),\n        span_receipt,\n    ))"
+        ));
         assert_eq!(production.matches(".take_d2h_spans(").count(), 1);
         assert_eq!(production.matches(".submit_d2h_spans(").count(), 1);
         let driver = body("fn host_demote_settle_with_deadline(");
         assert!(
-            at(driver, "p.staged = Some(buf);")
-                < at(driver, "Some(tier) => tier.hasher.submit(HostHashJob {")
+            at(
+                driver,
+                "p.staged = Some(HostStagingHeld::new(buf, &quiet));"
+            ) < at(driver, "Some(tier) => tier.hasher.submit(HostHashJob {")
         );
         assert!(
             driver
@@ -47942,11 +49302,235 @@ mod tests {
         );
         let hashing = body("fn host_demote_settle_hashing(");
         assert!(
-            at(hashing, "tier.staging_put(staged);")
-                < at(hashing, "host_hash_restore_payload(&mut e, payload)")
+            at(
+                hashing,
+                "payload.staged.take().and_then(HostStagingHeld::into_quiet),"
+            ) < at(hashing, "host_hash_restore_payload(&mut e, payload)")
         );
         let disable = body("    fn disable(&mut self, why: &str) {");
         assert!(disable.contains("tier.staging.borrow_mut().clear();"));
+    }
+
+    /// WP-A day 47 (`DAY47.md` design V, sections 1 and 1a; CPU census): the pause sweep's two shapes
+    /// demote off the tick. No pause path takes the on-tick route or starts while a demote or a promote
+    /// is in flight (a start would Block-settle it); shape 1 attaches its snapshot shell and the park's
+    /// release to the pending demote, shape 2 its shell and the reinstate mark; the publication hooks
+    /// queue the release and count shape 2; the tick top drains both queues after its settle calls and
+    /// before admission; both settle steps hold the shell under `HostDemoteShell`, handing it back on
+    /// every continuing exit and disarming it only on the publication or a quarantined source. The
+    /// admission flush and the handoff export keep the on-tick route (their two sites).
+    #[test]
+    fn day47_the_pause_sweep_demotes_off_the_tick() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let body = |start: &str| {
+            let a = at(production, start);
+            &production[a..a + production[a..].find("\n}\n").unwrap()]
+        };
+        let sweep = &production[at(production, "        if !pause_pending.is_empty() {")..];
+        let sweep = &sweep[..at(sweep, "        // publish serving metrics")];
+        assert!(
+            !sweep.contains("ContractD2h::OnTick"),
+            "no pause shape on the tick"
+        );
+        assert_eq!(sweep.matches("ContractD2h::OffTick").count(), 2);
+        let wait = at(sweep, "|| hpx.demoting.is_some()");
+        assert!(wait < at(sweep, "|| hpx.promoting.is_some()"));
+        assert!(wait < at(sweep, "let mut cand = pause_pending.swap_remove(ci);"));
+        assert!(sweep.contains("pending.release = Some(ParkRelease {"));
+        assert!(sweep.contains("pending.reinstate = true;"));
+        assert!(sweep.contains("if cand.shape2_owed && !submitted {"));
+        assert!(sweep.contains("pause_pending.push(cand);"));
+        assert!(!sweep.contains("ContractWait::Block"));
+        // The tick top: the drain after the settle calls, before admission.
+        let top = &production[at(production, "    'worker: loop {")..];
+        let drain = at(
+            top,
+            "host_pause_drain(&engine, &mut px, &mut hpx, &mut reuse);",
+        );
+        assert!(at(top, "host_restore_expire_ready(&mut px, &mut hpx);") < drain);
+        assert!(drain < at(top, "// 1. Drain pending commands."));
+        let d = body("fn host_pause_drain(");
+        assert!(d.contains("pause_park_index(pool.iter().map(|e| e.fed.as_slice()), &r.tape)"));
+        assert!(d.contains("px.insert_demoting(&key, e, \"pause reinstate\", engine, host);"));
+        // The publication hooks and the shell guard in both settle steps.
+        let driver = body("fn host_demote_settle_with_deadline(");
+        let hashing = body("fn host_demote_settle_hashing(");
+        for step in [driver, hashing] {
+            assert_eq!(
+                step.matches("HostDemoteShell::arm(dead, &pending, host)")
+                    .count(),
+                1
+            );
+            assert_eq!(step.matches("pending.dead = Some(dead.keep());").count(), 2);
+            let publish = at(step, "if outcome == HostDemoteOutcome::Demoted {");
+            assert!(
+                at(&step[publish..], "dead.disarm();")
+                    < at(&step[publish..], "host_pause_published(")
+            );
+        }
+        assert_eq!(
+            driver.matches("dead.reinstate = None;").count(),
+            1,
+            "the quarantined source"
+        );
+        let hooks = body("fn host_pause_published(");
+        assert!(
+            hooks.contains("host.park_releases.push(r);")
+                && hooks.contains("host.pause_demotes += 1;")
+        );
+        let guard = body("impl Drop for HostDemoteShell {");
+        assert!(guard.contains("q.borrow_mut().push(e);"));
+        // The admission flush and the handoff export keep the on-tick route.
+        assert!(body("fn evict_all_demoting(").contains("ContractD2h::OnTick"));
+        assert!(body("fn host_handoff_export(").contains("ContractD2h::OnTick"));
+    }
+
+    /// WP-A day 47 (`DAY47.md` design V, clause (a)): the demote shell's guard. Armed for a shape-2
+    /// demote, an unpublished drop queues the whole shell (the tick top reinstates it); `disarm` (the
+    /// publication) and a cleared queue (a quarantined source) queue nothing; `keep` hands the entry
+    /// back for a continuing demote and queues nothing. The release matcher is `pause_park_index`'s
+    /// exact-fed rule (`pause_park_index_matches_the_exact_fed_tape_only`).
+    #[test]
+    fn day47_the_demote_shell_reinstates_only_unpublished_shells() {
+        let shell = || super::PrefixEntry {
+            _tier_charge: None,
+            layout_version: super::PREFIX_ENTRY_LAYOUT_VERSION,
+            pool_key: ("m".into(), String::new()),
+            toks: (0..8).collect(),
+            kv: vec![],
+            conv: vec![],
+            ssm: vec![],
+            latent: vec![],
+            tp: None,
+            pos: 8,
+            last_logits: vec![],
+            draft: None,
+            dspark_draft: None,
+            last_h: vec![],
+            bytes: 0,
+            last_use: std::time::Instant::now(),
+            id: 0,
+            pins: 0,
+        };
+        let q = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        drop(super::HostDemoteShell::new(shell(), Some(q.clone()), false));
+        assert_eq!(q.borrow().len(), 1, "an unpublished drop reinstates");
+        assert_eq!(q.borrow()[0].toks.len(), 8, "the whole shell");
+        let mut published = super::HostDemoteShell::new(shell(), Some(q.clone()), true);
+        published.disarm();
+        drop(published);
+        assert_eq!(q.borrow().len(), 1, "a publication reinstates nothing");
+        let mut quarantined = super::HostDemoteShell::new(shell(), Some(q.clone()), false);
+        quarantined.reinstate = None;
+        drop(quarantined);
+        assert_eq!(q.borrow().len(), 1, "a quarantined source is not whole");
+        let kept = super::HostDemoteShell::new(shell(), Some(q.clone()), false).keep();
+        assert_eq!(kept.toks.len(), 8);
+        assert_eq!(q.borrow().len(), 1, "a continuing demote keeps its shell");
+        drop(super::HostDemoteShell::new(shell(), None, false));
+        assert_eq!(q.borrow().len(), 1, "a sink demote's shell drops");
+    }
+
+    /// WP-A day 42 (`DAY42.md` design S2, sections 1 and 1a, step 10; CPU census): the span receipt
+    /// is required before the publication and no staging frees or returns under its device read.
+    /// (a) The settle takes the receipt id with the spans and hands it out unsealed on `Done`. (b)
+    /// In the `Done` arm, the seal is the hand-off's last step before the job: after the two
+    /// unstage exits, the payload loop (every staging guarded) and the lease views, with `quiet`
+    /// cleared first; every exit of the arm gives the receipt back. (c) In the `Hashing` step the
+    /// receipt is read before the helper's reply, `quiet` is set only on its observation, the pair
+    /// check runs after the reply's checks and before the first staging return, and the latch
+    /// gives the receipt back. (d) The guard frees or returns its buffer only while quiet and
+    /// leaks it otherwise; the shutdown drain gives the receipt back.
+    #[test]
+    fn day42_the_span_receipt_is_required_before_the_publication() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let body = |start: &str| {
+            let a = production
+                .find(start)
+                .unwrap_or_else(|| panic!("{start} missing"));
+            let b = a + production[a..].find("\n}\n").unwrap();
+            &production[a..b]
+        };
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        // (a)
+        let settle = body("fn host_kv_planes_settle_contract(");
+        assert!(
+            at(settle, "span_receipt = taken.receipt;") < at(settle, "t.take_destination(&ticket")
+        );
+        assert!(
+            !settle.contains("seal_d2h_span_receipt"),
+            "no seal in the settle"
+        );
+        // (b)
+        let driver = body("fn host_demote_settle_with_deadline(");
+        let arm = &driver[at(
+            driver,
+            "Ok(ContractSettle::Done(mut kv, draft, staged, span_id)) => {",
+        )..];
+        let flip_exit = at(arm, "if let Err(err) = apply_flip_demote_fault(&mut kv) {");
+        let second_unstage = flip_exit + at(&arm[flip_exit..], "unstage(host, staged);");
+        let guarded = at(arm, "p.staged = Some(HostStagingHeld::new(buf, &quiet));");
+        let views = at(
+            arm,
+            "let (leases, lease_views) = match host_lease_views(leases) {",
+        );
+        let cleared = at(arm, "quiet.set(false);");
+        let seal = at(arm, ".seal_d2h_span_receipt(id, &staging)");
+        let submit = at(arm, "Some(tier) => tier.hasher.submit(HostHashJob {");
+        assert!(second_unstage < guarded && guarded < views && views < cleared);
+        assert!(cleared < seal && seal < submit);
+        assert!(at(arm, "let unstage =") < at(arm, "host_span_receipt_abandon(host, span_id);"));
+        assert_eq!(
+            arm[..submit + at(&arm[submit..], "return Some(HostDemoteOutcome::Failed);")]
+                .matches("host_span_receipt_abandon(host, span_id);")
+                .count(),
+            5,
+            "the unstage closure (its two callers: the latched tier, the flip fault), the span slot, \
+             the lease views, the refused seal, the helper gone"
+        );
+        assert!(arm.contains("span: (!span_slots.is_empty()).then_some(HostSpanReceipt {"));
+        // (c)
+        let hashing = body("fn host_demote_settle_hashing(");
+        let latch = at(hashing, "let latch = |host: &mut HostPrefixCache");
+        assert!(latch < at(hashing, "host_span_receipt_abandon(host, span_id);"));
+        let read = at(hashing, "ContractWait::Poll => t.d2h_span_receipt(id),");
+        let wait = at(
+            hashing,
+            "ContractWait::Block => t.d2h_span_receipt_wait(id).map(Some),",
+        );
+        let quiet = at(hashing, "r.quiet.set(true);");
+        let reply = at(hashing, "ContractWait::Poll => tier.hasher.try_reply(),");
+        assert!(read < quiet && wait < quiet && quiet < reply);
+        let mismatch = at(hashing, "tier hash reply mismatch: {what}");
+        let armed = at(hashing, "if !host.armed() {");
+        let pairs = at(hashing, ".find(|(_, (source, landed))| source != landed)");
+        let first_return = at(hashing, "tier.staging_put(buf);");
+        let restore = at(hashing, "host_hash_restore_payload(&mut e, payload)");
+        assert!(reply < mismatch && mismatch < armed && armed < pairs);
+        assert!(pairs < first_return && first_return < restore);
+        assert_eq!(hashing.matches("r.quiet.set(true);").count(), 1);
+        assert_eq!(
+            production.matches(".set(true)").count(),
+            1,
+            "quiet is set again only on the observation"
+        );
+        assert!(hashing.contains("e.span_digests = span_digests;"));
+        // (d)
+        let guard = body("impl HostStagingHeld {");
+        assert!(at(guard, "if self.quiet.get() {") < at(guard, "self.buf.take()"));
+        let drop = body("impl Drop for HostStagingHeld {");
+        assert!(drop.contains("&& !self.quiet.get()") && drop.contains("std::mem::forget(buf);"));
+        assert!(body("fn host_demote_drain_at_shutdown(").contains("host_span_receipt_abandon("));
+        assert_eq!(
+            production.matches(".seal_d2h_span_receipt(").count(),
+            1,
+            "one seal site"
+        );
     }
 
     /// WP-A day 31 (DAY30 finding 4 and the owed governor charge; CPU census): the staging goes
@@ -47995,7 +49579,9 @@ mod tests {
         assert_eq!(settle.matches("staged.bufs.is_empty()").count(), 1);
         assert_eq!(settle.matches("staged.bufs.len()").count(), 1);
         assert_eq!(settle.matches("staged.landed(&spans)").count(), 1);
-        assert!(settle.contains("Ok(ContractSettle::Done(kv, draft, staged.landed(&spans)))"));
+        assert!(settle.contains(
+            "Ok(ContractSettle::Done(\n        kv,\n        draft,\n        staged.landed(&spans),\n        span_receipt,\n    ))"
+        ));
         assert!(!settle.contains("mem::forget"));
         let guard_drop = body("impl Drop for StagedSpans<'_> {");
         assert!(guard_drop.contains("for buf in self.bufs.drain(..) {"));
@@ -48010,12 +49596,14 @@ mod tests {
         let driver = body("fn host_demote_settle_with_deadline(");
         let done = at(
             driver,
-            "Ok(ContractSettle::Done(mut kv, draft, staged)) => {",
+            "Ok(ContractSettle::Done(mut kv, draft, staged, span_id)) => {",
         );
         let arm = &driver[done..];
         let armed = at(arm, "if !host.armed() {");
         let flip = at(arm, "if let Err(err) = apply_flip_demote_fault(&mut kv) {");
         let into_payloads = at(arm, "for (slot, buf) in staged {");
+        // Day 42 (design S2): the span receipt's refusal moved to the `Hashing` step (after its
+        // observation); the arm's two exits before the hand-off are the day-31 pair again.
         assert_eq!(arm.matches("unstage(host, staged);").count(), 2);
         let first = at(arm, "unstage(host, staged);");
         let second = flip + at(&arm[flip..], "unstage(host, staged);");
@@ -48091,7 +49679,9 @@ mod tests {
         );
         let worker = include_str!("worker.rs");
         let production = &worker[..worker.find("\nmod tests {").unwrap()];
-        assert!(production.contains("the hash helper; {tally}\",\n                pending.polls,"));
+        assert!(
+            production.contains("the hash helper; {tally}{}\",\n                pending.polls,")
+        );
         assert_eq!(
             production
                 .matches("host_hash_class_tally(&payloads)")
@@ -48124,7 +49714,7 @@ mod tests {
         assert!(
             at(
                 parts,
-                "host_h2d_spans_submit(engine, tier, pending, &mut staged, fills)?"
+                "host_h2d_spans_submit(\n                            engine,\n                            tier,\n                            pending,\n                            &mut staged,\n                            fills,\n                            &src.span_digests,\n                        )?"
             ) < at(parts, "host_h2d_sources_handoff(tier, pending)?")
         );
         let handoff = body("fn host_h2d_sources_handoff(");
@@ -48250,6 +49840,93 @@ mod tests {
         }
     }
 
+    /// WP-A day 38 (`DAY38.md` designs G and P): the two new fault values are one-shot, demote side,
+    /// Move 1 faults; the demote route arms them for exactly its own batch, before the submission,
+    /// and only when the transfer engine takes device receipts; the receipt line names where hash 1
+    /// ran.
+    #[test]
+    fn day38_the_device_receipt_faults_are_armed_before_the_submission() {
+        use super::HostContractFault as F;
+        for (door, f) in [
+            ("d2h-source-flip", F::D2hSourceFlip),
+            ("d2h-delay", F::D2hDelay),
+        ] {
+            assert_eq!(F::from_door(door), Some(f));
+            assert!(f.is_demote() && f.is_move1(), "{door}");
+        }
+        let src = include_str!("worker.rs");
+        let body = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        let at = body.find("fn host_kv_planes_submit_contract(").unwrap();
+        let route = &body[at..at + body[at..].find("\n}\n").unwrap()];
+        let armed = route.find("if t.d2h_receipts_on_device() {").unwrap();
+        let flip = route.find("t.inject_d2h_source_flip();").unwrap();
+        let delay = route
+            .find("t.inject_d2h_delay(memra_engine::tier_transfer::D2H_DELAY_FAULT_NS);")
+            .unwrap();
+        let submit = route
+            .find("let ticket = match t.submit_batch(ops) {")
+            .unwrap();
+        assert!(armed < flip && flip < submit && delay < submit);
+        assert!(route.find("let fault = tier.take_fault(true);").unwrap() < armed);
+        let at = body.find("fn host_kv_planes_settle_contract(").unwrap();
+        let settle = &body[at..at + body[at..].find("\n}\n").unwrap()];
+        assert!(settle.contains("; receipts on the copy stream (source digests"));
+        assert!(settle.contains("retired acknowledged{}{receipt_place}"));
+    }
+
+    /// WP-A day 41 (`DAY41.md`, OWED item 5): the three Sources-keyed helper faults parse from the
+    /// existing door, are not contract faults, and each is keyed on the FIRST Sources job: a Hash job
+    /// before it runs clean (its reply lands), the Sources job takes the fault once, and a second
+    /// Sources job after a discarded or foreign reply runs clean.
+    #[test]
+    fn day41_the_sources_faults_key_on_the_first_sources_job() {
+        use super::HostHashFault as H;
+        for (door, want) in [
+            ("sources-helper-gone", H::SourcesGone),
+            ("sources-never-land", H::SourcesNeverLand),
+            ("sources-foreign-reply", H::SourcesForeignReply),
+        ] {
+            assert_eq!(H::from_door(door), Some(want));
+            assert_eq!(super::HostContractFault::from_door(door), None, "{door}");
+        }
+        let src = include_str!("worker.rs");
+        let production = &src[..src.find("\nmod tests {").unwrap()];
+        let at = production
+            .find("    fn spawn(fault: Option<HostHashFault>)")
+            .unwrap();
+        let spawn = &production[at..at + production[at..].find("\n    }\n").unwrap()];
+        let sources = spawn.find("HostHelperJob::Sources(job) => {").unwrap();
+        let gone = spawn
+            .find("if sources_fault == Some(HostHashFault::SourcesGone) {")
+            .unwrap();
+        let hashed = spawn[sources..].find("let d = v.digest();").unwrap() + sources;
+        let discard = spawn
+            .find("if sources_fault == Some(HostHashFault::SourcesNeverLand) {")
+            .unwrap();
+        let send = spawn.find("if sources_tx.send(reply).is_err() {").unwrap();
+        assert!(sources < gone && gone < hashed && hashed < discard && discard < send);
+        assert!(spawn.contains("job.seq.wrapping_add(1)"));
+        // One shot: the fault is cleared when a Sources job takes it.
+        let cleared = spawn[sources..].find("fault = None;").unwrap() + sources;
+        assert!(cleared < gone);
+        // Behaviour: under each Sources fault a Hash job runs clean (its reply lands).
+        for f in [H::SourcesGone, H::SourcesNeverLand, H::SourcesForeignReply] {
+            let helper = super::HostHashWorker::spawn(Some(f)).unwrap();
+            helper
+                .submit(super::HostHashJob {
+                    seq: 9,
+                    payloads: Vec::new(),
+                    leases: Vec::new(),
+                })
+                .unwrap();
+            let reply = helper
+                .reply_within(std::time::Duration::from_secs(5))
+                .unwrap()
+                .expect("a Hash job's reply lands under a Sources fault");
+            assert_eq!(reply.seq, 9, "{f:?}");
+            helper.close("test", std::time::Duration::from_secs(5));
+        }
+    }
     /// WP-A day 36 (`DAY36.md` section 1, log only): the restore's recurrent copy is timed around
     /// step 1 exactly (the two owner-stream events and the host timer bracket the copy loop, both
     /// before the producer fence), and the landing reads the owner-stream time only when the end
@@ -48393,7 +50070,7 @@ mod tests {
                 "host_kv_planes_submit_promote(engine, tier, src, class)?"
             ) < at(
                 parts,
-                "host_h2d_spans_submit(engine, tier, pending, &mut staged, fills)?"
+                "host_h2d_spans_submit(\n                            engine,\n                            tier,\n                            pending,\n                            &mut staged,\n                            fills,\n                            &src.span_digests,\n                        )?"
             )
         );
         assert!(
@@ -48505,6 +50182,7 @@ mod tests {
                 super::HostTierPrograms {
                     plain: base,
                     draft: Some(draft),
+                    tail: None,
                     generation,
                 },
             )]),
@@ -48590,6 +50268,165 @@ mod tests {
     fn gpu_used(host: &super::HostPrefixCache) -> (u64, u64, u64) {
         let used = host.tier.as_ref().unwrap().governor.lock().unwrap().used();
         (used.pinned, used.inflight, used.device.iter().sum())
+    }
+
+    /// Day 53 of lane/spill-c-20260919 (verify digest v3): the tag parse and the three-way
+    /// compare the promote runs.
+    #[test]
+    fn verify_digest_check_types_program_and_byte_mismatches() {
+        use super::{VerifyDigestCheck, verify_digest_check, verify_digest_program};
+        assert_eq!(verify_digest_program("split-state-v3:ab"), "split-state-v3");
+        assert_eq!(
+            verify_digest_program("host-prefix-state-v1:ab"),
+            "host-prefix-state-v1"
+        );
+        assert_eq!(verify_digest_program("0123abcd"), "untagged");
+        assert_eq!(
+            verify_digest_check("split-state-v3:ab", "split-state-v3:ab"),
+            VerifyDigestCheck::Match
+        );
+        assert_eq!(
+            verify_digest_check("split-state-v3:ab", "split-state-v3:cd"),
+            VerifyDigestCheck::Mismatch
+        );
+        assert_eq!(
+            verify_digest_check("0123abcd", "split-state-v3:0123abcd"),
+            VerifyDigestCheck::Program("untagged", "split-state-v3")
+        );
+        assert_eq!(
+            verify_digest_check("host-prefix-state-v1:ab", "split-state-v3:ab"),
+            VerifyDigestCheck::Program("host-prefix-state-v1", "split-state-v3")
+        );
+    }
+
+    /// Day 53: the fault's f32 flip changes exactly the first byte of a heap row and leaves an
+    /// empty row alone (the pinned arm is the same byte through `as_mut_slice`).
+    #[test]
+    fn verify_digest_v3_row_flip_touches_one_byte() {
+        let mut row = super::HostF32::Heap(Arc::new(vec![1.5f32, -2.0]));
+        assert!(super::flip_first_f32_byte(&mut row));
+        assert_eq!(row[0].to_bits(), 1.5f32.to_bits() ^ 0xff);
+        assert_eq!(row[1], -2.0);
+        let mut empty = super::HostF32::Heap(Arc::new(Vec::new()));
+        assert!(!super::flip_first_f32_byte(&mut empty));
+    }
+
+    /// Day 53 source census: the verify arm's non-GLM digest is v3; the v2 body is the base
+    /// tree's byte for byte (SHA-256 of its text pinned from `094c46b24`, so the split trace and
+    /// the HIRADIX restore oracle keep their program); the v3 red arms are called once, behind the
+    /// legacy-copy condition, in the whole-image build.
+    #[test]
+    fn verify_digest_v3_census() {
+        use sha2::Digest as _;
+        let src = include_str!("worker.rs");
+        let code = &src[..src
+            .find("#[cfg(test)]\nmod tests {")
+            .expect("the test module")];
+        let body = |start: &str| -> &str {
+            let a = code.find(start).unwrap_or_else(|| panic!("{start}"));
+            &code[a..a + code[a..].find("\n}\n").expect("the function ends") + 3]
+        };
+        let roundtrip = body("fn host_roundtrip_digest(");
+        assert!(roundtrip.contains("prefix_entry_roundtrip_digest(engine, entry)"));
+        assert!(!roundtrip.contains("prefix_entry_state_digest("));
+        let v2 = body("fn prefix_entry_state_digest(");
+        assert_eq!(
+            format!("{:x}", sha2::Sha256::digest(v2.as_bytes())),
+            "6cd83ed3d42eefc9ba30d2463f8044226ccd113bec94d93783200079cf5f036c",
+            "the v2 digest's text moved"
+        );
+        let v3 = body("fn prefix_entry_roundtrip_digest(");
+        assert!(v3.contains("prefix_entry_state_digest(engine, entry, entry.pos)?"));
+        assert_eq!(code.matches("apply_flip_plane_faults(").count(), 2);
+        let image = body("fn host_entry_from_device(");
+        let cond = image
+            .find("let legacy_copy = contract_draft.is_none() && pending.is_none();")
+            .expect("the legacy-copy condition");
+        let call = image
+            .find("    if legacy_copy {\n        apply_flip_plane_faults(&mut entry)?;\n    }")
+            .expect("the guarded call");
+        assert!(cond < call);
+    }
+
+    /// Day 53, GPU-only: a 4-token entry with a trunk plane, a draft plane, a hidden row, logits
+    /// and a one-layer DFlash tail; `flip` changes one byte of one of them.
+    fn v3_entry(engine: &Engine, flip: &str) -> super::PrefixEntry {
+        let (mut trunk, _) = gpu_plane(engine, 4, 34, 24, 3);
+        let (mut draft, _) = gpu_plane(engine, 4, 34, 24, 9);
+        let stream = engine.stream();
+        let bump = |p: &mut super::PrefixPlane| {
+            let mut k = stream.clone_dtoh(&p.k).unwrap();
+            k[0] ^= 0xff;
+            p.k = stream.clone_htod(&k).unwrap();
+        };
+        match flip {
+            "trunk" => bump(&mut trunk),
+            "draft" => bump(&mut draft),
+            _ => {}
+        }
+        let word = |base: f32, n: usize, hit: bool| -> Vec<f32> {
+            let mut v: Vec<f32> = (0..n).map(|i| base + i as f32).collect();
+            if hit {
+                v[0] = f32::from_bits(v[0].to_bits() ^ 0xff);
+            }
+            v
+        };
+        let tail_k = stream.clone_htod(&word(0.25, 16, flip == "tail")).unwrap();
+        let tail_v = stream.clone_htod(&word(0.75, 16, false)).unwrap();
+        super::PrefixEntry {
+            _tier_charge: None,
+            layout_version: super::PREFIX_ENTRY_LAYOUT_VERSION,
+            pool_key: ("m".into(), String::new()),
+            toks: (0..4).collect(),
+            kv: vec![Some(trunk)],
+            conv: vec![None],
+            ssm: vec![None],
+            latent: vec![None],
+            tp: None,
+            pos: 4,
+            last_logits: word(-1.0, 8, flip == "logits"),
+            draft: Some(draft),
+            dspark_draft: Some(memra_engine::dflash::DflashKvTail {
+                layers: vec![(tail_k, tail_v)],
+                base: 0,
+                rows: 4,
+                len: 4,
+                row_bytes: 16,
+                floor: 0,
+            }),
+            last_h: word(2.0, 8, flip == "hidden"),
+            bytes: 0,
+            last_use: std::time::Instant::now(),
+            id: 0,
+            pins: 0,
+        }
+    }
+
+    /// Day 53, GPU-only: v3 is equal on identical bytes and moves on one byte of each of the five
+    /// planes; v2 moves on the trunk byte only (the day-14 finding, now a test).
+    #[test]
+    #[ignore = "requires one CUDA device; run under the rig lock"]
+    fn verify_digest_v3_covers_every_round_tripped_plane_and_v2_stays_trunk_only() {
+        let engine = Engine::new(0).expect("device0");
+        let v3 = |e: &super::PrefixEntry| super::prefix_entry_roundtrip_digest(&engine, e).unwrap();
+        let v2 = |e: &super::PrefixEntry| super::prefix_entry_state_digest(&engine, e, 4).unwrap();
+        let base = v3_entry(&engine, "");
+        let (base3, base2) = (v3(&base), v2(&base));
+        assert!(base3.starts_with("split-state-v3:"), "{base3}");
+        assert_eq!(
+            v3(&v3_entry(&engine, "")),
+            base3,
+            "identical bytes, one digest"
+        );
+        for flip in ["trunk", "draft", "hidden", "logits", "tail"] {
+            let e = v3_entry(&engine, flip);
+            assert_ne!(v3(&e), base3, "v3 is blind to one {flip} byte");
+            assert_eq!(
+                v2(&e) == base2,
+                flip != "trunk",
+                "v2 must move on the trunk byte and only there ({flip})"
+            );
+        }
     }
 
     /// Review finding 1 on PR #599: a refusal BEFORE any op is submitted must return every
@@ -48773,13 +50610,15 @@ mod tests {
             );
         }
         let tier = host.tier.as_ref().unwrap();
-        let (kv, draft, staged) = match super::host_kv_planes_settle_contract(
+        let (kv, draft, staged, span_id) = match super::host_kv_planes_settle_contract(
             tier,
             &mut entry,
             pending,
             super::ContractWait::Block,
         ) {
-            Ok(super::ContractSettle::Done(kv, draft, staged)) => (kv, draft, staged),
+            Ok(super::ContractSettle::Done(kv, draft, staged, span_id)) => {
+                (kv, draft, staged, span_id)
+            }
             Ok(super::ContractSettle::Pending(_)) => panic!("a blocking settle came back pending"),
             Err(
                 super::HostContractFailure::Alloc(why)
@@ -48809,14 +50648,29 @@ mod tests {
                 .all(|p| p.k.receipt().is_some() && p.v.receipt().is_some()),
             "every KV plane crossed through the contract"
         );
-        let payloads = staged
+        // WP-A day 42 (`DAY42.md` design S2): the hand-off as the `Done` arm runs it: every staging
+        // buffer guarded, the quiet flag cleared, the span receipt sealed over the staging in attach
+        // order, then the job to the helper; the receipt observed (its pairs each the four-lane
+        // program over the pattern, source and landed alike) before any staging goes back.
+        let quiet = super::HostStagingQuiet::new();
+        let payloads: Vec<super::HostHashPayload> = staged
             .into_iter()
             .map(|(slot, buf)| super::HostHashPayload {
                 slot,
                 data: Default::default(),
-                staged: Some(buf),
+                staged: Some(super::HostStagingHeld::new(buf, &quiet)),
             })
             .collect();
+        let id = span_id.expect("a span receipt on the contracts route");
+        quiet.set(false);
+        {
+            let refs: Vec<&memra_engine::PinnedHostBuf> = payloads
+                .iter()
+                .map(|p| p.staged.as_ref().unwrap().buf())
+                .collect();
+            let mut t = tier.transfers.as_ref().unwrap().borrow_mut();
+            t.seal_d2h_span_receipt(id, &refs).unwrap();
+        }
         tier.hasher
             .submit(super::HostHashJob {
                 seq: 1,
@@ -48824,6 +50678,21 @@ mod tests {
                 leases: Vec::new(),
             })
             .unwrap();
+        let pairs = tier
+            .transfers
+            .as_ref()
+            .unwrap()
+            .borrow_mut()
+            .d2h_span_receipt_wait(id)
+            .unwrap();
+        assert_eq!(pairs.len(), recur.len());
+        for ((source, landed), (slot, pattern)) in pairs.iter().zip(&recur) {
+            let bytes: Vec<u8> = pattern.iter().flat_map(|x| x.to_le_bytes()).collect();
+            let oracle = memra_engine::tier_transfer::receipt_digest(&bytes);
+            assert_eq!(*source, oracle, "{slot:?}: the source digest");
+            assert_eq!(*landed, oracle, "{slot:?}: the landed digest");
+        }
+        quiet.set(true);
         let reply = tier
             .hasher
             .reply_within(std::time::Duration::from_secs(10))
@@ -48849,7 +50718,12 @@ mod tests {
         // KV planes drop, and the latch frees the set and releases it.
         let span_bytes: u64 = recur.iter().map(|(_, p)| p.len() as u64 * 4).sum();
         for (p, _, _) in reply.hashed {
-            tier.staging_put(p.staged.expect("the staging came back"));
+            let guard = p.staged.expect("the staging came back");
+            tier.staging_put(
+                guard
+                    .into_quiet()
+                    .expect("quiet once the receipt was observed"),
+            );
         }
         drop((kv, draft, image));
         {
@@ -48945,7 +50819,7 @@ mod tests {
         };
         assert_eq!(pending.spans.len(), recur.len());
         let tier = host.tier.as_ref().unwrap();
-        let Ok(super::ContractSettle::Done(kv, draft, staged)) =
+        let Ok(super::ContractSettle::Done(kv, draft, staged, _receipt)) =
             super::host_kv_planes_settle_contract(
                 tier,
                 &mut entry,
@@ -49069,7 +50943,7 @@ mod tests {
         let tier = host.tier.as_ref().unwrap();
         assert_eq!(tier.staging.borrow().idle.len(), 0, "the whole set reused");
         assert_eq!(tier.staging.borrow().charged, span_bytes, "no fresh charge");
-        let Ok(super::ContractSettle::Done(kv, draft, staged)) =
+        let Ok(super::ContractSettle::Done(kv, draft, staged, _receipt)) =
             super::host_kv_planes_settle_contract(
                 tier,
                 &mut entry,
@@ -49196,7 +51070,7 @@ mod tests {
             span_bytes,
             "fresh charges only"
         );
-        let Ok(super::ContractSettle::Done(kv, draft, staged)) =
+        let Ok(super::ContractSettle::Done(kv, draft, staged, _receipt)) =
             super::host_kv_planes_settle_contract(
                 tier,
                 &mut entry,
@@ -49290,7 +51164,7 @@ mod tests {
             panic!("the demote after the injected refusal did not submit");
         };
         let tier = host.tier.as_ref().unwrap();
-        let Ok(super::ContractSettle::Done(kv, draft, staged)) =
+        let Ok(super::ContractSettle::Done(kv, draft, staged, _receipt)) =
             super::host_kv_planes_settle_contract(
                 tier,
                 &mut entry,
@@ -49812,7 +51686,7 @@ mod tests {
         let pending = pending.expect("the contract route");
         let slots: Vec<super::HostHashSlot> = recur.iter().map(|(s, _)| *s).collect();
         assert_eq!(
-            pending.spans.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
+            pending.spans.iter().map(|(s, _, _)| *s).collect::<Vec<_>>(),
             slots,
             "every recurrent plane rides the ticket"
         );
@@ -49969,7 +51843,9 @@ mod tests {
                     "the day-35 cell",
                     |tier, dead, pending, wait| {
                         match super::host_kv_planes_settle_contract(tier, dead, pending, wait) {
-                            Ok(super::ContractSettle::Done(mut kv, draft, staged)) if change => {
+                            Ok(super::ContractSettle::Done(mut kv, draft, staged, receipt))
+                                if change =>
+                            {
                                 // The test-only writer, after hash 1 and before the hand-off.
                                 kv.iter_mut()
                                     .flatten()
@@ -49978,7 +51854,7 @@ mod tests {
                                     .k
                                     .flip_first_byte()
                                     .unwrap();
-                                Ok(super::ContractSettle::Done(kv, draft, staged))
+                                Ok(super::ContractSettle::Done(kv, draft, staged, receipt))
                             }
                             other => other,
                         }
@@ -50628,10 +52504,11 @@ mod tests {
                 .contains("host.tier_charge(&dead.pool_key, class, 0, pageable as u64, false)")
         );
         assert!(hook_body.contains("HostImageFailure::SourceQuarantined(err)"));
-        // The one live-entry caller drops on the quarantined outcome.
+        // The one live-entry caller drops on the quarantined outcome (WP-A day 47, design V: the
+        // entry left the device index for its off-tick demote and is not reinstated).
         let sweep = worker.find("if !pause_pending.is_empty() {").unwrap();
-        let sweep_body = &worker[sweep..sweep + 8000];
-        assert!(sweep_body.contains("outcome == HostDemoteOutcome::SourceQuarantined"));
+        let sweep_body = &worker[sweep..sweep + 16000];
+        assert!(sweep_body.contains("HostDemoteOutcome::SourceQuarantined => {"));
     }
 
     #[test]
@@ -50683,25 +52560,132 @@ mod tests {
     // failure gates under the default spec environment, OFF then ON).
 
     #[test]
-    fn host_tier_entry_class_admits_plain_and_mtp_draft_and_refuses_glm_and_dflash_by_name() {
-        use super::HostTierEntryClass::{MtpDraft, Plain};
+    fn host_tier_entry_class_admits_plain_mtp_draft_and_dflash_tail_and_refuses_glm_and_both_by_name()
+     {
+        // C day 56 (`DAY56.md` design a): the DFlash tail is its own class; GLM state and an entry
+        // carrying both spec programs' planes are refused by name.
+        use super::HostTierEntryClass::{DflashTail, MtpDraft, Plain};
         assert_eq!(super::host_tier_entry_class(false, false, false), Ok(Plain));
         assert_eq!(
             super::host_tier_entry_class(false, true, false),
             Ok(MtpDraft)
         );
+        assert_eq!(
+            super::host_tier_entry_class(false, false, true),
+            Ok(DflashTail)
+        );
         let glm = super::host_tier_entry_class(true, false, false).unwrap_err();
         assert!(glm.contains("TP or latent (GLM) planes"), "{glm}");
-        let tail = super::host_tier_entry_class(false, false, true).unwrap_err();
-        assert!(tail.contains("DFlash draft tail"), "{tail}");
-        assert!(
-            tail.contains("no drafter artifact identity"),
-            "the refusal names what is missing: {tail}"
-        );
         // A tail beside a draft plane cannot exist (the boot guard refuses two spec programs on
         // one model); the class function refuses rather than guessing which one won.
-        assert_eq!(super::host_tier_entry_class(false, true, true), Err(tail));
+        let both = super::host_tier_entry_class(false, true, true).unwrap_err();
+        assert!(
+            both.contains("both an MTP draft plane and a DFlash draft tail"),
+            "{both}"
+        );
         assert_eq!(super::host_tier_entry_class(true, true, true), Err(glm));
+        assert_eq!(super::host_tier_entry_class(true, false, true), Err(glm));
+    }
+
+    /// C day 56: the tail program is a pure function of its sources, differs from the plain and
+    /// draft programs in exactly artifact, plan and numeric, and moves with each source part.
+    #[test]
+    fn host_tier_tail_program_is_a_pure_function_of_the_drafter_sources() {
+        let plain = super::host_tier_program_base("aa", "plan", Some("{{ t }}"));
+        let source = |manifest: &str, cfg: &str, knobs: &str| super::HostTierTailSource {
+            manifest: manifest.into(),
+            cfg_debug: cfg.into(),
+            knobs: knobs.into(),
+        };
+        let base = source("config.json=1;model.safetensors=2", "cfg", "");
+        let tail = super::host_tier_tail_program(&plain, "aa", "plan", &base);
+        assert_eq!(
+            tail,
+            super::host_tier_tail_program(&plain, "aa", "plan", &base.clone())
+        );
+        assert_ne!(tail.artifact, plain.artifact);
+        assert_ne!(tail.serialized_plan, plain.serialized_plan);
+        assert_ne!(tail.numeric, plain.numeric);
+        for field in [
+            (tail.stream, plain.stream),
+            (tail.tokenizer, plain.tokenizer),
+            (tail.template, plain.template),
+            (tail.adapter, plain.adapter),
+            (tail.modality, plain.modality),
+            (tail.position, plain.position),
+        ] {
+            assert_eq!(field.0, field.1);
+        }
+        let draft = super::host_tier_draft_program(
+            &plain,
+            "aa",
+            "plan",
+            &super::HostTierDraftSource::Embedded,
+        );
+        assert_ne!(tail.artifact, draft.artifact);
+        assert_ne!(tail.serialized_plan, draft.serialized_plan);
+        assert_ne!(tail.numeric, draft.numeric);
+        let moved = [
+            source("config.json=1;model.safetensors=3", "cfg", ""),
+            source("config.json=1;model.safetensors=2", "cfg2", ""),
+            source(
+                "config.json=1;model.safetensors=2",
+                "cfg",
+                "MEMRA_DFLASH_PREC=bf16",
+            ),
+        ];
+        for other in &moved {
+            let p = super::host_tier_tail_program(&plain, "aa", "plan", other);
+            assert_ne!(p, tail, "{other:?} must name another program");
+        }
+        // The knob list: only the drafter's families, never the export path, sorted.
+        let knobs = super::host_tier_tail_knobs([
+            ("MEMRA_DSPARK_DRAFT".to_string(), "/x".to_string()),
+            ("MEMRA_DFLASH_PREC".to_string(), "q4".to_string()),
+            ("MEMRA_DSPARK_SPEC".to_string(), "1".to_string()),
+            ("MEMRA_KV_HOST_MB".to_string(), "8192".to_string()),
+        ]);
+        assert_eq!(knobs, "MEMRA_DFLASH_PREC=q4;MEMRA_DSPARK_SPEC=1");
+    }
+
+    /// C day 56: a tail image's shape blob is the v2 blob with the tail framed after it; the
+    /// framing names every geometry field and each layer's byte counts.
+    #[test]
+    fn host_tier_tail_shape_frames_the_geometry_after_the_v2_blob() {
+        let v2 = super::host_tier_shape_metadata(4, &[None], &[None], &[Some((4, 34, 24))], None);
+        let tail = super::host_tier_tail_shape_metadata(0, 4, 4, 64, 0, &[(256, 256)]);
+        assert_eq!(tail[0], 1);
+        assert_eq!(tail.len(), 1 + 6 * 8 + 2 * 8);
+        let other = super::host_tier_tail_shape_metadata(0, 4, 4, 64, 0, &[(256, 256), (256, 256)]);
+        assert_ne!(tail, other);
+        let mut framed = v2.clone();
+        framed.extend(&tail);
+        assert!(framed.starts_with(&v2) && framed.len() > v2.len());
+    }
+
+    /// C day 56 census: the tail class resolves through `program()` to the tail program, and the
+    /// bind's tail segments and its receipt line sit where DAY56 registers them.
+    #[test]
+    fn host_tier_dflash_tail_census() {
+        let src = include_str!("worker.rs");
+        let code = &src[..src
+            .find("#[cfg(test)]\nmod tests {")
+            .expect("the test module")];
+        let program = &code[code.find("    fn program(\n").expect("program()")..];
+        let program = &program[..program.find("\n    }\n").unwrap()];
+        assert!(program.contains("HostTierEntryClass::DflashTail => programs.tail.as_ref()"));
+        let bind = &code[code.find("    fn bind_tier_image(").expect("bind")..];
+        let bind = &bind[..bind.find("\n    }\n").unwrap()];
+        let geometry = bind.find("tier DFlash tail geometry mismatch").unwrap();
+        let segments = bind.find("b\"dflash-tail-k-f32\"").unwrap();
+        let transaction = bind
+            .find("add(Role::Transaction, 1, shape_encoding, &metadata, None, None)?;")
+            .unwrap();
+        let bound = bind.find("._tier_identity\n            .bind(").unwrap();
+        let line = bind.rfind("eprintln!(\"{line}\");").unwrap();
+        assert!(
+            geometry < segments && segments < transaction && transaction < bound && bound < line
+        );
     }
 
     #[test]
@@ -51318,9 +53302,9 @@ mod tests {
             "the wait is guarded on a not-ready Restoring request too (revuto round 2 on #638)"
         );
         assert!(
-            code[handoff + wait..handoff + wait + 400]
-                .contains("hpx.demoting.as_ref().is_some_and(|d| d.hashing.is_some())"),
-            "the wait is guarded on a Hashing entry too (WP-A day 29, ruling 40)"
+            code[handoff + wait..handoff + wait + 400].contains("|| hpx.demoting.is_some())"),
+            "the wait is guarded on a Demoting entry of either phase too (WP-A day 29, ruling 40; \
+             day 38, P)"
         );
         let recv = code[handoff + wait + guard..]
             .find("rx.recv_timeout(Duration::from_millis(2))")
@@ -52564,6 +54548,9 @@ mod tests {
             tape: vec![1, 2, 3],
             armed_at: now,
             deadline,
+            shape1_owed: true,
+            shape2_owed: true,
+            started: false,
         };
         // A pause-only wait sleeps until the NEAREST deadline, not the 5 ms poll: an idle
         // box must not spin a thousand wakeups through one 5 s pause.
@@ -52646,6 +54633,9 @@ mod tests {
             tape: vec![1],
             armed_at: now,
             deadline,
+            shape1_owed: true,
+            shape2_owed: true,
+            started: false,
         };
         // Pause nearer than the constraint poll: pause wins.
         assert_eq!(
@@ -52912,7 +54902,7 @@ mod tests {
         let sweep = worker
             .find("if !pause_pending.is_empty() {")
             .expect("the sweep exists in run()");
-        let sweep_body = window(&worker, sweep, 8000);
+        let sweep_body = window(&worker, sweep, 16000);
         assert!(sweep_body.contains("pause_park_index("));
         assert!(
             sweep_body.contains("prefix_snapshot("),
@@ -52927,7 +54917,8 @@ mod tests {
         );
         assert!(
             sweep_body.contains("px.remove_at("),
-            "the device entry leaves only after the host copy published"
+            "the device entry leaves the index into the sink's route (WP-A day 47, design V: a \
+             failure reinstates it)"
         );
         assert!(sweep_body.contains("pause_demotes"));
         assert!(sweep_body.contains("pause_cancels"));

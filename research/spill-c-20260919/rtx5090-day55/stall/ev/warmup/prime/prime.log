@@ -1,0 +1,5 @@
+  run  1 order 1 idle     tokens=400 p50=7.2 max=8.2 stall=0.9 demote=[] promote=[] intruder=None
+  run  2 order 1 prime    tokens=400 p50=7.2 max=239.6 stall=232.3 demote=[] promote=[] intruder=1129.8475330113433
+  run  3 order 2 prime    tokens=400 p50=7.2 max=237.3 stall=230.0 demote=[] promote=[] intruder=1128.3142269821838
+  run  4 order 2 idle     tokens=400 p50=7.2 max=8.2 stall=0.9 demote=[] promote=[] intruder=None
+STALL rule cell=stall-prime-prime arm=prime n_per_order=1 pooled=2 idle_runs=2 idle_p50=7.2 idle_p95=7.7 idle_p99=7.9 idle_max=8.2 arm_runs=2 arm_p50=7.2 arm_p95=7.8 arm_p99=207.5 arm_max=239.6 stall_median=231.2 stall_min=230.0 stall_max=232.3 server_demote_ms=[] server_promote_ms=[] intruder_prompt_tokens=[5123, 5122] tenant_text_identical=True errors=0

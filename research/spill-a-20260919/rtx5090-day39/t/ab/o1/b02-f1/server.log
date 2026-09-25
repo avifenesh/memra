@@ -1,0 +1,320 @@
+[server] build: memra-0.138.0-9da047d89b26 (id: source-tree, git: 7514bdf3b300)
+[server] starting; models config = [("gate", "/home/avifenesh/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /home/avifenesh/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+[worker]   loaded "gate": 33 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-host] contracts door: model gate program identity artifact_sha256=52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de plan_debug_sha256=f3115fca09bfefb0505f74eab7cddf4259b518cc3c81391386aceb7c55a47449 numeric=server-prefix-entry-v5-kv-q8_0-34B-q5_1-24B template=gguf-jinja device=0 (1670ms to hash /home/avifenesh/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf)
+[prefix-host] contracts door: model gate draft program identity source=embedded numeric=server-prefix-entry-v5-kv-q8_0-34B-q5_1-24B+mtp-draft-kv-q8_0-34B-q5_1-24B (0ms)
+[prefix-host] contracts door: D2H demotes and H2D promotes ride the transfer engine's copy stream and publish at the tick top (memra#536 Move 1)
+[prefix-host] contracts door ON (MEMRA_KV_HOST_CONTRACTS=1): 1 model program identities, tenant salt per pool namespace, server governor ledger pinned/pageable 17180MB device 201MB in-flight 198; host tier armed; KV plane D2H through the transfer engine on the pageable tier (Option B); KV plane H2D through the same engine on promote (Option C)
+[prefix-host] on: budget 8590MB pinned cacheable host RAM (MEMRA_KV_HOST_MB, startup budget policy), plain byte-LRU, demote on device capacity eviction, promote on exact-prefix probe; verify=off (MEMRA_KV_HOST_VERIFY); tenant share cap 50% = 4295MB (MEMRA_KV_HOST_TENANT_PCT)
+[prefix-cache] on: budget 67MB (67108864 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18139
+[meter] admit id=cmpl-18afadeac7c1ad4a861ac6099fcf5f94 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=154 path=plain = 14848 B/token x ctx + 32MB prefill-workspace + 0MB fixed = 34MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=89 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 103MB (observed 105MB at ctx 98 path=plain)
+[prefix-cache] capture submitted off the tick (seed): 64 tokens, 16 planes (53.6MB) on the contracts door's copy stream; recurrent state cloned at the boundary on the owner stream
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[prefix-cache] contracts door D2D capture receipt: ticket issuer=2 seq=1 epochs=0/1/1 items=16 bytes=950272 source_digests_sha256=df8b491e903c2624714cea83c697679b96aff11ab1f9fab09267cdc4ee9355f7 destination_digests_sha256=df8b491e903c2624714cea83c697679b96aff11ab1f9fab09267cdc4ee9355f7 require=ok
+[prefix-cache] capture published off the tick (seed): 64 tokens complete after 2 poll(s), 40.6ms from submission to completion, 40.6ms to publication (tick-top poll; the settle held the owner thread 0.06ms, entered 40.5ms after submission)
+[prefix-cache] insert (seed): 64 tokens, 53.6MB (resident 53.6MB / 67MB, model gate)
+[meter] admit id=cmpl-1c55049809a32034818143f41c8a1e06 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=151 path=plain = 14848 B/token x ctx + 31MB prefill-workspace + 103MB fixed = 136MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 86 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=86 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight, LRU): 64 tokens, 53.6MB (model gate)
+[prefix-host] tier span staging: 48 fresh pinned buffer(s), 52690944 bytes charged to the governor's pinned ledger; the set holds 52690944 bytes charged
+[prefix-host] demote submitted off the tick: 64 tokens, 54.6MB, ticket seq=2, 16 items on the contracts door's copy stream (model gate)
+[prefix-cache] capture submitted off the tick (seed): 64 tokens, 16 planes (53.6MB) on the contracts door's copy stream; recurrent state cloned at the boundary on the owner stream
+[prefix-host] contracts door D2H receipt: ticket issuer=2 seq=2 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=66a90af2c2d5472515d0053233ca81c160c5657abf0977fde43dfec99eb30ba1 retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; receipts on the receipt stream (source digests, 1.78ms)
+[prefix-host] demote copy complete off the tick: ticket seq=2 complete after 2 poll(s), 55.4ms from submission to completion (tick-top poll); items=64 (16 KV, 48 f32 spans); 50 heap payloads (53.7MB) handed to the hash helper; by slot class: conv 24 (2359296 B), ssm 24 (50331648 B), hidden 1 (0 B), logits 1 (993280 B)
+[prefix-host] demote KV leases on the hash helper: ticket seq=2, 16 lease views (1.0MB) for the bind's re-hash
+[prefix-cache] contracts door D2D capture receipt: ticket issuer=2 seq=3 epochs=0/1/1 items=16 bytes=950272 source_digests_sha256=37dc741ee826e5f847bfd3883132f3d831e67b6c7e5361270dff67e339c5673f destination_digests_sha256=37dc741ee826e5f847bfd3883132f3d831e67b6c7e5361270dff67e339c5673f require=ok
+[prefix-cache] capture published off the tick (seed): 64 tokens complete after 2 poll(s), 39.9ms from submission to completion, 39.9ms to publication (tick-top poll; the settle held the owner thread 0.06ms, entered 39.8ms after submission)
+[prefix-cache] insert (seed): 64 tokens, 53.6MB (resident 53.6MB / 67MB, model gate)
+[meter] admit id=cmpl-9213a8c0779f265f20e1926cf6f3f7b3 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 14848 B/token x ctx + 6MB prefill-workspace + 103MB fixed = 113MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 103MB (observed 106MB at ctx 184 path=plain)
+[prefix-host] demote: 64 tokens, 54.6MB in 101.7ms (host resident 54.6MB / 8590MB, model gate)
+[prefix-host] demote digests landed off the tick: ticket seq=2, 50 payloads (53.7MB) hashed in 38.8ms on the hash helper, landed after 809 poll(s) (tick-top poll); the owner thread held 16.59ms across the demote: pre-submit 16.21, copy settle 0.16 over 2 poll(s), hashing polls 0.14, take-back bind and publish 0.07; owner in-completion 16.42ms; wall 101.7ms t0 to publication; 0 hit(s) parked on the Hashing entry (0 re-park(s))
+[fa-pool] grow #1 dev=0 o_len 4096 -> 49152 ml_len 16 -> 192 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+[meter] admit id=cmpl-aca4b136eb20177a09223a8ff0917d27 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 14848 B/token x ctx + 6MB prefill-workspace + 103MB fixed = 113MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f7d5e1ef868b19d58830ee3b94cfb23d tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=154 path=plain = 14848 B/token x ctx + 32MB prefill-workspace + 103MB fixed = 138MB
+[prefix-host] promote submitted off the tick: 64 tokens, 53.6MB, ticket seq=4, 16 items on the contracts door's copy stream, 48 f32 spans filled on the copy stream (52.7MB); owner segment 0.45ms; request parked
+[prefix-host] contracts door H2D receipt: ticket issuer=2 seq=4 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=66a90af2c2d5472515d0053233ca81c160c5657abf0977fde43dfec99eb30ba1 published retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; 16 KV checksums on the hash helper (1.0MB in 9.0ms)
+[prefix-cache] insert (host-promote): 64 tokens, 53.6MB (resident 107.3MB / 67MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 53.6MB (model gate)
+[prefix-host] demote submitted off the tick: 64 tokens, 54.6MB, ticket seq=5, 16 items on the contracts door's copy stream (model gate)
+[prefix-host] promote published off the tick: ticket complete after 2 poll(s), 15.5ms from submission to completion (tick-top poll); timeline from t0: submitted +0.14ms (tick 8914, its top -0.24ms); poll 1 at +8.00ms (tick 8915, its top +8.00ms) pending (the tick top); poll 2 at +15.60ms (tick 8916, its top +15.50ms) complete (the tick top); published +16.04ms (tick 8916, its top +15.50ms)
+[prefix-host] promote: 64 tokens, 53.6MB in 16.0ms (model gate)
+[prefix-cache] restore not routed (contracts door): the entry was promoted for this admission (insertion pin id=2, 64 tokens, model gate); the tick program copies it
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 89 prompt tokens; model gate)
+[prefix-cache] hit: 64 of 89 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=89 cached=64 lcp=64 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[prefix-host] contracts door D2H receipt: ticket issuer=2 seq=5 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=12f2ecc4dd3856d313de45907f6e6873637150be824892679373508f79af38de retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; receipts on the receipt stream (source digests, 2.47ms)
+[prefix-host] demote copy complete off the tick: ticket seq=5 complete after 1 poll(s), 45.2ms from submission to completion (tick-top poll); items=64 (16 KV, 48 f32 spans); 50 heap payloads (53.7MB) handed to the hash helper; by slot class: conv 24 (2359296 B), ssm 24 (50331648 B), hidden 1 (0 B), logits 1 (993280 B)
+[prefix-host] demote KV leases on the hash helper: ticket seq=5, 16 lease views (1.0MB) for the bind's re-hash
+[prefix-host] demote: 64 tokens, 54.6MB in 90.8ms (host resident 109.3MB / 8590MB, model gate)
+[prefix-host] demote digests landed off the tick: ticket seq=5, 50 payloads (53.7MB) hashed in 37.8ms on the hash helper, landed after 6 poll(s) (tick-top poll); the owner thread held 0.64ms across the demote: pre-submit 0.42, copy settle 0.14 over 1 poll(s), hashing polls 0.01, take-back bind and publish 0.07; owner in-completion 0.50ms; wall 90.8ms t0 to publication; 0 hit(s) parked on the Hashing entry (0 re-park(s))
+[meter] admit id=cmpl-4e73f54d60e9585c859307eda87d2b13 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 14848 B/token x ctx + 6MB prefill-workspace + 103MB fixed = 113MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-af3af7c6384b1a5a1c38a463d2da4d70 tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-fd422238c139e3a178bc1f2f11a1f5e7 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=151 path=plain = 14848 B/token x ctx + 31MB prefill-workspace + 103MB fixed = 137MB
+[prefix-host] promote submitted off the tick: 64 tokens, 53.6MB, ticket seq=6, 16 items on the contracts door's copy stream, 48 f32 spans filled on the copy stream (52.7MB); owner segment 0.40ms; request parked
+[prefix-host] contracts door H2D receipt: ticket issuer=2 seq=6 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=12f2ecc4dd3856d313de45907f6e6873637150be824892679373508f79af38de published retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; 16 KV checksums on the hash helper (1.0MB in 8.8ms)
+[prefix-cache] insert (host-promote): 64 tokens, 53.6MB (resident 107.3MB / 67MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 53.6MB (model gate)
+[prefix-host] demote submitted off the tick: 64 tokens, 54.6MB, ticket seq=7, 16 items on the contracts door's copy stream (model gate)
+[prefix-host] promote published off the tick: ticket complete after 2 poll(s), 15.7ms from submission to completion (tick-top poll); timeline from t0: submitted +0.15ms (tick 10847, its top -0.27ms); poll 1 at +8.10ms (tick 10848, its top +8.09ms) pending (the tick top); poll 2 at +15.87ms (tick 10849, its top +15.76ms) complete (the tick top); published +17.44ms (tick 10849, its top +15.76ms)
+[prefix-host] promote: 64 tokens, 53.6MB in 17.4ms (model gate)
+[prefix-cache] restore not routed (contracts door): the entry was promoted for this admission (insertion pin id=3, 64 tokens, model gate); the tick program copies it
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 86 prompt tokens; model gate)
+[prefix-cache] hit: 64 of 86 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=86 cached=64 lcp=64 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[prefix-host] contracts door D2H receipt: ticket issuer=2 seq=7 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=66a90af2c2d5472515d0053233ca81c160c5657abf0977fde43dfec99eb30ba1 retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; receipts on the receipt stream (source digests, 2.59ms)
+[prefix-host] demote copy complete off the tick: ticket seq=7 complete after 1 poll(s), 45.7ms from submission to completion (tick-top poll); items=64 (16 KV, 48 f32 spans); 50 heap payloads (53.7MB) handed to the hash helper; by slot class: conv 24 (2359296 B), ssm 24 (50331648 B), hidden 1 (0 B), logits 1 (993280 B)
+[prefix-host] demote KV leases on the hash helper: ticket seq=7, 16 lease views (1.0MB) for the bind's re-hash
+[prefix-host] demote: 64 tokens, 54.6MB in 93.0ms (host resident 109.3MB / 8590MB, model gate)
+[prefix-host] demote digests landed off the tick: ticket seq=7, 50 payloads (53.7MB) hashed in 44.4ms on the hash helper, landed after 6 poll(s) (tick-top poll); the owner thread held 1.86ms across the demote: pre-submit 1.54, copy settle 0.13 over 1 poll(s), hashing polls 0.01, take-back bind and publish 0.17; owner in-completion 1.73ms; wall 93.0ms t0 to publication; 0 hit(s) parked on the Hashing entry (0 re-park(s))
+[meter] admit id=cmpl-c037737f4d4556883f8e97e8cfcf1e54 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 14848 B/token x ctx + 6MB prefill-workspace + 103MB fixed = 113MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-c696de77ec8aca81e520b2e13a949bac tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-e9f98bfa2958fcad553484e62baede8e tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=154 path=plain = 14848 B/token x ctx + 32MB prefill-workspace + 103MB fixed = 138MB
+[prefix-host] promote submitted off the tick: 64 tokens, 53.6MB, ticket seq=8, 16 items on the contracts door's copy stream, 48 f32 spans filled on the copy stream (52.7MB); owner segment 0.43ms; request parked
+[prefix-host] contracts door H2D receipt: ticket issuer=2 seq=8 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=66a90af2c2d5472515d0053233ca81c160c5657abf0977fde43dfec99eb30ba1 published retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; 16 KV checksums on the hash helper (1.0MB in 8.8ms)
+[prefix-cache] insert (host-promote): 64 tokens, 53.6MB (resident 107.3MB / 67MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 53.6MB (model gate)
+[prefix-host] demote submitted off the tick: 64 tokens, 54.6MB, ticket seq=9, 16 items on the contracts door's copy stream (model gate)
+[prefix-host] promote published off the tick: ticket complete after 2 poll(s), 16.8ms from submission to completion (tick-top poll); timeline from t0: submitted +0.15ms (tick 12729, its top -0.26ms); poll 1 at +8.13ms (tick 12730, its top +8.13ms) pending (the tick top); poll 2 at +16.95ms (tick 12731, its top +16.83ms) complete (the tick top); published +17.34ms (tick 12731, its top +16.83ms)
+[prefix-host] promote: 64 tokens, 53.6MB in 17.3ms (model gate)
+[prefix-cache] restore not routed (contracts door): the entry was promoted for this admission (insertion pin id=4, 64 tokens, model gate); the tick program copies it
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 89 prompt tokens; model gate)
+[prefix-cache] hit: 64 of 89 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=89 cached=64 lcp=64 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[prefix-host] contracts door D2H receipt: ticket issuer=2 seq=9 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=12f2ecc4dd3856d313de45907f6e6873637150be824892679373508f79af38de retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; receipts on the receipt stream (source digests, 2.50ms)
+[prefix-host] demote copy complete off the tick: ticket seq=9 complete after 1 poll(s), 45.7ms from submission to completion (tick-top poll); items=64 (16 KV, 48 f32 spans); 50 heap payloads (53.7MB) handed to the hash helper; by slot class: conv 24 (2359296 B), ssm 24 (50331648 B), hidden 1 (0 B), logits 1 (993280 B)
+[prefix-host] demote KV leases on the hash helper: ticket seq=9, 16 lease views (1.0MB) for the bind's re-hash
+[prefix-host] demote: 64 tokens, 54.6MB in 76.7ms (host resident 109.3MB / 8590MB, model gate)
+[prefix-host] demote digests landed off the tick: ticket seq=9, 50 payloads (53.7MB) hashed in 24.4ms on the hash helper, landed after 4 poll(s) (tick-top poll); the owner thread held 0.68ms across the demote: pre-submit 0.37, copy settle 0.14 over 1 poll(s), hashing polls 0.01, take-back bind and publish 0.16; owner in-completion 0.54ms; wall 76.7ms t0 to publication; 0 hit(s) parked on the Hashing entry (0 re-park(s))
+[meter] admit id=cmpl-1436a9fcb47c86dfe81c8a3ef3344256 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 14848 B/token x ctx + 6MB prefill-workspace + 103MB fixed = 113MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-0be49ed5ee769b0f8f07fdf645aa4de1 tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-1dd0357a2779ec7b6e067d514428e508 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=151 path=plain = 14848 B/token x ctx + 31MB prefill-workspace + 103MB fixed = 137MB
+[prefix-host] promote submitted off the tick: 64 tokens, 53.6MB, ticket seq=10, 16 items on the contracts door's copy stream, 48 f32 spans filled on the copy stream (52.7MB); owner segment 0.42ms; request parked
+[prefix-host] contracts door H2D receipt: ticket issuer=2 seq=10 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=12f2ecc4dd3856d313de45907f6e6873637150be824892679373508f79af38de published retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; 16 KV checksums on the hash helper (1.0MB in 8.7ms)
+[prefix-cache] insert (host-promote): 64 tokens, 53.6MB (resident 107.3MB / 67MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 53.6MB (model gate)
+[prefix-host] demote submitted off the tick: 64 tokens, 54.6MB, ticket seq=11, 16 items on the contracts door's copy stream (model gate)
+[prefix-host] promote published off the tick: ticket complete after 2 poll(s), 15.8ms from submission to completion (tick-top poll); timeline from t0: submitted +0.15ms (tick 14555, its top -0.27ms); poll 1 at +8.20ms (tick 14556, its top +8.20ms) pending (the tick top); poll 2 at +15.98ms (tick 14557, its top +15.88ms) complete (the tick top); published +16.34ms (tick 14557, its top +15.88ms)
+[prefix-host] promote: 64 tokens, 53.6MB in 16.3ms (model gate)
+[prefix-cache] restore not routed (contracts door): the entry was promoted for this admission (insertion pin id=5, 64 tokens, model gate); the tick program copies it
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 86 prompt tokens; model gate)
+[prefix-cache] hit: 64 of 86 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=86 cached=64 lcp=64 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[prefix-host] contracts door D2H receipt: ticket issuer=2 seq=11 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=66a90af2c2d5472515d0053233ca81c160c5657abf0977fde43dfec99eb30ba1 retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; receipts on the receipt stream (source digests, 2.54ms)
+[prefix-host] demote copy complete off the tick: ticket seq=11 complete after 1 poll(s), 45.5ms from submission to completion (tick-top poll); items=64 (16 KV, 48 f32 spans); 50 heap payloads (53.7MB) handed to the hash helper; by slot class: conv 24 (2359296 B), ssm 24 (50331648 B), hidden 1 (0 B), logits 1 (993280 B)
+[prefix-host] demote KV leases on the hash helper: ticket seq=11, 16 lease views (1.0MB) for the bind's re-hash
+[prefix-host] demote: 64 tokens, 54.6MB in 79.8ms (host resident 109.3MB / 8590MB, model gate)
+[prefix-host] demote digests landed off the tick: ticket seq=11, 50 payloads (53.7MB) hashed in 24.6ms on the hash helper, landed after 4 poll(s) (tick-top poll); the owner thread held 3.09ms across the demote: pre-submit 0.33, copy settle 0.17 over 1 poll(s), hashing polls 0.01, take-back bind and publish 2.58; owner in-completion 2.93ms; wall 79.8ms t0 to publication; 0 hit(s) parked on the Hashing entry (0 re-park(s))
+[meter] admit id=cmpl-d210456817fe66fa273b70381908f089 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 14848 B/token x ctx + 6MB prefill-workspace + 103MB fixed = 113MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-5f02a43215ecad650919c38784be58b8 tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-edd90a2ee1a8c48714c171a73fb5b218 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=154 path=plain = 14848 B/token x ctx + 32MB prefill-workspace + 103MB fixed = 138MB
+[prefix-host] promote submitted off the tick: 64 tokens, 53.6MB, ticket seq=12, 16 items on the contracts door's copy stream, 48 f32 spans filled on the copy stream (52.7MB); owner segment 0.40ms; request parked
+[prefix-host] contracts door H2D receipt: ticket issuer=2 seq=12 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=66a90af2c2d5472515d0053233ca81c160c5657abf0977fde43dfec99eb30ba1 published retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; 16 KV checksums on the hash helper (1.0MB in 8.9ms)
+[prefix-cache] insert (host-promote): 64 tokens, 53.6MB (resident 107.3MB / 67MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 53.6MB (model gate)
+[prefix-host] demote submitted off the tick: 64 tokens, 54.6MB, ticket seq=13, 16 items on the contracts door's copy stream (model gate)
+[prefix-host] promote published off the tick: ticket complete after 2 poll(s), 16.5ms from submission to completion (tick-top poll); timeline from t0: submitted +0.14ms (tick 16361, its top -0.22ms); poll 1 at +8.18ms (tick 16362, its top +8.17ms) pending (the tick top); poll 2 at +16.64ms (tick 16363, its top +16.51ms) complete (the tick top); published +18.13ms (tick 16363, its top +16.51ms)
+[prefix-host] promote: 64 tokens, 53.6MB in 18.1ms (model gate)
+[prefix-cache] restore not routed (contracts door): the entry was promoted for this admission (insertion pin id=6, 64 tokens, model gate); the tick program copies it
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 89 prompt tokens; model gate)
+[prefix-cache] hit: 64 of 89 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=89 cached=64 lcp=64 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[prefix-host] contracts door D2H receipt: ticket issuer=2 seq=13 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=12f2ecc4dd3856d313de45907f6e6873637150be824892679373508f79af38de retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; receipts on the receipt stream (source digests, 2.54ms)
+[prefix-host] demote copy complete off the tick: ticket seq=13 complete after 1 poll(s), 45.6ms from submission to completion (tick-top poll); items=64 (16 KV, 48 f32 spans); 50 heap payloads (53.7MB) handed to the hash helper; by slot class: conv 24 (2359296 B), ssm 24 (50331648 B), hidden 1 (0 B), logits 1 (993280 B)
+[prefix-host] demote KV leases on the hash helper: ticket seq=13, 16 lease views (1.0MB) for the bind's re-hash
+[prefix-host] demote: 64 tokens, 54.6MB in 85.7ms (host resident 109.3MB / 8590MB, model gate)
+[prefix-host] demote digests landed off the tick: ticket seq=13, 50 payloads (53.7MB) hashed in 35.6ms on the hash helper, landed after 5 poll(s) (tick-top poll); the owner thread held 1.79ms across the demote: pre-submit 1.46, copy settle 0.14 over 1 poll(s), hashing polls 0.02, take-back bind and publish 0.18; owner in-completion 1.65ms; wall 85.7ms t0 to publication; 0 hit(s) parked on the Hashing entry (0 re-park(s))
+[meter] admit id=cmpl-4a516da69f5ec4c8588f058642ed96ae tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 14848 B/token x ctx + 6MB prefill-workspace + 103MB fixed = 113MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-a29cb44a625e23905b36008a6377c041 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=151 path=plain = 14848 B/token x ctx + 31MB prefill-workspace + 103MB fixed = 137MB
+[prefix-host] promote submitted off the tick: 64 tokens, 53.6MB, ticket seq=14, 16 items on the contracts door's copy stream, 48 f32 spans filled on the copy stream (52.7MB); owner segment 0.42ms; request parked
+[prefix-host] contracts door H2D receipt: ticket issuer=2 seq=14 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=12f2ecc4dd3856d313de45907f6e6873637150be824892679373508f79af38de published retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; 16 KV checksums on the hash helper (1.0MB in 8.8ms)
+[prefix-cache] insert (host-promote): 64 tokens, 53.6MB (resident 107.3MB / 67MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 53.6MB (model gate)
+[prefix-host] demote submitted off the tick: 64 tokens, 54.6MB, ticket seq=15, 16 items on the contracts door's copy stream (model gate)
+[prefix-host] promote published off the tick: ticket complete after 2 poll(s), 15.9ms from submission to completion (tick-top poll); timeline from t0: submitted +0.16ms (tick 17243, its top -4.09ms); poll 1 at +8.23ms (tick 17244, its top +8.23ms) pending (the tick top); poll 2 at +16.09ms (tick 17245, its top +15.98ms) complete (the tick top); published +16.42ms (tick 17245, its top +15.98ms)
+[prefix-host] promote: 64 tokens, 53.6MB in 16.4ms (model gate)
+[prefix-cache] restore not routed (contracts door): the entry was promoted for this admission (insertion pin id=7, 64 tokens, model gate); the tick program copies it
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 86 prompt tokens; model gate)
+[prefix-cache] hit: 64 of 86 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=86 cached=64 lcp=64 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[prefix-host] contracts door D2H receipt: ticket issuer=2 seq=15 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=66a90af2c2d5472515d0053233ca81c160c5657abf0977fde43dfec99eb30ba1 retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; receipts on the receipt stream (source digests, 2.49ms)
+[prefix-host] demote copy complete off the tick: ticket seq=15 complete after 1 poll(s), 44.8ms from submission to completion (tick-top poll); items=64 (16 KV, 48 f32 spans); 50 heap payloads (53.7MB) handed to the hash helper; by slot class: conv 24 (2359296 B), ssm 24 (50331648 B), hidden 1 (0 B), logits 1 (993280 B)
+[prefix-host] demote KV leases on the hash helper: ticket seq=15, 16 lease views (1.0MB) for the bind's re-hash
+[prefix-host] demote: 64 tokens, 54.6MB in 76.4ms (host resident 109.3MB / 8590MB, model gate)
+[prefix-host] demote digests landed off the tick: ticket seq=15, 50 payloads (53.7MB) hashed in 24.3ms on the hash helper, landed after 4 poll(s) (tick-top poll); the owner thread held 0.62ms across the demote: pre-submit 0.31, copy settle 0.13 over 1 poll(s), hashing polls 0.01, take-back bind and publish 0.17; owner in-completion 0.49ms; wall 76.4ms t0 to publication; 0 hit(s) parked on the Hashing entry (0 re-park(s))
+[meter] admit id=cmpl-bfa0caa8614f19ddd8b2a1792efef5d3 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 14848 B/token x ctx + 6MB prefill-workspace + 103MB fixed = 113MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-4a96bbcf2586cfc0b0014c507ea02bd6 tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-33d6534ad002cf80f325a65f66a92f09 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=154 path=plain = 14848 B/token x ctx + 32MB prefill-workspace + 103MB fixed = 138MB
+[prefix-host] promote submitted off the tick: 64 tokens, 53.6MB, ticket seq=16, 16 items on the contracts door's copy stream, 48 f32 spans filled on the copy stream (52.7MB); owner segment 0.42ms; request parked
+[prefix-host] contracts door H2D receipt: ticket issuer=2 seq=16 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=66a90af2c2d5472515d0053233ca81c160c5657abf0977fde43dfec99eb30ba1 published retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; 16 KV checksums on the hash helper (1.0MB in 8.8ms)
+[prefix-cache] insert (host-promote): 64 tokens, 53.6MB (resident 107.3MB / 67MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 53.6MB (model gate)
+[prefix-host] demote submitted off the tick: 64 tokens, 54.6MB, ticket seq=17, 16 items on the contracts door's copy stream (model gate)
+[prefix-host] promote published off the tick: ticket complete after 2 poll(s), 16.1ms from submission to completion (tick-top poll); timeline from t0: submitted +0.13ms (tick 18978, its top -0.22ms); poll 1 at +8.29ms (tick 18979, its top +8.29ms) pending (the tick top); poll 2 at +16.19ms (tick 18980, its top +16.08ms) complete (the tick top); published +16.58ms (tick 18980, its top +16.08ms)
+[prefix-host] promote: 64 tokens, 53.6MB in 16.6ms (model gate)
+[prefix-cache] restore not routed (contracts door): the entry was promoted for this admission (insertion pin id=8, 64 tokens, model gate); the tick program copies it
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 89 prompt tokens; model gate)
+[prefix-cache] hit: 64 of 89 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=89 cached=64 lcp=64 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[prefix-host] contracts door D2H receipt: ticket issuer=2 seq=17 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=12f2ecc4dd3856d313de45907f6e6873637150be824892679373508f79af38de retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; receipts on the receipt stream (source digests, 2.22ms)
+[prefix-host] demote copy complete off the tick: ticket seq=17 complete after 1 poll(s), 48.6ms from submission to completion (tick-top poll); items=64 (16 KV, 48 f32 spans); 50 heap payloads (53.7MB) handed to the hash helper; by slot class: conv 24 (2359296 B), ssm 24 (50331648 B), hidden 1 (0 B), logits 1 (993280 B)
+[prefix-host] demote KV leases on the hash helper: ticket seq=17, 16 lease views (1.0MB) for the bind's re-hash
+[prefix-host] demote: 64 tokens, 54.6MB in 82.8ms (host resident 109.3MB / 8590MB, model gate)
+[prefix-host] demote digests landed off the tick: ticket seq=17, 50 payloads (53.7MB) hashed in 24.8ms on the hash helper, landed after 4 poll(s) (tick-top poll); the owner thread held 3.31ms across the demote: pre-submit 0.36, copy settle 0.17 over 1 poll(s), hashing polls 0.01, take-back bind and publish 2.77; owner in-completion 3.14ms; wall 82.9ms t0 to publication; 0 hit(s) parked on the Hashing entry (0 re-park(s))
+[meter] admit id=cmpl-0f9277ae78f53c835fb18148832670b4 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 14848 B/token x ctx + 6MB prefill-workspace + 103MB fixed = 113MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-8700e585d32ba4f535efdbc1a2b534af tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f0750292ae563d6bc647537da8e098ba tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=151 path=plain = 14848 B/token x ctx + 31MB prefill-workspace + 103MB fixed = 137MB
+[prefix-host] promote submitted off the tick: 64 tokens, 53.6MB, ticket seq=18, 16 items on the contracts door's copy stream, 48 f32 spans filled on the copy stream (52.7MB); owner segment 0.39ms; request parked
+[prefix-host] contracts door H2D receipt: ticket issuer=2 seq=18 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=12f2ecc4dd3856d313de45907f6e6873637150be824892679373508f79af38de published retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; 16 KV checksums on the hash helper (1.0MB in 8.8ms)
+[prefix-cache] insert (host-promote): 64 tokens, 53.6MB (resident 107.3MB / 67MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 53.6MB (model gate)
+[prefix-host] demote submitted off the tick: 64 tokens, 54.6MB, ticket seq=19, 16 items on the contracts door's copy stream (model gate)
+[prefix-host] promote published off the tick: ticket complete after 2 poll(s), 16.1ms from submission to completion (tick-top poll); timeline from t0: submitted +0.14ms (tick 20689, its top -0.28ms); poll 1 at +8.31ms (tick 20690, its top +8.31ms) pending (the tick top); poll 2 at +16.27ms (tick 20691, its top +16.16ms) complete (the tick top); published +18.03ms (tick 20691, its top +16.16ms)
+[prefix-host] promote: 64 tokens, 53.6MB in 18.0ms (model gate)
+[prefix-cache] restore not routed (contracts door): the entry was promoted for this admission (insertion pin id=9, 64 tokens, model gate); the tick program copies it
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 86 prompt tokens; model gate)
+[prefix-cache] hit: 64 of 86 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=86 cached=64 lcp=64 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[prefix-host] contracts door D2H receipt: ticket issuer=2 seq=19 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=66a90af2c2d5472515d0053233ca81c160c5657abf0977fde43dfec99eb30ba1 retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; receipts on the receipt stream (source digests, 2.53ms)
+[prefix-host] demote copy complete off the tick: ticket seq=19 complete after 1 poll(s), 45.6ms from submission to completion (tick-top poll); items=64 (16 KV, 48 f32 spans); 50 heap payloads (53.7MB) handed to the hash helper; by slot class: conv 24 (2359296 B), ssm 24 (50331648 B), hidden 1 (0 B), logits 1 (993280 B)
+[prefix-host] demote KV leases on the hash helper: ticket seq=19, 16 lease views (1.0MB) for the bind's re-hash
+[prefix-host] demote: 64 tokens, 54.6MB in 86.3ms (host resident 109.3MB / 8590MB, model gate)
+[prefix-host] demote digests landed off the tick: ticket seq=19, 50 payloads (53.7MB) hashed in 35.8ms on the hash helper, landed after 5 poll(s) (tick-top poll); the owner thread held 2.06ms across the demote: pre-submit 1.73, copy settle 0.15 over 1 poll(s), hashing polls 0.01, take-back bind and publish 0.17; owner in-completion 1.90ms; wall 86.3ms t0 to publication; 0 hit(s) parked on the Hashing entry (0 re-park(s))
+[meter] admit id=cmpl-8d97bc8239dc5db9c74786155462f320 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 14848 B/token x ctx + 6MB prefill-workspace + 103MB fixed = 113MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-687e5a3cd5b0f617a1e8434bf4d6414f tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-04a70898ddd8928352fea3d38ba5e73d tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=154 path=plain = 14848 B/token x ctx + 32MB prefill-workspace + 103MB fixed = 138MB
+[prefix-host] promote submitted off the tick: 64 tokens, 53.6MB, ticket seq=20, 16 items on the contracts door's copy stream, 48 f32 spans filled on the copy stream (52.7MB); owner segment 0.39ms; request parked
+[prefix-host] contracts door H2D receipt: ticket issuer=2 seq=20 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=66a90af2c2d5472515d0053233ca81c160c5657abf0977fde43dfec99eb30ba1 published retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; 16 KV checksums on the hash helper (1.0MB in 8.9ms)
+[prefix-cache] insert (host-promote): 64 tokens, 53.6MB (resident 107.3MB / 67MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 53.6MB (model gate)
+[prefix-host] demote submitted off the tick: 64 tokens, 54.6MB, ticket seq=21, 16 items on the contracts door's copy stream (model gate)
+[prefix-host] promote published off the tick: ticket complete after 2 poll(s), 16.0ms from submission to completion (tick-top poll); timeline from t0: submitted +0.14ms (tick 22329, its top -0.22ms); poll 1 at +8.24ms (tick 22330, its top +8.24ms) pending (the tick top); poll 2 at +16.16ms (tick 22331, its top +16.05ms) complete (the tick top); published +16.51ms (tick 22331, its top +16.05ms)
+[prefix-host] promote: 64 tokens, 53.6MB in 16.5ms (model gate)
+[prefix-cache] restore not routed (contracts door): the entry was promoted for this admission (insertion pin id=10, 64 tokens, model gate); the tick program copies it
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 89 prompt tokens; model gate)
+[prefix-cache] hit: 64 of 89 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=89 cached=64 lcp=64 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[prefix-host] contracts door D2H receipt: ticket issuer=2 seq=21 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=12f2ecc4dd3856d313de45907f6e6873637150be824892679373508f79af38de retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; receipts on the receipt stream (source digests, 2.52ms)
+[prefix-host] demote copy complete off the tick: ticket seq=21 complete after 1 poll(s), 45.9ms from submission to completion (tick-top poll); items=64 (16 KV, 48 f32 spans); 50 heap payloads (53.7MB) handed to the hash helper; by slot class: conv 24 (2359296 B), ssm 24 (50331648 B), hidden 1 (0 B), logits 1 (993280 B)
+[prefix-host] demote KV leases on the hash helper: ticket seq=21, 16 lease views (1.0MB) for the bind's re-hash
+[prefix-host] demote: 64 tokens, 54.6MB in 77.2ms (host resident 109.3MB / 8590MB, model gate)
+[prefix-host] demote digests landed off the tick: ticket seq=21, 50 payloads (53.7MB) hashed in 25.2ms on the hash helper, landed after 4 poll(s) (tick-top poll); the owner thread held 0.63ms across the demote: pre-submit 0.32, copy settle 0.14 over 1 poll(s), hashing polls 0.01, take-back bind and publish 0.16; owner in-completion 0.49ms; wall 77.2ms t0 to publication; 0 hit(s) parked on the Hashing entry (0 re-park(s))
+[meter] admit id=cmpl-022de0e610e8708af55a3b2f9aa5b482 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 14848 B/token x ctx + 6MB prefill-workspace + 103MB fixed = 113MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f6654863ec8005ce0004ab49251205d0 tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-2ec5d965408ab8c756ed0d3b03debb33 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=151 path=plain = 14848 B/token x ctx + 31MB prefill-workspace + 103MB fixed = 137MB
+[prefix-host] promote submitted off the tick: 64 tokens, 53.6MB, ticket seq=22, 16 items on the contracts door's copy stream, 48 f32 spans filled on the copy stream (52.7MB); owner segment 0.39ms; request parked
+[prefix-host] contracts door H2D receipt: ticket issuer=2 seq=22 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=12f2ecc4dd3856d313de45907f6e6873637150be824892679373508f79af38de published retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; 16 KV checksums on the hash helper (1.0MB in 8.9ms)
+[prefix-cache] insert (host-promote): 64 tokens, 53.6MB (resident 107.3MB / 67MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 53.6MB (model gate)
+[prefix-host] demote submitted off the tick: 64 tokens, 54.6MB, ticket seq=23, 16 items on the contracts door's copy stream (model gate)
+[prefix-host] promote published off the tick: ticket complete after 2 poll(s), 16.0ms from submission to completion (tick-top poll); timeline from t0: submitted +0.15ms (tick 23641, its top -0.26ms); poll 1 at +8.22ms (tick 23642, its top +8.22ms) pending (the tick top); poll 2 at +16.12ms (tick 23643, its top +15.99ms) complete (the tick top); published +16.53ms (tick 23643, its top +15.99ms)
+[prefix-host] promote: 64 tokens, 53.6MB in 16.5ms (model gate)
+[prefix-cache] restore not routed (contracts door): the entry was promoted for this admission (insertion pin id=11, 64 tokens, model gate); the tick program copies it
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 86 prompt tokens; model gate)
+[prefix-cache] hit: 64 of 86 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=86 cached=64 lcp=64 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[prefix-host] contracts door D2H receipt: ticket issuer=2 seq=23 epochs=0/1/1 items=16 (8 KV planes) complete=16 require=ok checksums_sha256=66a90af2c2d5472515d0053233ca81c160c5657abf0977fde43dfec99eb30ba1 retired acknowledged; 48 f32 spans landed under the ticket and taken back before the retire; receipts on the receipt stream (source digests, 2.54ms)
+[prefix-host] demote copy complete off the tick: ticket seq=23 complete after 1 poll(s), 45.6ms from submission to completion (tick-top poll); items=64 (16 KV, 48 f32 spans); 50 heap payloads (53.7MB) handed to the hash helper; by slot class: conv 24 (2359296 B), ssm 24 (50331648 B), hidden 1 (0 B), logits 1 (993280 B)
+[prefix-host] demote KV leases on the hash helper: ticket seq=23, 16 lease views (1.0MB) for the bind's re-hash
+[prefix-host] demote: 64 tokens, 54.6MB in 82.1ms (host resident 109.3MB / 8590MB, model gate)
+[prefix-host] demote digests landed off the tick: ticket seq=23, 50 payloads (53.7MB) hashed in 25.4ms on the hash helper, landed after 4 poll(s) (tick-top poll); the owner thread held 3.97ms across the demote: pre-submit 0.38, copy settle 0.16 over 1 poll(s), hashing polls 0.01, take-back bind and publish 3.41; owner in-completion 3.81ms; wall 82.1ms t0 to publication; 0 hit(s) parked on the Hashing entry (0 re-park(s))
+[meter] admit id=cmpl-7fc179d6ea4c02f54748a8b2cfc5d126 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 14848 B/token x ctx + 6MB prefill-workspace + 103MB fixed = 113MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[prefix-host] hash helper joined (shutdown)
+[server] GPU worker shutdown complete

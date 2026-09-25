@@ -1,0 +1,35 @@
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-47ae06a2f9cbea34)
+
+running 15 tests
+test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ok
+test tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt ... ok
+test tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle ... ok
+test tier_transfer::tests::d2d_receipt_digest_price_against_the_copy ... D2D-RECEIPT PRICE order=copy-first bytes=165675008 n_per_arm=5 copy_ms=[0.19616, 0.196288, 0.2, 0.195808, 0.196992] copy_median=0.196 digest_ms=[0.121856, 0.121824, 0.12192, 0.120544, 0.120864] digest_median=0.122 pair_median=0.244 pair_over_copy=1.24
+D2D-RECEIPT PRICE order=digest-first bytes=165675008 n_per_arm=5 copy_ms=[0.184288, 0.19792, 0.201536, 0.199488, 0.197504] copy_median=0.198 digest_ms=[0.126624, 0.120576, 0.12048, 0.121088, 0.120736] digest_median=0.121 pair_median=0.241 pair_over_copy=1.22
+ok
+test tier_transfer::tests::d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait ... ok
+test tier_transfer::tests::d2h_device_receipt_lands_with_the_source_digest ... D2H DEVICE RECEIPT cell flip=false items=3 gpu_ms=22.727
+ok
+test tier_transfer::tests::d2h_source_flip_is_witnessed_by_the_landed_bytes ... D2H DEVICE RECEIPT cell flip=true items=3 gpu_ms=22.734
+ok
+test tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... HOLD READING cell=d2h_span_batch first_item_seen_ms=20.14 polls=13012 longest_poll_ms=0.00 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=d2h_span_batch htod-pageable@-2.37+0.12 pinned-alloc@-2.24+0.48 htod-pageable@-1.76+0.19 pinned-alloc@-1.58+0.81 htod-pageable@-0.77+0.15 pinned-alloc@-0.62+0.61 delay@0.00+0.01 htod-pageable@0.01+0.11 pinned-alloc@0.12+0.46 htod-pageable@0.58+0.18 pinned-alloc@0.76+0.72 htod-pageable@1.48+0.15 pinned-alloc@1.63+0.57 submit@2.20+0.07 htod-pageable@2.27+0.11 pinned-alloc@2.38+0.43 htod-pageable@2.81+0.21 pinned-alloc@3.02+0.69 htod-pageable@3.71+0.15 pinned-alloc@3.86+0.55 submit-busy@4.41+0.00
+ok
+test tier_transfer::tests::day48_a_take_back_waits_for_its_own_lease_only ... ok
+test tier_transfer::tests::h2d_deferred_checksum_lands_with_the_supplied_digests ... ok
+test tier_transfer::tests::h2d_fill_host_function_does_not_hold_the_owner_thread ... owner-thread work while the copy stream's host function sleeps: 0.42 ms; the copy behind the host function still pending: true
+ok
+test tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream ... HOLD READING cell=h2d_span_batch first_item_seen_ms=3.46 polls=1 longest_poll_ms=0.00 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=h2d_span_batch pinned-alloc@-18.39+0.47 pinned-write@-17.92+0.05 device-alloc@-17.87+0.01 pinned-alloc@-17.86+0.65 pinned-write@-17.21+0.08 device-alloc@-17.12+0.00 pinned-alloc@-17.12+0.52 pinned-write@-16.60+0.06 device-alloc@-16.54+0.01 pinned-alloc@-2.38+0.39 pinned-write@-1.98+0.05 device-alloc@-1.94+0.01 pinned-alloc@-1.93+0.60 device-alloc@-1.33+0.00 pinned-alloc@-1.32+0.48 pinned-write@-0.84+0.06 device-alloc@-0.78+0.01 delay@0.00+0.01 pinned-alloc@0.01+0.39 pinned-write@0.39+0.05 device-alloc@0.44+0.01 pinned-alloc@0.45+0.59 pinned-write@1.04+0.08 device-alloc@1.11+0.00 pinned-alloc@1.12+0.47 pinned-write@1.59+0.06 device-alloc@1.65+0.00 submit@1.65+0.07 pinned-alloc@1.72+0.42 pinned-write@2.14+0.05 device-alloc@2.19+0.00 pinned-alloc@2.19+0.62 pinned-write@2.81+0.08 device-alloc@2.89+0.01 pinned-alloc@2.89+0.50 pinned-write@3.39+0.06 device-alloc@3.45+0.00 submit-busy@3.46+0.00
+ok
+test tier_transfer::tests::h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies ... HOLD READING cell=h2d_span_filled_batch first_item_seen_ms=1.68 polls=1 longest_poll_ms=0.00 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=h2d_span_filled_batch pinned-alloc@-14.91+0.44 device-alloc@-14.48+0.01 pinned-alloc@-14.47+0.63 device-alloc@-13.84+0.01 pinned-alloc@-13.83+0.50 device-alloc@-13.33+0.01 delay@0.00+0.01 pinned-alloc@0.01+0.39 device-alloc@0.40+0.01 pinned-alloc@0.41+0.61 device-alloc@1.01+0.01 pinned-alloc@1.02+0.53 device-alloc@1.55+0.00 submit@1.55+0.13
+ok
+test tier_transfer::tests::pinned_kind_arm_is_honoured_by_the_driver ... ok
+test tier_transfer::tests::span_receipt_digests_are_the_program_per_span ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 584 filtered out; finished in 7.04s
+
