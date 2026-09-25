@@ -97,8 +97,10 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
 - **Status.** `DAY65.md`'s cell `pin` ran on BOX17 (BOX15's machine): `DAY65 PIN VERDICT rig=pro-single integrity=ok ->
   pin_does_not placement_does_not_track; ...`: the L3-domain hypothesis refuted (slow in 8 of 10 boots on one domain
   as on two, the owner thread home in every sample). The next reading is registered (`DAY66.md`, cell `freq`: the
-  owner core's clock and the process's huge-page backing per boot) with its sitting ready (`day66-box.sh`). Open: the
-  cell waits on a 9950X-class box.
+  owner core's clock and the process's huge-page backing per boot) ran on BOX18 (BOX15's machine): `DAY66 FREQ VERDICT
+  rig=pro-single integrity=ok -> clock_does_not_track thp_does_not_track` (about 5720 MHz and no huge pages in every
+  boot). Next: `DAY67.md`, `run-gen --cpu-probe` (log only, `ab3d8f18e`) and the cell `probe` (the core against memory,
+  per boot), its sitting ready (`day67-box.sh`). Open: the cell waits on a 9950X-class box.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 

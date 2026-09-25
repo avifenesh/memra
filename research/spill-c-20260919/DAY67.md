@@ -53,3 +53,20 @@ Beside it, REF's per-run probe spread (does a REF boot's core or memory read slo
 
 **What it decides.** Whether the slow boots are the core or memory, or neither. It changes no default and no program;
 the probe runs after all timing.
+
+## 1a. The instrument as built, and the sitting, before any cell
+
+`run-gen --cpu-probe` landed in `ab3d8f18e` (`cpu_probe.rs`, the `run_gen.rs` call after the steady window's lines;
+engine lib 569, clippy `-D warnings`, fmt): at the registered sizes it reads, on the local CPU (by hand,
+`the_registered_probe_on_this_host`): `compute_ns=1.265 l1_ns=0.771 l2_ns=2.630 dram_ns=117.609 compute2_ns=1.157`,
+1.1 s in all. A first build walked the 256 MiB permutation once before the timed loads (9.2 s); that warm pass was
+replaced by nothing (the permutation's own construction writes every slot, so its pages are mapped), before any
+cell; the registered sizes stand. The label `p67=ab3d8f18e`: the door's engine is I15's (`2243b1fe2`) and REF's
+program is the legacy slot cache's with its prefetch, unchanged since `c60`; only the probe is added. `day67-cell.sh`
+and `day67-read.py` were written after section 1; the reader was dry-checked for mechanics on DAY66's receipts with
+synthetic probe lines appended (its verdict there means nothing); the driver `day67-box.sh` (one build, `p67`) is
+dry-checked for control flow (`day67-cpu/dry-check-driver.log`). Run as
+`D67_BUILDS="p67=ab3d8f18e" bash /root/wt-c/research/spill-c-20260919/day67-box.sh` on BOX15's Ryzen 9 9950X machine
+where it can be had (else another host of that class), one RTX PRO 6000 Blackwell Workstation Edition, the approved
+35B artifact, `/root/wt-c` at the lane tip and a detached `/root/wt-c-build`, CUDA 13 and Rust, at least 48 GB host
+`MemAvailable`. Expected: one build about 5 minutes, the cell about 10 (40 runs, each with a 1 s probe after its timing).
