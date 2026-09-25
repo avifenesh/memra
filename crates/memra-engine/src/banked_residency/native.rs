@@ -1237,13 +1237,13 @@ impl ExpertDispatchBank for TracedDispatch {
     fn demand(&mut self, local: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand> {
         self.drain_fill(32);
         let id = self.ids.get(&local).ok_or(Error::NotFound)?;
-        let hit = self
+        let before = self
             .inner
             .bank()
             .slru_policy()
             .ok_or(Error::Incomplete)?
-            .resident(id)
-            .is_some();
+            .resident(id);
+        let hit = before.is_some();
         let demand_started = self.clock.as_ref().map(|_| Instant::now());
         let demand = self.inner.demand(local, bytes);
         if let (Some(started), Some(clock)) = (demand_started, self.clock.as_mut()) {
@@ -1255,13 +1255,19 @@ impl ExpertDispatchBank for TracedDispatch {
             }
         }
         let demand = demand?;
-        let slot = self
-            .inner
-            .bank()
-            .slru_policy()
-            .ok_or(Error::Incomplete)?
-            .resident(id)
-            .ok_or(Error::Incomplete)?;
+        // DAY61 (I11 change 5): a host hit keeps its record's slot (publish's SLRU `hit` relinks
+        // the queues, never the slot), so the pre-demand lookup is the slot; a miss reads the
+        // slot its publication reserved.
+        let slot = match before {
+            Some(slot) => slot,
+            None => self
+                .inner
+                .bank()
+                .slru_policy()
+                .ok_or(Error::Incomplete)?
+                .resident(id)
+                .ok_or(Error::Incomplete)?,
+        };
         let victim = self
             .occupants
             .insert(slot, local)
