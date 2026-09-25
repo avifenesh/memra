@@ -4679,11 +4679,35 @@ __global__ void dsv4_dots_f32acc_mrow_kernel(const float* __restrict__ x,
             <<<(unsigned)n, threads, 0, stream>>>(x, w, w_is_bf16, y, k, n);           \
         break;
 
+#define DSV4_DENSE_FAST_DOTS_M_CASE(MM)                                                \
+    case MM:                                                                           \
+        dsv4_dense_fast_dots_kernel<MM><<<(unsigned)n, 128, 0, stream>>>(x, w, w_is_bf16, \
+                                                                         y, k, n);      \
+        break;
+
 extern "C" int memra_dsv4_dots_f32acc_mrow(const float* x, const void* w, int w_is_bf16,
                                            float* y, int s, int k, int n, void* stream_v) {
     cudaStream_t stream = (cudaStream_t)stream_v;
     if (k % 8 != 0) return 40012;
     if (s < 1) return 40020;
+    // Rows 2..8 on the dense-fast transport, as memra_dsv4_gemv_fp8_m does (memra #710):
+    // per row the same leaf order and tree as dsv4_dots_f32acc_mrow_kernel<M> below.
+    if (s >= 2 && s <= 8 && dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
+        dsv4_dense_fast_enabled &&
+        dsv4_dense_exact_tail_dots_admits(x, w, w_is_bf16, y, 1, n, k)) {
+        dsv4_dense_census_note(DSV4_DENSE_ENTRY_DOTS_F32ACC, s, n, k);
+        switch (s) {
+            DSV4_DENSE_FAST_DOTS_M_CASE(2)
+            DSV4_DENSE_FAST_DOTS_M_CASE(3)
+            DSV4_DENSE_FAST_DOTS_M_CASE(4)
+            DSV4_DENSE_FAST_DOTS_M_CASE(5)
+            DSV4_DENSE_FAST_DOTS_M_CASE(6)
+            DSV4_DENSE_FAST_DOTS_M_CASE(7)
+            DSV4_DENSE_FAST_DOTS_M_CASE(8)
+        }
+        DSV4_ERR();
+        return 0;
+    }
     Dsv4DenseExactTailControlScope control(s != 1);
     if (dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
         dsv4_dense_exact_tail_dots_admits(x, w, w_is_bf16, y, s, n, k))

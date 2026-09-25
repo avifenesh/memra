@@ -14360,6 +14360,10 @@ pub struct VerifyWs {
     sh_out: CudaSlice<f32>,
     cmp_emit: CudaSlice<f32>,
     cmp_shift: CudaSlice<f32>,
+    /// Row-group compressor projections computed once for every row (memra #710 B-row):
+    /// `[indexer kv, indexer score, attention kv, attention score]`, `tmax * latent` each on a
+    /// workspace of at most eight rows, one element otherwise.
+    cmp_hoist: [CudaSlice<f32>; 4],
     sink_scores: CudaSlice<f32>,
     sink_evals: CudaSlice<f32>,
     sink_den: CudaSlice<f64>,
@@ -15387,11 +15391,13 @@ impl Dsv4Gpu {
         };
         let mut max_d = 0usize;
         let mut max_shift = 0usize;
+        let mut max_latent = 0usize;
         let mut min_index_ratio = usize::MAX;
         for st in &self.stages {
             for l in &st.layers {
                 for cmp in l.cmp.iter().chain(l.idx.as_ref().map(|ix| &ix.cmp)) {
                     max_d = max_d.max(cmp.d);
+                    max_latent = max_latent.max(cmp.latent);
                     if cmp.overlap {
                         max_shift = max_shift.max(cmp.ratio * cmp.latent);
                     }
@@ -15541,6 +15547,10 @@ impl Dsv4Gpu {
                 sh_out: f(tmax * hidden)?,
                 cmp_emit: f(2 * max_d)?,
                 cmp_shift: f(max_shift.max(1))?,
+                cmp_hoist: {
+                    let n = if tmax <= 8 { tmax * max_latent } else { 1 };
+                    [f(n)?, f(n)?, f(n)?, f(n)?]
+                },
                 sink_scores: f(tmax * heads * idx_stride)?,
                 sink_evals: f(tmax * heads * idx_stride)?,
                 sink_den: {
@@ -16290,6 +16300,7 @@ impl Dsv4Gpu {
         mut host_store: Option<&mut C4HostStore>,
         replay_pos: Option<*const i32>,
         replay_cadence: Option<crate::dsv4_graph::ReplayCadence>,
+        pre: Option<(*const f32, *const f32)>,
     ) -> Res<()> {
         if replay_pos.is_some() && (t != 1 || host_store.is_some() || !matches!(cmp.ratio, 4 | 128))
         {
@@ -16331,26 +16342,42 @@ impl Dsv4Gpu {
                 ck_dev.rows_sc.device_ptr_mut(&stream).0 as *mut f32,
             )
         };
-        self.dots_m_dev(
-            st,
-            x_ptr,
-            cmp.wkv.ptr(&stream),
-            cmp.wkv.flag(),
-            t,
-            hidden,
-            latent,
-            kv_rows,
-        )?;
-        self.dots_m_dev(
-            st,
-            x_ptr,
-            cmp.wgate.ptr(&stream),
-            cmp.wgate.flag(),
-            t,
-            hidden,
-            latent,
-            sc_rows,
-        )?;
+        if let Some((kv, sc)) = pre {
+            // The row group's projections, computed with every group's rows in one launch
+            // (memra #710 B-row): the same bits per row as the launch below.
+            for (src, dst) in [(kv, kv_rows), (sc, sc_rows)] {
+                unsafe {
+                    cudarc::driver::result::memcpy_dtod_async(
+                        dst as cudarc::driver::sys::CUdeviceptr,
+                        src as cudarc::driver::sys::CUdeviceptr,
+                        t * latent * 4,
+                        stream.cu_stream(),
+                    )
+                    .map_err(e("hoisted compressor rows"))?;
+                }
+            }
+        } else {
+            self.dots_m_dev(
+                st,
+                x_ptr,
+                cmp.wkv.ptr(&stream),
+                cmp.wkv.flag(),
+                t,
+                hidden,
+                latent,
+                kv_rows,
+            )?;
+            self.dots_m_dev(
+                st,
+                x_ptr,
+                cmp.wgate.ptr(&stream),
+                cmp.wgate.flag(),
+                t,
+                hidden,
+                latent,
+                sc_rows,
+            )?;
+        }
         for i in 0..t {
             let pos = pos0 + i;
             let slot = if cmp.overlap {
@@ -17051,6 +17078,31 @@ impl Dsv4Gpu {
             )?;
         }
 
+        // ---- the row groups' compressor projections, once over every row (memra #710 B-row):
+        // one launch reads each compressor's weights for all the requests instead of one each.
+        let hoisted = groups.len() > 1 && layer.ratio != 0 && t <= 8;
+        if hoisted {
+            let mut plan: Vec<(&CmpDev, usize)> = Vec::new();
+            if let Some(ix) = &layer.idx {
+                plan.push((&ix.cmp, 0));
+            }
+            plan.push((layer.cmp.as_ref().expect("ratio!=0 has compressor"), 2));
+            for (cmp, slot) in plan {
+                for (w, out) in [(&cmp.wkv, slot), (&cmp.wgate, slot + 1)] {
+                    self.dots_m_dev(
+                        st,
+                        dpf!(vws.x, &stream),
+                        w.ptr(&stream),
+                        w.flag(),
+                        t,
+                        hidden,
+                        cmp.latent,
+                        vws.cmp_hoist[out].device_ptr_mut(&stream).0 as *mut f32,
+                    )?;
+                }
+            }
+        }
+
         // ---- per request: ring write, index lists, compressors and sink attention on its own
         // cache and rows
         for g in groups.iter_mut() {
@@ -17094,8 +17146,15 @@ impl Dsv4Gpu {
                             x,
                             cmp_emit,
                             cmp_shift,
+                            cmp_hoist,
                             ..
                         } = vws;
+                        let pre = hoisted.then(|| {
+                            (
+                                dpf_row!(cmp_hoist[0], &stream, row0, ix.cmp.latent),
+                                dpf_row!(cmp_hoist[1], &stream, row0, ix.cmp.latent),
+                            )
+                        });
                         self.cmp_decode_batch_dev(
                             st,
                             &ix.cmp,
@@ -17117,6 +17176,7 @@ impl Dsv4Gpu {
                             None,
                             replay_pos,
                             replay_cadence,
+                            pre,
                         )?;
                     }
                     debug_assert_eq!(*i_blocks, nbs[t - 1], "indexer block count (batch)");
@@ -17445,8 +17505,16 @@ impl Dsv4Gpu {
                         x,
                         cmp_emit,
                         cmp_shift,
+                        cmp_hoist,
                         ..
                     } = vws;
+                    let latent = layer.cmp.as_ref().expect("ratio!=0 has compressor").latent;
+                    let pre = hoisted.then(|| {
+                        (
+                            dpf_row!(cmp_hoist[2], &stream, row0, latent),
+                            dpf_row!(cmp_hoist[3], &stream, row0, latent),
+                        )
+                    });
                     self.cmp_decode_batch_dev(
                         st,
                         layer.cmp.as_ref().expect("ratio!=0 has compressor"),
@@ -17468,6 +17536,7 @@ impl Dsv4Gpu {
                         c4_host.as_mut(),
                         replay_pos,
                         replay_cadence,
+                        pre,
                     )?;
                 }
                 debug_assert_eq!(*n_blocks, nbs[t - 1], "attn block count (batch)");

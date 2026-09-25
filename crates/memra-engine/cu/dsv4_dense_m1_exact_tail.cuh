@@ -455,13 +455,18 @@ __global__ void dsv4_dense_fast_dots_kernel(const float* __restrict__ x,
             }
         }
     }
-    static_assert(M == 1, "exact-tail candidate is M=1 only");
+    // M > 1 (memra #710 B-row, verify rows): each row reduces through the same tree as
+    // dsv4_dots_f32acc_mrow_kernel<M>, so row t's bits equal its M=1 launch.
     __shared__ float red[128];
-    red[threadIdx.x] = part[0];
-    __syncthreads();
-    if (threadIdx.x < 32) {
-        float v = dsv4_dense_exact_tail_reduce(red);
-        if (threadIdx.x == 0) y[j] = v;
+#pragma unroll
+    for (int t = 0; t < M; t++) {
+        if (t > 0) __syncthreads();  // red free from the previous row's tree
+        red[threadIdx.x] = part[t];
+        __syncthreads();
+        if (threadIdx.x < 32) {
+            float v = dsv4_dense_exact_tail_reduce(red);
+            if (threadIdx.x == 0) y[(long)t * n + j] = v;
+        }
     }
 }
 
