@@ -31,19 +31,6 @@ impl Drop for Entry {
         }
     }
 }
-/// Day 61 (I11 change 6): the outcome of `ExpertBankProxy::demand_if_resident`.
-#[derive(Debug)]
-pub enum ResidentDemand<G> {
-    /// The record is not host-resident: the gate did not run and nothing is leased.
-    NotResident,
-    /// The gate declined: nothing is leased.
-    Declined,
-    /// The lease, with the gate's value.
-    Leased(ExpertLeaseToken, G),
-    /// The demand refused after the gate ran; nothing is leased and the gate's value comes
-    /// back for the caller to undo.
-    Refused(Error, G),
-}
 /// Registration must outlive all cache users. The Rc marker forbids moving this
 /// guard to a worker; only its proxy is transferable. Close refuses open leases.
 pub struct ExpertBankOwner {
@@ -178,67 +165,35 @@ impl ExpertBankProxy {
         self.access(|e| Ok(e.bank.as_ref().ok_or(Error::NotFound)?.stage_report()))
     }
     pub fn demand(&self, id: ExpertDispatchId, bytes: usize) -> Result<ExpertLeaseToken> {
-        self.access(|e| self.demand_in(e, id, bytes))
-    }
-    /// Day 61 (I11 change 6, `research/spill-c-20260919/DAY61.md`): a prefetch's residency
-    /// check, its gate (the caller's GPU slot step) and its lease in one registry access, in
-    /// the order the three calls ran: `host_resident`, then `gate`, then `demand`. The gate
-    /// runs on the owner thread inside the access and must not call the proxy (it would refuse
-    /// `Busy`). A registry refusal before the residency answer is `Err`; after the gate ran, a
-    /// refused demand is `Refused` with the gate's value, so the caller can undo its step.
-    pub fn demand_if_resident<G>(
-        &self,
-        id: ExpertDispatchId,
-        bytes: usize,
-        gate: impl FnOnce() -> Option<G>,
-    ) -> Result<ResidentDemand<G>> {
         self.access(|e| {
-            if !e.bank.as_ref().ok_or(Error::NotFound)?.host_resident(id)? {
-                return Ok(ResidentDemand::NotResident);
+            if e.pending.len() >= e.limit {
+                return Err(Error::Capacity);
             }
-            let Some(value) = gate() else {
-                return Ok(ResidentDemand::Declined);
+            let lease = e.next_lease;
+            let next = lease.checked_add(1).ok_or(Error::Overflow)?;
+            let demand = e.bank.as_mut().ok_or(Error::NotFound)?.demand(id, bytes)?;
+            let (record, artifact, epochs) = match identity(&demand) {
+                Ok(identity) if identity.0 == id => identity,
+                outcome => {
+                    // The bank published a lease for a record other than the one demanded.
+                    // Retire it through the bank before refusing, so no host use leaks; the
+                    // demand never becomes a token.
+                    e.bank.as_mut().ok_or(Error::NotFound)?.finish(demand)?;
+                    return Err(match outcome {
+                        Ok(_) => Error::ProgramMismatch,
+                        Err(err) => err,
+                    });
+                }
             };
-            Ok(match self.demand_in(e, id, bytes) {
-                Ok(token) => ResidentDemand::Leased(token, value),
-                Err(err) => ResidentDemand::Refused(err, value),
+            e.pending.insert(lease, demand);
+            e.next_lease = next;
+            Ok(ExpertLeaseToken {
+                owner: self.id,
+                lease,
+                record,
+                artifact,
+                epochs,
             })
-        })
-    }
-    /// The one demand: the pending bound, the bank's lease, the identity check, the token.
-    fn demand_in(
-        &self,
-        e: &mut Entry,
-        id: ExpertDispatchId,
-        bytes: usize,
-    ) -> Result<ExpertLeaseToken> {
-        if e.pending.len() >= e.limit {
-            return Err(Error::Capacity);
-        }
-        let lease = e.next_lease;
-        let next = lease.checked_add(1).ok_or(Error::Overflow)?;
-        let demand = e.bank.as_mut().ok_or(Error::NotFound)?.demand(id, bytes)?;
-        let (record, artifact, epochs) = match identity(&demand) {
-            Ok(identity) if identity.0 == id => identity,
-            outcome => {
-                // The bank published a lease for a record other than the one demanded.
-                // Retire it through the bank before refusing, so no host use leaks; the
-                // demand never becomes a token.
-                e.bank.as_mut().ok_or(Error::NotFound)?.finish(demand)?;
-                return Err(match outcome {
-                    Ok(_) => Error::ProgramMismatch,
-                    Err(err) => err,
-                });
-            }
-        };
-        e.pending.insert(lease, demand);
-        e.next_lease = next;
-        Ok(ExpertLeaseToken {
-            owner: self.id,
-            lease,
-            record,
-            artifact,
-            epochs,
         })
     }
     /// The closure may enqueue H2D but cannot extract a borrowed slice from here.

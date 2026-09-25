@@ -155,3 +155,38 @@ at I12's commit). Order 1 (REF, ON, I11, I12) x 5, order 2 reversed x 5, 40 runs
   with its receipt; `flat` or `improves` keeps it (the CPU ladder shows the work it removes). If the door still
   `loses` on the target card, the next improvement is registered from the attribution (`DAY60.md`) and this cell's
   readings, never by moving a bound here.
+
+## 2a. I11 on the CPU: the ladder, and change 6 not landed
+
+The CPU gates of every change passed at its commit (bank suite 297 then 298 with change 6's outcome test, engine lib
+565 then 566 with the trace-slot pin, clippy `-D warnings`, `cargo fmt --check`). The ladder (`cpu-day61/`, the
+profile at each commit, one thread under the cap, the median of 5 repeats of 200000 host-hit cycles; P2 is the
+unbracketed two-call prefetch sequence, P5 the one-call sequence of change 6):
+
+| row | commit | change | P2 ns per cycle | `stage` | `publish` |
+|---|---|---|---:|---:|---:|
+| profile run 2 | `0742e9dd5` | none | 5370.3 | 2487.8 | 364.7 |
+| ladder-1 | `6116cddc2` | 1, the memoized allowance | 4180.8 | 1509.9 | 352.4 |
+| ladder-2 | `dc88db7ab` | 2, one catalog and one cache read in `stage` | 3811.1 | 1126.4 | 346.6 |
+| ladder-3 | `1501bdc0e` | 3, one SLRU lookup in `publish` | 3713.2 | 1158.2 | 299.7 |
+| ladder-4 | `57d4050af` | 4, one id lookup in `demand` | 3650.1 | 1145.2 | 297.9 |
+| ladder-5 | `59a5875d4` | 5, the reused host slot | 3619.9 | 1164.5 | 296.0 |
+| ladder-6 | `c70ab06a1` | 6, one owner call | P5 3599.1 (P2 3601.2) | 1131.9 | 287.1 |
+
+Changes 1 to 5 take the host-hit prefetch cycle from 5370 to 3620 ns here (32.6% less CPU per block). Change 6 reads
+flat: the one owner call costs 3599.1 ns against the two calls' 3601.2 in the same binary. The residency check's
+bracketed 0.58 us in P1 is the record's first touch of the SLRU and the id map, which the demand then pays in the
+one-call form; the registry access itself is below this profile's resolution. A change with no measured effect is
+not worth its API (a new proxy method and outcome enum) or the dispatch clock's changed meaning, so it is not
+landed: `c70ab06a1` is the measured code (git history keeps it), and the next commit reverts it, keeping its
+ladder row as the receipt. This is a treatment trimmed on its own registered instrument before any card cell, not a
+bound moved: the card cell's rules are unchanged. **I11 is changes 1 to 5**; its card arm is the binary at the revert
+commit (the tree of `59a5875d4` plus this record). The section 2 text on `docs/FLAGS.md` for change 6 lapses with it
+(and would have been the wrong file: the dispatch clock's text lives in `MOE-SLOT-CACHE-DOOR.md`, CLI doors carry
+their record there).
+
+Where the remaining 3.6 us goes, from ladder-5: `stage` 1.16 us (the governor's reservation 0.32 us of it), `publish`
+0.30, the bank's retire side 0.33 and `finish` 0.43 in all, the residency check's first touch about 0.58, `with_bytes`
+0.19, and `SlruExpertDispatch::demand`'s own work (the `BankBatch`, the request clone, the ticket's progress, the
+lease clones: a `BankLease` clone copies its `BankId` and its whole `RecordLayout`) about 0.7. Those are the next
+improvement's candidates, registered after the card cell reads I11 and I12.

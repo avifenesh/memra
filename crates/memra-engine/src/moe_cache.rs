@@ -1352,34 +1352,26 @@ impl MoeSlotCache {
             bank.validate(local, bytes)?;
             self.banked_validated.insert(id, bytes);
         }
-        // DAY61 (I11 change 6): the residency check, the GPU slot step and the lease in one
-        // owner call, in that order as the three calls ran. The dispatch clock counts the slot
-        // step in `pf_reserve_ns` and the rest of the call in `pf_demand_ns` (the door's
-        // `pf_resident_ns` stays 0 from I11 on).
         let asking = self.dispatch_clock.is_some().then(std::time::Instant::now);
-        let mut reserve_ns = 0u64;
-        let outcome = bank.demand_if_resident(local, bytes, || {
-            let reserving = asking.map(|_| std::time::Instant::now());
-            let reserved = self.reserve_prefetch_slot(bytes, keep);
-            if let Some(started) = reserving {
-                reserve_ns = clock_ns(started);
-            }
-            reserved
-        });
-        if let (Some(started), Some(clock)) = (asking, self.dispatch_clock.as_mut()) {
-            clock.pf_reserve_ns += reserve_ns;
-            clock.pf_demand_ns += clock_ns(started).saturating_sub(reserve_ns);
+        let resident = bank.host_resident(local)?;
+        let reserving = self.dispatch_clock_mark(asking, |c, ns| c.pf_resident_ns += ns);
+        if !resident {
+            return Ok(false);
         }
-        let (token, slot) = match outcome? {
-            memra_tier::bank::ResidentDemand::NotResident
-            | memra_tier::bank::ResidentDemand::Declined => return Ok(false),
-            memra_tier::bank::ResidentDemand::Leased(token, slot) => (token, slot),
-            memra_tier::bank::ResidentDemand::Refused(err, slot) => {
+        let reserved = self.reserve_prefetch_slot(bytes, keep);
+        let demanding = self.dispatch_clock_mark(reserving, |c, ns| c.pf_reserve_ns += ns);
+        let Some(slot) = reserved else {
+            return Ok(false);
+        };
+        let demanded = bank.demand(local, bytes);
+        let staging = self.dispatch_clock_mark(demanding, |c, ns| c.pf_demand_ns += ns);
+        let token = match demanded {
+            Ok(token) => token,
+            Err(err) => {
                 self.release_reserved_slot(slot);
                 return Err(err.into());
             }
         };
-        let staging = self.dispatch_clock.is_some().then(std::time::Instant::now);
         if token.record() != local {
             self.release_reserved_slot(slot);
             bank.finish(&token)?;
