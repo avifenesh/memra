@@ -223,7 +223,9 @@ fn graphed(gpu: &Dsv4Gpu, prompts: &[Vec<u32>], capacity: usize, steps: usize) -
             continue;
         }
         let n = active.len();
-        active.rotate_left(k % n);
+        // No rotation here: the graph step orders its batch by request serial (the sessions'
+        // priming order), and the logits read back are in that order. The eager arm above
+        // covers row moves.
         let toks: Vec<u32> = active.iter().map(|&s| sessions[s].next).collect();
         let draws = vec![Dsv4RowDraw::Argmax; n];
         let mut picked: Vec<Option<&mut Session>> = sessions.iter_mut().map(Some).collect();
