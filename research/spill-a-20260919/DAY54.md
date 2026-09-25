@@ -67,7 +67,7 @@ hour).
 ## 2. As built (`17d43a6ac`), the CPU cells, and the sitting prepared
 
 - Step 1: `HostPrefixCache::on_tick_reason` (a `&'static str`) is set before every `OnTick` answer of
-  `prefix_capture_off_tick` (7 reasons: the capture path latched, no transfer engine, an SWA ring cache,
+  `prefix_capture_off_tick` (its reasons: the capture path latched, no transfer engine, an SWA ring cache,
   tensor-parallel shards, no model, latent planes, the cache position off the token boundary, no boundary logits, a KV
   layer not at the boundary, the path latched while settling), of `host_capture_submit` (no host tier, no transfer
   engine) and of `prefix_spec_capture_off_tick` (the same kind, plus a DFlash drafter tail, latent boundary tails, the
