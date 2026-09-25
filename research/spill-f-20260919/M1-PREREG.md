@@ -123,6 +123,46 @@ reference; TTFT with and without the import. Recorded: the export line (entries,
 import DONE line (entries, MB, s), device bytes, fsync share. N=5 cycles per size, single arm
 (the handoff has one I/O mode today; its O_DIRECT arm is OWED 18). Driver: OWED 13.
 
+#### B2 amendment (2026-09-25, registered before the driver code; OWED 13)
+
+Found while designing the driver: the in-tree `memra-server` exposes no route that triggers the
+handoff export; only a deployment binary's `ServerWiring::on_ready` hook receives
+`HostHandoffHandle`. The boot-time import needs no trigger (a file present at boot arms it, and
+the idle loop drips it at a 1 ms wait). So B2 needs one instrument and one driver:
+
+- **`kv-handoff-gate`** (new `memra-server` binary): `serve_with(ServerWiring::stock().on_ready(..))`;
+  SIGUSR1 calls `HostHandoffHandle::export(force = false)` and prints
+  `[handoff-gate] export ok <report json>` or `[handoff-gate] export refused: <reason>`; the task
+  drops its handles on the drain shutdown signal (the worker exits only when every sender is
+  dropped). No env read, no HTTP route, no change to the stock binary.
+- **Engine log change:** the existing `[prefix-host] handoff export:` line gains `write_ms=` and
+  `fsync_ms=` so the fsync share is measured, not inferred.
+- **Driver `m1-handoff-driver.py`**, one collector cell per size, external lock verified:
+  - model: the B3 artifact; server env `MEMRA_MODELS=gate=<artifact>`, `MEMRA_CTX=8192`,
+    `MEMRA_MAX_SESSIONS=4`, `MEMRA_PREFIX_CACHE_MB=1024` (device budget small so entries demote),
+    `MEMRA_KV_HOST_MB=16384`, `MEMRA_KV_HOST_HANDOFF=<P>/b2/handoff.bin`, greedy requests
+    (`max_tokens=48`, `temperature=0`);
+  - prompts: `m1-prereg/b2-prompts.jsonl`, 96 distinct deterministic synthetic prompts of about
+    7,000 tokens, hash in the file's manifest; probes are prompts 1 to 4 plus a fixed suffix;
+  - reference: one stock `memra-server` boot with `MEMRA_KV_HOST_MB=0` and no handoff gives the
+    probes' cold texts;
+  - cycle (N = 5 per size, sizes 1 GiB and 8 GiB of `prefix_host_bytes` plus the drain-demoted
+    device entries): boot the gate; send prompts in order until `/metrics` `prefix_host_bytes`
+    reaches the size (prompts exhausted is a cycle failure); SIGUSR1; wait for the export line
+    (900 s); SIGTERM and wait; SHA-256 of the file, then the cold regime on it (`mincore` = 0);
+    boot the gate again with the sampler on the proof's leaves; wait for
+    `[prefix-host] handoff import DONE` (1800 s); send the four probes; SIGTERM;
+  - a cycle passes when the export answered ok, the import finished with `skipped = 0`, and every
+    probe has `cached_tokens > 0` and text equal to the reference;
+  - recorded: export entries, MB, ms, write_ms, fsync_ms; file bytes and hash; import entries,
+    MB, seconds, skipped; device write bytes over the export window and read bytes over the
+    import window; probe `cached_tokens`. Descriptive medians with N stated; single arm; no
+    default decision.
+- CPU gates before the box: the gate binary builds and passes clippy; the driver runs end to end
+  against a stub server that prints the exact log formats and serves `/v1/models`,
+  `/v1/completions` and `/metrics`, including red controls (a refused export, an import with
+  skips, a probe that misses the cache, a probe whose text differs).
+
 ### B3 expert-bank spill (the headline cells; `run-gen` and `run-spec`)
 
 Common env (frozen in `m1-prereg/b3-arms.lock.json`): `MEMRA_SPILL_DISK=1
