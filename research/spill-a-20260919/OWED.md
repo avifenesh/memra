@@ -116,7 +116,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   the admission flush stays, a lead question: a deferring flush is the memory-admission door's decision).
 - Status: **built (V, on S4) and passes (a) to (d) on the target card** (DAY47 sections 3 and 3b: the pause's tenant
   stall 202.9 ms on the tick, 3.2 ms off it; every gate green, the new pause gate after its section 3a revision). Owed:
-  the 5090 half, after the card's reset; the admission flush's deferring form, a lead question (DAY47 section 1).
+  the 5090 half, after the card's reset. **Closed as V** (the lead, integ62): the admission reclaim flush stays on the
+  tick; its deferring form belongs inside `MEMRA_ADMIT_BY_MEMORY` and is lane B's owed item (V's receipts its source).
 
 ### 7. Lane C: why b1 shows no first-touch pre-submit step
 
