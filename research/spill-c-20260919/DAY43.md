@@ -150,3 +150,28 @@ every I10D run.
 the larger IQR. PASS: I6's regression is fixed in the tree the deciding cell runs. FAIL: the default budget still
 regresses on the final tree; the cause is found from the per-token stage lines and fixed, with its own cell, before
 `DAY51.md` section 2 names the final tree. Readings beside it: the per-token stage lines of both arms.
+
+## 5. Results, the fix check `residfix` (RTX 5090 Laptop GPU, `rtx5090-day43/residfix/`)
+
+One collector hold, 00:28:29Z to 00:44:06Z, 30 runs, tree `2f86e3078`, binaries `run-gen` `b73bb4d3...` (BASE) and
+`run-gen-i10` `90c0496d...` (the tree after every rung through I10), the approved artifact, the runner under the
+1200% cap. Regime (`regime-residfix.log`, 250 ms, N=3727): SM 172 to 2775 MHz, power 9.3 to 148.9 W, 54 to 73 C.
+Collector `--validate` rc=0.
+
+Verbatim (`residfix/reading.log`):
+
+`DAY43 RESIDFIX CHECKS rig=rtx5090 runs=30 integrity=ok`
+
+`DAY43 FIX ARM base window_door_ms_per_token pooled=19.64 o1=19.97 o2=19.41 gen_door_ms_per_token=42.03 window_s median=0.960 iqr=0.027 | per token: demand=16.956 verify=9.376 step=5.637 pread=4.043 stage=1.291 alloc=0.756 drain=2.073 enqueue=1.139 validate=0.652 finish=0.266 collect=0.135 publish=0.235 miss_total=21.055 gpu_misses=92.3 host_hits=0.0 host_misses=92.3 reads=92.3`
+
+`DAY43 FIX ARM i10d window_door_ms_per_token pooled=15.50 o1=15.94 o2=15.16 gen_door_ms_per_token=33.47 window_s median=0.827 iqr=0.029 | per token: demand=16.207 verify=9.356 step=5.698 pread=5.686 stage=0.539 alloc=0.008 drain=0.000 enqueue=0.191 validate=0.079 finish=0.003 collect=0.159 publish=0.273 miss_total=16.704 gpu_misses=92.3 host_hits=0.0 host_misses=92.3 reads=92.3`
+
+`DAY43 CLAUSE no_regression i10d_minus_base pooled=-0.133 o1=-0.129 o2=-0.136 noise=0.029 rule <=noise pooled and both orders -> PASS`
+
+`DAY43 RESIDFIX rig=rtx5090 integrity=ok no_regression=PASS`
+
+I6's clause holds on the tree the deciding cell runs: at the default budget the tuned door is 4.1 ms per window token
+faster than BASE, the allocation (0.756 to 0.008) and the stage (1.29 to 0.54) gone with I2's pool, the drain gone
+with I1. At 256 MiB the window still gets no host hits (every miss a read and a verify, 16.2 ms of the 16.7): the
+default budget holds 542 records against the window's reach of thousands, the day-40 profile's reading; the door's
+16 GiB arms are where the host tier serves.
