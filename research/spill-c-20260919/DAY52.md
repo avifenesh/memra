@@ -286,3 +286,16 @@ this card (trace 0.417 to 0.013) but its no-regression reads +0.002 s against a 
 (`DAY58.md`) runs here after the fix. The I6G arm at 16 GiB reads `resid_budget_hurts` on this card (heap buffers,
 before I2). By the end of the ladder the door's window is 0.25 ms per token faster than the legacy and
 its gen-only decode 0.88 ms per token faster (I10).
+
+## 12. The sitting, closed (BOX8, 2026-09-24 22:10Z to 2026-09-25 02:17Z)
+
+Every cell of sections 1 to 10 ran; the receipts are mirrored file for file into `pro-single-day52/`
+(`MANIFEST.sha256`, 2,589 files, `sha256sum -c` clean on the local copy; one 57.6 MB log stored as two line-aligned
+parts, `SPLIT.txt`; the per-cell `regime.log` files of `decide-b` and the later cells computed locally from their
+`command.gpu.csv`). The verdicts, verbatim in their DAY files: `DAY40 ATTRIB rig=pro-single ... top=demand`; the
+ladder's views (section 11); `DAY43 RESIDFIX rig=pro-single integrity=ok no_regression=PASS`; `DAY58 SMALLFIX
+rig=pro-single integrity=ok i8f=PASS i5f=PASS`; `DAY51 G1 ... -> PASS`, `DAY51 G2 rig=pro-single -> PASS`, `DAY51
+VERDICT rig=pro-single integrity=FAIL -> void` (decide) and `DAY51 VERDICT rig=pro-single integrity=ok -> door_wins`
+(decide-b); C6 ALL GREEN in all six cells on the rerun (`DAY53.md` section 4); `DAY56 DFLASH TAIL rig=pro-single ->
+PASS` (attempt 4); `DAY54 VERDICT -> moved_at s5=58b814abe`. The box's receipts, binaries and build targets were
+removed after the mirror checked; the lead's two worktrees stay for the box's teardown.

@@ -140,3 +140,27 @@ else changes: the same cell, arms, orders, N, binary and timing rule, run again 
 (`day51-cell.sh decide-b`, `day51-decide.py decide-b`). Stated plainly: the void cell's timing lines above were seen
 before this correction; the correction is confined to the integrity term I10 contradicts, and the verdict is
 `decide-b`'s, measured after it.
+
+## 4. `decide-b` on the target card (BOX8; receipts `pro-single-day52/decide-b/`)
+
+One collector hold, 02:12:42Z to 02:17:12Z, 30 runs, `run-gen-final` `35a64e9e...` (`62e848b1f`), the approved
+artifact, the runner pinned to 12 cores. Regime (`decide-b/regime.log`, the collector's 250 ms CSV, N=1064): SM 180
+to 2872 MHz, power 16.0 to 210.1 W, 37 to 49 C. Collector `--validate` rc=0. Verbatim (`decide-b/reading.log`):
+
+`DAY51 G3 rig=pro-single runs=30 integrity=ok`
+
+`DAY51 DECIDE rig=pro-single gen-only decode: off=0.311 on=0.277 ref=0.255 (N=10 each) on_minus_off pooled=-0.0340 o1=-0.0340 o2=-0.0340 noise=0.0005 ratio=0.891 (o1 0.891, o2 0.891) -> door_wins`
+
+`DAY51 DECIDE rig=pro-single steady window: off=0.251 on=0.240 ref=0.226 (N=10 each) on_minus_off pooled=-0.0110 o1=-0.0110 o2=-0.0110 noise=0.0000 ratio=0.956 (o1 0.956, o2 0.956) -> door_wins`
+
+`DAY51 READING rig=pro-single on install_s median=9.91 ref_minus_off gen=-0.0560 ref_minus_on gen=-0.0220`
+
+`DAY51 VERDICT rig=pro-single integrity=ok -> door_wins`
+
+**The target card's verdict is `door_wins`**: with G1, G2 and G3 green, the tuned door's gen-only decode is 0.277 s
+against the naked legacy's 0.311 (ratio 0.891 both orders, day 18's 5.743 before the tuning), and its steady window
+0.240 against 0.251. Reported beside it, as registered, and material to the owner's call: REF, the legacy with its
+own default-OFF prefetch (`MEMRA_MOE_PREFETCH=1`), is faster than the door on both measures (gen 0.255, 22 ms below
+the door; window 0.226), and the door's install takes 9.91 s (the SHA lock, the parallel record pass, the fill). Per
+section 1, a win on the target card goes to the owner as the promotion call, with `OWED.md` C2 as the promotion
+work; the RTX 5090's `decide-b` is queued behind the card's reset (`rtx5090-fault-20260925/`).
