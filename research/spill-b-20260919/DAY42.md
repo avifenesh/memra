@@ -168,6 +168,28 @@ card). The arm, its clauses and its readings are unchanged; the shape that exerc
 - Everything else of 1.2 to 1.9 stands: arms, orders, faults (`d2h-source-flip` per addendum A), clauses F1 to F4, the
   readings.
 
+### 1.12 Addendum E (2026-09-25, after 2.2, before any code of the revision)
+
+2.2 found that a per-arrival plan loses the warmth today's flush keeps: later arrivals drop the entries an earlier
+arrival planned to demote. The revision makes the demote set the worker's:
+
+- **One demote queue per worker.** The entries planned for demotion join a worker-level queue. No arrival's plan and
+  no drop set ever includes a queued entry (it is on its way to the host, and its bytes are already counted as coming).
+- **An arrival's pass.** With B from `decide` and Q the bytes queued plus the in-flight demote's: if B <= Q the
+  arrival waits on the landings (no new plan, no line); otherwise it plans over the evictable entries not queued, with
+  today's rule over B minus Q (its D joins the queue, its R drops at once, one plan line).
+- **The queue drains at the tick top**, after the settle calls: when the tier's demote slot is free and the queue has
+  entries, the next one leaves the device index on the off-tick route, whether or not the arrival that queued it is
+  still waiting (a refused or admitted arrival does not strand its entries: the whole demote set reaches the host, as
+  today's flush does, one landing at a time).
+- **The wait** is unchanged: the arrival defers (`reason=reclaim-landing`) while it is short and the queue has entries
+  or a landing is in flight, inside the defer budget, then gets the typed refusal.
+- **F4's `d2h-source-flip` reading**, corrected for the next run: the flush's flipped demote is the first demote outcome
+  after the fault's armed line; it must be `demote failed ... nothing published`; the boot's other publications are not
+  counted against it.
+- Everything else of 1.2 to 1.11 stands: arms, orders, the addenda C and D shape, F1 to F4, the readings. The cells run
+  again on both cards.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged except by its dated addenda.
@@ -234,3 +256,68 @@ allocated context, not the output, so:
   each arrival books and allocates M + 2,048 rows and generates 64 tokens. `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` stays at its
   8,192 default (no burst request is open-output).
 - Everything else of addendum C stands (the warm set at `max_tokens=16`, the P0 line).
+
+### 2.2 Addenda C and D on the target card (BOX26, one RTX PRO 6000 Blackwell Workstation Edition, 2026-09-25 16:22 to 16:53Z)
+
+`1d11d5426` (server `df6623f6...`), eight boots, receipts `pro-single-day42/box-c/` (208 files, checked against the box
+manifest). The reader's lines, verbatim:
+
+```
+DAY42 F3 card=pro6000 boot=ontick-O1 oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 17, 429: 47} counts={'ontick_demoted': 2, 'plans': 0, 'submitted': 0, 'published': 24, 'landing_defers': 0, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=offtick-O1 oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 17, 429: 47} counts={'ontick_demoted': 0, 'plans': 199, 'submitted': 1, 'published': 10, 'landing_defers': 1, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=offtick-O2 oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 17, 429: 47} counts={'ontick_demoted': 0, 'plans': 105, 'submitted': 1, 'published': 10, 'landing_defers': 1, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=ontick-O2 oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 17, 429: 47} counts={'ontick_demoted': 2, 'plans': 0, 'submitted': 0, 'published': 24, 'landing_defers': 0, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=ontick-nocontracts oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 17, 429: 47} counts={'ontick_demoted': 2, 'plans': 0, 'submitted': 0, 'published': 25, 'landing_defers': 0, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=fault-d2h-delay oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 17, 429: 47} counts={'ontick_demoted': 0, 'plans': 105, 'submitted': 1, 'published': 10, 'landing_defers': 1, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=fault-d2h-source-flip oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 17, 429: 47} counts={'ontick_demoted': 0, 'plans': 105, 'submitted': 1, 'published': 9, 'landing_defers': 1, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=fault-sources-helper-gone oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 17, 429: 47} counts={'ontick_demoted': 0, 'plans': 105, 'submitted': 1, 'published': 1, 'landing_defers': 1, 'landing_refusals': 0} -> PASS
+DAY42 P0 card=pro6000 boot=ontick-O1 warm_published_before_burst=24 memory_verdict_lines=95 flush_runs=2 -> EXERCISED
+DAY42 P0 card=pro6000 boot=offtick-O1 warm_published_before_burst=24 memory_verdict_lines=95 flush_runs=199 -> EXERCISED
+DAY42 P0 card=pro6000 boot=offtick-O2 warm_published_before_burst=24 memory_verdict_lines=95 flush_runs=105 -> EXERCISED
+DAY42 P0 card=pro6000 boot=ontick-O2 warm_published_before_burst=24 memory_verdict_lines=95 flush_runs=2 -> EXERCISED
+DAY42 P0 card=pro6000 boot=ontick-nocontracts warm_published_before_burst=24 memory_verdict_lines=95 flush_runs=2 -> EXERCISED
+DAY42 P0 card=pro6000 boot=fault-d2h-delay warm_published_before_burst=24 memory_verdict_lines=95 flush_runs=105 -> EXERCISED
+DAY42 P0 card=pro6000 boot=fault-d2h-source-flip warm_published_before_burst=24 memory_verdict_lines=95 flush_runs=105 -> EXERCISED
+DAY42 P0 card=pro6000 boot=fault-sources-helper-gone warm_published_before_burst=24 memory_verdict_lines=95 flush_runs=105 -> EXERCISED
+DAY42 F1 card=pro6000 order=O1 rows=52 arm_differ=[] cold_differ=[] -> PASS
+DAY42 F2 card=pro6000 order=O1 ontick={'ontick_demoted': 2, 'plans': 0, 'submitted': 0, 'published': 24, 'landing_defers': 0, 'landing_refusals': 0} offtick={'ontick_demoted': 0, 'plans': 199, 'submitted': 1, 'published': 10, 'landing_defers': 1, 'landing_refusals': 0} -> PASS
+DAY42 F1 card=pro6000 order=O2 rows=52 arm_differ=[] cold_differ=[] -> PASS
+DAY42 F2 card=pro6000 order=O2 ontick={'ontick_demoted': 2, 'plans': 0, 'submitted': 0, 'published': 24, 'landing_defers': 0, 'landing_refusals': 0} offtick={'ontick_demoted': 0, 'plans': 105, 'submitted': 1, 'published': 10, 'landing_defers': 1, 'landing_refusals': 0} -> PASS
+DAY42 F4 card=pro6000 boot=fault-d2h-delay burst=64 all_200_or_429=True landing_refusals=0 armed=True -> PASS
+DAY42 F4 card=pro6000 boot=fault-d2h-source-flip burst=64 all_200_or_429=True armed=True submitted=1 published=9 -> FAIL
+DAY42 F4 card=pro6000 boot=fault-sources-helper-gone burst=64 all_200_or_429=True latch_lines=1 -> PASS
+DAY42 READING card=pro6000 boot=ontick-O1 tenant_gap_ms_in_burst N=276 p50=51.9 p99=8639.5 max=8640.2 burst_ttft_ms N=17 p50=11848.5 p95=14180.6 demoted_MB=9005 warmth_hits=10/24
+DAY42 READING card=pro6000 boot=offtick-O1 tenant_gap_ms_in_burst N=276 p50=51.9 p99=3895.9 max=3896.2 burst_ttft_ms N=17 p50=7984.7 p95=8596.7 demoted_MB=4164 warmth_hits=1/24
+DAY42 READING card=pro6000 boot=offtick-O2 tenant_gap_ms_in_burst N=276 p50=52.5 p99=3895.7 max=3896.3 burst_ttft_ms N=17 p50=7247.3 p95=8669.4 demoted_MB=4164 warmth_hits=1/24
+DAY42 READING card=pro6000 boot=ontick-O2 tenant_gap_ms_in_burst N=276 p50=52.0 p99=8801.8 max=8802.0 burst_ttft_ms N=17 p50=12157.3 p95=14529.2 demoted_MB=9005 warmth_hits=10/24
+DAY42 READING card=pro6000 boot=ontick-nocontracts tenant_gap_ms_in_burst N=276 p50=52.5 p99=4589.7 max=4590.7 burst_ttft_ms N=17 p50=7942.8 p95=9579.1 demoted_MB=9422 warmth_hits=10/24
+DAY42 READING card=pro6000 boot=fault-d2h-delay tenant_gap_ms_in_burst N=276 p50=52.5 p99=3897.9 max=3898.3 burst_ttft_ms N=17 p50=7256.6 p95=8677.6 demoted_MB=4164 warmth_hits=1/24
+DAY42 READING card=pro6000 boot=fault-d2h-source-flip tenant_gap_ms_in_burst N=276 p50=52.5 p99=3895.2 max=3895.8 burst_ttft_ms N=17 p50=7253.9 p95=8688.0 demoted_MB=3748 warmth_hits=0/24
+DAY42 READING card=pro6000 boot=fault-sources-helper-gone tenant_gap_ms_in_burst N=276 p50=52.5 p99=4139.7 max=4140.1 burst_ttft_ms N=17 p50=7497.6 p95=8437.7 demoted_MB=416 warmth_hits=0/24
+```
+
+- **P0: EXERCISED on all eight boots** (24 warm entries published before the burst; 95 memory verdict lines per boot).
+- **F1 PASS, F2 PASS in both orders, F3 PASS on all eight.** On `ontick` the flush demoted on the tick
+  (`reclaim demoted 10 of 28 device prefix entries to the host tier (4154MB kept warm ...)`); on `offtick` it planned
+  (`plan 10 demote + 18 drop (3828MB demote budget)`), submitted one demote off the tick, and one arrival deferred on the
+  landing (`landing_defers=1`); no on-tick demote there.
+- **F4: `d2h-delay` PASS, `sources-helper-gone` PASS; `d2h-source-flip` reads FAIL on `submitted=1 published=9`.** The
+  log places it: the fault armed on the flush's own submission (`demote fault armed (MEMRA_KV_HOST_FAULT=d2h-source-flip)`
+  then `reclaim off-tick: submitted 1 of 10`), and that demote failed its bind (`demote failed (tier image Key plane
+  checksum differs from its D2H contract receipt); nothing published`). The nine publications are the prefix cache's
+  capacity-eviction demotes in the warmth phase, which addendum A's count ("the boot's publication count is below its
+  submitted count") does not separate. The clause's intent held; the line reads FAIL as registered.
+- **Readings (the price, target card; N and regime from each boot's receipts).** The tenants' largest inter-token gap
+  inside the burst: 8,640 and 8,802 ms on `ontick`, 3,896 ms on `offtick` in both orders (the on-tick D2H stall
+  removed; the rest is the burst's own admission and prime work). Burst TTFT p50: 11,849 and 12,157 ms on `ontick`,
+  7,985 and 7,247 ms on `offtick` (N=17 admitted each). Demoted bytes: 9,005 MB against 4,164 MB. **Warmth kept:
+  10 of 24 warm prompts hit on `ontick`, 1 of 24 on `offtick`.**
+- **Why the off-tick arm kept less warmth (a design defect of 1.2).** The plan is per arrival. The first arrival's plan
+  was 10 demote + 18 drop; its drops alone made room, so it admitted after one submission and its nine unsubmitted
+  entries stayed resident and evictable. The next arrivals, each with a smaller shortfall, made their own plans over
+  those entries (`plan 5 demote + 4 drop`, `plan 1 demote + 4 drop`), dropped most of them at once and could not submit
+  while the slot was busy. Today's flush demotes the whole demote set in one tick, so it kept 4,154 MB warm against the
+  arm's 415 MB. The replan of addendum B also prints a plan line on every pass of a waiting arrival (187 empty
+  `plan 0 demote + 0 drop` lines on `offtick-O1`).
+
+Addendum E (1.12) revises the arm so its demote set is the flush's, not an arrival's.
