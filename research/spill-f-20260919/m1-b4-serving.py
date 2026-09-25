@@ -172,9 +172,11 @@ def run(args):
         if len(arms) == 1:
             schedule += [(c, p + 1, "single", [arms[0]]) for p in range(args.pairs)]
         else:
+            # Round-robin as in B3: odd rounds forward, even rounds reversed, so every pair of
+            # arms meets `pairs` times in each relative order (for two arms: 5 AB plus 5 BA).
             for p in range(args.pairs):
-                schedule.append((c, p + 1, "AB", arms))
-                schedule.append((c, p + 1, "BA", arms[::-1]))
+                schedule.append((c, p + 1, "forward", arms))
+                schedule.append((c, p + 1, "reverse", arms[::-1]))
     for c, pair, order, arm_order in schedule:
         for arm in arm_order:
             name = f"c{c}-p{pair}-{order}-{arm['name']}"
@@ -217,7 +219,30 @@ def run(args):
             s = rec["summary"]
             print(f"M1-B4 {name} scored={rec['scored']} tok/s={s['tok_per_s']:.2f} ttft_p50={s['ttft_s']['p50']} "
                   f"itl_p99={s['itl_s']['p99']} errors={len(errors)}", flush=True)
-    summary = {"visits": len(visits), "arms": args.arms, "regime": args.regime, "qualified": False, "cells": {}}
+    summary = {"visits": len(visits), "arms": args.arms, "regime": args.regime, "qualified": False, "cells": {},
+               "verdicts": {}}
+    base = arms[0]["name"]
+    for c in concurrencies:
+        for arm in arms[1:]:
+            ratios = {"forward": [], "reverse": []}
+            for v in visits:
+                if v["arm"] != arm["name"] or v["concurrency"] != c or not v["scored"]:
+                    continue
+                b = next((x for x in visits if x["arm"] == base and x["concurrency"] == c and x["pair"] == v["pair"]
+                          and x["order"] == v["order"] and x["scored"]), None)
+                if b:
+                    ratios[v["order"]].append(v["summary"]["tok_per_s"] / b["summary"]["tok_per_s"])
+            fw, rv = ratios["forward"], ratios["reverse"]
+            allr = fw + rv
+            if min(len(fw), len(rv)) < 4:
+                verdict = "insufficient"
+            else:
+                med = statistics.median(allr)
+                up = min(sum(r > 1 for r in fw), sum(r > 1 for r in rv))
+                down = min(sum(r < 1 for r in fw), sum(r < 1 for r in rv))
+                verdict = "winner" if med >= 1.05 and up >= 4 else "loser" if med <= 0.95 and down >= 4 else "flat"
+            summary["verdicts"][f"c{c}/{arm['name']}"] = {"verdict": verdict, "median_tok_ratio": statistics.median(allr) if allr else None,
+                                                          "forward": fw, "reverse": rv}
     for c in concurrencies:
         for arm in arms:
             vs = [v for v in visits if v["concurrency"] == c and v["arm"] == arm["name"] and v["scored"]]
@@ -231,6 +256,8 @@ def run(args):
                    for k in ("ttft_s", "e2e_s", "tpot_s", "itl_s") for q in ("p50", "p95", "p99")}}
     (args.out / "summary.json").write_text(json.dumps(summary, indent=1) + "\n")
     print("M1-B4-SUMMARY " + json.dumps(summary["cells"]), flush=True)
+    for k, v in summary["verdicts"].items():
+        print(f"M1-B4-VERDICT {k} vs {base}: {v['verdict']} median_tok_ratio={v['median_tok_ratio']}", flush=True)
     return 0 if all(v["scored"] for v in visits) else 3
 
 
