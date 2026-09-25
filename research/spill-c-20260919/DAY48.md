@@ -38,3 +38,35 @@ I5). Order 1 (OFF, I2, I8, I5) x 5, order 2 reversed x 5, one collector hold. In
 Each rung stays if its two clauses hold.
 
 **What each card can decide.** The RTX 5090 decides the four clauses here; the target card reads them in the ladder.
+
+## 2. Results, cell `small` (RTX 5090 Laptop GPU, `rtx5090-day48/small/`)
+
+One collector hold, 23:59:59Z to 00:09:53Z, 40 runs, tree `305ca1ca1`, binaries `run-gen-i2` `974a7e4b...`,
+`run-gen-i8` `308dad3a...`, `run-gen-i5` `2b5a738e...`, the approved artifact, the runner under the 1200% cap. Regime
+(`regime.log`, 250 ms, N=2311): SM 180 to 2782 MHz, power 10.1 to 158.1 W, 58 to 71 C. Collector `--validate` rc=0.
+
+Verbatim (`small/reading.log`):
+
+`DAY48 SMALL CHECKS rig=rtx5090 runs=40 integrity=ok`
+
+`DAY48 ARM i2 window_door_ms_per_token=0.91 window_s median=0.360 iqr=0.002 | per window token: gpu_misses=92.3 host_hits=92.3 validate=0.435 trace=0.243 demand=0.800 enqueue=0.176 retire=0.054 finish=0.002 miss_total=1.360`
+
+`DAY48 ARM i8 window_door_ms_per_token=0.70 window_s median=0.353 iqr=0.002 | per window token: gpu_misses=92.3 host_hits=92.3 validate=0.131 trace=0.240 demand=0.855 enqueue=0.178 retire=0.055 finish=0.002 miss_total=1.410`
+
+`DAY48 ARM i5 window_door_ms_per_token=0.69 window_s median=0.353 iqr=0.002 | per window token: gpu_misses=92.3 host_hits=92.3 validate=0.134 trace=0.033 demand=0.656 enqueue=0.179 retire=0.053 finish=0.002 miss_total=1.215`
+
+`DAY48 CLAUSE (i) validate per window token i2=0.435 i8=0.131 rule i8 < 0.1 x i2 -> FAIL`
+
+`DAY48 CLAUSE (ii) i8_minus_i2 window pooled=-0.007 o1=-0.007 o2=-0.006 noise=0.002 rule <=noise -> PASS`
+
+`DAY48 CLAUSE (iii) trace per window token i8=0.240 i5=0.033 rule i5 < 0.1 x i8 -> FAIL`
+
+`DAY48 CLAUSE (iv) i5_minus_i8 window pooled=-0.001 o1=+0.000 o2=-0.001 noise=0.002 rule <=noise -> PASS`
+
+`DAY48 READING window i2=0.360 i8=0.353 i5=0.353 -> falls`
+
+`DAY48 SMALL rig=rtx5090 integrity=ok i8=FAIL i5=FAIL`
+
+Both rungs fail their stage clause and hold their no-regression clause: I8 took the validate stage down 3.3 times and
+the window by 7 ms per 32 tokens, I5 took the trace down 7.3 times; neither reached the registered tenth. The rule
+stands; both are fixed before the final tree is named (`DAY58.md`, registered before the fix code).
