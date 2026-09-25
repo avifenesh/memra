@@ -1,0 +1,7 @@
+DAY47 READING order=o1 arm=base pause-window-stall N=50 median=202.88 released=[20, 20, 20, 20, 20] landed=[0, 0, 0, 0, 0]
+DAY47 READING order=o1 arm=v pause-window-stall N=50 median=3.17 released=[20, 20, 20, 20, 20] landed=[20, 20, 20, 20, 20]
+DAY47 READING order=o2 arm=base pause-window-stall N=50 median=202.90 released=[20, 20, 20, 20, 20] landed=[0, 0, 0, 0, 0]
+DAY47 READING order=o2 arm=v pause-window-stall N=50 median=3.21 released=[20, 20, 20, 20, 20] landed=[20, 20, 20, 20, 20]
+DAY47 V C order=o1 stall base=202.88 v=3.17 rule v<=base/4=50.72 tenant_texts=1 -> PASS | D released=[20] -> PASS
+DAY47 V C order=o2 stall base=202.90 v=3.21 rule v<=base/4=50.72 tenant_texts=1 -> PASS | D released=[20] -> PASS
+DAY47 V -> PASS

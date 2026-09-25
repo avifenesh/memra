@@ -1,0 +1,58 @@
+== ft
+   Compiling memra-tier v0.138.0 (/root/wt-a/crates/memra-tier)
+   Compiling memra-engine v0.138.0 (/root/wt-a/crates/memra-engine)
+   Compiling memra-server v0.138.0 (/root/wt-a/crates/memra-server)
+   Compiling memra-kv v0.138.0 (/root/wt-a/crates/memra-kv)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 2m 28s
+   Compiling memra-tier v0.138.0 (/root/wt-a/crates/memra-tier)
+   Compiling memra-engine v0.138.0 (/root/wt-a/crates/memra-engine)
+   Compiling memra-server v0.138.0 (/root/wt-a/crates/memra-server)
+   Compiling memra-kv v0.138.0 (/root/wt-a/crates/memra-kv)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 17s
+   Compiling memra-tier v0.138.0 (/root/wt-a/crates/memra-tier)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-kv v0.138.0 (/root/wt-a/crates/memra-kv)
+   Compiling memra-engine v0.138.0 (/root/wt-a/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.38s
+== f1
+   Compiling memra-tier v0.138.0 (/root/wt-a/crates/memra-tier)
+   Compiling memra-engine v0.138.0 (/root/wt-a/crates/memra-engine)
+   Compiling memra-server v0.138.0 (/root/wt-a/crates/memra-server)
+   Compiling memra-kv v0.138.0 (/root/wt-a/crates/memra-kv)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+warning: constant `FILL_THREADS_MAX` is never used
+   --> crates/memra-engine/src/tier_transfer.rs:569:18
+    |
+569 | pub(crate) const FILL_THREADS_MAX: usize = 12;
+    |                  ^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `fill_threads_for_host` is never used
+   --> crates/memra-engine/src/tier_transfer.rs:575:15
+    |
+575 | pub(crate) fn fill_threads_for_host(cpus: usize) -> usize {
+    |               ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `memra-engine` (lib) generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 2m 29s
+== hk
+Applied patch to 'crates/memra-server/src/worker.rs' cleanly.
+   Compiling memra-tier v0.138.0 (/root/wt-a/crates/memra-tier)
+   Compiling memra-engine v0.138.0 (/root/wt-a/crates/memra-engine)
+   Compiling memra-server v0.138.0 (/root/wt-a/crates/memra-server)
+   Compiling memra-kv v0.138.0 (/root/wt-a/crates/memra-kv)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 2m 29s
+   Compiling cudarc v0.19.8
+   Compiling cfg-if v1.0.5
+   Compiling libloading v0.9.0
+   Compiling day39-fill-survey v0.0.0 (/root/wt-a/research/spill-a-20260919/day39-fill-survey)
+    Finished `release` profile [optimized] target(s) in 1.94s

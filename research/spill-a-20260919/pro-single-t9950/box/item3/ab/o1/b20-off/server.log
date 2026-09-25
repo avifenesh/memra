@@ -1,0 +1,212 @@
+[server] build: memra-0.138.0-e3e09093b820 (id: source-tree, git: 84e6f4e1bc5a)
+[server] starting; models config = [("gate", "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "gate": 65 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-host] on: budget 8590MB pinned cacheable host RAM (MEMRA_KV_HOST_MB, startup budget policy), plain byte-LRU, demote on device capacity eviction, promote on exact-prefix probe; verify=off (MEMRA_KV_HOST_VERIFY); tenant share cap 50% = 4295MB (MEMRA_KV_HOST_TENANT_PCT)
+[prefix-cache] on: budget 268MB (268435456 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18137
+[meter] admit id=cmpl-3ba2abb96da8a06df213146d4bc76cd9 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=154 path=plain = 29696 B/token x ctx + 43MB prefill-workspace + 0MB fixed = 47MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=89 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 311MB at ctx 98 path=plain)
+[prefix-cache] insert (seed): 64 tokens, 158.8MB (resident 158.8MB / 268MB, model gate)
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+[meter] admit id=cmpl-6717b9c08db4f3071a10bfd3956686a8 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=151 path=plain = 29696 B/token x ctx + 41MB prefill-workspace + 308MB fixed = 354MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 86 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=86 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] evict (snapshot preflight, LRU): 64 tokens, 158.8MB (model gate)
+[prefix-host] demote: 64 tokens, 159.8MB in 28.0ms (host resident 159.8MB / 8590MB, model gate)
+[prefix-cache] insert (seed): 64 tokens, 158.8MB (resident 158.8MB / 268MB, model gate)
+[meter] admit id=cmpl-5c4447d605e0163e57d19e2cbaaf7f7c tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 29696 B/token x ctx + 8MB prefill-workspace + 308MB fixed = 323MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 314MB at ctx 184 path=plain)
+[fa-pool] grow #1 dev=0 o_len 6144 -> 36864 ml_len 24 -> 144 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 36864 -> 73728 ml_len 144 -> 288 (retired kept, zero=false)
+[meter] admit id=cmpl-53e3dac0ede358d9028f0321edcda1c3 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 29696 B/token x ctx + 8MB prefill-workspace + 308MB fixed = 323MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-a15d4f08e8d54dc6d4976af2adfade06 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=154 path=plain = 29696 B/token x ctx + 43MB prefill-workspace + 308MB fixed = 355MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 89 prompt tokens; model gate)
+[prefix-cache] insert (host-promote): 64 tokens, 158.8MB (resident 317.6MB / 268MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 158.8MB (model gate)
+[prefix-host] demote: 64 tokens, 159.8MB in 33.0ms (host resident 319.6MB / 8590MB, model gate)
+[prefix-host] promote: 64 tokens, 158.8MB in 41.2ms (model gate)
+[prefix-cache] hit: 64 of 89 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=89 cached=64 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[meter] admit id=cmpl-46b49450d2ebd05a6f310c5b8d36bf23 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 29696 B/token x ctx + 8MB prefill-workspace + 308MB fixed = 323MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-344ddcec0ff4a13507feb6c733c2449c tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-8ac4a721d21d627debad5d654dd6ffcd tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=151 path=plain = 29696 B/token x ctx + 41MB prefill-workspace + 308MB fixed = 354MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 86 prompt tokens; model gate)
+[prefix-cache] insert (host-promote): 64 tokens, 158.8MB (resident 317.6MB / 268MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 158.8MB (model gate)
+[prefix-host] demote: 64 tokens, 159.8MB in 31.7ms (host resident 319.6MB / 8590MB, model gate)
+[prefix-host] promote: 64 tokens, 158.8MB in 39.9ms (model gate)
+[prefix-cache] hit: 64 of 86 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=86 cached=64 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[meter] admit id=cmpl-b8305d9e074d3a251a58c042c86a9e06 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 29696 B/token x ctx + 8MB prefill-workspace + 308MB fixed = 323MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-e0c5db1d6039b65903742e2dbdab1d85 tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-0bd4c20742582de4961d480d2abceb46 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=154 path=plain = 29696 B/token x ctx + 43MB prefill-workspace + 308MB fixed = 355MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 89 prompt tokens; model gate)
+[prefix-cache] insert (host-promote): 64 tokens, 158.8MB (resident 317.6MB / 268MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 158.8MB (model gate)
+[prefix-host] demote: 64 tokens, 159.8MB in 9.3ms (host resident 319.6MB / 8590MB, model gate)
+[prefix-host] promote: 64 tokens, 158.8MB in 17.7ms (model gate)
+[prefix-cache] hit: 64 of 89 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=89 cached=64 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[meter] admit id=cmpl-1d51793276de438d19143abc362f5366 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 29696 B/token x ctx + 8MB prefill-workspace + 308MB fixed = 323MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-f2cd3ff74d919e34c16ab260ab299967 tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-a4168db1ce4754efd21fac761063564f tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=151 path=plain = 29696 B/token x ctx + 41MB prefill-workspace + 308MB fixed = 354MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 86 prompt tokens; model gate)
+[prefix-cache] insert (host-promote): 64 tokens, 158.8MB (resident 317.6MB / 268MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 158.8MB (model gate)
+[prefix-host] demote: 64 tokens, 159.8MB in 9.8ms (host resident 319.6MB / 8590MB, model gate)
+[prefix-host] promote: 64 tokens, 158.8MB in 17.4ms (model gate)
+[prefix-cache] hit: 64 of 86 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=86 cached=64 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[meter] admit id=cmpl-9f1dc9608e21e3616d7fad20c5f40912 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 29696 B/token x ctx + 8MB prefill-workspace + 308MB fixed = 323MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-caf7cd95db3e746844c34549c5a0dc8e tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-4ae0ea0de1c963ce98c7d4f3a75f5855 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=154 path=plain = 29696 B/token x ctx + 43MB prefill-workspace + 308MB fixed = 355MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 89 prompt tokens; model gate)
+[prefix-cache] insert (host-promote): 64 tokens, 158.8MB (resident 317.6MB / 268MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 158.8MB (model gate)
+[prefix-host] demote: 64 tokens, 159.8MB in 9.3ms (host resident 319.6MB / 8590MB, model gate)
+[prefix-host] promote: 64 tokens, 158.8MB in 16.8ms (model gate)
+[prefix-cache] hit: 64 of 89 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=89 cached=64 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[meter] admit id=cmpl-55edc5bb4e3a087a2cedd4a4dfe84543 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 29696 B/token x ctx + 8MB prefill-workspace + 308MB fixed = 323MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-a3dd5bc49a9c321f755bd92cb7e750c6 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=151 path=plain = 29696 B/token x ctx + 41MB prefill-workspace + 308MB fixed = 354MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 86 prompt tokens; model gate)
+[prefix-cache] insert (host-promote): 64 tokens, 158.8MB (resident 317.6MB / 268MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 158.8MB (model gate)
+[prefix-host] demote: 64 tokens, 159.8MB in 9.3ms (host resident 319.6MB / 8590MB, model gate)
+[prefix-host] promote: 64 tokens, 158.8MB in 16.5ms (model gate)
+[prefix-cache] hit: 64 of 86 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=86 cached=64 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[meter] admit id=cmpl-e005b8fd8066dca4d41cf8fc1b4bbefc tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 29696 B/token x ctx + 8MB prefill-workspace + 308MB fixed = 323MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-ea50ac5bbf0b63c31f0645be5b778bde tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-8a2d8d57699f342b10e2350971fe9d7c tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=154 path=plain = 29696 B/token x ctx + 43MB prefill-workspace + 308MB fixed = 355MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 89 prompt tokens; model gate)
+[prefix-cache] insert (host-promote): 64 tokens, 158.8MB (resident 317.6MB / 268MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 158.8MB (model gate)
+[prefix-host] demote: 64 tokens, 159.8MB in 9.2ms (host resident 319.6MB / 8590MB, model gate)
+[prefix-host] promote: 64 tokens, 158.8MB in 16.5ms (model gate)
+[prefix-cache] hit: 64 of 89 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=89 cached=64 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[meter] admit id=cmpl-a435d603ea9e74d0d6da2a3d2cbcefc1 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 29696 B/token x ctx + 8MB prefill-workspace + 308MB fixed = 323MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-5a77d8c028574744cbacd2ad47b0681d tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-595361541e4b227ba41c2640f0105edc tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=151 path=plain = 29696 B/token x ctx + 41MB prefill-workspace + 308MB fixed = 354MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 86 prompt tokens; model gate)
+[prefix-cache] insert (host-promote): 64 tokens, 158.8MB (resident 317.6MB / 268MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 158.8MB (model gate)
+[prefix-host] demote: 64 tokens, 159.8MB in 9.3ms (host resident 319.6MB / 8590MB, model gate)
+[prefix-host] promote: 64 tokens, 158.8MB in 16.8ms (model gate)
+[prefix-cache] hit: 64 of 86 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=86 cached=64 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[meter] admit id=cmpl-63b16b084d117c69b1270d3de813f21c tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 29696 B/token x ctx + 8MB prefill-workspace + 308MB fixed = 323MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-1522b1804f87aa5b56960357a54d66d9 tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-9b5ba19480b03fb443e0000bb61635b8 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=154 path=plain = 29696 B/token x ctx + 43MB prefill-workspace + 308MB fixed = 355MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 89 prompt tokens; model gate)
+[prefix-cache] insert (host-promote): 64 tokens, 158.8MB (resident 317.6MB / 268MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 158.8MB (model gate)
+[prefix-host] demote: 64 tokens, 159.8MB in 9.2ms (host resident 319.6MB / 8590MB, model gate)
+[prefix-host] promote: 64 tokens, 158.8MB in 16.4ms (model gate)
+[prefix-cache] hit: 64 of 89 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=89 cached=64 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[meter] admit id=cmpl-44bfa023ffc423d713aac5d57f21db83 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 29696 B/token x ctx + 8MB prefill-workspace + 308MB fixed = 323MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-22ba50ffe3093ea92e7fd9e1350e95ac tenant=default lane=interactive model="gate"
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[meter] admit id=cmpl-dcc660ace958d3e72cc49b03c781ca50 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=151 path=plain = 29696 B/token x ctx + 41MB prefill-workspace + 308MB fixed = 354MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 86 prompt tokens; model gate)
+[prefix-cache] insert (host-promote): 64 tokens, 158.8MB (resident 317.6MB / 268MB, model gate)
+[prefix-cache] evict (LRU): 64 tokens, 158.8MB (model gate)
+[prefix-host] demote: 64 tokens, 159.8MB in 9.1ms (host resident 319.6MB / 8590MB, model gate)
+[prefix-host] promote: 64 tokens, 158.8MB in 16.6ms (model gate)
+[prefix-cache] hit: 64 of 86 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=86 cached=64 lcp=0 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[meter] admit id=cmpl-22e0705721cee562be17d254145c0a70 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=240 path=plain = 29696 B/token x ctx + 8MB prefill-workspace + 308MB fixed = 323MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 16 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=16 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

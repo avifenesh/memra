@@ -286,6 +286,20 @@ impl PinnedHostBuf {
         }
         Ok(())
     }
+    /// WP-A day 40 (`DAY40.md` design S): the buffer's device address (`cuMemHostGetDevicePointer`),
+    /// for a device kernel that reads the landed bytes (the D2H span's landed digest) or writes
+    /// one byte of them (its red arm). Every pinned allocation of this type is device-mapped under
+    /// unified addressing; the driver refuses otherwise, and the caller treats that as an error.
+    pub(crate) fn device_address(&self) -> Result<u64, Error> {
+        let mut dptr: cudarc::driver::sys::CUdeviceptr = 0;
+        // SAFETY: documented FFI (`cuMemHostGetDevicePointer_v2(&dptr, p, 0)`); `ptr` lies inside a
+        // live `cuMemHostAlloc` allocation this buffer (or its arena region) owns.
+        unsafe {
+            cudarc::driver::sys::cuMemHostGetDevicePointer_v2(&mut dptr, self.ptr.cast(), 0)
+                .result()?;
+        }
+        Ok(dptr)
+    }
     /// WP-A day 32: every byte of the logical range was written (a span source must be).
     pub(crate) fn is_written(&self) -> bool {
         self.written

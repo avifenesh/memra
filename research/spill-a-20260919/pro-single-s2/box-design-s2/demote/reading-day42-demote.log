@@ -1,0 +1,7 @@
+DAY42 READING mode=demote order=o1 arm=g4 e2e N=50 median=176.08 min=173.45 max=202.32 | wall N=40 median=101.45 min=100.40 max=101.90 | copy-settle N=40 median=0.27 min=0.22 max=0.33 | owner-held N=40 median=1.40 min=1.25 max=1.67 | pin N=0 | steady polls [] (counts [])
+DAY42 READING mode=demote order=o1 arm=s2 e2e N=50 median=179.25 min=174.01 max=205.33 | wall N=40 median=104.60 min=103.80 max=104.90 | copy-settle N=40 median=0.30 min=0.23 max=0.36 | owner-held N=40 median=1.44 min=1.13 max=1.64 | pin N=0 | steady polls [] (counts [])
+DAY42 READING mode=demote order=o2 arm=g4 e2e N=50 median=176.25 min=175.08 max=202.46 | wall N=40 median=101.55 min=101.10 max=101.90 | copy-settle N=40 median=0.27 min=0.22 max=0.33 | owner-held N=40 median=1.38 min=1.15 max=1.58 | pin N=0 | steady polls [] (counts [])
+DAY42 READING mode=demote order=o2 arm=s2 e2e N=50 median=179.32 min=175.07 max=205.52 | wall N=40 median=104.60 min=104.20 max=104.80 | copy-settle N=40 median=0.30 min=0.25 max=0.35 | owner-held N=40 median=1.43 min=1.35 max=1.53 | pin N=0 | steady polls [] (counts [])
+DAY42 S2 C order=o1 wall g4=101.45 s2=104.60 s2-minus-g4=+3.15 rule <=+8.0 | e2e g4=176.08 s2=179.25 s2-minus-g4=+3.16 rule <=+1.0 -> FAIL
+DAY42 S2 C order=o2 wall g4=101.55 s2=104.60 s2-minus-g4=+3.05 rule <=+8.0 | e2e g4=176.25 s2=179.32 s2-minus-g4=+3.06 rule <=+1.0 -> FAIL
+DAY42 S2 DEMOTE -> FAIL
