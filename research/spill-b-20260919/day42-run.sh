@@ -12,6 +12,13 @@ RIG_LOCK=${RIG_LOCK:-/tmp/memra-5090.lock}
 BIN=${BIN:-$WT/target/day42/tip/memra-server}
 HOST_MB=${HOST_MB:-8192}
 BURST=${BURST:-32}
+# DAY42 addendum C: the warm set, the warm requests' output, and the open-output charge per card.
+WARM=${WARM:-8}
+WARM_TOKENS=${WARM_TOKENS:-8192}
+WARM_MAX_TOKENS=${WARM_MAX_TOKENS:-1}
+OPEN_OUTPUT=${OPEN_OUTPUT:-8192}
+# DAY42 addendum D: the burst's request-supplied context (0 = open output).
+BURST_MAX_CTX=${BURST_MAX_CTX:-0}
 cd "$WT" || exit 1
 mkdir -p "$R/boots"
 log() { echo "$(date -u +%FT%TZ) $*" >> "$R/run.log"; }
@@ -26,7 +33,7 @@ export LOCK=$RIG_LOCK RIGDIR="$R/boots" N=1 CLIENT=day42-client.py PARSER=day42-
 for spec in "$@"; do
   IFS=: read -r name arm <<< "$spec"
   uenv=(-u MEMRA_ADMIT_RECLAIM_OFFTICK -u MEMRA_KV_HOST_CONTRACTS -u MEMRA_KV_HOST_FAULT -u MEMRA_PREFIX_CACHE_MB)
-  aenv=(MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 "MEMRA_KV_HOST_MB=$HOST_MB")
+  aenv=(MEMRA_ADMIT_BY_MEMORY=1 "MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=$OPEN_OUTPUT" "MEMRA_KV_HOST_MB=$HOST_MB")
   case $arm in
     ontick) aenv+=(MEMRA_KV_HOST_CONTRACTS=1) ;;
     offtick) aenv+=(MEMRA_KV_HOST_CONTRACTS=1 MEMRA_ADMIT_RECLAIM_OFFTICK=1) ;;
@@ -43,7 +50,7 @@ for spec in "$@"; do
     [ $waited = 0 ] && log "boot $name: waiting for an idle rig"
     waited=1; sleep 30
   done
-  args="--burst $BURST"
+  args="--burst $BURST --warm $WARM --warm-tokens $WARM_TOKENS --warm-max-tokens $WARM_MAX_TOKENS --burst-max-ctx $BURST_MAX_CTX"
   log "boot $name start arm=$arm bin=$(sha256sum "$BIN" | cut -c1-16) env=[${aenv[*]}] args=[$args]"
   printf 'arm=%s\nbin_sha256=%s\nenv=%s\nclient_args=%s\n' "$arm" "$(sha256sum "$BIN" | cut -d' ' -f1)" "${aenv[*]}" "$args" \
     > "$R/boots/$name.arm.txt"

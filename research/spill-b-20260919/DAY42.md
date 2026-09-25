@@ -222,3 +222,15 @@ DAY42 READING card=pro6000 boot=fault-sources-helper-gone tenant_gap_ms_in_burst
   max 13 to 15 s (a reading; without a flush it is the burst's own admission and prime work).
 
 Addendum C (1.10) pre-registers the shape that reaches the flush.
+
+### 1.11 Addendum D (2026-09-25, while writing addendum C's chains, before any cell of that shape)
+
+Addendum C's pressure (a large open-output value) makes every admitted burst arrival generate up to that value
+(131,072 tokens of raw document continuation on the target card: hours per boot). The pressure is the booked and
+allocated context, not the output, so:
+
+- **The burst arrivals send `max_tokens=64` and `max_ctx = 2,048 + M`** (M = 131,072 on the target card, 32,768 on the
+  5090). A request-supplied `max_ctx` is the charged and allocated context (`request_ctx_cap`'s authoritative arm), so
+  each arrival books and allocates M + 2,048 rows and generates 64 tokens. `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` stays at its
+  8,192 default (no burst request is open-output).
+- Everything else of addendum C stands (the warm set at `max_tokens=16`, the P0 line).

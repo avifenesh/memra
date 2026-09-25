@@ -93,6 +93,27 @@ for n in names:
     say(f"DAY42 F3 card={card} boot={n} oom_lines={oom} crash_lines={crash} r503={r503} bad_429={bad429[:4]} "
         f"burst_status={dict(sorted(status.items(), key=str))} counts={counts(n)} -> {'PASS' if ok else 'FAIL'}")
 
+# ---- P0 exercised (addendum C): the warm entries published before the burst, and the reclaim passes --------------
+def exercised(n):
+    t, m = log(n), marks(n)
+    b0 = m.get("burst_start_ms")
+    warm_pub = 0
+    for line in t.splitlines():
+        mm = re.match(r"(\d+) \[prefix-cache\] insert \([^)]*\): \d+ tokens.*ns \"warm\"\)", line)
+        if mm and b0 and int(mm.group(1)) < b0:
+            warm_pub += 1
+    passes = len(re.findall(r"verdict=(?:defer|refuse|demote-then-admit)", t))
+    c = counts(n)
+    ran = c["ontick_demoted"] + c["plans"]
+    return warm_pub, passes, ran
+
+
+for n in names:
+    if have(n):
+        w, p, ran = exercised(n)
+        say(f"DAY42 P0 card={card} boot={n} warm_published_before_burst={w} memory_verdict_lines={p} flush_runs={ran} "
+            f"-> {'EXERCISED' if w > 0 and ran > 0 else 'NOT-EXERCISED'}")
+
 # ---- F1 identity and F2 the flush ran ---------------------------------------------------------------------------
 for order in ("O1", "O2"):
     on, off = f"ontick-{order}", f"offtick-{order}"

@@ -22,9 +22,14 @@ ap.add_argument("--n", default=None, help="run-day26-cell.sh passes it; unused")
 ap.add_argument("--order", default=None, help="run-day26-cell.sh passes it; unused")
 ap.add_argument("--warm", type=int, default=8)
 ap.add_argument("--warm-tokens", type=int, default=8192)
+ap.add_argument("--warm-max-tokens", type=int, default=1,
+                help="addendum C: 16, so the spec route's burst publishes each warm entry (1 publishes nothing)")
 ap.add_argument("--tenants", type=int, default=4)
 ap.add_argument("--tenant-tokens", type=int, default=2048)
 ap.add_argument("--burst", type=int, default=32)
+ap.add_argument("--burst-max-ctx", type=int, default=0,
+                help="addendum D: each burst arrival sends max_ctx = this and max_tokens = --burst-max-tokens (0: open output)")
+ap.add_argument("--burst-max-tokens", type=int, default=64)
 ap.add_argument("--timeout-s", type=int, default=3600)
 ap.add_argument("--serving-md", default=os.path.join(os.path.dirname(__file__), "..", "..", "docs", "SERVING.md"))
 a = ap.parse_args()
@@ -61,11 +66,13 @@ def take(n):
     return s
 
 
-def call(tag, phase, ids, max_tokens, salt, record_gaps=False):
+def call(tag, phase, ids, max_tokens, salt, record_gaps=False, max_ctx=None):
     body = {"model": a.model, "prompt_ids": ids, "temperature": 0, "stream": True,
             "stream_options": {"include_usage": True}, "cache_salt": salt}
     if max_tokens is not None:
         body["max_tokens"] = max_tokens
+    if max_ctx:
+        body["max_ctx"] = max_ctx
     submit = now()
     first = last = None
     gaps, parts = [], []
@@ -117,7 +124,7 @@ def call(tag, phase, ids, max_tokens, salt, record_gaps=False):
 marks["warm_start_ms"] = now()
 warm = [take(a.warm_tokens) for _ in range(a.warm)]
 for i, ids in enumerate(warm):
-    call(f"warm-{i}", "warm", ids, 1, "warm")
+    call(f"warm-{i}", "warm", ids, a.warm_max_tokens, "warm")
 marks["warm_end_ms"] = now()
 # 2. tenants, started together, then 3. the burst while they run
 tenants = [threading.Thread(target=call, args=(f"tenant-{i}", "tenant", take(1024), a.tenant_tokens, f"tenant-{i}", True))
@@ -126,7 +133,9 @@ marks["tenants_start_ms"] = now()
 for th in tenants:
     th.start()
 time.sleep(3.0)
-bursts = [threading.Thread(target=call, args=(f"burst-{i}", "burst", take(2048), None, f"burst-{i}"))
+bmt = a.burst_max_tokens if a.burst_max_ctx else None
+bursts = [threading.Thread(target=call, args=(f"burst-{i}", "burst", take(2048), bmt, f"burst-{i}", False,
+                                              a.burst_max_ctx or None))
           for i in range(a.burst)]
 marks["burst_start_ms"] = now()
 for th in bursts:
