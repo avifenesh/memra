@@ -949,10 +949,14 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             // Host-only adapter serializes policy decisions at successful publication.
             // A prefetch hit is a no-op, not demand heat. Duplicate IDs retain order.
             for id in &p.ids {
-                if policy.resident(id).is_some() {
-                    if p.demand {
-                        policy.hit(id);
-                    }
+                // Day 61 (I11 change 3): one SLRU lookup per id; `hit` answers residency and
+                // promotes as it did after the separate check.
+                let resident = if p.demand {
+                    policy.hit(id)
+                } else {
+                    policy.resident(id).is_some()
+                };
+                if resident {
                     continue;
                 }
                 let lease = &p.records[id];
