@@ -221,7 +221,7 @@ runs as a descriptive serving row.
 ### B5 io_uring decision input
 
 From B0's scored screen: if `io_uring` beats `psync` threads by at least 5% at the worker's
-operating point, or matches it at 10% less CPU per GiB, the lead assigns the memra ring from
+operating point (with 4 of 5 rounds agreeing in each order), or matches it (median bandwidth ratio at least 0.97) at 10% less CPU per GiB (both clarifications registered 2026-09-25 with the runner, before any run), the lead assigns the memra ring from
 `spill-a-20260919/IO-URING-PROPOSAL.md` and its own AB against `worker16` becomes a B3 arm;
 otherwise io_uring stays deferred with this receipt as the reason.
 

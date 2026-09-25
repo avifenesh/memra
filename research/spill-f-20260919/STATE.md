@@ -1,21 +1,22 @@
-# WP-F resumable state (2026-09-25, stopped at NEED BOX)
+# WP-F resumable state (2026-09-25, stopped: box pending; CPU prerequisites complete)
 
-- Lane `lane/spill-f-20260919`, worktree `wt-spill-f`. Resynced 2026-09-25: the branch was fully
-  contained in `origin/main`, fast-forwarded to `5228ff0cd` (no conflicts). Upstream unset so the
-  pre-push range is measured against `origin/main`; pushes of this branch carry main's engine
-  files relative to the old remote tip, so they go out with
-  `MEMRA_RELEASE_QUALIFICATION_MODE=development` (logged by the hook).
-- Plan of record: `M1-PREREG.md` (proof chain A, cells B0 to B6, routes C). Ledger: `OWED.md`.
-- Done: proof tool `m1-nvme-proof.py` (24/24 fixture, 7/7 live controls, `M1-PROOF-CONTROLS.md`);
-  this rig's artifact store and root filesystem proven `nvme-local-direct`; direct-arm alignment
-  census of the pinned artifact (0 of 31,488 slices O_DIRECT-admissible); B3 arm lock and prompt
-  frozen in `m1-prereg/`.
-- **NEED BOX** for the M1 proof and cells: one RTX PRO 6000, docker instance with a host-local
-  volume at `/scratch`, whole machine, 600 W. Ranked offers and quotes: private
-  `LANE-LOCAL-NVME.md` (worktree root, excluded through the common `info/exclude`).
-- CPU work that does not need the box, in order: OWED 7 (aligned over-read in the direct worker),
-  8 (per-stage spill counters), 9 (`storage-bench` io_ns), 10 (host/storage sampler), 11 (cache
-  regimes), 12 (cell runner), 13 (B2 driver), 14 (collector proof binding, D-owned file).
-  B3's `direct16` arm stays refused until 7 lands; B1 through the collector waits on 14.
-- Private receipts (not scratch, retained): `~/.local/share/memra-lane-f-private/m1-proof-controls/`.
-- Scratch: none. The read-only search dumps under `/tmp/spill-f-m1/` were removed at stop.
+- Lane `lane/spill-f-20260919`, worktree `wt-spill-f`, branch contains `origin/main` `5228ff0cd`
+  (no newer main at the last fetch). Upstream unset; pushes use
+  `MEMRA_RELEASE_QUALIFICATION_MODE=development` (engine files in range; logged).
+- Plan of record: `M1-PREREG.md` (A proof, B0 to B6 cells, C routes, B2 amendment). Ledger: `OWED.md`.
+  CPU-side registration of the prerequisites: `CPU-PREREG.md`.
+- Landed CPU-verified today: proof tool (`M1-PROOF-CONTROLS.md`); OWED 7 direct over-read
+  (`owed7/`); OWED 8 stage counters (`owed8/`); OWED 9 storage-bench timing (`owed9/`); OWED 10
+  sampler (`owed10/`); OWED 11 cache regimes (`owed11/`); OWED 12 B3 runner (`owed12/`); OWED 13
+  B2 driver plus `kv-handoff-gate` seam (`owed13/`); OWED 14 collector patch and test, not
+  applied (`owed14/`, lead routes to D); B0 runner (`b0/`).
+- Box: the lead rents rank 1 of `LANE-LOCAL-NVME.md` with a 600 GB local volume at `/scratch`
+  after lane A releases it (about 17:00Z), runs the proof first, hands it over only on
+  `M1-PROOF verdict=PASS`.
+- On the box, in order: bootstrap (CUDA 13 toolchain, `apt-get install -y fio`), build
+  `run-gen`, `run-spec`, `memra-server`, `kv-handoff-gate`, `storage-bench`, `h2d_probe` at one
+  commit; stage and re-hash the artifact on `/scratch/spill-f`; generate the B2 prompts and check
+  the manifest; then B0, OWED 7's pinned-pool GPU test, B1, B3 (cold, warm, bounded), `run-spec`
+  cells, B2 (1 GiB, 8 GiB), B4, B6. `direct16` enters B3 only after the pinned-pool test passes.
+- Private receipts (retained, not scratch): `~/.local/share/memra-lane-f-private/`.
+- Scratch: none. No process of this lane is running.
