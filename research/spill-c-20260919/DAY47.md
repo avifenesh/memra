@@ -48,3 +48,29 @@ I2 stays if (i) and (ii) hold; (ii) holding with (i) failing is recorded as the 
 
 **What each card can decide.** The RTX 5090 decides (i) and (ii) here; the target card reads them in the ladder (its
 host is a different CPU and PCIe generation; nothing is compared across cards).
+
+## 2. Results, cell `pinned` (RTX 5090 Laptop GPU, `rtx5090-day47/pinned/`)
+
+One collector hold, 23:49:50Z to 23:56:07Z, 30 runs, tree `59c6b9ac0`, binaries `run-gen-i1` `0d90e124...` and
+`run-gen-i2` `974a7e4b...`, the approved artifact, the runner under the 1200% cap. Regime (`regime.log`, 250 ms,
+N=1495): SM 1027 to 2790 MHz, power 28.4 to 158.5 W, 56 to 70 C. Collector `--validate` rc=0.
+
+Verbatim (`pinned/reading.log`):
+
+`DAY47 PINNED CHECKS rig=rtx5090 runs=30 integrity=ok`
+
+`DAY47 ARM i1 window_door_ms_per_token=3.23 gen_door_ms_per_token=11.59 window_s median=0.434 iqr=0.004 | per window token: gpu_misses=92.3 host_hits=92.3 demand=0.898 enqueue=3.187 copy_gpu=4.458 wait=0.000 retire=0.061 finish=0.002 alloc=0.000 step=0.000 miss_total=4.504`
+
+`DAY47 ARM i2 window_door_ms_per_token=0.91 gen_door_ms_per_token=4.97 window_s median=0.360 iqr=0.002 | per window token: gpu_misses=92.3 host_hits=92.3 demand=0.801 enqueue=0.179 copy_gpu=2.194 wait=0.000 retire=0.054 finish=0.002 alloc=0.000 step=0.000 miss_total=1.360`
+
+`DAY47 CLAUSE (i) i2_minus_i1 window o1=-0.074 o2=-0.075 noise=0.004 rule < -noise both orders -> PASS`
+
+`DAY47 CLAUSE (ii) enqueue per window token i1=3.187 i2=0.179 rule i2 < 0.5 x i1 -> PASS`
+
+`DAY47 READING copy_gpu per window token i1=4.458 i2=2.194 -> copy_lower`
+
+`DAY47 PINNED rig=rtx5090 integrity=ok clause_i=PASS clause_ii=PASS`
+
+I2 stays: the H2D is a pinned DMA enqueue (3.19 to 0.18 ms per token), the copy itself halves (4.46 to 2.19), and the
+window door cost falls 3.23 to 0.91 ms per token. It is also the fix section 3 of `DAY43.md` names for I6's
+default-budget regression (no per-read `Vec`, no assembly copy); `residfix` checks it on the final tree.
