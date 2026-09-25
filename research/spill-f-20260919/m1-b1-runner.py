@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """M1 B1: KV ObjectStore storage cells on the proven path (M1-PREREG.md B1).
 
-  run --bench storage-bench --root DIR --proof PRIVATE_PROOF.json --out DIR --rig pro-single
-      --lock-fd N [--rounds 10] [--sizes ...] [--stub-no-lock]
+  run --bench storage-bench --root DIR --proof PRIVATE_PROOF.json --public-proof PROOF.json --out DIR
+      --rig pro-single [--rounds 10] [--sizes ...] [--smoke] [--stub-no-lock]
+
+Every visit is its own collector invocation (`tools/tier-battery.py --storage-root DIR
+--storage-proof PROOF.json --execute storage-bench PHASE OBJ BYTES MODE`): the collector's storage
+guard refuses storage-bench behind any wrapper, so the exact argv, the proof binding, the rig
+lock and the 250 ms GPU telemetry are the collector's per visit, and this runner only
+orchestrates the order, the regimes and the host sampler around each one.
 
 Per size: one restore object written once (buffered roundtrip, fsync'd by the store); then ten
 rounds, odd forward and even reversed over the three modes (buffered, uncached = O_DIRECT reads,
@@ -77,15 +83,27 @@ def visit(args, bench, phase, mode, size, obj, vdir, identity, leaves, top):
     while not (host.exists() and host.read_text().count("\n") >= 2):
         B.require(sampler.poll() is None and time.monotonic() < deadline, "sampler did not start")
         time.sleep(0.02)
+    if args.stub_no_lock:
+        argv = [str(bench), phase, str(obj), str(size), mode]
+    else:
+        argv = [sys.executable, str(ROOT / "tools/tier-battery.py"), "--rig", args.rig, "--timeout", "900",
+                "--storage-root", str(args.root), "--storage-proof", str(args.public_proof),
+                "--out", str(vdir / "collector"), "--execute", str(bench), phase, str(obj), str(size), mode]
     with (vdir / "stdout.log").open("xb") as out, (vdir / "stderr.log").open("xb") as err:
-        child = subprocess.Popen([str(bench), phase, str(obj), str(size), mode], stdout=out, stderr=err)
+        child = subprocess.Popen(argv, stdout=out, stderr=err)
     _, status, usage = os.wait4(child.pid, 0)
     code = os.waitstatus_to_exitcode(status)
     time.sleep(0.3)
     sampler.send_signal(signal.SIGTERM)
     sampler.wait(timeout=10)
-    sample, stages = parse((vdir / "stdout.log").read_text(errors="replace"),
-                           (vdir / "stderr.log").read_text(errors="replace"))
+    if args.stub_no_lock:
+        sample, stages = parse((vdir / "stdout.log").read_text(errors="replace"),
+                               (vdir / "stderr.log").read_text(errors="replace"))
+    else:
+        # The collector tees storage-bench's stdout and stderr together into command.log.
+        text = (vdir / "collector" / "command.log").read_text(errors="replace") \
+            if (vdir / "collector" / "command.log").exists() else ""
+        sample, stages = parse(text, text)
     problems = []
     if code != 0:
         problems.append(f"exit {code}")
@@ -103,7 +121,8 @@ def visit(args, bench, phase, mode, size, obj, vdir, identity, leaves, top):
     rec.update(exit_code=code, sample=sample, stages=stages, problems=problems, telemetry_ok=not tel,
                contamination=RUNNER.contamination(ticks, leaves, own), own_io=own,
                cpu_s=usage.ru_utime + usage.ru_stime,
-               raw_sha256={n: RUNNER.sha(vdir / n) for n in ("stdout.log", "stderr.log")})
+               raw_sha256={n: RUNNER.sha(vdir / n) for n in ("stdout.log", "stderr.log")},
+               own_io_note="wait4 rusage of the collector process tree (storage-bench plus the collector's own small I/O)")
     c = rec["contamination"]
     rec["clean_timing"] = bool(rec["telemetry_ok"] and rec.get("regime_ok", True) and c is not None
                                and c["foreign_share"] <= args.contamination_limit)
@@ -163,10 +182,8 @@ def run(args):
                   "--stub-no-lock is only for a stub or a debug build")
         lock = {"stub": True}
     else:
-        proc = subprocess.run([sys.executable, str(ROOT / "tools/tier-lock-proof.py"), "--fd", str(args.lock_fd),
-                               "--lock", B.LOCKS[args.rig]], pass_fds=(args.lock_fd,), capture_output=True, text=True)
-        B.require(proc.returncode == 0, f"lock proof failed: {proc.stderr.strip()}")
-        lock = json.loads(proc.stdout)
+        B.require(args.public_proof is not None, "--public-proof (the collector's --storage-proof) required")
+        lock = {"per_visit": "each visit's collector takes the canonical lock and records lock.json"}
     proof, identity, leaves, top = RUNNER.proof_view(args.proof)
     root = Path(args.root)
     B.require(B.filesystem_identity(root) == identity, "B1 root is not on the proven filesystem")
@@ -177,8 +194,12 @@ def run(args):
     visits = []
     for size in sizes:
         obj = root / f"restore-{size}"
-        prep = subprocess.run([str(args.bench), "roundtrip", str(obj), str(size), "buffered"],
-                              capture_output=True, text=True)
+        prep_argv = [str(args.bench), "roundtrip", str(obj), str(size), "buffered"]
+        if not args.stub_no_lock:
+            prep_argv = [sys.executable, str(ROOT / "tools/tier-battery.py"), "--rig", args.rig, "--timeout", "900",
+                         "--storage-root", str(args.root), "--storage-proof", str(args.public_proof),
+                         "--out", str(args.out / f"prepare-{size}-collector"), "--execute", *prep_argv]
+        prep = subprocess.run(prep_argv, capture_output=True, text=True)
         (args.out / f"prepare-{size}.log").write_text(prep.stdout + "\n--- stderr ---\n" + prep.stderr)
         B.require(prep.returncode == 0, f"restore object for {size} failed; see prepare-{size}.log")
         for r in range(args.rounds):
@@ -196,7 +217,7 @@ def run(args):
                     print(f"M1-B1 size={size} r{r + 1} {mode} {phase} scored={v['scored']} "
                           f"read={v.get('read_bytes_per_s', 0) / 1e6:.1f}MB/s problems={v['problems']}", flush=True)
         shutil.rmtree(obj)
-    summary = {"cells": summarize(visits, sizes, args.rounds), "visits": len(visits),
+    summary = {"cells": {} if args.smoke else summarize(visits, sizes, args.rounds), "smoke": args.smoke, "visits": len(visits),
                "failed": sum(1 for v in visits if v["problems"]), "qualified": False}
     (args.out / "summary.json").write_text(json.dumps(summary, indent=1) + "\n")
     for key, cell in summary["cells"].items():
@@ -213,14 +234,15 @@ def main(argv=None):
     for name in ("--bench", "--root", "--proof", "--out"):
         r.add_argument(name, required=True)
     r.add_argument("--rig", choices=["pro-single", "rtx5090"], default="pro-single")
-    r.add_argument("--lock-fd", type=int)
+    r.add_argument("--public-proof")
+    r.add_argument("--smoke", action="store_true", help="one round on the given sizes, never scored")
     r.add_argument("--rounds", type=int, default=10)
     r.add_argument("--sizes")
     r.add_argument("--contamination-limit", type=float, default=0.02)
     r.add_argument("--stub-no-lock", action="store_true")
     args = ap.parse_args(argv)
-    B.require(args.stub_no_lock or args.lock_fd is not None, "--lock-fd (inherited canonical lock) required")
-    B.require(args.stub_no_lock or (args.rounds == 10 and not args.sizes and args.contamination_limit == 0.02),
+    B.require(args.stub_no_lock or (args.smoke and args.rounds == 1) or
+              (args.rounds == 10 and not args.sizes and args.contamination_limit == 0.02),
               "the registered protocol is 10 rounds over the six sizes at a 2% co-tenancy limit")
     return run(args)
 
