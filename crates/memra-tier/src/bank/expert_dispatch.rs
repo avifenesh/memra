@@ -113,19 +113,27 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> SlruExpertDispatch<H, R> {
         self.bank.admit_filled(&id, bytes, digest, &self.request)
     }
 }
-impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpertDispatch<H, R> {
-    fn validate(&self, local: ExpertDispatchId, bytes: usize) -> Result<()> {
+impl<H: Hotness<ExpertDomain>, R: ExactReader> SlruExpertDispatch<H, R> {
+    /// The record behind `local` when its payload holds exactly `bytes`: the one validation
+    /// `validate` and `demand` share.
+    fn validated(&self, local: ExpertDispatchId, bytes: usize) -> Result<&BankId> {
         let id = self.ids.get(&local).ok_or(Error::NotFound)?;
         let layout = self.bank.layout(id)?;
         if layout.segments[0].valid_bytes != bytes as u64 {
             return Err(Error::InvalidLayout);
         }
-        Ok(())
+        Ok(id)
+    }
+}
+impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpertDispatch<H, R> {
+    fn validate(&self, local: ExpertDispatchId, bytes: usize) -> Result<()> {
+        self.validated(local, bytes).map(|_| ())
     }
     fn demand(&mut self, local: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand> {
-        self.validate(local, bytes)?;
+        // Day 61 (I11 change 4): the id validated is the id staged; one lookup.
+        let ids = vec![self.validated(local, bytes)?.clone()];
         let ticket = self.bank.stage(BankBatch {
-            ids: vec![self.ids[&local].clone()],
+            ids,
             epochs: self.epochs,
             request: self.request.clone(),
         })?;

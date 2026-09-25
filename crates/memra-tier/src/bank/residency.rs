@@ -447,7 +447,9 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         digest: Digest,
         request: &BudgetRequest,
     ) -> Result<FillOutcome> {
-        let record = self.catalog.record(id)?.clone();
+        let entry = self.catalog.entry(id)?;
+        let resident_charge = entry.resident_charge_bytes();
+        let record = entry.record.clone();
         let layout = &record.layout;
         if layout.segments.len() != 1 || layout.segments[0].role != Role::Payload {
             return Err(Error::Unsupported);
@@ -479,7 +481,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         };
         let mut charge_request = request.clone();
         charge_request.bytes = TierBudget::zero(charge_request.bytes.device.len());
-        charge_request.bytes.pageable = record.resident_charge_bytes(id)?;
+        charge_request.bytes.pageable = resident_charge?;
         let charge = match self.budget.borrow_mut().reserve(&charge_request) {
             Ok(charge) => charge,
             Err(_) => {
@@ -725,21 +727,40 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         {
             return Err(Error::Unsupported);
         }
+        // Day 61 (I11 change 2): each id's catalog entry is read once, for its logical bytes and
+        // its metadata allowance; the allowance's sum refuses at the point it always did.
         let mut logical = 0u64;
+        let mut metadata = Some(0u64);
         for id in &batch.ids {
+            if !D::accepts(&id.record) {
+                return Err(Error::InvalidLayout);
+            }
+            let entry = self.catalog.entry(id)?;
             logical = logical
-                .checked_add(self.layout(id)?.storage_bytes()?)
+                .checked_add(entry.record.layout.storage_bytes()?)
                 .ok_or(Error::Overflow)?;
+            metadata = metadata.and_then(|n| n.checked_add(entry.metadata));
         }
         if logical > self.limits.batch_bytes {
             return Err(Error::Capacity);
         }
         let unique: BTreeSet<_> = batch.ids.iter().cloned().collect();
-        let missing: Vec<_> = unique
-            .iter()
-            .filter(|id| !self.cache.contains_key(id))
-            .map(|id| Ok((id.clone(), self.catalog.record(id)?.clone())))
-            .collect::<Result<_>>()?;
+        // Day 61 (I11 change 2): the host cache is read once per unique id, for a cached lease
+        // or a missing record. Nothing below changes the cache before the ticket is recorded.
+        let mut missing = Vec::new();
+        let mut records = BTreeMap::new();
+        for id in unique {
+            match self.cache.get(&id) {
+                Some(lease) => {
+                    let lease = lease.clone();
+                    records.insert(id, lease);
+                }
+                None => {
+                    let record = self.catalog.record(&id)?.clone();
+                    missing.push((id, record));
+                }
+            }
+        }
         let plan = plan_reads(&missing, logical, &self.reader, self.policy)?;
         let sequence = self.sequence.checked_add(1).ok_or(Error::Overflow)?;
         let ticket = TransferTicket {
@@ -750,17 +771,11 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         // Charge output, slot and bounded metadata through one injected governor.
         // Canonical metadata + conservative per-node allowance is an estimate;
         // allocator/RSS calibration remains a native integration gate.
-        let output_bytes = missing.iter().try_fold(0u64, |n, (id, r)| {
-            n.checked_add(r.resident_charge_bytes(id)?)
+        let output_bytes = missing.iter().try_fold(0u64, |n, (id, _)| {
+            n.checked_add(self.catalog.entry(id)?.resident_charge_bytes()?)
                 .ok_or(Error::Overflow)
         })?;
-        let metadata = batch.ids.iter().try_fold(0u64, |n, id| {
-            n.checked_add(
-                (id.encode()?.len() + self.catalog.record(id)?.layout.encode()?.len() + 1024)
-                    as u64,
-            )
-            .ok_or(Error::Overflow)
-        })?;
+        let metadata = metadata.ok_or(Error::Overflow)?;
         let slot = if missing.is_empty() {
             0
         } else {
@@ -776,10 +791,10 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         queue_request.bytes.inflight = queue_request.bytes.inflight.max(1);
         let queue = self.budget.borrow_mut().reserve(&queue_request)?;
         let mut charges = Vec::new();
-        for (id, r) in &missing {
+        for (id, _) in &missing {
             let mut request = batch.request.clone();
             request.bytes = TierBudget::zero(request.bytes.device.len());
-            request.bytes.pageable = r.resident_charge_bytes(id)?;
+            request.bytes.pageable = self.catalog.entry(id)?.resident_charge_bytes()?;
             let result = self.budget.borrow_mut().reserve(&request);
             match result {
                 Ok(charge) => charges.push(charge),
@@ -851,10 +866,6 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             })
             .collect();
         let producer_done = missing.is_empty();
-        let records = unique
-            .into_iter()
-            .filter_map(|id| self.cache.get(&id).map(|l| (id, l.clone())))
-            .collect();
         self.pending.insert(
             ticket,
             Pending {
@@ -938,10 +949,14 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             // Host-only adapter serializes policy decisions at successful publication.
             // A prefetch hit is a no-op, not demand heat. Duplicate IDs retain order.
             for id in &p.ids {
-                if policy.resident(id).is_some() {
-                    if p.demand {
-                        policy.hit(id);
-                    }
+                // Day 61 (I11 change 3): one SLRU lookup per id; `hit` answers residency and
+                // promotes as it did after the separate check.
+                let resident = if p.demand {
+                    policy.hit(id)
+                } else {
+                    policy.resident(id).is_some()
+                };
+                if resident {
                     continue;
                 }
                 let lease = &p.records[id];

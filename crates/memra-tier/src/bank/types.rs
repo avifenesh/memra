@@ -15,17 +15,32 @@ pub struct CatalogRecord {
     pub layout: RecordLayout,
     pub checksums: Vec<Digest>,
 }
-impl CatalogRecord {
-    pub(crate) fn resident_charge_bytes(&self, id: &BankId) -> Result<u64> {
-        self.layout
+/// A ticket's metadata allowance for one record: the canonical encodings of its id and layout
+/// plus a conservative 1024-byte per-node allowance. A pure function of the immutable catalog
+/// entry, so `Catalog::new` computes it once per record (day 61, I11 change 1,
+/// `research/spill-c-20260919/DAY61.md`); every ticket reads that value.
+pub(crate) fn ticket_metadata(id: &BankId, layout: &RecordLayout) -> Result<u64> {
+    Ok((id.encode()?.len() + layout.encode()?.len() + 1024) as u64)
+}
+/// One retained catalog record with its ticket metadata allowance.
+pub(crate) struct CatalogEntry {
+    pub(crate) record: CatalogRecord,
+    /// `ticket_metadata(id, &record.layout)`, computed at `Catalog::new`.
+    pub(crate) metadata: u64,
+}
+impl CatalogEntry {
+    /// The record's resident charge: its storage bytes plus its metadata allowance.
+    pub(crate) fn resident_charge_bytes(&self) -> Result<u64> {
+        self.record
+            .layout
             .storage_bytes()?
-            .checked_add((id.encode()?.len() + self.layout.encode()?.len() + 1024) as u64)
+            .checked_add(self.metadata)
             .ok_or(Error::Overflow)
     }
 }
 pub struct Catalog {
     pub(crate) class: LayoutClass,
-    pub(crate) entries: BTreeMap<BankId, Option<CatalogRecord>>,
+    pub(crate) entries: BTreeMap<BankId, Option<CatalogEntry>>,
 }
 impl Catalog {
     pub fn new(class: LayoutClass, entries: Vec<(BankId, Option<CatalogRecord>)>) -> Result<Self> {
@@ -62,7 +77,14 @@ impl Catalog {
                     uniform = Some(layout.clone());
                 }
             }
-            if map.insert(id, record).is_some() {
+            let entry = match record {
+                Some(record) => Some(CatalogEntry {
+                    metadata: ticket_metadata(&id, &record.layout)?,
+                    record,
+                }),
+                None => None,
+            };
+            if map.insert(id, entry).is_some() {
                 return Err(Error::Conflict);
             }
         }
@@ -72,6 +94,15 @@ impl Catalog {
         })
     }
     pub fn record(&self, id: &BankId) -> Result<&CatalogRecord> {
+        Ok(&self.entry(id)?.record)
+    }
+    /// The ticket metadata allowance `Catalog::new` computed for `id` (day 61); the same
+    /// refusals as `record`.
+    pub fn metadata_allowance(&self, id: &BankId) -> Result<u64> {
+        Ok(self.entry(id)?.metadata)
+    }
+    /// The record with its ticket metadata allowance; the same refusals as `record`.
+    pub(crate) fn entry(&self, id: &BankId) -> Result<&CatalogEntry> {
         id.validate()?;
         self.entries
             .get(id)
