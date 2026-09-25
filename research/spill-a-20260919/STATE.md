@@ -1,13 +1,15 @@
-# WP-A resumable state (2026-09-25, day 51 read and closed)
+# WP-A resumable state (2026-09-26, day 55 closed; stopped at an integrable milestone)
 
-- Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ62 (#726, main `5228ff0cd`) merged A days 42 to 48; main
-  is merged into the lane (`ff41669d1`).
-- Items 7 and 8 closed (DAY49 section 3: `-> H attributed`, `-> b1 step attributed to H`). Item 9 closed (DAY50
-  section 3).
-- Item 17: design P ran on BOX22 (a 9950X host) and FAILED (g) in both orders (the chained request +1.40 / +1.54 ms
-  against +1.0; (a) to (f) pass: the copy -15.2 ms, the publication -12.4 ms where the tier fills). Reverted in one
-  commit (`a089a5c25`); the crates equal `e4de9c804`'s. Receipts `pro-single-p/box/` (1040 of 1040). BOX22 released.
-- Next: item 17's revision, pre-registered anew (a split of the publication segment to place the chain's millisecond,
-  and a reserve that refills only while the copy would fault); then items 10 to 14 (19 with 14), then 18 and 20; the
-  three 5090 cells after the card's reset.
+- Lane `lane/spill-a-20260919`; worktree `wt-spill-a`; remote tip `50fb33bc9`. The lead carries days 49 to 54 into
+  integ63; days 55 onward are new.
+- Resync after the rig reboot: the interrupted R2 cell (51 runs of T-a, its binary lost with `/tmp`) is void and banked
+  as `day55/no_progress_source_is_the_pre_fix_beat_a/r2-interrupted/`; R2 was re-run whole.
+- Item 22 closed (DAY55): T-a fixed in `health.rs` (one clock sample per snapshot and verdict); T-b, T-c and T-e fixed in
+  their tests (tokio's paused clock; the step clock with a test-only health clock and a non-blocking guard; the
+  coalescer's window a field with two mechanism cells). Accepted: R1 and R2 0 of 100 each, red arms 10 of 10, arm A 100
+  of 100 and arm B 98 of 100 full suites. T-d not reproduced, unchanged. New: items 24 and 25 (arm B's two other reds).
+- Item 10: priced (DAY54); the fanout design owed. Item 17 blocked on 14. Item 21 closed.
+- Next: item 23 (F1's +1.47 s: the admission counters injected so the writer tests need no lock), then 24 and 25, then
+  the fanout design, then items 11 to 14 (19 with 14, 17 on top), 18 and 20; the 5090 is back, so its three owed cells
+  (S4's half, V's half, item 16) run under `/tmp/memra-5090.lock` in their place in the order.
 - Local scratch: none.

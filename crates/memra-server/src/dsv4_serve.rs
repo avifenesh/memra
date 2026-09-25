@@ -1410,6 +1410,10 @@ struct Coalescer<S> {
     /// groups, two concurrent requests run as two pipelined one-row steps (the two cards
     /// overlap) and four run as two pipelined groups of two.
     groups: usize,
+    /// How long a partial batch waits for the remaining lanes (`ROW_BATCH_WAIT` in production;
+    /// WP-A day 55, `research/spill-a-20260919/DAY55.md`: a field so the mechanism's cells can set
+    /// a window a starved test runner cannot race).
+    window: std::time::Duration,
     inner: std::sync::Mutex<CoalesceState<S>>,
     cv: std::sync::Condvar,
 }
@@ -1452,9 +1456,13 @@ const ROW_BATCH_WAIT: std::time::Duration = std::time::Duration::from_micros(500
 
 impl<S> Coalescer<S> {
     fn new(bmax: usize, groups: usize) -> Self {
+        Self::with_window(bmax, groups, ROW_BATCH_WAIT)
+    }
+    fn with_window(bmax: usize, groups: usize, window: std::time::Duration) -> Self {
         Coalescer {
             bmax,
             groups: groups.max(1),
+            window,
             inner: std::sync::Mutex::new(CoalesceState {
                 members: 0,
                 in_flight: 0,
@@ -1505,7 +1513,7 @@ impl<S> Coalescer<S> {
             let target = g.members.div_ceil(self.groups).clamp(1, self.bmax);
             let full = g.waiting.len() >= target.min(free).max(1);
             if let Some(mine) = pos
-                && (full || t0.elapsed() >= ROW_BATCH_WAIT)
+                && (full || t0.elapsed() >= self.window)
             {
                 // Lead: the oldest deposits, with ours among them.
                 let mut take: Vec<usize> = (0..g.waiting.len()).collect();
@@ -1574,7 +1582,7 @@ impl<S> Coalescer<S> {
                 continue;
             }
             g = if pos.is_some() {
-                let left = ROW_BATCH_WAIT.saturating_sub(t0.elapsed());
+                let left = self.window.saturating_sub(t0.elapsed());
                 self.cv
                     .wait_timeout(g, left.max(std::time::Duration::from_micros(20)))
                     .unwrap_or_else(|p| p.into_inner())
@@ -3334,10 +3342,96 @@ mod c4_host_budget_tests {
         assert_eq!(widths.iter().sum::<usize>(), 60);
         assert!(widths.iter().all(|&w| (1..=3).contains(&w)));
         // Three members keep batches full most of the time; a partial batch only waits out
-        // the window.
+        // the window. WP-A day 55 (`research/spill-a-20260919/DAY55.md`, OWED item 22, T-e): the
+        // full-batch count depends on the OS delivering the lanes inside 500 us, so it is printed
+        // here, and the mechanism it rests on is asserted by the two window cells below.
+        eprintln!(
+            "coalesced rows: {} of {} batches full, widths {widths:?}",
+            widths.iter().filter(|&&w| w == 3).count(),
+            widths.len()
+        );
+    }
+
+    /// WP-A day 55 (T-e): a partial batch runs only after its window. Three members, one deposits
+    /// alone: its batch is one row, and it ran no earlier than the window after the deposit.
+    #[test]
+    fn a_partial_batch_waits_out_its_window() {
+        use super::{Coalescer, RowOut};
+        let window = std::time::Duration::from_millis(20);
+        let core = Coalescer::<u32>::with_window(4, 1, window);
+        for _ in 0..3 {
+            core.join();
+        }
+        let mut widths = Vec::new();
+        let mut state = 0u32;
+        let t = std::time::Instant::now();
+        let r = core.step(5, false, &mut state, &mut |toks, _, _| {
+            widths.push(toks.len());
+            Ok(toks
+                .iter()
+                .map(|&tok| RowOut { tok, logits: None })
+                .collect())
+        });
+        let waited = t.elapsed();
+        assert_eq!(
+            r,
+            Ok(RowOut {
+                tok: 5,
+                logits: None
+            })
+        );
+        assert_eq!(widths, vec![1]);
         assert!(
-            widths.iter().filter(|&&w| w == 3).count() >= 10,
-            "{widths:?}"
+            waited >= window,
+            "a partial batch ran after {waited:?}, inside its {window:?} window"
+        );
+    }
+
+    /// WP-A day 55 (T-e): a full batch does not wait for its window. Three members all deposit with
+    /// a 10 s window: one batch of three rows, well inside the window.
+    #[test]
+    fn a_full_batch_does_not_wait_for_its_window() {
+        use super::{Coalescer, RowOut};
+        use std::sync::{Arc, Mutex};
+        let core = Arc::new(Coalescer::<u32>::with_window(
+            4,
+            1,
+            std::time::Duration::from_secs(10),
+        ));
+        let widths = Arc::new(Mutex::new(Vec::new()));
+        for _ in 0..3 {
+            core.join();
+        }
+        let t = std::time::Instant::now();
+        let handles: Vec<_> = (0..3u32)
+            .map(|lane| {
+                let (core, widths) = (core.clone(), widths.clone());
+                std::thread::spawn(move || {
+                    let mut state = 0u32;
+                    core.step(lane, false, &mut state, &mut |toks, _, _| {
+                        widths.lock().unwrap().push(toks.len());
+                        Ok(toks
+                            .iter()
+                            .map(|&tok| RowOut { tok, logits: None })
+                            .collect())
+                    })
+                })
+            })
+            .collect();
+        for (lane, h) in handles.into_iter().enumerate() {
+            assert_eq!(
+                h.join().unwrap(),
+                Ok(RowOut {
+                    tok: lane as u32,
+                    logits: None
+                })
+            );
+        }
+        let took = t.elapsed();
+        assert_eq!(*widths.lock().unwrap(), vec![3], "one full batch");
+        assert!(
+            took < std::time::Duration::from_secs(5),
+            "a full batch waited {took:?} of its 10 s window"
         );
     }
 

@@ -156,7 +156,12 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   boundary snapshot (`prefix_snapshot` direct); the `dspark-boundary` publish; the `glm5-boundary` publish; every
   `OnTick` refusal"), carried as "2 to 4 unchanged" through day 36.
 - Acceptance: none registered.
-- Status: open.
+- Status: **priced** (DAY54 section 3, the lead's run on a 5900XT host): the fanout publisher **design next** (`DAY54
+  PRICE fanout (short) .. o1=+6.50 o2=+6.50 ms .. -> DESIGN NEXT`; its own parts the snapshot 0.72 ms and three
+  restores 1.19 ms, its insert's 2.26 ms is the evicted entry's demote pre-submit, item 19; the long cell's +896 ms is
+  the four members' own suffix primes past the 1024-token cap, recorded as read); the pause park snapshot **closed as
+  priced** (0.73 ms); no route refusal on the 27B; the DFlash, GLM-5 and latent publishers not measured here, owed to
+  their artifacts and rigs. Owed: the fanout design, pre-registered (after items 22 and 23, the lead's order).
 
 ### 11. Move 1 item 4: the decision cell (i), both classes, same window
 
@@ -203,7 +208,9 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   governor still charges).
 - Also read (DAY51 section 3 reading 5, BOX22, a 9950X host, the base arm): each publication that replaces a host
   entry of the same prompt holds the owner 9.36 to 9.39 ms in `take-back bind and publish` (the replaced entry's heap
-  payloads and 32 pinned leases freed on the owner thread) in the chain cell's shape.
+  payloads and 32 pinned leases freed on the owner thread) in the chain cell's shape. DAY52 section 3 (the publication
+  split, log only, its base arm): 8.6 ms of that is the 32 pinned lease frees (about 270 us per
+  `cuMemFreeHost`), the heap payloads 0.02 ms; and P's reserve made those frees about 1 ms slower (item 17).
 - Status: open.
 
 ### 15. The D2H receipt kernel's price at long entries (found by DAY38 section 17)
@@ -232,7 +239,10 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 
 ### Order of work from day 51 (the lead's order after integ62)
 
-Item 17 first (item 8's remedy; P refuted on day 51, its revision owed), then items 10 to 14 (item 10 per publisher; item 19 designed with item 14, one lease
+Item 17 first (item 8's remedy; P refuted on day 51, P2 on day 52; blocked on item 14, the lead's ruling), then item 21
+(the lead: the server test failure is a defect to place; closed on day 53), then item 10's pricing (day 54), then items
+22 and 23 (the lead, after DAY54: a flaky or slow suite hurts every lane's CI; 22 closed on day 55; 24 and 25 found by
+it, placed after 23 as the same class), then item 10's fanout design, then items 11 to 14 (item 10 per publisher; item 19 designed with item 14, one lease
 design for both directions), then items 18 and 20; the three 5090 cells (item 4's and item 6's halves, item 16) when
 the card is reset.
 
@@ -247,8 +257,14 @@ the card is reset.
   target card (BOX22, a 9950X host: the copy -15.2 ms with no faults, the publication -12.4 ms, one poll earlier) and
   FAILED (g) in both orders (DAY51 section 3: `DAY51 P (g) cell=chain order=o1 chain p-minus-base=+1.40 rule <=+1.00
   .. -> FAIL`, o2 +1.54); the chain's extra millisecond sits in the publication's `take-back bind and publish` segment
-  (+0.89 / +1.07 ms), unplaced within it. Owed: the revision, pre-registered anew before its code (a reserve that
-  refills only while the copy would fault, after a split of the publication segment places the chain's millisecond).
+  (+0.89 / +1.07 ms), unplaced within it. The revision, P2 (DAY52: P with an arming rule, `f9c849389`, over the
+  publication split `5990945cd`), passed (a) to (f) on BOX25 (DAY51's machine) and **FAILED (g) in o2** (`DAY52 P2 (g)
+  cell=chain order=o2 chain p2-minus-base=+1.15 rule <=+1.00 | first p2-minus-base=+1.11 .. -> FAIL`); **reverted**
+  (the P2 commit alone; the split lines stay). The split placed P's millisecond: `DAY52 PLACING -> placed in insert,
+  kv`, the replaced twin's 32 pinned lease frees (+0.91 / +0.99 ms; the heap frees flat), and in two of five o2 boots
+  P2 kept that cost for the whole boot although it disarmed at the fourth demote. Status: **open, blocked on item 14**
+  (proposed): both designs pass their mechanism and every gate and fail only through the pinned lease frees they slow;
+  the next revision is re-read on top of item 14's lease design (with 19), where no `cuMemFreeHost` reaches the tick.
 
 ### 18. S4's H2D destination digests ride the promote's landing (found by DAY50)
 
@@ -265,7 +281,9 @@ the card is reset.
   it allocating its 32 pinned KV destinations (151.1 MB, 36896 minor faults) fresh on every demote while no entry frees;
   the first demote of every context holds it about 20 ms allocating the staging set (`spans 19.74` and `20.43 ms`).
   Both are the tenant's tick. On BOX22 (a 9950X host, DAY51 section 3 reading 5) the chain's long pre-submit reads 25.8
-  to 26.0 ms, 25.3 to 25.5 of it in the leases.
+  to 26.0 ms, 25.3 to 25.5 of it in the leases. DAY54 section 3 (a 5900XT host): the fanout's insert holds the owner
+  2.26 ms (short entries) and 18.25 ms (long) for the evicted entry's demote pre-submit, and each boot's first demote 78
+  ms in `spans`.
 - Acceptance: none registered (the owner's hold priced at a long demote and at the first demote, then a design that
   allocates no pinned memory on the owner thread's serving path, pre-registered with item 14's: one lease design for
   both directions).
@@ -281,6 +299,66 @@ the card is reset.
 - Acceptance: none registered (the same program per payload and per view, bitwise, the digests in the job's order;
   priced on the target card against the tip, the tenant's hump and the promote's PIN inside S's bounds; pre-registered
   before its code).
+- Status: open.
+
+### 21. `tests::responses_carry_rate_limit_headers_and_slot_frees` failed once under the full server suite (found by DAY52)
+
+- Source: DAY52 section 2: one full `cargo test -p memra-server --lib` run on the P2 tree (under the rig's CPU quota,
+  default test threads) read `test tests::responses_carry_rate_limit_headers_and_slot_frees ... FAILED`, panicked at
+  `crates/memra-server/src/lib.rs:22740:9`. That line is `assert_eq!(resp.status(), StatusCode::OK);` of the test's
+  second request (the streaming `/v1/completions`): the stream was answered with a status other than 200. (Corrected on
+  day 53: DAY52 section 2 and this entry first named the next assertion, `stream in flight holds the slot`, from the
+  source rather than the panic line.) The rerun of the whole suite passed, and the test alone passed 6 of 6. The panic's
+  left and right values were not kept (that run's output was filtered to its summary lines), so the status it read is
+  unknown. The test holds `drain_lock()` against its shared-state peers.
+- The lead (2026-09-25): a defect to place, not a flake to leave; worked after item 17's reading.
+- Acceptance: none registered (a reproduction under the suite's concurrency first, pre-registered, then the placing
+  and the fix with their own clauses).
+- Status: **closed** (DAY53 section 7: F1 `22f1872d6`, `admission_counters_guard()` takes `drain_lock()` first; 400 of
+  400 full suites with the target green and no handler 429, against A''s 7 of 200; H1 placed by intervention). The
+  cost, a reading: the suite's median `finished in` 6.47 s to 7.94 s; item 23.
+
+### 22. Three server timing tests fail under CPU starvation (found by DAY53's arm B)
+
+- Source: DAY53 section 2, arm B (40 full `memra-server` suites, `--test-threads 48`, `CPUQuota=400%`):
+  `tests::an_extended_stream_commits_prefill_then_injects_the_original_deadline` failed 4 of 40 (`the bridge waited for
+  the first-token deadline instead of committing`), `worker::tests::slow_constraint_compile_times_out_while_normal_decode_and_heartbeat_progress`
+  4 of 40 (`heartbeat declared stalled: .. no forward progress for 80 ms (.. threshold 50 ms)`; `normal decode stopped
+  at 9 steps`), `dsv4_serve::c4_host_budget_tests::coalesced_rows_each_get_their_own_token_once_per_step` 1 of 40. None
+  failed in arm A's 40 runs (default threads, `CPUQuota=1200%`). DAY53 section 5 (A', 200 runs of arm A's shape):
+  `tests::deep_schema_fails_while_normal_decode_keeps_stepping` 1 of 200 (`bad schema stalled or replaced the normal
+  decode`). DAY53 section 7 (F1, 400 runs of arm A's shape): `dsv4_serve::c4_host_budget_tests::coalesced_rows_each_get_their_own_token_once_per_step`
+  1 of 400 and `health::tests::no_progress_source_is_the_pre_fix_beat_age_verdict` 1 of 400 (`left: 41 right: 40`).
+- Acceptance: none registered (each placed: a real defect, or a wall-clock threshold that a starved runner cannot
+  meet; pre-registered after item 21).
+- Status: **closed** (DAY55 section 7): T-a (a snapshot sampled the clock twice; fixed in `health.rs`), T-b (tokio's
+  paused clock), T-c (the step clock, a test-only health clock, a non-blocking guard) and T-e (the coalescer's window a
+  field, two mechanism cells) fixed and accepted: R1 and R2 0 of 100 each, red arms 10 of 10, none red in 200 full
+  suites (arm A 100 of 100, arm B 98 of 100 with two other tests, items 24 and 25). T-d not reproduced since its one A'
+  failure (R1, R2, 600 later full suites), left unchanged.
+
+### 23. The admission-counter test isolation costs 1.5 s of every full server suite (found by DAY53)
+
+- Source: DAY53 section 7: F1 orders the counter writers behind `drain_lock()`, and the suite's median `finished in`
+  went from 6.47 s (A', N=200) to 7.94 s (F1, N=400).
+- Acceptance: none registered (the writers isolated without serializing them, for example `reserve_pending_admit`'s
+  test entry taking its lane counters as a parameter so a writer never touches the process-global ones; the same 400-run
+  shape green for the target and its siblings, the suite's time back to A''s).
+- Status: open.
+
+### 24. `darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown` times out under starvation (found by DAY55)
+
+- Source: DAY55 section 7, arm B's shape (100 full suites, `--test-threads 48`, `CPUQuota=400%`): 1 of 100, `timed out
+  (3000ms) waiting for: yield to T` (darklane.rs:602).
+- Acceptance: none registered (reproduce and place it as DAY55 did: a defect, or a wall-clock bound).
+- Status: open.
+
+### 25. `tests::a_fake_route_memory_door_refuses_defers_and_recovers_through_the_handler` reads a running row after the cancel (found by DAY55)
+
+- Source: DAY55 section 7, arm B's shape: 1 of 100, lib.rs:19036: after the loop saw `cancelled == 1`, `(waiting,
+  running, inflight)` read `(0, 1, 0)` against `(0, 0, 0)`. Either the test reads a route book mid-update or the book
+  publishes `cancelled` before it takes the row out of `running` (a snapshot a reader could see in production).
+- Acceptance: none registered (reproduce, then place: the book's order of updates or the test's read).
 - Status: open.
 
 ## 2. Closed, delivered, or held by another owner

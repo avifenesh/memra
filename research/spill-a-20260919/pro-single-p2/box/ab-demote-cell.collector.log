@@ -1,0 +1,106 @@
+2026-09-25T14:29:24Z model sha256: 1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a Qwen3.8-27B-NVFP4-Q5K-mtp.gguf cell=demote mode=demote host_mb=8192 prefix_mb=256
+2026-09-25T14:30:17Z demote o1 base rc=0 STALL rule cell=p2-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.8
+2026-09-25T14:31:11Z demote o1 p2 rc=0 STALL rule cell=p2-demote-p2 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9 i
+2026-09-25T14:32:05Z demote o1 base rc=0 STALL rule cell=p2-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9
+2026-09-25T14:32:58Z demote o1 p2 rc=0 STALL rule cell=p2-demote-p2 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9 i
+2026-09-25T14:33:52Z demote o1 base rc=0 STALL rule cell=p2-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9
+2026-09-25T14:34:46Z demote o1 p2 rc=0 STALL rule cell=p2-demote-p2 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9 i
+2026-09-25T14:35:40Z demote o1 base rc=0 STALL rule cell=p2-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9
+2026-09-25T14:36:34Z demote o1 p2 rc=0 STALL rule cell=p2-demote-p2 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9 i
+2026-09-25T14:37:28Z demote o1 base rc=0 STALL rule cell=p2-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9
+2026-09-25T14:38:21Z demote o1 p2 rc=0 STALL rule cell=p2-demote-p2 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9 i
+2026-09-25T14:39:15Z demote o2 p2 rc=0 STALL rule cell=p2-demote-p2 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9 i
+2026-09-25T14:40:09Z demote o2 base rc=0 STALL rule cell=p2-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9
+2026-09-25T14:41:03Z demote o2 p2 rc=0 STALL rule cell=p2-demote-p2 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9 i
+2026-09-25T14:41:57Z demote o2 base rc=0 STALL rule cell=p2-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9
+2026-09-25T14:42:51Z demote o2 p2 rc=0 STALL rule cell=p2-demote-p2 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9 i
+2026-09-25T14:43:45Z demote o2 base rc=0 STALL rule cell=p2-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9
+2026-09-25T14:44:38Z demote o2 p2 rc=0 STALL rule cell=p2-demote-p2 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9 i
+2026-09-25T14:45:32Z demote o2 base rc=0 STALL rule cell=p2-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9
+2026-09-25T14:46:26Z demote o2 p2 rc=0 STALL rule cell=p2-demote-p2 arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.6 idle_p95=12.8 idle_p99=12.9 i
+2026-09-25T14:47:20Z demote o2 base rc=0 STALL rule cell=p2-demote-base arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9
+2026-09-25T14:47:21Z demote done
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "research/spill-a-20260919/pro-single-p2/ab.sh",
+    "3",
+    "demote"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 375277300198398,
+  "ended_monotonic_ns": 376360368834697,
+  "started_utc": "2026-09-25T14:29:18.623274+00:00",
+  "ended_utc": "2026-09-25T14:47:21.691912+00:00",
+  "elapsed_seconds": 1083.068636299,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 3435,
+    "sha256": "c67f82d93f87a4d8f918f5fae3adeb4108331e14b041042662b58bde3726441d"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 475627,
+      "sha256": "87549917be2c34f762762d5583618552a1b4b6c38c1d757209c48eb51ca45c22"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 182,
+    "sha256": "ac2828efa70c36dca6ee5ff2382335384379a4a5ccfddfbf97f5f17d542e1e10"
+  }
+}

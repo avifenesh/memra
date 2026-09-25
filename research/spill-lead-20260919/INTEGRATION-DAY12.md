@@ -3998,6 +3998,75 @@ NVMe volume; OWED 7 to 13 are built with CPU cells, stub dry runs and red contro
   - `ADMIT-MEM BURST GATE: ALL GREEN`; `SPEC-CTX-EDGE GATE: ALL GREEN`;
   - the pause gate with the 27B, the pair lock exported this time: `KV-HOST-PAUSE-DEMOTE GATE: ALL GREEN` (40 ok).
 
+## integ64 (`lane/spill-integ64-20260926`): A days 52 to 55 (design P2 refuted and reverted; item 21 closed as F1; item 10 priced, the fanout publisher designed next; item 22 closed, T-a a real single-clock defect in `health.rs`)
+Lane tip merged: A `90fe89abf` on main `968c0fa68` (#728), clean. The crate change, net of P2's revert:
+- `health.rs` (T-a, the one production behavior change): a health snapshot and the stall verdict read the clock once,
+  so with no progress source the published forward-progress age is exactly the beat age published beside it, and the
+  stall message prints the beat age it judged with; a route snapshot takes one `now` for every age. A test-only virtual
+  health clock (`#[cfg(test)]`, thread-local) serves T-c.
+- `worker.rs` (days 52 and 54, log only): the demote publication split (bind, reclaim, insert, the replaced twin's and
+  the LRU victims' drops timed by field group through a helper that drops every field in declaration order) and the
+  on-tick publish lines (each capture route records why it answered on-tick). The on-tick lines print only when the host
+  tier exists, which is set only under `MEMRA_KV_HOST_CONTRACTS=1`; the pause park line is on the pause path.
+- `dsv4_serve.rs` (T-e): the coalescer's batch window is a field, `ROW_BATCH_WAIT` in production (unchanged behavior),
+  plus two mechanism cells.
+- `lib.rs` (tests only): F1, `admission_counters_guard` takes `drain_lock()` first; T-b on tokio's paused clock.
+- `Cargo.toml`: tokio `test-util` as a dev-dependency only. `docs/TESTING.md`. No new `MEMRA_*` name.
+
+**A days 52 to 55, verbatim.**
+1. **Item 17 as design P2 (DAY52, BOX25, a 9950X host):** P's payload reserve with an arming rule. (a) to (f) pass
+   (`copy p2-minus-base=-15.52 rule <=-8.00`, `e2e p2-minus-base=+0.36 rule <=+1.00`, `hump xp2=+0.034 rule <=0.15`),
+   (g) fails in o2 (chain +1.15, first +1.11 against +1.0), so `DAY52 P2 -> FAIL`; reverted (`5d7260a0e`), the
+   publication split kept. The split places P's millisecond in the replaced twin's pinned lease frees (kv +0.91 / +0.99
+   ms), so item 17 is blocked on item 14, which carries the 8.6 ms free price.
+2. **Item 21 (DAY53):** `responses_carry_rate_limit_headers_and_slot_frees` was reproduced 7 of 200 full suites, all
+   429 `shed_queue`; cell D (a handler request inside a writer's queue-bound window) sheds 20 of 20. F1 orders the
+   writers against the handler readers: 400 of 400 full suites green, no handler 429. Closed, placed by intervention.
+3. **Item 10 (DAY54, BOX28, a 5900XT host):** `DAY54 VERDICTS fanout (short): DESIGN NEXT; fanout (long): DESIGN NEXT;
+   pause park: CLOSED AS PRICED`; the fanout's stall over prime is +6.50 ms short and +896 ms long (the long figure is
+   the members' own suffix primes), the pause park snapshot 0.73 ms against a 64 ms pause stall.
+4. **Item 22 (DAY55):** five tests red under starvation. The harness that reproduced them (one CPU beside eight burners,
+   R2) read T-c 33, T-e 14, T-b 2, T-a and T-d 0 of 100. T-a was a real defect (the double clock read above); T-b, T-c
+   and T-e asserted logic through wall-clock bounds. After the fixes R1 and R2 read 0 of 100 for every fixed test and
+   both new cells; each red arm fails 10 of 10; none of the five failed in 200 full suites. T-d never reproduced and is
+   unchanged by the rule. Two new reds from those suites are owed: item 24 (a stop-mode yield timeout) and item 25 (a
+   route still `running=1` after its cancel, possibly a real route-book ordering defect).
+
+**Lead review.**
+- T-a: the stall verdict judges and reports one sample, and the census pins one `self.beat_age_ms()` per snapshot and
+  verdict and one `now_ms()` per route snapshot; the verdict's direction is unchanged (the odometer can only lower the age).
+- The test clock cannot reach production: `TEST_NOW_MS` and `TestClock` are `#[cfg(test)]`, and only the setting
+  thread reads it.
+- The drop helper destructures `HostPrefixEntry` and drops in declaration order, which is the compiler's own order, so the
+  drop timing moves nothing; a census pins the field list against the struct.
+- The on-tick refusal chains keep the old conditions in the old order; only a reason string is recorded.
+- One numeric program per request: no served token path changes.
+
+**Ruling 59:**
+- Days 52 to 55 are read as registered. P2 is refuted and reverted; item 17 sits on item 14. Item 21 closes as F1.
+  Item 10's fanout publisher is the next design; the pause park closes as priced. Item 22 closes; T-d stays unchanged.
+- T-e's claim moves from the full-batch count to the window mechanism, as its pre-registration stated before any code;
+  the count is printed. Accepted.
+- Owed by A: items 23, 24 and 25 (25 registered and placed before any fix), the fanout design, items 11 to 14 (19 with
+  14, 17 re-read on top), 18 and 20, and the 5090 halves of S4, V and item 16.
+
+**Checks.**
+- CPU battery on `c8170aaa7`, 15 of 15 rc=0 after one rerun (`integ64-cpu-battery/`): the first pass's only red was
+  `git diff --check` on A's verbatim P2 arm patch receipt, marked `-whitespace` (`bf473e349`), rerun rc=0
+  (`diff-check-rerun.log`). Portable suites 388 passed, 0 skipped; server 937, engine lib 573, tier 301, pytest 87;
+  clippy `-D warnings` twice; fmt, check-flags, publish census, docs registry, conflict markers, workflow keys, perf board.
+- GPU battery on BOX30 (an RTX PRO 6000 Workstation box rented for it, so the local 5090's timed lane queues were not
+  interleaved) with the same 9B model (sha256 `52c9cceb...`, linked at the rig's path), under the pair lock
+  (`integ64-pro/`, 467 receipts mirrored and checked). Binary `5fbf1512`, hashed after serve-smoke's build. One
+  collector hold to 23:31Z. Verbatim:
+  - serve-smoke `serve-smoke: 0 failed`;
+  - the engine span cells `10 passed` and the worker cells `18 passed`, both serial;
+  - identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok);
+  - fault default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 255 ok each;
+  - hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 61 and 68 ok;
+  - `ADMIT-MEM BURST GATE: ALL GREEN`; `SPEC-CTX-EDGE GATE: ALL GREEN`;
+  - the pause gate with the 27B: `KV-HOST-PAUSE-DEMOTE GATE: ALL GREEN` (40 ok).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
