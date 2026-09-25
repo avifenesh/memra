@@ -132,6 +132,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // DAY44: under the door the expert banks load as views of the artifact's mapping; the door
     // never stages from them, so no pinned copy is made.
     e.set_expert_host_mapped(expert_bank.is_some());
+    // DAY60: --moe-dispatch-clock (log only, both the legacy slot cache and the door): the cache
+    // brackets its dispatch and prefetch entry points, printed at the stage-line phase points.
+    let dispatch_clock = std::env::args().any(|a| a == "--moe-dispatch-clock");
+    e.set_moe_dispatch_clock(dispatch_clock);
     // DIRECTORY path = safetensors HF checkpoint (MiniMax-M3 first-load path) OR a memra repack
     // dir (Hy3 Q4_K transcode: manifest.json + tensors/ + experts/). GGUF stays the dense norm.
     if std::path::Path::new(&path).is_dir() {
@@ -1459,6 +1463,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stage_line = |phase: &str| {
         if let Some(gate) = &expert_bank_owner {
             gate.print_stage_line(phase);
+        }
+        if dispatch_clock && let Some(line) = e.moe_dispatch_clock_line() {
+            eprintln!("[moe-cache] dispatch-clock phase={phase} {line}");
         }
     };
     stage_line("gate");

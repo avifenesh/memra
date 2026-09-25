@@ -306,6 +306,8 @@ pub struct MoeSlotCache {
     /// the door's life, so a pair that validated once always does; any other pair (a new id, or
     /// a known id with another byte count) still goes to the proxy, and a refusal is never kept.
     banked_validated: ValidatedMemo,
+    /// DAY60: `--moe-dispatch-clock` only.
+    dispatch_clock: Option<DispatchClock>,
     /// `--expert-bank-stages` only (DAY40): the CUDA-thread half of the door's log-only stage
     /// clock. `None` without the door and without the flag, so no legacy statement reads it.
     bank_clock: Option<BankAdmitClock>,
@@ -389,6 +391,46 @@ pub struct MoeSlotCache {
     pub hits: u64,
     pub misses: u64,
     pub staged_bytes: u64, // total H2D bytes the cache caused (admit + first-miss transient)
+}
+
+/// DAY60 (`--moe-dispatch-clock`, log only): the slot cache's dispatch and prefetch entry points
+/// bracketed for BOTH programs (the legacy cache and the door), with each dispatch's outcome, and
+/// the prefetch path's parts. The door's own stage clock (`BankAdmitClock`) stays as it is.
+#[derive(Default)]
+pub(crate) struct DispatchClock {
+    dispatch_calls: u64,
+    dispatch_ns: u64,
+    dispatch_hits: u64,
+    dispatch_pending: u64,
+    dispatch_sync: u64,
+    prefetch_calls: u64,
+    prefetch_ns: u64,
+    prefetch_issued: u64,
+    pf_reserve_ns: u64,
+    pf_stage_ns: u64,
+    pf_retire_ns: u64,
+    pf_resident_ns: u64,
+    pf_demand_ns: u64,
+}
+impl DispatchClock {
+    fn line(&self) -> String {
+        format!(
+            "dispatch_calls={} dispatch_ns={} dispatch_hits={} dispatch_pending={} dispatch_sync={} prefetch_calls={} prefetch_ns={} prefetch_issued={} pf_reserve_ns={} pf_stage_ns={} pf_retire_ns={} pf_resident_ns={} pf_demand_ns={}",
+            self.dispatch_calls,
+            self.dispatch_ns,
+            self.dispatch_hits,
+            self.dispatch_pending,
+            self.dispatch_sync,
+            self.prefetch_calls,
+            self.prefetch_ns,
+            self.prefetch_issued,
+            self.pf_reserve_ns,
+            self.pf_stage_ns,
+            self.pf_retire_ns,
+            self.pf_resident_ns,
+            self.pf_demand_ns
+        )
+    }
 }
 
 /// CUDA-thread half of the door's stage clock (`research/spill-c-20260919/DAY40.md` section
@@ -737,6 +779,7 @@ impl MoeSlotCache {
             banked_prefetched: 0,
             bank_copy_timings: VecDeque::new(),
             banked_validated: ValidatedMemo::default(),
+            dispatch_clock: e.moe_dispatch_clock().then(DispatchClock::default),
             bank_clock: None,
             slots,
             slot_class,
@@ -1107,7 +1150,6 @@ impl MoeSlotCache {
             return Err("banked expert has unretired H2D or unsupported frozen dispatch".into());
         }
         let bank = self.banked.as_ref().ok_or("bank proxy absent")?.clone();
-        self.retire_banked(&bank)?;
         let local = (id.layer, id.proj, id.ex);
         let clocked = self.bank_clock.is_some();
         let entered = clocked.then(std::time::Instant::now);
@@ -1146,6 +1188,10 @@ impl MoeSlotCache {
             self.publish(id, pending.slot);
             return Ok(pending.slot);
         }
+        // DAY61 (I12): finished leases retire where a lease is taken (here and in the prefetch),
+        // not on every admission; a GPU hit and a prefetched block's consumption take none, and
+        // the in-flight bound is waited on here, before this demand, as before.
+        self.retire_banked(&bank)?;
         let demanded = clocked.then(std::time::Instant::now);
         let token = bank.demand(local, bytes)?;
         if let (Some(started), Some(clock)) = (demanded, self.bank_clock.as_mut()) {
@@ -1298,7 +1344,9 @@ impl MoeSlotCache {
             return Ok(false);
         }
         let bank = self.banked.as_ref().ok_or("bank proxy absent")?.clone();
+        let retiring = self.dispatch_clock.is_some().then(std::time::Instant::now);
         self.retire_banked(&bank)?;
+        self.dispatch_clock_mark(retiring, |c, ns| c.pf_retire_ns += ns);
         if self.banked_inflight.len() + self.banked_prefetched >= BANKED_INFLIGHT {
             return Ok(false);
         }
@@ -1307,13 +1355,20 @@ impl MoeSlotCache {
             bank.validate(local, bytes)?;
             self.banked_validated.insert(id, bytes);
         }
-        if !bank.host_resident(local)? {
+        let asking = self.dispatch_clock.is_some().then(std::time::Instant::now);
+        let resident = bank.host_resident(local)?;
+        let reserving = self.dispatch_clock_mark(asking, |c, ns| c.pf_resident_ns += ns);
+        if !resident {
             return Ok(false);
         }
-        let Some(slot) = self.reserve_prefetch_slot(bytes, keep) else {
+        let reserved = self.reserve_prefetch_slot(bytes, keep);
+        let demanding = self.dispatch_clock_mark(reserving, |c, ns| c.pf_reserve_ns += ns);
+        let Some(slot) = reserved else {
             return Ok(false);
         };
-        let token = match bank.demand(local, bytes) {
+        let demanded = bank.demand(local, bytes);
+        let staging = self.dispatch_clock_mark(demanding, |c, ns| c.pf_demand_ns += ns);
+        let token = match demanded {
             Ok(token) => token,
             Err(err) => {
                 self.release_reserved_slot(slot);
@@ -1328,6 +1383,7 @@ impl MoeSlotCache {
         let staged = bank.with_bytes(&token, |payload| {
             stage_on_copy_stream(e, payload, &mut self.slots[slot])
         });
+        self.dispatch_clock_mark(staging, |c, ns| c.pf_stage_ns += ns);
         match staged {
             Ok(Ok(ready)) => {
                 self.occupant[slot] = Some(id);
@@ -1366,6 +1422,20 @@ impl MoeSlotCache {
                 Err(err.into())
             }
         }
+    }
+
+    /// DAY60: add the time since `started` to one dispatch-clock counter and return a fresh start
+    /// for the next part; `None` in and out without the clock.
+    fn dispatch_clock_mark(
+        &mut self,
+        started: Option<std::time::Instant>,
+        add: impl FnOnce(&mut DispatchClock, u64),
+    ) -> Option<std::time::Instant> {
+        let (Some(started), Some(clock)) = (started, self.dispatch_clock.as_mut()) else {
+            return None;
+        };
+        add(clock, clock_ns(started));
+        Some(std::time::Instant::now())
     }
 
     /// The stage clock's copy timing events whose copy has landed (`--expert-bank-stages` only).
@@ -1679,7 +1749,45 @@ impl MoeSlotCache {
         )
     }
 
+    /// DAY60: the dispatch clock's cumulative line, `None` without the clock.
+    pub(crate) fn dispatch_clock_line(&self) -> Option<String> {
+        self.dispatch_clock.as_ref().map(DispatchClock::line)
+    }
+
     pub(crate) fn dispatch_source(
+        &mut self,
+        id: BlockId,
+        source: ExpertSource<'_>,
+        e: &Engine,
+    ) -> Result<DispatchSlot, Box<dyn std::error::Error>> {
+        if self.dispatch_clock.is_none() {
+            return self.dispatch_source_unclocked(id, source, e);
+        }
+        // DAY60: the whole dispatch, both programs, and its outcome.
+        let (started, hits, was_pending) = (
+            std::time::Instant::now(),
+            self.hits,
+            self.pending.contains_key(&id),
+        );
+        let result = self.dispatch_source_unclocked(id, source, e);
+        let hit = self.hits > hits;
+        if let Some(clock) = self.dispatch_clock.as_mut() {
+            clock.dispatch_calls += 1;
+            clock.dispatch_ns += clock_ns(started);
+            if result.is_ok() {
+                if hit {
+                    clock.dispatch_hits += 1;
+                } else if was_pending {
+                    clock.dispatch_pending += 1;
+                } else {
+                    clock.dispatch_sync += 1;
+                }
+            }
+        }
+        result
+    }
+
+    fn dispatch_source_unclocked(
         &mut self,
         id: BlockId,
         source: ExpertSource<'_>,
@@ -1791,10 +1899,15 @@ impl MoeSlotCache {
         keep: &[BlockId],
         e: &Engine,
     ) -> Result<bool, Box<dyn std::error::Error>> {
-        let Some(slot) = self.reserve_prefetch_slot(host_bytes.len(), keep) else {
+        let reserving = self.dispatch_clock.is_some().then(std::time::Instant::now);
+        let reserved = self.reserve_prefetch_slot(host_bytes.len(), keep);
+        let staging = self.dispatch_clock_mark(reserving, |c, ns| c.pf_reserve_ns += ns);
+        let Some(slot) = reserved else {
             return Ok(false);
         };
-        let ready = match stage_on_copy_stream(e, host_bytes, &mut self.slots[slot]) {
+        let staged = stage_on_copy_stream(e, host_bytes, &mut self.slots[slot]);
+        self.dispatch_clock_mark(staging, |c, ns| c.pf_stage_ns += ns);
+        let ready = match staged {
             Ok(ready) => ready,
             Err((err, reusable)) => {
                 if reusable {
@@ -1828,6 +1941,29 @@ impl MoeSlotCache {
     }
 
     pub(crate) fn prefetch_source(
+        &mut self,
+        id: BlockId,
+        source: ExpertSource<'_>,
+        keep: &[BlockId],
+        e: &Engine,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        if self.dispatch_clock.is_none() {
+            return self.prefetch_source_unclocked(id, source, keep, e);
+        }
+        // DAY60: the whole prefetch, both programs.
+        let started = std::time::Instant::now();
+        let result = self.prefetch_source_unclocked(id, source, keep, e);
+        if let Some(clock) = self.dispatch_clock.as_mut() {
+            clock.prefetch_calls += 1;
+            clock.prefetch_ns += clock_ns(started);
+            if matches!(result, Ok(true)) {
+                clock.prefetch_issued += 1;
+            }
+        }
+        result
+    }
+
+    fn prefetch_source_unclocked(
         &mut self,
         id: BlockId,
         source: ExpertSource<'_>,

@@ -1,0 +1,20 @@
+label=c60 sha=da649107c start=2026-09-25T04:36:01Z
+head=da649107c7e85f7681ddfd179650543b8400270d
+Cuda compilation tools, release 13.1, V13.1.115
+Build cuda_13.1.r13.1/compiler.37061995_0
+cargo 1.97.1 (c980f4866 2026-06-30)
+   Compiling memra-validate v0.138.0 (/root/wt-c-build/crates/memra-validate)
+   Compiling memra-sampling v0.138.0 (/root/wt-c-build/crates/memra-sampling)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 2m 36s
+binary=run-gen-c60 tree=da649107c7e85f7681ddfd179650543b8400270d sha256=579958158e33a935a69a9f24384cb1e0ab92e5b228e8dee226248cb4cb9441e4
+binary=run-spec-c60 tree=da649107c7e85f7681ddfd179650543b8400270d sha256=cf0cc23df7fba2199db40e130ced977e8571412d1fd2325d8cc5aba2e831c99f
+   Compiling axum v0.7.9
+   Compiling async-stream v0.3.6
+   Compiling toml v0.8.23
+   Compiling memra-lanes v0.138.0 (/root/wt-c-build/crates/memra-lanes)
+    Finished `release` profile [optimized] target(s) in 49.80s
+binary=memra-server-c60 tree=da649107c7e85f7681ddfd179650543b8400270d sha256=7ddb8187f4d5bfa706c178608a5e297698e2f982458d763919b2f74cbee30ad9
+end=2026-09-25T04:39:29Z
+rc=0

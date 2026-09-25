@@ -1859,6 +1859,9 @@ pub struct Engine {
     /// DAY50: the MoE slot cache door is installed and prefetches the next routed expert through
     /// its owner. Set only by the door's installer; false keeps the legacy prefetch condition.
     expert_bank_prefetch: std::sync::atomic::AtomicBool,
+    /// DAY60: `--moe-dispatch-clock` (a gate binary's log-only flag): every MoE slot cache built
+    /// after it is set keeps a dispatch clock (both the legacy program and the door).
+    moe_dispatch_clock: std::sync::atomic::AtomicBool,
     /// CALIBRATED-A4 CLIPPING DIAGNOSTIC (research/qwen-fp4-activation-mint-20260909). `None`
     /// while serving, so the quantizer takes a null pointer and does no atomics. When a
     /// diagnostic run enables it, this is a device buffer of 4 u64 per program slot
@@ -3783,6 +3786,7 @@ impl Engine {
             moe_cache: Mutex::new(None),
             expert_host_mapped: std::sync::atomic::AtomicBool::new(false),
             expert_bank_prefetch: std::sync::atomic::AtomicBool::new(false),
+            moe_dispatch_clock: std::sync::atomic::AtomicBool::new(false),
             a4_clip_stats: Mutex::new(None),
             w8_mirrors: Mutex::new(std::collections::HashMap::new()),
             w8_act: Mutex::new(std::collections::HashMap::new()),
@@ -6648,6 +6652,27 @@ impl Engine {
     pub(crate) fn set_expert_bank_prefetch(&self, on: bool) {
         self.expert_bank_prefetch
             .store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// DAY60: `--moe-dispatch-clock`, set by a gate binary before its model loads (log only).
+    pub fn set_moe_dispatch_clock(&self, on: bool) {
+        self.moe_dispatch_clock
+            .store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// DAY60: whether slot caches built from now on keep a dispatch clock.
+    pub(crate) fn moe_dispatch_clock(&self) -> bool {
+        self.moe_dispatch_clock
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// DAY60: the slot cache's cumulative dispatch-clock line, `None` without a cache or a clock.
+    pub fn moe_dispatch_clock_line(&self) -> Option<String> {
+        self.moe_cache
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|cache| cache.dispatch_clock_line())
     }
 
     /// DAY50: whether the door prefetches through its owner (the forward's prefetch condition).
