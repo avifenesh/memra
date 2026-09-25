@@ -31,12 +31,28 @@ pub struct BankStageTimes {
     pub retire_ns: u64,
     /// `collect_evicted`.
     pub collect_ns: u64,
+    /// Day 63 (`research/spill-c-20260919/DAY63.md`), inside `stage`: the per-id catalog loop, the unique set and
+    /// host cache pass, the governor reservations.
+    pub stage_lookup_ns: u64,
+    pub stage_cache_ns: u64,
+    pub stage_charge_ns: u64,
+    /// Day 63, inside `publish`: the output leases, the hotness and the SLRU.
+    pub publish_output_ns: u64,
+    pub publish_policy_ns: u64,
+    /// Day 63, the retire side one call each (their sum is `retire_ns`), and the governor release inside
+    /// `acknowledge`.
+    pub host_use_ns: u64,
+    pub retire_only_ns: u64,
+    pub ack_ns: u64,
+    pub ack_release_ns: u64,
 }
 impl BankStageTimes {
     /// `key=value` tokens in a fixed order, the form the day-40 reader parses.
     pub fn line(&self) -> String {
         format!(
-            "stages={} stage_ns={} alloc_ns={} steps={} step_ns={} verified={} verify_ns={} publish_ns={} retire_ns={} collect_ns={}",
+            "stages={} stage_ns={} alloc_ns={} steps={} step_ns={} verified={} verify_ns={} publish_ns={} retire_ns={} collect_ns={} \
+             stage_lookup_ns={} stage_cache_ns={} stage_charge_ns={} publish_output_ns={} publish_policy_ns={} \
+             host_use_ns={} retire_only_ns={} ack_ns={} ack_release_ns={}",
             self.stages,
             self.stage_ns,
             self.alloc_ns,
@@ -46,7 +62,16 @@ impl BankStageTimes {
             self.verify_ns,
             self.publish_ns,
             self.retire_ns,
-            self.collect_ns
+            self.collect_ns,
+            self.stage_lookup_ns,
+            self.stage_cache_ns,
+            self.stage_charge_ns,
+            self.publish_output_ns,
+            self.publish_policy_ns,
+            self.host_use_ns,
+            self.retire_only_ns,
+            self.ack_ns,
+            self.ack_release_ns
         )
     }
 }
@@ -530,7 +555,10 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
     pub fn finish_host_use(&mut self, ticket: &TransferTicket) -> Result<()> {
         let started = clock_start(&self.clock);
         let result = self.finish_host_use_unclocked(ticket);
-        clock_add(&mut self.clock, started, |c, ns| c.retire_ns += ns);
+        clock_add(&mut self.clock, started, |c, ns| {
+            c.retire_ns += ns;
+            c.host_use_ns += ns;
+        });
         result
     }
     fn finish_host_use_unclocked(&mut self, ticket: &TransferTicket) -> Result<()> {
@@ -544,7 +572,10 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
     pub fn acknowledge(&mut self, ticket: &TransferTicket) -> Result<()> {
         let started = clock_start(&self.clock);
         let result = self.acknowledge_unclocked(ticket);
-        clock_add(&mut self.clock, started, |c, ns| c.retire_ns += ns);
+        clock_add(&mut self.clock, started, |c, ns| {
+            c.retire_ns += ns;
+            c.ack_ns += ns;
+        });
         result
     }
     fn acknowledge_unclocked(&mut self, ticket: &TransferTicket) -> Result<()> {
@@ -559,7 +590,9 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         // Keep tombstone/descriptor quota until actual acknowledgement removes it.
         let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
         if let Some(queue) = &p.queue {
+            let releasing = clock_start(&self.clock);
             self.budget.borrow_mut().release(queue)?;
+            clock_add(&mut self.clock, releasing, |c, ns| c.ack_release_ns += ns);
         }
         p.queue = None;
         self.pending.remove(ticket);
@@ -682,7 +715,10 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
     fn retire(&mut self, ticket: &TransferTicket) -> Result<bool> {
         let started = clock_start(&self.clock);
         let result = self.retire_unclocked(ticket);
-        clock_add(&mut self.clock, started, |c, ns| c.retire_ns += ns);
+        clock_add(&mut self.clock, started, |c, ns| {
+            c.retire_ns += ns;
+            c.retire_only_ns += ns;
+        });
         result
     }
     fn release(&mut self, lease: &BankLease) -> Result<()> {
@@ -729,6 +765,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         }
         // Day 61 (I11 change 2): each id's catalog entry is read once, for its logical bytes and
         // its metadata allowance; the allowance's sum refuses at the point it always did.
+        let looking = clock_start(&self.clock);
         let mut logical = 0u64;
         let mut metadata = Some(0u64);
         for id in &batch.ids {
@@ -741,9 +778,11 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                 .ok_or(Error::Overflow)?;
             metadata = metadata.and_then(|n| n.checked_add(entry.metadata));
         }
+        clock_add(&mut self.clock, looking, |c, ns| c.stage_lookup_ns += ns);
         if logical > self.limits.batch_bytes {
             return Err(Error::Capacity);
         }
+        let caching = clock_start(&self.clock);
         let unique: BTreeSet<_> = batch.ids.iter().cloned().collect();
         // Day 61 (I11 change 2): the host cache is read once per unique id, for a cached lease
         // or a missing record. Nothing below changes the cache before the ticket is recorded.
@@ -761,6 +800,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                 }
             }
         }
+        clock_add(&mut self.clock, caching, |c, ns| c.stage_cache_ns += ns);
         let plan = plan_reads(&missing, logical, &self.reader, self.policy)?;
         let sequence = self.sequence.checked_add(1).ok_or(Error::Overflow)?;
         let ticket = TransferTicket {
@@ -789,6 +829,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         queue_request.bytes.pageable = queue_request.bytes.pageable.max(required) - output_bytes;
         queue_request.bytes.staging = queue_request.bytes.staging.max(slot);
         queue_request.bytes.inflight = queue_request.bytes.inflight.max(1);
+        let charging = clock_start(&self.clock);
         let queue = self.budget.borrow_mut().reserve(&queue_request)?;
         let mut charges = Vec::new();
         for (id, _) in &missing {
@@ -807,6 +848,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                 }
             }
         }
+        clock_add(&mut self.clock, charging, |c, ns| c.stage_charge_ns += ns);
         let expected: Vec<Vec<SegmentExpectation>> = missing
             .iter()
             .map(|(_, r)| {
@@ -938,7 +980,12 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                 }
             }
         }
+        let outputting = clock_start(&self.clock);
         let output: Vec<_> = p.ids.iter().map(|id| p.records[id].clone()).collect();
+        clock_add(&mut self.clock, outputting, |c, ns| {
+            c.publish_output_ns += ns
+        });
+        let policing = clock_start(&self.clock);
         if p.demand {
             for id in &p.ids {
                 self.heat.demand(id);
@@ -977,6 +1024,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             }
             self.trim();
         }
+        clock_add(&mut self.clock, policing, |c, ns| c.publish_policy_ns += ns);
         Ok(output)
     }
     fn retire_unclocked(&mut self, ticket: &TransferTicket) -> Result<bool> {

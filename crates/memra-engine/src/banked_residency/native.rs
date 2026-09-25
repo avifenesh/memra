@@ -2222,6 +2222,38 @@ mod day61_profile {
             d(after.retire_ns, before.retire_ns),
             d(after.collect_ns, before.collect_ns)
         );
+        // DAY63 section 1: the split inside stage, publish and the retire side.
+        println!(
+            "DAY63 P3 split per cycle (all repeats): stage_lookup={:.1} stage_cache={:.1} stage_charge={:.1} publish_output={:.1} publish_policy={:.1} host_use={:.1} retire_only={:.1} ack={:.1} ack_release={:.1}",
+            d(after.stage_lookup_ns, before.stage_lookup_ns),
+            d(after.stage_cache_ns, before.stage_cache_ns),
+            d(after.stage_charge_ns, before.stage_charge_ns),
+            d(after.publish_output_ns, before.publish_output_ns),
+            d(after.publish_policy_ns, before.publish_policy_ns),
+            d(after.host_use_ns, before.host_use_ns),
+            d(after.retire_only_ns, before.retire_only_ns),
+            d(after.ack_ns, before.ack_ns),
+            d(after.ack_release_ns, before.ack_release_ns)
+        );
+        // DAY63 P7: one clone of the leased record's `BankLease` and its drop, inside the same routed cycle.
+        let p7 = median_repeat(|| {
+            let mut part = [0u64; 2];
+            let started = Instant::now();
+            for &local in &seq {
+                let demand = s.traced.inner.demand(local, LEN as usize).unwrap();
+                let a = Instant::now();
+                std::hint::black_box(demand.lease.clone());
+                part[0] += ns(a.elapsed());
+                s.traced.inner.finish(demand).unwrap();
+            }
+            part[1] = ns(started.elapsed());
+            part
+        });
+        println!(
+            "DAY63 P7 lease clone and drop per cycle ns={:.1} (cycle {:.1})",
+            per_cycle(p7[0]),
+            per_cycle(p7[1])
+        );
 
         // P4: the parts inside `stage` its clock does not split, each alone over the same ids.
         let catalog = Catalog::new(LayoutClass::PerRecord, s.entries.clone()).unwrap();
