@@ -216,7 +216,7 @@ fn graphed(gpu: &Dsv4Gpu, prompts: &[Vec<u32>], capacity: usize, steps: usize) -
     let mut trace: Trace = vec![Vec::new(); sessions.len()];
     let horizon = JOIN.iter().max().unwrap() + steps;
     for k in 0..horizon {
-        let mut active: Vec<usize> = (0..sessions.len())
+        let active: Vec<usize> = (0..sessions.len())
             .filter(|&s| k >= JOIN[s] && trace[s].len() < steps)
             .collect();
         if active.is_empty() {
