@@ -1,0 +1,106 @@
+{
+  "class": "nvme-local-direct",
+  "nvme_proven": true,
+  "nvme_name_hint": false,
+  "label": "M1 proof: physical local NVMe (nvme-local-direct); not measured spill speed",
+  "allow_unproven_storage": false,
+  "root": "/scratch/spill-f/b1",
+  "commands": [
+    {
+      "command": [
+        "findmnt",
+        "-J",
+        "-T",
+        "/scratch/spill-f/b1"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "storage-findmnt.log",
+        "bytes": 260,
+        "sha256": "a78a7aff744771d0a0b292844a2908e8dc3d38bf959fdcb3f7f4265e94dde138"
+      }
+    },
+    {
+      "command": [
+        "lsblk",
+        "-J",
+        "-o",
+        "NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "storage-lsblk.log",
+        "bytes": 4174,
+        "sha256": "2289aa6d5b1944536abc239309cb48358e3c170a8752677e2ccea800442bef64"
+      }
+    },
+    {
+      "command": [
+        "findmnt",
+        "-n",
+        "-o",
+        "SOURCE",
+        "-T",
+        "/scratch/spill-f/b1"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "storage-source.log",
+        "bytes": 42,
+        "sha256": "0c45cc2bb3ee8c12068aa3404b5f748ddb35dae115994d2cfdbece44721d0cb6"
+      }
+    },
+    {
+      "command": [
+        "lsblk",
+        "-s",
+        "-r",
+        "-n",
+        "-o",
+        "KNAME",
+        "/dev/nvme0n1p3"
+      ],
+      "exit_code": 32,
+      "timed_out": false,
+      "raw_log": {
+        "path": "storage-ancestry.log",
+        "bytes": 42,
+        "sha256": "b67470269669175458deed3ea5edc911c509b799a5fa2fcefff20fe54d29b718"
+      }
+    }
+  ],
+  "qualification": false,
+  "m1_proof": {
+    "receipt": {
+      "path": "STORAGE-PROOF.json",
+      "bytes": 3710,
+      "sha256": "6e08ea9a5f468273f14b9192a1aa4afff2897af76ad1e051d8b78002e2c000f9"
+    },
+    "tool_sha256": "d59851b624339e16d2290b21b94567a593645266eb0e5dd83d4490decbb78864",
+    "identity": {
+      "device": 66307,
+      "filesystem_id": 66307,
+      "mount_id": 577
+    },
+    "proof_utc": "2026-09-25T16:41:09.179488+00:00"
+  },
+  "object_binding": {
+    "root": "/scratch/spill-f/b1",
+    "object": "/scratch/spill-f/b1/rt-1048576-r8-buffered",
+    "root_filesystem": {
+      "device": 66307,
+      "filesystem_id": 66307,
+      "mount_id": 577
+    },
+    "object_filesystem": {
+      "device": 66307,
+      "filesystem_id": 66307,
+      "mount_id": 577
+    },
+    "method": "stat-device+statfs-id+linux-mount-id"
+  },
+  "object_argument": "/scratch/spill-f/b1/rt-1048576-r8-buffered"
+}
