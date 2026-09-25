@@ -69,7 +69,7 @@ Evidence: `DAY18.md` (day-18 inputs for items 1, 3, 4 and 6, verbatim lines unde
 `DAY9.md` (target card: default and 8 GiB, gen `MATCH`, spec K1..8
 `SELF-CONSISTENCY PASS`, ON/OFF tapes identical, 12,091 / 63,996 GPU evictions).
 
-## Days 40 to 50: the tuned program (each with its own pre-registration, commit and cell)
+## Days 40 to 58: the tuned program (each with its own pre-registration, commit and cell)
 
 The door's program after the tuning of `OWED.md` C1 (days 40 to 50). Every row is `executed-not-qualified` until its
 cell reads; the cells are listed in each day file and the deciding cell in `DAY51.md`.
@@ -85,9 +85,19 @@ cell reads; the cells are listed in each day file and the deciding cell in `DAY5
 | 48 | I8: a memo of `(id, bytes)` pairs `validate` accepted; I5: the host-demand trace written in 64 KiB line-aligned chunks | `moe_cache.rs`, `native.rs` | `cd49c8bcb`, `ae5237e6c` |
 | 49 | I7: the installer's per-expert compare and checksum on scoped threads after the serial SHA lock | `native.rs` | `14b2b9970` |
 | 50 | I4: prefetch of the next routed expert through the owner (host-resident records only, copy stream, consumption after a compute-stream wait) | `moe_cache.rs`, `hybrid_forward.rs`, `lib.rs`, `native.rs` | `6745fd062` |
+| 57 | I10: the installer admits the host fill to completion before decode (bounded) | `native.rs` | `70d6633f5` |
+| 58 | I8f and I5f (the day-48 clauses failed): the validate memo as a dense table, the trace line written directly | `moe_cache.rs`, `native.rs` | `7ea765687` |
 
-The door's decide-by is unchanged (2026-10-04). What the pending items below say about the synchronous miss path
-(item 4) describes the program before day 46.
+Every rung's RTX 5090 verdict is in its DAY file (I6's default-budget regression fixed on the tuned tree, `DAY43
+RESIDFIX ... no_regression=PASS`; I8 and I5 pass as I8f and I5f, `DAY58 SMALLFIX ... i8f=PASS i5f=PASS`), and the
+target card read the whole ladder (`DAY52.md` section 11). **The deciding cell** (`DAY51.md`), on the final tree
+`62e848b1f`: on the target card `DAY51 VERDICT rig=pro-single integrity=ok -> door_wins` (gen-only decode 0.311 to
+0.277 s, window 0.251 to 0.240 s against the naked legacy; REF, the legacy with its own default-OFF prefetch
+`MEMRA_MOE_PREFETCH=1`, 0.255 and 0.226, faster than the door on both; install 9.91 s); the first run of the cell
+was void on a trace term I10 contradicts (`DAY51.md` sections 3 and 1c). The RTX 5090's `decide-b` is queued behind
+the card's reset. The door's decide-by is unchanged (2026-10-04); a target-card win is the owner's promotion call,
+with `OWED.md` C2 as the promotion work. What the pending items below say about the synchronous miss path (item 4)
+describes the program before day 46.
 
 ## What is pending before the door can sit behind the tiered materializer
 
