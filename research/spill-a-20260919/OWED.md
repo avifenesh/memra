@@ -305,7 +305,21 @@ the card is reset.
 - The lead (2026-09-25): a defect to place, not a flake to leave; worked after item 17's reading.
 - Acceptance: none registered (a reproduction under the suite's concurrency first, pre-registered, then the placing
   and the fix with their own clauses).
-- Status: **pre-registered** (DAY53 section 1: the probe, then the reproduction in two arms, the placing rule).
+- Status: **not reproduced in 80 runs** (DAY53 section 2: arms A and B green for this test; arm A's sibling
+  `same_effort_value_resolves_identically_on_every_surface` answered 429, the H1 class); the targeted stress
+  pre-registered (DAY53 section 3).
+
+### 22. Three server timing tests fail under CPU starvation (found by DAY53's arm B)
+
+- Source: DAY53 section 2, arm B (40 full `memra-server` suites, `--test-threads 48`, `CPUQuota=400%`):
+  `tests::an_extended_stream_commits_prefill_then_injects_the_original_deadline` failed 4 of 40 (`the bridge waited for
+  the first-token deadline instead of committing`), `worker::tests::slow_constraint_compile_times_out_while_normal_decode_and_heartbeat_progress`
+  4 of 40 (`heartbeat declared stalled: .. no forward progress for 80 ms (.. threshold 50 ms)`; `normal decode stopped
+  at 9 steps`), `dsv4_serve::c4_host_budget_tests::coalesced_rows_each_get_their_own_token_once_per_step` 1 of 40. None
+  failed in arm A's 40 runs (default threads, `CPUQuota=1200%`).
+- Acceptance: none registered (each placed: a real defect, or a wall-clock threshold that a starved runner cannot
+  meet; pre-registered after item 21).
+- Status: open.
 
 ## 2. Closed, delivered, or held by another owner
 
