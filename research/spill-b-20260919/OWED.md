@@ -69,7 +69,8 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - Acceptance: DAY34 1.6's terms unchanged (V-DOOR and its members) on the capped tree, both cards, both orders, plus
   a term that says whether the cap bound on each boot (from the `pending_seed=` field against the uncapped sum), so
   the rerun says what the cap moved rather than only repeating day 36.
-- Status: `open`, DAY40. It follows O5 (DAY39): O5 corrects the door's own prime booking (a burst books the
+- Status: `pre-registered` (DAY40.md), on the final booking (the capped seed and day 39's revised prime term, GREEN on
+  the target card). Was `open`, DAY40. It follows O5 (DAY39): O5 corrects the door's own prime booking (a burst books the
   shared slab once per session today), and the ON rows are only the owner's input on the booking that would ship.
   Running them first would bank a second known over-booking beside day 36's.
 - Price: 0.1 agent-day plus about 4.5 h local and 6 h on a target card (STATE, day 36).
