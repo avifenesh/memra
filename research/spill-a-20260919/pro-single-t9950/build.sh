@@ -9,6 +9,7 @@
 set -uo pipefail
 R=/root/spill-receipts/a-t9950
 export PATH=/root/.cargo/bin:/usr/local/cuda/bin:$PATH
+if [ -f "$R/build.log" ]; then n=1; while [ -d "$R/build-attempt$n" ]; do n=$((n+1)); done; mkdir -p "$R/build-attempt$n"; mv "$R"/build.log "$R"/build-steps.log "$R/build-attempt$n/" 2>/dev/null; rm -rf "$R/bins"; fi
 mkdir -p "$R/bins/ft" "$R/bins/f1" "$R/bins/hk"
 L=$R/build-steps.log
 { lscpu | grep -E '^(Model name|CPU\(s\)|Thread\(s\) per core|Core\(s\) per socket|Socket\(s\)|CPU max MHz)'; free -g | head -2; nproc; } > "$R/host-shape.txt" 2>&1
@@ -24,10 +25,12 @@ clean() { [ -z "$(git status --porcelain --untracked-files=no)" ] && [ "$(git re
 back() { git checkout -q "$TIP" -- crates docs tools; git reset -q; git clean -q -fd crates; clean; }
 for arm in ft f1 hk; do
   echo "== $arm" >> "$L"
-  git diff --binary "$TIP" "$2" -- crates | git apply >> "$L" 2>&1 || { back; echo "rc=2 ($arm crates)" >> "$R/build.log"; exit 2; }
+  # The arms' crates into the index and the tree (`-3` merges through the index), then the arm's patch, crates only
+  # (the patches' docs and tools hunks are the pre-S2 tree's; the tip's differ).
+  git diff --binary "$TIP" "$2" -- crates | git apply --index >> "$L" 2>&1 || { back; echo "rc=2 ($arm crates)" >> "$R/build.log"; exit 2; }
   case $arm in
-    f1) git apply research/spill-a-20260919/rtx5090-day39/f1-g4.patch >> "$L" 2>&1 || { back; echo "rc=2 (f1 patch)" >> "$R/build.log"; exit 2; } ;;
-    hk) git apply -3 research/spill-a-20260919/rtx5090-day39/hk-revert-tip.patch >> "$L" 2>&1 || { back; echo "rc=2 (hk patch)" >> "$R/build.log"; exit 2; } ;;
+    f1) git apply --include='crates/*' research/spill-a-20260919/rtx5090-day39/f1-g4.patch >> "$L" 2>&1 || { back; echo "rc=2 (f1 patch)" >> "$R/build.log"; exit 2; } ;;
+    hk) git apply -3 --include='crates/*' research/spill-a-20260919/rtx5090-day39/hk-revert-tip.patch >> "$L" 2>&1 || { back; echo "rc=2 (hk patch)" >> "$R/build.log"; exit 2; } ;;
   esac
   nice -n 5 cargo build --release -p memra-server >> "$L" 2>&1; brc=$?
   cp target/release/memra-server "$R/bins/$arm/memra-server"
