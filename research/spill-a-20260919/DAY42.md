@@ -165,3 +165,43 @@ the reap on observation only.
   `gates.sh` (a) and (b) with twin OFF and ON, `hitgate.sh`, `unit-cells.sh` (day 42's censuses added), `trace.sh`).
   Any host class; the CPU class matters only for the fill reading (item 3's owed 9950X-class cell rides a separate
   sitting, DAY43 section 1).
+
+## 3. S2 on the target card, as it ran (`pro-single-s2/`, one RTX PRO 6000 Blackwell Workstation Edition on a host whose `lscpu` reads `AMD Ryzen 9 9950X3D2 16-Core Processor`, 32 CPUs, 124 GB)
+
+- The run (`pro-single-day42/run-all.sh c62a34175 b4816eda8`, every build before any cell): `s2 build rc=0` at 02:59:48Z;
+  s2 `bf1ce8372148d764..`, g4 `edc411520ecb45f8..`, gpp `b1d527cda6904c9f..`; markers `s2 span-receipt-sealed
+  wording: 1`, `g4 .. 0`, `gpp .. 0`. The build notes `the s2 rebuild differs in bytes` (the tip rebuilt after the arms,
+  for the test binaries, is not byte-identical to the first build; every cell ran `bins/s2`, the first). Model sha256
+  `1facf36c..e024a`. Receipts banked in `pro-single-s2/box-readings/` (the full mirror follows the box's last sitting).
+- **(c), verbatim** (`demote/reading-day42-demote.log`, `ab-demote rc=0` 03:27:10Z; 20 boots, 20 of 20 replays): `DAY42
+  S2 C order=o1 wall g4=101.45 s2=104.60 s2-minus-g4=+3.15 rule <=+8.0 | e2e g4=176.08 s2=179.25 s2-minus-g4=+3.16 rule
+  <=+1.0 -> FAIL`; `DAY42 S2 C order=o2 wall g4=101.55 s2=104.60 s2-minus-g4=+3.05 rule <=+8.0 | e2e g4=176.25 s2=179.32
+  s2-minus-g4=+3.06 rule <=+1.0 -> FAIL`; **`DAY42 S2 DEMOTE -> FAIL`**. The copy settle reads 0.27 (g4) and 0.30 (s2) ms,
+  the helper 84.6 and 85.1 ms (`b01`, `b02`), both publishing after 2 polls; the tenant's stall median per boot 64.0 to
+  64.4 (g4) and 65.8 to 66.2 (s2) ms.
+- **(d), verbatim** (`promote/reading-day42-promote.log`, 03:44:29Z): `DAY42 S2 D order=o1 pin g4=13.50 s2=13.70
+  s2-minus-g4=+0.20 rule <=+1.0 | e2e g4=102.23 s2=102.56 s2-minus-g4=+0.33 rule <=+1.0 -> PASS`; `order=o2 pin
+  g4=13.50 s2=13.60 .. +0.10 .. e2e g4=102.24 s2=102.54 .. +0.30 .. -> PASS`; `DAY42 S2 PROMOTE -> PASS`.
+- **(e), verbatim** (`hump/reading-hump.log`, 03:49:36Z): `HUMP arm=xs2 boots=2 median-hump=+0.027 humps=False`, the
+  control `HUMP arm=xgpp boots=2 median-hump=+0.514 humps=True`: PASS. Boot starts 71 to 73 C at 2805 to 2820 MHz.
+- **(a) and (b)**: the gates on s2, each `.exit` 0, verbatim: `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` x4,
+  `KV-HOST-SPILL FAILURE GATE: ALL GREEN` OFF and ON, `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` default and plain (the
+  `span-flip-landed` and `span-flip-resident` cells green in both), `PREFIX-NEWEST-TURN-FITS: .. cached_ok=7/7 ..` OFF
+  and ON, `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` OFF and ON; the unit cells `unit-cells parallel=3/3
+  engine-serial-rc=0 door-rc=0 cpu-rc=0 engine-census-rc=0 tier-rc=0` (the native cells `14 passed`, the batched
+  kernel's bitwise cell among them).
+- **The reading, and where the price sits** (`trace/nsys-*/reading.log`, and `box-readings/owner-during-landed.log`
+  from `pro-single-s2/owner-during-landed.py` over the same sqlite exports, a reading written after the result): `TRACE
+  steady N=6 .. landed_wall_ms=2.97 .. seal_delay_ms=8.39 receipt_after_copies_ms=11.39` (s2; g4 has no span kernel).
+  The landed digests are two launches, `grid=192x64` and `grid=192x32` (12288 and 6144 blocks), 1.05 and 1.88 to 1.92
+  ms, and **during every one of them the owner stream runs no kernel at all**: `landed dur=1.88 owner busy in=0.00ms n=0 |
+  before busy=1.84ms n=185`. The source digests (`192x64`, `192x32`, 0.05 to 0.09 ms) do the same for their length. A
+  grid of that size fills every SM with blocks that wait on PCIe reads of pinned host memory (157 MB), and the owner's
+  kernels do not start until it drains: about 3 ms of owner stall per demote, which the intruder's e2e (+3.1 ms), the
+  publication (+3.1 ms) and the tenant's stall (+1.8 ms) all carry. S2's receipt left the landing path as designed
+  (the copy settle moved 0.03 ms); its grid shape is the price.
+
+**Verdict, as registered: S2 FAILS (c) on the target card and is refuted.** Its correctness cells are green on the
+target ((a), (b), (e) and every gate); its price clause (c) is not. S2 is reverted in one commit with these receipts
+banked (the code returns to `b4816eda8`'s, G4 and T), its 5090 sitting is cancelled, and the revision is pre-registered
+(`DAY46.md`) before its code: the span digests' grid bounded so a launch never fills the card.

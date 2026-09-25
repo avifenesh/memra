@@ -77,9 +77,11 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   enough to push the landing past the first tick-top poll. The revision owed (section 7): the span receipt off the
   landing path, required at publication with the sources and staging held until its event, the digests in one launch
   each; pre-registered with its acceptance before its code; its 5090 and target sittings then. Ruling 54: S refuted and
-  reverted. The revision is design S2, pre-registered in `DAY42.md` section 1 (and 1a) before its code, **built**
-  (`7ce3f3243`, DAY42 section 2: CPU cells green); its 5090 cells wait for the card's reset (the 5090 reads `GPU requires
-  reset` since 01:25Z, Xid 119 then 154); its target sitting is prepared (`pro-single-s2/`).
+  reverted. The revision, design S2 (`DAY42.md` sections 1 and 1a, built as `7ce3f3243`), **failed (c) on the target
+  card and is reverted** (DAY42 section 3: e2e +3.16 / +3.06 ms against +1.0; (d), (e), every gate and the unit cells
+  green): its span digests ran grids of 12288 and 6144 blocks that filled the card for about 3 ms per demote, and the
+  owner stream ran no kernel meanwhile. The revision, design S3 (the grid bounded), is pre-registered in `DAY46.md`
+  before its code.
 
 ### 5. The helper's promote-side fail-closed arms have no serving-shape fault cell (found in this ledger's read)
 
