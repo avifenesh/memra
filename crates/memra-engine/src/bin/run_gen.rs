@@ -121,6 +121,15 @@ fn forced_decode_tokens() -> Result<Option<Vec<u32>>, Box<dyn std::error::Error>
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // DAY71 (`research/spill-c-20260919/DAY71.md`): --cpu-probe-counters-check (log only) prints one counted chain
+    // and exits before any engine work, so a cell learns in a separate process that `RDPRU` runs on this host.
+    if std::env::args().any(|a| a == "--cpu-probe-counters-check") {
+        eprintln!(
+            "[cpu-probe] {}",
+            memra_engine::cpu_probe::counters_check_line()
+        );
+        return Ok(());
+    }
     let path = std::env::args().nth(1).expect(
         "usage: run-gen <model.gguf|hf_dir|hf:owner/repo[:file]> [tok ids...] | --prompt \"text\"",
     );
@@ -135,10 +144,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // DAY68 (`research/spill-c-20260919/DAY68.md`): --cpu-probe-phases (log only): a short compute chain at the
     // start and at each stage-line point, all outside the timed spans.
     let cpu_probe_phases = std::env::args().any(|a| a == "--cpu-probe-phases");
+    // DAY71: --cpu-probe-counters (log only, with --cpu-probe-phases): each phase probe also reads the core's TSC,
+    // MPERF and APERF around its chain.
+    let cpu_probe_counters = std::env::args().any(|a| a == "--cpu-probe-counters");
     if cpu_probe_phases {
         eprintln!(
             "[cpu-probe] {}",
-            memra_engine::cpu_probe::phase_line("start")
+            memra_engine::cpu_probe::phase_line("start", cpu_probe_counters)
         );
     }
     // DAY60: --moe-dispatch-clock (log only, both the legacy slot cache and the door): the cache
@@ -1477,7 +1489,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("[moe-cache] dispatch-clock phase={phase} {line}");
         }
         if cpu_probe_phases {
-            eprintln!("[cpu-probe] {}", memra_engine::cpu_probe::phase_line(phase));
+            eprintln!(
+                "[cpu-probe] {}",
+                memra_engine::cpu_probe::phase_line(phase, cpu_probe_counters)
+            );
         }
     };
     stage_line("gate");

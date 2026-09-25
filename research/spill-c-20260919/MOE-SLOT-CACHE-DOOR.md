@@ -25,6 +25,10 @@ carry their decide-by here, not in `docs/FLAGS.md`). Since day 60 it also covers
 entry points bracketed, `DAY60.md`), and since day 67 `run-gen --cpu-probe` (log only: a compute chain and L1, L2 and
 DRAM dependent-load chases on the main thread after every timed phase, `DAY67.md`) and since day 68 `run-gen
 --cpu-probe-phases` (log only: a 2^20-step compute chain at the start and at each stage-line point, `DAY68.md`).
+Day 71 adds `run-gen --cpu-probe-counters` (log only, with `--cpu-probe-phases`: the thread's TSC and its CPU's MPERF
+and APERF, read with `RDPRU`, around each phase chain; `counters=unavailable` on a CPU without it) and `run-gen
+--cpu-probe-counters-check` (one counted chain, then exit before any engine work), `DAY71.md`, decide-by 2026-10-09
+(14 days after landing); they go with the probe when OWED C12 closes.
 
 Day 40 (`DAY40.md` section 2): `--expert-bank-stages` (no value, requires the door) installs
 the door's log-only stage clock, an explanatory diagnostic: `Instant` brackets around every
