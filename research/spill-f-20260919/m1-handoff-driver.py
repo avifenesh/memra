@@ -143,7 +143,10 @@ def base_env(args, host_mb, handoff):
     env = dict(os.environ)
     env.update({"MEMRA_COMPAT": "openai", "MEMRA_MODELS": f"gate={args.artifact}",
                 "MEMRA_ADDR": f"127.0.0.1:{args.port}", "MEMRA_CTX": "8192", "MEMRA_MAX_SESSIONS": "4",
-                "MEMRA_PREFIX_CACHE_MB": "1024", "MEMRA_KV_HOST_MB": str(host_mb)})
+                "MEMRA_PREFIX_CACHE_MB": "1024", "MEMRA_KV_HOST_MB": str(host_mb),
+                # B2 amendment 2: the prompt-end seed publishes only for plain sessions; spec off
+                # is the documented production posture for prefix-cache shapes (FLAGS.md).
+                "MEMRA_SERVE_SPEC": "0"})
     env.pop("MEMRA_KV_HOST_HANDOFF", None)
     if handoff:
         env["MEMRA_KV_HOST_HANDOFF"] = str(handoff)

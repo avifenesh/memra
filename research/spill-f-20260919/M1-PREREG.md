@@ -186,6 +186,16 @@ the idle loop drips it at a 1 ms wait). So B2 needs one instrument and one drive
   `/v1/completions` and `/metrics`, including red controls (a refused export, an import with
   skips, a probe that misses the cache, a probe whose text differs).
 
+#### B2 amendment 2 (2026-09-26, after the first B2 attempt, before any passing cycle)
+
+The first 1 GiB attempt (`box27/b2-1g-attempt1-spec-route`) never filled the host tier: all 128
+fill prompts ran on the MTP spec route, where the prompt-end seed that feeds the prefix cache
+does not publish (the grid-aligned seed is armed for plain sessions only; a spec session keeps
+its own post-prime capture, which one-token fills never reach), so `prefix_host_bytes` stayed 0
+and every cycle failed as "prompts exhausted". Every B2 boot (reference, export and import) now
+runs with `MEMRA_SERVE_SPEC=0`, the documented production posture for shared-prefix serving
+shapes (`docs/FLAGS.md`). Nothing else changes.
+
 ### B3 expert-bank spill (the headline cells; `run-gen` and `run-spec`)
 
 Common env (frozen in `m1-prereg/b3-arms.lock.json`): `MEMRA_SPILL_DISK=1
