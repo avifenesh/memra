@@ -1,0 +1,12 @@
+
+running 1 test
+test moe_cache::banked_native::day61_profile::host_hit_lease_profile ... DAY61 PROFILE records=30720 cycles=200000 repeats=5 record_bytes=64
+DAY61 P1 proxy per_cycle_ns host_resident=568.0 demand=3054.9 with_bytes=194.8 finish=477.2 cycle=4315.7
+DAY61 P2 proxy unbracketed per_cycle_ns cycle=4180.8 brackets=134.9
+DAY61 P3 bank per_cycle_ns demand=2633.2 finish=443.1 cycle=3091.3 | stage clock per cycle (all repeats): stages=1.00 stage=1509.9 alloc=0.0 publish=352.4 retire=340.9 collect=13.1
+DAY61 P4 per_op_ns encode_two=1068.2 bankid_clone_vec=89.7 ids_map_get=56.8 catalog_record=189.5 btreeset_one=86.7 request_clone_validate=19.9 governor_reserve_release=314.5
+DAY61 P4b per_op_ns slru_resident=99.8 siphash_bankid=39.6 traced_host_resident=186.3
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 608 filtered out; finished in 14.80s
+

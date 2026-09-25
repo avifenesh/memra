@@ -1842,6 +1842,18 @@ fn rows_step(
     result
 }
 
+/// A session's cache capacity. TP/EP plain requests serve on the full-token replay graphs,
+/// which need a capacity of at least [`REPLAY_MIN_CAPACITY`], so a shorter session is rounded
+/// up so it can arm, never past the model context: a boot with a smaller context serves the
+/// eager step, because the arm refuses the capacity.
+fn session_capacity(replay_route: bool, need: usize, max_seq: usize) -> usize {
+    if replay_route {
+        need.max(REPLAY_MIN_CAPACITY).min(max_seq).max(need)
+    } else {
+        need
+    }
+}
+
 /// The greedy program a TP/EP replay arms: the device argmax, no draw.
 const GREEDY_REPLAY: Dsv4SampleCfg = Dsv4SampleCfg {
     temperature: 0.0,
@@ -2552,13 +2564,11 @@ fn serve_one(
         ));
     }
     let use_spec = m.spec && !(greedy && penalties_set);
-    // TP/EP plain requests serve on the full-token replay graphs, which need a capacity of at
-    // least REPLAY_MIN_CAPACITY; a shorter session is rounded up so it can arm.
-    let session_capacity = if m.gpu.topology().is_tp_ep() && !use_spec {
-        (prompt.len() + budget).max(REPLAY_MIN_CAPACITY)
-    } else {
-        prompt.len() + budget
-    };
+    let session_capacity = session_capacity(
+        m.gpu.topology().is_tp_ep() && !use_spec,
+        prompt.len() + budget,
+        m.max_seq,
+    );
     // Memory admission (memra#503), before consuming a parked prefix or starting any state
     // allocation: the active C4 history against its configured budget (a session past it can
     // never fit, so it is the client's error, not a retryable one), then the whole session
@@ -3253,6 +3263,18 @@ mod c4_host_budget_tests {
     };
     use memra_engine::dsv4_topology::Dsv4Placement;
     use std::ffi::OsString;
+
+    /// The replay round-up never passes the model context (revuto on #727): a boot with a
+    /// context below 512 keeps each session at its own need and serves eager.
+    #[test]
+    fn the_replay_round_up_stays_inside_the_context() {
+        use super::session_capacity;
+        assert_eq!(session_capacity(true, 300, 1_048_576), 512);
+        assert_eq!(session_capacity(true, 900, 1_048_576), 900);
+        assert_eq!(session_capacity(true, 300, 400), 400);
+        assert_eq!(session_capacity(true, 300, 300), 300);
+        assert_eq!(session_capacity(false, 300, 1_048_576), 300);
+    }
 
     /// TP/EP with attention TP2 is the default placement (memra #710); `pp` is the rollback,
     /// and any other value, the retired `tp_ep_attn` measurement name included, refuses.

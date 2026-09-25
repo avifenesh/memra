@@ -1,6 +1,17 @@
-# WP-A day 36 resumable state
+# WP-A resumable state (2026-09-25, stopped at an integrable milestone on the target card; the 5090 down)
 
-- Lane `lane/spill-a-20260919`; Linux worktree `wt-spill-a`. Merged `origin/main` `1d0cf13bc` (#711, integ57, with the guard fix `43d16d73f`) as `e23383796`, no conflict. DAY36 sections 1 (`0c2c62f77`), 3 (`4c2a4b19d`) and 3a (`733075ed1`) pre-registered before their code and boots.
-- The instrument `d4f53945f` (a log-only recurrent copy field on the restore lines). 5090 reading `79f5f6ae0`: host 0.130, owner stream 0.170 ms.
-- BOX5 sitting (DAY36 section 4, receipts in `pro-single-day36/box/`): the price cell `-> CLOSES` (0.290 / 0.190 ms), the D2D half closed with no door; M' (c) and (d) PASS on the card, every gate green. BOX5 released.
-- Integrable: yes. Owed: hash 1 on the owner; the fill on slower CPUs; the strong-form receipt; the darklanes VERDICT line (drafted in DAY36 section 4, handed to the lead).
+- Lane `lane/spill-a-20260919`; worktree `wt-spill-a`; merged with `origin/main` `d6515742f` (integ61) as `35978fc42`
+  (one FLAGS.md conflict, both rows merged by content); CPU suites green on the merge (server lib 920, engine lib 570,
+  the tier crate, clippy, fmt, check-flags).
+- Item 4: S2 and S3 refuted on the target card's (c) and reverted (`16904e97d`, `7197c1a9d`); design S4 (`ef4b097ad`:
+  S3 plus the release paths draining the owner stream only) passes (a) to (e) on the target card (DAY48 section 3).
+- Item 6: design V (`a324503df`, on S4) passes (a) to (d) on the target card (DAY47 sections 3, 3a, 3b).
+- Item 15 closed (DAY43 section 2: G4 stays the single placement). Item 3 closed for the 9950X class (DAY44 section 2).
+- The 5090 reads `GPU requires reset` since 01:25Z (Xid 119, then 154); owed there: S4's half (`rtx5090-day42/` with
+  S4's tip), V's half, item 16 (`rtx5090-day45/`). The owner's reset.
+- Receipts mirrored (all against the box's own manifests): `pro-single-i15/box`, `pro-single-t9950/box`,
+  `pro-single-s2/box-design-s2`, `box-design-s3`, `box-design-s4`, `pro-single-v/box`.
+- Next in the ledger: items 7 to 14 (item 13's capture-settle hold behind other copy-stream work is S4's precise drain
+  in part: the capture settle reads 0.16 ms on S4's demote boots).
+- BOX10 released: /root/wt-a, /root/spill-receipts and the /tmp scratch removed, no lane process, no compute app.
+- Local scratch: none.

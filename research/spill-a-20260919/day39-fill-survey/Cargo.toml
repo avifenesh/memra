@@ -1,0 +1,14 @@
+# WP-A day 39 (DAY39.md section 1): the fill survey. A research tool, not engine code: the promote's staging fill at the
+# 27B's and the 9B's shapes, single-threaded as design F runs it and split across T threads, into cached pinned
+# destinations; with --gpu, the span copies' time. Detached from the workspace (the empty [workspace] table).
+# Build: cargo build --release --offline
+[package]
+name = "day39-fill-survey"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+cudarc = { version = "=0.19.8", default-features = false, features = ["std", "cuda-13010", "dynamic-loading", "driver"] }

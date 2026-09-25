@@ -1,0 +1,29 @@
+
+running 13 tests
+owner-thread work while the copy stream's host function sleeps: 1.86 ms; the copy behind the host function still pending: true
+HOLD READING cell=h2d_span_filled_batch first_item_seen_ms=3.51 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=h2d_span_filled_batch pinned-alloc@-40.43+2.26 device-alloc@-38.16+0.02 pinned-alloc@-38.14+3.96 device-alloc@-34.19+0.02 pinned-alloc@-34.17+1.56 device-alloc@-32.61+0.10 delay@0.00+0.01 pinned-alloc@0.02+0.93 device-alloc@0.94+0.01 pinned-alloc@0.96+1.34 device-alloc@2.30+0.01 pinned-alloc@2.31+1.06 device-alloc@3.36+0.01 submit@3.37+0.14
+test tier_transfer::tests::pinned_kind_arm_is_honoured_by_the_driver ... ok
+HOLD READING cell=h2d_span_batch first_item_seen_ms=8.70 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=h2d_span_batch pinned-alloc@-59.04+3.94 pinned-write@-55.10+0.24 device-alloc@-54.86+0.03 pinned-alloc@-54.83+5.25 pinned-write@-49.57+0.51 device-alloc@-49.06+0.03 pinned-alloc@-49.03+2.52 pinned-write@-46.51+0.38 device-alloc@-46.13+0.10 pinned-alloc@-10.05+0.93 pinned-write@-9.12+0.23 device-alloc@-8.90+0.02 pinned-alloc@-8.88+1.45 device-alloc@-7.43+0.01 pinned-alloc@-7.41+1.04 pinned-write@-6.37+0.31 device-alloc@-6.06+0.03 delay@0.00+0.05 pinned-alloc@0.05+0.76 pinned-write@0.81+0.26 device-alloc@1.07+0.02 pinned-alloc@1.09+1.37 pinned-write@2.46+0.38 device-alloc@2.84+0.01 pinned-alloc@2.85+0.96 pinned-write@3.81+0.34 device-alloc@4.15+0.01 submit@4.17+0.06 pinned-alloc@4.23+0.90 pinned-write@5.13+0.26 device-alloc@5.39+0.02 pinned-alloc@5.41+1.36 pinned-write@6.77+0.38 device-alloc@7.16+0.02 pinned-alloc@7.18+1.07 pinned-write@8.24+0.35 device-alloc@8.60+0.09 submit-busy@8.69+0.00
+test tier_transfer::tests::h2d_deferred_checksum_lands_with_the_supplied_digests ... ok
+HOLD READING cell=d2h_span_batch first_item_seen_ms=91.54 polls=38040 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=d2h_span_batch htod-pageable@-10.03+0.24 pinned-alloc@-9.80+5.20 htod-pageable@-4.59+0.50 pinned-alloc@-4.09+2.54 htod-pageable@-1.55+0.34 pinned-alloc@-1.20+1.18 delay@0.00+0.01 htod-pageable@0.01+0.29 pinned-alloc@0.31+0.92 htod-pageable@1.23+0.35 pinned-alloc@1.58+1.47 htod-pageable@3.05+0.29 pinned-alloc@3.34+1.58 submit@4.92+0.03 htod-pageable@4.95+0.20 pinned-alloc@5.16+0.92 htod-pageable@6.07+0.43 pinned-alloc@6.50+1.47 htod-pageable@7.98+0.32 pinned-alloc@8.30+1.23 submit-busy@9.54+0.00
+test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ok
+test tier_transfer::tests::d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait ... ok
+test tier_transfer::tests::h2d_fill_host_function_does_not_hold_the_owner_thread ... ok
+D2H DEVICE RECEIPT cell flip=true items=3 gpu_ms=101.745
+D2H DEVICE RECEIPT cell flip=false items=3 gpu_ms=105.152
+test tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt ... ok
+test tier_transfer::tests::h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies ... ok
+test tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+test tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+test tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle ... ok
+test tier_transfer::tests::d2h_device_receipt_lands_with_the_source_digest ... ok
+test tier_transfer::tests::d2h_source_flip_is_witnessed_by_the_landed_bytes ... ok
+D2D-RECEIPT PRICE order=copy-first bytes=165675008 n_per_arm=5 copy_ms=[0.394816, 0.392352, 0.39776, 0.396064, 0.397376] copy_median=0.396 digest_ms=[0.2224, 0.22144, 0.218656, 0.218464, 0.21952] digest_median=0.220 pair_median=0.439 pair_over_copy=1.11
+D2D-RECEIPT PRICE order=digest-first bytes=165675008 n_per_arm=5 copy_ms=[0.36992, 0.39472, 0.395328, 0.397024, 0.396608] copy_median=0.395 digest_ms=[0.222848, 0.21952, 0.221504, 0.221088, 0.221984] digest_median=0.222 pair_median=0.443 pair_over_copy=1.12
+test tier_transfer::tests::d2d_receipt_digest_price_against_the_copy ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 581 filtered out; finished in 2.78s
+

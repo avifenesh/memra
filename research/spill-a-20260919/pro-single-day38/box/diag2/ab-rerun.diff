@@ -1,0 +1,30 @@
+13,15c13,15
+< mkdir -p "$R/g/ab"
+< python3 tools/tier-lock-proof.py --fd "$fd" --lock /tmp/memra-gpu.lock --owner collector > "$R/g/LOCK.json"
+< log() { echo "$(date -u +%FT%TZ) $*" | tee -a "$R/g/run.log"; }
+---
+> mkdir -p "$R/g-rerun/ab"
+> python3 tools/tier-lock-proof.py --fd "$fd" --lock /tmp/memra-gpu.lock --owner collector > "$R/g-rerun/LOCK.json"
+> log() { echo "$(date -u +%FT%TZ) $*" | tee -a "$R/g-rerun/run.log"; }
+17c17
+< sha256sum "$R/bins/base/memra-server" "$R/bins/tip/memra-server" > "$R/g/binaries.sha256"
+---
+> sha256sum "$R/bins/base/memra-server" "$R/bins/tip/memra-server" > "$R/g-rerun/binaries.sha256"
+26c26
+<   --format=csv -lms 250 > "$R/g/card-250ms.csv" 2>&1 &
+---
+>   --format=csv -lms 250 > "$R/g-rerun/card-250ms.csv" 2>&1 &
+58c58
+<     i=$((i+1)); D=$R/g/ab/$order/$(printf 'b%02d-%s' "$i" "$arm"); mkdir -p "$D"
+---
+>     i=$((i+1)); D=$R/g-rerun/ab/$order/$(printf 'b%02d-%s' "$i" "$arm"); mkdir -p "$D"
+71c71
+<       >> "$R/g/ab/replays.log" 2>&1
+---
+>       >> "$R/g-rerun/ab/replays.log" 2>&1
+76,77c76,77
+< nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$R/g/compute-apps.after.csv" 2>&1
+< python3 research/spill-a-20260919/day38-reading.py "$R/g" > "$R/g/reading-day38-target.log" 2>&1
+---
+> nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$R/g-rerun/compute-apps.after.csv" 2>&1
+> python3 research/spill-a-20260919/day38-reading.py "$R/g-rerun" > "$R/g-rerun/reading-day38-target.log" 2>&1

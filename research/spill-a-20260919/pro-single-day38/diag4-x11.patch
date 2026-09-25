@@ -1,0 +1,39 @@
+diff --git a/crates/memra-engine/src/tier_transfer.rs b/crates/memra-engine/src/tier_transfer.rs
+index 088d1c89b..fbc1f636a 100644
+--- a/crates/memra-engine/src/tier_transfer.rs
++++ b/crates/memra-engine/src/tier_transfer.rs
+@@ -946,6 +946,9 @@ impl CudaTransfers {
+         // the engine keeps cudarc's timing-disabled default.
+         let timed = Some(sys::CUevent_flags::CU_EVENT_DEFAULT);
+         let start = cuda(rs.record_event(timed))?;
++        // diag4 x11: the digests go straight into the pinned twin through its host pointer (unified
++        // addressing), so no D2H of the lanes runs on the receipt stream.
++        let twin = cuda(scratch.pinned.as_mut_ptr())? as u64;
+         for (chunk, part) in sources.chunks(RECEIPT_ITEMS).enumerate() {
+             let mut items = ReceiptItems {
+                 n: part.len() as u64,
+@@ -957,14 +960,14 @@ impl CudaTransfers {
+                 items.len[j] = len;
+             }
+             let at = chunk * RECEIPT_ITEMS * 32;
+-            let mut out = scratch.lanes.slice_mut(at..at + part.len() * 32);
++            let out: u64 = twin + at as u64;
+             let cfg = LaunchConfig {
+                 grid_dim: (part.len().div_ceil(32) as u32, 1, 1),
+                 block_dim: (32, 1, 1),
+                 shared_mem_bytes: 0,
+             };
+             let mut b = rs.launch_builder(&k.sha256);
+-            b.arg(&items).arg(&mut out);
++            b.arg(&items).arg(&out);
+             // SAFETY: documented FFI of `cu/tier_receipt.cu`: `d2h_receipt_sha256(ReceiptItems items,
+             // u8* out)` reads `items.len[j]` bytes at each non-zero `items.ptr[j]` (live device
+             // sources of this batch, ordered behind their producer fences above) and writes exactly
+@@ -989,7 +992,6 @@ impl CudaTransfers {
+             cuda(unsafe { b.launch(cfg) })?;
+             flipped = Some(cuda(rs.record_event(None))?);
+         }
+-        cuda(rs.memcpy_dtoh(&scratch.lanes, &mut scratch.pinned))?;
+         scratch.event = Some(cuda(rs.record_event(None))?);
+         Ok(((start, end), flipped))
+     }

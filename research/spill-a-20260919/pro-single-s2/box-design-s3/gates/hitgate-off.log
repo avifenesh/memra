@@ -1,0 +1,82 @@
+== qwen arm: spec-on boot ==
+  on-grid prompt: 128 tokens (22 filler words)
+  census spec-on: entries published: 11 draft-bearing (insert (spec-boundary)), 1 plain (insert (seed)), 0 other
+    hits x1: hit: 128 of 128 prompt tokens
+    hits x6: hit: 64 of 106 prompt tokens
+    hits x3: hit: 64 of 119 prompt tokens
+    hits x2: hit: 96 of 119 prompt tokens
+    hits x1: hit: 96 of 135 prompt tokens
+    identity clause namespaces (default, "grow") on the spec-on side: 4 draft-bearing, 0 plain -> its hits restored draft-bearing entries
+    door lines: armed=0 door_on=0 capture_submitted=0 capture_published=0 restore_submitted=0 restore_landed=0 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+  ok: server log shows spec restore
+  ok: r1 cold has spec + zero cached
+  ok: r2 hit has cached tokens
+  ok: r2 hit SPEC ENGAGED (accepted > 0)
+  ok: r3 extended hit has cached tokens
+  ok: r3 extended hit SPEC ENGAGED (accepted > 0)
+  ok: r2 text == r1 text (deterministic repeat)
+-- sampled cells (temperature 0.8, seeds: 7 1234 99991, teeth=0) --
+  ok: s7 sampled cold engages spec, zero cached
+  ok: s7 sampled hit restores the whole published entry (cached == cap(prompt) == 64)
+  ok: s7 sampled hit SPEC ENGAGED (accepted > 0)
+  ok: s7 sampled hit bytes == cold leader bytes (same seed)
+  ok: s7 sampled hit acceptance == cold acceptance exactly
+  ok: s1234 sampled cold engages spec, zero cached
+  ok: s1234 sampled hit restores the whole published entry (cached == cap(prompt) == 64)
+  ok: s1234 sampled hit SPEC ENGAGED (accepted > 0)
+  ok: s1234 sampled hit bytes == cold leader bytes (same seed)
+  ok: s1234 sampled hit acceptance == cold acceptance exactly
+  ok: s99991 sampled cold engages spec, zero cached
+  ok: s99991 sampled hit restores the whole published entry (cached == cap(prompt) == 64)
+  ok: s99991 sampled hit SPEC ENGAGED (accepted > 0)
+  ok: s99991 sampled hit bytes == cold leader bytes (same seed)
+  ok: s99991 sampled hit acceptance == cold acceptance exactly
+  ok: sx sampled leader engages spec, zero cached
+  ok: sx sampled SUFFIX hit restores a strict prefix
+  ok: sx sampled SUFFIX hit SPEC ENGAGED (accepted > 0)
+  ok: sx sampled suffix hit reproduces byte-for-byte at one seed
+  ok: sp penalized sampled leader engages spec (entry has a draft plane)
+  ok: sp penalized sampled hit restores the whole published entry (cached == cap(prompt) == 64)
+  ok: sp penalized sampled hit SPEC ENGAGED (accepted > 0)
+  ok: sp penalized sampled hit bytes == cold leader bytes (same seed)
+  ok: sp penalized sampled hit acceptance == cold acceptance exactly
+  ok: np greedy+penalized leader serves PLAIN (publishes a plane-less entry)
+  ok: np sampled hit on a plane-less entry stays PLAIN (refusal is real)
+  ok: fc on-grid prompt (tokens a multiple of 32)
+  ok: fc sampled leader engages spec, zero cached
+  ok: fc sampled hit is a FULL-COVER cache hit (cached == prompt_tokens)
+  ok: fc sampled full-cover hit SPEC ENGAGED (accepted > 0)
+  ok: fc sampled full-cover hit bytes == cold leader bytes (same seed)
+  ok: fc sampled full-cover hit acceptance == cold acceptance exactly
+  ok: sampled FIRST token is drawn, not the greedy argmax (at least one seed differs)
+     first tokens: greedy='\n\n' sampled=['不解', '<k', '缴存']  (BTEMP=4.0, 3 distinct over 3 seeds)
+-- growth cells (Item 3: a growing conversation must learn a longer boundary) --
+  ok: g2 restores g1's published entry (cached == cap(P1) == 64)
+  ok: g1 turn 1 is cold and engages spec
+  ok: g2 turn 2 restores turn 1's boundary (suffix-fed hit)
+  ok: g3 turn 3 engages spec
+  ok: g3 turn 3 hits a STRICTLY LONGER prefix than turn 2 did
+  ok: g3's restored prefix == turn 2's republished boundary (96 of 119)
+  ok: g4 (repeat of turn 2) restores the whole REPUBLISHED entry (cached == 96)
+  ok: g4 SPEC ENGAGED on the republished entry
+  ok: g4 reproduces its publisher's continuation byte-for-byte (snapshot round-trip)
+  ok: g4 acceptance == its publisher's acceptance exactly
+-- boundary draws (Item 1) --
+  ok: boundary site cold-prime fired
+  ok: boundary site burst-tail-commit fired
+  ok: boundary site restore-full-cover fired
+  ok: 13 of 47 boundary draws deviated from the pre-lane argmax
+  ok: plane-less refusal names itself in the log
+== qwen arm: spec-off twin boot (identity reference) ==
+  census spec-off: entries published: 0 draft-bearing (insert (spec-boundary)), 2 plain (insert (seed)), 0 other
+    hits x1: hit: 64 of 106 prompt tokens
+    hits x2: hit: 64 of 119 prompt tokens
+    identity clause namespaces (default, "grow") on the spec-off side: 0 draft-bearing, 2 plain -> its hits restored plain entries
+    door lines: armed=0 door_on=0 capture_submitted=0 capture_published=0 restore_submitted=0 restore_landed=0 demote_submitted=0 promote_submitted=0 refused_contracts_door=0 restore_refused=0 latched=0
+  ok: off-boot rows carry no spec
+  ok: r1 spec==plain byte identity
+  ok: r2 spec==plain byte identity
+  ok: r3 spec==plain byte identity
+  ok: g1 spec==plain byte identity
+  ok: g2 spec==plain byte identity
+SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)

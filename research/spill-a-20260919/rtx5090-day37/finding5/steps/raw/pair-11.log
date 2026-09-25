@@ -1,0 +1,24 @@
+
+running 2 tests
+HOLD READING cell=d2h_span_batch first_item_seen_ms=313.36 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=true
+HOLD STEPS cell=d2h_span_batch htod-pageable@-45.20+1.24 pinned-alloc@-43.96+1.00 htod-pageable@-42.96+2.22 pinned-alloc@-40.74+1.77 htod-pageable@-38.97+4.70 pinned-alloc@-34.28+1.16 delay@0.00+0.23 htod-pageable@0.24+1.66 pinned-alloc@1.90+0.97 htod-pageable@2.88+298.04 pinned-alloc@300.93+2.29 htod-pageable@303.22+0.92 pinned-alloc@304.14+1.19 submit@305.34+0.04 htod-pageable@305.39+1.00 pinned-alloc@306.38+0.83 htod-pageable@307.21+1.51 pinned-alloc@308.73+1.55 htod-pageable@310.28+1.93 pinned-alloc@312.21+1.13 submit-busy@313.34+0.00
+
+thread 'tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream' (441881) panicked at crates/memra-engine/src/tier_transfer.rs:4139:9:
+a batch with a running span has not landed (HOLD READING cell=d2h_span_batch first_item_seen_ms=313.36 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=true) (HOLD STEPS cell=d2h_span_batch htod-pageable@-45.20+1.24 pinned-alloc@-43.96+1.00 htod-pageable@-42.96+2.22 pinned-alloc@-40.74+1.77 htod-pageable@-38.97+4.70 pinned-alloc@-34.28+1.16 delay@0.00+0.23 htod-pageable@0.24+1.66 pinned-alloc@1.90+0.97 htod-pageable@2.88+298.04 pinned-alloc@300.93+2.29 htod-pageable@303.22+0.92 pinned-alloc@304.14+1.19 submit@305.34+0.04 htod-pageable@305.39+1.00 pinned-alloc@306.38+0.83 htod-pageable@307.21+1.51 pinned-alloc@308.73+1.55 htod-pageable@310.28+1.93 pinned-alloc@312.21+1.13 submit-busy@313.34+0.00)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... FAILED
+HOLD READING cell=h2d_span_batch first_item_seen_ms=309.15 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=true
+HOLD STEPS cell=h2d_span_batch pinned-alloc@-351.58+1.00 pinned-write@-350.58+0.29 device-alloc@-350.29+0.96 pinned-alloc@-349.33+1.77 pinned-write@-347.56+0.56 device-alloc@-347.00+1.67 pinned-alloc@-345.32+4.55 pinned-write@-340.77+0.35 device-alloc@-340.42+0.94 pinned-alloc@-308.63+0.71 pinned-write@-307.91+0.20 device-alloc@-307.71+0.01 pinned-alloc@-307.70+1.41 device-alloc@-306.28+0.22 pinned-alloc@-306.06+1.18 pinned-write@-304.88+0.38 device-alloc@-304.49+1.16 delay@0.00+0.92 pinned-alloc@0.92+0.99 pinned-write@1.91+0.31 device-alloc@2.22+1.77 pinned-alloc@4.00+1.48 pinned-write@5.48+0.53 device-alloc@6.01+1.06 pinned-alloc@7.07+1.14 pinned-write@8.21+0.39 device-alloc@8.60+293.81 submit@302.42+1.20 pinned-alloc@303.63+1.52 pinned-write@305.16+0.27 device-alloc@305.43+0.01 pinned-alloc@305.44+1.64 pinned-write@307.08+0.50 device-alloc@307.58+0.01 pinned-alloc@307.59+1.18 pinned-write@308.76+0.37 device-alloc@309.13+0.01 submit-busy@309.14+0.00
+
+thread 'tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream' (441882) panicked at crates/memra-engine/src/tier_transfer.rs:4404:9:
+a batch with a running span has not landed (HOLD READING cell=h2d_span_batch first_item_seen_ms=309.15 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=true) (HOLD STEPS cell=h2d_span_batch pinned-alloc@-351.58+1.00 pinned-write@-350.58+0.29 device-alloc@-350.29+0.96 pinned-alloc@-349.33+1.77 pinned-write@-347.56+0.56 device-alloc@-347.00+1.67 pinned-alloc@-345.32+4.55 pinned-write@-340.77+0.35 device-alloc@-340.42+0.94 pinned-alloc@-308.63+0.71 pinned-write@-307.91+0.20 device-alloc@-307.71+0.01 pinned-alloc@-307.70+1.41 device-alloc@-306.28+0.22 pinned-alloc@-306.06+1.18 pinned-write@-304.88+0.38 device-alloc@-304.49+1.16 delay@0.00+0.92 pinned-alloc@0.92+0.99 pinned-write@1.91+0.31 device-alloc@2.22+1.77 pinned-alloc@4.00+1.48 pinned-write@5.48+0.53 device-alloc@6.01+1.06 pinned-alloc@7.07+1.14 pinned-write@8.21+0.39 device-alloc@8.60+293.81 submit@302.42+1.20 pinned-alloc@303.63+1.52 pinned-write@305.16+0.27 device-alloc@305.43+0.01 pinned-alloc@305.44+1.64 pinned-write@307.08+0.50 device-alloc@307.58+0.01 pinned-alloc@307.59+1.18 pinned-write@308.76+0.37 device-alloc@309.13+0.01 submit-busy@309.14+0.00)
+test tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream ... FAILED
+
+failures:
+
+failures:
+    tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream
+    tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 584 filtered out; finished in 0.88s
+

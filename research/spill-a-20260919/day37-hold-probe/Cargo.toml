@@ -1,0 +1,14 @@
+# WP-A day 37 (DAY37.md section 3): the two-thread hold probe that places finding 5's blocking call. A research tool,
+# not engine code: it drives the CUDA driver through cudarc (the engine's version) and nothing of the engine.
+# Detached from the workspace on purpose (the empty [workspace] table), its own target directory and lockfile.
+# Build: cargo build --release --offline
+[package]
+name = "day37-hold-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+cudarc = { version = "=0.19.8", default-features = false, features = ["std", "cuda-13010", "dynamic-loading", "driver", "nvrtc"] }

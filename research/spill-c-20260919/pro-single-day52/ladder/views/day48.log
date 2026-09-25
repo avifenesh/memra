@@ -1,0 +1,11 @@
+DAY52 VIEW day=48 reader=day48-small.py arms=off<-off,i2<-i2,i8<-i8,i5<-i5 rc=0
+DAY48 SMALL CHECKS rig=pro-single runs=40 integrity=ok
+DAY48 ARM i2 window_door_ms_per_token=0.63 window_s median=0.271 iqr=0.001 | per window token: gpu_misses=92.3 host_hits=92.3 validate=0.269 trace=0.412 demand=0.945 enqueue=0.169 retire=0.055 finish=0.002 miss_total=1.477
+DAY48 ARM i8 window_door_ms_per_token=0.44 window_s median=0.265 iqr=0.001 | per window token: gpu_misses=92.3 host_hits=92.3 validate=0.085 trace=0.417 demand=0.972 enqueue=0.169 retire=0.054 finish=0.002 miss_total=1.496
+DAY48 ARM i5 window_door_ms_per_token=0.50 window_s median=0.267 iqr=0.000 | per window token: gpu_misses=92.3 host_hits=92.3 validate=0.083 trace=0.013 demand=0.557 enqueue=0.173 retire=0.054 finish=0.002 miss_total=1.082
+DAY48 CLAUSE (i) validate per window token i2=0.269 i8=0.085 rule i8 < 0.1 x i2 -> FAIL
+DAY48 CLAUSE (ii) i8_minus_i2 window pooled=-0.006 o1=-0.005 o2=-0.005 noise=0.001 rule <=noise -> PASS
+DAY48 CLAUSE (iii) trace per window token i8=0.417 i5=0.013 rule i5 < 0.1 x i8 -> PASS
+DAY48 CLAUSE (iv) i5_minus_i8 window pooled=+0.002 o1=+0.002 o2=+0.001 noise=0.001 rule <=noise -> FAIL
+DAY48 READING window i2=0.271 i8=0.265 i5=0.267 -> not_monotone
+DAY48 SMALL rig=pro-single integrity=ok i8=FAIL i5=FAIL

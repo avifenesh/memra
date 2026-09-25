@@ -1,0 +1,15 @@
+diff --git a/crates/memra-engine/src/tier_transfer.rs b/crates/memra-engine/src/tier_transfer.rs
+index 433e0d7d6..5cc3b7f56 100644
+--- a/crates/memra-engine/src/tier_transfer.rs
++++ b/crates/memra-engine/src/tier_transfer.rs
+@@ -812,9 +812,7 @@ impl CudaTransfers {
+             copy: None,
+             receipt_stream: None,
+             twin_pool: RefCell::new(Vec::new()),
+-            fill_threads: fill_threads_for_host(
+-                std::thread::available_parallelism().map_or(1, |n| n.get()),
+-            ),
++            fill_threads: 1,
+             governor,
+             pinned_default,
+             owner: DeviceOwner::new(device),

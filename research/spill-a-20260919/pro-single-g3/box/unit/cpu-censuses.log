@@ -1,0 +1,30 @@
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-4cd9b829515be66d)
+
+running 21 tests
+test worker::tests::hash_fault_door_values_are_the_helpers_and_never_the_contract_routes ... ok
+test worker::tests::option_c_off_tick_checksums_ride_the_hash_helper_and_a_corrupt_lease_is_refused ... ignored, requires one CUDA device; run on the target card under the rig lock
+test worker::tests::day38_the_device_receipt_faults_are_armed_before_the_submission ... ok
+test worker::tests::day31_the_copy_complete_line_tallies_the_payload_bytes_by_class ... ok
+test worker::tests::day41_the_sources_faults_key_on_the_first_sources_job ... ok
+test worker::tests::day36_the_restore_recurrent_copy_is_timed_without_a_wait ... ok
+test worker::tests::day34_the_promote_checksums_ride_the_hash_helper_in_the_stated_order ... ok
+test worker::tests::day31_the_staging_goes_back_on_every_exit_and_is_charged_once ... ok
+test worker::tests::the_d2h_spans_ride_the_ticket_in_the_stated_order ... ok
+test worker::tests::hash_helper_gone_is_a_typed_refusal_that_latches_under_poll_and_under_block ... ok
+test worker::tests::every_path_that_meets_a_demoting_entry_settles_it_first ... ok
+test worker::tests::day35_the_demote_rehash_rides_the_hash_helper_in_the_stated_order ... ok
+test worker::tests::the_run_loop_waits_boundedly_when_the_queue_is_only_requests_parked_on_a_promote ... ok
+test worker::tests::every_path_that_meets_a_hashing_demote_meets_it_through_the_same_settle ... ok
+test worker::tests::every_path_that_meets_a_promoting_entry_settles_it_first ... ok
+test worker::tests::day33_the_promote_submits_its_filled_spans_in_the_probes_tick ... ok
+test worker::tests::hashing_hit_parks_the_request_once_per_id_and_a_miss_does_not ... ok
+test worker::tests::hash_digests_never_landing_latch_at_the_deadline_under_poll_and_under_block ... ok
+test worker::tests::hashing_demote_keeps_its_state_until_the_digests_land_then_reaches_publication ... ok
+test worker::tests::hash_helper_digests_equal_the_owner_thread_digests_bitwise ... ok
+test worker::tests::hash_reply_that_does_not_describe_the_image_is_a_typed_refusal_that_latches ... ok
+
+test result: ok. 20 passed; 0 failed; 1 ignored; 0 measured; 914 filtered out; finished in 0.70s
+
