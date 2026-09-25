@@ -22,6 +22,12 @@ for spec in "$@"; do
         head=$(git rev-parse HEAD)
         echo "head=$head"
         if [ -n "$(git status --porcelain --untracked-files=no)" ]; then echo "tree not clean"; git status --short | head; echo "rc=1"; exit 1; fi
+        # DAY58: an arm label with a patch in D52_PATCH_DIR (day58-<label>.patch) builds the commit with it applied.
+        patch=${D52_PATCH_DIR:-/nonexistent}/day58-$label.patch
+        if [ -f "$patch" ]; then
+            git apply "$patch" || { echo "patch $patch does not apply"; echo "rc=1"; exit 1; }
+            echo "patch=$(basename "$patch") sha256=$(sha256sum "$patch" | cut -d' ' -f1)"
+        fi
         nvcc --version | tail -2
         cargo --version
         if [ "$label" = server ] || [ "$label" = server-c5 ] || [[ $label == srv-* ]]; then
@@ -49,6 +55,7 @@ for spec in "$@"; do
             cp --no-preserve=links target/release/run-spec "$OUT/bins/run-spec-final"
             echo "binary=run-spec-final tree=$head sha256=$(sha256sum "$OUT/bins/run-spec-final" | cut -d' ' -f1)"
         fi
+        [ -f "$patch" ] && git checkout -q -- .
         echo "end=$(date -u +%FT%TZ)"
         echo "rc=0"
     } 2>&1 | tee "$log"

@@ -6,6 +6,9 @@ STUB day40-attrib.py D/root/spill-receipts/c-day52/attrib --rig pro-single
 STUB day40-run-cell.sh ladder 14400
 STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day52/ladder
 STUB day52-views.py D/root/spill-receipts/c-day52/ladder --rig pro-single
+STUB day40-run-cell.sh ladder-b 5400
+STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day52/ladder-b
+STUB day52-views.py D/root/spill-receipts/c-day52/ladder-b --rig pro-single --days 44,45
 STUB day53-cell.sh unit-server D/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf D/root/spill-receipts/c-day52/bins/memra-server-v3 D/root/spill-receipts/c-day52/c6 256
 STUB day53-cell.sh failure-default-off D/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf D/root/spill-receipts/c-day52/bins/memra-server-v3 D/root/spill-receipts/c-day52/c6 256
 STUB day53-cell.sh failure-plain-off D/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf D/root/spill-receipts/c-day52/bins/memra-server-v3 D/root/spill-receipts/c-day52/c6 256
@@ -18,27 +21,34 @@ STUB day56-reading.py D/root/spill-receipts/c-day52/c5 --rig pro-single
 STUB day40-run-cell.sh slices 10800
 STUB day54-slice-reading.py D/root/spill-receipts/c-day52/slices
 == run 1 driver lines
-attrib rc=0 2026-09-24T21:07:17Z
+attrib rc=0 2026-09-25T00:19:18Z
 attrib validate rc=0
 attrib reader rc=0
-ladder rc=0 2026-09-24T21:07:17Z
+ladder rc=0 2026-09-25T00:19:18Z
 ladder validate rc=0
 ladder reader rc=0
-c6 unit-server rc=0 2026-09-24T21:07:17Z
-c6 failure-default-off rc=0 2026-09-24T21:07:17Z
-c6 failure-plain-off rc=0 2026-09-24T21:07:17Z
-c6 failure-default-on rc=0 2026-09-24T21:07:17Z
-c6 identity-default-off rc=0 2026-09-24T21:07:17Z
-c6 identity-default-on rc=0 2026-09-24T21:07:17Z
-c5 identity-dspark-off rc=0 2026-09-24T21:07:17Z
-c5 identity-dspark-on rc=0 2026-09-24T21:07:17Z
+ladder-b rc=0 2026-09-25T00:19:18Z
+ladder-b validate rc=0
+ladder-b reader rc=0
+c6 unit-server rc=0 2026-09-25T00:19:18Z
+c6 failure-default-off rc=0 2026-09-25T00:19:18Z
+c6 failure-plain-off rc=0 2026-09-25T00:19:18Z
+c6 failure-default-on rc=0 2026-09-25T00:19:18Z
+c6 identity-default-off rc=0 2026-09-25T00:19:18Z
+c6 identity-default-on rc=0 2026-09-25T00:19:18Z
+c5 identity-dspark-off rc=0 2026-09-25T00:19:18Z
+c5 identity-dspark-on rc=0 2026-09-25T00:19:18Z
 c5 reader rc=0
-slices rc=0 2026-09-24T21:07:17Z
+slices rc=0 2026-09-25T00:19:18Z
 slices reader rc=0
 final not built: DAY51's hashlock, spec and decide not run (add final=<DAY51 section 2 commit> to D52_BUILDS and rerun)
-box done 2026-09-24T21:07:17Z
+box done 2026-09-25T00:19:18Z
 == run 2 (D52_BUILDS="base=1 i4=2 final=3") calls
 STUB day52-box-build.sh D/root/wt-c-build D/root/spill-receipts/c-day52 base=1 i4=2 final=3
+STUB day40-run-cell.sh residfix 3600
+STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day52/residfix
+STUB day40-run-cell.sh smallfix 3600
+STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day52/smallfix
 STUB day40-run-cell.sh hashlock 1800
 STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day52/hashlock
 STUB day51-decide.py hashlock D/root/spill-receipts/c-day52/hashlock --rig pro-single
@@ -51,19 +61,26 @@ STUB day51-decide.py decide D/root/spill-receipts/c-day52/decide --rig pro-singl
 == run 2 driver lines
 attrib already done
 ladder already done
+ladder-b already done
 c6 unit-server already done
 c6 failure-default-off already done
 c6 failure-plain-off already done
 c6 failure-default-on already done
 c6 identity-default-off already done
 c6 identity-default-on already done
-hashlock rc=0 2026-09-24T21:07:18Z
+residfix rc=0 2026-09-25T00:19:19Z
+residfix validate rc=0
+residfix reader rc=2
+smallfix rc=0 2026-09-25T00:19:19Z
+smallfix validate rc=0
+smallfix reader rc=2
+hashlock rc=0 2026-09-25T00:19:19Z
 hashlock validate rc=0
 hashlock reader rc=0
-spec rc=0 2026-09-24T21:07:18Z
+spec rc=0 2026-09-25T00:19:19Z
 spec validate rc=0
 spec reader rc=0
-decide rc=0 2026-09-24T21:07:18Z
+decide rc=0 2026-09-25T00:19:19Z
 decide validate rc=0
 decide reader rc=0
-box done 2026-09-24T21:07:18Z
+box done 2026-09-25T00:19:19Z

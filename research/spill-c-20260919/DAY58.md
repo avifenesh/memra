@@ -53,3 +53,12 @@ I8 (as I8f) stays if (i) and (ii) hold, I5 (as I5f) if (iii) and (iv) hold; a fa
 reverted, before `DAY51.md` section 2 names the final tree.
 
 **What each card can decide.** The RTX 5090 decides here; the target card reads the clauses in its final phase.
+
+## 1a. Scripts, before the fixes' cells run
+
+`day58-cell.sh` (cell `smallfix`), reader `day58-smallfix.py` (day 48's reader with the arms renamed and the same
+clauses), the arm patches `day58-nomemo.patch` and `day58-unbuf.patch` (made from `7ea765687`, checked with
+`git apply --check`). The fixes landed in `7ea765687`. The box build takes a label with a patch
+(`day58-<label>.patch` applied to the commit, the tree restored after the build) and builds only the labels whose
+binary is missing, so the final phase adds `tip`, `nomemo`, `unbuf` and `final` without rebuilding the rest; the
+target card runs `smallfix` in its final phase after `residfix`.

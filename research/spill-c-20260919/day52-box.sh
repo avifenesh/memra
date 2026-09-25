@@ -36,9 +36,21 @@ printf '%s  %s\n' "$ART_OTHER_SHA" "$ART_OTHER" > "$ART_OTHER.sha256"
 sha256sum -c "$ART.sha256" "$ART_OTHER.sha256" 2>&1 | tee -a "$R/provenance.log"
 grep -q ': FAILED' "$R/provenance.log" && { echo "ARTIFACT MISMATCH, stopping" | tee -a "$R/provenance.log"; exit 1; }
 
-if ! grep -q '^BUILDS-DONE' "$R/builds.log" 2>/dev/null; then
-    # shellcheck disable=SC2086
-    bash "$L/day52-box-build.sh" "$BWT" "$R" $D52_BUILDS || exit 1
+# Build every label whose binary is not there yet (a rerun with more labels builds only the new ones).
+need=()
+for spec in $D52_BUILDS; do
+    label=${spec%%=*}
+    case $label in
+        base) name=run-gen ;;
+        server) name=memra-server-v3 ;;
+        server-c5) name=memra-server-c5 ;;
+        srv-*) name=memra-server-${label#srv-} ;;
+        *) name=run-gen-$label ;;
+    esac
+    [ -x "$R/bins/$name" ] || need+=("$spec")
+done
+if [ ${#need[@]} -gt 0 ]; then
+    D52_PATCH_DIR=$L bash "$L/day52-box-build.sh" "$BWT" "$R" "${need[@]}" || exit 1
 fi
 
 if systemd-run --scope -q -p CPUQuota=1200% true 2>/dev/null; then
@@ -66,6 +78,7 @@ moe_cell() { # $1 cell  $2 script  $3 timeout
         ladder) python3 "$L/day52-views.py" "$R/$cell" --rig pro-single ;;
         ladder-b) python3 "$L/day52-views.py" "$R/$cell" --rig pro-single --days 44,45 ;;
         residfix) python3 "$L/day43-fix.py" "$R/$cell" --rig pro-single ;;
+        smallfix) python3 "$L/day58-smallfix.py" "$R/$cell" --rig pro-single ;;
         *) python3 "$L/day51-decide.py" "$cell" "$R/$cell" --rig pro-single ;;
     esac > "$R/$cell/reading.log" 2>&1
     echo "$cell reader rc=$?" | tee -a "$R/box-driver.log"
@@ -111,6 +124,8 @@ fi
 if [ -x "$R/bins/run-gen-final" ] && [ -x "$R/bins/run-spec-final" ]; then
     # DAY52 section 9: day 43's fix check on this card (run-gen and run-gen-i10 from the build list).
     moe_cell residfix day43-fix-cell.sh 3600
+    # DAY58: the I8f and I5f check (run-gen-tip, run-gen-nomemo, run-gen-unbuf from the build list).
+    moe_cell smallfix day58-cell.sh 3600
     moe_cell hashlock day51-cell.sh 1800
     moe_cell spec day51-cell.sh 3600
     moe_cell decide day51-cell.sh 3600
