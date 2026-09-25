@@ -2137,6 +2137,13 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   `day52_the_publication_split_is_log_only` (the drop helper names and releases every host entry field in declaration
   order, the compiler's own drop order; the insert's replaced twin and LRU victims drop through it at their old points;
   no decision reads a split figure).
+- The admission-counter test ordering (WP-A day 53, `research/spill-a-20260919/DAY53.md` section 6, OWED item 21): the
+  test helper `admission_counters_guard()` takes `drain_lock()` before its own lock, so the tests that write the
+  process-global admission counters (the queue-bound swaps) are ordered against the handler tests that read them
+  through a request; census `day53_the_admission_writers_are_ordered_against_the_handler_readers` (the order, no test
+  holding both separately, every counter writer under the guard) and cell
+  `day53_a_handler_request_inside_a_writer_window_sheds_429` (the mechanism: a request inside a writer's window sheds
+  429 `shed_queue` and holds no slot).
 - The hit gate's door arm (C day 27, `tools/spec-on-cache-hit-gate.sh qwen`): the door batteries run the
   hit gate twice, door OFF (`MEMRA_KV_HOST_CONTRACTS` unset) and door ON (`MEMRA_KV_HOST_CONTRACTS=1`).
   Until day 27 the ON arm booted with no `MEMRA_KV_HOST_MB`, so the server built no program identity
