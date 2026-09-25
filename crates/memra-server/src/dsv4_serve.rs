@@ -39,8 +39,8 @@ use crate::route_telemetry::{RouteLoad, RouteRun, ServeStats};
 use crate::worker::{EngineError, Event, EventSender, ModelCaps, Request, SpecUsage};
 use memra_engine::dsv4_gpu::{
     DSV4_BATCH_WIDTH_MAX, DecodePath, DecodeState, DsparkState, Dsv4Gpu, Dsv4HostDecodeState,
-    Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4SampleCfg, Dsv4Vt, REPLAY_MIN_CAPACITY, RoundTake,
-    StageMemory, dsv4_penalize_row, dsv4_sample_row, resolve_vt,
+    Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4RowDraw, Dsv4SampleCfg, Dsv4Vt, REPLAY_MIN_CAPACITY,
+    RoundTake, StageMemory, dsv4_penalize_row, dsv4_sample_row, resolve_vt,
 };
 use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
@@ -1772,6 +1772,25 @@ fn rows_step(
                     // TP/EP: both ranks work on every row, so the whole step runs holding the
                     // turn; there is no stage to overlap another group with.
                     let _lead = Turn::take(lock);
+                    if !full {
+                        // Argmax and device-draw rows: the captured B-row step when the batch
+                        // admits it (memra #710 B-row graphs), the eager one otherwise.
+                        let draws: Vec<Dsv4RowDraw> = asks
+                            .iter()
+                            .map(|a| match *a {
+                                RowAsk::Draw(cfg) => Dsv4RowDraw::Sample(cfg),
+                                _ => Dsv4RowDraw::Argmax,
+                            })
+                            .collect();
+                        return m.gpu.decode_rows_draw(toks, states, &mut ws.0, &draws).map(
+                            |tokens| {
+                                tokens
+                                    .into_iter()
+                                    .map(|tok| RowOut { tok, logits: None })
+                                    .collect()
+                            },
+                        );
+                    }
                     let (rows, am) = if full {
                         let (rows, am) = m.gpu.decode_rows_full(toks, states, &mut ws.0)?;
                         (Some(rows), am)

@@ -19767,9 +19767,30 @@ impl Dsv4Gpu {
             return Err("B-row draws run on TP/EP".into());
         }
         if self.rows_graph_admits(states, rows) {
-            return self
-                .decode_rows_tp_ep_run(toks, states, rows, false, Some(draws))
-                .map(|(_, tokens)| tokens);
+            // A captured graph names its batch in serial order, so the same requests replay
+            // whatever order their rows arrive in: a row's bits do not depend on its row
+            // (`dsv4_rows_gate`). Sort, step, then hand each caller row its own token.
+            let orig: std::collections::HashMap<u64, usize> = states
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (s.serial, i))
+                .collect();
+            if orig.len() != b {
+                return Err("B-row graph step with a request twice".into());
+            }
+            states.sort_by_key(|s| s.serial);
+            let order: Vec<usize> = states.iter().map(|s| orig[&s.serial]).collect();
+            let sorted_toks: Vec<u32> = order.iter().map(|&i| toks[i]).collect();
+            let sorted_draws: Vec<Dsv4RowDraw> = order.iter().map(|&i| draws[i]).collect();
+            let stepped =
+                self.decode_rows_tp_ep_run(&sorted_toks, states, rows, false, Some(&sorted_draws));
+            states.sort_by_key(|s| orig[&s.serial]);
+            let (_, sorted) = stepped?;
+            let mut out = vec![0u32; b];
+            for (&i, tok) in order.iter().zip(sorted) {
+                out[i] = tok;
+            }
+            return Ok(out);
         }
         let (_, am) = self.decode_rows_tp_ep_run(toks, states, rows, false, None)?;
         let mut sampler = match rows.draw_sampler.take() {
