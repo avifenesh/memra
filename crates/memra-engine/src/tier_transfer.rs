@@ -95,9 +95,46 @@ pub fn kv_vmm_placement_for_device(name: &str) -> (memra_kv::VmmGrowPlacement, &
     use crate::parallel::HardwareTarget;
     match HardwareTarget::from_device_name(name) {
         Ok(HardwareTarget::Rtx5090) => (memra_kv::VmmGrowPlacement::Helper, "rtx5090-receipt"),
+        // DAY37 2.5: stage 0 on one RTX PRO 6000 Blackwell Workstation Edition read
+        // `busy_p95_sum_us=55.3 ... -> inline`. The receipt covers the full-power Workstation card
+        // only; the class's other variants (the Max-Q card, the Server Edition) keep the no-receipt
+        // default until their own stage 0.
+        Ok(HardwareTarget::RtxPro6000Blackwell)
+            if name.contains("Workstation") && !name.contains("Max-Q") =>
+        {
+            (memra_kv::VmmGrowPlacement::Inline, "pro6000-ws-receipt")
+        }
         Ok(HardwareTarget::RtxPro6000Blackwell) | Err(_) => {
             (memra_kv::VmmGrowPlacement::Helper, "no-receipt-default")
         }
+    }
+}
+
+#[cfg(test)]
+mod kv_vmm_placement_tests {
+    use super::kv_vmm_placement_for_device as p;
+    use memra_kv::VmmGrowPlacement::{Helper, Inline};
+
+    /// Each class's stage-0 receipt selects its placement; a card without one takes the default.
+    #[test]
+    fn placement_follows_each_class_receipt() {
+        assert_eq!(
+            p("NVIDIA GeForce RTX 5090 Laptop GPU"),
+            (Helper, "rtx5090-receipt")
+        );
+        assert_eq!(
+            p("NVIDIA RTX PRO 6000 Blackwell Workstation Edition"),
+            (Inline, "pro6000-ws-receipt")
+        );
+        assert_eq!(
+            p("NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition"),
+            (Helper, "no-receipt-default")
+        );
+        assert_eq!(
+            p("NVIDIA RTX PRO 6000 Blackwell Server Edition"),
+            (Helper, "no-receipt-default")
+        );
+        assert_eq!(p("NVIDIA H100 80GB HBM3"), (Helper, "no-receipt-default"));
     }
 }
 

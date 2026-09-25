@@ -101,6 +101,12 @@ def door(name):
     return (len(re.findall(r"\[kv-vmm\] door=ON", t)), len(re.findall(r"\[kv-vmm\] door=OFF", t)))
 
 
+def placement(name):
+    """Addendum F: the boot line's placement (`grow=inline` or `grow=helper`), None without a door=ON line."""
+    m = re.search(r"\[kv-vmm\] door=ON \S+ granularity=\d+ grow=(\w+)", log(name))
+    return m.group(1) if m else None
+
+
 def pct(v, q):
     v = sorted(v)
     if not v:
@@ -193,19 +199,31 @@ if stream:
             parts.append(f"{key} pooled={p:.2f}(N={n_p}) vmm={v:.2f}(N={n_v}) ratio={r:.4f} rule{op}{bound} {'ok' if ok else 'FAIL'}")
         say(f"DAY37 A3-ii card={card} order={order or 'both'} " + "; ".join(parts)
             + (f" -> {'PASS' if a3ii else 'FAIL'}" if order is None else ""))
-    # A3 (i): the tick-top ensure walls and the owner grows that waited on a behind mapper.
-    walls, waited = [], []
+    # A3 (i), addendum F: by each vmm boot's placement. Inline: per grow event owner_us (1.6's inline branch). Helper:
+    # the tick-top ensure walls and the owner grows that waited on a behind mapper.
+    places = sorted({placement(n) for n, st in stream.items() if st["arm"] == "vmm"} - {None})
+    walls, waited, grows = [], [], []
     for n, st in stream.items():
         if st["arm"] != "vmm":
             continue
         t = log(n)
         for m in re.finditer(r"\[kv-vmm\] ensure-walls n=\d+ us=([\d,]+)", t):
             walls += [int(x) for x in m.group(1).split(",")]
-        waited += [int(m.group(1)) for m in re.finditer(r"\[kv-vmm\] grow .* owner_us=(\d+) waited=1", t)]
-    ok = len(walls) >= 20 and pct(walls, 0.99) <= 500
-    say(f"DAY37 A3-i card={card} placement=helper tick_ensure_walls N={len(walls)} p50_us={pct(walls, .5):.1f} "
-        f"p99_us={pct(walls, .99):.1f} max_us={max(walls) if walls else float('nan')} owner_grows_waited N={len(waited)} "
-        f"p99_us={pct(waited, .99):.1f} rule N>=20 p99<=500 -> {'PASS' if ok else 'FAIL'}")
+        for m in re.finditer(r"\[kv-vmm\] grow .* owner_us=(\d+) waited=(\d)", t):
+            grows.append(int(m.group(1)))
+            if m.group(2) == "1":
+                waited.append(int(m.group(1)))
+    if places == ["inline"]:
+        ok = len(grows) >= 20 and pct(grows, 0.99) <= 500
+        say(f"DAY37 A3-i card={card} placement=inline grow_events N={len(grows)} p50_us={pct(grows, .5):.1f} "
+            f"p99_us={pct(grows, .99):.1f} max_us={max(grows) if grows else float('nan')} waited={len(waited)} "
+            f"tick_ensure_walls N={len(walls)} p99_us={pct(walls, .99):.1f} rule N>=20 p99<=500 -> {'PASS' if ok else 'FAIL'}")
+    else:
+        ok = places == ["helper"] and len(walls) >= 20 and pct(walls, 0.99) <= 500
+        say(f"DAY37 A3-i card={card} placement={','.join(places) or 'none'} tick_ensure_walls N={len(walls)} "
+            f"p50_us={pct(walls, .5):.1f} p99_us={pct(walls, .99):.1f} max_us={max(walls) if walls else float('nan')} "
+            f"owner_grows_waited N={len(waited)} p99_us={pct(waited, .99):.1f} rule N>=20 p99<=500 "
+            f"-> {'PASS' if ok else 'FAIL'}")
 
 # ---- A4 ---------------------------------------------------------------------------------------------------------
 retire_ok = retire_n = 0
@@ -243,25 +261,39 @@ for n in sorted(B):
             f"spec_pool={me.get('spec_pool_entries')} continuation_pool={me.get('continuation_pool_entries')}")
 
 # ---- A5 ---------------------------------------------------------------------------------------------------------
-if "fault-mapper" in B and "mix-spec-O1-pooled" in B:
-    e, d, x, diffs = compare("mix-spec-O1-pooled", "fault-mapper")
+pooled_mix = "off-lane" if "off-lane" in B else "mix-spec-O1-pooled"
+if "fault-mapper" in B and pooled_mix in B:
+    e, d, x, diffs = compare(pooled_mix, "fault-mapper")
     t = log("fault-mapper")
     waited = len(re.findall(r"\[kv-vmm\] grow .* waited=1", t))
     f = faults("fault-mapper")
-    ok = d == 0 and e > 0 and f[0] == 0 and waited > 0
-    say(f"DAY37 A5-MAPPER card={card} compared={e + d} equal={e} differ={d} owner_grows_waited={waited} faults={f[0]} -> {'PASS' if ok else 'FAIL'}")
+    if placement("fault-mapper") == "inline":
+        # Addendum F: under inline there is no mapper; the fault injects nothing and the owner-behind path it targets
+        # is every grow, which A1 reads. The digests are printed; the clause does not apply.
+        say(f"DAY37 A5-MAPPER card={card} against={pooled_mix} compared={e + d} equal={e} differ={d} "
+            f"owner_grows_waited={waited} faults={f[0]} -> N/A (inline: no mapper)")
+    else:
+        ok = d == 0 and e > 0 and f[0] == 0 and waited > 0
+        say(f"DAY37 A5-MAPPER card={card} against={pooled_mix} compared={e + d} equal={e} differ={d} "
+            f"owner_grows_waited={waited} faults={f[0]} -> {'PASS' if ok else 'FAIL'}")
 if "fault-ensure" in B and "burst-g2-vmm" in B:
     t = log("fault-ensure")
-    failed = re.findall(r"\[kv-vmm\] ensure failed: (parked|not parked)[^\n]*", t)
+    failed = re.findall(r"\[kv-vmm\] ensure failed: (not parked|parked)", t)
     retry = len(re.findall(r"\[kv-vmm\] grow failed .*reclaim-retry", t))
     victims = set(re.findall(r"\[kv-vmm\] ensure failed:.*?\(model", t))
     ra = rows("fault-ensure")
+    rb = rows("burst-g2-vmm")
     errored = sorted(tag for tag, r in ra.items() if r.get("status") != 200 or r.get("finish_reason") == "error")
-    e, d, x, diffs = compare("burst-g2-vmm", "fault-ensure", skip=set(errored))
+    # Addendum F: a peer is a row with the same prompt in both boots; a later turn whose prompt carries an errored
+    # turn's different answer is a different request and is counted, not compared.
+    dependent = sorted(tag for tag in set(ra) & set(rb) if tag not in errored
+                       and ra[tag].get("prompt_sha256") != rb[tag].get("prompt_sha256"))
+    e, d, x, diffs = compare("burst-g2-vmm", "fault-ensure", skip=set(errored) | set(dependent))
     f = faults("fault-ensure")
     ok = len(failed) >= 1 and retry >= 1 and d == 0 and f[0] == 0
-    say(f"DAY37 A5-ENSURE card={card} reclaim_retry_lines={retry} outcomes={[x[0] for x in failed]} errored_rows={errored[:6]} "
-        f"peers_compared={e + d} equal={e} differ={d} faults={f[0]} -> {'PASS' if ok else 'FAIL'}")
+    say(f"DAY37 A5-ENSURE card={card} reclaim_retry_lines={retry} outcomes={failed} errored_rows={errored[:6]} "
+        f"dependent_rows={dependent[:6]} peers_compared={e + d} equal={e} differ={d} differ_tags={diffs[:6]} "
+        f"faults={f[0]} -> {'PASS' if ok else 'FAIL'}")
 for which in ("build1", "build64"):
     n = f"fault-{which}"
     if n not in B:
