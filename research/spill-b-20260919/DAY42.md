@@ -112,3 +112,18 @@ card's are each their own; no timing crosses cards.
 
 Code: about 0.5 agent-day. Cells: about 2 h on the 5090 (after its reset) and about 3 h on the target card, in the next
 sitting.
+
+### 1.8 Addendum A (2026-09-25, while writing the cells, before any cell)
+
+Writing the fault boots against the code found that 1.2's `flip-demote` arm is the wrong fault for "the landing fails
+its verify": `flip-demote` corrupts the host copy after its D2H receipt, the demote publishes, and the verify arm
+refuses the entry at its PROMOTE. The fault that makes the landing itself fail is `d2h-source-flip` (one byte of the
+first KV item's device source flips after its receipt digest and before its copy; the bind refuses the image). So:
+
+- **F4's flip arm is `fault-d2h-source-flip`:** F3, the fault's armed line, no `[prefix-host] demote:` publication for
+  the flipped demote (the boot's publication count is below its submitted count), and its arrival admits or gets the
+  typed refusal.
+- `fault-flip-demote` leaves the list; the promote-side verify is the host tier's own gate (lane A's), not this flush's.
+- The other clauses, arms and readings are unchanged.
+- The tenants are streamed `/v1/completions` requests with `prompt_ids` (1,024 ids, `max_tokens=2048`), like every
+  other phase of the client, not chat requests as 1.4 wrote.
