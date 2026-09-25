@@ -569,6 +569,81 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         p.host_use_done = true;
         Ok(())
     }
+    /// Day 63 (I13 change 3, `research/spill-c-20260919/DAY63.md`): `finish_host_use`, `retire` and `acknowledge`
+    /// on one pending entry, with their checks, flags, releases and removal in their order and their errors at their
+    /// points: an unknown ticket `UnknownTicket`; an unpublished, uncancelled, unfailed one `Busy`; one whose producer
+    /// is not done `NotReady`, after host use is marked done (the three calls answered `retire`'s `false` with
+    /// `NotReady` in the dispatch adapter). The stage clock brackets each step as the three calls did.
+    pub fn finish_ticket(&mut self, ticket: &TransferTicket) -> Result<()> {
+        let started = clock_start(&self.clock);
+        let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket);
+        let p = match p {
+            Ok(p) if !p.published && !p.cancelled && p.error.is_none() => Err(Error::Busy),
+            other => other,
+        };
+        let p = match p {
+            Ok(p) => {
+                p.host_use_done = true;
+                p
+            }
+            Err(err) => {
+                clock_add(&mut self.clock, started, |c, ns| {
+                    c.retire_ns += ns;
+                    c.host_use_ns += ns;
+                });
+                return Err(err);
+            }
+        };
+        clock_add(&mut self.clock, started, |c, ns| {
+            c.retire_ns += ns;
+            c.host_use_ns += ns;
+        });
+        let retiring = clock_start(&self.clock);
+        if !p.completion.producer_done {
+            clock_add(&mut self.clock, retiring, |c, ns| {
+                c.retire_ns += ns;
+                c.retire_only_ns += ns;
+            });
+            return Err(Error::NotReady);
+        }
+        if !p.retired {
+            for publication in &p.unpublished {
+                if let Err(err) = self.budget.borrow_mut().release(&publication.charge) {
+                    clock_add(&mut self.clock, retiring, |c, ns| {
+                        c.retire_ns += ns;
+                        c.retire_only_ns += ns;
+                    });
+                    return Err(err);
+                }
+            }
+            p.unpublished.clear();
+            p.retired = true;
+        }
+        clock_add(&mut self.clock, retiring, |c, ns| {
+            c.retire_ns += ns;
+            c.retire_only_ns += ns;
+        });
+        let acking = clock_start(&self.clock);
+        if let Some(queue) = &p.queue {
+            let releasing = clock_start(&self.clock);
+            let released = self.budget.borrow_mut().release(queue);
+            clock_add(&mut self.clock, releasing, |c, ns| c.ack_release_ns += ns);
+            if let Err(err) = released {
+                clock_add(&mut self.clock, acking, |c, ns| {
+                    c.retire_ns += ns;
+                    c.ack_ns += ns;
+                });
+                return Err(err);
+            }
+        }
+        p.queue = None;
+        self.pending.remove(ticket);
+        clock_add(&mut self.clock, acking, |c, ns| {
+            c.retire_ns += ns;
+            c.ack_ns += ns;
+        });
+        Ok(())
+    }
     pub fn acknowledge(&mut self, ticket: &TransferTicket) -> Result<()> {
         let started = clock_start(&self.clock);
         let result = self.acknowledge_unclocked(ticket);

@@ -171,11 +171,8 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpert
             .is_some_and(|policy| policy.resident(id).is_some()))
     }
     fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
-        self.bank.finish_host_use(&demand.ticket)?;
-        if !self.bank.retire(&demand.ticket)? {
-            return Err(Error::NotReady);
-        }
-        self.bank.acknowledge(&demand.ticket)?;
+        // Day 63 (I13 change 3): the three retire-side calls on one pending lookup.
+        self.bank.finish_ticket(&demand.ticket)?;
         drop(demand);
         self.bank.collect_evicted()
     }

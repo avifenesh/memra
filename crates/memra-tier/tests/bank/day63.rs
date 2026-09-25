@@ -1,6 +1,6 @@
-//! Day 63 (`research/spill-c-20260919/DAY63.md` section 1): the bank stage clock's split is log only. Every write of
-//! a day-63 field is an addition of a bracket's nanoseconds, the retire side's three calls still add to `retire_ns`,
-//! and the line keeps the day-40 fields first, in their order.
+//! Day 63 (`research/spill-c-20260919/DAY63.md`): the bank stage clock's split is log only (every write of a day-63
+//! field, and of `retire_ns`, is an addition of a bracket's nanoseconds, and the line keeps the day-40 fields first,
+//! in their order), and I13's changes keep what they replace.
 use super::*;
 
 const RESIDENCY: &str = include_str!("../../src/bank/residency.rs");
@@ -21,10 +21,13 @@ fn the_split_only_adds_nanoseconds() {
     ] {
         let writes = code.matches(&format!("c.{field} ")).count();
         let adds = code.matches(&format!("c.{field} += ns")).count();
-        assert_eq!(writes, 1, "{field}: one write");
-        assert_eq!(adds, 1, "{field}: the write adds a bracket");
+        assert!(writes >= 1, "{field}: written");
+        assert_eq!(adds, writes, "{field}: every write adds a bracket");
     }
-    assert_eq!(code.matches("c.retire_ns += ns").count(), 3);
+    // The retire side still counts into `retire_ns`, by additions only.
+    let retire = code.matches("c.retire_ns ").count();
+    assert!(retire >= 3);
+    assert_eq!(code.matches("c.retire_ns += ns").count(), retire);
     let line = &code[code.find("pub fn line(&self)").unwrap()..];
     let format = &line[..line.find(")\n").unwrap()];
     assert!(format.contains(
@@ -135,4 +138,67 @@ fn a_lease_clone_shares_its_body() {
         &*clone.resource::<Vec<u8>>().unwrap(),
         &expected(clone.layout())
     );
+}
+
+/// The three retire-side calls as `SlruExpertDispatch::finish` made them before day 63.
+fn three_calls(b: &mut Banks, t: &TransferTicket) -> Result<()> {
+    b.finish_host_use(t)?;
+    if !b.retire(t)? {
+        return Err(Error::NotReady);
+    }
+    b.acknowledge(t)
+}
+
+/// I13 change 3: `finish_ticket` answers as the three calls did on twin banks, case by case (unpublished, cancelled
+/// before the producer finished, published, a second finish of the same ticket, a cache hit), and leaves the same
+/// governor totals and the same cache behind.
+#[test]
+fn finish_ticket_is_the_three_calls() {
+    let (ga, gb) = (gov(), gov());
+    let (mut a, ids) = banks(LayoutClass::PerRecord, 1_000, Reader::default(), ga.clone());
+    let (mut b, _) = banks(LayoutClass::PerRecord, 1_000, Reader::default(), gb.clone());
+    let both = |a: &mut Banks, b: &mut Banks, ta: &TransferTicket, tb: &TransferTicket| {
+        let ra = three_calls(a, ta);
+        let rb = b.finish_ticket(tb);
+        assert_eq!(ra, rb);
+        ra
+    };
+    let totals = |g: &Rc<RefCell<Governor>>| g.borrow().used();
+    // Unpublished: Busy, and nothing changes.
+    let ta = a.stage(batch(vec![ids[0].clone()])).unwrap();
+    let tb = b.stage(batch(vec![ids[0].clone()])).unwrap();
+    assert_eq!(both(&mut a, &mut b, &ta, &tb), Err(Error::Busy));
+    assert_eq!(totals(&ga), totals(&gb));
+    // Cancelled before the producer finished: host use marked, then NotReady; after the pump, it finishes.
+    a.cancel(&ta).unwrap();
+    b.cancel(&tb).unwrap();
+    assert_eq!(both(&mut a, &mut b, &ta, &tb), Err(Error::NotReady));
+    drain(&mut a, &ta);
+    drain(&mut b, &tb);
+    assert_eq!(both(&mut a, &mut b, &ta, &tb), Ok(()));
+    assert_eq!(both(&mut a, &mut b, &ta, &tb), Err(Error::UnknownTicket));
+    assert_eq!(totals(&ga), totals(&gb));
+    // Published misses, then a hit over the cached records.
+    for order in [
+        vec![ids[0].clone(), ids[1].clone()],
+        vec![ids[1].clone()],
+        vec![ids[2].clone(), ids[0].clone()],
+    ] {
+        let ta = a.stage(batch(order.clone())).unwrap();
+        let tb = b.stage(batch(order)).unwrap();
+        let la = publish_bank(&mut a, &ta, epochs()).unwrap();
+        let lb = publish_bank(&mut b, &tb, epochs()).unwrap();
+        assert_eq!(
+            la.iter().map(|l| l.id().clone()).collect::<Vec<_>>(),
+            lb.iter().map(|l| l.id().clone()).collect::<Vec<_>>()
+        );
+        assert_eq!(totals(&ga), totals(&gb));
+        assert_eq!(both(&mut a, &mut b, &ta, &tb), Ok(()));
+        assert_eq!(both(&mut a, &mut b, &ta, &tb), Err(Error::UnknownTicket));
+        a.collect_evicted().unwrap();
+        b.collect_evicted().unwrap();
+        assert_eq!(totals(&ga), totals(&gb));
+        assert_eq!(a.cached_records(), b.cached_records());
+        assert_eq!(a.owned_leases(), b.owned_leases());
+    }
 }
