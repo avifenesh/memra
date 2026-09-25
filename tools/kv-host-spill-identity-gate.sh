@@ -22,6 +22,12 @@
 #   IDENTITY LAW: text(on r3) == text(off r3) and text(on r1) == text(off r1): the host
 #   round trip must not change a single byte.
 #
+# DRAFTER ARM (lane/spill-c-20260919 day 56): with MEMRA_DSPARK_SPEC=1 MEMRA_DSPARK_DRAFT=<dir>
+# MEMRA_DSPARK_PREFIX_RESTORE=1 in the caller's environment the entries carry the DFlash tail;
+# the gate then also requires the `[prefix-cache] DSPARK restore:` line on the ON boot and, with
+# MEMRA_KV_HOST_CONTRACTS=1, the door's `contracts door tail bound:` receipt and no
+# `refused (contracts door)` line.
+#
 # MEMRA_HOSTGATE_TEETH=1 is the FORCED-TINY RED ARM (the verdict must invert): the ON boot
 # takes MEMRA_KV_HOST_MB=1 (a 1 MiB tier no real entry fits), and the gate then REQUIRES
 # the opposite behavior: a named "skip demote" refusal, ZERO promotions, r3 cold
@@ -132,6 +138,15 @@ thrust-bearing temperature rise, cooling-water flow, overspeed trip, and grid-sy
 tests. For each item name the instrument used, the acceptance threshold, the sign-off role, \
 and the failure symptom that would halt commissioning. Be systematic and terse throughout."
 EXT=" Finally, state which single item most often fails first and why."
+# Drafter arm (lane/spill-c-20260919 day 56, DAY56.md section 2c): a DSPARK request restores
+# byte-identically to a cold prime only on a whole-entry cover (a strict-prefix restore from a
+# prompt-end entry starts its suffix prime off the GDN grid, a second numeric program), so the
+# drafter arm's r3 and r4 re-send P_A: a whole-cover hit through the promoted entry.
+DRAFTER_ARM=0
+if [ "${MEMRA_DSPARK_SPEC:-}" = 1 ]; then
+    DRAFTER_ARM=1
+    EXT=""
+fi
 
 req() { # $1 prompt $2 out-json
     python3 - "$PORT" "$1" "$2" <<'PY'
@@ -236,11 +251,33 @@ else
     chk "metrics: demotions >= 1, promotions >= 1, zero rejected allocs" \
         jqpy "$EV/host-on-metrics.json" \
         "r['prefix_host_demotions'] >= 1 and r['prefix_host_promotions'] >= 1 and r['prefix_host_rejected_allocs'] == 0"
-    chk "r3 served a strict-prefix hit through the promoted entry" \
-        jqpy "$EV/host-on-r3.json" \
-        "0 < r['usage']['prompt_tokens_details']['cached_tokens'] < r['usage']['prompt_tokens']"
+    if [ "$DRAFTER_ARM" = 1 ]; then
+        chk "drafter arm: r3 served a whole-cover hit through the promoted entry" \
+            jqpy "$EV/host-on-r3.json" \
+            "0 < r['usage']['prompt_tokens_details']['cached_tokens'] == r['usage']['prompt_tokens']"
+    else
+        chk "r3 served a strict-prefix hit through the promoted entry" \
+            jqpy "$EV/host-on-r3.json" \
+            "0 < r['usage']['prompt_tokens_details']['cached_tokens'] < r['usage']['prompt_tokens']"
+    fi
     chk "r4 repeats r3 byte-for-byte (deterministic promoted path)" \
         text_eq "$EV/host-on-r3.json" "$EV/host-on-r4.json"
+fi
+
+# Drafter arm (lane/spill-c-20260919 day 56, DAY56.md design f; DAY19.md Task 3's rule): with
+# MEMRA_DSPARK_SPEC=1 (and MEMRA_DSPARK_PREFIX_RESTORE=1 set by the caller) the seeds publish
+# DFlash tail entries; the promoted request must restore the tail and re-arm the drafter, and
+# under the contracts door the tail must bind as its own class with no refusal line.
+no_door_refusal() { ! grep -qiE "refused[a-z ]*\(contracts door\)" "$1"; }
+if [ "$TEETH" != 1 ] && [ "${MEMRA_DSPARK_SPEC:-}" = 1 ]; then
+    chk "drafter arm: the promoted request restored the DFlash tail (DSPARK restore line)" \
+        grep -q "\[prefix-cache\] DSPARK restore:" "$EV/host-on-server.log"
+    if [ "${MEMRA_KV_HOST_CONTRACTS:-}" = 1 ]; then
+        chk "drafter arm, door ON: the tail bound under Role::Tail (tail receipt line)" \
+            grep -q "\[prefix-host\] contracts door tail bound:" "$EV/host-on-server.log"
+        chk "drafter arm, door ON: no contracts-door refusal line anywhere" \
+            no_door_refusal "$EV/host-on-server.log"
+    fi
 fi
 
 echo "== host-tier OFF twin boot (MEMRA_KV_HOST_MB=0: the rollback seam) =="
