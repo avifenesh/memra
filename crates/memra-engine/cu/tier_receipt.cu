@@ -25,13 +25,9 @@ __device__ __forceinline__ unsigned long long memra_receipt_mix64(unsigned long 
     return z;
 }
 
-// The four-lane program over one span, blocks `block` of `blocks` (a grid stride of blocks * blockDim.x words): the
-// body of d2d_receipt_digest since day 22, shared with span_receipt_digests (day 42) so both run one program.
-__device__ __forceinline__ void memra_receipt_lanes(const unsigned char* __restrict__ p,
-                                                    unsigned long long n,
-                                                    unsigned long long* __restrict__ out,
-                                                    unsigned long long block,
-                                                    unsigned long long blocks) {
+__global__ void d2d_receipt_digest(const unsigned char* __restrict__ p,
+                                   unsigned long long n,
+                                   unsigned long long* __restrict__ out) {
     const unsigned long long C0 = 0x9E3779B97F4A7C15ULL;
     const unsigned long long C1 = 0xC2B2AE3D27D4EB4FULL;
     const unsigned long long C2 = 0x165667B19E3779F9ULL;
@@ -40,8 +36,9 @@ __device__ __forceinline__ void memra_receipt_lanes(const unsigned char* __restr
     const unsigned long long full = n / 8ULL;
     const bool aligned = ((uintptr_t)p & 7ULL) == 0ULL;
     unsigned long long a0 = 0, a1 = 0, a2 = 0, a3 = 0;
-    const unsigned long long stride = blocks * blockDim.x;
-    for (unsigned long long w = block * blockDim.x + threadIdx.x; w < words; w += stride) {
+    const unsigned long long stride = (unsigned long long)gridDim.x * blockDim.x;
+    for (unsigned long long w = (unsigned long long)blockIdx.x * blockDim.x + threadIdx.x; w < words;
+         w += stride) {
         unsigned long long v;
         if (aligned && w < full) {
             v = *reinterpret_cast<const unsigned long long*>(p + w * 8ULL);
@@ -93,32 +90,6 @@ __device__ __forceinline__ void memra_receipt_lanes(const unsigned char* __restr
             atomicAdd(&out[3], b3);
         }
     }
-}
-
-__global__ void d2d_receipt_digest(const unsigned char* __restrict__ p,
-                                   unsigned long long n,
-                                   unsigned long long* __restrict__ out) {
-    memra_receipt_lanes(p, n, out, blockIdx.x, gridDim.x);
-}
-
-// span_receipt_digests (WP-A day 42, `DAY42.md` design S2, `memra_tier::conformance::span_receipt`): the same program
-// over up to SPAN_ITEMS spans in ONE launch, passed BY VALUE (count, device pointers, byte lengths, and the device
-// address of each span's four u64 lanes, zero on entry). Span k is blockIdx.y; its words are grid-strided over
-// blockIdx.x; a block past the count returns before any barrier. Per span the value is d2d_receipt_digest's, so the
-// CPU oracle is `memra_tier::conformance::receipt_digest` span by span. A pointer may be a device plane or a pinned
-// host buffer's device address (the D2H span's landed staging).
-#define SPAN_ITEMS 64
-struct SpanItems {
-    unsigned long long n;
-    unsigned long long ptr[SPAN_ITEMS];
-    unsigned long long len[SPAN_ITEMS];
-    unsigned long long out[SPAN_ITEMS];
-};
-__global__ void span_receipt_digests(SpanItems items) {
-    const unsigned long long k = blockIdx.y;
-    if (k >= items.n) return;
-    memra_receipt_lanes((const unsigned char*)items.ptr[k], items.len[k], (unsigned long long*)items.out[k],
-                        blockIdx.x, gridDim.x);
 }
 
 // d2h_receipt_sha256 (WP-A day 38, `DAY38.md` design G, `memra_tier::conformance::d2h_device_receipt`):
@@ -235,9 +206,7 @@ __global__ void d2h_receipt_sha256(ReceiptItems items, unsigned char* __restrict
 }
 
 // tier_flip_byte (WP-A day 38, the `d2h-source-flip` fault's red arm): XOR one byte at `p` with 0x40, one
-// thread, queued on the copy stream after the receipt digest and ahead of the batch's copies (design G4); since day 42
-// (design S2) also the `span-flip-landed` fault's flip of one landed staging byte after span 0's copy and before its
-// event. Diagnostics only.
+// thread, queued on the receipt stream after the receipt digest; the copy stream waits on it for that batch. Diagnostics only.
 __global__ void tier_flip_byte(unsigned char* p) { p[0] ^= 0x40; }
 
 __global__ void tier_delay_spin(unsigned long long ns) {

@@ -2083,21 +2083,6 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   items, spans and fills); engine census `one_side_stream_beside_the_owner`, the tenant's decode hump cell
   `day38-hump-reading.py` (sections 13e to 16: a second side stream running kernels moved every later owner kernel
   boundary, on BOX7 with kernels on both side streams and on the 5090 even with the copy stream kernel-free).
-- The span receipts (WP-A day 46, `research/spill-a-20260919/DAY46.md` design S3: day 42's design S2, revising day 40's
-  design S, with the digests' grid bounded, `day46_span_digest_grids_leave_room_for_the_owner`;
-  `memra_tier::conformance::span_receipt`): the four-lane digest of every D2H f32 span's device source (one batched
-  launch ahead of the copies) and landed staging (one batched launch at the hand-off to the hash helper, off the
-  landing) and of every H2D span's device destination (one batched launch after the copies), on the copy stream; the
-  demote publishes only after its span receipt is observed and only spans whose pair agrees, and keeps each source
-  digest with the entry; the promote only spans whose destination digest equals it; the staging under a sealed receipt
-  travels guarded (a leak, never a free, before the observation). CPU binding `span_receipt_bindings` (three red arms:
-  a caller that publishes before the receipt is observed, an H2D batch landed on its copies alone, a caller that
-  publishes a differing span); engine census `span_receipt_rules_are_as_stated`; server census
-  `day42_the_span_receipt_is_required_before_the_publication`; native cells `span_receipt_digests_are_the_program_per_span`
-  (the batched kernel bitwise against the CPU oracle) and `d2h_span_batch_lands_with_its_ticket_on_the_copy_stream`
-  (the take, the seal's refusals, the pairs, the `span-flip-landed` arm with span 0 alone differing, the abandon and
-  displacement reaps); the fault gate's `span-flip-landed` and `span-flip-resident` cells (one typed refusal each, r1
-  to r4 byte-equal to door OFF).
 - Design K's promote-side fail-closed arms (WP-A day 41, `research/spill-a-20260919/DAY41.md`): the fault gate's
   `sources-helper-gone`, `sources-never-land` and `sources-foreign-reply` cells (the hash helper's first `Sources` job
   takes the fault; one typed latch in the arm's own words, no promote publication, the helper joined, r1 to r4

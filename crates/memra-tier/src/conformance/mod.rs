@@ -169,5 +169,3 @@ pub use h2d_deferred_checksum::*;
 // caller's re-hash of the landed bytes is the witness before publication.
 mod d2h_device_receipt;
 pub use d2h_device_receipt::*;
-mod span_receipt;
-pub use span_receipt::*;

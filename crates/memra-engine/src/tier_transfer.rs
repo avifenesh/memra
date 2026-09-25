@@ -11,9 +11,6 @@ use memra_kv::KvPlane;
 /// One item's receipt term (the source digest and the witnessed destination digest), re-exported
 /// so the worker names the receipt through the engine, its only tier surface.
 pub use memra_tier::conformance::ReceiptTerm;
-/// WP-A day 42 (`DAY42.md` design S2): the four-lane program's CPU oracle, re-exported for the
-/// worker's span receipt cells (the engine is its only tier surface).
-pub use memra_tier::conformance::receipt_digest;
 use memra_tier::conformance::receipt_digest_from_lanes;
 use memra_tier::{bank::SharedBudget, contracts::*};
 
@@ -526,51 +523,6 @@ impl std::fmt::Debug for D2hSpan {
 struct SpanBatch {
     slots: Vec<(D2hSpan, Option<CudaEvent>)>,
     landed: bool,
-    /// WP-A day 42 (`DAY42.md` design S2): the spans' receipt lanes, 64 bytes per span (the four
-    /// SOURCE lanes, written by one launch per 64 spans ahead of the copies, then the four LANDED
-    /// lanes, written at the seal). The batch lands with its copies; the lanes leave with the spans
-    /// at the take, as the batch's `SpanReceipt`. `None` on an engine without the receipt kernels.
-    receipt: Option<ReceiptScratch>,
-}
-/// WP-A day 42 (`DAY42.md` design S2): the id of one D2H span batch's receipt, handed out by
-/// `CudaTransfers::take_d2h_spans` with the landed spans; `seal_d2h_span_receipt` enqueues its
-/// landed digests, `d2h_span_receipt` reads its (source, landed) pairs once observed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct SpanReceiptId(u64);
-/// WP-A day 42 (design S2): the landed spans of a D2H batch in attach order and their receipt's
-/// id (`None` on an engine without the receipt kernels).
-pub struct TakenD2hSpans {
-    pub spans: Vec<D2hSpan>,
-    pub receipt: Option<SpanReceiptId>,
-}
-/// WP-A day 42 (design S2): one D2H span batch's receipt after its take. Unsealed, its lanes hold
-/// the source digests (complete: the batch landed after them in stream order) and nothing else is
-/// enqueued on them. Sealed, the copy stream may still write its lanes (the landed digests) and
-/// its twin (their D2H) until `scratch.event` is observed; `observed` records that observation.
-/// Dropped sealed and unobserved (the engine's drop), it LEAKS its lanes and twin, the `Entry`
-/// rule: a leak, never a free.
-struct SpanReceipt {
-    id: u64,
-    scratch: Option<ReceiptScratch>,
-    /// Each span's landed byte count, in attach order (the seal checks the staging against it).
-    lens: Vec<u64>,
-    sealed: bool,
-    observed: bool,
-}
-impl Drop for SpanReceipt {
-    fn drop(&mut self) {
-        if self.sealed && !self.observed {
-            std::mem::forget(self.scratch.take());
-        }
-    }
-}
-/// WP-A day 40 (`DAY40.md` design S): one landed H2D span with its device receipt: the four-lane
-/// digest of its DESTINATION (the device f32 plane, after the copy; one launch per 64 spans since
-/// design S2). The caller compares it with the source digest kept at the demote. `None` on an
-/// engine without the receipt kernels.
-pub struct LandedH2dSpan {
-    pub span: H2dSpan,
-    pub destination_digest: Option<Digest>,
 }
 /// One typed f32 span of an H2D promote batch (WP-A day 32, memra#536 Move 2 owed item 1, the H2D
 /// half; `memra_tier::conformance::h2d_span_batch`): an OWNED, fully written cached pinned source
@@ -598,55 +550,6 @@ struct H2dSpanBatch {
     slots: Vec<(H2dSpan, Option<CudaEvent>)>,
     landed: bool,
     fenced: bool,
-    /// WP-A day 40 (design S): the spans' destination digests, 32 bytes per span, sealed by
-    /// `receipt.event` after them; the batch lands only with it.
-    receipt: Option<ReceiptScratch>,
-}
-/// WP-A day 42 (`DAY42.md` design S2): the by-value argument of `span_receipt_digests`
-/// (`cu/tier_receipt.cu` `SpanItems`): up to `SPAN_ITEMS` spans per launch, their device
-/// addresses, byte lengths, and the device address of each span's four u64 lanes.
-const SPAN_ITEMS: usize = 64;
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct SpanItems {
-    n: u64,
-    ptr: [u64; SPAN_ITEMS],
-    len: [u64; SPAN_ITEMS],
-    out: [u64; SPAN_ITEMS],
-}
-// SAFETY: plain `#[repr(C)]` integers, laid out exactly as the kernel's `struct SpanItems`
-// (`u64 n; u64 ptr[64]; u64 len[64]; u64 out[64]`), passed by value.
-unsafe impl DeviceRepr for SpanItems {}
-/// WP-A day 46 (`DAY46.md` design S3): where a span digest launch reads.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SpanMemory {
-    /// Device planes (the D2H sources, the H2D destinations).
-    Device,
-    /// Pinned host staging through its device address (the D2H landed bytes): PCIe-bound.
-    PinnedHost,
-}
-/// WP-A day 46 (`DAY46.md` design S3, DAY42 section 3): the x-blocks per span of one
-/// `span_receipt_digests` launch over `spans` spans (the y dimension), so the launch holds at most
-/// one 256-thread block per SM (when `spans <= sms`) and every SM keeps room for the owner's
-/// blocks. S2 ran up to 192 x 64 blocks; during its landed launches the owner stream ran no kernel.
-/// Pinned host reads take one block per span (outstanding loads, not SMs, bound them); device reads
-/// take `sms / spans`, at least one, and never more than the largest span needs.
-fn span_blocks(sms: u64, spans: u64, longest: u64, memory: SpanMemory) -> u32 {
-    let need = longest.div_ceil(8).div_ceil(2048).max(1);
-    let per_span = match memory {
-        SpanMemory::PinnedHost => 1,
-        SpanMemory::Device => (sms / spans.max(1)).max(1),
-    };
-    per_span.min(need).min(2048) as u32
-}
-/// WP-A day 40 (design S): the four little-endian u64 lanes at byte offset `o` of a receipt's lanes.
-fn lanes_at(lanes: &[u8], o: usize) -> [u64; 4] {
-    let mut l = [0u64; 4];
-    for (k, lane) in l.iter_mut().enumerate() {
-        let at = o + 8 * k;
-        *lane = u64::from_le_bytes(lanes[at..at + 8].try_into().unwrap());
-    }
-    l
 }
 /// WP-A day 33 (design F): the fill of one filled H2D span batch, run by the copy stream's host
 /// function: each resident plane (an owned `Arc`) and its span's staging target (a raw pointer
@@ -787,8 +690,6 @@ struct ReceiptKernels {
     /// `d2h-source-flip` fault's one-byte flip.
     sha256: CudaFunction,
     flip: CudaFunction,
-    /// WP-A day 42 (`DAY42.md` design S2): the batched four-lane digest of the f32 spans.
-    spans: CudaFunction,
 }
 /// One D2D batch's receipt lanes (WP-A day 22, `memra_tier::conformance::d2d_receipt_witnessed`):
 /// per item, 64 bytes on the device (four u64 lanes of the SOURCE digest, taken on the copy stream
@@ -890,18 +791,6 @@ pub struct CudaTransfers {
     /// D2H batch lands no earlier than this many nanoseconds after its submission (a host-side
     /// hold since design G'''; no stream runs a spin). `None` in production.
     d2h_delay: Option<u64>,
-    /// WP-A day 40 (design S): the one-shot `span-flip-landed` fault (`inject_span_flip_landed`): the
-    /// next D2H span batch flips one byte of its first span's pinned staging on the copy stream after
-    /// its copy (and, design S2, before its event, so the landing covers it). `false` in production.
-    span_flip_landed: bool,
-    /// WP-A day 42 (`DAY42.md` design S2): the one live D2H span receipt (taken, sealed or not, not
-    /// yet read), and the sealed receipts a caller abandoned or a later take displaced, freed only
-    /// once their events are observed (`reap_span_receipts`); `span_receipt_seq` numbers them.
-    span_receipt: Option<SpanReceipt>,
-    span_reap: Vec<SpanReceipt>,
-    span_receipt_seq: u64,
-    /// WP-A day 46 (`DAY46.md` design S3): the card's SM count (`span_blocks`), read once.
-    sm_count: u64,
     /// Test only (the native `d2h_span` and day-32 `h2d_span` cells): the next span batch's second
     /// enqueue fails, whichever direction it is.
     #[cfg(test)]
@@ -916,13 +805,6 @@ impl CudaTransfers {
         }
         cuda(owner.context().bind_to_thread())?;
         let pinned_default = PinnedKind::for_device(&owner.context().name().unwrap_or_default());
-        // WP-A day 46 (design S3): the SM count bounds every span digest launch (`span_blocks`).
-        let sm_count = cuda(
-            owner
-                .context()
-                .attribute(sys::CUdevice_attribute_enum::CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT),
-        )?
-        .max(1) as u64;
         Ok(Self {
             stream: owner,
             copy: None,
@@ -944,11 +826,6 @@ impl CudaTransfers {
             early_reader: None,
             source_flip: false,
             d2h_delay: None,
-            span_flip_landed: false,
-            span_receipt: None,
-            span_reap: Vec::new(),
-            span_receipt_seq: 0,
-            sm_count,
             #[cfg(test)]
             span_enqueue_fault: false,
         })
@@ -970,14 +847,12 @@ impl CudaTransfers {
         let delay = cuda(module.load_function("tier_delay_spin"))?;
         let sha256 = cuda(module.load_function("d2h_receipt_sha256"))?;
         let flip = cuda(module.load_function("tier_flip_byte"))?;
-        let spans = cuda(module.load_function("span_receipt_digests"))?;
         t.receipt = Some(ReceiptKernels {
             _module: module,
             digest,
             delay,
             sha256,
             flip,
-            spans,
         });
         Ok(t)
     }
@@ -1004,14 +879,6 @@ impl CudaTransfers {
     /// would hold every later copy of every class, G's plain-arm failure). One-shot.
     pub fn inject_d2h_delay(&mut self, delay_ns: u64) {
         self.d2h_delay = Some(delay_ns);
-    }
-    /// The `MEMRA_KV_HOST_FAULT=span-flip-landed` fault (WP-A day 40, design S's D2H red arm): the
-    /// NEXT D2H span batch flips one byte of its first span's landed staging on the copy stream
-    /// after that span's copy and before that span's event (design S2, `DAY42.md` section 1a: the
-    /// landing covers the flip), so the span's landed digest (the seal's) differs from its source
-    /// digest and the caller must refuse the image. One-shot; diagnostics only.
-    pub fn inject_span_flip_landed(&mut self) {
-        self.span_flip_landed = true;
     }
     /// Test only (DAY38 design G''): the receipt twins waiting in the pool.
     #[cfg(test)]
@@ -1098,72 +965,6 @@ impl CudaTransfers {
         // SAFETY: documented FFI of `cu/tier_receipt.cu`: `d2d_receipt_digest(const u8* p, u64 n,
         // u64* out)` reads exactly `n` bytes of `span` (its length) and adds into the four u64
         // lanes of `lanes` (32 bytes, zeroed at allocation); argument order and types match.
-        cuda(unsafe { b.launch(cfg) }).map(|_| ())
-    }
-    /// WP-A day 42 (`DAY42.md` design S2): `span_receipt_digests` over `spans` (each a device
-    /// address and a byte length: a span's device plane, or its pinned staging through its device
-    /// address) on `stream`, ONE launch per `SPAN_ITEMS` spans; span `k` adds into the four u64
-    /// lanes at device address `lanes + offset + stride * k` (zeroed at allocation, fenced by the
-    /// caller's wait on the zero-fill). Each span's value is `d2d_receipt_digest`'s. WP-A day 46
-    /// (`DAY46.md` design S3): the grid is bounded, `span_blocks`, so a launch never fills the card.
-    fn span_digests_on(
-        &self,
-        stream: &Arc<CudaStream>,
-        spans: &[(u64, u64)],
-        lanes: u64,
-        offset: u64,
-        stride: u64,
-        memory: SpanMemory,
-    ) -> Result<()> {
-        let k = self.receipt.as_ref().ok_or(Error::Unsupported)?;
-        for (c, chunk) in spans.chunks(SPAN_ITEMS).enumerate() {
-            let mut items = SpanItems {
-                n: chunk.len() as u64,
-                ptr: [0; SPAN_ITEMS],
-                len: [0; SPAN_ITEMS],
-                out: [0; SPAN_ITEMS],
-            };
-            let mut longest = 0u64;
-            for (i, &(ptr, n)) in chunk.iter().enumerate() {
-                let at = (c * SPAN_ITEMS + i) as u64;
-                items.ptr[i] = ptr;
-                items.len[i] = n;
-                items.out[i] = lanes + offset + stride * at;
-                longest = longest.max(n);
-            }
-            let blocks = span_blocks(self.sm_count, chunk.len() as u64, longest, memory);
-            let cfg = LaunchConfig {
-                grid_dim: (blocks, chunk.len() as u32, 1),
-                block_dim: (256, 1, 1),
-                shared_mem_bytes: 0,
-            };
-            let mut b = stream.launch_builder(&k.spans);
-            b.arg(&items);
-            // SAFETY: documented FFI of `cu/tier_receipt.cu`: `span_receipt_digests(SpanItems
-            // items)` reads exactly `len[k]` bytes at `ptr[k]` (a live span buffer the engine owns
-            // or the caller keeps alive until an event after this launch is observed, ordered on
-            // `stream` by the caller) and adds into the four u64 lanes at `out[k]`, inside the
-            // caller's zeroed lanes; `items` is passed by value, laid out as the kernel's struct.
-            cuda(unsafe { b.launch(cfg) })?;
-        }
-        Ok(())
-    }
-    /// WP-A day 42 (design S2): the `span-flip-landed` fault's flip, one byte of `staging` (a
-    /// span's pinned destination through its device address) on `stream`.
-    fn flip_staging_on(&self, stream: &Arc<CudaStream>, staging: &PinnedHostBuf) -> Result<()> {
-        let k = self.receipt.as_ref().ok_or(Error::Unsupported)?;
-        let n = staging.len() as u64;
-        let at = staging.device_address().map_err(|_| Error::Quarantined)? + (n.max(1) - 1).min(5);
-        let cfg = LaunchConfig {
-            grid_dim: (1, 1, 1),
-            block_dim: (1, 1, 1),
-            shared_mem_bytes: 0,
-        };
-        let mut b = stream.launch_builder(&k.flip);
-        b.arg(&at);
-        // SAFETY: documented FFI of `cu/tier_receipt.cu`: `tier_flip_byte(u8* p)` XORs the one byte
-        // at `p`, inside span 0's pinned staging (the engine owns it; the copy before this launch on
-        // `stream` writes it, and the span's event after it covers the flip).
         cuda(unsafe { b.launch(cfg) }).map(|_| ())
     }
     /// `tier_delay_spin(ns)` on `stream` (the fault's delay).
@@ -2385,10 +2186,6 @@ impl CudaTransfers {
             for (_, event) in &b.slots {
                 cuda(event.as_ref().ok_or(Error::Quarantined)?.synchronize())?;
             }
-            // WP-A day 40 (design S): the H2D spans' receipt is part of their landing.
-            if let Some(r) = &b.receipt {
-                cuda(r.event.as_ref().ok_or(Error::Quarantined)?.synchronize())?;
-            }
         }
         e.unknown = false;
         self.progress(ticket)
@@ -2446,41 +2243,17 @@ impl CudaTransfers {
                     return Err(Error::WrongOwner);
                 }
             }
-            // WP-A day 40 (design S): the spans' receipt scratch, allocated before anything is
-            // enqueued, so a refusal here submits nothing.
-            let scratch = match self.receipt {
-                Some(_) => Some(self.receipt_scratch(spans.len())?),
-                None => None,
-            };
             let fence = cuda(self.stream.record_event(None))?;
             cuda(copy.wait(&fence))?;
-            Ok((copy, scratch))
+            Ok(copy)
         })();
-        let (copy, mut scratch) = match admitted {
-            Ok(admitted) => admitted,
+        let copy = match admitted {
+            Ok(copy) => copy,
             Err(error) => return Err((error, spans)),
         };
         #[cfg(test)]
         let mut fault = std::mem::take(&mut self.span_enqueue_fault);
         let mut failed = false;
-        // WP-A day 42 (`DAY42.md` design S2): every span's SOURCE digest behind the producer fence,
-        // before any copy, in ONE launch per 64 spans (the four-lane program over the device planes
-        // the copies read). Any error from the first enqueue on quarantines the batch (rule 5).
-        if let Some(scratch) = scratch.as_mut() {
-            let digested = (|| -> Result<()> {
-                cuda(copy.wait(&scratch.zeroed))?;
-                let sources: Vec<(u64, u64)> = spans
-                    .iter()
-                    .map(|s| (s.source.device_ptr(&copy).0, (s.source.len() * 4) as u64))
-                    .collect();
-                let lanes = scratch.lanes.device_ptr(&copy).0;
-                self.span_digests_on(&copy, &sources, lanes, 0, 64, SpanMemory::Device)
-            })();
-            failed = digested.is_err();
-        }
-        // WP-A day 42 (design S2, `DAY42.md` section 1a item 2): the `span-flip-landed` fault flips
-        // one byte of span 0's staging after its copy and before its event, so the landing covers it.
-        let mut flip = std::mem::take(&mut self.span_flip_landed) && scratch.is_some();
         let mut slots = Vec::with_capacity(spans.len());
         for mut span in spans {
             let event = if failed {
@@ -2501,14 +2274,7 @@ impl CudaTransfers {
                     fault = false;
                     enqueued = Err("injected span enqueue failure (test)".into());
                 }
-                let flipped = match enqueued {
-                    Ok(()) => {
-                        !std::mem::take(&mut flip)
-                            || self.flip_staging_on(&copy, &span.destination).is_ok()
-                    }
-                    Err(_) => false,
-                };
-                flipped.then(|| copy.record_event(None).ok()).flatten()
+                enqueued.ok().and_then(|()| copy.record_event(None).ok())
             };
             failed |= event.is_none();
             slots.push((span, event));
@@ -2517,7 +2283,6 @@ impl CudaTransfers {
         e.spans = Some(SpanBatch {
             slots,
             landed: false,
-            receipt: scratch,
         });
         if failed {
             e.unknown = true;
@@ -2528,11 +2293,8 @@ impl CudaTransfers {
     /// readable. `NotReady` until every item's AND every span's event is observed complete (the
     /// KV items' landing alone is not the batch's), `Quarantined` after a span error,
     /// `AlreadyReleased` on a second take, `Unsupported` for a batch that carries no spans. The
-    /// batch cannot retire until its spans are taken. WP-A day 42 (`DAY42.md` design S2): with the
-    /// batch's span receipt id; its lanes hold the source digests, complete (the batch landed after
-    /// them in stream order), and nothing more is enqueued here. At most one span receipt is live:
-    /// an earlier one is displaced (`abandon_span_receipt`).
-    pub fn take_d2h_spans(&mut self, ticket: &TransferTicket) -> Result<TakenD2hSpans> {
+    /// batch cannot retire until its spans are taken.
+    pub fn take_d2h_spans(&mut self, ticket: &TransferTicket) -> Result<Vec<D2hSpan>> {
         self.progress(ticket)?;
         let e = self.entries.get_mut(ticket).unwrap();
         if e.retired || e.spans_taken {
@@ -2546,13 +2308,7 @@ impl CudaTransfers {
         }
         let b = e.spans.take().unwrap();
         e.spans_taken = true;
-        let lens: Vec<u64> = b
-            .slots
-            .iter()
-            .map(|(span, _)| span.destination.len() as u64)
-            .collect();
-        let spans = b
-            .slots
+        Ok(b.slots
             .into_iter()
             .map(|(mut span, _)| {
                 // SAFETY: `progress` observed this span's event complete (`b.landed`), recorded
@@ -2560,184 +2316,7 @@ impl CudaTransfers {
                 unsafe { span.destination.mark_landed() };
                 span
             })
-            .collect();
-        let receipt = match b.receipt {
-            Some(scratch) => {
-                self.span_receipt_seq += 1;
-                let id = self.span_receipt_seq;
-                let displaced = self.span_receipt.replace(SpanReceipt {
-                    id,
-                    scratch: Some(scratch),
-                    lens,
-                    sealed: false,
-                    observed: false,
-                });
-                if let Some(r) = displaced {
-                    self.abandon_span_receipt(r);
-                }
-                Some(SpanReceiptId(id))
-            }
-            None => None,
-        };
-        self.reap_span_receipts();
-        Ok(TakenD2hSpans { spans, receipt })
-    }
-    /// WP-A day 42 (`DAY42.md` design S2): enqueue the LANDED digests of the live span receipt
-    /// `id` on the copy stream: ONE launch per 64 spans over each span's pinned staging through its
-    /// device address (`staging`, the take's destinations in attach order, each its span's length),
-    /// the lanes' D2H into the twin, and the receipt event. The caller keeps every staging buffer
-    /// alive and unreused until `d2h_span_receipt` (or its wait) has observed the receipt; no other
-    /// writer of a staging buffer may run meanwhile. Refusals before any enqueue: an unknown or
-    /// displaced id (`UnknownTicket`), a second seal (`Busy`), a count or length that is not the
-    /// take's (`InvalidLayout`), a staging buffer without a device address (`Quarantined`). From
-    /// the first enqueue on, an error leaves the receipt sealed and never observable
-    /// (`Quarantined` at its read; a leak at the engine's drop).
-    pub fn seal_d2h_span_receipt(
-        &mut self,
-        id: SpanReceiptId,
-        staging: &[&PinnedHostBuf],
-    ) -> Result<()> {
-        self.check_thread()?;
-        let copy = self.copy.clone().ok_or(Error::Unsupported)?;
-        let r = match self.span_receipt.as_ref() {
-            Some(r) if r.id == id.0 => r,
-            _ => return Err(Error::UnknownTicket),
-        };
-        if r.sealed {
-            return Err(Error::Busy);
-        }
-        if staging.len() != r.lens.len()
-            || staging
-                .iter()
-                .zip(&r.lens)
-                .any(|(b, &n)| b.len() as u64 != n)
-        {
-            return Err(Error::InvalidLayout);
-        }
-        let landed = staging
-            .iter()
-            .map(|b| {
-                b.device_address()
-                    .map(|p| (p, b.len() as u64))
-                    .map_err(|_| Error::Quarantined)
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let mut r = self.span_receipt.take().unwrap();
-        r.sealed = true;
-        let scratch = r.scratch.as_mut().unwrap();
-        let sealed = (|| -> Result<()> {
-            let lanes = scratch.lanes.device_ptr(&copy).0;
-            self.span_digests_on(&copy, &landed, lanes, 32, 64, SpanMemory::PinnedHost)?;
-            cuda(copy.memcpy_dtoh(&scratch.lanes, &mut scratch.pinned))?;
-            scratch.event = Some(cuda(copy.record_event(None))?);
-            Ok(())
-        })();
-        self.span_receipt = Some(r);
-        sealed.map_err(|_| Error::Quarantined)
-    }
-    /// WP-A day 42 (design S2): the live span receipt `id`'s pairs, per span in attach order the
-    /// (source, landed) four-lane digests, once its event is observed (`Ok(None)` while pending,
-    /// never a host wait). The receipt then leaves the engine (its twin back to the pool). `Busy`
-    /// before its seal, `UnknownTicket` for an unknown or displaced id, `Quarantined` for a seal
-    /// that failed or an event error.
-    pub fn d2h_span_receipt(&mut self, id: SpanReceiptId) -> Result<Option<Vec<(Digest, Digest)>>> {
-        self.check_thread()?;
-        self.reap_span_receipts();
-        let r = match self.span_receipt.as_ref() {
-            Some(r) if r.id == id.0 => r,
-            _ => return Err(Error::UnknownTicket),
-        };
-        if !r.sealed {
-            return Err(Error::Busy);
-        }
-        let event = r
-            .scratch
-            .as_ref()
-            .and_then(|s| s.event.as_ref())
-            .ok_or(Error::Quarantined)?;
-        if !event_done(event)? {
-            return Ok(None);
-        }
-        let mut r = self.span_receipt.take().unwrap();
-        r.observed = true;
-        let scratch = r.scratch.take().unwrap();
-        let lanes = cuda(scratch.pinned.as_slice())?.to_vec();
-        // Every write to the twin was observed (the receipt event); back to the pool (G'').
-        self.twin_pool.borrow_mut().push(scratch.pinned);
-        Ok(Some(
-            r.lens
-                .iter()
-                .enumerate()
-                .map(|(k, &n)| {
-                    (
-                        receipt_digest_from_lanes(lanes_at(&lanes, 64 * k), n),
-                        receipt_digest_from_lanes(lanes_at(&lanes, 64 * k + 32), n),
-                    )
-                })
-                .collect(),
-        ))
-    }
-    /// WP-A day 42 (design S2): `d2h_span_receipt` after a host wait on the receipt's event (a
-    /// `Block` settle).
-    pub fn d2h_span_receipt_wait(&mut self, id: SpanReceiptId) -> Result<Vec<(Digest, Digest)>> {
-        self.check_thread()?;
-        match self.span_receipt.as_ref() {
-            Some(r) if r.id == id.0 && r.sealed => {
-                let event = r
-                    .scratch
-                    .as_ref()
-                    .and_then(|s| s.event.as_ref())
-                    .ok_or(Error::Quarantined)?;
-                cuda(event.synchronize())?;
-            }
-            Some(r) if r.id == id.0 => return Err(Error::Busy),
-            _ => return Err(Error::UnknownTicket),
-        }
-        self.d2h_span_receipt(id)?.ok_or(Error::Quarantined)
-    }
-    /// WP-A day 42 (design S2): the caller gives up the live span receipt `id` (a demote that ends
-    /// without publishing). Unknown ids are a no-op (the receipt was read or displaced already).
-    pub fn d2h_span_receipt_abandon(&mut self, id: SpanReceiptId) {
-        if self.check_thread().is_err() {
-            return;
-        }
-        if self.span_receipt.as_ref().is_some_and(|r| r.id == id.0) {
-            let r = self.span_receipt.take().unwrap();
-            self.abandon_span_receipt(r);
-        }
-        self.reap_span_receipts();
-    }
-    /// An unsealed receipt drops at once (its lanes are complete and nothing else was enqueued on
-    /// them; its twin was never written by the device and goes back to the pool); a sealed one
-    /// waits in the reap list until its event is observed.
-    fn abandon_span_receipt(&mut self, mut r: SpanReceipt) {
-        if r.sealed {
-            self.span_reap.push(r);
-        } else if let Some(scratch) = r.scratch.take() {
-            self.twin_pool.borrow_mut().push(scratch.pinned);
-        }
-    }
-    /// Free every reaped receipt whose event is observed complete (its lanes and twin written for
-    /// the last time); one whose event is pending or failed stays (a leak at the engine's drop).
-    fn reap_span_receipts(&mut self) {
-        let mut kept = Vec::with_capacity(self.span_reap.len());
-        for mut r in std::mem::take(&mut self.span_reap) {
-            let done = r
-                .scratch
-                .as_ref()
-                .and_then(|s| s.event.as_ref())
-                .map(|e| event_done(e).unwrap_or(false))
-                .unwrap_or(false);
-            if done {
-                r.observed = true;
-                if let Some(scratch) = r.scratch.take() {
-                    self.twin_pool.borrow_mut().push(scratch.pinned);
-                }
-            } else {
-                kept.push(r);
-            }
-        }
-        self.span_reap = kept;
+            .collect())
     }
     /// WP-A day 32 (memra#536 Move 2 owed item 1, the H2D half; `memra_tier::conformance::
     /// h2d_span_batch`): attach typed f32 spans to a live H2D batch right after its submission.
@@ -2834,21 +2413,12 @@ impl CudaTransfers {
                     return Err(Error::WrongOwner);
                 }
             }
-            // WP-A day 40 (design S): the destination digests' scratch, allocated before anything
-            // is enqueued.
-            let scratch =
-                match self.receipt {
-                    Some(_) => Some(self.receipt_scratch_bytes(
-                        spans.len().checked_mul(32).ok_or(Error::Overflow)?,
-                    )?),
-                    None => None,
-                };
             let fence = cuda(self.stream.record_event(None))?;
             cuda(copy.wait(&fence))?;
-            Ok((copy, scratch))
+            Ok(copy)
         })();
-        let (copy, mut scratch) = match admitted {
-            Ok(admitted) => admitted,
+        let copy = match admitted {
+            Ok(copy) => copy,
             Err(error) => return Err((error, spans, fills)),
         };
         // Day 33 (design F): the fill, ONE host function on the copy stream ahead of every copy;
@@ -2922,35 +2492,11 @@ impl CudaTransfers {
             failed |= event.is_none();
             slots.push((span, event));
         }
-        // WP-A day 40 (design S): after every copy, each span's DESTINATION digest over its device
-        // plane (design S2: ONE launch per 64 spans), then one D2H of the lanes into the twin and
-        // the span receipt's event: the batch lands only with it.
-        if !failed && let Some(scratch) = scratch.as_mut() {
-            let sealed = (|| -> Result<()> {
-                cuda(copy.wait(&scratch.zeroed))?;
-                let destinations: Vec<(u64, u64)> = slots
-                    .iter()
-                    .map(|(span, _)| {
-                        (
-                            span.destination.device_ptr(&copy).0,
-                            (span.destination.len() * 4) as u64,
-                        )
-                    })
-                    .collect();
-                let lanes = scratch.lanes.device_ptr(&copy).0;
-                self.span_digests_on(&copy, &destinations, lanes, 0, 32, SpanMemory::Device)?;
-                cuda(copy.memcpy_dtoh(&scratch.lanes, &mut scratch.pinned))?;
-                scratch.event = Some(cuda(copy.record_event(None))?);
-                Ok(())
-            })();
-            failed |= sealed.is_err();
-        }
         let e = self.entries.get_mut(ticket).unwrap();
         e.h2d_spans = Some(H2dSpanBatch {
             slots,
             landed: false,
             fenced: false,
-            receipt: scratch,
         });
         if failed {
             e.unknown = true;
@@ -3063,7 +2609,7 @@ impl CudaTransfers {
     /// (`install_consumer_wait`; rule 3 of `h2d_span_batch`: landing is not a fence),
     /// `Quarantined` after a span error, `AlreadyReleased` on a second take, `Unsupported` for a
     /// batch that carries no H2D spans. The batch cannot retire until its spans are taken.
-    pub fn take_h2d_spans(&mut self, ticket: &TransferTicket) -> Result<Vec<LandedH2dSpan>> {
+    pub fn take_h2d_spans(&mut self, ticket: &TransferTicket) -> Result<Vec<H2dSpan>> {
         self.progress(ticket)?;
         let e = self.entries.get_mut(ticket).unwrap();
         if e.retired || e.h2d_spans_taken {
@@ -3075,32 +2621,16 @@ impl CudaTransfers {
         if !b.landed || !e.completion.producer_done || !b.fenced {
             return Err(Error::NotReady);
         }
-        // WP-A day 40 (design S): the destination digests, readable since `progress` observed the
-        // receipt event.
-        let lanes = match &b.receipt {
-            Some(r) => Some(cuda(r.pinned.as_slice())?.to_vec()),
-            None => None,
-        };
         let b = e.h2d_spans.take().unwrap();
         e.h2d_spans_taken = true;
-        if let Some(r) = b.receipt {
-            self.twin_pool.borrow_mut().push(r.pinned);
-        }
         Ok(b.slots
             .into_iter()
-            .enumerate()
-            .map(|(k, (mut span, _))| {
+            .map(|(mut span, _)| {
                 // SAFETY: `progress` observed this span's event complete, recorded after its copy,
                 // which stream order puts after its fill (day 33) when it had one: the source's bytes
                 // are written (and, without a fill, were already).
                 unsafe { span.source.mark_landed() };
-                let n = (span.destination.len() * 4) as u64;
-                LandedH2dSpan {
-                    destination_digest: lanes
-                        .as_ref()
-                        .map(|l| receipt_digest_from_lanes(lanes_at(l, 32 * k), n)),
-                    span,
-                }
+                span
             })
             .collect())
     }
@@ -3339,24 +2869,6 @@ impl CudaTransfers {
                 let mut all = true;
                 for (_, event) in &b.slots {
                     match event
-                        .as_ref()
-                        .ok_or(Error::Quarantined)
-                        .and_then(event_done)
-                    {
-                        Ok(true) => (),
-                        Ok(false) => all = false,
-                        Err(err) => {
-                            e.unknown = true;
-                            return Err(err);
-                        }
-                    }
-                }
-                // WP-A day 40 (design S): the H2D spans' receipt event is part of their landing
-                // (a D2H span batch lands with its copies since design S2; its receipt is read
-                // after the take, `d2h_span_receipt`).
-                if all && let Some(r) = &b.receipt {
-                    match r
-                        .event
                         .as_ref()
                         .ok_or(Error::Quarantined)
                         .and_then(event_done)
@@ -4221,9 +3733,8 @@ mod tests {
     }
 
     /// WP-A day 37 (`DAY37.md` section 8, finding 5): the number of native cells in this module,
-    /// one context each in the pool below (the census pins the count; day 42 added
-    /// `span_receipt_digests_are_the_program_per_span`).
-    const NATIVE_CELLS: usize = 14;
+    /// one context each in the pool below (the census pins the count).
+    const NATIVE_CELLS: usize = 13;
     /// The module's native cells' contexts: `NATIVE_CELLS` non-primary contexts created in ONE step,
     /// at the first `cell_context()` call (before that cell's body runs; every other cell waits
     /// here), and held for the whole test process by this static, so no context is created or
@@ -4415,261 +3926,6 @@ mod tests {
             "the device-receipt branch hashes nothing"
         );
     }
-    /// WP-A day 42 (`DAY42.md` design S2): the span receipts' order, by source. The D2H attach
-    /// allocates the scratch in its admission (before the fence, so a refusal submits nothing),
-    /// digests every span's SOURCE after the zero-fill and before the first copy in one batched
-    /// call, and flips span 0's staging (under its fault) after its copy and before its event; it
-    /// enqueues nothing after the copies. `progress` lands a D2H span batch on its copies (the H2D
-    /// fold alone waits on a receipt event). The take moves the lanes into the one live span
-    /// receipt, displacing an earlier one, and enqueues nothing. The seal checks the take's count
-    /// and lengths before its first enqueue, then the landed digests in one batched call, the
-    /// lanes' D2H and the event; the read observes the event before it reads the twin; an
-    /// abandoned or displaced sealed receipt frees only once its event is observed. The H2D attach
-    /// digests every DESTINATION after the copies in one batched call. The batched helper launches
-    /// once per 64 spans.
-    #[test]
-    fn span_receipt_rules_are_as_stated() {
-        let src = include_str!("tier_transfer.rs");
-        let body = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
-        let fn_body = |name: &str| -> &str {
-            let at = body.find(name).unwrap();
-            &body[at..at + body[at..].find("\n    }\n").unwrap()]
-        };
-        let at = |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle}"));
-        let d2h = fn_body("    pub fn submit_d2h_spans(");
-        let scratch = at(d2h, "Some(_) => Some(self.receipt_scratch(spans.len())?),");
-        let fence = at(d2h, "let fence = cuda(self.stream.record_event(None))?;");
-        let zeroed = at(d2h, "cuda(copy.wait(&scratch.zeroed))?;");
-        let source = at(
-            d2h,
-            "self.span_digests_on(&copy, &sources, lanes, 0, 64, SpanMemory::Device)",
-        );
-        let copies = at(d2h, ".enqueue_from_device_f32(&span.source, &copy)");
-        let flip = at(d2h, "self.flip_staging_on(&copy, &span.destination)");
-        let event = at(d2h, "copy.record_event(None).ok()");
-        let batch = at(d2h, "receipt: scratch,");
-        assert!(scratch < fence && fence < zeroed && zeroed < source && source < copies);
-        assert!(copies < flip && flip < event && event < batch);
-        assert_eq!(
-            d2h.matches("self.span_digests_on(").count(),
-            1,
-            "the attach digests the sources only"
-        );
-        assert!(!d2h.contains("memcpy_dtoh"), "no lanes D2H at the attach");
-        let progress = fn_body("    fn progress(");
-        assert_eq!(
-            progress
-                .matches("if all && let Some(r) = &b.receipt {")
-                .count(),
-            1,
-            "only the H2D fold waits on a receipt event"
-        );
-        let sync = fn_body("    pub fn synchronize(");
-        assert_eq!(sync.matches("if let Some(r) = &b.receipt {").count(), 1);
-        let take = fn_body("    pub fn take_d2h_spans(");
-        assert!(!take.contains("launch") && !take.contains("span_digests_on"));
-        assert!(
-            at(
-                take,
-                "let displaced = self.span_receipt.replace(SpanReceipt {"
-            ) < at(take, "self.abandon_span_receipt(r);")
-        );
-        let seal = fn_body("    pub fn seal_d2h_span_receipt(");
-        let layout = at(seal, "return Err(Error::InvalidLayout);");
-        let address = at(seal, ".device_address()");
-        let sealed = at(seal, "r.sealed = true;");
-        let landed = at(
-            seal,
-            "self.span_digests_on(&copy, &landed, lanes, 32, 64, SpanMemory::PinnedHost)?;",
-        );
-        let lanes = at(
-            seal,
-            "cuda(copy.memcpy_dtoh(&scratch.lanes, &mut scratch.pinned))?;",
-        );
-        let event = at(
-            seal,
-            "scratch.event = Some(cuda(copy.record_event(None))?);",
-        );
-        assert!(layout < address && address < sealed && sealed < landed);
-        assert!(landed < lanes && lanes < event);
-        let read = fn_body("    pub fn d2h_span_receipt(");
-        assert!(
-            at(read, "if !event_done(event)? {") < at(read, "r.observed = true;")
-                && at(read, "r.observed = true;") < at(read, "cuda(scratch.pinned.as_slice())?")
-        );
-        assert!(
-            read.contains("receipt_digest_from_lanes(lanes_at(&lanes, 64 * k), n)")
-                && read.contains("receipt_digest_from_lanes(lanes_at(&lanes, 64 * k + 32), n)")
-        );
-        let abandon = fn_body("    fn abandon_span_receipt(");
-        assert!(at(abandon, "if r.sealed {") < at(abandon, "self.span_reap.push(r);"));
-        let reap = fn_body("    fn reap_span_receipts(");
-        assert!(at(reap, "if done {") < at(reap, "r.observed = true;"));
-        let drop = fn_body("impl Drop for SpanReceipt {");
-        assert!(drop.contains("if self.sealed && !self.observed {"));
-        let h2d = fn_body("    fn attach_h2d_spans(");
-        let scratch = at(h2d, "spans.len().checked_mul(32).ok_or(Error::Overflow)?,");
-        let fence = at(h2d, "let fence = cuda(self.stream.record_event(None))?;");
-        let copies = at(h2d, ".enqueue_to_device_f32(&mut span.destination, &copy)");
-        let zeroed = at(h2d, "cuda(copy.wait(&scratch.zeroed))?;");
-        let dest = at(
-            h2d,
-            "self.span_digests_on(&copy, &destinations, lanes, 0, 32, SpanMemory::Device)?;",
-        );
-        let lanes = at(
-            h2d,
-            "cuda(copy.memcpy_dtoh(&scratch.lanes, &mut scratch.pinned))?;",
-        );
-        let event = at(h2d, "scratch.event = Some(cuda(copy.record_event(None))?);");
-        assert!(scratch < fence && fence < copies && copies < zeroed && zeroed < dest);
-        assert!(dest < lanes && lanes < event);
-        let take = fn_body("    pub fn take_h2d_spans(");
-        assert!(take.contains("self.twin_pool.borrow_mut().push(r.pinned);"));
-        assert!(take.contains("receipt_digest_from_lanes(lanes_at(l, 32 * k), n)"));
-        let helper = fn_body("    fn span_digests_on(");
-        assert!(
-            at(
-                helper,
-                "for (c, chunk) in spans.chunks(SPAN_ITEMS).enumerate() {"
-            ) < at(helper, "cuda(unsafe { b.launch(cfg) })?;")
-        );
-        assert_eq!(
-            helper.matches("b.launch(cfg)").count(),
-            1,
-            "one launch per chunk"
-        );
-        assert!(helper.contains("grid_dim: (blocks, chunk.len() as u32, 1),"));
-    }
-    /// WP-A day 46 (`DAY46.md` design S3): the grid rule. A launch over `k` spans holds at most one
-    /// block per SM when `k <= sms`; pinned host reads take one block per span; no span takes more
-    /// blocks than its words need; S2's shapes (192 x 64, 192 x 32) are not reachable.
-    #[test]
-    fn day46_span_digest_grids_leave_room_for_the_owner() {
-        let mib3 = 3u64 << 20;
-        for sms in [82u64, 170, 188] {
-            for k in [1u64, 2, 32, 48, 64] {
-                let b = span_blocks(sms, k, mib3, SpanMemory::Device) as u64;
-                assert!(b >= 1);
-                if k <= sms {
-                    assert!(b * k <= sms, "sms={sms} k={k} b={b}");
-                }
-                assert_eq!(span_blocks(sms, k, mib3, SpanMemory::PinnedHost), 1);
-            }
-        }
-        assert_eq!(span_blocks(188, 64, mib3, SpanMemory::Device), 2);
-        assert_eq!(span_blocks(188, 32, mib3, SpanMemory::Device), 5);
-        assert_eq!(span_blocks(82, 64, mib3, SpanMemory::Device), 1);
-        // A span shorter than one block's stride takes one block whatever the card.
-        assert_eq!(span_blocks(188, 1, 4096, SpanMemory::Device), 1);
-        let src = include_str!("tier_transfer.rs");
-        let body = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
-        assert!(body.contains(
-            "let blocks = span_blocks(self.sm_count, chunk.len() as u64, longest, memory);"
-        ));
-        assert!(!body.contains(".div_ceil(2048).clamp(1, 2048) as u32;\n            let cfg = LaunchConfig {\n                grid_dim: (blocks, chunk.len()"));
-        assert_eq!(
-            body.matches("SpanMemory::PinnedHost)").count(),
-            1,
-            "the landed launch alone"
-        );
-        assert_eq!(
-            body.matches("SpanMemory::Device)").count(),
-            2,
-            "the sources and the H2D destinations"
-        );
-    }
-    /// WP-A day 42 (`DAY42.md` design S2, clause (a), on a card): the batched kernel is the CPU
-    /// oracle per span, bitwise. 70 spans (two launches: 64 and 6) of lengths 1 B to 3 MiB + 3 at
-    /// byte offsets 0 to 7, over device memory and over pinned host memory through its device
-    /// address; each span's lanes against `memra_tier::conformance::receipt_digest` of its bytes.
-    #[test]
-    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
-    fn span_receipt_digests_are_the_program_per_span() {
-        use memra_tier::tier::governor::Governor;
-        let ctx = cell_context();
-        let stream = ctx.new_stream().unwrap();
-        let cap = TierBudget {
-            version: 1,
-            device: vec![1 << 30],
-            peer: vec![0],
-            replicas: vec![0],
-            pinned: 1 << 30,
-            pageable: 1 << 30,
-            staging: 1 << 30,
-            loaders: 64,
-            inflight: 64,
-            nvme: 0,
-        };
-        let gov: SharedBudget = Rc::new(RefCell::new(
-            Governor::new(cap, TierBudget::zero(1), 64, 0, Arc::new(|| 0)).unwrap(),
-        ));
-        let t = CudaTransfers::new_with_copy_stream(stream.clone(), gov).unwrap();
-        let copy = t.copy_stream().unwrap().clone();
-        let total = (3usize << 20) + 3 + 8;
-        let bytes: Vec<u8> = (0..total)
-            .map(|i| ((i as u64).wrapping_mul(0x9E37_79B9) >> 7) as u8)
-            .collect();
-        let sizes = [
-            1usize,
-            2,
-            7,
-            8,
-            9,
-            15,
-            16,
-            17,
-            63,
-            64,
-            65,
-            255,
-            4095,
-            4096,
-            4097,
-            61_445,
-            1 << 20,
-            (1 << 20) + 3,
-            (3 << 20) + 3,
-        ];
-        let spans: Vec<(usize, usize)> = (0..70).map(|i| (i % 8, sizes[i % sizes.len()])).collect();
-        let device = stream.clone_htod(&bytes).unwrap();
-        let mut host = PinnedHostBuf::new(total).unwrap();
-        host.copy_from_slice(&bytes).unwrap();
-        stream.synchronize().unwrap();
-        // Day 46 (design S3): each base at the bounded grid its launches take, and device memory at
-        // the pinned host rule's one block per span too (the program is grid-independent).
-        let bases = [
-            ("device", device.device_ptr(&copy).0, SpanMemory::Device),
-            (
-                "device at one block per span",
-                device.device_ptr(&copy).0,
-                SpanMemory::PinnedHost,
-            ),
-            (
-                "pinned host",
-                host.device_address().unwrap(),
-                SpanMemory::PinnedHost,
-            ),
-        ];
-        for (what, base, memory) in bases {
-            let lanes = stream.alloc_zeros::<u8>(32 * spans.len()).unwrap();
-            stream.synchronize().unwrap();
-            let items: Vec<(u64, u64)> = spans
-                .iter()
-                .map(|&(off, n)| (base + off as u64, n as u64))
-                .collect();
-            let at = lanes.device_ptr(&copy).0;
-            t.span_digests_on(&copy, &items, at, 0, 32, memory).unwrap();
-            copy.synchronize().unwrap();
-            let got = stream.clone_dtoh(&lanes).unwrap();
-            for (k, &(off, n)) in spans.iter().enumerate() {
-                assert_eq!(
-                    receipt_digest_from_lanes(lanes_at(&got, 32 * k), n as u64),
-                    memra_tier::conformance::receipt_digest(&bytes[off..off + n]),
-                    "{what} span {k}: {n} bytes at offset {off}"
-                );
-            }
-        }
-    }
     /// WP-A day 38 (`DAY38.md` design G4, section 17): the engine runs its side work on ONE stream
     /// beside the owner's, the copy stream, and has no receipt stream. BOX7's bisection (sections
     /// 13e to 13k) and the 5090's G''' cell (section 16) placed the tenant's per-demote decode hump
@@ -4682,9 +3938,7 @@ mod tests {
         assert!(!body.contains("receipt_stream"), "no second side stream");
         // Streams the engine creates: the copy stream only (the owner's is the caller's).
         assert_eq!(body.matches(".new_stream()").count(), 1);
-        // Direct launches: the four helpers' own (`stream.`, their parameter: the view digest,
-        // day 42's batched span digests and span flip, the spin) and the copy stream's (the D2H
-        // receipt's SHA-256 and flip).
+        // Direct launches: the two helpers' own (`stream.`, their parameter) and the D2H receipt's.
         let launches: Vec<&str> = body
             .match_indices("launch_builder(")
             .map(|(at, _)| {
@@ -4697,8 +3951,6 @@ mod tests {
             [
                 "let mut b = stream.",
                 "let mut b = stream.",
-                "let mut b = stream.",
-                "let mut b = stream.",
                 "let mut b = copy.",
                 "let mut b = copy."
             ],
@@ -4708,12 +3960,7 @@ mod tests {
         // early reader's destination digest (one per D2D class).
         let mut on_copy = 0;
         let mut on_owner = 0;
-        for helper in [
-            "self.digest_on(",
-            "self.delay_on(",
-            "self.span_digests_on(",
-            "self.flip_staging_on(",
-        ] {
+        for helper in ["self.digest_on(", "self.delay_on("] {
             for (at, _) in body.match_indices(helper) {
                 let arg = body[at + helper.len()..].trim_start();
                 if arg.starts_with("&copy,") {
@@ -4730,9 +3977,8 @@ mod tests {
         }
         assert_eq!(
             (on_copy, on_owner),
-            (10, 2),
-            "four digests, two spins and (day 42) three batched span digests and the span flip on the \
-             copy stream, two early readers"
+            (6, 2),
+            "four digests and two spins on the copy stream, two early readers"
         );
         // The release paths drain the owner stream and the copy stream.
         assert_eq!(body.matches("self.synchronize_copy_stream()?;").count(), 2);
@@ -5778,8 +5024,8 @@ mod tests {
         assert_eq!(
             body.matches("event.as_ref().ok_or(Error::Quarantined)?.synchronize())?;")
                 .count(),
-            5,
-            "items, receipt, (day 30) D2H spans and (day 32) H2D spans, (day 40) the H2D span receipt"
+            4,
+            "items, receipt, (day 30) D2H spans and (day 32) H2D spans"
         );
     }
 
@@ -5958,8 +5204,7 @@ mod tests {
         t.synchronize(&ticket).unwrap();
         assert!(t.poll(&ticket).unwrap().producer_done);
         assert_eq!(t.retire(&ticket, None), Err(Error::Busy));
-        let taken = t.take_d2h_spans(&ticket).unwrap();
-        let landed = &taken.spans;
+        let landed = t.take_d2h_spans(&ticket).unwrap();
         assert_eq!(landed.len(), 3);
         for (span, p) in landed.iter().zip(&patterns) {
             assert_eq!(span.destination.len(), p.len() * 4);
@@ -5974,46 +5219,6 @@ mod tests {
             t.take_d2h_spans(&ticket).err(),
             Some(Error::AlreadyReleased)
         );
-        // Day 42 (`DAY42.md` design S2): the take hands out the batch's span receipt, unsealed: a
-        // read is `Busy`; a seal with the wrong count or lengths refuses before any enqueue; the
-        // seal enqueues the landed digests; a second seal is `Busy`; the read after the wait gives
-        // each span's (source, landed) pair, both the four-lane program over the pattern, bitwise;
-        // the receipt then leaves the engine.
-        let id = taken
-            .receipt
-            .expect("a span receipt on an engine with the receipt kernels");
-        assert_eq!(t.d2h_span_receipt(id).err(), Some(Error::Busy));
-        let staging: Vec<&PinnedHostBuf> = landed.iter().map(|s| &s.destination).collect();
-        assert_eq!(
-            t.seal_d2h_span_receipt(id, &staging[..2]).err(),
-            Some(Error::InvalidLayout)
-        );
-        let reversed: Vec<&PinnedHostBuf> = staging.iter().rev().copied().collect();
-        assert_eq!(
-            t.seal_d2h_span_receipt(id, &reversed).err(),
-            Some(Error::InvalidLayout),
-            "every length is the take's, in attach order"
-        );
-        t.seal_d2h_span_receipt(id, &staging).unwrap();
-        assert_eq!(
-            t.seal_d2h_span_receipt(id, &staging).err(),
-            Some(Error::Busy)
-        );
-        let pairs = t.d2h_span_receipt_wait(id).unwrap();
-        assert_eq!(pairs.len(), 3);
-        for (k, ((source, landed), p)) in pairs.iter().zip(&patterns).enumerate() {
-            let oracle = memra_tier::conformance::receipt_digest(f32_bytes(p));
-            assert_eq!(
-                *source, oracle,
-                "span {k}: the source digest is the program"
-            );
-            assert_eq!(
-                *landed, oracle,
-                "span {k}: the landed digest is the program"
-            );
-        }
-        assert_eq!(t.d2h_span_receipt(id).err(), Some(Error::UnknownTicket));
-        drop(taken);
         t.retire_source(&ticket).unwrap();
         t.release_device(&keep).unwrap();
         let Destination::Host(host) = t.take_destination(&ticket, 0, epochs).unwrap() else {
@@ -6025,82 +5230,6 @@ mod tests {
         t.retire(&ticket, Some(consumer)).unwrap();
         t.acknowledge(&ticket).unwrap();
         t.release_producer(producer).unwrap();
-        // Day 42 (design S2), the red arm on a card: `span-flip-landed` flips one byte of span 0's
-        // staging after its copy and before its event: the landed bytes carry it, span 0's landed
-        // digest is the program over them, its source digest over the unflipped source; every
-        // other span's pair agrees. The receipt is sealed here and abandoned before its read: it
-        // waits in the reap list and frees once its event is observed.
-        let settle = |t: &mut CudaTransfers, ticket: &TransferTicket, producer, keep| {
-            t.retire_source(ticket).unwrap();
-            t.release_device(&keep).unwrap();
-            let _ = t.take_destination(ticket, 0, epochs).unwrap();
-            let consumer = t.record_consumer(ticket).unwrap();
-            stream.synchronize().unwrap();
-            t.retire(ticket, Some(consumer)).unwrap();
-            t.acknowledge(ticket).unwrap();
-            t.release_producer(producer).unwrap();
-        };
-        let (ticket, producer, keep) = submit_kv(&mut t);
-        t.inject_span_flip_landed();
-        t.submit_d2h_spans(&ticket, spans(false)).unwrap();
-        t.synchronize(&ticket).unwrap();
-        let taken = t.take_d2h_spans(&ticket).unwrap();
-        let id = taken.receipt.unwrap();
-        let staging: Vec<&PinnedHostBuf> = taken.spans.iter().map(|s| &s.destination).collect();
-        t.seal_d2h_span_receipt(id, &staging).unwrap();
-        let pairs = t.d2h_span_receipt_wait(id).unwrap();
-        for (k, ((source, landed), (span, p))) in pairs
-            .iter()
-            .zip(taken.spans.iter().zip(&patterns))
-            .enumerate()
-        {
-            let oracle = memra_tier::conformance::receipt_digest(f32_bytes(p));
-            assert_eq!(*source, oracle, "span {k}: the source digest");
-            let landed_now = memra_tier::conformance::receipt_digest(span.destination.as_slice());
-            assert_eq!(
-                *landed, landed_now,
-                "span {k}: the landed digest is the landed bytes'"
-            );
-            if k == 0 {
-                assert_ne!(landed, source, "the flip is witnessed by span 0 alone");
-            } else {
-                assert_eq!(landed, source, "span {k} agrees");
-            }
-        }
-        drop(taken);
-        settle(&mut t, &ticket, producer, keep);
-        // An abandoned sealed receipt waits for its event; a displaced unsealed one drops at once.
-        let (ticket, producer, keep) = submit_kv(&mut t);
-        t.submit_d2h_spans(&ticket, spans(false)).unwrap();
-        t.synchronize(&ticket).unwrap();
-        let taken = t.take_d2h_spans(&ticket).unwrap();
-        let sealed = taken.receipt.unwrap();
-        let staging: Vec<&PinnedHostBuf> = taken.spans.iter().map(|s| &s.destination).collect();
-        t.seal_d2h_span_receipt(sealed, &staging).unwrap();
-        t.d2h_span_receipt_abandon(sealed);
-        assert_eq!(t.d2h_span_receipt(sealed).err(), Some(Error::UnknownTicket));
-        copy.synchronize().unwrap();
-        t.d2h_span_receipt_abandon(sealed);
-        assert!(t.span_reap.is_empty(), "reaped once its event is observed");
-        drop(taken);
-        settle(&mut t, &ticket, producer, keep);
-        let (ticket, producer, keep) = submit_kv(&mut t);
-        t.submit_d2h_spans(&ticket, spans(false)).unwrap();
-        t.synchronize(&ticket).unwrap();
-        let first = t.take_d2h_spans(&ticket).unwrap();
-        settle(&mut t, &ticket, producer, keep);
-        let (ticket, producer, keep) = submit_kv(&mut t);
-        t.submit_d2h_spans(&ticket, spans(false)).unwrap();
-        t.synchronize(&ticket).unwrap();
-        let second = t.take_d2h_spans(&ticket).unwrap();
-        assert_eq!(
-            t.d2h_span_receipt(first.receipt.unwrap()).err(),
-            Some(Error::UnknownTicket),
-            "a take displaces the earlier receipt"
-        );
-        assert!(t.span_reap.is_empty(), "an unsealed receipt drops at once");
-        drop((first, second));
-        settle(&mut t, &ticket, producer, keep);
         // Rule 5: an injected second-enqueue failure quarantines the ticket; nothing comes back.
         let (ticket, _producer, _keep) = submit_kv(&mut t);
         t.span_enqueue_fault = true;
@@ -6344,8 +5473,7 @@ mod tests {
         t.install_consumer_wait(&ticket).unwrap();
         let landed = t.take_h2d_spans(&ticket).unwrap();
         assert_eq!(landed.len(), 3);
-        for (l, p) in landed.iter().zip(&patterns) {
-            let span = &l.span;
+        for (span, p) in landed.iter().zip(&patterns) {
             assert_eq!(
                 span.source.as_slice(),
                 f32_bytes(p),
@@ -6355,11 +5483,6 @@ mod tests {
                 stream.clone_dtoh(&span.destination).unwrap(),
                 *p,
                 "the owner stream reads the span's destination bit for bit"
-            );
-            // Day 40 (design S): the destination digest is the program over the plane, bitwise.
-            assert_eq!(
-                l.destination_digest,
-                Some(memra_tier::conformance::receipt_digest(f32_bytes(p)))
             );
         }
         assert_eq!(
@@ -6534,8 +5657,7 @@ mod tests {
         t.install_consumer_wait(&ticket).unwrap();
         let landed = t.take_h2d_spans(&ticket).unwrap();
         assert_eq!(landed.len(), 3);
-        for (l, p) in landed.iter().zip(&planes) {
-            let span = &l.span;
+        for (span, p) in landed.iter().zip(&planes) {
             assert_eq!(
                 span.source.as_slice(),
                 f32_bytes(p),
@@ -6545,10 +5667,6 @@ mod tests {
                 stream.clone_dtoh(&span.destination).unwrap(),
                 **p,
                 "the copy ran after the fill: the destination is the plane, bit for bit"
-            );
-            assert_eq!(
-                l.destination_digest,
-                Some(memra_tier::conformance::receipt_digest(f32_bytes(p)))
             );
         }
         assert_eq!(

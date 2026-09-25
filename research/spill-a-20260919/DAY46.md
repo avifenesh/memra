@@ -72,3 +72,34 @@ card time) 0.15.
 - The target sitting runs on the same box after item 15's (`pro-single-day42/run-all-2.sh`, S2's receipts moved to
   `a-s2-design-s2` first, S3's under `a-s2`), then item 3's 9950X-class reading again (the lead's order puts item 4
   first). The 5090 half waits for the card's reset.
+
+## 3. S3 on the target card, as it ran (the same box; `pro-single-day42/run-all-2.sh`; receipts under `a-s2`, banked in `pro-single-s2/box-readings-s3/`)
+
+- Build `s3 build rc=0` 05:18:53Z: s2 (S3's tip) `e67f46dfa020e3fd..`, g4 `5845c0e59f3db51b..`, gpp `7508d56dc8509ef3..`
+  (both rebuilt in this run, their trees `b4816eda8` and `358749c9f` as before).
+- **(c), verbatim** (`ab-demote rc=0` 05:46:17Z, 20 of 20 replays): `DAY42 S2 C order=o1 wall g4=101.40 s2=104.70
+  s2-minus-g4=+3.30 rule <=+8.0 | e2e g4=176.02 s2=179.36 s2-minus-g4=+3.34 rule <=+1.0 -> FAIL`; `order=o2 wall
+  g4=101.50 s2=104.75 .. +3.25 .. | e2e g4=176.20 s2=179.47 .. +3.27 .. -> FAIL`; **`DAY42 S2 DEMOTE -> FAIL`**.
+- (d), verbatim (06:03:36Z): `DAY42 S2 D order=o1 .. -> PASS`, `order=o2 pin g4=13.50 s2=13.60 s2-minus-g4=+0.10 rule
+  <=+1.0 | e2e g4=102.30 s2=102.53 s2-minus-g4=+0.23 rule <=+1.0 -> PASS`; `DAY42 S2 PROMOTE -> PASS`.
+- (e), verbatim (06:08:43Z): `HUMP arm=xs2 boots=2 median-hump=+0.012 humps=False`, the control `HUMP arm=xgpp boots=2
+  median-hump=+0.515 humps=True`: PASS.
+- (a) and (b): every gate `.exit` 0 (identity x4, failure x2, the fault gate default and plain, twin x2, the hit gate x2),
+  the unit cells `parallel=3/3 engine-serial-rc=0 door-rc=0 cpu-rc=0 engine-census-rc=0 tier-rc=0`.
+- The trace reading: `TRACE steady N=6 copies_wall_ms=4.22 .. landed_wall_ms=3.15 landed_sum_ms=3.14 seal_delay_ms=7.46`
+  (g4: `copies_wall_ms=3.30`). At one block per span the landed digests take as long as S2's full grid did.
+
+**Where the price sits (a reading of both sittings' receipts, after the result).** The price is not the grid. Each
+demote's copy settle and the intruder's seed capture settle land at the same tick top, the demote first; the capture's
+settle takes its destination planes back (`take_plane`), and `take_plane` and `release_device` drain the WHOLE copy
+stream (`synchronize_copy_stream`), which now holds the landed digests the seal just enqueued. The capture settle's
+line reads `the settle held the owner thread 3.23ms .. 3.26ms` on S3's boots (S2's 3.09 to 3.15 in its trace boot) against
+0.13 to 0.21 ms on g4's. S2's trace shows it directly: `cuStreamSynchronize dur=2.908` starting 0.066 ms after the landed
+launch, then 31 more take-backs' syncs at its end; the owner stream ran no kernel during the landed launches because the
+owner thread was waiting in that call, not because the grid filled the card. DAY46 section 1's premise ("a grid that
+fills every SM ... holds the owner's kernels") was wrong; the S2 reading that suggested it is corrected here.
+
+**Verdict, as registered: S3 FAILS (c) on the target card and is refuted.** It is reverted in one commit with these
+receipts (the code returns to `b4816eda8`'s, G4 and T); its 5090 sitting is cancelled; the revision (the release paths'
+copy-stream drain made precise, so a take-back waits for nothing but its own lease's work) is pre-registered in
+`DAY48.md` before its code.
