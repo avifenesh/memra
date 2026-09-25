@@ -26417,9 +26417,11 @@ pub fn run(
                 let step_result =
                     guard_request(&engine, &fault_id, &fault_route, "decode step", || {
                         // MEMRA_STEP_OOM_FAULT's non-batching injection point (WP-B day 38
-                        // addendum A): the forged quoted OOM stands in for this step, before any
-                        // device work; the error arm below is production logic.
-                        if step_oom_fault_fire() {
+                        // addenda A and D): the forged quoted OOM stands in for this step, before
+                        // any device work; the error arm below is production logic. It fires only
+                        // on a session past its prime (a step that decodes), so the forged failure
+                        // lands where an errored session could otherwise park.
+                        if active[i].prefill_done && step_oom_fault_fire() {
                             eprintln!(
                                 "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this non-batching step \
                                  reports a synthetic CUDA OOM (model {}, generated {})",
@@ -53644,10 +53646,19 @@ mod tests {
             4,
             "expected the fault door's definition and its three registered call sites"
         );
-        let sites: Vec<usize> = live
+        // Addendum D: the non-batching site fires only on a session past its prime.
+        let gated = format!("if active[i].prefill_done && {call}");
+        let mut sites: Vec<usize> = live
             .match_indices(format!("if {call}").as_str())
             .map(|(at, _)| at)
             .collect();
+        assert_eq!(
+            sites.len(),
+            2,
+            "the spec and batched sites fire on any step they reach"
+        );
+        assert_eq!(live.matches(gated.as_str()).count(), 1);
+        sites.extend(live.match_indices(gated.as_str()).map(|(at, _)| at));
         assert_eq!(sites.len(), 3);
         for &at in &sites {
             let body = window(live, at, 4000);
