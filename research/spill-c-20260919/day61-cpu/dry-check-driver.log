@@ -1,0 +1,51 @@
+== run 1 calls
+STUB day61-box-build.sh D/root/wt-c-build D/root/spill-receipts/c-day61 c60=1 i11=2 i12=3
+STUB day40-run-cell.sh pfgates 3600 script=D/root/wt-c/research/spill-c-20260919/day59-cell.sh
+STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day61/pfgates
+STUB day59-pf.py gates D/root/spill-receipts/c-day61/pfgates --rig pro-single
+STUB day40-run-cell.sh pfserve 3600 script=D/root/wt-c/research/spill-c-20260919/day59-cell.sh
+STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day61/pfserve
+STUB day59-pf.py serve D/root/spill-receipts/c-day61/pfserve --rig pro-single
+STUB day40-run-cell.sh pftime 3600 script=D/root/wt-c/research/spill-c-20260919/day59-cell.sh
+STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day61/pftime
+STUB day59-pf.py time D/root/spill-receipts/c-day61/pftime --rig pro-single --shape pftime
+STUB day40-run-cell.sh pfnaked 3600 script=D/root/wt-c/research/spill-c-20260919/day59-cell.sh
+STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day61/pfnaked
+STUB day59-pf.py time D/root/spill-receipts/c-day61/pfnaked --rig pro-single --shape pfnaked
+STUB day40-run-cell.sh gap 5400 script=D/root/wt-c/research/spill-c-20260919/day60-cell.sh
+STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day61/gap
+STUB day60-gap.py D/root/spill-receipts/c-day61/gap --rig pro-single
+STUB day40-run-cell.sh i11 5400 script=D/root/wt-c/research/spill-c-20260919/day61-cell.sh
+STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day61/i11
+STUB day61-read.py D/root/spill-receipts/c-day61/i11 --rig pro-single
+== run 1 driver lines
+cpu cap: taskset -c 0-11 (no systemd scope on this box)
+pfgates rc=0 2026-09-25T04:23:09Z
+pfgates validate rc=0
+pfgates reader rc=0
+pfserve rc=0 2026-09-25T04:23:09Z
+pfserve validate rc=0
+pfserve reader rc=0
+pftime rc=0 2026-09-25T04:23:09Z
+pftime validate rc=0
+pftime reader rc=0
+pfnaked rc=0 2026-09-25T04:23:09Z
+pfnaked validate rc=0
+pfnaked reader rc=0
+gap rc=0 2026-09-25T04:23:09Z
+gap validate rc=0
+gap reader rc=0
+i11 rc=0 2026-09-25T04:23:10Z
+i11 validate rc=0
+i11 reader rc=0
+box done 2026-09-25T04:23:10Z
+== run 2 calls
+== run 2 driver lines
+cpu cap: taskset -c 0-11 (no systemd scope on this box)
+pfgates already done
+pfserve already done
+pftime already done
+pfnaked already done
+gap already done
+i11 already done
+box done 2026-09-25T04:23:10Z

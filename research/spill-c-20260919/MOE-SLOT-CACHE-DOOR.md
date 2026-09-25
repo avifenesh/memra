@@ -89,6 +89,9 @@ cell reads; the cells are listed in each day file and the deciding cell in `DAY5
 | 50 | I4: prefetch of the next routed expert through the owner (host-resident records only, copy stream, consumption after a compute-stream wait) | `moe_cache.rs`, `hybrid_forward.rs`, `lib.rs`, `native.rs` | `6745fd062` |
 | 57 | I10: the installer admits the host fill to completion before decode (bounded) | `native.rs` | `70d6633f5` |
 | 58 | I8f and I5f (the day-48 clauses failed): the validate memo as a dense table, the trace line written directly | `moe_cache.rs`, `native.rs` | `7ea765687` |
+| 60 | `run-gen --moe-dispatch-clock` (log only, both programs): the dispatch and prefetch entry points bracketed, for the gap to REF | `moe_cache.rs`, `lib.rs`, `run_gen.rs` | `fec3c582f` |
+| 61 | I11, the host-hit lease's repeated work removed: the catalog's memoized ticket allowance, one catalog and one host-cache read in `stage`, one SLRU lookup in `publish`, one id lookup in `demand`, the reused host slot (5370 to 3620 ns per host-hit prefetch cycle on the local CPU; a sixth change, one owner call, read flat and was reverted) | `types.rs`, `residency.rs`, `expert_dispatch.rs`, `native.rs` | `6116cddc2` to `59a5875d4`, `a068ee37d` |
+| 61 | I12: finished leases retire where a lease is taken, not on every admission | `moe_cache.rs` | `117302725` |
 
 Every rung's RTX 5090 verdict is in its DAY file (I6's default-budget regression fixed on the tuned tree, `DAY43
 RESIDFIX ... no_regression=PASS`; I8 and I5 pass as I8f and I5f, `DAY58 SMALLFIX ... i8f=PASS i5f=PASS`), and the
@@ -100,6 +103,11 @@ was void on a trace term I10 contradicts (`DAY51.md` sections 3 and 1c). The RTX
 the card's reset. The door's decide-by is unchanged (2026-10-04); a target-card win is the owner's promotion call,
 with `OWED.md` C2 as the promotion work. What the pending items below say about the synchronous miss path (item 4)
 describes the program before day 46.
+
+Lead integ60 owed items (`DAY59.md` to `DAY61.md`, all registered before code or cells): REF's own deciding cell
+(`MEMRA_MOE_PREFETCH=1`, its `docs/FLAGS.md` row now carries decide-by 2026-10-04); the gap to REF attributed on both
+programs with the day-60 clock; I11 and I12 against the door they tune and against REF (cell `i11`). All wait on a
+card: the target sitting is `day61-box.sh`, the RTX 5090's cells are queued behind its reset (queue v6).
 
 ## What is pending before the door can sit behind the tiered materializer
 

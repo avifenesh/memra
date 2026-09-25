@@ -80,3 +80,6 @@ Existing evidence, read before this cell and moving no bound: the target card's 
 92.3 host-hit demands (88.6 of them prefetches), of which the bank's `stage()` is 0.333 ms (3.6 us per demand), with
 `wait_ns` 0 (the in-flight bound never waited). That is the same size as the 0.44 ms window gap, which is the
 hypothesis of section 0; this cell measures both programs with one clock.
+
+Pinned (`DAY61.md` section 2b, before any cell): `run-gen-c60` is built from `da649107c`, whose engine is
+`fec3c582f`'s; the lane's tip now also carries DAY61's I11 and I12, which this cell does not measure.

@@ -65,3 +65,6 @@ from one tree, the lane's tip at the sitting (engine of `fec3c582f`, which adds 
 those three binaries (it named `-final` before this section; the day-51 `-final` binaries in the local binary
 directory are a different tree and stay untouched for `DAY51.md`'s queued cells). The exact commit is recorded in
 each cell's `tree.sha` and `binary.sha256` and in the sitting's build log.
+
+Pinned (`DAY61.md` section 2b, before any cell): the lane's tip now carries DAY61's I11 and I12, so the label `c60`
+is built from `da649107c`, the commit whose engine is `fec3c582f`'s as this section names.

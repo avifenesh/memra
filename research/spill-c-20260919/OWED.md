@@ -40,7 +40,32 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   deciding verdict `DAY51 VERDICT rig=pro-single integrity=ok -> door_wins` (`decide-b`; the first `decide` void on a
   trace term I10 contradicts), with REF (the legacy's own prefetch) faster than the door, reported. The RTX 5090's G1,
   G2 and `decide-b` wait on the card's reset (`rtx5090-fault-20260925/`: `GPU requires reset` at 01:25:23Z), queued
-  (`rtx5090-queue-v5-20260925.sh`). Open until that cell reads; then the owner's promotion call (2026-10-04).
+  (`rtx5090-queue-v5-20260925.sh`). Open until that cell reads; then the owner's promotion call (2026-10-04). The
+  lead accepted `door_wins` on the corrected reading (integ60 ruling). The gap to REF and its tuning are C11.
+
+## C10. `MEMRA_MOE_PREFETCH=1`'s deciding cell (lead integ60 owed item 1, decide-by 2026-10-04)
+
+- **Source.** The lead's integ60 resume: REF beat both the door and the legacy on the target card (`DAY51.md`
+  section 4); its `docs/FLAGS.md` row lacked a decide-by. "Pre-register its deciding cell (correctness gates plus the
+  timing A/B, both orders, N>=5, both cards) and add the decide-by date to its row. The winner becomes the per-card
+  default under the flags doctrine; the owner decides promotions."
+- **Acceptance.** `DAY59.md` section 1 (G1 tapes at two shapes, G2 run-spec K=1..8, G3 serving byte-equality; `pftime`
+  and `pfnaked`, 20 runs each, both orders; `pf_wins`, `pf_flat`, `pf_loses`); the row's decide-by 2026-10-04
+  (`97bd6d889`, `55fbad45a`).
+- **Status.** Registered, scripts and reader committed, binaries named (`c60=da649107c`). Cells wait on a card: the
+  target sitting `day61-box.sh`, the RTX 5090's in queue v6 behind its reset.
+
+## C11. The door's gap to REF, attributed and tuned (lead integ60 owed item 2)
+
+- **Source.** The lead's integ60 resume: "Attribute the door's gap to REF stage by stage and tune the door to match
+  or beat it ..., each improvement with its own pre-registration and cell. If the tuned door still loses to REF,
+  record it plainly; the owner reads both against the 2026-10-04 date."
+- **Acceptance.** `DAY60.md` (the log-only `--moe-dispatch-clock`, cell `gap`, readings R1 to R4); `DAY61.md` (the
+  CPU profile, I11 and I12 with per-change CPU gates and ladder, cell `i11` with its rules).
+- **Status.** The instrument landed (`fec3c582f`). The CPU profile put about 5.4 us on each host-hit prefetch
+  cycle; I11 changes 1 to 5 took it to 3.6 us on the local CPU (a sixth change read flat and was reverted,
+  `DAY61.md` section 2a); I12 landed (`117302725`). The `gap` and `i11` cells wait on a card (the same sitting and
+  queue as C10). The next improvement is registered from those readings.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 
@@ -66,7 +91,8 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   only, no recommendation; `HOSTPREFIX-DOOR.md` section E the same.
 - **Status.** Current through lane A day 36 and ruling 53 (day 42, `DAY42.md`: `DAY42 PACKET LINES checked=68
   missing=0 -> PASS`). Stays open until the review: every later receipt bearing on the door is read in before
-  2026-10-05. At 2026-09-24 21:10Z lane A's days 37 to 41 are in flight on its branch (DAY38's G'' and G''' sittings,
+  2026-10-05. Lane A's days 37 to 41 are on main since integ59 (`5d653e851`) and are read in next, after the card
+  sittings of C10 and C11. At 2026-09-24 21:10Z lane A's days 37 to 41 were in flight on its branch (DAY38's G'' and G''' sittings,
   DAY39's design T, DAY40's span-receipt survey, DAY41's design K red arms); they are read in when they land. Item 3's
   open question (which slice moved the demote's landing) answered from this lane's day 54 and read in verbatim.
 

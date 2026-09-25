@@ -190,3 +190,27 @@ Where the remaining 3.6 us goes, from ladder-5: `stage` 1.16 us (the governor's 
 0.19, and `SlruExpertDispatch::demand`'s own work (the `BankBatch`, the request clone, the ticket's progress, the
 lease clones: a `BankLease` clone copies its `BankId` and its whole `RecordLayout`) about 0.7. Those are the next
 improvement's candidates, registered after the card cell reads I11 and I12.
+
+## 2b. The binaries and the sitting, named before any cell
+
+Labels, one commit each: `c60=da649107c` (`run-gen-c60`, `run-spec-c60`, `memra-server-c60`: the engine of
+`fec3c582f`, the day-60 instrument, as `DAY59.md` and `DAY60.md` section 1a register it; those sections said "the
+lane's tip at the sitting", which now carries I11 and I12, so the label is pinned to the commit whose engine they
+name), `i11=a068ee37d` (`run-gen-i11`: I11 changes 1 to 5, change 6 reverted), `i12=117302725` (`run-gen-i12`: I11
+plus I12). The cell script `day61-cell.sh` and the reader `day61-read.py` are written before any cell; the reader
+was dry-checked for mechanics only on the target card's day-58 logs relabelled (its verdict lines there mean
+nothing), and it found one host demand sequence across those 30 door runs as section 2 states.
+
+**The target sitting** (`day61-box.sh`, builds by `day61-box-build.sh`): provenance and the artifact's SHA-256, the
+three builds in a separate build worktree, then DAY59's `pfgates`, `pfserve`, `pftime`, `pfnaked`, DAY60's `gap`,
+DAY61's `i11`, each one collector hold under `/tmp/memra-gpu.lock` through the day-40 runner, the collector's
+`--validate` and the registered reader after each. Expected: the builds about 25 minutes, the cells about 45 (about
+125 `run-gen` runs at about 10 s each on that card, plus `run-spec` K=1..8 and two server boots). Box needs: one
+RTX PRO 6000 Blackwell Workstation Edition, the approved 35B artifact at `/root/artifacts/`, the lane at its tip in
+`/root/wt-c` with a detached build worktree at `/root/wt-c-build`, the CUDA 13 toolkit and the Rust toolchain, at
+least 48 GB of host `MemAvailable` beside the run (the door's 16 GiB host tier plus the loader's expert slabs),
+about 30 GB free under `/root` for the build and the receipts.
+
+**The RTX 5090 cells** (the same cells and readers, `rtx5090-day59/`, `rtx5090-day60/`, `rtx5090-day61/`) run from a
+local queue behind queue v5 once the card is reset, with the same labels built locally into the local binary
+directory (`/tmp/c61-build/build-*.log`, mirrored into `rtx5090-day61/builds/` when the cells run).
