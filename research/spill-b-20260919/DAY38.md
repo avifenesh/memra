@@ -144,3 +144,65 @@ else changes.
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
+
+### 2.1 The target-card half (one RTX PRO 6000 Blackwell Workstation Edition, 2026-09-24 19:06:59 to 21:57:34Z)
+
+Green `3dc05d17...` (the day-37 lane file, source `c6f9282c2`), red `c31ff36d...` (green plus `day38-red.patch`), the 27B
+at the checkpoint's context, lengths 6,144, 30,720 and 122,880. Receipts `pro-single-day38/box/`. The reader's lines,
+verbatim:
+
+```
+DAY38 P1 card=pro6000 order=O1 rows=150 door_equal=149 door_differ=['X-30720-r3-t3'] cold_differ=['main-O1-on:X-30720-r3-t3'] non200=[] x_resumed_on=30 park_compact_grow=19 park_compact_on=150 failed=0 affinity_rewound={'main-O1-off': 20, 'main-O1-on': 16} a_resumed={'main-O1-off': 15, 'main-O1-on': 15} pool_hits={'main-O1-off': 20, 'main-O1-on': 35} faults=0 -> FAIL
+DAY38 P1 card=pro6000 order=O2 rows=150 door_equal=149 door_differ=['X-30720-r3-t3'] cold_differ=['main-O2-on:X-30720-r3-t3'] non200=[] x_resumed_on=30 park_compact_grow=19 park_compact_on=150 failed=0 affinity_rewound={'main-O2-off': 20, 'main-O2-on': 16} a_resumed={'main-O2-off': 15, 'main-O2-on': 15} pool_hits={'main-O2-off': 20, 'main-O2-on': 35} faults=0 -> FAIL
+DAY38 P2 card=pro6000 boot=fault-batch fired=1 errored_rows=['X-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'X-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0}] faults=0 -> PASS
+DAY38 P2 card=pro6000 boot=fault-nobatch fired=1 errored_rows=['X-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'X-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0}] faults=0 -> PASS
+DAY38 P2 card=pro6000 boot=fault-nobatch-red fired=1 errored_rows=['X-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'X-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0}] faults=0 -> PASS (red arm: the expected reading is FAIL with park_compact=ok200+1 and a resumed next turn)
+DAY38 P3 card=pro6000 fed~6144 N=100 p50_ms=1.20 p95_ms=1.30 max_ms=1.30
+DAY38 P3 card=pro6000 fed~30720 N=100 p50_ms=2.60 p95_ms=2.70 max_ms=2.70
+DAY38 P3 card=pro6000 fed~122880 N=100 p50_ms=8.20 p95_ms=8.30 max_ms=8.30
+DAY38 P4 card=pro6000 boot=main-O1-off idle driver_free=7564754944 pool_cached=6735256512 pool_reserved=93818191872 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=1936.0 p95=51646.8
+DAY38 P4 card=pro6000 boot=main-O1-on idle driver_free=4645519360 pool_cached=9678177920 pool_reserved=96737427456 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=685.0 p95=9343.8
+DAY38 P4 card=pro6000 boot=main-O2-off idle driver_free=7564754944 pool_cached=6735256512 pool_reserved=93818191872 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=1968.0 p95=51678.8
+DAY38 P4 card=pro6000 boot=main-O2-on idle driver_free=4645519360 pool_cached=9678177920 pool_reserved=96737427456 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=700.0 p95=9352.0
+DAY38 VMM-PAIR card=pro6000 rows=30 differ=[] vmm_off idle vmm_mapped=0 pool_cached=2567162688 trims=0; vmm_on idle vmm_mapped=0 pool_cached=2622667584 park_compact=30
+```
+
+Causes, placed from the receipts:
+
+- **P1 fails in both orders, on the same row.** `X-30720-r3-t3` on the `on` arm differs from `off` and from its own cold
+  twin; `off`'s row equals its cold twin. Three facts from the rows' `usage.prompt_tokens_details.cached_tokens` and
+  the pool-hit deltas:
+  1. **The workload's premise was wrong.** 1.2 said a `max_tokens=1` turn parks "exactly the prompt". It parks the
+     prompt plus the one generated token: the resumed rows read `cached_tokens` = L + 1 at turn 2 (6,145, 30,721,
+     122,881) and L + 65 at turn 3 (6,209, 30,785, 122,945). A turn resumes only when that generated token equals the
+     next stream id (the exact-extension rule): 20 of the 30 shape-X turns 2 and 3 resumed on `on` (19 exact
+     extensions and one on-grid rewind at 104,832; 19 `park-compact grow:` lines). P1 (b)'s `x_resumed_on=30` counted
+     rows, not resumes.
+  2. **The `off` arm never resumed at 6,144 or 30,720.** Every one of its shape-X turns reads `cached_tokens=0`: the
+     plain-parked entry keeps turn 1's ladder cap, which does not fit the next turn's charged cap
+     (`plain_resume_cap_admits`, the legacy contract). At 122,880 `off` rewound to an on-grid checkpoint (104,832 to
+     108,800). The door's compacted entry regrows at the request's cap, so `on` resumes where `off` cannot. The door
+     comparison of 1.4 therefore compared `on`'s resumes against `off`'s cold primes, not resume against resume.
+  3. **The resume `on` performs is a second numeric program for the same request.** Every exact-extension resume
+     starts at a state after a DECODED token and off the GDN prime grid (L + 1), while the cold prime of the same
+     prompt primes that position inside a grid-aligned chunk. This is the measured law of `grid_align_boundary`
+     (an off-grid split diverges from the split row on) and the "prime vs decode" pair of the one-numeric-program
+     rule. 18 of the 19 exact-extension resumes kept the cold digest; `X-30720-r3-t3` (resumed at 30,785) did not,
+     deterministically in both orders. The on-grid rewind kept it. The crossing belongs to the continuation pool's exact-extension resume, not to the compaction copy:
+     the door makes it reachable on this workload because the compacted entry always fits.
+- **P2 (green) PASS in both modes; the red arm did not exercise the defect.** The forged OOM fired on
+  `X-6144-r0-t1`, not on turn 3 as addendum B predicted: a `max_tokens=1` turn decodes its one token (fact 1). In the
+  non-batching mode the injection point is the session's first step, which is its prime: the session is not
+  `prefill_done`, so it cannot park on either tree, and the red arm reads the same as green. The errored-session fix
+  (`1c1e5cd49`) keeps its CPU census as its only evidence of a red; the red arm needs an injection that lands after
+  the prime.
+- **P3** (a reading): the park-time copy is 1.2, 2.6 and 8.2 ms at the three fed lengths (N=100 each).
+- **P4** (a reading): resumed-turn E2E p50 1,936 and 1,968 ms on `off`, 685 and 700 ms on `on` (N=45 each; `off`'s
+  rows are mostly cold primes, fact 2). At idle `on` holds more pool-cached bytes (9.68 GB against 6.74 GB).
+- **VMM-PAIR** (outside the rule): no digest differs; `vmm_mapped=0` at idle on both. At 6,144 with `max_tokens` 1 to
+  32 the planes are below `on_demand_pays`, so the allocator stayed pooled and the pair shows nothing about the two
+  doors together.
+
+The rule of 1.6 reads **FAIL (no reading)**: P1 fails. The cause is the continuation pool's resume program (fact 3),
+which the door makes reachable, plus a workload that cannot compare resume against resume (facts 1 and 2). The door is
+revised under a new pre-registration after the pool's resume obeys the one-program rule (OWED O11).

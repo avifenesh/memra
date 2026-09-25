@@ -493,3 +493,100 @@ mapper, the graveyard, the worker's ensure, trim, reap and idle paths) and again
 
 O2's errored flag (DAY38 addendum A) is set before every session-error send the census test pairs, and O5's term is
 computed only with the door armed (its census test pins both).
+
+### 2.5 The target-card sitting (r4; one RTX PRO 6000 Blackwell Workstation Edition; 2026-09-24)
+
+`pro-single-b-sitting.sh` ran the day-37 half 16:41:55 to 19:04:12Z (`pro-single-day37/box/chain.log`): lane built from
+`c6f9282c2` (server `3dc05d17...`), main from `17dceb981` (`e0da013e...`), receipts mirrored by the lead and checked file
+for file against the box manifest. Stage 0 on the card read, verbatim:
+
+```
+GROW-PLACEMENT extent=1 busy_p95_sum_us=55.3 blocks_behind_queue=no rule p95<=100 -> inline
+RELEASE-PLACEMENT unmap_or_release_blocks_behind_queue=no blocks_owner_from_helper=no -> owner-tick
+```
+
+So the target class grows inline (addendum A: the mapper does not start there) and reaps at the owner tick; the sitting
+exported `MEMRA_KV_VMM_GROW=inline`, and every vmm boot line reads `grow=inline (MEMRA_KV_VMM_GROW)`. The reader's
+lines (`pro-single-day37/box/SUMMARY.txt`), verbatim, the eight A4-IDLE readings listed after:
+
+```
+DAY37 A2 card=pro6000 receipt=grow-32768-r4/receipt/GROW.txt GROW-G1 PASS (grows=28 unequal=0 planes=34 planes_crossed=34 min_crossings_per_plane=12 rule>=5 drift=0 tokens_equal=true logits_equal=true prefix_state_equal=true final_state_equal=true) committed=32768 generated=128
+DAY37 A1-GATE card=pro6000 cell=admit-mem-burst pooled=[rc=2 no-verdict] vmm=[rc=2 no-verdict] ok_lines=0/0 door_on/off pooled=0/0 vmm=0/0 -> FAIL
+DAY37 A1-GATE card=pro6000 cell=fault-default pooled=[rc=1 no-verdict] vmm=[rc=1 no-verdict] ok_lines=0/0 door_on/off pooled=0/0 vmm=0/0 -> FAIL
+DAY37 A1-GATE card=pro6000 cell=fault-plain pooled=[rc=1 no-verdict] vmm=[rc=1 no-verdict] ok_lines=0/0 door_on/off pooled=0/0 vmm=0/0 -> FAIL
+DAY37 A1-GATE card=pro6000 cell=hit-off pooled=[rc=1 no-verdict] vmm=[rc=1 no-verdict] ok_lines=0/0 door_on/off pooled=0/0 vmm=0/0 -> FAIL
+DAY37 A1-GATE card=pro6000 cell=hit-on pooled=[rc=1 no-verdict] vmm=[rc=1 no-verdict] ok_lines=0/0 door_on/off pooled=0/0 vmm=0/0 -> FAIL
+DAY37 A1-GATE card=pro6000 cell=identity-default-on pooled=[rc=1 no-verdict] vmm=[rc=1 no-verdict] ok_lines=0/0 door_on/off pooled=0/0 vmm=0/0 -> FAIL
+DAY37 A1-GATE card=pro6000 cell=serve-smoke pooled=[rc=1 no-verdict] vmm=[rc=1 no-verdict] ok_lines=0/0 door_on/off pooled=?/? vmm=?/? -> FAIL
+DAY37 A1-GATE card=pro6000 cell=spec-ctx-edge pooled=[rc=2 no-verdict] vmm=[rc=2 no-verdict] ok_lines=0/0 door_on/off pooled=0/0 vmm=0/0 -> FAIL
+DAY37 A1-GATE card=pro6000 cell=twin27-off pooled=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] vmm=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] ok_lines=0/0 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=pro6000 cell=twin27-on pooled=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] vmm=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] ok_lines=0/0 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-MIX card=pro6000 kind=spec order=O1 compared=45 equal=45 differ=0 excluded=0 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-MIX card=pro6000 kind=spec order=O2 compared=45 equal=45 differ=0 excluded=0 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-MIX card=pro6000 kind=plain order=O1 compared=45 equal=45 differ=0 excluded=0 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-MIX card=pro6000 kind=plain order=O2 compared=45 equal=45 differ=0 excluded=0 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-STREAM card=pro6000 pairs=10 differing_rows=0 -> PASS
+DAY37 A3-ii card=pro6000 order=both ttft_p50 pooled=3603.56(N=10) vmm=3686.06(N=10) ratio=1.0229 rule<=1.05 ok; itl_p99 pooled=38.46(N=10) vmm=38.45(N=10) ratio=0.9999 rule<=1.05 ok; tpot_p50 pooled=35.47(N=10) vmm=35.03(N=10) ratio=0.9877 rule<=1.02 ok; out_tok_per_s pooled=364.94(N=10) vmm=364.88(N=10) ratio=0.9998 rule>=0.98 ok -> PASS
+DAY37 A3-ii card=pro6000 order=O1 ttft_p50 pooled=3526.49(N=5) vmm=3686.45(N=5) ratio=1.0454 rule<=1.05 ok; itl_p99 pooled=38.47(N=5) vmm=38.50(N=5) ratio=1.0008 rule<=1.05 ok; tpot_p50 pooled=35.70(N=5) vmm=35.02(N=5) ratio=0.9810 rule<=1.02 ok; out_tok_per_s pooled=365.00(N=5) vmm=364.92(N=5) ratio=0.9998 rule>=0.98 ok
+DAY37 A3-ii card=pro6000 order=O2 ttft_p50 pooled=3683.23(N=5) vmm=3685.67(N=5) ratio=1.0007 rule<=1.05 ok; itl_p99 pooled=38.45(N=5) vmm=38.45(N=5) ratio=1.0000 rule<=1.05 ok; tpot_p50 pooled=35.28(N=5) vmm=35.04(N=5) ratio=0.9932 rule<=1.02 ok; out_tok_per_s pooled=364.77(N=5) vmm=364.87(N=5) ratio=1.0003 rule>=0.98 ok
+DAY37 A3-i card=pro6000 placement=helper tick_ensure_walls N=33811 p50_us=7.0 p99_us=26.0 max_us=2602 owner_grows_waited N=0 p99_us=nan rule N>=20 p99<=500 -> PASS
+DAY37 A4 card=pro6000 retires=488 within_bound=488 worst_over_bound_bytes=0 boots_without_granularity=[] rule mapped-used<=planes*granule+slack -> PASS
+DAY37 A5-MAPPER card=pro6000 compared=45 equal=45 differ=0 owner_grows_waited=0 faults=0 -> FAIL
+DAY37 A5-ENSURE card=pro6000 reclaim_retry_lines=1 outcomes=['n'] errored_rows=['i-L0-r0'] peers_compared=79 equal=78 differ=1 faults=0 -> FAIL
+DAY37 A5-BUILD1 card=pro6000 retry_lines=11 cache_alloc_failed_lines=0 non200_rows=0 faults=0 -> PASS
+DAY37 A5-BUILD64 card=pro6000 retry_lines=9 cache_alloc_failed_lines=50 non200_rows=50 faults=0 -> PASS
+DAY37 A6 card=pro6000 lane_boot=mix-spec-O1-pooled compared=0 equal=0 differ=0 lane_kv_vmm_lines=1 main_kv_vmm_lines=0 -> FAIL
+DAY37 A7 card=pro6000 shape=g2 oom_lines=0 r503=0 grow_failures=0 admit_lines=80 est_over_booked_free=0 status={200: 80} faults=0 -> PASS
+DAY37 A7 card=pro6000 shape=l64 oom_lines=0 r503=0 grow_failures=0 admit_lines=66 est_over_booked_free=0 status={200: 66, 429: 14} faults=0 -> PASS
+DAY37 A7 card=pro6000 shape=boff oom_lines=0 r503=0 grow_failures=0 admit_lines=0 est_over_booked_free=0 status={200: 80} faults=0 -> PASS
+```
+
+A4-IDLE (benefit readings, no bound; driver free, pool cached, on-demand mapped and reserved bytes at idle after each
+mix boot):
+
+```
+DAY37 A4-IDLE card=pro6000 boot=mix-plain-O1-pooled driver_free=45749698560 pool_cached=8767078360 pool_reserved=55633248256 vmm_mapped=0 vmm_reserved=0 spec_pool=0 continuation_pool=2
+DAY37 A4-IDLE card=pro6000 boot=mix-plain-O1-vmm driver_free=69797740544 pool_cached=512688632 pool_reserved=30836523008 vmm_mapped=499122176 vmm_reserved=16684941312 spec_pool=0 continuation_pool=2
+DAY37 A4-IDLE card=pro6000 boot=mix-plain-O2-pooled driver_free=45749698560 pool_cached=8767078360 pool_reserved=55633248256 vmm_mapped=0 vmm_reserved=0 spec_pool=0 continuation_pool=2
+DAY37 A4-IDLE card=pro6000 boot=mix-plain-O2-vmm driver_free=69797740544 pool_cached=512688632 pool_reserved=30836523008 vmm_mapped=499122176 vmm_reserved=16684941312 spec_pool=0 continuation_pool=2
+DAY37 A4-IDLE card=pro6000 boot=mix-spec-O1-pooled driver_free=43702878208 pool_cached=9867833272 pool_reserved=57646514176 vmm_mapped=0 vmm_reserved=0 spec_pool=2 continuation_pool=0
+DAY37 A4-IDLE card=pro6000 boot=mix-spec-O1-vmm driver_free=67818029056 pool_cached=1546334680 pool_reserved=32782680064 vmm_mapped=499122176 vmm_reserved=16684941312 spec_pool=2 continuation_pool=0
+DAY37 A4-IDLE card=pro6000 boot=mix-spec-O2-pooled driver_free=43702878208 pool_cached=9867833272 pool_reserved=57646514176 vmm_mapped=0 vmm_reserved=0 spec_pool=2 continuation_pool=0
+DAY37 A4-IDLE card=pro6000 boot=mix-spec-O2-vmm driver_free=67818029056 pool_cached=1546334680 pool_reserved=32782680064 vmm_mapped=499122176 vmm_reserved=16684941312 spec_pool=2 continuation_pool=0
+```
+
+Causes, placed from the cell logs before any reading:
+
+- **A1-GATE, eight cells on both arms: no verdict.** Every one refused before booting a server, verbatim (serve-smoke):
+  `serve-smoke: FAIL`, then `cannot observe listening sockets (no ss, no lsof), so this run cannot prove port 8177 is
+  free.` (the two fragments of one line; the separator between them is omitted here).
+  The identity, fault, hit, admit-mem-burst and spec-ctx-edge gates print the same refusal for their own ports. The box
+  had neither `ss` (iproute2) nor `lsof`; the lane's box needs did not list them. The two twin27 cells (no port check)
+  ran and PASS on both arms. The gate set has no reading on the target card: it reruns on a box with iproute2.
+- **A6: no reading.** The main binary refused to boot, verbatim:
+  `Error: "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_KV_VMM_GROW: unknown MEMRA_KV_* name`.
+  The sitting exported the lane-only `MEMRA_KV_VMM_GROW` to every boot, and `boots.sh`'s `main` arm did not clear it.
+  A harness defect of the lane, not a finding about either binary; the 5090 never exported the name, so its `off-main`
+  booted. A6 reruns with the `main` arm clearing every lane-only name.
+- **A5-MAPPER reads FAIL on `owner_grows_waited=0`.** Under the inline placement there is no mapper, so `mapper:all`
+  injects nothing and no grow can wait on one; the reader's `waited > 0` term presumes the helper placement. The mix
+  under the fault arm read 45 of 45 digests equal.
+- **A5-ENSURE reads FAIL on one differing row.** The injected failure ended `i-L0-r0` with the typed error (`ensure
+  failed: not parked ... generated 362, streamed 362`, the registered outcome for a session that has emitted). The one
+  differing row is `iii-L0-r0`, the same conversation continued: its prompt carries `i-L0-r0`'s answer, so its
+  `prompt_sha256` differs between the two boots (`05519b6e...` against `bed810eb...`). It is a different request, not a
+  peer. The reader compared digests of unequal prompts. Every row with an equal prompt reads equal (78 of 78). The
+  `outcomes=['n']` field is the reader printing the first character of `not parked`.
+- **A3-i prints `placement=helper` and reads the ensure walls.** The reader did not read the placement; the inline
+  clause is per grow event `owner_us`. From the same receipts (stream vmm boots, `[kv-vmm] grow ... owner_us=`):
+  N=4,420, p50 24 us, p99 139 us, max 1,999 us, `waited=1` on none. The walls read N=33,811, p99 26 us.
+
+What stands as read: A2 GROW-G1 PASS; A1-MIX PASS on both paths and both orders (45 of 45 each); A1-STREAM PASS (10
+pairs, 0 differing rows); A3 (ii) PASS in both orders (TTFT p50 ratio 1.0229, ITL p99 0.9999, TPOT p50 0.9877,
+throughput 0.9998; N=10 per arm, medians of the per-boot values, 250 ms samples in each boot, 62 to 70 C at the boot
+boundaries); A4 PASS (488 retires within the bound; under inline there is no lookahead granule); A5-BUILD1 and
+A5-BUILD64 PASS; A7 PASS on g2, l64 and boff (no OOM line, no 503, no grow failure, every admit within the booked
+reading).
+
+The rule of 1.7 has no reading on the target card yet: A1 (the gate set) and A6 have no verdict, and A5's two lines
+need the corrected reader. Addendum F (1.15) pre-registers the rerun and the reader corrections.
