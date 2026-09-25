@@ -96,6 +96,17 @@ pub fn run(sizes: ProbeSizes) -> CpuProbe {
     }
 }
 
+/// DAY68 (`research/spill-c-20260919/DAY68.md`): the phase probe's steps, a 2^20-step compute chain (about 1 ms at
+/// 5.7 GHz).
+pub const PHASE_STEPS: u64 = 1 << 20;
+
+/// DAY68: one phase point's reading: the CPU the thread read, and nanoseconds per step of a `PHASE_STEPS` chain.
+pub fn phase_line(phase: &str) -> String {
+    let cpu = current_cpu();
+    let ns = compute(PHASE_STEPS);
+    format!("phase={phase} cpu={cpu} compute_ns={ns:.3}")
+}
+
 impl CpuProbe {
     /// The `[cpu-probe]` line's fields in their registered order.
     pub fn line(&self) -> String {
@@ -140,6 +151,11 @@ mod tests {
         }
         assert!(p.cpu >= 0 && p.cpu_after >= 0);
         assert!(p.line().starts_with("cpu="));
+        let phase = phase_line("gate");
+        assert!(
+            phase.starts_with("phase=gate cpu=") && phase.contains(" compute_ns="),
+            "{phase}"
+        );
     }
 
     /// The registered sizes on this host, printed (log only, by hand).

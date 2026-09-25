@@ -132,6 +132,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // DAY44: under the door the expert banks load as views of the artifact's mapping; the door
     // never stages from them, so no pinned copy is made.
     e.set_expert_host_mapped(expert_bank.is_some());
+    // DAY68 (`research/spill-c-20260919/DAY68.md`): --cpu-probe-phases (log only): a short compute chain at the
+    // start and at each stage-line point, all outside the timed spans.
+    let cpu_probe_phases = std::env::args().any(|a| a == "--cpu-probe-phases");
+    if cpu_probe_phases {
+        eprintln!(
+            "[cpu-probe] {}",
+            memra_engine::cpu_probe::phase_line("start")
+        );
+    }
     // DAY60: --moe-dispatch-clock (log only, both the legacy slot cache and the door): the cache
     // brackets its dispatch and prefetch entry points, printed at the stage-line phase points.
     let dispatch_clock = std::env::args().any(|a| a == "--moe-dispatch-clock");
@@ -1466,6 +1475,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         if dispatch_clock && let Some(line) = e.moe_dispatch_clock_line() {
             eprintln!("[moe-cache] dispatch-clock phase={phase} {line}");
+        }
+        if cpu_probe_phases {
+            eprintln!("[cpu-probe] {}", memra_engine::cpu_probe::phase_line(phase));
         }
     };
     stage_line("gate");

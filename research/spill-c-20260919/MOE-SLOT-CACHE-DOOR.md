@@ -23,7 +23,8 @@ decide-by: 2026-10-04 (covers the door, both budget flags and the stage clock; C
 carry their decide-by here, not in `docs/FLAGS.md`). Since day 60 it also covers `run-gen
 --moe-dispatch-clock` (log only, both the legacy slot cache and the door: the dispatch and prefetch
 entry points bracketed, `DAY60.md`), and since day 67 `run-gen --cpu-probe` (log only: a compute chain and L1, L2 and
-DRAM dependent-load chases on the main thread after every timed phase, `DAY67.md`).
+DRAM dependent-load chases on the main thread after every timed phase, `DAY67.md`) and since day 68 `run-gen
+--cpu-probe-phases` (log only: a 2^20-step compute chain at the start and at each stage-line point, `DAY68.md`).
 
 Day 40 (`DAY40.md` section 2): `--expert-bank-stages` (no value, requires the door) installs
 the door's log-only stage clock, an explanatory diagnostic: `Instant` brackets around every
