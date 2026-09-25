@@ -32,13 +32,10 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   `pos` crosses a boundary, never move a byte), pre-mapping the next granule off the boundary tick, the parked-session
   tail release (a parked cache keeps its VA and captured graphs; only unused granules go back), and admission and
   metrics that count mapped bytes (`effective_free_bytes`, `cuda_pool_cached_bytes` do not see VMM planes).
-- Status: `running` (DAY37.md). The serving arm `MEMRA_KV_ALLOCATOR=vmm` is built (addenda A to E; r4 =
-  `c6f9282c2`). Target card, first sitting (2.5): A2, A1-MIX, A1-STREAM, A3 (ii), A4, A5-BUILD and A7 PASS; stage 0
-  selects inline grows (now the class default in code, `0b75283fe`); the gate set refused on a box without `ss`/`lsof`,
-  A6's main binary refused a lane-only env name (harness), A5's two lines were reader defects. Addendum F (1.15)
-  reruns those on the r4 source in the second sitting (`pro-single-b-sitting2.sh`). 5090: the r4 chain is at its
-  stream pairs (a foreign process on the card stretched the waits); the seven boots its first batch missed run next
-  (`rtx5090-queue-c.sh`).
+- Status: `running`. Target class (RTX PRO 6000 Blackwell Workstation): the rule of DAY37 1.7 reads
+  PROMOTE-ELIGIBLE from the r4 source across the two sittings (DAY37 2.5, 2.6); the two boxes' stage-0 probes disagree
+  (55.3 against 271.2 us busy p95; inline serving grows p99 139 and 141 us), which the owner weighs with the door. The
+  5090 class has no reading: its r4 half stopped at the card's reset (queue-e runs the rest when the card is healthy).
 - Price: 3 to 4 agent-days (design note), plus a target-card sitting of about 8 h (the byte cells on both allocators,
   the stall cell both orders, the grow series, the accounting cell) and the matching 5090 holds.
 
@@ -52,12 +49,10 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   cold prime), digests equal on every request, `plain-affinity` hit lines present on the resumed arms; (ii) the
   step-OOM adjacency replay (`retire_may_park(_, true)` refuses the park, no `park-compact` line, no entry left);
   (iii) the park-time copy cost per park at the served context on both cards (the local 9B pair is owed).
-- Status: `running`. Target card (DAY38 2.1): FAIL (no reading) as registered; P1's cold-twin clause asserted, for
-  shape X, what `docs/SERVING.md` documents as the verbatim-extension near-tie residual (2.2), and the workload never
-  let `off` resume. Addendum D (1.11) re-registers P1 and P2 (shape Xp under `max_ctx`, door identity resume against
-  resume, cold identity on the affinity rewind; the non-batching fault point after the prime, `45f1b948d`). The
-  registered 5090 half runs as registered (queue-b), addendum D's on both cards (queue-c, the second sitting).
-  Day 27 has the target-card plain-path receipt for (iii) only.
+- Status: `running`. Target class: the rule of DAY38 1.6 reads PROMOTE-ELIGIBLE under addendum D (DAY38 2.3: P1'
+  PASS in both orders with 30 of 30 resumes on both arms, P2' PASS with the red arm red). 3 of 30 verbatim-extension
+  resumes flip against cold on both arms (the pool's near-tie residual, O11). The 5090 half waits for the card
+  (queue-e). Day 27 has the target-card plain-path receipt for (iii) only.
 - Price: 1 agent-day (design note), plus about 3 h on each card.
 
 ### O3. `MEMRA_ADMIT_BY_MEMORY` ON rows on the capped seed booking, decide-by 2026-10-07
@@ -94,10 +89,8 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   about 5.6 GB here ... named for the lead, not fixed by this lane").
 - Why here: day 33's `pending_prime` sums every still-priming session's full `W`, so the door's booked reading carries
   the same over-count on a burst. The fix is the door's booking measured at its best, and it feeds O3.
-- Status: `running`. Target card (DAY39 2.1): NOT-GREEN, G-NOOM fails on both green runs (10 and 12 parked prefill
-  OOMs): the section-1 term missed the plain checkpoint snapshot (156.9 MB per session on the 27B) and subtracted the
-  slab from the call's returned rows. Addendum B (1.8) revises the term (`be2177ead`); `v1`/`v2`/`v3` cells on both
-  cards (queue-c, the second sitting); the registered 5090 half still runs as registered (queue-b). Before O3.
+- Status: `receipts banked` on the target card: DAY39 2.2 GREEN (v3: no OOM, 46 x 200 against v1's 44; v2 reproduces
+  the 10 OOMs). The 5090 half and the admission gate on v3 wait for the card (queue-e). Feeds O3.
 - Price: about 0.5 agent-day plus a cell on each card.
 
 ### O6. The enforcing predictive door on the fuller charge

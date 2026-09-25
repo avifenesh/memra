@@ -1,12 +1,12 @@
-# WP-B checkpoint 2026-09-25: the first target-card sitting read (DAY37 2.5, DAY38 2.1, DAY39 2.1), revisions pre-registered and coded, the second sitting ready (NEED TARGET CARD)
-- Resync at resume (2026-09-25 00:23Z): `git fetch`; STATE and OWED re-read; the local queue-b was at DAY37 r4's stream pairs (its first boot batch had stopped at `burst-l64-vmm` on a 7,200 s idle wait behind a foreign process); main had moved (lanes A and C), nothing of this lane's on it. The lead mirrored the BOX6 receipts (1243, 229, 140 files, sha256-checked); committed `a0e27e23b` (a mirrored ELF removed and recorded).
-- O1 (DAY37, `--kv-allocator vmm`, decide-by 2026-10-04): target card A2, A1-MIX, A1-STREAM, A3 (ii), A4, A5-BUILD, A7 PASS; stage 0 selects inline (class default in code since `0b75283fe`). No reading yet for A1-GATE (the box had no `ss`/`lsof`), A6 (main refused the lane-only `MEMRA_KV_VMM_GROW`), A5-MAPPER/ENSURE (reader defects). Addendum F (1.15) fixes harness and reader and reruns them.
-- O2 (DAY38, `MEMRA_KV_PARK_COMPACT`, decide-by 2026-10-06): FAIL (no reading) on the target card as registered; the cold clause asserted the documented near-tie residual (2.2) and `off` never resumed. Addendum D (1.11): shape Xp under `max_ctx`, resume-against-resume identity, the non-batching fault point after the prime (`45f1b948d`).
-- O5 (DAY39): NOT-GREEN on the target card (G-NOOM: 10 and 12 parked prefill OOMs); the term missed the plain checkpoint snapshot. Addendum B (1.8) revises it (`be2177ead`).
-- Local: queue-b (DAY37 r4, then the registered DAY38 and DAY39 halves), then queue-c (the r4 missed boots, DAY38D, DAY39B, the admission gate on v3). Arms `target/b2` from `a803d3080`.
-- Target card: `pro-single-b-sitting2.sh` (DAY37F, DAY38D, DAY39B), about 5.5 h, needs iproute2.
-- Owner: the verbatim-extension near-tie residual against the one-numeric-program rule (OWED, owner-only).
-- Next after the sitting: O3 (DAY40) on the final booking, then O4, O6, O7, O8, O10.
+# WP-B checkpoint 2026-09-25 (after the second sitting): O1 and O2 read PROMOTE-ELIGIBLE on the target class, O5 GREEN there; O3 and O11 pre-registered and coded; the third sitting ready (NEED TARGET CARD); the 5090 awaits its reset
+- Resync at resume (05:48Z): `git fetch`; main merged into the lane (`7bcb6364d`, integ59 and integ60; one FLAGS.md row conflict resolved keeping both sides); STATE and OWED re-read; queue-b and queue-c were only timing out against the card (`[GPU requires reset]` since 01:25Z) and were stopped (their own pids); queue-e now waits for the card's health (it only reads nvidia-smi) and then runs every unrun local cell in decide-by order.
+- O1 (DAY37): target class PROMOTE-ELIGIBLE (2.5 plus 2.6's rerun: every gate cell PASS on both arms, A5-ENSURE and A6 PASS, A5-MAPPER N/A under inline). Stage 0 disagrees across two boxes of the class (55.3 against 271.2 us).
+- O2 (DAY38): target class PROMOTE-ELIGIBLE under addendum D (2.3); the red arm is red.
+- O5 (DAY39): GREEN on the target card (2.2).
+- O3 (DAY40): day 36's cell on the final booking, pre-registered; `pending_seed_uncapped=` printed (`b46ae200e`).
+- O11 (DAY41): `MEMRA_RESUME_GRID_REWIND` (default unset, decide-by 2026-10-09, `424b6756e`) and the probe's `--rewind` arm; the price cells pre-registered (addendum A: RX with the prefix cache off, FX in its own boots, off-prev = the tip minus the door).
+- Target card: `pro-single-b-sitting3.sh` (DAY40 then DAY41), about 12 h, needs iproute2.
+- Next: the sitting's reading, the 5090 halves when the card is back, then O4, O6, O7, O8, O10.
 - Day 36 checkpoint (kept): WP-B day 36 checkpoint: memra#680 closed under the door (days 33 and 35, plus the review cap); the owner's decision cell read V-DOOR PASS on both cards
 - Branch lane/spill-b-20260919 on origin/main 25bbb91f5. Pushes in the announced development mode (`UNQUALIFIED DEVELOPMENT`, logged; no qualification claimed). Engine changes under the default-OFF door only; no default moved.
 - Day 33 (`30a5ab697`, on main since #692): the armed gate books each still-priming session's prefill workspace (`pending_prime`), prints a `verdict=admit` line per admission, and parks a pre-emission prefill OOM. 5090 green at G2; the burst gate `tools/admit-mem-burst-gate.sh` wired into local-ci. BOX3 was lost before its PRO half.
