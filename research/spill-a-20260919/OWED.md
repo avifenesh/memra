@@ -296,14 +296,16 @@ the card is reset.
 
 - Source: DAY52 section 2: one full `cargo test -p memra-server --lib` run on the P2 tree (under the rig's CPU quota,
   default test threads) read `test tests::responses_carry_rate_limit_headers_and_slot_frees ... FAILED`, panicked at
-  `crates/memra-server/src/lib.rs:22740:9`, the assertion `stream in flight holds the slot` (the streaming
-  completion's in-flight count read right after the response returns). The rerun of the whole suite passed, and the test
-  alone passed 6 of 6. The panic's left and right values were not kept (that run's output was filtered to its summary
-  lines), so the value it read is unknown. The test holds `drain_lock()` against its shared-state peers.
+  `crates/memra-server/src/lib.rs:22740:9`. That line is `assert_eq!(resp.status(), StatusCode::OK);` of the test's
+  second request (the streaming `/v1/completions`): the stream was answered with a status other than 200. (Corrected on
+  day 53: DAY52 section 2 and this entry first named the next assertion, `stream in flight holds the slot`, from the
+  source rather than the panic line.) The rerun of the whole suite passed, and the test alone passed 6 of 6. The panic's
+  left and right values were not kept (that run's output was filtered to its summary lines), so the status it read is
+  unknown. The test holds `drain_lock()` against its shared-state peers.
 - The lead (2026-09-25): a defect to place, not a flake to leave; worked after item 17's reading.
 - Acceptance: none registered (a reproduction under the suite's concurrency first, pre-registered, then the placing
   and the fix with their own clauses).
-- Status: open.
+- Status: **pre-registered** (DAY53 section 1: the probe, then the reproduction in two arms, the placing rule).
 
 ## 2. Closed, delivered, or held by another owner
 

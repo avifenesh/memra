@@ -114,7 +114,8 @@ reads its own verdict. The 5090 half after the card's reset.
 - CPU cells, green on P2: server lib `928 passed; 0 failed; 25 ignored`; clippy `-D warnings` (memra-server, all
   targets); fmt; `git diff --check`; `tools/check-flags.sh`. One earlier full-suite run read `2 failed`: this census
   (a count scoped too wide, fixed before the commit) and `tests::responses_carry_rate_limit_headers_and_slot_frees`
-  (`lib.rs:22740`, `stream in flight holds the slot`), which passed on the rerun and 6 of 6 alone; this change does not
+  (`lib.rs:22740`, the streaming request's `assert_eq!(resp.status(), StatusCode::OK)`; day 53 corrects the first
+  reading of this line, which named the next assertion), which passed on the rerun and 6 of 6 alone; this change does not
   touch `lib.rs`. Recorded here as a flake at first; the lead's ruling (2026-09-25) makes it a defect to place: OWED
   item 21, worked after item 17's reading.
 - The p arm: section 1 said P's commit is cherry-picked onto step 1 on the box; that pick conflicts at the two shared
