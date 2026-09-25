@@ -94,3 +94,17 @@ unarmed, the probe and admission text are today's. The client and reader dry-run
 Code: about 0.5 agent-day (the two pools' rewind, arming, receipts, census, the probe arm, the client and reader).
 Cells: the 5090 about 3 h once its reset is done (it is down since 01:25Z, Xid 119 then 154); the target card about
 4.5 h (the probe 20 min, 8 serving boots, `off-prev`).
+
+### 1.7 Addendum A (2026-09-25, while writing the cells, before any cell)
+
+1.3 did not say what the prefix cache does in these boots. It decides which program serves a turn: with the prefix
+cache on, a turn-2 prompt can restore from turn 1's prompt-end seed (an on-grid entry) ahead of the pool probe, so the
+pool's residual would not be the thing measured. So:
+
+- **RX boots run with `MEMRA_PREFIX_CACHE_MB=0`**, as DAY38's cell ran, so every resume is the pool's (keep or rewind).
+- **FX runs in its own boots with the prefix cache at its default**, because the in-batch fanout is a prefix-cache
+  mechanism: per route, `fx-keep` and `fx-rewind`, one each.
+- Boots per card: per route RX `keep`/`rewind` in both orders (4) and FX `keep`/`rewind` (2), 12 in all, plus
+  `off-prev` (plain route, RX at 6,144 only, prefix cache off). The target card's time is about 6 h (the 122,880-token
+  cold twins dominate), not the 4.5 h 1.6 priced.
+- No clause, bound or reading of 1.4 changes.
