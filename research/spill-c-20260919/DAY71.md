@@ -139,3 +139,93 @@ the container (the powercap energy files are root-only). Receipts land in `/root
 Expected per machine: one build about 5 minutes, the cell about 10 (40 runs). The class line comes from the two mirrored
 cells: `python3 day71-read.py --class pro-single-day71/core pro-single-day71-b/core`. If only BOX15's machine can be
 had, its reading stands on its own and the class line stays owed.
+
+## 2. Machine `b` (BOX24, a second Ryzen 9 9950X machine, run by the lead as registered; `pro-single-day71-b/`)
+
+BOX15's machine was not on the market, so the lead ran the `b` half first: BOX24 (one RTX PRO 6000 Blackwell
+Workstation Edition at 600 W, a Ryzen 9 9950X with two L3 domains, 60 GB RAM with 58 GB available, driver 595.58.03,
+kernel 5.15, `acpi-cpufreq` with the `ondemand` governor; idle 14.8 W at 180 MHz, P8, FMA spin 2850 to 2852 MHz, no
+brake), `D71_BUILDS="p71=6bad38150" D71_RIG=pro-single-b bash .../day71-box.sh` on the tree `d819faea7`, 13:08Z to
+`box done 2026-09-25T13:20:30Z`. The lead mirrored the receipts; read here: 194 of 194 files `OK` against
+`box-mirror-manifest.sha256` (`MIRROR-CHECK.txt`). Regime (`regime.txt`): 25 to 39 C, SM median 2610 MHz, N=2258; the
+card's link reads PCIe gen 5 x8 in 2253 of 2258 samples (BOX15's machine read gen 5 x16 in DAY70's cell). Verbatim
+(`core/reading.log`, the box's reading):
+
+- `DAY71 PINS rig=pro-single-b home_l3=0-7,16-23 one=0,1,2,3,4,5,6,7,16,17,18,19 sampler_cpu=31`
+- `DAY71 COUNTERS rig=pro-single-b on check: [cpu-probe] counters-check cpu=19 rdpru=ok cpu_after=19 wall_ns=1097927 tsc=4712156 mperf=4712155 aperf=6291632 | rc=0`
+- `DAY71 CORE CHECKS rig=pro-single-b runs=40 integrity=ok`
+- `DAY71 REF gate delivered_ghz: min=5.612 median=5.699 max=5.727 (N=19 of 20)`
+- `DAY71 REF gate ref_share: min=1.000 median=1.000 max=1.000 (N=19 of 20)`
+- `DAY71 REF gate counted_ghz: min=5.612 median=5.699 max=5.727 (N=19 of 20)`
+- `DAY71 REF gate cycles_per_step: min=6.000 median=6.000 max=6.746 (N=19 of 20)`
+- the fast door run and one slow one:
+  `DAY71 R2R3 o1-i15-r1: gen=0.327 fast gate_ns=1.047 span_ms=1250 owner_cpu=1 sibling=[17] delivered_ghz=5.732 ref_share=1.000 counted_ghz=5.732 cycles_per_step=6.000 irq_rate=0.000 softirq_rate=80.000 sibling_poll=0.000 pkg_w=not_read pcie_rx=1172.000 owner_sys=0.008`,
+  `DAY71 R2R3 o1-i15-r2: gen=0.467 slow gate_ns=2.421 span_ms=1251 owner_cpu=0 sibling=[16] delivered_ghz=5.722 ref_share=1.000 counted_ghz=5.722 cycles_per_step=13.852 irq_rate=0.000 softirq_rate=91.926 sibling_poll=0.000 pkg_w=not_read pcie_rx=2856.500 owner_sys=0.008`
+- `DAY71 R1 rig=pro-single-b ref_median=0.323 slow=19 fast=1 of 20 door runs`
+- `DAY71 CORE VERDICT rig=pro-single-b integrity=ok -> not_reproduced`
+
+**Read as registered: `not_reproduced` on `b`** (one fast door run, fewer than two). No field decides on this
+machine. The class line needs BOX15's machine too and stays owed. For when it reads: under section 1's rule, `b`'s 19
+slow door runs give `class`.
+
+**A reader defect, found reading these receipts.** In this container `/proc/interrupts` reads empty (no `IH` or `I`
+row in `ev/sched.tsv`, and the `cat /proc/interrupts` of `host-before.txt` printed nothing). The reader summed the
+absent rows as zero and printed `irq_rate=0.000`, where section 1 says a field not read prints `not read`. The verdict
+is not affected (`not_reproduced` decides before any field), but the `irq_rate` values in this reading are not
+measurements. Section 3 fixes the reader before BOX15's half runs, and the corrected reading of these receipts sits
+beside the box's (`core/reading-rev2.log`).
+
+**REF's own median, read before any conclusion** (the lead asked). REF's gen-only is 0.322 to 0.323 s in 18 of its 20
+runs here, against 0.245 on BOX15's machine. REF's core reads normal: 6.0 to 6.1 cycles per step at every phase from its
+third run on (one gate probe migrated between CPUs and is not read), at 5.61 to 5.73 GHz at the gate. Its cache behaves
+the same as on BOX15's machine (`o1-ref-r3` prints the same cache lines on both: hit rate 79.1 percent cumulative, 90.4
+percent and 43.5 MB per token in the steady window). What differs is the machine: the card's link is gen 5 x8 here
+against x16, and the host has 60 GB against 197. The decode that streams experts over the link is slower, and the core
+is not. So `b`'s REF-relative slow mark and BOX15's are on different baselines; the door's gate probe is the
+within-machine measure of the state, and at the gate it agrees with the mark in all 20 door runs (the fast run's state
+starts later, at `warm`).
+
+**What the receipts show beside the verdict, deciding nothing** (read from `ev/` after the verdict):
+- **The core state.** Every slow door run reads 12.4 to 14.2 APERF cycles per chain step at `gate` (6.0 in the fast
+  run and in REF). The delivered clock is 5.67 to 5.74 GHz and MPERF over TSC is 1.000 in every door and REF gate
+  reading. The chain is 2.2 times slower in wall time than the fast state (2.17 to 2.48 ns per step against 1.047) with
+  the core in C0 at its full clock the whole time. So on this machine the lost time is cycles the core spends
+  while its clock runs: not a stopped clock (K-stop), not a lower clock. It is interrupt work on that CPU, which APERF
+  counts (K-irq), system management mode with counting counters, or a loss inside the core (K-ipc). The sibling's
+  POLL share is 0.000 in every run, the owner's system share at most 0.027, softirqs 38 to 110 a second. The one fast
+  door run (`o1-i15-r1`) reads 6.0 at `gate` and `generate` and 13.7 from `warm` on: its state began inside its
+  decode, as `o2-i15-r1` did in DAY68.
+- **Memory compaction runs against the door's process, and only the door's.** Over each door run's gate-to-window span,
+  `/proc/vmstat` moves `compact_isolated` by 32,134 to 93,553 and `pgmigrate_fail` by nearly the same (every isolated
+  page fails to migrate), with `pgmigrate_success` at most 292. Over the REF spans from REF's third run on, both are 0.
+  Placed by phase in four door runs (`o1-i15-r1`, `r2`, `r5`, `o2-i15-r5`), the failures run at 4,700 to 6,200 a
+  second from the run's start to its fill's end, 29,000 to 54,000 from the fill's end to the gate, 35,000 to 81,000
+  over the span, and 50,000 to 60,000 from the window to the run's end mark; successful migrations appear only in that
+  last stretch (42,000 to 168,000 a second), as the process frees its memory. REF's first two runs are the exception
+  that fits: over their spans compaction migrated 381,440 and 324,044 pages successfully, and their later phases read
+  7.4 to 8.4 cycles per step. `compact_stall` never moves (no direct compaction); the kcompactd counters move little
+  (`compact_daemon_migrate_scanned` 52,270 over the cell against `compact_migrate_scanned` 46,512,361). Moving a page
+  that a process maps means unmapping it there, and each unmap flushes that mapping from the TLB of every CPU the
+  process runs on, the owner's among them, by an interrupt. That is a candidate mechanism for K-irq, not a reading:
+  this container hides the interrupt counts.
+- **The mover rows see the container only.** No kernel thread appears in any `T` row across the cell (the movers are
+  `run-gen-p71`, `python3`, `nvidia-smi`, `bash`, `ssh`), so the sampler's `/proc` is the container's PID namespace.
+  DAY70's R4 read the container's threads, not the host's: its "the host's movers" (`DAY70.md` section 2) means the
+  container's, and kcompactd, kswapd or another tenant would not have appeared there.
+- The package energy files are absent in this container (`pkg_w` not read). This kernel accounts no hard-interrupt time
+  either (the `irq` column of `/proc/stat` is 0 in every row).
+
+## 3. Registered after machine `b`, before BOX15's half runs: the reader defect fixed, two fields added
+
+**The fix.** `irq_rate` reads `not read` when the cell has no `/proc/interrupts` rows at all, and `softirq_rate` when
+it has no `/proc/softirqs` rows, as section 1 already says for a source that is not there.
+
+**Two fields for BOX15's half, registered now, on `b`'s receipts only as a post-hoc reading.**
+- `intr_rate`: the host-wide interrupt total over the span, per second, from the first number of `/proc/stat`'s
+  `intr` line. On x86 it includes the CPUs' interrupt-controller interrupts (timer, rescheduling, function-call and TLB
+  shootdown), so it still reads when a container hides `/proc/interrupts`. It is the whole host's, not the owner CPU's.
+  The sampler adds one `N` row per pass (`intr` total and `ctxt`); `b`'s receipts have none, so there it is `not read`.
+- `migrate_fail`: the span's `pgmigrate_fail` delta per second, from the sampler's `V` rows.
+Both are higher-is-tracking under the strict rule of section 1, joining the ten registered fields. They decide on
+BOX15's cell; nothing else in section 1 moves. BOX15's cell runs the same binary `p71=6bad38150`; the sampler's added
+row and the reader change come with the tree the sitting checks out.

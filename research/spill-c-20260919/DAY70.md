@@ -99,7 +99,8 @@ verdict; nothing here moves a bound):
   threads other than the owner move 99 to 100 ticks in one 1-second pass, and every such pass is stamped 0.26 to 0.53 s
   before the run's gate and before its fill's end line: the reader's pass window (the span widened by 1 s each side)
   takes in the end of the fill. Inside the spans the host's movers are the collector's Python and `nvidia-smi`, at
-  most 5 ticks a pass.
+  most 5 ticks a pass. (Corrected in `DAY71.md` section 2: the sampler's `/proc` is the container's PID namespace, so
+  these are the container's movers; kernel threads and other tenants never appear in them.)
 - What this sampler cannot see. This kernel accounts no hard-interrupt time: the `irq` column of `/proc/stat` is 0 on
   all 32 CPUs after 41 days up (`softirq` is counted). Hard-interrupt time is then charged to the task it interrupts:
   it sits inside the owner's `schedstat` run time and its CPU's busy ticks, where R2 and R3 cannot separate it. Time
