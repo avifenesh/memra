@@ -2074,6 +2074,8 @@ mod day61_profile {
             let formula =
                 (id.encode().unwrap().len() + layout.encode().unwrap().len() + 1024) as u64;
             assert_eq!(catalog.metadata_allowance(id).unwrap(), formula);
+            // DAY64 (I14 change 1): the hashed index finds every record of the door-shaped catalog.
+            assert_eq!(catalog.record(id).unwrap().layout, *layout);
         }
         drop(s);
         std::fs::remove_file(path).ok();

@@ -1,0 +1,15 @@
+uptime:  09:57:01 up 4 days, 21:40,  0 users,  load average: 2.00, 1.43, 1.52
+
+running 1 test
+test moe_cache::banked_native::day61_profile::host_hit_lease_profile ... DAY61 PROFILE records=30720 cycles=200000 repeats=5 record_bytes=64
+DAY61 P1 proxy per_cycle_ns host_resident=454.9 demand=1769.9 with_bytes=255.3 finish=213.2 cycle=2711.9
+DAY61 P2 proxy unbracketed per_cycle_ns cycle=2606.8 brackets=105.1
+DAY61 P3 bank per_cycle_ns demand=1729.4 finish=297.3 cycle=2041.3 | stage clock per cycle (all repeats): stages=1.00 stage=873.8 alloc=0.0 publish=267.7 retire=216.9 collect=11.9
+DAY63 P3 split per cycle (all repeats): stage_lookup=51.7 stage_cache=440.3 stage_charge=224.2 publish_output=20.6 publish_policy=187.1 host_use=31.4 retire_only=11.0 ack=174.5 ack_release=91.1
+DAY63 P7 lease clone and drop per cycle ns=10.9 (cycle 2032.9)
+DAY61 P4 per_op_ns encode_two=1008.2 bankid_clone_vec=88.9 ids_map_get=56.8 catalog_record=66.7 btreeset_one=87.6 request_clone_validate=19.7 governor_reserve_release=227.1
+DAY61 P4b per_op_ns slru_resident=64.9 siphash_bankid=37.9 traced_host_resident=153.6
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 610 filtered out; finished in 12.18s
+

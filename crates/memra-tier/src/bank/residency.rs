@@ -289,7 +289,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         Ok(self)
     }
     pub fn slru_metadata_bytes(&self, slots: usize) -> Result<u64> {
-        let max_id = self.catalog.entries.keys().try_fold(0u64, |max_id, id| {
+        let max_id = self.catalog.ids().try_fold(0u64, |max_id, id| {
             id.encode().map(|b| max_id.max(b.len() as u64))
         })?;
         // Two full-key maps + occupant key + queues, conservative node allowance.

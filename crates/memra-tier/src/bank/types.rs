@@ -1,3 +1,4 @@
+use super::fx::FxMap;
 use crate::contracts::*;
 use std::{
     cell::RefCell,
@@ -40,7 +41,10 @@ impl CatalogEntry {
 }
 pub struct Catalog {
     pub(crate) class: LayoutClass,
-    pub(crate) entries: BTreeMap<BankId, Option<CatalogEntry>>,
+    /// Day 64 (I14 change 1, `research/spill-c-20260919/DAY64.md`): the records in `BankId` order (the order the
+    /// map this replaced iterated in), found through `index`, an Fx-hashed map from each id to its position.
+    entries: Vec<(BankId, Option<CatalogEntry>)>,
+    index: FxMap<BankId, usize>,
 }
 impl Catalog {
     pub fn new(class: LayoutClass, entries: Vec<(BankId, Option<CatalogRecord>)>) -> Result<Self> {
@@ -88,10 +92,27 @@ impl Catalog {
                 return Err(Error::Conflict);
             }
         }
+        let entries: Vec<_> = map.into_iter().collect();
+        let index = entries
+            .iter()
+            .enumerate()
+            .map(|(position, (id, _))| (id.clone(), position))
+            .collect();
         Ok(Self {
             class,
-            entries: map,
+            entries,
+            index,
         })
+    }
+    /// Every id in `BankId` order.
+    pub(crate) fn ids(&self) -> impl Iterator<Item = &BankId> {
+        self.entries.iter().map(|(id, _)| id)
+    }
+    /// Every retained record in `BankId` order.
+    pub(crate) fn records(&self) -> impl Iterator<Item = &CatalogRecord> {
+        self.entries
+            .iter()
+            .filter_map(|(_, entry)| entry.as_ref().map(|e| &e.record))
     }
     pub fn record(&self, id: &BankId) -> Result<&CatalogRecord> {
         Ok(&self.entry(id)?.record)
@@ -104,11 +125,8 @@ impl Catalog {
     /// The record with its ticket metadata allowance; the same refusals as `record`.
     pub(crate) fn entry(&self, id: &BankId) -> Result<&CatalogEntry> {
         id.validate()?;
-        self.entries
-            .get(id)
-            .ok_or(Error::NotFound)?
-            .as_ref()
-            .ok_or(Error::MaskedId)
+        let position = *self.index.get(id).ok_or(Error::NotFound)?;
+        self.entries[position].1.as_ref().ok_or(Error::MaskedId)
     }
 }
 
@@ -188,4 +206,81 @@ pub trait ExactReader {
     fn begin_request(&mut self, _request: &BudgetRequest, _epochs: Epochs) {}
     fn storage_bytes(&self, tensor: &TensorId) -> Result<u64>;
     fn read_exact(&mut self, tensor: &TensorId, offset: u64, dst: &mut [u8]) -> Result<()>;
+}
+
+#[cfg(test)]
+mod day64_order {
+    //! Day 64 (I14 change 1): the catalog's ordered iterations read `BankId` order, the order of the map it replaced.
+    use super::*;
+
+    #[test]
+    fn ids_and_records_iterate_in_bank_id_order() {
+        let tensor = TensorId {
+            version: WIRE_VERSION,
+            artifact: [3; 32],
+            name: "t".into(),
+        };
+        let mut entries = Vec::new();
+        for n in [7u32, 2, 9, 4] {
+            let segment = ByteSegment {
+                version: WIRE_VERSION,
+                group: 0,
+                page: 0,
+                owner: 0,
+                role: Role::Payload,
+                tensor: Some(tensor.clone()),
+                offset: u64::from(n) * 16,
+                valid_bytes: 16,
+                storage_bytes: 16,
+                alignment: 1,
+                encoding: EncodingId {
+                    version: WIRE_VERSION,
+                    program: digest("e", &[1]),
+                    row_bytes: 16,
+                },
+            };
+            let layout = RecordLayout {
+                version: WIRE_VERSION,
+                requirements: vec![GroupRequirement {
+                    version: WIRE_VERSION,
+                    group: 0,
+                    owner: 0,
+                    role: Role::Payload,
+                    page_count: 1,
+                    pages: PageRequirement::AllPages,
+                }],
+                segments: vec![segment],
+            };
+            let id = BankId {
+                version: WIRE_VERSION,
+                tensor: tensor.clone(),
+                record: RecordId::Expert {
+                    layer: 1,
+                    original_id: n,
+                    projection: Projection::Up,
+                },
+                layout: layout.identity().unwrap(),
+            };
+            let record = (n != 9).then(|| CatalogRecord {
+                layout,
+                checksums: vec![[0; 32]],
+            });
+            entries.push((id, record));
+        }
+        let reference: BTreeMap<_, _> = entries.iter().cloned().collect();
+        let catalog = Catalog::new(LayoutClass::PerRecord, entries).unwrap();
+        assert!(catalog.ids().eq(reference.keys()));
+        let retained: Vec<_> = reference
+            .values()
+            .flatten()
+            .map(|r| r.layout.clone())
+            .collect();
+        assert_eq!(
+            catalog
+                .records()
+                .map(|r| r.layout.clone())
+                .collect::<Vec<_>>(),
+            retained
+        );
+    }
 }
