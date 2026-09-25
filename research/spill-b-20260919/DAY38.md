@@ -247,3 +247,46 @@ flips only at near-ties). `X-30720-r3-t3` is one such flip: one in 19 exact-exte
 cold-twin clause was a registration error of this lane for shape X, not a defect the door or the pool must fix. The
 tension between that documented contract and `CLAUDE.md`'s one-numeric-program rule is recorded for the owner (OWED,
 owner decisions) and not worked by this lane. Addendum D (1.11) re-registers P1 and P2.
+
+### 2.3 Addendum D on the target card (one RTX PRO 6000 Blackwell Workstation Edition, 2026-09-25 02:41 to 05:17Z)
+
+Green `c65f3076...` and red `0673a71d...` from `a803d3080` (`build-arms.sh`; red = green plus `day38-red.patch`). The
+reader (`pro-single-day38/box-d/SUMMARY.txt`), verbatim:
+
+```
+DAY38D P1 card=pro6000 order=O1 xp_turns=30 resumed_both=30 frac=1.00 xp_door_differ=[] prompt_mismatch=[] a_turn2=15 a_differ=[] on_resumed=30 park_compact_grow=30 affinity_rewound={'main-O1-off': 15, 'main-O1-on': 15} non200=[] faults=0 -> PASS
+DAY38D P1-READING card=pro6000 boot=main-O1-off xp_resumed=30 resumed_vs_cold_flips=3 flip_tags=['Xp-30720-r0-t3', 'Xp-30720-r1-t3', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P1-READING card=pro6000 boot=main-O1-on xp_resumed=30 resumed_vs_cold_flips=3 flip_tags=['Xp-30720-r0-t3', 'Xp-30720-r1-t3', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P1 card=pro6000 order=O2 xp_turns=30 resumed_both=30 frac=1.00 xp_door_differ=[] prompt_mismatch=[] a_turn2=15 a_differ=[] on_resumed=30 park_compact_grow=30 affinity_rewound={'main-O2-off': 15, 'main-O2-on': 15} non200=[] faults=0 -> PASS
+DAY38D P1-READING card=pro6000 boot=main-O2-off xp_resumed=30 resumed_vs_cold_flips=3 flip_tags=['Xp-30720-r0-t3', 'Xp-30720-r1-t3', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P1-READING card=pro6000 boot=main-O2-on xp_resumed=30 resumed_vs_cold_flips=3 flip_tags=['Xp-30720-r0-t3', 'Xp-30720-r1-t3', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P2 card=pro6000 boot=fault-batch fired=1 errored_rows=['Xp-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'Xp-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0, 'cached': 0}] faults=0 -> PASS
+DAY38D P2 card=pro6000 boot=fault-nobatch fired=1 errored_rows=['Xp-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'Xp-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0, 'cached': 0}] faults=0 -> PASS
+DAY38D P2 card=pro6000 boot=fault-nobatch-red fired=1 errored_rows=['Xp-6144-r0-t1'] ok200=39 park_compact=40 next_turn=[{'tag': 'Xp-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0, 'cached': 6144}] faults=0 -> FAIL (red arm: the expected reading is FAIL with park_compact=ok200+1 and a resumed next turn)
+DAY38D P3 card=pro6000 fed~6144 N=100 p50_ms=1.30 p95_ms=1.40 max_ms=4.50
+DAY38D P3 card=pro6000 fed~30720 N=100 p50_ms=2.60 p95_ms=2.70 max_ms=2.90
+DAY38D P3 card=pro6000 fed~122880 N=100 p50_ms=8.20 p95_ms=8.30 max_ms=8.50
+DAY38D P4 card=pro6000 boot=main-O1-off idle driver_free=7538343936 pool_cached=6699726720 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=531.0 p95=1255.2
+DAY38D P4 card=pro6000 boot=main-O1-on idle driver_free=6296829952 pool_cached=8067565184 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=533.0 p95=1248.8
+DAY38D P4 card=pro6000 boot=main-O2-off idle driver_free=7538343936 pool_cached=6699726720 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=530.0 p95=1250.0
+DAY38D P4 card=pro6000 boot=main-O2-on idle driver_free=6296829952 pool_cached=8067565184 continuation_pool_entries=16 resumed_e2e_ms N=45 p50=533.0 p95=1250.8
+DAY38D VMM-PAIR card=pro6000 rows=30 differ=[] vmm_off idle vmm_mapped=0 vmm_on idle vmm_mapped=0 park_compact=30
+```
+
+- **P1' PASS in both orders.** Every Xp turn 2 and 3 resumed on both arms (30 of 30), with no digest difference
+  between the compacted resume and the plain-parked one, 30 `park-compact grow:` lines, and every shape-A turn 2 equal
+  on `on`, `off` and its cold twin, rewound on both arms.
+- **P2' PASS on both green modes, and the red arm is red.** With the non-batching point after the prime, the red tree
+  parked the errored session (`park_compact=40` for 39 HTTP 200 rows) and its next turn reused 6,144 of its rows
+  (`cached: 6144`); green writes no park for it and the next turn primes cold. The errored-session fix (`1c1e5cd49`)
+  now has its red on the card.
+- **The near-tie reading.** Against their cold twins, 3 of the 30 verbatim-extension resumes flip on each arm, the
+  same three rows on both arms and in both orders (`Xp-30720-r0-t3`, `Xp-30720-r1-t3`, `Xp-6144-r2-t3`): the
+  residual belongs to the pool's resume program, not to the door.
+- **P3** 1.3, 2.6 and 8.2 ms per park at the three fed lengths (N=100 each). **P4**: with both arms resuming, the
+  resumed turns' E2E is the same (p50 531 against 533 ms, N=45 per boot); at idle `on` reads 1.24 GB less driver free
+  and 1.37 GB more pool-cached bytes than `off` (the freed ladder-cap allocations stay in the stream-ordered pool).
+- **VMM-PAIR**: no digest differs; the 6,144-row planes stay pooled under `on_demand_pays`, so the pair is silent.
+
+**The rule of 1.6 on the target class: PROMOTE-ELIGIBLE** (P1' and P2' pass; P3 and P4 go with it). The 5090 half
+waits for the card's reset.

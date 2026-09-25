@@ -201,3 +201,48 @@ The diagnosis, from the log and the code, per 1.5:
   its returned rows (`prompt_row_bytes x rows`), which the slab does not hold.
 
 Addendum B (1.8) is the revision. Day 33's term stays the door's booking until the revision passes.
+
+### 2.2 Addendum B on the target card (one RTX PRO 6000 Blackwell Workstation Edition, 2026-09-25 05:23 to 05:36Z)
+
+`v3` `c65f3076...` (reused from DAY38D's green, the same source), `v2` `6b06ac13...`, `v1` `28573f31...`, all from
+`a803d3080`. `day33-compare.py` (unchanged, `v2` as red and `v3` as green) and `day39-read.py`, verbatim:
+
+```
+== card pro6000
+DAY33 V-BOOT boot=v2-R64 arm=on32768 door_line=present -> PASS role=red shape=R64
+DAY33 V-BOOT boot=v2-off arm=off door_line=present -> PASS role=red shape=off
+DAY33 V-BOOT boot=v3-R64-r1 arm=on32768 door_line=present -> PASS role=green shape=R64
+DAY33 V-BOOT boot=v3-off arm=off door_line=present -> PASS role=green shape=off
+DAY33 V-BOOT boot=v3-R64-r2 arm=on32768 door_line=present -> PASS role=green shape=R64
+== R-OOM / G-NOOM / G-BOOK (ON boots)
+DAY33 R-OOM card=pro6000 boot=v2-R64 role=red shape=R64 v=32768 oom_lines=10 burst={429: 13, 200: 51} first_oom=server.log:708 1790313880872 [admit-mem] prefill OOM parked session back to queue (model q38, retry 1/3): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") -> RED
+DAY33 G-NOOM card=pro6000 boot=v2-R64 role=red shape=R64 oom_lines=10 burst_503=0 crash_lines=0 burst_200=51 other_non200=0 r429=13 refuse_lines=13 retry_after_in_1_60=True -> FAIL
+DAY33 G-BOOK card=pro6000 boot=v2-R64 role=red shape=R64 admit_lines=77 admit_lines_in_burst=61 est_over_booked_free=0 -> PASS
+DAY33 R-OOM card=pro6000 boot=v3-R64-r1 role=green shape=R64 v=32768 oom_lines=0 burst={429: 18, 200: 46} first_oom=none -> NOT-RED
+DAY33 G-NOOM card=pro6000 boot=v3-R64-r1 role=green shape=R64 oom_lines=0 burst_503=0 crash_lines=0 burst_200=46 other_non200=0 r429=18 refuse_lines=18 retry_after_in_1_60=True -> PASS
+DAY33 G-BOOK card=pro6000 boot=v3-R64-r1 role=green shape=R64 admit_lines=62 admit_lines_in_burst=46 est_over_booked_free=0 -> PASS
+DAY33 R-OOM card=pro6000 boot=v3-R64-r2 role=green shape=R64 v=32768 oom_lines=0 burst={429: 18, 200: 46} first_oom=none -> NOT-RED
+DAY33 G-NOOM card=pro6000 boot=v3-R64-r2 role=green shape=R64 oom_lines=0 burst_503=0 crash_lines=0 burst_200=46 other_non200=0 r429=18 refuse_lines=18 retry_after_in_1_60=True -> PASS
+DAY33 G-BOOK card=pro6000 boot=v3-R64-r2 role=green shape=R64 admit_lines=62 admit_lines_in_burst=46 est_over_booked_free=0 -> PASS
+== V-ID-FIX (green ON against red ON, same shape, sequential rows)
+DAY33 V-ID-FIX card=pro6000 shape=R64 green=v3-R64-r1 red=v2-R64 eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID-FIX card=pro6000 shape=R64 green=v3-R64-r2 red=v2-R64 eligible=16 equal=16 differ=0 -> PASS
+== V-ID (the day-32 term: green ON against green OFF)
+DAY33 V-ID card=pro6000 shape=R64 on=v3-R64-r1 off=v3-off eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID card=pro6000 shape=R64 on=v3-R64-r2 off=v3-off eligible=16 equal=16 differ=0 -> PASS
+== V-OFF (green OFF against red OFF: the default-OFF program unchanged)
+DAY33 V-OFF card=pro6000 green=v3-off red=v2-off rows=16 equal=16 differ=0 admit_mem_lines=0 -> PASS
+DAY33 VERDICT card=pro6000 boots=5 v_boot_all=True green_noom_book_all=True v_id_fix_all=True v_id_all=True v_off_all=True -> GREEN
+DAY39 READING card=pro6000 boot=v1-R64 burst_status={200: 44, 429: 20} admit_mem_lines_in_burst=92 peak_pending_prime=22720868352(other=None verdict=defer) peak_pending_prime_v1=none
+DAY39 READING card=pro6000 boot=v2-R64 burst_status={200: 51, 429: 13} admit_mem_lines_in_burst=87 peak_pending_prime=0(other=0 verdict=admit) peak_pending_prime_v1=32933781504(other=0 verdict=defer)
+DAY39 READING card=pro6000 boot=v3-R64-r1 burst_status={200: 46, 429: 18} admit_mem_lines_in_burst=82 peak_pending_prime=7088517120(other=29647687680 verdict=defer) peak_pending_prime_v1=29647687680(other=7088517120 verdict=defer)
+DAY39 READING card=pro6000 boot=v3-R64-r2 burst_status={200: 46, 429: 18} admit_mem_lines_in_burst=82 peak_pending_prime=7088517120(other=29639540736 verdict=defer) peak_pending_prime_v1=29639540736(other=7088517120 verdict=defer)
+DAY39 READING card=pro6000 boot=v2-off burst_status={} admit_mem_lines_in_burst=0 peak_pending_prime=none peak_pending_prime_v1=none
+DAY39 READING card=pro6000 boot=v3-off burst_status={} admit_mem_lines_in_burst=0 peak_pending_prime=none peak_pending_prime_v1=none
+```
+
+**The card reads GREEN.** `v3` has no OOM line on either burst run, 46 x 200 and 18 typed 429s, every admission
+within the booked reading; `v2` reproduces section 1's failure (10 parked prefill OOMs, 51 x 200); `v1` (day 35's
+booking) reads 44 x 200 and 20 x 429. At the burst's peak the revised term books 7.09 GB where day 33's booked
+29.6 GB. The revision admits two more requests of the 64-request burst than day 35's booking, with no OOM. The
+admission gate on `v3` and the 5090 half wait for the 5090's reset.

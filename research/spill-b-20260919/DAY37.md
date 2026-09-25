@@ -622,3 +622,42 @@ reading).
 
 The rule of 1.7 has no reading on the target card yet: A1 (the gate set) and A6 have no verdict, and A5's two lines
 need the corrected reader. Addendum F (1.15) pre-registers the rerun and the reader corrections.
+
+### 2.6 Addendum F's rerun on the target card (a second RTX PRO 6000 Blackwell Workstation Edition, 2026-09-25)
+
+`pro-single-b-sitting2.sh` ran `rerun-f.sh` 01:45:33 to 02:35:56Z (`pro-single-day37/box-f/chain.log`): lane built from
+`c6f9282c2` (server `7e586b8c...`), main from `17dceb981` (`92c1bf3b...`), `MEMRA_KV_VMM_GROW=inline` pinned, the box
+preflight found `ss`. The corrected reader (`pro-single-day37/box-f/SUMMARY.txt`), verbatim:
+
+```
+DAY37 A1-GATE card=pro6000 cell=admit-mem-burst pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=0/0 door_on/off pooled=0/1 vmm=1/0 -> PASS
+DAY37 A1-GATE card=pro6000 cell=fault-default pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=160/160 door_on/off pooled=0/14 vmm=14/0 -> PASS
+DAY37 A1-GATE card=pro6000 cell=fault-plain pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=160/160 door_on/off pooled=0/14 vmm=14/0 -> PASS
+DAY37 A1-GATE card=pro6000 cell=hit-off pooled=[rc=0 ALL GREEN (qwen)] vmm=[rc=0 ALL GREEN (qwen)] ok_lines=61/61 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=pro6000 cell=hit-on pooled=[rc=0 ALL GREEN (qwen)] vmm=[rc=0 ALL GREEN (qwen)] ok_lines=68/68 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=pro6000 cell=identity-default-on pooled=[rc=0 ALL GREEN (teeth=0)] vmm=[rc=0 ALL GREEN (teeth=0)] ok_lines=12/12 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=pro6000 cell=serve-smoke pooled=[rc=0 serve-smoke: 0 failed] vmm=[rc=0 serve-smoke: 0 failed] ok_lines=31/31 door_on/off pooled=0/1 vmm=1/0 -> PASS
+DAY37 A1-GATE card=pro6000 cell=spec-ctx-edge pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=0/0 door_on/off pooled=0/3 vmm=3/0 -> PASS
+DAY37 A1-GATE card=pro6000 cell=twin27-off pooled=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] vmm=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] ok_lines=0/0 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=pro6000 cell=twin27-on pooled=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] vmm=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] ok_lines=0/0 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A4 card=pro6000 retires=74 within_bound=74 worst_over_bound_bytes=0 boots_without_granularity=[] rule mapped-used<=planes*granule+slack -> PASS
+DAY37 A5-MAPPER card=pro6000 against=off-lane compared=45 equal=45 differ=0 owner_grows_waited=0 faults=0 -> N/A (inline: no mapper)
+DAY37 A5-ENSURE card=pro6000 reclaim_retry_lines=1 outcomes=['not parked'] errored_rows=['i-L0-r0'] dependent_rows=['iii-L0-r0'] peers_compared=78 equal=78 differ=0 differ_tags=[] faults=0 -> PASS
+DAY37 A6 card=pro6000 lane_boot=off-lane compared=45 equal=45 differ=0 lane_kv_vmm_lines=1 main_kv_vmm_lines=0 -> PASS
+DAY37 A7 card=pro6000 shape=g2 oom_lines=0 r503=0 grow_failures=0 admit_lines=80 est_over_booked_free=0 status={200: 80} faults=0 -> PASS
+```
+
+Stage 0 on this box read, verbatim, `GROW-PLACEMENT extent=1 busy_p95_sum_us=271.2 blocks_behind_queue=no rule p95<=100
+-> helper`, against 55.3 us (`-> inline`) on the first box of the same class: the probe's busy regime puts the two
+boxes on opposite sides of the rule's 100 us line. The serving grows read nearly the same on both under inline:
+per grow event p99 141 us (N=1,714, this box's vmm boots) and 139 us (N=4,420, the first box's stream boots), both
+under A3 (i)'s 500 us bound. The class default in code (`inline`, `0b75283fe`) rests on the first box's receipt; the
+two stage-0 readings disagree, which the owner weighs with the door.
+
+**The rule of 1.7 on the target class**, from the r4 source across the two sittings (A3 timing from the first
+sitting alone): A1 PASS (every gate cell on both arms here; A1-MIX and A1-STREAM in 2.5), A2 PASS (2.5), A5 PASS
+(ENSURE, BUILD1 and BUILD64; MAPPER does not apply under inline, addendum F), A6 PASS, A7 PASS, A3 (i) PASS (inline
+branch, 139 us) and A3 (ii) PASS. The rule reads **PROMOTE-ELIGIBLE** for the RTX PRO 6000 Blackwell Workstation
+class. A4's retention readings go with it (2.5). The 5090 class has no reading: its r4 half stopped when the card
+went to `GPU requires reset` (Xid 119, then 154, from 01:25Z; `rtx5090-day37/r4/run.log`), with the stream pairs
+from `stream-O1-2` on and the seven boots of addendum F still to run.
