@@ -1006,6 +1006,8 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         "[dsv4-serve] {name}: {sessions} serving lane(s){}",
         if std::env::var_os("MEMRA_DSV4_SESSIONS").is_some() {
             " (MEMRA_DSV4_SESSIONS)"
+        } else if sessions > 1 && tp_ep_rows {
+            " (default on the plain TP/EP program, sharing B-row steps; MEMRA_DSV4_SESSIONS=1 is the serial route)"
         } else if sessions > 1 {
             " (default on the plain PP matrix program; MEMRA_DSV4_SESSIONS=1 is the serial route)"
         } else {

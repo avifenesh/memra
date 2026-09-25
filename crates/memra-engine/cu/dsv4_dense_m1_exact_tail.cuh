@@ -283,13 +283,16 @@ __global__ void dsv4_dense_exact_tail_dots_kernel(const float* __restrict__ x,
 // GROUPED: n is rows per group and the grid covers every group's rows; a flat
 // row is group*n+row, the weight row stays flat, and only the activation and
 // output planes move by group. The launcher sizes the grid exactly.
-template <int ROWS, bool GROUPED = false>
+// M > 1 (memra #710 B-row, verify rows): M token rows share each weight load, each with
+// its own accumulator in the same leaf order, and each row reduces through the same
+// tree, so row t's bits equal its M=1 launch (and dsv4_gemv_fp8_m_kernel<M>'s).
+template <int ROWS, bool GROUPED = false, int M = 1>
 __global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
                                        const float* __restrict__ sc, int sc_cols,
                                        const uint16_t* __restrict__ x, float* __restrict__ y,
                                        int n, int k, int xstride, int ystride,
                                        int group_xstride, int group_ystride) {
-    constexpr int M = 1;
+    static_assert(M == 1 || !GROUPED, "the grouped plane is one token row");
     const int leaf = threadIdx.x % 128;
     const int tile_row = threadIdx.x / 128;
     const int flat = blockIdx.x * ROWS + tile_row;
@@ -303,13 +306,12 @@ __global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
     for (int i = threadIdx.x; i < 256; i += blockDim.x) e4m3_tab[i] = dsv4_e4m3((uint8_t)i);
     __syncthreads();
     __shared__ float red[ROWS * 128];
-    float leaf_sum = 0.0f;
-    if (row < n) {
-    const uint8_t* wr = w + (long)weight_row * k;
-    const float* srow = sc + (long)(weight_row >> 7) * sc_cols;
     float part[M];
 #pragma unroll
     for (int t = 0; t < M; t++) part[t] = 0.0f;
+    if (row < n) {
+    const uint8_t* wr = w + (long)weight_row * k;
+    const float* srow = sc + (long)(weight_row >> 7) * sc_cols;
     // Unroll-by-2, early weight loads — the m=1 twin's note applies: load scheduling
     // only, per-(t)-accumulation order verbatim, bit-identical.
     int stride = 128 * 8;
@@ -384,13 +386,16 @@ __global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
             part[t] = acc;
         }
     }
-    leaf_sum = part[0];
     }
-    red[threadIdx.x] = leaf_sum;
-    __syncthreads();
-    if (leaf < 32) {
-        float v = dsv4_dense_exact_tail_reduce(red + tile_row * 128);
-        if (leaf == 0 && row < n) y_group[row] = v;
+#pragma unroll
+    for (int t = 0; t < M; t++) {
+        if (t > 0) __syncthreads();  // red free from the previous row's tree
+        red[threadIdx.x] = part[t];
+        __syncthreads();
+        if (leaf < 32) {
+            float v = dsv4_dense_exact_tail_reduce(red + tile_row * 128);
+            if (leaf == 0 && row < n) y_group[(long)t * ystride + row] = v;
+        }
     }
 }
 
