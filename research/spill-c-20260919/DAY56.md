@@ -182,3 +182,24 @@ say so. The slice itself is not implicated: the door is byte-transparent on this
 so the gate's drafter arm re-sends P_A as r3 and r4 (a whole-cover hit through the promoted entry, checked as
 `cached == prompt`), without `MEMRA_DSPARK_PARTIAL_RESTORE`; every other check, the rule and the reader unchanged.
 The attempts 1 to 3 receipts stay as they are.
+
+## 3. Attempt 4 on the target card (BOX8; receipts `pro-single-day52/c5/`)
+
+The two cells ran 01:34:00Z to 01:35:12Z, the scripts at `62e848b1f` (the drafter arm re-sends P_A), the same
+`memra-server-c5` `e801759f...`, the 27B with the DFlash2 export (`drafter_config_sha256=873e3556...`,
+`drafter_model_sha256=67fc76d6...`). Verbatim (`c5/reading.log`):
+
+`DAY56 ARM off rig=pro-single exit=0 verdict='KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)' checks=13 demotes=[('89', '164.2'), ('86', '164.0')] tails=[] restores=2 refusals=0`
+
+`DAY56 ARM on rig=pro-single exit=0 verdict='KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)' checks=15 demotes=[('89', '164.2'), ('86', '164.0')] tails=[(5, 10, 3645440), (5, 10, 3522560)] restores=2 refusals=0`
+
+`DAY56 TERM all_green_both -> PASS`, `DAY56 TERM same_verdict_lines -> PASS`, `DAY56 TERM equal_demote_bytes -> PASS`,
+`DAY56 TERM tail_receipt_2L -> PASS`, `DAY56 TERM restore_both_same_text -> PASS`, `DAY56 TERM no_refusal_on -> PASS`
+
+`DAY56 DFLASH TAIL rig=pro-single -> PASS`
+
+DAY19 Task 3's rule holds on the target card: the tail binds as its own class (`contracts door tail bound: 5 draft
+layers, 10 Role::Tail segments (3645440 B, hashed in 0.8 ms on the owner thread), tail_checksums_sha256=3bc70fe5...`),
+the promote restores it and re-arms the drafter (`DSPARK restore: 89 of 89 prompt tokens + draft tail from cache (0
+suffix tokens to prime)` in both arms), equal demote bytes, no refusal, both arms ALL GREEN. The RTX 5090 runs the same
+shape next.

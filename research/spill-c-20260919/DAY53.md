@@ -137,3 +137,18 @@ Every term of sections 1 and 1a holds on this card: in the spec mode each new ce
 `VERIFY FAILED: promoted digest split-state-v3:... != demote digest split-state-v3:...` with zero promotions and
 reference bytes; plain entries flip nothing for the draft and hidden cells and promote with `verify ok`; the door-ON
 arm flips nothing and verifies ok across the contract route.
+
+## 4. Results on the target card, the rerun (BOX8; receipts `pro-single-day52/c6/`)
+
+The six cells ran again 01:11:43Z to 01:18:37Z with the fixed gate literal and the unit cell's 12-core cap
+(`cap=taskset -c 0-11`), the same `memra-server-v3` `172123b7...`, the scripts at `4417bbd1b`, the 27B, 256 MB.
+Verbatim verdicts and check counts:
+
+- `unit-server`: `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 939 filtered out; finished in 0.26s`
+- `failure-default-off`: `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (36 ok, 0 FAIL)
+- `failure-plain-off`: `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (31 ok, 0 FAIL)
+- `failure-default-on`: `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (33 ok, 0 FAIL)
+- `identity-default-off`: `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok)
+- `identity-default-on`: `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok)
+
+C6's acceptance holds on both cards. OWED C6 closes.
