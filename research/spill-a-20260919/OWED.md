@@ -108,8 +108,9 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   park half holds live device state and needs the `Demoting` state to protect the park until publication"; ruling 47.
   Code today: `ContractD2h::OnTick` at `worker.rs` `evict_all_demoting`, the pause sweep's shape 1 (plain park) and
   shape 2 (deepest resident entry), and the handoff export's drain-demote.
-- Acceptance: none registered.
-- Status: open.
+- Acceptance: DAY47 section 1 (design V: the pause sweep's two shapes off the tick; the export stays by its contract;
+  the admission flush stays, a lead question: a deferring flush is the memory-admission door's decision).
+- Status: **pre-registered** (DAY47); its code follows design S3's target reading.
 
 ### 7. Lane C: why b1 shows no first-touch pre-submit step
 
