@@ -194,3 +194,95 @@ day-45 views have no `i9g` runs and their readers stop (`KeyError: 'physical_rea
 ladder as registered. Fixed (`i9g` maps to `run-gen-i9`), and a cell `ladder-b` runs the arms those two days read,
 `off i6g i9g fill`, in the ladder's pattern (order 1 top to bottom x 5, order 2 reversed x 5, 40 runs, one hold),
 read by `day52-views.py --days 44,45`. The first ladder's receipts stay as they are.
+
+## 11. Results: the target card's ladder (`pro-single-day52/ladder/`, `ladder-b/`)
+
+`ladder`: one collector hold 22:35:56Z to 23:31:57Z, 130 runs (the 10 `i9g` runs exited 127, section 10), regime
+(`ladder/regime.log`, 250 ms, N=13346) SM 172 to 2872 MHz, power 15.9 to 207.2 W, 37 to 48 C. `ladder-b`: one hold
+00:52:58Z to 01:11:41Z, 40 runs, regime (`ladder-b/regime.log`, N=4465) SM 172 to 2872 MHz, power 15.9 to 205.4 W,
+36 to 46 C. Collector `--validate` rc=0 for both; every view's integrity `ok`. The box built each rung from its
+commit (`builds.log`); the runner pinned to 12 cores. Verbatim clause and verdict lines, day by day (the day-44 and
+day-45 views from `ladder-b`, the rest from `ladder`):
+
+`DAY43 CLAUSE no_regression i6d_minus_base pooled=+0.055 o1=+0.055 o2=+0.057 noise=0.007 rule <=noise pooled and both orders -> FAIL`
+
+`DAY43 READING budget i6g_minus_base pooled=+0.108 o1=+0.107 o2=+0.111 noise=0.007 host_hits_per_token=40.5 -> resid_budget_hurts`
+
+`DAY43 RESID rig=pro-single integrity=ok no_regression=FAIL budget=resid_budget_hurts`
+
+`DAY44 CLAUSE census i9 mmap=120 (15219032064 bytes) pinned=0 (0) paged=0 (0) rule pinned=0 paged=0 mmap>0 on every i9 run -> PASS`
+
+`DAY44 CLAUSE (i) no_regression i9_minus_i6 window pooled=+0.004 o1=+0.005 o2=+0.002 noise=0.007 rule <=noise pooled and both orders -> PASS`
+
+`DAY44 READING (ii) install i9_minus_i6 o1=-52.63 o2=-52.67 noise=0.06 -> install_falls`
+
+`DAY44 READING (iii) load i9_minus_i6 o1=-5.23 o2=-4.24 noise=1.08 -> load_not_higher`
+
+`DAY44 MAPPED rig=pro-single integrity=ok census=PASS no_regression=PASS`
+
+`DAY45 CLAUSE (i) fill_minus_i9g window o1=-0.514 o2=-0.512 noise=0.006 rule < -noise both orders -> PASS`
+
+`DAY45 CLAUSE (ii) fill host_hits/gpu_misses per window token median=1.000 rule >=0.9 -> PASS`
+
+`DAY45 READING gen fill_minus_i9g=-1.274 s -> gen_lower`
+
+`DAY45 FILL rig=pro-single integrity=ok clause_i=PASS clause_ii=PASS`
+
+`DAY46 CLAUSE (i) i1_minus_fill window o1=-0.039 o2=-0.038 noise=0.005 rule < -noise both orders -> PASS`
+
+`DAY46 CLAUSE (ii) i1 drain+sync2=0.000 wait=0.000 ms per window token rule <0.05 and <1.0 -> PASS`
+
+`DAY46 NODRAIN rig=pro-single integrity=ok clause_i=PASS clause_ii=PASS`
+
+`DAY47 CLAUSE (i) i2_minus_i1 window o1=-0.093 o2=-0.093 noise=0.005 rule < -noise both orders -> PASS`
+
+`DAY47 CLAUSE (ii) enqueue per window token i1=2.780 i2=0.169 rule i2 < 0.5 x i1 -> PASS`
+
+`DAY47 READING copy_gpu per window token i1=3.774 i2=1.429 -> copy_lower`
+
+`DAY47 PINNED rig=pro-single integrity=ok clause_i=PASS clause_ii=PASS`
+
+`DAY48 CLAUSE (i) validate per window token i2=0.269 i8=0.085 rule i8 < 0.1 x i2 -> FAIL`
+
+`DAY48 CLAUSE (ii) i8_minus_i2 window pooled=-0.006 o1=-0.005 o2=-0.005 noise=0.001 rule <=noise -> PASS`
+
+`DAY48 CLAUSE (iii) trace per window token i8=0.417 i5=0.013 rule i5 < 0.1 x i8 -> PASS`
+
+`DAY48 CLAUSE (iv) i5_minus_i8 window pooled=+0.002 o1=+0.002 o2=+0.001 noise=0.001 rule <=noise -> FAIL`
+
+`DAY48 READING window i2=0.271 i8=0.265 i5=0.267 -> not_monotone`
+
+`DAY48 SMALL rig=pro-single integrity=ok i8=FAIL i5=FAIL`
+
+`DAY49 CLAUSE (i) records_s i5=3.95 i7=0.89 rule i7 < 0.25 x i5 -> PASS`
+
+`DAY49 CLAUSE (ii) install_s i7_minus_i5 o1=-3.08 o2=-3.06 noise=0.03 rule < -noise both orders -> PASS`
+
+`DAY49 CLAUSE (iii) window i7_minus_i5 pooled=+0.000 o1=+0.000 o2=+0.000 noise=0.000 rule <=noise -> PASS`
+
+`DAY49 INSTALL rig=pro-single integrity=ok clause_i=PASS clause_ii=PASS clause_iii=PASS`
+
+`DAY50 CLAUSE (i) i4_minus_i7 window o1=-0.025 o2=-0.024 noise=0.001 rule < -noise both orders -> PASS`
+
+`DAY50 CLAUSE (ii) i4 prefetch_hits/gpu_misses per window token median=0.959 rule >=0.5 -> PASS`
+
+`DAY50 PREFETCH rig=pro-single integrity=ok clause_i=PASS clause_ii=PASS`
+
+`DAY57 CLAUSE (i) i10 physical_reads per run=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0] rule all 0 -> PASS`
+
+`DAY57 CLAUSE (ii) i10_minus_i4 gen o1=-0.158 o2=-0.157 noise=0.003 rule < -noise both orders -> PASS`
+
+`DAY57 CLAUSE (iii) i10_minus_i4 window pooled=+0.001 o1=+0.001 o2=+0.000 noise=0.001 rule <= noise pooled and both orders -> PASS`
+
+`DAY57 READING install_s median i4=8.87 i10=9.90 (i10 - i4 +1.03) fill_complete_ms median=1006.0 gen_s median off=0.310 i4=0.440 i10=0.282`
+
+`DAY57 FILLWAIT rig=pro-single integrity=ok clause_i=PASS clause_ii=PASS clause_iii=PASS`
+
+**Read against the RTX 5090's verdicts** (the 5090 decides each rung; these are this card's readings). The same
+rungs pass and fail on both cards: I6's default-budget regression reads on this card too (+1.7 ms per window token,
+`alloc` and `stage` again), and its fix check runs here in the final phase; I9, the fill, I1, I2, I7, I4 and I10 pass
+every clause; I8 fails its stage clause as on the 5090 (validate 0.269 to 0.085), and I5 meets its stage tenth on
+this card (trace 0.417 to 0.013) but its no-regression reads +0.002 s against a 0.001 s noise; `smallfix`
+(`DAY58.md`) runs here after the fix. The I6G arm at 16 GiB reads `resid_budget_hurts` on this card (heap buffers,
+before I2). By the end of the ladder the door's window is 0.25 ms per token faster than the legacy and
+its gen-only decode 0.88 ms per token faster (I10).
