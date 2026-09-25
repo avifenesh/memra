@@ -129,3 +129,73 @@ reads its own verdict. The 5090 half after the card's reset.
   (the demote, free, promote and chain cells, the hump, the gates with the pause gate, the hit gate, the unit cells, the
   reader), about 2.6 hours of card time on one RTX PRO 6000 Blackwell with the 27B artifact at
   `/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`, on the 9950X class (DAY51's).
+
+## 3. The sitting on the target card, as it ran (BOX25, DAY51's machine; `pro-single-p2/box/`)
+
+- The host reads `AMD Ryzen 9 9950X 16-Core Processor`, the machine DAY51 ran on. One RTX PRO 6000 Blackwell
+  Workstation Edition. The model sha256 `1facf36c2db359dc..` in every cell.
+- Build `rc=0` (14:18Z to 14:35Z): p2 `4757eceac2dbb0e6..` (tree `0b44204f0`), base `038720386ff16afa..` (`5990945cd`),
+  p `15c41fd8f77d576a..` (base plus `p-arm.patch`), gpp `439716d4a1b6345a..` (`358749c9f`); markers `p2 reserve-ready
+  wording: 1 arming wording: 1 publication-split wording: 1`, `base 0 0 1`, `p 1 0 1`, `gpp 0 0 0`; `note: the p2
+  rebuild differs in bytes`, as in every earlier sitting.
+- Cells, one collector hold each: `ab-demote-cell rc=0` 14:47:21Z, `ab-free-cell rc=0` 15:05:25Z, `ab-promote-cell
+  rc=0` 15:23:22Z, `ab-chain-cell rc=0` 15:52:02Z, `hump-cell rc=0` 15:57:17Z, `gates rc=0` 16:18:32Z, `hitgate-off
+  rc=0`, `hitgate-on rc=0`, `unit-cell rc=0` 16:20:06Z. Replays 20, 20, 20 and 30 of 30 `STALL REPLAY: PASS`.
+- Thermal regime: boot starts 30 C (the first) and 61 to 68 C after, at 2842 MHz; telemetry 30 to 77 C.
+- Mirror: 1092 files, 1091 of 1091 manifest entries OK, 0 mismatched; the four ELFs by hash only. Box scratch removed.
+
+**The reading, verbatim** (`box/reading-day52.log`):
+
+```
+DAY52 P2 (b) cell=demote order=o1 minflt p2-median (0.25 x pages)=+0.00 rule <=+9576.42 | copy p2-minus-base=-15.52 rule <=-8.00 | hits fraction of steady demotes=+1.00 rule >=+0.90 -> PASS
+DAY52 P2 (b) cell=demote order=o2 minflt p2-median (0.25 x pages)=+0.00 rule <=+9576.42 | copy p2-minus-base=-15.53 rule <=-8.00 | hits fraction of steady demotes=+1.00 rule >=+0.90 -> PASS
+DAY52 P2 (c) cell=demote order=o1 wall p2-minus-base=-12.40 rule <=-8.00 | e2e p2-minus-base=+0.36 rule <=+1.00 -> PASS
+DAY52 P2 (c) cell=demote order=o2 wall p2-minus-base=-12.50 rule <=-8.00 | e2e p2-minus-base=+0.26 rule <=+1.00 -> PASS
+DAY52 P2 (d) cell=promote order=o1 pin p2-minus-base=+0.00 rule <=+1.00 | e2e p2-minus-base=+0.16 rule <=+1.00 -> PASS
+DAY52 P2 (d) cell=promote order=o2 pin p2-minus-base=+0.00 rule <=+1.00 | e2e p2-minus-base=+0.04 rule <=+1.00 -> PASS
+DAY52 P2 (f) cell=free order=o1 wall p2-minus-base=+0.10 rule <=+2.00 | copy p2-minus-base=-0.01 rule <=+1.00 -> PASS
+DAY52 P2 (f) cell=free order=o2 wall p2-minus-base=+0.00 rule <=+2.00 | copy p2-minus-base=+0.02 rule <=+1.00 -> PASS
+DAY52 P2 (g) cell=chain order=o1 chain p2-minus-base=+0.41 rule <=+1.00 | first p2-minus-base=+0.11 rule <=+1.00 -> PASS
+DAY52 P2 (g) cell=chain order=o2 chain p2-minus-base=+1.15 rule <=+1.00 | first p2-minus-base=+1.11 rule <=+1.00 -> FAIL
+DAY52 PLACING order=o1 publish p-minus-base=+0.97 | bind=+0.05 reclaim=+0.01 insert=+0.92 meta=+0.00 kv=+0.91 f32=+0.00 rest=+0.00 evict=+0.00 pause=+0.00 insert_other=+0.01
+DAY52 PLACING order=o2 publish p-minus-base=+1.04 | bind=+0.05 reclaim=+0.01 insert=+1.00 meta=+0.00 kv=+0.99 f32=+0.00 rest=+0.00 evict=+0.00 pause=+0.00 insert_other=+0.01
+DAY52 PLACING -> placed in insert, kv
+DAY52 P2 (e) hump xp2=+0.034 rule <=0.15 control xgpp=+0.509 (humps) -> PASS
+DAY52 P2 -> FAIL
+```
+
+- (a): every gate exit 0 and every gate's own line green (identity x4 `ALL GREEN (teeth=0)`, failure x2, the fault gate
+  default and plain, twin x2, `KV-HOST-PAUSE-DEMOTE GATE: ALL GREEN`, `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` OFF and
+  ON); `unit-cells parallel=3/3 engine-serial-rc=0 door-rc=0 cpu-rc=0 engine-census-rc=0 tier-rc=0` (the CPU censuses 41
+  passed with the three day-52 cells). P2 passes (a).
+
+**Verdict, as registered: P2 FAILS (g) in order o2** (the chained request +1.15 ms and the first intruder +1.11 ms,
+each against +1.0; o1 reads +0.41 and +0.11) and passes (a) to (f). By section 1's rule P2 is reverted in one commit;
+step 1's split lines stay (log only).
+
+**Where P's millisecond sits, as registered: `placed in insert, kv`.** P's extra millisecond in the chain is the
+replaced twin's KV plane drops: its 32 pinned leases free in 9.53 / 9.60 ms on P against 8.62 / 8.61 on base (+0.91 /
++0.99), and nothing else moves (the heap payload frees `f32` read 0.02 on every arm; the bind +0.05). The reserve's
+heap memory does not cost more to free; its presence makes the pinned lease frees (`cuMemFreeHost`, item 14) slower.
+
+**What else the cell read** (readings, no clause):
+
+1. The arming rule did what section 1 said in every cell: the demote cell never disarmed (every refill fresh); the free
+   cell disarmed at the second demote, the promote cell at the third, the chain at the fourth (`first disarm at
+   demote=[2 ..]`, `[3 ..]`, `[4 ..]` on every p2 boot), each with the one line (`disarmed@6144/38304` and the like).
+2. P2's o2 failure is two boots (`readings-chain-per-boot.log`, `day52-chain-per-boot.py`, written after the verdict):
+   three of o2's p2 boots read the base's twin frees (8.56 to 8.64 ms) and the base's chain (404.3 to 405.8), and two,
+   `b19-p2` and `b28-p2`, read P's (9.45 and 9.52 ms; chains 406.7 and 407.3) for the whole boot although both disarmed
+   at the fourth demote. In o1 all five p2 boots read base-like (8.40 to 8.72). So the cost P's reserve adds to the
+   pinned frees can persist for a boot after the reserve is gone: it is a boot-level state, taken in the reserve's
+   first few demotes, not a per-demote cost of holding the reserve.
+3. The base arm's own price here (item 14): each publication that replaces a long entry frees its 32 pinned leases on
+   the owner thread in 8.6 ms (about 270 us per `cuMemFreeHost`), the tenant's tick; the heap payloads free in 0.02 ms.
+   The free cell shows the same frees inside the tenant reclaim (`reclaim 0.17 ms` at 64-token entries), not in the
+   insert.
+
+**What follows.** P2 is reverted (the P2 commit `f9c849389` alone; step 1 stays). Item 17 stays open. Both designs pass
+their mechanism and every gate, and both fail only through the pinned lease frees they slow down. Those frees are item
+14's subject (a design that frees no pinned memory on the serving path), so item 17's next revision is proposed to
+follow item 14's lease design (with item 19, one design for both directions), re-read on top of it, where a slower
+`cuMemFreeHost` cannot reach the tick. Next by the lead's order: item 21.
