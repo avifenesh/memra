@@ -1,0 +1,108 @@
+[server] build: memra-0.138.0-7fa9fc83a253 (id: source-tree, git: ffff2d89afb7)
+[server] starting; models config = [("gate", "/scratch/spill-f/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /scratch/spill-f/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 100.92GB (expert budget 96.32GB) -> RESIDENT
+[q8rp] split-plane decode mirrors built: 191 tensors
+[worker]   loaded "gate": 41 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 8; scheduler tick cap 8
+[prefix-host] on: budget 17180MB pinned cacheable host RAM (MEMRA_KV_HOST_MB, startup budget policy), plain byte-LRU, demote on device capacity eviction, promote on exact-prefix probe; verify=off (MEMRA_KV_HOST_VERIFY); tenant share cap 50% = 8590MB (MEMRA_KV_HOST_TENANT_PCT)
+[prefix-host] handoff import armed at boot: 0 entries / 0.0MB from /scratch/spill-f/b2/handoff.bin (file age 4s); re-materializing one per tick
+[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 9280 B/token, spec 10208 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="gate" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[moe-sk-form] dev=0 qt=6 sms=188 occ128=1 occ32=6 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=79 max_m=1639
+[moe-sk-form] dev=0 qt=5 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=79 max_m=1639
+[moe-sk-form] dev=0 qt=2 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=201 max_m=3650
+[fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+[spec-vg] MTP verify-graph pool ENGAGED (vt_cap=4)
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq_b4_rp
+[func] CAPTURE-TIME kernel lookup (not warmed): ssm_conv1d_fused_decode_tloop_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): gdn_scan_s128_tsnap
+[func] CAPTURE-TIME kernel lookup (not warmed): moe_gate_up_silu8_dev_q8_csr_iq4
+[func] CAPTURE-TIME kernel lookup (not warmed): moe_down8_fma_dev_q8_w8h2v_rows
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq_fused2_b4
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq_b4
+[fa-pool] grow #2 dev=0 o_len 532480 -> 1572864 ml_len 2080 -> 6144 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): moe_gate_up_silu8_dev_q8_v_rows
+[fa-pool] grow #3 dev=0 o_len 1572864 -> 3145728 ml_len 6144 -> 12288 (retired kept, zero=false)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":805306368,"still_owned_bytes":20820485980,"pool_reserved_bytes":21005074432,"pool_cached_bytes":184588452,"driver_free_bytes":80345104384,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 768MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=mtp transient floor 1536MB (static was 1536MB; measured 685MB; probe kv charge 41MB, draft-state 41MB, drafted 63 accepted 43; [dev0 peak-mapped 20800MB rest-mapped 20032MB charged 82MB -> 685MB]; 0.5s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["gate"]
+[handoff-gate] armed: SIGUSR1 exports the host tier
+[server] listening on http://127.0.0.1:18119
+[prefix-host] handoff import DONE: 0 entries / 0.0MB re-materialized, 0 skipped, in 0.5s from /scratch/spill-f/b2/handoff.bin
+[meter] admit id=cmpl-b5a222821456eaac3be449671956fbeb tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6642 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 0MB fixed = 1497MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6530 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 135MB (observed 202MB at ctx 6586 path=spec)
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.842 max_chunk_ms=234.842
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.260 max_chunk_ms=150.260
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=32.566 max_chunk_ms=32.566
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.711 max_chunk_ms=18.711
+[prefix-cache] insert (spec-boundary): 6496 tokens, 132.2MB (resident 132.2MB / 1074MB, model gate)
+[spec-acc] ctx=6531 burst=22/36 cum=22/36=0.611
+[spec-acc] ctx=6566 burst=8/12 cum=30/48=0.625
+[meter] admit id=cmpl-2946f106738a6a8f7da87601ef09082d tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6647 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1632MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6530; 1 parked, 6535 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6535 cached=0 lcp=2 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 135MB (observed 202MB at ctx 6591 path=spec)
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.296 max_chunk_ms=234.296
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=151.154 max_chunk_ms=151.154
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=33.146 max_chunk_ms=33.146
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.828 max_chunk_ms=18.828
+[prefix-cache] insert (spec-boundary): 6496 tokens, 132.2MB (resident 264.4MB / 1074MB, model gate)
+[spec-acc] ctx=6536 burst=20/39 cum=20/39=0.513
+[spec-acc] ctx=6570 burst=10/12 cum=30/51=0.588
+[meter] admit id=cmpl-c3fb9244d0b11f6b50c7e6fd1788e052 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6638 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1632MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6530; 2 parked, 6526 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6526 cached=0 lcp=2 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.535 max_chunk_ms=233.535
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.285 max_chunk_ms=150.285
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=32.095 max_chunk_ms=32.095
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.740 max_chunk_ms=18.740
+[prefix-cache] insert (spec-boundary): 6496 tokens, 132.2MB (resident 396.5MB / 1074MB, model gate)
+[spec-acc] ctx=6527 burst=19/42 cum=19/42=0.452
+[spec-acc] ctx=6561 burst=10/12 cum=29/54=0.537
+[meter] admit id=cmpl-c75c8637d41b5ef19828578f95c1b081 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6640 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1632MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6535; 2 parked, 6528 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6528 cached=0 lcp=2 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=3 chunks=1 wall_ms=233.641 max_chunk_ms=233.641
+[prime-yield] count=2 remaining=2 chunks=1 wall_ms=159.508 max_chunk_ms=159.508
+[prime-yield] count=3 remaining=1 chunks=1 wall_ms=18.744 max_chunk_ms=18.744
+[prefix-cache] insert (spec-boundary): 6528 tokens, 132.5MB (resident 529.1MB / 1074MB, model gate)
+[spec-acc] ctx=6529 burst=20/33 cum=20/33=0.606
+[spec-acc] ctx=6561 burst=9/18 cum=29/51=0.569
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[handoff-gate] handles dropped on drain
+[server] GPU worker shutdown complete

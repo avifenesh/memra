@@ -171,7 +171,66 @@ With the bank in the page cache the mapped arms beat the worker by 19% (31.1 vs 
 the positioned-read arms rank by concurrency: `worker16` over `pread16` over `worker2`.
 `direct16` stays drive-bound.
 
-### Bounded page cache regime
+### Bounded page cache regime (touched balloon, B3 regime (iii) amendment)
 
-Running (touched balloon of 120.24 GB, 6.99 GB of cgroup headroom, 5.66 GB of page cache at the
-first visit; B3 regime (iii) amendment).
+The balloon touched 120,240,163,328 bytes in the swapless cgroup, leaving 6,992,789,504 bytes of
+headroom; it held for all 60 visits and released cleanly. The bound held on every scored visit:
+the artifact was about 30% resident at each visit's end (`direct16` 15%), so the buffered arms
+read the bank from the drive (95 to 181 GB per visit).
+
+Registered verdict: **the regime scores**, and the read-gate rescoring agrees. `worker16` beats
+every challenger:
+
+| Arm | Scored | Decode tok/s median (min to max) | Device read GB per visit | Artifact resident at end | Read s (worker or blocking) | Owner wait s | Verdict vs worker16 |
+|---|---|---|---|---|---|---|---|
+| `worker16` | 10/10 | 10.86 (10.49 to 16.65) | 95.1 | 0.297 | 236.87 | 48.00 | baseline |
+| `mmap-random` | 10/10 | 1.00 (0.99 to 1.01) | 116.1 | 0.296 | n/a | n/a | loser (0.093) |
+| `mmap-normal` | 9/10 | 4.71 (4.61 to 4.86) | 180.5 | 0.312 | n/a | n/a | loser (0.435) |
+| `pread16` | 10/10 | 4.42 (4.29 to 8.21) | 150.8 | 0.299 | 121.82 | 0.00 | loser (0.407) |
+| `worker2` | 8/10 | 4.94 (4.91 to 7.63) | 95.1 | 0.298 | 111.26 | 114.20 | insufficient (0.460) |
+| `direct16` | 8/10 | 9.73 (9.49 to 10.03) | 409.1 | 0.147 | 529.26 | 86.53 | loser (0.893) |
+
+```text
+M1-VERDICT regime=bounded arm=mmap-random vs worker16: loser median_ratio=0.0926 pairs=10
+M1-VERDICT regime=bounded arm=mmap-normal vs worker16: loser median_ratio=0.4353 pairs=9
+M1-VERDICT regime=bounded arm=pread16 vs worker16: loser median_ratio=0.4074 pairs=10
+M1-VERDICT regime=bounded arm=worker2 vs worker16: insufficient median_ratio=0.4597 pairs=8
+M1-VERDICT regime=bounded arm=direct16 vs worker16: loser median_ratio=0.8931 pairs=8
+```
+
+`worker2` is `insufficient` only because two of its visits carried foreign I/O and left 8 pairs
+(4 and 4 are needed per order; its median ratio is 0.46). Under memory pressure the 4 KiB fault
+path is ten times slower than the worker (1.0 vs 10.9 tok/s), readahead recovers part of it
+(4.7), and `worker16` stays above `direct16` (10.9 vs 9.7) because its buffered reads still hit
+the 5.7 GB of page cache the balloon left.
+
+### run-spec self-consistency (B3 step 1 for the two speculative-capable arms)
+
+```text
+worker16: === SELF-CONSISTENCY PASS ===   K=1..8 each "self-consistency: PASS (identical to plain target)"
+direct16: === SELF-CONSISTENCY PASS ===   [spill-pread] reads=2379237 ... fallbacks=0 ... overread_bytes=9745354752 (= 4096 x reads)
+```
+
+`spec-worker16/`, `spec-direct16/`. On this 8-slot spill shape speculation does not pay
+(`worker16`: 22.72 tok/s at K=4, 1.04x plain; 14.18 at K=8, 0.65x), which is expected: every
+drafted token multiplies the expert reads.
+
+## B2: KV host-tier handoff (`kv-handoff-gate`, resident model, spec off)
+
+Two recorded failures preceded the passing cells, each fixed by a registered amendment before any
+passing cycle: attempt 1 at 1 GiB never filled the host tier (the spec route does not publish the
+prompt-end seed; amendment 2 sets `MEMRA_SERVE_SPEC=0`), and attempt 1 at 8 GiB plateaued at
+8,520,110,208 host bytes because the default 50% per-tenant share cap evicted the oldest entries,
+the probe prompts (amendment 3 sets the single-tenant cell to 100%). That attempt still exported
+8,520 MB in 5.2 s and imported it in 6.1 s; its receipts are kept.
+
+| Cell | Cycles passed | Entries / MB exported | Export ms (write / fsync) | Import s | Probes |
+|---|---|---|---|---|---|
+| 1 GiB | 5 / 5 | 17 / 2,161.8 | 1,456 to 1,460 (949 / 326) | 1.5 each | 6,496 cached tokens, text identical to cold, 20 of 20 |
+| 8 GiB (share 100%) | 5 / 5 | 76 / 9,664.6 | 5,772 to 5,898 (about 4,245 / 1,331 to 1,467) | 6.9 each | 6,496 cached tokens, text identical to cold, 20 of 20 |
+
+The export includes the drain-demote of the device entries (8 per cycle) before the write. The
+storage rates are about 1.5 GB/s (1 GiB) and 1.7 GB/s (8 GiB) for export end to end (serialize, buffered write and
+fsync) and 1.4 GB/s for import (a validated, frame-by-frame buffered read with re-materialization,
+cold file): both are well under the drive's 5.1 to 6.4 GB/s write and 7 GB/s read, so the
+handoff's cost is the engine path, not the storage. Its O_DIRECT arm stays OWED 18.
