@@ -1773,8 +1773,11 @@ mod day50_census {
         assert!(wait < publish, "published before the wait");
         let prefetch = &CACHE[CACHE.find("fn prefetch_banked(").unwrap()..];
         let prefetch = &prefetch[..prefetch.find("\n    fn ").unwrap_or(prefetch.len())];
-        assert!(prefetch.contains("bank.host_resident(local)?"));
-        assert!(prefetch.contains("bank.demand(local, bytes)"));
+        // DAY61 (I11 change 6): residency, the slot step and the lease in one owner call.
+        assert!(prefetch.contains("bank.demand_if_resident(local, bytes, || {"));
+        assert!(prefetch.contains("self.reserve_prefetch_slot(bytes, keep)"));
+        assert!(!prefetch.contains("bank.host_resident("));
+        assert!(!prefetch.contains("bank.demand(local, bytes)"));
         assert!(prefetch.contains("stage_on_copy_stream(e, payload, &mut self.slots[slot])"));
         assert_eq!(FORWARD.matches("e.expert_bank_prefetch()").count(), 1);
         // Count in this file's code, not in these tests' own literals.
@@ -2181,6 +2184,26 @@ mod day61_profile {
             "DAY61 P2 proxy unbracketed per_cycle_ns cycle={:.1} brackets={:.1}",
             per_cycle(p2[0]),
             per_cycle(p1[4]) - per_cycle(p2[0])
+        );
+        // P5 (I11 change 6): the prefetch sequence as the cache runs it from change 6, one owner
+        // call for residency, the slot step (a trivial gate here) and the lease; unbracketed.
+        let p5 = median_repeat(|| {
+            let started = Instant::now();
+            for &local in &seq {
+                let ResidentDemand::Leased(token, ()) = proxy
+                    .demand_if_resident(local, LEN as usize, || Some(()))
+                    .unwrap()
+                else {
+                    panic!("every record is host-resident");
+                };
+                std::hint::black_box(proxy.with_bytes(&token, |b| b[0]).unwrap());
+                proxy.finish(&token).unwrap();
+            }
+            [ns(started.elapsed())]
+        });
+        println!(
+            "DAY61 P5 one owner call unbracketed per_cycle_ns cycle={:.1}",
+            per_cycle(p5[0])
         );
         owner.close().unwrap();
         drop(owner);
