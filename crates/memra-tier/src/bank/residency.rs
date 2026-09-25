@@ -1,3 +1,4 @@
+use super::fx::FxMap;
 use super::*;
 use crate::contracts::*;
 use std::{
@@ -133,14 +134,16 @@ pub enum FillOutcome {
 /// candidates `collect_evicted` can release. This replaces a scan of every owned lease against
 /// every cached one, which was quadratic in the tier's size.
 struct CacheIndex {
-    map: BTreeMap<BankId, BankLease>,
+    /// Day 64 (I14 change 2, `research/spill-c-20260919/DAY64.md`): Fx-hashed; its one ordered reader, `trim`, states
+    /// its tie-break (the lowest score, then the lowest id), the victim the `BTreeMap` this replaced gave.
+    map: FxMap<BankId, BankLease>,
     bytes: u64,
     candidates: Vec<BankLease>,
 }
 impl CacheIndex {
     fn new() -> Self {
         Self {
-            map: BTreeMap::new(),
+            map: FxMap::default(),
             bytes: 0,
             candidates: Vec::new(),
         }
@@ -699,7 +702,12 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                 .cache
                 .map
                 .keys()
-                .min_by_key(|id| self.heat.score(id))
+                .min_by(|a, b| {
+                    self.heat
+                        .score(a)
+                        .cmp(&self.heat.score(b))
+                        .then_with(|| a.cmp(b))
+                })
                 .cloned()
                 .expect("nonempty cache");
             self.cache.remove_evicted(&id);

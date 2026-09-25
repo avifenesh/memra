@@ -73,3 +73,64 @@ fn the_hashed_catalog_answers_as_the_ordered_one() {
         assert_eq!(Catalog::new(class, twice).err(), Some(Error::Conflict));
     }
 }
+
+/// I14 change 2: without an SLRU the host cache trims to its byte limit by the lowest hotness score, ties to the
+/// lowest id; over a randomized demand sequence with many ties, the cached set after every ticket equals a reference
+/// that keeps the records in a `BTreeMap` and evicts its first minimum, as the ordered map did.
+#[test]
+fn trim_evicts_the_ordered_maps_victim() {
+    let g = gov();
+    let entries = fixture_entries(LayoutClass::Uniform);
+    let ids: Vec<BankId> = entries
+        .iter()
+        .filter(|(_, r)| r.is_some())
+        .map(|(id, _)| id.clone())
+        .collect();
+    let per_record = entries[0]
+        .1
+        .as_ref()
+        .unwrap()
+        .layout
+        .storage_bytes()
+        .unwrap();
+    let limit = 2 * per_record;
+    let mut bank = BankService::<ExpertDomain, _, _>::new(
+        Catalog::new(LayoutClass::Uniform, entries).unwrap(),
+        g.clone(),
+        Heat::default(),
+        Reader::default(),
+        CoalescingPolicy::default(),
+        limits(limit),
+    )
+    .unwrap();
+    let mut heat: BTreeMap<BankId, u64> = BTreeMap::new();
+    let mut cached: BTreeMap<BankId, ()> = BTreeMap::new();
+    let mut s: u64 = 0x9E37_79B9_7F4A_7C15;
+    for _ in 0..400 {
+        s ^= s << 13;
+        s ^= s >> 7;
+        s ^= s << 17;
+        let id = ids[(s % ids.len() as u64) as usize].clone();
+        let t = bank.stage(batch(vec![id.clone()])).unwrap();
+        let _ = publish_bank(&mut bank, &t, epochs()).unwrap();
+        finish(&mut bank, &t);
+        bank.collect_evicted().unwrap();
+        *heat.entry(id.clone()).or_default() += 1;
+        cached.insert(id, ());
+        while cached.len() as u64 * per_record > limit {
+            let victim = cached
+                .keys()
+                .min_by_key(|k| heat.get(*k).copied().unwrap_or(0))
+                .cloned()
+                .unwrap();
+            cached.remove(&victim);
+        }
+        for id in &ids {
+            assert_eq!(
+                bank.resident(id).unwrap().is_some(),
+                cached.contains_key(id),
+                "{id:?}"
+            );
+        }
+    }
+}
