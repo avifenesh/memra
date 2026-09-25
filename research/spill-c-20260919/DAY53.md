@@ -118,3 +118,22 @@ zero promotions, r3 byte-equal to the reference (door OFF), and the door-ON no-f
 verdicts stand as recorded. Fixed in the gate (`insert (spec-boundary)`) and in the unit cell (the 1200% cap as a user
 scope where systemd runs, else 12 pinned cores), both before any rerun; the three cells rerun on the target card
 (attempt-1 receipts kept) and run first time on the RTX 5090 with the fix.
+
+## 3. Results on the RTX 5090 Laptop GPU (`rtx5090-day53/`)
+
+The six cells ran 00:58:43Z to 01:01:42Z on `memra-server-v3` `709f079c...` (tree `256c3c640`'s crates; the cells'
+scripts at `422a0d470`, the fixed gate literal and unit cap), the 9B, the 64 MB device prefix budget, each gate
+taking `/tmp/memra-5090.lock` itself. Verbatim verdicts (`<cell>/verdict.txt`) and each gate's check counts:
+
+- `unit-server`: `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 939 filtered out; finished in 0.26s`
+  (`test worker::tests::verify_digest_v3_covers_every_round_tripped_plane_and_v2_stays_trunk_only ... ok`)
+- `failure-default-off`: `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (36 ok, 0 FAIL)
+- `failure-plain-off`: `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (31 ok, 0 FAIL)
+- `failure-default-on`: `KV-HOST-SPILL FAILURE GATE: ALL GREEN` (33 ok, 0 FAIL)
+- `identity-default-off`: `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok)
+- `identity-default-on`: `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok)
+
+Every term of sections 1 and 1a holds on this card: in the spec mode each new cell's flip is announced and refused
+`VERIFY FAILED: promoted digest split-state-v3:... != demote digest split-state-v3:...` with zero promotions and
+reference bytes; plain entries flip nothing for the draft and hidden cells and promote with `verify ok`; the door-ON
+arm flips nothing and verifies ok across the contract route.
