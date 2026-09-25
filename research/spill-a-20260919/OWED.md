@@ -235,7 +235,7 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 ### Order of work from day 51 (the lead's order after integ62)
 
 Item 17 first (item 8's remedy; P refuted on day 51, P2 on day 52; now proposed blocked on item 14), then item 21
-(the lead: the server test failure is a defect to place), then items 10 to 14 (item 10 per publisher; item 19 designed with item 14, one lease
+(the lead: the server test failure is a defect to place; closed on day 53), then items 10 to 14 (item 10 per publisher; item 19 designed with item 14, one lease
 design for both directions), then items 18 and 20; the three 5090 cells (item 4's and item 6's halves, item 16) when
 the card is reset.
 
@@ -305,9 +305,9 @@ the card is reset.
 - The lead (2026-09-25): a defect to place, not a flake to leave; worked after item 17's reading.
 - Acceptance: none registered (a reproduction under the suite's concurrency first, pre-registered, then the placing
   and the fix with their own clauses).
-- Status: **reproduced** (DAY53 section 5, A': the target 7 of 200 full suites, every red a 429; the probe's one line
-  `code="shed_queue" .. (256 queued, bound 256)`; cell D shows the mechanism), not placed by section 4's rule as
-  written (an uncovered case); the fix F1 pre-registered as the placing by intervention (DAY53 section 6).
+- Status: **closed** (DAY53 section 7: F1 `22f1872d6`, `admission_counters_guard()` takes `drain_lock()` first; 400 of
+  400 full suites with the target green and no handler 429, against A''s 7 of 200; H1 placed by intervention). The
+  cost, a reading: the suite's median `finished in` 6.47 s to 7.94 s; item 23.
 
 ### 22. Three server timing tests fail under CPU starvation (found by DAY53's arm B)
 
@@ -318,9 +318,19 @@ the card is reset.
   at 9 steps`), `dsv4_serve::c4_host_budget_tests::coalesced_rows_each_get_their_own_token_once_per_step` 1 of 40. None
   failed in arm A's 40 runs (default threads, `CPUQuota=1200%`). DAY53 section 5 (A', 200 runs of arm A's shape):
   `tests::deep_schema_fails_while_normal_decode_keeps_stepping` 1 of 200 (`bad schema stalled or replaced the normal
-  decode`).
+  decode`). DAY53 section 7 (F1, 400 runs of arm A's shape): `dsv4_serve::c4_host_budget_tests::coalesced_rows_each_get_their_own_token_once_per_step`
+  1 of 400 and `health::tests::no_progress_source_is_the_pre_fix_beat_age_verdict` 1 of 400 (`left: 41 right: 40`).
 - Acceptance: none registered (each placed: a real defect, or a wall-clock threshold that a starved runner cannot
   meet; pre-registered after item 21).
+- Status: open.
+
+### 23. The admission-counter test isolation costs 1.5 s of every full server suite (found by DAY53)
+
+- Source: DAY53 section 7: F1 orders the counter writers behind `drain_lock()`, and the suite's median `finished in`
+  went from 6.47 s (A', N=200) to 7.94 s (F1, N=400).
+- Acceptance: none registered (the writers isolated without serializing them, for example `reserve_pending_admit`'s
+  test entry taking its lane counters as a parameter so a writer never touches the process-global ones; the same 400-run
+  shape green for the target and its siblings, the suite's time back to A''s).
 - Status: open.
 
 ## 2. Closed, delivered, or held by another owner

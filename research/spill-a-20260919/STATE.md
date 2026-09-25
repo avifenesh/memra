@@ -1,11 +1,11 @@
-# WP-A resumable state (2026-09-25, day 52 read and closed)
+# WP-A resumable state (2026-09-25, day 53 closed)
 
-- Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ62 (#726, main `5228ff0cd`) merged A days 42 to 48; the lead
-  carries days 49 to 52 into integ63.
-- Item 17: P (DAY51) and P2 (DAY52) each passed (a) to (f) and failed (g); both reverted. The publication split
-  (`5990945cd`, log only) stays and placed P's millisecond in the replaced twin's pinned lease frees. Item 17 is
-  proposed blocked on item 14's lease design (with 19). Receipts `pro-single-p2/box/` (1091 of 1091). BOX25 released.
-- Next: item 21 (the server test failure under the full suite: a reproduction under the suite's concurrency,
-  pre-registered), then items 10 to 14 (19 with 14; item 17 re-read on top of 14), then 18 and 20; the three 5090
-  cells after the card's reset.
+- Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. The lead carries days 49 to 53 into integ63.
+- Item 17: P and P2 refuted and reverted; blocked on item 14's lease design (the lead's ruling), re-read on top of it.
+- Item 21 closed (DAY53): the admission-counter writer tests and the handler tests held different locks; F1
+  (`22f1872d6`) orders them (400 of 400 full suites green for the target, no handler 429). New: item 22 (timing tests
+  red under load: five named), item 23 (F1's +1.47 s of suite time).
+- Next by the lead's order: items 10 to 14 (item 10 per publisher; 19 with 14; then 17 re-read on top), then 18 and
+  20; items 22 and 23 placed after 21's class in the ledger, their order the lead's call; the three 5090 cells after
+  the card's reset.
 - Local scratch: none.

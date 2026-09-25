@@ -173,3 +173,22 @@ probe is removed with the fix; cell D stays (a regression cell of the mechanism)
 - Readings, no clause: the suite's `finished in` seconds against A' (the writers now serialize with 26 handler tests).
 
 If (b) fails, F1 is reverted in one commit with its runs banked, and the next step is pre-registered anew.
+
+## 7. F1 (`22f1872d6`), as run (`day53/f1/`)
+
+- CPU cells on F1: server lib `924 passed; 0 failed; 25 ignored`; clippy `-D warnings`; fmt; `git diff --check`. The
+  census `day53_the_admission_writers_are_ordered_against_the_handler_readers` passes, and its teeth were checked (one
+  writer's guard replaced: `.. writes a process-global admission counter without the counters' guard`). The probe is
+  gone; cell D takes the combined guard only.
+- **(b), 400 full suites in arm A's shape** (the binary `9ba640f6..` before and after the runs, no rebuild): `398
+  rc=0`, `2 rc=101`. **The target passed in 400 of 400, and no handler test answered 429 in any run.**
+- (c), the two reds, by name: `dsv4_serve::c4_host_budget_tests::coalesced_rows_each_get_their_own_token_once_per_step`
+  (run 152) and `health::tests::no_progress_source_is_the_pre_fix_beat_age_verdict` (run 322, `with no source the
+  published progress age IS the beat age .. left: 41 right: 40`): timing assertions, item 22's class (added there).
+- **Verdict, as registered: F1 passes (a) to (c); H1 is placed by intervention.** Against A' (the target 7 of 200 and
+  ten handler 429s in 200), 400 runs with none. Item 21 closes: the admission-counter writer tests held only their own
+  lock while the handler tests held only `drain_lock()`, so a handler request could land inside a writer's window,
+  where the interactive backlog sits at the queue bound, and shed 429 `shed_queue`.
+- Reading, no clause: the suite's `finished in` median 6.47 s on A' (N=200) and 7.94 s on F1 (N=400): the writers now
+  wait for every `drain_lock()` holder, +1.47 s per full suite. A reserve path that takes its counters as a parameter
+  would isolate the writers without serializing them; owed as item 23.
