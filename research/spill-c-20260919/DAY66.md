@@ -5,7 +5,7 @@ next before any cell (same rules as before)." Tree at start: `5c6e7c0cf` plus `D
 
 ## 0. What the receipts point to
 
-On the Ryzen 9 9950X machine of BOX15 and BOX17, across 50 door boots of five door arms and two pins
+On the Ryzen 9 9950X machine of BOX15 and BOX17, across 60 door boots of six door arms and two pins
 (`DAY64.md` section 4, `DAY65.md` section 2):
 
 - The door is slow in about 60 to 80% of boots and fast in the rest, per boot, at any position of the interleave and
@@ -63,3 +63,18 @@ modes appear more than once).
 **What it decides.** Which of H1 and H2, or neither, the slow boots follow. A remedy (for example, a fixed-clock arm
 where the host permits it, or huge-page backing for the door's metadata) would be its own registration after this
 reads, with its own cells.
+
+## 1a. The sitting, prepared before any cell
+
+`day66-cell.sh` (cell `freq`; the day-40 runner body unchanged; the host settings and DAY65's ONE pin read from sysfs;
+the two samplers, each stopped by its own pid) and `day66-read.py` were written after section 1. The samplers' reads
+were checked on the local host against a stand-in `run-gen` process (`scaling_cur_freq` in kHz, `AnonHugePages`, the
+context-switch counts). The reader was dry-checked for mechanics on DAY65's receipts relabelled with synthetic clock
+and memory files and printed its lines end to end; its verdict there means nothing. The driver `day66-box.sh` (builds
+`c60` and `i15`; no runner pin; each run pinned by the cell) is dry-checked for control flow
+(`day66-cpu/dry-check-driver.log`). Run as
+`D66_BUILDS="c60=da649107c i15=2243b1fe2" bash /root/wt-c/research/spill-c-20260919/day66-box.sh` on the Ryzen 9 9950X
+machine of BOX15 and BOX17 where it can be had (else another host of that class), one RTX PRO 6000 Blackwell
+Workstation Edition, the approved 35B artifact at `/root/artifacts/`, `/root/wt-c` at the lane tip and a detached
+`/root/wt-c-build`, CUDA 13 and Rust, at least 48 GB host `MemAvailable`. Expected: two builds about 10 minutes, the
+cell about 9 (40 runs).

@@ -94,9 +94,11 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
 - **Work.** Place the cause with the placement sampler's receipts (`ev/placement.tsv`, from the rerun onward) and a
   pre-registered cell on a 9950X-class host that pins the run to one core complex against the two-complex pin; read
   beside lane A's owed 9950X-class fill reading.
-- **Status.** Registered (`DAY65.md` section 1, cell `pin`: REF and the door on one L3 domain against two, the
-  slow-boot count, the placement share, the admissible one-domain door reading) with its sitting ready
-  (`day65-box.sh`, section 1a). Open: the cell waits on a 9950X-class box.
+- **Status.** `DAY65.md`'s cell `pin` ran on BOX17 (BOX15's machine): `DAY65 PIN VERDICT rig=pro-single integrity=ok ->
+  pin_does_not placement_does_not_track; ...`: the L3-domain hypothesis refuted (slow in 8 of 10 boots on one domain
+  as on two, the owner thread home in every sample). The next reading is registered (`DAY66.md`, cell `freq`: the
+  owner core's clock and the process's huge-page backing per boot) with its sitting ready (`day66-box.sh`). Open: the
+  cell waits on a 9950X-class box.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 
