@@ -56,3 +56,18 @@ and every fast I15TWO run more than half inside, else `placement_does_not_track`
 **What it decides.** Where the bimodality comes from, and the door's admissible reading on a two-complex host when the
 run is kept on one complex. It changes no code and no default: a placement fix (for example, the owner thread's own
 affinity) would be its own registration with its own cells, after this one reads.
+
+## 1a. The sitting, prepared before any cell
+
+`day65-cell.sh` (cell `pin`; the day-40 runner body of days 60 to 64 unchanged, the pins read from sysfs, a
+`not_applicable` exit when `0-11` spans one L3 domain, the placement sampler stopped by its own pid) and
+`day65-read.py` were written after section 1. The reader was dry-checked for mechanics on BOX15's receipts
+relabelled (REF as REF2 and REF1, I15 as I15TWO, I14 as I15ONE, a synthetic placement file) and printed its lines
+end to end; its verdict there means nothing. The pin derivation run on the local host (one L3 domain, CPUs 0 to 23)
+reads `two_l3_domains=1`, the `not_applicable` case. The driver `day65-box.sh` (builds `c60` and `i15` by
+`day63-box-build.sh`; no runner pin, each run pinned by the cell) is dry-checked for control flow
+(`day65-cpu/dry-check-driver.log`). Run as
+`D65_BUILDS="c60=da649107c i15=2243b1fe2" bash /root/wt-c/research/spill-c-20260919/day65-box.sh` on a Ryzen 9 9950X
+class host with one RTX PRO 6000 Blackwell Workstation Edition, the approved 35B artifact at `/root/artifacts/`,
+`/root/wt-c` at the lane tip and a detached `/root/wt-c-build`, CUDA 13 and Rust, at least 48 GB host `MemAvailable`.
+Expected: two builds about 10 minutes, the cell about 8 (40 runs).
