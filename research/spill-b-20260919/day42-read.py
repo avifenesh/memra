@@ -150,9 +150,15 @@ for n in ("fault-d2h-delay", "fault-d2h-source-flip", "fault-sources-helper-gone
         ok = settled
     elif n == "fault-d2h-source-flip":
         c = counts(n)
-        armed = bool(re.search(r"MEMRA_KV_HOST_FAULT=d2h-source-flip\): one byte", t))
-        extra = f"armed={armed} submitted={c['submitted']} published={c['published']}"
-        ok = settled and armed and c["published"] < c["submitted"]
+        armed_at = t.find("MEMRA_KV_HOST_FAULT=d2h-source-flip): one byte")
+        # Addendum E: the flipped demote is the first demote outcome after the armed line; it must fail
+        # its bind and publish nothing. The boot's other publications are the capacity sink's.
+        after = t[armed_at:] if armed_at >= 0 else ""
+        outcome = re.search(r"\[prefix-host\] (demote failed \([^\n]*\); nothing published|demote: )", after)
+        first = outcome.group(1)[:60] if outcome else "none"
+        extra = (f"armed={armed_at >= 0} submitted={c['submitted']} published={c['published']} "
+                 f"first_outcome_after_arm={first!r}")
+        ok = settled and armed_at >= 0 and outcome is not None and outcome.group(1).startswith("demote failed")
     else:
         extra = f"latch_lines={len(re.findall(r'latched off|latches off|latch', t))}"
         ok = settled

@@ -156,10 +156,11 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - What: `MEMRA_ADMIT_RECLAIM_OFFTICK` (default unset, only with `MEMRA_ADMIT_BY_MEMORY=1` and
   `MEMRA_KV_HOST_CONTRACTS=1`): the reclaim flush drops today's drop set at once and demotes its demote set off the
   tick, one landing at a time, and the arrival defers on the landings within the door's defer budget. Folds in O10.
-- Status: `running`. The fourth sitting's registered cell did not reach the flush on the target card (DAY42 2.1: no
-  memory verdict at all, the warm phase published nothing); addenda C and D pre-register the shape that does (warm at
-  `max_tokens=16`, a bounded burst at a large `max_ctx`, a P0 exercised line); the fifth sitting
-  (`pro-single-b-sitting5.sh`) and the 5090 (queue-f, `rtx5090-day42c`) run it.
+- Status: `running`. BOX26 (addenda C and D, DAY42 2.2): exercised; F1 to F3 PASS; F4 d2h-delay and helper-gone PASS,
+  source-flip FAIL as registered (the reader's count took the capacity sink's publications; the flipped flush demote
+  published nothing). The price: tenants' largest gap 3.9 s against 8.6 s, burst TTFT p50 7.2 to 8.0 s against 11.8 to
+  12.2 s, warmth kept 1 of 24 against 10 of 24 (a per-arrival plan). Addenda E and F: one worker-level demote queue
+  (`0cf59870a`). The sixth sitting (`pro-single-b-sitting6.sh`) and the 5090 (queue-f, `rtx5090-day42e`) run it.
 
 ## Owner-only (listed, not worked)
 
