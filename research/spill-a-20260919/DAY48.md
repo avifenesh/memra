@@ -48,3 +48,16 @@ within +2 ms; (d) and (e) as S3 read them.
 when it is back.
 
 **Budget.** 0.4 agent-day: the change, the census and the native cell 0.15, the CPU cells 0.05, the target sitting 0.2.
+
+## 2. S4 as built (`ef4b097ad`) and its CPU cells
+
+- Built: S3's code re-applied (the revert `7197c1a9d` reverted, code only); `take_plane` and `release_device` drain the
+  owner stream and no longer the copy stream; `synchronize_copy_stream` had no other caller and is removed. Census
+  `day48_release_paths_drain_the_owner_stream_only` (`require_unbound` first, the owner stream drained, no copy stream
+  touched; `require_unbound` checks every unretired entry's items; `retire` refuses before `producer_done`); the native
+  cell `day48_a_take_back_waits_for_its_own_lease_only` (the pool's 15th context); `one_side_stream_beside_the_owner`
+  now pins no copy-stream drain.
+- CPU cells, green: engine lib `554 passed; 0 failed; 45 ignored`; server lib `912 passed`; the tier crate; clippy `-D
+  warnings` on the three crates; fmt; `git diff --check`; `tools/check-flags.sh`.
+- The target sitting (`pro-single-day42/run-all-4.sh`, pro-single-s2's scripts with S4's tip as the s2 arm; S3's
+  receipts moved to `a-s2-design-s3` first) runs on the same box after item 3's reading.
