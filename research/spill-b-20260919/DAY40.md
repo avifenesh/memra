@@ -15,7 +15,7 @@ seen.
 
 ### 1.1 The program and the binary
 
-The lane tip at the first boot (`S40`, named in the chains when they are committed): main through integ60 (`7bcb6364d`
+The lane tip at the first boot, `S40` = `b46ae200e` (the tip with 1.4's print): main through integ60 (`7bcb6364d`
 merged it), the capped seed booking, the day-39 revised prime booking, and every lane door unset. One binary per card,
 built in a detached worktree. Door OFF is day 36's OFF program plus whatever main and the lane changed outside the
 door; V-OFF is not a clause here (day 36 has none), and the ON rows are read against this day's own OFF boots.
@@ -23,7 +23,8 @@ door; V-OFF is not a clause here (day 36 has none), and the ON rows are read aga
 ### 1.2 The cell
 
 DAY34.md 1.3 to 1.8 unchanged, as DAY36.md 1.3 to 1.8 ran them: arms `off`, `on2048`, `on8192`, `on32768`; orders O1
-and O2 (one collector hold per order, `day31-order.sh`, burst 64); the day-31 workload through the unchanged drivers;
+and O2 (one collector hold per order, `day31-order.sh`, burst 32 on the 5090 and 64 on the target card, as days 34 and
+36 ran them); the day-31 workload through the unchanged drivers (their sha256 match DAY34.md 1.2's);
 `day34-compare.py` unchanged (sha256 `c6013822...deaea5e9`) with DAY34.md 1.5's command lines on the directory names
 `rtx5090-day40/boots` and `pro-single-day40/box/boots`; every DAY34.md 1.6 term (the day-32 terms, V-ALLOC on the
 engine's form, V-OOM, G-BOOK, PARK and V-DOOR) and DAY32.md 1.7's selection rules (SELECT R1 to R4, stated, not chosen).
