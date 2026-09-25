@@ -83,3 +83,69 @@ leases, about 122 MB, fresh `cuMemHostAlloc` per demote).
   card time). Any host class with one RTX PRO 6000 Blackwell and the 27B artifact at
   `/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`; the host class is recorded (`host-shape.txt`), and the reading is
   that class's.
+
+## 3. The cell on the target card, as it ran (`pro-single-day49/box/`)
+
+- Run by the lead on BOX10 (one RTX PRO 6000 Blackwell Workstation Edition; the host reads `AMD Ryzen 9 9950X3D2
+  16-Core Processor`, 32 CPUs, 124 GB): `build.sh 03ec9b063` rc=0, the tip binary `ada9fe4eab1168aa..`
+  (`binaries.sha256` and the lead's `box-binaries.sha256` agree); `driver.sh` rc=0; one collector hold on
+  `/tmp/memra-gpu.lock` (`LOCK.json`: `inherited-flock-same-open-description`) from 10:42:30Z, `cell rc=0` at
+  10:57:03Z; the card idle at the hold's start and at its end (`compute-apps.after.csv` empty). The model
+  `Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`, sha256 `1facf36c2db359dc..`.
+- Mirror: 91 files against the box's `box-mirror-manifest.sha256`, 91 OK, 0 mismatched (`lead-a49.out` and
+  `lead-box-after.txt` are the lead's own driver output and the box's state after the run). Every boot's stall replay
+  reads `STALL REPLAY: PASS` (16 of 16). Both readers re-run here on the mirrored receipts print the box's readings
+  byte for byte.
+- Thermal regime: boot starts 35 C (the first boot, the card idle at 180 MHz) then 55 to 71 C at 2820 to 2827 MHz; the
+  hold's 250 ms telemetry 35 to 84 C over 3490 samples.
+- Count, as read: a 64-token boot makes nine demotes, not the ten section 1 said (`--mode demote` seeds nothing, so the
+  first intruder has no entry to demote); the long arm's seed makes ten. The reader's steady sets are its own rule's:
+  nofree 8 per boot (N=40), free 6 per boot (N=30), long 9 per boot (N=27).
+
+**The reading, verbatim** (`cell/reading-day49.log`):
+
+```
+DAY49 READING arm=nofree helper N=40 copy_ms=23.73 mb=156.9 minflt=38306 hash_ms=59.05 helper_ms=83.50 | pre-submit N=40 leases_ms=0.61 leases=32 lease_mb=1.9 lease_minflt=512 register_ms=0.15 spans_ms=0.16 other_ms=0.06 pre_ms=0.98
+DAY49 READING arm=free helper N=30 copy_ms=7.64 mb=156.9 minflt=0 hash_ms=59.23 helper_ms=67.60 | pre-submit N=30 leases_ms=0.12 leases=32 lease_mb=1.9 lease_minflt=0 register_ms=0.14 spans_ms=0.16 other_ms=0.06 pre_ms=0.48
+DAY49 READING arm=long helper N=27 copy_ms=24.03 mb=156.9 minflt=38306 hash_ms=59.21 helper_ms=139.80 | pre-submit N=27 leases_ms=19.26 leases=32 lease_mb=151.1 lease_minflt=36896 register_ms=0.17 spans_ms=0.17 other_ms=0.06 pre_ms=19.66
+DAY49 ITEM8 pages=38306 nofree_minflt=38306 (rule >= 19153) free_minflt=0 (rule <= 9576) copy_ms nofree=23.73 free=7.64 diff=+16.09 (rule >= +5.0) -> H attributed
+DAY49 ITEM7 -> b1 step attributed to H (the heap first touch) (the current pre-submit split above)
+```
+
+Per boot (steady medians, the demote's ledger line beside the split), every boot of an arm alike:
+
+| arm | copy ms | copy minflt | helper ms | wall t0 to publication ms | landed after |
+|---|---|---|---|---|---|
+| nofree b01 to b05 | 23.56 to 24.09 | 38306.5 | 83.2 to 83.8 | 101.0 to 101.5 | 2 polls |
+| free b01 to b05 | 7.60 to 7.67 | 0 | 67.3 to 67.7 | 88.4 to 88.8 | 1 poll |
+| long b01 to b03 | 23.77 to 24.30 | 38306 | 139.4 to 140.1 | 361.7 to 361.8 | 12 polls |
+
+**Verdict, as registered.** Item 8: **H attributed**. The helper's copy of the landed staging into a fresh heap `Vec`
+takes one minor fault per 4 KiB page (38306 per 156.9 MB) on every demote where no host entry frees, and the faults are
+16.09 ms of the helper's 83.50 ms. Where the LRU frees an entry, the freed heap memory is reused and the copy takes no
+fault at all (the free arm from its fourth demote on; b01's third already read `minflt +768`). Item 7: **the b1 step is
+attributed to H**, the same heap first touch, taken then on the owner thread and now on the helper.
+
+**What else the cell read** (readings, no clause):
+
+1. H's price where it lands. The first touch moves the demote's publication one tick-top poll later: the steady wall t0
+   to publication reads 101.0 to 101.5 ms without frees and 88.4 to 88.8 ms with them (landed after 2 polls against 1),
+   so about 12.7 ms of every demote's publication while the host tier fills. A request that meets the entry `Demoting`
+   parks for that time.
+2. The first demote of every boot holds the owner thread about 20 ms in its pre-submit (`pre-submit 20.02 ms` and
+   `20.70 ms` in the b01 boots), and the split puts it in the `spans` segment (19.74 and 20.43 ms), where the span
+   attach takes the staging set's buffers: the set is empty at boot, so its first demote allocates every buffer
+   (`staging_take`, fresh pinned memory; placed from the code, the split does not time the takes apart). Once per
+   context.
+3. The long arm's pre-submit is 19.66 ms, 19.26 of it in its leases: 32 pinned KV destinations, 151.1 MB, 36896 minor
+   faults, allocated fresh on the owner thread on every demote while no entry frees. The prediction had the place right
+   and the shape wrong (it said 64 leases and 122 MB). That is 19 ms of the tenant's tick per long demote, a new owed
+   item (OWED item 19, beside item 14, the same leases' frees).
+4. The long arm's helper reads 139.80 ms against copy 24.03 plus hash 59.21: the rest, about 56 ms, is the bind's KV
+   re-hash over the 151 MB of lease views (design M'), which the split does not time (it times the staged payloads).
+5. The 64-token leases: nofree 0.61 ms and 512 faults per 1.9 MB, free 0.12 ms and none (the freed entries' pinned
+   memory reused).
+
+**What follows, as section 1 registered.** H is attributed and recurs on every demote while the host tier fills, so
+the improvement that removes the first touch is pre-registered as its own design before its code (DAY51, OWED item
+17).

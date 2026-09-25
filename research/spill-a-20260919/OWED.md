@@ -126,8 +126,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   step (39 to 45 ms on the first two demotes, about 6 ms steady).
 - Acceptance: none registered (an attribution: a log-only per-demote allocation or first-touch line, read on the cell
   shape that shows it).
-- Status: **pre-registered and built** (DAY49: the split lines, log only; the attribution cell `pro-single-day49/`
-  prepared, NEED TARGET CARD).
+- Status: **closed** (DAY49 section 3, the target card, run by the lead: `DAY49 ITEM7 -> b1 step attributed to H (the
+  heap first touch)`; the same mechanism as item 8, taken on b1's owner thread and now on the helper).
 
 ### 8. Lane C: the b2 helper's `hashed_in` rise, 73.2 to 104.8 / 107.3 ms, unattributed
 
@@ -135,7 +135,10 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   first touch (about 106 ms on demotes 1 to 3, 79.8 steady) in the double-park cell.
 - Acceptance: none registered (attribution first; if a first touch recurs on every demote, the improvement that
   removes it is pre-registered as its own design).
-- Status: **pre-registered and built** (DAY49, with item 7: one hypothesis, one cell; `pro-single-day49/` prepared).
+- Status: **closed as attributed** (DAY49 section 3: `DAY49 ITEM8 pages=38306 nofree_minflt=38306 (rule >= 19153)
+  free_minflt=0 (rule <= 9576) copy_ms nofree=23.73 free=7.64 diff=+16.09 (rule >= +5.0) -> H attributed`). The first
+  touch recurs on every demote while the host tier fills and costs the publication one tick-top poll (wall 101.3 against
+  88.6 ms), so its remedy is owed as item 17.
 
 ### 9. Lane C: promote tick 2 on b1 and b2 on the target card
 
@@ -143,8 +146,9 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Acceptance: none registered. C's tick reader defines tick 2 as the second stretched tick after the fire; a reading
   of the promote's tick placement on the current tree, pre-registered, with the day-33 timeline fields that b1 and b2
   lack.
-- Status: **read on S4's receipts** (DAY50 section 2: one stretched tick, tick 2 absent in 100 of 100 runs on G4 and
-  S4; S4 publishes one tick late on 9 of 90); the tip's block rides DAY49's sitting.
+- Status: **closed** (DAY50 sections 2 and 3: one stretched tick, tick 2 absent in 100 of 100 runs on G4 and S4 and
+  in 30 of 30 on the tip, `DAY50 POOLED runs=30 tick1=30 tick2=0 .. submit_to_publish_ticks={1: 25, 2: 2}
+  owner_segment_med=0.52`). The one-tick-late publications recur on the tip (2 of 27), owed as item 18.
 
 ### 10. Move 2 item 2: the publishes still on the tick
 
@@ -222,6 +226,53 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   that places the cause (the regime or the design) either way.
 - Status: **pre-registered** (DAY45 section 1: the G4 hold's own warm-up, section 20's eight boots, the regime check and
   the placing rule; `rtx5090-day45/`); waits for the 5090's reset.
+
+### Order of work from day 51 (the lead's order after integ62)
+
+Item 17 first (item 8's remedy), then items 10 to 14 (item 10 per publisher; item 19 designed with item 14, one lease
+design for both directions), then items 18 and 20; the three 5090 cells (item 4's and item 6's halves, item 16) when
+the card is reset.
+
+### 17. Remove the helper's heap first touch from the demote's path (item 8's remedy)
+
+- Source: DAY49 section 3 (`-> H attributed`): 38306 minor faults per 156.9 MB copy, 16.09 ms of the helper's 83.50 ms,
+  the steady publication one tick-top poll later (wall 101.0 to 101.5 ms against 88.4 to 88.8 where entries free);
+  DAY49 section 1 ("the improvement that removes the first touch ... is pre-registered as its own design before its
+  code, with its own price clauses").
+- Acceptance: DAY51 section 1.
+- Status: open (DAY51 pre-registers it).
+
+### 18. S4's H2D destination digests ride the promote's landing (found by DAY50)
+
+- Source: DAY50 sections 2 and 3: on S4's tree 9 of 90 steady promotes publish one tick after the next tick top (0 of
+  90 on G4), and 2 of 27 on the tip; the destination digests of S4's span receipt are queued on the promote's landing
+  path (DAY42 section 1 step 5). The delay did not reach S4's (d) (PIN +0.10 ms per order).
+- Acceptance: none registered (the destination digests off the landing path, still required before the publication,
+  as S2 did for the demote; pre-registered with its own clauses before its code).
+- Status: open.
+
+### 19. The host tier's pinned allocations run on the owner thread (found by DAY49)
+
+- Source: DAY49 section 3 readings 2 and 3: a long (5122-token) demote's pre-submit holds the owner 19.66 ms, 19.26 of
+  it allocating its 32 pinned KV destinations (151.1 MB, 36896 minor faults) fresh on every demote while no entry frees;
+  the first demote of every context holds it about 20 ms allocating the staging set (`spans 19.74` and `20.43 ms`).
+  Both are the tenant's tick.
+- Acceptance: none registered (the owner's hold priced at a long demote and at the first demote, then a design that
+  allocates no pinned memory on the owner thread's serving path, pre-registered with item 14's: one lease design for
+  both directions).
+- Status: open.
+
+### 20. The hash helper's per-payload work runs on one thread (found by DAY49)
+
+- Source: DAY49 section 3: the helper's 83.50 ms per 64-token 27B demote is copy 23.73 plus hash 59.05 over 97
+  independent payloads, and at long entries the bind's KV re-hash adds about 56 ms over 32 independent lease views
+  (helper 139.80 ms); the publication waits for the whole job (wall 101 ms, 362 ms at long entries). Design T split
+  the promote's fill across `min(12, cpus / 2)` threads (item 3); the helper's copies and digests are the same shape of
+  work.
+- Acceptance: none registered (the same program per payload and per view, bitwise, the digests in the job's order;
+  priced on the target card against the tip, the tenant's hump and the promote's PIN inside S's bounds; pre-registered
+  before its code).
+- Status: open.
 
 ## 2. Closed, delivered, or held by another owner
 

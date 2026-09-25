@@ -46,3 +46,26 @@ the timeline, and the promote's second stretched tick becomes its own owed item.
 - The tip's own promote block runs in DAY49's sitting; item 9 closes on that reading if it agrees, and the S4 late
   landings become an owed improvement (the destination digests off the landing path, required before the publication)
   if they recur there.
+
+## 3. The tip's own promote block (DAY49's sitting, `pro-single-day49/box/cell/promote/`)
+
+- Three boots of `stall_cell.py --mode promote --n 5` on the tip binary `ada9fe4eab1168aa..`, after DAY49's demote
+  arms in the same collector hold (DAY49 section 3); boot starts 69 to 71 C at 2820 MHz; `STALL REPLAY: PASS` in each.
+  Read on the box and again here on the mirror, the same lines.
+- Verbatim (`cell/reading-day50.log`):
+
+```
+DAY50 BOOT b01 runs=10 tick1=10/10 tick2=0/10 tick1_med=74.93 tick2_med=nan stretched_med=1 submit_to_publish_ticks=[1, 2] owner_segment_med=0.53
+DAY50 BOOT b02 runs=10 tick1=10/10 tick2=0/10 tick1_med=74.84 tick2_med=nan stretched_med=1 submit_to_publish_ticks=[1, 2] owner_segment_med=0.51
+DAY50 BOOT b03 runs=10 tick1=10/10 tick2=0/10 tick1_med=74.95 tick2_med=nan stretched_med=1 submit_to_publish_ticks=[1] owner_segment_med=0.53
+DAY50 POOLED runs=30 tick1=30 tick2=0 tick1_med=74.87 tick2_med=nan stretched_med=1 submit_to_publish_ticks={1: 25, 2: 2} owner_segment_med=0.52
+```
+
+- **Against the predictions.** Tick 2 absent in every run: yes, 30 of 30 (and 100 of 100 on each tree of section 2).
+  The owner segment of the submission's tick about 0.5 ms: 0.52. The publication at the next tick top on every steady
+  promote: no, 25 of 27; 2 of 27 publish one tick later, as 9 of 90 did on S4's A/B.
+- **Item 9 closes** on this reading, as section 2 registered: on the current tree the promote stretches one tenant tick
+  (about 75 ms: the publication, the restore and the parked request's prime), and C's `tick 2 not_defined` on b1 and b2
+  is the promote's shape, not a missing measurement.
+- **The late landings recur on the tip** (2 of 27), so, as section 2 registered, they become an owed improvement: S4's
+  H2D destination digests off the promote's landing path, still required before the publication (OWED item 18).
