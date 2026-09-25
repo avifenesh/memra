@@ -67,3 +67,40 @@ there means nothing). The driver `day68-box.sh` (one build, `p68`) is dry-checke
 where it can be had (else another host of that class), one RTX PRO 6000 Blackwell Workstation Edition, the approved
 35B artifact, `/root/wt-c` at the lane tip and a detached `/root/wt-c-build`, CUDA 13 and Rust, at least 48 GB host
 `MemAvailable`. Expected: one build about 5 minutes, the cell about 10 (40 runs).
+
+## 2. The cell, as it ran (BOX21, BOX15's machine, run by the lead as registered; `pro-single-day68/`)
+
+The lead ran `day68-box.sh` as section 1a names it on the tree `b605dc1a9`, on BOX21 (BOX15's machine; idle 26.7 W,
+FMA spin 2682 MHz, no brake), 11:27Z to `box done 2026-09-25T11:37:00Z`. The lead mirrored the receipts; read here:
+190 of 190 files `OK` against `box-mirror-manifest.sha256` (`MIRROR-CHECK.txt`). Regime (`regime.txt`): 26 to 41 C,
+SM median 2610 MHz. Verbatim (`eclock/reading.log`):
+
+- `DAY68 ECLOCK CHECKS rig=pro-single runs=40 integrity=ok`
+- `DAY68 R1 ref_median=0.245 slow=9 fast=11 of 20 door runs`
+- `DAY68 COUNT generate_tracks: 8 of 9 slow runs beyond the fast runs' extreme (deciding nothing)`
+- `DAY68 COUNT gate_tracks: 9 of 9 slow runs beyond the fast runs' extreme (deciding nothing)`
+- `DAY68 COUNT eclock_tracks: 1 of 9 slow runs beyond the fast runs' extreme (deciding nothing)`
+- `DAY68 COUNT tctl_tracks: 0 of 9 slow runs beyond the fast runs' extreme (deciding nothing)`
+- `DAY68 ECLOCK VERDICT rig=pro-single integrity=ok -> gate_tracks`
+
+**Read as registered: `gate_tracks`.** The phase probe at `gate` (after the model load, the door's install and its host
+fill, before the timed generation) reads 1.419 to 1.543 ns per step in all 9 slow door runs and 1.052 to 1.055 in all
+11 fast ones; every REF run reads 1.048 to 1.055 at every phase. So the slow state is in place before the decode
+starts. `generate_tracks` misses by one: `o2-i15-r1` (gen-only 0.254 s, marked fast) reads 1.055 at `gate` and 1.468
+from `generate` on, so its slow state began inside its decode and cost it only the last part.
+
+**What the lines show beside the verdict, deciding nothing.**
+- The `start` probe (after the CUDA engine is created, before the model loads) reads 1.049 to 1.052 in every run,
+  slow or fast: the slow state begins between the start and the gate, during the load, the install or the fill.
+- It ends by itself: the day-67 probe's second compute chain reads 1.049 or 1.050 in 8 of the 9 slow runs (1.409 in
+  the ninth), about a second after the window.
+- The `/proc/cpuinfo` clock of the owner's CPU reads 5717 to 5723 MHz in slow and fast runs alike, as the requested
+  clock does, and the hottest `Tctl` 61.1 to 62.6 C in slow and fast door runs alike (`eclock_tracks` 1 of 9, `tctl_tracks` 0 of 9): neither the
+  reported clock nor the temperature follows the slow state.
+- The owner's CPU at `gate` was CPU 4 in 5 slow runs and CPU 1 in 4, and CPU 1, 4 or 17 in the fast ones: no CPU is
+  the slow one.
+
+A register-only chain running about 1.45 times slower in wall time, at a reported full clock and a normal
+temperature, from before the decode until about a second after it, points to the owner thread sharing its core:
+another thread runnable on the same CPU (the chain's wall time includes the time it waits) or busy on the same
+core's other hardware thread. The next registration (`DAY70.md`) reads which.
