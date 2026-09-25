@@ -1,0 +1,5 @@
+arm=vmm-mapperfault
+kind=mixspec
+bin_sha256=7e586b8cdb06ef5bfe75d7b2d031914a5b0036aa5fa1047f420bf1a08bba1528
+arm_env= MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_VMM_FAULT=mapper:all
+kind_env=-u MEMRA_SERVE_SPEC -u MEMRA_TIMEOUT_MS_MAX

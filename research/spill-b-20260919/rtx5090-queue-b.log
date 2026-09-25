@@ -1,3 +1,7 @@
 2026-09-24T15:10:12Z queue start: waiting for pid 959731
 2026-09-24T15:14:04Z queue stopped by the lane (its own pid 1191561) before any chain ran: the DAY37 review found a defect in the on-demand plane (addendum E), so the DAY38 and DAY39 binaries are rebuilt at the fix tip before their first boots
 2026-09-24T15:33:39Z queue start (r4): waiting for the r4 builds
+2026-09-24T15:38:39Z r4 builds present: 580fe677737305bfb7bf44e5d4f21f1dd5ee1fae85aa91f70ac42aaf1034f7bd  target/day37/r4/memra-server d0dfe4ab911bb89d26710099840541c0095f5ddbd01850393b6508548574ab7c  target/day37/r4/kv-tier-gate 
+2026-09-25T03:25:48Z day 37 r4 chain rc=0
+2026-09-25T05:25:53Z day 38 chain rc=0
+2026-09-25T05:49:45Z queue-b stopped by the lane (its own pids 1265985, 4179385, 4179393) while the RTX 5090 awaits a reset (Xid since 01:25Z): the day-39 chain was in its idle wait before red-G2, no boot ran; every unrun local cell moves to queue-d, which waits for the card's health
