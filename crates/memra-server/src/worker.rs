@@ -985,8 +985,15 @@ fn dspark_hit_is_restorable_with(
     // suffix through `prime_cache`, which refuses a suffix shorter than `PRIME_MIN_T`
     // (`dspark resume suffix N < PRIME_MIN_T 16 ... serve this turn cold`); admitting one here
     // failed the request with HTTP 500 instead of serving it cold. Such a hit is not restorable.
+    // C day 56 section 2c: and the carrier must end on the GDN prime grid. A suffix prime that
+    // starts off the grid materializes recurrent state the cold monolithic prime never computes
+    // (`grid_align_boundary`'s measured law), so an off-grid strict-prefix restore is a second
+    // numeric program for the request (measured: the restored text left the cold text at its
+    // 24th character, `DAY56.md` section 2c). Such a hit serves cold.
     entry_toks == prompt_toks
-        || (partial_on && prompt_toks - entry_toks >= memra_engine::hybrid_forward::PRIME_MIN_T)
+        || (partial_on
+            && prompt_toks - entry_toks >= memra_engine::hybrid_forward::PRIME_MIN_T
+            && entry_toks.is_multiple_of(memra_engine::Engine::gdn_chunk_size()))
 }
 
 fn dspark_prefix_capture_requested(
@@ -37248,10 +37255,14 @@ mod tests {
             !r(60, 100, true, false),
             "door shut must keep the pre-lane refusal"
         );
+        let grid = memra_engine::Engine::gdn_chunk_size();
         assert!(
-            r(60, 100, true, true),
-            "door open must admit a strict-prefix carrier"
+            r(2 * grid, 2 * grid + 40, true, true),
+            "door open must admit a grid-aligned strict-prefix carrier"
         );
+        // C day 56 section 2c: an off-grid carrier is a second numeric program; it serves cold
+        assert!(!r(2 * grid + 1, 2 * grid + 41, true, true));
+        assert!(!r(60, 100, true, true));
         // no tail: never restorable, the drafter cannot be re-armed from trunk planes alone
         assert!(!r(100, 100, false, true));
         assert!(!r(60, 100, false, true));
@@ -37259,12 +37270,11 @@ mod tests {
         // with HTTP 500); at PRIME_MIN_T it is
         let min = memra_engine::hybrid_forward::PRIME_MIN_T;
         assert!(
-            !r(100 - (min - 1), 100, true, true),
+            !r(2 * grid, 2 * grid + min - 1, true, true),
             "a sub-minimum suffix serves cold"
         );
-        assert!(!r(99, 100, true, true));
         assert!(
-            r(100 - min, 100, true, true),
+            r(2 * grid, 2 * grid + min, true, true),
             "a PRIME_MIN_T suffix restores"
         );
         // degenerate lengths are refused in both arms

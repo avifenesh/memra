@@ -17,10 +17,9 @@ case "$CELL" in
     identity-dspark-*) GATE=tools/kv-host-spill-identity-gate.sh ;;
     *) echo "unknown cell $CELL" >&2; exit 2 ;;
 esac
-# DAY56 section 2a: the gate's r3 is a strict-prefix hit, which a DSPARK session restores only with
-# MEMRA_DSPARK_PARTIAL_RESTORE=1 (the first attempt's shape error, `DAY56.md` section 2).
-ENVS=("MEMRA_HOSTGATE_CACHE_MB=$CACHE_MB" MEMRA_DSPARK_SPEC=1 "MEMRA_DSPARK_DRAFT=$DRAFT" MEMRA_DSPARK_PREFIX_RESTORE=1
-    MEMRA_DSPARK_PARTIAL_RESTORE=1)
+# DAY56 section 2c: the gate's drafter arm re-sends P_A (a whole-cover restore), so the strict-prefix switch of
+# attempts 2 and 3 (MEMRA_DSPARK_PARTIAL_RESTORE=1) is not set.
+ENVS=("MEMRA_HOSTGATE_CACHE_MB=$CACHE_MB" MEMRA_DSPARK_SPEC=1 "MEMRA_DSPARK_DRAFT=$DRAFT" MEMRA_DSPARK_PREFIX_RESTORE=1)
 [[ $CELL == *-on ]] && ENVS+=("MEMRA_KV_HOST_CONTRACTS=1")
 snap() { # label
     nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$OUT/compute-apps.$1.csv" 2>&1

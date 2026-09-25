@@ -138,11 +138,14 @@ thrust-bearing temperature rise, cooling-water flow, overspeed trip, and grid-sy
 tests. For each item name the instrument used, the acceptance threshold, the sign-off role, \
 and the failure symptom that would halt commissioning. Be systematic and terse throughout."
 EXT=" Finally, state which single item most often fails first and why."
-# Drafter arm (lane/spill-c-20260919 day 56, DAY56.md section 2b): a DSPARK strict-prefix restore
-# primes its suffix through prime_cache, which needs at least PRIME_MIN_T (16) suffix tokens; the
-# drafter arm's extension is long enough to be a restorable strict prefix.
+# Drafter arm (lane/spill-c-20260919 day 56, DAY56.md section 2c): a DSPARK request restores
+# byte-identically to a cold prime only on a whole-entry cover (a strict-prefix restore from a
+# prompt-end entry starts its suffix prime off the GDN grid, a second numeric program), so the
+# drafter arm's r3 and r4 re-send P_A: a whole-cover hit through the promoted entry.
+DRAFTER_ARM=0
 if [ "${MEMRA_DSPARK_SPEC:-}" = 1 ]; then
-    EXT=" Finally, state which single item most often fails first, why it fails there, and which one check catches it earliest in the sequence."
+    DRAFTER_ARM=1
+    EXT=""
 fi
 
 req() { # $1 prompt $2 out-json
@@ -248,9 +251,15 @@ else
     chk "metrics: demotions >= 1, promotions >= 1, zero rejected allocs" \
         jqpy "$EV/host-on-metrics.json" \
         "r['prefix_host_demotions'] >= 1 and r['prefix_host_promotions'] >= 1 and r['prefix_host_rejected_allocs'] == 0"
-    chk "r3 served a strict-prefix hit through the promoted entry" \
-        jqpy "$EV/host-on-r3.json" \
-        "0 < r['usage']['prompt_tokens_details']['cached_tokens'] < r['usage']['prompt_tokens']"
+    if [ "$DRAFTER_ARM" = 1 ]; then
+        chk "drafter arm: r3 served a whole-cover hit through the promoted entry" \
+            jqpy "$EV/host-on-r3.json" \
+            "0 < r['usage']['prompt_tokens_details']['cached_tokens'] == r['usage']['prompt_tokens']"
+    else
+        chk "r3 served a strict-prefix hit through the promoted entry" \
+            jqpy "$EV/host-on-r3.json" \
+            "0 < r['usage']['prompt_tokens_details']['cached_tokens'] < r['usage']['prompt_tokens']"
+    fi
     chk "r4 repeats r3 byte-for-byte (deterministic promoted path)" \
         text_eq "$EV/host-on-r3.json" "$EV/host-on-r4.json"
 fi

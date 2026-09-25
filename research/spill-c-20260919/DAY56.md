@@ -152,3 +152,33 @@ tap-filling twin); serve this turn cold`. Two findings, neither the slice's:
 The two cells run again (attempt 3) on both cards with the gate's drafter-arm extension, the same rule and reader.
 The server binary stays `memra-server-c5` (the tail class tree); the predicate fix is in the lane tip and is not
 reached by a suffix of 16 or more.
+
+## 2c. Attempt 3 on the target card, a second defect it found, and the cell's shape (before attempt 4)
+
+Attempt 3 (the drafter-arm extension of section 2b) ran on the box 01:21Z to 01:23Z (receipts
+`pro-single-day52/c5-attempt3/`). Verbatim (`c5-attempt3/reading.log`):
+
+`DAY56 ARM off rig=pro-single exit=1 verdict='KV-HOST-SPILL IDENTITY GATE: 1 FAILURE(S) (teeth=0)' checks=13 demotes=[('89', '164.2'), ('86', '164.0')] tails=[] restores=2 refusals=0`
+
+`DAY56 ARM on rig=pro-single exit=1 verdict='KV-HOST-SPILL IDENTITY GATE: 1 FAILURE(S) (teeth=0)' checks=15 demotes=[('89', '164.2'), ('86', '164.0')] tails=[(5, 10, 3645440), (5, 10, 3522560)] restores=2 refusals=0`
+
+`DAY56 TERM all_green_both -> FAIL`, `same_verdict_lines -> PASS`, `equal_demote_bytes -> PASS`, `tail_receipt_2L ->
+PASS`, `restore_both_same_text -> PASS`, `no_refusal_on -> PASS`; `DAY56 DFLASH TAIL rig=pro-single -> FAIL`
+
+Every door term passes: the promote verifies (`verify ok`, the v3 digest over the trunk, the tail, the hidden row
+and the logits), the restore reads `DSPARK restore: 89 of 116 prompt tokens + draft tail from cache (27 suffix
+tokens to prime)` in both arms, and the promoted request's text is the same byte for byte with the door OFF and ON.
+The one failing check, in both arms, is the identity law against the tier-off boot: `r3 ON == OFF byte identity
+(promoted restore == cold re-prime)`; the restored text leaves the cold one at its 24th character (`Station 1
+(North Cape):` against `Station 1 (North Cape)`). The restored state is the demoted state (the digest matched), so
+the difference is the program: the 27-token suffix prime starts at row 89, off the GDN prime grid (32), and
+`grid_align_boundary`'s measured law says a prime split off the grid materializes recurrent state the monolithic
+prime never computes. **A second defect of `MEMRA_DSPARK_PARTIAL_RESTORE`**: it admitted an off-grid strict-prefix
+carrier, a second numeric program for the request. Fixed in the same predicate: a strict-prefix carrier must end on
+the grid (`entry_toks % gdn_chunk_size() == 0`) or the request serves cold; the unit test and the `docs/FLAGS.md` row
+say so. The slice itself is not implicated: the door is byte-transparent on this path.
+
+**The cell's shape for attempt 4.** A DSPARK request restores byte-identically to cold only on a whole-entry cover,
+so the gate's drafter arm re-sends P_A as r3 and r4 (a whole-cover hit through the promoted entry, checked as
+`cached == prompt`), without `MEMRA_DSPARK_PARTIAL_RESTORE`; every other check, the rule and the reader unchanged.
+The attempts 1 to 3 receipts stay as they are.
