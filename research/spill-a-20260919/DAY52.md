@@ -115,7 +115,8 @@ reads its own verdict. The 5090 half after the card's reset.
   targets); fmt; `git diff --check`; `tools/check-flags.sh`. One earlier full-suite run read `2 failed`: this census
   (a count scoped too wide, fixed before the commit) and `tests::responses_carry_rate_limit_headers_and_slot_frees`
   (`lib.rs:22740`, `stream in flight holds the slot`), which passed on the rerun and 6 of 6 alone; this change does not
-  touch `lib.rs` (a flake under the full suite's parallel load, recorded, not owned here).
+  touch `lib.rs`. Recorded here as a flake at first; the lead's ruling (2026-09-25) makes it a defect to place: OWED
+  item 21, worked after item 17's reading.
 - The p arm: section 1 said P's commit is cherry-picked onto step 1 on the box; that pick conflicts at the two shared
   anchors (above), so the resolved pick is carried instead as `pro-single-p2/p-arm.patch`, the crate diff from step 1
   to step 1 plus P, and the build applies it (the same tree);

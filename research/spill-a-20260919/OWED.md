@@ -232,7 +232,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 
 ### Order of work from day 51 (the lead's order after integ62)
 
-Item 17 first (item 8's remedy; P refuted on day 51, its revision owed), then items 10 to 14 (item 10 per publisher; item 19 designed with item 14, one lease
+Item 17 first (item 8's remedy; P refuted on day 51, its revision P2 in its sitting), then item 21 (the lead: the
+server test failure is a defect to place), then items 10 to 14 (item 10 per publisher; item 19 designed with item 14, one lease
 design for both directions), then items 18 and 20; the three 5090 cells (item 4's and item 6's halves, item 16) when
 the card is reset.
 
@@ -282,6 +283,19 @@ the card is reset.
 - Acceptance: none registered (the same program per payload and per view, bitwise, the digests in the job's order;
   priced on the target card against the tip, the tenant's hump and the promote's PIN inside S's bounds; pre-registered
   before its code).
+- Status: open.
+
+### 21. `tests::responses_carry_rate_limit_headers_and_slot_frees` failed once under the full server suite (found by DAY52)
+
+- Source: DAY52 section 2: one full `cargo test -p memra-server --lib` run on the P2 tree (under the rig's CPU quota,
+  default test threads) read `test tests::responses_carry_rate_limit_headers_and_slot_frees ... FAILED`, panicked at
+  `crates/memra-server/src/lib.rs:22740:9`, the assertion `stream in flight holds the slot` (the streaming
+  completion's in-flight count read right after the response returns). The rerun of the whole suite passed, and the test
+  alone passed 6 of 6. The panic's left and right values were not kept (that run's output was filtered to its summary
+  lines), so the value it read is unknown. The test holds `drain_lock()` against its shared-state peers.
+- The lead (2026-09-25): a defect to place, not a flake to leave; worked after item 17's reading.
+- Acceptance: none registered (a reproduction under the suite's concurrency first, pre-registered, then the placing
+  and the fix with their own clauses).
 - Status: open.
 
 ## 2. Closed, delivered, or held by another owner
