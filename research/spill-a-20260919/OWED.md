@@ -247,8 +247,8 @@ the card is reset.
   target card (BOX22, a 9950X host: the copy -15.2 ms with no faults, the publication -12.4 ms, one poll earlier) and
   FAILED (g) in both orders (DAY51 section 3: `DAY51 P (g) cell=chain order=o1 chain p-minus-base=+1.40 rule <=+1.00
   .. -> FAIL`, o2 +1.54); the chain's extra millisecond sits in the publication's `take-back bind and publish` segment
-  (+0.89 / +1.07 ms), unplaced within it. Owed: the revision, pre-registered anew before its code (a reserve that
-  refills only while the copy would fault, after a split of the publication segment places the chain's millisecond).
+  (+0.89 / +1.07 ms), unplaced within it. The revision is **pre-registered** (DAY52 section 1: the publication split,
+  log only, then design P2, P with an arming rule that refills only while the copy it replaces would fault).
 
 ### 18. S4's H2D destination digests ride the promote's landing (found by DAY50)
 
