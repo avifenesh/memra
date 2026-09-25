@@ -331,7 +331,8 @@ the card is reset.
   1 of 400 and `health::tests::no_progress_source_is_the_pre_fix_beat_age_verdict` 1 of 400 (`left: 41 right: 40`).
 - Acceptance: none registered (each placed: a real defect, or a wall-clock threshold that a starved runner cannot
   meet; pre-registered after item 21).
-- Status: open.
+- Status: **pre-registered** (DAY55 section 1: a throttled reproduction per test, the fix per class with a red arm
+  each, the suite runs).
 
 ### 23. The admission-counter test isolation costs 1.5 s of every full server suite (found by DAY53)
 
