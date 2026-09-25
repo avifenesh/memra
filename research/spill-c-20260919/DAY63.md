@@ -166,3 +166,34 @@ Expected: three builds about 15 minutes, the cell about 8 (40 runs at about 11 s
 `/root/wt-c` and a detached build worktree at `/root/wt-c-build`, CUDA 13 and Rust, at least 48 GB host
 `MemAvailable`, about 20 GB free under `/root`. The RTX 5090's cell is queued (queue v7, behind v6) with
 `run-gen-i13` built locally (`/tmp/c61-build/build-i13.log`, sha256 `596b620e...`).
+
+## 4. The target card (BOX13, run by the lead as registered; `pro-single-day63/`)
+
+The lead ran `day63-box.sh` exactly as section 3a names it on the tree `cfbda42f8` (BOX13, one RTX PRO 6000 Blackwell
+Workstation Edition at 600 W, the same host class as BOX12), 05:54Z to `box done 2026-09-25T06:07:45Z`; the binaries
+built on the box (`run-gen-c60` `13a5cf85...`, `run-gen-i12` `d7e07114...`, `run-gen-i13` `8e29bcf0...`, by hash in
+`box-binaries.sha256`); the runner pinned to 12 cores with `taskset`. The receipts were mirrored by the lead into this
+worktree and read here: 187 of 187 files `OK` against `box-mirror-manifest.sha256` (`MIRROR-CHECK.txt`). Regime
+(`regime.txt`): 30 to 45 C, SM median 2610 MHz, N=1773 samples at 250 ms. Verbatim (`i13/reading.log`):
+
+- `DAY63 host demand sequence sha256 4bdc2610c3534e42 lines=[22077]`
+- `DAY63 I13 CHECKS rig=pro-single runs=40 integrity=ok`
+- `DAY63 gen-only decode medians (N=10 each): ref=0.255 i12=0.267 i13=0.264 i13s=0.266`
+- `DAY63 STEP i13_vs_i12 gen-only decode: pooled=-0.0030 o1=-0.0030 o2=-0.0030 noise=0.0010 -> improves`
+- `DAY63 steady window medians (N=10 each): ref=0.226 i12=0.234 i13=0.232 i13s=0.234`
+- `DAY63 STEP i13_vs_i12 steady window: pooled=-0.0020 o1=-0.0020 o2=-0.0020 noise=0.0010 -> improves`
+- `DAY63 DOOR i13_vs_ref gen-only decode: pooled=+0.0090 o1=+0.0090 o2=+0.0090 noise=0.0010 -> loses`
+- `DAY63 DOOR i13_vs_ref steady window: pooled=+0.0060 o1=+0.0060 o2=+0.0060 noise=0.0010 -> loses`
+- `DAY63 SPLIT owner per window token (N=10 runs): host_hits=92.3 host_misses=0.0 inner_demand_ns=0.2160ms pread_ns=0.0000ms reads=0.0 trace_ns=0.0060ms`
+- `DAY63 SPLIT bank per window token (N=10 runs): ack_ns=0.0312ms ack_release_ns=0.0120ms alloc_ns=0.0000ms collect_ns=0.0016ms host_use_ns=0.0037ms publish_ns=0.0215ms publish_output_ns=0.0027ms publish_policy_ns=0.0131ms retire_ns=0.0359ms retire_only_ns=0.0010ms stage_cache_ns=0.0807ms stage_charge_ns=0.0307ms stage_lookup_ns=0.0154ms stage_ns=0.1489ms stages=92.3 step_ns=0.0000ms steps=0.0 verified=0.0 verify_ns=0.0000ms`
+- (the cache side of the same runs: `retire_ns=0.0751ms`, `validate_ns=0.0144ms`, `prefetches=88.6`; the full line in the reading)
+- `DAY63 VERDICT rig=pro-single integrity=ok i13=improves door=i13 vs_ref=loses (window: i13=improves vs_ref=loses)`
+
+**Read as registered.** I13 improves the door on the target card (3 ms gen-only over 32 tokens, 2 ms of the window) and
+stays. The door still loses to REF: 0.264 s against 0.255 gen-only (+0.28 ms per token) and 0.232 against 0.226 in
+the window (+0.19 ms per token), from +0.69 and +0.44 before day 61. Recorded plainly for the owner's 2026-10-04
+reading. The owner side of the door now spends 0.216 ms per window token on 92.3 host-hit demands (2.3 us each, from
+0.423 ms at the day-58 tip); inside the bank, `stage_cache` is the largest part (0.081 ms, 0.87 us per demand), then
+the retire side (0.036), the governor's charge (0.031), `publish` (0.022) and the catalog loop (0.015); on the cache
+side, retiring leases costs 0.075 ms per window token (0.8 us per lease, each a proxy `finish`). The RTX 5090's cell
+waits on its reset (queue v7). The next improvement is registered from this split in `DAY64.md`, before its code.
