@@ -135,3 +135,75 @@ different host class reads its own verdict. The 5090 half after the card's reset
   2.2 hours of card time on one RTX PRO 6000 Blackwell with the 27B artifact at
   `/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`. The host class is recorded (`host-shape.txt`); the 9950X class is
   DAY49's, so it is the class this reading is registered for.
+
+## 3. P on the target card, as it ran (BOX22; `pro-single-p/box/`)
+
+- The host reads `AMD Ryzen 9 9950X 16-Core Processor` (32 CPUs, 123 GB): the 9950X class, a different machine from
+  DAY49's (a 9950X3D2), so its arms are compared only with each other. One RTX PRO 6000 Blackwell Workstation Edition.
+  The model sha256 `1facf36c2db359dc..`, verified in every cell.
+- Build `rc=0` (11:46Z to 11:57Z): p `2692df5612b141a7..` (tree `a2db13d67`), base `b9ca4480015a1531..` (`e4de9c804`),
+  gpp `541acb7e25248598..` (`358749c9f`); markers `p reserve-ready wording: 1`, `base .. 0`, `gpp .. 0`. The build
+  step log notes `the p rebuild differs in bytes`, as S2's, S3's and S4's builds did; the arms run the first p build,
+  the unit cells the tip's test binaries.
+- Cells, one collector hold each: `ab-demote-cell rc=0` 12:14:59Z, `ab-free-cell rc=0` 12:33:03Z, `ab-promote-cell rc=0`
+  12:51:00Z, `ab-chain-cell rc=0` 13:10:09Z, `hump-cell rc=0` 13:15:24Z, `gates rc=0` 13:36:22Z, `hitgate-off rc=0`,
+  `hitgate-on rc=0`, `unit-cell rc=0` 13:37:57Z. Every A/B cell 20 boots, 20 of 20 `STALL REPLAY: PASS`.
+- Thermal regime: boot starts 28 C (the hold's first boot, the card idle) and 57 to 68 C after; the 250 ms telemetry 28
+  to 75 C, SM up to 2842 to 2865 MHz.
+- Mirror: 1041 files, 1040 of 1040 manifest entries OK, 0 mismatched (`MIRROR-CHECK.txt`); the three ELFs by hash only
+  (`BINARIES.box.sha256`). Box scratch removed.
+
+**The reading, verbatim** (`box/reading-day51.log`, the box's run of the reader registered in section 1):
+
+```
+DAY51 P (b) cell=demote order=o1 minflt p-median (0.25 x pages)=+0.00 rule <=+9576.42 | copy p-minus-base=-15.17 rule <=-8.00 | hits fraction of steady demotes=+1.00 rule >=+0.90 -> PASS
+DAY51 P (b) cell=demote order=o2 minflt p-median (0.25 x pages)=+0.00 rule <=+9576.42 | copy p-minus-base=-15.32 rule <=-8.00 | hits fraction of steady demotes=+1.00 rule >=+0.90 -> PASS
+DAY51 P (c) cell=demote order=o1 wall p-minus-base=-12.40 rule <=-8.00 | e2e p-minus-base=+0.37 rule <=+1.00 -> PASS
+DAY51 P (c) cell=demote order=o2 wall p-minus-base=-12.40 rule <=-8.00 | e2e p-minus-base=+0.32 rule <=+1.00 -> PASS
+DAY51 P (d) cell=promote order=o1 pin p-minus-base=+0.20 rule <=+1.00 | e2e p-minus-base=+0.12 rule <=+1.00 -> PASS
+DAY51 P (d) cell=promote order=o2 pin p-minus-base=+0.20 rule <=+1.00 | e2e p-minus-base=+0.12 rule <=+1.00 -> PASS
+DAY51 P (f) cell=free order=o1 wall p-minus-base=+0.10 rule <=+2.00 | copy p-minus-base=-0.01 rule <=+1.00 -> PASS
+DAY51 P (f) cell=free order=o2 wall p-minus-base=+0.10 rule <=+2.00 | copy p-minus-base=-0.00 rule <=+1.00 -> PASS
+DAY51 P (g) cell=chain order=o1 chain p-minus-base=+1.40 rule <=+1.00 | first p-minus-base=+0.23 rule <=+1.00 -> FAIL
+DAY51 P (g) cell=chain order=o2 chain p-minus-base=+1.54 rule <=+1.00 | first p-minus-base=+0.05 rule <=+1.00 -> FAIL
+DAY51 P (e) hump xp=+0.022 rule <=0.15 control xgpp=+0.514 (humps) -> PASS
+DAY51 P -> FAIL
+```
+
+- (a), read by the same reader: every gate exit 0, and every gate's own line green: identity x4 `KV-HOST-SPILL IDENTITY
+  GATE: ALL GREEN (teeth=0)`, failure x2 `ALL GREEN`, the fault gate default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL
+  GREEN` (255 ok each), twin x2 `cached_ok=7/7`, `KV-HOST-PAUSE-DEMOTE GATE: ALL GREEN` (40 ok), `SPEC-ON-CACHE-HIT
+  GATE: ALL GREEN (qwen)` OFF and ON (61 and 68 ok); the unit cells `unit-cells parallel=3/3 engine-serial-rc=0
+  door-rc=0 cpu-rc=0 engine-census-rc=0 tier-rc=0` (the door cells 18 passed, the CPU censuses 38 with the four day-51
+  cells). P passes (a).
+
+**Verdict, as registered: P FAILS (g) in both orders** (the chained request +1.40 / +1.54 ms against +1.0) and passes
+(a) to (f). By section 1's rule P is not the door's copy program on this class, and it is reverted in one commit.
+
+**What the cell read** (readings, no clause):
+
+1. The mechanism works as designed where the tier fills: every steady demote a full hit (`reserve 96 of 96 staged`),
+   the copy 7.91 ms against 23.08 / 23.23 with no faults, the publication one poll earlier (wall 88.40 / 88.50 against
+   100.80 / 100.90). The refill runs 21.3 ms per demote there (38306 faults, off the job, never yielded in that cell).
+2. Where entries free (the free cell, the promote cell, the chain), the refill reuses freed memory (7.6 to 8.0 ms at
+   5376 to 6144 faults, 5.1 ms at none in the chain) and the copy is the same 7.9 ms on both arms: P buys nothing
+   there, as section 1 predicted for the chain.
+3. Where the chain's +1.4 ms sits (`readings/publication-split.log`, `day51-publication-split.py`, written after the
+   verdict): the chain's demote holds the owner thread 36.82 / 37.16 ms on P against 35.96 / 35.92 on base, and the
+   difference is in the publication's `take-back bind and publish` segment, 10.28 / 10.43 ms against 9.39 / 9.36 (+0.89
+   / +1.07). The pre-submit (26.00 / 26.11 against 25.81 / 26.01) and the helper (122.6 against 122.5) are flat. In
+   the chain, every publication replaces the previous host copy of the same prompt, so that segment frees the replaced
+   entry's heap payloads and its 32 pinned leases on the owner thread. The cause of the extra millisecond on P is not
+   placed by these lines (the segment is not split).
+4. The reserve's resident cost, per boot at its stop: VmRSS +149 to +153 MB on P in every cell (3038 against 2889 MB
+   in the demote cell), one image's recurrent bytes, as stated.
+5. Two owner-thread prices this shape shows on the base arm, beside the design: a long demote's pre-submit holds the
+   owner 25.8 to 26.0 ms, 25.3 to 25.5 of it in the pinned lease allocations (OWED item 19), and each publication that
+   replaces a host entry holds it 9.4 ms in `take-back bind and publish` (the replaced entry's frees: OWED item 14's
+   subject). Both are the tenant's tick.
+
+**What follows.** P is reverted (`git revert` of `d82738c14`, code and its TESTING.md entry, in one commit). Item 17
+stays open: a revision is pre-registered anew before its code. Its obvious shape, from reading 2, is a reserve that
+refills only while the copy it replaces would fault (the tier filling) and holds nothing where freed memory is reused;
+it must first place the chain's extra millisecond (a split of the publication segment), because a revision that simply
+avoids the regime would not say whether reserve-provenance buffers cost more to free.
