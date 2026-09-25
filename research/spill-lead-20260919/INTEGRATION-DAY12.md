@@ -3756,6 +3756,83 @@ gap), WP-B stopped with its second sitting running on BOX9. The local 5090 waits
   against the one-numeric-program rule; the alternative rewinds to the grid checkpoint. B prices the rewind first.
 - memra#464's guard seed format (money path); BOX3's detached OS volume.
 
+## integ61 (`lane/spill-integ61-20260925`): C days 59 to 62 (`MEMRA_MOE_PREFETCH=1` decided on the target card, pf_wins; the door's gap to it attributed; I11 improves, I12 flat; the tuned door still loses to the prefetch arm by half its former gap)
+Lane tip merged: C `e6217375e`, which already carries main `7bf457384` (#724), so the branch is a fast-forward. The
+engine change, all behind the default-absent CLI door `--experts-via-tier`, plus one FLAGS row:
+- `banked_residency/native.rs`, `moe_cache.rs`, `memra-tier/src/bank/*`: I11 changes 1 to 5 (the largest computes each
+  record's ticket metadata allowance once instead of JSON-encoding it on every ticket) and I12 (finished leases retire
+  only where a lease is taken, not on every admission). Change 6 read flat on the CPU (3599 against 3601 ns) and was
+  reverted before any card cell (`a068ee37d`).
+- `run_gen.rs`: the log-only `--moe-dispatch-clock` (documented in `MOE-SLOT-CACHE-DOOR.md`).
+- `docs/FLAGS.md`: the `MEMRA_MOE_PREFETCH=1` row now carries decide-by 2026-10-04 and its deciding cell.
+- No new `unsafe`, no new `MEMRA_*` read.
+
+**C days 59 to 62, target card (BOX12, 04:35Z to 05:00Z, 31 to 51 C; 635 receipts mirrored into `pro-single-day61/`,
+635 of 635 against the box manifest).** Verbatim:
+1. **`MEMRA_MOE_PREFETCH=1` (C10):** `DAY59 G1 rig=pro-single slots=9986 exits={'off': 0, 'pf': 0} match=True
+   one_tape=True -> PASS` (the 512-slot line PASS too); `DAY59 G2 rig=pro-single exit=0 k_lines=8 k_pass=8 -> PASS`;
+   `DAY59 G3 rig=pro-single requests=7 equal=7 errors=[] -> PASS`; `DAY59 VERDICT rig=pro-single shape=pftime
+   integrity=ok -> pf_wins` (gen-only decode 0.310 to 0.255 s); `DAY59 VERDICT rig=pro-single shape=pfnaked
+   integrity=ok -> pf_flat` (at the naked shape every expert stays resident, so there is nothing to prefetch). By the
+   registered rule it qualifies as the target card's naked default; the promotion is the owner's.
+2. **The gap (C11):** `DAY60 GAP rig=pro-single integrity=ok window: wall_gap=+0.437 cpu_gap=+0.699 top=prefetch_ns
+   cpu_side; gen: wall_gap=+0.688 cpu_gap=+1.478 top=prefetch_ns cpu_side`. The largest part is the door's per-block
+   owner demand on the prefetch path (`pf_demand_ns` +0.464 ms per window token). R2 reads `over_bound`: the clock's own
+   cost on the door is 0.047 ms per token against a 0.044 bound, and it stays recorded as over bound.
+3. **I11 and I12:** `DAY61 VERDICT rig=pro-single integrity=ok i11=improves i12=flat door=i12 vs_ref=loses (window:
+   i11=improves i12=flat vs_ref=loses)`. The door now reads 0.266 s gen-only and 0.234 s window, against the prefetch
+   arm's 0.255 and 0.226; the gap per token fell from +0.69 to +0.34 ms (generated) and from +0.44 to +0.25 ms (window).
+   I12 reads flat and stays, as registered. The CPU ladder per host-hit prefetch cycle: 5370 ns before I11, 3620 ns after
+   changes 1 to 5 (32.6% less).
+4. **The packet (C3):** `DAY62 PACKET LINES checked=63 missing=0 -> PASS`; the contracts-door packet is current through
+   lane A day 41 and ruling 54, and still recommends nothing.
+
+**Lead review.**
+- The I11 changes move work off the per-ticket path without changing what a lease carries: the allowance is the same
+  number computed once. I12 moves the retire point, not the retire condition (a lease finishes only after its copy
+  event completes, ruling 55's review).
+- The dispatch clock is log-only and costs 0.047 ms per token on the door (the R2 reading), so it is off unless asked.
+- One numeric program per request holds: the prefetch arm passed the tape, speculative and serving identity gates on the
+  target card (G1 to G3); the door's identity checks are unchanged.
+
+**Ruling 56:**
+- Days 59 to 62 are read as registered; the R2 `over_bound` stays in the record.
+- `MEMRA_MOE_PREFETCH=1` qualifies as the target card's naked default by its registered rule. The owner decides the
+  promotion by 2026-10-04; the 5090 cells wait for the card's reset.
+- The tuned door still loses to the prefetch arm. That reading goes to the owner as it is. C continues with DAY63 (the
+  owner demand on the prefetch path).
+
+**Checks.**
+- CPU battery on `e6217375e`, 15 of 15 rc=0:
+  - portable suites: 384 passed, 0 skipped;
+  - tests: server 917, engine lib 567, tier 297 across 8 binaries, pytest 87 passed;
+  - clippy `-D warnings` twice;
+  - fmt, check-flags, publish census, docs registry, conflict markers, workflow keys, perf board and
+    `git diff --check` (`integ61-cpu-battery/`).
+- The local RTX 5090 still needs a reset, so the GPU battery ran on BOX12 (the RTX PRO 6000 Workstation box C's sitting
+  used, kept for this after C released it) with the same 9B model the 5090 battery uses (sha256 `52c9cceb...`, linked at
+  the rig's path before the battery so serve-smoke reads it), under the pair lock `/tmp/memra-gpu.lock`
+  (`integ61-pro/`, 397 receipts mirrored and checked). Binary `76d99180`, hashed after serve-smoke's build. One
+  collector hold, 05:24Z to 05:39Z. Verbatim:
+  - serve-smoke `serve-smoke: 0 failed` (its Q35 coldhol arm skips for want of the 35B at that path, as on the 5090 rig);
+  - the engine span cells `10 passed` and the worker cells `18 passed`, both serial;
+  - identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok);
+  - fault default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 229 ok each;
+  - hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 61 and 68 ok;
+  - `ADMIT-MEM BURST GATE: ALL GREEN` (64 x 200, no OOM on the 96 GB card);
+  - `SPEC-CTX-EDGE GATE: ALL GREEN`.
+- BOX12 was destroyed after the mirror.
+
+**Running.** WP-A (BOX10), WP-C (DAY63), WP-B stopped with its second sitting on BOX9. The local 5090 waits for the
+owner's reset.
+
+**Owner decisions flagged.**
+- Reset the local RTX 5090 (`GPU requires reset` since 01:25Z).
+- 2026-10-04: `MEMRA_MOE_PREFETCH=1` (qualifies on the target card), the MoE slot cache door (`door_wins` against the
+  legacy, loses to the prefetch arm), `--kv-allocator vmm`.
+- 2026-10-05, the contracts door; 2026-10-06, the park door; 2026-10-07, `MEMRA_ADMIT_BY_MEMORY`.
+- B's question on the verbatim-extension resume; memra#464's guard seed format; BOX3's detached OS volume.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
