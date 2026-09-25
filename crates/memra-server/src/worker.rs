@@ -8634,6 +8634,11 @@ struct HostPrefixCache {
     /// instant its current tick began, stamped at the loop top before the tick-top polls; the
     /// promote's timeline (its submission, each settle step) reads it.
     tick_top: Option<(u64, Instant)>,
+    /// WP-A day 47 (`DAY47.md` design V): the parks a published pause snapshot demote releases, and
+    /// the shells of pause shape-2 demotes that ended unpublished; both drained by the run loop's
+    /// tick top, which holds the continuation pool and the device index.
+    park_releases: Vec<ParkRelease>,
+    reinstate: std::rc::Rc<std::cell::RefCell<Vec<PrefixEntry>>>,
     tier: Option<HostTierContext>,
     arena: Option<memra_engine::PinnedHostArena>,
     arena_reserve_ms: f64,
@@ -10148,6 +10153,90 @@ struct PendingDemote {
     /// request owns.
     parked: Vec<String>,
     reparks: u32,
+    /// WP-A day 47 (`DAY47.md` design V): a pause sweep's shape-1 demote (its boundary snapshot):
+    /// the park it releases once the publication lands (`HostPrefixCache.park_releases`).
+    release: Option<ParkRelease>,
+    /// WP-A day 47 (design V): a pause sweep's shape-2 demote (a resident entry that left the
+    /// device index for it): every exit that drops the shell unpublished reinstates it
+    /// (`HostDemoteShell`).
+    reinstate: bool,
+}
+
+/// WP-A day 47 (`DAY47.md` design V, shape 1): the continuation park a pause sweep's snapshot demote
+/// releases once it publishes: the park in `reuse[pool_key]` whose `fed` equals `tape`, if it is still
+/// there (a session that resumed consumed it, and then nothing is released).
+#[derive(Clone, Debug, PartialEq)]
+struct ParkRelease {
+    pool_key: PoolKey,
+    tape: Vec<u32>,
+}
+
+/// WP-A day 47 (`DAY47.md` design V): a pending demote's source shell while one settle step runs.
+/// A pause sweep's shape-2 demote (`PendingDemote.reinstate`) hands the whole shell to the context's
+/// reinstate queue on every exit that drops it unpublished (a typed refusal, a leaked ticket, a
+/// `Hashing` latch or reply mismatch, an unarmed tier, a refused span pair), and the tick top
+/// re-inserts it into the device index; a shape-1 demote (`PendingDemote.release`) names the kept
+/// park on such an exit. `disarm` on the publication and on a quarantined source (not whole);
+/// `keep` hands the entry back when the demote continues.
+struct HostDemoteShell {
+    entry: Option<PrefixEntry>,
+    reinstate: Option<std::rc::Rc<std::cell::RefCell<Vec<PrefixEntry>>>>,
+    park_kept_note: bool,
+}
+impl HostDemoteShell {
+    fn arm(entry: PrefixEntry, pending: &PendingDemote, host: &HostPrefixCache) -> Self {
+        Self::new(
+            entry,
+            pending.reinstate.then(|| host.reinstate.clone()),
+            pending.release.is_some(),
+        )
+    }
+    fn new(
+        entry: PrefixEntry,
+        reinstate: Option<std::rc::Rc<std::cell::RefCell<Vec<PrefixEntry>>>>,
+        park_kept_note: bool,
+    ) -> Self {
+        Self {
+            entry: Some(entry),
+            reinstate,
+            park_kept_note,
+        }
+    }
+    fn keep(mut self) -> PrefixEntry {
+        self.disarm();
+        self.entry
+            .take()
+            .expect("a demote shell holds its entry until it drops")
+    }
+    fn disarm(&mut self) {
+        self.reinstate = None;
+        self.park_kept_note = false;
+    }
+}
+impl std::ops::Deref for HostDemoteShell {
+    type Target = PrefixEntry;
+    fn deref(&self) -> &PrefixEntry {
+        self.entry
+            .as_ref()
+            .expect("a demote shell holds its entry until it drops")
+    }
+}
+impl std::ops::DerefMut for HostDemoteShell {
+    fn deref_mut(&mut self) -> &mut PrefixEntry {
+        self.entry
+            .as_mut()
+            .expect("a demote shell holds its entry until it drops")
+    }
+}
+impl Drop for HostDemoteShell {
+    fn drop(&mut self) {
+        if self.park_kept_note {
+            eprintln!("[prefix-host] pause demote: host copy did not publish; park kept");
+        }
+        if let (Some(e), Some(q)) = (self.entry.take(), self.reinstate.take()) {
+            q.borrow_mut().push(e);
+        }
+    }
 }
 
 /// WP-A day 28 (memra#536 Move 1 owed item 2, lead ruling 39, `research/spill-a-20260919/DAY28.md`):
@@ -13973,6 +14062,8 @@ fn host_demote_prefix_ref(
                 },
                 parked: Vec::new(),
                 reparks: 0,
+                release: None,
+                reinstate: false,
             });
             // The line carries no "(contracts door): " marker: that form is the door's REFUSAL
             // shape and the fault gate counts it (`no_extra_refusal`); a submission is not one.
@@ -14154,7 +14245,7 @@ fn host_demote_settle_with_deadline(
         ));
     }
     pending.polls += 1;
-    let (mut dead, contract) = match (pending.dead.take(), pending.contract.take()) {
+    let (dead, contract) = match (pending.dead.take(), pending.contract.take()) {
         (Some(dead), Some(contract)) => (dead, contract),
         (dead, contract) => {
             // FAIL CLOSED (revuto on #622). Unreachable by construction (the sink attaches the
@@ -14212,6 +14303,9 @@ fn host_demote_settle_with_deadline(
             });
         }
     };
+    // WP-A day 47 (`DAY47.md` design V): the shell under its guard for this step (a pause shape-2
+    // demote reinstates it on every unpublished exit below).
+    let mut dead = HostDemoteShell::arm(dead, &pending, host);
     let seq = contract.ticket.sequence;
     let submitted = contract.submitted;
     // WP-A day 30: the batch's item census for the copy-complete line (KV items plus f32 spans).
@@ -14224,7 +14318,7 @@ fn host_demote_settle_with_deadline(
     };
     match settled {
         Ok(ContractSettle::Pending(contract)) => {
-            pending.dead = Some(dead);
+            pending.dead = Some(dead.keep());
             pending.contract = Some(contract);
             pending.owner.copy_settle_ms += held.elapsed().as_secs_f64() * 1e3;
             host.demoting = Some(pending);
@@ -14304,14 +14398,20 @@ fn host_demote_settle_with_deadline(
                     pending.parked.len(),
                     pending.reparks
                 );
-                return Some(host_demote_publish(
+                let release = pending.release.take();
+                let outcome = host_demote_publish(
                     host,
                     &dead,
                     pending.image,
                     pending.host_bytes,
                     pending.t0,
                     None,
-                ));
+                );
+                if outcome == HostDemoteOutcome::Demoted {
+                    dead.disarm();
+                    host_pause_published(host, release, pending.reinstate, &dead);
+                }
+                return Some(outcome);
             }
             let n = payloads.len();
             let bytes: usize = payloads
@@ -14439,7 +14539,7 @@ fn host_demote_settle_with_deadline(
                  views ({:.1}MB) for the bind's re-hash",
                 lease_bytes as f64 / 1e6
             );
-            pending.dead = Some(dead);
+            pending.dead = Some(dead.keep());
             pending.owner.copy_settle_ms += held.elapsed().as_secs_f64() * 1e3;
             // WP-A day 38 (P): the copy phase's parked ids ride into the `Hashing` phase.
             let hashing = PendingHashing {
@@ -14488,6 +14588,8 @@ fn host_demote_settle_with_deadline(
                     HostDemoteOutcome::Failed
                 }
                 HostContractFailure::SourceQuarantined(err) => {
+                    // WP-A day 47 (design V): not whole, so never reinstated.
+                    dead.reinstate = None;
                     eprintln!(
                         "[prefix-host] demote failed ({err}); nothing demoted, and the device \
                          entry is no longer whole: its planes stay with the quarantined transfer \
@@ -14501,6 +14603,86 @@ fn host_demote_settle_with_deadline(
                 }
             })
         }
+    }
+}
+
+/// WP-A day 47 (`DAY47.md` design V): the tick top's drain of the pause sweep's finished off-tick
+/// demotes. Each queued release drops the park in `reuse[pool_key]` whose `fed` equals its tape, if it
+/// is still there; each reinstated shell goes back into the device index (`insert_demoting`: a capacity
+/// eviction it causes demotes through the sink as any insert's does).
+fn host_pause_drain(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    host: &mut HostPrefixCache,
+    reuse: &mut HashMap<PoolKey, Vec<ReuseEntry>>,
+) {
+    for r in std::mem::take(&mut host.park_releases) {
+        let at = reuse
+            .get(&r.pool_key)
+            .and_then(|pool| pause_park_index(pool.iter().map(|e| e.fed.as_slice()), &r.tape));
+        match at {
+            Some(pi) => {
+                let pool = reuse
+                    .get_mut(&r.pool_key)
+                    .expect("park index came from this pool");
+                let fed_len = pool[pi].fed.len();
+                drop(pool.remove(pi));
+                if pool.is_empty() {
+                    reuse.remove(&r.pool_key);
+                }
+                host.pause_demotes += 1;
+                eprintln!(
+                    "[prefix-host] pause demote: plain park released off the tick ({fed_len} fed \
+                     tokens, model {}{})",
+                    r.pool_key.0,
+                    ns_suffix(&r.pool_key.1),
+                );
+            }
+            None => eprintln!(
+                "[prefix-host] pause demote: plain park already gone at the publication (the \
+                 session resumed it); nothing released ({} tokens, model {}{})",
+                r.tape.len(),
+                r.pool_key.0,
+                ns_suffix(&r.pool_key.1),
+            ),
+        }
+    }
+    let back: Vec<PrefixEntry> = std::mem::take(&mut *host.reinstate.borrow_mut());
+    for e in back {
+        let key = e.pool_key.clone();
+        eprintln!(
+            "[prefix-host] pause demote failed: device prefix entry reinstated ({} tokens, model \
+             {}{})",
+            e.toks.len(),
+            key.0,
+            ns_suffix(&key.1),
+        );
+        px.insert_demoting(&key, e, "pause reinstate", engine, host);
+    }
+}
+
+/// WP-A day 47 (`DAY47.md` design V): a pause sweep's demote published: shape 1's park release goes
+/// to the tick top's queue (the continuation pool is the run loop's); shape 2's entry already left
+/// the device index, so its publication is the release, counted here.
+fn host_pause_published(
+    host: &mut HostPrefixCache,
+    release: Option<ParkRelease>,
+    reinstate: bool,
+    dead: &PrefixEntry,
+) {
+    if let Some(r) = release {
+        host.park_releases.push(r);
+    }
+    if reinstate {
+        host.pause_demotes += 1;
+        eprintln!(
+            "[prefix-host] pause demote: device prefix entry released off the tick ({} tokens, \
+             {:.1}MB, model {}{})",
+            dead.toks.len(),
+            dead.bytes as f64 / 1e6,
+            dead.pool_key.0,
+            ns_suffix(&dead.pool_key.1),
+        );
     }
 }
 
@@ -14622,6 +14804,8 @@ fn host_demote_settle_hashing(
             "no shell",
         );
     };
+    // WP-A day 47 (`DAY47.md` design V): the shell under its guard for this step.
+    let dead = HostDemoteShell::arm(dead, &pending, host);
     let elapsed = handed.elapsed();
     // WP-A day 42 (`DAY42.md` design S2): the span receipt BEFORE the helper's reply. Pending, the
     // entry stays `Hashing` under the same deadline; observed, its pairs are kept and every staging
@@ -14660,7 +14844,7 @@ fn host_demote_settle_hashing(
                 );
             }
             Ok(None) if elapsed < deadline => {
-                pending.dead = Some(dead);
+                pending.dead = Some(dead.keep());
                 pending.owner.hash_polls_ms += held.elapsed().as_secs_f64() * 1e3;
                 pending.hashing = Some(hashing);
                 host.demoting = Some(pending);
@@ -14733,7 +14917,7 @@ fn host_demote_settle_hashing(
                     "hash never landed",
                 );
             }
-            pending.dead = Some(dead);
+            pending.dead = Some(dead.keep());
             pending.owner.hash_polls_ms += held.elapsed().as_secs_f64() * 1e3;
             pending.hashing = Some(hashing);
             host.demoting = Some(pending);
@@ -14904,6 +15088,11 @@ fn host_demote_settle_hashing(
         pending.t0,
         Some(&digests),
     );
+    let mut dead = dead;
+    if outcome == HostDemoteOutcome::Demoted {
+        dead.disarm();
+        host_pause_published(host, pending.release.take(), pending.reinstate, &dead);
+    }
     if outcome == HostDemoteOutcome::Demoted {
         let publish_ms = publish_t.elapsed().as_secs_f64() * 1e3;
         let owner = pending.owner;
@@ -14978,6 +15167,13 @@ struct PauseCandidate {
     tape: Vec<u32>,
     armed_at: Instant,
     deadline: Instant,
+    /// WP-A day 47 (`DAY47.md` design V, section 1a): the shapes still owed. A fired candidate
+    /// whose shape cannot start (a demote or a promote in flight: starting would Block-settle it)
+    /// stays pending with its owed shapes and is tried again at a later tick; `started` records
+    /// that some shape submitted (a candidate that resolves without one is a cancel).
+    shape1_owed: bool,
+    shape2_owed: bool,
+    started: bool,
 }
 
 /// Bound on outstanding pause candidates: each owns a tape clone (<= ~1 MiB at a 262k
@@ -15054,6 +15250,9 @@ fn arm_pause_candidate(
         tape,
         armed_at: now,
         deadline: now + delay,
+        shape1_owed: true,
+        shape2_owed: true,
+        started: false,
     });
 }
 
@@ -24250,6 +24449,10 @@ pub fn run(
         // primes behind it; a ready restore its request never consumed expires typed.
         host_restore_settle_pending(&mut px, &mut hpx, ContractWait::Poll, "the tick top");
         host_restore_expire_ready(&mut px, &mut hpx);
+        // WP-A day 47 (`DAY47.md` design V): the pause sweep's off-tick demotes, finished. A
+        // published snapshot demote releases its park (if the session did not resume it meanwhile);
+        // a shape-2 entry whose demote ended unpublished goes back into the device index.
+        host_pause_drain(&engine, &mut px, &mut hpx, &mut reuse);
         // Cheap runtime peer validation stays on its copy-count cadence here, between scheduler
         // ticks on the CUDA owner thread. Idle-only rungs remain pending. A mismatch continues on
         // validated host bounce; only inability to arm that staging reaches the panic ladder.
@@ -28490,128 +28693,185 @@ pub fn run(
             let now = Instant::now();
             let mut ci = 0;
             while ci < pause_pending.len() {
-                if now < pause_pending[ci].deadline {
+                // WP-A day 47 (`DAY47.md` design V, section 1a): a shape starts only while no demote
+                // and no promote is in flight (starting one would Block-settle it: the stall V
+                // removes); the candidate waits with its owed shapes for a later tick.
+                if now < pause_pending[ci].deadline
+                    || hpx.demoting.is_some()
+                    || hpx.promoting.is_some()
+                {
                     ci += 1;
                     continue;
                 }
-                let cand = pause_pending.swap_remove(ci);
-                let mut demoted = 0u64;
-                // Shape 1: the plain park.
-                if let Some(pi) = pause_park_index(
-                    reuse
-                        .get(&cand.pool_key)
-                        .into_iter()
-                        .flatten()
-                        .map(|e| e.fed.as_slice()),
-                    &cand.tape,
-                ) {
-                    let pool = reuse
-                        .get_mut(&cand.pool_key)
-                        .expect("park index came from this pool");
-                    let park = &pool[pi];
-                    match prefix_snapshot(
-                        &engine,
-                        &park.cache,
-                        &cand.pool_key,
-                        &park.fed,
-                        &park.last_logits,
-                        loaded.get(&cand.pool_key.0).map(|l| &l.model),
+                let mut cand = pause_pending.swap_remove(ci);
+                let mut submitted = false;
+                // Shape 1: the plain park. Its boundary snapshot demotes off the tick; the park
+                // stays until the publication releases it (the tick top's `park_releases` drain).
+                if cand.shape1_owed {
+                    cand.shape1_owed = false;
+                    if let Some(pi) = pause_park_index(
+                        reuse
+                            .get(&cand.pool_key)
+                            .into_iter()
+                            .flatten()
+                            .map(|e| e.fed.as_slice()),
+                        &cand.tape,
                     ) {
-                        Ok(mut entry) => {
-                            match host_demote_prefix_ref(
-                                &engine,
-                                &mut hpx,
-                                &mut entry,
-                                ContractD2h::OnTick,
-                            ) {
-                                HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated => {
-                                    drop(entry); // the boundary copy's device planes free here
-                                    let fed_len = pool[pi].fed.len();
-                                    drop(pool.remove(pi));
-                                    if pool.is_empty() {
-                                        reuse.remove(&cand.pool_key);
+                        let pool = reuse
+                            .get_mut(&cand.pool_key)
+                            .expect("park index came from this pool");
+                        let park = &pool[pi];
+                        match prefix_snapshot(
+                            &engine,
+                            &park.cache,
+                            &cand.pool_key,
+                            &park.fed,
+                            &park.last_logits,
+                            loaded.get(&cand.pool_key.0).map(|l| &l.model),
+                        ) {
+                            Ok(mut entry) => {
+                                let fed_len = pool[pi].fed.len();
+                                match host_demote_prefix_ref(
+                                    &engine,
+                                    &mut hpx,
+                                    &mut entry,
+                                    ContractD2h::OffTick,
+                                ) {
+                                    HostDemoteOutcome::Demoting => {
+                                        if let Some(pending) = hpx.demoting.as_mut() {
+                                            pending.dead = Some(entry);
+                                            pending.release = Some(ParkRelease {
+                                                pool_key: cand.pool_key.clone(),
+                                                tape: cand.tape.clone(),
+                                            });
+                                        }
+                                        eprintln!(
+                                            "[prefix-host] pause demote: plain park snapshot \
+                                             demoting off the tick ({fed_len} fed tokens, model \
+                                             {}{}); the park stays until the publication",
+                                            cand.pool_key.0,
+                                            ns_suffix(&cand.pool_key.1),
+                                        );
+                                        cand.started = true;
+                                        submitted = true;
                                     }
-                                    eprintln!(
-                                        "[prefix-host] pause demote: plain park released \
-                                     ({fed_len} fed tokens, model {}{})",
-                                        cand.pool_key.0,
-                                        ns_suffix(&cand.pool_key.1),
-                                    );
-                                    demoted += 1;
-                                }
-                                HostDemoteOutcome::Failed
-                                | HostDemoteOutcome::Off
-                                | HostDemoteOutcome::SourceQuarantined
-                                | HostDemoteOutcome::Demoting => {
-                                    // The boundary snapshot was a copy; the park itself is intact
-                                    // whatever the transfer kept. `Demoting` is unreachable on the
-                                    // by-reference route (WP-A day 17) and reads as unpublished.
-                                    eprintln!(
-                                        "[prefix-host] pause demote: host copy did not \
-                                     publish; park kept"
-                                    );
+                                    HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated => {
+                                        // Published (a whole image) or evaporated at the submit:
+                                        // the park releases now, as on the tick.
+                                        drop(entry);
+                                        drop(pool.remove(pi));
+                                        if pool.is_empty() {
+                                            reuse.remove(&cand.pool_key);
+                                        }
+                                        eprintln!(
+                                            "[prefix-host] pause demote: plain park released \
+                                             ({fed_len} fed tokens, model {}{})",
+                                            cand.pool_key.0,
+                                            ns_suffix(&cand.pool_key.1),
+                                        );
+                                        hpx.pause_demotes += 1;
+                                        cand.started = true;
+                                    }
+                                    HostDemoteOutcome::Failed
+                                    | HostDemoteOutcome::Off
+                                    | HostDemoteOutcome::SourceQuarantined => {
+                                        // The boundary snapshot was a copy; the park itself is
+                                        // intact whatever the transfer kept.
+                                        eprintln!(
+                                            "[prefix-host] pause demote: host copy did not \
+                                             publish; park kept"
+                                        );
+                                    }
                                 }
                             }
-                        }
-                        Err(err) => eprintln!(
-                            "[prefix-host] pause demote: boundary snapshot refused \
-                             ({err}); park kept"
-                        ),
-                    }
-                }
-                // Shape 2: the deepest resident device prefix entry.
-                if let PausePxDecision::Demote(ei) = pause_px_decision(
-                    px.entries
-                        .get(&cand.pool_key)
-                        .into_iter()
-                        .flatten()
-                        .map(|e| (e.toks.as_slice(), e.last_use, e.pins)),
-                    &cand.tape,
-                    cand.armed_at,
-                ) && let Some(entry) = px
-                    .entries
-                    .get_mut(&cand.pool_key)
-                    .and_then(|pool| pool.get_mut(ei))
-                {
-                    let outcome =
-                        host_demote_prefix_ref(&engine, &mut hpx, entry, ContractD2h::OnTick);
-                    if outcome == HostDemoteOutcome::SourceQuarantined {
-                        // Option B: the transfer engine kept the entry's planes (a quarantined
-                        // completion); the entry is not whole and must not stay resident.
-                        if let Some(dead) = px.remove_at(&cand.pool_key, ei) {
-                            eprintln!(
-                                "[prefix-host] pause demote: device prefix entry DROPPED, its \
-                                 planes stay with a quarantined D2H ({} tokens, model {}{})",
-                                dead.toks.len(),
-                                cand.pool_key.0,
-                                ns_suffix(&cand.pool_key.1),
-                            );
-                            drop(dead);
-                        }
-                    } else if matches!(
-                        outcome,
-                        HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated
-                    ) {
-                        // `remove_at` refuses pinned entries, the second guard behind the
-                        // decision's pin check; a refusal leaves a redundant host twin,
-                        // exactly the promote path's kept-twin state.
-                        if let Some(dead) = px.remove_at(&cand.pool_key, ei) {
-                            eprintln!(
-                                "[prefix-host] pause demote: device prefix entry released \
-                                 ({} tokens, {:.1}MB, model {}{})",
-                                dead.toks.len(),
-                                dead.bytes as f64 / 1e6,
-                                cand.pool_key.0,
-                                ns_suffix(&cand.pool_key.1),
-                            );
-                            drop(dead);
-                            demoted += 1;
+                            Err(err) => eprintln!(
+                                "[prefix-host] pause demote: boundary snapshot refused \
+                                 ({err}); park kept"
+                            ),
                         }
                     }
                 }
-                if demoted > 0 {
-                    hpx.pause_demotes += demoted;
-                } else {
+                // Shape 2: the deepest resident device prefix entry. It leaves the device index
+                // into the sink's route; a failure reinstates it (the tick top's `reinstate`
+                // drain, or here for a refusal before the submit). Owed to a later tick while
+                // shape 1's demote is in flight.
+                if cand.shape2_owed && !submitted {
+                    cand.shape2_owed = false;
+                    if let PausePxDecision::Demote(ei) = pause_px_decision(
+                        px.entries
+                            .get(&cand.pool_key)
+                            .into_iter()
+                            .flatten()
+                            .map(|e| (e.toks.as_slice(), e.last_use, e.pins)),
+                        &cand.tape,
+                        cand.armed_at,
+                    ) && let Some(mut dead) = px.remove_at(&cand.pool_key, ei)
+                    {
+                        let (toks, mb) = (dead.toks.len(), dead.bytes as f64 / 1e6);
+                        match host_demote_prefix_ref(
+                            &engine,
+                            &mut hpx,
+                            &mut dead,
+                            ContractD2h::OffTick,
+                        ) {
+                            HostDemoteOutcome::Demoting => {
+                                if let Some(pending) = hpx.demoting.as_mut() {
+                                    pending.dead = Some(dead);
+                                    pending.reinstate = true;
+                                }
+                                eprintln!(
+                                    "[prefix-host] pause demote: device prefix entry demoting \
+                                     off the tick ({toks} tokens, {mb:.1}MB, model {}{})",
+                                    cand.pool_key.0,
+                                    ns_suffix(&cand.pool_key.1),
+                                );
+                                cand.started = true;
+                            }
+                            HostDemoteOutcome::Demoted | HostDemoteOutcome::Evaporated => {
+                                eprintln!(
+                                    "[prefix-host] pause demote: device prefix entry released \
+                                     ({toks} tokens, {mb:.1}MB, model {}{})",
+                                    cand.pool_key.0,
+                                    ns_suffix(&cand.pool_key.1),
+                                );
+                                drop(dead);
+                                hpx.pause_demotes += 1;
+                                cand.started = true;
+                            }
+                            HostDemoteOutcome::SourceQuarantined => {
+                                // Option B: the transfer engine kept the entry's planes (a
+                                // quarantined completion); the entry is not whole.
+                                eprintln!(
+                                    "[prefix-host] pause demote: device prefix entry DROPPED, its \
+                                     planes stay with a quarantined D2H ({toks} tokens, model {}{})",
+                                    cand.pool_key.0,
+                                    ns_suffix(&cand.pool_key.1),
+                                );
+                                drop(dead);
+                            }
+                            HostDemoteOutcome::Failed | HostDemoteOutcome::Off => {
+                                eprintln!(
+                                    "[prefix-host] pause demote failed: device prefix entry \
+                                     reinstated ({toks} tokens, model {}{})",
+                                    cand.pool_key.0,
+                                    ns_suffix(&cand.pool_key.1),
+                                );
+                                let key = cand.pool_key.clone();
+                                px.insert_demoting(
+                                    &key,
+                                    dead,
+                                    "pause reinstate",
+                                    &engine,
+                                    &mut hpx,
+                                );
+                            }
+                        }
+                    }
+                }
+                if cand.shape1_owed || cand.shape2_owed {
+                    // A shape is still owed (shape 1's demote is in flight): a later tick.
+                    pause_pending.push(cand);
+                } else if !cand.started {
                     hpx.pause_cancels += 1;
                     eprintln!(
                         "[prefix-host] pause cancelled: nothing demoted for the {}-token \
@@ -45541,6 +45801,8 @@ mod tests {
             owner: super::DemoteOwnerLedger::default(),
             parked: Vec::new(),
             reparks: 0,
+            release: None,
+            reinstate: false,
         });
     }
 
@@ -47765,6 +48027,8 @@ mod tests {
             owner: super::DemoteOwnerLedger::default(),
             parked: Vec::new(),
             reparks: 0,
+            release: None,
+            reinstate: false,
         });
         bytes
     }
@@ -48487,8 +48751,9 @@ mod tests {
             .collect();
         assert_eq!(
             code.join("\n").matches("ContractD2h::OffTick").count(),
-            2,
-            "the sink and the route selector in host_entry_from_device, nobody else"
+            4,
+            "the sink, the route selector in host_entry_from_device and (WP-A day 47, design V) the \
+             pause sweep's two shapes, nobody else"
         );
         // The settle-with driver is the only place that publishes a Demoting image, and it does
         // so through the shared publication function after `Done`.
@@ -48601,6 +48866,129 @@ mod tests {
         );
         let disable = body("    fn disable(&mut self, why: &str) {");
         assert!(disable.contains("tier.staging.borrow_mut().clear();"));
+    }
+
+    /// WP-A day 47 (`DAY47.md` design V, sections 1 and 1a; CPU census): the pause sweep's two shapes
+    /// demote off the tick. No pause path takes the on-tick route or starts while a demote or a promote
+    /// is in flight (a start would Block-settle it); shape 1 attaches its snapshot shell and the park's
+    /// release to the pending demote, shape 2 its shell and the reinstate mark; the publication hooks
+    /// queue the release and count shape 2; the tick top drains both queues after its settle calls and
+    /// before admission; both settle steps hold the shell under `HostDemoteShell`, handing it back on
+    /// every continuing exit and disarming it only on the publication or a quarantined source. The
+    /// admission flush and the handoff export keep the on-tick route (their two sites).
+    #[test]
+    fn day47_the_pause_sweep_demotes_off_the_tick() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let body = |start: &str| {
+            let a = at(production, start);
+            &production[a..a + production[a..].find("\n}\n").unwrap()]
+        };
+        let sweep = &production[at(production, "        if !pause_pending.is_empty() {")..];
+        let sweep = &sweep[..at(sweep, "        // publish serving metrics")];
+        assert!(
+            !sweep.contains("ContractD2h::OnTick"),
+            "no pause shape on the tick"
+        );
+        assert_eq!(sweep.matches("ContractD2h::OffTick").count(), 2);
+        let wait = at(sweep, "|| hpx.demoting.is_some()");
+        assert!(wait < at(sweep, "|| hpx.promoting.is_some()"));
+        assert!(wait < at(sweep, "let mut cand = pause_pending.swap_remove(ci);"));
+        assert!(sweep.contains("pending.release = Some(ParkRelease {"));
+        assert!(sweep.contains("pending.reinstate = true;"));
+        assert!(sweep.contains("if cand.shape2_owed && !submitted {"));
+        assert!(sweep.contains("pause_pending.push(cand);"));
+        assert!(!sweep.contains("ContractWait::Block"));
+        // The tick top: the drain after the settle calls, before admission.
+        let top = &production[at(production, "    'worker: loop {")..];
+        let drain = at(
+            top,
+            "host_pause_drain(&engine, &mut px, &mut hpx, &mut reuse);",
+        );
+        assert!(at(top, "host_restore_expire_ready(&mut px, &mut hpx);") < drain);
+        assert!(drain < at(top, "// 1. Drain pending commands."));
+        let d = body("fn host_pause_drain(");
+        assert!(d.contains("pause_park_index(pool.iter().map(|e| e.fed.as_slice()), &r.tape)"));
+        assert!(d.contains("px.insert_demoting(&key, e, \"pause reinstate\", engine, host);"));
+        // The publication hooks and the shell guard in both settle steps.
+        let driver = body("fn host_demote_settle_with_deadline(");
+        let hashing = body("fn host_demote_settle_hashing(");
+        for step in [driver, hashing] {
+            assert_eq!(
+                step.matches("HostDemoteShell::arm(dead, &pending, host)")
+                    .count(),
+                1
+            );
+            assert_eq!(step.matches("pending.dead = Some(dead.keep());").count(), 2);
+            let publish = at(step, "if outcome == HostDemoteOutcome::Demoted {");
+            assert!(
+                at(&step[publish..], "dead.disarm();")
+                    < at(&step[publish..], "host_pause_published(")
+            );
+        }
+        assert_eq!(
+            driver.matches("dead.reinstate = None;").count(),
+            1,
+            "the quarantined source"
+        );
+        let hooks = body("fn host_pause_published(");
+        assert!(
+            hooks.contains("host.park_releases.push(r);")
+                && hooks.contains("host.pause_demotes += 1;")
+        );
+        let guard = body("impl Drop for HostDemoteShell {");
+        assert!(guard.contains("q.borrow_mut().push(e);"));
+        // The admission flush and the handoff export keep the on-tick route.
+        assert!(body("fn evict_all_demoting(").contains("ContractD2h::OnTick"));
+        assert!(body("fn host_handoff_export(").contains("ContractD2h::OnTick"));
+    }
+
+    /// WP-A day 47 (`DAY47.md` design V, clause (a)): the demote shell's guard. Armed for a shape-2
+    /// demote, an unpublished drop queues the whole shell (the tick top reinstates it); `disarm` (the
+    /// publication) and a cleared queue (a quarantined source) queue nothing; `keep` hands the entry
+    /// back for a continuing demote and queues nothing. The release matcher is `pause_park_index`'s
+    /// exact-fed rule (`pause_park_index_matches_the_exact_fed_tape_only`).
+    #[test]
+    fn day47_the_demote_shell_reinstates_only_unpublished_shells() {
+        let shell = || super::PrefixEntry {
+            _tier_charge: None,
+            layout_version: super::PREFIX_ENTRY_LAYOUT_VERSION,
+            pool_key: ("m".into(), String::new()),
+            toks: (0..8).collect(),
+            kv: vec![],
+            conv: vec![],
+            ssm: vec![],
+            latent: vec![],
+            tp: None,
+            pos: 8,
+            last_logits: vec![],
+            draft: None,
+            dspark_draft: None,
+            last_h: vec![],
+            bytes: 0,
+            last_use: std::time::Instant::now(),
+            id: 0,
+            pins: 0,
+        };
+        let q = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        drop(super::HostDemoteShell::new(shell(), Some(q.clone()), false));
+        assert_eq!(q.borrow().len(), 1, "an unpublished drop reinstates");
+        assert_eq!(q.borrow()[0].toks.len(), 8, "the whole shell");
+        let mut published = super::HostDemoteShell::new(shell(), Some(q.clone()), true);
+        published.disarm();
+        drop(published);
+        assert_eq!(q.borrow().len(), 1, "a publication reinstates nothing");
+        let mut quarantined = super::HostDemoteShell::new(shell(), Some(q.clone()), false);
+        quarantined.reinstate = None;
+        drop(quarantined);
+        assert_eq!(q.borrow().len(), 1, "a quarantined source is not whole");
+        let kept = super::HostDemoteShell::new(shell(), Some(q.clone()), false).keep();
+        assert_eq!(kept.toks.len(), 8);
+        assert_eq!(q.borrow().len(), 1, "a continuing demote keeps its shell");
+        drop(super::HostDemoteShell::new(shell(), None, false));
+        assert_eq!(q.borrow().len(), 1, "a sink demote's shell drops");
     }
 
     /// WP-A day 42 (`DAY42.md` design S2, sections 1 and 1a, step 10; CPU census): the span receipt
@@ -51513,10 +51901,11 @@ mod tests {
                 .contains("host.tier_charge(&dead.pool_key, class, 0, pageable as u64, false)")
         );
         assert!(hook_body.contains("HostImageFailure::SourceQuarantined(err)"));
-        // The one live-entry caller drops on the quarantined outcome.
+        // The one live-entry caller drops on the quarantined outcome (WP-A day 47, design V: the
+        // entry left the device index for its off-tick demote and is not reinstated).
         let sweep = worker.find("if !pause_pending.is_empty() {").unwrap();
-        let sweep_body = &worker[sweep..sweep + 8000];
-        assert!(sweep_body.contains("outcome == HostDemoteOutcome::SourceQuarantined"));
+        let sweep_body = &worker[sweep..sweep + 16000];
+        assert!(sweep_body.contains("HostDemoteOutcome::SourceQuarantined => {"));
     }
 
     #[test]
@@ -53449,6 +53838,9 @@ mod tests {
             tape: vec![1, 2, 3],
             armed_at: now,
             deadline,
+            shape1_owed: true,
+            shape2_owed: true,
+            started: false,
         };
         // A pause-only wait sleeps until the NEAREST deadline, not the 5 ms poll: an idle
         // box must not spin a thousand wakeups through one 5 s pause.
@@ -53531,6 +53923,9 @@ mod tests {
             tape: vec![1],
             armed_at: now,
             deadline,
+            shape1_owed: true,
+            shape2_owed: true,
+            started: false,
         };
         // Pause nearer than the constraint poll: pause wins.
         assert_eq!(
@@ -53797,7 +54192,7 @@ mod tests {
         let sweep = worker
             .find("if !pause_pending.is_empty() {")
             .expect("the sweep exists in run()");
-        let sweep_body = window(&worker, sweep, 8000);
+        let sweep_body = window(&worker, sweep, 16000);
         assert!(sweep_body.contains("pause_park_index("));
         assert!(
             sweep_body.contains("prefix_snapshot("),
@@ -53812,7 +54207,8 @@ mod tests {
         );
         assert!(
             sweep_body.contains("px.remove_at("),
-            "the device entry leaves only after the host copy published"
+            "the device entry leaves the index into the sink's route (WP-A day 47, design V: a \
+             failure reinstates it)"
         );
         assert!(sweep_body.contains("pause_demotes"));
         assert!(sweep_body.contains("pause_cancels"));

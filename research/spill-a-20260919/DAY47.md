@@ -125,3 +125,20 @@ commit.
 3. **The gate's failure cell reads per boot.** `contract-presubmit` refuses the boot's first contract D2H: in the plain
    boot, shape 1's (`host copy did not publish; park kept`; shape 2 then demotes cleanly); in the default boot, shape
    2's (`entry reinstated`). Both byte-equal, the tier on.
+
+## 2. V as built and its CPU cells (on design S4's tree)
+
+- Built: `PendingDemote.release` (`ParkRelease { pool_key, tape }`) and `PendingDemote.reinstate`; `HostPrefixCache
+  .park_releases` and `.reinstate` (a shared queue); `HostDemoteShell` (the settle steps' guard: an unpublished drop of a
+  shape-2 shell queues it, a shape-1 one names the kept park; `disarm` on the publication and a quarantined source,
+  `keep` on a continuing demote), armed once in each settle step, handed back at each continuing exit (two per step);
+  `host_pause_published` (the release queued, shape 2 counted and named `released off the tick`); `host_pause_drain` at
+  the tick top after the settle calls (the park matched by `fed == tape`, released or `already gone`; a reinstated shell
+  back through `insert_demoting`); the sweep rewritten for the off-tick route with section 1a's deferral
+  (`PauseCandidate.shape1_owed`, `.shape2_owed`, `.started`; no shape starts while a demote or a promote is in flight;
+  shape 2 waits for shape 1's demote). The admission flush and the handoff export keep `ContractD2h::OnTick`.
+- CPU cells, green: server lib `914 passed; 0 failed; 24 ignored` (the new census `day47_the_pause_sweep_demotes_off_the_tick`,
+  the shell's unit cell `day47_the_demote_shell_reinstates_only_unpublished_shells`, the pause wiring census and the
+  day-17 route census updated to V's shape); clippy `-D warnings`; fmt; `git diff --check`.
+- The target sitting (`pro-single-v/`, `pro-single-day42/run-all-3.sh`, base the S4 tip) runs on the same box after
+  S4's; the 5090 half when the card is back.

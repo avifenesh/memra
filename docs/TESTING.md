@@ -2100,6 +2100,12 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   (the take, the seal's refusals, the pairs, the `span-flip-landed` arm with span 0 alone differing, the abandon and
   displacement reaps); the fault gate's `span-flip-landed` and `span-flip-resident` cells (one typed refusal each, r1
   to r4 byte-equal to door OFF).
+- The agent-pause demote off the tick (WP-A day 47, `research/spill-a-20260919/DAY47.md` design V, OWED item 6):
+  `tools/kv-host-pause-demote-gate.sh` (a tool conversation whose turn 1 must end in a tool call; `clean`, `race`
+  under `d2h-delay` and `failure` under `contract-presubmit`, each in the plain and the default boot, every turn
+  byte-equal to a door-OFF pause-OFF reference); CPU cells `day47_the_pause_sweep_demotes_off_the_tick` and
+  `day47_the_demote_shell_reinstates_only_unpublished_shells`; the pause stall cell (`stall_cell.py --mode pause`,
+  `day47-reading.py`).
 - Design K's promote-side fail-closed arms (WP-A day 41, `research/spill-a-20260919/DAY41.md`): the fault gate's
   `sources-helper-gone`, `sources-never-land` and `sources-foreign-reply` cells (the hash helper's first `Sources` job
   takes the fault; one typed latch in the arm's own words, no promote publication, the helper joined, r1 to r4
