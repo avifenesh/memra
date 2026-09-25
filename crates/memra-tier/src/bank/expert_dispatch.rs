@@ -39,6 +39,16 @@ pub struct ExpertDemand {
     pub ticket: TransferTicket,
     pub lease: BankLease,
 }
+/// Day 64 (I15, `research/spill-c-20260919/DAY64.md`): the most records one grouped demand leases, an expert's gate,
+/// up and down blocks.
+pub const MAX_GROUP: usize = 3;
+/// Day 64 (I15): one ticket's host leases for up to `MAX_GROUP` records, in the order demanded. The same rule as
+/// `ExpertDemand`: only an observed completion of every transfer that reads them may finish it.
+#[derive(Debug)]
+pub struct ExpertDemands {
+    pub ticket: TransferTicket,
+    pub leases: Vec<BankLease>,
+}
 /// Typed default-OFF native installation point. No synthetic artifact identities,
 /// lazy source registration or implicit fallback is permitted here.
 pub trait ExpertDispatchBank {
@@ -54,6 +64,14 @@ pub trait ExpertDispatchBank {
     /// takes only host-resident records, so it never reads storage on the owner thread).
     fn host_resident(&self, _local: ExpertDispatchId) -> Result<bool> {
         Ok(false)
+    }
+    /// Day 64 (I15): one ticket leasing every record of `blocks`, in order. A bank without it refuses.
+    fn demand_many(&mut self, _blocks: &[(ExpertDispatchId, usize)]) -> Result<ExpertDemands> {
+        Err(Error::Unsupported)
+    }
+    /// Day 64 (I15): finish a grouped demand's ticket, every lease at once.
+    fn finish_many(&mut self, _demands: ExpertDemands) -> Result<()> {
+        Err(Error::Unsupported)
     }
 }
 
@@ -174,6 +192,48 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpert
         // Day 63 (I13 change 3): the three retire-side calls on one pending lookup.
         self.bank.finish_ticket(&demand.ticket)?;
         drop(demand);
+        self.bank.collect_evicted()
+    }
+    fn demand_many(&mut self, blocks: &[(ExpertDispatchId, usize)]) -> Result<ExpertDemands> {
+        if blocks.is_empty() {
+            return Err(Error::EmptyBatch);
+        }
+        if blocks.len() > MAX_GROUP {
+            return Err(Error::Capacity);
+        }
+        let ids = blocks
+            .iter()
+            .map(|&(local, bytes)| self.validated(local, bytes).cloned())
+            .collect::<Result<Vec<_>>>()?;
+        let ticket = self.bank.stage(BankBatch {
+            ids,
+            epochs: self.epochs,
+            request: self.request.clone(),
+        })?;
+        let result = (|| {
+            while !self.bank.progress(&ticket)? {}
+            let leases = self.bank.publish(&ticket, self.epochs)?;
+            if leases.len() != blocks.len() {
+                return Err(Error::Incomplete);
+            }
+            Ok(ExpertDemands { ticket, leases })
+        })();
+        if result.is_err() {
+            // The single demand's unwind, unchanged: revoke, pump, retire, acknowledge, collect.
+            self.bank.cancel(&ticket)?;
+            while !self.bank.progress(&ticket)? {}
+            self.bank.finish_host_use(&ticket)?;
+            if !self.bank.retire(&ticket)? {
+                return Err(Error::NotReady);
+            }
+            self.bank.acknowledge(&ticket)?;
+            self.bank.collect_evicted()?;
+        }
+        result
+    }
+    fn finish_many(&mut self, demands: ExpertDemands) -> Result<()> {
+        self.bank.finish_ticket(&demands.ticket)?;
+        drop(demands);
         self.bank.collect_evicted()
     }
 }

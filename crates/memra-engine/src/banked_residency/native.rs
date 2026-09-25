@@ -753,10 +753,13 @@ impl Engine {
                 granularity: 1,
                 slot_bytes: max_bytes,
             },
+            // DAY64 (I15): a prefetched expert's three blocks share one ticket.
             BankLimits {
                 cache_bytes: plan.planned_bytes,
-                batch_bytes: max_bytes,
-                items: 1,
+                batch_bytes: max_bytes
+                    .checked_mul(MAX_GROUP as u64)
+                    .ok_or(Error::Overflow)?,
+                items: MAX_GROUP,
                 tickets: open_leases,
             },
         )?;
@@ -1081,6 +1084,42 @@ impl TracedDispatch {
     }
     /// Offer up to `limit` finished fills to the bank (DAY45 section 1 (b)); a full tier raises
     /// the fill's stop flag.
+    /// The host-demand trace line of one demanded record (DAY61 I11 change 5: a host hit keeps its record's slot,
+    /// publish's SLRU `hit` relinks the queues and never the slot, so the pre-demand lookup is the slot; a miss reads
+    /// the slot its publication reserved). DAY64: shared by the single and the grouped demand.
+    fn trace_record(
+        &mut self,
+        local: ExpertDispatchId,
+        bytes: usize,
+        before: Option<usize>,
+    ) -> Result<()> {
+        let hit = before.is_some();
+        let slot = match before {
+            Some(slot) => slot,
+            None => {
+                let id = self.ids.get(&local).ok_or(Error::NotFound)?;
+                self.inner
+                    .bank()
+                    .slru_policy()
+                    .ok_or(Error::Incomplete)?
+                    .resident(id)
+                    .ok_or(Error::Incomplete)?
+            }
+        };
+        let victim = self
+            .occupants
+            .insert(slot, local)
+            .filter(|old| *old != local);
+        let trace_started = self.clock.as_ref().map(|_| Instant::now());
+        push_trace_line(&mut self.trace, local, bytes, slot, hit, victim);
+        if self.trace.len() >= TRACE_CHUNK {
+            self.flush_trace();
+        }
+        if let (Some(started), Some(clock)) = (trace_started, self.clock.as_mut()) {
+            clock.trace_ns = clock.trace_ns.saturating_add(elapsed_ns(started));
+        }
+        Ok(())
+    }
     fn drain_fill(&mut self, limit: usize) {
         let Some(fill) = &self.fill else { return };
         let started = Instant::now();
@@ -1255,35 +1294,52 @@ impl ExpertDispatchBank for TracedDispatch {
             }
         }
         let demand = demand?;
-        // DAY61 (I11 change 5): a host hit keeps its record's slot (publish's SLRU `hit` relinks
-        // the queues, never the slot), so the pre-demand lookup is the slot; a miss reads the
-        // slot its publication reserved.
-        let slot = match before {
-            Some(slot) => slot,
-            None => self
-                .inner
-                .bank()
-                .slru_policy()
-                .ok_or(Error::Incomplete)?
-                .resident(id)
-                .ok_or(Error::Incomplete)?,
-        };
-        let victim = self
-            .occupants
-            .insert(slot, local)
-            .filter(|old| *old != local);
-        let trace_started = self.clock.as_ref().map(|_| Instant::now());
-        push_trace_line(&mut self.trace, local, bytes, slot, hit, victim);
-        if self.trace.len() >= TRACE_CHUNK {
-            self.flush_trace();
-        }
-        if let (Some(started), Some(clock)) = (trace_started, self.clock.as_mut()) {
-            clock.trace_ns = clock.trace_ns.saturating_add(elapsed_ns(started));
-        }
+        self.trace_record(local, bytes, before)?;
         Ok(demand)
     }
     fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
         self.inner.finish(demand)
+    }
+    /// DAY64 (I15): one ticket for the group, then one trace line per record in block order, each read as the single
+    /// demand reads its own (the pre-demand SLRU slot for a host hit, the published slot for a miss).
+    fn demand_many(&mut self, blocks: &[(ExpertDispatchId, usize)]) -> Result<ExpertDemands> {
+        if blocks.is_empty() {
+            return Err(Error::EmptyBatch);
+        }
+        if blocks.len() > MAX_GROUP {
+            return Err(Error::Capacity);
+        }
+        self.drain_fill(32);
+        let mut before = [None; MAX_GROUP];
+        for (slot, &(local, _)) in before.iter_mut().zip(blocks) {
+            let id = self.ids.get(&local).ok_or(Error::NotFound)?;
+            *slot = self
+                .inner
+                .bank()
+                .slru_policy()
+                .ok_or(Error::Incomplete)?
+                .resident(id);
+        }
+        let demand_started = self.clock.as_ref().map(|_| Instant::now());
+        let demands = self.inner.demand_many(blocks);
+        if let (Some(started), Some(clock)) = (demand_started, self.clock.as_mut()) {
+            clock.inner_demand_ns = clock.inner_demand_ns.saturating_add(elapsed_ns(started));
+            for slot in &before[..blocks.len()] {
+                if slot.is_some() {
+                    clock.host_hits += 1;
+                } else {
+                    clock.host_misses += 1;
+                }
+            }
+        }
+        let demands = demands?;
+        for (&(local, bytes), &slot) in blocks.iter().zip(&before) {
+            self.trace_record(local, bytes, slot)?;
+        }
+        Ok(demands)
+    }
+    fn finish_many(&mut self, demands: ExpertDemands) -> Result<()> {
+        self.inner.finish_many(demands)
     }
     fn host_resident(&self, local: ExpertDispatchId) -> Result<bool> {
         self.inner.host_resident(local)
@@ -1529,9 +1585,10 @@ mod day46_census {
     fn the_miss_path_drains_nothing_on_success() {
         let admit = body("admit_banked");
         assert!(!admit.contains("synchronize"), "admit_banked drains");
-        assert!(admit.contains("self.retire_banked(&bank)?;"));
-        // DAY50 wrapped the event in an `Arc` (a prefetch's copy event is shared with `pending`).
-        assert!(admit.contains("self.banked_inflight.push_back((token, Arc::new(done)));"));
+        assert!(admit.contains("self.retire_banked(&bank, 1)?;"));
+        // DAY50 wrapped the event in an `Arc` (a prefetch's copy event is shared with `pending`);
+        // DAY64 names the lease one record's.
+        assert!(admit.contains(".push_back((BankedLease::One(token), Arc::new(done)));"));
         let stage = body("stage_banked");
         assert_eq!(
             stage.matches("e.stream().synchronize()").count(),
@@ -1567,11 +1624,18 @@ mod day48_census {
     fn the_memo_holds_only_pairs_the_proxy_accepted() {
         // DAY58 (I8f): the dense memo's guard.
         let guarded = "        if !self.banked_validated.holds(id, bytes) {\n            bank.validate(local, bytes)?;\n            self.banked_validated.insert(id, bytes);\n        }";
-        // Two sites since DAY50 (the demand and the door's prefetch), each behind the guard.
+        // Two sites since DAY50 (the demand and the door's prefetch), each behind the guard; DAY64's
+        // grouped prefetch returns its chosen slots before a refusal leaves.
         assert_eq!(
             CACHE.matches(guarded).count(),
-            2,
-            "the memo's guarded insertions"
+            1,
+            "the demand's guarded insertion"
+        );
+        let grouped = "            if !self.banked_validated.holds(id, bytes) {\n                if let Err(err) = bank.validate(local, bytes) {\n                    self.release_chosen(&chosen[..taken]);\n                    return Err(err.into());\n                }\n                self.banked_validated.insert(id, bytes);\n            }";
+        assert_eq!(
+            CACHE.matches(grouped).count(),
+            1,
+            "the prefetch's guarded insertion"
         );
         assert_eq!(CACHE.matches("banked_validated.insert(").count(), 2);
         assert_eq!(
@@ -1771,10 +1835,11 @@ mod day50_census {
             .unwrap();
         let wait = CACHE[consume..].find("e.compute_wait(").unwrap();
         assert!(wait < publish, "published before the wait");
-        let prefetch = &CACHE[CACHE.find("fn prefetch_banked(").unwrap()..];
+        // DAY64 (I15): the prefetch is grouped; residency, the lease and the staging still go through the owner.
+        let prefetch = &CACHE[CACHE.find("fn prefetch_banked_group(").unwrap()..];
         let prefetch = &prefetch[..prefetch.find("\n    fn ").unwrap_or(prefetch.len())];
-        assert!(prefetch.contains("bank.host_resident(local)?"));
-        assert!(prefetch.contains("bank.demand(local, bytes)"));
+        assert!(prefetch.contains("bank.host_resident(local)"));
+        assert!(prefetch.contains("bank.demand_many(&locals[..taken])"));
         assert!(prefetch.contains("stage_on_copy_stream(e, payload, &mut self.slots[slot])"));
         assert_eq!(FORWARD.matches("e.expert_bank_prefetch()").count(), 1);
         // Count in this file's code, not in these tests' own literals.
@@ -1972,8 +2037,8 @@ mod day61_profile {
             },
             BankLimits {
                 cache_bytes: planned,
-                batch_bytes: LEN,
-                items: 1,
+                batch_bytes: LEN * MAX_GROUP as u64,
+                items: MAX_GROUP,
                 tickets: open,
             },
         )
@@ -2184,6 +2249,28 @@ mod day61_profile {
             per_cycle(p2[0]),
             per_cycle(p1[4]) - per_cycle(p2[0])
         );
+        // DAY64 P8: the grouped prefetch of one expert, its three blocks under one ticket through
+        // the proxy (the routed order read three records at a time), per block, unbracketed.
+        let p8 = median_repeat(|| {
+            let started = Instant::now();
+            for expert in seq.chunks_exact(3) {
+                let blocks: Vec<(ExpertDispatchId, usize)> =
+                    expert.iter().map(|&l| (l, LEN as usize)).collect();
+                for &(local, _) in &blocks {
+                    assert!(proxy.host_resident(local).unwrap());
+                }
+                let token = proxy.demand_many(&blocks).unwrap();
+                for index in 0..blocks.len() {
+                    std::hint::black_box(proxy.with_bytes_at(&token, index, |b| b[0]).unwrap());
+                }
+                proxy.finish_group(&token).unwrap();
+            }
+            [ns(started.elapsed())]
+        });
+        println!(
+            "DAY64 P8 grouped per_block_ns cycle={:.1}",
+            p8[0] as f64 / (seq.len() / 3 * 3) as f64
+        );
         owner.close().unwrap();
         drop(owner);
 
@@ -2361,10 +2448,12 @@ mod day61_census {
     #[test]
     fn leases_retire_where_a_lease_is_taken() {
         let code = &CACHE[..CACHE.find("#[cfg(test)]").unwrap_or(CACHE.len())];
-        assert_eq!(code.matches("bank.demand(local, bytes)").count(), 2);
+        // DAY64 (I15): the miss path demands one record, the prefetch one group.
+        assert_eq!(code.matches("bank.demand(local, bytes)").count(), 1);
+        assert_eq!(code.matches("bank.demand_many(").count(), 1);
         let admit = body("admit_banked");
-        assert_eq!(admit.matches("self.retire_banked(&bank)?;").count(), 1);
-        let retire = admit.find("self.retire_banked(&bank)?;").unwrap();
+        assert_eq!(admit.matches("self.retire_banked(&bank, 1)?;").count(), 1);
+        let retire = admit.find("self.retire_banked(&bank, 1)?;").unwrap();
         let hit = admit
             .find("if let Some(slot) = self.table.get(&id)")
             .unwrap();
@@ -2373,10 +2462,30 @@ mod day61_census {
             .unwrap();
         let demand = admit.find("bank.demand(local, bytes)").unwrap();
         assert!(hit < retire && consume < retire && retire < demand);
-        let prefetch = body("prefetch_banked");
-        let retire = prefetch.find("self.retire_banked(&bank)?;").unwrap();
-        let bound = prefetch.find(">= BANKED_INFLIGHT").unwrap();
-        let demand = prefetch.find("bank.demand(local, bytes)").unwrap();
+        let prefetch = body("prefetch_banked_group");
+        let retire = prefetch.find("self.retire_banked(&bank, count)?;").unwrap();
+        let bound = prefetch.find("let room =").unwrap();
+        let demand = prefetch.find("bank.demand_many(").unwrap();
         assert!(retire < bound && bound < demand);
+    }
+
+    /// DAY64 (I15): the legacy cache's prefetch is one `prefetch_source` call per block, as before;
+    /// a group's lease is finished through `BankedLease::finish` (in-flight retirement, teardown) or,
+    /// in the prefetch itself, only before any member was staged or after the copy stream proved
+    /// drained with none staged; a consumed member moves its group only through
+    /// `consume_group_member`.
+    #[test]
+    fn a_group_is_finished_once_on_its_proven_paths() {
+        let code = &CACHE[..CACHE.find("#[cfg(test)]").unwrap_or(CACHE.len())];
+        let expert = body("prefetch_expert");
+        assert!(expert.contains(
+            "if self.banked.is_none() {\n            for (id, source) in blocks {\n                let _ = self.prefetch_source(id, source, keep, e)?;"
+        ));
+        assert_eq!(code.matches("bank.finish_group(").count(), 3);
+        let prefetch = body("prefetch_banked_group");
+        assert_eq!(prefetch.matches("bank.finish_group(&token)").count(), 2);
+        assert_eq!(code.matches("self.consume_group_member(").count(), 1);
+        // The consumed group into flight, retire-all, and the cache's Drop (after the tests in the file).
+        assert_eq!(CACHE.matches("BankedLease::Group(entry.token)").count(), 3);
     }
 }

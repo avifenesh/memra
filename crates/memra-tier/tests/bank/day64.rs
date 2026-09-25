@@ -134,3 +134,135 @@ fn trim_evicts_the_ordered_maps_victim() {
         }
     }
 }
+
+/// A three-record SLRU dispatch of the fixture's retained records, and its `(ExpertDispatchId, bytes)` blocks.
+fn group_bank() -> (
+    SlruExpertDispatch<Heat, Reader>,
+    Vec<(ExpertDispatchId, usize)>,
+) {
+    let g = gov();
+    let mut entries = Vec::new();
+    let mut map = BTreeMap::new();
+    let mut blocks = Vec::new();
+    for n in [9u32, 47, 83] {
+        let mut l = layout(u64::from(n), 4, 16);
+        l.segments.truncate(1);
+        l.requirements.truncate(1);
+        let id = bank_id(n, &l);
+        let local = dispatch_id(&id.record).unwrap();
+        map.insert(local, id.clone());
+        blocks.push((local, 16));
+        entries.push((id, Some(record(l))));
+    }
+    let bank = BankService::new(
+        Catalog::new(LayoutClass::Uniform, entries).unwrap(),
+        g.clone(),
+        Heat::default(),
+        Reader::default(),
+        CoalescingPolicy {
+            granularity: 1,
+            slot_bytes: 32,
+        },
+        BankLimits {
+            cache_bytes: 64,
+            batch_bytes: 64,
+            items: MAX_GROUP,
+            tickets: 4,
+        },
+    )
+    .unwrap();
+    let mut req = request(bank.slru_metadata_bytes(3).unwrap(), Priority::Demand);
+    let metadata = g.borrow_mut().reserve(&req).unwrap();
+    let bank = bank
+        .with_slru(SlruPolicy::new(&[(16, 3)]).unwrap(), &metadata)
+        .unwrap();
+    req.bytes = TierBudget::zero(2);
+    (
+        SlruExpertDispatch::new(bank, map, req, epochs()).unwrap(),
+        blocks,
+    )
+}
+
+/// A bank that answers a grouped demand with its leases in reverse order: the case the group identity refuses.
+struct Reversed(SlruExpertDispatch<Heat, Reader>);
+impl ExpertDispatchBank for Reversed {
+    fn validate(&self, id: ExpertDispatchId, bytes: usize) -> Result<()> {
+        self.0.validate(id, bytes)
+    }
+    fn demand(&mut self, id: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand> {
+        self.0.demand(id, bytes)
+    }
+    fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
+        self.0.finish(demand)
+    }
+    fn demand_many(&mut self, blocks: &[(ExpertDispatchId, usize)]) -> Result<ExpertDemands> {
+        let mut d = self.0.demand_many(blocks)?;
+        d.leases.reverse();
+        Ok(d)
+    }
+    fn finish_many(&mut self, demands: ExpertDemands) -> Result<()> {
+        self.0.finish_many(demands)
+    }
+}
+
+/// I15: a grouped demand's token names every record in order; `with_bytes_at` lends each record's own bytes (the
+/// same bytes one `demand` per record lends); `finish_group` retires the ticket once; a single token and a group
+/// token do not stand for each other; the pending bound counts the group as one ticket; a bank that publishes the
+/// records in another order is refused and its group finished through it.
+#[test]
+fn a_grouped_demand_leases_its_records_in_order() {
+    let (bank, blocks) = group_bank();
+    let mut owner = ExpertBankOwner::register(Box::new(bank), 1).unwrap();
+    let proxy = owner.proxy();
+    let mut singles = Vec::new();
+    for &(local, bytes) in &blocks {
+        let token = proxy.demand(local, bytes).unwrap();
+        singles.push(proxy.with_bytes(&token, <[u8]>::to_vec).unwrap());
+        proxy.finish(&token).unwrap();
+    }
+    let group = proxy.demand_many(&blocks).unwrap();
+    assert_eq!(
+        group.records(),
+        blocks.iter().map(|b| b.0).collect::<Vec<_>>().as_slice()
+    );
+    for (index, want) in singles.iter().enumerate() {
+        assert_eq!(
+            &proxy.with_bytes_at(&group, index, <[u8]>::to_vec).unwrap(),
+            want
+        );
+    }
+    assert_eq!(
+        proxy.with_bytes_at(&group, 3, |_| ()).err(),
+        Some(Error::NotFound)
+    );
+    // The pending bound is one ticket: the open group holds it.
+    assert_eq!(proxy.demand(blocks[0].0, 16).err(), Some(Error::Capacity));
+    assert_eq!(proxy.demand_many(&blocks[..1]).err(), Some(Error::Capacity));
+    assert_eq!(owner.close(), Err(Error::Busy));
+    proxy.finish_group(&group).unwrap();
+    assert_eq!(proxy.finish_group(&group).err(), Some(Error::UnknownTicket));
+    // A single token is not a group's, and a group's is not a single one's.
+    let single = proxy.demand(blocks[1].0, 16).unwrap();
+    assert_eq!(
+        proxy.with_bytes_at(&group, 0, |_| ()).err(),
+        Some(Error::UnknownTicket)
+    );
+    proxy.finish(&single).unwrap();
+    let group = proxy.demand_many(&blocks[1..]).unwrap();
+    assert_eq!(group.records().len(), 2);
+    proxy.finish_group(&group).unwrap();
+    assert_eq!(proxy.demand_many(&[]).err(), Some(Error::EmptyBatch));
+    let four = [blocks[0], blocks[1], blocks[2], blocks[0]];
+    assert_eq!(proxy.demand_many(&four).err(), Some(Error::Capacity));
+    owner.close().unwrap();
+
+    let (bank, blocks) = group_bank();
+    let mut owner = ExpertBankOwner::register(Box::new(Reversed(bank)), 1).unwrap();
+    let proxy = owner.proxy();
+    assert_eq!(
+        proxy.demand_many(&blocks).err(),
+        Some(Error::ProgramMismatch)
+    );
+    // The refused group was finished through the bank: nothing is pending.
+    owner.close().unwrap();
+}
