@@ -196,8 +196,7 @@ fn graph_state(gpu: &Dsv4Gpu, prefix: &DecodeState, cfg: Dsv4SampleCfg) -> Decod
     gpu.restore_full_token_prefix_for_gate(&mut result, prefix)
         .unwrap();
     unsafe {
-        gpu.arm_full_token_replay_for_gate(&mut result, cfg)
-            .unwrap();
+        gpu.arm_full_token_replay(&mut result, cfg).unwrap();
     }
     result
 }
@@ -206,8 +205,7 @@ fn refusals(gpu: &Dsv4Gpu, prefix: &DecodeState, cfg: Dsv4SampleCfg, inputs: &[u
         for (position, layer) in [(258usize, 0usize), (259, 0), (383, 21), (511, 42)] {
             let mut failed = graph_state(gpu, prefix, cfg);
             for &token in &inputs[..position - PRIME] {
-                gpu.decode_sample_full_token_for_gate(token, &mut failed)
-                    .unwrap();
+                gpu.decode_sample_full_token(token, &mut failed).unwrap();
             }
             let cache = gpu.tp_ep_cache_digest_for_gate(&failed).unwrap();
             let counts = gpu.full_token_replay_counts_for_gate(&failed).unwrap();
@@ -215,7 +213,7 @@ fn refusals(gpu: &Dsv4Gpu, prefix: &DecodeState, cfg: Dsv4SampleCfg, inputs: &[u
             gpu.arm_attention_tp_join_refusal_for_gate(layer, rank, code)
                 .unwrap();
             let error = gpu
-                .decode_sample_full_token_for_gate(inputs[position - PRIME], &mut failed)
+                .decode_sample_full_token(inputs[position - PRIME], &mut failed)
                 .unwrap_err();
             assert!(error.contains("one-shot reduction refused"), "{error}");
             let mut words = [0, 0];
@@ -228,7 +226,7 @@ fn refusals(gpu: &Dsv4Gpu, prefix: &DecodeState, cfg: Dsv4SampleCfg, inputs: &[u
                 assert_eq!(after[r], [counts[r][0] + 1, counts[r][1]]);
             }
             assert!(
-                gpu.decode_sample_full_token_for_gate(inputs[position - PRIME], &mut failed)
+                gpu.decode_sample_full_token(inputs[position - PRIME], &mut failed)
                     .unwrap_err()
                     .contains("unfinished transaction")
             );
@@ -279,9 +277,7 @@ fn qualify_arm(
                 .unwrap();
             epochs(gpu, &before, 1);
             let before = gpu.full_token_ar_epochs_for_gate().unwrap();
-            let actual = gpu
-                .decode_sample_full_token_for_gate(carry, &mut graph)
-                .unwrap();
+            let actual = gpu.decode_sample_full_token(carry, &mut graph).unwrap();
             epochs(gpu, &before, 1);
             assert_eq!(actual, next, "same-class sample step={step}");
             assert_eq!(
@@ -420,9 +416,7 @@ fn scored_row(
     let start = Instant::now();
     for _ in 0..OUTPUT {
         tokens.push(carry);
-        carry = gpu
-            .decode_sample_full_token_for_gate(carry, &mut arm.graph)
-            .unwrap();
+        carry = gpu.decode_sample_full_token(carry, &mut arm.graph).unwrap();
     }
     let ns = start.elapsed().as_nanos();
     epochs(gpu, &before_epochs, OUTPUT as u32);
@@ -749,15 +743,14 @@ mod evidence {
         select(gpu, on);
         let mut state = prime(gpu, tokens);
         unsafe {
-            gpu.arm_full_token_replay_for_gate(&mut state, cfg).unwrap();
+            gpu.arm_full_token_replay(&mut state, cfg).unwrap();
         }
         let label = if on { "graph" } else { "control" };
         let mut file = std::io::BufWriter::new(
             std::fs::File::create(dir.join(format!("tf-{id}-{label}.f32le"))).unwrap(),
         );
         for (offset, &token) in tokens[PRIME..PRIME + TF].iter().enumerate() {
-            gpu.decode_sample_full_token_for_gate(token, &mut state)
-                .unwrap();
+            gpu.decode_sample_full_token(token, &mut state).unwrap();
             let logits = gpu.read_decode_logits_for_gate(&state).unwrap();
             let hash = logit_hash(&logits);
             for x in &logits {

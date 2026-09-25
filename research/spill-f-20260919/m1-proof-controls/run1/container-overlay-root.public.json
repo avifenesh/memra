@@ -1,0 +1,48 @@
+{
+ "A1_kernel": {
+  "cpu_flag_lines": true,
+  "dmi_virtual_markers": [],
+  "hypervisor_flag": false,
+  "pci_emulated_devices": [],
+  "pci_functions": 40,
+  "sys_hypervisor_type": null
+ },
+ "A2_A3_mount": {
+  "fstype": "overlay",
+  "identity": {
+   "device": 149,
+   "filesystem_id_sha256_16": "b050b2352d454855",
+   "mount_id": 6793
+  },
+  "st_dev": "0:149",
+  "statx": {
+   "dev_major": 0,
+   "dev_minor": 149,
+   "dio_mem_align": null,
+   "dio_offset_align": null,
+   "mask": 5951,
+   "mnt_id": 6793
+  }
+ },
+ "A7_capacity": {
+  "free_bytes": 480102391808,
+  "reserve_bytes": 0
+ },
+ "A8_identity": {
+  "device": 149,
+  "filesystem_id_sha256_16": "b050b2352d454855",
+  "mount_id": 6793
+ },
+ "class": null,
+ "private_capture_sha256": "0cd27772d7543b1d7918e1008313d6fcb623a7ace06abf00e3b4936649083d40",
+ "reasons": [
+  "A3: filesystem type 'overlay' is not block-traceable here (admitted: ext4, xfs)",
+  "A3: anonymous device 0:149 (no block device behind this filesystem)",
+  "A4: skipped (no block device)",
+  "A6: not run (--bind-bytes 0); a PASS requires the I/O binding"
+ ],
+ "registration": "research/spill-f-20260919/M1-PREREG.md section A",
+ "schema": "m1-nvme-proof-v1",
+ "utc": "2026-09-25T14:25:26.678062+00:00",
+ "verdict": "FAIL"
+}

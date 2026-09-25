@@ -1111,6 +1111,20 @@ both ranks. The default 304 steps cross position 512 and the C4 and C128 emissio
 timing arm then runs the same continuation eager and replayed in alternating order. Receipts:
 `research/dsv4f-bringup-20260923/tp-replay-long/`.
 
+The replayed state hands off to the eager step once the replay no longer covers its position
+(`min(capacity, 16384)`), the way the served TP/EP route does (#710): it reads the replay counters,
+drops the graphs (`disarm_full_token_replay`) and keeps stepping, and every later step must still
+match the eager state. `DSV4_REPLAY_GATE_LIMIT=N` arms a smaller limit so a run crosses the handoff
+in a few hundred steps (`DSV4_REPLAY_GATE_CAPACITY=2048 DSV4_REPLAY_GATE_LIMIT=640`, 500 steps);
+`DSV4_REPLAY_GATE_CAPACITY=20000` with 16100 steps crosses the served 16384 limit itself. At that
+capacity the cache and hidden digests read tens of megabytes per step, so such a run sets
+`DSV4_REPLAY_GATE_DIGEST_EVERY=256`: tokens and logits bits every step, the digests every 256
+steps and on the 64 steps either side of the handoff. A run with a handoff checks that it
+happened at the limit and skips the timing arm. `DSV4_REPLAY_GATE_PROFILE=replay|eager` replaces
+the timing arm with one warm run and one run bracketed by `cuProfilerStart`/`Stop`, for
+`nsys --capture-range=cudaProfilerApi`. Receipts:
+`research/dsv4f-bringup-20260923/tpep-default/`.
+
 ### DSv4 compressor BF16 island storage (#695)
 
 `cargo test -p memra-engine --release --test dsv4_island_bf16_gpu -- --ignored --test-threads=1`
