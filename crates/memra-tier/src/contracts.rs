@@ -742,7 +742,9 @@ impl TierBudget {
             ..Self::default()
         }
     }
-    fn values(&self) -> Vec<u64> {
+    /// Every dimension in a fixed order (devices, peers, replicas, then the scalars). Day 63 (I13 change 1): an
+    /// iterator, not a collected vector.
+    fn values(&self) -> impl Iterator<Item = u64> + '_ {
         self.device
             .iter()
             .chain(&self.peer)
@@ -756,7 +758,6 @@ impl TierBudget {
                 self.nvme,
                 self.inflight,
             ])
-            .collect()
     }
     pub fn fits(&self, used: &Self, capacity: &Self) -> Result<bool> {
         self.validate()?;
@@ -767,10 +768,47 @@ impl TierBudget {
         }
         Ok(self
             .values()
-            .iter()
             .zip(used.values())
             .zip(capacity.values())
-            .all(|((n, u), c)| u <= c && *n <= c - u))
+            .all(|((n, u), c)| u <= c && n <= c - u))
+    }
+    /// Day 63 (I13 change 1, `research/spill-c-20260919/DAY63.md`): `checked_add` (`add`) or `checked_sub` in place.
+    /// The same validation and the same errors as the allocating form; on an error nothing changes.
+    pub fn combine_in_place(&mut self, rhs: &Self, add: bool) -> Result<()> {
+        self.check_combine(rhs, add)?;
+        let op = |a: u64, b: u64| if add { a + b } else { a - b };
+        for (a, &b) in self.device.iter_mut().zip(&rhs.device) {
+            *a = op(*a, b);
+        }
+        for (a, &b) in self.peer.iter_mut().zip(&rhs.peer) {
+            *a = op(*a, b);
+        }
+        for (a, &b) in self.replicas.iter_mut().zip(&rhs.replicas) {
+            *a = op(*a, b);
+        }
+        self.pinned = op(self.pinned, rhs.pinned);
+        self.pageable = op(self.pageable, rhs.pageable);
+        self.staging = op(self.staging, rhs.staging);
+        self.loaders = op(self.loaders, rhs.loaders);
+        self.nvme = op(self.nvme, rhs.nvme);
+        self.inflight = op(self.inflight, rhs.inflight);
+        Ok(())
+    }
+    /// The checks of `combine` alone, in its order: both validations, the device count, then every component.
+    pub fn check_combine(&self, rhs: &Self, add: bool) -> Result<()> {
+        self.validate()?;
+        rhs.validate()?;
+        if self.device.len() != rhs.device.len() {
+            return Err(Error::InvalidLayout);
+        }
+        let ok = self.values().zip(rhs.values()).all(|(a, b)| {
+            if add {
+                a.checked_add(b).is_some()
+            } else {
+                a.checked_sub(b).is_some()
+            }
+        });
+        if ok { Ok(()) } else { Err(Error::Overflow) }
     }
     pub fn checked_add(&self, rhs: &Self) -> Result<Self> {
         self.combine(rhs, true)
