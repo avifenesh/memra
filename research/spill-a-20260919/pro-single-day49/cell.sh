@@ -3,7 +3,7 @@
 # @COLLECTOR_LOCK_FD@`. The attribution binary, door ON, the PRO environment: nofree (MEMRA_KV_HOST_MB=8192) and free
 # (MEMRA_KV_HOST_MB=480) interleaved five boots each, stall_cell.py --mode demote --n 5; then long x3
 # (--mode demote-long --n 5, MEMRA_KV_HOST_MB=8192, MEMRA_PREFIX_CACHE_MB=448); each boot's start temperature and SM
-# clock; 250 ms telemetry; day49-reading.py. A compute app at the hold's start: bounded 15 x 60 s, then NOT RUN.
+# clock; then promote x3 (DAY50, --mode promote --n 5); 250 ms telemetry; day49-reading.py and day50-reading.py. A compute app at the hold's start: bounded 15 x 60 s, then NOT RUN.
 set -uo pipefail
 fd=$1
 R=/root/spill-receipts/a-d49
@@ -52,11 +52,12 @@ stop() {
 }
 finish() { stop; kill "$SAMPLER" 2>/dev/null || true; }
 trap finish EXIT
-declare -A N=([nofree]=0 [free]=0 [long]=0)
+declare -A N=([nofree]=0 [free]=0 [long]=0 [promote]=0)
 run() { # $1 arm
   local arm=$1 host=8192 px=256 mode=demote
   [ "$arm" = free ] && host=480
   [ "$arm" = long ] && { px=448; mode=demote-long; }
+  [ "$arm" = promote ] && mode=promote
   N[$arm]=$((N[$arm] + 1)); local D=$R/cell/$arm/$(printf 'b%02d' "${N[$arm]}"); mkdir -p "$D"
   echo "arm=$arm host_mb=$host prefix_mb=$px mode=$mode bin=$(sha256sum "$BIN" | cut -c1-16)" > "$D/BOOT.txt"
   echo "start temperature.gpu,clocks.sm,power.draw: $(nvidia-smi --query-gpu=temperature.gpu,clocks.sm,power.draw --format=csv,noheader 2>&1)" >> "$D/BOOT.txt"
@@ -69,8 +70,11 @@ run() { # $1 arm
 }
 for _ in 1 2 3 4 5; do run nofree; run free; done
 for _ in 1 2 3; do run long; done
+# DAY50 (OWED item 9): the promote block on the same binary, a reading (day50-reading.py).
+for _ in 1 2 3; do run promote; done
 trap - EXIT
 kill "$SAMPLER" 2>/dev/null || true
 nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$R/cell/compute-apps.after.csv" 2>&1
 python3 research/spill-a-20260919/day49-reading.py "$R/cell" > "$R/cell/reading-day49.log" 2>&1
+python3 research/spill-a-20260919/day50-reading.py "$R"/cell/promote/b* > "$R/cell/reading-day50.log" 2>&1
 log "cell done; reading rc=$? $(tail -1 "$R/cell/reading-day49.log")"
