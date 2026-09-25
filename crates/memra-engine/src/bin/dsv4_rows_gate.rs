@@ -32,9 +32,15 @@
 //! replay and alternates: replayed steps alone, B-row steps beside session 1 while still
 //! armed, then replayed steps again. Every step's logits bits must equal the solo trace.
 //!
+//! Also in TP/EP mode, a graph arm runs the batched schedule through `decode_rows_draw`, whose
+//! steps of two or more rows run a captured graph per batch (memra #710 B-row graphs): every
+//! row's logits bits must again equal the solo trace, and the arm must have captured and
+//! replayed. A sampled graph arm draws every row at the vendor default and must give the
+//! eager B-row step's draws. Timing then adds the graph step at B=2 and 4.
+//!
 //! Usage: `dsv4_rows_gate <model-dir> <source.txt> [steps] [timing-steps]`.
 //! Rig law: under the box GPU lock, served defaults (no MEMRA_DSV4_* overrides).
-use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4SampleCfg};
+use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4RowDraw, Dsv4SampleCfg};
 use memra_engine::dsv4_source_tape::SourceTape;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
@@ -198,6 +204,91 @@ fn pipelined_groups(gpu: &Dsv4Gpu, prompts: &[Vec<u32>], capacity: usize, steps:
         }
     }
     trace
+}
+
+/// The batched schedule through `decode_rows_draw`: graph steps whenever two or more rows run.
+/// Returns each session's (token, logits hash) per step, read from the head workspace.
+fn graphed(gpu: &Dsv4Gpu, prompts: &[Vec<u32>], capacity: usize, steps: usize) -> Trace {
+    let mut sessions: Vec<Session> = prompts.iter().map(|p| prime(gpu, p, capacity)).collect();
+    let mut rows = gpu
+        .alloc_rows_state(sessions.len())
+        .expect("B-row workspace");
+    let mut trace: Trace = vec![Vec::new(); sessions.len()];
+    let horizon = JOIN.iter().max().unwrap() + steps;
+    for k in 0..horizon {
+        let mut active: Vec<usize> = (0..sessions.len())
+            .filter(|&s| k >= JOIN[s] && trace[s].len() < steps)
+            .collect();
+        if active.is_empty() {
+            continue;
+        }
+        let n = active.len();
+        active.rotate_left(k % n);
+        let toks: Vec<u32> = active.iter().map(|&s| sessions[s].next).collect();
+        let draws = vec![Dsv4RowDraw::Argmax; n];
+        let mut picked: Vec<Option<&mut Session>> = sessions.iter_mut().map(Some).collect();
+        let mut states: Vec<&mut DecodeState> = active
+            .iter()
+            .map(|&s| &mut picked[s].take().expect("each session once").state)
+            .collect();
+        let next = gpu
+            .decode_rows_draw(&toks, &mut states, &mut rows, &draws)
+            .expect("graph B-row step");
+        drop(states);
+        let logits = gpu.rows_logits_for_gate(&rows, n).expect("rows logits");
+        for ((&s, row), tok) in active.iter().zip(&logits).zip(next) {
+            assert_eq!(tok, argmax(row), "graph argmax is the logits argmax");
+            sessions[s].next = tok;
+            trace[s].push((tok, bits_hash(row)));
+        }
+    }
+    trace
+}
+
+/// Four sessions stepping together for `steps` sampled steps at the vendor default, through
+/// the eager B-row step (graphs off) and through the captured one; the draws must match.
+fn sampled_graph_vs_eager(
+    gpu: &Dsv4Gpu,
+    prompts: &[Vec<u32>],
+    capacity: usize,
+    steps: usize,
+) -> (Vec<Vec<u32>>, Vec<Vec<u32>>) {
+    let run = |graph: bool| -> Vec<Vec<u32>> {
+        let prev = memra_engine::dsv4_gpu::set_rows_graph_for_gate(graph);
+        let mut sessions: Vec<Session> = prompts.iter().map(|p| prime(gpu, p, capacity)).collect();
+        let mut rows = gpu
+            .alloc_rows_state(sessions.len())
+            .expect("B-row workspace");
+        let draws: Vec<Dsv4RowDraw> = (0..sessions.len())
+            .map(|s| {
+                Dsv4RowDraw::Sample(Dsv4SampleCfg {
+                    temperature: 1.0,
+                    top_p: 1.0,
+                    top_k: 0,
+                    seed: 20260926 + s as u64,
+                })
+            })
+            .collect();
+        let mut out = vec![Vec::new(); sessions.len()];
+        for _ in 0..steps {
+            let toks: Vec<u32> = sessions.iter().map(|s| s.next).collect();
+            let mut states: Vec<&mut DecodeState> =
+                sessions.iter_mut().map(|s| &mut s.state).collect();
+            let next = gpu
+                .decode_rows_draw(&toks, &mut states, &mut rows, &draws)
+                .expect("sampled B-row step");
+            drop(states);
+            for ((s, t), o) in sessions.iter_mut().zip(next).zip(out.iter_mut()) {
+                s.next = t;
+                o.push(t);
+            }
+        }
+        memra_engine::dsv4_gpu::set_rows_graph_for_gate(prev);
+        out
+    };
+    let eager = run(false);
+    let graph = run(true);
+    (eager, graph)
 }
 
 /// TP/EP replay arm: session 0 armed for greedy replay steps alone for `steps / 3` steps, then
@@ -375,6 +466,35 @@ fn main() {
         println!(
             "PASS: replayed, then {third} B-row steps beside a peer while armed, then replayed again: bit-identical to solo steps"
         );
+        let (captures0, steps0) = Dsv4Gpu::rows_graph_counts_for_gate();
+        let graph = graphed(&gpu, &prompts, capacity, steps);
+        let (captures1, steps1) = Dsv4Gpu::rows_graph_counts_for_gate();
+        for s in 0..prompts.len() {
+            if let Some(i) = (0..steps).find(|&i| reference[s][i] != graph[s][i]) {
+                println!(
+                    "GRAPH SESSION {s} FIRST DIVERGENCE step={i} solo=(tok {}, bits {:016x}) graph=(tok {}, bits {:016x})",
+                    reference[s][i].0, reference[s][i].1, graph[s][i].0, graph[s][i].1
+                );
+                println!("FAILED: the B-row graph diverged");
+                std::process::exit(1);
+            }
+        }
+        let (captures, graph_steps) = (captures1 - captures0, steps1 - steps0);
+        if captures == 0 || graph_steps <= captures {
+            println!("FAILED: the graph arm captured {captures} and replayed {graph_steps} steps");
+            std::process::exit(1);
+        }
+        println!(
+            "PASS: B-row graph steps bit-identical to solo steps across join, leave and row moves ({captures} captures, {graph_steps} graph steps)"
+        );
+        let (eager, graphs) = sampled_graph_vs_eager(&gpu, &prompts, capacity, steps);
+        if eager != graphs {
+            println!("FAILED: sampled graph draws differ from the eager B-row draws");
+            std::process::exit(1);
+        }
+        println!(
+            "PASS: sampled B-row graph draws equal the eager B-row draws ({steps} steps x 4 rows)"
+        );
     } else {
         let piped = pipelined_groups(&gpu, &prompts, capacity, steps);
         for s in 0..prompts.len() {
@@ -427,6 +547,35 @@ fn main() {
                 }
             }
             let rows_s = t0.elapsed().as_secs_f64();
+            if tp_ep && b >= 2 {
+                let mut sessions: Vec<Session> = prompts[..b]
+                    .iter()
+                    .map(|p| prime(&gpu, p, capacity))
+                    .collect();
+                let mut rows = gpu.alloc_rows_state(b).expect("B-row workspace");
+                let draws = vec![Dsv4RowDraw::Argmax; b];
+                drain(&gpu);
+                let t0 = Instant::now();
+                for _ in 0..timing_steps {
+                    let toks: Vec<u32> = sessions.iter().map(|s| s.next).collect();
+                    let mut states: Vec<&mut DecodeState> =
+                        sessions.iter_mut().map(|s| &mut s.state).collect();
+                    let next = gpu
+                        .decode_rows_draw(&toks, &mut states, &mut rows, &draws)
+                        .expect("graph B-row");
+                    drop(states);
+                    for (s, t) in sessions.iter_mut().zip(next) {
+                        s.next = t;
+                    }
+                }
+                let graph_s = t0.elapsed().as_secs_f64();
+                println!(
+                    "TIME rep={rep} GRAPH B={b} graph_ms_per_step={:.3} graph_tok_s={:.2} vs_eager_rows={:.3} (first step captures)",
+                    1e3 * graph_s / timing_steps as f64,
+                    (b * timing_steps) as f64 / graph_s,
+                    rows_s / graph_s
+                );
+            }
             if b == 4 && !tp_ep {
                 let mut sessions: Vec<Session> =
                     prompts.iter().map(|p| prime(&gpu, p, capacity)).collect();

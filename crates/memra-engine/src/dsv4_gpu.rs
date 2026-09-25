@@ -1321,6 +1321,9 @@ pub struct StepWs {
 /// Whole-trunk decode state: one [`LayerCache`] per trunk layer + the stream position.
 /// `pos` = tokens consumed so far (the next decode_step processes position `pos`).
 pub struct DecodeState {
+    /// A process-unique serial: a captured B-row graph names its requests by it, so a new
+    /// state at a freed state's address never matches that state's graph (memra #710).
+    serial: u64,
     matrix_moe: bool,
     /// A persistent one-row instance of the same executor used by matrix
     /// prefill and verification. Never crosses into the scalar expert program.
@@ -7640,6 +7643,7 @@ impl Dsv4Gpu {
             st.gpu.stream().synchronize().map_err(e("cache sync"))?;
         }
         Ok(DecodeState {
+            serial: DECODE_STATE_SERIAL.fetch_add(1, Ordering::Relaxed),
             matrix_moe: self.matrix_moe,
             matrix_step,
             caches,
@@ -11865,11 +11869,8 @@ impl Dsv4Gpu {
                 groups.iter().map(|g| g.t).sum::<usize>()
             ));
         }
-        if groups.len() > 1 && (self.attention_tp.is_none() || capture || taps.is_some()) {
-            return Err(
-                "several TP/EP row groups need attention TP2, no capture and no drafter taps"
-                    .into(),
-            );
+        if groups.len() > 1 && (self.attention_tp.is_none() || taps.is_some()) {
+            return Err("several TP/EP row groups need attention TP2 and no drafter taps".into());
         }
         let n_trunk = (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) as usize;
         if groups.iter().any(|g| {
@@ -14499,8 +14500,33 @@ struct LayerCkptDev {
     trans_base: usize,
 }
 
+/// What a row of a TP/EP B-row step draws (memra #710): the device argmax, or the device
+/// sampler at a configuration (its seed keys the row's uniform).
+pub use crate::dsv4_graph::RowDraw as Dsv4RowDraw;
+
+/// Whether TP/EP B-row steps capture and replay CUDA graphs. Default on; a gate turns it off
+/// to compare the captured step with the eager one.
+static DSV4_ROWS_GRAPH: AtomicBool = AtomicBool::new(true);
+
+/// Gate-only: capture TP/EP B-row steps (`true`, the default) or keep them eager. Returns the
+/// previous value.
+pub fn set_rows_graph_for_gate(on: bool) -> bool {
+    DSV4_ROWS_GRAPH.swap(on, Ordering::SeqCst)
+}
+
+static DSV4_ROWS_GRAPH_CAPTURES: AtomicU64 = AtomicU64::new(0);
+static DSV4_ROWS_GRAPH_STEPS: AtomicU64 = AtomicU64::new(0);
+
+/// The next [`DecodeState::serial`].
+static DECODE_STATE_SERIAL: AtomicU64 = AtomicU64::new(1);
+
 /// Whole-round verify state: the per-stage arenas + the per-layer §3.1 checkpoints.
 pub struct VerifyState {
+    /// A B-row workspace's captured TP/EP step (memra #710 B-row graphs). First, so it drops,
+    /// draining both ranks, before any buffer it captured.
+    rows_replay: Option<crate::dsv4_graph::RowsReplay>,
+    /// The device sampler an eager B-row step draws its sampled rows with.
+    draw_sampler: Option<crate::dsv4_sampler::Dsv4DeviceSampler>,
     matrix_moe: bool,
     capture_probe_next_round: bool,
     /// `None` means the legacy whole-layer capture census (every trunk layer).
@@ -15722,6 +15748,8 @@ impl Dsv4Gpu {
         }
         Ok(VerifyState {
             matrix_moe: self.matrix_moe,
+            rows_replay: None,
+            draw_sampler: None,
             capture_probe_next_round: false,
             capture_layers: None,
             replay_layer_next_round: false,
@@ -16673,13 +16701,15 @@ impl Dsv4Gpu {
             .all(|ok| ok);
         if groups.len() > 1
             && (host_math
-                || vws.full_token_replay
                 || !contiguous
-                || groups.iter().any(|g| g.cache.c4_host.is_some()))
+                || groups.iter().any(|g| g.cache.c4_host.is_some())
+                || (vws.full_token_replay
+                    && (vws.replay_cadence.is_some() || groups.iter().any(|g| g.t != 1))))
         {
             return Err(
                 "multi-request attention rows need device math, device-resident C4 caches, \
-                 no full-token replay and contiguous non-empty groups"
+                 contiguous non-empty groups, and under replay one row per group without \
+                 cadence variants"
                     .into(),
             );
         }
@@ -16731,9 +16761,9 @@ impl Dsv4Gpu {
             .full_token_replay
             .then(|| vws.pos_dev.device_ptr(&stream).0 as *const i32);
         if replay_pos.is_some()
-            && (t != 1
+            && (groups.iter().any(|g| g.t != 1)
                 || host_math
-                || groups[0].cache.c4_host.is_some()
+                || groups.iter().any(|g| g.cache.c4_host.is_some())
                 || !self.chains_f32
                 || self.indexer_score == Dsv4IndexerScore::Tiled)
         {
@@ -17025,6 +17055,9 @@ impl Dsv4Gpu {
         // cache and rows
         for g in groups.iter_mut() {
             let (pos0, t, row0) = (g.pos0, g.t, g.row0);
+            // Under replay each group is one row, reading its position at its own row of the
+            // workspace's device positions (memra #710 B-row graphs).
+            let replay_pos = replay_pos.map(|p| unsafe { p.add(row0) });
             let lck = &mut *g.lck;
             let trans_base = lck.trans_base;
             let LayerCache {
@@ -17102,7 +17135,7 @@ impl Dsv4Gpu {
                             ck(
                                 "replay fine indices",
                                 k::memra_dsv4_replay_indices(
-                                    vws.idx.device_ptr_mut(&stream).0 as *mut i32,
+                                    idx_row!(vws.idx, &stream, row0, vws.idx_stride),
                                     pos_dev,
                                     win as i32,
                                     ratio as i32,
@@ -17117,12 +17150,12 @@ impl Dsv4Gpu {
                             ck(
                                 "replay indexer",
                                 k::memra_dsv4_replay_indexer(
-                                    dpf!(vws.qi, &stream),
+                                    dpf_row!(vws.qi, &stream, row0, ix.heads * ix.hd),
                                     dpf!(ikvc.as_ref().expect("ikvc"), &stream),
-                                    dpf!(vws.wproj, &stream),
+                                    dpf_row!(vws.wproj, &stream, row0, ix.heads),
                                     wscale,
                                     dpm!(vws.score, &stream),
-                                    (vws.idx.device_ptr_mut(&stream).0 as *mut i32).add(win),
+                                    idx_row!(vws.idx, &stream, row0, vws.idx_stride).add(win),
                                     pos_dev,
                                     ix.heads as i32,
                                     ix.hd as i32,
@@ -17378,7 +17411,7 @@ impl Dsv4Gpu {
                             "build_idx_redirect_m coarse",
                             if let Some(pos_dev) = replay_pos {
                                 k::memra_dsv4_replay_indices(
-                                    vws.idx.device_ptr_mut(&stream).0 as *mut i32,
+                                    idx_row!(vws.idx, &stream, row0, vws.idx_stride),
                                     pos_dev,
                                     win as i32,
                                     ratio as i32,
@@ -17502,12 +17535,12 @@ impl Dsv4Gpu {
                         ck(
                             "replay attention st",
                             k::memra_dsv4_sink_attn_st_f32acc(
-                                dpf!(vws.q, &stream),
+                                dpf_row!(vws.q, &stream, row0, heads * hd),
                                 attention_kv,
                                 attention_indices,
                                 sink,
                                 dpm!(vws.sink_scores, &stream),
-                                dpm!(vws.o, &stream),
+                                dpm_row!(vws.o, &stream, row0, heads * hd),
                                 1,
                                 heads as i32,
                                 hd as i32,
@@ -17527,14 +17560,14 @@ impl Dsv4Gpu {
                         ck(
                             "replay attention",
                             k::memra_dsv4_replay_attention(
-                                dpf!(vws.qt, &stream),
+                                dpf_row!(vws.qt, &stream, row0, heads * hd),
                                 attention_kv,
                                 attention_indices,
                                 sink,
                                 dpm!(vws.sink_scores, &stream),
                                 dpm!(vws.sink_evals, &stream),
                                 vws.sink_den.device_ptr_mut(&stream).0 as *mut f32,
-                                dpm!(vws.o, &stream),
+                                dpm_row!(vws.o, &stream, row0, heads * hd),
                                 pos_dev,
                                 heads as i32,
                                 hd as i32,
@@ -19709,6 +19742,101 @@ impl Dsv4Gpu {
         Ok((logits.chunks(vocab).map(<[f32]>::to_vec).collect(), am))
     }
 
+    /// One TP/EP decode step for `states.len()` requests where row r draws `draws[r]` (memra
+    /// #710 B-row): the device argmax, or the device sampler at the row's position. The step
+    /// runs a captured graph for this batch when it can (every request unhosted, below its
+    /// replay limit, and the same batch and draws as the captured one) and the eager B-row step
+    /// otherwise: the same numeric program either way (`dsv4_rows_gate`).
+    pub fn decode_rows_draw(
+        &self,
+        toks: &[u32],
+        states: &mut [&mut DecodeState],
+        rows: &mut VerifyState,
+        draws: &[Dsv4RowDraw],
+    ) -> Res<Vec<u32>> {
+        let b = toks.len();
+        if draws.len() != b || b != states.len() || b == 0 || b > rows.tmax {
+            return Err(format!(
+                "B-row draw step of {b} tokens, {} draws, {} states, {}-row workspace",
+                draws.len(),
+                states.len(),
+                rows.tmax
+            ));
+        }
+        if !self.topology.is_tp_ep() {
+            return Err("B-row draws run on TP/EP".into());
+        }
+        if self.rows_graph_admits(states, rows) {
+            return self
+                .decode_rows_tp_ep_run(toks, states, rows, false, Some(draws))
+                .map(|(_, tokens)| tokens);
+        }
+        let (_, am) = self.decode_rows_tp_ep_run(toks, states, rows, false, None)?;
+        let mut sampler = match rows.draw_sampler.take() {
+            Some(sampler) => sampler,
+            None if draws.iter().any(|d| matches!(d, Dsv4RowDraw::Sample(_))) => {
+                self.device_sampler()?
+            }
+            None => return Ok(am),
+        };
+        let out = am
+            .iter()
+            .zip(draws)
+            .enumerate()
+            .map(|(i, (&tok, draw))| match draw {
+                Dsv4RowDraw::Argmax => Ok(tok),
+                Dsv4RowDraw::Sample(cfg) => {
+                    self.sample_rows_device(rows, i, states[i].pos, &mut sampler, cfg)
+                }
+            })
+            .collect();
+        rows.draw_sampler = Some(sampler);
+        out
+    }
+
+    /// Gate-only: the last B-row step's first `b` logits rows, read from the head workspace.
+    pub fn rows_logits_for_gate(&self, rows: &VerifyState, b: usize) -> Res<Vec<Vec<f32>>> {
+        let head = rows.ws.last().ok_or("B-row head workspace missing")?;
+        let vocab = head.logits.len() / head.tmax;
+        if b > head.tmax {
+            return Err(format!("{b} rows past a {}-row workspace", head.tmax));
+        }
+        let stream = self.stages.last().expect("head rank").gpu.stream();
+        let mut v = vec![0f32; b * vocab];
+        stream
+            .memcpy_dtoh(&head.logits.slice(0..b * vocab), &mut v[..])
+            .map_err(e("dtoh B-row logits for gate"))?;
+        stream
+            .synchronize()
+            .map_err(e("sync B-row logits for gate"))?;
+        Ok(v.chunks(vocab).map(<[f32]>::to_vec).collect())
+    }
+
+    /// Gate-only: B-row graph captures and graph steps in this process.
+    pub fn rows_graph_counts_for_gate() -> (u64, u64) {
+        (
+            DSV4_ROWS_GRAPH_CAPTURES.load(Ordering::Relaxed),
+            DSV4_ROWS_GRAPH_STEPS.load(Ordering::Relaxed),
+        )
+    }
+
+    /// Whether a TP/EP B-row step over `states` can run a captured graph.
+    fn rows_graph_admits(&self, states: &[&mut DecodeState], rows: &VerifyState) -> bool {
+        DSV4_ROWS_GRAPH.load(Ordering::Relaxed)
+            && (2..=8).contains(&states.len())
+            && self.validate_full_token_program().is_ok()
+            && !self.stages.iter().any(|st| st.gpu.ctx.is_event_tracking())
+            && rows.ws.iter().all(|ws| !ws.is_prefill)
+            && states.iter().all(|s| {
+                s.capacity >= REPLAY_MIN_CAPACITY
+                    && s.pos < s.capacity.min(REPLAY_LIMIT)
+                    && s.caches.iter().all(|c| c.c4_host.is_none())
+                    && s.tp_ep_caches
+                        .as_ref()
+                        .is_some_and(|cs| cs.iter().all(|c| c.c4_host.is_none()))
+            })
+    }
+
     /// Pipelined B-row step, first half (memra #667 levers 1 and 2): queue the whole step for
     /// every row with no host wait. Each row's device argmax (and, when `full`, its logits row)
     /// lands in pinned memory behind one event per stage, and each request's round stays open.
@@ -19837,7 +19965,7 @@ impl Dsv4Gpu {
                         .into(),
                 );
             }
-            return self.decode_rows_tp_ep(toks, states, rows, full);
+            return self.decode_rows_tp_ep_run(toks, states, rows, full, None);
         }
         if !self.matrix_moe
             || self.decode_path != (DecodePath::Device { host_math: false })
@@ -20120,12 +20248,13 @@ impl Dsv4Gpu {
     /// request armed for full-token replay may ride the step: the step touches its caches and
     /// checkpoints only, never its graphs or one-row workspace, and the replay refreshes its
     /// host marks from the position when it resumes.
-    fn decode_rows_tp_ep(
+    fn decode_rows_tp_ep_run(
         &self,
         toks: &[u32],
         states: &mut [&mut DecodeState],
         rows: &mut VerifyState,
         full: bool,
+        graph: Option<&[Dsv4RowDraw]>,
     ) -> Res<(Option<Vec<f32>>, Vec<u32>)> {
         if !self.matrix_moe
             || self.decode_path != (DecodePath::Device { host_math: false })
@@ -20186,8 +20315,12 @@ impl Dsv4Gpu {
             .iter_mut()
             .map(|s| s.matrix_step.take().expect("checked above"))
             .collect();
-        let mut result =
-            self.decode_rows_tp_ep_walk(toks, states, &mut rank1, &mut steps, rows, full);
+        let mut result = match graph {
+            Some(draws) => self
+                .decode_rows_tp_ep_graph(toks, states, &mut rank1, &mut steps, rows, draws)
+                .map(|tokens| (None, tokens)),
+            None => self.decode_rows_tp_ep_walk(toks, states, &mut rank1, &mut steps, rows, full),
+        };
         let failed = result.is_err();
         for ((state, caches), mut step) in states.iter_mut().zip(rank1).zip(steps) {
             // A failed step poisons every request in it: none may continue from a
@@ -20211,6 +20344,458 @@ impl Dsv4Gpu {
         }
         drop(walk_guard);
         result
+    }
+
+    /// Every request's host compressor marks as the graphs expect them before a launch: the
+    /// checkpoint keeps the committed count and the cache the count after this position. The
+    /// device appends and emissions read the device position (the one-row replay's refresh).
+    fn rows_graph_refresh_marks(
+        states: &mut [&mut DecodeState],
+        rank1: &mut [Vec<LayerCache>],
+        steps: &mut [Box<MatrixStep>],
+    ) {
+        for ((state, caches1), step) in states
+            .iter_mut()
+            .zip(rank1.iter_mut())
+            .zip(steps.iter_mut())
+        {
+            let pos = state.pos;
+            let planes: [(&mut Vec<LayerCache>, &mut Vec<LayerCkptDev>); 2] = [
+                (&mut state.caches, &mut step.verify.layers),
+                (
+                    caches1,
+                    step.verify
+                        .tp_ep_layers
+                        .as_mut()
+                        .expect("checked TP/EP checkpoints"),
+                ),
+            ];
+            for (caches, checkpoints) in planes {
+                for (cache, checkpoint) in caches.iter_mut().zip(checkpoints.iter_mut()) {
+                    if let Some(ck) = &mut checkpoint.cmp {
+                        ck.n_blocks0 = cache.n_blocks;
+                        cache.n_blocks = (pos + 1) / ck.ratio;
+                    }
+                    if let Some(ck) = &mut checkpoint.idx {
+                        ck.n_blocks0 = cache.i_blocks;
+                        cache.i_blocks = (pos + 1) / ck.ratio;
+                    }
+                }
+            }
+        }
+    }
+
+    /// The captured TP/EP B-row step (memra #710 B-row graphs). A batch it has not captured
+    /// (membership, order or draws differ) records a forward and a commit graph per rank from
+    /// the eager walk, under the full-token replay's device-position kernels, one row per
+    /// request; then every step uploads the rows' tokens, positions and uniforms, launches the
+    /// forward graphs, reads the one-shot refusals and MoE fault words, launches the commit
+    /// graphs and reads each row's token. Same numeric program as the eager B-row step.
+    fn decode_rows_tp_ep_graph(
+        &self,
+        toks: &[u32],
+        states: &mut [&mut DecodeState],
+        rank1: &mut [Vec<LayerCache>],
+        steps: &mut [Box<MatrixStep>],
+        rows: &mut VerifyState,
+        draws: &[Dsv4RowDraw],
+    ) -> Res<Vec<u32>> {
+        let b = toks.len();
+        let limit = states
+            .iter()
+            .map(|s| s.capacity.min(REPLAY_LIMIT))
+            .min()
+            .ok_or("empty B-row graph step")?;
+        let key: Vec<(u64, Dsv4RowDraw)> = states
+            .iter()
+            .zip(draws)
+            .map(|(s, &draw)| (s.serial, draw))
+            .collect();
+        let owner = self as *const Self as usize;
+        let capture = rows
+            .rows_replay
+            .as_ref()
+            .is_none_or(|g| !g.ready || g.key != key || g.limit != limit || g.owner != owner);
+        if capture {
+            // Dropping a stale batch's graphs drains both ranks first.
+            rows.rows_replay = None;
+            let samplers = draws
+                .iter()
+                .map(|draw| match draw {
+                    Dsv4RowDraw::Argmax => Ok(None),
+                    Dsv4RowDraw::Sample(_) => self.device_sampler().map(Some),
+                })
+                .collect::<Res<Vec<_>>>()?;
+            rows.rows_replay = Some(crate::dsv4_graph::RowsReplay::new(
+                [self.stages[0].gpu.stream(), self.stages[1].gpu.stream()],
+                key,
+                samplers,
+                limit,
+                owner,
+            )?);
+        }
+        let pos0: Vec<usize> = states.iter().map(|s| s.pos).collect();
+        let uploads: Vec<(u32, usize, f64)> = toks
+            .iter()
+            .zip(&pos0)
+            .zip(draws)
+            .map(|((&tok, &pos), draw)| {
+                let uniform = match draw {
+                    Dsv4RowDraw::Argmax => 0.0,
+                    Dsv4RowDraw::Sample(cfg) => dsv4_pos_uniform(cfg.seed, pos + 1),
+                };
+                (tok, pos, uniform)
+            })
+            .collect();
+        rows.rows_replay
+            .as_mut()
+            .expect("allocated above")
+            .upload(&uploads)?;
+        // The MoE route and mirror fault words: cleared outside the graphs, read between them.
+        for (rank, vws) in rows.ws.iter_mut().enumerate() {
+            let Some(words) = vws.moe_fault.as_mut() else {
+                continue;
+            };
+            let st = &self.stages[rank];
+            st.gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind B-row faults"))?;
+            if vws.moe_fault_armed {
+                st.gpu
+                    .stream()
+                    .memset_zeros(words)
+                    .map_err(e("clear stale MoE faults"))?;
+            }
+            vws.moe_fault_armed = true;
+        }
+        if capture {
+            for vws in &mut rows.ws {
+                vws.full_token_replay = true;
+                vws.replay_limit = limit;
+                vws.replay_cadence = None;
+            }
+            let recorded = self.rows_graph_record_forward(toks, states, rank1, steps, rows);
+            // Rust ran while CUDA only recorded: every host mark goes back before the first
+            // execution.
+            for ((state, caches1), step) in states
+                .iter_mut()
+                .zip(rank1.iter_mut())
+                .zip(steps.iter_mut())
+            {
+                let planes: [(&mut Vec<LayerCache>, &Vec<LayerCkptDev>); 2] = [
+                    (&mut state.caches, &step.verify.layers),
+                    (
+                        caches1,
+                        step.verify
+                            .tp_ep_layers
+                            .as_ref()
+                            .expect("checked TP/EP checkpoints"),
+                    ),
+                ];
+                for (caches, checkpoints) in planes {
+                    for (cache, checkpoint) in caches.iter_mut().zip(checkpoints) {
+                        if let Some(ck) = &checkpoint.cmp {
+                            cache.n_blocks = ck.n_blocks0;
+                        }
+                        if let Some(ck) = &checkpoint.idx {
+                            cache.i_blocks = ck.n_blocks0;
+                        }
+                    }
+                }
+            }
+            if let Err(error) = recorded {
+                for vws in &mut rows.ws {
+                    vws.full_token_replay = false;
+                    vws.replay_limit = 0;
+                }
+                let _ = rows.rows_replay.as_ref().map(|g| g.abort_capture_both());
+                rows.rows_replay = None;
+                return Err(error);
+            }
+        }
+        Self::rows_graph_refresh_marks(states, rank1, steps);
+        rows.rows_replay
+            .as_mut()
+            .expect("allocated above")
+            .launch(0)?;
+        let refusals = self.tp_ep_ar_refusal_words()?;
+        let faults = self.take_moe_faults(&mut rows.ws);
+        if refusals != [0, 0] || faults.is_err() {
+            rows.rows_replay.as_ref().expect("allocated").drain_both()?;
+            for vws in &mut rows.ws {
+                vws.full_token_replay = false;
+            }
+            let mut error = match faults {
+                Err(fault) if refusals == [0, 0] => fault,
+                Err(fault) => format!("TP/EP one-shot reduction refused: {refusals:?}; {fault}"),
+                Ok(()) => format!("TP/EP one-shot reduction refused: {refusals:?}"),
+            };
+            for (((state, caches1), step), &p0) in states
+                .iter_mut()
+                .zip(rank1.iter_mut())
+                .zip(steps.iter_mut())
+                .zip(&pos0)
+            {
+                let rollback0 = self.commit_verify_dev_plane(
+                    &mut state.caches,
+                    &mut step.verify.layers,
+                    &mut rows.ws,
+                    Some(0),
+                    p0,
+                    1,
+                    0,
+                );
+                let rollback1 = self.commit_verify_dev_plane(
+                    caches1,
+                    step.verify
+                        .tp_ep_layers
+                        .as_mut()
+                        .expect("checked TP/EP checkpoints"),
+                    &mut rows.ws,
+                    Some(1),
+                    p0,
+                    1,
+                    0,
+                );
+                for (rank, rollback) in [rollback0, rollback1].into_iter().enumerate() {
+                    if let Err(rollback_error) = rollback {
+                        error.push_str(&format!("; rank {rank} rollback: {rollback_error}"));
+                    }
+                }
+            }
+            rows.rows_replay = None;
+            return Err(error);
+        }
+        if capture {
+            let recorded = self.rows_graph_record_commit(states, rank1, steps, rows, draws, &pos0);
+            for vws in &mut rows.ws {
+                vws.full_token_replay = false;
+                vws.replay_limit = 0;
+            }
+            if let Err(error) = recorded {
+                let _ = rows.rows_replay.as_ref().map(|g| g.abort_capture_both());
+                rows.rows_replay = None;
+                return Err(error);
+            }
+            rows.rows_replay.as_mut().expect("allocated").ready = true;
+            DSV4_ROWS_GRAPH_CAPTURES.fetch_add(1, Ordering::Relaxed);
+        }
+        let graph = rows.rows_replay.as_mut().expect("allocated above");
+        graph.launch(1)?;
+        graph.drain_both()?;
+        DSV4_ROWS_GRAPH_STEPS.fetch_add(1, Ordering::Relaxed);
+        for (state, &p0) in states.iter_mut().zip(&pos0) {
+            state.pos = p0 + 1;
+        }
+        let stream = self.stages[1].gpu.stream();
+        self.stages[1]
+            .gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("bind B-row graph readback"))?;
+        let mut am = vec![0i32; b];
+        let view = rows.ws[1].argmax.slice(0..b);
+        stream
+            .memcpy_dtoh(&view, &mut am[..])
+            .map_err(e("dtoh B-row graph argmax"))?;
+        stream.synchronize().map_err(e("sync B-row graph argmax"))?;
+        let graph = rows.rows_replay.as_mut().expect("allocated above");
+        let mut out = Vec::with_capacity(b);
+        for (i, draw) in draws.iter().enumerate() {
+            out.push(match draw {
+                Dsv4RowDraw::Argmax => am[i] as u32,
+                Dsv4RowDraw::Sample(_) => graph.samplers[i]
+                    .as_mut()
+                    .ok_or("B-row graph sampler missing")?
+                    .read_replay()?,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Record the B-row forward graph: the rows' input kernel, embedding and the TP/EP walk.
+    fn rows_graph_record_forward(
+        &self,
+        toks: &[u32],
+        states: &mut [&mut DecodeState],
+        rank1: &mut [Vec<LayerCache>],
+        steps: &mut [Box<MatrixStep>],
+        rows: &mut VerifyState,
+    ) -> Res<()> {
+        let mc = &self.model.mc;
+        let d = self.model.cfg();
+        let b = toks.len();
+        let hidden = mc.n_embd as usize;
+        let hc = d.hc_mult as usize;
+        let win = d.sliding_window as usize;
+        rows.rows_replay.as_mut().expect("allocated").begin(0)?;
+        for rank in 0..2usize {
+            let st = &self.stages[rank];
+            st.gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind B-row capture"))?;
+            let stream = st.gpu.stream();
+            let input = rows
+                .rows_replay
+                .as_ref()
+                .expect("allocated")
+                .input_ptr(rank);
+            let vws = &mut rows.ws[rank];
+            unsafe {
+                ck(
+                    "B-row replay inputs",
+                    k::memra_dsv4_replay_rows_input(
+                        input,
+                        vws.tok.device_ptr_mut(&stream).0 as *mut i32,
+                        vws.pos_dev.device_ptr_mut(&stream).0 as *mut i32,
+                        vws.slot_rows.device_ptr_mut(&stream).0 as *mut i32,
+                        b as i32,
+                        win as i32,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "B-row replay embed",
+                    k::memra_dsv4_embed_rows(
+                        st.embed
+                            .as_ref()
+                            .ok_or("TP/EP rank embed missing")?
+                            .device_ptr(&stream)
+                            .0 as *const c_void,
+                        vws.tok.device_ptr(&stream).0 as *const i32,
+                        dpm!(vws.emb, &stream),
+                        b as i32,
+                        hidden as i32,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "B-row replay repeat hc",
+                    k::memra_dsv4_repeat_hc(
+                        dpf!(vws.emb, &stream),
+                        dpm!(vws.h_a, &stream),
+                        b as i32,
+                        hc as i32,
+                        hidden as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        }
+        let pos0: Vec<usize> = states.iter().map(|s| s.pos).collect();
+        let mut ckpts: Vec<[Vec<LayerCkptDev>; 2]> = steps
+            .iter_mut()
+            .map(|step| {
+                [
+                    std::mem::take(&mut step.verify.layers),
+                    step.verify
+                        .tp_ep_layers
+                        .take()
+                        .expect("checked TP/EP checkpoints"),
+                ]
+            })
+            .collect();
+        let walked = {
+            let mut groups: Vec<TpEpRows<'_>> = states
+                .iter_mut()
+                .zip(rank1.iter_mut())
+                .zip(ckpts.iter_mut())
+                .zip(&pos0)
+                .map(|(((state, caches1), [c0, c1]), &p0)| TpEpRows {
+                    caches: [&mut state.caches[..], &mut caches1[..]],
+                    ckpts: [&mut c0[..], &mut c1[..]],
+                    pos0: p0,
+                    t: 1,
+                })
+                .collect();
+            self.tp_ep_trunk_walk_rows(&mut groups, rows, toks, false, true, true, None, None)
+        };
+        for (step, [c0, c1]) in steps.iter_mut().zip(ckpts) {
+            step.verify.layers = c0;
+            step.verify.tp_ep_layers = Some(c1);
+        }
+        walked?;
+        rows.rows_replay.as_mut().expect("allocated").end(0)
+    }
+
+    /// Record the B-row commit graph: each request's two planes (its ring slot read from its
+    /// row), the head over every row, and each row's argmax or device draw.
+    fn rows_graph_record_commit(
+        &self,
+        states: &mut [&mut DecodeState],
+        rank1: &mut [Vec<LayerCache>],
+        steps: &mut [Box<MatrixStep>],
+        rows: &mut VerifyState,
+        draws: &[Dsv4RowDraw],
+        pos0: &[usize],
+    ) -> Res<()> {
+        let b = states.len();
+        rows.rows_replay.as_mut().expect("allocated").begin(1)?;
+        for (r, (((state, caches1), step), &p0)) in states
+            .iter_mut()
+            .zip(rank1.iter_mut())
+            .zip(steps.iter_mut())
+            .zip(pos0)
+            .enumerate()
+        {
+            self.commit_verify_dev_plane_row(
+                &mut state.caches,
+                &mut step.verify.layers,
+                &mut rows.ws,
+                0,
+                p0,
+                r,
+            )?;
+            self.commit_verify_dev_plane_row(
+                caches1,
+                step.verify
+                    .tp_ep_layers
+                    .as_mut()
+                    .expect("checked TP/EP checkpoints"),
+                &mut rows.ws,
+                1,
+                p0,
+                r,
+            )?;
+        }
+        self.stages[1]
+            .gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("bind B-row head capture"))?;
+        self.head_logits_batch_dev(&mut rows.ws[1], b, false)?;
+        let stream = self.stages[1].gpu.stream();
+        let input = rows.rows_replay.as_ref().expect("allocated").input_ptr(1);
+        let vocab = rows.ws[1].logits.len() / rows.ws[1].tmax;
+        for (i, draw) in draws.iter().enumerate() {
+            let vws = &mut rows.ws[1];
+            let row = (vws.logits.device_ptr(&stream).0 as usize + i * vocab * 4) as *const f32;
+            match draw {
+                Dsv4RowDraw::Argmax => unsafe {
+                    ck(
+                        "B-row graph argmax",
+                        k::memra_dsv4_argmax(
+                            row,
+                            vocab as i64,
+                            (vws.argmax.device_ptr_mut(&stream).0 as usize + i * 4) as *mut i32,
+                            sp(&stream),
+                        ),
+                    )?;
+                },
+                Dsv4RowDraw::Sample(cfg) => {
+                    let graph = rows.rows_replay.as_mut().expect("allocated");
+                    let sampler = graph.samplers[i]
+                        .as_mut()
+                        .ok_or("B-row graph sampler missing")?;
+                    unsafe {
+                        sampler.enqueue_replay(row, input.add(3 * i + 1).cast::<f64>(), cfg)?;
+                    }
+                }
+            }
+        }
+        rows.rows_replay.as_mut().expect("allocated").end(1)
     }
 
     fn decode_rows_tp_ep_walk(
@@ -20554,6 +21139,7 @@ impl Dsv4Gpu {
             t,
             n_commit,
             drain,
+            0,
         )?;
         state.pos = pos0 + n_commit;
         Ok(())
@@ -20579,6 +21165,36 @@ impl Dsv4Gpu {
             t,
             n_commit,
             true,
+            0,
+        )
+    }
+
+    /// [`Self::commit_verify_dev_plane`] for workspace row `slot_row` of a captured B-row step:
+    /// under capture the ring scatter reads that row's slot, which the graph's input kernel
+    /// wrote from the row's device position (memra #710 B-row graphs).
+    #[allow(clippy::too_many_arguments)]
+    fn commit_verify_dev_plane_row(
+        &self,
+        caches: &mut [LayerCache],
+        checkpoints: &mut [LayerCkptDev],
+        ws: &mut [VerifyWs],
+        stage: usize,
+        pos0: usize,
+        slot_row: usize,
+    ) -> Res<()> {
+        if !ws.get(stage).is_some_and(|w| w.full_token_replay) {
+            return Err("a B-row commit by row runs under capture only".into());
+        }
+        self.commit_verify_dev_plane_drain(
+            caches,
+            checkpoints,
+            ws,
+            Some(stage),
+            pos0,
+            1,
+            1,
+            true,
+            slot_row,
         )
     }
 
@@ -20599,6 +21215,7 @@ impl Dsv4Gpu {
         t: usize,
         n_commit: usize,
         drain: bool,
+        slot_row: usize,
     ) -> Res<()> {
         let d = self.model.cfg();
         let mc = &self.model.mc;
@@ -20698,7 +21315,8 @@ impl Dsv4Gpu {
                         k::memra_dsv4_scatter_rows(
                             src,
                             kvc as *mut f32,
-                            vws.slot_rows.device_ptr(&stream).0 as *const i32,
+                            (vws.slot_rows.device_ptr(&stream).0 as *const i32)
+                                .add(if graph_commit { slot_row } else { 0 }),
                             ring_keep as i32,
                             hd as i32,
                             sp(&stream),

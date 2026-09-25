@@ -7429,6 +7429,25 @@ extern "C" int memra_dsv4_replay_input(const uint64_t* input, int* token, int* p
     DSV4_ERR();
     return 0;
 }
+// B-row replay inputs (memra #710 B-row graphs): row r reads its words at input[3r] (token
+// in the low half, position in the high half) and writes its token, position and window slot.
+__global__ void dsv4_replay_rows_input_kernel(const uint64_t* input, int* token, int* pos,
+    int* slot, int rows, int window) {
+    int r = threadIdx.x;
+    if (r >= rows) return;
+    uint64_t word = input[3 * r];
+    token[r] = (int)(word & 0xffffffffULL);
+    pos[r] = (int)(word >> 32);
+    slot[r] = pos[r] % window;
+}
+extern "C" int memra_dsv4_replay_rows_input(const uint64_t* input, int* token, int* pos,
+    int* slot, int rows, int window, void* stream) {
+    if (!input || !token || !pos || !slot || rows <= 0 || rows > 32 || window <= 0) return 40074;
+    dsv4_replay_rows_input_kernel<<<1, 32, 0, (cudaStream_t)stream>>>(input, token, pos, slot,
+        rows, window);
+    DSV4_ERR();
+    return 0;
+}
 __global__ void dsv4_replay_tick_kernel(unsigned long long* count) { atomicAdd(count, 1ULL); }
 extern "C" int memra_dsv4_replay_tick(uint64_t* count, void* stream) {
     if (!count) return 40074;
