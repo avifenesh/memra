@@ -113,3 +113,8 @@ the run was stopped after 20 minutes without a verdict (`gate-275f83a75-stopped.
 `6695e7c0b` adds `DSV4_REPLAY_GATE_DIGEST_EVERY`: the token and logits bits are checked every
 step, and the digests every 256 steps and on the 64 steps either side of the handoff. That run
 is `raw/ws-limit/`.
+
+That run (Workstation pair, gate `6695e7c0b`, `raw/ws-limit/`) PASSES. It ran 16100 steps from
+position 400 to 16500, bit-identical to eager. 15984 steps were replayed, then the run continued
+eager from the handoff at 16384. Replay variants per rank: 11988 ordinary, 3871 C4, 125 C4+C128.
+`tokens_sha256=0c17e11b42db18583a2f07309c099719d13c796340d1f00a30d37db7f60c8be8`.
