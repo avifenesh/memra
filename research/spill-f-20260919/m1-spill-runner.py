@@ -47,6 +47,8 @@ SAMPLE = load("sampler", SAMPLER)
 PATTERNS = {
     "gate": r"argmax=(\d+)\s+decode argmax=(\d+)\s+logit maxdiff=\S+\s+(MATCH|MISMATCH)",
     "ttft": r"\[ttft\] prompt_tokens=(\d+) prefill_wall_s=([\d.]+)",
+    "prefill_pp": r"^prefill (\d+) tok in ([\d.]+)s = ([\d.]+) tok/s",
+    "config_invalid": r"^\[spill(?:-pread)?\] invalid (MEMRA_\w+)",
     "generated": r"^generated (\d+) tokens in ([\d.]+)s = ([\d.]+) tok/s",
     "tokens": r"^tokens: \[([\d, ]*)\]",
     "placed": r"\[spill\] experts placed: (\d+) pinned .*?, (\d+) mmap'd",
@@ -114,6 +116,9 @@ def expected_depth(arm):
     return int(arm["env"].get("MEMRA_SPILL_PREAD_DEPTH", "2"))
 
 
+lock_placement = {}
+
+
 def correctness(arm, parsed, oracle_tokens, ngen, overread_per_read):
     problems = []
     if parsed["panics"]:
@@ -124,6 +129,13 @@ def correctness(arm, parsed, oracle_tokens, ngen, overread_per_read):
         problems.append(f"did not generate {ngen} tokens")
     if parsed["tokens"] is None or (oracle_tokens is not None and parsed["tokens"] != oracle_tokens):
         problems.append("token ids differ from the byte oracle")
+    expected = lock_placement.get("expected")
+    if expected is not None:
+        placed = parsed.get("placed")
+        if placed is None or [int(placed[0]), int(placed[1])] != [expected["pinned"], expected["mmapd"]]:
+            problems.append(f"expert placement {placed} != {expected['pinned']} pinned / {expected['mmapd']} on disk")
+    if parsed.get("config_invalid"):
+        problems.append(f"config fallback: {parsed['config_invalid'][0]} rejected")
     depth = expected_depth(arm)
     if depth is None:
         if parsed["pread_enabled"] is not None:
@@ -136,16 +148,12 @@ def correctness(arm, parsed, oracle_tokens, ngen, overread_per_read):
             problems.append("no [spill-pread] totals line")
         elif int(drop[2]) or int(drop[3]):
             problems.append(f"read errors={drop[2]} short_reads={drop[3]}")
-        if arm["name"].startswith("direct"):
-            window = parsed["window"]
-            stages = parsed["stages"]
-            if window is None or stages is None:
-                problems.append("direct arm without window or stage lines")
-            else:
-                if int(window[4]):
-                    problems.append(f"direct arm fell back to mmap {window[4]} times")
-                if int(stages[4]) != overread_per_read * int(window[0]):
-                    problems.append(f"overread_bytes {stages[4]} != {overread_per_read} x reads {window[0]}")
+        if arm["name"].startswith("direct") and drop is not None:
+            # B3 amendment 2: the GGUF path's whole-visit totals line (prefill included).
+            if int(drop[4]):
+                problems.append(f"direct arm fell back to mmap {drop[4]} times")
+            if int(drop[7]) != overread_per_read * int(drop[0]):
+                problems.append(f"overread_bytes {drop[7]} != {overread_per_read} x reads {drop[0]}")
     return problems
 
 
@@ -281,6 +289,7 @@ def verdicts(visits, arms, baseline, contam_limit=0.02, max_contaminated=2):
 
 def run(args):
     lock = json.loads(Path(args.arms_lock).read_text())
+    lock_placement["expected"] = lock.get("expected_placement")
     arms = [a for a in lock["arms"] if not args.arms or a["name"] in args.arms.split(",")]
     names = [a["name"] for a in arms]
     B.require(lock["baseline"] in names, "baseline arm must be in the run")

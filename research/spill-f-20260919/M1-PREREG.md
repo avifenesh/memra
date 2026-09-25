@@ -211,6 +211,26 @@ they are B5 and OWED 17, not silent omissions.
    a flat or losing `MEMRA_SPILL_IO` arm goes to the door-hygiene decision in `docs/FLAGS.md`
    with these receipts.
 
+#### B3 amendment 2 (2026-09-25, after the one-round smoke, before any scored B3 visit)
+
+The smoke (`box27/b3-smoke`, one round, never scored) showed the registered common env cannot
+force the disk tier on the current engine: `[spill] invalid MEMRA_SPILL_PINNED_FRAC="0"
+(expected a finite fraction greater than 0 and at most 1); using 0.6`, then `[spill] experts
+placed: 30720 pinned (Tier 1), 0 mmap'd from disk`. The `0` came from the 2026-08-11 spill smoke,
+before the range check. Every smoke arm therefore measured pinned host RAM to the GPU (36.7 to
+37.1 tok/s, N=1 each); kept as an unscored diagnostic of the pinned tier.
+
+- Common env: `MEMRA_SPILL_PINNED_FRAC=0.000000001` (inside the accepted range; the pinnable
+  budget becomes tens of bytes, below one expert, so nothing is pinned).
+- New correctness gates per visit: `[spill] experts placed: 0 pinned ... 30720 mmap'd`, and no
+  `[spill] invalid` or `[spill-pread] invalid` line.
+- `run-gen`'s GGUF path prints no per-window spill lines (they exist on its safetensors path), so
+  the direct gates and the stage account read the pool's whole-visit totals line
+  (`[spill-pread] reads= ... overread_bytes= worker_read_ns= demand_read_ns= wait_ns=
+  h2d_submits=`, prefill included): `errors=0 short_reads=0` for every positioned arm, and for
+  `direct16` `fallbacks=0` and `overread_bytes == 4096 x reads`.
+- Prefill time from the GGUF path's `prefill N tok in Xs` line (it has no `[ttft]` line).
+
 #### B3 regime (iii) amendment (2026-09-25, registered on the box before any B3 visit)
 
 The rented container refuses the registered mlocked balloon: `RLIMIT_MEMLOCK` is 8 MiB and
