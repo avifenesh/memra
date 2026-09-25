@@ -219,11 +219,13 @@ fn default_sessions(pipelined_steps: bool, drafter: bool) -> usize {
     if pipelined_steps && !drafter { 2 } else { 1 }
 }
 
-/// The lanes a TP/EP load gets when `MEMRA_DSV4_SESSIONS` is unset (memra #710 B-row): two on
-/// the plain route, whose requests then share TP/EP B-row steps; one with a drafter, whose
-/// rounds hold the launch turn for a whole request.
+/// The lanes a TP/EP load gets when `MEMRA_DSV4_SESSIONS` is unset (memra #710 B-row): four on
+/// the plain route, whose requests then share TP/EP B-row graph steps; one with a drafter,
+/// whose rounds hold the launch turn for a whole request. Four against two on 2x RTX PRO 6000
+/// WS: c4 aggregate 132.8 against 102.0 tok/s, TTFT p50 0.42 s against 5.2 s, c1 and c2 the
+/// same (`research/dsv4f-bringup-20260923/tp-rows/`).
 fn default_tp_ep_sessions(rows_steps: bool, drafter: bool) -> usize {
-    if rows_steps && !drafter { 2 } else { 1 }
+    if rows_steps && !drafter { 4 } else { 1 }
 }
 
 /// `MEMRA_DSV4_ROWS` (memra #667 lever 2): the most plain rows one step runs across the lanes.
@@ -3421,12 +3423,12 @@ mod c4_host_budget_tests {
         }
     }
 
-    /// TP/EP lanes only help by sharing B-row steps, so the plain route gets two and a
+    /// TP/EP lanes only help by sharing B-row steps, so the plain route gets four and a
     /// drafter route one (memra #710).
     #[test]
-    fn tp_ep_lanes_default_to_two_on_the_plain_route() {
+    fn tp_ep_lanes_default_to_four_on_the_plain_route() {
         use super::default_tp_ep_sessions;
-        assert_eq!(default_tp_ep_sessions(true, false), 2);
+        assert_eq!(default_tp_ep_sessions(true, false), 4);
         assert_eq!(default_tp_ep_sessions(true, true), 1);
         assert_eq!(default_tp_ep_sessions(false, false), 1);
     }
