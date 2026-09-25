@@ -52,8 +52,10 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
 - **Acceptance.** `DAY59.md` section 1 (G1 tapes at two shapes, G2 run-spec K=1..8, G3 serving byte-equality; `pftime`
   and `pfnaked`, 20 runs each, both orders; `pf_wins`, `pf_flat`, `pf_loses`); the row's decide-by 2026-10-04
   (`97bd6d889`, `55fbad45a`).
-- **Status.** Registered, scripts and reader committed, binaries named (`c60=da649107c`). Cells wait on a card: the
-  target sitting `day61-box.sh`, the RTX 5090's in queue v6 behind its reset.
+- **Status.** Target card done (BOX12, `DAY59.md` section 2): G1, G2, G3 PASS, `DAY59 VERDICT rig=pro-single
+  shape=pftime integrity=ok -> pf_wins`, `DAY59 VERDICT rig=pro-single shape=pfnaked integrity=ok -> pf_flat`: it
+  qualifies as the target card's naked default; the promotion is the owner's call. The RTX 5090's cells wait on its
+  reset (queue v6).
 
 ## C11. The door's gap to REF, attributed and tuned (lead integ60 owed item 2)
 
@@ -64,8 +66,12 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   CPU profile, I11 and I12 with per-change CPU gates and ladder, cell `i11` with its rules).
 - **Status.** The instrument landed (`fec3c582f`). The CPU profile put about 5.4 us on each host-hit prefetch
   cycle; I11 changes 1 to 5 took it to 3.6 us on the local CPU (a sixth change read flat and was reverted,
-  `DAY61.md` section 2a); I12 landed (`117302725`). The `gap` and `i11` cells wait on a card (the same sitting and
-  queue as C10). The next improvement is registered from those readings.
+  `DAY61.md` section 2a); I12 landed (`117302725`). Target card (BOX12): `DAY60 GAP rig=pro-single integrity=ok
+  window: wall_gap=+0.437 cpu_gap=+0.699 top=prefetch_ns cpu_side; gen: wall_gap=+0.688 cpu_gap=+1.478 top=prefetch_ns
+  cpu_side` (R2 `over_bound` by 0.003 ms per token at the printed resolution) and `DAY61 VERDICT rig=pro-single
+  integrity=ok i11=improves i12=flat door=i12 vs_ref=loses (window: i11=improves i12=flat vs_ref=loses)`: the tuned
+  door still loses to REF (+0.34 ms per generated token, +0.25 per window token, from +0.69 and +0.44). The RTX
+  5090's cells wait on its reset (queue v6). Open: the next improvement, registered in `DAY63.md` from these readings.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 

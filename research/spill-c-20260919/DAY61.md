@@ -214,3 +214,34 @@ about 30 GB free under `/root` for the build and the receipts.
 **The RTX 5090 cells** (the same cells and readers, `rtx5090-day59/`, `rtx5090-day60/`, `rtx5090-day61/`) run from a
 local queue behind queue v5 once the card is reset, with the same labels built locally into the local binary
 directory (`/tmp/c61-build/build-*.log`, mirrored into `rtx5090-day61/builds/` when the cells run).
+
+## 3. The target card (BOX12; `pro-single-day61/i11/`)
+
+In the days 59 to 61 sitting (`DAY59.md` section 2), one hold 04:53Z to 05:00Z, 41 to 46 C, SM median 2610 MHz;
+`run-gen-i11` `aab99c5f...` (tree `a068ee37d`), `run-gen-i12` `9adacf62...` (tree `117302725`), `run-gen-c60`
+`57995815...`. N=10 per arm. Verbatim (`i11/reading.log`):
+
+- `DAY61 host demand sequence sha256 4bdc2610c3534e42 lines=[22077]`
+- `DAY61 I11 CHECKS rig=pro-single runs=40 integrity=ok`
+- `DAY61 gen-only decode medians (N=10 each): ref=0.255 on=0.276 i11=0.267 i12=0.266`
+- `DAY61 STEP i11_vs_on gen-only decode: pooled=-0.0090 o1=-0.0090 o2=-0.0090 noise=0.0010 -> improves`
+- `DAY61 STEP i12_vs_i11 gen-only decode: pooled=-0.0010 o1=+0.0000 o2=-0.0010 noise=0.0010 -> flat`
+- `DAY61 steady window medians (N=10 each): ref=0.226 on=0.240 i11=0.234 i12=0.234`
+- `DAY61 STEP i11_vs_on steady window: pooled=-0.0055 o1=-0.0060 o2=-0.0050 noise=0.0010 -> improves`
+- `DAY61 STEP i12_vs_i11 steady window: pooled=-0.0005 o1=+0.0000 o2=-0.0010 noise=0.0010 -> flat`
+- `DAY61 DOOR i12_vs_ref gen-only decode: pooled=+0.0110 o1=+0.0120 o2=+0.0110 noise=0.0010 -> loses`
+- `DAY61 DOOR i12_vs_ref steady window: pooled=+0.0080 o1=+0.0080 o2=+0.0080 noise=0.0010 -> loses`
+- `DAY61 VERDICT rig=pro-single integrity=ok i11=improves i12=flat door=i12 vs_ref=loses (window: i11=improves i12=flat vs_ref=loses)`
+
+The integrity checks hold across the three door binaries: one tape across all four arms, every door run's fill
+complete and `physical_reads=0`, one host demand sequence (slot stripped) across the 30 door runs, the same digest as
+the day-58 target runs (`4bdc2610...`, section 2b's dry check).
+
+**Read as registered.** I11 improves the door on this card by 9 ms of gen-only decode over 32 tokens (0.28 ms per
+token) and 5.5 ms of the steady window (0.17 ms per token). That is about what the local CPU's ladder (1.75 us less
+per host-hit prefetch) predicts at `DAY60.md` R3's counts: 88.6 issued prefetches per window token (0.16 ms) and
+187.8 per generated token (0.33 ms). I12 is flat and stays (section 2: `flat` keeps a step).
+**The tuned door still loses to REF on the target card**: gen-only 0.266 s against 0.255 (+0.34 ms per token), window
+0.234 against 0.226 (+0.25 ms per token); before I11 the gaps read +0.69 and +0.44 (`DAY60.md` section 2). Recorded
+plainly for the owner's 2026-10-04 reading. The RTX 5090's cell waits on its reset (queue v6). The next improvement is
+registered from `DAY60.md`'s attribution and this reading, before its code (`DAY63.md`).

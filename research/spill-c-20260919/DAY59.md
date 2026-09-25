@@ -68,3 +68,29 @@ each cell's `tree.sha` and `binary.sha256` and in the sitting's build log.
 
 Pinned (`DAY61.md` section 2b, before any cell): the lane's tip now carries DAY61's I11 and I12, so the label `c60`
 is built from `da649107c`, the commit whose engine is `fec3c582f`'s as this section names.
+
+## 2. The target card (BOX12, one RTX PRO 6000 Blackwell Workstation Edition at 600 W; `pro-single-day61/`)
+
+Sitting `day61-box.sh` on the lane tip `f0e77b8be`, 2026-09-25 04:35Z to 05:00Z; binaries built on the box from
+`da649107c` (`run-gen-c60` `57995815...`, `run-spec-c60` `cf0cc23d...`, `memra-server-c60` `7ddb8187...`); the runner
+pinned to 12 cores with `taskset` (no systemd on the box); one collector hold per cell. Receipts mirrored file for
+file (`MIRROR-CHECK.txt`: 635 of 635 `OK` against the box's `MANIFEST.box.sha256`). Regime per cell in
+`pro-single-day61/regime.txt` (the four cells 31 to 51 C, SM median 2617 to 2827 MHz). Verbatim (`*/reading.log`):
+
+- `DAY59 G1 rig=pro-single slots=9986 exits={'off': 0, 'pf': 0} match=True one_tape=True -> PASS`
+- `DAY59 G1 rig=pro-single slots=512 exits={'off': 0, 'pf': 0} match=True one_tape=True -> PASS`
+- `DAY59 G2 rig=pro-single exit=0 k_lines=8 k_pass=8 -> PASS`
+- `DAY59 G3 rig=pro-single requests=7 equal=7 errors=[] -> PASS` (48 tokens each, both boots)
+- `DAY59 TIME rig=pro-single shape=pftime gen-only decode: off=0.310 pf=0.255 (N=10 each) pf_minus_off pooled=-0.0550 o1=-0.0550 o2=-0.0550 noise=0.0000 -> pf_wins`
+  (steady window `off=0.251 pf=0.226 ... noise=0.0003 -> pf_wins`); `DAY59 VERDICT rig=pro-single shape=pftime integrity=ok -> pf_wins`
+- `DAY59 TIME rig=pro-single shape=pfnaked gen-only decode: off=0.113 pf=0.113 (N=10 each) pf_minus_off pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0003 -> pf_flat`;
+  `DAY59 VERDICT rig=pro-single shape=pfnaked integrity=ok -> pf_flat` (the naked shape keeps every expert resident
+  on this card, so there is no miss to prefetch)
+
+A note on `noise=0.0000`: `run-gen` prints the gen-only seconds to three decimals and each arm's ten runs read the same
+value, so the IQR is 0 at the printed resolution; the rule reads it as registered.
+
+**What follows, as section 1 registered.** On the target card G1, G2 and G3 pass, `pftime` reads `pf_wins` and
+`pfnaked` does not read `pf_loses`: `MEMRA_MOE_PREFETCH=1` qualifies as this card's naked default. The promotion is
+the owner's call, and the flip is its own change (`=0` kept as the rollback seam). The RTX 5090's cells wait on its
+reset (queue v6).

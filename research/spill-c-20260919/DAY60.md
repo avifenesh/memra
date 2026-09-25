@@ -83,3 +83,29 @@ hypothesis of section 0; this cell measures both programs with one clock.
 
 Pinned (`DAY61.md` section 2b, before any cell): `run-gen-c60` is built from `da649107c`, whose engine is
 `fec3c582f`'s; the lane's tip now also carries DAY61's I11 and I12, which this cell does not measure.
+
+## 2. The target card (BOX12; `pro-single-day61/gap/`)
+
+In the days 59 to 61 sitting (`DAY59.md` section 2 for the box, the binary and the mirror check), one hold 04:46Z to
+04:53Z, 41 to 46 C, SM median 2617 MHz, N=10 per arm. Verbatim (`gap/reading.log`):
+
+- `DAY60 GAP CHECKS rig=pro-single runs=40 integrity=ok`
+- `DAY60 R1 gen_gap_ms_per_token on_minus_ref pooled=+0.688 o1=+0.688 o2=+0.688 | medians ref=0.255 refc=0.255 on=0.277 onc=0.279 (N=10 each)`
+- `DAY60 R1 window_gap_ms_per_token on_minus_ref pooled=+0.437 o1=+0.437 o2=+0.437 | medians ref=0.226 refc=0.226 on=0.240 onc=0.241 (N=10 each)`
+- `DAY60 R2 instrument_ms_per_token refc_minus_ref=+0.000 onc_minus_on=+0.047 bound=0.044 -> over_bound`
+- `DAY60 R3 window per token: dispatch_ns=+0.092 prefetch_ns=+0.607 pf_reserve_ns=+0.001 pf_stage_ns=+0.034 pf_retire_ns=+0.009 pf_resident_ns=+0.054 pf_demand_ns=+0.464 | refc dispatch_calls=471.0 dispatch_hits=378.7 dispatch_pending=88.6 dispatch_sync=3.8 prefetch_calls=412.1 prefetch_issued=88.6 | onc dispatch_calls=471.0 dispatch_hits=378.7 dispatch_pending=88.6 dispatch_sync=3.8 prefetch_calls=412.1 prefetch_issued=88.6`
+- `DAY60 R4 window wall_gap=+0.437 cpu_gap=+0.699 residual=-0.262 top=prefetch_ns (+0.607) -> cpu_side`
+- `DAY60 R4 gen wall_gap=+0.688 cpu_gap=+1.478 residual=-0.790 top=prefetch_ns (+1.265) -> cpu_side`
+- `DAY60 GAP rig=pro-single integrity=ok window: wall_gap=+0.437 cpu_gap=+0.699 top=prefetch_ns cpu_side; gen: wall_gap=+0.688 cpu_gap=+1.478 top=prefetch_ns cpu_side`
+
+**Read as registered.** R2 reads `over_bound`: the door's clocked arm is 0.047 ms per window token slower than its
+unclocked arm against a bound of 0.044. That is one half of a printed millisecond over 32 tokens (the ONC median
+0.2415 s against ON's 0.240 at three printed decimals); REF's arm reads +0.000. The instrument's own cost on the door
+sits at the resolution floor, so the R3 terms carry about 0.05 ms per token of the clock itself on the door side;
+recorded, not corrected. R3 and R4: the two programs make the same dispatches (471.0 per window token, the same hit,
+pending and sync counts) and the same prefetches (412.1 calls, 88.6 issued); the door's CPU brackets exceed REF's by
+0.699 ms per window token against a 0.437 wall gap (`cpu_side`), and the largest part is the prefetch path (`top=
+prefetch_ns`, +0.607), within it the owner demand (`pf_demand_ns` +0.464, the host-hit lease, 5.2 us per issued
+prefetch). The CPU side exceeds the wall gap because part of the CPU time overlaps GPU work already queued. The
+hypothesis of section 0 is the reading. The improvement it points to is `DAY61.md`'s I11, measured in the same sitting
+(`DAY61.md` section 3).

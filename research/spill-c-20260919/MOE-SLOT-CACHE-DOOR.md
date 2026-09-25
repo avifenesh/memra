@@ -106,8 +106,14 @@ describes the program before day 46.
 
 Lead integ60 owed items (`DAY59.md` to `DAY61.md`, all registered before code or cells): REF's own deciding cell
 (`MEMRA_MOE_PREFETCH=1`, its `docs/FLAGS.md` row now carries decide-by 2026-10-04); the gap to REF attributed on both
-programs with the day-60 clock; I11 and I12 against the door they tune and against REF (cell `i11`). All wait on a
-card: the target sitting is `day61-box.sh`, the RTX 5090's cells are queued behind its reset (queue v6).
+programs with the day-60 clock; I11 and I12 against the door they tune and against REF (cell `i11`). On the target
+card (BOX12, 2026-09-25, `pro-single-day61/`): REF qualifies as that card's naked default (`DAY59 VERDICT
+rig=pro-single shape=pftime integrity=ok -> pf_wins`, gates PASS, `pfnaked -> pf_flat`); the gap is on the door's CPU
+side, its prefetch path's owner demand the largest part (`DAY60 GAP rig=pro-single integrity=ok window:
+wall_gap=+0.437 cpu_gap=+0.699 top=prefetch_ns cpu_side; ...`); `DAY61 VERDICT rig=pro-single integrity=ok
+i11=improves i12=flat door=i12 vs_ref=loses (window: i11=improves i12=flat vs_ref=loses)`: the tuned door at 0.266 s
+gen-only and 0.234 s window against REF's 0.255 and 0.226. The RTX 5090's cells are queued behind its reset (queue
+v6); the next improvement registers in `DAY63.md`.
 
 ## What is pending before the door can sit behind the tiered materializer
 
