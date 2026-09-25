@@ -83,8 +83,13 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   i14=flat i15=flat door=i15 vs_ref=matches (...)`, as the rule reads it, with noise terms (0.053 to 0.074 s) set by
   the door's per-boot host-CPU bimodality on that host (fast boots near REF, slow ones 62 ms behind); the rerun on the
   285K class with a pre-registered admissibility clause (IQR at most 0.005 s per arm) is prepared (`day64b-box.sh`);
-  its first attempt (BOX16) was void, nvcc segfaulted in a build and no cell ran (`DAY64.md` section 5a); the lead
-  runs it on BOX14 after lane B's sitting. The RTX 5090's `i15` is queued (queue v8). Open.
+  its first attempt (BOX16) was void, nvcc segfaulted in a build and no cell ran (`DAY64.md` section 5a). The rerun
+  ran on BOX14 (`DAY64.md` section 5b): `DAY64 ADMISSIBILITY ... -> admissible`, `DAY64 VERDICT rig=pro-single
+  integrity=ok i14=flat i15=flat door=i15 vs_ref=loses (window: i14=flat i15=flat vs_ref=loses)`: both steps stay;
+  the door 0.28 and 0.19 ms per token behind REF, as at I13, while its CPU-side work halved, so the gap is off the
+  CPU-side door work. Day 72 (`DAY72.md`): the gap re-attributed at I15 before any improvement, cell `gap15` (DAY60's
+  clocked arms plus REF and the door under Nsight Systems), sitting ready (`day72-box.sh`, the 285K class); the RTX
+  5090's half queued (queue v10, behind v9, which reruns the 5090's unrun cells after the reboot). Open.
 
 ## C12. The door's sensitivity to its owner thread's host placement (the 9950X class)
 
@@ -115,8 +120,11 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   rig=pro-single-b integrity=ok -> not_reproduced` (19 slow, 1 fast); beside it the door's gate probe at 12.4 to 14.2
   cycles per step at a full clock with MPERF over TSC 1.000, and compaction failing to migrate 70,000 to 78,000 pages
   a second through every slow door span, none in REF's (`DAY71.md` section 2). A reader defect fixed and `intr_rate`
-  and `migrate_fail` registered before BOX15's half (section 3). Open: BOX15's half (the default rig), then the class
-  line.
+  and `migrate_fail` registered before BOX15's half (section 3). Day 73 (`DAY73.md`): the compaction question as its own
+  cell `compact` on any 9950X machine (the state per run from the gate probe, compaction per span, the process's
+  pinned and huge-page memory, buddyinfo, system calls under strace), sitting ready (`day73-box.sh`). Open: DAY71's
+  default half waits on BOX15's machine (nothing else stands in for it under its registration), then the class line;
+  DAY73 on any 9950X machine.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 
