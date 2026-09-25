@@ -85,7 +85,7 @@
 #                  and r4 promote synchronously there); r1..r4 are byte-equal across the two boots.
 #
 # WP-A day 38 (memra#536 Move 1 owed item 2's hash 1, research/spill-a-20260919/DAY38.md designs G and P): the demote's
-# D2H receipt is taken on the receipt stream over each KV item's DEVICE source, and a hit on a Demoting entry parks in
+# D2H receipt is taken on the copy stream (design G4) over each KV item's DEVICE source, and a hit on a Demoting entry parks in
 # either phase. Two cells, two boots each (door ON with the fault, then door OFF as the byte reference):
 #   source-flip     MEMRA_KV_HOST_FAULT=d2h-source-flip: r1 P_A seeds E_A; r2 P_B evicts E_A, whose demote's first KV
 #                   item's device source has one byte flipped after its receipt digest and before its copy; the bind's
