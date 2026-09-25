@@ -38,14 +38,16 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Price today: `copy settle` 8.33 ms per demote on the 5090 (write-combined leases, `DAY35.md` section 8), 0.70 ms on
   BOX5 (`DAY36.md` section 4, cached leases).
 - Acceptance: DAY38 section 3, (a) to (e).
-- Status: **delivered as G4, pending one owner reading.** G'' failed (d) on BOX7 (the tenant's per-demote decode
-  hump); the bisection (DAY38 13a to 13k) placed the hump on two non-owner streams running kernels. G4 (`26676c037`: one
-  side stream; the D2H receipt ahead of the copies on the copy stream, the D2D classes there too, `d2h-delay` a host-side
-  hold) passes (a) to (f) on BOX7 (DAY38 section 19b: copy settle 0.53 ms, e2e -1.17 / -1.10 ms, hump +0.035, every gate
-  green) and (a) to (e) on the 5090 (sections 19, 19a); its 5090 (f) failed in a hot hold (section 19) and passes in the
-  base-controlled hold (section 20a: base +0.072, G''' +0.055, G4 +0.032, G'' +0.334). G''' (`9ab5c1265`, every kernel on
-  a receipt stream) passes (a) to (f) on BOX7 too and is the measured alternative. Owner items: read the 5090's (f) from
-  the base-controlled hold; G''' or G4 for long entries (item 15's cell).
+- Status: **closed as G4** (ruling 54, integ59, `research/spill-lead-20260919/INTEGRATION-DAY12.md`: G4 is the door's
+  form of hash 1 off the owner). G'' failed (d) on BOX7 (the tenant's per-demote decode hump); the bisection (DAY38 13a
+  to 13k) placed the hump on two non-owner streams running kernels. G4 (`26676c037`: one side stream; the D2H receipt
+  ahead of the copies on the copy stream, the D2D classes there too, `d2h-delay` a host-side hold) passes (a) to (f) on
+  BOX7 (DAY38 section 19b: copy settle 0.53 ms, e2e -1.17 / -1.10 ms, hump +0.035, every gate green) and (a) to (e) on
+  the 5090 (sections 19, 19a). Its 5090 (f) FAIL (section 19, +0.299 ms in a hot hold, 87 to 88 C, the clock falling)
+  **stands as registered** (ruling 54: the base-controlled cell of section 20a read base and G4 flat in a cooler hold, 60
+  to 78 C, and its rule presumed G4 would rise there; the cause is unplaced between the card's thermal regime and the
+  design). Owed, **item 16** below: section 20's cell replicated in the G4 hold's thermal regime. G''' (`9ab5c1265`) is
+  the measured alternative; G''' against G4 at long entries is item 15's cell (both arms, the evidence decides).
 
 ### 3. The same-tick fill (design F) on slower CPUs
 
@@ -57,8 +59,10 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   the host's reading.
 - Status: **closed for the slower-CPU host class** (DAY39 section 7: BOX7, `polls==1 90` of 90, HK - FT +12.64 /
   +12.55 ms e2e and +12.70 ms PIN against pair noise 0.10 to 0.23, every gate green; the 5090's (e) PASS, section 6).
-  Design T is `0153316d4` (the fill split across `min(12, cpus / 2)` threads). Owed: the 9950X-class host reading (the
-  same cell on that host class).
+  Design T is `0153316d4` (the fill split across `min(12, cpus / 2)` threads), the door's fill program (ruling 54).
+  The 9950X-class reading (DAY44 section 2, an `AMD Ryzen 9 9950X3D2` host): `DAY39 T TARGET (a) and (b) -> PASS`, the
+  gates and the unit cells green (attempt 2 on the arms' tree); every T fits there, T=1 included. **Item 3 closed for
+  both host classes.**
 
 ### 4. The strong-form receipt of the recurrent spans (both directions)
 
@@ -73,7 +77,15 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   trace (section 7) prices the span receipt at about 3.1 ms of copy-stream time (source digests 0.61, landed 2.49 ms),
   enough to push the landing past the first tick-top poll. The revision owed (section 7): the span receipt off the
   landing path, required at publication with the sources and staging held until its event, the digests in one launch
-  each; pre-registered with its acceptance before its code; its 5090 and target sittings then.
+  each; pre-registered with its acceptance before its code; its 5090 and target sittings then. Ruling 54: S refuted and
+  reverted. The revision, design S2 (`DAY42.md` sections 1 and 1a, built as `7ce3f3243`), **failed (c) on the target
+  card and is reverted** (DAY42 section 3: e2e +3.16 / +3.06 ms against +1.0; (d), (e), every gate and the unit cells
+  green): its span digests ran grids of 12288 and 6144 blocks that filled the card for about 3 ms per demote, and the
+  owner stream ran no kernel meanwhile. Design S3 (the grid bounded, `DAY46.md`) **failed (c) too and is reverted**
+  (DAY46 section 3: e2e +3.34 / +3.27 ms): the price is the release paths' whole-copy-stream drain, which the capture
+  settle at the same tick top pays for the landed digests (3.23 ms held against 0.13 to 0.21 on G4). The revision,
+  design S4 (the drain made precise, `DAY48.md`), **passes (a) to (e) on the target card** (DAY48 section 3: e2e +0.40 /
+  +0.37 ms, PIN +0.10, hump +0.012, every gate green). Owed: the 5090 half, after the card's reset.
 
 ### 5. The helper's promote-side fail-closed arms have no serving-shape fault cell (found in this ledger's read)
 
@@ -100,8 +112,11 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   park half holds live device state and needs the `Demoting` state to protect the park until publication"; ruling 47.
   Code today: `ContractD2h::OnTick` at `worker.rs` `evict_all_demoting`, the pause sweep's shape 1 (plain park) and
   shape 2 (deepest resident entry), and the handoff export's drain-demote.
-- Acceptance: none registered.
-- Status: open.
+- Acceptance: DAY47 section 1 (design V: the pause sweep's two shapes off the tick; the export stays by its contract;
+  the admission flush stays, a lead question: a deferring flush is the memory-admission door's decision).
+- Status: **built (V, on S4) and passes (a) to (d) on the target card** (DAY47 sections 3 and 3b: the pause's tenant
+  stall 202.9 ms on the tick, 3.2 ms off it; every gate green, the new pause gate after its section 3a revision). Owed:
+  the 5090 half, after the card's reset; the admission flush's deferring form, a lead question (DAY47 section 1).
 
 ### 7. Lane C: why b1 shows no first-touch pre-submit step
 
@@ -189,8 +204,22 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   restore, a promote's fill and copies) queues behind it, because no side placement off the copy stream stayed flat on
   both cards (sections 13 to 16).
 - Acceptance: none registered. A kernel bitwise equal to the program (`memra_tier::contracts::checksum`) on every size
-  and offset, priced on both cards at 32 x 60 KiB and 32 x 4 MiB, pre-registered with a bound before its code.
-- Status: open.
+  and offset, priced on both cards at 32 x 60 KiB and 32 x 4 MiB, pre-registered with a bound before its code. Ruling
+  54: G''' against G4 at long entries is not an owner choice; the 4096-token cell is pre-registered with both arms and
+  runs on the next target card, and the registered rule decides.
+- Status: **closed** (DAY43 section 2: `ITEM15 -> G4 STAYS the single placement`; term (1), the chained request that
+  waits on a demote, read -0.11 / -0.12 ms against +2.0, while G''' shortened the long copy phase 5.4 ms; the kernel's
+  price 104.9 ms per 32 x 4 MiB on the RTX PRO 6000, 107.1 on the 5090).
+
+### 16. The 5090 hump replicate in G4's hot regime (ruling 54)
+
+- Source: `DAY38.md` sections 19 (G4's 5090 (f) FAIL, +0.299 ms, 87 to 88 C, the clock falling) and 20a (the
+  base-controlled cell, base +0.072, G4 +0.032, 60 to 78 C); ruling 54.
+- Acceptance: none registered. Section 20's cell replicated in the G4 hold's thermal regime (the card driven to that
+  regime before the boots, the clock and the temperature recorded per boot), pre-registered before it runs, with a rule
+  that places the cause (the regime or the design) either way.
+- Status: **pre-registered** (DAY45 section 1: the G4 hold's own warm-up, section 20's eight boots, the regime check and
+  the placing rule; `rtx5090-day45/`); waits for the 5090's reset.
 
 ## 2. Closed, delivered, or held by another owner
 

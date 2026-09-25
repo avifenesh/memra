@@ -3833,6 +3833,99 @@ owner's reset.
 - 2026-10-05, the contracts door; 2026-10-06, the park door; 2026-10-07, `MEMRA_ADMIT_BY_MEMORY`.
 - B's question on the verbatim-extension resume; memra#464's guard seed format; BOX3's detached OS volume.
 
+## integ62 (`lane/spill-integ62-20260925`): A days 42 to 48 (item 4 as S4, the span receipts, after S2 and S3 were refuted; item 6 as V, the pause sweep's demotes off the tick; items 3 and 15 closed)
+Lane tip merged: A `e34a6c598`, which already carries main `d6515742f` (#725), so the branch is a fast-forward. The engine
+change is all behind the default-OFF door `MEMRA_KV_HOST_CONTRACTS` (and, for V, `MEMRA_KV_PAUSE_DEMOTE`):
+- `tier_transfer.rs`: S4, the span receipts (the source digests in one batched launch per 64 spans ahead of the copies,
+  the landed digests at the seal, required before the demote publishes), and `take_plane` and `release_device` draining
+  the owner stream only.
+- `worker.rs`: V, the pause sweep's two demote shapes off the tick, the park released when the demote publishes, a
+  failed shape-2 entry reinstated in the device cache.
+- `memra-tier`: the span receipt's conformance rule and binding tests.
+- `tools/kv-host-contract-fault-gate.sh` (255 ok per arm now) and the new `tools/kv-host-pause-demote-gate.sh`.
+- `docs/FLAGS.md` (the fault and pause rows), `docs/KERNELS.md`, `docs/TESTING.md`. No new `MEMRA_*` name.
+
+**A days 42 to 48, on the target card (BOX10, a 9950X3D2 host), verbatim.**
+1. **Item 4, the span receipts.** S2 (DAY42) and S3 (DAY46) each failed only their price clause and were reverted
+   (`16904e97d`, `7197c1a9d`): `DAY42 S2 C order=o1 .. e2e .. s2-minus-g4=+3.16 rule <=+1.0 -> FAIL` (o2 +3.06), and
+   `e2e s2-minus-g4=+3.34 / +3.27 rule <=+1.0 -> FAIL`. The cause: the seed capture settles at the same tick top as the
+   demote, and its `take_plane` drained the whole copy stream, including the ~3 ms of landed-byte digests S2 had just
+   queued (the capture settle held the owner 3.1 to 3.3 ms against 0.13 to 0.21 on G4). S4 (`ef4b097ad`, DAY48) drains
+   the owner stream only: `DAY42 S2 C order=o1 wall g4=101.40 s2=101.80 .. e2e .. s2-minus-g4=+0.40 rule <=+1.0 ->
+   PASS` (o2 +0.30 / +0.37), **`DAY42 S2 DEMOTE -> PASS`**; the promote `PIN +0.10 / +0.10, e2e +0.29 / +0.22 ->
+   PASS`; `HUMP arm=xs2 boots=2 median-hump=+0.012 humps=False` (the G'' control +0.507); every gate green; the native
+   cell `day48_a_take_back_waits_for_its_own_lease_only` passes. The capture settle now holds 0.16 ms on both arms.
+2. **Item 6, design V (`a324503df`).** `DAY47 V C order=o1 stall base=202.88 v=3.17 rule v<=base/4=50.72 tenant_texts=1
+   -> PASS | D released=[20] -> PASS` (o2 202.90 against 3.21), `DAY47 V -> PASS`: a 27B pause held the tenant 203 ms
+   and now holds about 3 ms. The new pause gate's first run failed 3 cells (two a defect in A's gate script, which passed
+   `[prefix-host]` to `grep` as a regex; one a wrong prediction of the plain-boot race); the result is recorded, the fix
+   pre-registered (DAY47 section 3a), and the rerun reads `KV-HOST-PAUSE-DEMOTE GATE: ALL GREEN`.
+3. **Item 15 closed:** `ITEM15 -> G4 STAYS the single placement`. G''' shortened a long demote's copy by 5.4 ms, but the
+   request waiting on the demote gained only -0.11 / -0.12 ms against the +2.0 required; at long entries it waits on the
+   hash helper. The receipt kernel costs 104.9 ms per 32 x 4 MiB on this card.
+4. **Item 3 closed for the 9950X class** (the host reads `AMD Ryzen 9 9950X3D2 16-Core Processor`): `DAY39 T TARGET (a)
+   and (b) -> PASS`, every fill thread count within budget, every gate green.
+5. **Process notes, recorded by A:** the first T build refused the hk patch (build script fixed, `9b3c4e82c`); the first
+   unit-cell run failed only the build-id test (ft's test binary built on the arms' crates but run in the tip's tree),
+   and the rerun on the arms' tree is green. Receipts mirrored and checked against each box manifest, 0 mismatches.
+
+**Lead review.**
+- The relaxed drain in S4 is safe by the ticket rule: every copy-stream operation on a registered lease is an item,
+  receipt, digest or fault of a ticket that names it; `require_unbound` refuses a release while any unretired ticket
+  names the lease; a ticket retires only after its landing observed every item and receipt event. So no copy can still
+  read or write a lease when it is taken back, and the whole-stream drain only waited on other memory's work. An
+  unknown-state ticket stays unretired, so its lease leaks rather than frees (fail closed). A census pins it.
+- V's release paths: the park is released when the demote publishes; a failed shape-2 entry goes back to the device
+  cache; an unpublished demote keeps the park (`host copy did not publish; park kept`). The pause gate's failure cells
+  cover both.
+- One numeric program per request holds: every pause and race turn is byte-compared with a door-OFF, pause-OFF
+  reference boot, and the receipts digest the same bytes.
+- New `unsafe`: the span-items kernel parameter struct and its launches, each with its ownership stated.
+
+**Ruling 57:**
+- Days 42 to 48 are read as registered.
+- Item 4 is S4 on the target card; S2 and S3 are refuted and reverted. Item 6 is V. Items 3 and 15 close.
+- The deferred admission reclaim flush (moving it off the tick means deferring an arrival until the reclaim lands) sits
+  inside `MEMRA_ADMIT_BY_MEMORY`, so it is lane B's owed item, with V's receipts as its source.
+- Owed by A: the 5090 halves of S4 and V and item 16 (the card needs its reset), then items 7 to 14.
+
+**Checks.**
+- CPU battery on `e34a6c598`, 15 of 15 rc=0:
+  - portable suites: 388 passed, 0 skipped;
+  - tests: server 920, engine lib 570, tier 301 across 8 binaries, pytest 87 passed;
+  - clippy `-D warnings` twice;
+  - fmt, check-flags, publish census, docs registry, conflict markers, workflow keys, perf board and
+    `git diff --check` (`integ62-cpu-battery/`).
+- The local RTX 5090 still needs a reset, so the GPU battery ran on BOX10 (the RTX PRO 6000 Workstation box with the
+  9950X3D2 that carried A's sittings, kept after A released it) with the same 9B model the 5090 battery uses (sha256
+  `52c9cceb...`, linked at the rig's path), under the pair lock `/tmp/memra-gpu.lock` (`integ62-pro/`, 473 receipts
+  mirrored and checked). Binary `868bbc8c`, hashed after serve-smoke's build. One collector hold, 10:19Z to 10:34Z.
+  Verbatim:
+  - serve-smoke `serve-smoke: 0 failed`;
+  - the engine span cells `10 passed` and the worker cells `18 passed`, both serial;
+  - identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok);
+  - fault default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 255 ok each;
+  - hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 61 and 68 ok;
+  - `ADMIT-MEM BURST GATE: ALL GREEN` (64 x 200, no OOM on the 96 GB card);
+  - `SPEC-CTX-EDGE GATE: ALL GREEN`;
+  - the new pause gate, run with the 27B (it needs a tool-calling model, as lane A ran it): the first attempt refused
+    before any boot (`REFUSED: [Errno 2] No such file or directory: '/tmp/memra-5090.lock'`: the lead's driver did not
+    export the pair lock name; `integ62-pro/pause-demote/`), and the rerun with `MEMRA_GPU_LOCK=/tmp/memra-gpu.lock`
+    reads `KV-HOST-PAUSE-DEMOTE GATE: ALL GREEN` (40 ok, `integ62-pro/pause-demote-rerun/`).
+
+**Running.** WP-B (the deferred flush, CPU side; its third sitting on BOX14), WP-C (the door's bimodal boots, after
+DAY65's `pin_does_not` and DAY66's `clock_does_not_track thp_does_not_track`), WP-A's DAY49 sitting (items 7 to 9) run
+by the lead on BOX10 after this battery.
+
+**Owner decisions flagged.**
+- Reset the local RTX 5090 (`GPU requires reset` since 01:25Z).
+- 2026-10-04: `MEMRA_MOE_PREFETCH=1`, the MoE slot cache door, `--kv-allocator vmm` (B: promote-eligible on the target
+  class; its stage-0 placement read 55 us on one box and 271 us on another).
+- 2026-10-05, the contracts door; 2026-10-06, the park door (B: promote-eligible under addendum D); 2026-10-07,
+  `MEMRA_ADMIT_BY_MEMORY`.
+- B's question on the verbatim-extension resume (B's rewind arm `MEMRA_RESUME_GRID_REWIND` prices it in its third
+  sitting); memra#464's guard seed format; BOX3's detached OS volume.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
