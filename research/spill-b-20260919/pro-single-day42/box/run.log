@@ -1,0 +1,17 @@
+2026-09-25T11:21:22Z boot ontick-O1 start arm=ontick bin=65473af7e049838d env=[MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 MEMRA_KV_HOST_MB=32768 MEMRA_KV_HOST_CONTRACTS=1] args=[--burst 64]
+2026-09-25T11:43:20Z boot ontick-O1 rc=0 DAY42 CLIENT rows=92 ok=92
+2026-09-25T11:43:25Z boot offtick-O1 start arm=offtick bin=65473af7e049838d env=[MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 MEMRA_KV_HOST_MB=32768 MEMRA_KV_HOST_CONTRACTS=1 MEMRA_ADMIT_RECLAIM_OFFTICK=1] args=[--burst 64]
+2026-09-25T12:05:26Z boot offtick-O1 rc=0 DAY42 CLIENT rows=92 ok=92
+2026-09-25T12:05:31Z boot offtick-O2 start arm=offtick bin=65473af7e049838d env=[MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 MEMRA_KV_HOST_MB=32768 MEMRA_KV_HOST_CONTRACTS=1 MEMRA_ADMIT_RECLAIM_OFFTICK=1] args=[--burst 64]
+2026-09-25T12:27:33Z boot offtick-O2 rc=0 DAY42 CLIENT rows=92 ok=92
+2026-09-25T12:27:38Z boot ontick-O2 start arm=ontick bin=65473af7e049838d env=[MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 MEMRA_KV_HOST_MB=32768 MEMRA_KV_HOST_CONTRACTS=1] args=[--burst 64]
+2026-09-25T12:49:39Z boot ontick-O2 rc=0 DAY42 CLIENT rows=92 ok=92
+2026-09-25T12:49:44Z boot ontick-nocontracts start arm=ontick-nocontracts bin=65473af7e049838d env=[MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 MEMRA_KV_HOST_MB=32768] args=[--burst 64]
+2026-09-25T13:11:37Z boot ontick-nocontracts rc=0 DAY42 CLIENT rows=92 ok=92
+2026-09-25T13:11:42Z boot fault-d2h-delay start arm=fault-d2h-delay bin=65473af7e049838d env=[MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 MEMRA_KV_HOST_MB=32768 MEMRA_KV_HOST_CONTRACTS=1 MEMRA_ADMIT_RECLAIM_OFFTICK=1 MEMRA_KV_HOST_FAULT=d2h-delay] args=[--burst 64]
+2026-09-25T13:33:47Z boot fault-d2h-delay rc=0 DAY42 CLIENT rows=92 ok=92
+2026-09-25T13:33:52Z boot fault-d2h-source-flip start arm=fault-d2h-source-flip bin=65473af7e049838d env=[MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 MEMRA_KV_HOST_MB=32768 MEMRA_KV_HOST_CONTRACTS=1 MEMRA_ADMIT_RECLAIM_OFFTICK=1 MEMRA_KV_HOST_FAULT=d2h-source-flip] args=[--burst 64]
+2026-09-25T13:55:53Z boot fault-d2h-source-flip rc=0 DAY42 CLIENT rows=92 ok=92
+2026-09-25T13:55:58Z boot fault-sources-helper-gone start arm=fault-sources-helper-gone bin=65473af7e049838d env=[MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 MEMRA_KV_HOST_MB=32768 MEMRA_KV_HOST_CONTRACTS=1 MEMRA_ADMIT_RECLAIM_OFFTICK=1 MEMRA_KV_HOST_FAULT=sources-helper-gone] args=[--burst 64]
+2026-09-25T14:17:59Z boot fault-sources-helper-gone rc=0 DAY42 CLIENT rows=92 ok=92
+2026-09-25T14:18:04Z boots done: ontick-O1:ontick offtick-O1:offtick offtick-O2:offtick ontick-O2:ontick ontick-nocontracts:ontick-nocontracts fault-d2h-delay:fault-d2h-delay fault-d2h-source-flip:fault-d2h-source-flip fault-sources-helper-gone:fault-sources-helper-gone

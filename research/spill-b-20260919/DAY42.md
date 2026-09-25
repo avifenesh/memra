@@ -146,3 +146,79 @@ case because every pass removes every evictable entry.
   demoted entry's shell rides the pending demote, whose settle returns its planes; the demote budget is `decide`'s
   shortfall, capped by the host tier's room; the arm hands no memory back on a reply.
 - No clause, bound or reading of 1.4 and 1.5 changes.
+
+### 1.10 Addendum C (2026-09-25, after the target-card sitting read the flush as never reached; before any cell of this shape)
+
+Section 2.1 places why the registered cell never reached the reclaim flush on the target card: the warm phase seeded
+nothing (a `max_tokens=1` request on the spec route parks its session in the spec pool and publishes no prefix entry;
+the 8,192-token entries appear only in the warmth phase, whose 32-token requests run a burst), and the burst never
+deferred (64 open-output arrivals at 8,192 charged about 2.6 GB each and all fit beside the prefix cache on a 96 GB
+card). The arm, its clauses and its readings are unchanged; the shape that exercises them:
+
+- **Warm.** W prompts, `max_tokens=16` (a spec burst runs, so the boundary capture publishes each entry), W and the
+  prompt length per card: 24 of 8,192 tokens on the target card (about 10 GB of evictable device entries at 415 MB
+  each), 16 of 4,096 tokens on the 5090.
+- **Pressure.** `MEMRA_ADMIT_OPEN_OUTPUT_TOKENS` large enough that the burst cannot all fit: 131,072 on the target card
+  (about 4.2 GB of context per arrival at 31,552 B/token), 32,768 on the 5090 (about 580 MB at 16,704 B/token), with
+  the burst of 1.4 (64 and 32). The first arrival that does not fit then has a shortfall under the evictable bytes,
+  which is `decide`'s demote arm.
+- **P0 precondition (a new line, not a clause).** Per boot, the reader prints the warm entries published before the
+  burst window and the reclaim passes; a boot with no warm publication or no reclaim pass reads `NOT-EXERCISED`, and
+  its F2 and F4 lines are not a verdict on the arm.
+- Everything else of 1.2 to 1.9 stands: arms, orders, faults (`d2h-source-flip` per addendum A), clauses F1 to F4, the
+  readings.
+
+## 2. Results
+
+Written after the runs. Section 1 is unchanged except by its dated addenda.
+
+### 2.1 The first target-card sitting (one RTX PRO 6000 Blackwell Workstation Edition, 2026-09-25 11:21 to 14:18Z)
+
+`1d11d5426` (server `65473af7...`), eight boots, receipts `pro-single-day42/box/` (208 files, checked against the box
+manifest). The reader's lines, verbatim:
+
+```
+DAY42 F3 card=pro6000 boot=ontick-O1 oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 64} counts={'ontick_demoted': 0, 'plans': 0, 'submitted': 0, 'published': 25, 'landing_defers': 0, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=offtick-O1 oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 64} counts={'ontick_demoted': 0, 'plans': 0, 'submitted': 0, 'published': 25, 'landing_defers': 0, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=offtick-O2 oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 64} counts={'ontick_demoted': 0, 'plans': 0, 'submitted': 0, 'published': 25, 'landing_defers': 0, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=ontick-O2 oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 64} counts={'ontick_demoted': 0, 'plans': 0, 'submitted': 0, 'published': 25, 'landing_defers': 0, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=ontick-nocontracts oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 64} counts={'ontick_demoted': 0, 'plans': 0, 'submitted': 0, 'published': 26, 'landing_defers': 0, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=fault-d2h-delay oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 64} counts={'ontick_demoted': 0, 'plans': 0, 'submitted': 0, 'published': 25, 'landing_defers': 0, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=fault-d2h-source-flip oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 64} counts={'ontick_demoted': 0, 'plans': 0, 'submitted': 0, 'published': 24, 'landing_defers': 0, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=fault-sources-helper-gone oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 64} counts={'ontick_demoted': 0, 'plans': 0, 'submitted': 0, 'published': 25, 'landing_defers': 0, 'landing_refusals': 0} -> PASS
+DAY42 F1 card=pro6000 order=O1 rows=20 arm_differ=[] cold_differ=[] -> PASS
+DAY42 F2 card=pro6000 order=O1 ontick={'ontick_demoted': 0, 'plans': 0, 'submitted': 0, 'published': 25, 'landing_defers': 0, 'landing_refusals': 0} offtick={'ontick_demoted': 0, 'plans': 0, 'submitted': 0, 'published': 25, 'landing_defers': 0, 'landing_refusals': 0} -> FAIL
+DAY42 F1 card=pro6000 order=O2 rows=20 arm_differ=[] cold_differ=[] -> PASS
+DAY42 F2 card=pro6000 order=O2 ontick={'ontick_demoted': 0, 'plans': 0, 'submitted': 0, 'published': 25, 'landing_defers': 0, 'landing_refusals': 0} offtick={'ontick_demoted': 0, 'plans': 0, 'submitted': 0, 'published': 25, 'landing_defers': 0, 'landing_refusals': 0} -> FAIL
+DAY42 F4 card=pro6000 boot=fault-d2h-delay burst=64 all_200_or_429=True landing_refusals=0 armed=True -> PASS
+DAY42 F4 card=pro6000 boot=fault-d2h-source-flip burst=64 all_200_or_429=True armed=True submitted=0 published=24 -> FAIL
+DAY42 F4 card=pro6000 boot=fault-sources-helper-gone burst=64 all_200_or_429=True latch_lines=12 -> PASS
+DAY42 READING card=pro6000 boot=ontick-O1 tenant_gap_ms_in_burst N=7576 p50=139.1 p99=142.1 max=13292.5 burst_ttft_ms N=64 p50=27608.5 p95=62996.2 demoted_MB=5348 warmth_hits=0/8
+DAY42 READING card=pro6000 boot=offtick-O1 tenant_gap_ms_in_burst N=7596 p50=139.4 p99=142.1 max=14033.6 burst_ttft_ms N=64 p50=29140.1 p95=64829.9 demoted_MB=5348 warmth_hits=0/8
+DAY42 READING card=pro6000 boot=offtick-O2 tenant_gap_ms_in_burst N=7592 p50=139.3 p99=141.9 max=14021.0 burst_ttft_ms N=64 p50=29120.1 p95=205777.7 demoted_MB=5348 warmth_hits=0/8
+DAY42 READING card=pro6000 boot=ontick-O2 tenant_gap_ms_in_burst N=7596 p50=139.5 p99=141.9 max=14030.3 burst_ttft_ms N=64 p50=29129.3 p95=64807.6 demoted_MB=5348 warmth_hits=0/8
+DAY42 READING card=pro6000 boot=ontick-nocontracts tenant_gap_ms_in_burst N=7596 p50=139.4 p99=142.1 max=15119.8 burst_ttft_ms N=64 p50=29232.4 p95=64912.2 demoted_MB=5566 warmth_hits=0/8
+DAY42 READING card=pro6000 boot=fault-d2h-delay tenant_gap_ms_in_burst N=7596 p50=139.5 p99=142.0 max=14049.9 burst_ttft_ms N=64 p50=29179.9 p95=64860.0 demoted_MB=5348 warmth_hits=0/8
+DAY42 READING card=pro6000 boot=fault-d2h-source-flip tenant_gap_ms_in_burst N=7572 p50=139.4 p99=142.2 max=14055.9 burst_ttft_ms N=64 p50=29186.0 p95=64900.6 demoted_MB=5158 warmth_hits=0/8
+DAY42 READING card=pro6000 boot=fault-sources-helper-gone tenant_gap_ms_in_burst N=7572 p50=139.4 p99=142.1 max=14103.1 burst_ttft_ms N=64 p50=29141.7 p95=64823.0 demoted_MB=5348 warmth_hits=0/8
+```
+
+**The registered cell did not exercise the arm.** Placed from the server logs:
+
+- **No reclaim pass ran on any boot.** Not one `[admit-mem]` line has `verdict=defer`, `refuse` or `demote-then-admit`;
+  every burst arrival admitted (`burst_status={200: 64}`). The 64 open-output arrivals charged about 2.6 GB each at
+  the open-output value 8,192 and all fit on the 96 GB card beside the prefix cache. `ontick_demoted=0` and `plans=0`
+  on every boot: neither flush ran, so F2 reads FAIL in both orders and F4's `d2h-source-flip` line reads FAIL on
+  `submitted=0`; those lines are not a reading of the arm.
+- **The warm phase published nothing.** The eight 8,192-token warm requests (`max_tokens=1`) ran on the spec route
+  (`[spec-k] ... tenant="warm" K=3 source=cold-long`) and parked their sessions in the spec pool
+  (`spec-affinity: declined (history diverged at 0 of checkpoint 8192; 2 parked ...)`); no 8,192-token prefix entry
+  exists until the warmth phase, whose 32-token requests run a burst and publish (`insert (spec-boundary): 8192 tokens,
+  415.4MB`). So `warmth_hits=0/8` and every warmth row equals its cold twin trivially.
+- **What the 25 publications are.** `published=25` counts the host tier's capacity-eviction demotes (the prefix cache's
+  own sink, on inserts past its 15,883 MB budget), not the admission flush.
+- What stands as read: F3 PASS on all eight boots (no OOM, no 503, no crash line); F1 PASS in both orders (tenant and
+  warmth digests equal across the arms; not a test of the flush). The tenants' gap p99 is 142 ms on every boot and the
+  max 13 to 15 s (a reading; without a flush it is the burst's own admission and prime work).
+
+Addendum C (1.10) pre-registers the shape that reaches the flush.
