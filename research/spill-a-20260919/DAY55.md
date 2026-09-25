@@ -69,3 +69,31 @@ a defect (T-a); a wall-time test that R1 cannot break is left unchanged and reco
 acceptance is reverted in one commit and its test re-read under a new pre-registration. No bound moves.
 
 **Budget.** 0.5 agent-day: the reproduction 0.1, five fixes and their red arms 0.3, the suite runs 0.1.
+
+## 2. The reproduction as run (R0 and R1; `day55/<test>/r{0,1}/`)
+
+- The test binary `1e83f63e450ff9c1` (tree `dfc9ff6e4`), each test alone, 100 runs per arm:
+
+| test | R0 (`CPUQuota=1200%`) | R1 (`CPUQuota=25%`) |
+|---|---|---|
+| T-a | 100 rc=0 | 100 rc=0 |
+| T-b | 100 rc=0 | 99 rc=0, 1 rc=101 (`the bridge waited for the first-token deadline instead of committing`, lib.rs:17423) |
+| T-c | 100 rc=0 | 100 rc=0 |
+| T-d | 100 rc=0 | 100 rc=0 |
+| T-e | 100 rc=0 | 100 rc=0 |
+
+- **As registered:** T-b is reproduced; T-a, T-c, T-d and T-e are not by R1. By the rule, T-a gets its fix (a defect),
+  T-b gets its fix, and T-c, T-d and T-e are left unchanged by this harness and recorded.
+- **What R1 missed** (a reading): a lone test under a 25% quota mostly finishes inside one 25 ms quota slice; the
+  failures came from contention, a test's threads waiting behind hundreds of runnable siblings. A harness that
+  reproduces contention for one test is registered below; it does not move any bound.
+
+## 3. R2, pre-registered (before it runs and before any fix's code)
+
+- R2: per test, 100 runs of `day55/r2.sh`: the test (`--exact`) inside a scope at `CPUQuota=100%` beside eight CPU
+  burners (`burn.py`, a busy loop) in the same scope, so the test's threads wait for CPU as they did in arm B. The
+  burners contend only for that scope's one CPU; nothing outside it is loaded.
+- The rule for T-c, T-d and T-e: reproduced when R2 reads at least one failure of the recorded assertion; then the fix
+  section 1 names, with its acceptance. Not reproduced by R2: the test is left unchanged and the item records it.
+- Every fix's acceptance (all five) gains R2 at 0 of 100 beside R1 at 0 of 100 (a stricter clause, added before any fix
+  is written).
