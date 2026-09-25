@@ -53,6 +53,46 @@ pub struct BlockId {
     pub proj: u8,
     pub ex: u16,
 }
+
+/// DAY58 (I8f): the `(id, bytes)` pairs the bank proxy accepted, a dense table indexed by layer,
+/// projection and expert (`0` = not validated), grown on the first insertion that needs it and
+/// never shrunk while the cache lives. Replaces a SipHash map whose lookup was most of the
+/// `validate` stage on every admission.
+#[derive(Default)]
+pub(crate) struct ValidatedMemo(Vec<Vec<Vec<usize>>>);
+impl ValidatedMemo {
+    /// True iff the proxy accepted exactly this pair; a zero byte count is never held.
+    #[inline]
+    pub(crate) fn holds(&self, id: BlockId, bytes: usize) -> bool {
+        bytes != 0
+            && self
+                .0
+                .get(usize::from(id.layer))
+                .and_then(|p| p.get(usize::from(id.proj)))
+                .and_then(|e| e.get(usize::from(id.ex)))
+                == Some(&bytes)
+    }
+    /// Record a pair the proxy accepted (the caller's guard: only after `bank.validate`).
+    pub(crate) fn insert(&mut self, id: BlockId, bytes: usize) {
+        let (l, p, x) = (
+            usize::from(id.layer),
+            usize::from(id.proj),
+            usize::from(id.ex),
+        );
+        if self.0.len() <= l {
+            self.0.resize_with(l + 1, Vec::new);
+        }
+        let projs = &mut self.0[l];
+        if projs.len() <= p {
+            projs.resize_with(p + 1, Vec::new);
+        }
+        let experts = &mut projs[p];
+        if experts.len() <= x {
+            experts.resize(x + 1, 0);
+        }
+        experts[x] = bytes;
+    }
+}
 impl BlockId {
     #[inline]
     pub fn new(layer: u16, proj: u8, ex: u16) -> Self {
@@ -265,7 +305,7 @@ pub struct MoeSlotCache {
     /// DAY48: `(id, bytes)` pairs the bank's `validate` accepted. The catalog is immutable for
     /// the door's life, so a pair that validated once always does; any other pair (a new id, or
     /// a known id with another byte count) still goes to the proxy, and a refusal is never kept.
-    banked_validated: HashMap<BlockId, usize>,
+    banked_validated: ValidatedMemo,
     /// `--expert-bank-stages` only (DAY40): the CUDA-thread half of the door's log-only stage
     /// clock. `None` without the door and without the flag, so no legacy statement reads it.
     bank_clock: Option<BankAdmitClock>,
@@ -696,7 +736,7 @@ impl MoeSlotCache {
             banked_inflight: VecDeque::new(),
             banked_prefetched: 0,
             bank_copy_timings: VecDeque::new(),
-            banked_validated: HashMap::new(),
+            banked_validated: ValidatedMemo::default(),
             bank_clock: None,
             slots,
             slot_class,
@@ -1071,7 +1111,7 @@ impl MoeSlotCache {
         let local = (id.layer, id.proj, id.ex);
         let clocked = self.bank_clock.is_some();
         let entered = clocked.then(std::time::Instant::now);
-        if self.banked_validated.get(&id) != Some(&bytes) {
+        if !self.banked_validated.holds(id, bytes) {
             bank.validate(local, bytes)?;
             self.banked_validated.insert(id, bytes);
         }
@@ -1263,7 +1303,7 @@ impl MoeSlotCache {
             return Ok(false);
         }
         let local = (id.layer, id.proj, id.ex);
-        if self.banked_validated.get(&id) != Some(&bytes) {
+        if !self.banked_validated.holds(id, bytes) {
             bank.validate(local, bytes)?;
             self.banked_validated.insert(id, bytes);
         }

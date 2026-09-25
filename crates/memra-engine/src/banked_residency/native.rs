@@ -1164,6 +1164,59 @@ fn admit_one_fill(
     }
 }
 
+/// DAY58 (I5f): one host-demand trace line, byte for byte the line day 48 printed
+/// (`[expert-host-slru] key={}:{}:{} bytes={} slot={} hit={} victim={}` with the victim as
+/// `layer:proj:expert` or `-`), written with direct pushes: no formatting machinery, no allocation.
+fn push_trace_line(
+    out: &mut String,
+    key: ExpertDispatchId,
+    bytes: usize,
+    slot: usize,
+    hit: bool,
+    victim: Option<ExpertDispatchId>,
+) {
+    let key3 = |out: &mut String, k: ExpertDispatchId| {
+        push_decimal(out, u64::from(k.0));
+        out.push(':');
+        push_decimal(out, u64::from(k.1));
+        out.push(':');
+        push_decimal(out, u64::from(k.2));
+    };
+    out.push_str("[expert-host-slru] key=");
+    key3(out, key);
+    out.push_str(" bytes=");
+    push_decimal(out, bytes as u64);
+    out.push_str(" slot=");
+    push_decimal(out, slot as u64);
+    out.push_str(if hit {
+        " hit=true victim="
+    } else {
+        " hit=false victim="
+    });
+    match victim {
+        Some(v) => key3(out, v),
+        None => out.push('-'),
+    }
+    out.push('\n');
+}
+
+/// DAY58: `n` in decimal, as `{}` prints it.
+fn push_decimal(out: &mut String, mut n: u64) {
+    let mut digits = [0u8; 20];
+    let mut at = digits.len();
+    loop {
+        at -= 1;
+        digits[at] = b'0' + (n % 10) as u8;
+        n /= 10;
+        if n == 0 {
+            break;
+        }
+    }
+    for &d in &digits[at..] {
+        out.push(char::from(d));
+    }
+}
+
 /// DAY57 (I10): how long the installer waits for the next finished fill before it stops waiting.
 const FILL_WAIT_STALL: std::time::Duration = std::time::Duration::from_secs(10);
 /// Owner-thread half of the stage clock: host-tier hits and misses, the inner demand, the
@@ -1214,22 +1267,7 @@ impl ExpertDispatchBank for TracedDispatch {
             .insert(slot, local)
             .filter(|old| *old != local);
         let trace_started = self.clock.as_ref().map(|_| Instant::now());
-        {
-            use std::fmt::Write as _;
-            let _ = writeln!(
-                self.trace,
-                "[expert-host-slru] key={}:{}:{} bytes={} slot={} hit={} victim={}",
-                local.0,
-                local.1,
-                local.2,
-                bytes,
-                slot,
-                hit,
-                victim
-                    .map(|v| format!("{}:{}:{}", v.0, v.1, v.2))
-                    .unwrap_or_else(|| "-".into())
-            );
-        }
+        push_trace_line(&mut self.trace, local, bytes, slot, hit, victim);
         if self.trace.len() >= TRACE_CHUNK {
             self.flush_trace();
         }
@@ -1521,7 +1559,8 @@ mod day48_census {
 
     #[test]
     fn the_memo_holds_only_pairs_the_proxy_accepted() {
-        let guarded = "        if self.banked_validated.get(&id) != Some(&bytes) {\n            bank.validate(local, bytes)?;\n            self.banked_validated.insert(id, bytes);\n        }";
+        // DAY58 (I8f): the dense memo's guard.
+        let guarded = "        if !self.banked_validated.holds(id, bytes) {\n            bank.validate(local, bytes)?;\n            self.banked_validated.insert(id, bytes);\n        }";
         // Two sites since DAY50 (the demand and the door's prefetch), each behind the guard.
         assert_eq!(
             CACHE.matches(guarded).count(),
@@ -1545,8 +1584,15 @@ mod day48_trace_census {
 
     #[test]
     fn the_trace_is_buffered_with_its_format_unchanged() {
-        let format = "\"[expert-host-slru] key={}:{}:{} bytes={} slot={} hit={} victim={}\"";
-        assert_eq!(SRC.matches(format).count(), 1);
+        // DAY58 (I5f): the line is written by `push_trace_line` alone; its bytes are pinned against
+        // day 48's format by `the_direct_trace_line_is_day_48s_format_byte_for_byte`.
+        let code = &SRC[..SRC.find("#[cfg(test)]").expect("the tests")];
+        assert_eq!(code.matches("push_trace_line(&mut self.trace, ").count(), 1);
+        assert_eq!(
+            code.matches("writeln!(\n                self.trace")
+                .count(),
+            0
+        );
         let unbuffered = concat!("eprintln!(\n", "            \"[expert-host-slru]");
         assert_eq!(
             SRC.matches(unbuffered).count(),
@@ -1555,6 +1601,95 @@ mod day48_trace_census {
         );
         assert!(SRC.contains("if self.trace.len() >= TRACE_CHUNK {"));
         assert!(SRC.contains("impl Drop for TracedDispatch {"));
+    }
+
+    /// DAY58 (I5f): the direct writer prints day 48's line byte for byte, edge values and a
+    /// randomized set of keys, sizes, slots, hits and victims.
+    #[test]
+    fn the_direct_trace_line_is_day_48s_format_byte_for_byte() {
+        let day48 = |k: (u16, u8, u16), b: usize, s: usize, h: bool, v: Option<(u16, u8, u16)>| {
+            format!(
+                "[expert-host-slru] key={}:{}:{} bytes={} slot={} hit={} victim={}\n",
+                k.0,
+                k.1,
+                k.2,
+                b,
+                s,
+                h,
+                v.map(|v| format!("{}:{}:{}", v.0, v.1, v.2))
+                    .unwrap_or_else(|| "-".into())
+            )
+        };
+        let mut cases = vec![
+            ((0, 0, 0), 0, 0, false, None),
+            (
+                (u16::MAX, u8::MAX, u16::MAX),
+                usize::MAX,
+                usize::MAX,
+                true,
+                Some((u16::MAX, u8::MAX, u16::MAX)),
+            ),
+            ((9, 10, 99), 100, 1000, true, Some((0, 0, 0))),
+        ];
+        let mut x: u64 = 0x9e37_79b9_7f4a_7c15;
+        for _ in 0..20_000 {
+            let mut next = || {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                x
+            };
+            let key = (next() as u16, next() as u8, next() as u16);
+            let victim = (next() % 3 != 0).then(|| (next() as u16, next() as u8, next() as u16));
+            cases.push((
+                key,
+                (next() % 2_000_000) as usize,
+                (next() % 40_000) as usize,
+                next() % 2 == 0,
+                victim,
+            ));
+        }
+        let mut out = String::new();
+        for (k, b, s, h, v) in cases {
+            out.clear();
+            super::push_trace_line(&mut out, k, b, s, h, v);
+            assert_eq!(out, day48(k, b, s, h, v));
+        }
+    }
+}
+
+#[cfg(test)]
+mod day58_memo {
+    //! DAY58 (I8f): the dense memo decides exactly as the map it replaced, step by step.
+    use crate::moe_cache::{BlockId, ValidatedMemo};
+    use std::collections::HashMap;
+
+    #[test]
+    fn the_dense_memo_matches_a_map_oracle() {
+        let (mut memo, mut oracle) = (ValidatedMemo::default(), HashMap::<BlockId, usize>::new());
+        let mut x: u64 = 0x2545_f491_4f6c_dd1d;
+        for step in 0..200_000 {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            let id = BlockId::new(
+                (x % 48) as u16,
+                ((x >> 8) % 3) as u8,
+                ((x >> 16) % 256) as u16,
+            );
+            let bytes = [450_560usize, 557_056, 860_160, 0][((x >> 32) % 4) as usize];
+            let held = memo.holds(id, bytes);
+            assert_eq!(
+                held,
+                bytes != 0 && oracle.get(&id) == Some(&bytes),
+                "step {step}"
+            );
+            // The caller's guard: a pair not held reaches the proxy; the proxy accepts nonzero sizes.
+            if !held && bytes != 0 {
+                memo.insert(id, bytes);
+                oracle.insert(id, bytes);
+            }
+        }
     }
 }
 
