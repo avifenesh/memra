@@ -2029,7 +2029,16 @@ pub(crate) fn release_pending_admit() {
 /// a few embedders/tests inject commands directly without going through the HTTP reservation
 /// path.
 pub(crate) fn release_admission_reservation(lane: Lane) {
-    decrement_atomic(&ADMISSION_RESERVATIONS[lane.idx()]);
+    release_admission_reservation_on(&ADMISSION_RESERVATIONS, lane);
+}
+
+/// The same over the lane counters a reservation was taken on (WP-A day 56: a pending-admission
+/// guard releases where it reserved; every production reservation is on `ADMISSION_RESERVATIONS`).
+pub(crate) fn release_admission_reservation_on(
+    counters: &[std::sync::atomic::AtomicUsize; 3],
+    lane: Lane,
+) {
+    decrement_atomic(&counters[lane.idx()]);
 }
 
 /// Release whichever hard reservation this request holds: its route ticket when a dedicated
