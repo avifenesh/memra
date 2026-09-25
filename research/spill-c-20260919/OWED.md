@@ -79,7 +79,21 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   0.255 and 0.226 (+0.28 and +0.19 ms per token); the RTX 5090's cell is queued (queue v7). Day 64 (`DAY64.md`): I14
   (the catalog and the host cache hashed, `8e7faf4ec`, `83f03d9b7`) and I15 (one ticket per prefetched expert,
   `2243b1fe2`), CPU gates green; the host-hit prefetch per block 2995 ns at I13 to 1997 grouped in one window; the card
-  cell `i15` prepared (`day64-box.sh`, NEED TARGET CARD) and queued on the RTX 5090 (queue v8). Open.
+  cell `i15` ran on BOX15 (a Ryzen 9 9950X host; `DAY64.md` section 4): `DAY64 VERDICT rig=pro-single integrity=ok
+  i14=flat i15=flat door=i15 vs_ref=matches (...)`, as the rule reads it, with noise terms (0.053 to 0.074 s) set by
+  the door's per-boot host-CPU bimodality on that host (fast boots near REF, slow ones 62 ms behind); the rerun on the
+  285K class with a pre-registered admissibility clause (IQR at most 0.005 s per arm) is prepared (`day64b-box.sh`,
+  NEED TARGET CARD), and the RTX 5090's `i15` is queued (queue v8). Open.
+
+## C12. The door's sensitivity to its owner thread's host placement (the 9950X class)
+
+- **Source.** `DAY64.md` section 4: on a Ryzen 9 9950X host every door arm is bimodal by boot (the CPU-side stage
+  parts about 1.85 times larger in the slow boots, the GPU copies unchanged), REF is not; the runner's 12 pinned CPUs
+  span both core complexes.
+- **Work.** Place the cause with the placement sampler's receipts (`ev/placement.tsv`, from the rerun onward) and a
+  pre-registered cell on a 9950X-class host that pins the run to one core complex against the two-complex pin; read
+  beside lane A's owed 9950X-class fill reading.
+- **Status.** Open, registered as a finding; the cell waits on a 9950X-class box.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 

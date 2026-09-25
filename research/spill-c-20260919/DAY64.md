@@ -138,3 +138,80 @@ The RTX 5090's cell is queued (queue v8, behind v7) with `run-gen-i14` (`dc406de
 
 The integrity gate carries I15's main claim: one host demand sequence (the trace without slot numbers) across I13,
 I14 and I15, so the grouped demand must reproduce the per-block order of host hits, misses and victims exactly.
+
+## 4. The target card, first sitting (BOX15, run by the lead as registered; `pro-single-day64/`)
+
+The lead ran `day64-box.sh` exactly as section 3a names it on the tree `6d099c0fd`. The Core Ultra 9 285K class of
+BOX12 and BOX13 was taken, so it ran on BOX15: one RTX PRO 6000 Blackwell Workstation Edition at 600 W (driver
+595.84) on an AMD Ryzen 9 9950X host, accepted by the lead with no brake and a 90 GiB alloc, idling at 26.7 W against
+the 285K boxes' 15.7 to 16.0 W, FMA spin 2671 to 2687 MHz against 2855. 07:34Z to `box done 2026-09-25T07:50:16Z`;
+binaries built on the box (`box-binaries.sha256`); the runner pinned with `taskset -c 0-11`. The lead mirrored the
+receipts; read here: 229 of 229 files `OK` against `box-mirror-manifest.sha256` (`MIRROR-CHECK.txt`). Regime
+(`regime.txt`): 25 to 41 C, SM median 2610 MHz. Verbatim (`i15/reading.log`):
+
+- `DAY64 host demand sequence sha256 4bdc2610c3534e42 lines=[22077]`
+- `DAY64 I15 CHECKS rig=pro-single runs=50 integrity=ok`
+- `DAY64 gen-only decode medians (N=10 each): ref=0.245 i13=0.322 i14=0.283 i15=0.307 i15s=0.314`
+- `DAY64 STEP i14_vs_i13 gen-only decode: pooled=-0.0385 o1=-0.0060 o2=-0.0020 noise=0.0742 -> flat`
+- `DAY64 STEP i15_vs_i14 gen-only decode: pooled=+0.0245 o1=-0.0110 o2=+0.0590 noise=0.0692 -> flat`
+- `DAY64 steady window medians (N=10 each): ref=0.218 i13=0.279 i14=0.247 i15=0.271 i15s=0.275`
+- `DAY64 DOOR i15_vs_ref gen-only decode: pooled=+0.0625 o1=+0.0620 o2=+0.0630 noise=0.0622 -> matches`
+- `DAY64 DOOR i15_vs_ref steady window: pooled=+0.0530 o1=+0.0530 o2=+0.0530 noise=0.0532 -> matches`
+- `DAY64 VERDICT rig=pro-single integrity=ok i14=flat i15=flat door=i15 vs_ref=matches (window: i14=flat i15=flat vs_ref=matches)`
+
+The one host demand sequence held across all 40 door runs of I13, I14 and I15 (I15's grouped demand reproduced the
+per-block order of hits, misses and victims exactly), and every run's tape matched.
+
+**The verdict reads as the rule reads it, and it stands in the record as `flat`, `flat`, `matches`.** Its noise terms
+(0.053 to 0.074 s) are the size of the effects, against 0.001 on BOX13, so the placement below is recorded beside it.
+
+**Where the noise comes from** (the receipts, placed before any conclusion). Every door arm is bimodal by boot, and REF
+is not (`i15/ev/marks.tsv` and the logs, in run order):
+
+- REF: all 10 runs 0.245 or 0.246 s gen-only, 0.217 or 0.218 window.
+- The door, every arm: each boot reads either 0.248 to 0.251 s gen-only (0.219 to 0.221 window) or 0.307 to 0.325 s
+  (0.271 to 0.280), in both orders and at every position of the interleave: I13 4 fast and 6 slow, I14 5 and 5, I15 4
+  and 6, I15S 3 and 7.
+- The mode is set per boot on the host CPU, not the card. In the slow boots the host fill before decode takes 1188 to
+  1350 ms (all but one of them 1331 or more) against 1113 to 1131 in the fast ones; I15S's stage clock reads every CPU-side part about 1.85 times larger
+  (the owner's demand 6.07 to 6.73 ms per window against 3.37 to 3.55, the cache's lease retire 1.90 to 2.01 against
+  1.06 to 1.10, the bank's `stage` 3.67 to 4.15 against 2.11 to 2.24), while the GPU time of each banked copy is the
+  same or lower (17.6 to 18.5 us against 19.6 to 20.0) and the SM clock reads 2610 MHz in both modes.
+- The likely cause, not measured: the 12 pinned CPUs span both of the 9950X's core complexes (0 to 7 and 8 to 11), and
+  the door's decode is CPU-side-bound (`DAY60.md`), so its owner thread's placement moves its speed and REF's lighter
+  CPU work does not. No receipt records the owner thread's CPU, so this stays a hypothesis.
+- What the fast boots show, deciding nothing: there the door runs within about 3 to 6 ms of REF over 32 tokens (I15
+  0.248 against 0.245 gen-only). What the slow boots show: the same door 62 ms behind. Both orders put the door behind
+  REF by 0.062 to 0.063 s in medians.
+
+This box's regime cannot decide the steps or the door against REF by the registered rule: its noise is the door's own
+host-CPU bimodality. The 9950X-class finding (the door's sensitivity to its owner thread's host placement) is recorded
+as a finding of this cell and becomes item C12 of `OWED.md`.
+
+## 5. Pre-registration: the rerun on the 285K class, with an admissibility clause (before it runs)
+
+**The clause, new, for this rerun and every later door timing cell of this lane.** A timing cell is admissible only
+if every arm's gen-only IQR and steady-window IQR are each at most 0.005 s (a fifth of a millisecond per token; BOX12
+and BOX13 read 0.000 to 0.001 across all their arms). An inadmissible cell's step and door readings decide nothing and
+are recorded as they read, with the arms that failed the clause. The clause does not change section 4's reading.
+
+**The rerun.** The same cell and binaries (`c60`, `i13`, `i14`, `i15` from the same commits, built on the box) on the
+Core Ultra 9 285K host class of BOX12 and BOX13, as cell `i15b` (the same arms and order as `i15`), read by
+`day64-read.py --admissibility`, which prints the clause's line (`DAY64 ADMISSIBILITY ... -> admissible` or
+`-> inadmissible` with the failing arms) before the verdict and, when inadmissible, ends in `DAY64 VERDICT ... ->
+void (inadmissible)`. One log-only addition for the placement question: the cell samples every 250 ms, with `ps`, the
+CPU each `run-gen` process last ran on (`ev/placement.tsv`); it decides nothing.
+
+**Post-hoc, deciding nothing:** the clause, run over section 4's receipts, is printed once into
+`pro-single-day64/admissibility-posthoc.log` for the record.
+
+**Script changes for the rerun, before it runs.** `day64-read.py` gains `--admissibility` (without it the reader
+prints exactly what it printed on BOX15: re-read, byte-equal to `pro-single-day64/i15/reading.log`); `day64-cell.sh`
+gains the cell `i15b` (the arms and order of `i15`, plus the placement sampler, stopped by its own pid when the arms
+end); the driver `day64b-box.sh` runs `i15b` into `/root/spill-receipts/c-day64b` and reads it with
+`--admissibility`, dry-checked (`day64-cpu/dry-check-driver-b.log`). The RTX 5090's queued `i15` cell (queue v8) is
+read with `--admissibility` when it is recorded. The post-hoc line over BOX15 (`admissibility-posthoc.log`):
+`DAY64 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0742 max_iqr_window=0.0590 failing=[...] ->
+inadmissible` for every door arm, REF inside the ceiling. Run as
+`D64_BUILDS="c60=da649107c i13=c9379c051 i14=83f03d9b7 i15=2243b1fe2" bash /root/wt-c/research/spill-c-20260919/day64b-box.sh`
+on a Core Ultra 9 285K host with one RTX PRO 6000 Blackwell Workstation Edition (box needs as section 3a).

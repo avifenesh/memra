@@ -2,7 +2,10 @@
 """Day 64 reader for cell `i15` (research/spill-c-20260919/DAY64.md section 3, registered before the cell's script):
 integrity, I14 against I13 and I15 against I14, the door against REF, and I15S's stage split per window token.
 
-usage: day64-read.py <cell-dir> [--rig NAME]
+usage: day64-read.py <cell-dir> [--rig NAME] [--admissibility]
+
+`--admissibility` (DAY64 section 5, registered before the rerun): the cell is admissible only if every arm's gen-only
+and steady-window IQR are each at most 0.005 s; an inadmissible cell's verdict is `void (inadmissible)`.
 """
 import hashlib
 import importlib.util
@@ -17,6 +20,7 @@ d40 = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(d40)
 
 N = 32
+ADMISSIBLE_IQR = 0.005
 ARMS = ("ref", "i13", "i14", "i15", "i15s")
 DOORS = ("i13", "i14", "i15", "i15s")
 STAGES = re.compile(r"\[experts-via-tier\] stages phase=(\w+) (.*)")
@@ -112,6 +116,19 @@ def main():
             verdicts[(new, key)] = name
             print(f"DAY64 STEP {new}_vs_{old} {label}: pooled={diff[None]:+.4f} o1={diff['o1']:+.4f}"
                   f" o2={diff['o2']:+.4f} noise={noise:.4f} -> {name}")
+    admissible = True
+    if "--admissibility" in sys.argv:
+        failing = []
+        for a in ARMS:
+            for key in ("gen_s", "window_s"):
+                spread = iqr(values(a, key))
+                if not spread <= ADMISSIBLE_IQR:
+                    failing.append(f"{a}:{key}={spread:.4f}")
+        admissible = not failing
+        worst = {key: max(iqr(values(a, key)) for a in ARMS) for key in ("gen_s", "window_s")}
+        print(f"DAY64 ADMISSIBILITY rig={rig} ceiling={ADMISSIBLE_IQR} max_iqr_gen={worst['gen_s']:.4f}"
+              f" max_iqr_window={worst['window_s']:.4f} failing={failing}"
+              f" -> {'admissible' if admissible else 'inadmissible'}")
     door = "i15"
     if verdicts.get(("i15", "gen_s")) == "regresses":
         door = "i13" if verdicts.get(("i14", "gen_s")) == "regresses" else "i14"
@@ -140,6 +157,9 @@ def main():
     if integrity != "ok":
         print(f"DAY64 VERDICT rig={rig} integrity=FAIL -> void")
         return 1
+    if not admissible:
+        print(f"DAY64 VERDICT rig={rig} integrity=ok -> void (inadmissible)")
+        return 0
     print(f"DAY64 VERDICT rig={rig} integrity=ok i14={verdicts[('i14', 'gen_s')]} i15={verdicts[('i15', 'gen_s')]}"
           f" door={door} vs_ref={out['gen_s']} (window: i14={verdicts[('i14', 'window_s')]}"
           f" i15={verdicts[('i15', 'window_s')]} vs_ref={out['window_s']})")

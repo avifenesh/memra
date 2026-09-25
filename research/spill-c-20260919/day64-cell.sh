@@ -6,7 +6,7 @@
 # i13, i14, i15, i15s) x 5, order 2 reversed x 5; the day-18 overlap environment.
 # Environment (set by the driver): D40_R receipts root, D40_BINS binary dir, D40_TREE worktree, D40_ART the approved
 # artifact, D40_LOCK the rig lock path.
-# usage: day64-cell.sh i15 <lockfd>
+# usage: day64-cell.sh i15|i15b <lockfd>
 set -uo pipefail
 cell=$1; fd=$2
 : "${D40_R:?}" "${D40_BINS:?}" "${D40_TREE:?}" "${D40_LOCK:?}" "${D40_ART:?}"
@@ -40,7 +40,18 @@ run_gen() { # $1 label  $2.. argv (env words first)
     return 0
 }
 case $cell in
-i15)
+i15|i15b)
+    # DAY64 section 5 (i15b, the rerun): the CPU each run-gen process last ran on, every 250 ms, log only. The sampler
+    # is this cell's own child and is stopped by its pid when the arms end.
+    sampler=""
+    if [ "$cell" = i15b ]; then
+        : > "$EV/placement.tsv"
+        ( while :; do
+            ps -eo pid,psr,comm | awk -v t="$(date -u +%T.%3N)" '$3 ~ /^run-gen/ {print t "\t" $1 "\t" $2 "\t" $3}' >> "$EV/placement.tsv"
+            sleep 0.25
+          done ) &
+        sampler=$!
+    fi
     sha256sum "$D40_BINS/run-gen-c60" "$D40_BINS/run-gen-i13" "$D40_BINS/run-gen-i14" "$D40_BINS/run-gen-i15" | tee "$EV/binary.sha256"
     stat -c '%n %s %Y' "$D40_ART" | tee "$EV/artifact.stat"
     [ -f "$D40_ART.sha256" ] && cp "$D40_ART.sha256" "$EV/artifact.sha256"
@@ -57,7 +68,8 @@ i15)
     }
     for i in 1 2 3 4 5; do arm ref "o1-ref-r$i"; arm i13 "o1-i13-r$i"; arm i14 "o1-i14-r$i"; arm i15 "o1-i15-r$i"; arm i15s "o1-i15s-r$i"; done
     for i in 1 2 3 4 5; do arm i15s "o2-i15s-r$i"; arm i15 "o2-i15-r$i"; arm i14 "o2-i14-r$i"; arm i13 "o2-i13-r$i"; arm ref "o2-ref-r$i"; done
-    echo "i15 cell done: $(cat "$EV"/*.exit | sort | uniq -c | tr '\n' ' ')"
+    [ -n "$sampler" ] && kill "$sampler" 2>/dev/null
+    echo "$cell cell done: $(cat "$EV"/*.exit | sort | uniq -c | tr '\n' ' ')"
     ;;
 *) echo "unknown cell $cell"; exit 2;;
 esac
