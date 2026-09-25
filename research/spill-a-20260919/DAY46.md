@@ -57,3 +57,18 @@ the box after its current sittings (item 15 and item 3's reading), the driver in
 
 **Budget.** 0.3 agent-day: the change and its censuses 0.1, the CPU cells 0.05, the target sitting (about 70 minutes of
 card time) 0.15.
+
+## 2. S3 as built (`e776b2843`) and its CPU cells
+
+- Built: S2's code re-applied (the revert `16904e97d` reverted, code only) with `span_blocks` (the grid rule of section
+  1, `SpanMemory::{Device, PinnedHost}`), `CudaTransfers.sm_count` (read at construction; a failed read is a
+  construction refusal), the three launch sites passing their memory kind (the sources and the H2D destinations
+  `Device`, the landed digests `PinnedHost`). The grid rule's census and values are their own unit test,
+  `day46_span_digest_grids_leave_room_for_the_owner` (at 188 SMs: 64 spans take 2 blocks each, 32 take 5; at 82 SMs, 64
+  take 1; pinned host always 1), rather than a clause inside `span_receipt_rules_are_as_stated`. The native kernel cell
+  runs every base at its rule and device memory at one block per span too.
+- CPU cells, green: engine lib `553 passed; 0 failed; 44 ignored`; server lib `912 passed; 0 failed; 24 ignored`; the
+  tier crate; clippy `-D warnings` on the three crates; fmt; `git diff --check`; `tools/check-flags.sh`.
+- The target sitting runs on the same box after item 15's (`pro-single-day42/run-all-2.sh`, S2's receipts moved to
+  `a-s2-design-s2` first, S3's under `a-s2`), then item 3's 9950X-class reading again (the lead's order puts item 4
+  first). The 5090 half waits for the card's reset.
