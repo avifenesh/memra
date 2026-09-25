@@ -373,6 +373,38 @@ addendum B's serving boots. The target-card sitting runs the same binary source.
 DAY38's and DAY39's first boots, so their green binaries are built from it (their red arms apply their own patches to
 it); both days' pre-registrations name the lane tip at the first boot, so neither changes.
 
+### 1.15 Addendum F (2026-09-25, after the target-card sitting, before any rerun or reader change)
+
+Section 2.5 placed four no-reading lines of the target card on the lane's harness and reader. This addendum fixes
+them, names the rerun, and changes no clause, bound or rule of 1.6 and 1.7.
+
+- **The box preflight.** The target-card chains refuse to start unless `ss` or `lsof` is on `PATH` (the gates' own
+  port check needs one), and the box needs name iproute2.
+- **The `main` arm clears every lane-only name.** `boots.sh` runs the main binary with `MEMRA_KV_ALLOCATOR`,
+  `MEMRA_KV_VMM_GROW` and `MEMRA_KV_VMM_FAULT` unset, whatever the sitting exported.
+- **Reader corrections (`day37-read.py`), all in how a clause is read, none in a bound:**
+  1. A3 (i) reads each vmm boot's placement from its boot line (`grow=inline` or `grow=helper`). Inline: per grow event
+     `owner_us` over the stream vmm boots, N >= 20, p99 <= 500 (1.6's inline branch). Helper: the ensure walls and the
+     owner grows that waited, as before.
+  2. A5-MAPPER under the inline placement prints `N/A (inline: no mapper)` with the digest comparison: the fault
+     injects nothing there and the owner-behind path it targets is every grow, which A1 reads. Helper: as before.
+  3. A5-ENSURE compares only rows whose `prompt_sha256` is equal in both boots, prints how many rows it excluded for a
+     changed prompt (a later turn of a conversation whose earlier turn took the injected error carries that turn's
+     different answer, so it is a different request), and prints the outcomes whole.
+  4. A5-MAPPER's and A6's pooled side is `off-lane` when that boot exists (the lane binary, door unset, the mix).
+- **The rerun on a target card (the r4 source `c6f9282c2`, `MEMRA_KV_VMM_GROW=inline` pinned from the class's stage-0
+  receipt; stage 0 runs again as a recorded reading):** the gate set of both arms (`gates-r4b-pooled`,
+  `gates-r4b-vmm`), then the boots `off-lane`, `fault-mapper`, `off-main`, `burst-g2-vmm`, `fault-ensure`, under the
+  corrected reader. The target card's rule reading of 1.7 is then the first sitting's A2, A1-MIX, A1-STREAM, A3, A4,
+  A5-BUILD and A7 lines with the rerun's A1-GATE, A5-MAPPER, A5-ENSURE and A6 lines, all from the r4 source; no timing
+  crosses the two boxes (A3 is the first sitting's alone).
+- **The 5090's r4 root** is read with the corrected reader. Its first boot batch stopped at `burst-l64-vmm` on the
+  idle wait (`rig not idle after 7200 s`, a foreign process on the card), so `burst-l64-vmm`, `burst-l64-pooled`,
+  `burst-boff-pooled`, `burst-boff-vmm`, `fault-ensure`, `fault-build1` and `fault-build64` run after the chain on the
+  same binaries.
+- **The target class's placement default** moves to inline in code (`kv_vmm_placement_for_device`, the stage-0 rule's
+  selection on this class, as addendum A said it would after the sitting). The deciding cells keep the pinned env.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
