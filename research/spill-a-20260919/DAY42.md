@@ -125,3 +125,43 @@ behavior, not a construction, and the design does not rely on it. Three mechanic
 Step 10's census adds: no exit between the take and the seal meets a pending read (the seal is the hand-off's last step
 before `submit`); the guard's only unguarded exit is after the observation; the take's discard of an earlier receipt;
 the reap on observation only.
+
+## 2. S2 as built (`7ce3f3243`), its CPU cells, and its sittings pre-registered
+
+- **Built** (section 1 with 1a's mechanics): `span_receipt_digests` (`cu/tier_receipt.cu`; the day-22 body moved into
+  one shared device function, `memra_receipt_lanes`, so `d2d_receipt_digest` and the new kernel run one program);
+  `CudaTransfers::span_digests_on` (one launch per 64 spans), `flip_staging_on`; `take_d2h_spans` returns
+  `TakenD2hSpans { spans, receipt }`; `seal_d2h_span_receipt`, `d2h_span_receipt`, `d2h_span_receipt_wait`,
+  `d2h_span_receipt_abandon` (one live receipt, a reap list, `SpanReceipt`'s drop leaking a sealed unobserved one); the
+  D2H landing on the copies alone again; the H2D destination digests in one launch. Server: `ContractSettle::Done`
+  carries the unsealed id; the `Done` arm guards the staging (`HostStagingHeld`, `HostStagingQuiet`), seals as the last
+  step before the job, gives the receipt back on every exit before it; the `Hashing` step reads the receipt before the
+  reply, sets `quiet` on its observation, checks the pairs before the first staging return and keeps each source digest
+  (`HostPrefixEntry::span_digests`), and its latch and the shutdown drain give the receipt back. The promote's check and
+  both red arms are S's; `span-flip-landed` flips at the submit. Tier rule `span_receipt` revised (rules 1 to 4, three
+  red arms). The engine re-exports the CPU oracle for the worker's cells.
+- **CPU cells, green** (under the CPU quota): engine lib `552 passed; 0 failed; 44 ignored` (the censuses
+  `span_receipt_rules_are_as_stated`, `one_side_stream_beside_the_owner` (10 copy-stream helper calls, two early readers,
+  six direct launches), `native_cells_own_their_context` at 14 cells); server lib `912 passed; 0 failed; 24 ignored`
+  (the new `day42_the_span_receipt_is_required_before_the_publication`, the day-31 staging census with the arm's two
+  unstage exits again); the tier crate (`span_receipt_bindings` 4 passed, every other suite green); clippy
+  `-D warnings` on the three crates, `cargo fmt --check`, `git diff --check`, `tools/check-flags.sh` clean.
+- **The 5090 is down, found before its cells.** `nvidia-smi` at 02:10Z reads the card `ERR!` with `[GPU requires
+  reset]` and no compute process; the kernel log, verbatim: `NVRM: Xid (PCI:0000:02:00): 119, pid=3398639,
+  name=nvidia-smi, Timeout after 6s of waiting for RPC response from GPU0 GSP! Expected function 76 (GSP_RM_CONTROL)`
+  (01:25:24Z, then 01:25:30Z, and `pid=2055, name=nvidia-powerd` at 01:25:37Z), then `NVRM: Xid (PCI:0000:02:00): 154,
+  GPU recovery action changed from 0x0 (None) to 0x1 (GPU Reset Required)`, and `Check failed: Reset required
+  [NV_ERR_RESET_REQUIRED]` every few seconds since. The 5090 lock file was last touched at 01:25Z. This lane ran nothing
+  on the card after its day-40 trace cell (before the S revert, 00:07Z). A reset or a reboot is the owner's; the 5090
+  half of S2 waits for it.
+- **The 5090 sitting, pre-registered** (`rtx5090-day42/`): `build.sh <out> b4816eda8` (s2 the tip; g4 the lane before
+  S2's code, its crates equal to main `5d653e851`; gpp `358749c9f`, the 5090's day-38 G'' control; the scratch
+  worktree and target on disk, removed at the end), `card-run.sh` (section 1's (a) to (e): the unit cells, the demote and
+  promote A/Bs g4 against s2 read by `day42-reading.py`, the hump cell xgpp xs2 xs2 xgpp with each boot's start
+  temperature and SM clock, the gates on s2), `trace.sh` (the reading, `day42-trace-reading.py`).
+- **The target sitting, pre-registered** (`pro-single-s2/`, one RTX PRO 6000 Blackwell, the collector's hold, receipts
+  under `/root/spill-receipts/a-s2`): `build.sh <tip> b4816eda8` (s2, g4 and gpp from one clone, the tree checked back
+  at the tip after each), `driver.sh` (`ab-demote.sh` (c), `ab-promote.sh` (d), `hump.sh` (e) with the regime record,
+  `gates.sh` (a) and (b) with twin OFF and ON, `hitgate.sh`, `unit-cells.sh` (day 42's censuses added), `trace.sh`).
+  Any host class; the CPU class matters only for the fill reading (item 3's owed 9950X-class cell rides a separate
+  sitting, DAY43 section 1).

@@ -19,6 +19,14 @@ from receipt.json by `--replay`; no threshold, no verdict: the cell measures a s
     at the tenant's 24th token, a whole-entry HIT whose restore copies the entry and primes the
     suffix; each intruder's `cached_tokens` is recorded, memra#536 Move 2 cell (ii). The four
     earlier arms are byte-for-byte unchanged.)
+    (`demote-long` and `promote-long`, WP-A day 43, `DAY43.md` section 1, OWED item 15: the demote and
+    promote arms at 4096-token entries. `demote-long`: each timed intruder is a fresh long prompt of the
+    prime arm's length whose insert evicts the resident long entry into the host tier (one untimed long
+    seed in setup, so the first timed run demotes too). `promote-long`: two fixed long prompts L_A and
+    L_B seeded untimed (L_B's insert demotes L_A); each timed intruder is a CHAIN: a hit on L_A (it
+    promotes, and its insert demotes L_B), then, the moment its response returns, a hit on L_B, which
+    meets L_B Demoting and parks until its publication, then promotes (its insert demotes L_A again);
+    the chained request's e2e is `chain_wall_ms`. The five earlier arms are byte-for-byte unchanged.)
     stall_cell.py --replay DIR/receipt.json
 
 Client-side only: stdlib, no engine binary, no GPU access of its own.
@@ -61,6 +69,11 @@ def words(n, salt):
 
 def fresh_prompt(n_words, run_id):
     return f"run {run_id}: " + words(n_words, run_id)
+
+
+# WP-A day 43 (`promote-long`): the two fixed long prompts, the prime arm's length each.
+L_A = fresh_prompt(PRIME_TARGET_TOKENS - 4, 3901)
+L_B = fresh_prompt(PRIME_TARGET_TOKENS - 4, 3902)
 
 
 def post(port, body, timeout=600):
@@ -184,6 +197,10 @@ def one_run(port, mode, arm, run_id, log_path, log_off, promote_toggle):
             prompt = fresh_prompt(PRIME_TARGET_TOKENS - 4, 2100)  # the ONE seeded prompt, a hit every run
         elif mode == "demote":
             prompt = fresh_prompt(72, 2000 + run_id)
+        elif mode == "demote-long":
+            prompt = fresh_prompt(PRIME_TARGET_TOKENS - 4, 3000 + run_id)
+        elif mode == "promote-long":
+            prompt = L_A
         else:
             prompt = P_A if promote_toggle[0] % 2 == 0 else P_B
             promote_toggle[0] += 1
@@ -197,6 +214,19 @@ def one_run(port, mode, arm, run_id, log_path, log_off, promote_toggle):
                                                                                          usage.get("cached_tokens"))}
         except Exception as e:
             intruder = {"error": repr(e), "fired_at_ms": (t_i - t_start) * 1e3}
+        if mode == "promote-long" and intruder is not None and "error" not in intruder:
+            # The chain: the entry the first hit's insert just demoted, at once (it is Demoting now).
+            t_c = time.monotonic()
+            try:
+                resp2, wall2 = post(port, {"model": "gate", "prompt": L_B, "max_tokens": 1, "temperature": 0})
+                usage2 = resp2.get("usage", {})
+                intruder["chain_fired_at_ms"] = (t_c - t_start) * 1e3
+                intruder["chain_wall_ms"] = wall2
+                intruder["chain_prompt_tokens"] = usage2.get("prompt_tokens")
+                intruder["chain_cached_tokens"] = (usage2.get("prompt_tokens_details") or {}).get(
+                    "cached_tokens", usage2.get("cached_tokens"))
+            except Exception as e:
+                intruder["chain_error"] = repr(e)
         if mode == "capture" and intruder is not None and "error" not in intruder:
             # The hit clause: the same prompt again, untimed, after the tenant's stream ends (so the
             # re-post never sits beside the timed window); its cached_tokens must equal the seed's
@@ -270,7 +300,10 @@ def summarize(runs):
         "intruder_cached_tokens": [r["intruder"].get("cached_tokens") for r in arm if r.get("intruder")],
         "intruder_wall_ms": [round(r["intruder"].get("wall_ms", float("nan")), 1) for r in arm if r.get("intruder")],
         "tenant_text_shas": sorted({r["tenant_text_sha"] for r in runs}),
-        "errors": [e for r in runs for e in r["errors"]] + [r["intruder"]["error"] for r in arm if r.get("intruder") and "error" in r["intruder"]],
+        "errors": [e for r in runs for e in r["errors"]] + [r["intruder"]["error"] for r in arm if r.get("intruder") and "error" in r["intruder"]]
+        + [r["intruder"]["chain_error"] for r in arm if r.get("intruder") and "chain_error" in r["intruder"]],
+        "chain_wall_ms": [round(r["intruder"]["chain_wall_ms"], 1) for r in arm
+                          if r.get("intruder") and "chain_wall_ms" in r["intruder"]],
     }
 
 
@@ -286,6 +319,8 @@ def rule_line(tag, mode, n, s):
             f"server_promote_ms={[round(x, 1) for x in s['server_promote_ms']]} "
             + (f"server_restore_ms={[round(x, 1) for x in s['server_restore_ms']]} "
                f"intruder_cached_tokens={s['intruder_cached_tokens']} " if mode == "restore" else "")
+            + (f"intruder_wall_ms={s['intruder_wall_ms']} chain_wall_ms={s.get('chain_wall_ms', [])} "
+               if mode == "promote-long" else "")
             + f"intruder_prompt_tokens={s['intruder_prompt_tokens']} tenant_text_identical={len(s['tenant_text_shas']) == 1} "
             f"errors={len(s['errors'])}")
 
@@ -293,7 +328,7 @@ def rule_line(tag, mode, n, s):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int)
-    ap.add_argument("--mode", choices=["prime", "demote", "promote", "capture", "restore"])
+    ap.add_argument("--mode", choices=["prime", "demote", "promote", "capture", "restore", "demote-long", "promote-long"])
     ap.add_argument("--server-log")
     ap.add_argument("--out")
     ap.add_argument("--n", type=int, default=5)
@@ -322,6 +357,19 @@ def main():
             tail, log_off = log_tail(a.server_log, log_off)
             setup.append({"seed": "AB"[i], "wall_ms": wall, "usage": resp.get("usage"),
                           "server_demote_ms": server_ms(tail, "demote")})
+    if a.mode == "promote-long":
+        # WP-A day 43: seed L_A then L_B (L_B's insert demotes L_A): untimed setup, recorded.
+        for i, p in enumerate((L_A, L_B)):
+            resp, wall = post(a.port, {"model": "gate", "prompt": p, "max_tokens": 1, "temperature": 0})
+            tail, log_off = log_tail(a.server_log, log_off)
+            setup.append({"seed": "AB"[i], "wall_ms": wall, "usage": resp.get("usage"),
+                          "server_demote_ms": server_ms(tail, "demote")})
+    if a.mode == "demote-long":
+        # WP-A day 43: one untimed long seed, so the first timed run's insert demotes it.
+        resp, wall = post(a.port, {"model": "gate", "prompt": fresh_prompt(PRIME_TARGET_TOKENS - 4, 2999),
+                                   "max_tokens": 1, "temperature": 0})
+        tail, log_off = log_tail(a.server_log, log_off)
+        setup.append({"seed": True, "wall_ms": wall, "usage": resp.get("usage")})
     if a.mode == "restore":
         # Untimed setup: the ONE intruder prompt is posted once so its grid seed captures and
         # publishes; every timed run's re-post is then a whole-entry hit. Recorded.

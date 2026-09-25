@@ -76,7 +76,9 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   enough to push the landing past the first tick-top poll. The revision owed (section 7): the span receipt off the
   landing path, required at publication with the sources and staging held until its event, the digests in one launch
   each; pre-registered with its acceptance before its code; its 5090 and target sittings then. Ruling 54: S refuted and
-  reverted. The revision is design S2, pre-registered in `DAY42.md` section 1 (and 1a) before its code.
+  reverted. The revision is design S2, pre-registered in `DAY42.md` section 1 (and 1a) before its code, **built**
+  (`7ce3f3243`, DAY42 section 2: CPU cells green); its 5090 cells wait for the card's reset (the 5090 reads `GPU requires
+  reset` since 01:25Z, Xid 119 then 154); its target sitting is prepared (`pro-single-s2/`).
 
 ### 5. The helper's promote-side fail-closed arms have no serving-shape fault cell (found in this ledger's read)
 
@@ -195,7 +197,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   and offset, priced on both cards at 32 x 60 KiB and 32 x 4 MiB, pre-registered with a bound before its code. Ruling
   54: G''' against G4 at long entries is not an owner choice; the 4096-token cell is pre-registered with both arms and
   runs on the next target card, and the registered rule decides.
-- Status: open (next after item 4).
+- Status: **pre-registered** (DAY43 section 1: G''' against G4 at 4096-token entries, the rule's four terms; the cells
+  in `pro-single-i15/`, run after the S2 sitting on the next target card).
 
 ### 16. The 5090 hump replicate in G4's hot regime (ruling 54)
 
