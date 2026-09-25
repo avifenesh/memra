@@ -108,3 +108,20 @@ holds by a wide margin; (d) holds.
 
 **Order.** V's code is written after design S3's target reading (item 4, DAY46), so a revert of either stays one clean
 commit.
+
+## 1a. Amendments before any V code (mechanics and the gate's cell readings; no clause or bound changes)
+
+1. **No pause shape Block-settles.** Every demote route settles a pending demote first (`host_demote_settle_pending(..,
+   Block, "a second demote")`, the one-batch rule), so a sweep that fired shape 1 and then shape 2 in one tick would hold
+   the tick for shape 1's whole copy and hash, the stall V removes. So a shape whose demote cannot start because a demote
+   is `Demoting` (shape 1's own, or the sink's) does not start: the candidate stays pending with that shape still owed
+   and the sweep tries it again at a later tick (shape 1 before shape 2; a candidate whose owed shapes all resolved
+   leaves the list; a later touch or pin cancels shape 2 as today). Census: no pause path reaches a `Block` settle.
+2. **The gate's race cell reads per boot.** In the plain boot the pause demotes shape 1's snapshot first, so turn 2
+   sent during the held copy resumes from the park itself (the park is released only at the publication); the
+   publication then finds the park gone and releases nothing (`plain park already gone at the publication`), and shape
+   2's demote runs at a later tick. In the default boot (spec parks out of scope) shape 2 is the first demote, and turn
+   2 parks on the `Demoting` entry and promotes after the publication. Both byte-equal to the reference.
+3. **The gate's failure cell reads per boot.** `contract-presubmit` refuses the boot's first contract D2H: in the plain
+   boot, shape 1's (`host copy did not publish; park kept`; shape 2 then demotes cleanly); in the default boot, shape
+   2's (`entry reinstated`). Both byte-equal, the tier on.
