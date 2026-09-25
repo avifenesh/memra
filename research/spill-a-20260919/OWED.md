@@ -240,7 +240,8 @@ the card is reset.
   DAY49 section 1 ("the improvement that removes the first touch ... is pre-registered as its own design before its
   code, with its own price clauses").
 - Acceptance: DAY51 section 1, (a) to (g).
-- Status: **pre-registered** (DAY51 section 1: design P, a pre-touched payload reserve on the hash helper).
+- Status: **built** (DAY51 sections 1 and 2: design P, a pre-touched payload reserve on the hash helper, `d82738c14`;
+  CPU cells green); the target sitting `pro-single-p/` prepared, NEED TARGET CARD (the 9950X class).
 
 ### 18. S4's H2D destination digests ride the promote's landing (found by DAY50)
 

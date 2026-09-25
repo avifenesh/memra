@@ -101,3 +101,37 @@ different host class reads its own verdict. The 5090 half after the card's reset
 
 **Budget.** 0.5 agent-day: the code, census and unit cells 0.2, the sitting and its reader 0.1, the card 0.2 (about
 2.5 hours of card time).
+
+## 2. P as built (`d82738c14`), the CPU cells, and the sitting prepared
+
+- Built as section 1 states, in `crates/memra-server/src/worker.rs`: `HostPayloadReserve` (`take`, `retarget`,
+  `refill_step`, `refill_until_job`), owned by the helper thread (`HostHashWorker::spawn(fault, reserve)`, the one
+  production reserve `HostPayloadReserve::new(governor.clone(), hpx.budget as u64)`); the helper's `for job in jobs_rx`
+  is now a loop whose top is `reserve.refill_until_job(&jobs_rx)`, then the blocking `recv`; the copy is
+  `match reserve.take(src.len()) { Some(mut v) => { v.copy_from_slice(src); .. } None => src.to_vec() }`; the retarget
+  runs after the payload map and before the reply is built, on every `Hash` job; `capacity.pageable =
+  thrice(host_budget)`. The charge is one `ResidentCharge` for the target's bytes under `host_payload_reserve_tenant()`,
+  taken by the first refill step of a target. A yield is counted when a job interrupts a refill that has written at
+  least one buffer of its target. No new env read, no new fault value.
+- Censuses moved with the code (their subject changed, no bound): the spawn string and the two signature lookups of
+  `every_path_that_meets_a_hashing_demote_meets_it_through_the_same_settle`, the signature lookup of
+  `day41_the_sources_faults_key_on_the_first_sources_job`, the copy line `the_d2h_spans_ride_the_ticket_in_the_stated_order`
+  and `day49_the_split_lines_are_log_only` pin (now the reserve's `take` line, still before the hash), and day 49's
+  `thread_minflt()` count, now 7 (the definition, two reads around each of the two copies, two around the refill's
+  buffer). The test sites that spawn a helper pass a reserve on its own governor (`test_payload_reserve`).
+- New: the census `day51_the_payload_reserve_is_the_copy_program` and the cells
+  `day51_a_reserve_hit_is_the_staged_bytes_bitwise`, `day51_the_refill_yields_to_a_waiting_job`,
+  `day51_the_reserve_charge_the_cap_and_the_shape_change` (section 1 (a)'s CPU half, every item).
+- CPU cells, green: server lib `925 passed; 0 failed; 25 ignored`; clippy `-D warnings` (memra-server, all targets);
+  `cargo fmt --all -- --check`; `git diff --check`; `tools/check-flags.sh` (`no uncovered runtime names`). The engine and
+  tier crates are unchanged.
+- The reader `day51-reading.py` was checked on a synthetic fixture built from DAY49's and item 15's mirrored receipts
+  (relabelled arms, a `reserve 97 of 97 staged` suffix added to one arm's lines): every clause parses and prints, and
+  a boot removed, a control that does not hump and a red gate exit read INCOMPLETE, UNREAD and FAIL as they must. The
+  fixture is gone.
+- The sitting `pro-single-p/`: `build.sh <tip> e4de9c804` (p, base, gpp from one clone; base is section 1's commit, the
+  tree before P's code; the tip's test binaries), `driver.sh` (the four A/B cells `demote`, `free`, `promote`, `chain`
+  through `ab.sh`, the hump cell, the gates with the pause gate, the hit gate, the unit cells, then the reader), about
+  2.2 hours of card time on one RTX PRO 6000 Blackwell with the 27B artifact at
+  `/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`. The host class is recorded (`host-shape.txt`); the 9950X class is
+  DAY49's, so it is the class this reading is registered for.
