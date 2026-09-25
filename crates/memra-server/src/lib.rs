@@ -22737,6 +22737,26 @@ temperature = 0.6
             ),
         )
         .await;
+        // WP-A day 53 (`research/spill-a-20260919/DAY53.md`, OWED item 21; a test-only probe,
+        // removed with the fix): a non-200 names its path before the assertion fails.
+        if resp.status() != StatusCode::OK {
+            let status = resp.status();
+            let reservations: Vec<usize> = worker::ADMISSION_RESERVATIONS
+                .iter()
+                .map(|a| a.load(std::sync::atomic::Ordering::SeqCst))
+                .collect();
+            let draining = DRAINING.load(std::sync::atomic::Ordering::SeqCst);
+            let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .unwrap_or_default();
+            let v: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            eprintln!(
+                "ITEM21 PROBE status={status} code={} message={} reservations={reservations:?} \
+                 draining={draining}",
+                v["error"]["code"], v["error"]["message"]
+            );
+            panic!("the streaming request answered {status}, not 200 OK (ITEM21 probe above)");
+        }
         assert_eq!(resp.status(), StatusCode::OK);
         assert!(resp.headers().contains_key("x-ratelimit-limit"));
         assert!(resp.headers().contains_key("x-ratelimit-remaining"));
