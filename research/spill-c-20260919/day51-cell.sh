@@ -62,7 +62,8 @@ spec)
     run_gen spec-exact8 env MEMRA_MOE_RESIDENT=0 MEMRA_NGEN=32 "$D40_BINS/run-spec-final" "$D40_ART" 55 88 13 "${host[@]}" --expert-bank-gpu-bytes=6881344
     echo "spec cell done: spec rc=$(cat "$EV/spec.exit") pressure rc=$(cat "$EV/spec-pressure.exit") exact8 rc=$(cat "$EV/spec-exact8.exit")"
     ;;
-decide)
+decide|decide-b)
+    # DAY51 section 1c: decide-b is the same cell, read with the corrected trace term.
     sha256sum "$D40_BINS/run-gen-final" | tee "$EV/binary.sha256"
     stat -c '%n %s %Y' "$D40_ART" | tee "$EV/artifact.stat"
     [ -f "$D40_ART.sha256" ] && cp "$D40_ART.sha256" "$EV/artifact.sha256"
@@ -76,7 +77,7 @@ decide)
     }
     for i in 1 2 3 4 5; do arm off "o1-off-r$i"; arm on "o1-on-r$i"; arm ref "o1-ref-r$i"; done
     for i in 1 2 3 4 5; do arm ref "o2-ref-r$i"; arm on "o2-on-r$i"; arm off "o2-off-r$i"; done
-    echo "decide cell done: $(cat "$EV"/*.exit | sort | uniq -c | tr '\n' ' ')"
+    echo "$cell cell done: $(cat "$EV"/*.exit | sort | uniq -c | tr '\n' ' ')"
     ;;
 *) echo "unknown cell $cell"; exit 2;;
 esac

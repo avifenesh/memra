@@ -129,6 +129,8 @@ if [ -x "$R/bins/run-gen-final" ] && [ -x "$R/bins/run-spec-final" ]; then
     moe_cell hashlock day51-cell.sh 1800
     moe_cell spec day51-cell.sh 3600
     moe_cell decide day51-cell.sh 3600
+    # DAY51 section 1c: the deciding cell again, read with the corrected trace term.
+    moe_cell decide-b day51-cell.sh 3600
 else
     echo "final not built: DAY51's hashlock, spec and decide not run (add final=<DAY51 section 2 commit> to D52_BUILDS and rerun)" \
         | tee -a "$R/box-driver.log"

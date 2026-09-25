@@ -95,3 +95,48 @@ two later commits touch `memra-server` only). Binaries on the RTX 5090: `run-gen
 `0fbf63285c76b5ddead74f6a8c1b488bbe69d4e6cc9d8398f2bb6203da5a4f03`, `run-spec-final` =
 `67286cfa67825cb0a7216203b0f4de8016b7fce289672c0e1fda6ce9ab9fbcb4` (built from the lane tree at `4417bbd1b`, the same
 crates). The target card builds `final=62e848b1f` on the box.
+
+## 3. The target card (BOX8, DAY52's final phase; receipts `pro-single-day52/{hashlock,spec,decide}/`)
+
+The box built `final=62e848b1f` (`run-gen-final` `35a64e9e...`, `run-spec-final` `e12bac33...`). G1 (the 27B,
+`MEMRA_MOE_RESIDENT=0`) and G2 (the three shapes) ran 02:04Z to 02:05Z; `decide` one collector hold 02:05:05Z to
+02:09:34Z, 30 runs, regime (`decide/regime.log`, 250 ms, N=1062) SM 2610 to 2857 MHz, power 86.1 to 210.9 W, 44 to
+49 C; collector `--validate` rc=0 for all three. Verbatim (`<cell>/reading.log`):
+
+`DAY51 G1 rig=pro-single door_exit=1 last_line='Error: "experts-via-tier artifact SHA256 mismatch"' door_lines=0 control_exit=0 control_match=True -> PASS`
+
+`DAY51 G2 spec rig=pro-single exit=0 self_consistency_pass=True k_lines=8 k_pass=8 installed=True fill_refused_lines=0 -> PASS`
+
+`DAY51 G2 spec-pressure rig=pro-single exit=0 self_consistency_pass=True k_lines=8 k_pass=8 installed=True fill_refused_lines=0 -> PASS`
+
+`DAY51 G2 spec-exact8 rig=pro-single exit=0 self_consistency_pass=True k_lines=8 k_pass=8 installed=True fill_refused_lines=0 -> PASS`
+
+`DAY51 G2 rig=pro-single -> PASS`
+
+`DAY51 G3 rig=pro-single runs=30 integrity=FAIL failed=o1-on-r1 trace lines 22077 misses 0; ...` (the same term on
+all ten ON runs, and no other)
+
+`DAY51 DECIDE rig=pro-single gen-only decode: off=0.311 on=0.277 ref=0.255 (N=10 each) on_minus_off pooled=-0.0345 o1=-0.0340 o2=-0.0350 noise=0.0010 ratio=0.889 (o1 0.891, o2 0.887) -> door_wins`
+
+`DAY51 DECIDE rig=pro-single steady window: off=0.251 on=0.240 ref=0.226 (N=10 each) on_minus_off pooled=-0.0110 o1=-0.0110 o2=-0.0110 noise=0.0013 ratio=0.956 (o1 0.956, o2 0.956) -> door_wins`
+
+`DAY51 READING rig=pro-single on install_s median=9.91 ref_minus_off gen=-0.0560 ref_minus_on gen=-0.0215`
+
+`DAY51 VERDICT rig=pro-single integrity=FAIL -> void`
+
+**Why void.** The one failing term is section 1a's trace term, `physical_reads` equal to the `hit=false` lines
+"plus at least one miss". Section 1a was written before I10; I10's own registered clause is that no decode demand
+misses the host tier (`DAY57.md` clause (i), `physical_reads=0` on every I10 run), and the final tree carries I10,
+so every ON run reads `physical_reads=0`, zero `hit=false` lines and 22,077 trace lines (every demand a host hit).
+The two registrations contradict each other; the rule says a failed G3 voids the timing verdict, and the verdict is
+void. Every other G3 term holds (tapes, `MATCH`, installer identity, `fill_refused=0`, `physical_reads` equal to the
+`hit=false` lines, no stage line on an ON run).
+
+## 1c. The corrected trace term, registered after the void cell and before `decide-b`
+
+The trace term on the ON arm is `physical_reads` equal to the `hit=false` lines and at least one trace line (the
+trace is present and consistent); "at least one miss" is dropped because I10's registered clause forbids it. Nothing
+else changes: the same cell, arms, orders, N, binary and timing rule, run again as a new hold `decide-b` on each card
+(`day51-cell.sh decide-b`, `day51-decide.py decide-b`). Stated plainly: the void cell's timing lines above were seen
+before this correction; the correction is confined to the integrity term I10 contradicts, and the verdict is
+`decide-b`'s, measured after it.

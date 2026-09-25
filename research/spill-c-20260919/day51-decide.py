@@ -3,7 +3,7 @@
 measured): G1 (hash lock), G2 (run-spec self-consistency under the tuned door), and the decide cell (G3 integrity and
 the door_wins / door_flat / door_loses rule on gen-only decode, the window read the same way beside it).
 
-usage: day51-decide.py hashlock|spec|decide <cell-dir> [--rig NAME]
+usage: day51-decide.py hashlock|spec|decide|decide-b <cell-dir> [--rig NAME]
 """
 import importlib.util
 import re
@@ -104,7 +104,13 @@ def decide(ev, rig):
         check(r["ident"] == DAY40_IDENT, f"{label} installer identity {r['ident']}")
         check(r["fill"] is not None and r["fill"].get("fill_refused") == 0, f"{label} fill_refused")
         check(r.get("physical_reads") == r["trace_misses"], f"{label} physical_reads != hit=false lines")
-        check(r["trace_lines"] >= r["trace_misses"] > 0, f"{label} trace lines {r['trace_lines']} misses {r['trace_misses']}")
+        if DECIDE_B:
+            # DAY51 section 1c: under I10 no decode demand misses the host tier (DAY57 clause (i)), so the trace term
+            # is the trace's own consistency: physical_reads equal to the hit=false lines (checked above) and at
+            # least one trace line.
+            check(r["trace_lines"] > 0, f"{label} no trace lines")
+        else:
+            check(r["trace_lines"] >= r["trace_misses"] > 0, f"{label} trace lines {r['trace_lines']} misses {r['trace_misses']}")
         check(not r["stages"], f"{label} stage lines without the flag")
     check(len({r.get("tokens") for r in runs.values()}) == 1, "tapes differ")
     check(len({r.get("steady") for r in runs.values()}) == 1, "steady lines differ")
@@ -140,8 +146,14 @@ def decide(ev, rig):
     return 0 if integrity == "ok" else 1
 
 
+DECIDE_B = False
+
+
 def main():
+    global DECIDE_B
     mode, cell = sys.argv[1], Path(sys.argv[2])
+    if mode == "decide-b":
+        DECIDE_B, mode = True, "decide"
     rig = sys.argv[sys.argv.index("--rig") + 1] if "--rig" in sys.argv else "?"
     return {"hashlock": hashlock, "spec": spec_cell, "decide": decide}[mode](cell / "ev", rig)
 
