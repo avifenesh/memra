@@ -165,3 +165,34 @@ acceptance is reverted in one commit and its test re-read under a new pre-regist
   made `false`) fails the second. Each 10 of 10, each grep-checked in its binary.
 - This touches `dsv4_serve.rs`, which the DSv4 lane also edits; the change is the one field, one constructor and the
   tests, and it is flagged to the lead for the overlap.
+
+## 7. T-e as built, the acceptance, and the suites (`day55/acceptance/`, `day55/suite-{a,b}/`)
+
+- **T-e** (`1ba2af13b`): as section 6 states. Red arms, each grep-checked in its binary: the window ignored fails
+  `a_partial_batch_waits_out_its_window` 10 of 10 (`a partial batch ran after 246.844us, inside its 20ms window`); the
+  fullness ignored fails `a_full_batch_does_not_wait_for_its_window` 10 of 10 (`a full batch waited 10.00073687s of its
+  10 s window`) (`coalesced_rows_each_get_their_own_token_/red-{window,full}/`).
+- CPU cells on the fixes tip (`1ba2af13b`): server lib `928 passed; 0 failed; 25 ignored`; clippy `-D warnings`; fmt.
+- **Acceptance, R1 and R2 on the fixes tip** (test binary `2dc7614a5fdd193e`), 100 runs each:
+
+| test | R1 | R2 |
+|---|---|---|
+| T-a `no_progress_source_is_the_pre_fix_beat_age_verdict` | 100 rc=0 | 100 rc=0 |
+| T-a's census `day55_a_snapshot_reads_the_clock_once` | 100 rc=0 | 100 rc=0 |
+| T-b `an_extended_stream_commits_..` | 100 rc=0 | 100 rc=0 (was 2 of 100 red) |
+| T-c `slow_constraint_compile_..` | 100 rc=0 | 100 rc=0 (was 33 of 100 red) |
+| T-e `coalesced_rows_..` | 100 rc=0 | 100 rc=0 (was 14 of 100 red) |
+| T-e `a_partial_batch_waits_out_its_window` | 100 rc=0 | 100 rc=0 |
+| T-e `a_full_batch_does_not_wait_for_its_window` | 100 rc=0 | 100 rc=0 |
+
+- **The suites** (the fixes tip's test binary run directly from `crates/memra-server`, the cargo test runner's
+  directory): arm A's shape (default threads, `CPUQuota=1200%`) **100 of 100 green**; arm B's shape (`--test-threads 48`,
+  `CPUQuota=400%`) **98 of 100**. None of the five failed in any of the 200. Arm B's two reds, by name:
+  `darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown` (run 89, `timed out (3000ms) waiting for: yield
+  to T`) and `tests::a_fake_route_memory_door_refuses_defers_and_recovers_through_the_handler` (run 64, lib.rs:19036,
+  `(waiting, running, inflight)` read `(0, 1, 0)` against `(0, 0, 0)` after the loop saw `cancelled == 1`). By the rule
+  each becomes its own item (OWED 24 and 25).
+
+**Verdict, as registered.** T-a, T-b, T-c and T-e: **fixed and accepted** (R1 and R2 0 of 100 each, every red arm 10 of
+10, none red in 200 full suites). T-d: **not reproduced** (R1 and R2 0 of 100; 0 in the 400 F1 and the 200 suites here,
+after its one A' failure), left unchanged and recorded. Item 22 closes; items 24 and 25 open.

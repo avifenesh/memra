@@ -241,8 +241,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 
 Item 17 first (item 8's remedy; P refuted on day 51, P2 on day 52; blocked on item 14, the lead's ruling), then item 21
 (the lead: the server test failure is a defect to place; closed on day 53), then item 10's pricing (day 54), then items
-22 and 23 (the lead, after DAY54: a flaky or slow suite hurts every lane's CI), then item 10's fanout design, then items
-11 to 14 (item 10 per publisher; item 19 designed with item 14, one lease
+22 and 23 (the lead, after DAY54: a flaky or slow suite hurts every lane's CI; 22 closed on day 55; 24 and 25 found by
+it, placed after 23 as the same class), then item 10's fanout design, then items 11 to 14 (item 10 per publisher; item 19 designed with item 14, one lease
 design for both directions), then items 18 and 20; the three 5090 cells (item 4's and item 6's halves, item 16) when
 the card is reset.
 
@@ -331,9 +331,11 @@ the card is reset.
   1 of 400 and `health::tests::no_progress_source_is_the_pre_fix_beat_age_verdict` 1 of 400 (`left: 41 right: 40`).
 - Acceptance: none registered (each placed: a real defect, or a wall-clock threshold that a starved runner cannot
   meet; pre-registered after item 21).
-- Status: **reproduced in part** (DAY55 sections 2 to 4: R2, the test beside eight burners in a one-CPU scope, reads
-  T-c 33 of 100, T-e 14 of 100, T-b 2 of 100 (R1 1 of 100), T-a and T-d 0); fixes for T-a to T-c and T-e in progress;
-  T-d not reproduced, left unchanged (its A' failure recorded).
+- Status: **closed** (DAY55 section 7): T-a (a snapshot sampled the clock twice; fixed in `health.rs`), T-b (tokio's
+  paused clock), T-c (the step clock, a test-only health clock, a non-blocking guard) and T-e (the coalescer's window a
+  field, two mechanism cells) fixed and accepted: R1 and R2 0 of 100 each, red arms 10 of 10, none red in 200 full
+  suites (arm A 100 of 100, arm B 98 of 100 with two other tests, items 24 and 25). T-d not reproduced since its one A'
+  failure (R1, R2, 600 later full suites), left unchanged.
 
 ### 23. The admission-counter test isolation costs 1.5 s of every full server suite (found by DAY53)
 
@@ -342,6 +344,21 @@ the card is reset.
 - Acceptance: none registered (the writers isolated without serializing them, for example `reserve_pending_admit`'s
   test entry taking its lane counters as a parameter so a writer never touches the process-global ones; the same 400-run
   shape green for the target and its siblings, the suite's time back to A''s).
+- Status: open.
+
+### 24. `darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown` times out under starvation (found by DAY55)
+
+- Source: DAY55 section 7, arm B's shape (100 full suites, `--test-threads 48`, `CPUQuota=400%`): 1 of 100, `timed out
+  (3000ms) waiting for: yield to T` (darklane.rs:602).
+- Acceptance: none registered (reproduce and place it as DAY55 did: a defect, or a wall-clock bound).
+- Status: open.
+
+### 25. `tests::a_fake_route_memory_door_refuses_defers_and_recovers_through_the_handler` reads a running row after the cancel (found by DAY55)
+
+- Source: DAY55 section 7, arm B's shape: 1 of 100, lib.rs:19036: after the loop saw `cancelled == 1`, `(waiting,
+  running, inflight)` read `(0, 1, 0)` against `(0, 0, 0)`. Either the test reads a route book mid-update or the book
+  publishes `cancelled` before it takes the row out of `running` (a snapshot a reader could see in production).
+- Acceptance: none registered (reproduce, then place: the book's order of updates or the test's read).
 - Status: open.
 
 ## 2. Closed, delivered, or held by another owner
