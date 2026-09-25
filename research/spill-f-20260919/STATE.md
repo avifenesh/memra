@@ -1,22 +1,17 @@
-# WP-F resumable state (2026-09-25, stopped: box pending; CPU prerequisites complete)
+# WP-F resumable state (2026-09-25, on BOX27; box campaign in progress)
 
-- Lane `lane/spill-f-20260919`, worktree `wt-spill-f`, branch contains `origin/main` `5228ff0cd`
-  (no newer main at the last fetch). Upstream unset; pushes use
-  `MEMRA_RELEASE_QUALIFICATION_MODE=development` (engine files in range; logged).
-- Plan of record: `M1-PREREG.md` (A proof, B0 to B6 cells, C routes, B2 amendment). Ledger: `OWED.md`.
-  CPU-side registration of the prerequisites: `CPU-PREREG.md`.
-- Landed CPU-verified today: proof tool (`M1-PROOF-CONTROLS.md`); OWED 7 direct over-read
-  (`owed7/`); OWED 8 stage counters (`owed8/`); OWED 9 storage-bench timing (`owed9/`); OWED 10
-  sampler (`owed10/`); OWED 11 cache regimes (`owed11/`); OWED 12 B3 runner (`owed12/`); OWED 13
-  B2 driver plus `kv-handoff-gate` seam (`owed13/`); OWED 14 collector patch and test, not
-  applied (`owed14/`, lead routes to D); B0 runner (`b0/`).
-- Box: the lead rents rank 1 of `LANE-LOCAL-NVME.md` with a 600 GB local volume at `/scratch`
-  after lane A releases it (about 17:00Z), runs the proof first, hands it over only on
-  `M1-PROOF verdict=PASS`.
-- On the box, in order: bootstrap (CUDA 13 toolchain, `apt-get install -y fio`), build
-  `run-gen`, `run-spec`, `memra-server`, `kv-handoff-gate`, `storage-bench`, `h2d_probe` at one
-  commit; stage and re-hash the artifact on `/scratch/spill-f`; generate the B2 prompts and check
-  the manifest; then B0, OWED 7's pinned-pool GPU test, B1, B3 (cold, warm, bounded), `run-spec`
-  cells, B2 (1 GiB, 8 GiB), B4, B6. `direct16` enters B3 only after the pinned-pool test passes.
-- Private receipts (retained, not scratch): `~/.local/share/memra-lane-f-private/`.
-- Scratch: none. No process of this lane is running.
+- Lane `lane/spill-f-20260919`; build commit on the box `ffff2d89a` (engine source verified
+  unchanged at every later checkout). Box checkout `/root/wt-f`; receipts
+  `/root/spill-receipts/f-box27/`; private proof `/root/f-private/m1-proof.json`; frozen
+  binaries and the staged artifact under `/scratch/spill-f/`.
+- Done on BOX27: proof mirrored (PASS); B0 (io_uring refused by seccomp); OWED 7 GPU gate
+  (12/12); B1 (360/360 scored under the amended read gate, buffered wins everything); B3 cold
+  (unscored: host-level foreign I/O); B3 warm (unscored registered; read-gate rescoring: mmap
+  arms 1.19x winners). Mirrored and pushed: parts 1 to 4 (`box27/MANIFEST-part*.sha256`).
+- Running: B3 bounded (touched balloon, about 2.8 h from 19:47Z). A background 1 s device sampler
+  runs with its pid in `$R/background-sampler.pid` (stop it by that pid only).
+- Next, in order: run-spec for worker16 and direct16; B2 at 1 GiB and 8 GiB; B4 (worker16 plus
+  the B3 winners in their regime); B6; a second-window rerun of B3 cold; then mirror everything,
+  remove `/scratch/spill-f` and `/root/wt-f` scratch, stop the background sampler, report
+  `BOX27 RELEASED`.
+- Private receipts and sanitized originals: `~/.local/share/memra-lane-f-private/box27/`.

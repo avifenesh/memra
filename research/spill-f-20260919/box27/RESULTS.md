@@ -113,3 +113,65 @@ roundtrip) is about a ninth of the drive's 7.03 GB/s. So the ObjectStore read pa
 device. The run's in-process scoring used the pre-amendment gate (the amendment's first commit
 was stopped by a failed shell chain); its `summary.json` is kept and superseded by
 `summary-amended-gate.json`.
+
+## B3: expert-bank spill arms (`run-gen`, 128 greedy tokens, 8 slots, every expert on the disk tier)
+
+Every visit passed correctness: gate `MATCH`, 128 token ids identical to `mmap-random`'s,
+placement `0 pinned / 30720 mmap'd`, no config fallback, zero read errors and short reads;
+`direct16` zero fallbacks and `overread_bytes == 4096 x reads` on every visit (for example
+813,555 reads and 3,332,321,280 over-read bytes). No arm was refused in the cold or warm regime.
+
+Two smokes preceded the scored runs (one round, never scored): the first used the registered
+`MEMRA_SPILL_PINNED_FRAC=0`, which the engine rejects (`using 0.6`), so every expert was
+pinned in host RAM and all six arms ran 36.7 to 37.1 tok/s (the pinned-host tier, recorded as a
+diagnostic); the second, after B3 amendment 2, is the one that sized the regimes.
+
+### Cold regime (the artifact out of the page cache at each visit start)
+
+Registered verdict: **regime unscored**. Five of 60 visits carried host-level foreign I/O on
+the drive (6.6 to 14.4 GB read, up to 2.2 GB written, by something outside this container while
+nothing else of this lane ran), and `mmap-random` had three of them, above the registered two.
+The read gate agrees (those were real foreign reads), so cold is unscored either way. Descriptive
+numbers:
+
+| Arm | Decode tok/s median (range), all visits | Device read GB per visit (median) | Artifact resident at end (median) | Read-gate verdict vs `worker16` (median ratio, scored pairs) |
+|---|---|---|---|---|
+| `worker16` | 22.48 (18.77 to 22.57), N=10 | 12.8 | 0.702 | baseline |
+| `mmap-random` | 7.75 (7.36 to 7.77), N=10 | 12.8 | 0.701 | unscored-regime (0.344, 6 pairs) |
+| `mmap-normal` | 26.79 (26.53 to 26.89), N=10 | 16.9 | 0.931 | unscored-regime (1.189, 9 pairs) |
+| `pread16` | 16.35 (16.25 to 16.44), N=10 | 14.5 | 0.797 | unscored-regime (0.728, 9 pairs) |
+| `worker2` | 14.09 (14.02 to 14.14), N=10 | 12.8 | 0.702 | unscored-regime (0.627, 9 pairs) |
+| `direct16` | 9.59 (9.02 to 10.17), N=10 | 409.1 | 0.147 | unscored-regime (0.406, 9 pairs) |
+
+"Cold" is cold only at the visit's start: the buffered arms re-read their first pass from the
+drive (12.8 GB) and then run from the page cache (70% of the file resident at the end), which is
+why `worker16` outruns the drive (22 tok/s x 454 MB per token). `direct16` reads every expert
+from the drive on every token (409 GB per visit) and is the drive-bound rate: about 10 tok/s,
+4.6 GB/s during decode.
+
+### Warm regime (the whole artifact in the page cache before each visit)
+
+Registered verdict: **regime unscored**, but for a different reason than cold: a warm buffered
+visit reads nothing from the drive, so the registered foreign-share gate divides about 21 MB of
+log and journal writes (kernel-thread I/O no process accounting sees) by zero own device bytes
+and marks every buffered visit contaminated. Rescored with the B1 read gate (an amendment made
+after seeing this data, reported as such, `summary-read-gate.json`; no visit had a foreign read
+except one `direct16` visit with 6.2 GB, 1.5% of its 406 GB):
+
+| Arm | Decode tok/s median (range), all visits | Device read GB per visit (median) | Artifact resident at end (median) | Read-gate verdict vs `worker16` (median ratio, scored pairs) |
+|---|---|---|---|---|
+| `worker16` | 26.27 (25.85 to 26.61), N=10 | 0.0 | 1.000 | baseline |
+| `mmap-random` | 31.09 (31.00 to 31.42), N=10 | 0.0 | 1.000 | winner (1.188, 10 pairs) |
+| `mmap-normal` | 31.11 (31.02 to 31.48), N=10 | 0.0 | 1.000 | winner (1.186, 10 pairs) |
+| `pread16` | 20.88 (20.62 to 21.21), N=10 | 0.0 | 1.000 | loser (0.796, 10 pairs) |
+| `worker2` | 17.71 (17.66 to 17.81), N=10 | 0.0 | 1.000 | loser (0.674, 10 pairs) |
+| `direct16` | 9.71 (8.89 to 10.12), N=10 | 406.4 | 1.000 | loser (0.369, 10 pairs) |
+
+With the bank in the page cache the mapped arms beat the worker by 19% (31.1 vs 26.3 tok/s), and
+the positioned-read arms rank by concurrency: `worker16` over `pread16` over `worker2`.
+`direct16` stays drive-bound.
+
+### Bounded page cache regime
+
+Running (touched balloon of 120.24 GB, 6.99 GB of cgroup headroom, 5.66 GB of page cache at the
+first visit; B3 regime (iii) amendment).
