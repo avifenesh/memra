@@ -309,3 +309,11 @@ prompts (a 4,096-token prefix plus 64, from the start of the stream) hold no con
 same boundary there and B3 does not reach a fanout; 2.1's FX readings stand for the revision. R1 to R4 and the
 readings are unchanged; R2 still counts the spec route's `keep` misses, which stay today's program (a new owed item
 takes that miss). Price: about 0.4 agent-day of code; the target card about 6 h, the 5090 about 3 h.
+
+### 1.9 Addendum C (2026-09-26, while coding addendum B, before its code is committed and before any cell)
+
+B2's words "control tokens searched only at or past the resumed depth" do not cover 2.1's own case: there the resumed
+depth P is the grid floor of the last control token, so the token itself lies past P while its floor does not. The
+rule, stated exactly: with `markers`, the checkpoint is the grid floor of the last control token when that floor lies
+strictly past the resumed depth (and clears the fed-start floor, else none); when the floor lies at or below the
+resumed depth, the guard window. Without `markers`, the guard window. Everything else of addendum B stands.
