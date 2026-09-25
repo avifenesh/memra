@@ -38,14 +38,14 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Price today: `copy settle` 8.33 ms per demote on the 5090 (write-combined leases, `DAY35.md` section 8), 0.70 ms on
   BOX5 (`DAY36.md` section 4, cached leases).
 - Acceptance: DAY38 section 3, (a) to (e).
-- Status: **5090 done, target in its sitting.** G'' failed (d) on BOX7 (the tenant's per-demote decode hump); the
-  bisection (DAY38 13a to 13k) placed the hump on two non-owner streams running kernels. G''' (every kernel on the receipt
-  stream) passes (a) to (f) on BOX7 (sections 16c, 16d) and (a) to (e) on the 5090; its 5090 (f) failed in a hot hold
-  (section 16). G4 (one side stream, section 17, `26676c037`) is the delivered placement: 5090 (a) to (e) PASS (sections
-  19, 19a), its (f) failed in a hot hold (section 19) and passes in the base-controlled hold (section 20a: base +0.072,
-  G''' +0.055, G4 +0.032, G'' +0.334); BOX7 (c) PASS 0.53 ms, (d) PASS (e2e -1.17 / -1.10 ms), the rest of its sitting
-  running. Owner items: whether the 5090's (f) is read from the base-controlled hold; G''' or G4 for long entries (item
-  15's cell).
+- Status: **delivered as G4, pending one owner reading.** G'' failed (d) on BOX7 (the tenant's per-demote decode
+  hump); the bisection (DAY38 13a to 13k) placed the hump on two non-owner streams running kernels. G4 (`26676c037`: one
+  side stream; the D2H receipt ahead of the copies on the copy stream, the D2D classes there too, `d2h-delay` a host-side
+  hold) passes (a) to (f) on BOX7 (DAY38 section 19b: copy settle 0.53 ms, e2e -1.17 / -1.10 ms, hump +0.035, every gate
+  green) and (a) to (e) on the 5090 (sections 19, 19a); its 5090 (f) failed in a hot hold (section 19) and passes in the
+  base-controlled hold (section 20a: base +0.072, G''' +0.055, G4 +0.032, G'' +0.334). G''' (`9ab5c1265`, every kernel on
+  a receipt stream) passes (a) to (f) on BOX7 too and is the measured alternative. Owner items: read the 5090's (f) from
+  the base-controlled hold; G''' or G4 for long entries (item 15's cell).
 
 ### 3. The same-tick fill (design F) on slower CPUs
 
