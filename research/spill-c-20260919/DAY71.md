@@ -106,3 +106,36 @@ window. It changes no code; a remedy is its own registration after this reads.
 and two or more fast); `undecided` otherwise (one slow run on `b`, or `a` does not reproduce). `b` is any Ryzen 9 9950X
 machine other than BOX15's with one RTX PRO 6000 Blackwell Workstation Edition, the approved artifact, the same tree
 and the same driver script. Each machine's reading stands on its own; the class line needs both.
+
+## 1a. The sitting, prepared before any cell
+
+The probe change landed as `6bad38150` (binary `p71`), after section 1: `cpu_probe.rs` keeps DAY67's compute chain as
+it ran and adds a copy of the chain for the counted path, bracketed by the monotonic clock, `RDTSC` and `RDPRU` (ECX 0
+then 1) on each side, with the chain's seed and result passed through `black_box` so it runs between the two readings
+(the release disassembly shows clock, `rdtsc`, `rdpru`, `rdpru`, the loop, clock, `rdtsc`, `rdpru`, `rdpru` in that
+order). On the local host (an Intel CPU, no `RDPRU`) the check prints `[cpu-probe] counters-check cpu=5
+counters=unavailable`, and the unit test covers that path and the field format; the `RDPRU` path first runs on the
+target machine, behind the cell's check.
+
+`day71-sampler.py`, `day71-cell.sh`, `day71-read.py` and `day71-box.sh` were written after section 1. Dry checks, all
+in `day71-cpu/`:
+- the sampler on the local host for 3.4 s against a busy stand-in `run-gen` process: every row kind written (`C`, `O`,
+  `I`/`IH`, `S`/`SH`, `D`/`DH`, `V`, `EH`, `H`, `T`); the local powercap zones read `unreadable` (not root), which the
+  reader turns into `pkg_w` not read;
+- the cell's control flow (`dry-check-cell.sh`, `dry-check-cell.log`): a stub `run-gen-p71` and a stub `nvidia-smi` in
+  a sandbox; the check's `rdpru=ok` passes `--cpu-probe-counters` to all 40 runs, the sampler and `dmon` start pinned
+  and are stopped by their own pids, nothing outlives the cell;
+- the reader's mechanics (`make-synthetic.py`): DAY70's receipts with invented counter, interrupt, idle, vmstat, energy,
+  sensor and dmon rows give every line, the counts and a verdict (meaningless); DAY70's own receipts, which lack the
+  counters files, read `void`; the class mode reads two cells and prints its line;
+- the driver's control flow (`dry-check-driver.sh`, `dry-check-driver.log`): one build, the cell, the validation and
+  the reader per machine label, each machine into its own receipts root, a rerun skipping the done cell.
+
+Run as `D71_BUILDS="p71=6bad38150" bash /root/wt-c/research/spill-c-20260919/day71-box.sh` on BOX15's machine, and as
+`D71_BUILDS="p71=6bad38150" D71_RIG=pro-single-b bash /root/wt-c/research/spill-c-20260919/day71-box.sh` on the second
+Ryzen 9 9950X machine; each: one RTX PRO 6000 Blackwell Workstation Edition, the approved 35B artifact, `/root/wt-c` at
+the lane tip and a detached `/root/wt-c-build`, CUDA 13, Rust and Python 3, at least 48 GB host `MemAvailable`, root in
+the container (the powercap energy files are root-only). Receipts land in `/root/spill-receipts/c-day71-<rig>/`.
+Expected per machine: one build about 5 minutes, the cell about 10 (40 runs). The class line comes from the two mirrored
+cells: `python3 day71-read.py --class pro-single-day71/core pro-single-day71-b/core`. If only BOX15's machine can be
+had, its reading stands on its own and the class line stays owed.

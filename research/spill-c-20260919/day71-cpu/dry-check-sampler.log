@@ -1,0 +1,26 @@
+# DAY71 sampler dry check: 3.4 s on the local host (24 CPUs) against a busy stand-in run-gen process pinned to CPU 3; the sampler pinned to CPU 23
+sampler rc=124 (124: stopped by timeout, as the cell stops it)
+row kinds:
+    336 C
+    299 D
+     96 DH
+      4 EH
+     14 H
+    124 I
+    126 IH
+     14 O
+     66 S
+     10 SH
+     66 T
+     13 V
+owner rows:
+12:55:30.677	O	1187845	run-gen-standin	3	326940048 100981 9	1067	0	32	0
+12:55:30.927	O	1187845	run-gen-standin	3	576843970 197390 16	1067	0	57	0
+12:55:31.177	O	1187845	run-gen-standin	3	826814932 226854 22	1067	0	82	0
+powercap rows:
+12:55:30.677	EH	intel-rapl-mmio:0	package-0	unreadable
+12:55:30.677	EH	intel-rapl:0	package-0	unreadable
+12:55:30.677	EH	intel-rapl:0:0	core	unreadable
+12:55:30.677	EH	intel-rapl:0:1	uncore	unreadable
+one cpuidle row:
+12:55:30.927	D	0	1:2978/11,2:32261/38,3:213848/62

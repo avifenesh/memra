@@ -111,7 +111,8 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   it). Next: `DAY71.md`, one cell `core` for the remaining candidates at once (the core's TSC, APERF and MPERF around
   the gate probe through `RDPRU`, every CPU's interrupt and softirq counts, the sibling's idle states, the package's
   energy and sensors, the card's PCIe traffic), on BOX15's machine and on a second 9950X machine for the class
-  question. Open: registered; the probe change and the sitting follow.
+  question. The probe change landed (`6bad38150`, binary `p71`) and the sitting is ready (`day71-box.sh`, section 1a).
+  Open: the cell waits on BOX15's machine and a second 9950X machine.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 

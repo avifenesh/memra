@@ -1,0 +1,30 @@
+cell rc=0
+== pins and counters
+home_l3=0-23
+one=0,1,2,3,4,5,6,7,8,9,10,11
+sampler_cpu=23
+counters=--cpu-probe-counters
+== counters check
+[cpu-probe] counters-check cpu=1 rdpru=ok cpu_after=1 wall_ns=1528888 tsc=6571234 mperf=6571000 aperf=8745000
+rc=0
+== calls (first 3 and count)
+--cpu-probe-counters-check
+D/art.gguf 55 88 13 --cpu-probe --cpu-probe-phases --cpu-probe-counters
+D/art.gguf 55 88 13 --experts-via-tier --expert-bank-host-bytes=17179869184 --cpu-probe --cpu-probe-phases --cpu-probe-counters
+41
+== run exits
+     40 0
+== sampler row kinds
+     96 C      72 D      96 DH       4 EH       4 H      32 I     126 IH      17 S      10 SH       3 V 
+== dmon rows
+12:53:23.576	#Time        gpu  rxpci  txpci
+12:53:23.577	#HH:MM:SS    Idx   MB/s   MB/s
+12:53:23.578	12:53:23      0    100     20
+== host state files
+host-after.txt 156 lines, kernel 7.0.0-31-generic
+host-before.txt 156 lines, kernel 7.0.0-31-generic
+== cell tail
+counters=--cpu-probe-counters
+core cell done:      40 0 
+== leftover processes (none expected)
+none
