@@ -2072,15 +2072,6 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   items, spans and fills); engine census `one_side_stream_beside_the_owner`, the tenant's decode hump cell
   `day38-hump-reading.py` (sections 13e to 16: a second side stream running kernels moved every later owner kernel
   boundary, on BOX7 with kernels on both side streams and on the 5090 even with the copy stream kernel-free).
-- The span receipts (WP-A day 40, `research/spill-a-20260919/DAY40.md` design S, `memra_tier::conformance::span_receipt`):
-  the four-lane digest of every D2H f32 span's device source and landed staging and of every H2D span's device
-  destination, on the copy stream; the demote publishes only spans whose pair agrees and keeps each source digest with
-  the entry, the promote only spans whose destination digest equals it. CPU binding `span_receipt_bindings` (two red
-  arms: a batch landed on its copies alone, a caller that publishes a differing span); engine census
-  `span_receipt_rules_are_as_stated`; the native span cells assert every digest bitwise against the CPU oracle, and
-  `d2h_span_batch_lands_with_its_ticket_on_the_copy_stream` carries the `span-flip-landed` arm (span 0 alone differs); the
-  fault gate's `span-flip-landed` and `span-flip-resident` cells (one typed refusal each, r1 to r4 byte-equal to door
-  OFF).
 - Design K's promote-side fail-closed arms (WP-A day 41, `research/spill-a-20260919/DAY41.md`): the fault gate's
   `sources-helper-gone`, `sources-never-land` and `sources-foreign-reply` cells (the hash helper's first `Sources` job
   takes the fault; one typed latch in the arm's own words, no promote publication, the helper joined, r1 to r4

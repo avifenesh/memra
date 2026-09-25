@@ -214,3 +214,37 @@ No other clause, bound or check moves.
   revision.
 - A reading from the same boot: one steady demote's copy phase was `216.9ms from submission to completion` (seq=7), the
   span receipt's cost again; the trace (section 6) places it.
+
+## 7. The trace, as it ran (`rtx5090-day40/trace/`; attempt 1 in `trace-attempt1/`), and what it places
+
+- Attempt 1 ran no boot: nsys could not create `/tmp/nvidia/nsight_systems` (another user's directory on this rig), both
+  boots `NOT READY`; the script's edit to set a private `TMPDIR` landed while it still ran and its last line read the
+  edited file. Attempt 2 (23:57:54Z to 23:59:52Z) traced one g4 and one s boot, 7 demotes each; reports under `/tmp`
+  (sha256 in `nsys-*/trace.sha256`).
+- The reader's grouping did not fit S's order (it expected the source digests before the first span copy, but the KV
+  item copies above 64 KiB opened its span window first), so its group columns read `between n=48`; the copy stream's
+  timeline of one steady s demote, listed directly from the same sqlite (exploratory): the D2H receipt kernel 2.99 ms;
+  the 16 KV item copies 0.20 ms; **the 48 source digests 0.61 ms** (0.47 busy); the span copies 0.28 + 2.34 ms; **the 48
+  landed digests 2.49 ms** (2.26 busy, the staging read through its device address at about 21 GB/s); the lanes' D2H.
+  The side work of a steady demote: `side_work_span_ms` g4 6.06, s 6.46 by the reader's window (which stops at the span
+  copies), 8.93 ms by the listing: **S adds about 3.1 ms of copy-stream time on this card**, as the survey said (section
+  2: about 2.5 to 3 ms for these bytes), not 17.
+- **What makes it cost a poll.** Under the A/B's untraced timing the tick-top poll after a demote's submission comes
+  about 8.4 ms later: G4's side work (about 6 ms) is done by then, S's (about 9 ms) is not, and the next poll comes only
+  after the intruder's own work, about 40 ms later (section 5's 73 of 90 two-poll demotes). In the traced boots, whose
+  ticks run longer, both land at the first poll (g4 8.8 to 9.0 ms, s 10.1 to 10.4 ms). The span receipt's price is small;
+  its place on the landing path is what costs a poll. The e2e excess is the same three milliseconds of copy-stream
+  kernels running beside the intruder's last steps.
+- **What the revision must do** (recorded here, pre-registered with its own acceptance before its code; `OWED.md` item 4):
+  keep the span receipt off the demote's landing path: the batch lands with its copies (G4's timing), and the span
+  receipt is required before the PUBLICATION (the Hashing phase's end, 38 ms later on this card and 161 ms on BOX7), with
+  the source planes and the staging held until its event is observed; and take the source digests (0.61 ms of 48
+  launches) and the landed digests into one launch each. Until then S is reverted from the lane (section 8) so the
+  integrable tip carries G4 and T without a design that failed its clauses.
+
+## 8. S reverted
+
+- S (`a40e5b334`) is reverted in one commit with the gate's settle-helper change that only its cell used; the records
+  (sections 3 to 7), the readers (`day40-reading.py`, `day40-trace-reading.py`), the 5090 receipts (`rtx5090-day40/s/`,
+  `trace/`, `trace-attempt1/`) and the BOX7 scripts (`pro-single-s/`, never run: the queued build was cancelled,
+  `CANCELLED.txt`) stay. Item 4 stays open with section 7's revision owed.

@@ -8492,10 +8492,6 @@ struct HostPrefixEntry {
     /// MEMRA_KV_HOST_VERIFY=1 arm: `prefix_entry_state_digest` of the device entry at demote,
     /// re-checked against the re-materialized entry at promote. None with the flag off.
     verify_digest: Option<String>,
-    /// WP-A day 40 (`DAY40.md` design S): the device source digest (the four-lane program) of each
-    /// recurrent plane that rode the demote as an f32 span, by slot; the promote's span receipt is
-    /// compared with it. Empty for an image without spans (and for a handoff import).
-    span_digests: Vec<(HostHashSlot, memra_engine::cache::tiered::Digest)>,
     _tier_metadata: Vec<u8>,
     _tier_metadata_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
     _tier_charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
@@ -10016,17 +10012,9 @@ enum ContractSettle {
     Done(
         Vec<Option<HostPlane>>,
         Option<HostPlane>,
-        Vec<(HostHashSlot, memra_engine::PinnedHostBuf, HostSpanPair)>,
+        Vec<(HostHashSlot, memra_engine::PinnedHostBuf)>,
     ),
 }
-
-/// WP-A day 40 (`DAY40.md` design S): one landed D2H span's device receipt, the four-lane digest of
-/// its SOURCE and of its LANDED bytes (`memra_engine::tier_transfer::LandedD2hSpan`); `None` on an
-/// engine without the receipt kernels.
-type HostSpanPair = (
-    Option<memra_engine::cache::tiered::Digest>,
-    Option<memra_engine::cache::tiered::Digest>,
-);
 
 /// The image `host_entry_from_device` built: whole (every plane on the host, the pre-door
 /// meaning) or `Demoting` (the f32 planes and metadata on the host, the KV planes in flight on the
@@ -10127,9 +10115,6 @@ struct HostHashPayload {
     slot: HostHashSlot,
     data: HostHeapF32,
     staged: Option<memra_engine::PinnedHostBuf>,
-    /// WP-A day 40 (design S): the landed span's device source digest, kept with the published
-    /// entry for the promote's check; `None` for a payload that did not ride a span.
-    span_digest: Option<memra_engine::cache::tiered::Digest>,
 }
 
 /// WP-A day 31 (spill-c DAY38 section 3, the separating line): the hand-off's heap payload count
@@ -10313,7 +10298,6 @@ fn host_hash_take_payloads(e: &mut HostPrefixEntry) -> Vec<HostHashPayload> {
                 slot: HostHashSlot::Conv(i),
                 data: std::mem::take(v),
                 staged: None,
-                span_digest: None,
             });
         }
     }
@@ -10323,7 +10307,6 @@ fn host_hash_take_payloads(e: &mut HostPrefixEntry) -> Vec<HostHashPayload> {
                 slot: HostHashSlot::Ssm(i),
                 data: std::mem::take(v),
                 staged: None,
-                span_digest: None,
             });
         }
     }
@@ -10332,7 +10315,6 @@ fn host_hash_take_payloads(e: &mut HostPrefixEntry) -> Vec<HostHashPayload> {
             slot: HostHashSlot::Logits,
             data: std::mem::take(v),
             staged: None,
-            span_digest: None,
         });
     }
     if let HostF32::Heap(v) = &mut e.last_h {
@@ -10340,7 +10322,6 @@ fn host_hash_take_payloads(e: &mut HostPrefixEntry) -> Vec<HostHashPayload> {
             slot: HostHashSlot::Hidden,
             data: std::mem::take(v),
             staged: None,
-            span_digest: None,
         });
     }
     out
@@ -10358,10 +10339,6 @@ fn host_hash_restore_payload(e: &mut HostPrefixEntry, p: HostHashPayload) -> Res
     match target {
         Some(HostF32::Heap(v)) if v.is_empty() => {
             *v = p.data;
-            // WP-A day 40 (design S): a span payload's source digest stays with the entry.
-            if let Some(d) = p.span_digest {
-                e.span_digests.push((p.slot, d));
-            }
             Ok(())
         }
         _ => Err(format!(
@@ -10734,13 +10711,8 @@ struct PendingContractPromote {
     submitted: Instant,
     /// WP-A day 32 (Move 2 owed item 1, the H2D half): the recurrent planes that ride the ticket
     /// as f32 H2D spans, in attach order: the slot and the plane's f32 count (the span's receipt
-    /// term). Empty when no span was attached. WP-A day 40 (design S): with the plane's kept
-    /// source digest from its demote, when the entry has one.
-    spans: Vec<(
-        HostHashSlot,
-        usize,
-        Option<memra_engine::cache::tiered::Digest>,
-    )>,
+    /// term). Empty when no span was attached.
+    spans: Vec<(HostHashSlot, usize)>,
     /// WP-A day 34 (`DAY34.md` design K): `Some` when the KV items' completion checksums are on the
     /// hash helper (the off-tick route); the settle takes the reply before its completion step.
     helper_sums: Option<PendingSources>,
@@ -11027,15 +10999,6 @@ enum HostContractFault {
     /// section 14; no stream runs a spin), so a request hitting the entry arrives in its copy phase
     /// and must park until the publication, then promote.
     D2hDelay,
-    /// WP-A day 40 (`DAY40.md` design S, the D2H span receipt's red arm): one byte of the off-tick
-    /// demote's first f32 span's landed staging flips on the copy stream after its copy and before
-    /// its landed digest (`CudaTransfers::inject_span_flip_landed`); the demote must refuse the
-    /// image (nothing published, the tier on).
-    SpanFlipLanded,
-    /// WP-A day 40 (design S, the H2D span receipt's red arm): the off-tick promote's first span
-    /// is filled from a copy of its resident plane with one byte flipped (the bytes going up differ
-    /// from the demote's); the promote must refuse (the host twins intact, the request cold).
-    SpanFlipResident,
 }
 impl HostContractFault {
     fn from_door(fault: &str) -> Option<Self> {
@@ -11052,8 +11015,6 @@ impl HostContractFault {
             "contract-promote-spans" => Some(Self::PromoteSpanAttach),
             "d2h-source-flip" => Some(Self::D2hSourceFlip),
             "d2h-delay" => Some(Self::D2hDelay),
-            "span-flip-landed" => Some(Self::SpanFlipLanded),
-            "span-flip-resident" => Some(Self::SpanFlipResident),
             _ => None,
         }
     }
@@ -11066,7 +11027,6 @@ impl HostContractFault {
                 | Self::SpanAttach
                 | Self::D2hSourceFlip
                 | Self::D2hDelay
-                | Self::SpanFlipLanded
         )
     }
     /// A Move 1 fault (the D2H or H2D route), as opposed to a D2D fault (day 22).
@@ -11390,14 +11350,6 @@ fn host_kv_planes_submit_contract(
                      its copy; the bind must refuse the image"
                 );
             }
-            Some(HostContractFault::SpanFlipLanded) => {
-                t.inject_span_flip_landed();
-                eprintln!(
-                    "[prefix-host] demote fault armed (MEMRA_KV_HOST_FAULT=span-flip-landed): one \
-                     byte of the first f32 span's landed staging flips after its copy and before its \
-                     landed digest; the demote must refuse the image"
-                );
-            }
             Some(HostContractFault::D2hDelay) => {
                 t.inject_d2h_delay(memra_engine::tier_transfer::D2H_DELAY_FAULT_NS);
                 eprintln!(
@@ -11663,7 +11615,6 @@ fn host_kv_planes_settle_contract(
     let mut staged = StagedSpans {
         tier,
         bufs: Vec::with_capacity(spans.len()),
-        pairs: Vec::with_capacity(spans.len()),
     };
     if !spans.is_empty() {
         let landed = match t.take_d2h_spans(&ticket) {
@@ -11675,18 +11626,12 @@ fn host_kv_planes_settle_contract(
             }
         };
         let mut sources = Vec::with_capacity(landed.len());
-        for landed in landed {
-            let memra_engine::tier_transfer::LandedD2hSpan {
-                span:
-                    memra_engine::tier_transfer::D2hSpan {
-                        source,
-                        destination,
-                    },
-                source_digest,
-                landed_digest,
-            } = landed;
+        for span in landed {
+            let memra_engine::tier_transfer::D2hSpan {
+                source,
+                destination,
+            } = span;
             staged.bufs.push(destination);
-            staged.pairs.push((source_digest, landed_digest));
             sources.push(source);
         }
         if sources.len() != spans.len() {
@@ -11905,23 +11850,17 @@ fn host_kv_planes_settle_contract(
 struct StagedSpans<'a> {
     tier: &'a HostTierContext,
     bufs: Vec<memra_engine::PinnedHostBuf>,
-    /// WP-A day 40 (design S): each buffer's span receipt, in the same order.
-    pairs: Vec<HostSpanPair>,
 }
 impl StagedSpans<'_> {
-    /// The success exit: each buffer with its slot and its span receipt, in attach order (the
-    /// count was checked).
+    /// The success exit: each buffer with its slot, in attach order (the count was checked).
     fn landed(
         mut self,
         slots: &[HostHashSlot],
-    ) -> Vec<(HostHashSlot, memra_engine::PinnedHostBuf, HostSpanPair)> {
-        let pairs = std::mem::take(&mut self.pairs);
+    ) -> Vec<(HostHashSlot, memra_engine::PinnedHostBuf)> {
         slots
             .iter()
             .copied()
             .zip(std::mem::take(&mut self.bufs))
-            .zip(pairs)
-            .map(|((slot, buf), pair)| (slot, buf, pair))
             .collect()
     }
 }
@@ -12185,8 +12124,7 @@ fn host_h2d_spans_submit(
     tier: &HostTierContext,
     mut pending: PendingContractPromote,
     staged: &mut HostStagingBack<'_>,
-    mut fills: Vec<HostHeapF32>,
-    kept: &[(HostHashSlot, memra_engine::cache::tiered::Digest)],
+    fills: Vec<HostHeapF32>,
 ) -> Result<PendingContractPromote, HostPromoteFailure> {
     use memra_engine::tier_transfer::H2dSpan;
     let Some(transfers) = &tier.transfers else {
@@ -12197,11 +12135,7 @@ fn host_h2d_spans_submit(
     };
     let mut t = transfers.borrow_mut();
     let mut refused = None;
-    let mut slots: Vec<(
-        HostHashSlot,
-        usize,
-        Option<memra_engine::cache::tiered::Digest>,
-    )> = Vec::with_capacity(staged.bufs.len());
+    let mut slots: Vec<(HostHashSlot, usize)> = Vec::with_capacity(staged.bufs.len());
     let mut spans: Vec<H2dSpan> = Vec::with_capacity(staged.bufs.len());
     for (slot, source) in std::mem::take(&mut staged.bufs) {
         if refused.is_some() {
@@ -12215,8 +12149,7 @@ fn host_h2d_spans_submit(
                     source,
                     destination,
                 });
-                let kept = kept.iter().find(|(s, _)| *s == slot).map(|(_, d)| *d);
-                slots.push((slot, len, kept));
+                slots.push((slot, len));
             }
             Err(e) => {
                 refused = Some(format!(
@@ -12234,23 +12167,6 @@ fn host_h2d_spans_submit(
         && pending.fault == Some(HostContractFault::PromoteSpanAttach)
     {
         refused = Some("injected failure (MEMRA_KV_HOST_FAULT=contract-promote-spans)".into());
-    }
-    // WP-A day 40 (design S): `MEMRA_KV_HOST_FAULT=span-flip-resident` fills the first span from a
-    // copy of its resident plane with one byte flipped, so the bytes going up differ from the
-    // demote's source and the promote's span receipt must refuse them.
-    if refused.is_none()
-        && pending.fault == Some(HostContractFault::SpanFlipResident)
-        && let Some(first) = fills.first_mut()
-    {
-        let mut v: Vec<f32> = first.as_ref().clone();
-        if let Some(x) = v.first_mut() {
-            *x = f32::from_bits(x.to_bits() ^ 0x40);
-        }
-        *first = Arc::new(v);
-        eprintln!(
-            "[prefix-host] promote fault armed (MEMRA_KV_HOST_FAULT=span-flip-resident): the first \
-             span is filled from its resident plane with one byte flipped; the promote must refuse"
-        );
     }
     // WP-A day 33 (design F): the fill rides the copy stream ahead of the copies (one host function).
     let attached = match refused {
@@ -12275,7 +12191,7 @@ fn host_h2d_spans_submit(
         Err(refusal) => refusal,
     };
     let n = back.len();
-    for (&(slot, _, _), span) in slots.iter().zip(back) {
+    for (&(slot, _), span) in slots.iter().zip(back) {
         staged.bufs.push((slot, span.source));
     }
     Err(host_promote_contract_abort(
@@ -12883,52 +12799,19 @@ fn host_kv_planes_settle_promote(
         };
         let count = back.len();
         let mut short = None;
-        let mut differs = None;
-        for (&(slot, len, kept), landed) in spans.iter().zip(back) {
-            let memra_engine::tier_transfer::LandedH2dSpan {
-                span:
-                    memra_engine::tier_transfer::H2dSpan {
-                        source,
-                        destination,
-                    },
-                destination_digest,
-            } = landed;
+        for (&(slot, len), span) in spans.iter().zip(back) {
+            let memra_engine::tier_transfer::H2dSpan {
+                source,
+                destination,
+            } = span;
             if destination.len() != len && short.is_none() {
                 short = Some(format!(
                     "{slot:?} landed {} f32 against {len} submitted",
                     destination.len()
                 ));
             }
-            // WP-A day 40 (`DAY40.md` design S): the span landed on the device must be the
-            // demote's source, digest for digest, before anything is published.
-            if let (Some(kept), Some(landed)) = (kept, destination_digest)
-                && kept != landed
-                && differs.is_none()
-            {
-                differs = Some(slot);
-            }
             staged.bufs.push((slot, source));
             recur.push((slot, destination));
-        }
-        // The KV planes' receipt mismatch's path (the host bytes no longer match what the demote
-        // wrote): the entry leaves and the cold path serves (DAY40 section 3a).
-        if let Some(slot) = differs {
-            let why = format!(
-                "tier image {slot:?} span landed on the device differs from its demote's source"
-            );
-            return Err(
-                match host_promote_contract_abort(
-                    &mut t,
-                    registered,
-                    Some(ticket),
-                    Some(producer),
-                    &sources,
-                    &why,
-                ) {
-                    HostPromoteFailure::Refused(why) => ReceiptMismatch(why),
-                    other => other,
-                },
-            );
         }
         if count != spans.len() || short.is_some() {
             let why = format!(
@@ -13564,7 +13447,6 @@ fn host_entry_from_device(
         last_use: Instant::now(),
         id: 0, // recency identity assigned by HostPrefixCache::insert
         verify_digest,
-        span_digests: Vec::new(),
     };
     if let Some(glm) = &entry.glm {
         let plane_bytes = |p: &HostPlane| p.len * (p.k_tok_bytes + p.v_tok_bytes);
@@ -14168,18 +14050,15 @@ fn host_demote_settle_with_deadline(
             };
             // WP-A day 31: the two exits before the hand-off put the landed staging back (a put
             // after the latch frees the buffer; its charge released at the latch).
-            let unstage = |host: &HostPrefixCache,
-                           staged: Vec<(
-                HostHashSlot,
-                memra_engine::PinnedHostBuf,
-                HostSpanPair,
-            )>| {
-                if let Some(tier) = &host.tier {
-                    for (_, buf, _) in staged {
-                        tier.staging_put(buf);
+            let unstage =
+                |host: &HostPrefixCache,
+                 staged: Vec<(HostHashSlot, memra_engine::PinnedHostBuf)>| {
+                    if let Some(tier) = &host.tier {
+                        for (_, buf) in staged {
+                            tier.staging_put(buf);
+                        }
                     }
-                }
-            };
+                };
             if !host.armed() {
                 eprintln!(
                     "[prefix-host] demote dropped: the tier latched off while ticket seq={seq} was \
@@ -14195,21 +14074,6 @@ fn host_demote_settle_with_deadline(
                 host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "flip fault");
                 return Some(HostDemoteOutcome::Failed);
             }
-            // WP-A day 40 (`DAY40.md` design S): every landed f32 span witnesses its device source
-            // (the two four-lane digests equal) before anything is published; a difference is a
-            // typed refusal, the tier on.
-            if let Some((slot, _, _)) = staged
-                .iter()
-                .find(|(_, _, (src, landed))| src.is_some() && landed.is_some() && src != landed)
-            {
-                eprintln!(
-                    "[prefix-host] demote failed (tier image {slot:?} span landed bytes differ from \
-                     their device source); nothing published"
-                );
-                unstage(host, staged);
-                host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "span receipt");
-                return Some(HostDemoteOutcome::Failed);
-            }
             pending.image.kv = kv;
             pending.image.draft = draft;
             // WP-A day 28 (ruling 39): the image's heap payloads go to the hash helper; the entry
@@ -14217,7 +14081,7 @@ fn host_demote_settle_with_deadline(
             // off (every f32 payload pinned, which the door refuses) publishes here as on day 17.
             let mut payloads = host_hash_take_payloads(&mut pending.image);
             // WP-A day 30: each landed f32 span's staging travels with its slot's (empty) payload.
-            for (slot, buf, (source_digest, _)) in staged {
+            for (slot, buf) in staged {
                 let Some(p) = payloads
                     .iter_mut()
                     .find(|p| p.slot == slot && p.data.is_empty() && p.staged.is_none())
@@ -14235,8 +14099,6 @@ fn host_demote_settle_with_deadline(
                     return Some(HostDemoteOutcome::Failed);
                 };
                 p.staged = Some(buf);
-                // Design S: the source digest rides the payload into the published entry.
-                p.span_digest = source_digest;
             }
             if payloads.is_empty() {
                 eprintln!(
@@ -14976,14 +14838,7 @@ fn device_entry_from_host_parts(
                     let pending = if staged.bufs.is_empty() {
                         pending
                     } else {
-                        host_h2d_spans_submit(
-                            engine,
-                            tier,
-                            pending,
-                            &mut staged,
-                            fills,
-                            &src.span_digests,
-                        )?
+                        host_h2d_spans_submit(engine, tier, pending, &mut staged, fills)?
                     };
                     // WP-A day 34 (design K): the last step of the submission, so no submit-side
                     // unwind can meet a view that is out.
@@ -15014,7 +14869,7 @@ fn device_entry_from_host_parts(
     // WP-A day 32: a plane that rides the ticket as a span stays empty here (the settle fills it).
     let spanned: Vec<HostHashSlot> = pending
         .as_ref()
-        .map(|p| p.spans.iter().map(|(slot, _, _)| *slot).collect())
+        .map(|p| p.spans.iter().map(|(slot, _)| *slot).collect())
         .unwrap_or_default();
     let mut conv = Vec::with_capacity(src.conv.len());
     for (i, c) in src.conv.iter().enumerate() {
@@ -15738,7 +15593,7 @@ fn host_promote_park_probe(
                 format!(
                     ", {} f32 spans filled on the copy stream ({:.1}MB)",
                     contract.spans.len(),
-                    contract.spans.iter().map(|(_, n, _)| n * 4).sum::<usize>() as f64 / 1e6
+                    contract.spans.iter().map(|(_, n)| n * 4).sum::<usize>() as f64 / 1e6
                 )
             };
             host.promoting = Some(PendingPromote {
@@ -19299,9 +19154,6 @@ fn host_entry_from_owned(
         last_use: Instant::now(),
         id: 0, // recency identity assigned by HostPrefixCache::insert
         verify_digest: e.verify_digest,
-        // WP-A day 40 (design S): the handoff frame carries no span digests; an imported entry's
-        // promote keeps the weak span receipt.
-        span_digests: Vec::new(),
     })
 }
 
@@ -45102,7 +44954,6 @@ mod tests {
             last_use: next_instant(),
             id: 0,
             verify_digest: None,
-            span_digests: Vec::new(),
         }
     }
 
@@ -47427,14 +47278,12 @@ mod tests {
             slot: super::HostHashSlot::Conv(0),
             data: Arc::new(vec![1.0]),
             staged: None,
-            span_digest: None,
         };
         assert!(super::host_hash_restore_payload(&mut e, stray).is_err());
         let out_of_range = super::HostHashPayload {
             slot: super::HostHashSlot::Ssm(7),
             data: Default::default(),
             staged: None,
-            span_digest: None,
         };
         assert!(super::host_hash_restore_payload(&mut e, out_of_range).is_err());
         // The close is idempotent and the second call is a no-op; an idle helper joins well
@@ -48387,21 +48236,11 @@ mod tests {
         let arm = &driver[done..];
         let armed = at(arm, "if !host.armed() {");
         let flip = at(arm, "if let Err(err) = apply_flip_demote_fault(&mut kv) {");
-        let into_payloads = at(arm, "for (slot, buf, (source_digest, _)) in staged {");
-        // Day 40 (design S): a third exit, the span receipt's refusal, after the flip's.
-        assert_eq!(arm.matches("unstage(host, staged);").count(), 3);
+        let into_payloads = at(arm, "for (slot, buf) in staged {");
+        assert_eq!(arm.matches("unstage(host, staged);").count(), 2);
         let first = at(arm, "unstage(host, staged);");
         let second = flip + at(&arm[flip..], "unstage(host, staged);");
-        let receipt = at(arm, "span landed bytes differ from");
-        let third = receipt + at(&arm[receipt..], "unstage(host, staged);");
-        assert!(
-            armed < first
-                && first < flip
-                && flip < second
-                && second < receipt
-                && receipt < third
-                && third < into_payloads
-        );
+        assert!(armed < first && first < flip && flip < second && second < into_payloads);
         // (b) The charge.
         let take_fn = body("    fn staging_take(&self, bytes: usize)");
         let latched = at(take_fn, "if set.latched {");
@@ -48455,7 +48294,6 @@ mod tests {
             slot,
             data: Arc::new(vec![0.0; n]),
             staged: None,
-            span_digest: None,
         };
         let payloads = vec![
             heap(super::HostHashSlot::Conv(0), 3),
@@ -48507,7 +48345,7 @@ mod tests {
         assert!(
             at(
                 parts,
-                "host_h2d_spans_submit(\n                            engine,\n                            tier,\n                            pending,\n                            &mut staged,\n                            fills,\n                            &src.span_digests,\n                        )?"
+                "host_h2d_spans_submit(engine, tier, pending, &mut staged, fills)?"
             ) < at(parts, "host_h2d_sources_handoff(tier, pending)?")
         );
         let handoff = body("fn host_h2d_sources_handoff(");
@@ -48863,7 +48701,7 @@ mod tests {
                 "host_kv_planes_submit_promote(engine, tier, src, class)?"
             ) < at(
                 parts,
-                "host_h2d_spans_submit(\n                            engine,\n                            tier,\n                            pending,\n                            &mut staged,\n                            fills,\n                            &src.span_digests,\n                        )?"
+                "host_h2d_spans_submit(engine, tier, pending, &mut staged, fills)?"
             )
         );
         assert!(
@@ -49259,7 +49097,7 @@ mod tests {
             ) => panic!("the settle failed: {why}"),
         };
         assert_eq!(staged.len(), recur.len());
-        for ((slot, buf, _), (want_slot, pattern)) in staged.iter().zip(&recur) {
+        for ((slot, buf), (want_slot, pattern)) in staged.iter().zip(&recur) {
             assert_eq!(slot, want_slot);
             assert_eq!(
                 f32_bits(buf.as_f32_slice()),
@@ -49281,11 +49119,10 @@ mod tests {
         );
         let payloads = staged
             .into_iter()
-            .map(|(slot, buf, _)| super::HostHashPayload {
+            .map(|(slot, buf)| super::HostHashPayload {
                 slot,
                 data: Default::default(),
                 staged: Some(buf),
-                span_digest: None,
             })
             .collect();
         tier.hasher
@@ -49434,7 +49271,7 @@ mod tests {
             span_bytes,
             "the set was reused: no fresh charge"
         );
-        for (_, buf, _) in staged {
+        for (_, buf) in staged {
             tier.staging_put(buf);
         }
         drop((kv, draft, image));
@@ -49550,11 +49387,11 @@ mod tests {
         else {
             panic!("the settle after the refusal did not complete");
         };
-        for ((slot, buf, _), (want_slot, pattern)) in staged.iter().zip(&recur) {
+        for ((slot, buf), (want_slot, pattern)) in staged.iter().zip(&recur) {
             assert_eq!(slot, want_slot);
             assert_eq!(f32_bits(buf.as_f32_slice()), f32_bits(pattern), "{slot:?}");
         }
-        for (_, buf, _) in staged {
+        for (_, buf) in staged {
             tier.staging_put(buf);
         }
         drop((kv, draft, image));
@@ -49678,7 +49515,7 @@ mod tests {
             panic!("the settle did not complete");
         };
         assert!(gpu_recurrent_whole(&engine, &entry, &recur));
-        for (_, buf, _) in staged {
+        for (_, buf) in staged {
             tier.staging_put(buf);
         }
         drop((kv, draft, image));
@@ -49776,7 +49613,7 @@ mod tests {
             span_bytes,
             "the set was reused"
         );
-        for (_, buf, _) in staged {
+        for (_, buf) in staged {
             tier.staging_put(buf);
         }
         drop((kv, draft, image));
@@ -50283,7 +50120,7 @@ mod tests {
         let pending = pending.expect("the contract route");
         let slots: Vec<super::HostHashSlot> = recur.iter().map(|(s, _)| *s).collect();
         assert_eq!(
-            pending.spans.iter().map(|(s, _, _)| *s).collect::<Vec<_>>(),
+            pending.spans.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
             slots,
             "every recurrent plane rides the ticket"
         );
