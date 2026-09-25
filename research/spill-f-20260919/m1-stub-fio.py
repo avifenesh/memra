@@ -19,7 +19,8 @@ if args["name"] == "m1-prep":
     with open(args["filename"], "wb") as f:
         f.truncate(size)
 if os.environ.get("M1_STUB_FIO_REFUSE_URING") == "1" and args["ioengine"] == "io_uring":
-    print("fio: pid=1, err=1/file:engines/io_uring.c:1049, func=io_queue_init, error=Operation not permitted", file=sys.stderr)
+    open(args["output"], "w").write('{"jobs": [{"error": 1}]}\nfio: pid=1, err=1/file:engines/io_uring.c:1049, '
+                                     'func=io_queue_init, error=Operation not permitted\n')
     sys.exit(1)
 bw = json.loads(os.environ.get("M1_STUB_FIO_BW", "{}")).get(args["ioengine"], 1_000_000_000)
 side = {"io_bytes": bw * 10, "bw_bytes": bw, "iops": bw / int(args["bs"]), "runtime": 10000,

@@ -162,7 +162,10 @@ def run(args):
             child.returncode = os.waitstatus_to_exitcode(status)
             sampler.send_signal(signal.SIGTERM)
             sampler.wait(timeout=10)
+            # fio reports an engine init failure on stderr or inside its --output file.
             err_text = (args.out / f"{step['name']}.stderr").read_text(errors="replace")
+            if raw.exists():
+                err_text += "\n".join(l for l in raw.read_text(errors="replace").splitlines() if l.startswith("fio: "))
             if child.returncode != 0 and step["engine"] == "io_uring" and "io_queue_init" in err_text:
                 # Registered: an unavailable io_uring is a recorded refusal, never replaced.
                 row = {"name": step["name"], "engine": "io_uring", "depth": step["depth"], "bs": step["bs"],

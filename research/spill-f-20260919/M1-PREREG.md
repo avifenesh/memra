@@ -237,6 +237,20 @@ tokens, concurrency 1 and 4, 5 AB plus 5 BA. Recorded: TTFT, E2E, TPOT and ITL p
 request and token throughput, plus the B3 stage account. Without a B3 winner, `worker16` alone
 runs as a descriptive serving row.
 
+#### B4 amendment (2026-09-25, registered on the box before any B4 visit)
+
+- Request set: 32 prompts, each the B3 prompt text followed by ` Answer variant i of 32 in your
+  own order.` (i = 1..32); SHA-256 of the joined set recorded in each run's `identity.json`.
+- Transport: `POST /v1/completions`, `stream: true`, `stream_options.include_usage`, greedy
+  (`temperature 0`), `max_tokens 128`; `c` client workers pull from the set in order.
+- Server: `memra-server` with the B3 common env and the arm env (minus the `run-gen`-only
+  prompt, chat and NGEN variables), `MEMRA_COMPAT=openai`, `MEMRA_CTX=8192`,
+  `MEMRA_MAX_SESSIONS = max(4, c)`; a fresh boot per visit after the regime is applied.
+- Per request: TTFT (first text frame), E2E, TPOT = (E2E - TTFT) / (tokens - 1), every
+  inter-token gap. Per visit: p50/p95/p99 of each, request and token throughput over the
+  request window. A visit with any request error, invalid telemetry or a failed regime is
+  unscored. Tool: `m1-b4-serving.py`.
+
 ### B5 io_uring decision input
 
 From B0's scored screen: if `io_uring` beats `psync` threads by at least 5% at the worker's
