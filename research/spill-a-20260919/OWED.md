@@ -156,8 +156,12 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   boundary snapshot (`prefix_snapshot` direct); the `dspark-boundary` publish; the `glm5-boundary` publish; every
   `OnTick` refusal"), carried as "2 to 4 unchanged" through day 36.
 - Acceptance: none registered.
-- Status: **built** (DAY54 sections 1 and 2: the on-tick lines, log only, `17d43a6ac`; the fanout and pause cells and
-  the census; the per-publisher rule); the sitting `pro-single-day54/` prepared, NEED TARGET CARD (any class).
+- Status: **priced** (DAY54 section 3, the lead's run on a 5900XT host): the fanout publisher **design next** (`DAY54
+  PRICE fanout (short) .. o1=+6.50 o2=+6.50 ms .. -> DESIGN NEXT`; its own parts the snapshot 0.72 ms and three
+  restores 1.19 ms, its insert's 2.26 ms is the evicted entry's demote pre-submit, item 19; the long cell's +896 ms is
+  the four members' own suffix primes past the 1024-token cap, recorded as read); the pause park snapshot **closed as
+  priced** (0.73 ms); no route refusal on the 27B; the DFlash, GLM-5 and latent publishers not measured here, owed to
+  their artifacts and rigs. Owed: the fanout design, pre-registered (after items 22 and 23, the lead's order).
 
 ### 11. Move 1 item 4: the decision cell (i), both classes, same window
 
@@ -235,8 +239,10 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 
 ### Order of work from day 51 (the lead's order after integ62)
 
-Item 17 first (item 8's remedy; P refuted on day 51, P2 on day 52; now proposed blocked on item 14), then item 21
-(the lead: the server test failure is a defect to place; closed on day 53), then items 10 to 14 (item 10 per publisher; item 19 designed with item 14, one lease
+Item 17 first (item 8's remedy; P refuted on day 51, P2 on day 52; blocked on item 14, the lead's ruling), then item 21
+(the lead: the server test failure is a defect to place; closed on day 53), then item 10's pricing (day 54), then items
+22 and 23 (the lead, after DAY54: a flaky or slow suite hurts every lane's CI), then item 10's fanout design, then items
+11 to 14 (item 10 per publisher; item 19 designed with item 14, one lease
 design for both directions), then items 18 and 20; the three 5090 cells (item 4's and item 6's halves, item 16) when
 the card is reset.
 
@@ -275,7 +281,9 @@ the card is reset.
   it allocating its 32 pinned KV destinations (151.1 MB, 36896 minor faults) fresh on every demote while no entry frees;
   the first demote of every context holds it about 20 ms allocating the staging set (`spans 19.74` and `20.43 ms`).
   Both are the tenant's tick. On BOX22 (a 9950X host, DAY51 section 3 reading 5) the chain's long pre-submit reads 25.8
-  to 26.0 ms, 25.3 to 25.5 of it in the leases.
+  to 26.0 ms, 25.3 to 25.5 of it in the leases. DAY54 section 3 (a 5900XT host): the fanout's insert holds the owner
+  2.26 ms (short entries) and 18.25 ms (long) for the evicted entry's demote pre-submit, and each boot's first demote 78
+  ms in `spans`.
 - Acceptance: none registered (the owner's hold priced at a long demote and at the first demote, then a design that
   allocates no pinned memory on the owner thread's serving path, pre-registered with item 14's: one lease design for
   both directions).

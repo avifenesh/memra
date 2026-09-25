@@ -123,7 +123,9 @@ def main():
         verdicts.append((f"fanout ({cell})", v))
     # The pause park.
     park, pstall = [], []
-    for d in sorted(glob.glob(os.path.join(root, "pause", "b*"))):
+    # Corrected on day 54 (section 3): the boot directories only (`bNN`); the first glob also matched the cell's
+    # `binary.sha256` and the reader stopped there.
+    for d in sorted(x for x in glob.glob(os.path.join(root, "pause", "b[0-9][0-9]")) if os.path.isdir(x)):
         for ln in open(os.path.join(d, "server.log"), errors="replace"):
             m = PARK.search(ln)
             if m:

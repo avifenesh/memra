@@ -89,3 +89,56 @@ hour).
   the paired cells boot with `MEMRA_MAX_SESSIONS=8` (the fanout needs the tenant plus four intruders; the S sittings'
   4 would queue the fourth), both modes alike; the pause cell keeps 4. About 1.5 hours of card time on one RTX PRO 6000
   Blackwell with the 27B artifact; any host class, recorded (the arms are compared within the hold).
+
+## 3. The sitting on the target card, as it ran (the lead's run; `pro-single-day54/box/`)
+
+- Run by the lead on BOX28: one RTX PRO 6000 Blackwell Workstation Edition; the host reads `AMD Ryzen 9 5900XT 16-Core
+  Processor` (32 CPUs, 121 GB), a Zen 3 class, recorded as read (the arms are compared within each hold). A fresh
+  clone at `b05e79f3e`, `build.sh b05e79f3e` `rc=0` (the tip `072659f1639f6db9..`; markers `on-tick wording: 2 dedup: 1
+  park: 1`), `driver.sh` with `MEMRA_GPU_LOCK=/tmp/memra-gpu.lock` exported. Cells: `ab-short-cell rc=0` 19:17:03Z,
+  `ab-long-cell rc=0` 19:47:26Z, `pause-cell rc=0` 19:50:28Z, `census-cell rc=0` 19:54:15Z, `hitgate-on rc=0`. Replays 20,
+  20 and 3 of 3 `STALL REPLAY: PASS`. The model sha256 `1facf36c2db359dc..`.
+- Mirror: 328 files, 327 of 327 against the box's `box-mirror-manifest.sha256`, 0 mismatched (the lead's `lead-a54.out`
+  and `lead-box-after.txt` beside them); the ELF by hash (`box-binaries.sha256`).
+- Thermal regime: boot starts 29 C (the first) and 51 to 66 C after; telemetry 29 to 77 C, SM up to 2850 to 2857 MHz.
+- **The box's reader stopped** after the two fanout prices: `NotADirectoryError: .. '/root/spill-receipts/a-d54/pause/
+  binary.sha256/server.log'`: the pause glob `b*` matched the cell's `binary.sha256`. A reader defect, corrected (the
+  boot directories `b[0-9][0-9]` only) before its pause and census parts were read; the corrected reader re-run here on
+  the mirror prints the box's lines unchanged and the rest (`reading-day54-corrected.log`).
+
+**The reading, verbatim** (the corrected reader over the mirror):
+
+```
+DAY54 PRICE fanout (short) stall fanout-minus-prime o1=+6.50 o2=+6.50 ms rule >1.0 both -> DESIGN NEXT
+DAY54 PRICE fanout (long) stall fanout-minus-prime o1=+896.82 o2=+895.60 ms rule >1.0 both -> DESIGN NEXT
+DAY54 PRICE pause park snapshot owner N=30 median=0.73 ms (pause stall median 64.00 ms, N=30) rule >1.0 -> CLOSED AS PRICED
+DAY54 CENSUS no on-tick publish line from either capture route on this card
+DAY54 PRICE dspark-boundary (a DFlash drafter tail) -> NOT MEASURED HERE (not exercised by the 27B on one card)
+DAY54 PRICE glm5-boundary (latent tails, tensor parallel) -> NOT MEASURED HERE (not exercised by the 27B on one card)
+DAY54 PRICE latent planes (MLA models) -> NOT MEASURED HERE (not exercised by the 27B on one card)
+DAY54 VERDICTS fanout (short): DESIGN NEXT; fanout (long): DESIGN NEXT; pause park: CLOSED AS PRICED
+```
+
+- The census gates are green: `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` default and plain, `KV-HOST-PAUSE-DEMOTE
+  GATE: ALL GREEN`, `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, each exit 0.
+
+**Verdicts, as registered.** The fanout publisher: **design next** (both lengths). The pause park snapshot: **closed as
+priced** (0.73 ms of owner time; the pause cell's 64 ms stall is the tool turn's own prime on the tick, which the stall
+reads whole). The seed, split and spec-boundary route refusals: **none on this card** (no on-tick publish line in any
+gate or cell: the 27B's caches never hit a refusal). The DFlash, GLM-5 and latent publishers: **not measured here**,
+owed to their families' artifacts and rigs.
+
+**What the fanout's price is made of** (readings, no verdict; they shape the design's pre-registration):
+
+1. At 72 words the four identical prompts share a 95 to 98-token prefix, and the fanout adds 6.50 ms to the tenant's
+   stall over one prime of the same prompt. Its on-tick parts: the leader's snapshot 0.72 ms (160 MB), the three
+   sibling restores 1.19 ms, and the insert 2.26 ms, which is the evicted entry's demote pre-submit (steady 2.09 ms: the
+   pinned lease allocation, item 19), not the fanout's.
+2. At 4096 tokens the shared prefix is capped at 1024 tokens (`prefix=1024` on every group), so each of the four
+   members primes its own 3072-token suffix on the tick: the +896 ms is three extra suffix primes, the four requests'
+   own work, not the publisher. The single-prime control does not match four requests there; the price is recorded as
+   read, and the design's cells use the short shape and a matched control. The groups also split when the four
+   arrivals straddle a tick (`{4: 33, 3: 9, 2: 8}` and `{4: 27, 3: 15, 2: 8}` of 50 in the two orders).
+3. The long fanout's insert holds the owner 18.25 ms, the evicted long entry's demote pre-submit (18.11 ms steady, 32
+   pinned leases of 30.4 MB): item 19's price again. The first demote of each boot holds it 78 ms in `spans` (the staging
+   set's first allocation) on this host class, against about 20 ms on the 9950X class (DAY49): item 19's other half.
