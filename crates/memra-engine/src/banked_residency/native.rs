@@ -2073,6 +2073,44 @@ mod day61_profile {
         std::fs::remove_file(path).ok();
     }
 
+    /// I11 changes 4 and 5: over the fill (every record a host miss) and 20000 routed host-hit
+    /// cycles, every demand's trace line names the slot a fresh SLRU lookup finds after the
+    /// demand, with the hit flag the pre-demand lookup gave; the demanded record is the one
+    /// leased.
+    #[test]
+    fn the_trace_slot_is_the_fresh_slot() {
+        let (path, bytes) = artifact("slot");
+        let mut s = stack(&path, &bytes, false);
+        let ids = s.ids.clone();
+        let check = |traced: &mut TracedDispatch, local: ExpertDispatchId, hit: bool| {
+            let demand = traced.demand(local, LEN as usize).unwrap();
+            assert_eq!(dispatch_id(&demand.lease.id().record).unwrap(), local);
+            let id = &ids[&local];
+            let fresh = traced
+                .inner
+                .bank()
+                .slru_policy()
+                .unwrap()
+                .resident(id)
+                .unwrap();
+            let line = traced.trace.lines().last().unwrap().to_owned();
+            assert!(
+                line.contains(&format!(" slot={fresh} hit={hit} ")),
+                "{line} (fresh slot {fresh})"
+            );
+            traced.trace.clear();
+            traced.finish(demand).unwrap();
+        };
+        for local in ids.keys() {
+            check(&mut s.traced, *local, false);
+        }
+        for &local in order().iter().take(20_000) {
+            check(&mut s.traced, local, true);
+        }
+        drop(s);
+        std::fs::remove_file(path).ok();
+    }
+
     #[test]
     #[ignore = "DAY61 profile: log only, run by hand under the CPU cap"]
     fn host_hit_lease_profile() {
