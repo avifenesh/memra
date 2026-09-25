@@ -1,0 +1,34 @@
+NSYSAPI owner_stream=13 owner_tid=282027903451432 (memra-gpu-worke) sample_hits={282027903451432: 5004} markers=15
+NSYSAPI interval=1 owner_gaps_ms=165.82 owner_api_calls=1605376 owner_api_ms=4004.13 owner_off_api_ms=492.46 owner_osrt_calls=647 owner_osrt_ms=94.57 span_ms=4496.6
+NSYSAPI interval=2 owner_gaps_ms=201.00 owner_api_calls=1605272 owner_api_ms=3948.80 owner_off_api_ms=493.79 owner_osrt_calls=415 owner_osrt_ms=6.70 span_ms=4442.6
+NSYSAPI interval=3 owner_gaps_ms=231.05 owner_api_calls=1605271 owner_api_ms=3980.65 owner_off_api_ms=493.22 owner_osrt_calls=419 owner_osrt_ms=6.65 span_ms=4473.9
+NSYSAPI interval=4 owner_gaps_ms=255.25 owner_api_calls=1605273 owner_api_ms=4006.10 owner_off_api_ms=493.31 owner_osrt_calls=422 owner_osrt_ms=6.75 span_ms=4499.4
+NSYSAPI interval=5 owner_gaps_ms=279.68 owner_api_calls=1605265 owner_api_ms=4028.53 owner_off_api_ms=496.43 owner_osrt_calls=414 owner_osrt_ms=6.58 span_ms=4525.0
+NSYSAPI interval=6 owner_gaps_ms=302.68 owner_api_calls=1605264 owner_api_ms=4053.24 owner_off_api_ms=497.07 owner_osrt_calls=412 owner_osrt_ms=6.71 span_ms=4550.3
+NSYSAPI interval=7 owner_gaps_ms=167.51 owner_api_calls=811607 owner_api_ms=2112.30 owner_off_api_ms=255.16 owner_osrt_calls=226 owner_osrt_ms=4.32 span_ms=2367.5
+NSYSAPI interval=8 owner_gaps_ms=347.08 owner_api_calls=1605265 owner_api_ms=4092.09 owner_off_api_ms=502.66 owner_osrt_calls=420 owner_osrt_ms=6.91 span_ms=4594.8
+NSYSAPI interval=9 owner_gaps_ms=327.88 owner_api_calls=1605281 owner_api_ms=4071.91 owner_off_api_ms=501.92 owner_osrt_calls=415 owner_osrt_ms=5.23 span_ms=4573.8
+NSYSAPI interval=10 owner_gaps_ms=302.33 owner_api_calls=1597602 owner_api_ms=3974.62 owner_off_api_ms=502.79 owner_osrt_calls=419 owner_osrt_ms=8.41 span_ms=4477.4
+NSYSAPI interval=11 owner_gaps_ms=279.50 owner_api_calls=1597601 owner_api_ms=3953.29 owner_off_api_ms=498.40 owner_osrt_calls=423 owner_osrt_ms=6.60 span_ms=4451.7
+NSYSAPI interval=12 owner_gaps_ms=258.62 owner_api_calls=1605265 owner_api_ms=4001.93 owner_off_api_ms=501.18 owner_osrt_calls=420 owner_osrt_ms=6.61 span_ms=4503.1
+NSYSAPI interval=13 owner_gaps_ms=237.25 owner_api_calls=1605258 owner_api_ms=3976.62 owner_off_api_ms=503.71 owner_osrt_calls=415 owner_osrt_ms=6.51 span_ms=4480.3
+NSYSAPI interval=14 owner_gaps_ms=209.59 owner_api_calls=1605264 owner_api_ms=3948.79 owner_off_api_ms=503.85 owner_osrt_calls=417 owner_osrt_ms=6.79 span_ms=4452.6
+NSYSAPI base intervals=[1, 2, 3] peak interval=8 (the most owner launch gaps among full intervals)
+NSYSAPI growth owner-cuda name=cuMemcpyDtoHAsync_v2 base(first3 median) calls=457 ms=2368.19 -> peak(interval 8) calls=457 ms=2511.16 delta_ms=+142.97
+NSYSAPI growth owner-cuda name=cuLaunchKernel base(first3 median) calls=169131 ms=479.41 -> peak(interval 8) calls=169131 ms=481.41 delta_ms=+2.00
+NSYSAPI growth owner-cuda name=cuLaunchKernelEx base(first3 median) calls=201096 ms=479.43 -> peak(interval 8) calls=201096 ms=481.37 delta_ms=+1.95
+NSYSAPI growth owner-cuda name=cuMemFreeAsync base(first3 median) calls=595894 ms=244.79 -> peak(interval 8) calls=595894 ms=245.95 delta_ms=+1.16
+NSYSAPI growth owner-cuda name=cuStreamSynchronize base(first3 median) calls=456 ms=1.73 -> peak(interval 8) calls=456 ms=2.14 delta_ms=+0.40
+NSYSAPI growth owner-cuda name=cudaLaunchKernel_v7000 base(first3 median) calls=3456 ms=34.04 -> peak(interval 8) calls=3456 ms=34.39 delta_ms=+0.35
+NSYSAPI growth owner-cuda name=cuMemsetD8Async base(first3 median) calls=31752 ms=36.60 -> peak(interval 8) calls=31752 ms=36.77 delta_ms=+0.18
+NSYSAPI growth owner-cuda name=cuMemcpyDtoDAsync_v2 base(first3 median) calls=1233 ms=6.53 -> peak(interval 8) calls=1233 ms=6.65 delta_ms=+0.12
+NSYSAPI growth owner-cuda name=cuMemHostAlloc base(first3 median) calls=32 ms=1.68 -> peak(interval 8) calls=32 ms=1.74 delta_ms=+0.06
+NSYSAPI growth owner-cuda name=cuEventCreate base(first3 median) calls=202 ms=0.08 -> peak(interval 8) calls=202 ms=0.10 delta_ms=+0.02
+NSYSAPI growth owner-osrt name=pthread_rwlock_wrlock base(first3 median) calls=1 ms=0.09 -> peak(interval 8) calls=3 ms=0.18 delta_ms=+0.09
+NSYSAPI growth owner-osrt name=munmap base(first3 median) calls=0 ms=0.00 -> peak(interval 8) calls=1 ms=0.02 delta_ms=+0.02
+NSYSAPI growth owner-osrt name=ioctl base(first3 median) calls=49 ms=2.52 -> peak(interval 8) calls=48 ms=2.53 delta_ms=+0.01
+NSYSAPI growth owner-osrt name=write base(first3 median) calls=28 ms=0.12 -> peak(interval 8) calls=28 ms=0.11 delta_ms=-0.01
+NSYSAPI growth owner-osrt name=pthread_mutex_lock base(first3 median) calls=14 ms=0.24 -> peak(interval 8) calls=15 ms=0.23 delta_ms=-0.01
+NSYSAPI growth owner-osrt name=mmap base(first3 median) calls=1 ms=0.04 -> peak(interval 8) calls=2 ms=0.03 delta_ms=-0.01
+NSYSAPI growth owner-osrt name=futex base(first3 median) calls=324 ms=3.82 -> peak(interval 8) calls=323 ms=3.80 delta_ms=-0.02
+NSYSAPI owner off-api ms base median=493.22 peak=502.66
