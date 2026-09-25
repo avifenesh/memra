@@ -61,3 +61,29 @@ when it is back.
   warnings` on the three crates; fmt; `git diff --check`; `tools/check-flags.sh`.
 - The target sitting (`pro-single-day42/run-all-4.sh`, pro-single-s2's scripts with S4's tip as the s2 arm; S3's
   receipts moved to `a-s2-design-s3` first) runs on the same box after item 3's reading.
+
+## 3. S4 on the target card, as it ran (the same box; `pro-single-day42/run-all-4.sh`; `pro-single-s2/box-design-s4/`)
+
+- Build `s4 build rc=0` 07:45:41Z: s2 (S4's tip) `20178d426a2bd132..`, g4 `3a38182e8d89dbe3..`, gpp `4b41fdbd4b6aae15..`.
+  Mirrored 816 of 816 files against the box's manifest, mismatched 0.
+- **(c), verbatim** (`ab-demote rc=0` 08:03:05Z, 20 of 20 replays): `DAY42 S2 C order=o1 wall g4=101.40 s2=101.80
+  s2-minus-g4=+0.40 rule <=+8.0 | e2e g4=176.06 s2=176.46 s2-minus-g4=+0.40 rule <=+1.0 -> PASS`; `DAY42 S2 C order=o2
+  wall g4=101.50 s2=101.80 s2-minus-g4=+0.30 rule <=+8.0 | e2e g4=176.21 s2=176.58 s2-minus-g4=+0.37 rule <=+1.0 ->
+  PASS`; **`DAY42 S2 DEMOTE -> PASS`**.
+- **(d), verbatim** (08:20:24Z): `DAY42 S2 D order=o1 pin g4=13.50 s2=13.60 s2-minus-g4=+0.10 rule <=+1.0 | e2e
+  g4=102.23 s2=102.53 s2-minus-g4=+0.29 rule <=+1.0 -> PASS`; `order=o2 pin .. +0.10 .. | e2e g4=102.27 s2=102.50
+  s2-minus-g4=+0.22 .. -> PASS`; **`DAY42 S2 PROMOTE -> PASS`**.
+- **(e), verbatim** (08:25:31Z): `HUMP arm=xs2 boots=2 median-hump=+0.012 humps=False`, the control `HUMP arm=xgpp
+  boots=2 median-hump=+0.507 humps=True`: PASS. Boot starts 70 to 73 C, 2805 to 2820 MHz.
+- **(a) and (b)**: every gate `.exit` 0 (identity x4, failure x2, the fault gate default and plain with the span-flip
+  cells, twin x2, the hit gate x2); the unit cells `parallel=3/3 engine-serial-rc=0 door-rc=0 cpu-rc=0
+  engine-census-rc=0 tier-rc=0`, the native `day48_a_take_back_waits_for_its_own_lease_only ... ok` in every run.
+- The readings: the capture settle's owner hold in o1's demote boots, g4 `N=50 median=0.16` ms and S4 `N=50
+  median=0.16` (S2 and S3 held 3.1 to 3.3); the trace `landed_wall_ms=3.16 .. receipt_after_copies_ms=10.68`, and
+  `owner-during-landed.log`: `landed dur=1.25 owner busy in=1.00ms n=38 | before busy=1.23ms`, `landed dur=1.88 owner
+  busy in=1.86ms n=64 | before busy=1.84ms` (S2 read 0.00): the owner keeps running while the landed digests read the
+  staging.
+
+**Verdict, as registered: S4 PASSES (a) to (e) on the target card.** The span receipts are off the landing path and
+required before the publication at a price inside S's bounds (e2e +0.37 to +0.40 ms, PIN +0.10 ms). The 5090 half
+(`rtx5090-day42/` with S4's tip) waits for the card's reset.

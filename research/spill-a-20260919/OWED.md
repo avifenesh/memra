@@ -84,7 +84,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   owner stream ran no kernel meanwhile. Design S3 (the grid bounded, `DAY46.md`) **failed (c) too and is reverted**
   (DAY46 section 3: e2e +3.34 / +3.27 ms): the price is the release paths' whole-copy-stream drain, which the capture
   settle at the same tick top pays for the landed digests (3.23 ms held against 0.13 to 0.21 on G4). The revision,
-  design S4 (the drain made precise), is pre-registered in `DAY48.md` before its code.
+  design S4 (the drain made precise, `DAY48.md`), **passes (a) to (e) on the target card** (DAY48 section 3: e2e +0.40 /
+  +0.37 ms, PIN +0.10, hump +0.012, every gate green). Owed: the 5090 half, after the card's reset.
 
 ### 5. The helper's promote-side fail-closed arms have no serving-shape fault cell (found in this ledger's read)
 
