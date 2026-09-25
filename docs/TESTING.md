@@ -2137,6 +2137,15 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   `day52_the_publication_split_is_log_only` (the drop helper names and releases every host entry field in declaration
   order, the compiler's own drop order; the insert's replaced twin and LRU victims drop through it at their old points;
   no decision reads a split figure).
+- Design P2, the hash helper's payload reserve with its arming rule (WP-A day 52, `DAY52.md` step 2; P's code of day 51
+  re-applied, `DAY51.md`, OWED item 17): the CPU census `day51_the_payload_reserve_is_the_copy_program` (a reserve
+  buffer written only by `copy_from_slice` of the staged slice, a miss by `to_vec`; the refill at the helper loop's top
+  with a `try_recv` before every buffer; the pageable charge before the first allocation; the ledger's third pageable
+  term), the census `day52_the_arming_rule_reads_only_the_jobs_fresh_pages`, and the cells
+  `day51_a_reserve_hit_is_the_staged_bytes_bitwise`, `day51_the_refill_yields_to_a_waiting_job`,
+  `day51_the_reserve_charge_the_cap_and_the_shape_change` and
+  `day52_the_reserve_arms_while_copies_fault_and_disarms_on_recycled_memory`. Bytes on a card: the identity, fault and
+  hit gates on the door (the reserve changes where a payload's memory comes from, never its bytes).
 - The hit gate's door arm (C day 27, `tools/spec-on-cache-hit-gate.sh qwen`): the door batteries run the
   hit gate twice, door OFF (`MEMRA_KV_HOST_CONTRACTS` unset) and door ON (`MEMRA_KV_HOST_CONTRACTS=1`).
   Until day 27 the ON arm booted with no `MEMRA_KV_HOST_MB`, so the server built no program identity
