@@ -55,12 +55,10 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   rulings 49, 52 and 53.
 - Acceptance: DAY39 section 1's rule picks the design per host class; the design's acceptance is pre-registered after
   the host's reading.
-- Status: **5090 done, target owed.** The survey on the 5090 host (DAY39 section 2) and on BOX7, a slower-CPU host of
-  the BOX4 class (section 4: T=1 10.985 ms against a 9.22 ms budget, T=12 3.889 ms; the rule picks T alone); design T
-  pre-registered (section 5, amended 5a) and built (`0153316d4`: the fill split across `min(12, cpus/2)` scoped threads);
-  on the 5090 (section 6) (e) PASS in both orders and every gate ALL GREEN. The target cell (HK FT F1 OFF, `polls [1]` on
-  80 of 90 and the day-35 margin) rides the next BOX7-class sitting; the HK arm is ported (`rtx5090-day39/HK.txt`). The
-  9950X-class reading stays owed.
+- Status: **closed for the slower-CPU host class** (DAY39 section 7: BOX7, `polls==1 90` of 90, HK - FT +12.64 /
+  +12.55 ms e2e and +12.70 ms PIN against pair noise 0.10 to 0.23, every gate green; the 5090's (e) PASS, section 6).
+  Design T is `0153316d4` (the fill split across `min(12, cpus / 2)` threads). Owed: the 9950X-class host reading (the
+  same cell on that host class).
 
 ### 4. The strong-form receipt of the recurrent spans (both directions)
 

@@ -192,3 +192,24 @@ hump". The fix is not settled (DAY38 section 16: G''' fails its hump clause on t
 pre-registered there), and where the D2D classes and the demote's receipt run decides what a promote's copies share
 the copy stream with. So the cell runs in the sitting of the final tree, its four arms built from that tree by the same
 patches (`f1.patch`, `hk-revert-tip.patch` re-checked on it). No clause, bound or arm changes.
+
+## 7. Design T on BOX7, as it ran (`/root/spill-receipts/a-g4/item3`, the G4 sitting's last cell; DAY39 section 5b)
+
+- The arms from the G4 tree (`020745ef4`): ft = the G4 tip `e764db2195703cf7..`, f1 `7f466826f289a4ce..` (`f1-g4.patch`),
+  hk `b448c36c214f5d04..` (`hk-revert-tip.patch`, applied cleanly), off = ft with the door off; one collector hold, 40
+  boots, `STALL REPLAY: PASS` 40 of 40 (`item3-cell rc=0` 00:08:26Z); the 27B artifact `1facf36c2db359dc..`.
+- **Verbatim** (`item3/reading-day39-target.log`):
+  - `DAY39 T CLAUSE (a) ft steady promotes N=90 polls==1 90 rule N=90 and >=80 -> PASS`.
+  - `DAY39 T CLAUSE (b) order=o1 metric=e2e hk=131.24 ft=118.61 hk-minus-ft=+12.64 pair-noise=0.20 .. -> CLEARS`;
+    `order=o1 metric=pin hk=27.40 ft=14.70 hk-minus-ft=+12.70 pair-noise=0.10 .. -> CLEARS`; `order=o2 metric=e2e
+    hk=131.15 ft=118.59 hk-minus-ft=+12.55 pair-noise=0.23 .. -> CLEARS`; `order=o2 metric=pin .. +12.70 pair-noise=0.10
+    .. -> CLEARS`; `DAY39 T TARGET (a) and (b) -> PASS`.
+  - (c): 40 of 40 replays; the gate set on the ft binary (the G4 sitting's gates, DAY38 section 19b) ALL GREEN; the unit
+    cells green (`unit-cells parallel=3/3 ..`, the native filled-batch cell on three threads among them).
+  - Readings: `f1-minus-ft` +12.60 / +12.70 ms e2e and +12.70 / +12.70 ms PIN (the lever alone: F at one fill thread
+    misses the probe's tick exactly as the day-32 helper fill does, `polls [2]` on 90 of 90); DAY28 1b `ft on_minus_off
+    -1.6 / -1.7` (the door ON with T promotes faster end to end than the door OFF), hk and f1 `+11.0 / +10.9 / +11.0`.
+- **Design T passes (a) to (c) on the slower-CPU host class and (e) on the 5090: item 3 closes for this class.** The
+  one-tick landing DAY34 finding 2 said no measured card had (F on BOX4 and BOX7's hosts missed the tick by the fill's
+  11 ms) is now measured: every steady promote lands in the probe's tick, 12.7 ms sooner. The 9950X-class reading stays
+  owed (`OWED.md` item 3).
