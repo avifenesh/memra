@@ -97,3 +97,29 @@ acceptance is reverted in one commit and its test re-read under a new pre-regist
   section 1 names, with its acceptance. Not reproduced by R2: the test is left unchanged and the item records it.
 - Every fix's acceptance (all five) gains R2 at 0 of 100 beside R1 at 0 of 100 (a stricter clause, added before any fix
   is written).
+
+## 4. R2 as run (`day55/<test>/r2/`), and one addition to T-c's fix, pre-registered
+
+- **The interruption.** The first R2 cell was cut by the rig's reboot during T-a's runs: 51 runs, 50 `rc=0` and run 51
+  `rc=143` (the shutdown's signal; its log reads `test result: ok`), on a binary kept in `/tmp` that the reboot removed.
+  The cell is void (incomplete, and its binary is gone); its logs are banked as `r2-interrupted/`, and R2 was re-run
+  whole on a rebuilt test binary (`ef352d04c48a28b5`, the same tree `f44001fa7`, whose crates are `dfc9ff6e4`'s; the
+  R0 and R1 binary read `1e83f63e450ff9c1`).
+- **R2, 100 runs per test:**
+
+| test | R2 | the failing lines |
+|---|---|---|
+| T-a | 100 rc=0 | |
+| T-b | 98 rc=0, 2 rc=101 | `the bridge waited for the first-token deadline instead of committing` (2) |
+| T-c | 67 rc=0, 33 rc=101 | `normal decode stopped at N steps` (N = 4 to 8; 25), `test compiler did not start: Timeout` (8) |
+| T-d | 100 rc=0 | |
+| T-e | 86 rc=0, 14 rc=101 | the full-batch count (the widths vectors, mostly width 1 and 2) |
+
+- **As registered:** T-c and T-e are reproduced by R2 and get their fixes; T-b has its fix (R1 and R2); T-a has its fix
+  (a defect); **T-d is not reproduced** by R1 or R2 (it failed once in A''s 200 full suites) and is left unchanged; the
+  item records it open with its A' observation.
+- **T-c, an addition before its code.** R2 found a second wall bound in T-c's harness: the test waits 50 ms
+  (`recv_timeout`) for the held compile to START before its loop begins. That wait is plumbing (it orders the loop after
+  the compile is running), not one of the test's claims; the fix waits for the start signal with a 10 s safety bound,
+  whose expiry still fails the test by the same message. The claims' bounds (the 100 ms deadline, `>= 10` steps, the 50
+  ms stall threshold) are unchanged.
