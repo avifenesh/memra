@@ -332,6 +332,9 @@ pub(crate) struct MemoryLine<'a> {
     /// memra#680 (lane B day 35): bytes of the prefix entries armed sessions will publish when
     /// their primes complete; `tiers.device_free_bytes` is reduced by it too.
     pub pending_seed_bytes: u64,
+    /// WP-B day 40: the seed sum before the prefix cache's budget cap, printed beside the capped
+    /// `pending_seed=` so a reading can say whether the cap bound. It reduces nothing.
+    pub pending_seed_uncapped_bytes: u64,
     pub inflight: u64,
     pub cap: u64,
     pub waited_ms: u64,
@@ -351,7 +354,7 @@ pub(crate) fn memory_line(line: &MemoryLine<'_>) -> String {
     format!(
         "[admit-mem] id={} model={:?} verdict={} prompt={} output_bound={} charged_ctx={} \
          est_bytes={} est_context={} est_fixed={} device_free={} pending_prime={} pending_prime_v1={} \
-         pending_seed={} \
+         pending_seed={} pending_seed_uncapped={} \
          host_free={} demotable={} short_by={} inflight={} cap={} waited_ms={} retry_after_s={}",
         line.request_id,
         line.model,
@@ -366,6 +369,7 @@ pub(crate) fn memory_line(line: &MemoryLine<'_>) -> String {
         line.pending_prime_bytes,
         line.pending_prime_v1_bytes,
         line.pending_seed_bytes,
+        line.pending_seed_uncapped_bytes,
         line.tiers.host_free_bytes,
         line.tiers.demotable_device_bytes,
         short_by,
@@ -655,6 +659,7 @@ mod tests {
             pending_prime_bytes: 658_000_000,
             pending_prime_v1_bytes: 1_316_000_000,
             pending_seed_bytes: 197_800_000,
+            pending_seed_uncapped_bytes: 395_600_000,
             inflight: 9,
             cap: 32,
             waited_ms: 0,
@@ -683,6 +688,7 @@ mod tests {
             "pending_prime=658000000",
             "pending_prime_v1=1316000000",
             "pending_seed=197800000",
+            "pending_seed_uncapped=395600000",
             "host_free=200000000000",
             "demotable=50000000000",
             "short_by=1834872320",

@@ -25893,9 +25893,14 @@ pub fn run(
                 // evicts or demotes older unleased entries to fit a seed inside the cache's byte
                 // budget before it allocates, so the cache's device bytes can grow by at most
                 // `budget - total_bytes`. A warm, full cache replaces bytes; it does not add them.
+                let pending_seed_uncapped = if admit_memory_cfg.armed {
+                    pending_seed_bytes(&active)
+                } else {
+                    0
+                };
                 let pending_seed = if admit_memory_cfg.armed {
                     seed_booking_cap(
-                        pending_seed_bytes(&active),
+                        pending_seed_uncapped,
                         prefix_cache_budget_bytes(),
                         px.total_bytes,
                     )
@@ -26554,6 +26559,8 @@ pub fn run(
                                             pending_prime_bytes: pending_prime as u64,
                                             pending_prime_v1_bytes: pending_prime_v1 as u64,
                                             pending_seed_bytes: pending_seed as u64,
+                                            pending_seed_uncapped_bytes: pending_seed_uncapped
+                                                as u64,
                                             inflight: admission_book.inflight(&req.model),
                                             cap: cap as u64,
                                             waited_ms,
@@ -26612,6 +26619,7 @@ pub fn run(
                                 pending_prime_bytes: pending_prime as u64,
                                 pending_prime_v1_bytes: pending_prime_v1 as u64,
                                 pending_seed_bytes: pending_seed as u64,
+                                pending_seed_uncapped_bytes: pending_seed_uncapped as u64,
                                 inflight: admission_book.inflight(&req.model),
                                 cap: cap as u64,
                                 waited_ms: crate::admit_memory::waited_ms(req.memory_defer_since),
@@ -54306,7 +54314,7 @@ mod tests {
         let worker = squash(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         assert!(live.contains(
-            "let pending_seed = if admit_memory_cfg.armed { seed_booking_cap( pending_seed_bytes(&active), prefix_cache_budget_bytes(), px.total_bytes, ) } else { 0 };"
+            "let pending_seed_uncapped = if admit_memory_cfg.armed { pending_seed_bytes(&active) } else { 0 }; let pending_seed = if admit_memory_cfg.armed { seed_booking_cap( pending_seed_uncapped, prefix_cache_budget_bytes(), px.total_bytes, ) } else { 0 };"
         ));
         assert!(live.contains("let pending_booked = pending_prime.saturating_add(pending_seed);"));
         assert!(live.contains(
