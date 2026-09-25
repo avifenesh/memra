@@ -40,18 +40,23 @@ const PINS: [(&str, &str); 7] = [
     ("MEMRA_DSV4_DRAFTER", "off"),
 ];
 
-/// (logits bits sha256, cache digest, hidden digest) of a state's last step.
-type Identity = (String, [u64; 2], [u64; 2]);
+/// (logits bits sha256, cache digest, hidden digest) of a state's last step. The digests are
+/// `None` on steps the digest cadence skips.
+type Identity = (String, Option<([u64; 2], [u64; 2])>);
 
-fn identity(gpu: &Dsv4Gpu, s: &DecodeState) -> Identity {
+fn identity(gpu: &Dsv4Gpu, s: &DecodeState, digests: bool) -> Identity {
     let mut hash = Sha256::new();
     for v in gpu.read_decode_logits_for_gate(s).expect("logits") {
         hash.update(v.to_bits().to_le_bytes());
     }
     (
         format!("{:x}", hash.finalize()),
-        gpu.tp_ep_cache_digest_for_gate(s).expect("cache digest"),
-        gpu.tp_ep_hidden_digest_for_gate(s).expect("hidden digest"),
+        digests.then(|| {
+            (
+                gpu.tp_ep_cache_digest_for_gate(s).expect("cache digest"),
+                gpu.tp_ep_hidden_digest_for_gate(s).expect("hidden digest"),
+            )
+        }),
     )
 }
 
@@ -76,6 +81,13 @@ fn main() {
         .map(|v| v.parse().expect("DSV4_REPLAY_GATE_LIMIT"));
     let limit = limit_override.unwrap_or(capacity.min(16384));
     assert!(limit > PREFIX, "the replay limit must lie past the prefix");
+    // DSV4_REPLAY_GATE_DIGEST_EVERY=N: the cache and hidden digests every N steps and on the 64
+    // steps either side of the handoff (default every step). The digests read every layer's
+    // caches, so a 16k-step run at a long capacity checks tokens and logits bits every step and
+    // the digests on that cadence.
+    let digest_every: usize = std::env::var("DSV4_REPLAY_GATE_DIGEST_EVERY")
+        .map_or(1, |v| v.parse().expect("DSV4_REPLAY_GATE_DIGEST_EVERY"));
+    assert!(digest_every >= 1);
     let replay_steps = steps.min(limit - PREFIX);
     // Process startup, before any model or worker thread exists: pin the admitted program.
     for (key, value) in PINS {
@@ -141,7 +153,7 @@ fn main() {
         seed: 20260924,
     };
     println!(
-        "PROTOCOL {{\"prefix\":{PREFIX},\"steps\":{steps},\"capacity\":{capacity},\"replay_limit\":{limit},\"compare\":\"token, logits bits, TP/EP cache and hidden digests per step\",\"seed\":{},\"source_sha256\":\"{}\"}}",
+        "PROTOCOL {{\"prefix\":{PREFIX},\"steps\":{steps},\"capacity\":{capacity},\"replay_limit\":{limit},\"digest_every\":{digest_every},\"compare\":\"token and logits bits per step, TP/EP cache and hidden digests on the digest cadence and around the handoff\",\"seed\":{},\"source_sha256\":\"{}\"}}",
         cfg.seed, tape.sha256
     );
 
@@ -242,7 +254,11 @@ fn main() {
         } else {
             eager_step(tr, &mut replay, &mut handoff_sampler)
         };
-        let (ie, ir) = (identity(&gpu, &eager), identity(&gpu, &replay));
+        let digests = step % digest_every == 0 || pos.abs_diff(limit) <= 64;
+        let (ie, ir) = (
+            identity(&gpu, &eager, digests),
+            identity(&gpu, &replay, digests),
+        );
         if te != tr || ie != ir {
             first_bad = Some((step, pos, te, tr, ie, ir));
             break;
@@ -296,8 +312,13 @@ fn main() {
         std::process::exit(1);
     }
     println!(
-        "PASS: {steps} steps from position {PREFIX} to {} bit-identical to eager (token, logits, cache and hidden digests), {replay_steps} of them replayed{}; tokens_sha256={tokens_sha}",
+        "PASS: {steps} steps from position {PREFIX} to {} bit-identical to eager (token and logits every step, cache and hidden digests {}), {replay_steps} of them replayed{}; tokens_sha256={tokens_sha}",
         PREFIX + steps,
+        if digest_every == 1 {
+            "every step".to_string()
+        } else {
+            format!("every {digest_every} steps and around the handoff")
+        },
         if handoff.is_some() {
             format!(", then eager from the handoff at {limit}")
         } else {
