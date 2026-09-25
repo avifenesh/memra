@@ -239,8 +239,8 @@ the card is reset.
   the steady publication one tick-top poll later (wall 101.0 to 101.5 ms against 88.4 to 88.8 where entries free);
   DAY49 section 1 ("the improvement that removes the first touch ... is pre-registered as its own design before its
   code, with its own price clauses").
-- Acceptance: DAY51 section 1.
-- Status: open (DAY51 pre-registers it).
+- Acceptance: DAY51 section 1, (a) to (g).
+- Status: **pre-registered** (DAY51 section 1: design P, a pre-touched payload reserve on the hash helper).
 
 ### 18. S4's H2D destination digests ride the promote's landing (found by DAY50)
 
