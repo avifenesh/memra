@@ -203,7 +203,9 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   governor still charges).
 - Also read (DAY51 section 3 reading 5, BOX22, a 9950X host, the base arm): each publication that replaces a host
   entry of the same prompt holds the owner 9.36 to 9.39 ms in `take-back bind and publish` (the replaced entry's heap
-  payloads and 32 pinned leases freed on the owner thread) in the chain cell's shape.
+  payloads and 32 pinned leases freed on the owner thread) in the chain cell's shape. DAY52 section 3 (the publication
+  split, log only, on main's tree of the lane): 8.6 ms of that is the 32 pinned lease frees (about 270 us per
+  `cuMemFreeHost`), the heap payloads 0.02 ms; and P's reserve made those frees about 1 ms slower (item 17).
 - Status: open.
 
 ### 15. The D2H receipt kernel's price at long entries (found by DAY38 section 17)
@@ -232,8 +234,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 
 ### Order of work from day 51 (the lead's order after integ62)
 
-Item 17 first (item 8's remedy; P refuted on day 51, its revision P2 in its sitting), then item 21 (the lead: the
-server test failure is a defect to place), then items 10 to 14 (item 10 per publisher; item 19 designed with item 14, one lease
+Item 17 first (item 8's remedy; P refuted on day 51, P2 on day 52; now proposed blocked on item 14), then item 21
+(the lead: the server test failure is a defect to place), then items 10 to 14 (item 10 per publisher; item 19 designed with item 14, one lease
 design for both directions), then items 18 and 20; the three 5090 cells (item 4's and item 6's halves, item 16) when
 the card is reset.
 
@@ -248,9 +250,14 @@ the card is reset.
   target card (BOX22, a 9950X host: the copy -15.2 ms with no faults, the publication -12.4 ms, one poll earlier) and
   FAILED (g) in both orders (DAY51 section 3: `DAY51 P (g) cell=chain order=o1 chain p-minus-base=+1.40 rule <=+1.00
   .. -> FAIL`, o2 +1.54); the chain's extra millisecond sits in the publication's `take-back bind and publish` segment
-  (+0.89 / +1.07 ms), unplaced within it. The revision is **built** (DAY52 sections 1 and 2: the publication split,
-  log only, `5990945cd`, the base arm; design P2, P with an arming rule that refills only while the copy it replaces
-  would fault, `f9c849389`; CPU cells green); the sitting `pro-single-p2/` prepared, NEED TARGET CARD (the 9950X class).
+  (+0.89 / +1.07 ms), unplaced within it. The revision, P2 (DAY52: P with an arming rule, `f9c849389`, over the
+  publication split `5990945cd`), passed (a) to (f) on BOX25 (DAY51's machine) and **FAILED (g) in o2** (`DAY52 P2 (g)
+  cell=chain order=o2 chain p2-minus-base=+1.15 rule <=+1.00 | first p2-minus-base=+1.11 .. -> FAIL`); **reverted**
+  (the P2 commit alone; the split lines stay). The split placed P's millisecond: `DAY52 PLACING -> placed in insert,
+  kv`, the replaced twin's 32 pinned lease frees (+0.91 / +0.99 ms; the heap frees flat), and in two of five o2 boots
+  P2 kept that cost for the whole boot although it disarmed at the fourth demote. Status: **open, blocked on item 14**
+  (proposed): both designs pass their mechanism and every gate and fail only through the pinned lease frees they slow;
+  the next revision is re-read on top of item 14's lease design (with 19), where no `cuMemFreeHost` reaches the tick.
 
 ### 18. S4's H2D destination digests ride the promote's landing (found by DAY50)
 
