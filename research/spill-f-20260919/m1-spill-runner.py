@@ -374,6 +374,9 @@ def run(args):
     refused = {n for n in names if any(v["correctness_problems"] for v in visits if v["arm"] == n)}
     summary = verdicts([v for v in visits if v["arm"] not in refused], [n for n in names if n not in refused],
                        lock["baseline"])
+    if args.smoke:
+        summary = {"smoke": True, "scored": False, "arms": {}, "regime_scored": False,
+                   "note": "one-round smoke: line shapes and visit time only, never a verdict"}
     summary.update(refused_arms=sorted(refused), regime=args.regime, visits=len(visits), qualified=False,
                    identity_sha256=sha(args.out / "identity.json"))
     (args.out / "summary.json").write_text(json.dumps(summary, indent=1) + "\n")
@@ -418,6 +421,7 @@ def main(argv=None):
     r.add_argument("--bound-residency-max", type=float, default=0.5)
     r.add_argument("--oracle-tokens", help="byte-oracle token ids when the oracle arm is not in the run")
     r.add_argument("--contamination-limit", type=float, default=0.02)
+    r.add_argument("--smoke", action="store_true", help="one round, output labelled smoke and never scored")
     r.add_argument("--stub-no-lock", action="store_true")
     p = sub.add_parser("reparse")
     p.add_argument("dir")
@@ -425,7 +429,8 @@ def main(argv=None):
     if args.cmd == "reparse":
         return reparse(args.dir)
     B.require(args.stub_no_lock or args.lock_fd is not None, "--lock-fd (inherited canonical lock) required")
-    B.require(args.rounds >= 10 or args.stub_no_lock, "registered protocol is 10 rounds")
+    B.require(args.rounds >= 10 or args.stub_no_lock or (args.smoke and args.rounds == 1),
+              "registered protocol is 10 rounds (a smoke is exactly 1 round and never scored)")
     B.require(args.contamination_limit == 0.02 or args.stub_no_lock, "the registered co-tenancy limit is 2%")
     return run(args)
 
