@@ -22689,6 +22689,75 @@ temperature = 0.6
         }
     }
 
+    /// WP-A day 53 (`research/spill-a-20260919/DAY53.md` section 4, cell D; OWED item 21): a handler
+    /// request made inside an admission-counter writer's window sheds 429 `shed_queue`. The writers
+    /// (`the_queue_bound_sheds_..` and its siblings) hold `admission_counters_guard()` and set the
+    /// process-global interactive backlog to the queue bound; a handler test that holds only
+    /// `drain_lock()` is not ordered against them, which is item 21's placed mechanism. After the
+    /// restore the same request answers 200 and holds its slot.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: both locks are held across the awaits on purpose: the cell is the writer's window
+    async fn day53_a_handler_request_inside_a_writer_window_sheds_429() {
+        let _l = drain_lock();
+        let _counters = admission_counters_guard();
+        let st = fake_worker_state();
+        let lane = lanes::Lane::Interactive;
+        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let stream_req = || {
+            Json(
+                serde_json::from_value(serde_json::json!({
+                    "model": "m", "prompt": "t", "stream": true
+                }))
+                .unwrap(),
+            )
+        };
+        {
+            let prev = counter.swap(
+                max_queue_depth(lane_cap(lane)),
+                std::sync::atomic::Ordering::AcqRel,
+            );
+            let _restore = CounterRestore(counter, prev);
+            let resp = completions(
+                State(st.clone()),
+                axum::http::HeaderMap::new(),
+                None,
+                stream_req(),
+            )
+            .await;
+            assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+            let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(v["error"]["code"], "shed_queue", "{v}");
+            assert_eq!(
+                st.inflight[0].load(std::sync::atomic::Ordering::SeqCst),
+                0,
+                "a shed request holds no slot"
+            );
+        }
+        let resp = completions(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            stream_req(),
+        )
+        .await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "after the restore the request is admitted"
+        );
+        assert_eq!(
+            st.inflight[0].load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "stream in flight holds the slot"
+        );
+        let _ = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+    }
+
     #[tokio::test]
     #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK serializes this test against its shared-state peers; holding across the awaits is the point
     async fn responses_carry_rate_limit_headers_and_slot_frees() {

@@ -124,3 +124,52 @@ longer reads the global backlog), the target and its siblings green in arm A's a
 the target, H1 is **placed by mechanism** when D passes and at least one handler test in arm A or A' failed with a 429
 (arm A already read one): the target's own failure then stays unobserved, and that is said. If D fails, nothing is
 placed and the next step is pre-registered anew. The fix follows either placing, pre-registered with its own clauses.
+
+## 5. A' and D, as run
+
+- **A'** (200 full suites, arm A's shape, `day53/arm-a2/`): `189 rc=0`, `11 rc=101`. Cargo rebuilt `memra-server` once
+  at run 1 (`Compiling memra-server .. Finished .. in 3.70s`, the same tree `2f1ea5a2b`; the binary read `2cc5c251..`
+  after the runs against `092bd386..` hashed before them), so all 200 runs used the rebuilt binary. The reds, by name:
+  - the target, **7 of 200**: six at `lib.rs:22711:9`, the FIRST request's status assertion (the non-streaming chat,
+    which the probe does not cover), each `left: 429 right: 200`; one at the streaming request with the probe line,
+    verbatim: `ITEM21 PROBE status=429 Too Many Requests code="shed_queue" message="interactive queue is at its bound
+    (256 queued, bound 256); this request was not admitted and is not billed; retry after ~10s (a coarse estimate, not
+    a promise)" reservations=[0, 0, 0] draining=false`;
+  - `same_effort_value_resolves_identically_on_every_surface` 2 (`/v1/responses rejected effort "minimal"` and
+    `"none"`, `left: 429`), `same_omitted_request_resolves_identically_on_all_four_surfaces` 1 (`/v1/messages rejected
+    the omitted-sampling request`, `left: 429`): every one a 429 in a handler test that holds `drain_lock()`;
+  - `deep_schema_fails_while_normal_decode_keeps_stepping` 1 (`bad schema stalled or replaced the normal decode`), a
+    timing assertion (item 22's class, added there).
+- **D** (`day53_a_handler_request_inside_a_writer_window_sheds_429`): 20 of 20 green (`day53/cell-d/`): inside a
+  writer's window the target's streaming request answers 429 `shed_queue` and holds no slot; after the restore it
+  answers 200 and holds the slot.
+- **The rule, as written, places nothing.** A' caught the target, so section 4's mechanism branch (for "A' does not
+  catch the target") does not apply; the observation branch asks for the probe's interactive reservations above zero,
+  and the probe read `[0, 0, 0]` (it reads after the response returns, when the writer's window has closed). This case
+  was not foreseen by the rule; recorded as read, nothing placed by it.
+- **What the evidence says** (a reading, no verdict): the shed message's own count, `256 queued, bound 256`, is the
+  backlog the server read at the shed, and 256 is `max_queue_depth(64)`, the exact value the writer tests swap in; every
+  one of the ten handler reds in A' and arm A is a 429; D shows the mechanism produces exactly this answer. The placing
+  that the rule can accept is by intervention: order the writers against the readers and count again (section 6).
+
+## 6. The fix F1, pre-registered (before its code): the writers ordered against every `drain_lock()` holder
+
+**Design.** `admission_counters_guard()` takes `drain_lock()` first and then its own lock, and returns both (the drain
+flag reset `drain_lock()` performs stays). Every admission-counter writer and route test, which take
+`admission_counters_guard()`, then runs alone against every handler test that holds `drain_lock()`, the target and its
+three siblings included. No test takes both separately (the one that did, cell D, takes the combined guard only). The
+probe is removed with the fix; cell D stays (a regression cell of the mechanism).
+
+**Acceptance.**
+
+- (a) The census `day53_the_admission_writers_are_ordered_against_the_handler_readers`: `admission_counters_guard()`
+  acquires `drain_lock()` before its own lock; no test fn calls both `drain_lock()` and `admission_counters_guard()`;
+  every test fn that writes `ADMISSION_RESERVATIONS` or `PENDING_ADMITS` (`swap`, `store`, `fetch_add`) takes
+  `admission_counters_guard()`.
+- (b) **The placing by intervention and the fix:** 400 full suites in arm A's shape on the F1 tree: zero failures of the
+  target, and zero 429 failures in any handler test. Against A' (7 of 200 for the target, 10 handler 429s in 200), an
+  unchanged mechanism would give zero in 400 with a probability below 1e-8. H1 is placed when (b) holds.
+- (c) Every other red in the 400 runs recorded by name (item 22's class is not (b)'s).
+- Readings, no clause: the suite's `finished in` seconds against A' (the writers now serialize with 26 handler tests).
+
+If (b) fails, F1 is reverted in one commit with its runs banked, and the next step is pre-registered anew.

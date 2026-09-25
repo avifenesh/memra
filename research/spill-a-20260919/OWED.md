@@ -305,9 +305,9 @@ the card is reset.
 - The lead (2026-09-25): a defect to place, not a flake to leave; worked after item 17's reading.
 - Acceptance: none registered (a reproduction under the suite's concurrency first, pre-registered, then the placing
   and the fix with their own clauses).
-- Status: **not reproduced in 80 runs** (DAY53 section 2: arms A and B green for this test; arm A's sibling
-  `same_effort_value_resolves_identically_on_every_surface` answered 429, the H1 class); the targeted stress
-  pre-registered (DAY53 section 3).
+- Status: **reproduced** (DAY53 section 5, A': the target 7 of 200 full suites, every red a 429; the probe's one line
+  `code="shed_queue" .. (256 queued, bound 256)`; cell D shows the mechanism), not placed by section 4's rule as
+  written (an uncovered case); the fix F1 pre-registered as the placing by intervention (DAY53 section 6).
 
 ### 22. Three server timing tests fail under CPU starvation (found by DAY53's arm B)
 
@@ -316,7 +316,9 @@ the card is reset.
   the first-token deadline instead of committing`), `worker::tests::slow_constraint_compile_times_out_while_normal_decode_and_heartbeat_progress`
   4 of 40 (`heartbeat declared stalled: .. no forward progress for 80 ms (.. threshold 50 ms)`; `normal decode stopped
   at 9 steps`), `dsv4_serve::c4_host_budget_tests::coalesced_rows_each_get_their_own_token_once_per_step` 1 of 40. None
-  failed in arm A's 40 runs (default threads, `CPUQuota=1200%`).
+  failed in arm A's 40 runs (default threads, `CPUQuota=1200%`). DAY53 section 5 (A', 200 runs of arm A's shape):
+  `tests::deep_schema_fails_while_normal_decode_keeps_stepping` 1 of 200 (`bad schema stalled or replaced the normal
+  decode`).
 - Acceptance: none registered (each placed: a real defect, or a wall-clock threshold that a starved runner cannot
   meet; pre-registered after item 21).
 - Status: open.
