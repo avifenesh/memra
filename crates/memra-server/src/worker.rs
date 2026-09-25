@@ -14645,15 +14645,33 @@ fn admit_reclaim_offtick_on() -> bool {
     })
 }
 
-/// One arrival's off-tick reclaim plan (DAY42 1.2): the demote set's entry ids, oldest first,
-/// not yet submitted, and the counts its receipts print.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// An arrival waiting on the worker's off-tick reclaim (DAY42 addendum E): how many plans it
+/// has made. The demote set itself is the worker's queue, not the arrival's.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct ReclaimOffTick {
-    demote_ids: std::collections::VecDeque<u64>,
-    planned: usize,
-    submitted: usize,
-    /// How many plans this arrival has made (addendum B replans an empty one).
     plans: usize,
+}
+
+/// The worker's off-tick demote queue (DAY42 addendum E): every entry an arrival's plan chose
+/// for demotion, oldest first, not yet submitted, with their bytes; and the bytes of the queue's
+/// demote in flight. No plan and no drop set includes a queued entry.
+#[derive(Debug, Default)]
+struct ReclaimQueue {
+    ids: std::collections::VecDeque<(u64, u64)>,
+    inflight_bytes: u64,
+    submitted: usize,
+}
+
+impl ReclaimQueue {
+    fn queued_bytes(&self) -> u64 {
+        self.ids
+            .iter()
+            .map(|&(_, b)| b)
+            .fold(0u64, u64::saturating_add)
+    }
+    fn contains(&self, id: u64) -> bool {
+        self.ids.iter().any(|&(i, _)| i == id)
+    }
 }
 
 /// The plan, pure over the evictable entries oldest first as `(id, bytes)`: today's demote rule
@@ -14722,32 +14740,38 @@ fn px_find_evictable(px: &PrefixCache, id: u64) -> Option<(PoolKey, usize)> {
         .cloned()
 }
 
-/// The off-tick flush's pass for one arrival (DAY42 1.2): at the first pass the plan is made and
-/// the drop set removed; at every pass, when the tier's demote slot is free and the plan has
-/// entries, the next entry leaves the device index on the sink's off-tick route (a refusal drops
-/// it and the next is tried). Returns the entries removed from the device index this pass.
+/// The off-tick flush's pass for one arrival (DAY42 1.2, addenda B and E): with Q the bytes the
+/// worker's queue will free (queued plus the queue's demote in flight), an arrival whose shortfall
+/// B exceeds Q plans over the evictable entries not already queued, with today's rule over B - Q:
+/// its demote set joins the queue, its drop set drops at once. Then, the slot free, the queue's next
+/// entry is submitted. Returns the entries removed from the device index this pass.
 fn reclaim_offtick_pass(
     engine: &Engine,
     px: &mut PrefixCache,
     hpx: &mut HostPrefixCache,
+    queue: &mut ReclaimQueue,
     req: &mut Request,
     budget: u64,
 ) -> usize {
     let mut removed = 0usize;
-    // DAY42 addendum B: an empty plan with the slot free is made again from the current
-    // evictable set, so entries that became evictable after the last plan are flushed too.
-    if req
+    let inflight = if hpx.demoting.is_some() {
+        queue.inflight_bytes
+    } else {
+        0
+    };
+    let coming = queue.queued_bytes().saturating_add(inflight);
+    let marker = req
         .reclaim_offtick
-        .as_ref()
-        .is_none_or(|p| p.demote_ids.is_empty() && hpx.demoting.is_none())
-    {
+        .get_or_insert_with(ReclaimOffTick::default);
+    if budget > coming {
         let oldest: Vec<(u64, u64)> = px
             .lru
             .values()
             .filter_map(|(key, i)| px.entries.get(key).and_then(|row| row.get(*i)))
+            .filter(|e| !queue.contains(e.id))
             .map(|e| (e.id, e.bytes as u64))
             .collect();
-        let (demote, drop) = reclaim_offtick_plan(&oldest, budget);
+        let (demote, drop) = reclaim_offtick_plan(&oldest, budget - coming);
         for id in &drop {
             if let Some((key, i)) = px_find_evictable(px, *id)
                 && px.remove_at(&key, i).is_some()
@@ -14755,32 +14779,49 @@ fn reclaim_offtick_pass(
                 removed += 1;
             }
         }
-        eprintln!(
-            "[admit-mem] reclaim off-tick: plan {} demote + {} drop ({:.0}MB demote budget) for {} (plan {})",
-            demote.len(),
-            drop.len(),
-            budget as f64 / 1e6,
-            req.request_id,
-            req.reclaim_offtick.as_ref().map_or(0, |p| p.plans) + 1
+        marker.plans += 1;
+        if !demote.is_empty() || !drop.is_empty() {
+            eprintln!(
+                "[admit-mem] reclaim off-tick: plan {} demote + {} drop ({:.0}MB demote budget, {:.0}MB \
+                 already coming) for {} (plan {})",
+                demote.len(),
+                drop.len(),
+                (budget - coming) as f64 / 1e6,
+                coming as f64 / 1e6,
+                req.request_id,
+                marker.plans
+            );
+        }
+        let bytes: std::collections::HashMap<u64, u64> = oldest.iter().copied().collect();
+        queue.ids.extend(
+            demote
+                .iter()
+                .map(|id| (*id, bytes.get(id).copied().unwrap_or(0))),
         );
-        let plans = req.reclaim_offtick.as_ref().map_or(0, |p| p.plans) + 1;
-        req.reclaim_offtick = Some(ReclaimOffTick {
-            planned: demote.len(),
-            demote_ids: demote.into(),
-            submitted: 0,
-            plans,
-        });
     }
-    let plan = req
-        .reclaim_offtick
-        .as_mut()
-        .expect("the plan was made above");
+    px.evictions += removed as u64;
+    removed + reclaim_queue_drain(engine, px, hpx, queue, &req.request_id)
+}
+
+/// Submit the worker queue's next demote while the tier's slot is free (DAY42 addendum E): the
+/// admission pass calls it, and so does the tick top after its settle calls, so the whole demote
+/// set reaches the host whether or not the arrival that queued it is still waiting. A queued entry
+/// that is no longer evictable (leased, hit or evicted meanwhile) is skipped; a refused submission
+/// dropped its entry (its bytes free now) and the next is tried. Returns the entries removed.
+fn reclaim_queue_drain(
+    engine: &Engine,
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    queue: &mut ReclaimQueue,
+    why: &str,
+) -> usize {
+    let mut removed = 0usize;
     while hpx.demoting.is_none() {
-        let Some(id) = plan.demote_ids.pop_front() else {
+        let Some((id, _)) = queue.ids.pop_front() else {
             break;
         };
         let Some((key, i)) = px_find_evictable(px, id) else {
-            continue; // leased, hit or evicted meanwhile: not ours to move
+            continue;
         };
         let Some(dead) = px.remove_at(&key, i) else {
             continue;
@@ -14789,16 +14830,16 @@ fn reclaim_offtick_pass(
         let bytes = dead.bytes;
         host_demote_prefix_entry(engine, hpx, dead);
         if hpx.demoting.is_some() {
-            plan.submitted += 1;
+            queue.submitted += 1;
+            queue.inflight_bytes = bytes as u64;
             eprintln!(
-                "[admit-mem] reclaim off-tick: submitted {} of {} ({:.0}MB) for {}",
-                plan.submitted,
-                plan.planned,
+                "[admit-mem] reclaim off-tick: submitted {} ({:.0}MB; {} queued) for {}",
+                queue.submitted,
                 bytes as f64 / 1e6,
-                req.request_id
+                queue.ids.len(),
+                why
             );
         }
-        // A refusal dropped the entry (its bytes free now); the next is tried in this pass.
     }
     px.evictions += removed as u64;
     removed
@@ -25455,6 +25496,8 @@ pub fn run(
     // WP-B day 37 addendum D: releases scheduled by retires and parks and not yet reaped. While
     // any are, the idle block polls instead of waiting indefinitely, so they land at idle.
     let mut vmm_pending = false;
+    // WP-B day 42 addendum E (MEMRA_ADMIT_RECLAIM_OFFTICK): the worker's off-tick demote queue.
+    let mut reclaim_queue = ReclaimQueue::default();
     // Served-path receipts (lane/dspark-sampled-wave-20260825): admission-time route
     // classification, published to /metrics for the deploy gate's sampled probe.
     let mut n_served_dspark = 0u64;
@@ -25645,6 +25688,17 @@ pub fn run(
         // published snapshot demote releases its park (if the session did not resume it meanwhile);
         // a shape-2 entry whose demote ended unpublished goes back into the device index.
         host_pause_drain(&engine, &mut px, &mut hpx, &mut reuse);
+        // WP-B day 42 addendum E: the reclaim flush's demote queue drains here too, one landing at a
+        // time, whether or not the arrival that queued an entry still waits.
+        if !reclaim_queue.ids.is_empty() {
+            reclaim_queue_drain(
+                &engine,
+                &mut px,
+                &mut hpx,
+                &mut reclaim_queue,
+                "the tick top",
+            );
+        }
         // Cheap runtime peer validation stays on its copy-count cadence here, between scheduler
         // ticks on the CUDA owner thread. Idle-only rungs remain pending. A mismatch continues on
         // validated host bounce; only inability to arm that staging reaches the panic ladder.
@@ -25677,6 +25731,7 @@ pub fn run(
                 && hpx.capturing.is_none()
                 && hpx.restoring.is_none()
                 && !vmm_pending
+                && reclaim_queue.ids.is_empty()
             {
                 // Do not let an already-arrived request sit behind an idle-only probe. Once the
                 // channel is observed empty, one pending expensive rung may run before the worker
@@ -25752,6 +25807,11 @@ pub fn run(
                 // WP-B day 37 addendum D: a pending on-demand KV release is tick work on an idle box
                 // too: keep the poll running so the tick-top reap lands it without a request.
                 if vmm_pending {
+                    wait = wait.min(Duration::from_millis(2));
+                }
+                // WP-B day 42 addendum E: a queued reclaim demote is tick work on an idle box too: the
+                // tick top submits it once the slot frees, so the loop keeps polling.
+                if !reclaim_queue.ids.is_empty() {
                     wait = wait.min(Duration::from_millis(2));
                 }
                 match rx.recv_timeout(wait) {
@@ -26847,26 +26907,22 @@ pub fn run(
                                     ContractWait::Block,
                                     "the admission reclaim",
                                 );
-                                if offtick_arm {
-                                    (
-                                        reclaim_offtick_pass(
-                                            &engine, &mut px, &mut hpx, &mut req, budget,
-                                        ),
-                                        0,
-                                        0,
-                                    )
-                                } else {
+                                if !offtick_arm {
                                     evict_all_demoting(&engine, &mut px, &mut hpx, budget)
+                                } else {
+                                    let q = &mut reclaim_queue;
+                                    let n = reclaim_offtick_pass(
+                                        &engine, &mut px, &mut hpx, q, &mut req, budget,
+                                    );
+                                    (n, 0, 0)
                                 }
                             } else {
                                 (px.evict_all(), 0, 0)
                             };
                         // The arrival waits on a landing while its plan is live (DAY42 1.2): the
                         // parked-session ladder is not climbed for bytes already on their way.
-                        let reclaim_landing = req
-                            .reclaim_offtick
-                            .as_ref()
-                            .is_some_and(|p| !p.demote_ids.is_empty() || hpx.demoting.is_some());
+                        let reclaim_landing = req.reclaim_offtick.is_some()
+                            && (!reclaim_queue.ids.is_empty() || hpx.demoting.is_some());
                         if demoted_prefix > 0 {
                             eprintln!(
                                 "[admit-mem] reclaim demoted {demoted_prefix} of \
@@ -27350,9 +27406,7 @@ pub fn run(
                                 match reclaim_offtick_step(
                                     false,
                                     hpx.demoting.is_some(),
-                                    req.reclaim_offtick
-                                        .as_ref()
-                                        .map_or(0, |p| p.demote_ids.len()),
+                                    reclaim_queue.ids.len(),
                                     waited_ms,
                                     admit_memory_cfg.defer_budget_ms,
                                 ) {
@@ -27429,10 +27483,8 @@ pub fn run(
                         // WP-B day 42: an arrival waiting on its off-tick reclaim's landing is parked
                         // on the in-flight demote, so it joins the parked-only bounded wait (the
                         // guard's `hpx.demoting.is_some()` arm) instead of spinning the owner.
-                        if req
-                            .reclaim_offtick
-                            .as_ref()
-                            .is_some_and(|p| !p.demote_ids.is_empty() || hpx.demoting.is_some())
+                        if req.reclaim_offtick.is_some()
+                            && (!reclaim_queue.ids.is_empty() || hpx.demoting.is_some())
                         {
                             parked_on_promote += 1;
                         }
@@ -55619,7 +55671,9 @@ mod tests {
         let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
         let worker = squash(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
-        assert!(live.contains("&& hpx.restoring.is_none() && !vmm_pending {"));
+        assert!(live.contains(
+            "&& hpx.restoring.is_none() && !vmm_pending && reclaim_queue.ids.is_empty() {"
+        ));
         assert!(live.contains("if vmm_pending { wait = wait.min(Duration::from_millis(2)); }"));
         assert!(live.contains("let (reaped, pending) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse); vmm_pending = pending > 0;"));
         // Addendum E2 and E4: the idle decision re-reads the pending bytes (this tick's retires
@@ -55631,7 +55685,9 @@ mod tests {
             .expect("the idle decision refreshes the pending flag first");
         assert!(
             at < live
-                .find("&& hpx.restoring.is_none() && !vmm_pending {")
+                .find(
+                    "&& hpx.restoring.is_none() && !vmm_pending && reclaim_queue.ids.is_empty() {"
+                )
                 .unwrap()
         );
         assert_eq!(live.matches("vmm_idle_refresh(&mut").count(), 1);
@@ -55648,6 +55704,24 @@ mod tests {
         ));
         assert!(live.contains(
             "vmm_reap_for(\"admin-trim\"); report.devices = trim_model_device_pools(&engine, &loaded, \"admin-trim\");"
+        ));
+    }
+
+    /// WP-B day 42 addendum E: the worker queue's helpers, and the idle wait keeps polling while
+    /// entries are queued (the tick top submits them), so a queue never strands on an idle box.
+    #[test]
+    fn reclaim_queue_counts_its_bytes_and_keeps_the_idle_wait_polling() {
+        let mut q = super::ReclaimQueue::default();
+        assert_eq!(q.queued_bytes(), 0);
+        q.ids.extend([(7, 400), (9, 300)]);
+        assert_eq!(q.queued_bytes(), 700);
+        assert!(q.contains(9) && !q.contains(8));
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        assert!(live.contains("&& !vmm_pending && reclaim_queue.ids.is_empty() {"));
+        assert!(live.contains(
+            "if !reclaim_queue.ids.is_empty() { wait = wait.min(Duration::from_millis(2)); }"
         ));
     }
 
@@ -55738,19 +55812,30 @@ mod tests {
         ));
         // The site sits inside the armed branch, so unarmed it is today's `px.evict_all()`.
         assert!(live.contains(
-            "if offtick_arm { ( reclaim_offtick_pass( &engine, &mut px, &mut hpx, &mut req, budget, ), 0, 0, ) } else { evict_all_demoting(&engine, &mut px, &mut hpx, budget) }"
+            "if !offtick_arm { evict_all_demoting(&engine, &mut px, &mut hpx, budget) } else { let q = &mut reclaim_queue; let n = reclaim_offtick_pass( &engine, &mut px, &mut hpx, q, &mut req, budget, ); (n, 0, 0) }"
         ));
         let site = live
-            .find("reclaim_offtick_pass( &engine, &mut px, &mut hpx, &mut req, budget, )")
+            .find("reclaim_offtick_pass( &engine, &mut px, &mut hpx, q, &mut req, budget, )")
             .unwrap();
         let armed = live[..site].rfind("if admit_memory_cfg.armed {").unwrap();
         assert!(site - armed < 3000);
-        // Addendum B: an empty plan with a free slot is made again.
+        // Addendum E: an arrival plans only for the bytes the worker's queue will not already free,
+        // over entries not queued; the queue drains at the pass and at the tick top.
+        assert!(live.contains("if budget > coming {"));
+        assert!(live.contains(".filter(|e| !queue.contains(e.id))"));
         assert!(live.contains(
-            "if req .reclaim_offtick .as_ref() .is_none_or(|p| p.demote_ids.is_empty() && hpx.demoting.is_none())"
+            "if !reclaim_queue.ids.is_empty() { reclaim_queue_drain( &engine, &mut px, &mut hpx, &mut reclaim_queue, \"the tick top\", ); }"
         ));
+        let drain = live.find("reclaim_queue_drain( &engine, &mut px, &mut hpx, &mut reclaim_queue, \"the tick top\", )").unwrap();
+        let pause = live
+            .find("host_pause_drain(&engine, &mut px, &mut hpx, &mut reuse);")
+            .unwrap();
+        assert!(
+            pause < drain && drain - pause < 400,
+            "the drain follows the tick top's settles"
+        );
         // One submission per free slot: the pass loops only while the slot is free.
-        assert!(live.contains("while hpx.demoting.is_none() { let Some(id) = plan.demote_ids.pop_front() else { break; };"));
+        assert!(live.contains("while hpx.demoting.is_none() { let Some((id, _)) = queue.ids.pop_front() else { break; };"));
         assert!(live.contains("host_demote_prefix_entry(engine, hpx, dead);"));
         // The waiting arrival does not climb the parked-session ladder, and it parks.
         assert!(live.contains("while !reclaim_landing && !headroom.sufficient(required) {"));
