@@ -2602,6 +2602,20 @@ impl Dsv4Gpu {
         self.topology
     }
 
+    /// Whether several requests' plain rows can share one decode step (`decode_rows_*`): the
+    /// PP matrix device program (memra #667 lever 2), or the TP/EP attention-TP2 matrix device
+    /// program (memra #710 B-row).
+    pub fn rows_steps_supported(&self) -> bool {
+        let device = self.matrix_moe
+            && self.decode_path == (DecodePath::Device { host_math: false })
+            && !crate::moe_f16g_gu_fuse_on();
+        if self.topology.is_tp_ep() {
+            device && self.attention_tp.is_some() && self.stages.len() == 2
+        } else {
+            self.pipelined_steps_supported()
+        }
+    }
+
     /// The plain sampler this load serves, resolved once at load.
     pub fn plain_sampler(&self) -> crate::dsv4_sampler::Dsv4Sampler {
         self.plain_sampler
@@ -8991,6 +9005,37 @@ impl Dsv4Gpu {
         }
     }
 
+    /// Draw row `row` of the last B-row step with the device sampler at position `pos` (the
+    /// row's request position after the step): the same program [`Self::sample_device_logits`]
+    /// runs on a one-row step's logits.
+    pub fn sample_rows_device(
+        &self,
+        rows: &VerifyState,
+        row: usize,
+        pos: usize,
+        sampler: &mut crate::dsv4_sampler::Dsv4DeviceSampler,
+        cfg: &Dsv4SampleCfg,
+    ) -> Res<u32> {
+        let stream = self.stages.last().expect("head rank").gpu.stream();
+        let head = rows.ws.last().ok_or("B-row head workspace missing")?;
+        let vocab = head.logits.len() / head.tmax;
+        if row >= head.tmax {
+            return Err(format!("B-row draw row {row} outside {} rows", head.tmax));
+        }
+        sampler.validate_source(&stream, vocab)?;
+        // The head workspace belongs to this model and its producer ran on this stream; the
+        // row lies inside its allocation.
+        unsafe {
+            sampler.sample_ptr(
+                (head.logits.device_ptr(&stream).0 as *const f32).add(row * vocab),
+                pos,
+                cfg,
+                &[],
+                None,
+            )
+        }
+    }
+
     fn validate_full_token_program(&self) -> Res<()> {
         if !self.topology.is_tp_ep()
             || self.stages.len() != 2
@@ -11747,6 +11792,7 @@ impl Dsv4Gpu {
     /// walk, so a one-row verify is the decode step's program by construction. `taps` takes
     /// the DSpark target rows from rank 1, the head rank.
     #[allow(clippy::too_many_arguments)] // Both cache planes plus the transaction coordinates.
+    #[allow(clippy::too_many_arguments)]
     fn tp_ep_trunk_walk(
         &self,
         rank0_caches: &mut [LayerCache],
@@ -11758,16 +11804,86 @@ impl Dsv4Gpu {
         capture: bool,
         replaying: bool,
         fault_inputs: Option<[*const u64; 2]>,
+        taps: Option<&mut CudaSlice<f32>>,
+    ) -> Res<()> {
+        // One request's rows are one group. Its checkpoints live in the same state as the
+        // workspace, so they step out for the walk and back in after it; the device buffers
+        // they own do not move, so captured graph addresses stay valid.
+        let mut rank0_ckpts = std::mem::take(&mut verify.layers);
+        let mut rank1_ckpts = match verify.tp_ep_layers.take() {
+            Some(layers) => layers,
+            None => {
+                verify.layers = rank0_ckpts;
+                return Err("TP/EP rank-1 checkpoints missing".into());
+            }
+        };
+        let result = {
+            let mut groups = [TpEpRows {
+                caches: [rank0_caches, rank1_caches],
+                ckpts: [&mut rank0_ckpts, &mut rank1_ckpts],
+                pos0,
+                t: toks.len(),
+            }];
+            self.tp_ep_trunk_walk_rows(
+                &mut groups,
+                verify,
+                toks,
+                allow_gu_fuse,
+                capture,
+                replaying,
+                fault_inputs,
+                taps,
+            )
+        };
+        verify.layers = rank0_ckpts;
+        verify.tp_ep_layers = Some(rank1_ckpts);
+        result
+    }
+
+    /// The TP/EP trunk walk over row groups (memra #710 B-row): each group is consecutive
+    /// positions of one request, with its own caches and checkpoints on both ranks, at
+    /// consecutive workspace rows. Every weight is read once for all rows; each group's
+    /// attention touches only its own cache, and no row's arithmetic reads another row, so a
+    /// request gets the same bits alone and in a batch. Several groups need attention TP2.
+    #[allow(clippy::too_many_arguments)]
+    fn tp_ep_trunk_walk_rows(
+        &self,
+        groups: &mut [TpEpRows<'_>],
+        verify: &mut VerifyState,
+        toks: &[u32],
+        allow_gu_fuse: bool,
+        capture: bool,
+        replaying: bool,
+        fault_inputs: Option<[*const u64; 2]>,
         mut taps: Option<&mut CudaSlice<f32>>,
     ) -> Res<()> {
         let d = self.model.cfg();
         let t = toks.len();
+        if groups.is_empty() || groups.iter().map(|g| g.t).sum::<usize>() != t {
+            return Err(format!(
+                "TP/EP row groups cover {} rows, the walk has {t}",
+                groups.iter().map(|g| g.t).sum::<usize>()
+            ));
+        }
+        if groups.len() > 1 && (self.attention_tp.is_none() || capture || taps.is_some()) {
+            return Err(
+                "several TP/EP row groups need attention TP2, no capture and no drafter taps"
+                    .into(),
+            );
+        }
+        let n_trunk = (self.model.mc.n_layer - self.model.mc.nextn_predict_layers) as usize;
+        if groups.iter().any(|g| {
+            g.caches.iter().any(|c| c.len() != n_trunk)
+                || g.ckpts.iter().any(|c| c.len() != n_trunk)
+        }) {
+            return Err("TP/EP row group layer count mismatch".into());
+        }
         let hidden = self.model.mc.n_embd as usize;
         let hc = d.hc_mult as usize;
         let topk = self.model.mc.moe.as_ref().expect("moe").expert_used_count as usize;
         let targets = self.dspark.as_ref().map(|ds| ds.targets.clone());
         let n_t = targets.as_ref().map_or(0, Vec::len);
-        for (il, rank1_cache) in rank1_caches.iter_mut().enumerate() {
+        for il in 0..n_trunk {
             for rank in 0..2usize {
                 let st = &self.stages[rank];
                 if capture {
@@ -11782,25 +11898,28 @@ impl Dsv4Gpu {
                     .find(|l| l.il == il as u32)
                     .ok_or_else(|| format!("TP/EP rank {rank} missing layer {il}"))?;
                 let vws = &mut verify.ws[rank];
-                let lck = if rank == 0 {
-                    &mut verify.layers[il]
-                } else {
-                    verify
-                        .tp_ep_layers
-                        .as_mut()
-                        .ok_or("TP/EP rank-1 checkpoints missing")?
-                        .get_mut(il)
-                        .ok_or("TP/EP rank-1 checkpoint layer missing")?
-                };
-                let cache = if rank == 0 {
-                    &mut rank0_caches[il]
-                } else {
-                    &mut *rank1_cache
-                };
                 if self.attention_tp.is_some() {
-                    self.attention_verify_dev(st, layer, cache, lck, vws, false, pos0, t, false)?;
+                    let mut row0 = 0usize;
+                    let mut rows: Vec<AttnRows<'_>> = groups
+                        .iter_mut()
+                        .map(|g| {
+                            let rows = AttnRows {
+                                cache: &mut g.caches[rank][il],
+                                lck: &mut g.ckpts[rank][il],
+                                pos0: g.pos0,
+                                t: g.t,
+                                row0,
+                            };
+                            row0 += g.t;
+                            rows
+                        })
+                        .collect();
+                    self.attention_rows_dev(st, layer, &mut rows, vws, false, t, false)?;
                     self.attention_tp_rank_calls[rank].fetch_add(1, Ordering::Relaxed);
                 } else {
+                    let g = &mut groups[0];
+                    let (cache, lck, pos0) =
+                        (&mut g.caches[rank][il], &mut g.ckpts[rank][il], g.pos0);
                     self.block_verify_dev(
                         st,
                         layer,
@@ -14360,6 +14479,15 @@ struct AttnRows<'a> {
     pos0: usize,
     t: usize,
     row0: usize,
+}
+
+/// One request's rows in a TP/EP walk: its caches and verify checkpoints on each rank
+/// (`[rank 0, rank 1]`), its first position and its row count.
+struct TpEpRows<'a> {
+    caches: [&'a mut [LayerCache]; 2],
+    ckpts: [&'a mut [LayerCkptDev]; 2],
+    pos0: usize,
+    t: usize,
 }
 
 /// One trunk layer's verify-round checkpoint: the two compressor payloads. The window
@@ -19701,6 +19829,16 @@ impl Dsv4Gpu {
                 rows.tmax
             ));
         }
+        if self.topology.is_tp_ep() {
+            if deferred {
+                return Err(
+                    "TP/EP B-row steps run whole: both ranks work on every row, so no stage \
+                     is free to overlap another group"
+                        .into(),
+                );
+            }
+            return self.decode_rows_tp_ep(toks, states, rows, full);
+        }
         if !self.matrix_moe
             || self.decode_path != (DecodePath::Device { host_math: false })
             || self.topology.is_tp_ep()
@@ -19971,6 +20109,321 @@ impl Dsv4Gpu {
             )?;
             state.pos = p0 + 1;
         }
+        Ok((logits, am.into_iter().map(|x| x as u32).collect()))
+    }
+
+    /// One TP/EP decode step for `states.len()` requests (memra #710 B-row): row r feeds
+    /// `toks[r]` to `states[r]` at its own position. Both ranks read every weight once for all
+    /// rows, each row's attention reads only its own request's caches, and each request
+    /// commits its row on both planes as its one-row step would, so every row is bit-identical
+    /// to that request's one-row TP/EP step, replayed or eager (`dsv4_rows_gate --tpep`). A
+    /// request armed for full-token replay may ride the step: the step touches its caches and
+    /// checkpoints only, never its graphs or one-row workspace, and the replay refreshes its
+    /// host marks from the position when it resumes.
+    fn decode_rows_tp_ep(
+        &self,
+        toks: &[u32],
+        states: &mut [&mut DecodeState],
+        rows: &mut VerifyState,
+        full: bool,
+    ) -> Res<(Option<Vec<f32>>, Vec<u32>)> {
+        if !self.matrix_moe
+            || self.decode_path != (DecodePath::Device { host_math: false })
+            || self.attention_tp.is_none()
+            || crate::moe_f16g_gu_fuse_on()
+            || self.stages.len() != 2
+        {
+            return Err(
+                "TP/EP B-row decode runs the attention-TP2 matrix device program (no GU fusion)"
+                    .into(),
+            );
+        }
+        crate::dsv4_grouped::ensure_program(self.matrix_moe, rows.matrix_moe)?;
+        if rows.open.is_some() || rows.tp_ep_layers.is_none() || rows.tp_ep_ar_outputs.is_none() {
+            return Err("TP/EP B-row workspace is open or was not allocated for TP/EP".into());
+        }
+        for (r, state) in states.iter().enumerate() {
+            crate::dsv4_grouped::ensure_program(self.matrix_moe, state.matrix_moe)?;
+            if state.pos == 0 || state.pos + 1 > state.capacity {
+                return Err(format!(
+                    "B-row {r}: position {} outside a primed session of capacity {}",
+                    state.pos, state.capacity
+                ));
+            }
+            let rank1 = state
+                .tp_ep_caches
+                .as_ref()
+                .ok_or_else(|| format!("B-row {r}: TP/EP rank-1 cache plane missing"))?;
+            if state
+                .caches
+                .iter()
+                .chain(rank1)
+                .any(|c| c.c4_host.is_some())
+            {
+                return Err(format!(
+                    "B-row {r}: host-resident C4 caches are not batched"
+                ));
+            }
+            let step = state
+                .matrix_step
+                .as_ref()
+                .ok_or_else(|| format!("B-row {r}: matrix one-row workspace missing"))?;
+            if step.failed || step.verify.open.is_some() || step.verify.tp_ep_layers.is_none() {
+                return Err(format!(
+                    "B-row {r}: matrix one-row workspace is failed, open, or not TP/EP"
+                ));
+            }
+        }
+        let walk_guard = self
+            .tp_ep_walk_lock
+            .lock()
+            .map_err(|_| "TP/EP walk mutex poisoned".to_string())?;
+        let mut rank1: Vec<Vec<LayerCache>> = states
+            .iter_mut()
+            .map(|s| s.tp_ep_caches.take().expect("checked above"))
+            .collect();
+        let mut steps: Vec<Box<MatrixStep>> = states
+            .iter_mut()
+            .map(|s| s.matrix_step.take().expect("checked above"))
+            .collect();
+        let mut result =
+            self.decode_rows_tp_ep_walk(toks, states, &mut rank1, &mut steps, rows, full);
+        let failed = result.is_err();
+        for ((state, caches), mut step) in states.iter_mut().zip(rank1).zip(steps) {
+            // A failed step poisons every request in it: none may continue from a
+            // half-written round.
+            step.failed |= failed;
+            state.tp_ep_caches = Some(caches);
+            state.matrix_step = Some(step);
+        }
+        if let Err(error) = &mut result {
+            // A rank may still be waiting on its peer: drain both before any buffer is reused.
+            for (rank, stage) in self.stages.iter().enumerate() {
+                let drained = stage
+                    .gpu
+                    .ctx
+                    .bind_to_thread()
+                    .and_then(|()| stage.gpu.stream().synchronize());
+                if let Err(drain_error) = drained {
+                    error.push_str(&format!("; TP/EP rank {rank} drain: {drain_error}"));
+                }
+            }
+        }
+        drop(walk_guard);
+        result
+    }
+
+    fn decode_rows_tp_ep_walk(
+        &self,
+        toks: &[u32],
+        states: &mut [&mut DecodeState],
+        rank1: &mut [Vec<LayerCache>],
+        steps: &mut [Box<MatrixStep>],
+        rows: &mut VerifyState,
+        full: bool,
+    ) -> Res<(Option<Vec<f32>>, Vec<u32>)> {
+        let mc = &self.model.mc;
+        let d = self.model.cfg();
+        let b = toks.len();
+        let hidden = mc.n_embd as usize;
+        let hc = d.hc_mult as usize;
+        let pos0: Vec<usize> = states.iter().map(|s| s.pos).collect();
+        let tok_i32: Vec<i32> = toks.iter().map(|&x| x as i32).collect();
+        let pos_i32: Vec<i32> = pos0.iter().map(|&p| p as i32).collect();
+        for rank in 0..2usize {
+            let st = &self.stages[rank];
+            st.gpu.ctx.bind_to_thread().map_err(e("bind TP/EP rows"))?;
+            let stream = st.gpu.stream();
+            let vws = &mut rows.ws[rank];
+            if let Some(words) = vws.moe_fault.as_mut() {
+                if vws.moe_fault_armed {
+                    stream
+                        .memset_zeros(words)
+                        .map_err(e("clear stale MoE faults"))?;
+                }
+                vws.moe_fault_armed = true;
+            }
+            write_pinned_i32(&mut vws.tok_host, &tok_i32)?;
+            write_pinned_i32(&mut vws.pos_host, &pos_i32)?;
+            let tok_host = pinned_i32(&vws.tok_host, b)?;
+            let pos_host = pinned_i32(&vws.pos_host, b)?;
+            let mut dst = vws.tok.slice_mut(0..b);
+            stream
+                .memcpy_htod(tok_host, &mut dst)
+                .map_err(e("htod TP/EP tok rows"))?;
+            let mut dst = vws.pos_dev.slice_mut(0..b);
+            stream
+                .memcpy_htod(pos_host, &mut dst)
+                .map_err(e("htod TP/EP pos rows"))?;
+            unsafe {
+                ck(
+                    "TP/EP B-row embed",
+                    k::memra_dsv4_embed_rows(
+                        st.embed
+                            .as_ref()
+                            .ok_or("TP/EP rank embed missing")?
+                            .device_ptr(&stream)
+                            .0 as *const c_void,
+                        vws.tok.device_ptr(&stream).0 as *const i32,
+                        dpm!(vws.emb, &stream),
+                        b as i32,
+                        hidden as i32,
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "TP/EP B-row repeat hc",
+                    k::memra_dsv4_repeat_hc(
+                        dpf!(vws.emb, &stream),
+                        dpm!(vws.h_a, &stream),
+                        b as i32,
+                        hc as i32,
+                        hidden as i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        }
+        // Each request's checkpoints live in its one-row workspace; they step out for the
+        // walk and back in after it, whatever the walk returned.
+        let mut ckpts: Vec<[Vec<LayerCkptDev>; 2]> = steps
+            .iter_mut()
+            .map(|step| {
+                [
+                    std::mem::take(&mut step.verify.layers),
+                    step.verify
+                        .tp_ep_layers
+                        .take()
+                        .expect("checked TP/EP checkpoints"),
+                ]
+            })
+            .collect();
+        let walked = {
+            let mut groups: Vec<TpEpRows<'_>> = states
+                .iter_mut()
+                .zip(rank1.iter_mut())
+                .zip(ckpts.iter_mut())
+                .zip(&pos0)
+                .map(|(((state, caches1), [c0, c1]), &p0)| TpEpRows {
+                    caches: [&mut state.caches[..], &mut caches1[..]],
+                    ckpts: [&mut c0[..], &mut c1[..]],
+                    pos0: p0,
+                    t: 1,
+                })
+                .collect();
+            self.tp_ep_trunk_walk_rows(&mut groups, rows, toks, false, false, false, None, None)
+        };
+        for (step, [c0, c1]) in steps.iter_mut().zip(ckpts) {
+            step.verify.layers = c0;
+            step.verify.tp_ep_layers = Some(c1);
+        }
+        walked?;
+        // The one-shot reduction refusals and the MoE route and mirror checks, before any
+        // plane commits: a refused step rolls every request's pending compressor rows back.
+        let refusals = self.tp_ep_ar_refusal_words()?;
+        let faults = self.take_moe_faults(&mut rows.ws);
+        if refusals != [0, 0] || faults.is_err() {
+            let mut error = match faults {
+                Err(fault) if refusals == [0, 0] => fault,
+                Err(fault) => format!("TP/EP one-shot reduction refused: {refusals:?}; {fault}"),
+                Ok(()) => format!("TP/EP one-shot reduction refused: {refusals:?}"),
+            };
+            for (((state, caches1), step), &p0) in states
+                .iter_mut()
+                .zip(rank1.iter_mut())
+                .zip(steps.iter_mut())
+                .zip(&pos0)
+            {
+                let rollback0 = self.commit_verify_dev_plane(
+                    &mut state.caches,
+                    &mut step.verify.layers,
+                    &mut rows.ws,
+                    Some(0),
+                    p0,
+                    1,
+                    0,
+                );
+                let rollback1 = self.commit_verify_dev_plane(
+                    caches1,
+                    step.verify.tp_ep_layers.as_mut().expect("restored above"),
+                    &mut rows.ws,
+                    Some(1),
+                    p0,
+                    1,
+                    0,
+                );
+                for (rank, rollback) in [rollback0, rollback1].into_iter().enumerate() {
+                    if let Err(rollback_error) = rollback {
+                        error.push_str(&format!("; rank {rank} rollback: {rollback_error}"));
+                    }
+                }
+            }
+            return Err(error);
+        }
+        for (((state, caches1), step), &p0) in states
+            .iter_mut()
+            .zip(rank1.iter_mut())
+            .zip(steps.iter_mut())
+            .zip(&pos0)
+        {
+            self.commit_verify_dev_plane(
+                &mut state.caches,
+                &mut step.verify.layers,
+                &mut rows.ws,
+                Some(0),
+                p0,
+                1,
+                1,
+            )?;
+            self.commit_verify_dev_plane(
+                caches1,
+                step.verify.tp_ep_layers.as_mut().expect("restored above"),
+                &mut rows.ws,
+                Some(1),
+                p0,
+                1,
+                1,
+            )?;
+            state.pos = p0 + 1;
+        }
+        self.stages[1]
+            .gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("bind TP/EP B-row head"))?;
+        self.head_logits_batch_dev(&mut rows.ws[1], b, false)?;
+        let stream = self.stages[1].gpu.stream();
+        let vws = &mut rows.ws[1];
+        let vocab = vws.logits.len() / vws.tmax;
+        unsafe {
+            for i in 0..b {
+                ck(
+                    "argmax TP/EP B-row",
+                    k::memra_dsv4_argmax(
+                        (vws.logits.device_ptr(&stream).0 as usize + i * vocab * 4) as *const f32,
+                        vocab as i64,
+                        (vws.argmax.device_ptr_mut(&stream).0 as usize + i * 4) as *mut i32,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        }
+        let logits = if full {
+            let mut v = vec![0f32; b * vocab];
+            let view = vws.logits.slice(0..b * vocab);
+            stream
+                .memcpy_dtoh(&view, &mut v[..])
+                .map_err(e("dtoh TP/EP logits rows"))?;
+            Some(v)
+        } else {
+            None
+        };
+        let mut am = vec![0i32; b];
+        let view = vws.argmax.slice(0..b);
+        stream
+            .memcpy_dtoh(&view, &mut am[..])
+            .map_err(e("dtoh TP/EP argmax rows"))?;
+        stream.synchronize().map_err(e("sync TP/EP argmax rows"))?;
         Ok((logits, am.into_iter().map(|x| x as u32).collect()))
     }
 
