@@ -32,11 +32,13 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   `pos` crosses a boundary, never move a byte), pre-mapping the next granule off the boundary tick, the parked-session
   tail release (a parked cache keeps its VA and captured graphs; only unused granules go back), and admission and
   metrics that count mapped bytes (`effective_free_bytes`, `cuda_pool_cached_bytes` do not see VMM planes).
-- Status: `running` (DAY37.md). The serving arm `MEMRA_KV_ALLOCATOR=vmm` is built (addenda A to E). A2 PASS on the
-  5090 on design v1 and on r3; the r3 gate set PASS on both arms (2.3). Addendum E (a release stuck behind a live
-  extent, the idle decision's stale flag, failed reaps, the ensure-walls last batch, a one-granule lookahead) moved the
-  deciding cell to r4 (`c6f9282c2`) before any serving boot: running on the 5090 (`rtx5090-day37/r4/`); the
-  target-card sitting is ready (`pro-single-b-sitting.sh`).
+- Status: `running` (DAY37.md). The serving arm `MEMRA_KV_ALLOCATOR=vmm` is built (addenda A to E; r4 =
+  `c6f9282c2`). Target card, first sitting (2.5): A2, A1-MIX, A1-STREAM, A3 (ii), A4, A5-BUILD and A7 PASS; stage 0
+  selects inline grows (now the class default in code, `0b75283fe`); the gate set refused on a box without `ss`/`lsof`,
+  A6's main binary refused a lane-only env name (harness), A5's two lines were reader defects. Addendum F (1.15)
+  reruns those on the r4 source in the second sitting (`pro-single-b-sitting2.sh`). 5090: the r4 chain is at its
+  stream pairs (a foreign process on the card stretched the waits); the seven boots its first batch missed run next
+  (`rtx5090-queue-c.sh`).
 - Price: 3 to 4 agent-days (design note), plus a target-card sitting of about 8 h (the byte cells on both allocators,
   the stall cell both orders, the grow series, the accounting cell) and the matching 5090 holds.
 
@@ -50,9 +52,12 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   cold prime), digests equal on every request, `plain-affinity` hit lines present on the resumed arms; (ii) the
   step-OOM adjacency replay (`retire_may_park(_, true)` refuses the park, no `park-compact` line, no entry left);
   (iii) the park-time copy cost per park at the served context on both cards (the local 9B pair is owed).
-- Status: `pre-registered` (DAY38.md, addenda A to C: the plain path's errored-session park fix and the fault door's
-  plain injection points landed first; the binaries are r4). Queued on the 5090 after O1's r4 chain; the target-card
-  half is in the same sitting. Day 27 has the target-card plain-path receipt for (iii) only.
+- Status: `running`. Target card (DAY38 2.1): FAIL (no reading) as registered; P1's cold-twin clause asserted, for
+  shape X, what `docs/SERVING.md` documents as the verbatim-extension near-tie residual (2.2), and the workload never
+  let `off` resume. Addendum D (1.11) re-registers P1 and P2 (shape Xp under `max_ctx`, door identity resume against
+  resume, cold identity on the affinity rewind; the non-batching fault point after the prime, `45f1b948d`). The
+  registered 5090 half runs as registered (queue-b), addendum D's on both cards (queue-c, the second sitting).
+  Day 27 has the target-card plain-path receipt for (iii) only.
 - Price: 1 agent-day (design note), plus about 3 h on each card.
 
 ### O3. `MEMRA_ADMIT_BY_MEMORY` ON rows on the capped seed booking, decide-by 2026-10-07
@@ -88,9 +93,10 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   about 5.6 GB here ... named for the lead, not fixed by this lane").
 - Why here: day 33's `pending_prime` sums every still-priming session's full `W`, so the door's booked reading carries
   the same over-count on a burst. The fix is the door's booking measured at its best, and it feeds O3.
-- Status: `pre-registered` (DAY39.md), code landed (`6262506fc`, the corrected term with `pending_prime_v1=` beside
-  it). Queued on the 5090 after O2 on the r4 binaries (red = r4 plus `day39-red.patch`); the target-card half is in
-  the same sitting. Before O3.
+- Status: `running`. Target card (DAY39 2.1): NOT-GREEN, G-NOOM fails on both green runs (10 and 12 parked prefill
+  OOMs): the section-1 term missed the plain checkpoint snapshot (156.9 MB per session on the 27B) and subtracted the
+  slab from the call's returned rows. Addendum B (1.8) revises the term (`be2177ead`); `v1`/`v2`/`v3` cells on both
+  cards (queue-c, the second sitting); the registered 5090 half still runs as registered (queue-b). Before O3.
 - Price: about 0.5 agent-day plus a cell on each card.
 
 ### O6. The enforcing predictive door on the fuller charge
@@ -148,6 +154,12 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - `phase=warming` on a first boot (`DAY25.md` 4: binding before the load is a serving-order change).
 - Every door verdict and default: `MEMRA_ADMIT_BY_MEMORY` and its open-output value, `--kv-allocator vmm`,
   `MEMRA_KV_PARK_COMPACT`.
+- The verbatim-extension continuation resume (plain and spec pools) keeps decode-computed rows, so a resumed turn can
+  differ from the same prompt's cold prime at near-ties: `docs/SERVING.md` documents it as a near-tie residual,
+  `CLAUDE.md`'s one-numeric-program rule reads such a crossing as a bug unless forbidden or proven bit-identical. The
+  two conflict on this path. Measured: one flip in 19 exact-extension resumes on the 27B (DAY38 2.1, 2.2). A rewind
+  to the entry's grid checkpoint would make the resume cold-identical by the grid law, at the cost of re-priming the
+  previous turn's generated tokens; which contract holds is the owner's.
 
 ## Open in the records, outside this lane's clauses (for the lead to route)
 
