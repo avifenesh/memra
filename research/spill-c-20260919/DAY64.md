@@ -215,3 +215,15 @@ read with `--admissibility` when it is recorded. The post-hoc line over BOX15 (`
 inadmissible` for every door arm, REF inside the ceiling. Run as
 `D64_BUILDS="c60=da649107c i13=c9379c051 i14=83f03d9b7 i15=2243b1fe2" bash /root/wt-c/research/spill-c-20260919/day64b-box.sh`
 on a Core Ultra 9 285K host with one RTX PRO 6000 Blackwell Workstation Edition (box needs as section 3a).
+
+## 5a. The rerun's first attempt: void, no cell ran (BOX16; `pro-single-day64b-box16-rejected/`)
+
+The lead staged BOX16, a Core Ultra 9 285K host with one RTX PRO 6000 Blackwell Workstation Edition (driver
+580.173.02), at `7a95f4924`, and ran `day64b-box.sh` as section 5 names it (`box start 2026-09-25T08:29:34Z`). The
+`c60` build finished; the `i13` build failed inside nvcc (`build-i13.log`, verbatim: `Segmentation fault`, then
+`panicked at crates/memra-engine/build.rs:661:13:` `nvcc static-lib build failed for cu/dsv4_gpu.cu`, `rc=101`), and
+the driver stopped with no cell run. The lead rejected the host as unstable and destroyed it. The 8 partial receipts
+check 8 of 8 against `box-mirror-manifest.sha256` (`MIRROR-CHECK.txt`); the one binary built is listed by hash only.
+This attempt is void: it has no reading, and it moves nothing. The same tree built `i13` on BOX13 and BOX15, so the
+fault is the host's, recorded as read. The rerun stays registered as section 5 names it, for the Idaho 285K class
+(BOX14, after lane B's sitting).
