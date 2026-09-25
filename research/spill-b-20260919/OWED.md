@@ -156,8 +156,10 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - What: `MEMRA_ADMIT_RECLAIM_OFFTICK` (default unset, only with `MEMRA_ADMIT_BY_MEMORY=1` and
   `MEMRA_KV_HOST_CONTRACTS=1`): the reclaim flush drops today's drop set at once and demotes its demote set off the
   tick, one landing at a time, and the arrival defers on the landings within the door's defer budget. Folds in O10.
-- Status: `pre-registered` (DAY42.md). Price: about 0.5 agent-day plus about 2 h on the 5090 and 3 h on the target
-  card (the next sitting).
+- Status: `running`: pre-registered (DAY42.md, addenda A and B), coded (`a7fc62703`, `1d11d5426`: plan, one landing at a
+  time, the landing wait in the parked-only bounded wait, the replan), CPU cells green; the 5090 cells queued behind the
+  card's reset (queue-f); the target-card cells ready for the next sitting (`pro-single-b-sitting4.sh`). Price: about
+  0.5 agent-day plus about 2 h on the 5090 and 3 h on the target card.
 
 ## Owner-only (listed, not worked)
 

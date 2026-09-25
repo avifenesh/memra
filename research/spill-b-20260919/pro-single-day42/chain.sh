@@ -8,7 +8,7 @@ R=/root/spill-receipts/b-day42; mkdir -p "$R/bins" "$R/boots"
 WT=/root/wt-b
 MODEL=${MODEL:-/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf}
 WANT_MODEL=1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a
-S42=${S42:-a7fc62703e9cb6c4783e5dea5ab9e2fdc536f7cb}
+S42=${S42:-1d11d5426fc137401e8166bafa094cb15ae04a0e}
 export PATH=/root/.cargo/bin:/usr/local/cuda/bin:$PATH
 log() { echo "$(date -u +%FT%TZ) $*" | tee -a "$R/chain.log"; }
 cd "$WT" || { log "no $WT"; exit 1; }
