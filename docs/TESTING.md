@@ -2141,6 +2141,12 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   census `day54_the_on_tick_lines_are_log_only` (every `OnTick` answer of both capture routes and of the submit core
   records its reason first; the routes refuse the same conditions as before, one `else if` chain each; no decision reads
   the reason; the publish lines print only under the door; the fanout's snapshot, restores and insert keep their order).
+- The starved-runner fixes (WP-A day 55, `research/spill-a-20260919/DAY55.md`, OWED item 22): the health snapshot and
+  stall verdict read the clock once (census `day55_a_snapshot_reads_the_clock_once`); the extended-stream commit test on
+  tokio's paused clock; the slow-constraint-compile test on its loop's step clock and a test-only virtual health clock
+  (`health::TestClock`) with a per-step non-blocking guard; the coalescer's window a field, with the cells
+  `a_partial_batch_waits_out_its_window` and `a_full_batch_does_not_wait_for_its_window` (the full-batch count of
+  `coalesced_rows_each_get_their_own_token_once_per_step` is printed). Each fix's red arm is recorded in DAY55.
 - The admission-counter test ordering (WP-A day 53, `research/spill-a-20260919/DAY53.md` section 6, OWED item 21): the
   test helper `admission_counters_guard()` takes `drain_lock()` before its own lock, so the tests that write the
   process-global admission counters (the queue-bound swaps) are ordered against the handler tests that read them
