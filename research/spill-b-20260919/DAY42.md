@@ -127,3 +127,22 @@ first KV item's device source flips after its receipt digest and before its copy
 - The other clauses, arms and readings are unchanged.
 - The tenants are streamed `/v1/completions` requests with `prompt_ids` (1,024 ids, `max_tokens=2048`), like every
   other phase of the client, not chat requests as 1.4 wrote.
+
+### 1.9 Addendum B (2026-09-25, from the spill review patterns, before any cell)
+
+Reading the arm's state machine against the review patterns found one defect of the "a wait that never ends" shape:
+1.2 makes the plan once per arrival. Entries that become evictable after the plan (other sessions' seeds) are then
+never dropped for that arrival, and `decide` keeps answering `DemoteThenAdmit` while any evictable bytes exist, so an
+arrival whose plan ran out could defer past its budget without ever reaching the refusal. Today's flush has no such
+case because every pass removes every evictable entry.
+
+- **The fix.** When the plan is empty and the tier's demote slot is free, the next reclaim pass makes a new plan from
+  the current evictable set (today's demote rule over the pass's own budget; everything else drops), with its own plan
+  line. Each plan drops or demotes every entry evictable at its making, so the evictable set shrinks to what arrives
+  later; with none left, `decide`'s own rule defers and then refuses as today.
+- The other patterns: moves happen after the shape is decided (`px_find_evictable`, then `remove_at`); the waiting
+  arrival joins the parked-only bounded wait; the reader's counts come from the run's own lines; a refused submission
+  drops its entry and a refused or timed-out arrival drops its plan, leaving the unsubmitted entries resident; the
+  demoted entry's shell rides the pending demote, whose settle returns its planes; the demote budget is `decide`'s
+  shortfall, capped by the host tier's room; the arm hands no memory back on a reply.
+- No clause, bound or reading of 1.4 and 1.5 changes.
