@@ -143,7 +143,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Acceptance: none registered. C's tick reader defines tick 2 as the second stretched tick after the fire; a reading
   of the promote's tick placement on the current tree, pre-registered, with the day-33 timeline fields that b1 and b2
   lack.
-- Status: open.
+- Status: **read on S4's receipts** (DAY50 section 2: one stretched tick, tick 2 absent in 100 of 100 runs on G4 and
+  S4; S4 publishes one tick late on 9 of 90); the tip's block rides DAY49's sitting.
 
 ### 10. Move 2 item 2: the publishes still on the tick
 
