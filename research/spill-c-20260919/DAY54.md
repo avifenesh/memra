@@ -67,3 +67,42 @@ submitted off the tick`, medians); the tenant's stall (the median over its ten b
 **What this decides.** Nothing about the door by itself: it names the slice for the contracts door's review
 (2026-10-05), as `DOOR-DECISION-PACKET.md` item 3 asks. The reader was dry-checked on day 29's arm-X receipts
 relabeled as all eight binaries (`landing 22.4` everywhere, `not_reproduced`, as it must read).
+
+## 2. Results, cell `slices` (the target card, BOX8; receipts `pro-single-day52/slices/`)
+
+One collector hold, 23:37:38Z (the dry boot of `e0`) to 00:47:48Z, 81 boots, the 27B, lane A's harness
+`13867e77...`, tree `f9f5f3953`; the eight servers built on the box from their commits (`builds.log`). Regime
+(`slices/regime.log`, the collector's 250 ms CSV, N=16778): SM 2610 to 2865 MHz, power 89.9 to 496.8 W, 47 to 72 C.
+81 of 81 receipts `STALL REPLAY: PASS`; collector `--validate` rc=0.
+
+Verbatim (`slices/reading.log`):
+
+`DAY54 CHECKS receipts=80 replays_pass=81 admissible=True e0:boots=10,errors=0,texts=1 s1:boots=10,errors=0,texts=1 s2:boots=10,errors=0,texts=1 s3:boots=10,errors=0,texts=1 s4:boots=10,errors=0,texts=1 s5:boots=10,errors=0,texts=1 s6:boots=10,errors=0,texts=1 s7:boots=10,errors=0,texts=1`
+
+`DAY54 SLICE label=e0 commit=0713c1a79 boots=10 promote_runs=100 landing_ms median=89.1 p25=88.8 p75=89.6 n=100 landing_missing=0 promote_parks_per_run median=1.0 restore_parks_per_run median=0.0 stall_median_of_boots=75.7`
+
+`DAY54 SLICE label=s1 commit=ff64e7f5d boots=10 promote_runs=100 landing_ms median=89.1 p25=88.7 p75=89.8 n=100 landing_missing=0 promote_parks_per_run median=1.0 restore_parks_per_run median=0.0 stall_median_of_boots=75.6`
+
+`DAY54 SLICE label=s2 commit=da1f59bf6 boots=10 promote_runs=100 landing_ms median=89.1 p25=88.8 p75=89.6 n=100 landing_missing=0 promote_parks_per_run median=1.0 restore_parks_per_run median=0.0 stall_median_of_boots=75.7`
+
+`DAY54 SLICE label=s3 commit=226abab0e boots=10 promote_runs=100 landing_ms median=89.1 p25=88.8 p75=89.4 n=100 landing_missing=0 promote_parks_per_run median=1.0 restore_parks_per_run median=0.0 stall_median_of_boots=75.7`
+
+`DAY54 SLICE label=s4 commit=5df11152f boots=10 promote_runs=100 landing_ms median=89.1 p25=88.8 p75=89.6 n=100 landing_missing=0 promote_parks_per_run median=1.0 restore_parks_per_run median=0.0 stall_median_of_boots=75.7`
+
+`DAY54 SLICE label=s5 commit=58b814abe boots=10 promote_runs=100 landing_ms median=26.2 p25=26.0 p75=26.7 n=100 landing_missing=0 promote_parks_per_run median=1.0 restore_parks_per_run median=1.0 stall_median_of_boots=98.9`
+
+`DAY54 SLICE label=s6 commit=f661406e4 boots=10 promote_runs=100 landing_ms median=26.3 p25=26.1 p75=27.0 n=100 landing_missing=0 promote_parks_per_run median=1.0 restore_parks_per_run median=1.0 stall_median_of_boots=98.8`
+
+`DAY54 SLICE label=s7 commit=269ef2cec boots=10 promote_runs=100 landing_ms median=26.3 p25=26.2 p75=27.0 n=100 landing_missing=0 promote_parks_per_run median=1.0 restore_parks_per_run median=1.0 stall_median_of_boots=98.8`
+
+`DAY54 ENDPOINTS e0 landing=89.1 restore=0.0 s7 landing=26.3 restore=1.0 rule (e0 landing > 2 x s7 landing) or (restore parks differ) -> reproduced`
+
+`DAY54 MOVES midpoint_ms=57.7 s5=58b814abe: landing late->early (89.1->26.2 ms), restore parks 0.0->1.0`
+
+`DAY54 VERDICT -> moved_at s5=58b814abe`
+
+**Read, not tuned.** The double park and the moved landing arrive together in one slice, #638 (integ37, the
+parked-only wait): the restore of the promoted entry starts parking off the tick (0 to 1 per run), the inline
+demote's copy then lands 89.1 to 26.2 ms after submission, and the tenant's promote-class stall rises 75.7 to 98.9
+ms. No other slice moves either reading. For `DOOR-DECISION-PACKET.md` section 5 item 3 (the question it asked is
+answered here; the packet is updated with the verbatim lines when C3 reads this sitting in).
