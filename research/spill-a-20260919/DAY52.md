@@ -91,3 +91,40 @@ reads its own verdict. The 5090 half after the card's reset.
 
 **Budget.** 0.5 agent-day: step 1 and its census 0.1, P2 and its cells 0.15, the sitting and reader 0.1, the card 0.15
 (about 2.5 hours of card time).
+
+## 2. As built, the CPU cells, and the sitting prepared
+
+- **Step 1** (`5990945cd`, the base arm): `host_entry_drop_split` destructures a `HostPrefixEntry` and releases its 23
+  fields in declaration order (`drop` or `let _ =` per field), timed as `meta`, `kv` (with the lease count), `f32` (with
+  the payload count) and `rest`; `insert` drops its replaced twin and its LRU victims through it at their old points
+  (the twin right after `remove_at`, before the new entry is indexed; each victim after its evict line) and records a
+  `HostInsertSplit`; `host_demote_publish` times the bind, the reclaim and the insert into a `HostPublishSplit`; the
+  settle times the pause release and prints `[prefix-host] demote publication split: ..` after the helper split line.
+  Census `day52_the_publication_split_is_log_only` (the destructure and the release order equal the struct's
+  declaration, parsed from the source; the insert's drops go through the helper; no decision reads a figure); its teeth
+  checked by swapping two drops (the census fails). Server lib `922 passed; 0 failed; 25 ignored`.
+- **Step 2, P2** (`f9c849389`): P's code (`d82738c14`) re-applied onto step 1 (its cherry-pick conflicts only where both
+  add tests and a TESTING.md entry at the same anchor; resolved by keeping both), plus
+  `HostPayloadReserve::after_job(lengths, copy_minflt, hits)` and the `armed` state, called at the job's retarget point
+  with the job's own split figures; `retarget` is unchanged. P's census now pins the `after_job` call. Census
+  `day52_the_arming_rule_reads_only_the_jobs_fresh_pages` and cell
+  `day52_the_reserve_arms_while_copies_fault_and_disarms_on_recycled_memory` (arming on faulting misses, staying armed
+  on a faulting refill, disarming on a recycling refill with nothing held and the charge released, staying disarmed on
+  recycling misses, re-arming on a faulting miss, the half boundary, the empty job).
+- CPU cells, green on P2: server lib `928 passed; 0 failed; 25 ignored`; clippy `-D warnings` (memra-server, all
+  targets); fmt; `git diff --check`; `tools/check-flags.sh`. One earlier full-suite run read `2 failed`: this census
+  (a count scoped too wide, fixed before the commit) and `tests::responses_carry_rate_limit_headers_and_slot_frees`
+  (`lib.rs:22740`, `stream in flight holds the slot`), which passed on the rerun and 6 of 6 alone; this change does not
+  touch `lib.rs` (a flake under the full suite's parallel load, recorded, not owned here).
+- The p arm: section 1 said P's commit is cherry-picked onto step 1 on the box; that pick conflicts at the two shared
+  anchors (above), so the resolved pick is carried instead as `pro-single-p2/p-arm.patch`, the crate diff from step 1
+  to step 1 plus P, and the build applies it (the same tree);
+  applied on a clean checkout of `5990945cd` it builds the tree P2 differs from by the arming rule alone (131 lines).
+- The reader `day52-reading.py` (day51's with p2 in p's place, the chain cell's three arms, the placing rule, the arming
+  and split readings), checked on a fixture built from DAY51's mirrored receipts with synthetic split and arming lines:
+  every clause, the placing rule (`placed in f32` on the fixture's injected delta) and the readings print. The fixture
+  is gone.
+- The sitting `pro-single-p2/`: `build.sh <tip> 5990945cd` (p2, base, p from base plus the patch, gpp), `driver.sh`
+  (the demote, free, promote and chain cells, the hump, the gates with the pause gate, the hit gate, the unit cells, the
+  reader), about 2.6 hours of card time on one RTX PRO 6000 Blackwell with the 27B artifact at
+  `/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`, on the 9950X class (DAY51's).
