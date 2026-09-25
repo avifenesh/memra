@@ -1,16 +1,14 @@
-# WP-A resumable state (2026-09-25, stopped at NEED TARGET CARD with the 5090 down)
+# WP-A resumable state (2026-09-25, stopped at an integrable milestone on the target card; the 5090 down)
 
-- Lane `lane/spill-a-20260919`; worktree `wt-spill-a`; merged with `origin/main` `5d653e851` (integ59, #723) at resume.
-- Item 4: design S2 pre-registered (DAY42 sections 1 and 1a), built (`7ce3f3243`), CPU cells green (engine lib 552,
-  server lib 912, tier crate, clippy, fmt, check-flags, diff --check). Not integrable yet: its 5090 cells and its target
-  sitting have not run.
-- The 5090 reads `GPU requires reset` since 01:25Z (Xid 119, GSP RPC timeouts from `nvidia-smi` and `nvidia-powerd`,
-  then Xid 154); a reset or reboot is the owner's. Its S2 cells (`rtx5090-day42/`) and item 16's cell (`rtx5090-day45/`)
-  wait for it.
-- Target sittings prepared, in the order to run on one RTX PRO 6000 Blackwell box (any host class for the first two):
-  `pro-single-s2/` (S2: build.sh <tip> b4816eda8, then driver.sh), `pro-single-i15/` (item 15: build.sh <tip> b4816eda8
-  after the S2 build, then driver.sh), and on a 9950X-class host `pro-single-t9950/` (item 3's owed reading: build.sh
-  <tip> b4816eda8 checks the host class first, then driver.sh).
-- Pre-registered and waiting: item 15 (DAY43), item 3's 9950X reading (DAY44), item 16 (DAY45). Next after them in the
-  ledger: items 6 to 14.
-- Local scratch: none (the eza waits of earlier sessions in this worktree were ended by pid; `/tmp/wt-a*` empty).
+- Lane `lane/spill-a-20260919`; worktree `wt-spill-a`; last merged with `origin/main` `5d653e851`.
+- Item 4: S2 and S3 refuted on the target card's (c) and reverted (`16904e97d`, `7197c1a9d`); design S4 (`ef4b097ad`:
+  S3 plus the release paths draining the owner stream only) passes (a) to (e) on the target card (DAY48 section 3).
+- Item 6: design V (`a324503df`, on S4) passes (a) to (d) on the target card (DAY47 sections 3, 3a, 3b).
+- Item 15 closed (DAY43 section 2: G4 stays the single placement). Item 3 closed for the 9950X class (DAY44 section 2).
+- The 5090 reads `GPU requires reset` since 01:25Z (Xid 119, then 154); owed there: S4's half (`rtx5090-day42/` with
+  S4's tip), V's half, item 16 (`rtx5090-day45/`). The owner's reset.
+- Receipts mirrored (all against the box's own manifests): `pro-single-i15/box`, `pro-single-t9950/box`,
+  `pro-single-s2/box-design-s2`, `box-design-s3`, `box-design-s4`, `pro-single-v/box`.
+- Next in the ledger: items 7 to 14 (item 13's capture-settle hold behind other copy-stream work is S4's precise drain
+  in part: the capture settle reads 0.16 ms on S4's demote boots).
+- Local scratch: none.

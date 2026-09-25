@@ -1,0 +1,49 @@
+== plain: the reference boot (door OFF, pause OFF) ==
+  ok: plain ref: turn 1 ended in a tool call (the cell measures a pause)
+== plain clean ==
+  ok: plain clean: shape 1 released off the tick
+  ok: plain clean: the pause armed
+  ok: plain clean: shape 2 released off the tick
+  ok: plain clean: no pause demote on the tick
+  ok: plain clean: nothing reinstated or kept
+  ok: plain clean: turn 2 hit the kept state (cached_tokens > 0)
+  ok: plain clean: turn 1 byte-equal to the reference
+  ok: plain clean: turn 2 byte-equal to the reference
+  ok: plain clean: the tier never latched off
+== plain race (MEMRA_KV_HOST_FAULT=d2h-delay) ==
+  ok: plain race: turn 2 parked on the Demoting entry
+  ok: plain race: turn 2 promoted after the publication
+  ok: plain race: the publication released the unused park
+  ok: plain race: the held demote was the pause's
+  ok: plain race: turn 2 byte-equal to the reference
+  ok: plain race: the tier never latched off
+== plain failure (MEMRA_KV_HOST_FAULT=contract-presubmit) ==
+  ok: plain failure: shape 1's park kept
+  ok: plain failure: the refusal is the injected one
+  ok: plain failure: turn 2 served from the device (cached_tokens > 0)
+  ok: plain failure: turn 2 byte-equal to the reference
+  ok: plain failure: the tier never latched off
+== default: the reference boot (door OFF, pause OFF) ==
+  ok: default ref: turn 1 ended in a tool call (the cell measures a pause)
+== default clean ==
+  ok: default clean: the pause armed
+  ok: default clean: shape 2 released off the tick
+  ok: default clean: no pause demote on the tick
+  ok: default clean: nothing reinstated or kept
+  ok: default clean: turn 2 hit the kept state (cached_tokens > 0)
+  ok: default clean: turn 1 byte-equal to the reference
+  ok: default clean: turn 2 byte-equal to the reference
+  ok: default clean: the tier never latched off
+== default race (MEMRA_KV_HOST_FAULT=d2h-delay) ==
+  ok: default race: turn 2 parked on the Demoting entry
+  ok: default race: turn 2 promoted after the publication
+  ok: default race: the held demote was the pause's
+  ok: default race: turn 2 byte-equal to the reference
+  ok: default race: the tier never latched off
+== default failure (MEMRA_KV_HOST_FAULT=contract-presubmit) ==
+  ok: default failure: shape 2's entry reinstated
+  ok: default failure: the refusal is the injected one
+  ok: default failure: turn 2 served from the device (cached_tokens > 0)
+  ok: default failure: turn 2 byte-equal to the reference
+  ok: default failure: the tier never latched off
+KV-HOST-PAUSE-DEMOTE GATE: ALL GREEN

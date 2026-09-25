@@ -114,7 +114,9 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   shape 2 (deepest resident entry), and the handoff export's drain-demote.
 - Acceptance: DAY47 section 1 (design V: the pause sweep's two shapes off the tick; the export stays by its contract;
   the admission flush stays, a lead question: a deferring flush is the memory-admission door's decision).
-- Status: **pre-registered** (DAY47); its code follows design S3's target reading.
+- Status: **built (V, on S4) and passes (a) to (d) on the target card** (DAY47 sections 3 and 3b: the pause's tenant
+  stall 202.9 ms on the tick, 3.2 ms off it; every gate green, the new pause gate after its section 3a revision). Owed:
+  the 5090 half, after the card's reset; the admission flush's deferring form, a lead question (DAY47 section 1).
 
 ### 7. Lane C: why b1 shows no first-touch pre-submit step
 

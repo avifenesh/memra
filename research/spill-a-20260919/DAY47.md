@@ -173,3 +173,14 @@ commit.
   after the publication (both boots), and the plain boot's publication releases the unused park. Nothing else changes.
 - The re-run: the pause gate alone, both boots, on the same v binary, under one collector hold
   (`pro-single-v/pause-gate-rerun.sh`); the first run's receipts stay as `gates/pause-demote/` and its log.
+
+## 3b. The pause gate's re-run, as it ran (`pro-single-v/box/gates/pause-demote-rerun*`)
+
+- The revised gate (section 3a, tip `ccfd26af0`) on the same v binary (`fe85df10f764ce61..`), both boots, one collector
+  hold: **`KV-HOST-PAUSE-DEMOTE GATE: ALL GREEN`** (`.exit` 0, 40 checks ok): in both boots the pause armed and demoted
+  off the tick, turn 2 hit the kept state, the race parked turn 2 on the Demoting entry and promoted it after the
+  publication (the plain boot's publication releasing the unused park), the failure kept the park (plain) and reinstated
+  the entry (default), the tier stayed on, every turn byte-equal to the door-OFF pause-OFF reference.
+- V's receipts mirrored: 690 of 690 files against the box's manifest, mismatched 0.
+
+**Verdict: V PASSES (a) to (d) on the target card.** The 5090 half waits for the card's reset.
