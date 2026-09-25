@@ -97,3 +97,30 @@ first.
 **What follows a placing.** The fix is pre-registered with its own clauses before its code: one ordering rule for every
 test that reads the process-global admission state through a handler (the same lock as the writers, or a state that no
 longer reads the global backlog), the target and its siblings green in arm A's and arm B's full-suite shapes.
+
+## 4. The targeted stress as run, and the next cells pre-registered
+
+- T1 (the target beside the 17 tests that hold `admission_counters_guard()`: the seven counter writers and the ten
+  route tests; 17 of 17 names matched by `--list`), T2 (the target alone) and T3 (the target beside
+  `draining_rejects_new_requests_with_503_and_retry_after`, the one test that raises `DRAINING`, under `drain_lock()`),
+  200 runs each, the probe binary `092bd386..` as arms A and B: **200 of 200 green in each** (`day53/t{1,2,3}/`).
+- **Verdict, as registered: not reproduced** (600 more runs; section 3's rule said 480, a counting slip in the text,
+  the runs are 600). The deterministic cell comes next, and with it a longer run of the shape that did fail.
+- The reading: the writers' windows are a few milliseconds and 18 tests start together; in the full suite the 900-odd
+  tests keep the runner's 24 threads busy for 6 s, and a handler request lands in a writer's window by chance (arm A
+  caught a sibling once in 40 runs; the target failed once in about ten full runs on day 52).
+
+**Pre-registered now (before either runs):**
+
+- A' (the observation): 200 more full suites in arm A's shape (default threads, `CPUQuota=1200%`, the same probe
+  binary), each output kept (`day53/arm-a2/`).
+- D (the mechanism, a test-only cell `day53_a_handler_request_inside_a_writer_window_sheds_429`): holding
+  `admission_counters_guard()`, the interactive backlog swapped to `max_queue_depth(cap)` (restored on drop, the
+  writers' own idiom), the target's streaming `/v1/completions` on a fresh fake state; the cell asserts the answer is
+  429 with code `shed_queue`, and that the same request after the restore answers 200 and holds the slot.
+
+**The rule.** H1 is **placed by observation** when A' catches the target with probe code `shed_queue` or
+`shed_deadline` and interactive reservations above zero; another code places its own hypothesis. If A' does not catch
+the target, H1 is **placed by mechanism** when D passes and at least one handler test in arm A or A' failed with a 429
+(arm A already read one): the target's own failure then stays unobserved, and that is said. If D fails, nothing is
+placed and the next step is pre-registered anew. The fix follows either placing, pre-registered with its own clauses.
