@@ -143,6 +143,16 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   door OFF; the same with `MEMRA_KV_HOST_CONTRACTS=1`. Both cards.
 - Status: `open`. Price: about 0.3 agent-day plus a cell on each card. Feeds O3.
 
+### O11. The grid-checkpoint rewind arm for the verbatim-extension resume (lead's order, 2026-09-25)
+
+- Source: the lead's message of 2026-09-25 ("pre-register and price the grid-checkpoint rewind arm ... so the owner
+  decides the near-tie residual question on receipts. Do not change the serving default"); DAY38 2.1 to 2.3.
+- What: `MEMRA_RESUME_GRID_REWIND` (default unset) makes a plain or spec pool exact-extension resume rewind to the
+  entry's grid checkpoint and re-prime from there, so the resumed turn is cold-identical by the grid law; the cells
+  price it against keeping the decoded rows (re-primed rows, TTFT, throughput, memory, fanout reach), both cards.
+- Status: `pre-registered` (DAY41.md). Price: about 0.5 agent-day plus about 3 h on the 5090 and 4.5 h on the target
+  card.
+
 ## Owner-only (listed, not worked)
 
 - memra#476's boot pre-grow booking point (`DAY28.md` 3.3: `fa_dcw_pool_ensure` in `run_boot_calibration`; it moves the
