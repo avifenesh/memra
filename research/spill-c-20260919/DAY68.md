@@ -50,3 +50,20 @@ Beside the strict verdict, a count per field (how many slow runs lie beyond the 
 **What it decides.** Whether the decode itself runs in the slow state, whether the effective clock reads it, and
 whether the CPU's temperature follows it. It changes no default and no program; a remedy (the fill's thread count or
 its placement against the decode, for example) is its own registration after this reads.
+
+## 1a. The instrument as built, and the sitting, before any cell
+
+`run-gen --cpu-probe-phases` landed in `48c098374` (`cpu_probe::phase_line`, a 2^20-step chain; the `start` point runs
+right after the CUDA engine is created, before the model loads, the other four inside the stage-line closure; engine
+lib 572, clippy `-D warnings`, fmt). The label `p68=48c098374` carries main `5228ff0cd` (#726, lane A's contracts
+code, which neither program under test reaches) beside the door of I15 and REF's legacy program. `day68-cell.sh` and
+`day68-read.py` were written after section 1. The samplers' reads were checked on the local host (`/proc/cpuinfo`
+`cpu MHz` read 1849.7 against `scaling_cur_freq` 3046554 kHz on the same CPU in one sample, the two clocks the cell
+tells apart; the local host's sensors are `coretemp`, so the cell reads `coretemp` where `k10temp` is absent). The
+reader was dry-checked for mechanics on DAY67's receipts with synthetic phase lines and clock samples (its verdict
+there means nothing). The driver `day68-box.sh` (one build, `p68`) is dry-checked for control flow
+(`day68-cpu/dry-check-driver.log`). Run as
+`D68_BUILDS="p68=48c098374" bash /root/wt-c/research/spill-c-20260919/day68-box.sh` on BOX15's Ryzen 9 9950X machine
+where it can be had (else another host of that class), one RTX PRO 6000 Blackwell Workstation Edition, the approved
+35B artifact, `/root/wt-c` at the lane tip and a detached `/root/wt-c-build`, CUDA 13 and Rust, at least 48 GB host
+`MemAvailable`. Expected: one build about 5 minutes, the cell about 10 (40 runs).

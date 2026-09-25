@@ -99,8 +99,12 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   as on two, the owner thread home in every sample). The next reading is registered (`DAY66.md`, cell `freq`: the
   owner core's clock and the process's huge-page backing per boot) ran on BOX18 (BOX15's machine): `DAY66 FREQ VERDICT
   rig=pro-single integrity=ok -> clock_does_not_track thp_does_not_track` (about 5720 MHz and no huge pages in every
-  boot). Next: `DAY67.md`, `run-gen --cpu-probe` (log only, `ab3d8f18e`) and the cell `probe` (the core against memory,
-  per boot), its sitting ready (`day67-box.sh`). Open: the cell waits on a 9950X-class box.
+  boot). `DAY67.md`'s cell `probe` ran on BOX19: `DAY67 PROBE VERDICT rig=pro-single integrity=ok -> none_tracks` by
+  the strict rule, while 19 of 20 door boots split by mode on the compute, L1 and L2 chases (about 1.4x, DRAM
+  unchanged: a lower effective core clock than the requested one DAY66 read), the slow state ending within the probe
+  in 9 of 10 slow boots. Next: `DAY68.md`, `run-gen --cpu-probe-phases` (`48c098374`) and the cell `eclock` (the
+  effective clock from `/proc/cpuinfo` and the CPU temperatures across the run), its sitting ready (`day68-box.sh`).
+  Open: the cell waits on a 9950X-class box.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 
