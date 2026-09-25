@@ -27,6 +27,10 @@ from receipt.json by `--replay`; no threshold, no verdict: the cell measures a s
     promotes, and its insert demotes L_B), then, the moment its response returns, a hit on L_B, which
     meets L_B Demoting and parks until its publication, then promotes (its insert demotes L_A again);
     the chained request's e2e is `chain_wall_ms`. The five earlier arms are byte-for-byte unchanged.)
+    (`pause`, WP-A day 47, `DAY47.md` section 1, OWED item 6: each timed intruder is turn 1 of a fresh tool
+    conversation on the chat surface (two tools declared, an agent system prompt, a run-numbered ask), so its
+    retire arms a pause candidate on a `MEMRA_KV_PAUSE_DEMOTE=1` boot and the pause sweep demotes while the
+    tenant still streams; the intruder records its `finish_reason`. The earlier arms are byte-for-byte unchanged.)
     stall_cell.py --replay DIR/receipt.json
 
 Client-side only: stdlib, no engine binary, no GPU access of its own.
@@ -69,6 +73,42 @@ def words(n, salt):
 
 def fresh_prompt(n_words, run_id):
     return f"run {run_id}: " + words(n_words, run_id)
+
+
+# WP-A day 47 (`pause`): the tool conversation's surface (the darklanes pause battery's shape).
+PAUSE_TOOLS = [
+    {"type": "function", "function": {
+        "name": "read_file", "description": "Read a file from the repository and return its contents.",
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string", "description": "Repository-relative path"}}, "required": ["path"]}}},
+    {"type": "function", "function": {
+        "name": "run_command", "description": "Run a shell command in the repository and return its output.",
+        "parameters": {"type": "object", "properties": {
+            "command": {"type": "string", "description": "The command to run"}}, "required": ["command"]}}},
+]
+PAUSE_SYS = ("You are a coding agent working in a git repository. You have tools. When you need information from "
+             "the repository, CALL A TOOL instead of guessing. Do not explain what you are about to do; just call "
+             "the tool.")
+
+
+def pause_messages(run_id):
+    return [{"role": "system", "content": PAUSE_SYS},
+            {"role": "user", "content": f"Run {run_id}: open notes/{WORDS[run_id % 64]}-{run_id}.md and tell me "
+                                        f"what its first section says."}]
+
+
+def post_chat(port, body, timeout=600):
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+    t0 = time.monotonic()
+    c.request("POST", "/v1/chat/completions", body=json.dumps(body),
+              headers={"Content-Type": "application/json"})
+    r = c.getresponse()
+    data = r.read()
+    wall = (time.monotonic() - t0) * 1e3
+    c.close()
+    if r.status != 200:
+        raise RuntimeError(f"HTTP {r.status}: {data[:200]!r}")
+    return json.loads(data), wall
 
 
 # WP-A day 43 (`promote-long`): the two fixed long prompts, the prime arm's length each.
@@ -201,17 +241,27 @@ def one_run(port, mode, arm, run_id, log_path, log_off, promote_toggle):
             prompt = fresh_prompt(PRIME_TARGET_TOKENS - 4, 3000 + run_id)
         elif mode == "promote-long":
             prompt = L_A
+        elif mode == "pause":
+            prompt = None
         else:
             prompt = P_A if promote_toggle[0] % 2 == 0 else P_B
             promote_toggle[0] += 1
         t_i = time.monotonic()
         try:
-            resp, wall = post(port, {"model": "gate", "prompt": prompt, "max_tokens": 1, "temperature": 0})
+            if mode == "pause":
+                resp, wall = post_chat(port, {"model": "gate", "messages": pause_messages(run_id),
+                                              "tools": PAUSE_TOOLS, "max_tokens": 256, "temperature": 0})
+            else:
+                resp, wall = post(port, {"model": "gate", "prompt": prompt, "max_tokens": 1, "temperature": 0})
             usage = resp.get("usage", {})
             intruder = {"fired_at_tenant_token": FIRE_AT, "fired_at_ms": (t_i - t_start) * 1e3,
                         "wall_ms": wall, "prompt_tokens": usage.get("prompt_tokens"),
                         "cached_tokens": (usage.get("prompt_tokens_details") or {}).get("cached_tokens",
                                                                                          usage.get("cached_tokens"))}
+            if mode == "pause":
+                ch = (resp.get("choices") or [{}])[0]
+                intruder["finish_reason"] = ch.get("finish_reason")
+                intruder["completion_tokens"] = usage.get("completion_tokens")
         except Exception as e:
             intruder = {"error": repr(e), "fired_at_ms": (t_i - t_start) * 1e3}
         if mode == "promote-long" and intruder is not None and "error" not in intruder:
@@ -304,6 +354,8 @@ def summarize(runs):
         + [r["intruder"]["chain_error"] for r in arm if r.get("intruder") and "chain_error" in r["intruder"]],
         "chain_wall_ms": [round(r["intruder"]["chain_wall_ms"], 1) for r in arm
                           if r.get("intruder") and "chain_wall_ms" in r["intruder"]],
+        "finish_reasons": [r["intruder"].get("finish_reason") for r in arm
+                           if r.get("intruder") and "finish_reason" in r["intruder"]],
     }
 
 
@@ -321,6 +373,7 @@ def rule_line(tag, mode, n, s):
                f"intruder_cached_tokens={s['intruder_cached_tokens']} " if mode == "restore" else "")
             + (f"intruder_wall_ms={s['intruder_wall_ms']} chain_wall_ms={s.get('chain_wall_ms', [])} "
                if mode == "promote-long" else "")
+            + (f"intruder_finish={s.get('finish_reasons', [])} " if mode == "pause" else "")
             + f"intruder_prompt_tokens={s['intruder_prompt_tokens']} tenant_text_identical={len(s['tenant_text_shas']) == 1} "
             f"errors={len(s['errors'])}")
 
@@ -328,7 +381,8 @@ def rule_line(tag, mode, n, s):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int)
-    ap.add_argument("--mode", choices=["prime", "demote", "promote", "capture", "restore", "demote-long", "promote-long"])
+    ap.add_argument("--mode", choices=["prime", "demote", "promote", "capture", "restore", "demote-long", "promote-long",
+                                       "pause"])
     ap.add_argument("--server-log")
     ap.add_argument("--out")
     ap.add_argument("--n", type=int, default=5)
