@@ -1820,3 +1820,430 @@ mod day60_census {
         assert!(code.matches("        result\n    }").count() >= 2);
     }
 }
+
+#[cfg(test)]
+mod day61_profile {
+    //! DAY61 section 1 (`research/spill-c-20260919/DAY61.md`): the door's host-hit lease on the
+    //! CPU, profiled. `#[ignore]`: a log-only instrument that decides nothing. The owner stack is
+    //! built as the installer builds it, from synthetic bytes in a temporary file.
+    use super::*;
+    use std::collections::BTreeSet;
+    use std::io::Write as _;
+
+    const LAYERS: u16 = 40;
+    const EXPERTS: u16 = 256;
+    const LEN: u64 = 64;
+    const CYCLES: usize = 200_000;
+    const REPEATS: usize = 5;
+
+    struct View;
+    impl HostExpsView for View {
+        fn is_uniform_layout(&self) -> bool {
+            true
+        }
+        fn n_expert(&self) -> usize {
+            usize::from(EXPERTS)
+        }
+        fn max_expert_bytes(&self) -> u64 {
+            LEN
+        }
+        fn expert_layout(&self, e: usize) -> Result<ExpertMetadata> {
+            Ok(ExpertMetadata {
+                offset: e as u64 * LEN,
+                len: LEN,
+                qtype: 12,
+                row_bytes: 16,
+            })
+        }
+    }
+    struct HeapBuf(Vec<u8>);
+    impl HostBuffer for HeapBuf {
+        fn as_slice(&self) -> &[u8] {
+            &self.0
+        }
+        fn as_mut_slice(&mut self) -> &mut [u8] {
+            &mut self.0
+        }
+    }
+    /// A heap stand-in for the pinned pool, so a lease lends through the pooled-buffer branch as
+    /// on the card.
+    struct HeapSource;
+    impl HostBufferSource for HeapSource {
+        fn take(&mut self, len: usize) -> Option<Box<dyn HostBuffer>> {
+            Some(Box::new(HeapBuf(vec![0; len])))
+        }
+    }
+    struct Stack {
+        traced: TracedDispatch,
+        entries: Vec<(BankId, Option<CatalogRecord>)>,
+        ids: BTreeMap<ExpertDispatchId, BankId>,
+        request: BudgetRequest,
+        capacity: TierBudget,
+        _metadata: ChargedLease,
+    }
+    fn artifact() -> (std::path::PathBuf, Vec<u8>) {
+        let len = usize::from(LAYERS) * 3 * usize::from(EXPERTS) * LEN as usize;
+        let bytes: Vec<u8> = (0..len).map(|i| (i * 31 % 251) as u8).collect();
+        let path = std::env::temp_dir().join(format!("c61-profile-{}.bin", std::process::id()));
+        File::create(&path).unwrap().write_all(&bytes).unwrap();
+        (path, bytes)
+    }
+    fn stack(path: &std::path::Path, bytes: &[u8], stage_clock: bool) -> Stack {
+        let artifact = [7u8; 32];
+        let mut reader = FileReader {
+            file: Arc::new(File::open(path).unwrap()),
+            ranges: BTreeMap::new(),
+            reads: Rc::new(Cell::new(0)),
+            pread_ns: None,
+        };
+        let mut entries = Vec::new();
+        let mut ids = BTreeMap::new();
+        let tensor_bytes = u64::from(EXPERTS) * LEN;
+        for layer in 0..LAYERS {
+            for (proj, (name, projection)) in [
+                ("gate", Projection::Gate),
+                ("up", Projection::Up),
+                ("down", Projection::Down),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let start = (usize::from(layer) * 3 + proj) as u64 * tensor_bytes;
+                let tensor = TensorId {
+                    version: WIRE_VERSION,
+                    artifact,
+                    name: format!("blk.{layer}.ffn_{name}_exps.weight"),
+                };
+                reader.ranges.insert(tensor.clone(), (start, tensor_bytes));
+                let mut sources = BTreeMap::new();
+                for e in 0..u32::from(EXPERTS) {
+                    let at = (start + u64::from(e) * LEN) as usize;
+                    sources.insert(
+                        e,
+                        ExpertSource {
+                            tensor: tensor.clone(),
+                            split: false,
+                            scales: vec![],
+                            checksums: vec![checksum(&bytes[at..at + LEN as usize])],
+                        },
+                    );
+                }
+                let active = vec![true; usize::from(EXPERTS)];
+                let mapping = host_exps_catalog(
+                    &View,
+                    tensor,
+                    u32::from(layer),
+                    projection,
+                    &active,
+                    &sources,
+                )
+                .unwrap();
+                for id in mapping.ids {
+                    let record = mapping.catalog.record(&id).unwrap().clone();
+                    ids.insert(dispatch_id(&id.record).unwrap(), id.clone());
+                    entries.push((id, Some(record)));
+                }
+            }
+        }
+        let slots = entries.len();
+        let open = crate::moe_cache::BANKED_INFLIGHT + 1;
+        let planned = slots as u64 * LEN;
+        let mut capacity = TierBudget::zero(1);
+        capacity.pageable = planned + slots as u64 * 4096 + 512 * 1024 * 1024;
+        capacity.staging = LEN * open as u64;
+        capacity.inflight = open as u64;
+        let budget: SharedBudget = Rc::new(RefCell::new(
+            Governor::new(capacity.clone(), TierBudget::zero(1), 1, 0, Arc::new(|| 0)).unwrap(),
+        ));
+        let bank: BankService<ExpertDomain, Heat, FileReader> = BankService::new(
+            Catalog::new(LayoutClass::PerRecord, entries.clone()).unwrap(),
+            budget.clone(),
+            Heat,
+            reader,
+            CoalescingPolicy {
+                granularity: 1,
+                slot_bytes: LEN,
+            },
+            BankLimits {
+                cache_bytes: planned,
+                batch_bytes: LEN,
+                items: 1,
+                tickets: open,
+            },
+        )
+        .unwrap();
+        let bank = if stage_clock {
+            bank.with_stage_clock()
+        } else {
+            bank
+        };
+        let bank = bank.with_host_buffers(Box::new(HeapSource)).unwrap();
+        let mut request = BudgetRequest {
+            bytes: TierBudget::zero(1),
+            priority: Priority::Demand,
+            deadline: Deadline(u64::MAX),
+            tenant: artifact,
+        };
+        request.bytes.pageable = bank.slru_metadata_bytes(slots).unwrap();
+        let metadata = budget.borrow_mut().reserve(&request).unwrap();
+        let bank = bank
+            .with_slru(SlruPolicy::new(&[(LEN, slots)]).unwrap(), &metadata)
+            .unwrap();
+        request.bytes = TierBudget::zero(1);
+        let dispatch = SlruExpertDispatch::new(
+            bank,
+            ids.clone(),
+            request.clone(),
+            Epochs {
+                state: 0,
+                src_gen: 0,
+                dst_gen: 0,
+            },
+        )
+        .unwrap();
+        Stack {
+            traced: TracedDispatch {
+                inner: dispatch,
+                ids: ids.clone(),
+                occupants: BTreeMap::new(),
+                clock: None,
+                fill: None,
+                trace: String::with_capacity(TRACE_CHUNK + 256),
+            },
+            entries,
+            ids,
+            request,
+            capacity,
+            _metadata: metadata,
+        }
+    }
+    /// One fixed seeded routing: per layer 8 distinct experts, each expert's three projections.
+    fn order() -> Vec<ExpertDispatchId> {
+        let mut s: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut out = Vec::with_capacity(CYCLES + 1024);
+        while out.len() < CYCLES {
+            for layer in 0..LAYERS {
+                let mut chosen: Vec<u16> = Vec::with_capacity(8);
+                while chosen.len() < 8 {
+                    s ^= s << 13;
+                    s ^= s >> 7;
+                    s ^= s << 17;
+                    let e = (s % u64::from(EXPERTS)) as u16;
+                    if !chosen.contains(&e) {
+                        chosen.push(e);
+                    }
+                }
+                for e in chosen {
+                    for proj in 0..3u8 {
+                        out.push((layer, proj, e));
+                    }
+                }
+            }
+        }
+        out.truncate(CYCLES);
+        out
+    }
+    fn ns(d: std::time::Duration) -> u64 {
+        u64::try_from(d.as_nanos()).unwrap_or(u64::MAX)
+    }
+    /// The median repeat (by its total) of `REPEATS` runs of `run`, each returning its per-part ns.
+    fn median_repeat<const N: usize>(mut run: impl FnMut() -> [u64; N]) -> [u64; N] {
+        let mut repeats: Vec<[u64; N]> = (0..REPEATS).map(|_| run()).collect();
+        repeats.sort_by_key(|r| r[N - 1]);
+        repeats[REPEATS / 2]
+    }
+    fn per_cycle(total: u64) -> f64 {
+        total as f64 / CYCLES as f64
+    }
+
+    #[test]
+    #[ignore = "DAY61 profile: log only, run by hand under the CPU cap"]
+    fn host_hit_lease_profile() {
+        let (path, bytes) = artifact();
+        let seq = order();
+        let open = crate::moe_cache::BANKED_INFLIGHT + 1;
+        println!(
+            "DAY61 PROFILE records={} cycles={CYCLES} repeats={REPEATS} record_bytes={LEN}",
+            usize::from(LAYERS) * 3 * usize::from(EXPERTS)
+        );
+
+        // P1 and P2: the door's prefetch sequence through the owner proxy.
+        let s = stack(&path, &bytes, false);
+        let ids = s.ids.clone();
+        let mut owner = ExpertBankOwner::register(Box::new(s.traced), open).unwrap();
+        let proxy = owner.proxy();
+        for local in ids.keys() {
+            let token = proxy.demand(*local, LEN as usize).unwrap();
+            proxy.finish(&token).unwrap();
+        }
+        assert!(ids.keys().all(|l| proxy.host_resident(*l).unwrap()));
+        let p1 = median_repeat(|| {
+            let mut part = [0u64; 5];
+            let started = Instant::now();
+            for &local in &seq {
+                let a = Instant::now();
+                assert!(proxy.host_resident(local).unwrap());
+                let b = Instant::now();
+                let token = proxy.demand(local, LEN as usize).unwrap();
+                let c = Instant::now();
+                std::hint::black_box(proxy.with_bytes(&token, |b| b[0]).unwrap());
+                let d = Instant::now();
+                proxy.finish(&token).unwrap();
+                let f = Instant::now();
+                part[0] += ns(b - a);
+                part[1] += ns(c - b);
+                part[2] += ns(d - c);
+                part[3] += ns(f - d);
+            }
+            part[4] = ns(started.elapsed());
+            part
+        });
+        println!(
+            "DAY61 P1 proxy per_cycle_ns host_resident={:.1} demand={:.1} with_bytes={:.1} finish={:.1} cycle={:.1}",
+            per_cycle(p1[0]),
+            per_cycle(p1[1]),
+            per_cycle(p1[2]),
+            per_cycle(p1[3]),
+            per_cycle(p1[4])
+        );
+        let p2 = median_repeat(|| {
+            let started = Instant::now();
+            for &local in &seq {
+                assert!(proxy.host_resident(local).unwrap());
+                let token = proxy.demand(local, LEN as usize).unwrap();
+                std::hint::black_box(proxy.with_bytes(&token, |b| b[0]).unwrap());
+                proxy.finish(&token).unwrap();
+            }
+            [ns(started.elapsed())]
+        });
+        println!(
+            "DAY61 P2 proxy unbracketed per_cycle_ns cycle={:.1} brackets={:.1}",
+            per_cycle(p2[0]),
+            per_cycle(p1[4]) - per_cycle(p2[0])
+        );
+        owner.close().unwrap();
+        drop(owner);
+
+        // P3: the bank alone, called directly, with its stage clock.
+        let mut s = stack(&path, &bytes, true);
+        for local in ids.keys() {
+            let demand = s.traced.inner.demand(*local, LEN as usize).unwrap();
+            s.traced.inner.finish(demand).unwrap();
+        }
+        let before = *s.traced.inner.bank().stage_times().unwrap();
+        let p3 = median_repeat(|| {
+            let mut part = [0u64; 3];
+            let started = Instant::now();
+            for &local in &seq {
+                let a = Instant::now();
+                let demand = s.traced.inner.demand(local, LEN as usize).unwrap();
+                let b = Instant::now();
+                s.traced.inner.finish(demand).unwrap();
+                let c = Instant::now();
+                part[0] += ns(b - a);
+                part[1] += ns(c - b);
+            }
+            part[2] = ns(started.elapsed());
+            part
+        });
+        let after = *s.traced.inner.bank().stage_times().unwrap();
+        let cycles = (CYCLES * REPEATS) as f64;
+        let d = |a: u64, b: u64| (a - b) as f64 / cycles;
+        println!(
+            "DAY61 P3 bank per_cycle_ns demand={:.1} finish={:.1} cycle={:.1} | stage clock per cycle (all repeats): stages={:.2} stage={:.1} alloc={:.1} publish={:.1} retire={:.1} collect={:.1}",
+            per_cycle(p3[0]),
+            per_cycle(p3[1]),
+            per_cycle(p3[2]),
+            d(after.stages, before.stages),
+            d(after.stage_ns, before.stage_ns),
+            d(after.alloc_ns, before.alloc_ns),
+            d(after.publish_ns, before.publish_ns),
+            d(after.retire_ns, before.retire_ns),
+            d(after.collect_ns, before.collect_ns)
+        );
+
+        // P4: the parts inside `stage` its clock does not split, each alone over the same ids.
+        let catalog = Catalog::new(LayoutClass::PerRecord, s.entries.clone()).unwrap();
+        let bank_ids: Vec<BankId> = seq.iter().map(|l| s.ids[l].clone()).collect();
+        let time = |f: &mut dyn FnMut(usize)| {
+            median_repeat(|| {
+                let started = Instant::now();
+                for i in 0..CYCLES {
+                    f(i);
+                }
+                [ns(started.elapsed())]
+            })[0]
+        };
+        let encode = time(&mut |i| {
+            let id = &bank_ids[i];
+            let n = id.encode().unwrap().len()
+                + catalog.record(id).unwrap().layout.encode().unwrap().len();
+            std::hint::black_box(n);
+        });
+        let clone = time(&mut |i| {
+            std::hint::black_box(vec![s.ids[&seq[i]].clone()]);
+        });
+        let map = time(&mut |i| {
+            std::hint::black_box(s.ids.get(&seq[i]));
+        });
+        let lookup = time(&mut |i| {
+            std::hint::black_box(catalog.record(&bank_ids[i]).unwrap());
+        });
+        let set = time(&mut |i| {
+            let unique: BTreeSet<BankId> = std::iter::once(bank_ids[i].clone()).collect();
+            std::hint::black_box(unique);
+        });
+        let request = time(&mut |_| {
+            let r = s.request.clone();
+            r.validate().unwrap();
+            std::hint::black_box(r);
+        });
+        let mut governor = Governor::new(
+            s.capacity.clone(),
+            TierBudget::zero(1),
+            1,
+            0,
+            Arc::new(|| 0),
+        )
+        .unwrap();
+        let mut queue = s.request.clone();
+        queue.bytes.pageable = 2048;
+        queue.bytes.inflight = 1;
+        let reserve = time(&mut |_| {
+            let lease = governor.reserve(&queue).unwrap();
+            governor.release(&lease).unwrap();
+        });
+        println!(
+            "DAY61 P4 per_op_ns encode_two={:.1} bankid_clone_vec={:.1} ids_map_get={:.1} catalog_record={:.1} btreeset_one={:.1} request_clone_validate={:.1} governor_reserve_release={:.1}",
+            per_cycle(encode),
+            per_cycle(clone),
+            per_cycle(map),
+            per_cycle(lookup),
+            per_cycle(set),
+            per_cycle(request),
+            per_cycle(reserve)
+        );
+        // P4b (added after the first run, DAY61 section 1a): the SLRU's lookup, the std hash of
+        // one BankId alone, and the owner stack's host_resident without the proxy.
+        let slru = time(&mut |i| {
+            let policy = s.traced.inner.bank().slru_policy().unwrap();
+            std::hint::black_box(policy.resident(&bank_ids[i]));
+        });
+        let hash = time(&mut |i| {
+            use std::hash::{BuildHasher as _, RandomState};
+            thread_local!(static STATE: RandomState = RandomState::new());
+            std::hint::black_box(STATE.with(|st| st.hash_one(&bank_ids[i])));
+        });
+        let traced_resident = time(&mut |i| {
+            std::hint::black_box(s.traced.host_resident(seq[i]).unwrap());
+        });
+        println!(
+            "DAY61 P4b per_op_ns slru_resident={:.1} siphash_bankid={:.1} traced_host_resident={:.1}",
+            per_cycle(slru),
+            per_cycle(hash),
+            per_cycle(traced_resident)
+        );
+        drop(s);
+        std::fs::remove_file(path).ok();
+    }
+}
