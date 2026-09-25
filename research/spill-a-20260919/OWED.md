@@ -201,8 +201,9 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   and offset, priced on both cards at 32 x 60 KiB and 32 x 4 MiB, pre-registered with a bound before its code. Ruling
   54: G''' against G4 at long entries is not an owner choice; the 4096-token cell is pre-registered with both arms and
   runs on the next target card, and the registered rule decides.
-- Status: **pre-registered** (DAY43 section 1: G''' against G4 at 4096-token entries, the rule's four terms; the cells
-  in `pro-single-i15/`, run after the S2 sitting on the next target card).
+- Status: **closed** (DAY43 section 2: `ITEM15 -> G4 STAYS the single placement`; term (1), the chained request that
+  waits on a demote, read -0.11 / -0.12 ms against +2.0, while G''' shortened the long copy phase 5.4 ms; the kernel's
+  price 104.9 ms per 32 x 4 MiB on the RTX PRO 6000, 107.1 on the 5090).
 
 ### 16. The 5090 hump replicate in G4's hot regime (ruling 54)
 

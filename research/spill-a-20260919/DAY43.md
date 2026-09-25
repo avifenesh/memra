@@ -87,3 +87,36 @@ hours of card time after the S2 sitting.
   5.1k tokens, not 4096; the cell is read as it ran.
 - The box's run of the sitting calls the reader from its tree at `c62a34175` (the defect included); the reading is
   re-run with the corrected reader over the same raw receipts once they are mirrored, and both outputs are banked.
+
+## 2. The cell, as it ran (`pro-single-i15/box/`, one RTX PRO 6000 Blackwell Workstation Edition, the S2 sitting's box)
+
+- Build (`build.sh c62a34175 b4816eda8`, `rc=0`): g4 `edc411520ecb45f8..` (the S2 sitting's g4, copied), g3
+  `6fc78411d33ba88f..`, the survey probe `bf28a3177c849833..`; markers `g4 copy-stream-receipt-line: 1 receipt-stream
+  wording: 0`, `g3 .. 0 .. 1`. Mirrored 241 of 241 files against the box's manifest, mismatched 0 (`MIRROR-CHECK.txt`).
+- **The kernel's price on this card** (`survey/survey.log`, a reading): `SURVEY IDENTITY checked=56 mismatches=0 ->
+  BITWISE`; `SURVEY G items=32 bytes_each=61440 N=5 ms median=1.351`; `items=32 bytes_each=1048576 .. median=22.768`;
+  `items=32 bytes_each=4194304 .. median=104.891 min=104.513 max=105.698` (the 5090 read 107.120); `SURVEY WC
+  kind=write-combined .. direct_ms median=7.803 .. streamed_ms median=0.702`, `kind=cached .. direct_ms median=0.416`.
+- The cells: `demote-long` and `promote-long`, 20 boots each, 20 of 20 replays each; every chained turn-2 hit read
+  `chain_cached_tokens` 5120 in both arms (the whole entry, promoted after its park); the hump cell's boots started at
+  65 to 75 C, 2805 MHz after the first. The entries read 5122 prompt tokens (section 1a).
+- **The rule, verbatim** (`reading-item15-corrected.log`, the corrected reader of section 1a over the mirrored raw
+  receipts; the box's own run of the uncorrected reader, `reading-item15.log`, read every demote-long boot incomplete for
+  the defect section 1a names):
+  - `ITEM15 order=o1 (1) chain g4-g3=-0.11 rule >=+2.0 | (2) copy g4-g3=+5.40 rule >=+2.0 | (3) demote-long tenant
+    g3-g4=-4.63 rule <=+1.0 | (3) promote-long tenant g3-g4=+0.11 rule <=+1.0 | (3) first g3-g4=+0.01 rule <=+1.0 | (3)
+    wall g3-g4=-5.30 rule <=+5.0 | (3) demote-long itl g3-g4=+0.00 rule <=+0.05 | (3) promote-long itl g3-g4=-0.00 rule
+    <=+0.05 -> FAILS`
+  - `ITEM15 order=o2 (1) chain g4-g3=-0.12 rule >=+2.0 | (2) copy g4-g3=+5.40 .. | (3) demote-long tenant g3-g4=-5.32 ..
+    | (3) wall g3-g4=-5.40 .. -> FAILS`
+  - `ITEM15 (4) hump xg3 median=+0.022 rule <=0.15 -> HOLDS` (xg4 +0.012)
+  - **`ITEM15 -> G4 STAYS the single placement`**.
+- **What it says.** G''' does shorten a long demote's copy phase, by 5.4 ms of about 195 (the copies beside the 105 ms
+  kernel instead of behind it), and the publication with it (wall -5.3 ms), and the demoting tenant's e2e reads 4.6 to
+  5.3 ms better; nothing regresses and it stays flat on the hump. But the request that waits on a demote, the chained hit
+  that parks until the publication, gains nothing (-0.11 / -0.12 ms against the +2.0 the rule asked): at these entries
+  the publication waits on the `Hashing` phase (the helper's 124 to 140 ms over 157.9 MB), not on the copy, so the copy's
+  saving does not reach it. Term (1) fails in both orders; by the registered rule G4 stays the single placement on the
+  RTX PRO 6000 class too. **Item 15 closes** with the kernel's price (about 105 ms per 32 x 4 MiB on both cards) and
+  these readings. The long entry's cost that does reach a waiting request is the helper's hashing, which item 15 does not
+  own.
