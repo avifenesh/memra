@@ -1150,7 +1150,6 @@ impl MoeSlotCache {
             return Err("banked expert has unretired H2D or unsupported frozen dispatch".into());
         }
         let bank = self.banked.as_ref().ok_or("bank proxy absent")?.clone();
-        self.retire_banked(&bank)?;
         let local = (id.layer, id.proj, id.ex);
         let clocked = self.bank_clock.is_some();
         let entered = clocked.then(std::time::Instant::now);
@@ -1189,6 +1188,10 @@ impl MoeSlotCache {
             self.publish(id, pending.slot);
             return Ok(pending.slot);
         }
+        // DAY61 (I12): finished leases retire where a lease is taken (here and in the prefetch),
+        // not on every admission; a GPU hit and a prefetched block's consumption take none, and
+        // the in-flight bound is waited on here, before this demand, as before.
+        self.retire_banked(&bank)?;
         let demanded = clocked.then(std::time::Instant::now);
         let token = bank.demand(local, bytes)?;
         if let (Some(started), Some(clock)) = (demanded, self.bank_clock.as_mut()) {

@@ -2308,3 +2308,41 @@ mod day61_profile {
         std::fs::remove_file(path).ok();
     }
 }
+
+#[cfg(test)]
+mod day61_census {
+    //! DAY61 (I12): the cache retires finished leases where a lease is taken. `admit_banked`
+    //! calls `retire_banked` once, after its GPU-hit and prefetched-consumption arms and before
+    //! its demand; the prefetch retires before its bound check and its demand; nothing else in
+    //! the cache demands a lease.
+    const CACHE: &str = include_str!("../moe_cache.rs");
+
+    fn body(name: &str) -> &'static str {
+        let code = &CACHE[..CACHE.find("#[cfg(test)]").unwrap_or(CACHE.len())];
+        let start = code.find(&format!("fn {name}(")).unwrap();
+        let rest = &code[start..];
+        &rest[..rest[1..].find("\n    fn ").map_or(rest.len(), |i| i + 1)]
+    }
+
+    #[test]
+    fn leases_retire_where_a_lease_is_taken() {
+        let code = &CACHE[..CACHE.find("#[cfg(test)]").unwrap_or(CACHE.len())];
+        assert_eq!(code.matches("bank.demand(local, bytes)").count(), 2);
+        let admit = body("admit_banked");
+        assert_eq!(admit.matches("self.retire_banked(&bank)?;").count(), 1);
+        let retire = admit.find("self.retire_banked(&bank)?;").unwrap();
+        let hit = admit
+            .find("if let Some(slot) = self.table.get(&id)")
+            .unwrap();
+        let consume = admit
+            .find("if let Some(pending) = self.pending.remove(&id)")
+            .unwrap();
+        let demand = admit.find("bank.demand(local, bytes)").unwrap();
+        assert!(hit < retire && consume < retire && retire < demand);
+        let prefetch = body("prefetch_banked");
+        let retire = prefetch.find("self.retire_banked(&bank)?;").unwrap();
+        let bound = prefetch.find(">= BANKED_INFLIGHT").unwrap();
+        let demand = prefetch.find("bank.demand(local, bytes)").unwrap();
+        assert!(retire < bound && bound < demand);
+    }
+}
