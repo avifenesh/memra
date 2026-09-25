@@ -447,7 +447,9 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         digest: Digest,
         request: &BudgetRequest,
     ) -> Result<FillOutcome> {
-        let record = self.catalog.record(id)?.clone();
+        let entry = self.catalog.entry(id)?;
+        let resident_charge = entry.resident_charge_bytes();
+        let record = entry.record.clone();
         let layout = &record.layout;
         if layout.segments.len() != 1 || layout.segments[0].role != Role::Payload {
             return Err(Error::Unsupported);
@@ -479,7 +481,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         };
         let mut charge_request = request.clone();
         charge_request.bytes = TierBudget::zero(charge_request.bytes.device.len());
-        charge_request.bytes.pageable = record.resident_charge_bytes(id)?;
+        charge_request.bytes.pageable = resident_charge?;
         let charge = match self.budget.borrow_mut().reserve(&charge_request) {
             Ok(charge) => charge,
             Err(_) => {
@@ -750,16 +752,13 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         // Charge output, slot and bounded metadata through one injected governor.
         // Canonical metadata + conservative per-node allowance is an estimate;
         // allocator/RSS calibration remains a native integration gate.
-        let output_bytes = missing.iter().try_fold(0u64, |n, (id, r)| {
-            n.checked_add(r.resident_charge_bytes(id)?)
+        let output_bytes = missing.iter().try_fold(0u64, |n, (id, _)| {
+            n.checked_add(self.catalog.entry(id)?.resident_charge_bytes()?)
                 .ok_or(Error::Overflow)
         })?;
         let metadata = batch.ids.iter().try_fold(0u64, |n, id| {
-            n.checked_add(
-                (id.encode()?.len() + self.catalog.record(id)?.layout.encode()?.len() + 1024)
-                    as u64,
-            )
-            .ok_or(Error::Overflow)
+            n.checked_add(self.catalog.entry(id)?.metadata)
+                .ok_or(Error::Overflow)
         })?;
         let slot = if missing.is_empty() {
             0
@@ -776,10 +775,10 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         queue_request.bytes.inflight = queue_request.bytes.inflight.max(1);
         let queue = self.budget.borrow_mut().reserve(&queue_request)?;
         let mut charges = Vec::new();
-        for (id, r) in &missing {
+        for (id, _) in &missing {
             let mut request = batch.request.clone();
             request.bytes = TierBudget::zero(request.bytes.device.len());
-            request.bytes.pageable = r.resident_charge_bytes(id)?;
+            request.bytes.pageable = self.catalog.entry(id)?.resident_charge_bytes()?;
             let result = self.budget.borrow_mut().reserve(&request);
             match result {
                 Ok(charge) => charges.push(charge),

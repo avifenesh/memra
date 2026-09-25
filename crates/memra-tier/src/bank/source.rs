@@ -43,7 +43,7 @@ impl<S: ObjectStore> BankSource<S> {
             }
         }
         let mut required = BTreeSet::new();
-        for record in catalog.entries.values().flatten() {
+        for record in catalog.entries.values().flatten().map(|e| &e.record) {
             for segment in &record.layout.segments {
                 let tensor = segment.tensor.as_ref().ok_or(Error::InvalidLayout)?;
                 let spec = specs.get(tensor).ok_or(Error::NotFound)?;

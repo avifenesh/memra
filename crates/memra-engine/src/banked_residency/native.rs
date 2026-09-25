@@ -1881,10 +1881,10 @@ mod day61_profile {
         capacity: TierBudget,
         _metadata: ChargedLease,
     }
-    fn artifact() -> (std::path::PathBuf, Vec<u8>) {
+    fn artifact(tag: &str) -> (std::path::PathBuf, Vec<u8>) {
         let len = usize::from(LAYERS) * 3 * usize::from(EXPERTS) * LEN as usize;
         let bytes: Vec<u8> = (0..len).map(|i| (i * 31 % 251) as u8).collect();
-        let path = std::env::temp_dir().join(format!("c61-profile-{}.bin", std::process::id()));
+        let path = std::env::temp_dir().join(format!("c61-{tag}-{}.bin", std::process::id()));
         File::create(&path).unwrap().write_all(&bytes).unwrap();
         (path, bytes)
     }
@@ -2056,10 +2056,27 @@ mod day61_profile {
         total as f64 / CYCLES as f64
     }
 
+    /// I11 change 1 on the door-shaped catalog (30720 records): the allowance `Catalog::new`
+    /// memoizes is the per-ticket formula it replaced.
+    #[test]
+    fn the_door_catalog_allowance_is_the_formula() {
+        let (path, bytes) = artifact("allowance");
+        let s = stack(&path, &bytes, false);
+        let catalog = Catalog::new(LayoutClass::PerRecord, s.entries.clone()).unwrap();
+        for (id, record) in &s.entries {
+            let layout = &record.as_ref().unwrap().layout;
+            let formula =
+                (id.encode().unwrap().len() + layout.encode().unwrap().len() + 1024) as u64;
+            assert_eq!(catalog.metadata_allowance(id).unwrap(), formula);
+        }
+        drop(s);
+        std::fs::remove_file(path).ok();
+    }
+
     #[test]
     #[ignore = "DAY61 profile: log only, run by hand under the CPU cap"]
     fn host_hit_lease_profile() {
-        let (path, bytes) = artifact();
+        let (path, bytes) = artifact("profile");
         let seq = order();
         let open = crate::moe_cache::BANKED_INFLIGHT + 1;
         println!(
