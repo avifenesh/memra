@@ -9,8 +9,8 @@
 # server boot each, every turn byte-compared with a door-OFF, pause-OFF reference boot of the same turns:
 #   clean    the release lines of the boot's shapes (off the tick), turn 2 a host hit (cached_tokens > 0) or a park.
 #   race     MEMRA_KV_HOST_FAULT=d2h-delay (the boot's first demote held 3 s unlanded): turn 2 sent once the pause
-#            fired. Plain: turn 2 resumes from the park, the publication releases nothing (`plain park already gone
-#            at the publication`). Default: turn 2 parks on the Demoting entry and promotes after the publication.
+#            fired parks on the Demoting entry (the plain boot's is shape 1's snapshot) and promotes after the
+#            publication; the plain boot's publication then releases the unused park (DAY47 section 3a).
 #   failure  MEMRA_KV_HOST_FAULT=contract-presubmit (the boot's first contract D2H refused before any op). Plain: the
 #            park is kept (`host copy did not publish; park kept`). Default: the entry is reinstated (`entry
 #            reinstated`). The tier stays on.
@@ -151,8 +151,9 @@ chk() { # NAME CMD...
 }
 absent() { ! grep -q "$1" "$2"; }
 present() { grep -q "$1" "$2"; }
-await_line() { # $1 literal $2 log: bounded 150 x 100 ms
-    for _ in $(seq 1 150); do grep -q "$1" "$2" && return 0; sleep 0.1; done
+await_line() { # $1 literal $2 log: bounded 150 x 100 ms (a fixed string: WP-A day 47 section 3a, the first run's
+             # `[prefix-host] pause armed` was read as a bracket expression and the check errored)
+    for _ in $(seq 1 150); do grep -qF -- "$1" "$2" && return 0; sleep 0.1; done
     return 1
 }
 ended_in_tool_call() { # $1 json
@@ -222,12 +223,14 @@ for b in $BOOTS; do
     turn 1 "$EV/$b-race-t1.json"
     fired=0; await_line "demote fault armed (MEMRA_KV_HOST_FAULT=d2h-delay)" "$L" || fired=$?
     turn 2 "$EV/$b-race-t2.json" "$EV/$b-race-t1.json"
+    # WP-A day 47 section 3a: in both boots turn 2 parks on the Demoting entry (in the plain boot, shape 1's snapshot:
+    # the continuation park does not serve turn 2 in this shape) and promotes after the publication; the plain boot's
+    # publication then releases the unused park.
+    chk "$b race: turn 2 parked on the Demoting entry" present "hit parked on a Demoting entry" "$L"
+    chk "$b race: turn 2 promoted after the publication" present "\[prefix-host\] promote: " "$L"
     if [ "$b" = plain ]; then
-        gone=0; await_line "pause demote: plain park already gone at the publication" "$L" || gone=$?
-        chk "$b race: the publication found the park consumed" test "$gone" -eq 0
-    else
-        chk "$b race: turn 2 parked on the Demoting entry" present "hit parked on a Demoting entry" "$L"
-        chk "$b race: turn 2 promoted after the publication" present "\[prefix-host\] promote: " "$L"
+        rel=0; await_line "pause demote: plain park released off the tick" "$L" || rel=$?
+        chk "$b race: the publication released the unused park" test "$rel" -eq 0
     fi
     stop
     chk "$b race: the held demote was the pause's" test "$fired" -eq 0

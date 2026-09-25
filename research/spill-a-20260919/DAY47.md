@@ -142,3 +142,34 @@ commit.
   day-17 route census updated to V's shape); clippy `-D warnings`; fmt; `git diff --check`.
 - The target sitting (`pro-single-v/`, `pro-single-day42/run-all-3.sh`, base the S4 tip) runs on the same box after
   S4's; the 5090 half when the card is back.
+
+## 3. V on the target card, as it ran (the S2 sitting's box; `pro-single-day42/run-all-3.sh a324503df bbd2535b6`)
+
+- Build `v build rc=0` 08:54:21Z: v `fe85df10f764ce61..`, base (S4's tree `bbd2535b6`) `4596ea39412b3384..`; markers
+  `v pause-off-tick wording: 2`, `base .. 0`.
+- **(c) and (d), verbatim** (`pause/reading-day47.log`, `ab-pause rc=0` 09:12:03Z, 20 boots, every intruder
+  `finish_reason` `tool_calls`, 20 released lines per boot in both arms): `DAY47 V C order=o1 stall base=202.88 v=3.17
+  rule v<=base/4=50.72 tenant_texts=1 -> PASS | D released=[20] -> PASS`; `DAY47 V C order=o2 stall base=202.90 v=3.21
+  rule v<=base/4=50.72 tenant_texts=1 -> PASS | D released=[20] -> PASS`; **`DAY47 V -> PASS`**. A pause on the 27B held
+  the tenant 202.9 ms on the tick and holds it 3.2 ms off it.
+- **(a) and (b)**: the day-36 gate set on v, each `.exit` 0 (identity x4, failure x2, the fault gate default and plain,
+  twin x2, the hit gate x2); the unit cells `parallel=3/3 engine-serial-rc=0 door-rc=0 cpu-rc=0 engine-census-rc=0
+  tier-rc=0`. **The new pause gate read `KV-HOST-PAUSE-DEMOTE GATE: 3 FAILURE(S)`** (`.exit` 1), every other of its 45
+  checks ok, both boots' turns byte-equal to the reference in every cell:
+  - `FAIL: plain clean: the pause armed` and `FAIL: default clean: the pause armed`: the gate's own defect. Its
+    `await_line` passed `[prefix-host] pause armed` to `grep` as a pattern, which reads a bracket expression and errors
+    (`grep: Invalid range end`); the line is in both logs (`grep -c` 1 each).
+  - `FAIL: plain race: the publication found the park consumed`: section 1a's prediction for the plain race was wrong.
+    Turn 2 did not resume the continuation park; it parked on shape 1's Demoting snapshot entry (`hit parked on a
+    Demoting entry in its copy phase: .. (569 tokens) hits the Demoting entry's 514 tokens`), promoted after the
+    publication (`cached_tokens` 514), and the publication released the unused park (`plain park released off the
+    tick`): the same program as the default boot's race, byte-equal to the reference. Why the park did not serve turn 2
+    is not established (the continuation match, `continuation_reuse_index`, did not take it).
+
+## 3a. The pause gate revised, before its re-run (pre-registered here; the design unchanged)
+
+- `await_line` matches a fixed string (`grep -qF`), the defect of the two `pause armed` checks.
+- The race cell's plain boot asserts the program the first run read: turn 2 parks on the Demoting entry and promotes
+  after the publication (both boots), and the plain boot's publication releases the unused park. Nothing else changes.
+- The re-run: the pause gate alone, both boots, on the same v binary, under one collector hold
+  (`pro-single-v/pause-gate-rerun.sh`); the first run's receipts stay as `gates/pause-demote/` and its log.
