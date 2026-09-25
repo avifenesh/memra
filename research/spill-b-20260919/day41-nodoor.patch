@@ -1,0 +1,225 @@
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index 053a1178a..ebb9bff32 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -3182,120 +3182,6 @@ const FP_MIN_SEGMENTS: usize = 3;
+ /// once with `MEMRA_AFFINITY=0`, and requires identical per-turn `text_sha`. Disabling the pool
+ /// outright (`MEMRA_REUSE_POOL=0`) would be a different comparison: it also drops the
+ /// token/text-prefix resumes, so a divergence could not be attributed to affinity.
+-/// The plain pool's grid rewind (DAY41 1.1): restore the entry to its checkpoint in place (the
+-/// affinity path's restore), truncate `fed` to it and carry the checkpoint's logits. `None` (the
+-/// entry dropped, the request primes cold) when there is no checkpoint, the ring lapped it, the
+-/// prompt does not reproduce the committed tokens through it, or the restore fails.
+-fn grid_rewind_plain(
+-    engine: &Engine,
+-    lm: &LoadedModel,
+-    mut e: ReuseEntry,
+-    prompt: &[u32],
+-    model: &str,
+-) -> Option<ReuseEntry> {
+-    let committed = e.fed.len();
+-    let Some(ckpt) = e.ckpt.take() else {
+-        eprintln!("[kv-reuse] grid-rewind: plain declined (no checkpoint); cold");
+-        return None;
+-    };
+-    if !e.cache.can_rollback(&ckpt.snap, 0) {
+-        eprintln!("[kv-reuse] grid-rewind: plain declined (ring lapped the checkpoint); cold");
+-        return None;
+-    }
+-    let pos = ckpt.pos;
+-    if pos > committed || prompt.len() <= pos || prompt[..pos] != e.fed[..pos] {
+-        eprintln!(
+-            "[kv-reuse] grid-rewind: plain declined (prompt diverges before checkpoint {pos}); cold"
+-        );
+-        return None;
+-    }
+-    if let Err(err) = memra_engine::pp::restore_cache_checkpoint(
+-        engine,
+-        &lm.model,
+-        None,
+-        &mut e.cache,
+-        &ckpt.snap,
+-    ) {
+-        eprintln!("[kv-reuse] grid-rewind: plain declined (restore failed: {err}); cold");
+-        return None;
+-    }
+-    e.fed.truncate(pos);
+-    e.last_logits = ckpt.last_logits;
+-    eprintln!(
+-        "[kv-reuse] grid-rewind: plain extension of {committed} committed rows rewound to {pos} \
+-         (re-priming {} rows; model {model})",
+-        committed - pos
+-    );
+-    Some(e)
+-}
+-
+-/// The spec pool's grid rewind (DAY41 1.1): `spec_rewind_to_checkpoint` (trunk cache, draft
+-/// scratch, committed tokens), then the token suffix primes. `None` (cold) when the session keeps
+-/// no turn checkpoint, the prompt does not reproduce the committed tokens through it, or the
+-/// rewind fails.
+-fn grid_rewind_spec(
+-    engine: &Engine,
+-    lm: &LoadedModel,
+-    mut sess: memra_engine::spec::SpecSession,
+-    prompt: &[u32],
+-    model: &str,
+-) -> Option<memra_engine::spec::SpecSession> {
+-    let committed = sess.committed.len();
+-    let Some(pos) = sess.rewind_pos() else {
+-        eprintln!("[kv-reuse] grid-rewind: spec declined (no turn checkpoint); cold");
+-        return None;
+-    };
+-    if !sess.rewind_is_resident() {
+-        eprintln!("[kv-reuse] grid-rewind: spec declined (ring lapped the checkpoint); cold");
+-        return None;
+-    }
+-    if pos > committed || prompt.len() <= pos || prompt[..pos] != sess.committed[..pos] {
+-        eprintln!(
+-            "[kv-reuse] grid-rewind: spec declined (prompt diverges before checkpoint {pos}); cold"
+-        );
+-        return None;
+-    }
+-    match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {
+-        Ok(Some(p)) => {
+-            eprintln!(
+-                "[kv-reuse] grid-rewind: spec extension of {committed} committed rows rewound to {p} \
+-                 (re-priming {} rows; model {model})",
+-                committed - p
+-            );
+-            Some(sess)
+-        }
+-        Ok(None) => {
+-            eprintln!("[kv-reuse] grid-rewind: spec declined (no turn checkpoint); cold");
+-            None
+-        }
+-        Err(err) => {
+-            eprintln!("[kv-reuse] grid-rewind: spec declined (rewind failed: {err}); cold");
+-            None
+-        }
+-    }
+-}
+-
+-/// MEMRA_RESUME_GRID_REWIND (default unset = OFF; WP-B day 41, O11, a measurement door): a pool
+-/// resume that exactly extends a parked session's committed tokens rewinds it to the entry's grid
+-/// checkpoint and re-primes from there, instead of resuming on the parked state (which holds the
+-/// previous turn's DECODED rows, the near-tie residual `docs/SERVING.md` names). By the grid law a
+-/// prime split on the grid is bit-identical to the monolithic prime, so the rewound resume is
+-/// cold-identical. Armed, every session also arms its checkpoint (`plain_checkpoint_boundary`),
+-/// not only a nominatable prompt. Unset, nothing reads it.
+-fn resume_grid_rewind_on() -> bool {
+-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+-    *ON.get_or_init(|| {
+-        let on = std::env::var("MEMRA_RESUME_GRID_REWIND").as_deref() == Ok("1");
+-        if on {
+-            eprintln!(
+-                "[kv-reuse] MEMRA_RESUME_GRID_REWIND=1: exact-extension resumes rewind to the \
+-                 entry's grid checkpoint (DAY41 measurement door)"
+-            );
+-        }
+-        on
+-    })
+-}
+-
+ fn affinity_enabled() -> bool {
+     if memra_engine::pp::pp_host_bounce_active() {
+         // Plain-affinity checkpoints call Cache::snapshot through the primary Engine. Hybrid
+@@ -31305,14 +31191,6 @@ fn admit(
+             }
+         }
+     }
+-    // GRID REWIND (MEMRA_RESUME_GRID_REWIND, WP-B day 41): the exact-extension hit resumes from the
+-    // entry's grid checkpoint, not from its decoded rows; no usable checkpoint drops the entry and
+-    // the request primes cold. Unset, nothing here runs.
+-    if resume_grid_rewind_on()
+-        && let Some(e) = reused.take()
+-    {
+-        reused = grid_rewind_plain(engine, lm, e, &prompt, &req.model);
+-    }
+     if reused.is_some() {
+         reuse_metrics.continuation_hits += 1;
+     }
+@@ -32979,25 +32857,6 @@ fn admit(
+             }
+ 
+             match probe {
+-                // GRID REWIND (MEMRA_RESUME_GRID_REWIND, WP-B day 41): an exact or text hit
+-                // resumes from the session's turn checkpoint and primes the token suffix; no
+-                // usable checkpoint primes cold. Unset, both arms are today's.
+-                Some(SpecResumeProbe::Exact(index)) if resume_grid_rewind_on() => {
+-                    let sess = spec_reuse
+-                        .get_mut(&pool_key)
+-                        .expect("spec exact candidate pool vanished")
+-                        .remove(index)
+-                        .sess;
+-                    grid_rewind_spec(engine, lm, sess, &prompt, &req.model)
+-                }
+-                Some(SpecResumeProbe::Text { index, .. }) if resume_grid_rewind_on() => {
+-                    let sess = spec_reuse
+-                        .get_mut(&pool_key)
+-                        .expect("spec text candidate pool vanished")
+-                        .remove(index)
+-                        .sess;
+-                    grid_rewind_spec(engine, lm, sess, &prompt, &req.model)
+-                }
+                 Some(SpecResumeProbe::Exact(index)) => Some(
+                     spec_reuse
+                         .get_mut(&pool_key)
+@@ -34112,8 +33971,7 @@ fn admit(
+         && !eager_only_model(lm)
+         && !confidence_trace_enabled()
+         && (req.affinity.is_some()
+-            || plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t))
+-            || resume_grid_rewind_on())
++            || plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t)))
+     {
+         plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t))
+             .filter(|&b| b > seed_fed.len())
+@@ -36059,8 +35917,7 @@ fn step_session(
+             && affinity_enabled()
+             && (cold
+                 && (s.affinity.is_some()
+-                    || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t))
+-                    || resume_grid_rewind_on())
++                    || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t)))
+                 || !cold)
+         {
+             plain_checkpoint_boundary(&suffix, &|t| lm.tok.token_is_control(t))
+@@ -54428,38 +54285,6 @@ mod tests {
+         ));
+     }
+ 
+-    /// WP-B day 41 (DAY41 1.5): the grid-rewind door is read at the two arming sites and the two
+-    /// pools' exact and text hits, and nowhere else; each pool's rewind is the path's own restore.
+-    #[test]
+-    fn grid_rewind_door_reaches_the_two_pools_and_the_two_arming_sites_only() {
+-        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+-        let worker = squash(include_str!("worker.rs"));
+-        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+-        let call = format!("resume_grid_rewind_on{}", "()");
+-        // The definition, plain arming, spec arming, the plain hit, the spec exact and text hits.
+-        assert_eq!(live.matches(call.as_str()).count(), 6);
+-        assert!(live.contains("|| plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t)) || resume_grid_rewind_on())"));
+-        assert!(live.contains("|| plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t)) || resume_grid_rewind_on())"));
+-        assert!(live.contains(
+-            "if resume_grid_rewind_on() && let Some(e) = reused.take() { reused = grid_rewind_plain(engine, lm, e, &prompt, &req.model); }"
+-        ));
+-        assert!(live.contains("Some(SpecResumeProbe::Exact(index)) if resume_grid_rewind_on() =>"));
+-        assert!(
+-            live.contains(
+-                "Some(SpecResumeProbe::Text { index, .. }) if resume_grid_rewind_on() =>"
+-            )
+-        );
+-        // The rewind precedes the hit count, so a declined rewind is not a hit.
+-        let rewind = live.find("reused = grid_rewind_plain(").unwrap();
+-        let hit = live[rewind..]
+-            .find("reuse_metrics.continuation_hits += 1;")
+-            .unwrap();
+-        assert!(hit < 200, "the hit count follows the rewind directly");
+-        // Each rewind is its pool's own restore.
+-        assert!(live.contains("if let Err(err) = memra_engine::pp::restore_cache_checkpoint( engine, &lm.model, None, &mut e.cache, &ckpt.snap, )"));
+-        assert!(live.contains("match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {"));
+-    }
+-
+     /// WP-B day 39 (DAY39 1.6): the corrected pending-prime term, one model.
+     #[test]
+     fn corrected_pending_prime_books_one_call_once_and_unstarted_walker_stacks() {

@@ -108,3 +108,7 @@ pool's residual would not be the thing measured. So:
   `off-prev` (plain route, RX at 6,144 only, prefix cache off). The target card's time is about 6 h (the 122,880-token
   cold twins dominate), not the 4.5 h 1.6 priced.
 - No clause, bound or reading of 1.4 changes.
+- **`off-prev` is the tip with the door's commit reverted** (`day41-nodoor.patch`, the reverse of `424b6756e`'s
+  `worker.rs` diff), not `a803d3080`: `origin/main` was merged into the lane (`7bcb6364d`) after 1.3 was written, so
+  `a803d3080` would differ from the tip by main's changes too. The patch leaves the probe's new arm, which the server
+  does not contain.
