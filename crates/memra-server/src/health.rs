@@ -592,14 +592,17 @@ impl WorkerHealth {
 
     /// Milliseconds since this process last attested FORWARD PROGRESS, the fresher of the
     /// scheduler heartbeat and the engine's prime odometer (memra#50; see the module doc's
-    /// "BUSY IS NOT HUNG"). Lock-free: two relaxed loads, one acquire load and one
-    /// `Instant::now()`, so the verdict can still be computed while the worker is wedged.
+    /// "BUSY IS NOT HUNG"), from a beat age the caller sampled. Lock-free: two relaxed loads and
+    /// one acquire load, so the verdict can still be computed while the worker is wedged.
     ///
     /// The odometer can only ever make this SMALLER, so this cannot turn a healthy verdict
     /// into an unhealthy one, the change is strictly in the direction of not restarting a
     /// server that is working.
-    fn forward_progress_age_ms(&self) -> u64 {
-        let beat = self.beat_age_ms();
+    ///
+    /// WP-A day 55 (`DAY55.md`, OWED item 22): a snapshot or a verdict reads the clock ONCE and
+    /// hands its beat age here, so with no progress source the published progress age IS the beat
+    /// age published beside it, never a second, later sample.
+    fn forward_progress_age_from(&self, beat: u64) -> u64 {
         match self.progress.as_ref().and_then(|p| p()) {
             Some(p) => beat.min(p.age_ms),
             None => beat,
@@ -614,12 +617,14 @@ impl WorkerHealth {
     /// `Some(age)` when BUSY and that age exceeds the bound. Returns the age it judged rather
     /// than a bare bool so `live()` reports the number that PRODUCED the verdict: recomputing
     /// it for the message would print a second, later sample.
-    fn stalled_for_ms(&self) -> Option<u64> {
+    fn stalled_for_ms(&self) -> Option<(u64, u64)> {
         if self.phase.load(Ordering::Acquire) != PHASE_BUSY {
             return None;
         }
-        let age = self.forward_progress_age_ms();
-        (age > self.stall_ms).then_some(age)
+        // Day 55: one clock sample; the message prints the beat age this verdict judged with.
+        let beat = self.beat_age_ms();
+        let age = self.forward_progress_age_from(beat);
+        (age > self.stall_ms).then_some((age, beat))
     }
 
     /// LIVENESS (`/health`, `/livez`): should this process be restarted? Draining is NOT a
@@ -647,10 +652,9 @@ impl WorkerHealth {
                                   (readiness follows its completion)"
                 .into()),
             _ => match self.stalled_for_ms() {
-                Some(age) => Err(format!(
-                    "worker stalled: no forward progress for {age} ms (beat age {} ms, \
+                Some((age, beat)) => Err(format!(
+                    "worker stalled: no forward progress for {age} ms (beat age {beat} ms, \
                      threshold {} ms)",
-                    self.beat_age_ms(),
                     self.stall_ms
                 )),
                 None => {
@@ -712,7 +716,7 @@ impl WorkerHealth {
             xid_warns: self.xid_warns.load(Ordering::Relaxed),
             gpu_probe: self.gpu_probe(),
             stall_threshold_ms: self.stall_ms,
-            forward_progress_age_ms: self.forward_progress_age_ms(),
+            forward_progress_age_ms: self.forward_progress_age_from(beat_age_ms),
             progress: self.progress.as_ref().and_then(|p| p()),
         }
     }
@@ -889,23 +893,34 @@ impl RouteHealth {
     }
 
     fn registered_age_ms(&self) -> u64 {
-        now_ms().saturating_sub(self.registered_ms)
-    }
-
-    fn beat_age_ms(&self) -> u64 {
-        now_ms().saturating_sub(self.beat_ms.load(Ordering::Acquire))
-    }
-
-    fn progress_age_ms(&self) -> Option<u64> {
-        match self.progress_ms.load(Ordering::Acquire) {
-            0 => None,
-            t => Some(now_ms().saturating_sub(t - 1)),
-        }
+        self.registered_age_at(now_ms())
     }
 
     fn forward_progress_age_ms(&self) -> u64 {
-        let beat = self.beat_age_ms();
-        self.progress_age_ms().map_or(beat, |p| beat.min(p))
+        self.forward_progress_age_at(now_ms())
+    }
+
+    // WP-A day 55 (`DAY55.md`, OWED item 22): every age from ONE clock sample `now`, so a snapshot
+    // publishes ages that agree with each other (the forward-progress age is exactly the min of
+    // the beat and progress ages it publishes beside it).
+    fn registered_age_at(&self, now: u64) -> u64 {
+        now.saturating_sub(self.registered_ms)
+    }
+
+    fn beat_age_at(&self, now: u64) -> u64 {
+        now.saturating_sub(self.beat_ms.load(Ordering::Acquire))
+    }
+
+    fn progress_age_at(&self, now: u64) -> Option<u64> {
+        match self.progress_ms.load(Ordering::Acquire) {
+            0 => None,
+            t => Some(now.saturating_sub(t - 1)),
+        }
+    }
+
+    fn forward_progress_age_at(&self, now: u64) -> u64 {
+        let beat = self.beat_age_at(now);
+        self.progress_age_at(now).map_or(beat, |p| beat.min(p))
     }
 
     /// The route's liveness under the process stall bound. Three distinct failures: a thread
@@ -951,13 +966,14 @@ impl RouteHealth {
 
     fn snapshot(&self) -> RouteSnapshot {
         let phase = self.phase();
+        let now = now_ms();
         RouteSnapshot {
             name: self.name.clone(),
             phase,
-            registered_age_ms: self.registered_age_ms(),
-            beat_age_ms: self.beat_age_ms(),
-            progress_age_ms: self.progress_age_ms(),
-            forward_progress_age_ms: self.forward_progress_age_ms(),
+            registered_age_ms: self.registered_age_at(now),
+            beat_age_ms: self.beat_age_at(now),
+            progress_age_ms: self.progress_age_at(now),
+            forward_progress_age_ms: self.forward_progress_age_at(now),
             rows: self.rows.load(Ordering::Relaxed),
             rounds: self.rounds.load(Ordering::Relaxed),
             requests: self.requests.load(Ordering::Relaxed),
@@ -1833,6 +1849,49 @@ mod tests {
             h.live().is_err(),
             "neither signal is fresh: this IS a stall"
         );
+    }
+
+    /// WP-A day 55 (`research/spill-a-20260919/DAY55.md`, OWED item 22, T-a; CPU census): a snapshot
+    /// and the stall verdict read the clock ONCE. `WorkerHealth::snapshot` samples the beat age once
+    /// and derives the forward-progress age from that sample; the stall verdict judges and reports one
+    /// beat sample; a route's snapshot takes one `now` for every age it publishes.
+    #[test]
+    fn day55_a_snapshot_reads_the_clock_once() {
+        let src = include_str!("health.rs");
+        let prod = &src[..src.find("\nmod tests {").unwrap()];
+        let body = |start: &str| {
+            let a = prod
+                .find(start)
+                .unwrap_or_else(|| panic!("{start} missing"));
+            &prod[a..a + prod[a..].find("\n    }\n").unwrap()]
+        };
+        let snap = body("    pub fn snapshot(&self) -> HealthSnapshot {");
+        assert_eq!(snap.matches("self.beat_age_ms()").count(), 1);
+        assert!(
+            snap.contains("forward_progress_age_ms: self.forward_progress_age_from(beat_age_ms),")
+        );
+        assert!(!snap.contains("self.forward_progress_age_ms()"));
+        let stall = body("    fn stalled_for_ms(&self) -> Option<(u64, u64)> {");
+        assert_eq!(stall.matches("self.beat_age_ms()").count(), 1);
+        assert!(stall.contains("self.forward_progress_age_from(beat)"));
+        let route = body("    fn snapshot(&self) -> RouteSnapshot {");
+        assert_eq!(route.matches("now_ms()").count(), 1);
+        for f in [
+            "registered_age_at(now)",
+            "beat_age_at(now)",
+            "progress_age_at(now)",
+            "forward_progress_age_at(now)",
+        ] {
+            assert!(route.contains(f), "{f}");
+        }
+        // Behaviour: with no source, the published progress age is the published beat age.
+        let h = WorkerHealth::with_stall_ms(20);
+        h.mark_ready();
+        h.beat_busy();
+        for _ in 0..200 {
+            let s = h.snapshot();
+            assert_eq!(s.forward_progress_age_ms, s.beat_age_ms);
+        }
     }
 
     /// The `MEMRA_HEALTH_PROGRESS=0` rollback seam: with no source, the verdict is
