@@ -1116,8 +1116,13 @@ The replayed state hands off to the eager step once the replay no longer covers 
 drops the graphs (`disarm_full_token_replay`) and keeps stepping, and every later step must still
 match the eager state. `DSV4_REPLAY_GATE_LIMIT=N` arms a smaller limit so a run crosses the handoff
 in a few hundred steps (`DSV4_REPLAY_GATE_CAPACITY=2048 DSV4_REPLAY_GATE_LIMIT=640`, 500 steps);
-`DSV4_REPLAY_GATE_CAPACITY=20000` with 16100 steps crosses the served 16384 limit itself. A run with
-a handoff checks that it happened at the limit and skips the timing arm. Receipts:
+`DSV4_REPLAY_GATE_CAPACITY=20000` with 16100 steps crosses the served 16384 limit itself. At that
+capacity the cache and hidden digests read tens of megabytes per step, so such a run sets
+`DSV4_REPLAY_GATE_DIGEST_EVERY=256`: tokens and logits bits every step, the digests every 256
+steps and on the 64 steps either side of the handoff. A run with a handoff checks that it
+happened at the limit and skips the timing arm. `DSV4_REPLAY_GATE_PROFILE=replay|eager` replaces
+the timing arm with one warm run and one run bracketed by `cuProfilerStart`/`Stop`, for
+`nsys --capture-range=cudaProfilerApi`. Receipts:
 `research/dsv4f-bringup-20260923/tpep-default/`.
 
 ### DSv4 compressor BF16 island storage (#695)
