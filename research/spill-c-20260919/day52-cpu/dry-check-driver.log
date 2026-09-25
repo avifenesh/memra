@@ -21,34 +21,36 @@ STUB day56-reading.py D/root/spill-receipts/c-day52/c5 --rig pro-single
 STUB day40-run-cell.sh slices 10800
 STUB day54-slice-reading.py D/root/spill-receipts/c-day52/slices
 == run 1 driver lines
-attrib rc=0 2026-09-25T00:19:18Z
+attrib rc=0 2026-09-25T00:38:36Z
 attrib validate rc=0
 attrib reader rc=0
-ladder rc=0 2026-09-25T00:19:18Z
+ladder rc=0 2026-09-25T00:38:36Z
 ladder validate rc=0
 ladder reader rc=0
-ladder-b rc=0 2026-09-25T00:19:18Z
+ladder-b rc=0 2026-09-25T00:38:36Z
 ladder-b validate rc=0
 ladder-b reader rc=0
-c6 unit-server rc=0 2026-09-25T00:19:18Z
-c6 failure-default-off rc=0 2026-09-25T00:19:18Z
-c6 failure-plain-off rc=0 2026-09-25T00:19:18Z
-c6 failure-default-on rc=0 2026-09-25T00:19:18Z
-c6 identity-default-off rc=0 2026-09-25T00:19:18Z
-c6 identity-default-on rc=0 2026-09-25T00:19:18Z
-c5 identity-dspark-off rc=0 2026-09-25T00:19:18Z
-c5 identity-dspark-on rc=0 2026-09-25T00:19:18Z
+c6 unit-server rc=0 2026-09-25T00:38:36Z
+c6 failure-default-off rc=0 2026-09-25T00:38:36Z
+c6 failure-plain-off rc=0 2026-09-25T00:38:36Z
+c6 failure-default-on rc=0 2026-09-25T00:38:36Z
+c6 identity-default-off rc=0 2026-09-25T00:38:36Z
+c6 identity-default-on rc=0 2026-09-25T00:38:36Z
+c5 identity-dspark-off rc=0 2026-09-25T00:38:36Z
+c5 identity-dspark-on rc=0 2026-09-25T00:38:36Z
 c5 reader rc=0
-slices rc=0 2026-09-25T00:19:18Z
+slices rc=0 2026-09-25T00:38:37Z
 slices reader rc=0
 final not built: DAY51's hashlock, spec and decide not run (add final=<DAY51 section 2 commit> to D52_BUILDS and rerun)
-box done 2026-09-25T00:19:18Z
+box done 2026-09-25T00:38:37Z
 == run 2 (D52_BUILDS="base=1 i4=2 final=3") calls
 STUB day52-box-build.sh D/root/wt-c-build D/root/spill-receipts/c-day52 base=1 i4=2 final=3
 STUB day40-run-cell.sh residfix 3600
 STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day52/residfix
+STUB day43-fix.py D/root/spill-receipts/c-day52/residfix --rig pro-single
 STUB day40-run-cell.sh smallfix 3600
 STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day52/smallfix
+STUB day58-smallfix.py D/root/spill-receipts/c-day52/smallfix --rig pro-single
 STUB day40-run-cell.sh hashlock 1800
 STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day52/hashlock
 STUB day51-decide.py hashlock D/root/spill-receipts/c-day52/hashlock --rig pro-single
@@ -68,19 +70,19 @@ c6 failure-plain-off already done
 c6 failure-default-on already done
 c6 identity-default-off already done
 c6 identity-default-on already done
-residfix rc=0 2026-09-25T00:19:19Z
+residfix rc=0 2026-09-25T00:38:37Z
 residfix validate rc=0
-residfix reader rc=2
-smallfix rc=0 2026-09-25T00:19:19Z
+residfix reader rc=0
+smallfix rc=0 2026-09-25T00:38:37Z
 smallfix validate rc=0
-smallfix reader rc=2
-hashlock rc=0 2026-09-25T00:19:19Z
+smallfix reader rc=0
+hashlock rc=0 2026-09-25T00:38:37Z
 hashlock validate rc=0
 hashlock reader rc=0
-spec rc=0 2026-09-25T00:19:19Z
+spec rc=0 2026-09-25T00:38:37Z
 spec validate rc=0
 spec reader rc=0
-decide rc=0 2026-09-25T00:19:19Z
+decide rc=0 2026-09-25T00:38:37Z
 decide validate rc=0
 decide reader rc=0
-box done 2026-09-25T00:19:19Z
+box done 2026-09-25T00:38:37Z

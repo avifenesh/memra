@@ -18,7 +18,7 @@ S=$D/root/wt-c/research/spill-c-20260919
 for f in day40-run-cell.sh day53-cell.sh day56-cell.sh; do
     printf '#!/usr/bin/env bash\necho "STUB %s $*" >> %s/calls.log\n' "$f" "$D" > "$S/$f"
 done
-for f in day40-attrib.py day52-views.py day51-decide.py day54-slice-reading.py day56-reading.py; do
+for f in day40-attrib.py day52-views.py day51-decide.py day54-slice-reading.py day56-reading.py day43-fix.py day58-smallfix.py; do
     printf 'import sys\nopen("%s/calls.log", "a").write("STUB %s " + " ".join(sys.argv[1:]) + "\\n")\n' "$D" "$f" > "$S/$f"
 done
 printf 'import sys\nopen("%s/calls.log", "a").write("STUB tier-battery " + " ".join(sys.argv[1:]) + "\\n")\n' "$D" > "$D/root/wt-c/tools/tier-battery.py"
