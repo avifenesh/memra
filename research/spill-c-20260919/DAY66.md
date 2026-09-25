@@ -78,3 +78,27 @@ machine of BOX15 and BOX17 where it can be had (else another host of that class)
 Workstation Edition, the approved 35B artifact at `/root/artifacts/`, `/root/wt-c` at the lane tip and a detached
 `/root/wt-c-build`, CUDA 13 and Rust, at least 48 GB host `MemAvailable`. Expected: two builds about 10 minutes, the
 cell about 9 (40 runs).
+
+## 2. The cell, as it ran (BOX18, BOX15's machine, run by the lead as registered; `pro-single-day66/`)
+
+The lead ran `day66-box.sh` as section 1a names it on the tree `52544aed9`, on BOX18 (BOX15's machine again; idle
+26.6 W, FMA spin 2658 MHz, no brake), 09:58Z to `box done 2026-09-25T10:09:14Z`; binaries built on the box. The lead
+mirrored the receipts; read here: 191 of 191 files `OK` against `box-mirror-manifest.sha256` (`MIRROR-CHECK.txt`).
+Regime (`regime.txt`): 26 to 42 C, SM median 2610 MHz. Verbatim (`freq/reading.log`):
+
+- `DAY66 HOST rig=pro-single cpu0 cpufreq/scaling_driver=amd-pstate-epp | cpu0 cpufreq/scaling_governor=powersave | cpu0 cpufreq/energy_performance_preference=performance | ...` (the full line in the reading; `thp/enabled=always [madvise] never`)
+- `DAY66 FREQ CHECKS rig=pro-single runs=40 integrity=ok`
+- `DAY66 R1 ref_median=0.245 slow=14 fast=6 of 20 door runs`
+- the owner core's whole-run clock median 5715 to 5723 MHz in every door run, slow and fast; `anon_huge_kb=0` in every
+  run; voluntary context switches 25808 to 28282 per door run, involuntary 41 to 168, in both modes (the per-run lines
+  in the reading)
+- `DAY66 FREQ VERDICT rig=pro-single integrity=ok -> clock_does_not_track thp_does_not_track`
+
+**Read as registered.** Neither H1 (the core clock) nor H2 (huge-page backing: this host's THP mode is `madvise`, so the
+door's anonymous memory never had huge pages in any boot) follows the slow boots. The fill before decode still splits
+by mode (1337 to 1490 ms in most slow boots, 1178 to 1217 in the fast ones, with two slow boots at 1178.6 and 1181.2),
+and the owner thread's most-sampled CPU was 1 or 4 in slow and fast boots alike (a post-hoc table, deciding nothing).
+Two of REF's 20 runs read slow gen-only (0.314 and 0.319 s) with a normal window (0.218): the first REF runs slower than
+0.246 in 50 on this machine. This cell also sampled `/proc/<pid>/smaps_rollup` every second, which walks the process's
+page tables; that sampler is a possible cause of those two REF readings, so the next cell does not carry it. The next
+registration is `DAY67.md`.
