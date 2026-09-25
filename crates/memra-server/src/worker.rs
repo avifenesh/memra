@@ -981,7 +981,12 @@ fn dspark_hit_is_restorable_with(
     if !entry_has_tail || entry_toks == 0 || entry_toks > prompt_toks {
         return false;
     }
-    entry_toks == prompt_toks || partial_on
+    // lane/spill-c-20260919 day 56 (DAY56.md section 2b): a strict-prefix restore primes its
+    // suffix through `prime_cache`, which refuses a suffix shorter than `PRIME_MIN_T`
+    // (`dspark resume suffix N < PRIME_MIN_T 16 ... serve this turn cold`); admitting one here
+    // failed the request with HTTP 500 instead of serving it cold. Such a hit is not restorable.
+    entry_toks == prompt_toks
+        || (partial_on && prompt_toks - entry_toks >= memra_engine::hybrid_forward::PRIME_MIN_T)
 }
 
 fn dspark_prefix_capture_requested(
@@ -37250,6 +37255,18 @@ mod tests {
         // no tail: never restorable, the drafter cannot be re-armed from trunk planes alone
         assert!(!r(100, 100, false, true));
         assert!(!r(60, 100, false, true));
+        // a suffix shorter than PRIME_MIN_T is not restorable (C day 56: it failed the request
+        // with HTTP 500); at PRIME_MIN_T it is
+        let min = memra_engine::hybrid_forward::PRIME_MIN_T;
+        assert!(
+            !r(100 - (min - 1), 100, true, true),
+            "a sub-minimum suffix serves cold"
+        );
+        assert!(!r(99, 100, true, true));
+        assert!(
+            r(100 - min, 100, true, true),
+            "a PRIME_MIN_T suffix restores"
+        );
         // degenerate lengths are refused in both arms
         assert!(!r(0, 100, true, true));
         assert!(

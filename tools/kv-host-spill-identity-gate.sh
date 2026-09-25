@@ -138,6 +138,12 @@ thrust-bearing temperature rise, cooling-water flow, overspeed trip, and grid-sy
 tests. For each item name the instrument used, the acceptance threshold, the sign-off role, \
 and the failure symptom that would halt commissioning. Be systematic and terse throughout."
 EXT=" Finally, state which single item most often fails first and why."
+# Drafter arm (lane/spill-c-20260919 day 56, DAY56.md section 2b): a DSPARK strict-prefix restore
+# primes its suffix through prime_cache, which needs at least PRIME_MIN_T (16) suffix tokens; the
+# drafter arm's extension is long enough to be a restorable strict prefix.
+if [ "${MEMRA_DSPARK_SPEC:-}" = 1 ]; then
+    EXT=" Finally, state which single item most often fails first, why it fails there, and which one check catches it earliest in the sequence."
+fi
 
 req() { # $1 prompt $2 out-json
     python3 - "$PORT" "$1" "$2" <<'PY'

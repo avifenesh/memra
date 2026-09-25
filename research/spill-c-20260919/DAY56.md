@@ -131,3 +131,24 @@ The same two cells with `MEMRA_DSPARK_PARTIAL_RESTORE=1` added to both arms (`da
 unchanged, the same rule and reader; on the target card (the attempt-1 receipts kept under `c5-attempt1/`) and in the
 RTX 5090 queue. Expected from source: r3 restores from the promoted entry in both arms (`DSPARK restore: 89 of 102
 prompt tokens + draft tail from cache (13 suffix tokens to prime)`).
+
+## 2b. The corrected cell on the RTX 5090, and a defect it found (before any further run)
+
+The section-2a cell ran on the RTX 5090 at 01:13Z to 01:14Z (`rtx5090-day56/`, receipts kept as attempt 2). Both
+arms stopped at r3: the gate's request got `HTTP Error 500: Internal Server Error`, and the server logged
+`[engine-error] class=Engine step error: dspark resume suffix 13 < PRIME_MIN_T 16 (prime_cache has no tokenwise
+tap-filling twin); serve this turn cold`. Two findings, neither the slice's:
+
+- **A defect in `MEMRA_DSPARK_PARTIAL_RESTORE`.** Its worker predicate (`dspark_hit_is_restorable_with`) admitted a
+  strict-prefix hit whose suffix (13 tokens) is shorter than `PRIME_MIN_T`, a resume the engine refuses by design,
+  and the refusal failed the request instead of serving it cold, as the engine's own message says it should. Fixed
+  in the predicate: such a hit is not restorable and the request cold-primes; the unit test gains the floor's two
+  sides; the `docs/FLAGS.md` row says so.
+- **The cell's EXT is too short for a DSPARK strict-prefix restore.** The identity gate's extension is 13 tokens on
+  this tokenizer; with the floor fixed, r3 would cold-prime and the strict-prefix check would fail again, so the
+  drafter arm (and only it, `MEMRA_DSPARK_SPEC=1`) takes a longer extension that is a restorable strict prefix. Both
+  arms get the same prompts; the identity law is unchanged.
+
+The two cells run again (attempt 3) on both cards with the gate's drafter-arm extension, the same rule and reader.
+The server binary stays `memra-server-c5` (the tail class tree); the predicate fix is in the lane tip and is not
+reached by a suffix of 16 or more.
