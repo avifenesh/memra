@@ -60,7 +60,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Status: **closed for the slower-CPU host class** (DAY39 section 7: BOX7, `polls==1 90` of 90, HK - FT +12.64 /
   +12.55 ms e2e and +12.70 ms PIN against pair noise 0.10 to 0.23, every gate green; the 5090's (e) PASS, section 6).
   Design T is `0153316d4` (the fill split across `min(12, cpus / 2)` threads), the door's fill program (ruling 54).
-  Owed: the 9950X-class host reading (the same cell on that host class; it needs a 9950X-class target host).
+  Owed: the 9950X-class host reading (the same cell on that host class; it needs a 9950X-class target host):
+  **pre-registered** (DAY44 section 1; sitting `pro-single-t9950/`, which checks the host class first).
 
 ### 4. The strong-form receipt of the recurrent spans (both directions)
 
@@ -207,7 +208,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Acceptance: none registered. Section 20's cell replicated in the G4 hold's thermal regime (the card driven to that
   regime before the boots, the clock and the temperature recorded per boot), pre-registered before it runs, with a rule
   that places the cause (the regime or the design) either way.
-- Status: open (after item 15 and the 9950X-class fill reading).
+- Status: **pre-registered** (DAY45 section 1: the G4 hold's own warm-up, section 20's eight boots, the regime check and
+  the placing rule; `rtx5090-day45/`); waits for the 5090's reset.
 
 ## 2. Closed, delivered, or held by another owner
 
