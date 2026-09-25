@@ -71,7 +71,10 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   cpu_side` (R2 `over_bound` by 0.003 ms per token at the printed resolution) and `DAY61 VERDICT rig=pro-single
   integrity=ok i11=improves i12=flat door=i12 vs_ref=loses (window: i11=improves i12=flat vs_ref=loses)`: the tuned
   door still loses to REF (+0.34 ms per generated token, +0.25 per window token, from +0.69 and +0.44). The RTX
-  5090's cells wait on its reset (queue v6). Open: the next improvement, registered in `DAY63.md` from these readings.
+  5090's cells wait on its reset (queue v6). Day 63 (`DAY63.md`): the owner demand split (log only, `ad73d242c`); I13
+  (the governor without temporaries, one body per lease, the retire side in one lookup, the SLRU on an Fx hasher,
+  `9bbab60ed` to `c9379c051`) takes the host-hit prefetch cycle from 3569 to 2940 ns on the local CPU in one window;
+  its card cell `i13` is prepared (`day63-box.sh`, NEED TARGET CARD) and queued on the RTX 5090 (queue v7). Open.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 

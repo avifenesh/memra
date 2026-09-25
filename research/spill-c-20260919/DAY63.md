@@ -101,3 +101,68 @@ marked, not compared as if equal.
 
 **The card cell** is registered in section 4 before its script is written, with I13 against I12 and against REF, and
 any further improvement that section 3 registers from this ladder.
+
+## 2a. I13 on the CPU: the ladder
+
+Every change's CPU gates passed at its commit (the memra-tier suite 299, 300, 301, 301; engine lib 567 each time;
+clippy `-D warnings`; fmt): the differential budget test (20000 randomized budgets), the governor's fairness test
+past the limit (unchanged), `a_lease_clone_shares_its_body`, `finish_ticket_is_the_three_calls` on twin banks, the SLRU
+oracle tests (`day4::slru_matches_recorded_native_semantics_synthetic_trace`,
+`day43::o1_host_slru_matches_the_vecdeque_oracle_on_a_randomized_trace` and the rest) unchanged and green. The rig's
+load moved between rows (`uptime` in each `ladder-<n>.log`, load average 1.85 to 3.53), so each row as run is
+recorded and, beside it, all five binaries were re-read in one window in both orders (`window.log`, row 0 to 4 then
+4 to 0, one profile run each; the P2 figure is the mean of the two):
+
+| row | commit | change | P2 as run (ns per cycle) | P2 same window | P3 demand / finish same window |
+|---|---|---|---:|---:|---|
+| 0 | `ad73d242c` | none (I12 plus the split) | 3949.8, 3800.5 (`split*.log`) | 3569.2 | 2300.1 / 448.8 |
+| 1 | `9bbab60ed` | 1, the governor without temporaries | 3434.5 | 3432.4 | 2261.6 / 386.1 |
+| 2 | `e8195cbf3` | 2, one body per lease | 3077.7 | 3080.8 | 2002.2 / 364.6 |
+| 3 | `bc0e31d2e` | 3, the retire side in one lookup | 3032.1 | 3033.1 | 2020.8 / 306.1 |
+| 4 | `c9379c051` | 4, the SLRU on the Fx hasher | 2975.1 | 2939.9 | 1965.0 / 301.6 |
+
+I13 takes the host-hit prefetch cycle from 3569 to 2940 ns in one window (17.6% less CPU per block; day 61 began at
+5370). By part at row 4 (`ladder-4.log`): the governor's charge and release 240 plus 93 ns (from 271 plus 152), a
+lease clone 11 ns (from 70), `publish_output` 21 (from 68), the retire side 220 (from 350), an SLRU lookup 71 ns (from
+101). What stays largest is per record and keyed by the full `BankId`: `stage_cache` 478 ns (the host cache's
+`BTreeMap` walk), the residency check's 510 ns, the SLRU's `hit` inside `publish_policy` 207, the two catalog
+lookups (the validation's and `stage_lookup`'s 123).
+
+## 3. Pre-registration: the card cell `i13` (both cards; before its script)
+
+**Binaries.** Labels `c60=da649107c` (`run-gen-c60`, REF), `i12=117302725` (`run-gen-i12`, the door before I13) and
+`i13=c9379c051` (`run-gen-i13`, I13's last change), built on each card's host as day 61's were.
+
+**The cell** (`day63-cell.sh`, reader `day63-read.py`): day 18's pressure shape (`MEMRA_MOE_RESIDENT=0 MEMRA_NGEN=32
+MEMRA_MOE_SLOTS=9986`, prompt `55 88 13`), one collector hold, 250 ms telemetry, the 1200% cap (12 pinned cores on a
+box without systemd). Arms: REF (`MEMRA_MOE_PREFETCH=1`, `run-gen-c60`); I12 (the door at the full-bank host budget,
+`run-gen-i12`); I13 (the same door, `run-gen-i13`); I13S (I13 with `--expert-bank-stages`: read for its split only,
+never for a timing verdict). Order 1 (REF, I12, I13, I13S) x 5, order 2 reversed x 5, 40 runs.
+
+- **Integrity** (any failure voids the card's reading): every run exit 0 and `MATCH`; one `tokens:` tape across all
+  four arms; every door run's fill complete before decode and `physical_reads=0`; one host demand sequence (the
+  `[expert-host-slru]` lines without their slot numbers) across every I12, I13 and I13S run; I13S prints the stage
+  lines with the day-63 fields.
+- **Readings** (`noise` the larger IQR of the two arms compared; gen-only decode the primary reading, the steady window
+  beside it): I13 against I12, `improves`, `regresses` or `flat` exactly as `DAY61.md` section 2 defines them.
+- **The door against REF:** the door arm is I13, or I12 if I13 `regresses`: `beats`, `matches` or `loses` as `DAY61.md`
+  section 2 defines them, recorded plainly whatever it reads.
+- **The split on the card** (I13S, the median over its 10 runs of each field's window-minus-warm per window token):
+  printed beside the verdict for the next improvement's design; it decides nothing.
+- **What follows.** I13 `regresses` on either card: reverted by this lane with its receipt. `flat` or `improves`: kept.
+  If the door still `loses` on the target card, the next improvement (the per-record `BankId` lookups, or the three
+  blocks of one expert under one ticket) is registered from this cell's split, before its code.
+
+## 3a. The sitting, prepared before any cell
+
+`day63-cell.sh` and `day63-read.py` written after section 3; the reader dry-checked for mechanics only on relabelled
+target logs (the day-61 `i11` cell and the day-58 stage-clock tip runs): one host demand sequence (`4bdc2610...`)
+across the door arms, and its integrity check refuses stage lines without the day-63 fields, as the old logs lack them
+(its verdict there is `void`, as it must be). The driver `day63-box.sh` (builds by `day63-box-build.sh`, `run-gen`
+only), dry-checked for control flow (`day63-cpu/dry-check-driver.log`). Run as
+`D63_BUILDS="c60=da649107c i12=117302725 i13=c9379c051" bash /root/wt-c/research/spill-c-20260919/day63-box.sh`.
+Expected: three builds about 15 minutes, the cell about 8 (40 runs at about 11 s). Box needs as `DAY61.md` section
+2b: one RTX PRO 6000 Blackwell Workstation Edition, the approved 35B artifact at `/root/artifacts/`, the lane tip in
+`/root/wt-c` and a detached build worktree at `/root/wt-c-build`, CUDA 13 and Rust, at least 48 GB host
+`MemAvailable`, about 20 GB free under `/root`. The RTX 5090's cell is queued (queue v7, behind v6) with
+`run-gen-i13` built locally (`/tmp/c61-build/build-i13.log`, sha256 `596b620e...`).

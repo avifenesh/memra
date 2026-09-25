@@ -1,0 +1,16 @@
+== run 1 calls
+STUB day63-box-build.sh D/root/wt-c-build D/root/spill-receipts/c-day63 c60=1 i12=2 i13=3
+STUB day40-run-cell.sh i13 5400 script=D/root/wt-c/research/spill-c-20260919/day63-cell.sh
+STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day63/i13
+STUB day63-read.py D/root/spill-receipts/c-day63/i13 --rig pro-single
+== run 1 driver lines
+cpu cap: taskset -c 0-11 (no systemd scope on this box)
+i13 rc=0 2026-09-25T05:43:05Z
+i13 validate rc=0
+i13 reader rc=0
+box done 2026-09-25T05:43:05Z
+== run 2 calls
+== run 2 driver lines
+cpu cap: taskset -c 0-11 (no systemd scope on this box)
+i13 already done
+box done 2026-09-25T05:43:05Z
