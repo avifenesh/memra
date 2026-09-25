@@ -156,7 +156,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   boundary snapshot (`prefix_snapshot` direct); the `dspark-boundary` publish; the `glm5-boundary` publish; every
   `OnTick` refusal"), carried as "2 to 4 unchanged" through day 36.
 - Acceptance: none registered.
-- Status: open.
+- Status: **pre-registered** (DAY54 section 1: the on-tick lines, log only; the fanout and pause cells and the
+  census; the per-publisher rule).
 
 ### 11. Move 1 item 4: the decision cell (i), both classes, same window
 
