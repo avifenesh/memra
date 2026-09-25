@@ -1583,6 +1583,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // DAY67 (`research/spill-c-20260919/DAY67.md`): --cpu-probe (log only), on this thread after every timed phase.
+    if std::env::args().any(|a| a == "--cpu-probe") {
+        let probe = memra_engine::cpu_probe::run(memra_engine::cpu_probe::DAY67_SIZES);
+        eprintln!("[cpu-probe] {}", probe.line());
+    }
+
     // --- detokenize the output ids back to TEXT (text path only) ---
     if let Some(tok) = &tokenizer {
         // drop a trailing EOS for the printed text (keep it in the raw `tokens:` line above).

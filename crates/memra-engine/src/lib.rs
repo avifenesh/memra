@@ -58,6 +58,7 @@ fn ensure_tensor_stream_device<T>(
 pub use memra_gguf;
 pub use memra_runtime;
 
+pub mod cpu_probe;
 pub mod env_audit;
 pub mod forward;
 pub mod hybrid;
