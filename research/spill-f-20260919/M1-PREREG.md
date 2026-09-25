@@ -211,6 +211,25 @@ they are B5 and OWED 17, not silent omissions.
    a flat or losing `MEMRA_SPILL_IO` arm goes to the door-hygiene decision in `docs/FLAGS.md`
    with these receipts.
 
+#### B3 regime (iii) amendment (2026-09-25, registered on the box before any B3 visit)
+
+The rented container refuses the registered mlocked balloon: `RLIMIT_MEMLOCK` is 8 MiB and
+raising it fails (`ulimit: max locked memory: cannot modify limit: Operation not permitted`;
+the container has no `CAP_SYS_RESOURCE`). Its cgroup v2 limits are `memory.max` =
+127,295,029,248 bytes and `memory.swap.max` = 0. With swap forbidden for the cgroup, touched
+anonymous memory cannot be reclaimed, so it bounds the page cache exactly as locked memory would.
+
+- Mechanism: `m1-cache-regime.py balloon --touch`: anonymous mmap, one write per page, no mlock.
+  Refused unless the process's cgroup reports `memory.swap.max` = 0.
+- Size: `memory.max - anon - leave`, with `leave = 7,000,000,000` bytes for the visit process
+  and its page cache (below half the 15,600,713,728-byte expert bank, as registered).
+- Floor, restated for cgroup accounting: the balloon releases itself (exit 4) if
+  `memory.max - anon` falls under 2 GiB, which prevents a cgroup OOM. The registered 6 GiB
+  host-MemAvailable floor cannot apply here: the container's `/proc/meminfo` is host-wide.
+- Proof the bound held, per visit: `mincore` residency of the artifact at visit end below 50% of
+  the file, and device read bytes over the decode window of the same order as the logical spill
+  bytes. A visit failing either is `regime_ok = false` and unscored.
+
 ### B4 serving shape (memra-server)
 
 `worker16`, plus any B3 winner, in the regime where it won: a fixed 32-request set, 128 output

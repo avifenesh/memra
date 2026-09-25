@@ -311,16 +311,21 @@ def run(args):
     balloon = None
     if args.regime == "bounded":
         nbytes = args.balloon_bytes
-        if nbytes is None:
-            half_bank = lock["artifact"]["expert_bank_bytes"] // 2
-            B.require(args.floor_bytes <= args.bounded_leave_bytes < half_bank,
-                      "bounded regime needs floor <= leave < half the expert bank")
+        half_bank = lock["artifact"]["expert_bank_bytes"] // 2
+        B.require(args.bounded_leave_bytes < half_bank, "bounded regime needs leave < half the expert bank")
+        if nbytes is None and args.balloon_touch:
+            head = CACHE.cgroup_headroom()
+            B.require(head is not None, "touched balloon needs a bounded cgroup memory.max")
+            nbytes = head - args.bounded_leave_bytes
+        elif nbytes is None:
+            B.require(args.floor_bytes <= args.bounded_leave_bytes, "bounded regime needs floor <= leave")
             nbytes = CACHE.meminfo_kb("MemAvailable") * 1024 - args.bounded_leave_bytes
         balloon_log = (args.out / "balloon.log").open("xb")
         balloon = subprocess.Popen([sys.executable, str(HERE / "m1-cache-regime.py"), "balloon",
-                                    "--bytes", str(nbytes), "--floor-bytes", str(args.floor_bytes)],
+                                    "--bytes", str(nbytes), "--floor-bytes", str(args.floor_bytes),
+                                    *(["--touch"] if args.balloon_touch else [])],
                                    stdout=balloon_log, stderr=subprocess.STDOUT)
-        deadline = time.monotonic() + 120
+        deadline = time.monotonic() + 600
         while "LOCKED" not in (args.out / "balloon.log").read_text():
             B.require(balloon.poll() is None and time.monotonic() < deadline,
                       "balloon refused or did not lock; see balloon.log")
@@ -355,6 +360,10 @@ def run(args):
         if oracle is None:
             v["correctness_problems"].append("no byte oracle tokens in this run")
         c = v["contamination"]
+        if args.regime == "bounded":
+            resident, pages = v["residency_end"]
+            v["bound_held"] = bool(pages and resident / pages < args.bound_residency_max)
+            v["regime_ok"] = bool(v.get("regime_ok", True) and v["bound_held"])
         v["clean_timing"] = bool(v["telemetry_ok"] and v["thermal_ok"] and v["identity_after_ok"]
                                  and v.get("regime_ok", True) and c is not None
                                  and c["foreign_share"] <= args.contamination_limit)
@@ -405,6 +414,8 @@ def main(argv=None):
     r.add_argument("--bounded-leave-bytes", type=int, default=7_000_000_000)
     r.add_argument("--floor-bytes", type=int, default=6 << 30)
     r.add_argument("--balloon-bytes", type=int)
+    r.add_argument("--balloon-touch", action="store_true", help="B3 regime (iii) amendment: swapless-cgroup touched balloon")
+    r.add_argument("--bound-residency-max", type=float, default=0.5)
     r.add_argument("--oracle-tokens", help="byte-oracle token ids when the oracle arm is not in the run")
     r.add_argument("--contamination-limit", type=float, default=0.02)
     r.add_argument("--stub-no-lock", action="store_true")
