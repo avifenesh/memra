@@ -66,3 +66,20 @@ leases, about 122 MB, fresh `cuMemHostAlloc` per demote).
 **What each card decides.** The target card only (the attribution is the host's; the 5090's host is another class).
 
 **Budget.** 0.4 agent-day: the lines and their census 0.15, the reader and the sitting 0.1, the card's share 0.15.
+
+## 2. As built (`d77ccec61`), the CPU cells, and the sitting prepared
+
+- The lines: `[prefix-host] demote pre-submit split: ticket seq=S leases X ms (N pinned, B MB, minflt +M), register Y
+  ms, spans Z ms, other W ms (pre-submit T ms)` after each `demote submitted off the tick`, and `[prefix-host] demote
+  helper split: ticket seq=S copy X ms over B MB (minflt +M), hash Y ms (helper Z ms)` after each `demote digests
+  landed`. The helper's split is its own line rather than a suffix of the landed line (section 1 said a suffix): the
+  landed line's text is pinned by earlier censuses, and a separate line changes nothing they read. `thread_minflt`
+  reads `getrusage(RUSAGE_THREAD)`. The pre-submit split rides `PendingContractDemote` boxed (clippy's
+  `large_enum_variant` on `HostImage` otherwise). Census `day49_the_split_lines_are_log_only`.
+- CPU cells, green: server lib `921 passed; 0 failed; 25 ignored`; clippy `-D warnings`; fmt; `git diff --check`;
+  `tools/check-flags.sh`.
+- The reader `day49-reading.py` (checked on a synthetic fixture) and the sitting `pro-single-day49/` (`build.sh <tip>`,
+  `driver.sh`, `cell.sh`: nofree and free interleaved five boots each, long x3, one collector hold, about 25 minutes of
+  card time). Any host class with one RTX PRO 6000 Blackwell and the 27B artifact at
+  `/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`; the host class is recorded (`host-shape.txt`), and the reading is
+  that class's.
