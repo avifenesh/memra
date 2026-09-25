@@ -727,21 +727,40 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         {
             return Err(Error::Unsupported);
         }
+        // Day 61 (I11 change 2): each id's catalog entry is read once, for its logical bytes and
+        // its metadata allowance; the allowance's sum refuses at the point it always did.
         let mut logical = 0u64;
+        let mut metadata = Some(0u64);
         for id in &batch.ids {
+            if !D::accepts(&id.record) {
+                return Err(Error::InvalidLayout);
+            }
+            let entry = self.catalog.entry(id)?;
             logical = logical
-                .checked_add(self.layout(id)?.storage_bytes()?)
+                .checked_add(entry.record.layout.storage_bytes()?)
                 .ok_or(Error::Overflow)?;
+            metadata = metadata.and_then(|n| n.checked_add(entry.metadata));
         }
         if logical > self.limits.batch_bytes {
             return Err(Error::Capacity);
         }
         let unique: BTreeSet<_> = batch.ids.iter().cloned().collect();
-        let missing: Vec<_> = unique
-            .iter()
-            .filter(|id| !self.cache.contains_key(id))
-            .map(|id| Ok((id.clone(), self.catalog.record(id)?.clone())))
-            .collect::<Result<_>>()?;
+        // Day 61 (I11 change 2): the host cache is read once per unique id, for a cached lease
+        // or a missing record. Nothing below changes the cache before the ticket is recorded.
+        let mut missing = Vec::new();
+        let mut records = BTreeMap::new();
+        for id in unique {
+            match self.cache.get(&id) {
+                Some(lease) => {
+                    let lease = lease.clone();
+                    records.insert(id, lease);
+                }
+                None => {
+                    let record = self.catalog.record(&id)?.clone();
+                    missing.push((id, record));
+                }
+            }
+        }
         let plan = plan_reads(&missing, logical, &self.reader, self.policy)?;
         let sequence = self.sequence.checked_add(1).ok_or(Error::Overflow)?;
         let ticket = TransferTicket {
@@ -756,10 +775,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             n.checked_add(self.catalog.entry(id)?.resident_charge_bytes()?)
                 .ok_or(Error::Overflow)
         })?;
-        let metadata = batch.ids.iter().try_fold(0u64, |n, id| {
-            n.checked_add(self.catalog.entry(id)?.metadata)
-                .ok_or(Error::Overflow)
-        })?;
+        let metadata = metadata.ok_or(Error::Overflow)?;
         let slot = if missing.is_empty() {
             0
         } else {
@@ -850,10 +866,6 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             })
             .collect();
         let producer_done = missing.is_empty();
-        let records = unique
-            .into_iter()
-            .filter_map(|id| self.cache.get(&id).map(|l| (id, l.clone())))
-            .collect();
         self.pending.insert(
             ticket,
             Pending {
