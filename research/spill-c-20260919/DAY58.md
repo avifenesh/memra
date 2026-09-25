@@ -93,3 +93,26 @@ Verbatim (`smallfix/reading.log`):
 Both rungs now hold day 48's clauses: the dense memo takes `validate` to 0.038 ms per token (a ninth of its bound,
 11.3 times below the no-memo arm), the direct writer takes `trace` to 0.021 ms (12.1 times below the unbuffered
 print). I8 and I5 stay, as I8f and I5f.
+
+## 3. The target card (BOX8, DAY52's final phase; receipts `pro-single-day52/smallfix/`)
+
+One collector hold, 01:56:23Z to 02:03:51Z, 40 runs, the box's `run-gen-tip` `ba9522aa...`, `run-gen-nomemo`
+`eb569fa0...`, `run-gen-unbuf` `9dbc13c2...` (commit `7ea765687`, the patches applied by the box build), the runner
+pinned to 12 cores. Regime (`smallfix/regime.log`, 250 ms, N=1772): SM 2610 to 2872 MHz, power 84.6 to 207.3 W, 41 to
+48 C. Collector `--validate` rc=0.
+
+Verbatim (`smallfix/reading.log`):
+
+`DAY58 SMALLFIX CHECKS rig=pro-single runs=40 integrity=ok`
+
+`DAY58 CLAUSE (i) validate per window token nomemo=0.230 tip=0.015 rule tip < 0.1 x nomemo -> PASS`
+
+`DAY58 CLAUSE (ii) tip_minus_nomemo window pooled=-0.006 o1=-0.006 o2=-0.006 noise=0.002 rule <=noise -> PASS`
+
+`DAY58 CLAUSE (iii) trace per window token unbuf=0.409 tip=0.006 rule tip < 0.1 x unbuf -> PASS`
+
+`DAY58 CLAUSE (iv) tip_minus_unbuf window pooled=-0.013 o1=-0.012 o2=-0.013 noise=0.002 rule <=noise -> PASS`
+
+`DAY58 SMALLFIX rig=pro-single integrity=ok i8f=PASS i5f=PASS`
+
+Both fixes hold on this card too.
