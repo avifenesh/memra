@@ -10214,6 +10214,32 @@ struct ContractPlanned {
     capacity: usize,
 }
 
+/// WP-A day 49 (`DAY49.md`, OWED items 7 and 8; log only): the demote's pre-submit segments, printed
+/// once per demote (`demote pre-submit split`). No behavior reads it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct DemotePresubmitSplit {
+    leases_ms: f64,
+    leases: usize,
+    lease_bytes: u64,
+    leases_minflt: i64,
+    register_submit_ms: f64,
+    spans_ms: f64,
+}
+
+/// WP-A day 49 (log only): the calling thread's minor page faults so far (`getrusage(RUSAGE_THREAD)`),
+/// 0 where the call fails.
+fn thread_minflt() -> i64 {
+    // SAFETY: `getrusage` writes only the `rusage` it is handed, a zeroed stack value.
+    unsafe {
+        let mut ru: libc::rusage = std::mem::zeroed();
+        if libc::getrusage(libc::RUSAGE_THREAD, &mut ru) == 0 {
+            ru.ru_minflt as i64
+        } else {
+            0
+        }
+    }
+}
+
 /// A contract-routed D2H that was submitted and not yet settled (WP-A day 17): the ticket, its
 /// producer fence, the registered planes (their retained twins take them back), the plan and the
 /// per-item sizes, the one-shot fault the submission took, and when it was submitted. Owned by
@@ -10229,6 +10255,9 @@ struct PendingContractDemote {
     /// WP-A day 30 (memra#536 Move 2 owed item 1, the D2H half): the image slots whose f32 spans
     /// ride this ticket, in attach order (`host_spans_submit`); empty for a batch without spans.
     spans: Vec<HostHashSlot>,
+    /// WP-A day 49 (log only): the pre-submit segments (`DemotePresubmitSplit`), boxed so the
+    /// `HostImage::Demoting` variant stays the size it was.
+    split: Box<DemotePresubmitSplit>,
 }
 
 /// What one settle step of a contract-routed D2H produced.
@@ -10562,9 +10591,22 @@ struct HostHashReply {
     seq: u64,
     hashed: Vec<(HostHashPayload, usize, memra_engine::cache::tiered::Digest)>,
     helper_ms: f64,
+    /// WP-A day 49 (`DAY49.md`, log only): the job's staging copies and hashes, apart.
+    split: HostHashSplit,
     /// WP-A day 35: each lease view's byte count and digest, in the order handed over (the views
     /// end with the job: the helper reads nothing after this reply is sent).
     leases: Vec<(HostLeaseSlot, usize, memra_engine::cache::tiered::Digest)>,
+}
+
+/// WP-A day 49 (`DAY49.md`, OWED items 7 and 8; log only): one hash job's staging copies (time,
+/// bytes, the helper thread's minor page faults across them) and hashes (time), accumulated per
+/// payload in the job's own order.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct HostHashSplit {
+    copy_ms: f64,
+    copy_bytes: u64,
+    copy_minflt: i64,
+    hash_ms: f64,
 }
 
 /// WP-A day 35 (`DAY35.md` design M'): which KV lease of the image a view reads and a digest names.
@@ -10891,15 +10933,23 @@ impl HostHashWorker {
                         }
                     };
                     let t = Instant::now();
+                    let mut split = HostHashSplit::default();
                     let hashed = job
                         .payloads
                         .into_iter()
                         .map(|mut p| {
                             // WP-A day 30: a landed f32 span becomes the payload's heap `Vec`.
+                            // Day 49 (log only): the copy and the hash timed apart, in order.
                             if let Some(staged) = &p.staged {
+                                let (c0, f0) = (Instant::now(), thread_minflt());
                                 p.data = Arc::new(staged.as_f32_slice().to_vec());
+                                split.copy_minflt += thread_minflt() - f0;
+                                split.copy_ms += c0.elapsed().as_secs_f64() * 1e3;
+                                split.copy_bytes += staged.len() as u64;
                             }
+                            let h0 = Instant::now();
                             let (n, d) = host_hash_payload_digest(&p.data);
+                            split.hash_ms += h0.elapsed().as_secs_f64() * 1e3;
                             (p, n, d)
                         })
                         .collect();
@@ -10914,6 +10964,7 @@ impl HostHashWorker {
                         seq: job.seq,
                         hashed,
                         helper_ms: t.elapsed().as_secs_f64() * 1e3,
+                        split,
                         leases,
                     };
                     if fault == Some(HostHashFault::NeverLands) {
@@ -11594,6 +11645,8 @@ fn host_kv_planes_submit_contract(
     //    ledger's, the driver's or the alloc-fail fault's, leaves the entry untouched and the
     //    caller latches the tier exactly as the pre-door alloc path does.
     let mut hosts = Vec::with_capacity(planned.len() * 2);
+    // WP-A day 49 (log only): the pinned destinations' time, count, bytes and minor faults.
+    let (leases_t0, leases_f0) = (Instant::now(), thread_minflt());
     for p in &planned {
         for n in [p.kb, p.vb] {
             if kv_host_fault() == "alloc-fail" {
@@ -11609,6 +11662,14 @@ fn host_kv_planes_submit_contract(
             })?);
         }
     }
+    let mut split = DemotePresubmitSplit {
+        leases_ms: leases_t0.elapsed().as_secs_f64() * 1e3,
+        leases: hosts.len(),
+        lease_bytes: planned.iter().map(|p| (p.kb + p.vb) as u64).sum(),
+        leases_minflt: thread_minflt() - leases_f0,
+        ..DemotePresubmitSplit::default()
+    };
+    let register_t0 = Instant::now();
     // 3. Device admission probe on the same ledger: `register_device` charges the device
     //    dimension per plane, so probing the sum first means the registration below cannot be
     //    refused by the ledger, and no plane leaves the entry to be dropped by a refusal.
@@ -11836,6 +11897,7 @@ fn host_kv_planes_submit_contract(
         }
     };
     let _ = engine;
+    split.register_submit_ms = register_t0.elapsed().as_secs_f64() * 1e3;
     Ok(PendingContractDemote {
         ticket,
         producer,
@@ -11845,6 +11907,7 @@ fn host_kv_planes_submit_contract(
         fault,
         submitted: Instant::now(),
         spans: Vec::new(),
+        split: Box::new(split),
     })
 }
 
@@ -11862,6 +11925,8 @@ fn host_spans_submit(
     mut pending: PendingContractDemote,
 ) -> Result<PendingContractDemote, HostContractFailure> {
     use memra_engine::tier_transfer::D2hSpan;
+    // WP-A day 49 (log only): the span attach's time, set on both success exits.
+    let spans_t0 = Instant::now();
     let Some(transfers) = &tier.transfers else {
         // Unreachable: the submission that issued `pending` required the engine.
         return Err(HostContractFailure::SourceQuarantined(
@@ -11924,7 +11989,10 @@ fn host_spans_submit(
     }
     let attached = match refused {
         Some(why) => Err((why, spans)),
-        None if spans.is_empty() => return Ok(pending),
+        None if spans.is_empty() => {
+            pending.split.spans_ms = spans_t0.elapsed().as_secs_f64() * 1e3;
+            return Ok(pending);
+        }
         None => t
             .submit_d2h_spans(&pending.ticket, spans)
             .map_err(|(e, back)| (format!("{e:?}"), back)),
@@ -11932,6 +12000,7 @@ fn host_spans_submit(
     let (why, back) = match attached {
         Ok(()) => {
             pending.spans = slots;
+            pending.split.spans_ms = spans_t0.elapsed().as_secs_f64() * 1e3;
             return Ok(pending);
         }
         Err(refusal) => refusal,
@@ -11988,6 +12057,7 @@ fn host_kv_planes_settle_contract(
         fault,
         submitted,
         spans,
+        split,
     } = pending;
     // 6. Completion: the engine's event per item, then its status and its checksum of each
     //    destination (the receipt), then each destination taken exactly once. `Block` is the host
@@ -12018,6 +12088,7 @@ fn host_kv_planes_settle_contract(
                 fault,
                 submitted,
                 spans,
+                split,
             }));
         }
         return Err(SourceQuarantined(
@@ -14349,6 +14420,25 @@ fn host_demote_prefix_ref(
                 dead.pool_key.0,
                 ns_suffix(&dead.pool_key.1)
             );
+            // WP-A day 49 (`DAY49.md`, log only): where the pre-submit went.
+            if let Some(pending) = host.demoting.as_ref()
+                && let Some(c) = pending.contract.as_ref()
+            {
+                let sp = *c.split;
+                let total = pending.owner.presubmit_ms;
+                eprintln!(
+                    "[prefix-host] demote pre-submit split: ticket seq={seq} leases {:.2} ms ({} \
+                     pinned, {:.1} MB, minflt +{}), register {:.2} ms, spans {:.2} ms, other {:.2} ms \
+                     (pre-submit {total:.2} ms)",
+                    sp.leases_ms,
+                    sp.leases,
+                    sp.lease_bytes as f64 / 1e6,
+                    sp.leases_minflt,
+                    sp.register_submit_ms,
+                    sp.spans_ms,
+                    (total - sp.leases_ms - sp.register_submit_ms - sp.spans_ms).max(0.0),
+                );
+            }
             HostDemoteOutcome::Demoting
         }
         Ok(HostImage::Whole(mut e)) => {
@@ -15385,6 +15475,17 @@ fn host_demote_settle_hashing(
             pending.polls,
             owner.presubmit_ms + polls_ms + publish_ms,
             pending.t0.elapsed().as_secs_f64() * 1e3
+        );
+        // WP-A day 49 (`DAY49.md`, log only): the helper's staging copies and hashes, apart.
+        let sp = reply.split;
+        eprintln!(
+            "[prefix-host] demote helper split: ticket seq={seq} copy {:.2} ms over {:.1} MB (minflt \
+             +{}), hash {:.2} ms (helper {:.1} ms)",
+            sp.copy_ms,
+            sp.copy_bytes as f64 / 1e6,
+            sp.copy_minflt,
+            sp.hash_ms,
+            reply.helper_ms,
         );
     }
     outcome
@@ -20118,7 +20219,11 @@ fn host_handoff_export(
     //    file. Frames go OLDEST-first (selection reversed) so the importer's sequential
     //    inserts reconstruct true LRU recency.
     let tmp = format!("{path}.tmp");
+    // Stage clocks for the handoff's storage cost (lane/spill-f-20260919 B2): serialize and
+    // buffered write, then fsync, measured apart so the durability share is not inferred.
+    let (mut write_ms, mut fsync_ms) = (0.0f64, 0.0f64);
     let write = (|| -> Result<(), String> {
+        let t_write = Instant::now();
         let f = std::fs::File::create(&tmp).map_err(|e| format!("create {tmp}: {e}"))?;
         let mut w = std::io::BufWriter::with_capacity(4 << 20, f);
         handoff_write_header(
@@ -20137,8 +20242,11 @@ fn host_handoff_export(
         let f = w
             .into_inner()
             .map_err(|e| format!("handoff flush failed: {e}"))?;
+        write_ms = t_write.elapsed().as_secs_f64() * 1e3;
+        let t_fsync = Instant::now();
         f.sync_all()
             .map_err(|e| format!("handoff fsync failed: {e}"))?;
+        fsync_ms = t_fsync.elapsed().as_secs_f64() * 1e3;
         std::fs::rename(&tmp, path).map_err(|e| format!("rename {tmp} -> {path}: {e}"))
     })();
     if let Err(err) = write {
@@ -20149,6 +20257,7 @@ fn host_handoff_export(
     let ms = t0.elapsed().as_secs_f64() * 1e3;
     eprintln!(
         "[prefix-host] handoff export: {} entries / {:.1}MB to {path} in {ms:.0}ms \
+         write_ms={write_ms:.1} fsync_ms={fsync_ms:.1} \
          (drain-demoted {demoted} device entries first; {skipped_over_cap} skipped over \
          the MEMRA_KV_HOST_HANDOFF_MB cap)",
         selected.len(),
@@ -29421,10 +29530,14 @@ pub fn run(
                 .moe_pread_stats()
                 .or_else(|| (config_fallbacks != 0).then_some((0, 0, 0, 0, 0, 0, 0)))
             {
+                let stages = engine
+                    .moe_pread_stage_stats()
+                    .map(|s| format!(" {}", s.fields()))
+                    .unwrap_or_default();
                 eprintln!(
                     "[spill-pread] snapshot reads={reads} bytes={bytes} errors={errors} \
                            short_reads={short} config_fallbacks={config_fallbacks} \
-                           fallbacks={fallbacks} buffer_waits={waits} ring_full={ring_full}"
+                           fallbacks={fallbacks} buffer_waits={waits} ring_full={ring_full}{stages}"
                 );
             }
             if let Some((hits, misses, staged_bytes, slots)) = engine.moe_cache_stats() {
@@ -46215,6 +46328,7 @@ mod tests {
         dead.toks = toks.clone();
         let image = host_entry(pool_key, toks, 4096);
         let contract = super::PendingContractDemote {
+            split: Default::default(),
             ticket: memra_engine::cache::tiered::TransferTicket {
                 issuer: 7,
                 sequence: 1,
@@ -48585,6 +48699,7 @@ mod tests {
             .collect();
         replies
             .send(super::HostHashReply {
+                split: Default::default(),
                 seq: 5,
                 hashed,
                 helper_ms: 1.0,
@@ -48704,6 +48819,7 @@ mod tests {
             .collect();
         replies
             .send(super::HostHashReply {
+                split: Default::default(),
                 seq: 3,
                 hashed,
                 helper_ms: 1.0,
@@ -48741,6 +48857,7 @@ mod tests {
             .collect();
         replies
             .send(super::HostHashReply {
+                split: Default::default(),
                 seq: 4,
                 hashed,
                 helper_ms: 1.0,
@@ -48864,6 +48981,7 @@ mod tests {
             let _jobs = jobs_rx;
             let _ = release_rx.recv();
             let reply = super::HostHashReply {
+                split: Default::default(),
                 seq: 1,
                 hashed: Vec::new(),
                 helper_ms: 0.0,
@@ -48918,6 +49036,7 @@ mod tests {
                 })
                 .collect();
             let mut reply = super::HostHashReply {
+                split: Default::default(),
                 seq: 8,
                 hashed,
                 helper_ms: 1.0,
@@ -49309,6 +49428,44 @@ mod tests {
         );
         let disable = body("    fn disable(&mut self, why: &str) {");
         assert!(disable.contains("tier.staging.borrow_mut().clear();"));
+    }
+
+    /// WP-A day 49 (`DAY49.md`, OWED items 7 and 8; CPU census): the split lines are log only. The
+    /// helper's copy and hash stay one per payload in the job's order (each timed apart); the minor
+    /// fault counter is read around the helper's copy and the pre-submit's pinned allocations only;
+    /// the split structs are only written and printed; no decision reads them.
+    #[test]
+    fn day49_the_split_lines_are_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        assert_eq!(
+            production.matches("thread_minflt()").count(),
+            5,
+            "the definition, and two reads around each of the two copies"
+        );
+        let job = &production[at(production, "let mut split = HostHashSplit::default();")..];
+        let copy = at(job, "p.data = Arc::new(staged.as_f32_slice().to_vec());");
+        let hash = at(job, "let (n, d) = host_hash_payload_digest(&p.data);");
+        assert!(
+            copy < hash,
+            "the copy then the hash, per payload, as before"
+        );
+        for field in [
+            "split.copy_ms",
+            "split.copy_bytes",
+            "split.copy_minflt",
+            "split.hash_ms",
+        ] {
+            assert!(
+                !production.contains(&format!("if {field}")),
+                "{field} decides nothing"
+            );
+        }
+        assert!(!production.contains("if sp.") && !production.contains("split.leases_ms >"));
+        assert!(production.contains("[prefix-host] demote pre-submit split: ticket seq={seq}"));
+        assert!(production.contains("[prefix-host] demote helper split: ticket seq={seq}"));
     }
 
     /// WP-A day 47 (`DAY47.md` design V, sections 1 and 1a; CPU census): the pause sweep's two shapes

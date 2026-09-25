@@ -116,7 +116,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   the admission flush stays, a lead question: a deferring flush is the memory-admission door's decision).
 - Status: **built (V, on S4) and passes (a) to (d) on the target card** (DAY47 sections 3 and 3b: the pause's tenant
   stall 202.9 ms on the tick, 3.2 ms off it; every gate green, the new pause gate after its section 3a revision). Owed:
-  the 5090 half, after the card's reset; the admission flush's deferring form, a lead question (DAY47 section 1).
+  the 5090 half, after the card's reset. **Closed as V** (the lead, integ62): the admission reclaim flush stays on the
+  tick; its deferring form belongs inside `MEMRA_ADMIT_BY_MEMORY` and is lane B's owed item (V's receipts its source).
 
 ### 7. Lane C: why b1 shows no first-touch pre-submit step
 
@@ -125,7 +126,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   step (39 to 45 ms on the first two demotes, about 6 ms steady).
 - Acceptance: none registered (an attribution: a log-only per-demote allocation or first-touch line, read on the cell
   shape that shows it).
-- Status: open.
+- Status: **closed** (DAY49 section 3, the target card, run by the lead: `DAY49 ITEM7 -> b1 step attributed to H (the
+  heap first touch)`; the same mechanism as item 8, taken on b1's owner thread and now on the helper).
 
 ### 8. Lane C: the b2 helper's `hashed_in` rise, 73.2 to 104.8 / 107.3 ms, unattributed
 
@@ -133,8 +135,10 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   first touch (about 106 ms on demotes 1 to 3, 79.8 steady) in the double-park cell.
 - Acceptance: none registered (attribution first; if a first touch recurs on every demote, the improvement that
   removes it is pre-registered as its own design).
-- Status: open. Items 7 and 8 share a hypothesis (fresh heap pages on every demote where no host entry frees) that is
-  tested, not assumed.
+- Status: **closed as attributed** (DAY49 section 3: `DAY49 ITEM8 pages=38306 nofree_minflt=38306 (rule >= 19153)
+  free_minflt=0 (rule <= 9576) copy_ms nofree=23.73 free=7.64 diff=+16.09 (rule >= +5.0) -> H attributed`). The first
+  touch recurs on every demote while the host tier fills and costs the publication one tick-top poll (wall 101.3 against
+  88.6 ms), so its remedy is owed as item 17.
 
 ### 9. Lane C: promote tick 2 on b1 and b2 on the target card
 
@@ -142,7 +146,9 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Acceptance: none registered. C's tick reader defines tick 2 as the second stretched tick after the fire; a reading
   of the promote's tick placement on the current tree, pre-registered, with the day-33 timeline fields that b1 and b2
   lack.
-- Status: open.
+- Status: **closed** (DAY50 sections 2 and 3: one stretched tick, tick 2 absent in 100 of 100 runs on G4 and S4 and
+  in 30 of 30 on the tip, `DAY50 POOLED runs=30 tick1=30 tick2=0 .. submit_to_publish_ticks={1: 25, 2: 2}
+  owner_segment_med=0.52`). The one-tick-late publications recur on the tip (2 of 27), owed as item 18.
 
 ### 10. Move 2 item 2: the publishes still on the tick
 
@@ -195,6 +201,9 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Acceptance: none registered (the owner's hold priced at a host eviction with known copy-stream and receipt-stream work
   queued, then a design that frees no pinned memory on the serving path, for example the leases returned to a pool the
   governor still charges).
+- Also read (DAY51 section 3 reading 5, BOX22, a 9950X host, the base arm): each publication that replaces a host
+  entry of the same prompt holds the owner 9.36 to 9.39 ms in `take-back bind and publish` (the replaced entry's heap
+  payloads and 32 pinned leases freed on the owner thread) in the chain cell's shape.
 - Status: open.
 
 ### 15. The D2H receipt kernel's price at long entries (found by DAY38 section 17)
@@ -220,6 +229,59 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   that places the cause (the regime or the design) either way.
 - Status: **pre-registered** (DAY45 section 1: the G4 hold's own warm-up, section 20's eight boots, the regime check and
   the placing rule; `rtx5090-day45/`); waits for the 5090's reset.
+
+### Order of work from day 51 (the lead's order after integ62)
+
+Item 17 first (item 8's remedy; P refuted on day 51, its revision owed), then items 10 to 14 (item 10 per publisher; item 19 designed with item 14, one lease
+design for both directions), then items 18 and 20; the three 5090 cells (item 4's and item 6's halves, item 16) when
+the card is reset.
+
+### 17. Remove the helper's heap first touch from the demote's path (item 8's remedy)
+
+- Source: DAY49 section 3 (`-> H attributed`): 38306 minor faults per 156.9 MB copy, 16.09 ms of the helper's 83.50 ms,
+  the steady publication one tick-top poll later (wall 101.0 to 101.5 ms against 88.4 to 88.8 where entries free);
+  DAY49 section 1 ("the improvement that removes the first touch ... is pre-registered as its own design before its
+  code, with its own price clauses").
+- Acceptance: DAY51 section 1, (a) to (g).
+- Status: **open, design P refuted and reverted** (`a089a5c25`). P (DAY51, `d82738c14`) passed (a) to (f) on the
+  target card (BOX22, a 9950X host: the copy -15.2 ms with no faults, the publication -12.4 ms, one poll earlier) and
+  FAILED (g) in both orders (DAY51 section 3: `DAY51 P (g) cell=chain order=o1 chain p-minus-base=+1.40 rule <=+1.00
+  .. -> FAIL`, o2 +1.54); the chain's extra millisecond sits in the publication's `take-back bind and publish` segment
+  (+0.89 / +1.07 ms), unplaced within it. Owed: the revision, pre-registered anew before its code (a reserve that
+  refills only while the copy would fault, after a split of the publication segment places the chain's millisecond).
+
+### 18. S4's H2D destination digests ride the promote's landing (found by DAY50)
+
+- Source: DAY50 sections 2 and 3: on S4's tree 9 of 90 steady promotes publish one tick after the next tick top (0 of
+  90 on G4), and 2 of 27 on the tip; the destination digests of S4's span receipt are queued on the promote's landing
+  path (DAY42 section 1 step 5). The delay did not reach S4's (d) (PIN +0.10 ms per order).
+- Acceptance: none registered (the destination digests off the landing path, still required before the publication,
+  as S2 did for the demote; pre-registered with its own clauses before its code).
+- Status: open.
+
+### 19. The host tier's pinned allocations run on the owner thread (found by DAY49)
+
+- Source: DAY49 section 3 readings 2 and 3: a long (5122-token) demote's pre-submit holds the owner 19.66 ms, 19.26 of
+  it allocating its 32 pinned KV destinations (151.1 MB, 36896 minor faults) fresh on every demote while no entry frees;
+  the first demote of every context holds it about 20 ms allocating the staging set (`spans 19.74` and `20.43 ms`).
+  Both are the tenant's tick. On BOX22 (a 9950X host, DAY51 section 3 reading 5) the chain's long pre-submit reads 25.8
+  to 26.0 ms, 25.3 to 25.5 of it in the leases.
+- Acceptance: none registered (the owner's hold priced at a long demote and at the first demote, then a design that
+  allocates no pinned memory on the owner thread's serving path, pre-registered with item 14's: one lease design for
+  both directions).
+- Status: open.
+
+### 20. The hash helper's per-payload work runs on one thread (found by DAY49)
+
+- Source: DAY49 section 3: the helper's 83.50 ms per 64-token 27B demote is copy 23.73 plus hash 59.05 over 97
+  independent payloads, and at long entries the bind's KV re-hash adds about 56 ms over 32 independent lease views
+  (helper 139.80 ms); the publication waits for the whole job (wall 101 ms, 362 ms at long entries). Design T split
+  the promote's fill across `min(12, cpus / 2)` threads (item 3); the helper's copies and digests are the same shape of
+  work.
+- Acceptance: none registered (the same program per payload and per view, bitwise, the digests in the job's order;
+  priced on the target card against the tip, the tenant's hump and the promote's PIN inside S's bounds; pre-registered
+  before its code).
+- Status: open.
 
 ## 2. Closed, delivered, or held by another owner
 

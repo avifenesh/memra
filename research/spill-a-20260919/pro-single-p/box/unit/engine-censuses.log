@@ -1,0 +1,21 @@
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-47ae06a2f9cbea34)
+
+running 12 tests
+test tier_transfer::tests::day39_fill_shares_cover_every_byte_once ... ok
+test tier_transfer::tests::d2d_restore_rules_are_as_stated ... ok
+test tier_transfer::tests::copy_stream_issue_and_owner_wait_rules_are_as_stated ... ok
+test tier_transfer::tests::d2h_device_receipt_rules_are_as_stated ... ok
+test tier_transfer::tests::d2h_span_rules_are_as_stated ... ok
+test tier_transfer::tests::d2d_capture_rules_are_as_stated ... ok
+test tier_transfer::tests::h2d_deferred_checksum_rules_are_as_stated ... ok
+test tier_transfer::tests::native_cells_own_their_context ... ok
+test tier_transfer::tests::one_side_stream_beside_the_owner ... ok
+test tier_transfer::tests::h2d_span_rules_are_as_stated ... ok
+test tier_transfer::tests::span_receipt_rules_are_as_stated ... ok
+test tier_transfer::tests::day39_threaded_fill_is_bitwise_the_planes ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 604 filtered out; finished in 0.04s
+

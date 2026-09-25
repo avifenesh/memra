@@ -1,4 +1,6 @@
-# M1 storage decision — 2026-09-20
+# M1 storage decision: 2026-09-20
+
+> **Superseded 2026-09-25 as the plan of record** by [`M1-PREREG.md`](M1-PREREG.md) on the owner order of 2026-09-24 ("every improvment and tunning should be done, no shortcut or fast path"). The VM route this file parked is closed there: the route's documentation attaches local volumes to docker instances only and gives VMs virtual disks, so a VM cannot pass the proof. Kept as the record of the 2026-09-20 decision.
 
 **Recommendation: NO-GO on spending for the currently advertised VM-capable
 candidate without a storage-backing commitment.** The private candidate is

@@ -1,0 +1,243 @@
+test_storage_proof_requires_storage_root (__main__.Cli.test_storage_proof_requires_storage_root) ... [31mFAIL[0m
+test_bound_pass_receipt_is_the_only_nvme_label (__main__.Green.test_bound_pass_receipt_is_the_only_nvme_label) ... [31mERROR[0m
+test_live_proof_tool_receipt (__main__.Green.test_live_proof_tool_receipt) ... [33mskipped[0m 'set M1_LIVE_PROOF=1 on bare metal'
+test_private_receipt_with_raw_filesystem_id_binds (__main__.Green.test_private_receipt_with_raw_filesystem_id_binds) ... [31mERROR[0m
+test_subdirectory_of_the_proven_mount_binds (__main__.Green.test_subdirectory_of_the_proven_mount_binds) ... [31mERROR[0m
+test_different_tool (__main__.Red.test_different_tool) ... [31mERROR[0m
+test_fail_verdict (__main__.Red.test_fail_verdict) ... [31mERROR[0m
+test_failing_proof_never_downgrades_under_opt_in (__main__.Red.test_failing_proof_never_downgrades_under_opt_in) ... [31mERROR[0m
+test_malformed_receipt (__main__.Red.test_malformed_receipt) ... [31mERROR[0m
+test_missing_receipt (__main__.Red.test_missing_receipt) ... [31mERROR[0m
+test_other_device (__main__.Red.test_other_device) ... [31mERROR[0m
+test_other_filesystem_id (__main__.Red.test_other_filesystem_id) ... [31mERROR[0m
+test_other_mount (__main__.Red.test_other_mount) ... [31mERROR[0m
+test_reasons_present (__main__.Red.test_reasons_present) ... [31mERROR[0m
+test_wrong_schema (__main__.Red.test_wrong_schema) ... [31mERROR[0m
+test_bind_mount_source_suffix_is_stripped_and_still_unproven (__main__.Unproven.test_bind_mount_source_suffix_is_stripped_and_still_unproven) ... [31mFAIL[0m
+test_name_match_alone_is_not_proof (__main__.Unproven.test_name_match_alone_is_not_proof) ... [31mFAIL[0m
+test_legacy_name_match_label_is_refused (__main__.Validator.test_legacy_name_match_label_is_refused) ... [31mERROR[0m
+test_nvme_label_without_binding_is_refused (__main__.Validator.test_nvme_label_without_binding_is_refused) ... [31mERROR[0m
+test_tampered_archived_proof_is_refused (__main__.Validator.test_tampered_archived_proof_is_refused) ... [31mERROR[0m
+
+======================================================================
+[31mERROR[0m[1;31m: test_bound_pass_receipt_is_the_only_nvme_label (__main__.Green.test_bound_pass_receipt_is_the_only_nvme_label)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m68[0m, in [35mtest_bound_pass_receipt_is_the_only_nvme_label[0m
+    record = B.capture_storage(self.root, self.out, proof_path=proof)
+[1;35mTypeError[0m: [35mcapture_storage() got an unexpected keyword argument 'proof_path'[0m
+
+======================================================================
+[31mERROR[0m[1;31m: test_private_receipt_with_raw_filesystem_id_binds (__main__.Green.test_private_receipt_with_raw_filesystem_id_binds)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m81[0m, in [35mtest_private_receipt_with_raw_filesystem_id_binds[0m
+    record = B.capture_storage(self.root, self.out, proof_path=self.write_proof(proof))
+[1;35mTypeError[0m: [35mcapture_storage() got an unexpected keyword argument 'proof_path'[0m
+
+======================================================================
+[31mERROR[0m[1;31m: test_subdirectory_of_the_proven_mount_binds (__main__.Green.test_subdirectory_of_the_proven_mount_binds)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m87[0m, in [35mtest_subdirectory_of_the_proven_mount_binds[0m
+    record = B.capture_storage(sub, self.out, proof_path=self.write_proof(synthetic_proof(self.root)))
+[1;35mTypeError[0m: [35mcapture_storage() got an unexpected keyword argument 'proof_path'[0m
+
+======================================================================
+[31mERROR[0m[1;31m: test_different_tool (__main__.Red.test_different_tool)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m123[0m, in [35mtest_different_tool[0m
+    [31mself.refused[0m[1;31m(synthetic_proof(self.root, tool_sha256="0" * 64), "different proof tool")[0m
+    [31m~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m106[0m, in [35mrefused[0m
+    [31mB.capture_storage[0m[1;31m(self.root, self.out, allow_unproven, proof_path=path)[0m
+    [31m~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mTypeError[0m: [35mcapture_storage() got an unexpected keyword argument 'proof_path'[0m
+
+======================================================================
+[31mERROR[0m[1;31m: test_fail_verdict (__main__.Red.test_fail_verdict)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m114[0m, in [35mtest_fail_verdict[0m
+    [31mself.refused[0m[1;31m(synthetic_proof(self.root, verdict="FAIL", **{"class": None}), "did not PASS")[0m
+    [31m~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m106[0m, in [35mrefused[0m
+    [31mB.capture_storage[0m[1;31m(self.root, self.out, allow_unproven, proof_path=path)[0m
+    [31m~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mTypeError[0m: [35mcapture_storage() got an unexpected keyword argument 'proof_path'[0m
+
+======================================================================
+[31mERROR[0m[1;31m: test_failing_proof_never_downgrades_under_opt_in (__main__.Red.test_failing_proof_never_downgrades_under_opt_in)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m148[0m, in [35mtest_failing_proof_never_downgrades_under_opt_in[0m
+    [31mself.refused[0m[1;31m(synthetic_proof(self.root, verdict="FAIL"), "did not PASS", allow_unproven=True)[0m
+    [31m~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m106[0m, in [35mrefused[0m
+    [31mB.capture_storage[0m[1;31m(self.root, self.out, allow_unproven, proof_path=path)[0m
+    [31m~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mTypeError[0m: [35mcapture_storage() got an unexpected keyword argument 'proof_path'[0m
+
+======================================================================
+[31mERROR[0m[1;31m: test_malformed_receipt (__main__.Red.test_malformed_receipt)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m145[0m, in [35mtest_malformed_receipt[0m
+    [31mself.refused[0m[1;31m(bad, "Expecting property name")[0m
+    [31m~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m106[0m, in [35mrefused[0m
+    [31mB.capture_storage[0m[1;31m(self.root, self.out, allow_unproven, proof_path=path)[0m
+    [31m~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mTypeError[0m: [35mcapture_storage() got an unexpected keyword argument 'proof_path'[0m
+
+======================================================================
+[31mERROR[0m[1;31m: test_missing_receipt (__main__.Red.test_missing_receipt)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m140[0m, in [35mtest_missing_receipt[0m
+    [31mself.refused[0m[1;31m(Path(self.tmp.name) / "absent.json", "No such file")[0m
+    [31m~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m106[0m, in [35mrefused[0m
+    [31mB.capture_storage[0m[1;31m(self.root, self.out, allow_unproven, proof_path=path)[0m
+    [31m~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mTypeError[0m: [35mcapture_storage() got an unexpected keyword argument 'proof_path'[0m
+
+======================================================================
+[31mERROR[0m[1;31m: test_other_device (__main__.Red.test_other_device)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m127[0m, in [35mtest_other_device[0m
+    [31mself.refused[0m[1;31m(synthetic_proof(self.root, identity={"device": live["device"] + 1}),[0m
+    [31m~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+                 [1;31m"not this mount")[0m
+                 [1;31m^^^^^^^^^^^^^^^^^[0m
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m106[0m, in [35mrefused[0m
+    [31mB.capture_storage[0m[1;31m(self.root, self.out, allow_unproven, proof_path=path)[0m
+    [31m~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mTypeError[0m: [35mcapture_storage() got an unexpected keyword argument 'proof_path'[0m
+
+======================================================================
+[31mERROR[0m[1;31m: test_other_filesystem_id (__main__.Red.test_other_filesystem_id)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m136[0m, in [35mtest_other_filesystem_id[0m
+    [31mself.refused[0m[1;31m(synthetic_proof(self.root, identity={"filesystem_id_sha256_16": "0" * 16}),[0m
+    [31m~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+                 [1;31m"filesystem id differs")[0m
+                 [1;31m^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m106[0m, in [35mrefused[0m
+    [31mB.capture_storage[0m[1;31m(self.root, self.out, allow_unproven, proof_path=path)[0m
+    [31m~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mTypeError[0m: [35mcapture_storage() got an unexpected keyword argument 'proof_path'[0m
+
+======================================================================
+[31mERROR[0m[1;31m: test_other_mount (__main__.Red.test_other_mount)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m132[0m, in [35mtest_other_mount[0m
+    [31mself.refused[0m[1;31m(synthetic_proof(self.root, identity={"mount_id": live["mount_id"] + 1}),[0m
+    [31m~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+                 [1;31m"not this mount")[0m
+                 [1;31m^^^^^^^^^^^^^^^^^[0m
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m106[0m, in [35mrefused[0m
+    [31mB.capture_storage[0m[1;31m(self.root, self.out, allow_unproven, proof_path=path)[0m
+    [31m~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mTypeError[0m: [35mcapture_storage() got an unexpected keyword argument 'proof_path'[0m
+
+======================================================================
+[31mERROR[0m[1;31m: test_reasons_present (__main__.Red.test_reasons_present)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m117[0m, in [35mtest_reasons_present[0m
+    [31mself.refused[0m[1;31m(synthetic_proof(self.root, reasons=["A1: guest kernel"]), "did not PASS")[0m
+    [31m~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m106[0m, in [35mrefused[0m
+    [31mB.capture_storage[0m[1;31m(self.root, self.out, allow_unproven, proof_path=path)[0m
+    [31m~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mTypeError[0m: [35mcapture_storage() got an unexpected keyword argument 'proof_path'[0m
+
+======================================================================
+[31mERROR[0m[1;31m: test_wrong_schema (__main__.Red.test_wrong_schema)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m120[0m, in [35mtest_wrong_schema[0m
+    [31mself.refused[0m[1;31m(synthetic_proof(self.root, schema="something-else"), "not an M1 proof")[0m
+    [31m~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m106[0m, in [35mrefused[0m
+    [31mB.capture_storage[0m[1;31m(self.root, self.out, allow_unproven, proof_path=path)[0m
+    [31m~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mTypeError[0m: [35mcapture_storage() got an unexpected keyword argument 'proof_path'[0m
+
+======================================================================
+[31mERROR[0m[1;31m: test_legacy_name_match_label_is_refused (__main__.Validator.test_legacy_name_match_label_is_refused)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m199[0m, in [35mtest_legacy_name_match_label_is_refused[0m
+    record = self.proven_record()
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m183[0m, in [35mproven_record[0m
+    return [31mB.capture_storage[0m[1;31m(self.root, self.out, proof_path=proof)[0m
+           [31m~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mTypeError[0m: [35mcapture_storage() got an unexpected keyword argument 'proof_path'[0m
+
+======================================================================
+[31mERROR[0m[1;31m: test_nvme_label_without_binding_is_refused (__main__.Validator.test_nvme_label_without_binding_is_refused)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m192[0m, in [35mtest_nvme_label_without_binding_is_refused[0m
+    record = self.proven_record()
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m183[0m, in [35mproven_record[0m
+    return [31mB.capture_storage[0m[1;31m(self.root, self.out, proof_path=proof)[0m
+           [31m~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mTypeError[0m: [35mcapture_storage() got an unexpected keyword argument 'proof_path'[0m
+
+======================================================================
+[31mERROR[0m[1;31m: test_tampered_archived_proof_is_refused (__main__.Validator.test_tampered_archived_proof_is_refused)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m186[0m, in [35mtest_tampered_archived_proof_is_refused[0m
+    record = self.proven_record()
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m183[0m, in [35mproven_record[0m
+    return [31mB.capture_storage[0m[1;31m(self.root, self.out, proof_path=proof)[0m
+           [31m~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mTypeError[0m: [35mcapture_storage() got an unexpected keyword argument 'proof_path'[0m
+
+======================================================================
+[31mFAIL[0m[1;31m: test_storage_proof_requires_storage_root (__main__.Cli.test_storage_proof_requires_storage_root)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m215[0m, in [35mtest_storage_proof_requires_storage_root[0m
+    [31mself.assertIn[0m[1;31m("--storage-proof requires --storage-root", proc.stderr)[0m
+    [31m~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mAssertionError[0m: [35m'--storage-proof requires --storage-root' not found in '\x1b[1;34musage: \x1b[0m\x1b[1;35mtier-battery.py\x1b[0m [\x1b[32m-h\x1b[0m] (\x1b[36m--execute \x1b[33m...\x1b[0m | \x1b[36m--plan\x1b[0m | \x1b[36m--first-hour\x1b[0m |\n                       \x1b[36m--validate \x1b[33mRECEIPT\x1b[0m | \x1b[36m--dry-run\x1b[0m |\n                       \x1b[36m--validate-campaign \x1b[33mBUNDLE\x1b[0m) [\x1b[36m--out \x1b[33mOUT\x1b[0m]\n                       [\x1b[36m--external-lock\x1b[0m] [\x1b[36m--private-lock-dir-for-tests\x1b[0m]\n                       [\x1b[36m--schema \x1b[33m{auto,runs,telemetry,storage-cell}\x1b[0m]\n                       [\x1b[36m--storage-root \x1b[33mSTORAGE_ROOT\x1b[0m]\n                       [\x1b[36m--allow-unproven-storage\x1b[0m]\n                       [\x1b[36m--storage-samples \x1b[33mSTORAGE_SAMPLES\x1b[0m] [\x1b[36m--resume\x1b[0m]\n                       [\x1b[36m--run-id \x1b[33mRUN_ID\x1b[0m] [\x1b[36m--hourly-cost \x1b[33mHOURLY_COST\x1b[0m]\n                       [\x1b[36m--timeout \x1b[33mTIMEOUT\x1b[0m] [\x1b[36m--pairs-per-order \x1b[33mPAIRS_PER_ORDER\x1b[0m]\n                       [\x1b[36m--rig \x1b[33m{rtx5090,pro-single,pro-pair,pro-four}\x1b[0m]\ntier-battery.py: error: unrecognized arguments: --storage-proof /tmp/tmpns331nab/p.json\n'[0m
+
+======================================================================
+[31mFAIL[0m[1;31m: test_bind_mount_source_suffix_is_stripped_and_still_unproven (__main__.Unproven.test_bind_mount_source_suffix_is_stripped_and_still_unproven)[0m
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m174[0m, in [35mtest_bind_mount_source_suffix_is_stripped_and_still_unproven[0m
+    [31mself.assertEqual[0m[1;31m(calls[-1][-1], "/dev/md0")[0m
+    [31m~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mAssertionError[0m: [35m'/dev/md0[/var/lib/volumes/v1]' != '/dev/md0'
+- /dev/md0[/var/lib/volumes/v1]
++ /dev/md0
+[0m
+
+======================================================================
+[31mFAIL[0m[1;31m: test_name_match_alone_is_not_proof (__main__.Unproven.test_name_match_alone_is_not_proof)[0m
+----------------------------------------------------------------------
+[1;35mValueError[0m: [35mNVMe ancestry unproven; retained STORAGE.json; --allow-unproven-storage is development only[0m
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-f/research/spill-f-20260919/owed14/test_storage_proof.py"[0m, line [35m153[0m, in [35mtest_name_match_alone_is_not_proof[0m
+    with [31mself.assertRaisesRegex[0m[1;31m(ValueError, "no M1 proof")[0m:
+         [31m~~~~~~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1;35mAssertionError[0m: [35m"no M1 proof" does not match "NVMe ancestry unproven; retained STORAGE.json; --allow-unproven-storage is development only"[0m
+
+----------------------------------------------------------------------
+Ran 20 tests in 0.064s
+
+[1;31mFAILED[0m ([1;31mfailures=3[0m, [1;31merrors=16[0m, [33mskipped=1[0m)
+exit=1
