@@ -65,3 +65,21 @@ to R5, what the door's process holds that REF's does not and what it asks the ke
 memory placed so compaction leaves it alone, or the state's source removed) is its own registration after this reads. On
 a machine where nearly every door run is slow (as on `b`, one fast in 20), the cell reads `not_reproduced` by R1 and R2
 to R5 are still printed as observations.
+
+## 1a. The sitting, prepared before any cell
+
+`day73-sampler.py` (DAY71's sampler plus the `B` and `P` rows), `day73-cell.sh`, `day73-read.py` (which reuses
+`day71-read.py`'s run parsing, sampler rows and gate counters) and `day73-box.sh` were written after section 1. Dry
+checks (`day73-cpu/`): the sampler on the local host against a busy stand-in `run-gen` process writes `B` and `P` rows
+beside DAY71's (`dry-check-sampler.log`); the cell's control flow with a stub `run-gen-p71` and a stub `strace` (20
+sampled runs, then the four traced runs with their summaries, host settings before and after, nothing outliving the
+cell; `dry-check-cell.log`); the reader on a synthetic cell built from machine `b`'s DAY71 runs with invented `B`,
+`P` and strace rows, and `void` on `b`'s own cell, which has no `P` rows (`dry-check-reader.log`); the driver's
+control flow (`dry-check-driver.log`).
+
+Run as `D73_BUILDS="p71=6bad38150" [D73_RIG=<name>] bash /root/wt-c/research/spill-c-20260919/day73-box.sh` on any
+Ryzen 9 9950X machine with one RTX PRO 6000 Blackwell Workstation Edition, the approved 35B artifact, `/root/wt-c` at the
+lane tip and a detached `/root/wt-c-build`, root in the container, at least 48 GB `MemAvailable`, and `strace` if the
+image has it. On BOX15's machine it can follow DAY71's default half in the same sitting (separate receipts roots).
+Receipts land in `/root/spill-receipts/c-day73-<rig>/`. Expected: the build is shared with DAY71's when both run (else
+about 5 minutes), the cell about 8 minutes (20 sampled runs, 4 traced runs slower under `strace`).

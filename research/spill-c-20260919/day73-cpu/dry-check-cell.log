@@ -1,0 +1,32 @@
+cell rc=0
+== pins and counters
+home_l3=0-23
+one=0,1,2,3,4,5,6,7,8,9,10,11
+sampler_cpu=23
+counters=--cpu-probe-counters
+== counters check
+[cpu-probe] counters-check cpu=1 rdpru=ok cpu_after=1 wall_ns=1528888 tsc=6571234 mperf=6571000 aperf=8745000
+rc=0
+== calls (first 3 and count)
+--cpu-probe-counters-check
+D/art.gguf 55 88 13 --cpu-probe --cpu-probe-phases --cpu-probe-counters
+D/art.gguf 55 88 13 --experts-via-tier --expert-bank-host-bytes=17179869184 --cpu-probe --cpu-probe-phases --cpu-probe-counters
+30
+== run exits
+     24 0
+== sampler row kinds
+      9 B      72 C      37 D      96 DH       3 EH       3 H      28 I     126 IH       3 N      12 S      10 SH       2 V 
+== strace
+strace -- version stub
+D/R/compact/ev/s-i15-r1.strace
+D/R/compact/ev/s-i15-r2.strace
+D/R/compact/ev/s-ref-r1.strace
+D/R/compact/ev/s-ref-r2.strace
+== host state files
+host-after.txt 176 lines, kernel 7.0.0-34-generic
+host-before.txt 176 lines, kernel 7.0.0-34-generic
+== cell tail
+strace -- version stub
+compact cell done:      24 0 
+== leftover processes (none expected)
+none
