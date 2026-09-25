@@ -126,7 +126,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   step (39 to 45 ms on the first two demotes, about 6 ms steady).
 - Acceptance: none registered (an attribution: a log-only per-demote allocation or first-touch line, read on the cell
   shape that shows it).
-- Status: open.
+- Status: **pre-registered and built** (DAY49: the split lines, log only; the attribution cell `pro-single-day49/`
+  prepared, NEED TARGET CARD).
 
 ### 8. Lane C: the b2 helper's `hashed_in` rise, 73.2 to 104.8 / 107.3 ms, unattributed
 
@@ -134,8 +135,7 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   first touch (about 106 ms on demotes 1 to 3, 79.8 steady) in the double-park cell.
 - Acceptance: none registered (attribution first; if a first touch recurs on every demote, the improvement that
   removes it is pre-registered as its own design).
-- Status: open. Items 7 and 8 share a hypothesis (fresh heap pages on every demote where no host entry frees) that is
-  tested, not assumed.
+- Status: **pre-registered and built** (DAY49, with item 7: one hypothesis, one cell; `pro-single-day49/` prepared).
 
 ### 9. Lane C: promote tick 2 on b1 and b2 on the target card
 
