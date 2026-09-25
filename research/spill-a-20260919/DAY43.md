@@ -75,3 +75,15 @@ about the same; (3) holds; (4) holds (BOX7 read G''' flat at 64 tokens, +0.031).
 
 **Budget.** 0.3 agent-day for the harness, the readers and the sitting (this commit); the sitting's run is about 3
 hours of card time after the S2 sitting.
+
+## 1a. Amendment before any reading runs: the completeness count and the entry length
+
+- Reading one finished boot's server log to check the cell was demoting (`demote-long/ab/o1/b01-g4`, 10 copy-complete
+  lines, no comparison read) showed section 1's completeness term mis-stated: "a copy-complete line for every timed run
+  and the seed". The seed is demoted by timed run 1's insert, and the last timed run's entry stays resident, so a boot
+  in which every timed run demoted carries exactly one line per timed run. `item15-reading.py` required runs + 1 and
+  would have called every boot incomplete; it now requires one line per timed run. No rule term changes.
+- The long prompt (`PRIME_TARGET_TOKENS - 4` words) reads `intruder_prompt_tokens=[5122, ..]`: the entries are about
+  5.1k tokens, not 4096; the cell is read as it ran.
+- The box's run of the sitting calls the reader from its tree at `c62a34175` (the defect included); the reading is
+  re-run with the corrected reader over the same raw receipts once they are mirrored, and both outputs are banked.

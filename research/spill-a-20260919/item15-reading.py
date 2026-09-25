@@ -7,8 +7,8 @@ Input: ROOT/demote-long/ab/o{1,2}/bNN-{g4,g3}/{server.log,demote-long/receipt.js
 ROOT/promote-long/ab/o{1,2}/bNN-{g4,g3}/{server.log,promote-long/receipt.json} (stall_cell.py, --n 5: 5 timed runs of
 the arm per boot), each ab/replays.log; 20 boots per mode, five per arm per order. Complete: every boot with a receipt,
 `errors` empty, every intruder (and every chain) without an error, one `STALL REPLAY: PASS` per boot, and in
-demote-long at least as many `demote copy complete off the tick` lines as timed runs plus the seed's (every timed run
-demoted); nothing is read from an incomplete cell (it repeats whole once).
+demote-long at least as many `demote copy complete off the tick` lines as timed runs (every timed run demoted; DAY43
+section 1a); nothing is read from an incomplete cell (it repeats whole once).
 Terms, per order, medians over the pooled boots of an arm (steady = the second and later such line of a boot):
   copy   demote-long: the steady `demote copy complete off the tick: .. Xms from submission to completion`
   wall   demote-long: the steady `demote digests landed off the tick: .. wall Xms t0 to publication`
@@ -85,9 +85,11 @@ def boot(d, mode):
             if w >= 2:
                 out["wall"].append(float(m.group(1)))
     out["copies"] = c
-    if mode == "demote-long" and c < out["runs"] + 1:
+    # DAY43 section 1a: the seed is demoted by timed run 1's insert and the last run's entry stays resident, so a
+    # boot in which every timed run demoted carries exactly one copy-complete line per timed run.
+    if mode == "demote-long" and c < out["runs"]:
         out["ok"] = False
-        out["why"].append(f"copy-complete lines={c} for {out['runs']} timed runs plus the seed")
+        out["why"].append(f"copy-complete lines={c} for {out['runs']} timed runs")
     return out
 
 
