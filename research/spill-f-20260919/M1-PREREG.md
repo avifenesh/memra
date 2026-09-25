@@ -138,7 +138,7 @@ storage-to-GPU path is the whole decode loop.
 | `pread16` | `MEMRA_SPILL_IO=pread MEMRA_SPILL_PREAD_DEPTH=16` | blocking positioned-read oracle |
 | `mmap-random` | unset `MEMRA_SPILL_IO` (mmap default) | mapped access, default advice |
 | `mmap-normal` | `MEMRA_MOE_MMAP_ADVICE=normal` | mapped access with readahead |
-| `direct16` | `MEMRA_SPILL_IO=direct MEMRA_SPILL_PREAD_DEPTH=16` | O_DIRECT worker; **refused until OWED 7 lands**, because on this artifact 0 of 31,488 slices are O_DIRECT-admissible and the arm would be 100% mmap fallback under a direct label |
+| `direct16` | `MEMRA_SPILL_IO=direct MEMRA_SPILL_PREAD_DEPTH=16` | O_DIRECT worker; **refused until OWED 7's GPU gates pass** (the over-read landed CPU-verified 2026-09-25, `owed7/RESULTS.md`). Before it, 0 of 31,488 slices were O_DIRECT-admissible and the arm was 100% mmap fallback under a direct label |
 
 Census receipt: `m1-prereg/direct-alignment-census-qwen36-35b.json` (header-only; header
 SHA-256 `61329137...890ab`; `general.alignment=32`; slice lengths are 4096 multiples, every

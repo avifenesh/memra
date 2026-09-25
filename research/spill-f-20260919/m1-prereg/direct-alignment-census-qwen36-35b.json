@@ -13,6 +13,7 @@
  "expert_bytes": 15600713728,
  "aligned_bytes": 0,
  "aligned_share": 0.0,
+ "overread_bytes_one_read_of_every_slice": 128974848,
  "unknown_type_tensors": [],
  "per_tensor": [
   {
@@ -22,7 +23,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 1824,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.0.ffn_gate_exps.weight",
@@ -31,7 +35,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 1824,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.0.ffn_up_exps.weight",
@@ -40,7 +47,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 1824,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.1.ffn_down_exps.weight",
@@ -49,7 +59,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 2592,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.1.ffn_gate_exps.weight",
@@ -58,7 +71,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2592,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.1.ffn_up_exps.weight",
@@ -67,7 +83,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2592,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.2.ffn_down_exps.weight",
@@ -76,7 +95,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 3360,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.2.ffn_gate_exps.weight",
@@ -85,7 +107,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3360,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.2.ffn_up_exps.weight",
@@ -94,7 +119,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3360,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.3.ffn_down_exps.weight",
@@ -103,7 +131,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 2080,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.3.ffn_gate_exps.weight",
@@ -112,7 +143,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2080,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.3.ffn_up_exps.weight",
@@ -121,7 +155,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2080,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.4.ffn_down_exps.weight",
@@ -130,7 +167,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 2080,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.4.ffn_gate_exps.weight",
@@ -139,7 +179,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2080,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.4.ffn_up_exps.weight",
@@ -148,7 +191,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2080,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.5.ffn_down_exps.weight",
@@ -157,7 +203,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 2848,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.5.ffn_gate_exps.weight",
@@ -166,7 +215,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2848,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.5.ffn_up_exps.weight",
@@ -175,7 +227,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2848,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.6.ffn_down_exps.weight",
@@ -184,7 +239,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 3616,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.6.ffn_gate_exps.weight",
@@ -193,7 +251,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3616,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.6.ffn_up_exps.weight",
@@ -202,7 +263,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3616,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.7.ffn_down_exps.weight",
@@ -211,7 +275,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 2336,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.7.ffn_gate_exps.weight",
@@ -220,7 +287,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2336,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.7.ffn_up_exps.weight",
@@ -229,7 +299,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2336,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.8.ffn_down_exps.weight",
@@ -238,7 +311,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 2336,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.8.ffn_gate_exps.weight",
@@ -247,7 +323,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2336,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.8.ffn_up_exps.weight",
@@ -256,7 +335,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2336,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.9.ffn_down_exps.weight",
@@ -265,7 +347,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 3104,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.9.ffn_gate_exps.weight",
@@ -274,7 +359,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3104,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.9.ffn_up_exps.weight",
@@ -283,7 +371,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3104,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.10.ffn_down_exps.weight",
@@ -292,7 +383,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 3872,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.10.ffn_gate_exps.weight",
@@ -301,7 +395,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3872,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.10.ffn_up_exps.weight",
@@ -310,7 +407,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3872,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.11.ffn_down_exps.weight",
@@ -319,7 +419,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 2592,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.11.ffn_gate_exps.weight",
@@ -328,7 +431,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2592,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.11.ffn_up_exps.weight",
@@ -337,7 +443,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2592,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.12.ffn_down_exps.weight",
@@ -346,7 +455,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 2592,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.12.ffn_gate_exps.weight",
@@ -355,7 +467,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2592,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.12.ffn_up_exps.weight",
@@ -364,7 +479,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2592,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.13.ffn_down_exps.weight",
@@ -373,7 +491,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 3360,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.13.ffn_gate_exps.weight",
@@ -382,7 +503,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3360,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.13.ffn_up_exps.weight",
@@ -391,7 +515,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3360,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.14.ffn_down_exps.weight",
@@ -400,7 +527,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 32,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.14.ffn_gate_exps.weight",
@@ -409,7 +539,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 32,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.14.ffn_up_exps.weight",
@@ -418,7 +551,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 32,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.15.ffn_down_exps.weight",
@@ -427,7 +563,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 2848,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.15.ffn_gate_exps.weight",
@@ -436,7 +575,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2848,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.15.ffn_up_exps.weight",
@@ -445,7 +587,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2848,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.16.ffn_down_exps.weight",
@@ -454,7 +599,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 2848,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.16.ffn_gate_exps.weight",
@@ -463,7 +611,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2848,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.16.ffn_up_exps.weight",
@@ -472,7 +623,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2848,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.17.ffn_down_exps.weight",
@@ -481,7 +635,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 3616,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.17.ffn_gate_exps.weight",
@@ -490,7 +647,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3616,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.17.ffn_up_exps.weight",
@@ -499,7 +659,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3616,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.18.ffn_down_exps.weight",
@@ -508,7 +671,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 288,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.18.ffn_gate_exps.weight",
@@ -517,7 +683,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 288,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.18.ffn_up_exps.weight",
@@ -526,7 +695,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 288,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.19.ffn_down_exps.weight",
@@ -535,7 +707,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 3104,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.19.ffn_gate_exps.weight",
@@ -544,7 +719,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3104,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.19.ffn_up_exps.weight",
@@ -553,7 +731,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3104,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.20.ffn_down_exps.weight",
@@ -562,7 +743,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 3104,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.20.ffn_gate_exps.weight",
@@ -571,7 +755,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3104,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.20.ffn_up_exps.weight",
@@ -580,7 +767,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3104,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.21.ffn_down_exps.weight",
@@ -589,7 +779,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 3872,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.21.ffn_gate_exps.weight",
@@ -598,7 +791,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3872,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.21.ffn_up_exps.weight",
@@ -607,7 +803,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3872,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.22.ffn_down_exps.weight",
@@ -616,7 +815,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 544,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.22.ffn_gate_exps.weight",
@@ -625,7 +827,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 544,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.22.ffn_up_exps.weight",
@@ -634,7 +839,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 544,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.23.ffn_down_exps.weight",
@@ -643,7 +851,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 3360,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.23.ffn_gate_exps.weight",
@@ -652,7 +863,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3360,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.23.ffn_up_exps.weight",
@@ -661,7 +875,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3360,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.24.ffn_down_exps.weight",
@@ -670,7 +887,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 3360,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.24.ffn_gate_exps.weight",
@@ -679,7 +899,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3360,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.24.ffn_up_exps.weight",
@@ -688,7 +911,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3360,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.25.ffn_down_exps.weight",
@@ -697,7 +923,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 32,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.25.ffn_gate_exps.weight",
@@ -706,7 +935,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 32,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.25.ffn_up_exps.weight",
@@ -715,7 +947,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 32,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.26.ffn_down_exps.weight",
@@ -724,7 +959,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 800,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.26.ffn_gate_exps.weight",
@@ -733,7 +971,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 800,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.26.ffn_up_exps.weight",
@@ -742,7 +983,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 800,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.27.ffn_down_exps.weight",
@@ -751,7 +995,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 3616,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.27.ffn_gate_exps.weight",
@@ -760,7 +1007,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3616,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.27.ffn_up_exps.weight",
@@ -769,7 +1019,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3616,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.28.ffn_down_exps.weight",
@@ -778,7 +1031,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 3616,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.28.ffn_gate_exps.weight",
@@ -787,7 +1043,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3616,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.28.ffn_up_exps.weight",
@@ -796,7 +1055,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3616,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.29.ffn_down_exps.weight",
@@ -805,7 +1067,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 288,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.29.ffn_gate_exps.weight",
@@ -814,7 +1079,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 288,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.29.ffn_up_exps.weight",
@@ -823,7 +1091,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 288,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.30.ffn_down_exps.weight",
@@ -832,7 +1103,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 1056,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.30.ffn_gate_exps.weight",
@@ -841,7 +1115,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 1056,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.30.ffn_up_exps.weight",
@@ -850,7 +1127,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 1056,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.31.ffn_down_exps.weight",
@@ -859,7 +1139,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 3872,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.31.ffn_gate_exps.weight",
@@ -868,7 +1151,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3872,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.31.ffn_up_exps.weight",
@@ -877,7 +1163,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3872,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.32.ffn_down_exps.weight",
@@ -886,7 +1175,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 3872,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.32.ffn_gate_exps.weight",
@@ -895,7 +1187,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3872,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.32.ffn_up_exps.weight",
@@ -904,7 +1199,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 3872,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.33.ffn_down_exps.weight",
@@ -913,7 +1211,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 544,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.33.ffn_gate_exps.weight",
@@ -922,7 +1223,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 544,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.33.ffn_up_exps.weight",
@@ -931,7 +1235,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 544,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.34.ffn_down_exps.weight",
@@ -940,7 +1247,10 @@
    "slice_bytes": 860160,
    "slice_mod_4096": 0,
    "base_mod_4096": 1312,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.34.ffn_gate_exps.weight",
@@ -949,7 +1259,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 1312,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.34.ffn_up_exps.weight",
@@ -958,7 +1271,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 1312,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.35.ffn_down_exps.weight",
@@ -967,7 +1283,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 32,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.35.ffn_gate_exps.weight",
@@ -976,7 +1295,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 32,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.35.ffn_up_exps.weight",
@@ -985,7 +1307,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 32,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.36.ffn_down_exps.weight",
@@ -994,7 +1319,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 32,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.36.ffn_gate_exps.weight",
@@ -1003,7 +1331,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 32,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.36.ffn_up_exps.weight",
@@ -1012,7 +1343,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 32,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.37.ffn_down_exps.weight",
@@ -1021,7 +1355,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 800,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.37.ffn_gate_exps.weight",
@@ -1030,7 +1367,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 800,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.37.ffn_up_exps.weight",
@@ -1039,7 +1379,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 800,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.38.ffn_down_exps.weight",
@@ -1048,7 +1391,10 @@
    "slice_bytes": 860160,
    "slice_mod_4096": 0,
    "base_mod_4096": 1568,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.38.ffn_gate_exps.weight",
@@ -1057,7 +1403,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 1568,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.38.ffn_up_exps.weight",
@@ -1066,7 +1415,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 1568,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.39.ffn_down_exps.weight",
@@ -1075,7 +1427,10 @@
    "slice_bytes": 860160,
    "slice_mod_4096": 0,
    "base_mod_4096": 288,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.39.ffn_gate_exps.weight",
@@ -1084,7 +1439,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 288,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.39.ffn_up_exps.weight",
@@ -1093,7 +1451,10 @@
    "slice_bytes": 557056,
    "slice_mod_4096": 0,
    "base_mod_4096": 288,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.40.ffn_down_exps.weight",
@@ -1102,7 +1463,10 @@
    "slice_bytes": 589824,
    "slice_mod_4096": 0,
    "base_mod_4096": 2336,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.40.ffn_gate_exps.weight",
@@ -1111,7 +1475,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2336,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   },
   {
    "tensor": "blk.40.ffn_up_exps.weight",
@@ -1120,7 +1487,10 @@
    "slice_bytes": 450560,
    "slice_mod_4096": 0,
    "base_mod_4096": 2336,
-   "aligned_slices": 0
+   "aligned_slices": 0,
+   "overread_bytes_per_slice": [
+    4096
+   ]
   }
  ]
 }

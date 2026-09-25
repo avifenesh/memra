@@ -93,6 +93,7 @@ def main():
     rows, unknown = [], []
     total = aligned = 0
     total_bytes = aligned_bytes = 0
+    overread_total = 0
     for name, dims, t, off in infos:
         if not name.endswith(EXPERT_SUFFIXES):
             continue
@@ -114,13 +115,23 @@ def main():
         ok = sum(1 for e in range(n_expert)
                  if (base + e * slice_bytes) % DIRECT_IO_ALIGNMENT == 0
                  and slice_bytes % DIRECT_IO_ALIGNMENT == 0)
+        # OWED 7 over-read: window = align_up(offset + len) - align_down(offset).
+        over = []
+        for e in range(n_expert):
+            o = base + e * slice_bytes
+            start = o - o % DIRECT_IO_ALIGNMENT
+            end = -(-(o + slice_bytes) // DIRECT_IO_ALIGNMENT) * DIRECT_IO_ALIGNMENT
+            over.append(end - start - slice_bytes)
+        overread_total += sum(over)
+        over = set(over)
         total += n_expert
         aligned += ok
         total_bytes += nbytes
         aligned_bytes += ok * slice_bytes
         rows.append({"tensor": name, "type": tname, "experts": n_expert,
                      "slice_bytes": slice_bytes, "slice_mod_4096": slice_bytes % 4096,
-                     "base_mod_4096": base % 4096, "aligned_slices": ok})
+                     "base_mod_4096": base % 4096, "aligned_slices": ok,
+                     "overread_bytes_per_slice": sorted(over)})
     print(json.dumps({
         "file": path.rsplit("/", 1)[-1], "gguf_version": version, "tensors": n_tensors,
         "general_alignment": alignment, "header_bytes": header_end,
@@ -129,6 +140,7 @@ def main():
         "expert_tensors": len(rows), "expert_slices": total, "aligned_slices": aligned,
         "expert_bytes": total_bytes, "aligned_bytes": aligned_bytes,
         "aligned_share": (aligned / total) if total else None,
+        "overread_bytes_one_read_of_every_slice": overread_total,
         "unknown_type_tensors": unknown, "per_tensor": rows,
     }, indent=1))
 
