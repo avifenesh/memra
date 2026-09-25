@@ -2319,6 +2319,10 @@ struct SpecReuseEntry {
     /// as llama serve's cache_prompt: the suffix's boundary tokenization may differ from a cold
     /// full-retok — committed tokens stay authoritative, spec==greedy exactness is untouched.
     committed_text: String,
+    /// The public stream's length (`spec_public_len`, WP-B day 41 addendum B3): `committed`
+    /// minus the final burst's accepted drafts past the budget. Read only by the armed
+    /// `MEMRA_RESUME_GRID_REWIND` exact probe, which always rewinds below it.
+    public_len: usize,
     /// SESSION AFFINITY (lane/session-affinity): the conversation this session belongs to, as
     /// the admitting request declared it — `Some(id)` from the explicit tier
     /// (`session_id`/`user`/`x-session-id`), else None. Nomination only; see `affinity`.
@@ -3606,6 +3610,53 @@ fn plain_checkpoint_boundary(prompt: &[u32], is_control: &dyn Fn(u32) -> bool) -
     // inside the checkpoint.
     let b = grid_align_boundary_within(n - PLAIN_CKPT_RAW_GUARD, n);
     if b > REUSE_MIN_PREFIX { Some(b) } else { None }
+}
+
+/// The checkpoint an armed `MEMRA_RESUME_GRID_REWIND` session arms (WP-B day 41 addendum B).
+/// Absolute prompt positions, on the grid; `seed` is the resumed depth (0 cold).
+///
+/// - `markers` (the request is named or nominatable): the affinity program's point, the grid
+///   floor of the last control token, never past it, when that floor lies past `seed`; otherwise
+///   (B2: the resumed depth already covers it) the guard window.
+/// - not `markers` (B1: no affinity resume can nominate the session): the guard window,
+///   interior control tokens ignored, since an exact extension resends the whole prompt.
+///
+/// Every boundary clears the fed-start floor (`b >= seed + PRIME_MIN_T`), so no row between the
+/// resumed depth and the checkpoint primes tokenwise, and the snapshot is a prime-produced
+/// state on the grid. `None`: no legal checkpoint (the next resume declines cold).
+fn grid_rewind_checkpoint_boundary(
+    prompt: &[u32],
+    seed: usize,
+    markers: bool,
+    is_control: &dyn Fn(u32) -> bool,
+) -> Option<usize> {
+    let n = prompt.len();
+    if n <= REUSE_MIN_PREFIX + PLAIN_CKPT_RAW_GUARD {
+        return None;
+    }
+    let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+    let legal = |b: usize| b > REUSE_MIN_PREFIX && b < n && b >= seed + floor;
+    if markers && let Some(last_marker) = prompt.iter().rposition(|&t| is_control(t)) {
+        let b = grid_align_boundary_within(last_marker, n);
+        if b > REUSE_MIN_PREFIX && b < n && b > seed {
+            return legal(b).then_some(b);
+        }
+    }
+    let b = grid_align_boundary_within(n - PLAIN_CKPT_RAW_GUARD, n);
+    legal(b).then_some(b)
+}
+
+/// The public stream length of a parked spec session (WP-B day 41 addendum B3): the request's
+/// prompt plus its public generated tokens when `committed` reproduces the generated tokens
+/// there; otherwise `committed.len()` (today's match key). Rows past it are the final burst's
+/// accepted drafts beyond the budget, which the next prompt never carries.
+fn spec_public_len(committed: &[u32], n_prompt: usize, generated: &[u32]) -> usize {
+    let end = n_prompt + generated.len();
+    if end <= committed.len() && committed[n_prompt..end] == *generated {
+        end
+    } else {
+        committed.len()
+    }
 }
 
 /// PRIME-GRID BOUNDARY ALIGNMENT (lane/spec-longctx-20260821 — the GATES-SMOKE B3/B1-fold
@@ -29975,6 +30026,7 @@ pub fn run(
                         .map(|b| toks.first() == Some(&b))
                         .unwrap_or(false) as usize;
                     let committed_text = loaded[&s.model].tok.decode_special(&toks[skip..], true);
+                    let public_len = spec_public_len(toks, s.n_prompt, &s.generated);
                     // SESSION AFFINITY: identity of the conversation this session served, so a
                     // later turn that REWRITES history can still recognize and rewind it. The
                     // fingerprint chain is taken over the COMMITTED tokens (no live tail to
@@ -30009,6 +30061,7 @@ pub fn run(
                             .entry(pool_key)
                             .or_default()
                             .push(SpecReuseEntry {
+                                public_len,
                                 sess,
                                 committed_text,
                                 affinity: s.affinity,
@@ -33840,10 +33893,19 @@ fn admit(
         } else {
             let mut probe = None;
             if let Some(pool) = spec_reuse.get(&pool_key) {
+                // DAY41 addendum B3: armed, the exact key is the public stream (the final
+                // burst's overshoot rows are not required); the hit always rewinds below it.
+                let exact_key = |e: &SpecReuseEntry| -> usize {
+                    if resume_grid_rewind_on() {
+                        e.public_len.min(e.sess.committed.len())
+                    } else {
+                        e.sess.committed.len()
+                    }
+                };
                 if let Some(index) = pool.iter().rposition(|e| {
                     e.sess.cache_max_ctx() >= ctx_cap
-                        && prompt.len() >= e.sess.committed.len()
-                        && prompt.starts_with(&e.sess.committed)
+                        && prompt.len() >= exact_key(e)
+                        && prompt.starts_with(&e.sess.committed[..exact_key(e)])
                         && spec_resume_sampler_admits(&req_sampler, e, &mut sampler_refused)
                 }) {
                     probe = Some(SpecResumeProbe::Exact(index));
@@ -35090,8 +35152,17 @@ fn admit(
             || plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t))
             || resume_grid_rewind_on())
     {
-        plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t))
-            .filter(|&b| b > seed_fed.len())
+        if resume_grid_rewind_on() {
+            // DAY41 addendum B (B1, B2): the armed arm's own boundary rule.
+            let markers = req.affinity.is_some()
+                || plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t));
+            grid_rewind_checkpoint_boundary(&prompt, seed_fed.len(), markers, &|t| {
+                lm.tok.token_is_control(t)
+            })
+        } else {
+            plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t))
+                .filter(|&b| b > seed_fed.len())
+        }
     } else {
         None
     };
@@ -37038,7 +37109,16 @@ fn step_session(
                     || resume_grid_rewind_on())
                 || !cold)
         {
-            plain_checkpoint_boundary(&suffix, &|t| lm.tok.token_is_control(t))
+            if cold && resume_grid_rewind_on() {
+                // DAY41 addendum B (B1): a cold spec session arms the armed arm's rule.
+                let markers = s.affinity.is_some()
+                    || plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t));
+                grid_rewind_checkpoint_boundary(&suffix, 0, markers, &|t| {
+                    lm.tok.token_is_control(t)
+                })
+            } else {
+                plain_checkpoint_boundary(&suffix, &|t| lm.tok.token_is_control(t))
+            }
         } else {
             None
         };
@@ -55854,8 +55934,17 @@ mod tests {
         let worker = squash(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         let call = format!("resume_grid_rewind_on{}", "()");
-        // The definition, plain arming, spec arming, the plain hit, the spec exact and text hits.
-        assert_eq!(live.matches(call.as_str()).count(), 6);
+        // The definition, plain arming (the gate and addendum B's rule), spec arming (the gate
+        // and addendum B's cold rule), the plain hit, the spec exact key (addendum B3) and the
+        // spec exact and text hits.
+        assert_eq!(live.matches(call.as_str()).count(), 9);
+        assert!(live.contains("if resume_grid_rewind_on() { // DAY41 addendum B (B1, B2): the armed arm's own boundary rule. let markers = req.affinity.is_some() || plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t)); grid_rewind_checkpoint_boundary(&prompt, seed_fed.len(), markers, &|t| { lm.tok.token_is_control(t) }) } else { plain_checkpoint_boundary(&prompt, &|t| lm.tok.token_is_control(t)) .filter(|&b| b > seed_fed.len()) }"));
+        assert!(live.contains("if cold && resume_grid_rewind_on() {"));
+        assert!(live.contains("grid_rewind_checkpoint_boundary(&suffix, 0, markers, &|t| {"));
+        // B3: unset, the exact key is the whole committed stream (today's probe).
+        assert!(live.contains("if resume_grid_rewind_on() { e.public_len.min(e.sess.committed.len()) } else { e.sess.committed.len() }"));
+        assert!(live.contains("&& prompt.starts_with(&e.sess.committed[..exact_key(e)])"));
+        assert!(live.contains("let public_len = spec_public_len(toks, s.n_prompt, &s.generated);"));
         assert!(live.contains("|| plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t)) || resume_grid_rewind_on())"));
         assert!(live.contains("|| plain_ckpt_nominatable(&suffix, &|t| lm.tok.token_is_control(t)) || resume_grid_rewind_on())"));
         assert!(live.contains(
@@ -55876,6 +55965,88 @@ mod tests {
         // Each rewind is its pool's own restore.
         assert!(live.contains("if let Err(err) = memra_engine::pp::restore_cache_checkpoint( engine, &lm.model, None, &mut e.cache, &ckpt.snap, )"));
         assert!(live.contains("match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {"));
+    }
+
+    /// WP-B day 41 addendum B (B1, B2): the armed arm's checkpoint boundary.
+    #[test]
+    fn grid_rewind_checkpoint_boundary_follows_addendum_b() {
+        use super::{grid_rewind_checkpoint_boundary as rule, plain_checkpoint_boundary};
+        let grain = memra_engine::Engine::gdn_chunk_size();
+        let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+        const M: u32 = 7;
+        let is_m = |t: u32| t == M;
+        let plain = |n: usize| (0..n).map(|i| 100 + (i as u32 % 50)).collect::<Vec<u32>>();
+        let n = 40 * grain;
+        let guard = super::grid_align_boundary_within(n - super::PLAIN_CKPT_RAW_GUARD, n);
+        // A markerless prompt: the guard window, with or without markers searched.
+        let p = plain(n);
+        assert_eq!(rule(&p, 0, false, &is_m), Some(guard));
+        assert_eq!(rule(&p, 0, true, &is_m), Some(guard));
+        assert_eq!(
+            rule(&p, 0, true, &is_m),
+            plain_checkpoint_boundary(&p, &is_m)
+        );
+        // B1: an interior control token in an unnominatable prompt is ignored.
+        let mut q = plain(n);
+        q[10 * grain + 3] = M;
+        assert_eq!(rule(&q, 0, false, &is_m), Some(guard));
+        // A nominatable prompt keeps the affinity point, cold: today's boundary.
+        assert_eq!(rule(&q, 0, true, &is_m), Some(10 * grain));
+        assert_eq!(
+            rule(&q, 0, true, &is_m),
+            plain_checkpoint_boundary(&q, &is_m)
+        );
+        // B2: resumed past the last control token, the tail's guard window.
+        assert_eq!(rule(&q, 10 * grain, true, &is_m), Some(guard));
+        assert_eq!(rule(&q, 20 * grain, false, &is_m), Some(guard));
+        // A control token at or past the resumed depth: its grid floor, never past it.
+        assert_eq!(rule(&q, 5 * grain, true, &is_m), Some(10 * grain));
+        // The fed-start floor: a boundary fewer than PRIME_MIN_T rows past the resumed depth is
+        // no checkpoint at all, never a tokenwise one.
+        assert_eq!(rule(&q, guard - floor + 1, false, &is_m), None);
+        assert_eq!(rule(&q, guard - floor, false, &is_m), Some(guard));
+        assert_eq!(
+            rule(&q, 10 * grain - floor + 1, true, &is_m),
+            None,
+            "the marker floor, not a later point"
+        );
+        // Too short for any checkpoint.
+        assert_eq!(
+            rule(
+                &plain(super::REUSE_MIN_PREFIX + super::PLAIN_CKPT_RAW_GUARD),
+                0,
+                false,
+                &is_m
+            ),
+            None
+        );
+    }
+
+    /// WP-B day 41 addendum B3: the public stream of an overshooting park.
+    #[test]
+    fn spec_public_len_drops_the_final_bursts_overshoot() {
+        use super::spec_public_len;
+        let prompt: Vec<u32> = (0..64).collect();
+        let generated: Vec<u32> = (1000..1032).collect();
+        let mut committed = prompt.clone();
+        committed.extend_from_slice(&generated);
+        assert_eq!(
+            spec_public_len(&committed, 64, &generated),
+            96,
+            "no overshoot"
+        );
+        committed.extend_from_slice(&[5000, 5001, 5002]);
+        assert_eq!(
+            spec_public_len(&committed, 64, &generated),
+            96,
+            "three overshoot rows"
+        );
+        // Committed does not reproduce the generated tokens: today's key.
+        let mut other = committed.clone();
+        other[70] = 9;
+        assert_eq!(spec_public_len(&other, 64, &generated), other.len());
+        // A generated list longer than committed: today's key.
+        assert_eq!(spec_public_len(&committed[..80], 64, &generated), 80);
     }
 
     /// WP-B day 39 (DAY39 1.6): the corrected pending-prime term, one model.
