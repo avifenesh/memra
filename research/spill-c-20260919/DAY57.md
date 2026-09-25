@@ -43,3 +43,30 @@ I10 stays if (i), (ii) and (iii) hold.
 **What each card can decide.** The RTX 5090 decides the clauses here; the target card reads them in the ladder
 (`DAY52.md` grows an `i10` arm and a day-57 view before the sitting runs). The deciding cell (`DAY51.md`) runs on
 the tree after this rung's verdict, like the others.
+
+## 2. Results, cell `fillwait` (RTX 5090 Laptop GPU, `rtx5090-day57/fillwait/`)
+
+One collector hold, 00:22:26Z to 00:28:27Z, 30 runs, tree `2f86e3078`, binaries `run-gen-i4` `f14df194...` and
+`run-gen-i10` `90c0496d...`, the approved artifact, the runner under the 1200% cap. Regime (`regime.log`, 250 ms,
+N=1421): SM 1582 to 2775 MHz, power 28.5 to 167.1 W, 60 to 73 C. Collector `--validate` rc=0.
+
+Verbatim (`fillwait/reading.log`):
+
+`DAY57 FILLWAIT CHECKS rig=rtx5090 runs=30 integrity=ok`
+
+`DAY57 ARM i4 window_door_ms_per_token=-0.56 gen_door_ms_per_token=2.69 window_s median=0.313 iqr=0.002 | per window token: gpu_misses=92.3 host_hits=92.3 prefetches=88.6 prefetch_hits=88.6 demand=0.027 enqueue=0.008 copy_gpu=0.095 wait=0.000 retire=0.054 miss_total=0.051`
+
+`DAY57 ARM i10 window_door_ms_per_token=-0.59 gen_door_ms_per_token=-1.25 window_s median=0.312 iqr=0.001 | per window token: gpu_misses=92.3 host_hits=92.3 prefetches=88.6 prefetch_hits=88.6 demand=0.033 enqueue=0.008 copy_gpu=0.095 wait=0.000 retire=0.054 miss_total=0.056`
+
+`DAY57 CLAUSE (i) i10 physical_reads per run=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0] rule all 0 -> PASS`
+
+`DAY57 CLAUSE (ii) i10_minus_i4 gen o1=-0.127 o2=-0.125 noise=0.008 rule < -noise both orders -> PASS`
+
+`DAY57 CLAUSE (iii) i10_minus_i4 window pooled=-0.001 o1=+0.000 o2=-0.001 noise=0.002 rule <= noise pooled and both orders -> PASS`
+
+`DAY57 READING install_s median i4=9.85 i10=10.86 (i10 - i4 +1.00) fill_complete_ms median=1038.3 gen_s median off=0.402 i4=0.487 i10=0.361`
+
+`DAY57 FILLWAIT rig=rtx5090 integrity=ok clause_i=PASS clause_ii=PASS clause_iii=PASS`
+
+I10 stays. No decode demand reads storage, gen-only decode falls 0.487 to 0.361 s (below this cell's legacy 0.402),
+and the install carries the fill's 1.04 s instead (9.85 to 10.86 s), the direction registered.
