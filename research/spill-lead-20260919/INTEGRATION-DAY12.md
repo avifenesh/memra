@@ -3926,6 +3926,78 @@ by the lead on BOX10 after this battery.
 - B's question on the verbatim-extension resume (B's rewind arm `MEMRA_RESUME_GRID_REWIND` prices it in its third
   sitting); memra#464's guard seed format; BOX3's detached OS volume.
 
+## integ63 (`lane/spill-integ63-20260925`): A days 49 to 51 (items 7 and 8 attributed to the heap first touch; item 9 closed; design P refuted and reverted) and F's M1 build-out (the NVMe proof tool, OWED 7 to 14, the collector's proof binding)
+Lane tips merged: A `22a96f20e` and F `b014a791d` on main `5228ff0cd`, then main `cf6b82db4` (#727, the DSv4 TP/EP
+default) merged in clean before the batteries, so both batteries ran on the merged tree `558916480`. The lead routed
+F's OWED 14 patch into `tools/tier-battery.py` (`ef985d87d`, lane D's collector file). The engine and server change,
+net of P's revert:
+- `worker.rs` (A, day 49, log only): the demote's pre-submit split and the hash helper's copy and hash split, one line
+  per demote, printed only where a contract demote is pending (`MEMRA_KV_HOST_CONTRACTS`); no behavior reads them.
+- `spill_pread.rs` (F, OWED 7): `MEMRA_SPILL_IO=direct` over-reads an unaligned expert extent to its enclosing 4 KiB
+  window into a pinned buffer of `align_up(max block) + 4 KiB` and stages from the head offset, counted in
+  `overread_bytes`. Before this every unaligned extent fell back to mmap (all 31,488 slices of the pinned 35B). The
+  `direct` mode is opt-in; the naked default stays `mmap`.
+- `lib.rs`, `run_gen.rs`, `worker.rs` (F, OWED 8): per-stage positioned-read counters in the spill stats and `run-gen`'s
+  `spill stages` line. `storage_bench.rs` (OWED 9): read time as `io_ns` plus a stage line.
+- `kv_handoff_gate.rs` and the export write and fsync timing in `worker.rs` (F, B2 seam): measurement only.
+- `tools/tier-battery.py` (OWED 14): storage is labelled NVMe only through a PASS M1 proof receipt bound to the live
+  mount; a failing proof refuses even under `--allow-unproven-storage`.
+- `docs/FLAGS.md`: the `MEMRA_SPILL_IO` and `MEMRA_SPILL_STATS` rows. No new `MEMRA_*` name.
+
+**A days 49 to 51, verbatim.**
+1. **Items 7 and 8 (DAY49, BOX10):** `DAY49 ITEM8 pages=38306 nofree_minflt=38306 (rule >= 19153) free_minflt=0 (rule
+   <= 9576) copy_ms nofree=23.73 free=7.64 diff=+16.09 (rule >= +5.0) -> H attributed` and `DAY49 ITEM7 -> b1 step
+   attributed to H (the heap first touch)`. Where no host entry frees, the demote's staging copy first-touches 38306 heap
+   pages and pays +16.09 ms for it.
+2. **Item 9 (DAY50):** the promote stretches one tenant tick (tick 2 absent in 100 of 100 runs on G4 and S4; 30 of 30 on
+   BOX10), and the publication lands at the next tick top. Closed.
+3. **Item 17 as design P (DAY51, BOX22, a 9950X host):** a pre-touched payload reserve on the hash helper. (a) to (f)
+   pass, including `copy p-minus-base=-15.17 rule <=-8.00` and `e2e p-minus-base=+0.37 rule <=+1.00`, but `DAY51 P (g)
+   cell=chain order=o1 chain p-minus-base=+1.40 rule <=+1.00 .. -> FAIL` (o2 +1.54), so `DAY51 P -> FAIL`. P is
+   reverted (`a089a5c25`); the crates return to `e4de9c804`'s. A's reading: the chained request pays the reserve's
+   `cuMemFreeHost` take-back (+0.9 to +1.1 ms), so item 17's revision sits on top of item 14.
+
+**F's M1 build-out.** The proof tool reads `M1-PROOF verdict=PASS class=nvme-local-direct reasons=0` on a host-local
+NVMe volume; OWED 7 to 13 are built with CPU cells, stub dry runs and red controls (`M1-PROOF-CONTROLS.md`,
+`CPU-PREREG.md`, `owed10/`, `b0/`). Target-card cells are running now (B3 bounded on F's box), not claimed here.
+
+**Lead review.**
+- The direct window: `direct_window` rounds the start down and the end up with checked arithmetic and returns `None` on
+  overflow; `direct_buffer_bytes` sizes the pinned buffer for the worst head offset (one extra block). The head offset
+  is where staging starts, so the bytes staged are exactly the extent's. The identity of the staged bytes is the same
+  program as mmap; `overread_bytes` makes the extra reads visible.
+- The split lines touch only timing and `getrusage(RUSAGE_THREAD)`, one `unsafe` with its ownership stated; the boxed
+  split keeps `HostImage::Demoting`'s size.
+- OWED 14 fails closed: a missing, failing or mount-mismatched proof never labels NVMe.
+- One numeric program per request: nothing here changes a served token path by default.
+
+**Ruling 58:**
+- Days 49 to 51 are read as registered. Items 7 and 8 are attributed to H; item 9 closes. Item 17's design P is refuted
+  on (g) and reverted; its revision is owed on top of item 14.
+- F's direct over-read stays behind the opt-in `MEMRA_SPILL_IO=direct`; its target-card decision waits on F's B3 cells.
+- Owed by A: the 5090 halves of S4 and V and item 16 (the card is back since the rig's reboot), the fanout design
+  (priced in DAY54), items 22 and 23, then 17 on top of 14, then 18 and 20. Owed by F: B3 and B4 on the proven NVMe
+  volume, then the decision record.
+
+**Checks.**
+- CPU battery on the pre-merge tree `ef985d87d`, 15 of 15 rc=0 (`integ63-cpu-battery/`), and again on the merged tree
+  `558916480` (`integ63-cpu-battery-merged/`): 14 of 15 rc=0 on the first pass, and the pytest step failed only because
+  the `python3` on PATH after the rig's reboot was a uv environment without pytest (`No module named pytest`); rerun with
+  `/usr/bin/python3`, `87 passed, 32 subtests passed` (`pytest-battery-rerun.log`). Portable suites 388 passed, 0
+  skipped; server 930, engine lib 573; clippy `-D warnings` twice; fmt, check-flags, publish census, docs registry,
+  conflict markers, workflow keys, perf board and `git diff --check`.
+- GPU battery on BOX14 (an RTX PRO 6000 Workstation box already staged for lane C's sitting; the local 5090 was left to
+  the lanes' queued cells) with the same 9B model the 5090 battery uses (sha256 `52c9cceb...`, linked at the rig's
+  path), under the pair lock (`integ63-pro/`, 468 receipts mirrored and checked). Binary `f988d735`, hashed after
+  serve-smoke's build. One collector hold, 21:25Z to 21:40Z. Verbatim:
+  - serve-smoke `serve-smoke: 0 failed` (its gemma4 and 35B coldhol arms SKIP, no model at the rig path);
+  - the engine span cells `10 passed` and the worker cells `18 passed`, both serial;
+  - identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok);
+  - fault default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 255 ok each;
+  - hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 61 and 68 ok;
+  - `ADMIT-MEM BURST GATE: ALL GREEN`; `SPEC-CTX-EDGE GATE: ALL GREEN`;
+  - the pause gate with the 27B, the pair lock exported this time: `KV-HOST-PAUSE-DEMOTE GATE: ALL GREEN` (40 ok).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
