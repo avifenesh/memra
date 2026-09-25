@@ -124,8 +124,12 @@ def visit(args, bench, phase, mode, size, obj, vdir, identity, leaves, top):
                raw_sha256={n: RUNNER.sha(vdir / n) for n in ("stdout.log", "stderr.log")},
                own_io_note="wait4 rusage of the collector process tree (storage-bench plus the collector's own small I/O)")
     c = rec["contamination"]
+    if c is not None:
+        # B1 amendment: gate on reads; journal and writeback writes run in kernel threads.
+        c["foreign_read_bytes"] = max(0, c["device_read_bytes"] - own["read_bytes"])
+        c["read_gate_limit"] = max(args.contamination_limit * c["device_read_bytes"], 1 << 20)
     rec["clean_timing"] = bool(rec["telemetry_ok"] and rec.get("regime_ok", True) and c is not None
-                               and c["foreign_share"] <= args.contamination_limit)
+                               and c["foreign_read_bytes"] <= c["read_gate_limit"])
     rec["scored"] = bool(rec["clean_timing"] and not problems)
     if sample and stages and stages["read_ns"]:
         rec["read_bytes_per_s"] = sample["valid_bytes"] / (stages["read_ns"] / 1e9)

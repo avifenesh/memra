@@ -114,6 +114,25 @@ modes per size and phase, N=10 each. Scored: read-call time and write/commit tim
 (OWED 9), valid bytes, padded bytes, device bytes, `fallbacks=0`, byte-exact status. Buffered is
 the baseline arm. Blocked on OWED 14 when run through the collector's storage guard.
 
+#### B1 amendment (2026-09-25, after the one-round B1 smoke, before any scored B1 visit)
+
+Record of how it landed: written at 17:42Z, before the scored B1 run started at 17:43:57Z, but
+its first commit was stopped by a failed shell chain (a zero-count `grep -c` exits 1), so the
+box ran the pre-amendment runner. That runner records every input of the amended gate (device
+and own read bytes per visit), so the scored B1 summary is recomputed offline with this gate by
+`m1-b1-resummarize.py`; the run's in-process scoring is kept as recorded and labelled
+superseded.
+
+- Every visit is its own collector invocation with the exact `storage-bench` argv and
+  `--storage-root`/`--storage-proof` (the collector refuses storage-bench behind a wrapper:
+  `REFUSED: opaque storage command`); the runner orchestrates around them.
+- Co-tenancy gate, restated for storage writes: per-process accounting cannot see the
+  filesystem journal or the kernel's writeback threads (the smoke's roundtrip visits carried 15
+  to 24 MB of such writes with no other tenant on the machine), and sub-MiB payloads are below
+  the filesystem's own metadata traffic. B1 gates on reads: foreign read bytes at most
+  max(2% of the visit's device read bytes, 1 MiB). Device write bytes are recorded per visit and
+  not gated. B3's gate is unchanged (its visits are read-dominated; the smoke read 0.1 to 0.4%).
+
 ### B2 KV host-tier handoff (memra-server, GPU)
 
 The artifact in resident mode, `MEMRA_KV_HOST_MB=16384`, `MEMRA_KV_HOST_HANDOFF=$P/handoff.bin`.
