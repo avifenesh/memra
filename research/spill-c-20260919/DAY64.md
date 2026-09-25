@@ -227,3 +227,38 @@ check 8 of 8 against `box-mirror-manifest.sha256` (`MIRROR-CHECK.txt`); the one 
 This attempt is void: it has no reading, and it moves nothing. The same tree built `i13` on BOX13 and BOX15, so the
 fault is the host's, recorded as read. The rerun stays registered as section 5 names it, for the Idaho 285K class
 (BOX14, after lane B's sitting).
+
+## 5b. The rerun `i15b` (BOX14, the Idaho 285K class, run by the lead as registered; `pro-single-day64b/`)
+
+The lead ran `day64b-box.sh` as section 5 names it (`D64_BUILDS="c60=da649107c i13=c9379c051 i14=83f03d9b7
+i15=2243b1fe2"`) on BOX14, a Core Ultra 9 285K host (24 CPUs, 197 GB) with one RTX PRO 6000 Blackwell Workstation
+Edition (driver 595.71.05, PCIe gen 5 x16), 20:52Z to `box done 2026-09-25T21:08:18Z`, `i15b rc=0`, validate and
+reader `rc=0`. The lead mirrored the receipts; re-checked here: 229 of 229 `OK` against `box-mirror-manifest.sha256`
+(`MIRROR-CHECK.txt`), the 4 binaries by hash in `box-binaries.sha256`. Regime (`regime.txt`, the card over the hold):
+33 to 48 C, SM median 2610 MHz, N=2274. Verbatim (`i15b/reading.log`):
+
+- `DAY64 I15 CHECKS rig=pro-single runs=50 integrity=ok`
+- `DAY64 gen-only decode medians (N=10 each): ref=0.255 i13=0.264 i14=0.263 i15=0.264 i15s=0.266`
+- `DAY64 STEP i14_vs_i13 gen-only decode: pooled=-0.0015 o1=-0.0020 o2=-0.0010 noise=0.0010 -> flat`
+- `DAY64 STEP i15_vs_i14 gen-only decode: pooled=+0.0015 o1=+0.0020 o2=+0.0010 noise=0.0010 -> flat`
+- `DAY64 steady window medians (N=10 each): ref=0.226 i13=0.232 i14=0.231 i15=0.232 i15s=0.233`
+- `DAY64 STEP i14_vs_i13 steady window: pooled=-0.0010 o1=-0.0010 o2=-0.0010 noise=0.0010 -> flat`
+- `DAY64 STEP i15_vs_i14 steady window: pooled=+0.0010 o1=+0.0010 o2=+0.0010 noise=0.0010 -> flat`
+- `DAY64 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0010 max_iqr_window=0.0010 failing=[] -> admissible`
+- `DAY64 DOOR i15_vs_ref gen-only decode: pooled=+0.0090 o1=+0.0090 o2=+0.0090 noise=0.0002 -> loses`
+- `DAY64 DOOR i15_vs_ref steady window: pooled=+0.0060 o1=+0.0060 o2=+0.0060 noise=0.0010 -> loses`
+- `DAY64 VERDICT rig=pro-single integrity=ok i14=flat i15=flat door=i15 vs_ref=loses (window: i14=flat i15=flat vs_ref=loses)`
+
+**Read as registered: admissible; I14 `flat`, I15 `flat`, the door (I15) `loses` to REF.** By section 3's rule both
+steps stay (`flat`). The door runs 0.264 s gen-only and 0.232 s window against REF's 0.255 and 0.226: 0.28 and 0.19 ms
+per token behind, the same as I13 on BOX13 (`DAY63.md` section 4). Per-arm ranges, no bimodality on this class: REF
+0.254 to 0.255 gen-only, I13 0.263 to 0.267, I14 0.261 to 0.263, I15 0.264 to 0.265; the door's fill 991 to 1018 ms in
+every run.
+
+**What the split says** (`DAY64 SPLIT`, I15S, per window token, against I13S on BOX13 in `DAY63.md` section 4): the
+owner's demand 0.119 ms (from 0.216), the cache's lease retire 0.039 (from 0.075), the bank's `stage` 0.074 on 33.3
+stages (from 0.149 on 92.3: one ticket per prefetched expert), `ack` 0.015 (from 0.031), `retire` 0.017 (from 0.036),
+`stage_lookup` 0.004 (from 0.015). I14 and I15 halved the door's CPU-side work on the card as they did on the CPU, and
+the window did not move. So the CPU-side door work is no longer on the decode's critical path; the 0.19 ms per window
+token the door still loses is somewhere else. DAY60's attribution (`cpu_side`, `top=prefetch_ns`) was read on I10's
+program; it does not describe I15's. The next registration (`DAY72.md`) re-attributes the gap at I15 before any code.
