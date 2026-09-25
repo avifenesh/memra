@@ -14375,6 +14375,8 @@ pub(crate) struct ReclaimOffTick {
     demote_ids: std::collections::VecDeque<u64>,
     planned: usize,
     submitted: usize,
+    /// How many plans this arrival has made (addendum B replans an empty one).
+    plans: usize,
 }
 
 /// The plan, pure over the evictable entries oldest first as `(id, bytes)`: today's demote rule
@@ -14455,7 +14457,13 @@ fn reclaim_offtick_pass(
     budget: u64,
 ) -> usize {
     let mut removed = 0usize;
-    if req.reclaim_offtick.is_none() {
+    // DAY42 addendum B: an empty plan with the slot free is made again from the current
+    // evictable set, so entries that became evictable after the last plan are flushed too.
+    if req
+        .reclaim_offtick
+        .as_ref()
+        .is_none_or(|p| p.demote_ids.is_empty() && hpx.demoting.is_none())
+    {
         let oldest: Vec<(u64, u64)> = px
             .lru
             .values()
@@ -14471,16 +14479,19 @@ fn reclaim_offtick_pass(
             }
         }
         eprintln!(
-            "[admit-mem] reclaim off-tick: plan {} demote + {} drop ({:.0}MB demote budget) for {}",
+            "[admit-mem] reclaim off-tick: plan {} demote + {} drop ({:.0}MB demote budget) for {} (plan {})",
             demote.len(),
             drop.len(),
             budget as f64 / 1e6,
-            req.request_id
+            req.request_id,
+            req.reclaim_offtick.as_ref().map_or(0, |p| p.plans) + 1
         );
+        let plans = req.reclaim_offtick.as_ref().map_or(0, |p| p.plans) + 1;
         req.reclaim_offtick = Some(ReclaimOffTick {
             planned: demote.len(),
             demote_ids: demote.into(),
             submitted: 0,
+            plans,
         });
     }
     let plan = req
@@ -54766,6 +54777,10 @@ mod tests {
             .unwrap();
         let armed = live[..site].rfind("if admit_memory_cfg.armed {").unwrap();
         assert!(site - armed < 3000);
+        // Addendum B: an empty plan with a free slot is made again.
+        assert!(live.contains(
+            "if req .reclaim_offtick .as_ref() .is_none_or(|p| p.demote_ids.is_empty() && hpx.demoting.is_none())"
+        ));
         // One submission per free slot: the pass loops only while the slot is free.
         assert!(live.contains("while hpx.demoting.is_none() { let Some(id) = plan.demote_ids.pop_front() else { break; };"));
         assert!(live.contains("host_demote_prefix_entry(engine, hpx, dead);"));
