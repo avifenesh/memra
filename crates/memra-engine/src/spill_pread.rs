@@ -368,6 +368,8 @@ struct ReadCompletion {
     index: usize,
     len: usize,
     payload: usize,
+    /// Wall time of the positioned read on the worker thread.
+    read_ns: u64,
     data: PinnedHostSlice<u8>,
     result: Result<(), WorkerReadError>,
 }
@@ -448,6 +450,7 @@ fn read_worker(
             payload,
             mut data,
         } = request;
+        let started = std::time::Instant::now();
         let result = match data.as_mut_slice() {
             Ok(dst) if need == len => pread_exact_at(file.as_ref(), &mut dst[..len], offset)
                 .map_err(WorkerReadError::from_io),
@@ -456,6 +459,7 @@ fn read_worker(
                 .map_err(WorkerReadError::from_io),
             Err(err) => Err(WorkerReadError::other(err)),
         };
+        let read_ns = elapsed_ns(started);
         // The receiver outlives and is drained after every worker joins. No CUDA operation can
         // reference this allocation until the caller receives the completion and submits H2D.
         if completions
@@ -464,6 +468,7 @@ fn read_worker(
                 index,
                 len,
                 payload,
+                read_ns,
                 data,
                 result,
             })
@@ -485,6 +490,19 @@ pub(crate) struct PreadStats {
     pub ring_full: u64,
     /// Direct-window bytes read beyond the payload (successful reads only).
     pub overread_bytes: u64,
+    /// Stage clocks (host wall time, summed). `worker_read_ns` is positioned-read time on the
+    /// worker threads (concurrent reads overlap, so it can exceed elapsed time);
+    /// `demand_read_ns` is blocking `pread` time on the owner; `wait_ns` is time the owner spent
+    /// blocked on a worker completion or on an H2D event to free a buffer.
+    pub worker_read_ns: u64,
+    pub demand_read_ns: u64,
+    pub wait_ns: u64,
+    /// Payload copies submitted to the device (known and unknown-completion submissions).
+    pub h2d_submits: u64,
+}
+
+fn elapsed_ns(started: std::time::Instant) -> u64 {
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
 pub(crate) struct PreadPool {
@@ -645,6 +663,7 @@ impl PreadPool {
             index,
             len,
             payload,
+            read_ns,
             data,
             result,
         } = completion;
@@ -663,6 +682,7 @@ impl PreadPool {
             return;
         }
         buffer.data = Some(data);
+        self.stats.worker_read_ns = self.stats.worker_read_ns.saturating_add(read_ns);
         let success = result.is_ok();
         let short = result.as_ref().err().is_some_and(|err| err.short);
         let canceled = buffer.phase.finish_read(success);
@@ -709,11 +729,14 @@ impl PreadPool {
             );
         };
         self.stats.buffer_waits += 1;
-        self.buffers[index]
+        let started = std::time::Instant::now();
+        let synced = self.buffers[index]
             .ready
             .as_ref()
             .ok_or_else(|| io::Error::other("H2D buffer is missing its completion event"))?
-            .synchronize()?;
+            .synchronize();
+        self.stats.wait_ns = self.stats.wait_ns.saturating_add(elapsed_ns(started));
+        synced?;
         assert!(self.buffers[index].phase.finish_h2d(true));
         self.buffers[index].ready = None;
         Ok(())
@@ -766,7 +789,13 @@ impl PreadPool {
                     return Err(err.into());
                 }
             };
-            pread_exact_at(file, &mut dst[..len], offset)
+            let started = std::time::Instant::now();
+            let result = pread_exact_at(file, &mut dst[..len], offset);
+            self.stats.demand_read_ns = self
+                .stats
+                .demand_read_ns
+                .saturating_add(elapsed_ns(started));
+            result
         };
         match result {
             Ok(()) => {
@@ -960,12 +989,15 @@ impl PreadPool {
                 self.stats.buffer_waits += 1;
                 waited = true;
             }
+            let started = std::time::Instant::now();
             let completion = self
                 .workers
                 .as_ref()
                 .ok_or_else(|| io::Error::other("spill worker pool is unavailable"))?
                 .completions
-                .recv()
+                .recv();
+            self.stats.wait_ns = self.stats.wait_ns.saturating_add(elapsed_ns(started));
+            let completion = completion
                 .map_err(|_| io::Error::other("spill worker completion channel disconnected"))?;
             self.finish_worker_completion(completion);
         }
@@ -1019,6 +1051,7 @@ impl PreadPool {
     }
 
     pub(crate) fn mark_h2d(&mut self, index: usize, ready: Arc<CudaEvent>) {
+        self.stats.h2d_submits += 1;
         self.buffers[index].phase.begin_h2d();
         self.buffers[index].ticket = None;
         self.buffers[index].ready = Some(ready);
@@ -1027,6 +1060,7 @@ impl PreadPool {
     /// Conservatively retain a buffer when CUDA submission/event recording could not prove a
     /// completion point. Only a later whole-stream synchronization may release it.
     pub(crate) fn mark_unknown_h2d(&mut self, index: usize) {
+        self.stats.h2d_submits += 1;
         self.buffers[index].phase.begin_h2d();
         self.buffers[index].ticket = None;
         self.buffers[index].ready = None;
@@ -1098,7 +1132,8 @@ impl Drop for PreadPool {
         if self.stats.reads != 0 || self.stats.fallbacks != 0 || self.stats.ring_full != 0 {
             eprintln!(
                 "[spill-pread] reads={} bytes={} errors={} short_reads={} fallbacks={} \
-                 buffer_waits={} ring_full={}",
+                 buffer_waits={} ring_full={} overread_bytes={} worker_read_ns={} \
+                 demand_read_ns={} wait_ns={} h2d_submits={}",
                 self.stats.reads,
                 self.stats.bytes,
                 self.stats.read_errors,
@@ -1106,6 +1141,11 @@ impl Drop for PreadPool {
                 self.stats.fallbacks,
                 self.stats.buffer_waits,
                 self.stats.ring_full,
+                self.stats.overread_bytes,
+                self.stats.worker_read_ns,
+                self.stats.demand_read_ns,
+                self.stats.wait_ns,
+                self.stats.h2d_submits,
             );
         }
     }
@@ -1214,6 +1254,36 @@ mod tests {
         pread_exact_at(&file, &mut unaligned, 3).unwrap();
         assert_eq!(unaligned, bytes[3..40]);
         std::fs::remove_file(path).ok();
+    }
+
+    /// OWED 8: window deltas and the shared field formatting of the stage counters.
+    #[test]
+    fn stage_stats_deltas_and_fields() {
+        let before = crate::SpillStageStats {
+            worker_read_ns: 1_000_000,
+            demand_read_ns: 0,
+            wait_ns: 250_000,
+            h2d_submits: 3,
+            overread_bytes: 4096,
+        };
+        let after = crate::SpillStageStats {
+            worker_read_ns: 3_500_000,
+            demand_read_ns: 0,
+            wait_ns: 1_250_000,
+            h2d_submits: 10,
+            overread_bytes: 4096 * 8,
+        };
+        let d = after.since(&before);
+        assert_eq!(d.h2d_submits, 7);
+        assert_eq!(d.overread_bytes, 4096 * 7);
+        assert_eq!(
+            d.fields(),
+            "worker_read_ms=2.500 demand_read_ms=0.000 wait_ms=1.000 h2d_submits=7 \
+             overread_bytes=28672"
+        );
+        assert_eq!(before.since(&after), crate::SpillStageStats::default());
+        let t = std::time::Instant::now();
+        assert!(super::elapsed_ns(t) < 1_000_000_000);
     }
 
     /// OWED 7 gate 1: every head and the registered payload lengths give an aligned window that
@@ -1566,6 +1636,11 @@ mod tests {
         assert_eq!(stats.read_errors, 0);
         assert_eq!(stats.fallbacks, 0);
         assert_eq!(stats.overread_bytes, predicted);
+        assert!(
+            stats.worker_read_ns > 0,
+            "OWED 8: worker read clock never advanced"
+        );
+        assert_eq!(stats.h2d_submits, 0, "aborted reads submit no H2D");
         std::fs::remove_file(path).ok();
     }
 }

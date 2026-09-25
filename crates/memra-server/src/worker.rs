@@ -29421,10 +29421,14 @@ pub fn run(
                 .moe_pread_stats()
                 .or_else(|| (config_fallbacks != 0).then_some((0, 0, 0, 0, 0, 0, 0)))
             {
+                let stages = engine
+                    .moe_pread_stage_stats()
+                    .map(|s| format!(" {}", s.fields()))
+                    .unwrap_or_default();
                 eprintln!(
                     "[spill-pread] snapshot reads={reads} bytes={bytes} errors={errors} \
                            short_reads={short} config_fallbacks={config_fallbacks} \
-                           fallbacks={fallbacks} buffer_waits={waits} ring_full={ring_full}"
+                           fallbacks={fallbacks} buffer_waits={waits} ring_full={ring_full}{stages}"
                 );
             }
             if let Some((hits, misses, staged_bytes, slots)) = engine.moe_cache_stats() {
