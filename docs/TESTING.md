@@ -2133,13 +2133,6 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   `sources-helper-gone`, `sources-never-land` and `sources-foreign-reply` cells (the hash helper's first `Sources` job
   takes the fault; one typed latch in the arm's own words, no promote publication, the helper joined, r1 to r4
   byte-equal to door OFF) and the CPU cell `day41_the_sources_faults_key_on_the_first_sources_job`.
-- Design P, the hash helper's payload reserve (WP-A day 51, `research/spill-a-20260919/DAY51.md`, OWED item 17): the
-  CPU census `day51_the_payload_reserve_is_the_copy_program` (a reserve buffer written only by `copy_from_slice` of the
-  staged slice, a miss by `to_vec`; the refill at the helper loop's top with a `try_recv` before every buffer; the
-  pageable charge before the first allocation, released at the retarget; the ledger's third pageable term) and the
-  cells `day51_a_reserve_hit_is_the_staged_bytes_bitwise`, `day51_the_refill_yields_to_a_waiting_job` and
-  `day51_the_reserve_charge_the_cap_and_the_shape_change`. Bytes on a card: the identity, fault and hit gates on the
-  door (a hit changes where the payload's memory comes from, never its bytes).
 - The hit gate's door arm (C day 27, `tools/spec-on-cache-hit-gate.sh qwen`): the door batteries run the
   hit gate twice, door OFF (`MEMRA_KV_HOST_CONTRACTS` unset) and door ON (`MEMRA_KV_HOST_CONTRACTS=1`).
   Until day 27 the ON arm booted with no `MEMRA_KV_HOST_MB`, so the server built no program identity
