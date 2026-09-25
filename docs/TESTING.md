@@ -1100,6 +1100,25 @@ shapes. The dense test's red arm moves one output row's weight codes and require
 move in every token row and its neighbour in none. Output buffers start as a NaN pattern, so an
 unwritten element fails, and the dense test also requires the stride gaps to stay unwritten. `_tile_timing` prints device time against the loop. Receipts:
 `research/dsv4f-bringup-20260923/prefill-tile/`.
+### DSv4 TP/EP B-row steps and their graphs (#710)
+
+`DSV4_ROWS_GATE_TOPOLOGY=tp_ep dsv4_rows_gate <model-dir> <source-tape> 24 64` (a 2x RTX PRO 6000
+pair, under `/tmp/memra-gpu.lock`) runs the B-row identity gate on the served TP/EP program.
+Four sessions decode alone for the solo trace. Every arm then compares each step's logits
+bits against it:
+- The eager B-row step, as the sessions join and leave (widths 1 to 4) and their rows rotate.
+- A replay arm: session 0 replays alone, rides B-row steps beside session 1 while still
+  armed, then replays again.
+- A graph arm through `decode_rows_draw`, whose steps of two or more rows run a captured graph
+  per batch. It must capture and then replay.
+- A sampled arm, which draws four rows at the vendor default through the eager B-row step and
+  through the graph; the draws must match.
+
+Timing adds the graph step at B=2 and 4. `cargo test -p memra-engine --release --test
+dsv4_dense_fast_rows_gpu -- --ignored --test-threads=1` (one card) checks the multi-row
+dense-fast FP8 GEMV against the m-row kernel and each row's one-row launch at the served
+shapes, bit for bit, with a red arm. Receipts: `research/dsv4f-bringup-20260923/tp-rows/`.
+
 ### DSv4 TP/EP full-token replay past position 512 (#710)
 
 `dsv4_tp_replay_long_gate <model-dir> <source-tape> [steps]` (a 2x RTX PRO 6000 pair, under

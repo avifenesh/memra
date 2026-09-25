@@ -20,7 +20,8 @@
 //! of 1, 2 and 4 rows, and two pipelined groups of 2, reported as ms per step and aggregate
 //! tokens per second.
 //!
-//! Profile mode (`DSV4_ROWS_GATE_PROFILE=B`): prime B sessions, warm up, then run `timing-steps`
+//! Profile mode (`DSV4_ROWS_GATE_PROFILE=B`, and `DSV4_ROWS_GATE_PROFILE_GRAPH=1` for the TP/EP
+//! graph step): prime B sessions, warm up, then run `timing-steps`
 //! B-row steps between `cuProfilerStart` and `cuProfilerStop` and exit, for
 //! `nsys profile --capture-range=cudaProfilerApi`. Comparing B=1 with B=2 attributes the cost an
 //! added row brings, kernel by kernel.
@@ -378,6 +379,8 @@ fn main() {
 
     if let Ok(b) = std::env::var("DSV4_ROWS_GATE_PROFILE") {
         let b: usize = b.parse().expect("DSV4_ROWS_GATE_PROFILE rows");
+        // DSV4_ROWS_GATE_PROFILE_GRAPH=1: profile the captured TP/EP B-row step instead.
+        let graph = std::env::var("DSV4_ROWS_GATE_PROFILE_GRAPH").as_deref() == Ok("1");
         assert!((1..=prompts.len()).contains(&b));
         let mut sessions: Vec<Session> = prompts[..b]
             .iter()
@@ -389,9 +392,14 @@ fn main() {
                 let toks: Vec<u32> = sessions.iter().map(|s| s.next).collect();
                 let mut states: Vec<&mut DecodeState> =
                     sessions.iter_mut().map(|s| &mut s.state).collect();
-                let next = gpu
-                    .decode_rows_greedy(&toks, &mut states, &mut rows)
-                    .expect("B-row");
+                let next = if graph {
+                    let draws = vec![Dsv4RowDraw::Argmax; toks.len()];
+                    gpu.decode_rows_draw(&toks, &mut states, &mut rows, &draws)
+                        .expect("graph B-row")
+                } else {
+                    gpu.decode_rows_greedy(&toks, &mut states, &mut rows)
+                        .expect("B-row")
+                };
                 drop(states);
                 for (s, t) in sessions.iter_mut().zip(next) {
                     s.next = t;
