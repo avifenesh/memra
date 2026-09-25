@@ -143,3 +143,25 @@ acceptance is reverted in one commit and its test re-read under a new pre-regist
      (a non-blocking call; beside eight burners a step's scheduling gaps read tens of milliseconds, R2); a resolve that
      waits on the held compile fails at the first step.
   Red arm: `resolve_constraint_compiles` made to wait on its result channel for 2 s (a scratch patch): fails 10 of 10.
+
+## 6. T-c as built, and T-e's fix revised before its code
+
+- **T-c** (`965f6e9c1`): as section 5 states. Its red arm (`resolve_constraint_compiles` waiting 2 s on its result
+  channel, a scratch patch grep-checked in its binary) fails 10 of 10: `a resolve blocked on the held compile
+  (2.099645589s)` (`slow_constraint_compile_times_out_while_/red/`).
+- **T-e, the revision (section 1's per-deposit timestamps cannot judge it).** Reading `Coalescer::step`: a batch is full
+  when the waiting deposits reach `min(target, members - in_flight)`, so a batch of two is full while a row rides a
+  batch in flight; the test cannot see `in_flight` at the leader's decision, and inferring it from its own callbacks
+  races the leader. A timestamp assertion built that way would be flaky itself. The fix instead:
+  1. `Coalescer` takes its window as a field (`Coalescer::new` keeps `ROW_BATCH_WAIT`; a `with_window` constructor for
+     tests), the same program in production;
+  2. `coalesced_rows_each_get_their_own_token_once_per_step` keeps every correctness assertion; its full-batch count
+     is printed, not asserted;
+  3. the mechanism gets two cells that a starved runner cannot break: `a_partial_batch_waits_out_its_window` (three
+     members, one deposits alone with a 20 ms window: its batch runs one row, after at least 20 ms), and
+     `a_full_batch_does_not_wait_for_its_window` (three members all deposit with a 10 s window: the batch runs all
+     three rows in under 5 s).
+  Red arms: the window ignored (`t0.elapsed() >= window` made `true`) fails the first cell; the fullness ignored (`full`
+  made `false`) fails the second. Each 10 of 10, each grep-checked in its binary.
+- This touches `dsv4_serve.rs`, which the DSv4 lane also edits; the change is the one field, one constructor and the
+  tests, and it is flagged to the lead for the overlap.
