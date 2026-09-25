@@ -52,7 +52,8 @@
 //!           of budget (worker.rs prefill_tick bound_rem) and the second call RESUMES at the
 //!           unaligned position L. Any LCP in [64, win=512] reproduced the FA-prefix defect
 //!           on an interactive request. Rows print as `sp<L>`.
-//!   primepath <model> primepath --prompt-a <txt|@file> [--suffix <txt|@file>] [--hist K] [--rewind]
+//!   primepath <model> primepath --prompt-a <txt|@file> [--suffix <txt|@file>] [--hist K] [--rewind] [--prompt-tokens N]
+//!                               [--suffix-tokens N]
 //!                               [--splits L1,L2,...] [--steps N] [--chat]
 //!           PRIME-PATH DIVERGENCE PROFILER (lane/spec-longctx-20260821 — the GATES-SMOKE
 //!           B3 class, with B1 folded in per FRSPEC-FIX §3.2): the same token sequence
@@ -1612,7 +1613,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let structured_margin: f32 = arg(&rest, "--structured-margin")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0.5);
-            let ta = encode_prompt(&cx.tok, &pa, chat);
+            let mut ta = encode_prompt(&cx.tok, &pa, chat);
+            // WP-B day 41: an exact prompt length in tokens (the grid cells' L).
+            if let Some(n) = arg(&rest, "--prompt-tokens").and_then(|v| v.parse::<usize>().ok()) {
+                assert!(
+                    ta.len() >= n,
+                    "prompt has {} tokens, fewer than --prompt-tokens {n}",
+                    ta.len()
+                );
+                ta.truncate(n);
+            }
             let n_embd = cx.model.cfg.n_embd as usize;
             let min_t = memra_engine::hybrid_forward::PRIME_MIN_T;
             let cap = |t: usize| cx.ctx_len.max(t + steps + hist_k + 8);
@@ -1635,7 +1645,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     tk = argmax(&l) as u32;
                     d.push(tk);
                 }
-                let tb = cx.tok.encode(sb, false);
+                let mut tb = cx.tok.encode(sb, false);
+                if let Some(n) = arg(&rest, "--suffix-tokens").and_then(|v| v.parse::<usize>().ok())
+                {
+                    assert!(
+                        tb.len() >= n,
+                        "suffix has {} tokens, fewer than --suffix-tokens {n}",
+                        tb.len()
+                    );
+                    tb.truncate(n);
+                }
                 assert!(
                     tb.len() >= min_t,
                     "suffix must be >= PRIME_MIN_T={min_t} tokens"
