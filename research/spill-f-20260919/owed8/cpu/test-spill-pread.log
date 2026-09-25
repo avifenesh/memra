@@ -1,0 +1,22 @@
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-f/crates/memra-engine)
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 17s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-47ae06a2f9cbea34)
+
+running 12 tests
+test spill_pread::tests::direct_worker_overread_preserves_exact_bytes ... ignored, requires a CUDA GPU
+test spill_pread::tests::buffer_state_rejects_early_reuse ... ok
+test spill_pread::tests::exact_and_unaligned_positioned_reads_match_file_bytes ... ok
+test spill_pread::tests::mode_and_depth_defaults_are_conservative ... ok
+test spill_pread::tests::short_positioned_read_is_an_error ... ok
+test spill_pread::tests::stage_stats_deltas_and_fields ... ok
+test spill_pread::tests::worker_positioned_reads_preserve_exact_bytes_and_reuse_after_short_read ... ignored, requires a CUDA GPU
+test spill_pread::tests::unaligned_direct_read_without_window_is_refused ... ok
+test spill_pread::tests::direct_window_is_aligned_contains_payload_and_fits_buffer ... ok
+test spill_pread::tests::invalid_spill_pread_depth_refuses_to_start ... ok
+test spill_pread::tests::invalid_spill_io_refuses_to_start ... ok
+test spill_pread::tests::direct_window_reads_match_buffered_reads ... ok
+
+test result: ok. 10 passed; 0 failed; 2 ignored; 0 measured; 608 filtered out; finished in 0.91s
+
+exit=0

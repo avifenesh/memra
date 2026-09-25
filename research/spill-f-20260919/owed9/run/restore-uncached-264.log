@@ -1,0 +1,4 @@
+{"version":1,"fixture":"opaque-affine-mod251-v1-restore-development-linux-io-not-spill-speed","backend_requested":"uncached","backend_actual":"linux-o-direct-read-buffered-write","status":"byte-exact","valid_bytes":264,"padded_bytes":4096,"io_bytes":40960,"physical_bytes":null,"queue_ns":null,"io_ns":724031,"h2d_ns":null,"d2h_ns":null,"p2p_ns":null,"total_ns":1931239,"inflight":1,"pinned_bytes":0,"pageable_bytes":null,"fallbacks":0,"payload_checksum":[67,187,247,110,211,70,209,240,35,97,56,163,100,26,245,103,206,193,140,42,230,57,194,169,31,127,74,114,36,232,179,245]}
+
+--- stderr ---
+[storage-bench] stages put_ns=0 commit_ns=0 lease_ns=839717 read_ns=724031 verify_ns=7693 total_ns=1931239

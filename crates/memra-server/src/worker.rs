@@ -20219,7 +20219,11 @@ fn host_handoff_export(
     //    file. Frames go OLDEST-first (selection reversed) so the importer's sequential
     //    inserts reconstruct true LRU recency.
     let tmp = format!("{path}.tmp");
+    // Stage clocks for the handoff's storage cost (lane/spill-f-20260919 B2): serialize and
+    // buffered write, then fsync, measured apart so the durability share is not inferred.
+    let (mut write_ms, mut fsync_ms) = (0.0f64, 0.0f64);
     let write = (|| -> Result<(), String> {
+        let t_write = Instant::now();
         let f = std::fs::File::create(&tmp).map_err(|e| format!("create {tmp}: {e}"))?;
         let mut w = std::io::BufWriter::with_capacity(4 << 20, f);
         handoff_write_header(
@@ -20238,8 +20242,11 @@ fn host_handoff_export(
         let f = w
             .into_inner()
             .map_err(|e| format!("handoff flush failed: {e}"))?;
+        write_ms = t_write.elapsed().as_secs_f64() * 1e3;
+        let t_fsync = Instant::now();
         f.sync_all()
             .map_err(|e| format!("handoff fsync failed: {e}"))?;
+        fsync_ms = t_fsync.elapsed().as_secs_f64() * 1e3;
         std::fs::rename(&tmp, path).map_err(|e| format!("rename {tmp} -> {path}: {e}"))
     })();
     if let Err(err) = write {
@@ -20250,6 +20257,7 @@ fn host_handoff_export(
     let ms = t0.elapsed().as_secs_f64() * 1e3;
     eprintln!(
         "[prefix-host] handoff export: {} entries / {:.1}MB to {path} in {ms:.0}ms \
+         write_ms={write_ms:.1} fsync_ms={fsync_ms:.1} \
          (drain-demoted {demoted} device entries first; {skipped_over_cap} skipped over \
          the MEMRA_KV_HOST_HANDOFF_MB cap)",
         selected.len(),
@@ -29522,10 +29530,14 @@ pub fn run(
                 .moe_pread_stats()
                 .or_else(|| (config_fallbacks != 0).then_some((0, 0, 0, 0, 0, 0, 0)))
             {
+                let stages = engine
+                    .moe_pread_stage_stats()
+                    .map(|s| format!(" {}", s.fields()))
+                    .unwrap_or_default();
                 eprintln!(
                     "[spill-pread] snapshot reads={reads} bytes={bytes} errors={errors} \
                            short_reads={short} config_fallbacks={config_fallbacks} \
-                           fallbacks={fallbacks} buffer_waits={waits} ring_full={ring_full}"
+                           fallbacks={fallbacks} buffer_waits={waits} ring_full={ring_full}{stages}"
                 );
             }
             if let Some((hits, misses, staged_bytes, slots)) = engine.moe_cache_stats() {

@@ -28,8 +28,35 @@ pub(crate) fn config_fallbacks() -> u64 {
     CONFIG_FALLBACKS.load(Ordering::Relaxed)
 }
 
-fn direct_extent_aligned(offset: u64, len: usize) -> bool {
-    offset.is_multiple_of(DIRECT_IO_ALIGNMENT as u64) && len.is_multiple_of(DIRECT_IO_ALIGNMENT)
+/// The O_DIRECT read window enclosing one expert extent: `len` bytes from the aligned file
+/// offset `offset`, with the extent's payload at `head`. An aligned extent has `head == 0` and a
+/// window equal to the extent, so aligned reads are unchanged; an unaligned one is over-read to
+/// the enclosing 4 KiB blocks instead of falling back to mmap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DirectWindow {
+    offset: u64,
+    head: usize,
+    len: usize,
+}
+
+fn direct_window(offset: u64, len: usize) -> Option<DirectWindow> {
+    let align = DIRECT_IO_ALIGNMENT as u64;
+    let start = offset - offset % align;
+    let end = offset.checked_add(u64::try_from(len).ok()?)?;
+    let end_aligned = end.checked_next_multiple_of(align)?;
+    Some(DirectWindow {
+        offset: start,
+        head: usize::try_from(offset - start).ok()?,
+        len: usize::try_from(end_aligned - start).ok()?,
+    })
+}
+
+/// Pinned bytes that hold the direct window of any payload up to `capacity` bytes: a window is
+/// `align_up(head + len)` with `head < 4096`, which never exceeds `align_up(capacity) + 4096`.
+fn direct_buffer_bytes(capacity: usize) -> Option<usize> {
+    capacity
+        .checked_next_multiple_of(DIRECT_IO_ALIGNMENT)?
+        .checked_add(DIRECT_IO_ALIGNMENT)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -141,6 +168,46 @@ pub(crate) fn pread_exact_at(file: &File, mut dst: &mut [u8], mut offset: u64) -
     Ok(())
 }
 
+/// Fill `dst` from `offset`, accepting end-of-file only once the first `need` bytes (the
+/// payload's end inside a direct window) have arrived. A window may extend past the end of the
+/// file; an EOF inside the payload is a short read. Returns the bytes actually read.
+pub(crate) fn pread_window_at(
+    file: &File,
+    dst: &mut [u8],
+    mut offset: u64,
+    need: usize,
+) -> io::Result<usize> {
+    debug_assert!(need <= dst.len());
+    let mut filled = 0;
+    while filled < dst.len() {
+        match file.read_at(&mut dst[filled..], offset) {
+            Ok(0) => break,
+            Ok(n) => {
+                filled += n;
+                offset = offset.checked_add(n as u64).ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "positioned-read offset overflow",
+                    )
+                })?;
+            }
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+            Err(err) => return Err(err),
+        }
+    }
+    if filled < need {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            format!(
+                "short positioned window read at offset {}: {} payload bytes missing",
+                offset,
+                need - filled
+            ),
+        ));
+    }
+    Ok(filled)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BufferPhase {
     Free,
@@ -229,6 +296,8 @@ struct PinnedBuffer {
     ready: Option<Arc<CudaEvent>>,
     ticket: Option<ReadTicket>,
     error: Option<WorkerReadError>,
+    /// Payload start inside the buffer: 0 for exact reads, the window head for a direct over-read.
+    head: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -284,8 +353,13 @@ struct ReadRequest {
     ticket: ReadTicket,
     index: usize,
     file: Arc<File>,
+    /// File offset and byte count of the read itself: the extent, or its direct window.
     offset: u64,
     len: usize,
+    /// Bytes that must arrive before EOF is acceptable (`head + payload`); equals `len` for an
+    /// exact read, which keeps the exact-read program byte-for-byte.
+    need: usize,
+    payload: usize,
     data: PinnedHostSlice<u8>,
 }
 
@@ -293,6 +367,9 @@ struct ReadCompletion {
     ticket: ReadTicket,
     index: usize,
     len: usize,
+    payload: usize,
+    /// Wall time of the positioned read on the worker thread.
+    read_ns: u64,
     data: PinnedHostSlice<u8>,
     result: Result<(), WorkerReadError>,
 }
@@ -369,13 +446,20 @@ fn read_worker(
             file,
             offset,
             len,
+            need,
+            payload,
             mut data,
         } = request;
+        let started = std::time::Instant::now();
         let result = match data.as_mut_slice() {
-            Ok(dst) => pread_exact_at(file.as_ref(), &mut dst[..len], offset)
+            Ok(dst) if need == len => pread_exact_at(file.as_ref(), &mut dst[..len], offset)
+                .map_err(WorkerReadError::from_io),
+            Ok(dst) => pread_window_at(file.as_ref(), &mut dst[..len], offset, need)
+                .map(|_| ())
                 .map_err(WorkerReadError::from_io),
             Err(err) => Err(WorkerReadError::other(err)),
         };
+        let read_ns = elapsed_ns(started);
         // The receiver outlives and is drained after every worker joins. No CUDA operation can
         // reference this allocation until the caller receives the completion and submits H2D.
         if completions
@@ -383,6 +467,8 @@ fn read_worker(
                 ticket,
                 index,
                 len,
+                payload,
+                read_ns,
                 data,
                 result,
             })
@@ -402,11 +488,29 @@ pub(crate) struct PreadStats {
     pub fallbacks: u64,
     pub buffer_waits: u64,
     pub ring_full: u64,
+    /// Direct-window bytes read beyond the payload (successful reads only).
+    pub overread_bytes: u64,
+    /// Stage clocks (host wall time, summed). `worker_read_ns` is positioned-read time on the
+    /// worker threads (concurrent reads overlap, so it can exceed elapsed time);
+    /// `demand_read_ns` is blocking `pread` time on the owner; `wait_ns` is time the owner spent
+    /// blocked on a worker completion or on an H2D event to free a buffer.
+    pub worker_read_ns: u64,
+    pub demand_read_ns: u64,
+    pub wait_ns: u64,
+    /// Payload copies submitted to the device (known and unknown-completion submissions).
+    pub h2d_submits: u64,
+}
+
+fn elapsed_ns(started: std::time::Instant) -> u64 {
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
 pub(crate) struct PreadPool {
     buffers: Vec<PinnedBuffer>,
+    /// Largest payload a read may return.
     capacity: usize,
+    /// Bytes per pinned allocation: `capacity`, or the direct-window bound in `Direct` mode.
+    buffer_bytes: usize,
     stream: Arc<CudaStream>,
     stats: PreadStats,
     mode: SpillIoMode,
@@ -424,16 +528,24 @@ impl PreadPool {
         mode: SpillIoMode,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         debug_assert_ne!(mode, SpillIoMode::Mmap);
+        let buffer_bytes = if mode == SpillIoMode::Direct {
+            direct_buffer_bytes(capacity).ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidInput, "direct buffer size overflow")
+            })?
+        } else {
+            capacity
+        };
         let requested_depth = configured_depth();
         let mut buffers = Vec::with_capacity(requested_depth);
         for _ in 0..requested_depth {
-            match unsafe { e.ctx().alloc_pinned::<u8>(capacity) } {
+            match unsafe { e.ctx().alloc_pinned::<u8>(buffer_bytes) } {
                 Ok(data) => buffers.push(PinnedBuffer {
                     data: Some(data),
                     phase: BufferPhase::Free,
                     ready: None,
                     ticket: None,
                     error: None,
+                    head: 0,
                 }),
                 Err(err) if buffers.is_empty() => return Err(err.into()),
                 Err(err) => {
@@ -455,7 +567,7 @@ impl PreadPool {
         let description = match mode {
             SpillIoMode::Pread => "blocking demand pread",
             SpillIoMode::Worker => "bounded worker prefetch",
-            SpillIoMode::Direct => "bounded O_DIRECT worker prefetch",
+            SpillIoMode::Direct => "bounded O_DIRECT worker prefetch, 4 KiB-window over-read",
             SpillIoMode::Mmap => unreachable!(),
         };
         if mode.is_worker() && depth < 6 {
@@ -466,13 +578,15 @@ impl PreadPool {
         }
         let h2d_stream = "compute-stream H2D";
         eprintln!(
-            "[spill-pread] enabled: depth={depth} buffer_bytes={capacity} total_pinned_bytes={} \
+            "[spill-pread] enabled: depth={depth} buffer_bytes={buffer_bytes} \
+             payload_capacity={capacity} total_pinned_bytes={} \
              ({description}, caller-thread {h2d_stream}, mmap error fallback)",
-            depth.saturating_mul(capacity)
+            depth.saturating_mul(buffer_bytes)
         );
         Ok(Self {
             buffers,
             capacity,
+            buffer_bytes,
             stream: e.stream().clone(),
             stats: PreadStats::default(),
             mode,
@@ -548,6 +662,8 @@ impl PreadPool {
             ticket,
             index,
             len,
+            payload,
+            read_ns,
             data,
             result,
         } = completion;
@@ -566,12 +682,14 @@ impl PreadPool {
             return;
         }
         buffer.data = Some(data);
+        self.stats.worker_read_ns = self.stats.worker_read_ns.saturating_add(read_ns);
         let success = result.is_ok();
         let short = result.as_ref().err().is_some_and(|err| err.short);
         let canceled = buffer.phase.finish_read(success);
         if success {
             self.stats.reads += 1;
-            self.stats.bytes += len as u64;
+            self.stats.bytes += payload as u64;
+            self.stats.overread_bytes += len.saturating_sub(payload) as u64;
         } else {
             self.stats.read_errors += 1;
             if short {
@@ -611,11 +729,14 @@ impl PreadPool {
             );
         };
         self.stats.buffer_waits += 1;
-        self.buffers[index]
+        let started = std::time::Instant::now();
+        let synced = self.buffers[index]
             .ready
             .as_ref()
             .ok_or_else(|| io::Error::other("H2D buffer is missing its completion event"))?
-            .synchronize()?;
+            .synchronize();
+        self.stats.wait_ns = self.stats.wait_ns.saturating_add(elapsed_ns(started));
+        synced?;
         assert!(self.buffers[index].phase.finish_h2d(true));
         self.buffers[index].ready = None;
         Ok(())
@@ -653,6 +774,7 @@ impl PreadPool {
             .position(|buffer| buffer.phase == BufferPhase::Free)
             .expect("wait_for_one must make one pinned buffer reusable");
         assert!(self.buffers[index].phase.begin_read());
+        self.buffers[index].head = 0;
         let result = {
             let dst = match self.buffers[index]
                 .data
@@ -667,7 +789,13 @@ impl PreadPool {
                     return Err(err.into());
                 }
             };
-            pread_exact_at(file, &mut dst[..len], offset)
+            let started = std::time::Instant::now();
+            let result = pread_exact_at(file, &mut dst[..len], offset);
+            self.stats.demand_read_ns = self
+                .stats
+                .demand_read_ns
+                .saturating_add(elapsed_ns(started));
+            result
         };
         match result {
             Ok(()) => {
@@ -729,17 +857,31 @@ impl PreadPool {
             )
             .into());
         }
-        if self.mode == SpillIoMode::Direct && !direct_extent_aligned(offset, len) {
-            self.stats.read_errors += 1;
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!(
-                    "O_DIRECT expert extent requires {DIRECT_IO_ALIGNMENT}-byte aligned offset \
-                     and length (offset={offset}, len={len})"
-                ),
-            )
-            .into());
-        }
+        let window = if self.mode == SpillIoMode::Direct {
+            let window = direct_window(offset, len).ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("O_DIRECT window overflows (offset={offset}, len={len})"),
+                )
+            })?;
+            if window.len > self.buffer_bytes {
+                // Unreachable while `len <= capacity` (see `direct_buffer_bytes`); refuse rather
+                // than read past the pinned allocation.
+                self.stats.read_errors += 1;
+                return Err(io::Error::other(format!(
+                    "O_DIRECT window {} exceeds pinned buffer {}",
+                    window.len, self.buffer_bytes
+                ))
+                .into());
+            }
+            window
+        } else {
+            DirectWindow {
+                offset,
+                head: 0,
+                len,
+            }
+        };
         let file = self.io_file(file)?;
         self.reap_completed();
         let free_count = self
@@ -766,6 +908,7 @@ impl PreadPool {
         let buffer = &mut self.buffers[index];
         assert!(buffer.phase.begin_read());
         buffer.ticket = Some(ticket);
+        buffer.head = window.head;
         let data = buffer
             .data
             .take()
@@ -774,8 +917,10 @@ impl PreadPool {
             ticket,
             index,
             file,
-            offset,
-            len,
+            offset: window.offset,
+            len: window.len,
+            need: window.head + len,
+            payload: len,
             data,
         };
         let sender = self
@@ -844,12 +989,15 @@ impl PreadPool {
                 self.stats.buffer_waits += 1;
                 waited = true;
             }
+            let started = std::time::Instant::now();
             let completion = self
                 .workers
                 .as_ref()
                 .ok_or_else(|| io::Error::other("spill worker pool is unavailable"))?
                 .completions
-                .recv()
+                .recv();
+            self.stats.wait_ns = self.stats.wait_ns.saturating_add(elapsed_ns(started));
+            let completion = completion
                 .map_err(|_| io::Error::other("spill worker completion channel disconnected"))?;
             self.finish_worker_completion(completion);
         }
@@ -885,17 +1033,25 @@ impl PreadPool {
         index: usize,
         len: usize,
     ) -> Result<&[u8], Box<dyn std::error::Error>> {
-        if self.buffers[index].phase != BufferPhase::Ready {
+        let buffer = &self.buffers[index];
+        if buffer.phase != BufferPhase::Ready {
             return Err(io::Error::other("pread buffer is not ready for H2D").into());
         }
-        Ok(&self.buffers[index]
+        let all = buffer
             .data
             .as_ref()
             .expect("live pread buffer must retain its pinned allocation")
-            .as_slice()?[..len])
+            .as_slice()?;
+        let end = buffer
+            .head
+            .checked_add(len)
+            .filter(|&end| end <= all.len())
+            .ok_or_else(|| io::Error::other("pread payload exceeds its pinned buffer"))?;
+        Ok(&all[buffer.head..end])
     }
 
     pub(crate) fn mark_h2d(&mut self, index: usize, ready: Arc<CudaEvent>) {
+        self.stats.h2d_submits += 1;
         self.buffers[index].phase.begin_h2d();
         self.buffers[index].ticket = None;
         self.buffers[index].ready = Some(ready);
@@ -904,6 +1060,7 @@ impl PreadPool {
     /// Conservatively retain a buffer when CUDA submission/event recording could not prove a
     /// completion point. Only a later whole-stream synchronization may release it.
     pub(crate) fn mark_unknown_h2d(&mut self, index: usize) {
+        self.stats.h2d_submits += 1;
         self.buffers[index].phase.begin_h2d();
         self.buffers[index].ticket = None;
         self.buffers[index].ready = None;
@@ -975,7 +1132,8 @@ impl Drop for PreadPool {
         if self.stats.reads != 0 || self.stats.fallbacks != 0 || self.stats.ring_full != 0 {
             eprintln!(
                 "[spill-pread] reads={} bytes={} errors={} short_reads={} fallbacks={} \
-                 buffer_waits={} ring_full={}",
+                 buffer_waits={} ring_full={} overread_bytes={} worker_read_ns={} \
+                 demand_read_ns={} wait_ns={} h2d_submits={}",
                 self.stats.reads,
                 self.stats.bytes,
                 self.stats.read_errors,
@@ -983,6 +1141,11 @@ impl Drop for PreadPool {
                 self.stats.fallbacks,
                 self.stats.buffer_waits,
                 self.stats.ring_full,
+                self.stats.overread_bytes,
+                self.stats.worker_read_ns,
+                self.stats.demand_read_ns,
+                self.stats.wait_ns,
+                self.stats.h2d_submits,
             );
         }
     }
@@ -991,8 +1154,9 @@ impl Drop for PreadPool {
 #[cfg(test)]
 mod tests {
     use super::{
-        BufferPhase, SpillIoMode, config_fallbacks, configured_depth, configured_mode,
-        direct_extent_aligned, parse_depth, parse_spill_io, pread_exact_at,
+        BufferPhase, DIRECT_IO_ALIGNMENT, DirectWindow, SpillIoMode, config_fallbacks,
+        configured_depth, configured_mode, direct_buffer_bytes, direct_window, parse_depth,
+        parse_spill_io, pread_exact_at, pread_window_at,
     };
 
     fn temp_file(name: &str, bytes: &[u8]) -> (std::path::PathBuf, std::fs::File) {
@@ -1092,12 +1256,219 @@ mod tests {
         std::fs::remove_file(path).ok();
     }
 
+    /// OWED 8: window deltas and the shared field formatting of the stage counters.
     #[test]
-    fn direct_io_requires_conservative_block_alignment() {
-        assert!(direct_extent_aligned(0, 4096));
-        assert!(direct_extent_aligned(8192, 16384));
-        assert!(!direct_extent_aligned(1, 4096));
-        assert!(!direct_extent_aligned(0, 4095));
+    fn stage_stats_deltas_and_fields() {
+        let before = crate::SpillStageStats {
+            worker_read_ns: 1_000_000,
+            demand_read_ns: 0,
+            wait_ns: 250_000,
+            h2d_submits: 3,
+            overread_bytes: 4096,
+        };
+        let after = crate::SpillStageStats {
+            worker_read_ns: 3_500_000,
+            demand_read_ns: 0,
+            wait_ns: 1_250_000,
+            h2d_submits: 10,
+            overread_bytes: 4096 * 8,
+        };
+        let d = after.since(&before);
+        assert_eq!(d.h2d_submits, 7);
+        assert_eq!(d.overread_bytes, 4096 * 7);
+        assert_eq!(
+            d.fields(),
+            "worker_read_ms=2.500 demand_read_ms=0.000 wait_ms=1.000 h2d_submits=7 \
+             overread_bytes=28672"
+        );
+        assert_eq!(before.since(&after), crate::SpillStageStats::default());
+        let t = std::time::Instant::now();
+        assert!(super::elapsed_ns(t) < 1_000_000_000);
+    }
+
+    /// OWED 7 gate 1: every head and the registered payload lengths give an aligned window that
+    /// contains the payload and fits the direct buffer bound; overflow refuses instead of wrapping.
+    #[test]
+    fn direct_window_is_aligned_contains_payload_and_fits_buffer() {
+        let a = DIRECT_IO_ALIGNMENT;
+        let capacity = 860_160 + 17;
+        let bound = direct_buffer_bytes(capacity).unwrap();
+        assert_eq!(bound, 864_256 + a);
+        for len in [1, 4095, 4096, 4097, 450_560, 557_056, 860_160, capacity] {
+            for head in 0..a {
+                for block in [0u64, 1, 2683, 1 << 20] {
+                    let offset = block * a as u64 + head as u64;
+                    let w = direct_window(offset, len).unwrap();
+                    assert_eq!(w.offset % a as u64, 0);
+                    assert_eq!(w.len % a, 0);
+                    assert_eq!(w.head, head);
+                    assert_eq!(w.offset + w.head as u64, offset);
+                    assert!(w.head + len <= w.len, "payload escapes window");
+                    assert!(
+                        w.len - (w.head + len) < a,
+                        "window over-reads a whole block"
+                    );
+                    assert!(w.len <= bound, "window exceeds the pinned buffer bound");
+                }
+            }
+        }
+        assert_eq!(
+            direct_window(8192, 16384),
+            Some(DirectWindow {
+                offset: 8192,
+                head: 0,
+                len: 16384
+            }),
+            "an aligned extent is its own window"
+        );
+        assert_eq!(direct_window(u64::MAX - 10, 100), None);
+        assert_eq!(direct_window(u64::MAX - 4000, 1), None);
+        assert_eq!(direct_buffer_bytes(usize::MAX), None);
+    }
+
+    /// 4 KiB-aligned heap buffer for O_DIRECT reads without CUDA.
+    struct AlignedBuf {
+        ptr: *mut u8,
+        layout: std::alloc::Layout,
+    }
+
+    impl AlignedBuf {
+        fn new(len: usize) -> Self {
+            let layout = std::alloc::Layout::from_size_align(len, DIRECT_IO_ALIGNMENT).unwrap();
+            // SAFETY: non-zero size, valid alignment; freed with the same layout in Drop.
+            let ptr = unsafe { std::alloc::alloc_zeroed(layout) };
+            assert!(!ptr.is_null());
+            Self { ptr, layout }
+        }
+
+        fn slice(&mut self, len: usize) -> &mut [u8] {
+            assert!(len <= self.layout.size());
+            // SAFETY: the allocation holds `layout.size()` initialized bytes owned by self.
+            unsafe { std::slice::from_raw_parts_mut(self.ptr, len) }
+        }
+    }
+
+    impl Drop for AlignedBuf {
+        fn drop(&mut self) {
+            // SAFETY: allocated in `new` with this layout.
+            unsafe { std::alloc::dealloc(self.ptr, self.layout) }
+        }
+    }
+
+    /// A file on the test binary's own filesystem (the build tree, not tmpfs): ext4 and xfs
+    /// enforce O_DIRECT alignment, which the red control relies on.
+    fn direct_test_file(name: &str, bytes: &[u8]) -> (std::path::PathBuf, bool) {
+        let dir = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let path = dir.join(format!("memra-direct-{name}-{}", std::process::id()));
+        std::fs::write(&path, bytes).unwrap();
+        // SAFETY: statfs on a NUL-terminated existing path into a zeroed out-parameter.
+        let enforcing = unsafe {
+            let c = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
+            let mut s: libc::statfs = std::mem::zeroed();
+            libc::statfs(c.as_ptr(), &mut s) == 0 && matches!(s.f_type as i64, 0xEF53 | 0x5846_5342) // ext4, xfs
+        };
+        (path, enforcing)
+    }
+
+    fn open_direct(path: &std::path::Path) -> std::fs::File {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECT)
+            .open(path)
+            .unwrap()
+    }
+
+    fn pattern(len: usize, seed: u64) -> Vec<u8> {
+        let mut x = seed | 1;
+        (0..len)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                x as u8
+            })
+            .collect()
+    }
+
+    fn window_read(file: &std::fs::File, offset: u64, len: usize) -> std::io::Result<Vec<u8>> {
+        let w = direct_window(offset, len).unwrap();
+        let mut buf = AlignedBuf::new(w.len);
+        pread_window_at(file, buf.slice(w.len), w.offset, w.head + len)?;
+        Ok(buf.slice(w.len)[w.head..w.head + len].to_vec())
+    }
+
+    /// OWED 7 gate 2: O_DIRECT windows return exactly the bytes a buffered positioned read of the
+    /// same extent returns, for seeded random extents and a GGUF-shaped expert layout, including
+    /// an extent that ends at an unaligned end of file. An extent crossing EOF is a short read.
+    #[test]
+    fn direct_window_reads_match_buffered_reads() {
+        const BASE: u64 = 10_991_392; // the pinned artifact's data_start (1824 mod 4096)
+        let slices = [450_560usize, 557_056, 860_160];
+        let layout_len: u64 = slices.iter().map(|&s| s as u64 * 3).sum();
+        let file_len = (BASE + layout_len + 1234) as usize; // unaligned EOF
+        let bytes = pattern(file_len, 0x5eed);
+        let (path, _) = direct_test_file("window", &bytes);
+        let direct = open_direct(&path);
+        let buffered = std::fs::File::open(&path).unwrap();
+        let check = |offset: u64, len: usize| {
+            let got = window_read(&direct, offset, len).unwrap();
+            let mut want = vec![0u8; len];
+            pread_exact_at(&buffered, &mut want, offset).unwrap();
+            assert_eq!(
+                got, want,
+                "window bytes differ at offset={offset} len={len}"
+            );
+            assert_eq!(&got[..], &bytes[offset as usize..offset as usize + len]);
+        };
+        let mut offset = BASE;
+        for &slice in &slices {
+            for _expert in 0..3 {
+                check(offset, slice);
+                offset += slice as u64;
+            }
+        }
+        let mut x = 0x9e37_79b9_7f4a_7c15u64;
+        for _ in 0..2000 {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            let len = 1 + (x % 900_000) as usize;
+            let offset = (x >> 20) % (file_len - len) as u64;
+            check(offset, len);
+        }
+        let tail = 777;
+        check((file_len - tail) as u64, tail);
+        let err = window_read(&direct, (file_len - 10) as u64, 20).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+        std::fs::remove_file(path).ok();
+    }
+
+    /// OWED 7 gate 3 (red control): the same unaligned extent read through the O_DIRECT
+    /// descriptor WITHOUT the window is refused by an alignment-enforcing filesystem, which is
+    /// why the direct arm used to fall back to mmap on every slice of the pinned artifact.
+    #[test]
+    fn unaligned_direct_read_without_window_is_refused() {
+        let bytes = pattern(3 * DIRECT_IO_ALIGNMENT, 7);
+        let (path, enforcing) = direct_test_file("red", &bytes);
+        let direct = open_direct(&path);
+        let mut buf = AlignedBuf::new(2 * DIRECT_IO_ALIGNMENT);
+        let refused = pread_exact_at(&direct, &mut buf.slice(4096)[..], 1824);
+        if enforcing {
+            let err = refused.expect_err("ext4/xfs must refuse an unaligned O_DIRECT offset");
+            assert_eq!(err.raw_os_error(), Some(libc::EINVAL), "{err}");
+        } else {
+            eprintln!("red control skipped: test filesystem does not enforce O_DIRECT alignment");
+        }
+        assert_eq!(
+            window_read(&direct, 1824, 4096).unwrap(),
+            &bytes[1824..1824 + 4096]
+        );
+        std::fs::remove_file(path).ok();
     }
 
     #[test]
@@ -1223,6 +1594,53 @@ mod tests {
         let reused_buffer = pool.wait_worker(reused).unwrap();
         assert_eq!(pool.bytes(reused_buffer, 8).unwrap(), &bytes[..8]);
         pool.abort_read(reused_buffer);
+        std::fs::remove_file(path).ok();
+    }
+
+    /// OWED 7 GPU gate: `Direct` mode over unaligned extents returns the file's bytes from pinned
+    /// buffers, counts exactly the predicted over-read, and never refuses an unaligned extent.
+    #[test]
+    #[ignore = "requires a CUDA GPU"]
+    fn direct_worker_overread_preserves_exact_bytes() {
+        let engine = crate::Engine::new(0).unwrap();
+        let capacity = 557_056;
+        let bytes = pattern(10_991_392 + 8 * capacity + 999, 42);
+        let (path, _) = direct_test_file("pool", &bytes);
+        let file = std::sync::Arc::new(std::fs::File::open(&path).unwrap());
+        let mut pool = super::PreadPool::try_new(&engine, capacity, SpillIoMode::Direct).unwrap();
+        let mut predicted = 0u64;
+        let mut extents: Vec<(u64, usize)> = (0..8)
+            .map(|e| (10_991_392 + e * capacity as u64, capacity))
+            .collect();
+        extents.extend([
+            (0, 4096),
+            (3, 97),
+            (8192, 16384),
+            ((bytes.len() - 500) as u64, 500),
+        ]);
+        for (offset, len) in extents {
+            let w = direct_window(offset, len).unwrap();
+            predicted += (w.len - len) as u64;
+            let ticket = pool
+                .submit_worker(file.clone(), offset, len)
+                .unwrap()
+                .unwrap();
+            let index = pool.wait_worker(ticket).unwrap();
+            assert_eq!(
+                pool.bytes(index, len).unwrap(),
+                &bytes[offset as usize..offset as usize + len]
+            );
+            pool.abort_read(index);
+        }
+        let stats = pool.stats();
+        assert_eq!(stats.read_errors, 0);
+        assert_eq!(stats.fallbacks, 0);
+        assert_eq!(stats.overread_bytes, predicted);
+        assert!(
+            stats.worker_read_ns > 0,
+            "OWED 8: worker read clock never advanced"
+        );
+        assert_eq!(stats.h2d_submits, 0, "aborted reads submit no H2D");
         std::fs::remove_file(path).ok();
     }
 }
