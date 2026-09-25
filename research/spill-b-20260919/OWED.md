@@ -135,7 +135,7 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - Acceptance to pre-register: an armed host tier (`MEMRA_KV_HOST_MB > 0`), door ON, a warm prefix cache and a burst
   that reaches the reclaim flush; the `reclaim demoted` lines, bytes and the flush's tick cost; identity against
   door OFF; the same with `MEMRA_KV_HOST_CONTRACTS=1`. Both cards.
-- Status: `open`. Price: about 0.3 agent-day plus a cell on each card. Feeds O3.
+- Status: folded into O12 (DAY42's `ontick` and `ontick-nocontracts` arms are this item's cell). Feeds O3.
 
 ### O11. The grid-checkpoint rewind arm for the verbatim-extension resume (lead's order, 2026-09-25)
 
@@ -146,6 +146,18 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   price it against keeping the decoded rows (re-primed rows, TTFT, throughput, memory, fanout reach), both cards.
 - Status: `pre-registered` (DAY41.md). Price: about 0.5 agent-day plus about 3 h on the 5090 and 4.5 h on the target
   card.
+
+### O12. The admission reclaim flush off the tick (lead's ruling at integ62)
+
+- Source: the lead's ruling at integ62; lane A's design V (`research/spill-a-20260919/DAY47.md` section 1: "Site 1
+  stays on the tick in this design, and goes to the lead as a question ... an off-tick flush means deferring the
+  arrival until the landings, which is the memory-admission door's own decision"), receipts under lane A's day-47
+  `pro-single-*` dirs.
+- What: `MEMRA_ADMIT_RECLAIM_OFFTICK` (default unset, only with `MEMRA_ADMIT_BY_MEMORY=1` and
+  `MEMRA_KV_HOST_CONTRACTS=1`): the reclaim flush drops today's drop set at once and demotes its demote set off the
+  tick, one landing at a time, and the arrival defers on the landings within the door's defer budget. Folds in O10.
+- Status: `pre-registered` (DAY42.md). Price: about 0.5 agent-day plus about 2 h on the 5090 and 3 h on the target
+  card (the next sitting).
 
 ## Owner-only (listed, not worked)
 
