@@ -1,0 +1,87 @@
+box start 2026-09-25T01:38:39Z tree ddbfa2141fa0a6b4448dd49643f3e15c89e605ef
+name, driver_version, memory.total [MiB], power.limit [W], clocks.max.sm [MHz]
+NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 595.71.05, 97887 MiB, 600.00 W, 3090 MHz
+
+==============NVSMI LOG==============
+
+Timestamp                                              : Fri Sep 25 01:38:39 2026
+Driver Version                                         : 595.71.05
+CUDA Version                                           : 13.2
+
+Attached GPUs                                          : 1
+GPU 00000000:02:00.0
+    Performance State                                  : P8
+    Clocks Event Reasons
+        Idle                                           : Not Active
+        Applications Clocks Setting                    : Not Active
+        SW Power Cap                                   : Not Active
+        HW Slowdown                                    : Not Active
+            HW Thermal Slowdown                        : Not Active
+            HW Power Brake Slowdown                    : Not Active
+        Sync Boost                                     : Not Active
+        SW Thermal Slowdown                            : Not Active
+        Display Clock Setting                          : Not Active
+    Clocks Event Reasons Counters
+        SW Power Capping                               : 127891288861 us
+        Sync Boost                                     : 0 us
+        SW Thermal Slowdown                            : 0 us
+        HW Thermal Slowdown                            : 0 us
+        HW Power Braking                               : 0 us
+    Sparse Operation Mode                              : N/A
+
+24
+CPU(s):                                  24
+Model name:                              Intel(R) Core(TM) Ultra 9 285K
+Thread(s) per core:                      1
+Socket(s):                               1
+CPU(s) scaling MHz:                      25%
+MemTotal:       197542692 kB
+MemAvailable:   176687704 kB
+SwapTotal:       8388604 kB
+Filesystem      Size  Used Avail Use% Mounted on
+overlay         350G   51G  300G  15% /
+overlay         350G   51G  300G  15% /
+/root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf: OK
+/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: OK
+label=final sha=62e848b1f start=2026-09-25T01:38:48Z
+head=62e848b1f1c604ebdad328e4538544ce46a0143e
+Cuda compilation tools, release 13.1, V13.1.115
+Build cuda_13.1.r13.1/compiler.37061995_0
+cargo 1.97.1 (c980f4866 2026-06-30)
+   Compiling memra-engine v0.138.0 (/root/wt-c-build/crates/memra-engine)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 2m 26s
+binary=run-gen-final tree=62e848b1f1c604ebdad328e4538544ce46a0143e sha256=35a64e9e46922eaf2b8fa6a76a02c763aa74018201e487ee8dce31a4e1f4fd84
+binary=run-spec-final tree=62e848b1f1c604ebdad328e4538544ce46a0143e sha256=e12bac3347076ec86904b46720775a43503882eb2088a0ea0f3771d3510101c3
+end=2026-09-25T01:41:15Z
+rc=0
+binary=run-gen-final tree=62e848b1f1c604ebdad328e4538544ce46a0143e sha256=35a64e9e46922eaf2b8fa6a76a02c763aa74018201e487ee8dce31a4e1f4fd84
+binary=run-spec-final tree=62e848b1f1c604ebdad328e4538544ce46a0143e sha256=e12bac3347076ec86904b46720775a43503882eb2088a0ea0f3771d3510101c3
+BUILDS-DONE 2026-09-25T01:41:15Z
+cpu cap: taskset -c 0-11 (no systemd scope on this box)
+attrib already done
+ladder already done
+ladder-b already done
+c6 unit-server already done
+c6 failure-default-off already done
+c6 failure-plain-off already done
+c6 failure-default-on already done
+c6 identity-default-off already done
+c6 identity-default-on already done
+residfix rc=0 2026-09-25T01:56:22Z
+residfix validate rc=0
+residfix reader rc=0
+smallfix rc=0 2026-09-25T02:03:51Z
+smallfix validate rc=0
+smallfix reader rc=0
+hashlock rc=0 2026-09-25T02:04:12Z
+hashlock validate rc=0
+hashlock reader rc=0
+spec rc=0 2026-09-25T02:05:04Z
+spec validate rc=0
+spec reader rc=0
+decide rc=0 2026-09-25T02:09:35Z
+decide validate rc=0
+decide reader rc=1
+box done 2026-09-25T02:09:35Z

@@ -3647,6 +3647,115 @@ WP-A resumes when a slot frees.
 - memra#464's guard seed format (money path).
 - BOX3's detached OS volume: keep or delete.
 
+## integ60 (`lane/spill-integ60-20260925`): C days 40 to 58 (the MoE slot cache door tuned and decided on the target card: door_wins against the legacy, and the legacy's own prefetch faster than both; verify digest v3; the DFlash tail class; two partial-restore fixes)
+Lane tip merged: C `942dc5736` onto main `5d653e851` (#723) as `21d964039`. Two conflicts, both documentation, resolved
+as a union of both sides: the `MEMRA_KV_HOST_FAULT` row in `docs/FLAGS.md` (main's `d2h-source-flip` and `d2h-delay`
+beside C's `flip-demote-draft`, `-hidden` and `-logits`; merged token by token, the row's length equal to ours plus
+theirs minus the base) and one `docs/TESTING.md` paragraph (main's day-37 rewrite kept, C's two new bullets appended).
+A lead commit (`2dc6cfe50`) marks C's verbatim CPU logs, driver outputs, split log parts and one banked harness diff
+`-whitespace`, so `git diff --check` passes; no receipt byte changed. The engine change:
+- The MoE slot cache door `--experts-via-tier` (a CLI door, decide-by 2026-10-04 in `MOE-SLOT-CACHE-DOOR.md`): ten
+  rungs (I1 to I10, with I8 and I5 rewritten as I8f and I5f), among them a pinned host pool (`PinnedPool`, one cached
+  portable allocation carved per plan class), leases retired on their copy events instead of a stream drain, a fill
+  that completes before decode starts (I10), and the prediction prefetch rung.
+- Verify digest v3 (`MEMRA_KV_HOST_VERIFY`, a diagnostic): the round-trip digest also covers the draft plane, the
+  boundary hidden row, the logits and the DFlash tail; v2 unchanged.
+- The DFlash tail as its own entry class of the contracts door, with a drafter arm in the identity gate.
+- Two fixes in the default-OFF `MEMRA_DSPARK_PARTIAL_RESTORE` path: a strict-prefix hit with a suffix under 16 tokens
+  failed with HTTP 500 (`c4e18a4e3`, now serves cold); an off-grid strict-prefix restore changed the output at the
+  24th character against cold (`62e848b1f`, now serves cold: a second numeric program is forbidden, not tolerated).
+
+**C days 40 to 58.**
+1. **The door's deciding cell (C1), target card, final tree `62e848b1f`,** verbatim:
+   - `DAY51 VERDICT rig=pro-single integrity=ok -> door_wins`
+   - `DAY51 DECIDE rig=pro-single gen-only decode: off=0.311 on=0.277 ref=0.255 (N=10 each) on_minus_off
+     pooled=-0.0340 o1=-0.0340 o2=-0.0340 noise=0.0005 ratio=0.891 (o1 0.891, o2 0.891) -> door_wins`
+   - `DAY51 DECIDE rig=pro-single steady window: off=0.251 on=0.240 ref=0.226 (N=10 each) on_minus_off
+     pooled=-0.0110 o1=-0.0110 o2=-0.0110 noise=0.0000 ratio=0.956 (o1 0.956, o2 0.956) -> door_wins`
+   - `DAY51 G1 ... -> PASS` and `DAY51 G2 rig=pro-single -> PASS` (all three run-spec shapes).
+   - REF is the legacy slot cache with `MEMRA_MOE_PREFETCH=1`; it beats the door on both measures. The door's install
+     takes 9.91 s.
+   - The cell's first run read `integrity=FAIL -> void`: one integrity term registered before I10 required at least one
+     host miss, and I10's registered clause requires zero. C corrected only that term (DAY51 section 1c) and ran the
+     cell again in a new hold, the timing rule unchanged; DAY51 records that C saw the void run's timings first.
+2. **The ladder on the 5090,** verbatim: I6 failed first (`DAY43 RESID rig=rtx5090 integrity=ok no_regression=FAIL`)
+   and I2's pinned pool fixed it (`DAY43 RESIDFIX .. no_regression=PASS`, and on the target card); `DAY44 MAPPED ..
+   PASS`, `DAY45 FILL .. PASS`, `DAY46 NODRAIN .. PASS`, `DAY47 PINNED .. PASS`, `DAY49 INSTALL .. PASS`, `DAY50
+   PREFETCH .. PASS`, `DAY57 FILLWAIT .. PASS`; I8 and I5 failed (`DAY48 SMALL .. i8=FAIL i5=FAIL`), were rewritten, and
+   pass (`DAY58 SMALLFIX .. i8f=PASS i5f=PASS`, and on the target card). No rung was reverted.
+3. **Closed:** C4 (`DAY54 VERDICT -> moved_at s5=58b814abe`: the double park comes from #638, integ37's parked-only
+   wait; now in the contracts-door packet), C6 (verify digest v3 ALL GREEN in six cells on both cards), C8 (`DAY55
+   VERDICT -> prime_always_admitted` on the 5090), C9, and the 9B conv/ssm/hidden split (`DAY41 9B SPLIT plain_tuples=1
+   -> PASS`).
+4. **C5, the DFlash tail:** `DAY56 DFLASH TAIL rig=pro-single -> PASS` on the fourth attempt; the earlier attempts found
+   the two partial-restore defects above.
+5. **The 5090 went down at 01:25Z** (bad register reads, then Xid 119 GSP RPC timeouts and Xid 154, `GPU Reset
+   Required`; C's kernel log `rtx5090-fault-20260925/kernel.log`), 32 s after C's last cell ended cleanly. C's
+   remaining 5090 cells (DAY51's G1, G2 and decide-b, C5's cells) wait for the owner's reset.
+6. **BOX8** carried C's sitting: 2589 receipts mirrored into `pro-single-day52/`, checked against the box manifest.
+
+**Lead review.**
+- `PinnedPool` and `PooledBuffer`: one cached portable pinned allocation (never write-combined, since the CPU reads it),
+  buffers handed out and returned under one mutex, zeroed on first take, the allocation freed only at pool drop after
+  every buffer (each holds the pool's `Arc`) is gone. The one `cuMemFreeHost` is at teardown, not per lease (DAY37's
+  law: that call waits for every queued stream in the context).
+- Borrowed sources: a lease is finished only after its copy event completes; an enqueue with an unknown stream keeps the
+  lease open (fail closed, never freed under a live DMA).
+- One numeric program per request: the off-grid strict-prefix restore now serves cold, and the verify digest covers every
+  round-tripped plane.
+- The seven spill review patterns were read against the worker and bank state machines; the lease retire on the copy
+  event and the fail-closed unknown stream are the release paths off the happy path. No move-then-match or gate literal
+  found in the new code.
+- New `unsafe`: 10 sites (the pool's `Send`/`Sync`, its allocation, carve, first-take zeroing and free, the buffer's
+  `Send` and two slice views, one read-only `Mmap::map` in `memra-gguf`), each with its ownership stated.
+
+**Ruling 55:**
+- Days 40 to 58 are read as registered. The DAY51 void-run correction is accepted as an integrity definition, not the
+  decision rule; the record says C saw the void run's timings.
+- `door_wins` on the target card is the door's deciding receipt for 2026-10-04. The owner decides promotion.
+- `MEMRA_MOE_PREFETCH=1` is faster than both the door and the legacy on the target card, and its FLAGS row carries no
+  decide-by date, which the door-hygiene rule forbids. Owed by C: its deciding cell on both cards with a decide-by
+  date on its row, and the door's gap to it attributed and tuned.
+- C4, C6, C8, C9 and the 9B split close. C5 passes on the target card; its 5090 cells wait for the reset.
+- The two partial-restore fixes enter the tree.
+
+**Checks.**
+- CPU battery on `2dc6cfe50`, 15 of 15 rc=0:
+  - portable suites: 383 passed, 0 skipped;
+  - tests: server 917, engine lib 563, tier 296 across 8 binaries, pytest 87 passed;
+  - clippy `-D warnings` twice;
+  - fmt, check-flags, publish census, docs registry, conflict markers, workflow keys, perf board and
+    `git diff --check` (`integ60-cpu-battery/`).
+- The local RTX 5090 is down (it needs a reset), so the GPU battery ran on a rented RTX PRO 6000 Blackwell Workstation
+  Edition (BOX11, accepted: no brake, FMA spin 2810 to 2825 MHz, 90 GiB alloc) with the same 9B model the 5090 battery
+  uses (sha256 `52c9cceb...`), under the pair lock `/tmp/memra-gpu.lock` (`integ60-pro/`, 403 receipts mirrored and
+  checked). Binary `c39aeb53`, hashed after serve-smoke's build and again after its rerun (unchanged). One collector
+  hold, 03:05Z to 03:26Z. Verbatim:
+  - serve-smoke first read `serve-smoke: SKIP (no model at /data/ai-ml/...)`: the gate looks for the model at the
+    rig's path. A skip is not a pass: the model was linked at that path and serve-smoke rerun alone under the lock,
+    `serve-smoke: 0 failed` (`integ60-pro/serve-smoke-rerun/`). Its Q35 coldhol arm skips for want of the 35B on
+    that path, as it does on the 5090 rig;
+  - the engine span cells `10 passed` and the worker cells `18 passed`, both serial;
+  - identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok);
+  - fault default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 229 ok each;
+  - hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 61 and 68 ok;
+  - `ADMIT-MEM BURST GATE: ALL GREEN` (64 x 200, no OOM: the 96 GB card admits the whole burst, where the 5090
+    refuses 28 with typed 429s);
+  - `SPEC-CTX-EDGE GATE: ALL GREEN`.
+- Process note: a stray `vastai destroy` in one of the lead's setup calls destroyed BOX8 after C's release, when the
+  lead had meant to reuse it for this battery. No receipt was lost (C had mirrored all 2589); a box was rented instead.
+
+**Running.** WP-A (S2, item 15 and the 9950X fill reading on BOX10), WP-C (the prefetch deciding cell and the door's
+gap), WP-B stopped with its second sitting running on BOX9. The local 5090 waits for the owner's reset.
+
+**Owner decisions flagged.**
+- Reset the local RTX 5090 (`GPU requires reset` since 01:25Z); every lane's 5090 cells wait on it.
+- 2026-10-04: the MoE slot cache door (`door_wins`, with `MEMRA_MOE_PREFETCH=1` faster than both), `--kv-allocator vmm`.
+- 2026-10-05, the contracts door; 2026-10-06, the park door; 2026-10-07, `MEMRA_ADMIT_BY_MEMORY`.
+- B's question: the verbatim-extension resume keeps decoded rows (`docs/SERVING.md`'s documented near-tie residual)
+  against the one-numeric-program rule; the alternative rewinds to the grid checkpoint. B prices the rewind first.
+- memra#464's guard seed format (money path); BOX3's detached OS volume.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

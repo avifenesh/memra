@@ -123,32 +123,146 @@ pub fn map_host_exps(
     host_exps_catalog(&HostView(host), tensor, layer, projection, active, sources)
 }
 
-/// Qualification-only host budget, independent of native CUDA slot sizing.
-/// Refuse an impossible record instead of silently increasing the budget.
-pub fn host_bank_slots(bytes: u64, max_record: u64) -> std::result::Result<usize, &'static str> {
-    if max_record == 0 || bytes < max_record {
+/// The host tier's plan under `--expert-bank-host-bytes` (day 43,
+/// `research/spill-c-20260919/DAY43.md`): one SLRU class per exact record size of the catalog,
+/// each class's slots proportional to its record count under the budget (the Hamilton
+/// remainder pass of `moe_cache.rs::size_class_plan`), capped at the class's record count, with
+/// at least one slot of the largest size. Refused, never clamped: a budget that cannot hold one
+/// record of the largest size, and a budget above the machine ceiling.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HostBankPlan {
+    /// Ascending `(record bytes, slots)`, every count positive: `SlruPolicy::new`'s input.
+    pub classes: Vec<(u64, usize)>,
+    /// Bytes the planned slots hold at their record sizes.
+    pub planned_bytes: u64,
+    /// Planned slots, one record each.
+    pub records_held: usize,
+}
+
+/// Plan `bytes` over `record_sizes` (one entry per retained record). `ceiling` is the machine
+/// ceiling the installer measured (`host_bank_ceiling`).
+pub fn host_bank_plan(
+    bytes: u64,
+    record_sizes: &[u64],
+    ceiling: u64,
+) -> std::result::Result<HostBankPlan, &'static str> {
+    let mut counts: BTreeMap<u64, u64> = BTreeMap::new();
+    for &size in record_sizes.iter().filter(|&&size| size > 0) {
+        *counts.entry(size).or_insert(0) += 1;
+    }
+    let Some((&largest, _)) = counts.iter().next_back() else {
+        return Err("experts-via-tier host bank has no expert record");
+    };
+    if bytes < largest {
         return Err("experts-via-tier host bank budget cannot hold one expert record");
     }
-    if bytes > 256 * 1024 * 1024 {
-        return Err("experts-via-tier host bank budget exceeds qualification ceiling");
+    if bytes > ceiling {
+        return Err("experts-via-tier host bank budget exceeds the machine ceiling");
     }
-    Ok((bytes / max_record).min(16) as usize)
+    let total: u128 = counts
+        .iter()
+        .map(|(&size, &count)| u128::from(size) * u128::from(count))
+        .sum();
+    let budget = u128::from(bytes);
+    // (size, available, planned, remainder)
+    let mut plan: Vec<(u64, u64, u64, u128)> = counts
+        .iter()
+        .map(|(&size, &count)| {
+            let scaled = u128::from(count) * budget;
+            let planned = (scaled / total).min(u128::from(count)) as u64;
+            (size, count, planned, scaled % total)
+        })
+        .collect();
+    let used = |plan: &[(u64, u64, u64, u128)]| -> u128 {
+        plan.iter()
+            .map(|&(size, _, planned, _)| u128::from(size) * u128::from(planned))
+            .sum()
+    };
+    let mut order: Vec<usize> = (0..plan.len()).collect();
+    order.sort_by(|&a, &b| plan[b].3.cmp(&plan[a].3).then(a.cmp(&b)));
+    for index in order {
+        let (size, available, planned, _) = plan[index];
+        if planned < available && used(&plan) + u128::from(size) <= budget {
+            plan[index].2 += 1;
+        }
+    }
+    // One slot of the largest size, taking slots from the smallest classes if the budget
+    // is full (the budget holds one largest record, checked above).
+    let last = plan.len() - 1;
+    if plan[last].2 == 0 {
+        plan[last].2 = 1;
+        let mut index = 0;
+        while used(&plan) > budget && index < last {
+            if plan[index].2 > 0 {
+                plan[index].2 -= 1;
+            } else {
+                index += 1;
+            }
+        }
+    }
+    let planned_bytes = u64::try_from(used(&plan))
+        .map_err(|_| "experts-via-tier host bank plan arithmetic overflow")?;
+    let classes: Vec<(u64, usize)> = plan
+        .iter()
+        .filter(|&&(_, _, planned, _)| planned > 0)
+        .map(|&(size, _, planned, _)| (size, planned as usize))
+        .collect();
+    let records_held = classes.iter().map(|&(_, slots)| slots).sum();
+    Ok(HostBankPlan {
+        classes,
+        planned_bytes,
+        records_held,
+    })
+}
+
+/// Typed host plan refusal naming the requested, minimum and ceiling bytes.
+pub fn host_bank_budget(
+    bytes: u64,
+    record_sizes: &[u64],
+    ceiling: u64,
+) -> std::result::Result<HostBankPlan, ExpertBankRefusal> {
+    host_bank_plan(bytes, record_sizes, ceiling).map_err(|reason| {
+        let minimum = record_sizes.iter().copied().max().unwrap_or(0);
+        ExpertBankRefusal(format!(
+            "{reason} (requested {bytes}, minimum {minimum}, ceiling {ceiling})"
+        ))
+    })
+}
+
+/// The machine ceiling for the host tier: three quarters of `MemAvailable` in a
+/// `/proc/meminfo` text, in bytes. `None` when the field is absent or malformed (the installer
+/// then refuses: an unknown host memory is never read as unlimited).
+pub fn host_bank_ceiling(meminfo: &str) -> Option<u64> {
+    let line = meminfo.lines().find(|l| l.starts_with("MemAvailable:"))?;
+    let mut fields = line.split_whitespace().skip(1);
+    let kib: u64 = fields.next()?.parse().ok()?;
+    if fields.next() != Some("kB") {
+        return None;
+    }
+    kib.checked_mul(1024)?.checked_div(4)?.checked_mul(3)
 }
 
 /// Gate-only budgets for the `--experts-via-tier` door. Both come from the gate
 /// binary's argv (`--expert-bank-host-bytes=N`, `--expert-bank-gpu-bytes=N`), never
 /// from an environment variable. `gpu_bytes == None` leaves native slot sizing
 /// (`MEMRA_MOE_SLOTS` / auto) exactly as it is.
+///
+/// `stage_clock` is not a budget: `--expert-bank-stages` installs the door's log-only stage
+/// clock (`research/spill-c-20260919/DAY40.md`), an explanatory diagnostic that reads
+/// `Instant` and two timing events per GPU miss and changes no decision. It shares the
+/// door's decide-by (`MOE-SLOT-CACHE-DOOR.md`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExpertBankBudget {
     pub host_bytes: u64,
     pub gpu_bytes: Option<u64>,
+    pub stage_clock: bool,
 }
 impl Default for ExpertBankBudget {
     fn default() -> Self {
         Self {
             host_bytes: 256 * 1024 * 1024,
             gpu_bytes: None,
+            stage_clock: false,
         }
     }
 }
@@ -182,8 +296,10 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
     const DOOR: &str = "--experts-via-tier";
     const HOST: &str = "--expert-bank-host-bytes";
     const GPU: &str = "--expert-bank-gpu-bytes";
+    const STAGES: &str = "--expert-bank-stages";
     const FAMILY: &str = "--expert-bank-";
     let mut door = false;
+    let mut stages = false;
     let mut host = None;
     let mut gpu = None;
     for arg in args {
@@ -199,11 +315,20 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
                 door = true;
                 continue;
             }
+            STAGES => {
+                if value.is_some() {
+                    return Err(format!("{STAGES} takes no value"));
+                }
+                if std::mem::replace(&mut stages, true) {
+                    return Err(format!("{STAGES} given more than once"));
+                }
+                continue;
+            }
             HOST => &mut host,
             GPU => &mut gpu,
             _ if key.starts_with(FAMILY) || key.starts_with(DOOR) => {
                 return Err(format!(
-                    "unknown expert bank flag {key:?}; expected {DOOR}, {HOST}=<bytes> or {GPU}=<bytes>"
+                    "unknown expert bank flag {key:?}; expected {DOOR}, {HOST}=<bytes>, {GPU}=<bytes> or {STAGES}"
                 ));
             }
             _ => continue,
@@ -220,6 +345,9 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
         if host.is_some() || gpu.is_some() {
             return Err(format!("expert bank budgets require {DOOR}"));
         }
+        if stages {
+            return Err(format!("{STAGES} requires {DOOR}"));
+        }
         return Ok(None);
     }
     let mut budget = ExpertBankBudget::default();
@@ -227,20 +355,8 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
         budget.host_bytes = bytes;
     }
     budget.gpu_bytes = gpu;
+    budget.stage_clock = stages;
     Ok(Some(budget))
-}
-
-/// Typed host budget refusal naming the requested and minimum bytes.
-pub fn host_bank_budget(
-    bytes: u64,
-    max_record: u64,
-) -> std::result::Result<usize, ExpertBankRefusal> {
-    host_bank_slots(bytes, max_record).map_err(|reason| {
-        ExpertBankRefusal(format!(
-            "{reason} (requested {bytes}, minimum {max_record}, ceiling {})",
-            256u64 * 1024 * 1024
-        ))
-    })
 }
 
 /// Tail pad `MoeSlotCache` allocates after every slot: wide expert dots may issue an

@@ -1,0 +1,24 @@
+diff --git a/crates/memra-engine/src/banked_residency/native.rs b/crates/memra-engine/src/banked_residency/native.rs
+index d459c0964..bac0e3521 100644
+--- a/crates/memra-engine/src/banked_residency/native.rs
++++ b/crates/memra-engine/src/banked_residency/native.rs
+@@ -1267,7 +1267,18 @@ impl ExpertDispatchBank for TracedDispatch {
+             .insert(slot, local)
+             .filter(|old| *old != local);
+         let trace_started = self.clock.as_ref().map(|_| Instant::now());
+-        push_trace_line(&mut self.trace, local, bytes, slot, hit, victim);
++        eprintln!(
++            "[expert-host-slru] key={}:{}:{} bytes={} slot={} hit={} victim={}",
++            local.0,
++            local.1,
++            local.2,
++            bytes,
++            slot,
++            hit,
++            victim
++                .map(|v| format!("{}:{}:{}", v.0, v.1, v.2))
++                .unwrap_or_else(|| "-".into())
++        );
+         if self.trace.len() >= TRACE_CHUNK {
+             self.flush_trace();
+         }

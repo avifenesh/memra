@@ -1,0 +1,8 @@
+DAY52 VIEW day=49 reader=day49-install.py arms=off<-off,i5<-i5,i7<-i7 rc=0
+DAY49 INSTALL CHECKS rig=pro-single runs=30 integrity=ok
+DAY49 ARM i5 install_s median=11.93 iqr=0.03 records_s median=3.95 sha_s median=4.64 window_s median=0.267 iqr=0.000
+DAY49 ARM i7 install_s median=8.87 iqr=0.03 records_s median=0.89 sha_s median=4.63 window_s median=0.267 iqr=0.000
+DAY49 CLAUSE (i) records_s i5=3.95 i7=0.89 rule i7 < 0.25 x i5 -> PASS
+DAY49 CLAUSE (ii) install_s i7_minus_i5 o1=-3.08 o2=-3.06 noise=0.03 rule < -noise both orders -> PASS
+DAY49 CLAUSE (iii) window i7_minus_i5 pooled=+0.000 o1=+0.000 o2=+0.000 noise=0.000 rule <=noise -> PASS
+DAY49 INSTALL rig=pro-single integrity=ok clause_i=PASS clause_ii=PASS clause_iii=PASS

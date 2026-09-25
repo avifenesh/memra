@@ -131,3 +131,79 @@ fn token_identity_names_the_fixture_lease() {
     proxy.finish(&token).unwrap();
     owner.close().unwrap();
 }
+/// Day 40: the bank's log-only stage clock. Absent by default (the report is `None`);
+/// installed, it counts one stage per demand, one read step and one verified record per
+/// host-tier miss and none per host-tier hit, and the leased bytes are the same either way.
+fn clocked_owner(clock: bool) -> ExpertBankOwner {
+    let g = gov();
+    let mut l = layout(9, 4, 16);
+    l.segments.truncate(1);
+    l.requirements.truncate(1);
+    let id = bank_id(9, &l);
+    let bank = BankService::new(
+        Catalog::new(LayoutClass::Uniform, vec![(id.clone(), Some(record(l)))]).unwrap(),
+        g.clone(),
+        Heat::default(),
+        Reader::default(),
+        CoalescingPolicy {
+            granularity: 1,
+            slot_bytes: 32,
+        },
+        limits(32),
+    )
+    .unwrap();
+    let bank = if clock { bank.with_stage_clock() } else { bank };
+    let mut req = request(bank.slru_metadata_bytes(1).unwrap(), Priority::Demand);
+    let metadata = g.borrow_mut().reserve(&req).unwrap();
+    let bank = bank
+        .with_slru(SlruPolicy::new(&[(16, 1)]).unwrap(), &metadata)
+        .unwrap();
+    req.bytes = TierBudget::zero(2);
+    let bank =
+        SlruExpertDispatch::new(bank, BTreeMap::from([((2, 0, 9), id)]), req, epochs()).unwrap();
+    ExpertBankOwner::register(Box::new(bank), 1).unwrap()
+}
+fn token_value(line: &str, key: &str) -> u64 {
+    line.split_whitespace()
+        .find_map(|t| t.strip_prefix(&format!("{key}=")))
+        .unwrap_or_else(|| panic!("{key} missing in {line}"))
+        .parse()
+        .unwrap()
+}
+#[test]
+fn stage_clock_is_absent_by_default_and_counts_reads_only_on_host_misses() {
+    let mut plain = clocked_owner(false);
+    let mut timed = clocked_owner(true);
+    let (p, t) = (plain.proxy(), timed.proxy());
+    assert_eq!(p.stage_report(), Ok(None));
+    let mut seen = Vec::new();
+    for _ in 0..2 {
+        for proxy in [&p, &t] {
+            let token = proxy.demand((2, 0, 9), 16).unwrap();
+            seen.push(proxy.with_bytes(&token, <[u8]>::to_vec).unwrap());
+            proxy.finish(&token).unwrap();
+        }
+    }
+    assert!(
+        seen.windows(2).all(|w| w[0] == w[1]),
+        "clocked bytes differ"
+    );
+    assert_eq!(p.stage_report(), Ok(None));
+    let line = t.stage_report().unwrap().unwrap();
+    assert_eq!(token_value(&line, "stages"), 2, "{line}");
+    assert_eq!(token_value(&line, "steps"), 1, "{line}");
+    assert_eq!(token_value(&line, "verified"), 1, "{line}");
+    for key in [
+        "stage_ns",
+        "alloc_ns",
+        "step_ns",
+        "verify_ns",
+        "publish_ns",
+        "retire_ns",
+        "collect_ns",
+    ] {
+        token_value(&line, key);
+    }
+    plain.close().unwrap();
+    timed.close().unwrap();
+}
