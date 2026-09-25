@@ -63,3 +63,29 @@ after its reset, a compatibility reading.
 
 **Budget.** 0.4 agent-day: the lines and their census 0.1, the stall mode and the sitting 0.1, the card 0.2 (about an
 hour).
+
+## 2. As built (`17d43a6ac`), the CPU cells, and the sitting prepared
+
+- Step 1: `HostPrefixCache::on_tick_reason` (a `&'static str`) is set before every `OnTick` answer of
+  `prefix_capture_off_tick` (7 reasons: the capture path latched, no transfer engine, an SWA ring cache,
+  tensor-parallel shards, no model, latent planes, the cache position off the token boundary, no boundary logits, a KV
+  layer not at the boundary, the path latched while settling), of `host_capture_submit` (no host tier, no transfer
+  engine) and of `prefix_spec_capture_off_tick` (the same kind, plus a DFlash drafter tail, latent boundary tails, the
+  capture snapshot off its boundary, the boundary outside the committed tokens, a KV layer shorter than the boundary,
+  no KV rows). Each route's combined refusal is now one `else if` chain over the same conditions; day 24's census pins
+  the chain's `dspark_tail` arm by its new text. The lines print as section 1 states; the fanout's line prints under
+  the door too (section 1 left its condition unstated; door OFF prints nothing new anywhere).
+- Census `day54_the_on_tick_lines_are_log_only` (every `OnTick` answer preceded by its reason; the refusal names; no
+  decision reads the reason; the door guard on the lines; the fanout's order), its teeth checked (one reason removed:
+  `an OnTick answer without its reason`).
+- CPU cells, green: server lib `925 passed; 0 failed; 25 ignored`; clippy `-D warnings`; fmt; `git diff --check`.
+- `stall_cell.py` gains `fanout`, `fanout-long` and `prime-short` (four identical fresh prompts posted at once, the
+  slowest wall recorded with each member's wall and cached tokens; the single-prime control), smoke-checked against a
+  fake local server (four members, `STALL REPLAY: PASS`); the earlier modes' programs and receipts unchanged.
+- The reader `day54-reading.py`, checked on a synthetic fixture (every price line, the census row, the rule's three
+  answers).
+- The sitting `pro-single-day54/`: `build.sh <tip>`, `driver.sh` (the short and long paired cells, the pause cell,
+  the census gates, the hit gate, the reader). One change from section 1's environment, stated here before any cell:
+  the paired cells boot with `MEMRA_MAX_SESSIONS=8` (the fanout needs the tenant plus four intruders; the S sittings'
+  4 would queue the fourth), both modes alike; the pause cell keeps 4. About 1.5 hours of card time on one RTX PRO 6000
+  Blackwell with the 27B artifact; any host class, recorded (the arms are compared within the hold).
