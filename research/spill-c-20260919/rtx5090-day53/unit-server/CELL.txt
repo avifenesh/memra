@@ -1,0 +1,8 @@
+cell=unit-server gate=cargo test -p memra-server --lib -- --ignored --test-threads=1 verify_digest_v3_
+env=
+lock=/tmp/memra-5090.lock owner=driver-flock
+tree=422a0d470adb8cb15d26ac239f9ec0c9c3552586
+binary_sha256=709f079ca0450fe56657a4a774b0cb15f54ee4e34f3574663b5a3441815265c1
+model=none (unit cell: the test binary opens its own device context)
+gpu=NVIDIA GeForce RTX 5090 Laptop GPU, [N/A]
+status=executed-not-qualified

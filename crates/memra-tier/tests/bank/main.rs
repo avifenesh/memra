@@ -1467,3 +1467,7 @@ mod owner_proxy;
 mod day8;
 
 mod day10;
+mod day43;
+mod day45;
+mod day47;
+mod slru_oracle;

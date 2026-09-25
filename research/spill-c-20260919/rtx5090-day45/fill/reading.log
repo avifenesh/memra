@@ -1,0 +1,7 @@
+DAY45 FILL CHECKS rig=rtx5090 runs=30 integrity=ok
+DAY45 ARM i9g window_door_ms_per_token=22.50 gen_door_ms_per_token=57.25 window_s median=1.051 iqr=0.006 | per window token: gpu_misses=92.3 host_hits=40.5 host_misses=51.8 demand=19.161 verify=5.290 step=11.448 finish=0.104
+DAY45 ARM fill window_door_ms_per_token=5.17 gen_door_ms_per_token=13.66 window_s median=0.496 iqr=0.011 | per window token: gpu_misses=92.3 host_hits=92.3 host_misses=0.0 demand=0.867 verify=0.000 step=0.000 finish=0.084 fill_admitted gate=26254 warm=29556
+DAY45 CLAUSE (i) fill_minus_i9g window o1=-0.554 o2=-0.562 noise=0.011 rule < -noise both orders -> PASS
+DAY45 CLAUSE (ii) fill host_hits/gpu_misses per window token median=1.000 rule >=0.9 -> PASS
+DAY45 READING gen fill_minus_i9g=-1.395 s -> gen_lower
+DAY45 FILL rig=rtx5090 integrity=ok clause_i=PASS clause_ii=PASS

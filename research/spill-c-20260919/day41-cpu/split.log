@@ -1,0 +1,5 @@
+DAY41 9B INPUT files=216 lines=1120 distinct_tuples=2
+DAY41 9B TUPLE class=plain lines=983 conv=24x98304=2359296 ssm=24x2097152=50331648 hidden=0 logits=993280 (248320 f32) heap=53684224 (line 53.7MB) conv+ssm+hidden=52690944 entry=kv+tokens+heap=54634752 | shares of entry: kv 1.739% conv 4.318% ssm 92.124% hidden 0.000% logits 1.818% | heap_rounds_to_line=ok slots=ok recurrent_hidden_bound=ok logits_bound=ok heap_bound=ok entry_bound=ok
+DAY41 9B TUPLE class=draft-bearing lines=137 conv=24x98304=2359296 ssm=24x2097152=50331648 hidden=16384 logits=993280 (248320 f32) heap=53700608 (line 53.7MB) conv+ssm+hidden=52707328 entry not computed (KV with the draft plane is not on this line) | shares of heap: conv 4.393% ssm 93.726% hidden 0.031% logits 1.850% | heap_rounds_to_line=ok slots=ok
+DAY41 9B SPLIT plain_tuples=1 -> PASS
+# exit=

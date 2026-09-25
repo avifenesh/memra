@@ -4,7 +4,69 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     marker::PhantomData,
     sync::atomic::{AtomicU64, Ordering},
+    time::Instant,
 };
+
+/// Log-only stage clock of the host bank lifecycle: the `--expert-bank-stages` diagnostic
+/// of the MoE slot cache door (`research/spill-c-20260919/DAY40.md`). Host wall nanoseconds
+/// summed per bracket and call counts; it reads `Instant` only, changes no decision, and is
+/// absent unless `with_stage_clock` installed it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BankStageTimes {
+    /// `stage()` calls and their whole wall.
+    pub stages: u64,
+    pub stage_ns: u64,
+    /// `ReadWork::new` inside `stage()`: the output allocations and their zero-fill.
+    pub alloc_ns: u64,
+    /// `ReadWork::step` calls from `progress()`: slot allocation and zero-fill, the reader
+    /// call, the assembly copy.
+    pub steps: u64,
+    pub step_ns: u64,
+    /// Records verified in `progress()` and the per-segment checksum and zero-tail wall.
+    pub verified: u64,
+    pub verify_ns: u64,
+    /// `publish()` whole.
+    pub publish_ns: u64,
+    /// `finish_host_use` + `retire` + `acknowledge`.
+    pub retire_ns: u64,
+    /// `collect_evicted`.
+    pub collect_ns: u64,
+}
+impl BankStageTimes {
+    /// `key=value` tokens in a fixed order, the form the day-40 reader parses.
+    pub fn line(&self) -> String {
+        format!(
+            "stages={} stage_ns={} alloc_ns={} steps={} step_ns={} verified={} verify_ns={} publish_ns={} retire_ns={} collect_ns={}",
+            self.stages,
+            self.stage_ns,
+            self.alloc_ns,
+            self.steps,
+            self.step_ns,
+            self.verified,
+            self.verify_ns,
+            self.publish_ns,
+            self.retire_ns,
+            self.collect_ns
+        )
+    }
+}
+
+fn clock_start(clock: &Option<BankStageTimes>) -> Option<Instant> {
+    clock.is_some().then(Instant::now)
+}
+
+fn clock_add(
+    clock: &mut Option<BankStageTimes>,
+    start: Option<Instant>,
+    field: impl FnOnce(&mut BankStageTimes, u64),
+) {
+    if let (Some(start), Some(clock)) = (start, clock.as_mut()) {
+        field(
+            clock,
+            u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX),
+        );
+    }
+}
 
 static NEXT_SERVICE: AtomicU64 = AtomicU64::new(1);
 struct Pending {
@@ -27,6 +89,83 @@ struct Pending {
     retired: bool,
 }
 
+/// What the host fill's offer of one record came to (day 45).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FillOutcome {
+    /// Published into a free slot of the host tier.
+    Admitted,
+    /// Already resident or pending, no free slot of a fitting class, or no charge left.
+    Dropped,
+    /// No free slot in any class: the tier is full and the fill has nothing left to do.
+    Full,
+    /// The bytes did not verify against the catalog's checksum (or a non-zero storage tail).
+    Refused,
+}
+
+/// The host cache's index (day 43, `research/spill-c-20260919/DAY43.md`): the resident leases by
+/// id, their storage bytes kept on every insert and removal, and the leases that left the index
+/// (evicted, trimmed, replaced, or published without a slot) while still owned: the only
+/// candidates `collect_evicted` can release. This replaces a scan of every owned lease against
+/// every cached one, which was quadratic in the tier's size.
+struct CacheIndex {
+    map: BTreeMap<BankId, BankLease>,
+    bytes: u64,
+    candidates: Vec<BankLease>,
+}
+impl CacheIndex {
+    fn new() -> Self {
+        Self {
+            map: BTreeMap::new(),
+            bytes: 0,
+            candidates: Vec::new(),
+        }
+    }
+    fn lease_bytes(lease: &BankLease) -> u64 {
+        lease.layout().storage_bytes().expect("validated layout")
+    }
+    fn get(&self, id: &BankId) -> Option<&BankLease> {
+        self.map.get(id)
+    }
+    fn contains_key(&self, id: &BankId) -> bool {
+        self.map.contains_key(id)
+    }
+    /// Insert, and hand a replaced lease of another charge to the release candidates.
+    fn insert(&mut self, id: BankId, lease: BankLease) {
+        let charge = lease.charge().id();
+        self.bytes += Self::lease_bytes(&lease);
+        if let Some(old) = self.map.insert(id, lease) {
+            self.bytes -= Self::lease_bytes(&old);
+            if old.charge().id() != charge {
+                self.candidates.push(old);
+            }
+        }
+    }
+    /// Remove an id that leaves the cache while its lease may still be owned.
+    fn remove_evicted(&mut self, id: &BankId) -> bool {
+        match self.map.remove(id) {
+            Some(old) => {
+                self.bytes -= Self::lease_bytes(&old);
+                self.candidates.push(old);
+                true
+            }
+            None => false,
+        }
+    }
+    /// Remove the entry of a lease that is being released now (not a candidate).
+    fn remove_released(&mut self, lease: &BankLease) -> bool {
+        if self
+            .map
+            .get(lease.id())
+            .is_some_and(|r| r.charge().id() == lease.charge().id())
+        {
+            let old = self.map.remove(lease.id()).expect("checked present");
+            self.bytes -= Self::lease_bytes(&old);
+            return true;
+        }
+        false
+    }
+}
+
 /// Portable HOST-only implementation of the frozen bank lifecycle. Reads currently
 /// run only in the explicit bounded `progress` pump; publication, cancellation and
 /// last-use retirement are separate. This is not A's asynchronous DMA engine and
@@ -40,12 +179,15 @@ pub struct BankService<D: BankDomain, H: Hotness<D>, R: ExactReader> {
     reader: R,
     policy: CoalescingPolicy,
     limits: BankLimits,
-    cache: BTreeMap<BankId, BankLease>,
+    cache: CacheIndex,
     owned: BTreeMap<(u64, u64), BankLease>,
     slru: Option<(SlruPolicy, LeasePin)>,
     pending: HashMap<TransferTicket, Pending>,
     issuer: u64,
     sequence: u64,
+    clock: Option<BankStageTimes>,
+    /// Day 47: where record buffers come from; `None` is a heap `Vec` per record.
+    buffers: Option<Box<dyn HostBufferSource>>,
     _domain: PhantomData<D>,
 }
 impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
@@ -71,14 +213,35 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             reader,
             policy,
             limits,
-            cache: BTreeMap::new(),
+            cache: CacheIndex::new(),
             owned: BTreeMap::new(),
             slru: None,
             pending: HashMap::new(),
             issuer,
             sequence: 0,
+            clock: None,
+            buffers: None,
             _domain: PhantomData,
         })
+    }
+    /// Install a source of record buffers (day 47): every read then lands in a buffer from it,
+    /// and the lease owns that buffer. Refused once any record is resident or pending.
+    pub fn with_host_buffers(mut self, source: Box<dyn HostBufferSource>) -> Result<Self> {
+        if !self.pending.is_empty() || !self.owned.is_empty() {
+            return Err(Error::Busy);
+        }
+        self.buffers = Some(source);
+        Ok(self)
+    }
+    /// Install the log-only stage clock (`BankStageTimes`). Diagnostic only: every bracket
+    /// reads `Instant` and nothing else, so the lifecycle's decisions are unchanged.
+    pub fn with_stage_clock(mut self) -> Self {
+        self.clock = Some(BankStageTimes::default());
+        self
+    }
+    /// The stage clock's totals, `None` unless `with_stage_clock` installed it.
+    pub fn stage_times(&self) -> Option<&BankStageTimes> {
+        self.clock.as_ref()
     }
     /// Install the CPU SLRU policy before any request. The charge is metadata
     /// only; exact output/backing remains separately charged by stage until final
@@ -130,7 +293,13 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         } else {
             self.reader.begin_request(&p.request, ticket.epochs);
             let work = p.work.as_mut().ok_or(Error::NotReady)?;
-            match work.step(&p.missing, &p.plan, &mut self.reader, self.policy) {
+            let started = clock_start(&self.clock);
+            let stepped = work.step(&p.missing, &p.plan, &mut self.reader, self.policy);
+            clock_add(&mut self.clock, started, |c, ns| {
+                c.steps += 1;
+                c.step_ns += ns;
+            });
+            match stepped {
                 Ok(false) => return Ok(false),
                 Ok(true) => Ok(std::mem::take(&mut work.outputs)),
                 Err(e) => Err(e),
@@ -149,12 +318,14 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             {
                 let mut base = 0usize;
                 let mut segments = Vec::new();
+                let started = clock_start(&self.clock);
                 for (j, s) in r.layout.segments.iter().enumerate() {
                     let valid_end = base + s.valid_bytes as usize;
                     let end = base + s.storage_bytes as usize;
-                    let hash = checksum(&bytes[base..valid_end]);
+                    let view = bytes.bytes();
+                    let hash = checksum(&view[base..valid_end]);
                     let valid =
-                        hash == r.checksums[j] && bytes[valid_end..end].iter().all(|&v| v == 0);
+                        hash == r.checksums[j] && view[valid_end..end].iter().all(|&v| v == 0);
                     if !valid {
                         error = Some(Error::Corrupt);
                     }
@@ -179,6 +350,10 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                     });
                     base = end;
                 }
+                clock_add(&mut self.clock, started, |c, ns| {
+                    c.verified += 1;
+                    c.verify_ns += ns;
+                });
                 items.push(ItemOutcome {
                     item: index as u32,
                     accepted: true,
@@ -189,7 +364,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                     layout: r.layout,
                     class: self.catalog.class,
                     charge,
-                    backing: Box::new(bytes),
+                    backing: bytes.into_backing(),
                 });
             }
         } else {
@@ -257,22 +432,106 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             .completion)
     }
     pub fn cache_bytes(&self) -> u64 {
-        self.cache
-            .values()
-            .map(|r| r.layout().storage_bytes().expect("validated layout"))
-            .sum()
+        self.cache.bytes
+    }
+    /// Admit a record the host fill read off the owner thread (day 45,
+    /// `research/spill-c-20260919/DAY45.md`): the digest the fill computed over the bytes must
+    /// equal the catalog's checksum (the check `progress` applies to a read), then a charge, a
+    /// lease and publication into a FREE slot of the SLRU. Never evicts, never replaces: a
+    /// resident or pending record, a full tier or a refused charge drops the bytes. Only
+    /// single-segment payload records with no storage tail (the door's) are accepted.
+    pub fn admit_filled(
+        &mut self,
+        id: &BankId,
+        bytes: HostBytes,
+        digest: Digest,
+        request: &BudgetRequest,
+    ) -> Result<FillOutcome> {
+        let record = self.catalog.record(id)?.clone();
+        let layout = &record.layout;
+        if layout.segments.len() != 1 || layout.segments[0].role != Role::Payload {
+            return Err(Error::Unsupported);
+        }
+        let segment = &layout.segments[0];
+        if segment.valid_bytes != segment.storage_bytes {
+            return Err(Error::Unsupported);
+        }
+        // The fill computed `digest` with the contract `checksum` over exactly these bytes (moved
+        // here, not copied): the same function over the same bytes `progress` would verify.
+        if bytes.len() as u64 != segment.storage_bytes || digest != record.checksums[0] {
+            return Ok(FillOutcome::Refused);
+        }
+        if self.cache.contains_key(id) {
+            return Ok(FillOutcome::Dropped);
+        }
+        let Some((policy, _)) = &mut self.slru else {
+            return Err(Error::Unsupported);
+        };
+        if policy.resident(id).is_some() || policy.pending(id) {
+            return Ok(FillOutcome::Dropped);
+        }
+        let Some(_slot) = policy.reserve_free(id, layout.storage_bytes()?)? else {
+            return Ok(if policy.free_slots() == 0 {
+                FillOutcome::Full
+            } else {
+                FillOutcome::Dropped
+            });
+        };
+        let mut charge_request = request.clone();
+        charge_request.bytes = TierBudget::zero(charge_request.bytes.device.len());
+        charge_request.bytes.pageable = record.resident_charge_bytes(id)?;
+        let charge = match self.budget.borrow_mut().reserve(&charge_request) {
+            Ok(charge) => charge,
+            Err(_) => {
+                policy.abort_retired(id)?;
+                return Ok(FillOutcome::Dropped);
+            }
+        };
+        match BankLease::from_backend(
+            id.clone(),
+            record.layout.clone(),
+            self.catalog.class,
+            charge,
+            bytes.into_backing(),
+        ) {
+            Ok(lease) => {
+                policy.publish(id)?;
+                self.owned.insert(lease.charge().id(), lease.clone());
+                self.cache.insert(id.clone(), lease);
+                Ok(FillOutcome::Admitted)
+            }
+            Err(rejected) => {
+                policy.abort_retired(id)?;
+                self.budget.borrow_mut().release(&rejected.op.charge)?;
+                Err(rejected.error)
+            }
+        }
+    }
+    /// Records the host cache holds (day 43; read-only).
+    pub fn cached_records(&self) -> usize {
+        self.cache.map.len()
+    }
+    /// Leases the service owns, cached or held by an open ticket (day 43; read-only).
+    pub fn owned_leases(&self) -> usize {
+        self.owned.len()
     }
     pub fn evict_cached(&mut self, id: &BankId) -> Result<bool> {
         self.catalog.record(id)?;
         if let Some((policy, _)) = &mut self.slru {
             policy.remove(id);
         }
-        Ok(self.cache.remove(id).is_some())
+        Ok(self.cache.remove_evicted(id))
     }
     /// Host consumer adapter calls after its last use (including speculative
     /// rollback). No CUDA/graph use is accepted by this backend. Does not release
     /// resources: retire/release still run, and borrowed views refuse Busy.
     pub fn finish_host_use(&mut self, ticket: &TransferTicket) -> Result<()> {
+        let started = clock_start(&self.clock);
+        let result = self.finish_host_use_unclocked(ticket);
+        clock_add(&mut self.clock, started, |c, ns| c.retire_ns += ns);
+        result
+    }
+    fn finish_host_use_unclocked(&mut self, ticket: &TransferTicket) -> Result<()> {
         let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
         if !p.published && !p.cancelled && p.error.is_none() {
             return Err(Error::Busy);
@@ -281,6 +540,12 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         Ok(())
     }
     pub fn acknowledge(&mut self, ticket: &TransferTicket) -> Result<()> {
+        let started = clock_start(&self.clock);
+        let result = self.acknowledge_unclocked(ticket);
+        clock_add(&mut self.clock, started, |c, ns| c.retire_ns += ns);
+        result
+    }
+    fn acknowledge_unclocked(&mut self, ticket: &TransferTicket) -> Result<()> {
         if !self
             .pending
             .get(ticket)
@@ -322,11 +587,12 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         while self.cache_bytes() > self.limits.cache_bytes {
             let id = self
                 .cache
+                .map
                 .keys()
                 .min_by_key(|id| self.heat.score(id))
                 .cloned()
                 .expect("nonempty cache");
-            self.cache.remove(&id);
+            self.cache.remove_evicted(&id);
             if let Some((policy, _)) = &mut self.slru {
                 policy.remove(&id);
             }
@@ -334,24 +600,45 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
     }
     /// Release inactive evicted allocations, never outstanding consumer tickets.
     pub fn collect_evicted(&mut self) -> Result<()> {
-        let leases: Vec<_> = self
-            .owned
-            .values()
-            .filter(|l| {
-                !self
+        let started = clock_start(&self.clock);
+        let result = self.collect_evicted_unclocked();
+        clock_add(&mut self.clock, started, |c, ns| c.collect_ns += ns);
+        result
+    }
+    fn collect_evicted_unclocked(&mut self) -> Result<()> {
+        // Every owned lease outside the cache entered `candidates` when it left the index or
+        // was published without a slot, so these are exactly the leases the old scan found.
+        let candidates = std::mem::take(&mut self.cache.candidates);
+        let mut kept = Vec::new();
+        let mut failure = None;
+        for lease in candidates {
+            let charge = lease.charge().id();
+            if !self.owned.contains_key(&charge)
+                || self
                     .cache
-                    .values()
-                    .any(|c| c.charge().id() == l.charge().id())
-            })
-            .cloned()
-            .collect();
-        for lease in leases {
+                    .get(lease.id())
+                    .is_some_and(|c| c.charge().id() == charge)
+            {
+                continue;
+            }
+            if failure.is_some() {
+                kept.push(lease);
+                continue;
+            }
             match self.release(&lease) {
-                Ok(()) | Err(Error::Busy) => (),
-                Err(e) => return Err(e),
+                Ok(()) => {}
+                Err(Error::Busy) => kept.push(lease),
+                Err(e) => {
+                    kept.push(lease);
+                    failure = Some(e);
+                }
             }
         }
-        Ok(())
+        self.cache.candidates.extend(kept);
+        match failure {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
 }
 impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankService<D, H, R> {
@@ -367,6 +654,50 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
         Ok(self.cache.get(id).cloned())
     }
     fn stage(&mut self, batch: BankBatch) -> Result<TransferTicket> {
+        let started = clock_start(&self.clock);
+        let result = self.stage_unclocked(batch);
+        clock_add(&mut self.clock, started, |c, ns| {
+            c.stages += 1;
+            c.stage_ns += ns;
+        });
+        result
+    }
+    fn publish(&mut self, ticket: &TransferTicket, current: Epochs) -> Result<Vec<BankLease>> {
+        let started = clock_start(&self.clock);
+        let result = self.publish_unclocked(ticket, current);
+        clock_add(&mut self.clock, started, |c, ns| c.publish_ns += ns);
+        result
+    }
+    fn cancel(&mut self, ticket: &TransferTicket) -> Result<CancelState> {
+        let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
+        if p.published {
+            Ok(CancelState::AlreadyPublished)
+        } else {
+            p.cancelled = true;
+            Ok(CancelState::PublicationRevoked)
+        }
+    }
+    fn retire(&mut self, ticket: &TransferTicket) -> Result<bool> {
+        let started = clock_start(&self.clock);
+        let result = self.retire_unclocked(ticket);
+        clock_add(&mut self.clock, started, |c, ns| c.retire_ns += ns);
+        result
+    }
+    fn release(&mut self, lease: &BankLease) -> Result<()> {
+        self.can_release(lease)?;
+        lease.retire_backing()?;
+        self.budget.borrow_mut().release(lease.charge())?;
+        if self.cache.remove_released(lease)
+            && let Some((policy, _)) = &mut self.slru
+        {
+            policy.remove(lease.id());
+        }
+        self.owned.remove(&lease.charge().id());
+        Ok(())
+    }
+}
+impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
+    fn stage_unclocked(&mut self, batch: BankBatch) -> Result<TransferTicket> {
         if batch.ids.is_empty() {
             return Err(Error::EmptyBatch);
         }
@@ -406,7 +737,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
         let unique: BTreeSet<_> = batch.ids.iter().cloned().collect();
         let missing: Vec<_> = unique
             .iter()
-            .filter(|id| !self.cache.contains_key(*id))
+            .filter(|id| !self.cache.contains_key(id))
             .map(|id| Ok((id.clone(), self.catalog.record(id)?.clone())))
             .collect::<Result<_>>()?;
         let plan = plan_reads(&missing, logical, &self.reader, self.policy)?;
@@ -479,7 +810,10 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
         let work = if missing.is_empty() {
             None
         } else {
-            match ReadWork::new(&missing) {
+            let started = clock_start(&self.clock);
+            let work = ReadWork::new(&missing, self.buffers.as_deref_mut());
+            clock_add(&mut self.clock, started, |c, ns| c.alloc_ns += ns);
+            match work {
                 Ok(work) => Some(work),
                 Err(error) => {
                     for charge in &charges {
@@ -551,7 +885,11 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
         self.sequence = sequence;
         Ok(ticket)
     }
-    fn publish(&mut self, ticket: &TransferTicket, current: Epochs) -> Result<Vec<BankLease>> {
+    fn publish_unclocked(
+        &mut self,
+        ticket: &TransferTicket,
+        current: Epochs,
+    ) -> Result<Vec<BankLease>> {
         let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
         ticket.epochs.require(current)?;
         if p.cancelled {
@@ -609,29 +947,24 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
                 let lease = &p.records[id];
                 if let Some(decision) = policy.reserve(id, lease.layout().storage_bytes()?, &[])? {
                     if let Some(old) = decision.evicted {
-                        self.cache.remove(&old);
+                        self.cache.remove_evicted(&old);
                     }
                     policy.publish(id)?;
                     self.cache.insert(id.clone(), lease.clone());
+                } else {
+                    // Published to this ticket with no host slot: owned, never cached.
+                    self.cache.candidates.push(lease.clone());
                 }
             }
         } else {
-            self.cache
-                .extend(p.records.iter().map(|(id, l)| (id.clone(), l.clone())));
+            for (id, lease) in &p.records {
+                self.cache.insert(id.clone(), lease.clone());
+            }
             self.trim();
         }
         Ok(output)
     }
-    fn cancel(&mut self, ticket: &TransferTicket) -> Result<CancelState> {
-        let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
-        if p.published {
-            Ok(CancelState::AlreadyPublished)
-        } else {
-            p.cancelled = true;
-            Ok(CancelState::PublicationRevoked)
-        }
-    }
-    fn retire(&mut self, ticket: &TransferTicket) -> Result<bool> {
+    fn retire_unclocked(&mut self, ticket: &TransferTicket) -> Result<bool> {
         let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket)?;
         if !p.host_use_done || !p.completion.producer_done {
             return Ok(false);
@@ -647,22 +980,5 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
         p.unpublished.clear();
         p.retired = true;
         Ok(true)
-    }
-    fn release(&mut self, lease: &BankLease) -> Result<()> {
-        self.can_release(lease)?;
-        lease.retire_backing()?;
-        self.budget.borrow_mut().release(lease.charge())?;
-        if self
-            .cache
-            .get(lease.id())
-            .is_some_and(|r| r.charge().id() == lease.charge().id())
-            && let Some((policy, _)) = &mut self.slru
-        {
-            policy.remove(lease.id());
-        }
-        self.cache
-            .retain(|_, r| r.charge().id() != lease.charge().id());
-        self.owned.remove(&lease.charge().id());
-        Ok(())
     }
 }

@@ -981,7 +981,19 @@ fn dspark_hit_is_restorable_with(
     if !entry_has_tail || entry_toks == 0 || entry_toks > prompt_toks {
         return false;
     }
-    entry_toks == prompt_toks || partial_on
+    // lane/spill-c-20260919 day 56 (DAY56.md section 2b): a strict-prefix restore primes its
+    // suffix through `prime_cache`, which refuses a suffix shorter than `PRIME_MIN_T`
+    // (`dspark resume suffix N < PRIME_MIN_T 16 ... serve this turn cold`); admitting one here
+    // failed the request with HTTP 500 instead of serving it cold. Such a hit is not restorable.
+    // C day 56 section 2c: and the carrier must end on the GDN prime grid. A suffix prime that
+    // starts off the grid materializes recurrent state the cold monolithic prime never computes
+    // (`grid_align_boundary`'s measured law), so an off-grid strict-prefix restore is a second
+    // numeric program for the request (measured: the restored text left the cold text at its
+    // 24th character, `DAY56.md` section 2c). Such a hit serves cold.
+    entry_toks == prompt_toks
+        || (partial_on
+            && prompt_toks - entry_toks >= memra_engine::hybrid_forward::PRIME_MIN_T
+            && entry_toks.is_multiple_of(memra_engine::Engine::gdn_chunk_size()))
 }
 
 fn dspark_prefix_capture_requested(
@@ -4546,14 +4558,16 @@ impl HostTierDraftSource {
 enum HostTierEntryClass {
     Plain,
     MtpDraft,
+    /// C day 56 (`DAY56.md`, OWED C5): an entry published by a DSPARK session, carrying the
+    /// DFlash drafter's KV tail, bound to the model's tail program (`host_tier_tail_program`).
+    DflashTail,
 }
 
 /// Classify an entry by the planes it carries, refusing BY NAME every plane outside the
-/// contract-routed surface: GLM state (TP shards, latent planes) and the DFlash draft tail (no
-/// drafter artifact identity is derivable from a GGUF digest in this slice). The refusal text
-/// is what the caller prints under `(contracts door)`; nothing is skipped silently. The tail
-/// refusal outranks a draft plane on purpose: two spec programs never coexist on one model (the
-/// boot guard refuses the combination) and this function does not guess which one won.
+/// contract-routed surface: GLM state (TP shards, latent planes), and an entry carrying both an
+/// MTP draft plane and a DFlash tail (two spec programs never coexist on one model: the boot
+/// guard refuses the combination, and this function does not guess which one won). The refusal
+/// text is what the caller prints under `(contracts door)`; nothing is skipped silently.
 fn host_tier_entry_class(
     glm: bool,
     mtp_draft: bool,
@@ -4562,17 +4576,95 @@ fn host_tier_entry_class(
     if glm {
         return Err("entry carries TP or latent (GLM) planes outside the contract-routed surface");
     }
-    if dflash_tail {
-        return Err(
-            "entry carries a DFlash draft tail outside the contract-routed surface (no drafter \
-             artifact identity in this slice)",
-        );
-    }
-    Ok(if mtp_draft {
-        HostTierEntryClass::MtpDraft
-    } else {
-        HostTierEntryClass::Plain
+    Ok(match (mtp_draft, dflash_tail) {
+        (true, true) => {
+            return Err(
+                "entry carries both an MTP draft plane and a DFlash draft tail (two spec \
+                 programs on one model)",
+            );
+        }
+        (false, true) => HostTierEntryClass::DflashTail,
+        (true, false) => HostTierEntryClass::MtpDraft,
+        (false, false) => HostTierEntryClass::Plain,
     })
+}
+
+/// The numeric class of a TAIL-BEARING image (C day 56): the plain class plus the DFlash
+/// drafter's f32 KV tail rows. Distinct from the plain and draft classes by construction.
+fn host_tier_tail_numeric_class() -> String {
+    format!("{}+dflash-tail-f32", host_tier_numeric_class())
+}
+
+/// What names one attached DFlash drafter's program (C day 56): the byte manifest of the files
+/// `DflashDraft::load` reads (`config.json`, `model.safetensors`, each by streaming SHA-256), the
+/// drafter's `DflashCfg` in its `Debug` form, and its numeric knobs (every `MEMRA_DFLASH_*` and
+/// `MEMRA_DSPARK_*` variable set at boot but `MEMRA_DSPARK_DRAFT`, whose bytes the manifest
+/// names; sorted `NAME=value`, joined by `;`; over-inclusive on purpose, fail closed).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HostTierTailSource {
+    manifest: String,
+    cfg_debug: String,
+    knobs: String,
+}
+impl HostTierTailSource {
+    fn from_export(
+        dir: &std::path::Path,
+        cfg_debug: String,
+        env: impl IntoIterator<Item = (String, String)>,
+    ) -> Result<Self, String> {
+        let mut manifest = Vec::new();
+        for name in ["config.json", "model.safetensors"] {
+            let path = dir.join(name);
+            let path = path
+                .to_str()
+                .ok_or_else(|| format!("drafter export path {path:?} is not UTF-8"))?;
+            manifest.push(format!("{name}={}", sha256_file_hex(path)?));
+        }
+        Ok(Self {
+            manifest: manifest.join(";"),
+            cfg_debug,
+            knobs: host_tier_tail_knobs(env),
+        })
+    }
+}
+
+/// The drafter's numeric knobs from an environment listing (C day 56, `HostTierTailSource`).
+fn host_tier_tail_knobs(env: impl IntoIterator<Item = (String, String)>) -> String {
+    let mut knobs: Vec<String> = env
+        .into_iter()
+        .filter(|(k, _)| {
+            (k.starts_with("MEMRA_DFLASH_") || k.starts_with("MEMRA_DSPARK_"))
+                && k != "MEMRA_DSPARK_DRAFT"
+        })
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect();
+    knobs.sort();
+    knobs.join(";")
+}
+
+/// The tail-bearing program of one model (C day 56): the plain base with the drafter folded into
+/// `artifact` (the trunk digest framed with the drafter's byte manifest), `serialized_plan` (the
+/// plan text framed with the drafter's config and knobs) and `numeric`
+/// (`host_tier_tail_numeric_class`). Every other field is the plain field.
+fn host_tier_tail_program(
+    plain: &memra_engine::cache::record::ProgramIdentity,
+    artifact_sha256_hex: &str,
+    plan_debug: &str,
+    source: &HostTierTailSource,
+) -> memra_engine::cache::record::ProgramIdentity {
+    use memra_engine::cache::record::digest;
+    let mut program = plain.clone();
+    program.artifact = digest(
+        "artifact-sha256+dflash-tail",
+        &host_tier_framed_pair(artifact_sha256_hex, &source.manifest),
+    );
+    // Three length-framed parts: the pair's framing extended by one more part.
+    let mut plan = host_tier_framed_pair(plan_debug, &source.cfg_debug);
+    plan.extend((source.knobs.len() as u64).to_le_bytes());
+    plan.extend(source.knobs.as_bytes());
+    program.serialized_plan = digest("plan-debug+dflash-tail", &plan);
+    program.numeric = digest("numeric", host_tier_tail_numeric_class().as_bytes());
+    program
 }
 
 /// Length-framed pair for a contract digest: never hash an ambiguous concatenation.
@@ -4646,6 +4738,28 @@ fn host_tier_shape_metadata(
         for n in [len, k_tok_bytes, v_tok_bytes] {
             metadata.extend((n as u64).to_le_bytes());
         }
+    }
+    metadata
+}
+
+/// C day 56: the tail framing a DFlash tail image appends to its `host-prefix-shape-v2` blob
+/// (under the encoding `host-prefix-shape-v2+dflash-tail-v1`): the geometry `export_tail` wrote,
+/// the layer count, and each layer's K and V byte counts, all as u64.
+fn host_tier_tail_shape_metadata(
+    base: usize,
+    rows: usize,
+    len: usize,
+    row_bytes: usize,
+    floor: usize,
+    layers: &[(usize, usize)],
+) -> Vec<u8> {
+    let mut metadata = vec![1u8];
+    for n in [base, rows, len, row_bytes, floor, layers.len()] {
+        metadata.extend((n as u64).to_le_bytes());
+    }
+    for (k, v) in layers {
+        metadata.extend((*k as u64).to_le_bytes());
+        metadata.extend((*v as u64).to_le_bytes());
     }
     metadata
 }
@@ -4760,6 +4874,7 @@ fn host_tier_context(
     loaded: &HashMap<String, LoadedModel>,
     models: &[(String, String, Option<String>)],
     vision_tower_loaded: bool,
+    tails: &HashMap<String, HostTierTailSource>,
 ) -> Result<HostTierContext, String> {
     host_tier_arena_refusal(hpx.arena.is_some())?;
     if vision_tower_loaded {
@@ -4842,11 +4957,29 @@ fn host_tier_context(
                  draft-bearing entries are refused by name"
             ),
         }
+        // C day 56: the tail program, one per model with a DFlash drafter attached.
+        let tail = tails.get(name).map(|source| {
+            let sha = |text: &str| {
+                let mut h = Sha256::new();
+                h.update(text.as_bytes());
+                format!("{:x}", h.finalize())
+            };
+            eprintln!(
+                "[prefix-host] contracts door: model {name} DFlash tail program \
+                 drafter_manifest={} dflash_cfg_sha256={} knobs=[{}] numeric={}",
+                source.manifest,
+                sha(&source.cfg_debug),
+                source.knobs,
+                host_tier_tail_numeric_class(),
+            );
+            host_tier_tail_program(&base, &artifact, &plan, source)
+        });
         programs.insert(
             name.clone(),
             HostTierPrograms {
                 plain: base,
                 draft,
+                tail,
                 generation,
             },
         );
@@ -4995,9 +5128,11 @@ fn parse_kv_host_tenant_pct(raw: Option<&str>) -> usize {
     }
 }
 
-/// MEMRA_KV_HOST_VERIFY (default 0 = off): sha256 the demoted entry's logical trunk state
-/// (`prefix_entry_state_digest` over KV planes + conv/ssm) at demote and re-verify it on the
-/// re-materialized device entry at promote; a mismatch drops the host entry and serves cold.
+/// MEMRA_KV_HOST_VERIFY (default 0 = off): sha256 the demoted entry's logical state at demote
+/// (`host_roundtrip_digest`: since day 53 of lane/spill-c-20260919 the v3 digest, the trunk's
+/// KV planes, conv/ssm and latent plus the draft plane, boundary rows and DFlash tail) and
+/// re-verify it on the re-materialized device entry at promote; a mismatch drops the host
+/// entry and serves cold.
 /// Gate/diagnostic arm ONLY: the digest D2Hs every plane byte on both sides of the round
 /// trip, far too slow always-on for GB-class entries.
 fn kv_host_verify_on() -> bool {
@@ -5010,8 +5145,11 @@ fn kv_host_verify_on() -> bool {
 /// loud-failures-fail-quietly law). Values: `alloc-fail` = every pinned host alloc reports
 /// failure, exercising the loud latch-off with no pageable fallback; `flip-demote` = flip
 /// one K byte of the first demoted plane AFTER the demote digest is recorded, exercising the
-/// MEMRA_KV_HOST_VERIFY promote mismatch. Unset (the default) = off. NEVER set on a serving
-/// box: `flip-demote` intentionally corrupts host-tier bytes.
+/// MEMRA_KV_HOST_VERIFY promote mismatch; `flip-demote-draft`, `flip-demote-hidden`,
+/// `flip-demote-logits` (lane/spill-c-20260919 day 53, verify digest v3) = the same for the
+/// draft K plane, the boundary hidden row and the boundary logits, on the legacy copy path
+/// only. Unset (the default) = off. NEVER set on a serving box: the flips intentionally corrupt
+/// host-tier bytes.
 fn kv_host_fault() -> &'static str {
     static F: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     F.get_or_init(|| std::env::var("MEMRA_KV_HOST_FAULT").unwrap_or_default())
@@ -9389,6 +9527,8 @@ impl HostStaging {
 struct HostTierPrograms {
     plain: memra_engine::cache::record::ProgramIdentity,
     draft: Option<memra_engine::cache::record::ProgramIdentity>,
+    /// C day 56: the tail-bearing program, for a model with a DFlash drafter attached.
+    tail: Option<memra_engine::cache::record::ProgramIdentity>,
     generation: Arc<()>,
 }
 impl HostTierContext {
@@ -9455,6 +9595,10 @@ impl HostTierContext {
             HostTierEntryClass::MtpDraft => programs.draft.as_ref().ok_or(
                 "tier draft program identity missing: the model has no MTP head, so a \
                  draft-bearing entry cannot name its program",
+            )?,
+            HostTierEntryClass::DflashTail => programs.tail.as_ref().ok_or(
+                "tier DFlash tail program identity missing: no drafter is attached to the \
+                 model, so a tail-bearing entry cannot name its program",
             )?,
         };
         let mut program = base.clone();
@@ -9680,10 +9824,24 @@ impl HostPrefixCache {
         if let Some(p) = &entry.draft {
             geometry(p, "MTP draft plane")?;
         }
+        // C day 56: the DFlash tail's geometry, `export_tail`'s rule: every layer's K and V hold
+        // `rows * row_bytes` bytes and the rows end at the tail's logical length.
+        if let Some(t) = &entry.dspark_draft {
+            let want = t.rows.checked_mul(t.row_bytes);
+            if t.layers.is_empty()
+                || t.rows == 0
+                || t.base.checked_add(t.rows) != Some(t.len)
+                || t.layers
+                    .iter()
+                    .any(|(k, v)| Some(k.len() * 4) != want || Some(v.len() * 4) != want)
+            {
+                return Err("tier DFlash tail geometry mismatch".into());
+            }
+        }
         // Capture presence/length/order metadata as well as every payload. No raw pointers,
         // padding, codec, alternate attention program or old handoff identity is imported.
         let plane_geometry = |p: &HostPlane| (p.len, p.k_tok_bytes, p.v_tok_bytes);
-        let metadata = host_tier_shape_metadata(
+        let mut metadata = host_tier_shape_metadata(
             entry.pos,
             &entry
                 .conv
@@ -9702,6 +9860,25 @@ impl HostPrefixCache {
                 .collect::<Vec<_>>(),
             entry.draft.as_ref().map(plane_geometry),
         );
+        // C day 56: a tail image frames its tail after the v2 blob under its own encoding; plain
+        // and draft images keep `host-prefix-shape-v2` byte for byte.
+        let shape_encoding: &[u8] = match &entry.dspark_draft {
+            Some(t) => {
+                metadata.extend(host_tier_tail_shape_metadata(
+                    t.base,
+                    t.rows,
+                    t.len,
+                    t.row_bytes,
+                    t.floor,
+                    &t.layers
+                        .iter()
+                        .map(|(k, v)| (k.len() * 4, v.len() * 4))
+                        .collect::<Vec<_>>(),
+                ));
+                b"host-prefix-shape-v2+dflash-tail-v1"
+            }
+            None => b"host-prefix-shape-v2",
+        };
         // WP-A day 35 (`DAY35.md` design M'): a KV plane's re-hash (hash 2) is the helper's digest
         // over a view of the lease when one came back (the same `checksum` program over the same
         // bytes, taken after the `flip-demote` point); without one it runs here, as before. Either
@@ -9789,14 +9966,54 @@ impl HostPrefixCache {
                 lease_pre(HostLeaseSlot::DraftV),
             )?;
         }
-        add(
-            Role::Transaction,
-            1,
-            b"host-prefix-shape-v2",
-            &metadata,
-            None,
-            None,
-        )?;
+        // C day 56: the DFlash tail, per draft layer a K and a V segment under `Role::Tail`,
+        // checksummed here on the owner thread (the tail is not handed to the hash helper).
+        let tail_t0 = Instant::now();
+        if let Some(t) = &entry.dspark_draft {
+            for (k, v) in &t.layers {
+                add(
+                    Role::Tail,
+                    t.row_bytes as u64,
+                    b"dflash-tail-k-f32",
+                    f32s_as_bytes(k),
+                    None,
+                    None,
+                )?;
+                add(
+                    Role::Tail,
+                    t.row_bytes as u64,
+                    b"dflash-tail-v-f32",
+                    f32s_as_bytes(v),
+                    None,
+                    None,
+                )?;
+            }
+        }
+        let tail_hash_ms = tail_t0.elapsed().as_secs_f64() * 1e3;
+        add(Role::Transaction, 1, shape_encoding, &metadata, None, None)?;
+        // The tail's receipt (DAY19 Task 3's rule, `DAY56.md` design d): its segments and their
+        // checksums, printed once the identity binds below.
+        let tail_receipt = entry.dspark_draft.as_ref().map(|t| {
+            let mut h = Sha256::new();
+            let (mut segments, mut bytes) = (0usize, 0u64);
+            for (segment, sum) in layout.segments.iter().zip(&checksums) {
+                if segment.role == Role::Tail {
+                    h.update(sum);
+                    segments += 1;
+                    bytes += segment.valid_bytes;
+                }
+            }
+            format!(
+                "[prefix-host] contracts door tail bound: {} draft layers, {segments} Role::Tail \
+                 segments ({bytes} B, hashed in {tail_hash_ms:.1} ms on the owner thread), \
+                 tail_checksums_sha256={:x} ({} tokens, model {}{})",
+                t.layers.len(),
+                h.finalize(),
+                entry.toks.len(),
+                entry.pool_key.0,
+                ns_suffix(&entry.pool_key.1)
+            )
+        });
         let id = KvBlockId::new(&program, [0; 32], &entry.toks, 0, 0, tier.device, 0)
             .map_err(|e| format!("{e:?}"))?;
         let bundle = StateBundle {
@@ -9817,6 +10034,9 @@ impl HostPrefixCache {
             .map_err(|e| format!("tier image identity refused: {e:?}"))?;
         entry._tier_metadata_charge = metadata_charge;
         entry._tier_metadata = metadata;
+        if let Some(line) = tail_receipt {
+            eprintln!("{line}");
+        }
         Ok(())
     }
 }
@@ -13395,6 +13615,9 @@ fn host_entry_from_device(
             _ => None,
         });
     }
+    // Day 53: the legacy copy path (no contract route took any plane), where the verify digest
+    // is the only byte attestation and the v3 red arms apply.
+    let legacy_copy = contract_draft.is_none() && pending.is_none();
     let draft = match contract_draft {
         Some(draft) => draft,
         None => match &dead.draft {
@@ -13424,7 +13647,7 @@ fn host_entry_from_device(
         }
         _ => None,
     };
-    let entry = HostPrefixEntry {
+    let mut entry = HostPrefixEntry {
         _tier_charge: None,
         _tier_metadata_charge: None,
         _tier_metadata: Vec::new(),
@@ -13472,10 +13695,60 @@ fn host_entry_from_device(
             .into());
         }
     }
+    if legacy_copy {
+        apply_flip_plane_faults(&mut entry)?;
+    }
     Ok(match pending {
         Some(pending) => HostImage::Demoting(entry, pending),
         None => HostImage::Whole(entry),
     })
+}
+
+/// The verify digest v3's red arms (lane/spill-c-20260919 day 53, see `kv_host_fault`): the first
+/// byte of the host copy's draft K plane, boundary hidden row or boundary logits row flipped AFTER
+/// the demote digest was recorded, so `MEMRA_KV_HOST_VERIFY` has a real mismatch to catch in each
+/// plane v2 was blind to. Called on the legacy copy path only; an image without the plane gets no
+/// flip and no line.
+fn apply_flip_plane_faults(entry: &mut HostPrefixEntry) -> Result<(), String> {
+    let which = match kv_host_fault() {
+        "flip-demote-draft" => {
+            let Some(plane) = entry.draft.as_mut().filter(|p| p.len * p.k_tok_bytes > 0) else {
+                return Ok(());
+            };
+            plane.k.flip_first_byte()?;
+            "draft K"
+        }
+        "flip-demote-hidden" if flip_first_f32_byte(&mut entry.last_h) => "hidden",
+        "flip-demote-logits" if flip_first_f32_byte(&mut entry.last_logits) => "logits",
+        _ => return Ok(()),
+    };
+    eprintln!(
+        "[prefix-host] FAULT: flipped one demoted {which} byte (MEMRA_KV_HOST_FAULT={})",
+        kv_host_fault()
+    );
+    Ok(())
+}
+
+/// Flips the first (little-endian low) byte of a host f32 row; `false` for an empty row. A heap
+/// row is shared and immutable, so the fault replaces it with a flipped copy.
+fn flip_first_f32_byte(row: &mut HostF32) -> bool {
+    match row {
+        HostF32::Heap(words) => {
+            let mut flipped = words.as_ref().clone();
+            let Some(first) = flipped.first_mut() else {
+                return false;
+            };
+            *first = f32::from_bits(first.to_bits() ^ 0xff);
+            *words = Arc::new(flipped);
+        }
+        HostF32::Pinned(buf) => {
+            let Some(first) = buf.as_mut_slice().first_mut() else {
+                return false;
+            };
+            *first ^= 0xff;
+        }
+    }
+    true
 }
 
 /// The `flip-demote` fault (see `kv_host_fault`): one K byte of the first demoted plane flipped
@@ -13599,9 +13872,10 @@ fn evict_all_demoting(
 /// what makes a demote racing the next request lose cleanly.
 fn host_roundtrip_digest(engine: &Engine, entry: &PrefixEntry) -> Result<String, String> {
     if entry.tp.is_some() || entry.latent.iter().any(Option::is_some) {
-        host_glm::digest(entry)
+        host_glm::digest(entry).map(|hex| format!("{VERIFY_PROGRAM_GLM_V1}:{hex}"))
     } else {
-        prefix_entry_state_digest(engine, entry, entry.pos).map_err(|e| e.to_string())
+        // Day 53: v3, the trunk digest plus the draft plane, the boundary rows and the tail.
+        prefix_entry_roundtrip_digest(engine, entry).map_err(|e| e.to_string())
     }
 }
 
@@ -15253,23 +15527,34 @@ fn host_promote_finish(
     };
     if let Some(expected) = expected_digest {
         match host_roundtrip_digest(engine, &e) {
-            Ok(actual) if actual == expected => {
+            Ok(actual) => {
+                let failed = match verify_digest_check(&expected, &actual) {
+                    VerifyDigestCheck::Match => None,
+                    VerifyDigestCheck::Mismatch => Some(format!(
+                        "promoted digest {actual} != demote digest {expected} ({host_len} tokens)"
+                    )),
+                    // Day 53: a digest carried from another binary's program (a handoff file)
+                    // cannot attest these bytes either way; typed, and dropped as a mismatch.
+                    VerifyDigestCheck::Program(carried, ours) => Some(format!(
+                        "carried digest program {carried} != this binary's {ours} (a handoff \
+                         written by another binary; {host_len} tokens)"
+                    )),
+                };
+                if let Some(why) = failed {
+                    host.digest_mismatches += 1;
+                    if let Some(hi) = host_entry_index_by_id(host, pool_key, host_id) {
+                        host.remove_at(pool_key, hi);
+                    }
+                    eprintln!(
+                        "[prefix-host] VERIFY FAILED: {why}; host entry dropped, cold path serves"
+                    );
+                    set_memo(host);
+                    return None;
+                }
                 eprintln!(
                     "[prefix-host] verify ok: promoted state digest matches demote digest \
                      ({host_len} tokens)"
                 );
-            }
-            Ok(actual) => {
-                host.digest_mismatches += 1;
-                if let Some(hi) = host_entry_index_by_id(host, pool_key, host_id) {
-                    host.remove_at(pool_key, hi);
-                }
-                eprintln!(
-                    "[prefix-host] VERIFY FAILED: promoted digest {actual} != demote digest \
-                     {expected} ({host_len} tokens); host entry dropped, cold path serves"
-                );
-                set_memo(host);
-                return None;
             }
             Err(err) => {
                 eprintln!("[prefix-host] verify digest failed ({err}); promote refused");
@@ -20051,6 +20336,108 @@ fn prefix_entry_state_digest(
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+/// Program tags of the `MEMRA_KV_HOST_VERIFY` round-trip digest (lane/spill-c-20260919 day 53,
+/// verify digest v3): the string a demote records and a promote compares is `<tag>:<hex>`, so a
+/// digest carried from another binary's program (a handoff file) is a typed refusal, not a
+/// false byte-corruption alarm. An untagged string is a pre-v3 binary's.
+const VERIFY_PROGRAM_SPLIT_V3: &str = "split-state-v3";
+const VERIFY_PROGRAM_GLM_V1: &str = "host-prefix-state-v1";
+
+/// The program tag of a verify digest string, `untagged` for a pre-v3 string.
+fn verify_digest_program(digest: &str) -> &str {
+    digest.split_once(':').map_or("untagged", |(tag, _)| tag)
+}
+
+/// How a promoted entry's verify digest compares with the one its demote recorded.
+#[derive(Debug, PartialEq, Eq)]
+enum VerifyDigestCheck<'a> {
+    Match,
+    /// Same program, different bytes: the loud `VERIFY FAILED` of a corrupted round trip.
+    Mismatch,
+    /// The carried digest was computed by another program (`carried`, `ours`).
+    Program(&'a str, &'a str),
+}
+
+fn verify_digest_check<'a>(expected: &'a str, actual: &'a str) -> VerifyDigestCheck<'a> {
+    let (carried, ours) = (
+        verify_digest_program(expected),
+        verify_digest_program(actual),
+    );
+    if carried != ours {
+        VerifyDigestCheck::Program(carried, ours)
+    } else if expected == actual {
+        VerifyDigestCheck::Match
+    } else {
+        VerifyDigestCheck::Mismatch
+    }
+}
+
+/// Verify digest v3 (lane/spill-c-20260919 day 53, `DAY53.md`): the `MEMRA_KV_HOST_VERIFY`
+/// round-trip digest of a non-GLM entry. v2 (`prefix_entry_state_digest`) covers the trunk only
+/// and cannot grow (the HIRADIX restore oracle compares it with a restored `Cache`, which holds
+/// none of the rest), so v3 is composed: the v2 string at the boundary, then every other plane a
+/// round trip carries and a restore consumes: the MTP draft plane's logical window, the boundary
+/// hidden row, the boundary logits, the DFlash tail (whole layer buffers, which the round trip
+/// copies whole).
+fn prefix_entry_roundtrip_digest(
+    engine: &Engine,
+    entry: &PrefixEntry,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let trunk = prefix_entry_state_digest(engine, entry, entry.pos)?;
+    let mut hasher = Sha256::new();
+    hasher.update(b"memra-prefix-split-state-v3");
+    hasher.update(trunk.as_bytes());
+    match &entry.draft {
+        Some(plane) => {
+            hasher.update([1]);
+            digest_usize(&mut hasher, plane.len);
+            digest_usize(&mut hasher, plane.k_tok_bytes);
+            digest_usize(&mut hasher, plane.v_tok_bytes);
+            let kb = plane
+                .len
+                .checked_mul(plane.k_tok_bytes)
+                .ok_or("entry digest draft K byte count overflow")?;
+            let vb = plane
+                .len
+                .checked_mul(plane.v_tok_bytes)
+                .ok_or("entry digest draft V byte count overflow")?;
+            if plane.k.len() < kb || plane.v.len() < vb {
+                return Err("entry digest draft plane is truncated".into());
+            }
+            let k = engine.dtoh_u8_view(&plane.k.slice(0..kb))?;
+            let v = engine.dtoh_u8_view(&plane.v.slice(0..vb))?;
+            digest_usize(&mut hasher, k.len());
+            hasher.update(&k);
+            digest_usize(&mut hasher, v.len());
+            hasher.update(&v);
+        }
+        None => hasher.update([0]),
+    }
+    digest_f32_plane(&mut hasher, &entry.last_h);
+    digest_f32_plane(&mut hasher, &entry.last_logits);
+    match &entry.dspark_draft {
+        Some(tail) => {
+            hasher.update([1]);
+            for x in [
+                tail.base,
+                tail.rows,
+                tail.len,
+                tail.row_bytes,
+                tail.floor,
+                tail.layers.len(),
+            ] {
+                digest_usize(&mut hasher, x);
+            }
+            for (k, v) in &tail.layers {
+                digest_f32_plane(&mut hasher, &engine.dtoh(k)?);
+                digest_f32_plane(&mut hasher, &engine.dtoh(v)?);
+            }
+        }
+        None => hasher.update([0]),
+    }
+    Ok(format!("{VERIFY_PROGRAM_SPLIT_V3}:{:x}", hasher.finalize()))
+}
+
 /// Same digest over the actual freshly-restored Cache. Device `len_d` mirrors are read and must
 /// equal the split before a digest can be reported.
 fn prefix_cache_state_digest(
@@ -23447,7 +23834,47 @@ pub fn run(
     }
     if kv_host_contracts && hpx.budget > 0 {
         let vision_loaded = vision_tower.is_some() || gemma_tower.is_some() || glm5_tower.is_some();
-        match host_tier_context(&engine, &hpx, &loaded, &models, vision_loaded) {
+        // C day 56: every attached DFlash drafter names its tail program by the export
+        // directory's byte manifest (the same directory the drafter loaded from).
+        let mut tails = HashMap::new();
+        if !dspark_drafts.is_empty() {
+            let spec = std::env::var("MEMRA_DSPARK_DRAFT").unwrap_or_default();
+            let dir = match memra_gguf::hf::resolve_arg(&spec) {
+                Ok(dir) => dir,
+                Err(err) => {
+                    let _ = ready_tx.send(Err(format!(
+                        "MEMRA_KV_HOST_CONTRACTS=1: MEMRA_DSPARK_DRAFT={spec:?}: {err}"
+                    )));
+                    return;
+                }
+            };
+            for (name, d) in &dspark_drafts {
+                let cfg_debug = format!(
+                    "{:?};markov={};confidence={};rope_yarn={};dflash2={}",
+                    d.cfg,
+                    d.markov.is_some(),
+                    d.confidence.is_some(),
+                    d.rope_yarn.is_some(),
+                    d.dflash2.is_some()
+                );
+                match HostTierTailSource::from_export(
+                    std::path::Path::new(&dir),
+                    cfg_debug,
+                    std::env::vars(),
+                ) {
+                    Ok(source) => {
+                        tails.insert(name.clone(), source);
+                    }
+                    Err(err) => {
+                        let _ = ready_tx.send(Err(format!(
+                            "MEMRA_KV_HOST_CONTRACTS=1: model {name} drafter manifest: {err}"
+                        )));
+                        return;
+                    }
+                }
+            }
+        }
+        match host_tier_context(&engine, &hpx, &loaded, &models, vision_loaded, &tails) {
             Ok(tier) => {
                 eprintln!(
                     "[prefix-host] contracts door ON (MEMRA_KV_HOST_CONTRACTS=1): {} model \
@@ -36998,13 +37425,28 @@ mod tests {
             !r(60, 100, true, false),
             "door shut must keep the pre-lane refusal"
         );
+        let grid = memra_engine::Engine::gdn_chunk_size();
         assert!(
-            r(60, 100, true, true),
-            "door open must admit a strict-prefix carrier"
+            r(2 * grid, 2 * grid + 40, true, true),
+            "door open must admit a grid-aligned strict-prefix carrier"
         );
+        // C day 56 section 2c: an off-grid carrier is a second numeric program; it serves cold
+        assert!(!r(2 * grid + 1, 2 * grid + 41, true, true));
+        assert!(!r(60, 100, true, true));
         // no tail: never restorable, the drafter cannot be re-armed from trunk planes alone
         assert!(!r(100, 100, false, true));
         assert!(!r(60, 100, false, true));
+        // a suffix shorter than PRIME_MIN_T is not restorable (C day 56: it failed the request
+        // with HTTP 500); at PRIME_MIN_T it is
+        let min = memra_engine::hybrid_forward::PRIME_MIN_T;
+        assert!(
+            !r(2 * grid, 2 * grid + min - 1, true, true),
+            "a sub-minimum suffix serves cold"
+        );
+        assert!(
+            r(2 * grid, 2 * grid + min, true, true),
+            "a PRIME_MIN_T suffix restores"
+        );
         // degenerate lengths are refused in both arms
         assert!(!r(0, 100, true, true));
         assert!(
@@ -45075,6 +45517,7 @@ mod tests {
                 super::HostTierPrograms {
                     plain: base,
                     draft: Some(draft),
+                    tail: None,
                     generation,
                 },
             )]),
@@ -48813,6 +49256,7 @@ mod tests {
                 super::HostTierPrograms {
                     plain: base,
                     draft: Some(draft),
+                    tail: None,
                     generation,
                 },
             )]),
@@ -48898,6 +49342,165 @@ mod tests {
     fn gpu_used(host: &super::HostPrefixCache) -> (u64, u64, u64) {
         let used = host.tier.as_ref().unwrap().governor.lock().unwrap().used();
         (used.pinned, used.inflight, used.device.iter().sum())
+    }
+
+    /// Day 53 of lane/spill-c-20260919 (verify digest v3): the tag parse and the three-way
+    /// compare the promote runs.
+    #[test]
+    fn verify_digest_check_types_program_and_byte_mismatches() {
+        use super::{VerifyDigestCheck, verify_digest_check, verify_digest_program};
+        assert_eq!(verify_digest_program("split-state-v3:ab"), "split-state-v3");
+        assert_eq!(
+            verify_digest_program("host-prefix-state-v1:ab"),
+            "host-prefix-state-v1"
+        );
+        assert_eq!(verify_digest_program("0123abcd"), "untagged");
+        assert_eq!(
+            verify_digest_check("split-state-v3:ab", "split-state-v3:ab"),
+            VerifyDigestCheck::Match
+        );
+        assert_eq!(
+            verify_digest_check("split-state-v3:ab", "split-state-v3:cd"),
+            VerifyDigestCheck::Mismatch
+        );
+        assert_eq!(
+            verify_digest_check("0123abcd", "split-state-v3:0123abcd"),
+            VerifyDigestCheck::Program("untagged", "split-state-v3")
+        );
+        assert_eq!(
+            verify_digest_check("host-prefix-state-v1:ab", "split-state-v3:ab"),
+            VerifyDigestCheck::Program("host-prefix-state-v1", "split-state-v3")
+        );
+    }
+
+    /// Day 53: the fault's f32 flip changes exactly the first byte of a heap row and leaves an
+    /// empty row alone (the pinned arm is the same byte through `as_mut_slice`).
+    #[test]
+    fn verify_digest_v3_row_flip_touches_one_byte() {
+        let mut row = super::HostF32::Heap(Arc::new(vec![1.5f32, -2.0]));
+        assert!(super::flip_first_f32_byte(&mut row));
+        assert_eq!(row[0].to_bits(), 1.5f32.to_bits() ^ 0xff);
+        assert_eq!(row[1], -2.0);
+        let mut empty = super::HostF32::Heap(Arc::new(Vec::new()));
+        assert!(!super::flip_first_f32_byte(&mut empty));
+    }
+
+    /// Day 53 source census: the verify arm's non-GLM digest is v3; the v2 body is the base
+    /// tree's byte for byte (SHA-256 of its text pinned from `094c46b24`, so the split trace and
+    /// the HIRADIX restore oracle keep their program); the v3 red arms are called once, behind the
+    /// legacy-copy condition, in the whole-image build.
+    #[test]
+    fn verify_digest_v3_census() {
+        use sha2::Digest as _;
+        let src = include_str!("worker.rs");
+        let code = &src[..src
+            .find("#[cfg(test)]\nmod tests {")
+            .expect("the test module")];
+        let body = |start: &str| -> &str {
+            let a = code.find(start).unwrap_or_else(|| panic!("{start}"));
+            &code[a..a + code[a..].find("\n}\n").expect("the function ends") + 3]
+        };
+        let roundtrip = body("fn host_roundtrip_digest(");
+        assert!(roundtrip.contains("prefix_entry_roundtrip_digest(engine, entry)"));
+        assert!(!roundtrip.contains("prefix_entry_state_digest("));
+        let v2 = body("fn prefix_entry_state_digest(");
+        assert_eq!(
+            format!("{:x}", sha2::Sha256::digest(v2.as_bytes())),
+            "6cd83ed3d42eefc9ba30d2463f8044226ccd113bec94d93783200079cf5f036c",
+            "the v2 digest's text moved"
+        );
+        let v3 = body("fn prefix_entry_roundtrip_digest(");
+        assert!(v3.contains("prefix_entry_state_digest(engine, entry, entry.pos)?"));
+        assert_eq!(code.matches("apply_flip_plane_faults(").count(), 2);
+        let image = body("fn host_entry_from_device(");
+        let cond = image
+            .find("let legacy_copy = contract_draft.is_none() && pending.is_none();")
+            .expect("the legacy-copy condition");
+        let call = image
+            .find("    if legacy_copy {\n        apply_flip_plane_faults(&mut entry)?;\n    }")
+            .expect("the guarded call");
+        assert!(cond < call);
+    }
+
+    /// Day 53, GPU-only: a 4-token entry with a trunk plane, a draft plane, a hidden row, logits
+    /// and a one-layer DFlash tail; `flip` changes one byte of one of them.
+    fn v3_entry(engine: &Engine, flip: &str) -> super::PrefixEntry {
+        let (mut trunk, _) = gpu_plane(engine, 4, 34, 24, 3);
+        let (mut draft, _) = gpu_plane(engine, 4, 34, 24, 9);
+        let stream = engine.stream();
+        let bump = |p: &mut super::PrefixPlane| {
+            let mut k = stream.clone_dtoh(&p.k).unwrap();
+            k[0] ^= 0xff;
+            p.k = stream.clone_htod(&k).unwrap();
+        };
+        match flip {
+            "trunk" => bump(&mut trunk),
+            "draft" => bump(&mut draft),
+            _ => {}
+        }
+        let word = |base: f32, n: usize, hit: bool| -> Vec<f32> {
+            let mut v: Vec<f32> = (0..n).map(|i| base + i as f32).collect();
+            if hit {
+                v[0] = f32::from_bits(v[0].to_bits() ^ 0xff);
+            }
+            v
+        };
+        let tail_k = stream.clone_htod(&word(0.25, 16, flip == "tail")).unwrap();
+        let tail_v = stream.clone_htod(&word(0.75, 16, false)).unwrap();
+        super::PrefixEntry {
+            _tier_charge: None,
+            layout_version: super::PREFIX_ENTRY_LAYOUT_VERSION,
+            pool_key: ("m".into(), String::new()),
+            toks: (0..4).collect(),
+            kv: vec![Some(trunk)],
+            conv: vec![None],
+            ssm: vec![None],
+            latent: vec![None],
+            tp: None,
+            pos: 4,
+            last_logits: word(-1.0, 8, flip == "logits"),
+            draft: Some(draft),
+            dspark_draft: Some(memra_engine::dflash::DflashKvTail {
+                layers: vec![(tail_k, tail_v)],
+                base: 0,
+                rows: 4,
+                len: 4,
+                row_bytes: 16,
+                floor: 0,
+            }),
+            last_h: word(2.0, 8, flip == "hidden"),
+            bytes: 0,
+            last_use: std::time::Instant::now(),
+            id: 0,
+            pins: 0,
+        }
+    }
+
+    /// Day 53, GPU-only: v3 is equal on identical bytes and moves on one byte of each of the five
+    /// planes; v2 moves on the trunk byte only (the day-14 finding, now a test).
+    #[test]
+    #[ignore = "requires one CUDA device; run under the rig lock"]
+    fn verify_digest_v3_covers_every_round_tripped_plane_and_v2_stays_trunk_only() {
+        let engine = Engine::new(0).expect("device0");
+        let v3 = |e: &super::PrefixEntry| super::prefix_entry_roundtrip_digest(&engine, e).unwrap();
+        let v2 = |e: &super::PrefixEntry| super::prefix_entry_state_digest(&engine, e, 4).unwrap();
+        let base = v3_entry(&engine, "");
+        let (base3, base2) = (v3(&base), v2(&base));
+        assert!(base3.starts_with("split-state-v3:"), "{base3}");
+        assert_eq!(
+            v3(&v3_entry(&engine, "")),
+            base3,
+            "identical bytes, one digest"
+        );
+        for flip in ["trunk", "draft", "hidden", "logits", "tail"] {
+            let e = v3_entry(&engine, flip);
+            assert_ne!(v3(&e), base3, "v3 is blind to one {flip} byte");
+            assert_eq!(
+                v2(&e) == base2,
+                flip != "trunk",
+                "v2 must move on the trunk byte and only there ({flip})"
+            );
+        }
     }
 
     /// Review finding 1 on PR #599: a refusal BEFORE any op is submitted must return every
@@ -50991,25 +51594,132 @@ mod tests {
     // failure gates under the default spec environment, OFF then ON).
 
     #[test]
-    fn host_tier_entry_class_admits_plain_and_mtp_draft_and_refuses_glm_and_dflash_by_name() {
-        use super::HostTierEntryClass::{MtpDraft, Plain};
+    fn host_tier_entry_class_admits_plain_mtp_draft_and_dflash_tail_and_refuses_glm_and_both_by_name()
+     {
+        // C day 56 (`DAY56.md` design a): the DFlash tail is its own class; GLM state and an entry
+        // carrying both spec programs' planes are refused by name.
+        use super::HostTierEntryClass::{DflashTail, MtpDraft, Plain};
         assert_eq!(super::host_tier_entry_class(false, false, false), Ok(Plain));
         assert_eq!(
             super::host_tier_entry_class(false, true, false),
             Ok(MtpDraft)
         );
+        assert_eq!(
+            super::host_tier_entry_class(false, false, true),
+            Ok(DflashTail)
+        );
         let glm = super::host_tier_entry_class(true, false, false).unwrap_err();
         assert!(glm.contains("TP or latent (GLM) planes"), "{glm}");
-        let tail = super::host_tier_entry_class(false, false, true).unwrap_err();
-        assert!(tail.contains("DFlash draft tail"), "{tail}");
-        assert!(
-            tail.contains("no drafter artifact identity"),
-            "the refusal names what is missing: {tail}"
-        );
         // A tail beside a draft plane cannot exist (the boot guard refuses two spec programs on
         // one model); the class function refuses rather than guessing which one won.
-        assert_eq!(super::host_tier_entry_class(false, true, true), Err(tail));
+        let both = super::host_tier_entry_class(false, true, true).unwrap_err();
+        assert!(
+            both.contains("both an MTP draft plane and a DFlash draft tail"),
+            "{both}"
+        );
         assert_eq!(super::host_tier_entry_class(true, true, true), Err(glm));
+        assert_eq!(super::host_tier_entry_class(true, false, true), Err(glm));
+    }
+
+    /// C day 56: the tail program is a pure function of its sources, differs from the plain and
+    /// draft programs in exactly artifact, plan and numeric, and moves with each source part.
+    #[test]
+    fn host_tier_tail_program_is_a_pure_function_of_the_drafter_sources() {
+        let plain = super::host_tier_program_base("aa", "plan", Some("{{ t }}"));
+        let source = |manifest: &str, cfg: &str, knobs: &str| super::HostTierTailSource {
+            manifest: manifest.into(),
+            cfg_debug: cfg.into(),
+            knobs: knobs.into(),
+        };
+        let base = source("config.json=1;model.safetensors=2", "cfg", "");
+        let tail = super::host_tier_tail_program(&plain, "aa", "plan", &base);
+        assert_eq!(
+            tail,
+            super::host_tier_tail_program(&plain, "aa", "plan", &base.clone())
+        );
+        assert_ne!(tail.artifact, plain.artifact);
+        assert_ne!(tail.serialized_plan, plain.serialized_plan);
+        assert_ne!(tail.numeric, plain.numeric);
+        for field in [
+            (tail.stream, plain.stream),
+            (tail.tokenizer, plain.tokenizer),
+            (tail.template, plain.template),
+            (tail.adapter, plain.adapter),
+            (tail.modality, plain.modality),
+            (tail.position, plain.position),
+        ] {
+            assert_eq!(field.0, field.1);
+        }
+        let draft = super::host_tier_draft_program(
+            &plain,
+            "aa",
+            "plan",
+            &super::HostTierDraftSource::Embedded,
+        );
+        assert_ne!(tail.artifact, draft.artifact);
+        assert_ne!(tail.serialized_plan, draft.serialized_plan);
+        assert_ne!(tail.numeric, draft.numeric);
+        let moved = [
+            source("config.json=1;model.safetensors=3", "cfg", ""),
+            source("config.json=1;model.safetensors=2", "cfg2", ""),
+            source(
+                "config.json=1;model.safetensors=2",
+                "cfg",
+                "MEMRA_DFLASH_PREC=bf16",
+            ),
+        ];
+        for other in &moved {
+            let p = super::host_tier_tail_program(&plain, "aa", "plan", other);
+            assert_ne!(p, tail, "{other:?} must name another program");
+        }
+        // The knob list: only the drafter's families, never the export path, sorted.
+        let knobs = super::host_tier_tail_knobs([
+            ("MEMRA_DSPARK_DRAFT".to_string(), "/x".to_string()),
+            ("MEMRA_DFLASH_PREC".to_string(), "q4".to_string()),
+            ("MEMRA_DSPARK_SPEC".to_string(), "1".to_string()),
+            ("MEMRA_KV_HOST_MB".to_string(), "8192".to_string()),
+        ]);
+        assert_eq!(knobs, "MEMRA_DFLASH_PREC=q4;MEMRA_DSPARK_SPEC=1");
+    }
+
+    /// C day 56: a tail image's shape blob is the v2 blob with the tail framed after it; the
+    /// framing names every geometry field and each layer's byte counts.
+    #[test]
+    fn host_tier_tail_shape_frames_the_geometry_after_the_v2_blob() {
+        let v2 = super::host_tier_shape_metadata(4, &[None], &[None], &[Some((4, 34, 24))], None);
+        let tail = super::host_tier_tail_shape_metadata(0, 4, 4, 64, 0, &[(256, 256)]);
+        assert_eq!(tail[0], 1);
+        assert_eq!(tail.len(), 1 + 6 * 8 + 2 * 8);
+        let other = super::host_tier_tail_shape_metadata(0, 4, 4, 64, 0, &[(256, 256), (256, 256)]);
+        assert_ne!(tail, other);
+        let mut framed = v2.clone();
+        framed.extend(&tail);
+        assert!(framed.starts_with(&v2) && framed.len() > v2.len());
+    }
+
+    /// C day 56 census: the tail class resolves through `program()` to the tail program, and the
+    /// bind's tail segments and its receipt line sit where DAY56 registers them.
+    #[test]
+    fn host_tier_dflash_tail_census() {
+        let src = include_str!("worker.rs");
+        let code = &src[..src
+            .find("#[cfg(test)]\nmod tests {")
+            .expect("the test module")];
+        let program = &code[code.find("    fn program(\n").expect("program()")..];
+        let program = &program[..program.find("\n    }\n").unwrap()];
+        assert!(program.contains("HostTierEntryClass::DflashTail => programs.tail.as_ref()"));
+        let bind = &code[code.find("    fn bind_tier_image(").expect("bind")..];
+        let bind = &bind[..bind.find("\n    }\n").unwrap()];
+        let geometry = bind.find("tier DFlash tail geometry mismatch").unwrap();
+        let segments = bind.find("b\"dflash-tail-k-f32\"").unwrap();
+        let transaction = bind
+            .find("add(Role::Transaction, 1, shape_encoding, &metadata, None, None)?;")
+            .unwrap();
+        let bound = bind.find("._tier_identity\n            .bind(").unwrap();
+        let line = bind.rfind("eprintln!(\"{line}\");").unwrap();
+        assert!(
+            geometry < segments && segments < transaction && transaction < bound && bound < line
+        );
     }
 
     #[test]

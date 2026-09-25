@@ -1815,9 +1815,13 @@ before any bank demand:
   names equal the former literal `blk.N.ffn_{gate,up,down}_exps.weight` spelling on a
   qwen3_5_moe plan with an MTP block, plus one test per refusal).
 - `--expert-bank-host-bytes=N` (default 256 MiB) sets the host bank budget. `host_bank_budget`
-  refuses `experts-via-tier host bank budget cannot hold one expert record` below one record
-  and `experts-via-tier host bank budget exceeds qualification ceiling` above 256 MiB, each
-  suffixed `(requested N, minimum M, ceiling C)`, and caps the bank at 16 records.
+  plans it into one SLRU class per exact record size of the catalog (slots proportional to each
+  size's record count, capped at it) and refuses `experts-via-tier host bank budget cannot hold
+  one expert record` below one record of the largest size and `experts-via-tier host bank
+  budget exceeds the machine ceiling` above three quarters of the host's `MemAvailable` read at
+  install, each suffixed `(requested N, minimum M, ceiling C)`; an unreadable `MemAvailable`
+  refuses too. The installer prints `[experts-via-tier] host_bank_plan requested= planned=
+  classes= records_held= ceiling=` (day 43, `research/spill-c-20260919/DAY43.md`).
 - `--expert-bank-gpu-bytes=N` fixes the GPU slot count before any allocation
   (`MoeSlotCache::with_exact_slots`, never clamps). `gpu_bank_budget` refuses
   `experts-via-tier GPU bank budget cannot hold the eight-slot minimum` below eight slots and
@@ -2047,6 +2051,25 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   `a batch with a running span has not landed` (reproduced 17 of 20 and 20 of 20 runs; fixed 100 of 100 in
   parallel, the red arm failing both rule-2 checks). Evidence: `research/spill-a-20260919/DAY31.md`, `DAY32.md`,
   `DAY33.md`, `DAY37.md`.
+- The DFlash tail class of the contracts door (lane/spill-c-20260919 day 56, `research/spill-c-20260919/DAY56.md`,
+  the rule of `DAY19.md` Task 3): `tools/kv-host-spill-identity-gate.sh`'s drafter arm (the caller sets
+  `MEMRA_DSPARK_SPEC=1 MEMRA_DSPARK_DRAFT=<export dir> MEMRA_DSPARK_PREFIX_RESTORE=1`) requires the ON boot's
+  `[prefix-cache] DSPARK restore:` line and, door ON, the `contracts door tail bound:` receipt and no `refused
+  (contracts door)` line; door OFF against door ON on the 27B with the DFlash2 drafter. CPU cells (`worker::tests`):
+  `host_tier_entry_class_admits_plain_mtp_draft_and_dflash_tail_and_refuses_glm_and_both_by_name`,
+  `host_tier_tail_program_is_a_pure_function_of_the_drafter_sources`,
+  `host_tier_tail_shape_frames_the_geometry_after_the_v2_blob`, `host_tier_dflash_tail_census`.
+- Verify digest v3 (lane/spill-c-20260919 day 53, `research/spill-c-20260919/DAY53.md`): `MEMRA_KV_HOST_VERIFY`'s
+  round-trip digest covers the MTP draft plane, the boundary hidden row, the boundary logits and the DFlash tail
+  beside the unchanged v2 trunk digest. `tools/kv-host-spill-failure-gate.sh` cells `digest-draft`,
+  `digest-hidden`, `digest-logits` (`MEMRA_KV_HOST_FAULT=flip-demote-{draft,hidden,logits}`, door OFF): spec
+  entries must refuse the promote `VERIFY FAILED: promoted digest`, zero promotions, r3 byte-equal to the pool-full
+  reference; under `MEMRA_SERVE_SPEC=0` the draft and hidden cells, and under `MEMRA_KV_HOST_CONTRACTS=1` all three,
+  must flip nothing and promote with `verify ok`.
+  CPU cells (`worker::tests`): `verify_digest_check_types_program_and_byte_mismatches`,
+  `verify_digest_v3_row_flip_touches_one_byte`, `verify_digest_v3_census` (v2's text pinned by SHA-256, the red
+  arms only behind the legacy copy path); GPU cell `verify_digest_v3_covers_every_round_tripped_plane_and_v2_stays_trunk_only`
+  (`#[ignore]` without a device: v3 moves on one byte of each of five planes, v2 on the trunk byte only).
 - The promote's KV completion checksums on the hash helper (WP-A day 34, `research/spill-a-20260919/DAY34.md`,
   `memra_tier::conformance::h2d_deferred_checksum_lands_with_its_digests`): under the door the off-tick promote
   defers its H2D items' checksums (`CudaTransfers::defer_h2d_checksums`), the helper digests each item's host
