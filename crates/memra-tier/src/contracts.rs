@@ -1737,20 +1737,24 @@ impl std::fmt::Debug for BankPublication {
             .finish_non_exhaustive()
     }
 }
-type RetainedBankBacking = Rc<RefCell<Option<(Box<dyn std::any::Any>, LeasePin)>>>;
+type RetainedBankBacking = RefCell<Option<(Box<dyn std::any::Any>, LeasePin)>>;
+/// A published record. Day 63 (I13 change 2, `research/spill-c-20260919/DAY63.md`): every clone shares one body, so a
+/// clone is a count increment; the body's fields and their drop order (the charge, then the backing with its pin) are
+/// what the separate fields were, dropped with the last clone as before.
 #[derive(Clone)]
-pub struct BankLease {
+pub struct BankLease(Rc<BankLeaseBody>);
+struct BankLeaseBody {
     id: BankId,
     layout: RecordLayout,
     class: LayoutClass,
-    charge: Arc<ChargedLease>,
+    charge: ChargedLease,
     backing: RetainedBankBacking,
 }
 impl std::fmt::Debug for BankLease {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BankLease")
-            .field("id", &self.id)
-            .field("class", &self.class)
+            .field("id", &self.0.id)
+            .field("class", &self.0.class)
             .finish_non_exhaustive()
     }
 }
@@ -1781,13 +1785,13 @@ impl BankLease {
             charge.pin()
         };
         match validate() {
-            Ok(pin) => Ok(Self {
+            Ok(pin) => Ok(Self(Rc::new(BankLeaseBody {
                 id,
                 layout,
                 class,
-                charge: Arc::new(charge),
-                backing: Rc::new(RefCell::new(Some((backing, pin)))),
-            }),
+                charge,
+                backing: RefCell::new(Some((backing, pin))),
+            }))),
             Err(error) => Err(Rejected {
                 op: BankPublication {
                     id,
@@ -1801,16 +1805,20 @@ impl BankLease {
         }
     }
     pub fn id(&self) -> &BankId {
-        &self.id
+        &self.0.id
     }
     pub fn layout(&self) -> &RecordLayout {
-        &self.layout
+        &self.0.layout
     }
     pub fn charge(&self) -> &ChargedLease {
-        &self.charge
+        &self.0.charge
+    }
+    /// Day 63: whether two leases are clones of one publication (one body).
+    pub fn same_publication(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
     }
     pub fn resource<T: 'static>(&self) -> Result<Ref<'_, T>> {
-        Ref::filter_map(self.backing.try_borrow().map_err(|_| Error::Busy)?, |r| {
+        Ref::filter_map(self.0.backing.try_borrow().map_err(|_| Error::Busy)?, |r| {
             r.as_ref()?.0.downcast_ref()
         })
         .map_err(|_| Error::AlreadyReleased)
@@ -1818,7 +1826,8 @@ impl BankLease {
     /// Backend-only lifecycle boundary: call after ALL aliased consumers retire.
     /// Invalidate every clone before crediting quota; a borrowed view refuses Busy.
     pub fn retire_backing(&self) -> Result<()> {
-        self.backing
+        self.0
+            .backing
             .try_borrow_mut()
             .map_err(|_| Error::Busy)?
             .take()
@@ -1839,10 +1848,9 @@ impl UniformLease {
     pub fn try_new(leases: Vec<BankLease>) -> std::result::Result<Self, Rejected<Vec<BankLease>>> {
         let error = if leases.is_empty() {
             Some(Error::EmptyBatch)
-        } else if leases
-            .iter()
-            .any(|l| l.class != LayoutClass::Uniform || !l.layout.same_program(&leases[0].layout))
-        {
+        } else if leases.iter().any(|l| {
+            l.0.class != LayoutClass::Uniform || !l.0.layout.same_program(&leases[0].0.layout)
+        }) {
             Some(Error::MixedLayout)
         } else {
             None

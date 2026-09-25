@@ -99,3 +99,40 @@ fn the_in_place_budget_arithmetic_is_the_allocating_form() {
         }
     }
 }
+
+/// I13 change 2: a clone of a published lease is the same publication (one body) and reads what the lease reads;
+/// a second ticket over the cached record lends the same publication; a clone outlives its source's drop.
+#[test]
+fn a_lease_clone_shares_its_body() {
+    let g = gov();
+    let (mut b, ids) = banks(LayoutClass::PerRecord, 1_000, Reader::default(), g.clone());
+    let t = b
+        .stage(batch(vec![ids[0].clone(), ids[1].clone()]))
+        .unwrap();
+    let leases = publish_bank(&mut b, &t, epochs()).unwrap();
+    for lease in &leases {
+        let clone = lease.clone();
+        assert!(clone.same_publication(lease));
+        assert_eq!(clone.id(), lease.id());
+        assert_eq!(clone.layout(), lease.layout());
+        assert_eq!(clone.charge().id(), lease.charge().id());
+        assert_eq!(
+            &*clone.resource::<Vec<u8>>().unwrap(),
+            &expected(lease.layout())
+        );
+    }
+    assert!(!leases[0].same_publication(&leases[1]));
+    finish(&mut b, &t);
+    // A second ticket over the cached record lends the same publication.
+    let t2 = b.stage(batch(vec![ids[0].clone()])).unwrap();
+    let again = publish_bank(&mut b, &t2, epochs()).unwrap();
+    assert!(again[0].same_publication(&leases[0]));
+    finish(&mut b, &t2);
+    let clone = leases[1].clone();
+    drop(leases);
+    drop(again);
+    assert_eq!(
+        &*clone.resource::<Vec<u8>>().unwrap(),
+        &expected(clone.layout())
+    );
+}
