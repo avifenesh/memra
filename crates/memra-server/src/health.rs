@@ -153,7 +153,40 @@ fn epoch() -> Instant {
 }
 
 fn now_ms() -> u64 {
+    #[cfg(test)]
+    if let Some(t) = TEST_NOW_MS.with(std::cell::Cell::get) {
+        return t;
+    }
     epoch().elapsed().as_millis() as u64
+}
+
+#[cfg(test)]
+thread_local! {
+    /// WP-A day 55 (`research/spill-a-20260919/DAY55.md` section 5, OWED item 22, T-c): a test-only
+    /// virtual clock for THIS thread's `now_ms()` reads. Only a test sets it, through
+    /// `TestClock`, and every other thread (and every non-test build) reads the real clock.
+    static TEST_NOW_MS: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+/// A test's virtual clock for `WorkerHealth` on the calling thread; dropped, the thread reads the
+/// real clock again.
+#[cfg(test)]
+pub(crate) struct TestClock;
+#[cfg(test)]
+impl TestClock {
+    pub(crate) fn start(at_ms: u64) -> Self {
+        TEST_NOW_MS.with(|c| c.set(Some(at_ms)));
+        TestClock
+    }
+    pub(crate) fn advance(&self, ms: u64) {
+        TEST_NOW_MS.with(|c| c.set(Some(c.get().unwrap_or(0) + ms)));
+    }
+}
+#[cfg(test)]
+impl Drop for TestClock {
+    fn drop(&mut self) {
+        TEST_NOW_MS.with(|c| c.set(None));
+    }
 }
 
 /// MEMRA_HEALTH_STALL_S (default 120): how long a BUSY worker may go without stamping a beat

@@ -39134,7 +39134,12 @@ mod tests {
                 }
             });
 
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
+        // WP-A day 55 (`research/spill-a-20260919/DAY55.md` section 5, OWED item 22, T-c): the
+        // expiry is judged on the loop's step clock (2 ms a step, the deadline at step 50) and the
+        // heartbeat on a virtual health clock advanced with it, so a starved runner cannot fail the
+        // bounds below; the teeth are the per-step non-blocking guard on the wall clock.
+        let start = std::time::Instant::now();
+        let deadline = start + std::time::Duration::from_millis(100);
         let mut pathological = serde_json::json!({"type": "string"});
         for _ in 0..24 {
             pathological = serde_json::json!({"allOf": [pathological]});
@@ -39147,7 +39152,7 @@ mod tests {
             )
             .unwrap();
         started_rx
-            .recv_timeout(std::time::Duration::from_millis(50))
+            .recv_timeout(std::time::Duration::from_secs(10))
             .expect("test compiler did not start");
 
         let (bad_tx, mut bad_rx) = event_channel();
@@ -39197,10 +39202,12 @@ mod tests {
 
         // CPU-only worker harness: one normal decode publishes a token every scheduler tick
         // while the pathological constraint compile is held on its background thread.
+        let clock = crate::health::TestClock::start(1_000_000);
         let health = crate::health::WorkerHealth::with_stall_ms(50);
         let (normal_tx, mut normal_rx) = event_channel();
         let mut normal_steps = 0u32;
         while !pending.is_empty() {
+            clock.advance(2);
             health.beat_busy();
             normal_steps += 1;
             normal_tx
@@ -39209,9 +39216,17 @@ mod tests {
                     text: "x".into(),
                 })
                 .unwrap();
+            let t = std::time::Instant::now();
             super::resolve_constraint_compiles(&result_rx, &mut pending, &mut queue);
-            super::expire_constraint_compiles(&mut pending, std::time::Instant::now());
-            std::thread::sleep(std::time::Duration::from_millis(2));
+            assert!(
+                t.elapsed() < std::time::Duration::from_secs(1),
+                "a resolve blocked on the held compile ({:?})",
+                t.elapsed()
+            );
+            super::expire_constraint_compiles(
+                &mut pending,
+                start + std::time::Duration::from_millis(2 * u64::from(normal_steps)),
+            );
         }
 
         let error = ready_rx
