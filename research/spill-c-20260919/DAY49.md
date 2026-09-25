@@ -36,3 +36,28 @@ orders). I7 stays if all three hold.
 
 **What each card can decide.** The RTX 5090 decides the clauses here; the target card reads them in the ladder (its
 host runs SHA-256 at 2.15 GB/s against this host's 4.49, `DAY18.md`).
+
+## 2. Results, cell `install` (RTX 5090 Laptop GPU, `rtx5090-day49/install/`)
+
+One collector hold, 00:09:54Z to 00:16:22Z, 30 runs, tree `cf86f3771`, binaries `run-gen-i5` `2b5a738e...` and
+`run-gen-i7` `3eab35aa...`, the approved artifact, the runner under the 1200% cap. Regime (`regime.log`, 250 ms,
+N=1511): SM 1582 to 2782 MHz, power 28.4 to 163.9 W, 59 to 73 C. Collector `--validate` rc=0. The installer identity
+values equal day 40's on every door run (the reader's integrity term).
+
+Verbatim (`install/reading.log`):
+
+`DAY49 INSTALL CHECKS rig=rtx5090 runs=30 integrity=ok`
+
+`DAY49 ARM i5 install_s median=12.87 iqr=0.57 records_s median=4.31 sha_s median=5.25 window_s median=0.353 iqr=0.005`
+
+`DAY49 ARM i7 install_s median=9.74 iqr=1.11 records_s median=0.96 sha_s median=5.24 window_s median=0.354 iqr=0.006`
+
+`DAY49 CLAUSE (i) records_s i5=4.31 i7=0.96 rule i7 < 0.25 x i5 -> PASS`
+
+`DAY49 CLAUSE (ii) install_s i7_minus_i5 o1=-3.52 o2=-2.58 noise=1.11 rule < -noise both orders -> PASS`
+
+`DAY49 CLAUSE (iii) window i7_minus_i5 pooled=+0.001 o1=+0.002 o2=+0.001 noise=0.006 rule <=noise -> PASS`
+
+`DAY49 INSTALL rig=rtx5090 integrity=ok clause_i=PASS clause_ii=PASS clause_iii=PASS`
+
+I7 stays: the record pass 4.31 to 0.96 s, the install 12.87 to 9.74 s; the SHA lock (5.2 s) is now most of it.
