@@ -1,0 +1,5 @@
+START utc=2026-09-24T21:10:42Z bin=/root/lane/target-tpr/release/memra-server env=MEMRA_DSV4_SESSIONS=1
+READY after=125s port=60001
+CELL warmup c=1 ok=1/1 agg=46.40 tok/s decode_p50=68.82 tok/s ttft_p50=239 ms tpot_p50=14.53 ms errs=[]
+CELL greedy-c1 c=1 ok=8/8 agg=65.43 tok/s decode_p50=68.40 tok/s ttft_p50=183 ms tpot_p50=14.62 ms errs=[]
+CELL sampled-c1 c=1 ok=8/8 agg=57.31 tok/s decode_p50=59.60 tok/s ttft_p50=185 ms tpot_p50=16.78 ms errs=[]
