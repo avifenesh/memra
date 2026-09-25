@@ -175,3 +175,20 @@ faster than BASE, the allocation (0.756 to 0.008) and the stage (1.29 to 0.54) g
 with I1. At 256 MiB the window still gets no host hits (every miss a read and a verify, 16.2 ms of the 16.7): the
 default budget holds 542 records against the window's reach of thousands, the day-40 profile's reading; the door's
 16 GiB arms are where the host tier serves.
+
+## 6. The fix check on the target card (BOX8, DAY52 section 9; receipts `pro-single-day52/residfix/`)
+
+One collector hold, 01:41:15Z to 01:56:22Z, 30 runs, the box's `run-gen` `550baa4b...` (day 40's tree) and
+`run-gen-i10` `4870d3ef...` (`70d6633f5`), the runner pinned to 12 cores. Regime (`residfix/regime.log`, 250 ms,
+N=3607): SM 172 to 2872 MHz, power 15.7 to 203.8 W, 34 to 45 C. Collector `--validate` rc=0.
+
+Verbatim (`residfix/reading.log`):
+
+`DAY43 RESIDFIX CHECKS rig=pro-single runs=30 integrity=ok`
+
+`DAY43 CLAUSE no_regression i10d_minus_base pooled=-0.128 o1=-0.126 o2=-0.128 noise=0.004 rule <=noise pooled and both orders -> PASS`
+
+`DAY43 RESIDFIX rig=pro-single integrity=ok no_regression=PASS`
+
+At the default budget the tuned door is 4.0 ms per window token faster than BASE on this card too (17.44 to 13.45),
+`alloc` 0.712 to 0.008 and `stage` 1.27 to 0.56.
