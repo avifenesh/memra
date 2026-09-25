@@ -52,7 +52,8 @@ for line in (src / "sched.tsv").read_text().splitlines():
         rows += [f"{t}\tI\tLOC\t" + ",".join(f"{c}:{250 + (n % 3)}" for c in range(32)), f"{t}\tI\tCAL\t1:{n % 5 + 1}",
                  f"{t}\tS\tTIMER\t1:{n % 4 + 1},4:2,17:1", f"{t}\tD\t17\t0:{n * 10}/1,2:240000/3",
                  f"{t}\tV\tpgfault:{n + 10},nr_free_pages:-{n}", f"{t}\tE\tintel-rapl:0\t{n * 60_000_000 + 10**9}",
-                 f"{t}\tH\thwmon1:k10temp/temp1_input={60000 + n * 10}"]
+                 f"{t}\tH\thwmon1:k10temp/temp1_input={60000 + n * 10}",
+                 f"{t}\tN\t{10**9 + int(t[3:5]) * 60_000 + n * 1000}\t{5 * 10**8 + n * 100}"]
 (out / "sched.tsv").write_text("\n".join(rows) + "\n")
 t0 = datetime.strptime(first[:8], "%H:%M:%S")
 pcie = []

@@ -14,7 +14,8 @@ Every 250 ms:
   once, give each state's name);
 - `V` every `/proc/vmstat` counter that moved: `name:delta`;
 - `E` every powercap zone's `energy_uj` (`EH` rows, once, give each zone's name, or that it cannot be read);
-- `H` every hwmon temperature and power input: `chip/input=value`.
+- `H` every hwmon temperature and power input: `chip/input=value`;
+- `N` (DAY71 section 3) the first number of `/proc/stat`'s `intr` line (the host's interrupt total) and its `ctxt`.
 Every 1 s:
 - `T` every host thread whose user or system time moved since the last pass (DAY70's rows).
 
@@ -197,9 +198,16 @@ def main():
         t = stamp()
         rows = []
         text = read("/proc/stat") or ""
+        intr = ctxt = None
         for line in text.splitlines():
             if line.startswith("cpu") and line[3:4].isdigit():
                 rows.append(f"{t}\tC\t{line}")
+            elif line.startswith("intr "):
+                intr = line.split()[1]
+            elif line.startswith("ctxt "):
+                ctxt = line.split()[1]
+        if intr is not None and ctxt is not None:
+            rows.append(f"{t}\tN\t{intr}\t{ctxt}")
         for pid, comm in run_gens():
             sched = read(f"/proc/{pid}/task/{pid}/schedstat")
             st = read(f"/proc/{pid}/task/{pid}/stat")

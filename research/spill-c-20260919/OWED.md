@@ -111,8 +111,12 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   it). Next: `DAY71.md`, one cell `core` for the remaining candidates at once (the core's TSC, APERF and MPERF around
   the gate probe through `RDPRU`, every CPU's interrupt and softirq counts, the sibling's idle states, the package's
   energy and sensors, the card's PCIe traffic), on BOX15's machine and on a second 9950X machine for the class
-  question. The probe change landed (`6bad38150`, binary `p71`) and the sitting is ready (`day71-box.sh`, section 1a).
-  Open: the cell waits on BOX15's machine and a second 9950X machine.
+  question. The probe change landed (`6bad38150`, binary `p71`). Machine `b` (BOX24) ran: `DAY71 CORE VERDICT
+  rig=pro-single-b integrity=ok -> not_reproduced` (19 slow, 1 fast); beside it the door's gate probe at 12.4 to 14.2
+  cycles per step at a full clock with MPERF over TSC 1.000, and compaction failing to migrate 70,000 to 78,000 pages
+  a second through every slow door span, none in REF's (`DAY71.md` section 2). A reader defect fixed and `intr_rate`
+  and `migrate_fail` registered before BOX15's half (section 3). Open: BOX15's half (the default rig), then the class
+  line.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 

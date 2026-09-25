@@ -1,4 +1,4 @@
-# DAY71 sampler dry check: 3.4 s on the local host (24 CPUs) against a busy stand-in run-gen process pinned to CPU 3; the sampler pinned to CPU 23
+# DAY71 sampler dry check (section 3's N row added): 3.4 s on the local host (24 CPUs) against a busy stand-in run-gen process pinned to CPU 3; the sampler pinned to CPU 23
 sampler rc=124 (124: stopped by timeout, as the cell stops it)
 row kinds:
     336 C
@@ -6,21 +6,26 @@ row kinds:
      96 DH
       4 EH
      14 H
-    124 I
+    144 I
     126 IH
+     14 N
      14 O
-     66 S
+     73 S
      10 SH
-     66 T
+     60 T
      13 V
 owner rows:
-12:55:30.677	O	1187845	run-gen-standin	3	326940048 100981 9	1067	0	32	0
-12:55:30.927	O	1187845	run-gen-standin	3	576843970 197390 16	1067	0	57	0
-12:55:31.177	O	1187845	run-gen-standin	3	826814932 226854 22	1067	0	82	0
+13:44:05.692	O	1300034	run-gen-standin	3	326483548 167897 28	1068	0	32	0
+13:44:05.942	O	1300034	run-gen-standin	3	576316020 336056 57	1068	0	57	0
+13:44:06.193	O	1300034	run-gen-standin	3	826199006 452970 70	1068	0	82	0
+interrupt-total rows:
+13:44:05.692	N	6269966150	8775603654
+13:44:05.942	N	6269968667	8775607104
+13:44:06.193	N	6269969917	8775608691
 powercap rows:
-12:55:30.677	EH	intel-rapl-mmio:0	package-0	unreadable
-12:55:30.677	EH	intel-rapl:0	package-0	unreadable
-12:55:30.677	EH	intel-rapl:0:0	core	unreadable
-12:55:30.677	EH	intel-rapl:0:1	uncore	unreadable
+13:44:05.692	EH	intel-rapl-mmio:0	package-0	unreadable
+13:44:05.692	EH	intel-rapl:0	package-0	unreadable
+13:44:05.692	EH	intel-rapl:0:0	core	unreadable
+13:44:05.692	EH	intel-rapl:0:1	uncore	unreadable
 one cpuidle row:
-12:55:30.927	D	0	1:2978/11,2:32261/38,3:213848/62
+13:44:05.942	D	0	1:14361/187,2:40563/48,3:192992/61

@@ -229,3 +229,15 @@ it has no `/proc/softirqs` rows, as section 1 already says for a source that is 
 Both are higher-is-tracking under the strict rule of section 1, joining the ten registered fields. They decide on
 BOX15's cell; nothing else in section 1 moves. BOX15's cell runs the same binary `p71=6bad38150`; the sampler's added
 row and the reader change come with the tree the sitting checks out.
+
+### 3a. Section 3 as it landed (before BOX15's half)
+
+`day71-sampler.py` writes one `N` row per pass (the `intr` total and `ctxt` of `/proc/stat`); `day71-read.py` reads a
+source with no header rows as `not read` and adds `intr_rate` and `migrate_fail` to the strict rule. Dry checks re-run
+(`day71-cpu/`): the sampler on the local host writes `N` rows beside the others; the cell's control flow and the
+synthetic reading are unchanged apart from the two new fields; DAY70's receipts still read `void`.
+
+The corrected reading of `b`'s receipts (`core/reading-rev2.log`) keeps `DAY71 R1 rig=pro-single-b ref_median=0.323
+slow=19 fast=1 of 20 door runs` and `DAY71 CORE VERDICT rig=pro-single-b integrity=ok -> not_reproduced`; `irq_rate`
+and `intr_rate` now print `not_read` in every run. Post hoc and deciding nothing on `b`: `migrate_fail` reads 69,785 to
+77,819 a second in the 19 slow door runs and 42,430 in the fast one, whose state began at `warm`, inside its span.

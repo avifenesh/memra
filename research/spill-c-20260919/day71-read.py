@@ -3,7 +3,8 @@
 integrity, R1 the slow door boots, R2 the core's counters at the gate probe, R3 the owner CPU's interrupts and
 softirqs, its sibling's POLL time, the package's power, the card's PCIe receive rate and the owner's system share over
 each door run's gate-to-window span, R4 the named sources beside them, and the strict verdict with a count per field.
-With --class, the class verdict from two machines' cells.
+DAY71 section 3 adds `intr_rate` (the host's interrupt total per second, from `/proc/stat`) and `migrate_fail` (failed
+page migrations per second) and reads a hidden source as not read. With --class, the class verdict from two cells.
 
 usage: day71-read.py <cell-dir> [--rig NAME]
        day71-read.py --class <cell-dir-a> <cell-dir-b>
@@ -30,10 +31,11 @@ PHASE = re.compile(
     r"(?: cpu_after=(-?\d+) wall_ns=(\d+) tsc=(\d+) mperf=(\d+) aperf=(\d+)| (counters=unavailable))?$", re.M)
 FILL = re.compile(r"\[experts-via-tier\] fill complete before decode in ([0-9.]+) ms")
 SLOT = re.compile(r" slot=\d+")
-# (field, direction): +1 tracks when every slow value is above every fast one, -1 when below.
+# (field, direction): +1 tracks when every slow value is above every fast one, -1 when below. The last two joined in
+# DAY71 section 3 (registered after machine b's reading, before BOX15's half).
 FIELDS = (("delivered_ghz", -1), ("ref_share", -1), ("counted_ghz", -1), ("cycles_per_step", +1),
           ("irq_rate", +1), ("softirq_rate", +1), ("sibling_poll", +1), ("pkg_w", +1), ("pcie_rx", +1),
-          ("owner_sys", +1))
+          ("owner_sys", +1), ("intr_rate", +1), ("migrate_fail", +1))
 
 
 def hms(text):
@@ -115,8 +117,8 @@ def gate_counters(r):
 
 
 def load_sampler(ev):
-    s = {"C": defaultdict(list), "O": defaultdict(list), "T": [], "I": [], "S": [], "IH": {}, "D": [], "DH": {},
-         "V": [], "E": defaultdict(list), "EH": {}, "H": []}
+    s = {"C": defaultdict(list), "O": defaultdict(list), "T": [], "I": [], "S": [], "IH": {}, "SH": {}, "D": [],
+         "DH": {}, "V": [], "E": defaultdict(list), "EH": {}, "H": [], "N": []}
     for line in (ev / "sched.tsv").read_text().splitlines():
         p = line.split("\t")
         if len(p) < 3:
@@ -133,8 +135,10 @@ def load_sampler(ev):
             s["T"].append((t, p[2], p[3], p[4], p[5], int(p[6])))
         elif tag in ("I", "S") and len(p) == 4:
             s[tag].append((t, p[2], {k: int(v) for k, v in (x.split(":") for x in p[3].split(","))}))
-        elif tag == "IH" and len(p) >= 3:
-            s["IH"][p[2]] = p[3] if len(p) > 3 else ""
+        elif tag in ("IH", "SH") and len(p) >= 3:
+            s[tag][p[2]] = p[3] if len(p) > 3 else ""
+        elif tag == "N" and len(p) == 4:
+            s["N"].append((t, int(p[2]), int(p[3])))
         elif tag == "D" and len(p) == 4:
             moved = {}
             for x in p[3].split(","):
@@ -258,10 +262,18 @@ def read_cell(cell, rig):
         v.update(gate_counters(r) or {})
 
         def rate(tag, c):
+            # DAY71 section 3: a source with no header rows (hidden or absent) is not read, not zero.
+            if not s[tag + "H"]:
+                return None
             return sum(d.get(str(c), 0) for t, _, d in s[tag] if t0 < t <= t1) / wall_s
 
         v["irq_rate"] = rate("I", cpu)
         v["softirq_rate"] = rate("S", cpu)
+        na, nb = at(s["N"], t0, True), at(s["N"], t1, False)
+        if na and nb and nb[0] > na[0]:
+            v["intr_rate"] = (nb[1] - na[1]) / (nb[0] - na[0]).total_seconds()
+        if s["V"]:
+            v["migrate_fail"] = sum(d.get("pgmigrate_fail", 0) for t, d in s["V"] if t0 < t <= t1) / wall_s
         if sib and any(c == sib[0] for c, _ in s["DH"]):
             poll = [k for (c, k), name in s["DH"].items() if c == sib[0] and name == "POLL"]
             us = sum(m.get(k, 0) for t, c, m in s["D"] if c == sib[0] and t0 < t <= t1 for k in poll)
