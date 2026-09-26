@@ -79,3 +79,50 @@ dry-checked on DAY79's local receipts, flags a run without the door's demand lin
 target-card sitting runs before the check lands, the cell's own integrity (MATCH in every run, one host demand sequence
 across I15, I18 and I20) reads the same two properties on the target card, and the local check is read when it lands,
 deciding nothing further for the cell.
+
+**The local RTX 5090 check landed** (queue v16, `day82-cpu/gpu-check.log`, raw logs in `day82-cpu/gpu-check/`):
+`DAY82 GPU CHECK PASS`. Every run exits 0 with `MATCH`; I20's tape and host demand sequence (`4bdc2610c3534e42`, 22077
+lines) are I18's in both orders.
+
+## 4. The target card (BOX39, a Core Ultra 9 285K; run by the lead as registered; `pro-single-day82/`)
+
+BOX39: one RTX PRO 6000 Blackwell Workstation Edition, 249 GB, driver 580.173.02, after integ69's GPU battery on the
+same card. `D82_BUILDS="i15=2243b1fe2 i18=c7294b912 i20=8efea3a54" bash .../day82-box.sh` on the tree `ab5e91667`,
+`box start 2026-09-26T18:12:23Z` to `box done 2026-09-26T18:27:39Z`. Receipts: 260 `OK` against the box manifest, ELFs
+by hash; the profiler's reports and exports (8 files, all `OK` against `profiles.sha256`) moved out of the tree. The
+reader re-run here on the mirror with the exports restored prints `i20/reading.log` byte for byte. Regime: 39 to 49 C,
+SM median 2820 MHz (2610 to 2850), P0 and P1, N=581 busy samples of 2308; the power brake not active. Verbatim
+(`i20/reading.log`):
+
+- `DAY82 host demand sequence i15 sha256 4bdc2610c3534e42 lines=[22077]`, and the same for `i18`, `i20` and `i20c`
+- `DAY82 I20 CHECKS rig=pro-single runs=50 integrity=ok`
+- `DAY82 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0025 max_iqr_window=0.0010 failing=[] -> admissible`
+- `DAY82 gen-only decode medians (N=10 each): ref=0.312 i15=0.316 i18=0.315 i20=0.315 i20c=0.315`
+- `DAY82 STEP i20_vs_i18 gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0012 -> flat`
+- `DAY82 steady window medians (N=10 each): ref=0.286 i15=0.286 i18=0.286 i20=0.286 i20c=0.286`
+- `DAY82 STEP i20_vs_i18 steady window: pooled=-0.0005 o1=-0.0010 o2=+0.0000 noise=0.0010 -> flat`
+- `DAY82 BESIDE i20_vs_i15 gen-only decode: pooled=-0.0010 o1=-0.0010 o2=-0.0010 noise=0.0025 -> flat (deciding nothing)`
+- `DAY82 BESIDE i20_vs_i15 steady window: pooled=+0.0000 o1=+0.0000 o2=-0.0010 noise=0.0010 -> flat (deciding nothing)`
+- `DAY82 DOOR i20_vs_ref gen-only decode: pooled=+0.0030 o1=+0.0040 o2=+0.0030 noise=0.0010 -> loses`
+- `DAY82 DOOR i20_vs_ref steady window: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0010 -> matches`
+- `DAY82 I20C brackets per window token (ms, medians): dispatch_ns=0.0827 prefetch_ns=0.5125 pf_demand_ns=0.1499
+  pf_resident_ns=0.0443 pf_retire_ns=0.0249 pf_stage_ns=0.2292`
+- `DAY82 B i20_minus_ref per window token (ms, medians of two; deciding nothing): gpu_busy=+0.0064 gpu_idle=+0.2280
+  h2d_exposed=+0.0633 kernel_sum=+0.0065`
+- `DAY82 VERDICT rig=pro-single integrity=ok i20=flat door=i20 vs_ref=loses (window: i20=flat vs_ref=matches)`
+
+**Read as registered: I20 `flat`, so it stays; the door `loses` to REF gen-only (+3 ms over 32 tokens, both orders)
+and `matches` it on the window.** The host demand sequence is one across I15, I18 and I20, as the program requires.
+
+**Beside it, deciding nothing.** I20 against I15 reads -1 ms gen-only in both orders and 0 on the window, inside its
+noise term (0.0025, set by I15's own spread): the whole cut since I15 (I17, I18, I20, about 300 ns per block on the
+local CPU) does not resolve on this card either. The clocks agree: I20C's `pf_demand_ns` is 0.1499 ms per window token
+against I18C's 0.1495 on BOX34 and `pf_stage_ns` 0.2292 against 0.2274, so the six allocations I20 removed are not
+visible in the path's own clock. Part B holds its shape (the door's GPU idles 0.23 ms per window token more than REF's
+with the same kernels, `h2d_exposed` +0.06, as BOX34's +0.20 and +0.06). What this leaves for C11, stated plainly: on
+one host, the three cuts since I15 (I17, I18, I20) together read -1 ms over 32 tokens, inside the noise. The door's
+gen-only gap to REF on this class runs +10 ms (BOX32, `DAY77.md`), +4 (BOX34) and +3 (BOX39); that spread is the host,
+as `DAY79.md` section 3 read it, not the cuts. The window matches REF on BOX34 and BOX39.
+
+**The 9950X half stands.** Section 3 registered the 285K class, then a 9950X, and `regresses` on either class reverts
+I20; a `flat` on one class does not answer the other. It runs the same command on a 9950X host.

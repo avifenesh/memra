@@ -110,8 +110,10 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   byte-for-byte I18's), reverted (`5f8824d6b`). Day 82 (`DAY82.md`): an allocation census of the grouped host-hit
   cycle chose I20 (`8efea3a54`, the bank's stage without its two `BudgetRequest` clones: 22 to 16 allocations per
   cycle), CPU gates green, P9 unresolved on the local CPU; the card cell `i20` adds I15 as a fifth arm (I20 against
-  I15 printed beside the registered step, deciding nothing); sitting ready (`day82-box.sh`, the 285K class, then a
-  9950X).
+  I15 printed beside the registered step, deciding nothing); on BOX39 (the 285K class) `DAY82 VERDICT rig=pro-single
+  integrity=ok i20=flat door=i20 vs_ref=loses (window: i20=flat vs_ref=matches)` (admissible; I20 stays; the door 3 ms
+  over 32 tokens behind REF gen-only; beside it I20 against I15 -1 ms, `flat`); the local RTX 5090 check `PASS`. The
+  9950X half stands (section 3's two classes).
 
 ## C12. The door's sensitivity to its owner thread's host placement (the 9950X class)
 

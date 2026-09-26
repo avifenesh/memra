@@ -1,0 +1,11 @@
+# DAY82 local GPU check (the development host's RTX 5090 under its lock): the door at I18 (run-gen-i18 = c7294b912) and at I20 (run-gen-i20 = 8efea3a54), 32 tokens each, order i18, i20, i20, i18; raw logs in gpu-check/
+da081bbcc55117d8753c1f0651826d2f19c090f43566c27fd7cbeb0597e6db8d  /home/avifenesh/projects/wt-spill-c/target/c-bins/run-gen-i18
+3f58bca93cfb3ef2ee6a1910aa038c3e383ee6ebca32b92e2ffefcc92dcd5d6a  /home/avifenesh/projects/wt-spill-c/target/c-bins/run-gen-i20
+i18-a rc=0 MATCH generated 32 tokens in 0.371s window: 32 decode steps in 0.311s trace=4bdc2610c3534e42 lines=22077
+i20-a rc=0 MATCH generated 32 tokens in 0.373s window: 32 decode steps in 0.314s trace=4bdc2610c3534e42 lines=22077
+i20-b rc=0 MATCH generated 32 tokens in 0.369s window: 32 decode steps in 0.313s trace=4bdc2610c3534e42 lines=22077
+i18-b rc=0 MATCH generated 32 tokens in 0.358s window: 32 decode steps in 0.314s trace=4bdc2610c3534e42 lines=22077
+i20-a: the same tape and the same host demand sequence as i18-a
+i20-b: the same tape and the same host demand sequence as i18-a
+i18-b: the same tape and the same host demand sequence as i18-a
+DAY82 GPU CHECK PASS
