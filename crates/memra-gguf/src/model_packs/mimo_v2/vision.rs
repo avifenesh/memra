@@ -10,7 +10,7 @@
 //! these rows against a full HF census. This sidecar does not establish an
 //! executable vision path or model support.
 
-use crate::config::MiMoVisionConfig;
+use crate::config::{Arch, MiMoVisionConfig, ModelConfig};
 use crate::tensor_contract::{
     FloatType, QuantConstraint, TensorContractError, TensorId, TensorMatch, TensorOwner,
     TensorRequirement, TensorTransform, VisionTensor,
@@ -23,6 +23,57 @@ const WINDOW_ATTENTION_TYPES: [i32; 28] = [
 const FUSED_QKV_ROWS: u64 = 3_072;
 const ATTENTION_PROJECTION_INPUT: u64 = 2_048;
 const MERGER_WIDTH: u64 = 5_120;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiMoPatchOrder {
+    Row,
+    Column,
+}
+
+/// Source ViT attention, distinct from the text mixer's causal sink denominator.
+/// `sink_first_key` adds a learned score bias to the first patch in each image;
+/// a masked first patch remains masked. Q/K already carry two-axis RoPE.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MiMoVisionAttentionPlan {
+    pub layer: u32,
+    pub query_heads: usize,
+    pub kv_heads: usize,
+    pub head_dim: usize,
+    pub symmetric_window: Option<usize>,
+    pub sink_first_key: bool,
+    pub patch_order: MiMoPatchOrder,
+}
+
+pub fn pinned_attention_plan(
+    config: &ModelConfig,
+    layer: u32,
+) -> Result<MiMoVisionAttentionPlan, &'static str> {
+    let vision = config
+        .mimo
+        .as_ref()
+        .and_then(|mimo| mimo.vision_config.as_ref())
+        .ok_or("MiMo vision config is missing")?;
+    if config.arch != Arch::MiMoV2 || !pinned_geometry(vision, config.n_embd) {
+        return Err("MiMo vision geometry differs from the pinned source");
+    }
+    if layer >= vision.depth {
+        return Err("MiMo vision layer is out of range");
+    }
+    let global = FULL_ATTENTION_BLOCKS.contains(&layer);
+    Ok(MiMoVisionAttentionPlan {
+        layer,
+        query_heads: 32,
+        kv_heads: 8,
+        head_dim: 64,
+        symmetric_window: (!global).then_some(64),
+        sink_first_key: !global,
+        patch_order: if vision.vit_window_attn_types[layer as usize] == 1 {
+            MiMoPatchOrder::Column
+        } else {
+            MiMoPatchOrder::Row
+        },
+    })
+}
 
 fn pinned_geometry(vision: &MiMoVisionConfig, text_hidden_size: u32) -> bool {
     text_hidden_size == 4_096
@@ -182,6 +233,39 @@ mod tests {
     fn pinned_config() -> (MiMoVisionConfig, u32) {
         let config = ModelConfig::from_hf(&HfConfig::parse(include_str!("fixtures/config.json")));
         (config.mimo.unwrap().vision_config.unwrap(), config.n_embd)
+    }
+
+    #[test]
+    fn pinned_attention_program_tracks_full_window_and_patch_order() {
+        let config = ModelConfig::from_hf(&HfConfig::parse(include_str!("fixtures/config.json")));
+        for layer in 0..28 {
+            let plan = pinned_attention_plan(&config, layer).unwrap();
+            let global = [0, 9, 18, 27].contains(&layer);
+            assert_eq!(plan.query_heads, 32);
+            assert_eq!(plan.kv_heads, 8);
+            assert_eq!(plan.head_dim, 64);
+            assert_eq!(plan.symmetric_window, (!global).then_some(64));
+            assert_eq!(plan.sink_first_key, !global);
+            assert_eq!(
+                plan.patch_order,
+                if [5, 6, 7, 8, 14, 15, 16, 17, 23, 24, 25, 26].contains(&layer) {
+                    MiMoPatchOrder::Column
+                } else {
+                    MiMoPatchOrder::Row
+                }
+            );
+        }
+        assert!(pinned_attention_plan(&config, 28).is_err());
+        let mut wrong = config;
+        wrong
+            .mimo
+            .as_mut()
+            .unwrap()
+            .vision_config
+            .as_mut()
+            .unwrap()
+            .visual_token_window_size = 32;
+        assert!(pinned_attention_plan(&wrong, 1).is_err());
     }
 
     fn census(rows: &[TensorRequirement]) -> Vec<TensorCensusEntry> {

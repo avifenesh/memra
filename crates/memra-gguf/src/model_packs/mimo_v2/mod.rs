@@ -4,7 +4,7 @@
 pub(crate) mod audio;
 pub(crate) mod mint_headers;
 pub(crate) mod mtp;
-pub(crate) mod vision;
+pub mod vision;
 
 use crate::GgmlType;
 use crate::checkpoint_binding::{CheckpointBinding, bind_census};
