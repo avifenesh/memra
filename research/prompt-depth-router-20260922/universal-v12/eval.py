@@ -356,6 +356,7 @@ def qualifier(args, arms):
 
 def run(args):
     manifest, arms, gpu_uuid = freeze(args)
+    meta = json.loads(args.run_meta.read_text())
     previous_phase(args, arms)
     args.out.mkdir(exist_ok=True)
     specs = arms["arms"]
@@ -365,6 +366,7 @@ def run(args):
         if not 0 <= args.start < stop <= len(entries):
             raise ValueError("invalid mixed conversation range")
         for index in range(args.start, stop):
+            current_gpu(meta)
             entry = entries[index]
             shift = (index + domain_index * 5) % len(specs)
             order = specs[shift:] + specs[:shift]
