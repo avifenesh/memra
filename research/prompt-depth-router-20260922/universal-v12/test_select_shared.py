@@ -15,7 +15,7 @@ LEARNED = (
     select_shared.LAST_TOKEN,
     select_shared.NO_K_PRIOR,
     select_shared.FRESH_FULL,
-)
+) + tuple(sorted(select_shared.CD_FIXED))
 NOOPS = {
     "joint-shared": "joint-noop-shared",
     "joint-code-only": "joint-noop-code-only",
@@ -23,6 +23,10 @@ NOOPS = {
     select_shared.NO_K_PRIOR:
     "joint-noop-fresh-window-no-k-prior",
     select_shared.FRESH_FULL: "joint-noop-fresh-only",
+    **{
+        label: label.replace("cd-", "cd-noop-", 1)
+        for label in select_shared.CD_FIXED
+    },
 }
 
 
@@ -30,7 +34,8 @@ def write(path, value):
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
 
 
-def fixture(root, prose_shared=105.0, judge="f" * 64):
+def fixture(root, prose_shared=105.0, cd_k10=100.0,
+            judge="f" * 64):
     arms = root / "validation-arms.json"
     specs = [
         {"label": label, "role": "fixed"}
@@ -39,7 +44,8 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
     for label, policy in zip(
         LEARNED, (
             "a" * 64, "b" * 64, "9" * 64,
-            "8" * 64, "7" * 64,
+            "8" * 64, "7" * 64, "6" * 64,
+            "5" * 64, "4" * 64,
         ),
     ):
         specs.extend((
@@ -48,7 +54,14 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
                 "noop_label": NOOPS[label],
                 "policy_sha256": policy,
                 "selectable": True,
-                "arm": "joint-ckd",
+                "arm": (
+                    "joint-cd" if label in select_shared.CD_FIXED
+                    else "joint-ckd"
+                ),
+                "k": (
+                    int(label.rsplit("k", 1)[1])
+                    if label in select_shared.CD_FIXED else 20
+                ),
             },
             {
                 "label": NOOPS[label], "role": "noop",
@@ -76,6 +89,10 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
         rates[select_shared.LAST_TOKEN] = 100.0
         rates[select_shared.NO_K_PRIOR] = 100.0
         rates[select_shared.FRESH_FULL] = 100.0
+        for label in select_shared.CD_FIXED:
+            rates[label] = (
+                cd_k10 if label == "cd-fresh-k10" else 100.0
+            )
         rates.update({label: 100.0 for label in NOOPS.values()})
         comparisons = {}
         for label in LEARNED:
@@ -130,6 +147,35 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
 
 
 class SharedSelectionTest(unittest.TestCase):
+    def test_fixed_k_with_learned_cd_can_be_global_policy(self):
+        with tempfile.TemporaryDirectory() as folder:
+            score, arms = fixture(
+                Path(folder), prose_shared=99.0,
+                cd_k10=105.0,
+            )
+            selection, final = select_shared.choose(score, arms)
+            self.assertEqual(selection["status"], "selected")
+            self.assertEqual(
+                selection["selected_policy"]["label"],
+                "cd-fresh-k10",
+            )
+            self.assertEqual(
+                selection["selected_policy"]["arm"],
+                "joint-cd",
+            )
+            self.assertEqual(
+                selection["selected_policy"]["configured_draft_k"],
+                10,
+            )
+            self.assertIn(
+                "cd-noop-fresh-k10",
+                {item["label"] for item in final},
+            )
+            self.assertIn(
+                "fixed-k10-d3-c0",
+                {item["label"] for item in final},
+            )
+
     def test_weak_prefix_receipt_does_not_hide_history_validation(self):
         with tempfile.TemporaryDirectory() as folder:
             score, arms = fixture(Path(folder))

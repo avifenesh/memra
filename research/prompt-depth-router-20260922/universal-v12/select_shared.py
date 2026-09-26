@@ -15,6 +15,9 @@ BASELINE = "fixed-k20-d3-c0"
 LAST_TOKEN = "joint-fresh-last-token"
 NO_K_PRIOR = "joint-fresh-window-no-k-prior"
 FRESH_FULL = "joint-fresh-only"
+CD_FIXED = {
+    f"cd-fresh-k{k}" for k in (3, 10, 20)
+}
 REQUIRED_FIXED = {
     f"fixed-k{k}-d{depth}-c0"
     for k in (3, 10, 20) for depth in (1, 2, 3, 4)
@@ -172,10 +175,12 @@ def inspect(validation, arms_path):
     selectable = {
         label for label in learned
         if by_label[label].get("selectable") is True
-        and by_label[label].get("arm") == "joint-ckd"
+        and by_label[label].get("arm")
+        in ("joint-ckd", "joint-cd")
     }
     if not {
         LAST_TOKEN, NO_K_PRIOR, FRESH_FULL,
+        *CD_FIXED,
     }.issubset(selectable) or any(
         by_label[label].get("selectable") not in (False, True)
         for label in learned
@@ -303,6 +308,8 @@ def choose(validation, arms_path):
             continue
         candidates.append({
             "label": label,
+            "arm": by_label[label]["arm"],
+            "configured_draft_k": by_label[label]["k"],
             "policy_sha256": by_label[label]["policy_sha256"],
             "domain_margin_percent": margins,
             "worst_domain_margin_percent": min(margins.values()),
@@ -330,6 +337,7 @@ def choose(validation, arms_path):
             FRESH_FULL,
             by_label[FRESH_FULL]["noop_label"],
             BASELINE,
+            f"fixed-k{by_label[chosen['label']]['k']}-d3-c0",
             global_fixed,
             *domain_best_fixed.values(),
         }

@@ -102,10 +102,14 @@ separate sealed commitment.
    The menu contains 21 fixed controls: every K=3/10/20 and
    D=1/2/3/4 combination at C=0, plus three D3 C cutoffs
    measured separately from training offers at each K.
-   It also contains five
-   selectable joint C/K/D candidates, two component diagnostics,
-   and their exact model-running no-op twins. The K-only and C/D-only
-   diagnostics cannot become the selected universal controller.
+   It also contains five joint C/K/D candidates, three fixed-K
+   learned C/D candidates, one K-only diagnostic, and exact
+   model-running no-op twins. The joint and fixed-K C/D candidates
+   are selectable as one universal policy. The K-only arm remains
+   a diagnostic.
+   Each no-op is byte-compared with the fixed D3/C0 control at
+   its own draft K. A selected fixed-K C/D arm carries that
+   same-K control into final.
    Two fresh-only joint ablations compare D/C's last generated token
    with its 4/16-token history windows, then test K's previous-turn
    acceptance feature. The shortest D/C variant still reads the
@@ -190,7 +194,11 @@ setting changes. A bounded final result does not prove optimal
 C/K/D choices for every possible prompt.
 Report the actual K/D/C action counts. If K never varies, the
 result cannot be called adaptive K, even if a learned C/D controller
-improves the global rate.
+improves the global rate. A static K does not turn a qualified
+one-policy throughput and quality win into a no-go when that K
+is the best tested choice across the mixed workload. Report the
+selected arm kind and configured draft K alongside adaptive
+component flags.
 
 At `origin/main` `e3a8402cb9f2d37ef91e7107b6f251cf3ca7d9ef`
 on 2026-09-26, `docs/MODELS.md` names DFlash2 as Qwen3.8's

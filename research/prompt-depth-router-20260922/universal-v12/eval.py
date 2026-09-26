@@ -62,6 +62,10 @@ def save(path, value):
         output.write("\n")
 
 
+def noop_reference(spec):
+    return f"fixed-k{spec['k']}-d3-c0"
+
+
 def current_gpu(meta):
     result = subprocess.check_output(
         [
@@ -205,6 +209,12 @@ def freeze(args):
             }[spec["arm"]]
         ):
             raise ValueError("mixed learned arm lacks exact model-running no-op")
+    for spec in specs:
+        if spec["role"] == "noop" and (
+            noop_reference(spec) not in by_label
+            or by_label[noop_reference(spec)]["role"] != "fixed"
+        ):
+            raise ValueError("mixed no-op lacks matching fixed-K oracle")
     for domain in DOMAINS:
         entries = manifest["groups"][args.phase][domain]
         if len(entries) != COUNTS[args.phase]:
@@ -298,12 +308,12 @@ def qualifier(args, arms):
     engagement = {}
     for domain in DOMAINS:
         prefix = f"qualification-{domain}-0"
-        baseline = args.out / f"{prefix}-{REFERENCE}"
         for turn in range(1, 9):
-            expected = (
-                baseline / f"turn-{turn}.output.ids"
-            ).read_bytes()
             for item in noops:
+                expected = (
+                    args.out / f"{prefix}-{noop_reference(item)}"
+                    / f"turn-{turn}.output.ids"
+                ).read_bytes()
                 got = (
                     args.out / f"{prefix}-{item['label']}"
                     / f"turn-{turn}.output.ids"
@@ -350,6 +360,10 @@ def qualifier(args, arms):
         "byte_identical_noops": [
             item["label"] for item in noops
         ],
+        "noop_reference_controls": {
+            item["label"]: noop_reference(item)
+            for item in noops
+        },
         "policy_engagement": engagement,
     }
 

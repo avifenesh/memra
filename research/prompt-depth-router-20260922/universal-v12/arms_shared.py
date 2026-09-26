@@ -198,17 +198,22 @@ def freeze(models, v11_rows, fresh_rows, fresh_replay,
             arm(noop, "noop", 20, "noop-ckd", 4, *extra),
         ))
     source = "fresh-only"
-    depth = weight(source, "topk20/depth-history.tsv")
-    confidence = weight(source, "topk20/confidence-history.tsv")
-    extra = (
-        f"depth-model={depth}", f"confidence-model={confidence}",
-    )
-    arms.extend((
-        arm("cd-fresh-only", "learned", 20, "joint-cd", 4,
-            *extra, noop_label="cd-noop-fresh-only"),
-        arm("cd-noop-fresh-only", "noop", 20, "noop-cd", 4,
-            *extra),
-    ))
+    for k in (3, 10, 20):
+        depth = weight(source, f"topk{k}/depth-history.tsv")
+        confidence = weight(
+            source, f"topk{k}/confidence-history.tsv",
+        )
+        extra = (
+            f"depth-model={depth}",
+            f"confidence-model={confidence}",
+        )
+        label = f"cd-fresh-k{k}"
+        noop = f"cd-noop-fresh-k{k}"
+        arms.extend((
+            arm(label, "learned", k, "joint-cd", 4,
+                *extra, noop_label=noop, selectable=True),
+            arm(noop, "noop", k, "noop-cd", 4, *extra),
+        ))
     router = weight(source, "ridge-100/topk-prior.tsv")
     extra = (f"topk-model={router}",)
     arms.extend((
@@ -217,7 +222,7 @@ def freeze(models, v11_rows, fresh_rows, fresh_replay,
         arm("k-noop-fresh-only", "noop", 20, "noop-topk", 3,
             *extra),
     ))
-    if len(arms) != 35 or len({item["label"] for item in arms}) != 35:
+    if len(arms) != 39 or len({item["label"] for item in arms}) != 39:
         raise ValueError("mixed validation arm menu differs")
     out.mkdir(exist_ok=False)
     common = {

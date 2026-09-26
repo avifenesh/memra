@@ -82,10 +82,12 @@ def actions(rows, key):
 
 def identity(root, domain, noops):
     for index in range(COUNT):
-        baseline = root / f"validation-{domain}-{index}-{REFERENCE}"
         for turn in range(1, 9):
-            expected = (baseline / f"turn-{turn}.output.ids").read_bytes()
-            for label in noops:
+            for label, reference in noops.items():
+                expected = (
+                    root / f"validation-{domain}-{index}-{reference}"
+                    / f"turn-{turn}.output.ids"
+                ).read_bytes()
                 if (
                     root / f"validation-{domain}-{index}-{label}"
                     / f"turn-{turn}.output.ids"
@@ -98,10 +100,17 @@ def identity(root, domain, noops):
 def report(root, domain, arms, tasks, prose, gpu_uuid):
     by_label = {item["label"]: item for item in arms["arms"]}
     labels = list(by_label)
-    noops = [
-        label for label in labels
+    noops = {
+        label: f"fixed-k{by_label[label]['k']}-d3-c0"
+        for label in labels
         if by_label[label]["role"] == "noop"
-    ]
+    }
+    if any(
+        reference not in by_label
+        or by_label[reference]["role"] != "fixed"
+        for reference in noops.values()
+    ):
+        raise ValueError("mixed no-op lacks fixed-K quality oracle")
     identity(root, domain, noops)
     if domain != "prose":
         graded = {
@@ -245,7 +254,8 @@ def report(root, domain, arms, tasks, prose, gpu_uuid):
     return {
         "gpu_uuid": gpu_uuid,
         "arms": scores, "eligible_fixed": fixed,
-        "byte_identical_noops": noops,
+        "byte_identical_noops": sorted(noops),
+        "noop_reference_controls": noops,
         "comparisons": comparisons,
         **({
             "judge_receipt_sha256": prose["judge_results_manifest_sha256"],

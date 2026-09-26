@@ -56,7 +56,17 @@ class FinalPolicyTest(unittest.TestCase):
             "adaptive_k_observed"
         ] = False
         self.assertEqual(
-            score_final.decide(no_k_switch), "global-no-go",
+            score_final.decide(no_k_switch),
+            "bounded-one-policy-win",
+        )
+        self.assertEqual(
+            score_final.adaptive_components(
+                no_k_switch["observed_behavior"]
+            ),
+            {
+                "k": False, "d": True,
+                "c": True, "all_three": False,
+            },
         )
         code_rate_loss = copy.deepcopy(good)
         code_rate_loss["domains"]["code"][

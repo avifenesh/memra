@@ -168,10 +168,12 @@ def native_rows(root, domain, labels, gpu_uuid):
 
 def noops_identical(root, domain, noops):
     for index in range(COUNT):
-        baseline = root / f"final-{domain}-{index}-{REFERENCE}"
         for turn in range(1, 9):
-            expected = (baseline / f"turn-{turn}.output.ids").read_bytes()
-            for label in noops:
+            for label, reference in noops.items():
+                expected = (
+                    root / f"final-{domain}-{index}-{reference}"
+                    / f"turn-{turn}.output.ids"
+                ).read_bytes()
                 observed = (
                     root / f"final-{domain}-{index}-{label}"
                     / f"turn-{turn}.output.ids"
@@ -312,14 +314,19 @@ def decide(result):
             )
         ):
             return "global-no-go"
-    actions = result["observed_behavior"]
-    if not all(actions[key] for key in (
-        "adaptive_k_observed",
-        "adaptive_d_observed",
-        "adaptive_c_observed",
-    )):
-        return "global-no-go"
     return "bounded-one-policy-win"
+
+
+def adaptive_components(actions):
+    observed = {
+        "k": actions["adaptive_k_observed"],
+        "d": actions["adaptive_d_observed"],
+        "c": actions["adaptive_c_observed"],
+    }
+    return {
+        **observed,
+        "all_three": all(observed.values()),
+    }
 
 
 def score(args):
@@ -370,10 +377,13 @@ def score(args):
     ):
         raise ValueError("final quality or selected arm lineage differs")
     tasks["labels"] = sorted(labels)
-    noops = [
-        item["label"] for item in arms["arms"]
+    noops = {
+        item["label"]: f"fixed-k{item['k']}-d3-c0"
+        for item in arms["arms"]
         if item["role"] == "noop"
-    ]
+    }
+    if not set(noops.values()).issubset(labels):
+        raise ValueError("final no-op lacks same-K fixed oracle")
     native = {
         domain: native_rows(
             args.root, domain, labels, meta["gpu_uuid"],
@@ -420,10 +430,12 @@ def score(args):
         "schema": 1, "phase": "final",
         "scope": "one Qwen C/K/D policy across code, prose and math",
         "selection_sha256": sha(selected_path),
+        "selected_policy": selected["selected_policy"],
         "training_prefix_preflight_status":
         selected["training_prefix_preflight_status"],
         "gpu_uuid": meta["gpu_uuid"],
         "arms_sha256": sha(args.arms),
+        "noop_reference_controls": noops,
         "tasks_quality_sha256": sha(args.tasks),
         "prose_quality_sha256": sha(args.prose),
         "domains": domains,
@@ -491,6 +503,9 @@ def score(args):
             ))
         },
     }
+    result["adaptive_components"] = adaptive_components(
+        result["observed_behavior"]
+    )
     result["status"] = decide(result)
     return result
 
