@@ -1,0 +1,11 @@
+M1-5090-VERDICT arm=mmap-random vs worker16: unscored-regime median_ratio=0.47959152334152333 pairs=2
+M1-5090-VERDICT arm=mmap-normal vs worker16: unscored-regime median_ratio=1.185140253890254 pairs=2
+M1-5090-VERDICT arm=pread16 vs worker16: unscored-regime median_ratio=0.8262367197875167 pairs=2
+M1-5090-VERDICT arm=worker2 vs worker16: unscored-regime median_ratio=0.546563609063609 pairs=2
+M1-5090-VERDICT regime_scored=False contaminated={'worker16': 6, 'mmap-random': 8, 'mmap-normal': 6, 'pread16': 6, 'worker2': 7}
+M1-5090-VERDICT-READGATE(post-hoc) arm=mmap-random vs worker16: unscored-regime median_ratio=0.4779116465863454 pairs=3
+M1-5090-VERDICT-READGATE(post-hoc) arm=mmap-normal vs worker16: unscored-regime median_ratio=1.1663663663663666 pairs=3
+M1-5090-VERDICT-READGATE(post-hoc) arm=pread16 vs worker16: unscored-regime median_ratio=0.8262367197875167 pairs=4
+M1-5090-VERDICT-READGATE(post-hoc) arm=worker2 vs worker16: unscored-regime median_ratio=0.551128818061089 pairs=5
+M1-5090-VERDICT-READGATE(post-hoc) regime_scored=False contaminated={'worker16': 4, 'mmap-random': 5, 'mmap-normal': 4, 'pread16': 4, 'worker2': 4}
+rounds=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10] visits=60 refused=['direct16'] gpu_cotenant_unclean=0
