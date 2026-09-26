@@ -47,6 +47,9 @@ class ProseOrderTest(unittest.TestCase):
             })
             source = []
             answers = []
+            rejected = []
+            responses = judged / "responses"
+            responses.mkdir()
             for turn in range(1, 9):
                 for order in (0, 1):
                     source.append({
@@ -66,13 +69,65 @@ class ProseOrderTest(unittest.TestCase):
                         "output_tokens": 20,
                         "choice": "A+" if order == 0 else "A+",
                     })
+            for index, answer in enumerate(answers):
+                if index == 0:
+                    bad = {
+                        "prompt_sha256": answer["prompt_sha256"],
+                        "request_id": "rejected-test-request",
+                        "body": {
+                            "usage": {
+                                "inputTokens": 100,
+                                "outputTokens": 20,
+                            },
+                            "stopReason": "end_turn",
+                            "output": {
+                                "message": {
+                                    "content": [{"text": "not json"}],
+                                },
+                            },
+                        },
+                    }
+                    bad_path = responses / "00000.attempt-1.json"
+                    write(bad_path, bad)
+                    rejected.append({
+                        "packet_index": 0,
+                        "attempt": 1,
+                        "prompt_sha256": answer["prompt_sha256"],
+                        "provider_response_id": bad["request_id"],
+                        "input_tokens": 100,
+                        "output_tokens": 20,
+                        "raw_response_sha256": score_prose.sha(bad_path),
+                        "reason": "judge did not return strict JSON",
+                    })
+                answer["attempt"] = 2 if index == 0 else 1
+                raw = {
+                    "prompt_sha256": answer["prompt_sha256"],
+                    "request_id": answer["provider_response_id"],
+                    "body": {
+                        "usage": {
+                            "inputTokens": answer["input_tokens"],
+                            "outputTokens": answer["output_tokens"],
+                        },
+                    },
+                }
+                raw_path = responses / (
+                    f"{index:05d}.attempt-{answer['attempt']}.json"
+                )
+                write(raw_path, raw)
+                answer["raw_response_sha256"] = score_prose.sha(
+                    raw_path
+                )
             packet_path = packets / "packets.jsonl"
             result_path = judged / "results.jsonl"
+            rejected_path = judged / "rejected.jsonl"
             packet_path.write_text("".join(
                 json.dumps(item) + "\n" for item in source
             ))
             result_path.write_text("".join(
                 json.dumps(item) + "\n" for item in answers
+            ))
+            rejected_path.write_text("".join(
+                json.dumps(item) + "\n" for item in rejected
             ))
             write(packets / "manifest.json", {
                 "schema": 1, "phase": "validation",
@@ -88,6 +143,8 @@ class ProseOrderTest(unittest.TestCase):
                 "packets_sha256": score_prose.sha(packet_path),
                 "config_sha256": score_prose.sha(config),
                 "results_sha256": score_prose.sha(result_path),
+                "rejected_sha256": score_prose.sha(rejected_path),
+                "rejected_attempts": 1,
                 "model_id": "pinned-test-judge",
                 "pricing_sha256": score_prose.sha(
                     judged / "pricing.json"
@@ -96,11 +153,15 @@ class ProseOrderTest(unittest.TestCase):
                     judged / "profile.json"
                 ),
                 "prior_judge_manifest_sha256": None,
-                "cumulative_usage": {
-                    "input_tokens": 1600,
-                    "output_tokens": 320,
+                "usage": {
+                    "input_tokens": 1700,
+                    "output_tokens": 340,
                 },
-                "cumulative_quoted_spend_usd": 0.00192,
+                "cumulative_usage": {
+                    "input_tokens": 1700,
+                    "output_tokens": 340,
+                },
+                "cumulative_quoted_spend_usd": 0.00204,
             })
             result = score_prose.score(packets, judged, config)
             comparison = result["comparisons"]["learned::vs::fixed"]
@@ -108,6 +169,9 @@ class ProseOrderTest(unittest.TestCase):
             self.assertEqual(comparison["ties"], 8)
             self.assertEqual(comparison["reverse_order_disagreements"], 8)
             self.assertEqual(comparison["point_win_fraction"], 0.5)
+            self.assertEqual(
+                result["judge_usage"]["input_tokens"], 1700,
+            )
             answers[0]["model_id"] = "unmatched-judge"
             result_path.write_text("".join(
                 json.dumps(item) + "\n" for item in answers
@@ -117,6 +181,8 @@ class ProseOrderTest(unittest.TestCase):
                 "packets_sha256": score_prose.sha(packet_path),
                 "config_sha256": score_prose.sha(config),
                 "results_sha256": score_prose.sha(result_path),
+                "rejected_sha256": score_prose.sha(rejected_path),
+                "rejected_attempts": 1,
                 "model_id": "pinned-test-judge",
                 "pricing_sha256": score_prose.sha(
                     judged / "pricing.json"
@@ -125,11 +191,15 @@ class ProseOrderTest(unittest.TestCase):
                     judged / "profile.json"
                 ),
                 "prior_judge_manifest_sha256": None,
-                "cumulative_usage": {
-                    "input_tokens": 1600,
-                    "output_tokens": 320,
+                "usage": {
+                    "input_tokens": 1700,
+                    "output_tokens": 340,
                 },
-                "cumulative_quoted_spend_usd": 0.00192,
+                "cumulative_usage": {
+                    "input_tokens": 1700,
+                    "output_tokens": 340,
+                },
+                "cumulative_quoted_spend_usd": 0.00204,
             })
             with self.assertRaises(ValueError):
                 score_prose.score(packets, judged, config)

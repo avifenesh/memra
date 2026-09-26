@@ -183,7 +183,10 @@ template, parsing rule and budget are pinned in the private
 `judge-config.json` with SHA-256
 `624cbb8478326ec7662d6e5aaa959e713cb3bf0330128dd42a7e0dc9b8a05bdd`.
 The private judge custody pins its model, price source and cumulative
-spend cap. The access pilot verifies the model and template before
+spend cap. At most three format attempts are allowed per packet;
+every provider response is sealed and its usage counts toward that
+cap, while only a parseable response casts a quality vote. The access
+pilot verifies the model and template before
 the native battery starts. A disagreement between
 reversed judgments counts as a tie. The prose comparison with its
 validation-best fixed arm

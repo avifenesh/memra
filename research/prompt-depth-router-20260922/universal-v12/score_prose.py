@@ -37,6 +37,19 @@ def jsonl(path):
     ]
 
 
+def raw_receipt(path, item):
+    raw = json.loads(path.read_text())
+    usage = raw["body"]["usage"]
+    if (
+        sha(path) != item["raw_response_sha256"]
+        or raw["prompt_sha256"] != item["prompt_sha256"]
+        or raw["request_id"] != item["provider_response_id"]
+        or usage["inputTokens"] != item["input_tokens"]
+        or usage["outputTokens"] != item["output_tokens"]
+    ):
+        raise ValueError("prose judge raw attempt differs")
+
+
 def orientation(choice, candidate_in_a):
     if choice == "A=B":
         return 0
@@ -88,6 +101,7 @@ def score(packets_dir, results_dir, config_path,
     config = json.loads(config_path.read_text())
     packet_path = packets_dir / "packets.jsonl"
     result_path = results_dir / "results.jsonl"
+    rejected_path = results_dir / "rejected.jsonl"
     if (
         packets_manifest["schema"] != 1
         or packets_manifest["template_sha256"] != TEMPLATE_SHA
@@ -101,6 +115,8 @@ def score(packets_dir, results_dir, config_path,
         != sha(results_dir / "pricing.json")
         or results_manifest["profile_sha256"]
         != sha(results_dir / "profile.json")
+        or results_manifest["rejected_sha256"]
+        != sha(rejected_path)
         or profile["model_id"] != config["model_id"]
         or profile["status"] != "ACTIVE"
         or not profile["model_revision_ids"]
@@ -136,16 +152,43 @@ def score(packets_dir, results_dir, config_path,
         raise ValueError("prose judgment lacks pinned prompt/model lineage")
     packets = jsonl(packet_path)
     results = jsonl(result_path)
+    rejected = jsonl(rejected_path)
     if len(packets) != packets_manifest["packet_count"] or (
         len(results) != len(packets)
-    ):
+    ) or results_manifest["rejected_attempts"] != len(rejected):
         raise ValueError("prose judgment inventory is incomplete")
     grouped = defaultdict(dict)
     usage = {"input_tokens": 0, "output_tokens": 0}
     response_ids = set()
+    rejected_by_index = defaultdict(list)
+    expected_raw = set()
+    for item in rejected:
+        index = item["packet_index"]
+        attempt = len(rejected_by_index[index]) + 1
+        if (
+            index < 0 or index >= len(packets)
+            or item["attempt"] != attempt
+            or attempt > 2
+            or item["prompt_sha256"]
+            != packets[index]["prompt_sha256"]
+            or item["provider_response_id"] in response_ids
+        ):
+            raise ValueError("prose judge rejected attempt differs")
+        response_ids.add(item["provider_response_id"])
+        raw = results_dir / "responses" / (
+            f"{index:05d}.attempt-{attempt}.json"
+        )
+        raw_receipt(raw, item)
+        expected_raw.add(raw.name)
+        rejected_by_index[index].append(item)
+        usage["input_tokens"] += item["input_tokens"]
+        usage["output_tokens"] += item["output_tokens"]
     for index, (packet, result) in enumerate(zip(packets, results)):
+        attempt = len(rejected_by_index[index]) + 1
         if (
             result["packet_index"] != index
+            or result["attempt"] != attempt
+            or attempt > 3
             or result["prompt_sha256"] != packet["prompt_sha256"]
             or result["model_id"] != config["model_id"]
             or result["choice"] not in CHOICES
@@ -158,6 +201,11 @@ def score(packets_dir, results_dir, config_path,
         ):
             raise ValueError("prose judgment differs from frozen packet")
         response_ids.add(result["provider_response_id"])
+        raw = results_dir / "responses" / (
+            f"{index:05d}.attempt-{attempt}.json"
+        )
+        raw_receipt(raw, result)
+        expected_raw.add(raw.name)
         usage["input_tokens"] += result["input_tokens"]
         usage["output_tokens"] += result["output_tokens"]
         key = (
@@ -170,6 +218,13 @@ def score(packets_dir, results_dir, config_path,
             result["choice"],
             packet["response_a"] == packet["candidate"],
         )
+    actual_raw = {
+        path.name for path in (results_dir / "responses").iterdir()
+    }
+    if actual_raw != expected_raw or (
+        results_manifest["usage"] != usage
+    ):
+        raise ValueError("prose judge billed attempt inventory differs")
     projected_usd = quoted_usd(
         price, usage["input_tokens"], usage["output_tokens"],
     )
