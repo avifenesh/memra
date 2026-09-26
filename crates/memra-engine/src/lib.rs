@@ -109,6 +109,7 @@ pub mod kda;
 pub mod mla;
 pub mod mla_ffi;
 mod model_memory;
+
 #[cfg(test)]
 mod model_memory_fixture;
 /// Pair-only GPU tests (the exclusively locked development pair) announce an explicit skip on
@@ -7437,6 +7438,21 @@ impl Engine {
         Ok(())
     }
 
+    /// WP-A design B1's launch shape (`research/spill-a-20260919/DAY59.md` section 7; integ67 review): the
+    /// grid's y dimension holds one row per item plus the set row, and CUDA caps `gridDim.y` at 65535. More
+    /// items than that is refused with the count named, before any device work, never a launch failure
+    /// after the table upload.
+    pub fn copy_batch_items_rows(n: usize) -> Result<u32, String> {
+        const GRID_Y_MAX: usize = 65535;
+        if n + 1 > GRID_Y_MAX {
+            return Err(format!(
+                "batched copy of {n} items refused: {} grid rows exceed CUDA's gridDim.y limit of {GRID_Y_MAX}",
+                n + 1
+            ));
+        }
+        Ok((n + 1) as u32)
+    }
+
     /// WP-A design B1 (`research/spill-a-20260919/DAY59.md` section 7): copy every `(src, dst, bytes)`
     /// item and write every `(dst, value)` i32 set in ONE launch on the owner stream. The pointers are raw
     /// device addresses the caller holds live (with their cudarc guards) across this call; the items must
@@ -7452,6 +7468,8 @@ impl Engine {
             return Ok(());
         }
         let (n, m) = (items.len(), sets.len());
+        // Fail closed before any device work: the grid's y dimension is n + 1 rows.
+        let rows = Self::copy_batch_items_rows(n)?;
         let ni = i32::try_from(n).map_err(|_| "batched copy item count exceeds i32")?;
         let mi = i32::try_from(m).map_err(|_| "batched copy set count exceeds i32")?;
         let mut table = Vec::with_capacity(3 * n + 2 * m);
@@ -7466,7 +7484,7 @@ impl Engine {
         let chunks = (max_bytes / 16).max(1).div_ceil(256).min(64) as u32;
         let f = self.func("copy_batch_items_u8");
         let cfg = LaunchConfig {
-            grid_dim: (chunks, n as u32 + 1, 1),
+            grid_dim: (chunks, rows, 1),
             block_dim: (256, 1, 1),
             shared_mem_bytes: 0,
         };
@@ -35844,6 +35862,28 @@ mod fused_gate_bounds_tests {
     /// `compute-sanitizer --tool memcheck` on the half-width case reported invalid `__global__`
     /// reads of size 4 in `q_gate_split_f32`; with the guard in place the same run is clean and
     /// the call returns `Err`. Receipt in the lane report.
+    /// integ67 review (B1): more items than `gridDim.y` can hold is refused with the count named,
+    /// before any device work; the largest legal batch and today's shapes pass.
+    #[test]
+    fn copy_batch_items_refuses_more_rows_than_the_grid_holds() {
+        assert_eq!(Engine::copy_batch_items_rows(0), Ok(1));
+        assert_eq!(
+            Engine::copy_batch_items_rows(128),
+            Ok(129),
+            "the 27B's snapshot"
+        );
+        assert_eq!(
+            Engine::copy_batch_items_rows(65534),
+            Ok(65535),
+            "the largest legal batch"
+        );
+        let err = Engine::copy_batch_items_rows(65535).unwrap_err();
+        assert!(
+            err.contains("65535 items refused") && err.contains("65536 grid rows"),
+            "{err}"
+        );
+    }
+
     /// WP-A design B1 (`research/spill-a-20260919/DAY59.md` section 7, cell (a1)): the batched
     /// item copy is the memcpy program. Items at 16-byte-aligned and unaligned addresses, sizes 0,
     /// 1, 15, 17, 4096 + 3 and 4 MiB + 5, plus i32 sets: each destination range equals its source,
