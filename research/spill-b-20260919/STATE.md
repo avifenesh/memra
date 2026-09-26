@@ -1,4 +1,10 @@
 # WP-B checkpoint 2026-09-26 (NEED TARGET CARD, thirteenth sitting): DAY49 addendum C (the batch reclaim's VMM reap,
+- 17:48Z: queue-k stopped by the lane in an idle wait (DAY39B's boots after v2-G2 went unrun: v2-L64's 7200 s idle
+  wait ran out at 17:38Z and day39-run.sh stops the call there). queue-m (pid 2617798) runs queue-k's items 2 to 9 with
+  the same specs and readers; a spec that did not start is asked again (up to eight times), one that started never is.
+  The card has been held back to back by another lane's M1 queue since about 15:48Z; chain-r5's A2 collector has retried
+  the lock every 120 s since 16:35Z and records `collector.exit=1` at its 61st try (about 18:37Z) if it stays held; A2
+  would then be asked again under a new label (a not-run is not a result).
 `95d35c383`) and its i-vmm cell ready for the target card (`pro-single-b-sitting13.sh`, about 45 min, can follow the
 twelfth on BOX35); O1's 5090 rerun (r5) and queue-l running locally; the ninth sitting still on BOX33
 # WP-B checkpoint 2026-09-26 (O14 queued): the eleventh and twelfth sittings queued on BOX35 (the lead's /root/b11-chain.sh, then /root/b12-chain.sh behind it; receipts /root/spill-receipts/b-day45b, b-day47, b-day49); the ninth sitting still on BOX33
