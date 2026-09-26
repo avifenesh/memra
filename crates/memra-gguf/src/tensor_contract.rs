@@ -1469,6 +1469,29 @@ fn add_full_attention(
             TensorTransform::Identity,
         );
     }
+    if attention
+        .mimo_math
+        .is_some_and(|math| math.sink == TensorPresence::Required)
+    {
+        if builder.dialect != CheckpointDialect::HfSafetensors {
+            return Err(TensorContractError::UnsupportedPlanOperation {
+                operation: "MiMo attention sink without safetensors",
+            });
+        }
+        builder.requirements.push(TensorRequirement {
+            id: layer_id(index, LayerTensor::AttentionSink),
+            names: vec![format!(
+                "model.layers.{index}.self_attn.attention_sink_bias"
+            )],
+            match_mode: TensorMatch::OneOf,
+            shape: vec![attention.query_heads as u64],
+            owner: TensorOwner::Layer(index),
+            transform: TensorTransform::Identity,
+            quant: QuantConstraint::ExactFloat(FloatType::Bf16),
+            auxiliaries: None,
+            required: true,
+        });
+    }
     Ok(())
 }
 
@@ -2778,6 +2801,47 @@ mod tests {
                         .any(|req| req.id == layer_id(layer, separate))
                 );
             }
+        }
+    }
+
+    #[test]
+    fn mimo_hf_contract_requires_only_sliding_layer_sinks() {
+        let config = ModelConfig::from_hf(&HfConfig::parse(include_str!(
+            "model_packs/mimo_v2/fixtures/config.json"
+        )));
+        let plan = ModelPlan::compile(&config).unwrap();
+        let contract = TensorContract::for_plan(
+            &plan,
+            CheckpointDialect::HfSafetensors,
+            ContractOptions::default(),
+        )
+        .unwrap();
+        let sinks: Vec<_> = contract
+            .requirements
+            .iter()
+            .filter_map(|requirement| match &requirement.id {
+                TensorId::Layer {
+                    index,
+                    tensor: LayerTensor::AttentionSink,
+                } => Some((*index, requirement)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(sinks.len(), 39);
+        for (layer, requirement) in sinks {
+            assert!(![0, 5, 11, 17, 23, 29, 35, 41, 47].contains(&layer));
+            assert_eq!(
+                requirement.names,
+                vec![format!(
+                    "model.layers.{layer}.self_attn.attention_sink_bias"
+                )]
+            );
+            assert_eq!(requirement.shape, vec![64]);
+            assert_eq!(
+                requirement.quant,
+                QuantConstraint::ExactFloat(FloatType::Bf16)
+            );
+            assert!(requirement.required);
         }
     }
 
