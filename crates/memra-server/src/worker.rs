@@ -11402,6 +11402,33 @@ struct PendingContractPromote {
     /// WP-A day 34 (`DAY34.md` design K): `Some` when the KV items' completion checksums are on the
     /// hash helper (the off-tick route); the settle takes the reply before its completion step.
     helper_sums: Option<PendingSources>,
+    /// WP-A day 64 (`DAY64.md` step 1, log only): what the last `Pending` answer waited on
+    /// (`sources`, `copies`, `receipt`, joined by `+`); printed on the promote's timeline.
+    waiting: String,
+}
+
+/// WP-A day 64 (step 1, log only): the requirements a pending promote still waits on: the helper's
+/// source checksums, the batch's copies, the spans' destination-digest receipt.
+fn host_promote_waiting(
+    t: &memra_engine::tier_transfer::CudaTransfers,
+    ticket: &memra_engine::cache::tiered::TransferTicket,
+    sources_pending: bool,
+) -> String {
+    let (copies, receipt) = t.h2d_landing_parts(ticket).unwrap_or((false, false));
+    let mut w = Vec::new();
+    if sources_pending {
+        w.push("sources");
+    }
+    if !copies {
+        w.push("copies");
+    } else if !receipt {
+        w.push("receipt");
+    }
+    if w.is_empty() {
+        "none".into()
+    } else {
+        w.join("+")
+    }
 }
 
 /// WP-A day 34: the hash helper's source-checksum job of one promote: how many views went, when,
@@ -13420,6 +13447,7 @@ fn host_kv_planes_submit_promote(
         submitted: Instant::now(),
         spans: Vec::new(),
         helper_sums: None,
+        waiting: String::new(),
     })
 }
 
@@ -13448,6 +13476,7 @@ fn host_kv_planes_settle_promote(
         submitted,
         spans,
         mut helper_sums,
+        waiting: _,
     } = pending;
     let Some(transfers) = &tier.transfers else {
         return Err(Latched(
@@ -13491,6 +13520,7 @@ fn host_kv_planes_settle_promote(
                 p.landed = Some((r.bytes, r.helper_ms));
             }
             Ok(None) if wait == ContractWait::Poll && p.handed.elapsed() < HOST_HASH_DEADLINE => {
+                let waiting = host_promote_waiting(&t, &ticket, true);
                 return Ok(PromoteSettle::Pending(PendingContractPromote {
                     ticket,
                     producer,
@@ -13503,6 +13533,7 @@ fn host_kv_planes_settle_promote(
                     submitted,
                     spans,
                     helper_sums,
+                    waiting,
                 }));
             }
             Ok(None) => {
@@ -13545,6 +13576,7 @@ fn host_kv_planes_settle_promote(
         }
     };
     if wait == ContractWait::Poll && !completion.producer_done {
+        let waiting = host_promote_waiting(&t, &ticket, false);
         return Ok(PromoteSettle::Pending(PendingContractPromote {
             ticket,
             producer,
@@ -13557,6 +13589,7 @@ fn host_kv_planes_settle_promote(
             submitted,
             spans,
             helper_sums,
+            waiting,
         }));
     }
     // 6b. Rule 3 (WP-A day 19, `memra_tier::conformance::h2d_reader_fence`, the at-settle install):
@@ -17109,9 +17142,10 @@ fn host_promote_settle_with(
     };
     // WP-A day 33 (log only): this settle step on the promote's timeline.
     let outcome = match &settled {
-        Ok(PromoteSettle::Pending(_)) => "pending",
-        Ok(PromoteSettle::Done(..)) => "complete",
-        Err(_) => "failed",
+        // WP-A day 64 (step 1, log only): and what it still waits on.
+        Ok(PromoteSettle::Pending(c)) => format!("pending on {}", c.waiting),
+        Ok(PromoteSettle::Done(..)) => "complete".to_string(),
+        Err(_) => "failed".to_string(),
     };
     let step = host_promote_mark(host, pending.t0, Instant::now());
     pending.timeline.push(format!(
@@ -48638,6 +48672,7 @@ mod tests {
             submitted: std::time::Instant::now(),
             spans: Vec::new(),
             helper_sums: None,
+            waiting: String::new(),
         };
         host.promoting = Some(super::PendingPromote {
             pool_key: pool_key.clone(),
@@ -50498,6 +50533,33 @@ mod tests {
             .unwrap()..];
         let disable = &disable[..disable.find("\n    }\n").unwrap()];
         assert!(disable.contains("let (n, bytes) = pool.close();"));
+    }
+
+    /// WP-A day 64 (`DAY64.md` step 1; CPU census): the promote's waiting labels are log only. The
+    /// engine's parts query is read only by `host_promote_waiting`; `waiting` is written only at the
+    /// two `Pending` answers and read only by the timeline's outcome; no decision reads either.
+    #[test]
+    fn day64_the_promote_waiting_labels_are_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert_eq!(production.matches("h2d_landing_parts(").count(), 1);
+        assert_eq!(
+            production
+                .matches("host_promote_waiting(&t, &ticket, ")
+                .count(),
+            2
+        );
+        assert_eq!(
+            production.matches("c.waiting").count(),
+            1,
+            "the timeline's outcome only"
+        );
+        assert!(!production.contains("if waiting") && !production.contains("waiting =="));
+        assert!(
+            production.contains(
+                "Ok(PromoteSettle::Pending(c)) => format!(\"pending on {}\", c.waiting),"
+            )
+        );
     }
 
     /// WP-A day 66 (`DAY66.md`): a stray timed call of any kind before a scoped call never reaches

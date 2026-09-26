@@ -3285,6 +3285,30 @@ impl CudaTransfers {
     /// (`install_consumer_wait`; rule 3 of `h2d_span_batch`: landing is not a fence),
     /// `Quarantined` after a span error, `AlreadyReleased` on a second take, `Unsupported` for a
     /// batch that carries no H2D spans. The batch cannot retire until its spans are taken.
+    /// WP-A day 64 (`DAY64.md` step 1, log only): which parts of an H2D batch's landing have been
+    /// observed, read from their events without changing any state: (the items' and spans' copies,
+    /// the spans' destination-digest receipt; `true` where there is none). No decision reads it.
+    pub fn h2d_landing_parts(&self, ticket: &TransferTicket) -> Result<(bool, bool)> {
+        self.check_thread()?;
+        let e = self.entries.get(ticket).ok_or(Error::UnknownTicket)?;
+        let done = |ev: Option<&CudaEvent>| ev.ok_or(Error::Quarantined).and_then(event_done);
+        let mut copies = true;
+        for item in e.items.iter().flatten() {
+            copies &= done(item.event.as_ref())?;
+        }
+        let mut receipt = true;
+        if let Some(b) = &e.h2d_spans
+            && !b.landed
+        {
+            for (_, event) in &b.slots {
+                copies &= done(event.as_ref())?;
+            }
+            if let Some(r) = &b.receipt {
+                receipt = done(r.event.as_ref())?;
+            }
+        }
+        Ok((copies, receipt))
+    }
     pub fn take_h2d_spans(&mut self, ticket: &TransferTicket) -> Result<Vec<LandedH2dSpan>> {
         self.progress(ticket)?;
         let e = self.entries.get_mut(ticket).unwrap();
