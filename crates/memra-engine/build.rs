@@ -521,6 +521,8 @@ fn main() {
             "cu/mimo_mixed_attn.cu",
             // Source-inspection NVFP4 cache row codec.
             "cu/mimo_kv_nvfp4.cu",
+            // Source BF16 speech-table gather for the MiMo audio patch encoder.
+            "cu/mimo_audio_embed.cu",
             // Small-message cross-rank all-reduce for TP decode (lane/tp-allreduce-20260906).
             // Portable CUDA C; peer stores plus a bounded flag wait, no oracle to match, so it
             // takes the default flags rather than dsv4_gpu.cu's -fmad=false.

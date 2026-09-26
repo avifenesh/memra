@@ -28,6 +28,7 @@ pub struct MiMoAudioPatchPlan {
     pub local_layers: usize,
     pub local_heads: usize,
     pub local_head_dim: usize,
+    pub local_intermediate: usize,
     pub local_full_attention: bool,
     pub local_rope_theta: f32,
     pub projection_input: usize,
@@ -52,6 +53,7 @@ pub fn pinned_patch_plan(config: &ModelConfig) -> Result<MiMoAudioPatchPlan, &'s
         local_layers: 6,
         local_heads: 16,
         local_head_dim: 64,
+        local_intermediate: 4_096,
         local_full_attention: true,
         local_rope_theta: 640_000.0,
         projection_input: 4_096,
@@ -190,6 +192,7 @@ mod tests {
         assert_eq!(plan.local_layers, 6);
         assert_eq!(plan.local_heads, 16);
         assert_eq!(plan.local_head_dim, 64);
+        assert_eq!(plan.local_intermediate, 4_096);
         assert!(plan.local_full_attention);
         assert_eq!(plan.local_rope_theta.to_bits(), 640_000.0f32.to_bits());
         assert_eq!(plan.projection_input, 4_096);
