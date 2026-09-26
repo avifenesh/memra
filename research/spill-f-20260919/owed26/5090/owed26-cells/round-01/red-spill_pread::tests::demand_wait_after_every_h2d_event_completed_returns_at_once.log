@@ -1,0 +1,18 @@
+
+running 1 test
+[spill-worker] WARNING: effective depth 2 < 6; grouped current+next overlap is degraded; continuing with projection concurrency and mmap fallback
+[spill-pread] enabled: depth=2 buffer_bytes=1024 payload_capacity=1024 total_pinned_bytes=2048 (bounded worker prefetch, caller-thread compute-stream H2D, mmap error fallback)
+
+thread 'spill_pread::tests::demand_wait_after_every_h2d_event_completed_returns_at_once' (3160927) panicked at crates/memra-engine/src/spill_pread.rs:1967:9:
+completed H2D events waited 30.000136012s
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[spill-pread] reads=2 bytes=128 errors=0 short_reads=0 fallbacks=0 buffer_waits=2 ring_full=0 overread_bytes=0 worker_read_ns=27439 demand_read_ns=0 wait_ns=30000174954 h2d_submits=2 mapped_serves=0 demand_waits=0 demand_wait_ns=0 prefetch_cancels=0 demand_wait_timeouts=0
+test spill_pread::tests::demand_wait_after_every_h2d_event_completed_returns_at_once ... FAILED
+
+failures:
+
+failures:
+    spill_pread::tests::demand_wait_after_every_h2d_event_completed_returns_at_once
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 627 filtered out; finished in 30.16s
+

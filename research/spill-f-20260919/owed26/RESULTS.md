@@ -21,10 +21,18 @@ cell on; recorded cells got post-hoc per-visit summaries (`visits-gpu.json`).
 - Serving-shape check on that build FAILED (`5090/owed26-serve-attempt1`): `worker2` generated
   tokens equal to the oracle at 0.65 tok/s and stalled; stopped at 729.6 s. Cause: a wait with a
   free buffer and nothing in flight still blocked for the 30 s bound.
-- Correction (next commit after e5d899500): return at once in that case and after a reap that freed
-  a buffer; cap each completion wait at 50 ms. Two red-arm cells run on the e5d899500 build (each must
-  take the 30 s) and on the corrected build (each within 1 s). Results and the rerun of the
-  serving-shape check land in `5090/owed26-cells` and `5090/owed26-serve`.
+- Correction `50e1cf3f6` (build commit in `build/commit.txt`): return at once with a free buffer and
+  nothing in flight or after a reap that freed one; cap each completion wait at 50 ms. Red arm
+  (`5090/owed26-cells`, the e5d899500 build with only the two cells added): both failed as
+  predicted, `a free buffer with nothing in flight waited 30.000227536s` and
+  `completed H2D events waited 30.000136012s`. Green: all seven pool GPU cells pass on the
+  corrected build.
+- Serving-shape check on the corrected build (`5090/owed26-serve`): `OWED26-SERVE-CHECK PASS
+  visits=6`. Every visit: zero fallbacks, zero demand-wait timeouts, tokens equal the oracle.
+  Unscored visit rates, capped scope, shared rig: worker2 8.29 and 7.68 tok/s (5,774 and 7,406
+  demand waits, 4.2 s and 5.6 s waiting), worker16 15.14 and 14.68 (1,930 and 1,843 waits),
+  bypass-mapped 10.43 and 10.19 (4,672 and 3,979 waits). `prefetch_cancels` was 0 in every visit.
+- The OWED 17 cell and both PRO sittings use this build (`build/`).
 
 ## G3, census (done)
 
