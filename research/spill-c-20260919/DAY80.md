@@ -83,3 +83,106 @@ Ultra 9 285K host, then on a Ryzen 9 9950X host, each with one RTX PRO 6000 Blac
 container, and at least 98 GiB `MemFree` when `regpool` starts (after the page-cache eviction of unused files; the
 driver runs `regtime` first, which needs no eviction). Where a 9950X host cannot give 98 GiB, `regpool` reads `not_run`
 there and `regtime` still reads. Expected: the build about 5 minutes, `regtime` about 8, `regpool` about 30.
+
+## 2. The 285K half (BOX37, a Core Ultra 9 285K, run by the lead as registered; `pro-single-day80-box37-285k/`)
+
+BOX37: one RTX PRO 6000 Blackwell Workstation Edition, 249 GB, driver 580.173.02; the page-cache eviction of unused
+files before the cells (`MemFree` 206 GiB at `regpool`'s start). `D80_BUILDS="p80=57086efc8" D80_RIG=box37-285k bash
+.../day80-box.sh` on the tree `f318def14`, 14:00Z to `box done 2026-09-26T14:42:30Z`. Receipts: 281 of 281 `OK` against
+the box manifest (re-checked), `run-gen-p80` by hash. Regimes: `regtime` 36 to 47 C, SM median 2610 MHz, N=1154;
+`regpool` 35 to 44 C, N=8283. Verbatim:
+
+`regtime/reading.log`:
+- `DAY80 host demand sequence d sha256 4bdc2610c3534e42`, `DAY80 host demand sequence dr sha256 4bdc2610c3534e42`
+- `DAY80 REGTIME CHECKS rig=box37-285k runs=30 integrity=ok`
+- `DAY80 ADMISSIBILITY rig=box37-285k ceiling=0.005 max_iqr_gen=0.0012 max_iqr_window=0.0013 failing=[] -> admissible`
+- `DAY80 gen-only decode medians (N=10 each): ref=0.311 d=0.315 dr=0.315`
+- `DAY80 STEP dr_vs_d gen-only decode: pooled=+0.0000 o1=+0.0000 o2=-0.0010 noise=0.0012 -> flat`
+- `DAY80 STEP dr_vs_d steady window: pooled=+0.0000 o1=+0.0010 o2=-0.0010 noise=0.0013 -> flat`
+- `DAY80 DOOR dr_vs_ref gen-only decode: pooled=+0.0035 o1=+0.0040 o2=+0.0030 noise=0.0010 -> loses`
+- `DAY80 DOOR dr_vs_ref steady window: pooled=+0.0005 o1=+0.0010 o2=+0.0000 noise=0.0010 -> matches`
+- `DAY80 REGTIME VERDICT rig=box37-285k integrity=ok dr=flat vs_ref=loses (window: dr=flat vs_ref=matches)`
+
+`regpool/reading.log`:
+- `DAY80 REGPOOL CHECKS rig=box37-285k runs=24 state=ns_per_step integrity=ok`
+- `DAY80 ARM rig=box37-285k refi: fail_heavy=0 of 8 slow=0 of 8 compacted=3 of 8 window_ns_per_step median=1.055 gen median=0.315 window median=0.286`
+- `DAY80 ARM rig=box37-285k di: fail_heavy=6 of 8 slow=5 of 8 compacted=7 of 8 window_ns_per_step median=1.456 gen median=0.360 window median=0.318`
+- `DAY80 ARM rig=box37-285k dri: fail_heavy=0 of 8 slow=0 of 8 compacted=0 of 8 window_ns_per_step median=1.055 gen median=0.316 window median=0.287`
+- `DAY80 REGPOOL VERDICT rig=box37-285k integrity=ok -> registered_clears (fail_heavy: di 6 of 8, dri 0 of 8, refi 0 of 8; slow: dri 0 of 8)`
+
+**Read as registered: `registered_clears` and `dr=flat`.** Under the same fragmentation, the door with today's pool
+had failing compaction in 6 of 8 runs and was slow in 5 (1.41 to 1.67 ns per chain step against 1.055); with the
+registered pool no run had any compaction at all and every run read 1.054 to 1.063, the same as REF. Its pool is a
+15,055,928 kB `rw-p [anon]` mapping in the census, where today's is the `rw-s /dev/zero (deleted)` one. And it costs
+the door nothing in the normal regime: DR against D is `flat` on both measures with the same host demand sequence
+(0.315 s gen-only, 0.286 window). Under fragmentation it also gives back the time the slow state took: DR+I's gen-only
+median 0.316 against D+I's 0.360. The door against REF is this host's usual reading (`loses` gen-only by 3.5 ms over
+32 tokens, `matches` the window), unchanged by the pool.
+
+## 2a. The local check on the development host's RTX 5090 (under its lock; `day80-cpu/gpu-check.log`)
+
+The door and the door with `--expert-bank-pool-registered`, 256 generated tokens each: both exit 0 with `MATCH` and the
+same tape; the registered run's pool line ends ` registered`; the page census of each run's own process shows the pool
+as `rw-s /dev/zero (deleted)` for today's pool and `rw-p [anon]` (15,055,924 kB resident) for the registered one; the
+decode times are the same (2.789 s and 2.820 s for 256 tokens, one run each).
+
+## 2b. The RTX 5090's `regtime` (queue v15; `rtx5090-day80/regtime/`)
+
+Verbatim: `DAY80 ADMISSIBILITY rig=rtx5090 ... -> inadmissible` (every arm above the ceiling; the card ran 64 to 85 C
+with other lanes' work between holds), `DAY80 REGTIME VERDICT rig=rtx5090 integrity=ok -> void (inadmissible) [as read:
+dr=flat vs_ref=matches (window: dr=flat vs_ref=matches)]`. Decides nothing; the same host demand sequence held, and as
+read DR is not slower than D (0.382 against 0.383 gen-only, 0.330 against 0.334 window).
+
+## 3. The 9950X half, by section 1, and one reading added before it runs
+
+Lead: no RTX PRO 6000 Workstation offer with a 9950X and more than 123 GB is on the market, and on 123 GB `regpool`
+cannot reach 98 GiB `MemFree` with the 35B cached (about 93 GiB at best). By section 1 ("or, where a 9950X host cannot
+give 98 GiB `MemFree`, `regpool` `not_run` there and its `regtime` read with any natural slow boots it shows"), a 123
+GB 9950X host is a valid 9950X half: the driver runs `regtime`, then `regpool` reads `not_run`, and `regpool` on a 9950X
+is not owed by this registration. The 98 GiB floor is `DAY74.md` section 4's and no other way to meet it was
+registered; it does not move.
+
+**Registered now, before the 9950X half runs: how "any natural slow boots it shows" is read.** A 9950X host can show the
+door's natural slow boots (BOX15's machine did in every door arm, `DAY64.md` section 4), and then the admissibility
+clause voids `regtime`'s step and door readings (a bimodal D arm spreads past 0.005 s), as the clause intends. So
+`day80-regtime-read.py` gains one reading and one verdict line, the same on every host: per door arm, the runs slower
+than REF's median gen-only by more than 0.030 s (DAY64's and DAY70's slow mark); `DAY80 NATURAL rig=<rig> ... ->`
+`no_natural_slow` when fewer than 2 of D's 10 runs are slow, `registered_clears_natural` when at least 2 are and none of
+DR's are, `registered_does_not_natural` when at least 2 of DR's are, `undecided` otherwise. On BOX37 it reads
+`no_natural_slow` (0 of 10 in both arms); on DAY64's BOX15 receipts relabelled (a mechanics check, meaningless as a fix
+reading) it counts 6 of 10 (`day80-cpu/dry-check-natural.log`).
+
+**What the 9950X half decides, then.** `regtime` admissible and not `regresses` there, or, where natural slow boots void
+it, `registered_clears_natural`: the section 1 condition holds on the 9950X, and section 4's question goes to the owner
+complete. `registered_does_not_natural`: the registered pool does not clear the 9950X's natural state, recorded, and the
+question goes with that reading.
+
+Run as `D80_BUILDS="p80=<the lane tip's p80, 57086efc8 or later with the same engine>" D80_RIG=<name> bash
+/root/wt-c/research/spill-c-20260919/day80-box.sh` on a Ryzen 9 9950X host with one RTX PRO 6000 Blackwell Workstation
+Edition, 123 GB is enough, root in the container, no page-cache eviction needed. About 15 minutes (the build, `regtime`,
+`regpool` reading `not_run` at once).
+
+## 4. The owner's question (prepared now; complete when the 9950X half reads)
+
+**Proposed: the door's host pool made from private anonymous memory pinned with `cuMemHostRegister` (today's
+`--expert-bank-pool-registered`) becomes the door's default pool, and today's `cuMemHostAlloc(PORTABLE)` pool stays
+behind a rollback flag (`--expert-bank-pool-allocated`, a door with a decide-by, deleted after two weeks unused per the
+door rules).** The door itself stays default-off; this changes only the pool the door uses.
+
+What it rests on:
+- **The cause, placed** (`DAY78.md` section 2): under fragmented host memory, compaction isolates the pages of today's
+  pool (shared `/dev/zero` memory the driver pins) and fails to move them, again and again, and the door's core runs 1.4
+  to 1.7 times slower per instruction while it does (the C12 slow state seen on BOX15's 9950X and on machine `b`). With
+  the pool made of pageable heap memory the state is gone (`pool_draws`: 8 of 8 against 0 of 8).
+- **The fix, measured** (section 2): with the registered pool, the same fragmentation produces no compaction against
+  the door at all (`registered_clears`: 6 of 8 failing runs with today's pool, 0 of 8 with the registered one, every
+  registered run at REF's core speed), and in the normal regime the door's timing is unchanged (`dr=flat` on both
+  measures, the same host demand sequence, admissible). The local RTX 5090 check reads `MATCH`, the same tape and the
+  same decode time; the 5090's timing cell is inadmissible and, as read, not slower.
+- **What it costs:** the pool's pages are written once at install (15 GB of page faults before the registration), the
+  registration pins them; nothing changes after install. No host setting, no privilege.
+- **What it does not change:** the door still `loses` to REF gen-only on these hosts (C11's gap, 3.5 to 10 ms over 32
+  tokens by host); this fix removes the host-memory-dependent slowdown, not that gap.
+Owed before the question is complete: the 9950X half (section 3). The implementation of the default change follows the
+owner's answer: the flip, the rollback flag and its decide-by row, the door doc, one qualification sitting of the
+flipped default on the 285K class.

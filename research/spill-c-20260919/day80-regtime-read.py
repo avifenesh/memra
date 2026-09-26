@@ -2,7 +2,8 @@
 """Day 80 reader for cell `regtime` (research/spill-c-20260919/DAY80.md section 1, registered before the cell's
 script): integrity (one host demand sequence within each door arm, and DR's equal to D's), DAY64 section 5's
 admissibility clause, DR against D (`DAY61.md` section 2's improves / regresses / flat, gen-only primary, the window
-beside it), DR against REF, and the verdict line.
+beside it), DR against REF, the verdict line, and (section 3, registered before the 9950X half) the natural slow boots
+per door arm with their own verdict line.
 
 usage: day80-regtime-read.py <cell-dir> [--rig NAME]
 """
@@ -27,6 +28,7 @@ d40 = load("day40_attrib", "day40-attrib.py")
 
 N = 32
 ADMISSIBLE_IQR = 0.005
+NATURAL_SLOW = 0.030
 ARMS = ("ref", "d", "dr")
 DOORS = ("d", "dr")
 FILL = re.compile(r"\[experts-via-tier\] fill complete before decode in ([0-9.]+) ms")
@@ -127,6 +129,20 @@ def main():
             out[key] = "matches"
         print(f"DAY80 DOOR dr_vs_ref {label}: pooled={diff[None]:+.4f} o1={diff['o1']:+.4f} o2={diff['o2']:+.4f}"
               f" noise={noise:.4f} -> {out[key]}")
+    # DAY80 section 3 (registered before the 9950X half): natural slow boots per door arm, a run slower than REF's
+    # median gen-only by more than 0.030 s (the slow mark of DAY64 and DAY70), and its verdict line.
+    ref_gen = med(values("ref", "gen_s"))
+    slow = {a: sum(g > ref_gen + NATURAL_SLOW for g in values(a, "gen_s")) for a in DOORS}
+    if slow["d"] < 2:
+        natural = "no_natural_slow"
+    elif slow["dr"] == 0:
+        natural = "registered_clears_natural"
+    elif slow["dr"] >= 2:
+        natural = "registered_does_not_natural"
+    else:
+        natural = "undecided"
+    print(f"DAY80 NATURAL rig={rig} ref_median={ref_gen:.3f} d slow={slow['d']} of {len(values('d', 'gen_s'))}"
+          f" dr slow={slow['dr']} of {len(values('dr', 'gen_s'))} -> {natural}")
     tail = (f"dr={step['gen_s']} vs_ref={out['gen_s']} (window: dr={step['window_s']} vs_ref={out['window_s']})")
     if not admissible:
         print(f"DAY80 REGTIME VERDICT rig={rig} integrity=ok -> void (inadmissible) [as read: {tail}]")

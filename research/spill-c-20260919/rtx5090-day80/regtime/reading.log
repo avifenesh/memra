@@ -1,0 +1,11 @@
+DAY80 host demand sequence d sha256 4bdc2610c3534e42
+DAY80 host demand sequence dr sha256 4bdc2610c3534e42
+DAY80 REGTIME CHECKS rig=rtx5090 runs=30 integrity=ok
+DAY80 ADMISSIBILITY rig=rtx5090 ceiling=0.005 max_iqr_gen=0.0245 max_iqr_window=0.0165 failing=['ref:gen_s=0.0245', 'ref:window_s=0.0165', 'd:gen_s=0.0137', 'd:window_s=0.0075', 'dr:gen_s=0.0082', 'dr:window_s=0.0115'] -> inadmissible
+DAY80 gen-only decode medians (N=10 each): ref=0.371 d=0.383 dr=0.382
+DAY80 STEP dr_vs_d gen-only decode: pooled=-0.0005 o1=-0.0060 o2=-0.0030 noise=0.0137 -> flat
+DAY80 DOOR dr_vs_ref gen-only decode: pooled=+0.0105 o1=+0.0070 o2=+0.0220 noise=0.0245 -> matches
+DAY80 steady window medians (N=10 each): ref=0.323 d=0.334 dr=0.330
+DAY80 STEP dr_vs_d steady window: pooled=-0.0035 o1=-0.0040 o2=-0.0040 noise=0.0115 -> flat
+DAY80 DOOR dr_vs_ref steady window: pooled=+0.0070 o1=+0.0050 o2=+0.0120 noise=0.0165 -> matches
+DAY80 REGTIME VERDICT rig=rtx5090 integrity=ok -> void (inadmissible) [as read: dr=flat vs_ref=matches (window: dr=flat vs_ref=matches)]

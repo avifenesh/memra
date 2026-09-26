@@ -1,0 +1,43 @@
+DAY80 INDUCER rig=box37-285k memfree_gib=206 F_gib=204 induce=1
+DAY80 REGPOOL CHECKS rig=box37-285k runs=24 state=ns_per_step integrity=ok
+DAY80 POOL door arms: bytes=[15417016320]
+DAY80 R o1-refi-r1: gen=0.314 window=0.287 window_ns_per_step=1.054 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY80 R o1-di-r1: gen=0.411 window=0.297 window_ns_per_step=1.068 fast compacted=yes fail_heavy=no compact_isolated=1562721/s migrate_fail=353006/s
+DAY80 R o1-dri-r1: gen=0.330 window=0.293 window_ns_per_step=1.063 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY80 R o1-refi-r2: gen=0.315 window=0.288 window_ns_per_step=1.057 fast compacted=yes fail_heavy=no compact_isolated=1876001/s migrate_fail=6/s
+DAY80 R o1-di-r2: gen=0.376 window=0.332 window_ns_per_step=1.574 slow compacted=yes fail_heavy=yes compact_isolated=857657/s migrate_fail=858029/s
+DAY80 R o1-dri-r2: gen=0.315 window=0.286 window_ns_per_step=1.054 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY80 R o1-refi-r3: gen=0.315 window=0.288 window_ns_per_step=1.066 fast compacted=yes fail_heavy=no compact_isolated=1906354/s migrate_fail=80/s
+DAY80 R o1-di-r3: gen=0.317 window=0.288 window_ns_per_step=1.055 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY80 R o1-dri-r3: gen=0.315 window=0.287 window_ns_per_step=1.055 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY80 R o1-refi-r4: gen=0.424 window=0.285 window_ns_per_step=1.055 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY80 R o1-di-r4: gen=0.361 window=0.316 window_ns_per_step=1.092 fast compacted=yes fail_heavy=yes compact_isolated=1018606/s migrate_fail=689886/s
+DAY80 R o1-dri-r4: gen=0.316 window=0.286 window_ns_per_step=1.055 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY80 R o2-dri-r1: gen=0.316 window=0.287 window_ns_per_step=1.060 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY80 R o2-di-r1: gen=0.354 window=0.319 window_ns_per_step=1.498 slow compacted=yes fail_heavy=yes compact_isolated=874843/s migrate_fail=874842/s
+DAY80 R o2-refi-r1: gen=0.313 window=0.286 window_ns_per_step=1.054 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY80 R o2-dri-r2: gen=0.447 window=0.286 window_ns_per_step=1.055 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY80 R o2-di-r2: gen=0.362 window=0.326 window_ns_per_step=1.669 slow compacted=yes fail_heavy=yes compact_isolated=873071/s migrate_fail=873071/s
+DAY80 R o2-refi-r2: gen=0.313 window=0.288 window_ns_per_step=1.068 fast compacted=yes fail_heavy=no compact_isolated=1319288/s migrate_fail=15994/s
+DAY80 R o2-dri-r3: gen=0.317 window=0.287 window_ns_per_step=1.054 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY80 R o2-di-r3: gen=0.354 window=0.325 window_ns_per_step=1.601 slow compacted=yes fail_heavy=yes compact_isolated=841008/s migrate_fail=840998/s
+DAY80 R o2-refi-r3: gen=0.405 window=0.285 window_ns_per_step=1.055 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY80 R o2-dri-r4: gen=0.316 window=0.287 window_ns_per_step=1.055 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY80 R o2-di-r4: gen=0.360 window=0.317 window_ns_per_step=1.413 slow compacted=yes fail_heavy=yes compact_isolated=920565/s migrate_fail=764652/s
+DAY80 R o2-refi-r4: gen=0.312 window=0.286 window_ns_per_step=1.053 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY80 ARM rig=box37-285k refi: fail_heavy=0 of 8 slow=0 of 8 compacted=3 of 8 window_ns_per_step median=1.055 gen median=0.315 window median=0.286
+DAY80 ARM rig=box37-285k di: fail_heavy=6 of 8 slow=5 of 8 compacted=7 of 8 window_ns_per_step median=1.456 gen median=0.360 window median=0.318
+DAY80 ARM rig=box37-285k dri: fail_heavy=0 of 8 slow=0 of 8 compacted=0 of 8 window_ns_per_step median=1.055 gen median=0.316 window median=0.287
+DAY80 CENSUS c1-di-r1: pid=76530	CapEff=0xa80405fb	cap_sys_admin=no	kpageflags=unreadable (Permission denied)	page_owner=absent	tracefs=absent
+DAY80 CENSUS c1-di-r1 map: 7f2b5ea82000-7f2f9c000000 r--s /root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf pages=4445566 present=4342062 file_or_shared=4342062 exclusive=4342062 rss_kb=17368248 locked_kb=0 thp_kb=0 vmflags=rd mr me ms sd pfn_sha=- flags=-
+DAY80 CENSUS c1-di-r1 map: 7f2788000000-7f2b1eed0000 rw-s /dev/zero (deleted) pages=3763920 present=3763919 file_or_shared=3763920 exclusive=3763919 rss_kb=15055680 locked_kb=0 thp_kb=0 vmflags=rd wr sh mr mw me ms sd pfn_sha=- flags=-
+DAY80 CENSUS c1-di-r1 map: 7f2b3d50f000-7f2b5ea82000 rw-p [anon] pages=136563 present=136563 file_or_shared=0 exclusive=136563 rss_kb=546252 locked_kb=0 thp_kb=0 vmflags=rd wr mr mw me ac sd pfn_sha=- flags=-
+DAY80 CENSUS c1-di-r1 map: 63c6ad1e4000-63c6bace7000 rw-p [heap] pages=56067 present=47199 file_or_shared=0 exclusive=47198 rss_kb=188744 locked_kb=0 thp_kb=0 vmflags=rd wr mr mw me ac sd pfn_sha=- flags=-
+DAY80 CENSUS c1-di-r1: mappings with frames changed between the passes: 0
+DAY80 CENSUS c1-dri-r1: pid=78965	CapEff=0xa80405fb	cap_sys_admin=no	kpageflags=unreadable (Permission denied)	page_owner=absent	tracefs=absent
+DAY80 CENSUS c1-dri-r1 map: 721f02a82000-722340000000 r--s /root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf pages=4445566 present=4342062 file_or_shared=4342062 exclusive=4342062 rss_kb=17368248 locked_kb=0 thp_kb=0 vmflags=rd mr me ms sd pfn_sha=- flags=-
+DAY80 CENSUS c1-dri-r1 map: 721b2d130000-721ec403e000 rw-p [anon] pages=3763982 present=3763982 file_or_shared=0 exclusive=3763982 rss_kb=15055928 locked_kb=0 thp_kb=0 vmflags=rd wr mr mw me ac sd pfn_sha=- flags=-
+DAY80 CENSUS c1-dri-r1 map: 721ee0bfe000-721f02a82000 rw-p [anon] pages=138884 present=138884 file_or_shared=0 exclusive=138884 rss_kb=555536 locked_kb=0 thp_kb=0 vmflags=rd wr mr mw me ac sd pfn_sha=- flags=-
+DAY80 CENSUS c1-dri-r1 map: 63692ed6c000-63693c86f000 rw-p [heap] pages=56067 present=47037 file_or_shared=0 exclusive=47033 rss_kb=188100 locked_kb=0 thp_kb=0 vmflags=rd wr mr mw me ac sd pfn_sha=- flags=-
+DAY80 CENSUS c1-dri-r1: mappings with frames changed between the passes: 0
+DAY80 REGPOOL VERDICT rig=box37-285k integrity=ok -> registered_clears (fail_heavy: di 6 of 8, dri 0 of 8, refi 0 of 8; slow: dri 0 of 8)
