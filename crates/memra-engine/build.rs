@@ -517,6 +517,8 @@ fn main() {
             "cu/mimo_qkv_gather.cu",
             // Bounded f32 MiMo attention reference component with learned sink.
             "cu/mimo_sink_attn.cu",
+            // Bounded preprojected MiMo ViT attention over independent patch sequences.
+            "cu/mimo_vision_attn.cu",
             // Source-inspection split attention over q8_0 K and NVFP4 V.
             "cu/mimo_mixed_attn.cu",
             // Source-inspection NVFP4 cache row codec.
