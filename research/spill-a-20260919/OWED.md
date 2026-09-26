@@ -171,7 +171,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   `653c997f4` against the day-16 tree `1646d421b` (integ40): `DAY29 CELL(i) CLAUSE: NOT MET (demote=False
   promote=False admissible=True); executed-not-qualified`; ruling 47 carries item 4 as owed.
 - Acceptance: day 16's clause, verbatim, unchanged.
-- Status: open (the NOT MET reading is on a tree before options (a) and 2a, the D2H and H2D spans, K, F and M'; the
+- Status: **pre-registered** (DAY60 section 1: C's day-29 cell verbatim with arm X the current tip; the clause read
+  as written; a target card).
   cell is owed on the current tree; the clause is read as written).
 
 ### 12. Every CPU hash over the 5090's write-combined leases reads at the direct rate (found by DAY38's survey)
