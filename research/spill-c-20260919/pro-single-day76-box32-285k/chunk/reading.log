@@ -1,0 +1,31 @@
+DAY76 INDUCER rig=box32-285k memfree_gib=127 F_gib=125 induce=1
+DAY76 CHUNK CHECKS rig=box32-285k runs=24 state=ns_per_step integrity=ok
+DAY76 POOL dci: bytes=[15417016320] allocations=[58]
+DAY76 R o1-refi-r1: gen=0.261 window=0.229 window_ns_per_step=1.112 fast compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY76 R o1-di-r1: gen=0.354 window=0.246 window_ns_per_step=1.114 fast compacted=yes compact_isolated=1549139/s migrate_fail=217943/s
+DAY76 R o1-dci-r1: gen=0.273 window=0.307 window_ns_per_step=1.623 slow compacted=yes compact_isolated=433405/s migrate_fail=431116/s
+DAY76 R o1-refi-r2: gen=0.258 window=0.229 window_ns_per_step=1.112 fast compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY76 R o1-di-r2: gen=0.371 window=0.307 window_ns_per_step=1.602 slow compacted=yes compact_isolated=797018/s migrate_fail=797018/s
+DAY76 R o1-dci-r2: gen=0.345 window=0.308 window_ns_per_step=1.593 slow compacted=yes compact_isolated=774957/s migrate_fail=775270/s
+DAY76 R o1-refi-r3: gen=0.257 window=0.229 window_ns_per_step=1.112 fast compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY76 R o1-di-r3: gen=0.350 window=0.314 window_ns_per_step=1.702 slow compacted=yes compact_isolated=769547/s migrate_fail=768350/s
+DAY76 R o1-dci-r3: gen=0.268 window=0.238 window_ns_per_step=1.113 fast compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY76 R o1-refi-r4: gen=0.259 window=0.234 window_ns_per_step=1.117 fast compacted=yes compact_isolated=1413184/s migrate_fail=20712/s
+DAY76 R o1-di-r4: gen=0.327 window=0.270 window_ns_per_step=1.336 fast compacted=yes compact_isolated=1204963/s migrate_fail=494444/s
+DAY76 R o1-dci-r4: gen=0.332 window=0.263 window_ns_per_step=1.113 fast compacted=yes compact_isolated=1349029/s migrate_fail=322062/s
+DAY76 R o2-dci-r1: gen=0.267 window=0.236 window_ns_per_step=1.112 fast compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY76 R o2-di-r1: gen=0.268 window=0.238 window_ns_per_step=1.112 fast compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY76 R o2-refi-r1: gen=0.259 window=0.231 window_ns_per_step=1.112 fast compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY76 R o2-dci-r2: gen=0.297 window=0.259 window_ns_per_step=1.160 fast compacted=yes compact_isolated=1509450/s migrate_fail=272064/s
+DAY76 R o2-di-r2: gen=0.268 window=0.237 window_ns_per_step=1.112 fast compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY76 R o2-refi-r2: gen=0.258 window=0.230 window_ns_per_step=1.113 fast compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY76 R o2-dci-r3: gen=0.329 window=0.306 window_ns_per_step=1.447 slow compacted=yes compact_isolated=702172/s migrate_fail=576879/s
+DAY76 R o2-di-r3: gen=0.268 window=0.237 window_ns_per_step=1.113 fast compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY76 R o2-refi-r3: gen=0.258 window=0.230 window_ns_per_step=1.114 fast compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY76 R o2-dci-r4: gen=0.335 window=0.237 window_ns_per_step=1.116 fast compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY76 R o2-di-r4: gen=0.269 window=0.238 window_ns_per_step=1.112 fast compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY76 R o2-refi-r4: gen=0.257 window=0.229 window_ns_per_step=1.112 fast compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY76 ARM rig=box32-285k refi: compacted=1 of 8 slow=0 of 8 window_ns_per_step median=1.112 gen median=0.258 window median=0.230
+DAY76 ARM rig=box32-285k di: compacted=4 of 8 slow=2 of 8 window_ns_per_step median=1.114 gen median=0.298 window median=0.242
+DAY76 ARM rig=box32-285k dci: compacted=5 of 8 slow=3 of 8 window_ns_per_step median=1.138 gen median=0.313 window median=0.261
+DAY76 CHUNK VERDICT rig=box32-285k integrity=ok -> chunk_does_not (di compacted 4 of 8, dci 5 of 8, refi 1 of 8)

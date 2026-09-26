@@ -76,3 +76,34 @@ Run as `D76_BUILDS="p76=7a162e6b7" [D76_RIG=<name>] bash /root/wt-c/research/spi
 Ultra 9 285K host with one RTX PRO 6000 Blackwell Workstation Edition, at least 98 GiB `MemFree` at the start (after
 the page-cache eviction of unused files), root in the container. Expected: the build about 5 minutes, the cell about 25
 (24 runs, each with a fragmentation setup of about 38 s at 120 GiB).
+
+## 2. The cell on the 285K class (BOX32, BOX29's machine, run by the lead as registered; `pro-single-day76-box32-285k/`)
+
+After a page-cache eviction of unused files (`MemFree` 127 GiB at the start), `D76_BUILDS="p76=7a162e6b7"
+D76_RIG=box32-285k bash .../day76-box.sh` on the tree `1d4f94cba`, 11:08Z to `box done 2026-09-26T11:31:37Z`, after
+DAY77's cell on the same card. Receipts: 133 of 133 `OK` (re-checked), `run-gen-p76` by hash. Verbatim
+(`chunk/reading.log`):
+
+- `DAY76 INDUCER rig=box32-285k memfree_gib=127 F_gib=125 induce=1`
+- `DAY76 CHUNK CHECKS rig=box32-285k runs=24 state=ns_per_step integrity=ok`
+- `DAY76 POOL dci: bytes=[15417016320] allocations=[58]`
+- `DAY76 ARM rig=box32-285k refi: compacted=1 of 8 slow=0 of 8 window_ns_per_step median=1.112 gen median=0.258 window median=0.230`
+- `DAY76 ARM rig=box32-285k di: compacted=4 of 8 slow=2 of 8 window_ns_per_step median=1.114 gen median=0.298 window median=0.242`
+- `DAY76 ARM rig=box32-285k dci: compacted=5 of 8 slow=3 of 8 window_ns_per_step median=1.138 gen median=0.313 window median=0.261`
+- `DAY76 CHUNK VERDICT rig=box32-285k integrity=ok -> chunk_does_not (di compacted 4 of 8, dci 5 of 8, refi 1 of 8)`
+
+**Read as registered: `chunk_does_not`.** The pool in 58 allocations of at most 256 MiB draws compaction as often as
+the one allocation (5 of 8 against 4 of 8) and its runs are as slow. The allocation's size is not the cause; section 1
+names the artifact reads as the next candidate.
+
+**What the per-run lines show beside the verdict, deciding nothing, and it refines what "the state" is.** Every slow
+run had compaction, as before, but not every run with compaction was slow, and the difference is how compaction ended:
+- the six runs that read 1.34 to 1.70 ns per step (four slow, one partly at 1.336, plus `o2-dci-r3` at 1.447) failed to
+  migrate nearly every page they isolated: `pgmigrate_fail` 431,116 of 433,405 isolated a second, 797,018 of 797,018,
+  775,270 of 774,957, 768,350 of 769,547, 576,879 of 702,172, and 494,444 of 1,204,963 in the partly slow one;
+- the four runs with compaction that stayed at 1.113 to 1.160 migrated most of what they isolated: 217,943 failed of
+  1,549,139, 322,062 of 1,349,029, 272,064 of 1,509,450, and REF's one compacted run 20,712 of 1,413,184.
+So the slow state goes with compaction that keeps isolating pages it cannot move, not with compaction as such: in the
+door's process something holds a large set of pages that compaction takes off the LRU and fails to migrate, again and
+again. REF's one compacting run moved its pages and did not slow. What those pages are is the next question; the
+pinned pool's allocation granularity is ruled out here.

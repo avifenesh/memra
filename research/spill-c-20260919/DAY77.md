@@ -79,3 +79,32 @@ Run as `D77_BUILDS="i15=2243b1fe2 i17=d4ab19f1d" bash /root/wt-c/research/spill-
 Ultra 9 285K host with one RTX PRO 6000 Blackwell Workstation Edition (nsys; box needs as `DAY72.md` section 1a).
 Expected: two builds about 10 minutes, the cell about 25. The RTX 5090's half: queue v13
 (`rtx5090-queue-v13-20260926.sh`).
+
+## 3. The target card (BOX32, the 285K class, run by the lead as registered; `pro-single-day77/`)
+
+BOX32 is BOX29's machine re-rented (a Core Ultra 9 285K, 188 GB, one RTX PRO 6000 Blackwell Workstation Edition).
+`D77_BUILDS="i15=2243b1fe2 i17=d4ab19f1d" bash .../day77-box.sh` on the tree `1d4f94cba`, 10:54Z to `box done
+2026-09-26T11:08:31Z`. Receipts: 219 of 219 `OK` against the box manifest (re-checked), ELFs and profiles by hash.
+Regime: 32 to 47 C, SM median 2610 MHz, N=2024. Verbatim (`i17/reading.log`):
+
+- `DAY77 host demand sequence i15 sha256 4bdc2610c3534e42 lines=[22077]`, and the same for `i17` and `i17c`
+- `DAY77 I17 CHECKS rig=pro-single runs=40 integrity=ok`
+- `DAY77 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0005 max_iqr_window=0.0010 failing=[] -> admissible`
+- `DAY77 gen-only decode medians (N=10 each): ref=0.254 i15=0.264 i17=0.264 i17c=0.264`
+- `DAY77 STEP i17_vs_i15 gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0005 -> flat`
+- `DAY77 STEP i17_vs_i15 steady window: pooled=-0.0010 o1=-0.0010 o2=+0.0000 noise=0.0010 -> flat`
+- `DAY77 DOOR i17_vs_ref gen-only decode: pooled=+0.0100 o1=+0.0100 o2=+0.0100 noise=0.0005 -> loses`
+- `DAY77 VERDICT rig=pro-single integrity=ok i17=flat door=i17 vs_ref=loses (window: i17=flat vs_ref=loses)`
+
+**Read as registered: I17 `flat`, so it stays; the door (I17) `loses` to REF** (0.264 against 0.254 gen-only, 0.231
+against 0.226 window). The host demand sequence is byte-for-byte I15's, as section 1 claimed. As the CPU profile
+predicted, the saving is below this card's resolution: I17C's residency bracket reads 0.0426 ms per window token
+against I15's 0.046, and the profiled GPU still idles 0.41 ms per window token more than REF's.
+
+## 3a. The RTX 5090 (queue v13, 2026-09-26 10:49Z to 11:00Z; `rtx5090-day77/i17/`)
+
+`run-gen-i17` rebuilt locally from `d4ab19f1d`. Regime: 60 to 81 C, SM median 1687 MHz, N=2429 (warmer than earlier
+5090 holds; the rig ran other lanes' work). Verbatim: `DAY77 ADMISSIBILITY rig=rtx5090 ceiling=0.005 max_iqr_gen=0.0120
+max_iqr_window=0.0195 failing=[...every arm...] -> inadmissible`, `DAY77 VERDICT rig=rtx5090 integrity=ok -> void
+(inadmissible) [as read: i17=flat door=i17 vs_ref=matches (window: i17=flat vs_ref=matches)]`. Decides nothing; the
+same host demand sequence held here too.
