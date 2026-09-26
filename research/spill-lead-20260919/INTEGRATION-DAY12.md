@@ -4277,6 +4277,57 @@ on its 5090 half; R2 (item 13) is refuted and reverted on the target card, R1 se
   and engine tests, portable suites, gates) and the lead's quick censuses (check-flags, docs registry, `git diff --check`,
   fmt all rc=0), not a fourth battery; nothing in #763 is reachable from the spill battery's cells.
 
+## integ68 (`lane/spill-integ68-20260926`): lane F's items 17 and 18 (two default-off doors: a cold read-once bypass for spilled experts and O_DIRECT host-tier handoff files) and lane C days 75 to 77 (I16 reverted, I17 kept flat, the chunk flag)
+Lane tips merged: F `290fbbc1e` and C `2983d31d7` on main `6581fecfc` (#762), clean. C's later I18 and the pageable-pool
+flag stay out (not card-qualified). The change:
+- `moe_cache.rs`, `spill_pread.rs`, `hybrid_forward.rs` (F, item 17, `MEMRA_MOE_COLD_BYPASS=staged|mapped`, default
+  `off`, decide-by 2026-10-10): a cold first-miss expert block can be served once without admission; the dispatch goes
+  through `dispatch_source_once`, `payload` and `consumed`, and with the flag off `dispatch_source_once` returns only
+  `Resident`, `payload` gives the slot and `0..len`, `consumed` does nothing, so the naked program is the old one.
+- `handoff_io.rs`, `worker.rs` (F, item 18, `MEMRA_KV_HOST_HANDOFF_IO=direct`, default `buffered`, decide-by
+  2026-10-10): the host-tier handoff export and import through one file layer; `buffered` is the historical 4 MiB
+  BufWriter and BufReader with `sync_all`; both arms write byte-identical files, cross-readable.
+- `h2d-probe` records an `[N/A]` power limit (F). C's I17 (grouped owner calls), the I16 revert, and the
+  `--expert-bank-pool-chunk-bytes` diagnostic flag. `docs/FLAGS.md` rows for both of F's doors.
+
+**Lanes, verbatim.** F: item 17 `test spill_pread::tests::mapped_serve_reads_in_place_and_owns_the_buffer_until_its_event
+... ok`, the smoke's tokens equal the oracle on all three arms; item 18 `M1-B2-CYCLE 1 passed=True` (buffered) and
+`M1-B2-CYCLE 2 passed=True` (direct), export 4,353 against 1,385 ms in that pair (the fsync 2,798 to 1.0 ms), import
+2.0 s both ways; the 5090 capped regime unscored (`regime_scored=False`, the build volume shares the proven device).
+C: `DAY75 VERDICT ... i16=regresses` (+0.018 s gen-only, reverted), `DAY77 VERDICT ... i17=flat` (kept),
+`DAY76 CHUNK VERDICT ... -> chunk_does_not`, `DAY74 INDUCE VERDICT rig=box29-285k ... -> not_induced (compaction in
+0 of 6 REF+I and 3 of 6 door+I spans)`.
+
+**Integration fixes, each its own commit.**
+- F's code failed the battery's `clippy -D warnings --all-targets` in both forms: `memcpy_dtov` (deprecated, a test) and
+  three `x % DIRECT_ALIGN == 0` as `is_multiple_of` (DIRECT_ALIGN is 4096; the same values). F had not run clippy; it
+  now runs both forms on every push and took the fix byte for byte.
+- memra-tier's day-4 SLRU test pins the sha256 of `moe_cache.rs`; C and F both edited it, so the merged file matched
+  neither pin. The merged diff changes no SLRU statement (the bypass branch runs only with the flag set and
+  `bypass_allowed`); the fixture is re-pinned to the merged file and its 2,013-row replay passes.
+- Location words scrubbed from four of lane C's tracked records (host class only).
+
+**Found in the battery, pre-existing on main: #777.** serve-smoke's Q35 mixed c=4 cold-prefill arm ran on a box for
+the first time (the 35B linked at its rig path) and reads `FAIL: Q35 mixed c=4 exact-token regression`, although all
+20 requests return exactly 60 tokens with `golden_ok`: every hit reports `cached_tokens` 4832 against
+`expected_cached_tokens` 4860. Main's own tree `6581fecfc`, run on the same box, reads the same (`Counter({(4832,
+4860): 18})`, `integ68-q35ab/`). The harness expects the full prompt length while, since #602, the prompt-end seed
+publishes on the 32-token GDN grid and `cached_tokens` reports the aligned length. The expectation is stale, not the
+tokens; the fix is filed as #777 and is not this integ's.
+
+**Ruling 63:** F's items 17 and 18 land as default-off doors with their correctness receipts; their target-card timing
+is F's running sitting. C's I16 revert and I17 stand as read. The Q35 arm's failure is main's, owned by #777.
+
+**Checks.**
+- CPU battery on `ff385ce1f`: 11 of 15, red on exactly the clippy and fixture-pin failures above
+  (`integ68-cpu-battery/`); on the fixed head `d74ccb7fe`, 15 of 15 rc=0 (`integ68-cpu-battery-fix/`).
+- GPU battery on BOX35 (a Ryzen 9 5900XT with one RTX PRO 6000 WS; `integ68-pro/`, 467 receipts mirrored and checked),
+  on `af4b145c1`, before the lint and pin commits (they change no program a GPU cell runs: a test, a debug assertion,
+  two same-value checks, a fixture hash, record text): serve-smoke 1 failed (the Q35 arm, #777; every other arm ok);
+  engine span cells `10 passed`, worker cells `18 passed`; identity 12 ok; fault default and plain 255 ok each; hit OFF
+  and ON 61 and 68 ok; `ADMIT-MEM BURST GATE: ALL GREEN`; `SPEC-CTX-EDGE GATE: ALL GREEN`; the pause gate with the 27B
+  `ALL GREEN` (40 ok).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
