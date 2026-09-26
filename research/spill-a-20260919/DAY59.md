@@ -68,3 +68,12 @@ artifact the rig carries, door ON. A reading that selects the design; the design
   120 s; the card idle with 20000 MiB free; DAY54's short cell shape, 20 boots) and the reader `day59-reading.py`, both
   written before the cell runs. The model is the local copy of the target's artifact
   (`Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`, sha256 `1facf36c2db359dc..`).
+
+## 3. The first 5090 run, cancelled; the re-run
+
+- The first run (on `8b5e5e213`'s binary) waited 23 of its 60 lock attempts behind lanes B and C and never held the
+  card; it was cancelled when the lead interrupted with item 23's addendum, whose builds would have perturbed an
+  owner-time cell. Banked as `rtx5090-day59/cell-cancelled/`.
+- The re-run is the same cell on the tip's binary (`6f844ccf0c00d9a0`, tree `071e1126a`, whose fanout path equals
+  `8b5e5e213`'s), with one addition recorded before it runs: each boot's `BOOT.txt` also records the host's load
+  average at the boot's start (the rig is shared with lanes B and C, and the cell reads owner-thread time), a reading.
