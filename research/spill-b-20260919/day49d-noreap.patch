@@ -1,0 +1,14 @@
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index 049332b8d..03d5faed9 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -15316,9 +15316,6 @@ fn batch_oom_reclaim(
+     oom_teardown_fence(engine, loaded);
+     host_capture_settle_pending(engine, px, hpx, ContractWait::Block, "a batch OOM");
+     host_restore_settle_pending(px, hpx, ContractWait::Block, "a batch OOM");
+-    // DAY49 addendum C: the third reclaim path reaps the VMM graveyard before its trim, as the
+-    // step-OOM teardown and the admin trim do (a dropped cache's planes return only when reaped).
+-    vmm_reap_for("batch-oom");
+     let reports = trim_model_device_pools(engine, loaded, "batch-oom");
+     let trimmed = reports.len();
+     format!(
