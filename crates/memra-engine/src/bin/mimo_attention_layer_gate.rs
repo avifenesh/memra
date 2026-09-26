@@ -223,6 +223,7 @@ fn run() -> Result<(), Fail> {
         report,
         "target_source\tXiaomiMiMo/MiMo-V2.6-Flash-RL@3b38d063180c3e4aed9691fdc735f3d10b266ee4"
     )?;
+    writeln!(report, "payload_verification\texternal_hf_verify_required")?;
     writeln!(report, "config_sha256\t{config_digest}")?;
     writeln!(
         report,
@@ -370,6 +371,9 @@ fn run() -> Result<(), Fail> {
             0.01,
         )?;
 
+        let mut paired_q = engine.dtoh(&gathered.query)?;
+        let mut paired_k = engine.dtoh(&gathered.key)?;
+        let paired_v = engine.dtoh(&gathered.value)?;
         engine.rope_neox(
             &mut gathered.query,
             &position_device,
@@ -392,24 +396,30 @@ fn run() -> Result<(), Fail> {
         )?;
         cpu_rope(&mut q_cpu, HEADS, 64, rope.base, POSITION);
         cpu_rope(&mut k_cpu, kv_heads, 64, rope.base, POSITION);
+        cpu_rope(&mut paired_q, HEADS, 64, rope.base, POSITION);
+        cpu_rope(&mut paired_k, kv_heads, 64, rope.base, POSITION);
+        let rotated_q = engine.dtoh(&gathered.query)?;
+        let rotated_k = engine.dtoh(&gathered.key)?;
         compare(
             &mut report,
             layer,
-            "rope_q",
-            &q_cpu,
-            &engine.dtoh(&gathered.query)?,
-            0.02,
-            0.01,
+            "rope_q_same_input",
+            &paired_q,
+            &rotated_q,
+            0.0002,
+            0.0002,
         )?;
         compare(
             &mut report,
             layer,
-            "rope_k",
-            &k_cpu,
-            &engine.dtoh(&gathered.key)?,
-            0.02,
-            0.01,
+            "rope_k_same_input",
+            &paired_k,
+            &rotated_k,
+            0.0002,
+            0.0002,
         )?;
+        compare(&mut report, layer, "rope_q", &q_cpu, &rotated_q, 0.02, 0.01)?;
+        compare(&mut report, layer, "rope_k", &k_cpu, &rotated_k, 0.02, 0.01)?;
 
         let sink_cpu = if layer == 1 {
             Some(source_vector(
@@ -423,6 +433,13 @@ fn run() -> Result<(), Fail> {
         let sink_device = sink_cpu.as_ref().map(|v| engine.htod(v)).transpose()?;
         let (context_cpu, sink_range) =
             cpu_attention(&q_cpu, &k_cpu, &v_cpu, sink_cpu.as_deref(), kv_heads);
+        let (paired_context, _) = cpu_attention(
+            &rotated_q,
+            &rotated_k,
+            &paired_v,
+            sink_cpu.as_deref(),
+            kv_heads,
+        );
         if let Some((minimum, maximum)) = sink_range {
             if !minimum.is_finite() || !maximum.is_finite() || maximum <= 1e-6 {
                 return Err(format!("layer {layer}: sink was numerically inactive").into());
@@ -440,12 +457,22 @@ fn run() -> Result<(), Fail> {
             1,
             &layer_plan.attention,
         )?;
+        let actual_context = engine.dtoh(&context_device)?;
+        compare(
+            &mut report,
+            layer,
+            "sink_decode_same_input",
+            &paired_context,
+            &actual_context,
+            0.0002,
+            0.0002,
+        )?;
         compare(
             &mut report,
             layer,
             "sink_decode_context",
             &context_cpu,
-            &engine.dtoh(&context_device)?,
+            &actual_context,
             0.03,
             0.02,
         )?;
