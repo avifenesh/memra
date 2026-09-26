@@ -129,8 +129,11 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   own step; the door 2 ms behind REF gen-only on both classes, matching the window. Day 85 (`DAY85.md`): the rc check
   (one historical receipt line, no live script); I22 (`4b378a064`, the bank's host cache, SLRU hit, catalog entry and
   the adapter's `validated` by position), CPU gates green, the day-61 profile's grouped cycle about 60 percent less per
-  block; the card cell `i22` ready (`day85-box.sh`, the 285K class, then a 9950X); the local check and split queued
-  (v19). Day 86 (`DAY86.md`): the cell `slow86` ready for a long-running 9950X.
+  block; the card cell `i22`: on BOX43 (9950X) `i22=improves door=i22 vs_ref=matches (window: i22=flat
+  vs_ref=matches)`, on BOX41 (285K) `i22=flat door=i22 vs_ref=matches (window: i22=flat vs_ref=matches)`: I22 stays,
+  and the tuned door matches REF on both classes by the rule (1 to 2 ms behind gen-only by the medians, against 9 to 10
+  at I15; `DAY85.md` section 5); the local check and split of I22 queued (v19). Day 86 (`DAY86.md`): the cell `slow86`
+  on BOX43 once it has carried 12 h of sittings (no earlier than 2026-09-27T09:40Z).
 
 ## C12. The door's sensitivity to its owner thread's host placement (the 9950X class)
 

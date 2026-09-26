@@ -119,3 +119,49 @@ the driver under stubs names the three builds, the cell, `--validate` and the re
 in `DAY82.md` section 2a, recorded before any result: if the card cell `i22` runs first, its own integrity reads the
 same two properties on the target card (`MATCH` in every run, one host demand sequence across I15, I21 and I22), the
 local check is read when it lands, and the in-situ split beside it decides nothing either way.
+
+## 5. The target card, both classes (run by the lead as registered, chain tree `8d1863980`)
+
+Both halves: `D85_BUILDS="i15=2243b1fe2 i21=b555b4141 i22=4b378a064" bash .../day85-box.sh`; the cell, reader and driver
+scripts are those committed in `168bcc0f5` (`git diff` empty); the builds name the three trees, each `rc=0`, and each
+cell's `binary.sha256` equals its box's `BINARIES.sha256`; 261 receipts `OK` against each box manifest, ELFs and
+profiles by hash; the reader re-run here on each mirror prints its `reading.log` byte for byte. No slow boot in any arm
+on either host.
+
+**285K class** (BOX41, a Core Ultra 9 285K, one RTX PRO 6000 WS, 249 GB, driver 580.173.02, after integ69's GPU run 4
+on the same card; `pro-single-day85/`; 21:51Z to 22:06Z; 39 to 48 C, SM median 2820 MHz, N=549 busy samples of 2315):
+- `DAY85 I22 CHECKS rig=pro-single runs=50 integrity=ok` (one host demand sequence, `4bdc2610c3534e42`, in every door arm)
+- `DAY85 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0020 max_iqr_window=0.0020 failing=[] -> admissible`
+- `DAY85 STEP i22_vs_i21 gen-only decode: pooled=-0.0010 o1=+0.0010 o2=-0.0020 noise=0.0020 -> flat`
+- `DAY85 STEP i22_vs_i21 steady window: pooled=-0.0005 o1=+0.0000 o2=-0.0010 noise=0.0020 -> flat`
+- `DAY85 BESIDE i22_vs_i15 gen-only decode: pooled=-0.0020 o1=-0.0010 o2=-0.0030 noise=0.0020 -> flat (deciding
+  nothing)`
+- `DAY85 DOOR i22_vs_ref gen-only decode: pooled=+0.0020 o1=+0.0030 o2=+0.0010 noise=0.0020 -> matches`
+- `DAY85 DOOR i22_vs_ref steady window: pooled=+0.0005 o1=+0.0010 o2=+0.0000 noise=0.0010 -> matches`
+- `DAY85 I22C brackets per window token (ms, medians): dispatch_ns=0.0727 prefetch_ns=0.3489 pf_demand_ns=0.0669
+  pf_resident_ns=0.0019 pf_retire_ns=0.0259 pf_stage_ns=0.2245`
+- `DAY85 VERDICT rig=pro-single integrity=ok i22=flat door=i22 vs_ref=matches (window: i22=flat vs_ref=matches)`
+
+**9950X class** (BOX43, a Ryzen 9 9950X, one RTX PRO 6000 WS, 184 GB, driver 580.65.06, its container's first sitting,
+host uptime 130029 s at the chain's start; `pro-single-day85-9950x/`; 21:43Z to 22:00Z; 32 to 47 C, SM median 2850 MHz,
+N=538 busy samples of 2613):
+- `DAY85 I22 CHECKS rig=pro-single runs=50 integrity=ok` (the same one host demand sequence)
+- `DAY85 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0010 max_iqr_window=0.0020 failing=[] -> admissible`
+- `DAY85 STEP i22_vs_i21 gen-only decode: pooled=-0.0020 o1=-0.0020 o2=-0.0020 noise=0.0010 -> improves`
+- `DAY85 STEP i22_vs_i21 steady window: pooled=-0.0010 o1=-0.0020 o2=+0.0000 noise=0.0020 -> flat`
+- `DAY85 BESIDE i22_vs_i15 gen-only decode: pooled=-0.0040 o1=-0.0030 o2=-0.0040 noise=0.0010 -> improves (deciding
+  nothing)`
+- `DAY85 DOOR i22_vs_ref gen-only decode: pooled=+0.0010 o1=+0.0010 o2=+0.0010 noise=0.0010 -> matches`
+- `DAY85 DOOR i22_vs_ref steady window: pooled=+0.0000 o1=-0.0010 o2=+0.0010 noise=0.0020 -> matches`
+- `DAY85 I22C brackets per window token (ms, medians): dispatch_ns=0.0669 prefetch_ns=0.3436 pf_demand_ns=0.0590
+  pf_resident_ns=0.0016 pf_retire_ns=0.0210 pf_stage_ns=0.2243`
+- `DAY85 VERDICT rig=pro-single integrity=ok i22=improves door=i22 vs_ref=matches (window: i22=flat vs_ref=matches)`
+
+**Read as registered: I22 `improves` on the 9950X class (-2 ms over 32 tokens gen-only in both orders) and is `flat` on
+the 285K class; neither regresses, so I22 stays. The door `matches` REF on both classes, gen-only and window, for the
+first time since C11 opened.** Stated plainly, as the rule reads it: on the 285K the door is still 2 ms behind REF
+gen-only by the medians (1 and 3 by order), and it reads `matches` because this sitting's noise term is 2 ms (DAY84's
+BOX41 sitting read the same +2 ms against a 1 ms term as `loses`); on the 9950X it is 1 ms behind against a 1 ms term.
+So the gen-only gap is now one to two ticks of the printed resolution on both classes, from 9 to 10 ms at I15. The
+door's own clock: `pf_demand` 0.059 to 0.067 ms per window token (0.125 to 0.131 at I21, 0.150 at I20), `prefetch_ns`
+0.344 to 0.349 (0.513 at I20).
