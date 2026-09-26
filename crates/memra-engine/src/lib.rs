@@ -103,6 +103,7 @@ pub mod glm5_tp_sym_graph;
 pub mod glm_spec;
 pub mod graph_update;
 pub mod kda;
+pub mod mimo_source_moe;
 /// MLA (multi-head latent attention) CPU f32 reference — GLM-5.2 bring-up lane increment 1.
 /// Naive vs absorbed decode forms + NORM/NEOX rope permutation, unit-tested; the permanent
 /// oracle for the MLA kernel family (`research/mla-bringup-20260801/DESIGN.md`). No CUDA deps.
