@@ -6179,10 +6179,13 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         let _ = signal_admin_shutdown.send(true);
         // STOPPING=1 + EXTEND_TIMEOUT_USEC: tell systemd the stop is deliberate and how
         // long the drain may legitimately take, so TimeoutStopSec does not SIGKILL a
-        // healthy drain mid-stream (audit's systemd section).
+        // healthy drain mid-stream (audit's systemd section). Two deadlines: the HTTP
+        // drain, then the wait for dsv4 serving lanes still inside an engine call
+        // (`dsv4_serve::join_lanes`, memra #739), which a kill would interrupt exactly
+        // where CUDA teardown is unsafe.
         health::sd_notify(&format!(
             "STOPPING=1\nSTATUS=draining\nEXTEND_TIMEOUT_USEC={}",
-            (drain_deadline_s() + 5) * 1_000_000
+            (2 * drain_deadline_s() + 5) * 1_000_000
         ));
         let n: usize = inflight
             .iter()
