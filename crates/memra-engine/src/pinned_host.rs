@@ -318,7 +318,8 @@ impl PinnedHostBuf {
     /// # Safety
     ///
     /// As `enqueue_to_device_f32`, and: a host function that writes all `len` bytes of this buffer
-    /// was launched on `stream` before this call, so stream order puts the write before the copy.
+    /// was launched on `stream` before this call, or (WP-A day 64, design F) on another stream whose
+    /// event recorded after it `stream` waits on before this call, so the write precedes the copy.
     pub(crate) unsafe fn enqueue_to_device_f32_after_fill(
         &self,
         dst: &mut CudaSlice<f32>,

@@ -978,6 +978,10 @@ pub struct CudaTransfers {
     /// issued after the submit behind the copy's landing. Created from the owner context on the
     /// owner thread; `check_thread` still pins every call.
     copy: Option<Arc<CudaStream>>,
+    /// WP-A day 64 (`DAY64.md` design F): the fill stream, created with the copy stream. A promote's
+    /// span fill runs here in chunks, each sealed by an event the copy stream waits on before that
+    /// chunk's copies, so the fill overlaps the KV item copies and the earlier chunks' copies.
+    fill: Option<Arc<CudaStream>>,
     /// WP-A day 38 (`DAY38.md` design G'', section 8): the receipt twins (the pinned host side of a
     /// batch's receipt lanes), reused by exact byte length. A twin returns here when its batch is
     /// acknowledged (every write to it observed) instead of being freed: `cuMemFreeHost` waits for
@@ -1060,6 +1064,7 @@ impl CudaTransfers {
         Ok(Self {
             stream: owner,
             copy: None,
+            fill: None,
             twin_pool: RefCell::new(Vec::new()),
             lease_pool: Rc::new(LeasePool::new(governor.clone())),
             fill_threads: fill_threads_for_host(
@@ -1094,6 +1099,8 @@ impl CudaTransfers {
     pub fn new_with_copy_stream(owner: Arc<CudaStream>, governor: SharedBudget) -> Result<Self> {
         let mut t = Self::new(owner, governor)?;
         t.copy = Some(cuda(t.stream.context().new_stream())?);
+        // WP-A day 64 (design F.1): the fill stream, or a construction refusal.
+        t.fill = Some(cuda(t.stream.context().new_stream())?);
         // WP-A day 22: the D2D classes carry a receipt, so the copy stream comes with its kernels;
         // a module that will not load is a construction refusal, never a receipt-less class.
         let module = cuda(
@@ -3025,47 +3032,82 @@ impl CudaTransfers {
                 .ok()
         };
         let mut timing: Vec<CudaEvent> = timed(&copy).into_iter().collect();
-        // Day 33 (design F): the fill, ONE host function on the copy stream ahead of every copy;
-        // day 39 (design T): split inside it across the engine's fill threads.
+        // Day 33 (design F): the fill, a host function ahead of every copy; day 39 (design T): split
+        // inside it across the engine's fill threads. WP-A day 64 (`DAY64.md` design F.2, F.3): on
+        // the fill stream, in K = min(4, spans) contiguous chunks, each sealed by an event; the copy
+        // stream waits on chunk k's event before chunk k's first copy. A first chunk that does not
+        // launch hands everything back, as the single launch did; a failure once a chunk launched
+        // quarantines the batch (the engine keeps every span, as an enqueue failure does), so the
+        // attach never waits on the host.
+        let mut chunk_events: Vec<(usize, CudaEvent)> = Vec::new();
+        let mut fill_failed = false;
         if let Some(fills) = fills {
-            let task = Box::new(SpanFillTask {
-                items: fills
-                    .into_iter()
-                    .zip(spans.iter_mut())
-                    .map(|(plane, span)| {
-                        let dst = span.source.fill_target();
-                        (plane, dst)
-                    })
-                    .collect(),
-                threads: self.fill_threads,
-            });
-            let raw = Box::into_raw(task);
-            // SAFETY: `span_fill_on_copy_stream` takes the box back exactly once, when the copy
-            // stream reaches it; each target is a staging buffer the engine owns from here until
-            // `take_h2d_spans`, which runs only after that span's event, which stream order puts
-            // after this host function; nobody else reads or writes a target in between, and each
-            // plane is an owned `Arc` the task holds. On a launch error the driver did not take the
-            // box, so it is taken back here.
-            let launched = unsafe {
-                result::stream::launch_host_function(
-                    copy.cu_stream(),
-                    span_fill_on_copy_stream,
-                    raw.cast(),
-                )
-            };
-            if let Err(e) = launched {
-                // SAFETY: the launch failed, so the driver holds no reference to `raw`.
-                let task = unsafe { Box::from_raw(raw) };
-                let fills = task.items.into_iter().map(|(plane, _)| plane).collect();
-                return Err((cuda::<()>(Err(e)).unwrap_err(), spans, Some(fills)));
+            let fill = self.fill.clone().unwrap_or_else(|| copy.clone());
+            let back: Vec<Arc<Vec<f32>>> = fills.to_vec();
+            let n = spans.len();
+            let k = n.clamp(1, 4);
+            let per = n.div_ceil(k);
+            let mut items: Vec<(Arc<Vec<f32>>, FillTarget)> = fills
+                .into_iter()
+                .zip(spans.iter_mut())
+                .map(|(plane, span)| {
+                    let dst = span.source.fill_target();
+                    (plane, dst)
+                })
+                .collect();
+            let mut start = 0usize;
+            while !items.is_empty() {
+                let take = per.min(items.len());
+                let rest = items.split_off(take);
+                let task = Box::new(SpanFillTask {
+                    items: std::mem::replace(&mut items, rest),
+                    threads: self.fill_threads,
+                });
+                let raw = Box::into_raw(task);
+                // SAFETY: `span_fill_on_copy_stream` takes the box back exactly once, when the fill
+                // stream reaches it; each target is a staging buffer the engine owns from here until
+                // `take_h2d_spans`, which runs only after that span's copy event, which the copy
+                // stream orders after this chunk's event (the wait below); nobody else reads or
+                // writes a target in between, and each plane is an owned `Arc` the task holds. On a
+                // launch error the driver did not take the box, so it is taken back here.
+                let launched = unsafe {
+                    result::stream::launch_host_function(
+                        fill.cu_stream(),
+                        span_fill_on_copy_stream,
+                        raw.cast(),
+                    )
+                };
+                if let Err(e) = launched {
+                    // SAFETY: the launch failed, so the driver holds no reference to `raw`.
+                    drop(unsafe { Box::from_raw(raw) });
+                    if chunk_events.is_empty() {
+                        return Err((cuda::<()>(Err(e)).unwrap_err(), spans, Some(back)));
+                    }
+                    fill_failed = true;
+                    break;
+                }
+                match fill.record_event(None) {
+                    Ok(event) => chunk_events.push((start, event)),
+                    Err(_) => {
+                        fill_failed = true;
+                        break;
+                    }
+                }
+                start += take;
             }
         }
         timing.extend(timed(&copy));
         #[cfg(test)]
         let mut fault = std::mem::take(&mut self.span_enqueue_fault);
-        let mut failed = false;
+        let mut failed = fill_failed;
         let mut slots = Vec::with_capacity(spans.len());
-        for mut span in spans {
+        for (i, mut span) in spans.into_iter().enumerate() {
+            // WP-A day 64 (design F.3): chunk k's copies wait on chunk k's fill.
+            if let Some((_, ev)) = chunk_events.iter().find(|(first, _)| *first == i)
+                && copy.wait(ev).is_err()
+            {
+                failed = true;
+            }
             let event = if failed {
                 None
             } else {
@@ -5015,8 +5057,11 @@ mod tests {
         let src = include_str!("tier_transfer.rs");
         let body = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
         assert!(!body.contains("receipt_stream"), "no second side stream");
-        // Streams the engine creates: the copy stream only (the owner's is the caller's).
-        assert_eq!(body.matches(".new_stream()").count(), 1);
+        // Streams the engine creates: the copy stream, and since WP-A day 64 (design F) the fill
+        // stream, which carries host functions and their events only: no kernel, no copy, no
+        // receipt (the owner's stream is the caller's).
+        assert_eq!(body.matches(".new_stream()").count(), 2);
+        assert!(!body.contains("launch_builder(&fill") && !body.contains("b = fill."));
         // Direct launches: the four helpers' own (`stream.`, their parameter: the view digest,
         // day 42's batched span digests and span flip, the spin) and the copy stream's (the D2H
         // receipt's SHA-256 and flip).
@@ -5408,6 +5453,39 @@ mod tests {
     /// WP-A day 37 (`DAY37.md` section 8): every native cell of this module owns a context of the
     /// pool (`cell_context()`), the pool is the module's only context constructor, and its size is
     /// the native cell count.
+    /// WP-A day 64 (`DAY64.md` design F; CPU census): a promote's span fill runs on the fill stream
+    /// in chunks, each sealed by an event, and the copy stream waits on a chunk's event before that
+    /// chunk's first copy; no fill host function is launched on the copy stream any more; the fill
+    /// stream is created with the copy stream; a failure once a chunk launched quarantines the batch
+    /// (no host wait at attach).
+    #[test]
+    fn day64_the_span_fill_runs_on_its_own_stream_in_chunks() {
+        let src = include_str!("tier_transfer.rs");
+        let body = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        let attach = &body[body
+            .find("        mut spans: Vec<H2dSpan>,\n        fills: Option<Vec<Arc<Vec<f32>>>>,")
+            .unwrap()..];
+        let attach = &attach[..attach.find("    pub fn defer_h2d_checksums(").unwrap()];
+        assert_eq!(attach.matches("launch_host_function(").count(), 1);
+        assert!(attach.contains("fill.cu_stream(),"));
+        assert!(
+            !attach.contains("copy.cu_stream(),\n                    span_fill_on_copy_stream")
+        );
+        assert!(attach.contains("match fill.record_event(None) {"));
+        assert!(!attach.contains("synchronize("), "no host wait at attach");
+        assert!(
+            attach.contains("let mut failed = fill_failed;"),
+            "a later chunk's failure quarantines"
+        );
+        let wait = attach
+            .find("chunk_events.iter().find(|(first, _)| *first == i)")
+            .unwrap();
+        let copy = attach.find("enqueue_to_device_f32_after_fill(").unwrap();
+        assert!(wait < copy, "the chunk's wait precedes its copies");
+        let ctor = &body[body.find("pub fn new_with_copy_stream(").unwrap()..];
+        assert!(ctor[..600].contains("t.fill = Some(cuda(t.stream.context().new_stream())?);"));
+    }
+
     /// WP-A day 63 (`DAY63.md` design L1.1): the size class table.
     #[test]
     fn day63_the_lease_class_table() {
@@ -6638,7 +6716,10 @@ mod tests {
         );
         assert!(
             at(submit, "Err(error) => return Err((error, spans, fills)),")
-                < at(submit, "for mut span in spans {")
+                < at(
+                    submit,
+                    "for (i, mut span) in spans.into_iter().enumerate() {"
+                )
         );
         assert!(submit.contains("!(filled || s.source.is_written())"));
         assert!(submit.contains("fills[k].len().checked_mul(4) != Some(bytes)"));
