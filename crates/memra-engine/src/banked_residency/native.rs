@@ -1693,7 +1693,9 @@ mod day48_census {
             1,
             "the demand's guarded insertion"
         );
-        let grouped = "            if !self.banked_validated.holds(id, bytes) {\n                if let Err(err) = bank.validate(local, bytes) {\n                    self.release_chosen(&chosen[..taken]);\n                    return Err(err.into());\n                }\n                self.banked_validated.insert(id, bytes);\n            }";
+        // DAY77 (I17): the grouped prefetch validates every wanted member before it reserves any
+        // slot, so a refusal has no chosen slot to return.
+        let grouped = "            if !self.banked_validated.holds(id, bytes) {\n                bank.validate(local, bytes)?;\n                self.banked_validated.insert(id, bytes);\n            }";
         assert_eq!(
             CACHE.matches(grouped).count(),
             1,
@@ -1928,9 +1930,13 @@ mod day50_census {
         // DAY64 (I15): the prefetch is grouped; residency, the lease and the staging still go through the owner.
         let prefetch = &CACHE[CACHE.find("fn prefetch_banked_group(").unwrap()..];
         let prefetch = &prefetch[..prefetch.find("\n    fn ").unwrap_or(prefetch.len())];
-        assert!(prefetch.contains("bank.host_resident(local)"));
+        // DAY77 (I17): residency and staging each in one registry entry for the group.
+        assert!(prefetch.contains("bank.host_resident_many(&asked[..wanted.len()])"));
         assert!(prefetch.contains("bank.demand_many(&locals[..taken])"));
+        assert!(prefetch.contains("bank.with_bytes_each(&token, |index, payload| {"));
         assert!(prefetch.contains("stage_on_copy_stream(e, payload, &mut self.slots[slot])"));
+        assert!(!prefetch.contains("bank.host_resident(local)"));
+        assert!(!prefetch.contains("bank.with_bytes_at("));
         assert_eq!(FORWARD.matches("e.expert_bank_prefetch()").count(), 1);
         // Count in this file's code, not in these tests' own literals.
         let code = &SRC[..SRC.find("#[cfg(test)]").unwrap()];
@@ -2360,6 +2366,50 @@ mod day61_profile {
         println!(
             "DAY64 P8 grouped per_block_ns cycle={:.1}",
             p8[0] as f64 / (seq.len() / 3 * 3) as f64
+        );
+        // DAY77 P9: I17's form of P8, the group's residency and its staging each in one registry
+        // entry; then P8 again, so the two forms bracket each other in one window.
+        let p9 = median_repeat(|| {
+            let started = Instant::now();
+            for expert in seq.chunks_exact(3) {
+                let blocks: Vec<(ExpertDispatchId, usize)> =
+                    expert.iter().map(|&l| (l, LEN as usize)).collect();
+                let ids: Vec<ExpertDispatchId> = blocks.iter().map(|b| b.0).collect();
+                let resident = proxy.host_resident_many(&ids).unwrap();
+                assert!(resident[..ids.len()].iter().all(|&r| r));
+                let token = proxy.demand_many(&blocks).unwrap();
+                proxy
+                    .with_bytes_each(&token, |_, b| {
+                        std::hint::black_box(b[0]);
+                        Ok::<(), ()>(())
+                    })
+                    .unwrap()
+                    .unwrap();
+                proxy.finish_group(&token).unwrap();
+            }
+            [ns(started.elapsed())]
+        });
+        let p8b = median_repeat(|| {
+            let started = Instant::now();
+            for expert in seq.chunks_exact(3) {
+                let blocks: Vec<(ExpertDispatchId, usize)> =
+                    expert.iter().map(|&l| (l, LEN as usize)).collect();
+                for &(local, _) in &blocks {
+                    assert!(proxy.host_resident(local).unwrap());
+                }
+                let token = proxy.demand_many(&blocks).unwrap();
+                for index in 0..blocks.len() {
+                    std::hint::black_box(proxy.with_bytes_at(&token, index, |b| b[0]).unwrap());
+                }
+                proxy.finish_group(&token).unwrap();
+            }
+            [ns(started.elapsed())]
+        });
+        let per_block = |v: u64| v as f64 / (seq.len() / 3 * 3) as f64;
+        println!(
+            "DAY77 P9 group calls per_block_ns cycle={:.1} | P8 again cycle={:.1}",
+            per_block(p9[0]),
+            per_block(p8b[0])
         );
         owner.close().unwrap();
         drop(owner);

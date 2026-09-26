@@ -136,7 +136,7 @@ fn trim_evicts_the_ordered_maps_victim() {
 }
 
 /// A three-record SLRU dispatch of the fixture's retained records, and its `(ExpertDispatchId, bytes)` blocks.
-fn group_bank() -> (
+pub(super) fn group_bank() -> (
     SlruExpertDispatch<Heat, Reader>,
     Vec<(ExpertDispatchId, usize)>,
 ) {
