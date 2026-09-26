@@ -129,6 +129,9 @@ def main():
                             "MEMRA_CUDA_ARCH=120a", "cargo", "test", "--release", "-p", "memra-engine", "--lib",
                             "--", "--ignored", "--exact", GPU_CELL, "--nocapture"]
                 elif a.regime == "spec":
+                    # run-spec takes no lock FD: without the placeholder the collector must not be
+                    # asked to substitute one (it refuses `--external-lock` with no token).
+                    argv.remove("--external-lock")
                     argv[-4:-4] = ["--storage-root", "/data/cache", "--storage-proof", str(PUBLIC_PROOF)]
                     argv += [str(HERE / "m1-spec-cell.py"), "--arms-lock", str(HERE / "m1-prereg/f17-arms.lock.json"),
                              "--arm", a.arm, "--binary", BIN26.replace("run-gen", "run-spec"), "--artifact", ART]
