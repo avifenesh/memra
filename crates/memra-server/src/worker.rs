@@ -8854,19 +8854,6 @@ struct HostPrefixCache {
     /// KV plane copies are in flight on the copy stream (or settled and waiting for a caller with
     /// the device cache in hand to publish). Declared before `tier` for the same drop order.
     capturing: Option<PendingCapture>,
-    /// WP-A day 62 (`DAY62.md` design R2): a retiring session that is the pending capture's
-    /// source, held here instead of retiring while the capture's copies may still read its cache.
-    /// Released into the retire pass once the holding capture's landing is observed
-    /// (`capture_landed_seq`); a holding capture that ends without an observed landing (a latch)
-    /// moves it to `quarantined_sources`. Written only at the deferral.
-    held_source: Option<HeldCaptureSource>,
-    /// WP-A day 62 (R2): the ticket sequence of the last capture whose every item was observed
-    /// complete (the settle's `Done`), the release condition of `held_source`.
-    capture_landed_seq: Option<u64>,
-    /// WP-A day 62 (R2): held sources whose capture ended without an observed landing. Never
-    /// parked, never dropped while the process runs (the engine's leak-on-unknown rule); leaked
-    /// at shutdown.
-    quarantined_sources: Vec<Session>,
     /// WP-A day 20: the capture path's own latch. Set when a capture's completion could not be
     /// observed or its ticket did not retire (`[prefix-cache] CAPTURE OFF-TICK DISABLED`); every
     /// later capture of the boot takes the tick program (`prefix_snapshot` on the owner stream).
@@ -9552,25 +9539,6 @@ impl HostPrefixCache {
         // if it is the purged tenant's it is DROPPED unpublished (its planes free at drop), so a
         // revoked tenant's bytes never enter the device cache after the purge's receipt.
         host_capture_settle_contract(self, ContractWait::Block, "a tenant purge");
-        // WP-A day 62 (R2.2): a held source of the purged tenant never parks (its bytes would
-        // outlive the purge in the reuse pool): it drops once its capture's landing is observed,
-        // and is quarantined otherwise.
-        if self
-            .held_source
-            .as_ref()
-            .is_some_and(|h| crate::auth::meter_key(&h.session.cache_ns) == row)
-        {
-            let held = self.held_source.take().expect("checked");
-            if self.capture_landed_seq == Some(held.seq) {
-                eprintln!(
-                    "[prefix-cache] retire dropped: the tenant purge revoked the capture's held                      source session (ticket seq={}); not parked",
-                    held.seq
-                );
-                drop(held);
-            } else {
-                self.quarantined_sources.push(*held.session);
-            }
-        }
         if self
             .capturing
             .as_ref()
@@ -11502,47 +11470,6 @@ struct PendingCapture {
     /// nothing decides on either.
     source_kv: usize,
     queued_ahead: String,
-}
-
-/// WP-A day 62 (`DAY62.md` design R2): the pending capture's source session, held until the
-/// capture's landing is observed.
-struct HeldCaptureSource {
-    /// The holding capture's ticket sequence.
-    seq: u64,
-    session: Box<Session>,
-    held_at: Instant,
-}
-
-/// WP-A day 62 (R2.1): whether this retire pass defers instead of settling. Only when the one
-/// retiring session is the pending capture's source, the capture has a ticket in flight, and no
-/// source is held already; any other retire settles `Block` as before (R1 is not selected).
-fn r2_defer_retire(
-    finished: usize,
-    source_retiring: bool,
-    ticket: Option<u64>,
-    held: bool,
-) -> bool {
-    finished == 1 && source_retiring && ticket.is_some() && !held
-}
-
-/// What the retire pass does with a held source (R2.2).
-#[derive(Debug, PartialEq, Eq)]
-enum HeldRelease {
-    /// The holding capture's landing was observed: the source retires now.
-    Release,
-    /// The holding capture is still pending: keep holding.
-    Keep,
-    /// The holding capture ended without an observed landing: never parked, never dropped.
-    Quarantine,
-}
-fn r2_held_release(held: u64, landed: Option<u64>, pending: Option<u64>) -> HeldRelease {
-    if landed == Some(held) {
-        HeldRelease::Release
-    } else if pending == Some(held) {
-        HeldRelease::Keep
-    } else {
-        HeldRelease::Quarantine
-    }
 }
 
 /// WP-A day 62 (step 1, log only): the copy-stream tickets in flight on this worker, by kind.
@@ -18185,7 +18112,6 @@ fn host_capture_settle_with(
         }
     };
     let submitted = contract.submitted;
-    let seq = contract.ticket.sequence;
     // WP-A day 25: the settle's own span on the owner thread, and where in the copy's life it began.
     let settle_after_ms = submitted.elapsed().as_secs_f64() * 1e3;
     let settle_entered = Instant::now();
@@ -18203,9 +18129,6 @@ fn host_capture_settle_with(
             Some(CaptureSettled::Pending)
         }
         Ok(CaptureSettle::Done { kv, draft }) => {
-            // WP-A day 62 (R2.2): every item observed complete; a source held by this capture
-            // may retire.
-            host.capture_landed_seq = Some(seq);
             pending.copy_ms = submitted.elapsed().as_secs_f64() * 1e3;
             pending.settle_after_ms = settle_after_ms;
             pending.settle_held_ms = settle_held_ms;
@@ -18354,20 +18277,6 @@ fn host_capture_publish(
 /// Shutdown (the run loop's exit): a host wait on the pending capture's events, then DROP; no
 /// publication after a stop.
 fn host_capture_drain_at_shutdown(hpx: &mut HostPrefixCache) {
-    host_capture_drain_capture(hpx);
-    // WP-A day 62 (R2.2): a held source drops after the drain's host wait observed its capture;
-    // one whose capture never landed, and every quarantined source, is leaked.
-    if let Some(held) = hpx.held_source.take() {
-        if hpx.capture_landed_seq == Some(held.seq) {
-            drop(held);
-        } else {
-            std::mem::forget(held);
-        }
-    }
-    std::mem::forget(std::mem::take(&mut hpx.quarantined_sources));
-}
-
-fn host_capture_drain_capture(hpx: &mut HostPrefixCache) {
     if hpx.capturing.is_none() {
         return;
     }
@@ -25599,9 +25508,6 @@ pub fn run(
                 && hpx.promoting.is_none()
                 && hpx.capturing.is_none()
                 && hpx.restoring.is_none()
-                // WP-A day 62 (R2.2): a held source retires in the retire pass after its capture's
-                // landing, which the tick top may have observed just above: never block before it.
-                && hpx.held_source.is_none()
             {
                 // Do not let an already-arrived request sit behind an idle-only probe. Once the
                 // channel is observed empty, one pending expensive rung may run before the worker
@@ -25671,7 +25577,6 @@ pub fn run(
                     || hpx.promoting.is_some()
                     || hpx.capturing.is_some()
                     || hpx.restoring.is_some()
-                    || hpx.held_source.is_some()
                 {
                     wait = wait.min(Duration::from_millis(2));
                 }
@@ -29351,35 +29256,6 @@ pub fn run(
         finished.dedup();
         let mut retired_interactive = false;
         let mut oom_teardowns = 0usize;
-        // WP-A day 62 (`DAY62.md` design R2.2): a source held by a capture retires in the first
-        // pass after the capture's landing is observed; a capture that ended without an observed
-        // landing quarantines it.
-        if let Some(held) = hpx.held_source.take() {
-            let pending = hpx
-                .capturing
-                .as_ref()
-                .and_then(|c| c.contract.as_ref())
-                .map(|k| k.ticket.sequence);
-            match r2_held_release(held.seq, hpx.capture_landed_seq, pending) {
-                HeldRelease::Release => {
-                    eprintln!(
-                        "[prefix-cache] retire released: the capture's source session (ticket                          seq={}) retires after {:.1} ms held (the landing observed)",
-                        held.seq,
-                        held.held_at.elapsed().as_secs_f64() * 1e3
-                    );
-                    finished.push(active.len());
-                    active.push(*held.session);
-                }
-                HeldRelease::Keep => hpx.held_source = Some(held),
-                HeldRelease::Quarantine => {
-                    eprintln!(
-                        "[prefix-cache] retire QUARANTINED: the capture holding its source (ticket                          seq={}) ended without an observed landing; the session is never parked                          or dropped",
-                        held.seq
-                    );
-                    hpx.quarantined_sources.push(*held.session);
-                }
-            }
-        }
         // MOVE 2 SLICE 1 (revuto on #634): a pending capture reads a live session's KV planes on
         // the copy stream and the engine retains no source. A retiring session's cache is dropped
         // on the owner stream (not ordered against the copy stream) or parked for a later request
@@ -29395,42 +29271,11 @@ pub fn run(
                     .as_ref()
                     .is_some_and(|c| c.kv.as_ptr() as usize == source_kv)
             });
-            let ticket = hpx
-                .capturing
-                .as_ref()
-                .and_then(|c| c.contract.as_ref())
-                .map(|k| k.ticket.sequence);
-            if let (true, Some(seq)) = (
-                r2_defer_retire(
-                    finished.len(),
-                    source_retiring,
-                    ticket,
-                    hpx.held_source.is_some(),
-                ),
-                ticket,
-            ) {
-                // WP-A day 62 (R2.1): the one retiring session is the source; it leaves `active`
-                // into the hold, and nothing parks, drops or rewrites its cache until the
-                // landing (R2.2). The response is complete; its retire tail waits.
-                let t = Instant::now();
-                let i = finished.pop().expect("one retiring session");
-                let session = Box::new(active.remove(i));
-                hpx.held_source = Some(HeldCaptureSource {
-                    seq,
-                    session,
-                    held_at: Instant::now(),
-                });
-                eprintln!(
-                    "[prefix-cache] retire deferred: the capture's source session is held until                      its landing (ticket seq={seq}; {:.3} ms)",
-                    t.elapsed().as_secs_f64() * 1e3
-                );
-            } else {
-                let why = format!(
-                    "a session retire (source retiring: {})",
-                    if source_retiring { "yes" } else { "no" }
-                );
-                host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, &why);
-            }
+            let why = format!(
+                "a session retire (source retiring: {})",
+                if source_retiring { "yes" } else { "no" }
+            );
+            host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, &why);
         }
         for &i in finished.iter().rev() {
             let mut s = active.remove(i);
@@ -45992,12 +45837,8 @@ mod tests {
             admit_at < push_at && push_at - admit_at < 200,
             "book-admit must immediately precede active.push"
         );
-        // ...and the retire release at the single active.remove seam of the retire loop. (WP-A
-        // day 62 design R2: a capture's held source leaves `active` still booked and re-enters it
-        // before this loop, so its booking is retired here, once.)
-        let remove_at = prod
-            .find("let mut s = active.remove(i);")
-            .expect("retire remove exists");
+        // ...and the retire release at the single active.remove seam.
+        let remove_at = prod.find("active.remove(i)").expect("retire remove exists");
         let retire_at = prod
             .find("admission_book.retire(")
             .expect("book retire exists");
@@ -47869,7 +47710,7 @@ mod tests {
         assert!(body[capture..capture + 200].contains("ContractWait::Poll,"));
         assert!(body.contains("&& hpx.capturing.is_none()"));
         assert!(body.contains(
-            "if hpx.demoting.is_some()\n                    || hpx.promoting.is_some()\n                    || hpx.capturing.is_some()\n                    || hpx.restoring.is_some()\n                    || hpx.held_source.is_some()\n                {"
+            "if hpx.demoting.is_some()\n                    || hpx.promoting.is_some()\n                    || hpx.capturing.is_some()\n                    || hpx.restoring.is_some()\n                {"
         ));
         let purge = body
             .find("    fn purge_tenant(&mut self, tenant: &str) -> (usize, usize, usize) {")
@@ -50025,7 +49866,7 @@ mod tests {
         assert!(worker[loop_at..loop_at + 4500].contains("&& hpx.demoting.is_none()"));
         // (Day 20 extended the cap to the `Capturing` entry; the statement is one `if`.)
         assert!(worker[loop_at..loop_at + 9000].contains(
-            "if hpx.demoting.is_some()\n                    || hpx.promoting.is_some()\n                    || hpx.capturing.is_some()\n                    || hpx.restoring.is_some()\n                    || hpx.held_source.is_some()\n                {"
+            "if hpx.demoting.is_some()\n                    || hpx.promoting.is_some()\n                    || hpx.capturing.is_some()\n                    || hpx.restoring.is_some()\n                {"
         ));
         // OffTick is the eviction sink's route and nobody else's.
         let sink = body("fn host_demote_prefix_entry(");
@@ -50308,21 +50149,18 @@ mod tests {
         );
     }
 
-    /// WP-A day 62 (`DAY62.md` step 1; CPU census): the retire seam's lines. `source_kv` and
-    /// `queued_ahead` are written at submission and read only by the retire pass and the publish
-    /// line; since design R2 (section 5) the source test is the deferral's decision, and every
-    /// other retire with a capture pending still settles `Block` before any session leaves
-    /// `active`.
+    /// WP-A day 62 (`DAY62.md` step 1; CPU census): the retire seam's lines are log only. The retire
+    /// still settles a pending capture with `Block` before any session leaves `active`, whether or
+    /// not the source retires; `source_kv` and `queued_ahead` are written at submission and read
+    /// only by the retire's why and the publish line.
     #[test]
     fn day62_the_retire_seam_lines_are_log_only() {
         let worker = include_str!("worker.rs");
         let production = &worker[..worker.find("\nmod tests {").unwrap()];
-        // Design R2 (day 62 section 5) makes the source test a decision: computed, handed to
-        // `r2_defer_retire` (its parameter and body), then printed on the settle's why.
         assert_eq!(
             production.matches("source_retiring").count(),
-            5,
-            "R2's decision and the why"
+            2,
+            "computed, then printed"
         );
         assert!(production.contains("if source_retiring { \"yes\" } else { \"no\" }"));
         assert_eq!(
@@ -50346,120 +50184,6 @@ mod tests {
             settle.unwrap() < remove.unwrap(),
             "the Block settle still precedes the removal"
         );
-    }
-
-    /// WP-A day 62 design R2 (`DAY62.md` section 5): the deferral and release decisions.
-    #[test]
-    fn day62_r2_defers_only_the_lone_source_and_releases_only_after_the_landing() {
-        use super::{HeldRelease, r2_defer_retire, r2_held_release};
-        assert!(
-            r2_defer_retire(1, true, Some(7), false),
-            "the lone retiring source is held"
-        );
-        assert!(
-            !r2_defer_retire(2, true, Some(7), false),
-            "another retire settles Block"
-        );
-        assert!(
-            !r2_defer_retire(1, false, Some(7), false),
-            "a non-source retire settles Block"
-        );
-        assert!(
-            !r2_defer_retire(1, true, None, false),
-            "no ticket in flight: the Block settle"
-        );
-        assert!(
-            !r2_defer_retire(1, true, Some(7), true),
-            "one held source at a time"
-        );
-        assert_eq!(r2_held_release(7, Some(7), None), HeldRelease::Release);
-        assert_eq!(r2_held_release(7, Some(6), Some(7)), HeldRelease::Keep);
-        assert_eq!(r2_held_release(7, None, Some(7)), HeldRelease::Keep);
-        assert_eq!(
-            r2_held_release(7, Some(6), None),
-            HeldRelease::Quarantine,
-            "ended unobserved"
-        );
-        assert_eq!(
-            r2_held_release(7, None, Some(8)),
-            HeldRelease::Quarantine,
-            "another capture"
-        );
-    }
-
-    /// WP-A day 62 design R2 (CPU census): no path drops, parks, rewrites or hands out a held
-    /// source before its release. `held_source` is written at the deferral (and put back while
-    /// its capture is pending); the source returns to `active` only on `Release`, after
-    /// `capture_landed_seq` was set by the settle's `Done`; the purge drops it only after the
-    /// landing; a capture that ended unobserved quarantines it; shutdown leaks what never landed.
-    #[test]
-    fn day62_r2_no_path_releases_a_held_source_before_its_landing() {
-        let worker = include_str!("worker.rs");
-        let production = &worker[..worker.find("\nmod tests {").unwrap()];
-        let at = |b: &str, n: &str| b.find(n).unwrap_or_else(|| panic!("{n} missing"));
-        assert_eq!(
-            production
-                .matches("held_source = Some(HeldCaptureSource {")
-                .count(),
-            1
-        );
-        assert_eq!(
-            production.matches("held_source = Some(held)").count(),
-            1,
-            "the Keep arm"
-        );
-        assert_eq!(
-            production.matches("capture_landed_seq = Some(seq)").count(),
-            1,
-            "Done only"
-        );
-        let done = at(production, "Ok(CaptureSettle::Done { kv, draft }) => {");
-        let landed = at(production, "host.capture_landed_seq = Some(seq);");
-        assert!(
-            landed > done && landed - done < 300,
-            "the landing is recorded at Done"
-        );
-        assert_eq!(production.matches("active.push(*held.session)").count(), 1);
-        let release = at(production, "HeldRelease::Release => {");
-        let push = at(production, "active.push(*held.session)");
-        let keep = at(production, "HeldRelease::Keep =>");
-        assert!(
-            release < push && push < keep,
-            "only the Release arm returns it to active"
-        );
-        let block = at(production, "if let Some(held) = hpx.held_source.take() {");
-        let defer = at(production, "let session = Box::new(active.remove(i));");
-        let settle = production[defer..]
-            .find("ContractWait::Block, &why)")
-            .map(|x| x + defer);
-        assert!(
-            block < defer && settle.is_some(),
-            "release, then the deferral or the Block settle"
-        );
-        assert_eq!(
-            production.matches("quarantined_sources.push(").count(),
-            2,
-            "unobserved and purge"
-        );
-        let purge = at(production, "the tenant purge revoked the capture's held");
-        let purge_check = production[..purge]
-            .rfind("if self.capture_landed_seq == Some(held.seq) {")
-            .unwrap();
-        assert!(
-            purge - purge_check < 300,
-            "the purge drops a held source only after its landing"
-        );
-        let shutdown = at(
-            production,
-            "fn host_capture_drain_at_shutdown(hpx: &mut HostPrefixCache) {",
-        );
-        assert!(
-            production.contains("&& hpx.held_source.is_none()\n            {"),
-            "the idle block waits for a held source's release"
-        );
-        let tail = &production[shutdown..shutdown + 900];
-        assert!(tail.contains("std::mem::forget(held);"));
-        assert!(tail.contains("std::mem::forget(std::mem::take(&mut hpx.quarantined_sources));"));
     }
 
     /// WP-A day 66 (`DAY66.md`): a stray timed call of any kind before a scoped call never reaches
