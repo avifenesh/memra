@@ -296,3 +296,39 @@ W's hold runs its timed boots, nothing of this lane builds.
     state, and the staging set is allocated at boot.
   - The growth phase (before any entry leaves the tier) still allocates fresh, as section 1 stated.
 - The 5090 half follows under the per-hardware rule. Item 17 is re-read on top of L' (DAY67).
+
+## 7. integ69's worker GPU span cells: 13 failures, placed (before any edit)
+
+- integ69's battery (the lead's BOX35 run, tree `64101769b` = main plus `dba7c0a0c` plus lane C's `9bb17bd8d`) reads
+  `worker-span-cells rc=101 test result: FAILED. 5 passed; 13 failed`: the serial `cargo test -p memra-server --lib
+  -- --ignored --test-threads=1 option_b_ option_c_`. Every gate is green.
+- L's and L''s sittings ran L's own native engine cells but not these worker GPU cells. That is this lane's gap: a
+  design that moves the pinned ledger must run the worker's `option_b_` and `option_c_` cells in its sitting.
+- **Placing the 12 `gpu_used` failures** (`assert_eq!(gpu_used(host), (3 * 8 * 58, 0, 0))`, `left: (2304, 0, 0)
+  right: (1392, 0, 0)`):
+  - The fixture's entry (`gpu_entry`) has three KV planes (trunk layers 0 and 2, and the draft), each 8 rows of 34 K
+    bytes and 24 V bytes: K 272 bytes, V 192 bytes. The expectation 3 x 8 x 58 = 1392 is the sum of the leases'
+    requested lengths.
+  - Design L1.2 (section 2, registered before code: "the lease's own charge is its class bytes ... Stated now
+    because it moves the ledger") charges each lease its size class: 272 is class 512 and 192 is class 256. Three
+    planes of 512 + 256 is 2304, exactly the reading.
+  - Nothing else is in the pinned total. The fixture builds its `HostTierContext` directly, with no boot staging and
+    the lease pool at its default cap of 0, so the pool holds nothing.
+  - **Placed:** the cells encode the pre-L charge. The behaviour is L1.2's, as registered.
+- **Placing `option_b_span_staging_charge_refusal_refuses_the_attach_and_keeps_the_tier_on`** (`a staging buffer over
+  the ledger was charged`; `tier span staging: 4 fresh pinned buffer(s), 163952 bytes charged`):
+  - The cell sizes a co-tenant charge as `2 * (1 << 30) - kv_bytes - first`: the pinned capacity at two budgets, less
+    the KV leases at their requested bytes and one staging buffer. That leaves room for exactly one buffer, so the
+    second span's staging charge must refuse.
+  - Design L1.5 (registered) made the pinned capacity three budgets, so the hog leaves a whole budget free, and the
+    staging charges succeed.
+  - The refusal path itself is untouched by L: `staging_take` still reserves before it allocates, and a refused
+    charge still hands every span back. The fixture has no boot staging, so the first demote allocates, as the cell
+    expects.
+  - **Placed:** the cell's setup encodes the pre-L capacity and charge, not the behaviour.
+- **The fix follows from L1.2 and L1.5 as registered**, and changes no production code. The cells compute the
+  expected charge from `lease_class` (`gpu_lease_charge()`: three planes of `lease_class(272) + lease_class(192)`), and
+  the refusal cell sizes its hog from the ledger's three-budget capacity and that charge. Each cell asserts the same
+  property as before.
+- The same cells run in the next target sitting of any design that moves the pinned ledger (recorded for F2 and for
+  T-H' if accepted).
