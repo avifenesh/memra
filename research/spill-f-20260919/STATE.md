@@ -33,3 +33,7 @@
 - After each regime: `m1-b3-pool.py <dir>` (bounded: `--fallback-unclean`; f17: `--bypass-check --fallback-unclean`), mirror the receipts into
   `rtx5090/` (then `owed17/`, `owed18/`), record verdicts in OWED and a 5090 RESULTS file.
 - Local scratch to remove at the end: `~/spill-f-5090/`, `/data/cache/spill-f-b2/`.
+- 09:06Z queue relaunched with both doors' correctness gates first (`--from mapped-gpu-cell
+  --bounded-max 7864223232`); it waits on lane A's B1 cell (coordinator timing note: no builds or
+  CPU-heavy work until `spill-a-cells/b1-bins` servers are gone; the attribution sampler runs at
+  nice 19). Capped done and unscored (`rtx5090/RESULTS.md`); OWED 26 flagged.
