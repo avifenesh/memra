@@ -20732,6 +20732,15 @@ fn prefix_copy_split_take() -> PrefixCopySplit {
     PREFIX_COPY_SPLIT.with(|c| c.replace(PrefixCopySplit::default()))
 }
 
+/// WP-A day 66 (`DAY66.md`): run `f` with this thread's split scoped to it. Whatever another caller
+/// left since the last take (a retire capture, a park snapshot, a hit restore) is discarded first,
+/// so the returned split holds `f`'s own calls only.
+fn prefix_copy_scoped<T>(f: impl FnOnce() -> T) -> (T, PrefixCopySplit) {
+    let _stale = prefix_copy_split_take();
+    let out = f();
+    (out, prefix_copy_split_take())
+}
+
 /// Time one device call of `kind` into this thread's split (log only; the call is unchanged).
 fn prefix_copy_timed<T>(kind: u8, f: impl FnOnce() -> T) -> T {
     let t = Instant::now();
@@ -34760,18 +34769,19 @@ fn dedup_interactive_prefixes(
         advanced.insert(leader_i);
         // WP-A day 54 (`DAY54.md` step 1, log only): the fanout's on-tick parts, timed.
         let t_snap = Instant::now();
-        let snapshot = prefix_snapshot(
-            engine,
-            active[leader_i].cache.as_ref().unwrap(),
-            &key,
-            &prefix,
-            &leader_logits,
-            loaded.get(&key.0).map(|l| &l.model),
-        );
+        // WP-A day 59 (log only): the snapshot's calls by kind. Day 66: scoped, so a leftover of
+        // another caller on this thread is discarded rather than added to this line.
+        let (snapshot, snap_split) = prefix_copy_scoped(|| {
+            prefix_snapshot(
+                engine,
+                active[leader_i].cache.as_ref().unwrap(),
+                &key,
+                &prefix,
+                &leader_logits,
+                loaded.get(&key.0).map(|l| &l.model),
+            )
+        });
         let fanout_snapshot_ms = t_snap.elapsed().as_secs_f64() * 1e3;
-        // WP-A day 59 (log only): the snapshot's calls by kind; the take also drops whatever an
-        // earlier caller on this thread left in the split.
-        let snap_split = prefix_copy_split_take();
         {
             let s = &mut active[leader_i];
             s.last_logits = leader_logits;
@@ -34861,6 +34871,7 @@ fn dedup_interactive_prefixes(
         }
 
         let fanout_restores_ms = t_restores.elapsed().as_secs_f64() * 1e3;
+        // Only the sibling restores ran since the scoped snapshot's take.
         let restore_split = prefix_copy_split_take();
         let t_insert = Instant::now();
         let pin = px.insert_pinned_demoting(
@@ -49865,8 +49876,27 @@ mod tests {
         );
         assert_eq!(
             production.matches("prefix_copy_split_take()").count(),
-            3,
-            "the fn and the fanout's two takes"
+            4,
+            "the fn, the scoped helper's two, and the restores' take (day 66)"
+        );
+        let fanout = &squash(
+            &production[at(
+                production,
+                "let t_snap = Instant::now();\n        // WP-A day 59",
+            )..],
+        );
+        assert!(
+            at(
+                fanout,
+                &squash("let (snapshot, snap_split) = prefix_copy_scoped(|| {")
+            ) < at(fanout, &squash("prefix_snapshot(")),
+            "the fanout's snapshot runs inside the scoped split (day 66)"
+        );
+        let scoped = &production[at(production, "fn prefix_copy_scoped<T>(")..];
+        let scoped = squash(&scoped[..at(scoped, "\n}\n")]);
+        assert!(
+            at(&scoped, "let_stale=prefix_copy_split_take();") < at(&scoped, "letout=f();"),
+            "the scoped split discards before it runs f"
         );
         for f in [
             "a.alloc",
@@ -49885,6 +49915,37 @@ mod tests {
         assert!(
             production.contains("[prefix-dedup] on-tick split: snapshot alloc {:.2} ms over {}")
         );
+    }
+
+    /// WP-A day 66 (`DAY66.md`): a stray timed call of any kind before a scoped call never reaches
+    /// the scoped split; a second scoped call reads only its own calls.
+    #[test]
+    fn day66_a_stray_copy_before_a_fanout_never_reaches_its_split() {
+        use super::{PrefixCopySplit, prefix_copy_scoped, prefix_copy_timed};
+        let counts = |sp: PrefixCopySplit| (sp.allocs, sp.copies, sp.clones, sp.sets);
+        std::thread::spawn(move || {
+            for kind in 0..4u8 {
+                prefix_copy_timed(kind, || ());
+            }
+            let ((), snap) = prefix_copy_scoped(|| {
+                prefix_copy_timed(0, || ());
+                prefix_copy_timed(2, || ());
+            });
+            assert_eq!(
+                counts(snap),
+                (1, 0, 1, 0),
+                "the stray calls stay out of the scoped split"
+            );
+            prefix_copy_timed(1, || ());
+            let ((), again) = prefix_copy_scoped(|| prefix_copy_timed(3, || ()));
+            assert_eq!(
+                counts(again),
+                (0, 0, 0, 1),
+                "a second scope reads only its own call"
+            );
+        })
+        .join()
+        .unwrap();
     }
 
     /// WP-A day 54 (`DAY54.md` step 1; CPU census): the on-tick lines are log only. Every `OnTick`
@@ -49967,7 +50028,7 @@ mod tests {
             assert!(i - guard < 200, "{line} prints only under the door");
         }
         let fanout = body("fn dedup_interactive_prefixes(");
-        let snap = at(fanout, "let snapshot = prefix_snapshot(");
+        let snap = at(fanout, "let (snapshot, snap_split) = prefix_copy_scoped(");
         let restore = at(fanout, "let restored = prefix_restore(");
         let insert = at(fanout, "let pin = px.insert_pinned_demoting(");
         assert!(

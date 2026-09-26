@@ -33,3 +33,23 @@ nothing.
 (section 8), so the twin is not rerun.
 
 **Budget.** 0.05 agent-day.
+
+## 2. As built
+
+- `prefix_copy_scoped(f)` (`worker.rs`, beside `prefix_copy_timed`) discards the thread-local, runs `f`, and takes
+  `f`'s own split. The fanout's snapshot runs inside it, and the wrong comment is replaced. The restores' take is
+  unchanged: only the sibling restores run between the scoped take and it.
+- The censuses:
+  - `day59_the_fanout_copy_split_is_log_only` now counts four takes, pins the fanout's snapshot inside the scoped call,
+    and pins the discard before `f`.
+  - `day54_the_on_tick_lines_are_log_only` looks for the fanout's snapshot by its new line
+    (`let (snapshot, snap_split) = prefix_copy_scoped(`), with the order clause (snapshot, restores, insert) unchanged.
+- The cell `day66_a_stray_copy_before_a_fanout_never_reaches_its_split`: ok.
+- **The red arm** (`day66/red-arm.patch`, the discard replaced by a printed marker). Binary `216e7b9da9de22e0`, found
+  through cargo's JSON `executable` field, carries the marker. It fails as required (`day66/red-arm.log`):
+
+      [day66 red arm] the scoped split does not discard
+      assertion `left == right` failed: the stray calls stay out of the scoped split
+
+- Server lib `935 passed; 0 failed; 25 ignored` (`day66/server-lib.log`); clippy `-D warnings` clean
+  (`day66/clippy.log`); fmt clean.
