@@ -163,6 +163,7 @@ The one selected policy must beat its model-running no-op and the
 single global fixed setting on pooled tok/s with a positive lower
 paired interval bound. It must also have no negative lower paired
 interval bound against each domain's validation-best fixed setting
+and against its own no-op and the global fixed setting separately
 for code, prose and math. Failure of any domain is a no-go even if
 the pool rises. No exact-loop conversation enters a rate; caps,
 loops and actual K/D/C action counts remain visible.

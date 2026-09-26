@@ -304,10 +304,16 @@ def decide(result):
     ):
         return "global-no-go"
     for domain, report in result["domains"].items():
-        comparison = report["vs_validation_best_fixed"]
         if (
-            comparison["status"] != "paired"
-            or comparison["bootstrap_95_percent"][0] < 0
+            any(
+                report[name]["status"] != "paired"
+                or report[name]["bootstrap_95_percent"][0] < 0
+                for name in (
+                    "vs_validation_best_fixed",
+                    "vs_own_noop",
+                    "vs_global_fixed",
+                )
+            )
             or not all(
                 detail["eligible"]
                 for detail in report["quality"].values()
@@ -424,6 +430,14 @@ def score(args):
             "vs_validation_best_fixed": paired(
                 native[domain], candidate, best[domain],
                 26092641,
+            ),
+            "vs_own_noop": paired(
+                native[domain], candidate, noop,
+                26092642,
+            ),
+            "vs_global_fixed": paired(
+                native[domain], candidate, global_fixed,
+                26092643,
             ),
         }
     result = {

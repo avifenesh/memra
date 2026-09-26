@@ -24,6 +24,14 @@ def fixture():
                     "status": "paired",
                     "bootstrap_95_percent": [0.0, 3.0],
                 },
+                "vs_own_noop": {
+                    "status": "paired",
+                    "bootstrap_95_percent": [0.0, 3.0],
+                },
+                "vs_global_fixed": {
+                    "status": "paired",
+                    "bootstrap_95_percent": [0.0, 3.0],
+                },
                 "quality": {
                     "fixed-control": {"eligible": True},
                 },
@@ -74,6 +82,20 @@ class FinalPolicyTest(unittest.TestCase):
         ]["bootstrap_95_percent"][0] = -0.01
         self.assertEqual(
             score_final.decide(code_rate_loss), "global-no-go",
+        )
+        prose_noop_loss = copy.deepcopy(good)
+        prose_noop_loss["domains"]["prose"][
+            "vs_own_noop"
+        ]["bootstrap_95_percent"][0] = -0.01
+        self.assertEqual(
+            score_final.decide(prose_noop_loss), "global-no-go",
+        )
+        math_global_loss = copy.deepcopy(good)
+        math_global_loss["domains"]["math"][
+            "vs_global_fixed"
+        ]["bootstrap_95_percent"][0] = -0.01
+        self.assertEqual(
+            score_final.decide(math_global_loss), "global-no-go",
         )
 
 
