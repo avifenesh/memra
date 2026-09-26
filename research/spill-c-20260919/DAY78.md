@@ -61,3 +61,33 @@ the fast compacted ones 0.01 to 0.24).
 remedy is a pool compaction leaves alone (its own registration: the candidates are a pinned pool from huge pages, or
 from memory outside the movable LRU); `pool_does_not`: the pool is not the cause, and the census names the door's
 other held mappings for the next registration. It changes no default.
+
+## 1a. The flag, the sitting, before any cell
+
+The flag landed as `a1786bc32` (binary `p78`): `ExpertBankBudget` gains `pool_pageable`; `expert_bank_cli` parses
+`--expert-bank-pool-pageable` only behind the door, without a value, once; `PinnedPool::new` takes it (pageable: each
+allocation from `alloc_zeroed` with 4 KiB alignment, freed with the same layout; pinned: `cuMemHostAlloc` as before);
+the pool line ends ` pageable` when it is given. CPU gates (`day78-cpu/gates.log`): the engine library 574 passed, the
+tier suites green (a new test pins the flag's parse), clippy and fmt clean.
+
+Scripts (`day78-cell.sh`, `day78-pages.py`, `day78-read.py`, `day78-box.sh`), written after section 1. Two details:
+- **The census finds the run's own process** through the process tree (a `run-gen-p78` whose ancestors include the
+  cell's shell), never by name alone: an earlier dry run of the census on this development host, which found its target
+  by name, read another lane's `run-gen` instead (read only; its output was discarded and is not in this lane).
+- **The census reads fast enough to finish inside the run**: `pagemap`'s flag bits are counted a byte at a time at C
+  speed, and the per-entry pass that collects frame numbers runs only when `CAP_SYS_ADMIN` makes them visible; a
+  mapping with nothing resident is not scanned. On the development host a census of a process holding 8 GiB takes
+  0.74 s including its 0.5 s gap (`day78-cpu/dry-check-pages.log`).
+Dry checks (`day78-cpu/`): the census against the development host's own stand-in process (unprivileged: `CapEff=0x0`,
+no frame numbers, `kpageflags` unreadable, no `page_owner`, no tracefs, as section 0 expects of a container); the
+process-tree lookup against real ELFs named `run-gen-p78`, one below the shell and one reparented away from it
+(`dry-check-own.log`: it names the first); the reader on a synthetic cell from DAY76's BOX32 receipts
+(`dry-check-reader.log`, meaningless); the cell's control flow with stub binaries (`dry-check-cell.log`: 24 timed and 6
+census runs; the stub is a script named `bash`, so the census attempts nothing there); the driver
+(`dry-check-driver.log`).
+
+Run as `D78_BUILDS="p78=a1786bc32" [D78_RIG=<name>] bash /root/wt-c/research/spill-c-20260919/day78-box.sh` on a Core
+Ultra 9 285K host with one RTX PRO 6000 Blackwell Workstation Edition, at least 98 GiB `MemFree` at the start (after
+the page-cache eviction of unused files), root in the container; `--privileged` or `CAP_SYS_ADMIN` would let the census
+join frame numbers to `kpageflags` (the cell reads either way). Receipts under `/root/spill-receipts/c-day78-<rig>/`.
+Expected: the build about 5 minutes, the cell about 35 (30 runs, each with a fragmentation setup of about 38 s).
