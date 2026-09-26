@@ -1,0 +1,26 @@
+binary: 216e7b9da9de22e0 marker count: 6
+
+running 1 test
+test worker::tests::day66_a_stray_copy_before_a_fanout_never_reaches_its_split ... FAILED
+
+failures:
+
+---- worker::tests::day66_a_stray_copy_before_a_fanout_never_reaches_its_split stdout ----
+[day66 red arm] the scoped split does not discard
+
+thread '<unnamed>' (426833) panicked at crates/memra-server/src/worker.rs:49927:13:
+assertion `left == right` failed: the stray calls stay out of the scoped split
+  left: (2, 1, 2, 1)
+ right: (1, 0, 1, 0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'worker::tests::day66_a_stray_copy_before_a_fanout_never_reaches_its_split' (426832) panicked at crates/memra-server/src/worker.rs:49933:10:
+called `Result::unwrap()` on an `Err` value: Any { .. }
+
+
+failures:
+    worker::tests::day66_a_stray_copy_before_a_fanout_never_reaches_its_split
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 959 filtered out; finished in 0.00s
+
+rc=101

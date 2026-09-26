@@ -68,6 +68,7 @@ for order in o1 o2; do
     i=$((i+1)); D=$ROOT/short/ab/$order/$(printf 'b%02d-%s' "$i" "$mode"); mkdir -p "$D"
     echo "mode=$mode order=$order bin=$(sha256sum "$BIN" | cut -c1-16)" > "$D/BOOT.txt"
     echo "start temperature.gpu,clocks.sm,power.draw: $(nvidia-smi --query-gpu=temperature.gpu,clocks.sm,power.draw --format=csv,noheader 2>&1)" >> "$D/BOOT.txt"
+    echo "host load at start: $(cut -d' ' -f1-3 /proc/loadavg)" >> "$D/BOOT.txt"
     if ! boot "$D/server.log"; then log "$order $mode boot NOT READY"; echo boot-failed >> "$D/BOOT.txt"; stop; continue; fi
     python3 research/spill-a-20260919/stall_cell.py --port "$PORT" --mode "$mode" --n 5 --server-log "$D/server.log" \
       --out "$D/$mode" --tag "d59-5090-$mode" > "$D/$mode.log" 2>&1
