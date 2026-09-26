@@ -48,6 +48,7 @@ def replay(archive, manifest_path, rows_out):
         "source/joint-v11/",
         "source/private_ops/",
         "diagnostic/pilot-results/",
+        "diagnostic/judge-preflight/",
         "native/training-prose-results/",
     )
     if any(
@@ -73,6 +74,7 @@ def replay(archive, manifest_path, rows_out):
                 "seal_training.py",
                 "replay_training.py",
                 "pilot_depth.py",
+                "judge_preflight.py",
             ),
             "joint-v9": (
                 "collect.py", "eval.py", "measurement_rows.py",
@@ -98,6 +100,25 @@ def replay(archive, manifest_path, rows_out):
             root / "native/pilot-result.json",
             workloads, root / "native/run-meta.json",
         )
+        judge = root / "diagnostic/judge-preflight"
+        if sha(judge / "manifest.json") != (
+            manifest["judge_preflight_sha256"]
+        ):
+            raise ValueError("sealed independent judge preflight changed")
+        judge_receipt = json.loads(
+            (judge / "manifest.json").read_text()
+        )
+        if (
+            judge_receipt["status"]
+            != "independent-judge-template-and-order-qualified"
+            or len(judge_receipt["receipts"]) != 2
+            or any(
+                sha(judge / f"response-{item['order']}.json")
+                != item["raw_response_sha256"]
+                for item in judge_receipt["receipts"]
+            )
+        ):
+            raise ValueError("sealed independent judge access differs")
         metadata = json.loads(
             (root / "native/run-meta.json").read_text()
         )

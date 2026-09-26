@@ -88,6 +88,10 @@ separate sealed commitment.
    Before the long training battery, run D=1 and D=2 fixed controls
    on the pinned binary and replay their native depth, sampler,
    and KV receipts from the training-only archive.
+   Also require two synthetic, reversed-order Bedrock checklist
+   judgments to pass the frozen JSON parser on the trusted research
+   host before downloading the large Qwen artifact. This access pilot
+   uses no final prompt or customer content and is sealed with training.
    The menu contains 21 fixed controls: every K=3/10/20 and
    D=1/2/3/4 combination at C=0, plus three D3 C cutoffs
    measured separately from training offers at each K.

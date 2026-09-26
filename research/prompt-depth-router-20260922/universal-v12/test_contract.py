@@ -60,7 +60,8 @@ class PhaseContractTest(unittest.TestCase):
     def test_prose_judge_template_pin_agrees(self):
         for name in (
             "prose_packets.py", "score_prose.py",
-            "judge_bedrock.py", "supervise_v12.py",
+            "judge_bedrock.py", "judge_preflight.py",
+            "supervise_v12.py",
         ):
             with self.subTest(name=name):
                 self.assertEqual(

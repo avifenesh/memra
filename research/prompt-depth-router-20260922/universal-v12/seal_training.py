@@ -61,6 +61,8 @@ def inventory(base):
         "source/joint-v11": base / "joint-v11",
         "source/private_ops": base / "ops",
         "diagnostic/pilot-results": base / "pilot-results",
+        "diagnostic/judge-preflight":
+        base / "judge-preflight",
         "native/training-prose-results":
         base / "training-prose-results",
     }
@@ -118,6 +120,8 @@ def seal(base, out):
         != sha(base / "cuda-accept.json")
         or metadata["ops_source_sha256"]
         != sha(base / "ops/run_meta_v12.py")
+        or metadata["judge_preflight_sha256"]
+        != sha(base / "judge-preflight/manifest.json")
     ):
         raise ValueError("research host identity or CUDA proof differs")
     for name, expected in metadata["source_files_sha256"].items():
@@ -167,6 +171,8 @@ def seal(base, out):
         "training_workloads_sha256": TRAIN_SHA,
         "source_full_manifest_sha256": FULL_SHA,
         "pilot_sha256": sha(base / "pilot-result.json"),
+        "judge_preflight_sha256":
+        sha(base / "judge-preflight/manifest.json"),
         "archive_sha256": sha(archive),
         "members": members,
     }
