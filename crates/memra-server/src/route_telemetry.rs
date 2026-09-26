@@ -209,6 +209,7 @@ impl RouteLoad {
             t0: Instant::now(),
             admitted: false,
             done: false,
+            out: false,
         }
     }
 
@@ -247,6 +248,12 @@ impl RouteLoad {
             .lock()
             .map(|w| (w.percentile(50), w.percentile(99)))
             .unwrap_or_default();
+        // WP-A day 58 (OWED item 25): the end counters before the gauges (`Acquire`, pairing with
+        // the ends' `Release`), so an end this snapshot reports is out of `running` in it too.
+        let completed = self.completed.load(Ordering::Acquire);
+        let failed = self.failed.load(Ordering::Acquire);
+        let cancelled = self.cancelled.load(Ordering::Acquire);
+        let refused = self.refused.load(Ordering::Acquire);
         RouteLoadSnapshot {
             name: self.name.clone(),
             capacity: self.capacity,
@@ -254,10 +261,10 @@ impl RouteLoad {
             inflight: self.inflight_total(),
             running: self.running(),
             admitted: self.admitted.load(Ordering::Relaxed),
-            completed: self.completed.load(Ordering::Relaxed),
-            failed: self.failed.load(Ordering::Relaxed),
-            cancelled: self.cancelled.load(Ordering::Relaxed),
-            refused: self.refused.load(Ordering::Relaxed),
+            completed,
+            failed,
+            cancelled,
+            refused,
             tokens_out: self.tokens_out.load(Ordering::Relaxed),
             prompt_tokens_in: self.prompt_tokens_in.load(Ordering::Relaxed),
             cached_tokens_in: self.cached_tokens_in.load(Ordering::Relaxed),
@@ -314,6 +321,11 @@ pub(crate) struct RouteRun {
     t0: Instant,
     admitted: bool,
     done: bool,
+    /// WP-A day 58 (`research/spill-a-20260919/DAY58.md`, OWED item 25): the run has left
+    /// `running`. Every end takes it out of `running` BEFORE it counts the end (`Release`), and
+    /// `snapshot` loads the end counters (`Acquire`) before `running`, so a snapshot that reports a
+    /// run ended also reports it out of `running`.
+    out: bool,
 }
 
 impl RouteRun {
@@ -325,10 +337,19 @@ impl RouteRun {
         }
     }
 
+    /// Take the run out of `running`, once, before any end is counted.
+    fn leave_running(&mut self) {
+        if !self.out {
+            self.out = true;
+            decrement(&self.load.running);
+        }
+    }
+
     pub(crate) fn finish(mut self, stats: ServeStats) {
         self.admit();
+        self.leave_running();
         let l = &self.load;
-        l.completed.fetch_add(1, Ordering::Relaxed);
+        l.completed.fetch_add(1, Ordering::Release);
         l.tokens_out
             .fetch_add(stats.tokens_out as u64, Ordering::Relaxed);
         l.prompt_tokens_in
@@ -343,23 +364,25 @@ impl RouteRun {
 
     pub(crate) fn cancel(mut self) {
         self.admit();
-        self.load.cancelled.fetch_add(1, Ordering::Relaxed);
+        self.leave_running();
+        self.load.cancelled.fetch_add(1, Ordering::Release);
         self.done = true;
     }
 
     pub(crate) fn refuse(mut self) {
         self.admit();
-        self.load.refused.fetch_add(1, Ordering::Relaxed);
+        self.leave_running();
+        self.load.refused.fetch_add(1, Ordering::Release);
         self.done = true;
     }
 }
 
 impl Drop for RouteRun {
     fn drop(&mut self) {
+        self.leave_running();
         if self.admitted && !self.done {
-            self.load.failed.fetch_add(1, Ordering::Relaxed);
+            self.load.failed.fetch_add(1, Ordering::Release);
         }
-        decrement(&self.load.running);
     }
 }
 
@@ -402,6 +425,92 @@ pub(crate) fn all() -> Vec<Arc<RouteLoad>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// WP-A day 58 (`DAY58.md`, OWED item 25; CPU census): every end of a run leaves `running`
+    /// before it counts the end, and `snapshot` loads the end counters before `running`.
+    #[test]
+    fn day58_the_book_orders_ends_after_running_and_reads_them_first() {
+        let src = include_str!("route_telemetry.rs");
+        let prod = &src[..src.find("\n#[cfg(test)]\nmod tests {").unwrap()];
+        let at = |b: &str, n: &str| b.find(n).unwrap_or_else(|| panic!("{n} missing"));
+        let body = |start: &str| {
+            let a = at(prod, start);
+            &prod[a..a + prod[a..].find("\n    }\n").unwrap()]
+        };
+        for (f, end) in [
+            (
+                "    pub(crate) fn finish(mut self, stats: ServeStats) {",
+                "l.completed.fetch_add(1, Ordering::Release);",
+            ),
+            (
+                "    pub(crate) fn cancel(mut self) {",
+                "self.load.cancelled.fetch_add(1, Ordering::Release);",
+            ),
+            (
+                "    pub(crate) fn refuse(mut self) {",
+                "self.load.refused.fetch_add(1, Ordering::Release);",
+            ),
+        ] {
+            let b = body(f);
+            assert!(
+                at(b, "self.leave_running();") < at(b, end),
+                "{f}: the end is counted before the run leaves running"
+            );
+        }
+        let d = &prod[at(prod, "impl Drop for RouteRun {")..];
+        let d = &d[..at(d, "\n}\n")];
+        assert!(
+            at(d, "self.leave_running();")
+                < at(d, "self.load.failed.fetch_add(1, Ordering::Release);")
+        );
+        assert!(
+            !d.contains("decrement(&self.load.running)"),
+            "only leave_running decrements, once"
+        );
+        let snap = body("    pub(crate) fn snapshot(&self) -> RouteLoadSnapshot {");
+        let running = at(snap, "running: self.running(),");
+        for end in [
+            "self.completed.load(Ordering::Acquire)",
+            "self.failed.load(Ordering::Acquire)",
+            "self.cancelled.load(Ordering::Acquire)",
+            "self.refused.load(Ordering::Acquire)",
+        ] {
+            assert!(at(snap, end) < running, "{end} is loaded before running");
+        }
+    }
+
+    /// WP-A day 58 (`research/spill-a-20260919/DAY58.md`, OWED item 25): a snapshot never counts a
+    /// run that it reports ended as still running. 100,000 fresh books: a writer runs one `begin`,
+    /// `admit` and `cancel`, while the reader loops until its snapshot sees `cancelled == 1` and
+    /// checks that the same snapshot reads the run out of `running`.
+    #[test]
+    fn day58_a_snapshot_never_counts_an_ended_run_as_running() {
+        let mut violations = 0u32;
+        for i in 0..100_000u32 {
+            let load = RouteLoad::new(format!("t-day58-{i}"), 1);
+            let w = load.clone();
+            let writer = std::thread::spawn(move || {
+                let mut run = w.begin();
+                run.admit();
+                run.cancel();
+            });
+            loop {
+                let s = load.snapshot();
+                if s.cancelled == 1 {
+                    if s.running != 0 {
+                        violations += 1;
+                    }
+                    break;
+                }
+                std::hint::spin_loop();
+            }
+            writer.join().unwrap();
+        }
+        assert_eq!(
+            violations, 0,
+            "{violations} snapshots counted an ended run as running"
+        );
+    }
 
     #[test]
     fn a_ticket_releases_its_waiting_slot_on_drop() {
