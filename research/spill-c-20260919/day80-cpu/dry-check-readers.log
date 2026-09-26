@@ -1,0 +1,26 @@
+synthetic regtime cell /home/avifenesh/projects/wt-spill-c/target/c80-dry/regtime
+# regtime reader on the synthetic cell (meaningless)
+DAY80 host demand sequence d sha256 4bdc2610c3534e42
+DAY80 host demand sequence dr sha256 4bdc2610c3534e42
+DAY80 REGTIME CHECKS rig=synthetic runs=30 integrity=ok
+DAY80 ADMISSIBILITY rig=synthetic ceiling=0.005 max_iqr_gen=0.0002 max_iqr_window=0.0010 failing=[] -> admissible
+DAY80 gen-only decode medians (N=10 each): ref=0.255 d=0.264 dr=0.264
+DAY80 STEP dr_vs_d gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0002 -> flat
+DAY80 DOOR dr_vs_ref gen-only decode: pooled=+0.0090 o1=+0.0090 o2=+0.0090 noise=0.0002 -> loses
+DAY80 steady window medians (N=10 each): ref=0.226 d=0.232 dr=0.232
+DAY80 STEP dr_vs_d steady window: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0010 -> flat
+DAY80 DOOR dr_vs_ref steady window: pooled=+0.0060 o1=+0.0060 o2=+0.0060 noise=0.0010 -> loses
+DAY80 REGTIME VERDICT rig=synthetic integrity=ok dr=flat vs_ref=loses (window: dr=flat vs_ref=loses)
+synthetic regpool cell /home/avifenesh/projects/wt-spill-c/target/c80-dry/regpool
+# regpool reader on the synthetic cell (meaningless)
+DAY80 INDUCER rig=synthetic memfree_gib=204 F_gib=202 induce=1
+DAY80 REGPOOL CHECKS rig=synthetic runs=24 state=ns_per_step integrity=ok
+DAY80 POOL door arms: bytes=[15417016320]
+DAY80 ARM rig=synthetic refi: fail_heavy=0 of 8 slow=0 of 8 compacted=8 of 8 window_ns_per_step median=1.055 gen median=0.315 window median=0.288
+DAY80 ARM rig=synthetic di: fail_heavy=8 of 8 slow=6 of 8 compacted=8 of 8 window_ns_per_step median=1.534 gen median=0.365 window median=0.322
+DAY80 ARM rig=synthetic dri: fail_heavy=0 of 8 slow=0 of 8 compacted=0 of 8 window_ns_per_step median=1.054 gen median=0.536 window median=0.386
+DAY80 CENSUS c1-di-r1: pid=83609	CapEff=0xa80405fb	cap_sys_admin=no	kpageflags=unreadable (Permission denied)	page_owner=absent	tracefs=absent
+DAY80 CENSUS c1-di-r1: mappings with frames changed between the passes: 0
+DAY80 CENSUS c1-dri-r1: pid=86038	CapEff=0xa80405fb	cap_sys_admin=no	kpageflags=unreadable (Permission denied)	page_owner=absent	tracefs=absent
+DAY80 CENSUS c1-dri-r1: mappings with frames changed between the passes: 0
+DAY80 REGPOOL VERDICT rig=synthetic integrity=ok -> registered_clears (fail_heavy: di 8 of 8, dri 0 of 8, refi 0 of 8; slow: dri 0 of 8)

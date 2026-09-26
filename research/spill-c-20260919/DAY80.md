@@ -61,3 +61,25 @@ with these receipts. `registered_does_not`: the write-combined pool with bounced
 the engine library and tier suites; clippy and fmt; and a local RTX 5090 check that the door with the registered pool
 exits 0 with `MATCH` and the door's tape, with its pool line and a page census showing the pool as a private anonymous
 mapping.
+
+## 1a. The flag, the sitting, before any cell
+
+The flag landed as `57086efc8` (binary `p80`): `ExpertBankBudget` gains `pool_registered`; `expert_bank_cli` parses
+`--expert-bank-pool-registered` only behind the door, without a value, once, and refuses it beside
+`--expert-bank-pool-pageable`; `PinnedPool` carries a `PoolKind` (allocated, pageable, registered): a registered
+allocation is an `mmap(MAP_PRIVATE | MAP_ANONYMOUS)` written once per page, then `cuMemHostRegister_v2(...,
+CU_MEMHOSTREGISTER_PORTABLE)` (unmapped again if the registration fails), unregistered then unmapped in `Drop`; the pool
+line ends ` registered`. CPU gates (`day80-cpu/gates.log`): the engine library 574 passed, the tier suites green (the
+parse test among them), clippy and fmt clean.
+
+Scripts (`day80-cell.sh` with both cells, `day80-regpool-read.py` from DAY78's reader, `day80-regtime-read.py`,
+`day80-box.sh`), written after section 1. Dry checks (`day80-cpu/`): both readers on synthetic cells (`regtime` from
+DAY75's target receipts, `regpool` from DAY78's BOX34 receipts; meaningless; `dry-check-readers.log`); both cells'
+control flow with stub binaries (30 `regtime` runs; 24 `regpool` runs and 2 census runs; `dry-check-cell.log`); the
+driver running `regtime` then `regpool` (`dry-check-driver.log`).
+
+Run as `D80_BUILDS="p80=57086efc8" [D80_RIG=<name>] bash /root/wt-c/research/spill-c-20260919/day80-box.sh` on a Core
+Ultra 9 285K host, then on a Ryzen 9 9950X host, each with one RTX PRO 6000 Blackwell Workstation Edition, root in the
+container, and at least 98 GiB `MemFree` when `regpool` starts (after the page-cache eviction of unused files; the
+driver runs `regtime` first, which needs no eviction). Where a 9950X host cannot give 98 GiB, `regpool` reads `not_run`
+there and `regtime` still reads. Expected: the build about 5 minutes, `regtime` about 8, `regpool` about 30.
