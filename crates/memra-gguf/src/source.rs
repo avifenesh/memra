@@ -267,6 +267,15 @@ pub struct Fp8Native<'a> {
     pub in_f: usize,
 }
 
+/// MiMo source routed expert in its original OCP MXFP4 storage. The E2M1
+/// codes are packed two per byte; E8M0 scales have one byte per 32 values.
+pub struct MimoMxfp4Native<'a> {
+    pub weight: &'a [u8],
+    pub scales: &'a [u8],
+    pub out_f: usize,
+    pub in_f: usize,
+}
+
 /// Raw block-128 E4M3 stacked expert bank. Step stores routed projections as
 /// `[n_expert, out_f, in_f]` codes plus `[n_expert, ceil(out_f/128), ceil(in_f/128)]` scales.
 /// Keeping the expert axis explicit prevents a 3-D bank from entering a 2-D linear path.
@@ -698,6 +707,16 @@ pub trait TensorSource: Sync {
     /// independent FP8 scale grids. This returns exact byte slices per shard,
     /// distinct from the continuous-grid `find_fp8_native` operand.
     fn find_fp8_mimo_qkv_shards(&self, _hf_weight: &str) -> Option<Vec<Fp8Native<'_>>> {
+        None
+    }
+    /// Loader-facing MiMo QKV access through a GGUF-style semantic request.
+    /// The recorded source audits this request against its bound HF tensor.
+    fn find_mimo_fp8_qkv_ggml(&self, _ggml_name: &str) -> Option<Vec<Fp8Native<'_>>> {
+        None
+    }
+    /// Loader-facing per-expert MiMo MXFP4 codes and scales. The requested
+    /// name is GGUF-style so checkpoint consumption stays auditable.
+    fn find_mimo_mxfp4_expert_ggml(&self, _ggml_name: &str) -> Option<MimoMxfp4Native<'_>> {
         None
     }
     /// Native access for a stacked expert bank. This is deliberately distinct from
@@ -2569,6 +2588,38 @@ impl TensorSource for SafetensorsSource {
         split_mimo_fp8_qkv_shards(bytes, out_f, in_f, shards, scales)
     }
 
+    fn find_mimo_fp8_qkv_ggml(&self, ggml_name: &str) -> Option<Vec<Fp8Native<'_>>> {
+        if self.cfg.arch != Arch::MiMoV2 || !ggml_name.ends_with(".attn_qkv.weight") {
+            return None;
+        }
+        let hf = match crate::hf_mapping::resolve_ggml(ggml_name, &self.cfg)? {
+            crate::hf_mapping::HfTarget::Plain(hf) => hf,
+            crate::hf_mapping::HfTarget::Transform { .. } => return None,
+        };
+        self.find_fp8_mimo_qkv_shards(&hf)
+    }
+
+    fn find_mimo_mxfp4_expert_ggml(&self, ggml_name: &str) -> Option<MimoMxfp4Native<'_>> {
+        if self.cfg.arch != Arch::MiMoV2
+            || ![".ffn_gate_exps.", ".ffn_up_exps.", ".ffn_down_exps."]
+                .iter()
+                .any(|tag| ggml_name.contains(tag))
+        {
+            return None;
+        }
+        let hf = match crate::hf_mapping::resolve_ggml(ggml_name, &self.cfg)? {
+            crate::hf_mapping::HfTarget::Plain(hf) => hf,
+            crate::hf_mapping::HfTarget::Transform { .. } => return None,
+        };
+        let (out_f, in_f, weight, scales) = self.mimo_mxfp4_expert(&hf)?;
+        Some(MimoMxfp4Native {
+            weight,
+            scales,
+            out_f,
+            in_f,
+        })
+    }
+
     fn find_fp8_stacked_native(&self, ggml_name: &str) -> Option<Fp8StackedNative<'_>> {
         use crate::hf_mapping::{HfTarget, resolve_ggml};
         let hf = match resolve_ggml(ggml_name, &self.cfg)? {
@@ -3175,6 +3226,15 @@ mod tests {
             "model_packs/mimo_v2/fixtures/config.json"
         )));
         let source = SafetensorsSource::open_with_config(&file, config).unwrap();
+        let ggml = "blk.1.ffn_gate_exps.0.weight";
+        let raw = source.find_mimo_mxfp4_expert_ggml(ggml).unwrap();
+        assert_eq!((raw.out_f, raw.in_f), (1, 64));
+        assert_eq!(&raw.weight[..16], &[0x21; 16]);
+        assert_eq!(&raw.weight[16..], &[0x43; 16]);
+        assert_eq!(raw.scales, &[127, 128]);
+        let recorded = crate::checkpoint_binding::RecordingSource::new(&source);
+        assert!(recorded.find_mimo_mxfp4_expert_ggml(ggml).is_some());
+        assert!(recorded.requested().contains(ggml));
         let (data, shape) = source.dequant_f32_hf(name).unwrap();
         assert_eq!(shape, vec![64, 1]);
         assert_eq!(data.len(), 64);
@@ -4961,6 +5021,18 @@ mod f8_block128 {
         assert_eq!(views[1].blk.as_ref().unwrap().scales, vec![3.0, 4.0]);
         assert_eq!(views[0].bytes.len(), 192 * 128);
         assert_eq!(views[1].bytes.len(), 192 * 128);
+        let ggml = "blk.0.attn_qkv.weight";
+        let loader_views = source.find_mimo_fp8_qkv_ggml(ggml).unwrap();
+        assert_eq!(loader_views.len(), 2);
+        assert_eq!(loader_views[0].blk.as_ref().unwrap().scales, vec![1.0, 2.0]);
+        let recorded = crate::checkpoint_binding::RecordingSource::new(&source);
+        assert_eq!(recorded.find_mimo_fp8_qkv_ggml(ggml).unwrap().len(), 2);
+        assert!(recorded.requested().contains(ggml));
+        assert!(
+            source
+                .find_mimo_fp8_qkv_ggml("blk.0.attn_q.weight")
+                .is_none()
+        );
         assert!(
             TensorSource::find_fp8_mimo_qkv_shards(
                 &source,

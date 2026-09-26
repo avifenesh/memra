@@ -33,8 +33,8 @@ use crate::hf_mapping::{HfTarget, resolve_ggml};
 use crate::model_packs::{ModelPack, OutputHeadContract, TensorConsumption, for_config};
 use crate::model_plan::ModelPlan;
 use crate::source::{
-    DiskExtent, ExpertActivationPrecision, Fp8Native, Fp8StackedNative, Nvfp4Native,
-    Nvfp4StackedNative, TensorCensus, TensorSource, TensorView, canonical_hf_name,
+    DiskExtent, ExpertActivationPrecision, Fp8Native, Fp8StackedNative, MimoMxfp4Native,
+    Nvfp4Native, Nvfp4StackedNative, TensorCensus, TensorSource, TensorView, canonical_hf_name,
 };
 use crate::tensor_contract::{
     BoundTensor, BoundTensorContract, CheckpointDialect, ContractOptions, OutputHead,
@@ -512,6 +512,14 @@ impl TensorSource for RecordingSource<'_> {
     fn find_fp8_native(&self, ggml_name: &str) -> Option<Fp8Native<'_>> {
         self.record(ggml_name);
         self.inner.find_fp8_native(ggml_name)
+    }
+    fn find_mimo_fp8_qkv_ggml(&self, ggml_name: &str) -> Option<Vec<Fp8Native<'_>>> {
+        self.record(ggml_name);
+        self.inner.find_mimo_fp8_qkv_ggml(ggml_name)
+    }
+    fn find_mimo_mxfp4_expert_ggml(&self, ggml_name: &str) -> Option<MimoMxfp4Native<'_>> {
+        self.record(ggml_name);
+        self.inner.find_mimo_mxfp4_expert_ggml(ggml_name)
     }
     fn find_fp8_stacked_native(&self, ggml_name: &str) -> Option<Fp8StackedNative<'_>> {
         self.record(ggml_name);
