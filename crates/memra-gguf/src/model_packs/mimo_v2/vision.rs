@@ -44,6 +44,141 @@ pub struct MiMoVisionAttentionPlan {
     pub patch_order: MiMoPatchOrder,
 }
 
+/// One source `grid_thw` row after temporal pairs and 16x16 spatial patches
+/// have been formed. Height and width count patch rows, not pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MiMoVisionGrid {
+    pub frames: u32,
+    pub height: u32,
+    pub width: u32,
+}
+
+/// The source ViT's patch order and two-axis position IDs, before RoPE
+/// frequencies, QKV projection, and any vision execution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MiMoVisionLayout {
+    /// Row-order `(height, width)` position of each projected patch. Every
+    /// four consecutive patches form one 2x2 spatial merge unit.
+    pub row_positions: Vec<(u32, u32)>,
+    /// Cumulative patch ends for attention. A frame never attends to another
+    /// frame or image in the publisher's vision tower.
+    pub frame_ends: Vec<u32>,
+    /// Selection indices at four-patch merge-unit granularity: column-order
+    /// unit `i` reads row-order unit `column_groups[i]`.
+    pub column_groups: Vec<u32>,
+    /// Selection indices that restore row order after a column-order block.
+    pub reverse_column_groups: Vec<u32>,
+    pub output_tokens: u32,
+}
+
+/// Bounds a single diagnostic layout before materializing its indices.
+/// This is not an image/video decoder or a serving request admission limit.
+const MAX_LAYOUT_PATCHES: usize = 50_000;
+
+/// Reproduce `rot_pos_emb`, `get_window_index_1d(col=True)`, and the per-frame
+/// `cu_seqlens` of the pinned publisher source. The source image processor
+/// must provide already patchified pixel rows in four-patch merge-unit order.
+pub fn pinned_vision_layout(
+    config: &ModelConfig,
+    grids: &[MiMoVisionGrid],
+) -> Result<MiMoVisionLayout, &'static str> {
+    let vision = config
+        .mimo
+        .as_ref()
+        .and_then(|mimo| mimo.vision_config.as_ref())
+        .ok_or("MiMo vision config is missing")?;
+    if config.arch != Arch::MiMoV2 || !pinned_geometry(vision, config.n_embd) {
+        return Err("MiMo vision geometry differs from the pinned source");
+    }
+    if grids.is_empty() {
+        return Err("MiMo vision grid is empty");
+    }
+    let mut total_patches = 0usize;
+    let mut total_frames = 0usize;
+    for grid in grids {
+        if grid.frames == 0 || grid.height == 0 || grid.width == 0 {
+            return Err("MiMo vision grid has a zero extent");
+        }
+        if grid.height % 2 != 0 || grid.width % 2 != 0 {
+            return Err("MiMo vision grid is not divisible by the 2x2 merger");
+        }
+        let patches = (grid.frames as usize)
+            .checked_mul(grid.height as usize)
+            .and_then(|value| value.checked_mul(grid.width as usize))
+            .ok_or("MiMo vision patch count overflow")?;
+        total_patches = total_patches
+            .checked_add(patches)
+            .ok_or("MiMo vision total patch count overflow")?;
+        total_frames = total_frames
+            .checked_add(grid.frames as usize)
+            .ok_or("MiMo vision frame count overflow")?;
+    }
+    if total_patches > MAX_LAYOUT_PATCHES {
+        return Err("MiMo vision diagnostic layout exceeds 50000 patches");
+    }
+    let total_patches_u32 =
+        u32::try_from(total_patches).map_err(|_| "MiMo vision patch count exceeds u32")?;
+    let total_groups = total_patches / 4;
+    let mut row_positions = Vec::new();
+    let mut frame_ends = Vec::new();
+    let mut column_groups = Vec::new();
+    row_positions
+        .try_reserve_exact(total_patches)
+        .map_err(|_| "MiMo vision position allocation failed")?;
+    frame_ends
+        .try_reserve_exact(total_frames)
+        .map_err(|_| "MiMo vision frame allocation failed")?;
+    column_groups
+        .try_reserve_exact(total_groups)
+        .map_err(|_| "MiMo vision column allocation failed")?;
+
+    let mut patch_end = 0u32;
+    let mut group_start = 0u32;
+    for grid in grids {
+        let group_h = grid.height / 2;
+        let group_w = grid.width / 2;
+        let frame_patches = grid.height * grid.width;
+        for _ in 0..grid.frames {
+            for group_row in 0..group_h {
+                for group_col in 0..group_w {
+                    for sub_row in 0..2 {
+                        for sub_col in 0..2 {
+                            row_positions.push((group_row * 2 + sub_row, group_col * 2 + sub_col));
+                        }
+                    }
+                }
+            }
+            // `torch.arange(...).reshape(t, group_h, group_w).transpose(1,2)`
+            // selects complete merge units by column, then by row.
+            for group_col in 0..group_w {
+                for group_row in 0..group_h {
+                    column_groups.push(group_start + group_row * group_w + group_col);
+                }
+            }
+            patch_end += frame_patches;
+            group_start += group_h * group_w;
+            frame_ends.push(patch_end);
+        }
+    }
+    if patch_end != total_patches_u32
+        || row_positions.len() != total_patches
+        || column_groups.len() != total_groups
+    {
+        return Err("MiMo vision layout bookkeeping differs from grid");
+    }
+    let mut reverse_column_groups = vec![0; total_groups];
+    for (column, &row) in column_groups.iter().enumerate() {
+        reverse_column_groups[row as usize] = column as u32;
+    }
+    Ok(MiMoVisionLayout {
+        row_positions,
+        frame_ends,
+        column_groups,
+        reverse_column_groups,
+        output_tokens: total_patches_u32 / 4,
+    })
+}
+
 pub fn pinned_attention_plan(
     config: &ModelConfig,
     layer: u32,
@@ -233,6 +368,108 @@ mod tests {
     fn pinned_config() -> (MiMoVisionConfig, u32) {
         let config = ModelConfig::from_hf(&HfConfig::parse(include_str!("fixtures/config.json")));
         (config.mimo.unwrap().vision_config.unwrap(), config.n_embd)
+    }
+
+    #[test]
+    fn publisher_grid_layout_keeps_merge_units_and_frame_boundaries() {
+        let config = ModelConfig::from_hf(&HfConfig::parse(include_str!("fixtures/config.json")));
+        let layout = pinned_vision_layout(
+            &config,
+            &[
+                MiMoVisionGrid {
+                    frames: 2,
+                    height: 4,
+                    width: 6,
+                },
+                MiMoVisionGrid {
+                    frames: 1,
+                    height: 2,
+                    width: 4,
+                },
+            ],
+        )
+        .unwrap();
+        assert_eq!(layout.frame_ends, [24, 48, 56]);
+        assert_eq!(layout.output_tokens, 14);
+        assert_eq!(
+            layout.row_positions[0..8],
+            [
+                (0, 0),
+                (0, 1),
+                (1, 0),
+                (1, 1),
+                (0, 2),
+                (0, 3),
+                (1, 2),
+                (1, 3),
+            ]
+        );
+        assert_eq!(
+            layout.row_positions[12..16],
+            [(2, 0), (2, 1), (3, 0), (3, 1)]
+        );
+        assert_eq!(layout.row_positions[0..24], layout.row_positions[24..48]);
+        assert_eq!(
+            layout.column_groups,
+            [0, 3, 1, 4, 2, 5, 6, 9, 7, 10, 8, 11, 12, 13]
+        );
+        assert_eq!(
+            layout.reverse_column_groups,
+            [0, 2, 4, 1, 3, 5, 6, 8, 10, 7, 9, 11, 12, 13]
+        );
+        for (column, &row) in layout.column_groups.iter().enumerate() {
+            assert_eq!(layout.reverse_column_groups[row as usize], column as u32);
+        }
+    }
+
+    #[test]
+    fn publisher_grid_layout_refuses_invalid_grid_and_plan() {
+        let mut config =
+            ModelConfig::from_hf(&HfConfig::parse(include_str!("fixtures/config.json")));
+        assert!(pinned_vision_layout(&config, &[]).is_err());
+        for grid in [
+            MiMoVisionGrid {
+                frames: 0,
+                height: 2,
+                width: 2,
+            },
+            MiMoVisionGrid {
+                frames: 1,
+                height: 3,
+                width: 2,
+            },
+            MiMoVisionGrid {
+                frames: 1,
+                height: 2,
+                width: 1,
+            },
+            MiMoVisionGrid {
+                frames: 1,
+                height: 226,
+                width: 226,
+            },
+        ] {
+            assert!(pinned_vision_layout(&config, &[grid]).is_err());
+        }
+        config
+            .mimo
+            .as_mut()
+            .unwrap()
+            .vision_config
+            .as_mut()
+            .unwrap()
+            .patch_size = 14;
+        assert!(
+            pinned_vision_layout(
+                &config,
+                &[MiMoVisionGrid {
+                    frames: 1,
+                    height: 2,
+                    width: 2,
+                }],
+            )
+            .is_err()
+        );
     }
 
     #[test]
