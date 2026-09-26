@@ -365,7 +365,8 @@ the card is reset.
   DAY56 section 2: 1 of 400 in arm A's shape too (run 156). Cause read from the code (DAY58 registers it):
   `RouteRun::cancel` counts `cancelled` before its `Drop` takes the row out of `running`, and the snapshot loads
   `running` before `cancelled`, so a reader can see both.
-- Status: open.
+- Status: **pre-registered** (DAY58 section 1: the cause read, a stress cell as the reproduction, the fix of both
+  orders).
 
 ## 2. Closed, delivered, or held by another owner
 
