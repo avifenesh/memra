@@ -3569,6 +3569,10 @@ impl Dsv4Gpu {
         placement: Dsv4Placement,
     ) -> Res<Self> {
         assert_eq!(devices.len(), 2, "lane 4 placement is a 2-card layer split");
+        let pdl_chain = dsv4_pdl_chain_env()?;
+        // Before any stream capture: a replay graph records the launch attribute it saw.
+        unsafe { k::memra_pdl_chain_set(i32::from(pdl_chain)) };
+        eprintln!("[load] programmatic dependent launch on the decode chain: {pdl_chain}");
         let sampler_order = dsv4_sampler_order()?;
         let sampler_env = crate::dsv4_sampler::dsv4_sampler_env()?;
         eprintln!("[load] sampled candidate order: {sampler_order:?}");
@@ -23078,6 +23082,18 @@ thread_local! {
 /// restores the immutable process configuration. Not a serving-policy interface.
 pub fn set_dsv4_sampler_order_for_gate(order: Option<Dsv4SamplerOrder>) {
     SAMPLER_ORDER_GATE.with(|current| current.set(order));
+}
+
+/// `MEMRA_DSV4_PDL`: programmatic dependent launch on the DSv4 kernel chain (door, default OFF
+/// until its A/B). `MEMRA_PDL=0`, the engine-wide PDL master seam, turns it off too.
+fn dsv4_pdl_chain_env() -> Res<bool> {
+    let on = match std::env::var("MEMRA_DSV4_PDL").as_deref() {
+        Err(std::env::VarError::NotPresent) | Ok("0") => false,
+        Ok("1") => true,
+        Ok(other) => return Err(format!("MEMRA_DSV4_PDL must be 0 or 1, got {other:?}")),
+        Err(err) => return Err(format!("MEMRA_DSV4_PDL: {err}")),
+    };
+    Ok(on && !matches!(std::env::var("MEMRA_PDL").as_deref(), Ok("0")))
 }
 
 pub fn dsv4_sampler_order() -> Res<Dsv4SamplerOrder> {

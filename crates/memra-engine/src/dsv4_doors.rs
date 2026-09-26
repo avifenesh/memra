@@ -971,6 +971,11 @@ mod tests {
         ("MEMRA_DSV4_HAVE_NVTX", "build-time profiling switch"),
         ("MEMRA_DSV4_INDEXER_SCORE", "program selector"),
         ("MEMRA_DSV4_NVTX", "profiling ranges"),
+        (
+            "MEMRA_DSV4_PDL",
+            "launch-scheduling door under its first A/B; the kernels' loads, stores and \
+             arithmetic are the same with it on or off",
+        ),
         ("MEMRA_DSV4_PEER_PROBE_POISON", "gate-only fault injection"),
         ("MEMRA_DSV4_PREFILL_DRAFT", "program selector"),
         ("MEMRA_DSV4_PREFILL_HEAD", "program selector"),

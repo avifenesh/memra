@@ -33,6 +33,7 @@
 #include <string>
 #include <utility>
 #include "moe_kq_prims.cuh"
+#include "memra_pdl_chain.cuh"
 
 #define QT_IQ4_XS 5
 #define QT_IQ3_S  6
@@ -2021,6 +2022,7 @@ moe_kq_m1_stream_kernel(
         const int* __restrict__ ex_ids, const __half* __restrict__ A,
         float* __restrict__ Y, const float* __restrict__ row_scale,
         const int* __restrict__ ex_off, int n_active, int in_f, int out_f, long row_bytes){
+    MEMRA_PDL_CHAIN_ENTRY();
     extern __shared__ __align__(16) unsigned char kqs_smem[];
     uint32_t* As = reinterpret_cast<uint32_t*>(kqs_smem);          // in_f / 2 permuted words
     const int r = blockIdx.y;
@@ -2632,7 +2634,7 @@ int memra_moe_kq_m1_stream(
     if(smem > 48 * 1024) return 40004;
     const dim3 grid((unsigned)((out_f / 8 + KQS_WARPS - 1) / KQS_WARPS), (unsigned)slots, 1);
     cudaStream_t st = reinterpret_cast<cudaStream_t>(stream);
-    moe_kq_m1_stream_kernel<KQS_WARPS><<<grid, dim3(32, KQS_WARPS, 1), smem, st>>>(
+    memra_chain_launch(moe_kq_m1_stream_kernel<KQS_WARPS>,grid, dim3(32, KQS_WARPS, 1), smem, st)(
         table, proj, n_expert, ex_ids, (const __half*)act_f16, y, row_scale, ex_off_dev,
         n_active, in_f, out_f, row_bytes);
     cudaError_t e = cudaGetLastError();

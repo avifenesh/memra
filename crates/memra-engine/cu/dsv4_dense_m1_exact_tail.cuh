@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include "memra_pdl_chain.cuh"
 
 // Host gate selection is thread-local and never read by a device kernel. Capture
 // freezes the chosen kernel function, so later selection cannot mutate a graph.
@@ -111,6 +112,7 @@ __global__ void dsv4_dense_exact_tail_fp8_kernel(const uint8_t* __restrict__ w,
                                        const uint16_t* __restrict__ x, float* __restrict__ y,
                                        int n, int k, int xstride, int ystride,
                                        int group_xstride, int group_ystride) {
+    MEMRA_PDL_CHAIN_ENTRY();
     int flat = blockIdx.x;
     int row = GROUPED ? flat % n : flat;
     if (row >= n) return;
@@ -215,6 +217,7 @@ template <int M>
 __global__ void dsv4_dense_exact_tail_dots_kernel(const float* __restrict__ x,
                                              const void* __restrict__ w, int w_is_bf16,
                                              float* __restrict__ y, int k, int n) {
+    MEMRA_PDL_CHAIN_ENTRY();
     int j = blockIdx.x;
     if (j >= n) return;
     float part[M];
@@ -292,6 +295,7 @@ __global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
                                        const uint16_t* __restrict__ x, float* __restrict__ y,
                                        int n, int k, int xstride, int ystride,
                                        int group_xstride, int group_ystride) {
+    MEMRA_PDL_CHAIN_ENTRY();
     static_assert(M == 1 || !GROUPED, "the grouped plane is one token row");
     const int leaf = threadIdx.x % 128;
     const int tile_row = threadIdx.x / 128;
@@ -403,6 +407,7 @@ template <int M>
 __global__ void dsv4_dense_fast_dots_kernel(const float* __restrict__ x,
                                              const void* __restrict__ w, int w_is_bf16,
                                              float* __restrict__ y, int k, int n) {
+    MEMRA_PDL_CHAIN_ENTRY();
     int j = blockIdx.x;
     if (j >= n) return;
     float part[M];
@@ -545,6 +550,7 @@ extern "C" int memra_dsv4_hc_dot_split_slices_for_gate() {
 template<int S>
 __global__ void dsv4_hc_dot_split_partial_kernel(const float* __restrict__ x,
     const float* __restrict__ w, float* __restrict__ partial) {
+    MEMRA_PDL_CHAIN_ENTRY();
     x += (long)blockIdx.y * 16384;
     partial += (long)blockIdx.y * 24 * S;
     const int row = blockIdx.x / S;
@@ -577,6 +583,7 @@ __global__ void dsv4_hc_dot_split_partial_kernel(const float* __restrict__ x,
 template<int S>
 __global__ void dsv4_hc_dot_split_reduce_kernel(const float* __restrict__ partial,
     float* __restrict__ y) {
+    MEMRA_PDL_CHAIN_ENTRY();
     partial += (long)blockIdx.x * 24 * S;
     y += (long)blockIdx.x * 24;
     const int row = threadIdx.x;

@@ -26,6 +26,7 @@
 // 64 KiB, every element wrong at 256 KiB, which is the spin winning the whole device. An event
 // wait occupies nothing, cannot starve the peer, and needs no timeout to reason about.
 #include <cuda_runtime.h>
+#include "memra_pdl_chain.cuh"
 
 #define TP_AR_ERR()                                            \
     do {                                                       \
@@ -37,6 +38,7 @@
 // it: the pointers are cudaMalloc'd and therefore 256 B aligned, so only `n` decides.
 __global__ void memra_tp_ar_push_kernel(const float* __restrict__ src, float* __restrict__ peer,
                                         long n) {
+    MEMRA_PDL_CHAIN_ENTRY();
     long stride = (long)gridDim.x * blockDim.x;
     long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
     long n4 = n / 4;
@@ -49,6 +51,7 @@ __global__ void memra_tp_ar_push_kernel(const float* __restrict__ src, float* __
 // `dst += stage`, run only once the peer's push event has fired.
 __global__ void memra_tp_ar_fold_kernel(float* __restrict__ dst, const float* __restrict__ stage,
                                         long n) {
+    MEMRA_PDL_CHAIN_ENTRY();
     long stride = (long)gridDim.x * blockDim.x;
     long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
     long n4 = n / 4;
@@ -74,7 +77,7 @@ static inline int memra_tp_ar_blocks(long units) {
 extern "C" int memra_tp_ar_push(const float* src, float* peer_stage, long n, void* stream_v) {
     if (n <= 0) return 40041;
     cudaStream_t stream = (cudaStream_t)stream_v;
-    memra_tp_ar_push_kernel<<<memra_tp_ar_blocks(n / 4), 256, 0, stream>>>(src, peer_stage, n);
+    memra_chain_launch(memra_tp_ar_push_kernel,memra_tp_ar_blocks(n / 4), 256, 0, stream)(src, peer_stage, n);
     TP_AR_ERR();
     return 0;
 }
@@ -82,7 +85,7 @@ extern "C" int memra_tp_ar_push(const float* src, float* peer_stage, long n, voi
 extern "C" int memra_tp_ar_fold(float* dst, const float* stage, long n, void* stream_v) {
     if (n <= 0) return 40041;
     cudaStream_t stream = (cudaStream_t)stream_v;
-    memra_tp_ar_fold_kernel<<<memra_tp_ar_blocks(n / 4), 256, 0, stream>>>(dst, stage, n);
+    memra_chain_launch(memra_tp_ar_fold_kernel,memra_tp_ar_blocks(n / 4), 256, 0, stream)(dst, stage, n);
     TP_AR_ERR();
     return 0;
 }
@@ -94,6 +97,7 @@ extern "C" int memra_tp_ar_fold(float* dst, const float* stage, long n, void* st
 __global__ void memra_tp_ar_push_2d_kernel(const float* __restrict__ src, float* __restrict__ peer,
                                            long rows, long row_len, long src_stride,
                                            long dst_stride) {
+    MEMRA_PDL_CHAIN_ENTRY();
     long stride = (long)gridDim.x * blockDim.x;
     for (long r = blockIdx.y; r < rows; r += gridDim.y) {
         const float* s = src + r * src_stride;
@@ -109,7 +113,7 @@ extern "C" int memra_tp_ar_push_2d(const float* src, float* peer_stage, long row
     cudaStream_t stream = (cudaStream_t)stream_v;
     unsigned gy = (unsigned)(rows > 65535 ? 65535 : rows);
     dim3 grid((unsigned)memra_tp_ar_blocks(row_len), gy);
-    memra_tp_ar_push_2d_kernel<<<grid, 256, 0, stream>>>(src, peer_stage, rows, row_len, src_stride,
+    memra_chain_launch(memra_tp_ar_push_2d_kernel,grid, 256, 0, stream)(src, peer_stage, rows, row_len, src_stride,
                                                           dst_stride);
     TP_AR_ERR();
     return 0;
@@ -274,6 +278,7 @@ __global__ void __launch_bounds__(512, 1) memra_tp_ar_1stage_kernel(
         MemraArPhase* trace = nullptr, unsigned long long* trace_cursor = nullptr,
         long trace_capacity = 0, unsigned int phase_site = 0u, int null_arm = 0,
         long long delay_ticks = 0) {
+    MEMRA_PDL_CHAIN_ENTRY();
     // Live request-local diagnostic, before the real waits so a real timeout
     // takes precedence. The ordinary entry passes null and keeps its program.
     if (fault && threadIdx.x == 0) {
@@ -358,6 +363,7 @@ __global__ void __launch_bounds__(512, 1) memra_tp_ar_1stage_kernel(
 __global__ void memra_tp_ar_gather_i32_kernel(
     const int* in0, const int* in1, int* out, MemraArSignal* self_sg,
     MemraArSignal* peer_sg, int rank, long n, int* err, long long spin_limit) {
+    MEMRA_PDL_CHAIN_ENTRY();
     unsigned flag = self_sg->seq[blockIdx.x] + 1;
     if (memra_ar_barrier(peer_sg->start, self_sg->start, flag, rank, spin_limit)) {
         if (threadIdx.x == 0) {
@@ -382,7 +388,7 @@ extern "C" int memra_tp_ar_gather_i32(const int* in0, const int* in1, int* out,
     int blocks, void* stream_v) {
     if (n <= 0 || spin_limit <= 0 || rank < 0 || rank >= 2 ||
         blocks < 1 || blocks > MEMRA_AR_MAX_BLOCKS) return 40041;
-    memra_tp_ar_gather_i32_kernel<<<blocks, 512, 0, (cudaStream_t)stream_v>>>(
+    memra_chain_launch(memra_tp_ar_gather_i32_kernel,blocks, 512, 0, (cudaStream_t)stream_v)(
         in0, in1, out, (MemraArSignal*)self_sg, (MemraArSignal*)peer_sg,
         rank, n, err, spin_limit);
     TP_AR_ERR();
@@ -399,6 +405,7 @@ __global__ void __launch_bounds__(512, 1) memra_tp_ar_gather_rows_f32_kernel(
         float* __restrict__ out, MemraArSignal* self_sg, MemraArSignal* peer_sg, int rank,
         long rows, long width, int* __restrict__ err, long long spin_limit,
         const unsigned long long* fault, int site) {
+    MEMRA_PDL_CHAIN_ENTRY();
     if (fault && threadIdx.x == 0) {
         unsigned long long word = *fault;
         if ((unsigned)(word >> 32) && (int)(word & 0xffffu) == site &&
@@ -435,7 +442,7 @@ extern "C" int memra_tp_ar_gather_rows_f32(const float* in_rank0, const float* i
     if (rank < 0 || rank >= MEMRA_AR_RANKS) return 40045;
     if (blocks < 1 || blocks > MEMRA_AR_MAX_BLOCKS) return 40046;
     if (fault && (site < 0 || site >= 43)) return 40047;
-    memra_tp_ar_gather_rows_f32_kernel<<<(unsigned)blocks, 512u, 0, (cudaStream_t)stream_v>>>(
+    memra_chain_launch(memra_tp_ar_gather_rows_f32_kernel,(unsigned)blocks, 512u, 0, (cudaStream_t)stream_v)(
         in_rank0, in_rank1, out, (MemraArSignal*)self_sg, (MemraArSignal*)peer_sg, rank, rows,
         width, err, spin_limit, (const unsigned long long*)fault, site);
     TP_AR_ERR();
@@ -450,9 +457,9 @@ extern "C" int memra_tp_ar_1stage(const float* in_rank0, const float* in_rank1, 
     if (rank < 0 || rank >= MEMRA_AR_RANKS) return 40045;
     if (blocks < 1 || blocks > MEMRA_AR_MAX_BLOCKS) return 40046;
     cudaStream_t stream = (cudaStream_t)stream_v;
-    memra_tp_ar_1stage_kernel<<<(unsigned)blocks, 512u, 0, stream>>>(
+    memra_chain_launch(memra_tp_ar_1stage_kernel,(unsigned)blocks, 512u, 0, stream)(
         in_rank0, in_rank1, out, (MemraArSignal*)self_sg, (MemraArSignal*)peer_sg, rank, n, err,
-        spin_limit);
+        spin_limit, nullptr, -1, nullptr, nullptr, 0, 0u, 0, 0);
     TP_AR_ERR();
     return 0;
 }
@@ -465,9 +472,9 @@ extern "C" int memra_tp_ar_1stage_replay(const float* in_rank0, const float* in_
     if (rank < 0 || rank >= MEMRA_AR_RANKS) return 40045;
     if (blocks < 1 || blocks > MEMRA_AR_MAX_BLOCKS) return 40046;
     if (!fault || site < 0 || site >= 43) return 40047;
-    memra_tp_ar_1stage_kernel<<<(unsigned)blocks, 512u, 0, (cudaStream_t)stream_v>>>(
+    memra_chain_launch(memra_tp_ar_1stage_kernel,(unsigned)blocks, 512u, 0, (cudaStream_t)stream_v)(
         in_rank0,in_rank1,out,(MemraArSignal*)self_sg,(MemraArSignal*)peer_sg,rank,n,err,
-        spin_limit,(const unsigned long long*)fault,site);
+        spin_limit,(const unsigned long long*)fault,site, nullptr, nullptr, 0, 0u, 0, 0);
     TP_AR_ERR();
     return 0;
 }
@@ -489,7 +496,7 @@ extern "C" int memra_tp_ar_1stage_instr(const float* in_rank0, const float* in_r
     if (!trace || !trace_cursor || trace_capacity <= 0) return 40048;
     if (null_arm < 0 || null_arm > 1) return 40049;
     if (delay_ticks < 0) return 40050;
-    memra_tp_ar_1stage_kernel<<<(unsigned)blocks, 512u, 0, (cudaStream_t)stream_v>>>(
+    memra_chain_launch(memra_tp_ar_1stage_kernel,(unsigned)blocks, 512u, 0, (cudaStream_t)stream_v)(
         in_rank0, in_rank1, out, (MemraArSignal*)self_sg, (MemraArSignal*)peer_sg, rank, n, err,
         spin_limit, (const unsigned long long*)fault, fault ? site : -1, (MemraArPhase*)trace,
         (unsigned long long*)trace_cursor, trace_capacity, phase_site, null_arm, delay_ticks);
@@ -520,6 +527,7 @@ __global__ void __launch_bounds__(256) memra_tp_ar_1stage_hcpost_kernel(
         const float* __restrict__ comb, float* __restrict__ out, int hc, int d,
         MemraArSignal* self_sg, MemraArSignal* peer_sg, int rank, int* __restrict__ err,
         long long spin_limit) {
+    MEMRA_PDL_CHAIN_ENTRY();
     __shared__ int ok;
     const unsigned flag = self_sg->seq[0] + 1;
     const unsigned round = self_sg->hp_seq + 1;
@@ -591,7 +599,7 @@ extern "C" int memra_tp_ar_1stage_hcpost(const float* in_rank0, const float* in_
     if (rank < 0 || rank >= MEMRA_AR_RANKS) return 40045;
     if (blocks < 1 || blocks > MEMRA_AR_MAX_BLOCKS) return 40046;
     cudaStream_t stream = (cudaStream_t)stream_v;
-    memra_tp_ar_1stage_hcpost_kernel<<<(unsigned)blocks, 256u, 0, stream>>>(
+    memra_chain_launch(memra_tp_ar_1stage_hcpost_kernel,(unsigned)blocks, 256u, 0, stream)(
         in_rank0, in_rank1, residual, post, comb, out, hc, d, (MemraArSignal*)self_sg,
         (MemraArSignal*)peer_sg, rank, err, spin_limit);
     TP_AR_ERR();
