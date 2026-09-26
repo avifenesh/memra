@@ -82,3 +82,14 @@ clock's own cost (`pf_demand` in `i20s` against `i20c`) and each leaf's change f
 named leaf's work by the smallest change that keeps every answer, order and refusal (borrowed or reused structures,
 work done once at install instead of per lease, a denser key in place of a hashed one; never a skipped protocol step).
 Then CPU gates, and the card cell in DAY82's shape on the 285K class, then a 9950X.
+
+## 1a. Before the cell: one leaf's scope corrected
+
+Found in the reader's dry check (`day83-cpu/dry-check-queue.log`, stub binaries replaying one BOX39 I20C run and
+DAY64b's first I15S stage lines, meaningless), before any cell: `pf_retire` brackets only the prefetch path's
+`retire_banked` calls, while the bank's retire counters count every finish, the dispatch path's too, so `retire_outer`
+as section 1 wrote it mixed two scopes. It is now the engine stage clock's `retire_ns` (every `retire_banked` call)
+minus its in-flight-bound `wait_ns` and the bank's `retire` and `collect`, one scope. `pf_retire` stays beside it. No
+other leaf changes; `outer` already pairs `pf_demand` with the dispatch path's `demand_ns`, the owner clock's scope.
+The queue's control flow under the same stubs: 30 runs in the registered order, 10 per arm with the registered flags,
+the lock held across them, the reader run into the cell.

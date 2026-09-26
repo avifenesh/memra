@@ -65,7 +65,7 @@ def terms(run, a, b):
     for k in ("pf_demand_ns", "pf_resident_ns", "pf_retire_ns", "pf_stage_ns", "pf_reserve_ns", "prefetch_ns",
               "dispatch_ns", "prefetch_issued"):
         t[k] = delta(d, a, b, k)
-    for k in ("demand_ns", "finish_ns", "retire_ns", "validate_ns", "enqueue_ns", "prefetches", "gpu_misses"):
+    for k in ("demand_ns", "finish_ns", "retire_ns", "wait_ns", "validate_ns", "enqueue_ns", "prefetches", "gpu_misses"):
         t["eng_" + k] = delta(s, a, b, k, "engine")
     for k in ("inner_demand_ns", "trace_ns"):
         t["own_" + k] = delta(s, a, b, k, "owner")
@@ -88,8 +88,10 @@ def terms(run, a, b):
     # adapter's pre-demand lookups.
     both = None if t["pf_demand_ns"] is None or t["eng_demand_ns"] is None else t["pf_demand_ns"] + t["eng_demand_ns"]
     t["outer_ns"] = sub(both, t["own_inner_demand_ns"], t["own_trace_ns"])
-    # The engine's retire outside the bank's finish (the in-flight walk, event queries, the proxy's entry).
-    t["retire_outer_ns"] = sub(t["pf_retire_ns"], t["bank_retire_ns"], t["bank_collect_ns"])
+    # The engine's retire (every `retire_banked` call, the prefetch path's and the dispatch path's, the scope of the
+    # bank's retire counters) outside the bank's finish and any in-flight-bound wait: the in-flight walk, the event
+    # queries, the proxy's entry.
+    t["retire_outer_ns"] = sub(t["eng_retire_ns"], t["eng_wait_ns"], t["bank_retire_ns"], t["bank_collect_ns"])
     return t
 
 
