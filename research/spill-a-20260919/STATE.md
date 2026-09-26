@@ -1,4 +1,4 @@
-# WP-A resumable state (2026-09-26, NEED TARGET CARD: DAY64's placing sitting and L's (running); W's 5090 half waiting)
+# WP-A resumable state (2026-09-26, NEED TARGET CARD: DAY64's and T-H's sittings; L's running; W's 5090 half waiting)
 
 - Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ65 took `9ab479d9c` (DAY66); integ67 takes B1 after integ66.
 - Items 21 to 25 closed (DAY53 to DAY58); item 23's addendum F2b (`b4d6f95c2`) accepted.
@@ -35,6 +35,8 @@
 - Items 14 and 19 (DAY63, design L): built (`f6dfe303a`, CPU-green, section 3). Its sitting is `pro-single-l/`
   (`build.sh <tip> <L's parent>`, then `driver.sh`, last line `L VERDICT -> ..`). Item 17 is re-read on top after L's
   verdict.
+- Item 20 (DAY65, design T-H): built (`a839d3494`, CPU-green, section 2). Its sitting is `pro-single-th/`
+  (`build.sh <tip> <T-H's parent>`, then `driver.sh`, last line `TH VERDICT -> ..`).
 - Pre-registered and waiting in order: item 13's design (DAY62, the retire seam: lines, a price, R1
   or R2), items 14 and 19 (DAY63, design L; item 17 re-read on top), item 18 (DAY64), item 20 (DAY65, design T-H).
 - The owed 5090 cells (S4's half, V's half, item 16, and B1's (a1) and (a2) as a compatibility reading) queue on the
