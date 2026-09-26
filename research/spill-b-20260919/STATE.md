@@ -1,3 +1,5 @@
+# WP-B checkpoint 2026-09-26 21:3xZ: O14 read on the target card in full (DAY49 2.3 gates, 2.4 serving shape: on 9/9 on
+both routes, off loses the chunk); BOX35 released; the ninth sitting still on BOX33; 5090 halves waiting for the card
 # WP-B checkpoint 2026-09-26 21:1xZ (NEED TARGET CARD, the DAY49D boots-only rerun on BOX35): DAY49 2.3 read (arm j
 PASS x4 on a 3-session chunk; j-vmm as registered); the chain's WT export fixed with a BOOTS_ONLY=1 entry (`09b15280f`)
 # WP-B checkpoint 2026-09-26 (NEED TARGET CARD, fourteenth sitting on BOX35): DAY49 2.1 and 2.2 read (the fault never

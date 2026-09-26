@@ -177,8 +177,11 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   `8926ccfb3`, memra-server lib 959 passed, clippy clean), gate arm j on the plain route, `j-vmm`, and the serving shape
   on both routes. The fourteenth sitting (DAY49 2.3): arm j PASS four times on a 3-session chunk (j1, j2, and both
   sides of the VMM pair), its red twin red each time; j-vmm green one reap per retry, red none. The serving boots did not
-  start (the box chain did not export `WT`); fixed in `09b15280f`, and the boots-only rerun (`BOOTS_ONLY=1`) waits on
-  BOX35. The 5090 half runs from `rtx5090-day49d/run.sh`.
+  start (the box chain did not export `WT`); fixed in `09b15280f`. The boots-only rerun (DAY49 2.4): every `on` boot
+  9 of 9 `200` with one retry, on both routes and both orders; `off` loses the faulted chunk's sessions (8 of 9 `503`
+  on the spec default, 5 of 9 on the plain route). Target card read in full. The 5090 half (queue-l's registered
+  boots, `rtx5090-day49d/run.sh`) waits for the card. `MEMRA_BATCH_OOM_RECOVER` stays default-off; its default is the
+  owner's call at decide-by 2026-10-10.
 
 ### O9. memra#464's guard seed
 
