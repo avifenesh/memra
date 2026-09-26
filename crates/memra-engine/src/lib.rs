@@ -34013,13 +34013,6 @@ impl Engine {
             && std::env::var("MEMRA_GDN_WGMMA").as_deref() != Ok("0")
     }
 
-    /// task #18 conv-fuse: carried-ring conv + SiLU + GDN repack in ONE pass (the
-    /// conv_out intermediate and its transposed re-read disappear — 11.8ms of the
-    /// T=2048 prime). Ring update stays the separate follow-up launch (pad-aware).
-    /// BIT-IDENTICAL values to ssm_conv1d_tm_state_pad + qkv_to_gdn_repack.
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::manual_div_ceil)]
-    // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
     /// GRID CAPTURE (WP-B day 44, `grid_capture`): the conv ring at `rows` into the call, i.e.
     /// the ring update of a call that ended there: rows `rows - (d_conv - 1) .. rows` of the
     /// token-major conv input, through the same ring-update kernel (a copy).
@@ -34045,6 +34038,13 @@ impl Engine {
         Ok(dst)
     }
 
+    /// task #18 conv-fuse: carried-ring conv + SiLU + GDN repack in ONE pass (the
+    /// conv_out intermediate and its transposed re-read disappear — 11.8ms of the
+    /// T=2048 prime). Ring update stays the separate follow-up launch (pad-aware).
+    /// BIT-IDENTICAL values to ssm_conv1d_tm_state_pad + qkv_to_gdn_repack.
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::manual_div_ceil)]
+    // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
     pub fn ssm_conv1d_gdn_state_pad(
         &self,
         qkv_tm: &cudarc::driver::CudaView<f32>,
