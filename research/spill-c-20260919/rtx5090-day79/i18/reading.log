@@ -1,0 +1,18 @@
+DAY79 host demand sequence i17 sha256 4bdc2610c3534e42 lines=[22077]
+DAY79 host demand sequence i18 sha256 4bdc2610c3534e42 lines=[22077]
+DAY79 host demand sequence i18c sha256 4bdc2610c3534e42 lines=[22077]
+DAY79 I18 CHECKS rig=rtx5090 runs=40 integrity=ok
+DAY79 ADMISSIBILITY rig=rtx5090 ceiling=0.005 max_iqr_gen=0.0128 max_iqr_window=0.0110 failing=['ref:gen_s=0.0075', 'ref:window_s=0.0073', 'i17:gen_s=0.0128', 'i17:window_s=0.0075', 'i18:gen_s=0.0077', 'i18:window_s=0.0077', 'i18c:window_s=0.0110'] -> inadmissible
+DAY79 gen-only decode medians (N=10 each): ref=0.377 i17=0.392 i18=0.386 i18c=0.386
+DAY79 STEP i18_vs_i17 gen-only decode: pooled=-0.0055 o1=-0.0050 o2=-0.0060 noise=0.0128 -> flat
+DAY79 steady window medians (N=10 each): ref=0.328 i17=0.335 i18=0.336 i18c=0.335
+DAY79 STEP i18_vs_i17 steady window: pooled=+0.0010 o1=+0.0020 o2=+0.0010 noise=0.0077 -> flat
+DAY79 DOOR i18_vs_ref gen-only decode: pooled=+0.0090 o1=+0.0080 o2=+0.0100 noise=0.0077 -> loses
+DAY79 DOOR i18_vs_ref steady window: pooled=+0.0075 o1=+0.0080 o2=+0.0070 noise=0.0077 -> matches
+DAY79 I18C brackets per window token (ms, medians): dispatch_ns=0.1221 prefetch_ns=0.6526 pf_demand_ns=0.2156 pf_resident_ns=0.0708 pf_retire_ns=0.0279 pf_stage_ns=0.2380
+DAY79 B p-ref-r1: window_ms=349.0 gpu_busy=7.1247 gpu_idle=3.7816 h2d_exposed=1.2965 (ms per window token)
+DAY79 B p-on-r1: window_ms=367.0 gpu_busy=7.1226 gpu_idle=4.3462 h2d_exposed=1.3021 (ms per window token)
+DAY79 B p-on-r2: window_ms=364.0 gpu_busy=7.1156 gpu_idle=4.2594 h2d_exposed=1.2946 (ms per window token)
+DAY79 B p-ref-r2: window_ms=359.0 gpu_busy=7.1330 gpu_idle=4.0857 h2d_exposed=1.2916 (ms per window token)
+DAY79 B i18_minus_ref per window token (ms, medians of two; deciding nothing): gpu_busy=-0.0098 gpu_idle=+0.3692 h2d_exposed=+0.0043 kernel_sum=-0.0101
+DAY79 VERDICT rig=rtx5090 integrity=ok -> void (inadmissible) [as read: i18=flat door=i18 vs_ref=loses (window: i18=flat vs_ref=matches)]

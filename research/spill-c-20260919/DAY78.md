@@ -95,3 +95,33 @@ Expected: the build about 5 minutes, the cell about 35 (30 runs, each with a fra
 **A local GPU check of the flag** (`day78-cpu/gpu-check.log`, the development host's RTX 5090 under its lock, one run
 each): the door and the door with `--expert-bank-pool-pageable` both exit 0 with `MATCH` and the same tape; the pool
 line reads ` pageable` for the second; its decode is slower (0.585 s gen-only against 0.393), as pageable copies are.
+
+## 2. The cell on the 285K class (BOX34, run by the lead as registered; `pro-single-day78-box34-285k/`)
+
+After a page-cache eviction of unused files (`MemFree` 204 GiB at the start), `D78_BUILDS="p78=a1786bc32"
+D78_RIG=box34-285k bash .../day78-box.sh` on the tree `cb7b15cbb`, 12:35Z to `box done 2026-09-26T13:16:33Z`, after
+DAY79's cell. Receipts: 166 of 166 `OK` (re-checked), `run-gen-p78` by hash. Verbatim (`pages/reading.log`):
+
+- `DAY78 INDUCER rig=box34-285k memfree_gib=204 F_gib=202 induce=1`
+- `DAY78 PAGES CHECKS rig=box34-285k runs=24 state=ns_per_step integrity=ok`
+- `DAY78 ARM rig=box34-285k refi: fail_heavy=0 of 8 slow=0 of 8 compacted=8 of 8 window_ns_per_step median=1.055 gen median=0.315 window median=0.288`
+- `DAY78 ARM rig=box34-285k di: fail_heavy=8 of 8 slow=6 of 8 compacted=8 of 8 window_ns_per_step median=1.534 gen median=0.365 window median=0.322`
+- `DAY78 ARM rig=box34-285k dpi: fail_heavy=0 of 8 slow=0 of 8 compacted=0 of 8 window_ns_per_step median=1.054 gen median=0.536 window median=0.386`
+- `DAY78 CENSUS c1-di-r1: pid=83609	CapEff=0xa80405fb	cap_sys_admin=no	kpageflags=unreadable (Permission denied)	page_owner=absent	tracefs=absent` (the same in every census run)
+- `DAY78 PAGES VERDICT rig=box34-285k integrity=ok -> pool_draws (fail_heavy: di 8 of 8, dpi 0 of 8, refi 0 of 8)`
+
+**Read as registered: `pool_draws`.** Every run of the door with its pinned pool had compaction that failed on at
+least half of what it isolated (and 6 of 8 were slow, 1.53 ns per step at the median against 1.055); with the same
+pool made of pageable heap memory no run had any, and REF's runs compacted and moved their pages. The pinned pool's
+pages are the ones compaction takes and cannot move. The frame-number census was not available here (`CapEff`
+without `CAP_SYS_ADMIN`, `kpageflags` unreadable), so the pages were identified by elimination, as section 0 planned.
+
+**What the census shows beside it, deciding nothing, and it says why.** The door's pinned pool is a 15,055,680 kB
+`rw-s` mapping of `/dev/zero (deleted)`: `cuMemHostAlloc` with `CU_MEMHOSTALLOC_PORTABLE` here backs the pool with
+shared anonymous memory, whose pages are file-backed shmem pages on the LRU (`file_or_shared` 3,763,920 of 3,763,920
+pages). By the kernel's source (`isolate_migratepages_block`), compaction skips a pinned anonymous page before isolating it (a private anonymous page whose
+reference count exceeds its map count), but a shmem page has a mapping, so that check does not apply: compaction
+isolates the pool's pinned pages, fails to move them, and does it again, flushing the door's mappings each time. REF's
+pinned memory (`cuMemHostAlloc` write-combined) appears as `rw-s /dev/nvidiactl` mappings with `de dd mm` flags, pages
+the driver owns and compaction never scans; the pageable arm's pool is a private anonymous mapping (`rw-p [anon]`),
+which compaction moves freely. That is the fix's shape: the next registration (`DAY80.md`).

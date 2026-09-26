@@ -1,0 +1,67 @@
+DAY78 INDUCER rig=box34-285k memfree_gib=204 F_gib=202 induce=1
+DAY78 PAGES CHECKS rig=box34-285k runs=24 state=ns_per_step integrity=ok
+DAY78 POOL door arms: bytes=[15417016320]
+DAY78 R o1-refi-r1: gen=0.316 window=0.337 window_ns_per_step=1.056 fast compacted=yes fail_heavy=no compact_isolated=1983630/s migrate_fail=1431/s
+DAY78 R o1-di-r1: gen=0.571 window=0.288 window_ns_per_step=1.067 fast compacted=yes fail_heavy=yes compact_isolated=670012/s migrate_fail=557595/s
+DAY78 R o1-dpi-r1: gen=0.536 window=0.386 window_ns_per_step=1.054 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY78 R o1-refi-r2: gen=0.315 window=0.288 window_ns_per_step=1.062 fast compacted=yes fail_heavy=no compact_isolated=1875527/s migrate_fail=325/s
+DAY78 R o1-di-r2: gen=0.359 window=0.322 window_ns_per_step=1.532 slow compacted=yes fail_heavy=yes compact_isolated=851310/s migrate_fail=843833/s
+DAY78 R o1-dpi-r2: gen=0.542 window=0.385 window_ns_per_step=1.055 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY78 R o1-refi-r3: gen=0.315 window=0.288 window_ns_per_step=1.054 fast compacted=yes fail_heavy=no compact_isolated=1945129/s migrate_fail=511/s
+DAY78 R o1-di-r3: gen=0.372 window=0.332 window_ns_per_step=1.637 slow compacted=yes fail_heavy=yes compact_isolated=859130/s migrate_fail=823087/s
+DAY78 R o1-dpi-r3: gen=0.536 window=0.386 window_ns_per_step=1.054 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY78 R o1-refi-r4: gen=0.315 window=0.288 window_ns_per_step=1.054 fast compacted=yes fail_heavy=no compact_isolated=1919583/s migrate_fail=160/s
+DAY78 R o1-di-r4: gen=0.385 window=0.315 window_ns_per_step=1.071 fast compacted=yes fail_heavy=yes compact_isolated=928998/s migrate_fail=769900/s
+DAY78 R o1-dpi-r4: gen=0.534 window=0.385 window_ns_per_step=1.054 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY78 R o2-dpi-r1: gen=0.535 window=0.386 window_ns_per_step=1.060 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY78 R o2-di-r1: gen=0.357 window=0.319 window_ns_per_step=1.535 slow compacted=yes fail_heavy=yes compact_isolated=897061/s migrate_fail=897061/s
+DAY78 R o2-refi-r1: gen=0.391 window=0.288 window_ns_per_step=1.054 fast compacted=yes fail_heavy=no compact_isolated=1932764/s migrate_fail=32/s
+DAY78 R o2-dpi-r2: gen=0.537 window=0.396 window_ns_per_step=1.092 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY78 R o2-di-r2: gen=0.354 window=0.321 window_ns_per_step=1.512 slow compacted=yes fail_heavy=yes compact_isolated=844717/s migrate_fail=844691/s
+DAY78 R o2-refi-r2: gen=0.315 window=0.288 window_ns_per_step=1.057 fast compacted=yes fail_heavy=no compact_isolated=1933410/s migrate_fail=102/s
+DAY78 R o2-dpi-r3: gen=0.543 window=0.390 window_ns_per_step=1.056 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY78 R o2-di-r3: gen=0.366 window=0.326 window_ns_per_step=1.560 slow compacted=yes fail_heavy=yes compact_isolated=908349/s migrate_fail=896430/s
+DAY78 R o2-refi-r3: gen=0.315 window=0.288 window_ns_per_step=1.055 fast compacted=yes fail_heavy=no compact_isolated=1914371/s migrate_fail=48/s
+DAY78 R o2-dpi-r4: gen=0.537 window=0.385 window_ns_per_step=1.054 fast compacted=no fail_heavy=no compact_isolated=0/s migrate_fail=0/s
+DAY78 R o2-di-r4: gen=0.364 window=0.328 window_ns_per_step=1.644 slow compacted=yes fail_heavy=yes compact_isolated=846513/s migrate_fail=846513/s
+DAY78 R o2-refi-r4: gen=0.314 window=0.287 window_ns_per_step=1.072 fast compacted=yes fail_heavy=no compact_isolated=1950789/s migrate_fail=64/s
+DAY78 ARM rig=box34-285k refi: fail_heavy=0 of 8 slow=0 of 8 compacted=8 of 8 window_ns_per_step median=1.055 gen median=0.315 window median=0.288
+DAY78 ARM rig=box34-285k di: fail_heavy=8 of 8 slow=6 of 8 compacted=8 of 8 window_ns_per_step median=1.534 gen median=0.365 window median=0.322
+DAY78 ARM rig=box34-285k dpi: fail_heavy=0 of 8 slow=0 of 8 compacted=0 of 8 window_ns_per_step median=1.054 gen median=0.536 window median=0.386
+DAY78 CENSUS c1-di-r1: pid=83609	CapEff=0xa80405fb	cap_sys_admin=no	kpageflags=unreadable (Permission denied)	page_owner=absent	tracefs=absent
+DAY78 CENSUS c1-di-r1 map: 70ca3ea82000-70ce7c000000 r--s /root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf pages=4445566 present=4342062 file_or_shared=4342062 exclusive=4342062 rss_kb=17368248 locked_kb=0 thp_kb=0 vmflags=rd mr me ms sd pfn_sha=- flags=-
+DAY78 CENSUS c1-di-r1 map: 70c668000000-70c9feed0000 rw-s /dev/zero (deleted) pages=3763920 present=3763920 file_or_shared=3763920 exclusive=3763920 rss_kb=15055680 locked_kb=0 thp_kb=0 vmflags=rd wr sh mr mw me ms sd pfn_sha=- flags=-
+DAY78 CENSUS c1-di-r1 map: 70ca1cbfe000-70ca3ea82000 rw-p [anon] pages=138884 present=138884 file_or_shared=0 exclusive=138884 rss_kb=555536 locked_kb=0 thp_kb=0 vmflags=rd wr mr mw me ac sd pfn_sha=- flags=-
+DAY78 CENSUS c1-di-r1 map: 5ee356149000-5ee363c4a000 rw-p [heap] pages=56065 present=47031 file_or_shared=0 exclusive=47027 rss_kb=188040 locked_kb=0 thp_kb=0 vmflags=rd wr mr mw me ac sd pfn_sha=- flags=-
+DAY78 CENSUS c1-di-r1: mappings with frames changed between the passes: 0
+DAY78 CENSUS c1-dpi-r1: pid=86038	CapEff=0xa80405fb	cap_sys_admin=no	kpageflags=unreadable (Permission denied)	page_owner=absent	tracefs=absent
+DAY78 CENSUS c1-dpi-r1 map: 77f02ea82000-77f46c000000 r--s /root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf pages=4445566 present=4342062 file_or_shared=4342062 exclusive=4342062 rss_kb=17368248 locked_kb=0 thp_kb=0 vmflags=rd mr me ms sd pfn_sha=- flags=-
+DAY78 CENSUS c1-dpi-r1 map: 77ec5912e000-77eff003e000 rw-p [anon] pages=3763984 present=3763983 file_or_shared=0 exclusive=3763983 rss_kb=15055932 locked_kb=0 thp_kb=0 vmflags=rd wr mr mw me ac sd pfn_sha=- flags=-
+DAY78 CENSUS c1-dpi-r1 map: 77f00d50f000-77f02ea82000 rw-p [anon] pages=136563 present=136563 file_or_shared=0 exclusive=136563 rss_kb=546252 locked_kb=0 thp_kb=0 vmflags=rd wr mr mw me ac sd pfn_sha=- flags=-
+DAY78 CENSUS c1-dpi-r1 map: 57252f7fe000-57253d2f0000 rw-p [heap] pages=56050 present=47199 file_or_shared=0 exclusive=47196 rss_kb=188720 locked_kb=0 thp_kb=0 vmflags=rd wr mr mw me ac sd pfn_sha=- flags=-
+DAY78 CENSUS c1-dpi-r1: mappings with frames changed between the passes: 0
+DAY78 CENSUS c1-refi-r1: pid=82153	CapEff=0xa80405fb	cap_sys_admin=no	kpageflags=unreadable (Permission denied)	page_owner=absent	tracefs=absent
+DAY78 CENSUS c1-refi-r1 map: 78a102a82000-78a540000000 r--s /root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf pages=4445566 present=4342062 file_or_shared=4342062 exclusive=4342062 rss_kb=17368248 locked_kb=0 thp_kb=0 vmflags=rd mr me ms sd pfn_sha=- flags=-
+DAY78 CENSUS c1-refi-r1 map: 78a0e2731000-78a102a82000 rw-p [anon] pages=131921 present=131921 file_or_shared=0 exclusive=131921 rss_kb=527684 locked_kb=0 thp_kb=0 vmflags=rd wr mr mw me ac sd pfn_sha=- flags=-
+DAY78 CENSUS c1-refi-r1 map: 789cc2000000-789ccf200000 rw-s /dev/nvidiactl pages=53760 present=53760 file_or_shared=53760 exclusive=53760 rss_kb=215040 locked_kb=0 thp_kb=0 vmflags=rd wr sh mr mw me ms de dd sd mm pfn_sha=- flags=-
+DAY78 CENSUS c1-refi-r1 map: 789ce4000000-789cf1200000 rw-s /dev/nvidiactl pages=53760 present=53760 file_or_shared=53760 exclusive=53760 rss_kb=215040 locked_kb=0 thp_kb=0 vmflags=rd wr sh mr mw me ms de dd sd mm pfn_sha=- flags=-
+DAY78 CENSUS c1-refi-r1: mappings with frames changed between the passes: 0
+DAY78 CENSUS c2-di-r1: pid=91057	CapEff=0xa80405fb	cap_sys_admin=no	kpageflags=unreadable (Permission denied)	page_owner=absent	tracefs=absent
+DAY78 CENSUS c2-di-r1 map: 7e66e2a82000-7e6b20000000 r--s /root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf pages=4445566 present=4342062 file_or_shared=4342062 exclusive=4342062 rss_kb=17368248 locked_kb=0 thp_kb=0 vmflags=rd mr me ms sd pfn_sha=- flags=-
+DAY78 CENSUS c2-di-r1 map: 7e6310000000-7e66a6ed0000 rw-s /dev/zero (deleted) pages=3763920 present=3763749 file_or_shared=3763920 exclusive=3763749 rss_kb=15055680 locked_kb=0 thp_kb=0 vmflags=rd wr sh mr mw me ms sd pfn_sha=- flags=-
+DAY78 CENSUS c2-di-r1 map: 7e66c0bfe000-7e66e2a82000 rw-p [anon] pages=138884 present=138884 file_or_shared=0 exclusive=138884 rss_kb=555536 locked_kb=0 thp_kb=0 vmflags=rd wr mr mw me ac sd pfn_sha=- flags=-
+DAY78 CENSUS c2-di-r1 map: 5955e9d76000-5955f7876000 rw-p [heap] pages=56064 present=47032 file_or_shared=0 exclusive=47031 rss_kb=188056 locked_kb=0 thp_kb=0 vmflags=rd wr mr mw me ac sd pfn_sha=- flags=-
+DAY78 CENSUS c2-di-r1: mappings with frames changed between the passes: 0
+DAY78 CENSUS c2-dpi-r1: pid=88547	CapEff=0xa80405fb	cap_sys_admin=no	kpageflags=unreadable (Permission denied)	page_owner=absent	tracefs=absent
+DAY78 CENSUS c2-dpi-r1 map: 7b1a1aa82000-7b1e58000000 r--s /root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf pages=4445566 present=4342062 file_or_shared=4342062 exclusive=4342062 rss_kb=17368248 locked_kb=0 thp_kb=0 vmflags=rd mr me ms sd pfn_sha=- flags=-
+DAY78 CENSUS c2-dpi-r1 map: 7b164512e000-7b19dc03c000 rw-p [anon] pages=3763982 present=3763981 file_or_shared=0 exclusive=3763981 rss_kb=15055924 locked_kb=0 thp_kb=0 vmflags=rd wr mr mw me ac sd pfn_sha=- flags=-
+DAY78 CENSUS c2-dpi-r1 map: 7b19f950f000-7b1a1aa82000 rw-p [anon] pages=136563 present=136563 file_or_shared=0 exclusive=136563 rss_kb=546252 locked_kb=0 thp_kb=0 vmflags=rd wr mr mw me ac sd pfn_sha=- flags=-
+DAY78 CENSUS c2-dpi-r1 map: 583ea8f4a000-583eb6a34000 rw-p [heap] pages=56042 present=47172 file_or_shared=0 exclusive=47168 rss_kb=188604 locked_kb=0 thp_kb=0 vmflags=rd wr mr mw me ac sd pfn_sha=- flags=-
+DAY78 CENSUS c2-dpi-r1: mappings with frames changed between the passes: 0
+DAY78 CENSUS c2-refi-r1: pid=93458	CapEff=0xa80405fb	cap_sys_admin=no	kpageflags=unreadable (Permission denied)	page_owner=absent	tracefs=absent
+DAY78 CENSUS c2-refi-r1 map: 77eceaa82000-77f128000000 r--s /root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf pages=4445566 present=4342062 file_or_shared=4342062 exclusive=4342062 rss_kb=17368248 locked_kb=0 thp_kb=0 vmflags=rd mr me ms sd pfn_sha=- flags=-
+DAY78 CENSUS c2-refi-r1 map: 77ecca731000-77eceaa82000 rw-p [anon] pages=131921 present=131921 file_or_shared=0 exclusive=131921 rss_kb=527684 locked_kb=0 thp_kb=0 vmflags=rd wr mr mw me ac sd pfn_sha=- flags=-
+DAY78 CENSUS c2-refi-r1 map: 77e8aa000000-77e8b7200000 rw-s /dev/nvidiactl pages=53760 present=53760 file_or_shared=53760 exclusive=53760 rss_kb=215040 locked_kb=0 thp_kb=0 vmflags=rd wr sh mr mw me ms de dd sd mm pfn_sha=- flags=-
+DAY78 CENSUS c2-refi-r1 map: 77e8cc000000-77e8d9200000 rw-s /dev/nvidiactl pages=53760 present=53760 file_or_shared=53760 exclusive=53760 rss_kb=215040 locked_kb=0 thp_kb=0 vmflags=rd wr sh mr mw me ms de dd sd mm pfn_sha=- flags=-
+DAY78 CENSUS c2-refi-r1: mappings with frames changed between the passes: 0
+DAY78 PAGES VERDICT rig=box34-285k integrity=ok -> pool_draws (fail_heavy: di 8 of 8, dpi 0 of 8, refi 0 of 8)

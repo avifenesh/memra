@@ -225,10 +225,10 @@ The lead staged BOX16, a Core Ultra 9 285K host with one RTX PRO 6000 Blackwell 
 the driver stopped with no cell run. The lead rejected the host as unstable and destroyed it. The 8 partial receipts
 check 8 of 8 against `box-mirror-manifest.sha256` (`MIRROR-CHECK.txt`); the one binary built is listed by hash only.
 This attempt is void: it has no reading, and it moves nothing. The same tree built `i13` on BOX13 and BOX15, so the
-fault is the host's, recorded as read. The rerun stays registered as section 5 names it, for the Idaho 285K class
+fault is the host's, recorded as read. The rerun stays registered as section 5 names it, for the 285K class
 (BOX14, after lane B's sitting).
 
-## 5b. The rerun `i15b` (BOX14, the Idaho 285K class, run by the lead as registered; `pro-single-day64b/`)
+## 5b. The rerun `i15b` (BOX14, the 285K class, run by the lead as registered; `pro-single-day64b/`)
 
 The lead ran `day64b-box.sh` as section 5 names it (`D64_BUILDS="c60=da649107c i13=c9379c051 i14=83f03d9b7
 i15=2243b1fe2"`) on BOX14, a Core Ultra 9 285K host (24 CPUs, 197 GB) with one RTX PRO 6000 Blackwell Workstation

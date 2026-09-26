@@ -70,3 +70,31 @@ cell's control flow (22 runs per binary), the driver.
 Run as `D79_BUILDS="i17=d4ab19f1d i18=c7294b912" bash /root/wt-c/research/spill-c-20260919/day79-box.sh` on a Core
 Ultra 9 285K host with one RTX PRO 6000 Blackwell Workstation Edition (nsys). Expected: two builds about 10 minutes,
 the cell about 25. The RTX 5090's half: queue v14 (`rtx5090-queue-v14-20260926.sh`).
+
+## 3. The target card (BOX34, a Core Ultra 9 285K, another machine than BOX29's; run by the lead as registered; `pro-single-day79/`)
+
+BOX34: one RTX PRO 6000 Blackwell Workstation Edition, 249 GB, driver 580.173.02. `D79_BUILDS="i17=d4ab19f1d
+i18=c7294b912" bash .../day79-box.sh` on the tree `cb7b15cbb`, 12:24Z to `box done 2026-09-26T12:35:47Z`. Receipts:
+219 of 219 `OK` against the box manifest (re-checked), ELFs and profiles by hash. Regime: 34 to 45 C, SM median 2610
+MHz, N=1846. Verbatim (`i18/reading.log`):
+
+- `DAY79 host demand sequence i17 sha256 4bdc2610c3534e42 lines=[22077]`, and the same for `i18` and `i18c`
+- `DAY79 I18 CHECKS rig=pro-single runs=40 integrity=ok`
+- `DAY79 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0010 max_iqr_window=0.0010 failing=[] -> admissible`
+- `DAY79 gen-only decode medians (N=10 each): ref=0.311 i17=0.315 i18=0.315 i18c=0.315`
+- `DAY79 STEP i18_vs_i17 gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0010 -> flat`
+- `DAY79 DOOR i18_vs_ref gen-only decode: pooled=+0.0040 o1=+0.0040 o2=+0.0040 noise=0.0010 -> loses`
+- `DAY79 DOOR i18_vs_ref steady window: pooled=+0.0000 o1=+0.0010 o2=+0.0000 noise=0.0010 -> matches`
+- `DAY79 VERDICT rig=pro-single integrity=ok i18=flat door=i18 vs_ref=loses (window: i18=flat vs_ref=matches)`
+
+**Read as registered: I18 `flat`, so it stays; the door `loses` to REF gen-only and `matches` it on the window.** The
+host demand sequence is byte-for-byte I17's. This host runs everything slower than BOX29's machine (REF 0.311 s
+gen-only against 0.254) and the door's gap is smaller (+0.004 against +0.010 over 32 tokens), but that is the host, not
+I18: I18 against I17 reads 0.000 in both orders here. The window `matches` is this host's reading, not a change of
+program.
+
+## 3a. The RTX 5090 (queue v14; `rtx5090-day79/i18/`)
+
+Verbatim: `DAY79 ADMISSIBILITY rig=rtx5090 ... -> inadmissible` (every arm above the ceiling; the card ran 61 to 82 C
+with other lanes' work), `DAY79 VERDICT rig=rtx5090 integrity=ok -> void (inadmissible) [as read: i18=flat door=i18
+vs_ref=loses (window: i18=flat vs_ref=matches)]`. Decides nothing; the same host demand sequence held.
