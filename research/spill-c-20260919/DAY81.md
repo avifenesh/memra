@@ -49,3 +49,26 @@ compared). Admissibility, then I19 against I18 (`improves`, `regresses`, `flat`,
 it), the door (I19, or I18 if I19 `regresses`) against REF. Part B, deciding nothing: I19's `gpu_idle` and
 `h2d_exposed` against REF's, the stall this is meant to remove. `regresses` on either class reverts I19 with its
 receipt; `flat` or `improves` stays.
+
+## 2a. I19 withdrawn before any card: its order is I18's
+
+I19 landed as `9e23cc5bb`; its CPU gates passed (`day81-cpu/gates.log`: the engine library 575 passed, the `day81`
+census, clippy and fmt). The local RTX 5090 check (`day81-cpu/gpu-check.log`: I18 and I19, 32 tokens each, both
+orders) reads `MATCH` and the same tape in every run, as expected, and one thing section 1 did not expect: the host
+demand sequence of I19 is byte-for-byte I18's (`822fecd4961b5341` in all four runs), where section 1 said the order
+would change.
+
+It is the same because section 0's premise was wrong. In I18, expert `j+2`'s prefetch runs at the top of iteration
+`j+1`, before expert `j+1`'s dispatch and launch; that is, after expert `j`'s launch. So the per-iteration sequence is
+already "launch `j`, prefetch `j+2`, dispatch and launch `j+1`" in I18, and I19's "prefetch `j+2` right after `j`'s
+accumulate" is the same sequence written another way. The only differences are the `keep` set (I19 names experts `j`
+and `j+1`, I18 names `j+1`) and nothing else. The prefetch never sat before the launch of the expert whose kernels
+the GPU had just drained; it sits between two launches, which is where DAY72 placed the GPU's wait: the CPU work
+between launching expert `j` and launching expert `j+1` (the dispatch of `j+1`, its launches, the prefetch of `j+2`)
+is longer than expert `j`'s kernels on the GPU in this decode, and the door's share of it is its prefetch's lease.
+
+So I19 would read `flat` by construction and a card sitting would measure nothing. It is withdrawn here, before any
+cell, and reverted with this record; no bound moves. What this leaves for C11, stated plainly: the door's remaining gap
+is its prefetch's CPU cost between two launches in a decode that is launch-bound (REF's own GPU idles 3.1 of 8.4 ms per
+window token under the profiler, `DAY72.md` section 3); only cutting that cost closes it. The next cut is registered as
+`DAY82.md`, starting from where the cost still is.

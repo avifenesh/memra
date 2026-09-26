@@ -1,0 +1,15 @@
+# DAY81 reader dry check on make-synthetic.py's cell (DAY79's BOX34 runs relabelled one step; meaningless)
+DAY81 host demand sequence i18 sha256 4bdc2610c3534e42 lines=[22077]
+DAY81 host demand sequence i19 sha256 4bdc2610c3534e42 lines=[22077]
+DAY81 host demand sequence i19c sha256 4bdc2610c3534e42 lines=[22077]
+DAY81 I19 CHECKS rig=synthetic runs=40 integrity=ok
+DAY81 ADMISSIBILITY rig=synthetic ceiling=0.005 max_iqr_gen=0.0010 max_iqr_window=0.0010 failing=[] -> admissible
+DAY81 gen-only decode medians (N=10 each): ref=0.311 i18=0.315 i19=0.315 i19c=0.315
+DAY81 STEP i19_vs_i18 gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0010 -> flat
+DAY81 steady window medians (N=10 each): ref=0.286 i18=0.286 i19=0.286 i19c=0.286
+DAY81 STEP i19_vs_i18 steady window: pooled=+0.0000 o1=+0.0000 o2=-0.0010 noise=0.0010 -> flat
+DAY81 DOOR i19_vs_ref gen-only decode: pooled=+0.0040 o1=+0.0040 o2=+0.0040 noise=0.0010 -> loses
+DAY81 DOOR i19_vs_ref steady window: pooled=+0.0000 o1=+0.0010 o2=+0.0000 noise=0.0010 -> matches
+DAY81 I19C brackets per window token (ms, medians): dispatch_ns=0.0814 prefetch_ns=0.5024 pf_demand_ns=0.1495 pf_resident_ns=0.0428 pf_retire_ns=0.0246 pf_stage_ns=0.2274
+DAY81 B i19_minus_ref per window token (ms, medians of two; deciding nothing): gpu_busy=+0.0076 gpu_idle=+0.1955 h2d_exposed=+0.0612 kernel_sum=+0.0076
+DAY81 VERDICT rig=synthetic integrity=ok i19=flat door=i19 vs_ref=loses (window: i19=flat vs_ref=matches)
