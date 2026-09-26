@@ -161,7 +161,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   restores 1.19 ms, its insert's 2.26 ms is the evicted entry's demote pre-submit, item 19; the long cell's +896 ms is
   the four members' own suffix primes past the 1024-token cap, recorded as read); the pause park snapshot **closed as
   priced** (0.73 ms); no route refusal on the 27B; the DFlash, GLM-5 and latent publishers not measured here, owed to
-  their artifacts and rigs. Owed: the fanout design, pre-registered (after items 22 and 23, the lead's order).
+  their artifacts and rigs. The fanout design is **pre-registered** (DAY59 section 1: an attribution of the snapshot's
+  and restores' owner time on the 5090, then design B1 (batched copies) or B2 (one pool reservation) by a stated rule).
 
 ### 11. Move 1 item 4: the decision cell (i), both classes, same window
 
@@ -170,7 +171,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   `653c997f4` against the day-16 tree `1646d421b` (integ40): `DAY29 CELL(i) CLAUSE: NOT MET (demote=False
   promote=False admissible=True); executed-not-qualified`; ruling 47 carries item 4 as owed.
 - Acceptance: day 16's clause, verbatim, unchanged.
-- Status: open (the NOT MET reading is on a tree before options (a) and 2a, the D2H and H2D spans, K, F and M'; the
+- Status: **pre-registered** (DAY60 section 1: C's day-29 cell verbatim with arm X the current tip; the clause read
+  as written; a target card).
   cell is owed on the current tree; the clause is read as written).
 
 ### 12. Every CPU hash over the 5090's write-combined leases reads at the direct rate (found by DAY38's survey)
@@ -181,7 +183,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   `Hashing` job, DAY35 section 8), the verify arm's host digest, and hash 1 until item 2 lands.
 - Acceptance: none registered (a streaming read for write-combined pinned sources in the hash path, the program
   unchanged, bitwise, priced on the 5090 and a no-regression reading on the target card's cached leases).
-- Status: open.
+- Status: **pre-registered** (DAY61 section 1: design W, a streamed read through a cached bounce buffer into the
+  same checksum program).
 
 ### 13. The capture retire seam's `Block` settle holds the owner thread when the capture's copy is queued behind other copy-stream work (found by DAY38; see DAY38 section 7: part of the observed hold is the receipt twin's free, item 2's G'')
 
@@ -193,7 +196,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Acceptance: none registered (the seam's owner hold priced with a capture queued behind a known amount of copy-stream
   work, then a design that does not block the owner there, for example the retiring session's source planes held by
   the pending capture until it lands).
-- Status: open.
+- Status: **pre-registered** (DAY62 section 1: the lines, a price cell with the source and no-source shapes, designs
+  R1 and R2 selected by it).
 
 ### 14. The host tier's pinned lease frees run `cuMemFreeHost` on the owner thread (found by DAY37 and DAY38)
 
@@ -211,7 +215,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   payloads and 32 pinned leases freed on the owner thread) in the chain cell's shape. DAY52 section 3 (the publication
   split, log only, its base arm): 8.6 ms of that is the 32 pinned lease frees (about 270 us per
   `cuMemFreeHost`), the heap payloads 0.02 ms; and P's reserve made those frees about 1 ms slower (item 17).
-- Status: open.
+- Status: **pre-registered** (DAY63 section 1: design L, a pinned backing pool (L1) and the staging set at boot
+  (L2), items 14 and 19 together; item 17 re-read on top).
 
 ### 15. The D2H receipt kernel's price at long entries (found by DAY38 section 17)
 
@@ -273,7 +278,7 @@ the card is reset.
   path (DAY42 section 1 step 5). The delay did not reach S4's (d) (PIN +0.10 ms per order).
 - Acceptance: none registered (the destination digests off the landing path, still required before the publication,
   as S2 did for the demote; pre-registered with its own clauses before its code).
-- Status: open.
+- Status: **pre-registered** (DAY64 section 1: per-poll lines, the promote cell, a placing rule, a design per place).
 
 ### 19. The host tier's pinned allocations run on the owner thread (found by DAY49)
 
@@ -287,7 +292,8 @@ the card is reset.
 - Acceptance: none registered (the owner's hold priced at a long demote and at the first demote, then a design that
   allocates no pinned memory on the owner thread's serving path, pre-registered with item 14's: one lease design for
   both directions).
-- Status: open.
+- Status: **pre-registered** (DAY63 section 1: design L, a pinned backing pool (L1) and the staging set at boot
+  (L2), items 14 and 19 together; item 17 re-read on top).
 
 ### 20. The hash helper's per-payload work runs on one thread (found by DAY49)
 
@@ -299,7 +305,8 @@ the card is reset.
 - Acceptance: none registered (the same program per payload and per view, bitwise, the digests in the job's order;
   priced on the target card against the tip, the tenant's hump and the promote's PIN inside S's bounds; pre-registered
   before its code).
-- Status: open.
+- Status: **pre-registered** (DAY65 section 1: design T-H, the helper's payloads and views across scoped threads,
+  the digest program unchanged).
 
 ### 21. `tests::responses_carry_rate_limit_headers_and_slot_frees` failed once under the full server suite (found by DAY52)
 
@@ -344,14 +351,18 @@ the card is reset.
 - Acceptance: none registered (the writers isolated without serializing them, for example `reserve_pending_admit`'s
   test entry taking its lane counters as a parameter so a writer never touches the process-global ones; the same 400-run
   shape green for the target and its siblings, the suite's time back to A''s).
-- Status: open.
+- Status: **closed** (DAY56 section 2: F2 `10b9329cc`, the median 6.62 s against 6.70; section 3, from integ65's review:
+  the pending-admits gauge the path still wrote, now one `AdmitCounters` pair, F2b `b4d6f95c2`; its deterministic red
+  arm `(1, [0, 0, 0])` against `(0, [0, 0, 0])`, 200 of 200 green in R3's shape on the fix).
 
 ### 24. `darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown` times out under starvation (found by DAY55)
 
 - Source: DAY55 section 7, arm B's shape (100 full suites, `--test-threads 48`, `CPUQuota=400%`): 1 of 100, `timed out
   (3000ms) waiting for: yield to T` (darklane.rs:602).
 - Acceptance: none registered (reproduce and place it as DAY55 did: a defect, or a wall-clock bound).
-- Status: open.
+  DAY56 section 2: 1 of 400 in arm A's shape too (run 179).
+- Status: **closed** (DAY57 section 2: reproduced 1 of 100 beside sixteen burners; the waits made acknowledgement
+  waits under a 30 s hang guard, `a327f486c`; 0 of 100 in R2 and R3 after, the red arm 10 of 10).
 
 ### 25. `tests::a_fake_route_memory_door_refuses_defers_and_recovers_through_the_handler` reads a running row after the cancel (found by DAY55)
 
@@ -359,7 +370,12 @@ the card is reset.
   running, inflight)` read `(0, 1, 0)` against `(0, 0, 0)`. Either the test reads a route book mid-update or the book
   publishes `cancelled` before it takes the row out of `running` (a snapshot a reader could see in production).
 - Acceptance: none registered (reproduce, then place: the book's order of updates or the test's read).
-- Status: open.
+  DAY56 section 2: 1 of 400 in arm A's shape too (run 156). Cause read from the code (DAY58 registers it):
+  `RouteRun::cancel` counts `cancelled` before its `Drop` takes the row out of `running`, and the snapshot loads
+  `running` before `cancelled`, so a reader can see both.
+- Status: **closed** (DAY58 section 2: a real ordering defect, reproduced by a stress cell, 34011 and 27753 of
+  100,000 snapshots; fixed in `route_telemetry.rs`, `62a29cfe0`: 0 of 100,000 twice, both red arms read it, the test 100
+  of 100 beside sixteen burners).
 
 ## 2. Closed, delivered, or held by another owner
 

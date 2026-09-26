@@ -2708,9 +2708,29 @@ fn queue_wait_ceiling_s() -> u64 {
 /// the estimator-based backpressure check it replaced is gone, but a
 /// successful admission must use this compare-exchange immediately before the
 /// command send so concurrent handlers cannot all pass one stale snapshot.
+/// The admission counters a reservation reads and takes: the lane counters and the handler-to-worker
+/// pending-admits gauge (WP-A day 56, `research/spill-a-20260919/DAY56.md` sections 1 and 3). Every
+/// production path uses `AdmitCounters::GLOBAL`; the isolated shed tests pass their own pair.
+#[derive(Clone, Copy)]
+pub(crate) struct AdmitCounters {
+    lanes: &'static [std::sync::atomic::AtomicUsize; 3],
+    pending: &'static std::sync::atomic::AtomicUsize,
+}
+
+impl AdmitCounters {
+    pub(crate) const GLOBAL: AdmitCounters = AdmitCounters {
+        lanes: &worker::ADMISSION_RESERVATIONS,
+        pending: &worker::PENDING_ADMITS,
+    };
+}
+
 pub(crate) struct PendingAdmissionGuard {
     reserved: bool,
     lane: lanes::Lane,
+    /// The counters this reservation was taken on (`AdmitCounters::GLOBAL` on every production
+    /// path; a test's own pair on the isolated shed tests), so a dropped guard releases the lane slot
+    /// and the pending-admits gauge where it took them.
+    counters: AdmitCounters,
     /// A dedicated route admitted this request (memra#501): its hard reservation is the route
     /// ticket, not a lane slot. `ticket` holds it until `bind` moves it into the request.
     route_bound: bool,
@@ -2745,9 +2765,9 @@ impl PendingAdmissionGuard {
 impl Drop for PendingAdmissionGuard {
     fn drop(&mut self) {
         if self.reserved {
-            worker::release_pending_admit();
+            worker::release_pending_admit_on(self.counters.pending);
             if !self.route_bound {
-                worker::release_admission_reservation(self.lane);
+                worker::release_admission_reservation_on(self.counters.lanes, self.lane);
             }
         }
     }
@@ -2774,8 +2794,24 @@ fn reserve_pending_admit_with_ceiling(
     deadline: RequestDeadline,
     ceiling_s: u64,
 ) -> Result<PendingAdmissionGuard, (Response, &'static str)> {
+    reserve_pending_admit_on(st, lane, rl, deadline, ceiling_s, AdmitCounters::GLOBAL)
+}
+
+/// The reservation path over the lane counters it reads and takes (WP-A day 56,
+/// `research/spill-a-20260919/DAY56.md`, OWED item 23). Every production path passes
+/// `worker::ADMISSION_RESERVATIONS`; the shed tests pass their own, so they need no order against
+/// the handler tests that move the global backlog.
+#[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
+fn reserve_pending_admit_on(
+    st: &AppState,
+    lane: lanes::Lane,
+    rl: &RateLimit,
+    deadline: RequestDeadline,
+    ceiling_s: u64,
+    counters: AdmitCounters,
+) -> Result<PendingAdmissionGuard, (Response, &'static str)> {
     if let Some(route) = rl.route.as_ref() {
-        return reserve_route_admit(route, lane, deadline, ceiling_s);
+        return reserve_route_admit(route, lane, deadline, ceiling_s, counters);
     }
     // The queue bound is a capacity safety property, not a quota-only feature. A key with
     // remaining rate-limit headroom can still open hundreds of concurrent requests; applying
@@ -2783,7 +2819,7 @@ fn reserve_pending_admit_with_ceiling(
     // finite even before a per-key window reaches zero.
     let cap = lane_cap(lane).max(1);
     let bound = max_queue_depth(cap);
-    let reservations_for_lane = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+    let reservations_for_lane = &counters.lanes[lane.idx()];
     loop {
         let m = st.metrics.lock().map(|m| m.clone()).unwrap_or_default();
         let reservations = reservations_for_lane.load(std::sync::atomic::Ordering::Acquire);
@@ -2888,10 +2924,13 @@ fn reserve_pending_admit_with_ceiling(
             // Keep the command-channel signal for speculative-burst yield decisions. It is
             // released when the worker pops the command, while the hard reservation above is
             // held until actual model admission or terminal rejection.
-            worker::PENDING_ADMITS.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+            counters
+                .pending
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
             return Ok(PendingAdmissionGuard {
                 reserved: true,
                 lane,
+                counters,
                 route_bound: false,
                 ticket: None,
             });
@@ -2923,6 +2962,7 @@ fn reserve_route_admit(
     lane: lanes::Lane,
     deadline: RequestDeadline,
     ceiling_s: u64,
+    counters: AdmitCounters,
 ) -> Result<PendingAdmissionGuard, (Response, &'static str)> {
     let cap = route.capacity();
     let bound = max_queue_depth(cap);
@@ -2986,10 +3026,15 @@ fn reserve_route_admit(
             );
         }
         if let Ok(ticket) = route.try_reserve(lane.idx(), waiting_lane) {
-            worker::PENDING_ADMITS.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+            counters
+                .pending
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
             return Ok(PendingAdmissionGuard {
                 reserved: true,
                 lane,
+                // A route-bound guard never releases a lane slot (`route_bound`); its pending-admits
+                // gauge is released where it was taken.
+                counters,
                 route_bound: true,
                 ticket: Some(ticket),
             });
@@ -17905,26 +17950,36 @@ default_reasoning_effort = "always"
     /// slot because a sibling had the interactive counter at max_queue_depth for that
     /// instant). Every test that WRITES these counters serializes here.
     ///
-    /// WP-A day 53 (`research/spill-a-20260919/DAY53.md` section 6, OWED item 21): the guard takes
-    /// `drain_lock()` FIRST, then its own lock. The writers used to hold only this lock while the
-    /// handler tests that READ the counters through a real request hold only `drain_lock()`, so a
-    /// handler request could land inside a writer's window (the backlog swapped to the queue bound)
-    /// and shed 429 `shed_queue`: `responses_carry_rate_limit_headers_and_slot_frees` 7 of 200 full
-    /// suites, three siblings in the same window. A test takes this guard OR `drain_lock()`, never
-    /// both (the census `day53_the_admission_writers_are_ordered_against_the_handler_readers`).
-    fn admission_counters_guard() -> AdmissionCountersGuard {
+    /// WP-A day 53 (`research/spill-a-20260919/DAY53.md` section 6, OWED item 21) and day 56
+    /// (`DAY56.md`, OWED item 23): two guards over this one lock. `admission_counters_guard()` is the
+    /// lock alone, for the route tests, which never set the global backlog and retry through the
+    /// contention a handler request makes. `global_counter_writer_guard()` takes `drain_lock()` FIRST,
+    /// then this lock, for the tests that set the process-global counters: a handler test holds only
+    /// `drain_lock()`, and before day 53 a handler request could land inside a writer's window (the
+    /// backlog swapped to the queue bound) and shed 429 `shed_queue`. The shed tests run on their
+    /// own counters (`own_admit_counters`) and take neither. No test takes `drain_lock()` together
+    /// with either guard (the census `day56_the_admission_writers_are_ordered_against_the_handler_readers`).
+    fn admission_counters_guard() -> std::sync::MutexGuard<'static, ()> {
+        admission_counters_lock()
+    }
+
+    fn admission_counters_lock() -> std::sync::MutexGuard<'static, ()> {
         static COUNTERS: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let drain = drain_lock();
-        let counters = COUNTERS
+        COUNTERS
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn global_counter_writer_guard() -> AdmissionCountersGuard {
+        let drain = drain_lock();
+        let counters = admission_counters_lock();
         AdmissionCountersGuard {
             _counters: counters,
             _drain: drain,
         }
     }
 
-    /// Both locks of `admission_counters_guard()`; fields drop in declaration order, so the
+    /// Both locks of `global_counter_writer_guard()`; fields drop in declaration order, so the
     /// counters' lock is released before the drain lock (the reverse of acquisition).
     struct AdmissionCountersGuard {
         _counters: std::sync::MutexGuard<'static, ()>,
@@ -17980,15 +18035,76 @@ default_reasoning_effort = "always"
         g
     }
 
+    /// WP-A day 56 (`research/spill-a-20260919/DAY56.md`, OWED item 23): a shed test's own lane
+    /// counters (leaked, one set per test), so the bound's arithmetic runs on a backlog no other
+    /// test can move and the test needs no lock against the handler tests.
+    fn own_admit_counters() -> AdmitCounters {
+        AdmitCounters {
+            lanes: Box::leak(Box::default()),
+            pending: Box::leak(Box::default()),
+        }
+    }
+
+    /// `reserve_pending_admit` over a test's own lane counters.
+    #[allow(clippy::result_large_err)] // allow: the reservation path's own error type, passed through
+    fn reserve_own(
+        lanes_counters: AdmitCounters,
+        st: &AppState,
+        lane: lanes::Lane,
+        rl: &RateLimit,
+        deadline: RequestDeadline,
+    ) -> Result<PendingAdmissionGuard, (Response, &'static str)> {
+        reserve_pending_admit_on(
+            st,
+            lane,
+            rl,
+            deadline,
+            queue_wait_ceiling_s(),
+            lanes_counters,
+        )
+    }
+
+    /// `reserve_pending_admit_with_ceiling` over a test's own lane counters.
+    #[allow(clippy::result_large_err)] // allow: the reservation path's own error type, passed through
+    fn reserve_own_with_ceiling(
+        lanes_counters: AdmitCounters,
+        st: &AppState,
+        lane: lanes::Lane,
+        rl: &RateLimit,
+        deadline: RequestDeadline,
+        ceiling_s: u64,
+    ) -> Result<PendingAdmissionGuard, (Response, &'static str)> {
+        reserve_pending_admit_on(st, lane, rl, deadline, ceiling_s, lanes_counters)
+    }
+
+    /// The interactive reservation over a test's own counters: nothing else moves them, so there
+    /// is no contention to retry through.
+    #[allow(clippy::result_large_err)] // allow: the reservation path's own error type, passed through
+    fn reserve_own_interactive(
+        lanes_counters: AdmitCounters,
+        st: &AppState,
+        rl: &RateLimit,
+        deadline_ms: u64,
+    ) -> Result<PendingAdmissionGuard, (Response, &'static str)> {
+        reserve_own(
+            lanes_counters,
+            st,
+            lanes::Lane::Interactive,
+            rl,
+            RequestDeadline::starting_now(deadline_ms),
+        )
+    }
+
     /// BACKPRESSURE, absolute bound: at MEMRA_MAX_QUEUE_DEPTH the request sheds with 429 +
     /// Retry-After, outcome `shed_queue`, no bill, X-RateLimit trio present.
     #[test]
     fn the_queue_bound_sheds_with_429_retry_after_and_the_ratelimit_trio() {
-        let _counters = admission_counters_guard();
+        // WP-A day 56 (`DAY56.md`, OWED item 23): this test's own lane counters, no lock.
+        let lanes_counters = own_admit_counters();
         let st = fake_worker_state();
         let lane = lanes::Lane::Interactive;
         let cap = lane_cap(lane);
-        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let counter = &lanes_counters.lanes[lane.idx()];
         let prev = counter.swap(max_queue_depth(cap), std::sync::atomic::Ordering::AcqRel);
         let _restore = CounterRestore(counter, prev);
         let rl = RateLimit {
@@ -17997,7 +18113,8 @@ default_reasoning_effort = "always"
             reset_s: 1,
             route: None,
         };
-        let (resp, outcome) = reserve_pending_admit(
+        let (resp, outcome) = reserve_own(
+            lanes_counters,
             &st,
             lane,
             &rl,
@@ -18027,7 +18144,8 @@ default_reasoning_effort = "always"
     /// keyed on the caller's own deadline, not on load alone.
     #[test]
     fn admission_sheds_only_when_the_estimated_wait_cannot_fit_the_deadline() {
-        let _counters = admission_counters_guard();
+        // WP-A day 56 (`DAY56.md`, OWED item 23): this test's own lane counters, no lock.
+        let lanes_counters = own_admit_counters();
         let st = fake_worker_state();
         let lane = lanes::Lane::Interactive;
         let cap = lane_cap(lane);
@@ -18037,7 +18155,7 @@ default_reasoning_effort = "always"
             m.tokens_out = 1_000;
             m.step_p50_ms = 10.0; // mean service ~1s
         }
-        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let counter = &lanes_counters.lanes[lane.idx()];
         let prev = counter.swap(cap, std::sync::atomic::Ordering::AcqRel); // one wave ahead
         let _restore = CounterRestore(counter, prev);
         let rl = RateLimit {
@@ -18047,7 +18165,8 @@ default_reasoning_effort = "always"
             route: None,
         };
         // A 90s deadline absorbs a ~2s wait: ADMIT (never shed a request that can wait).
-        let admitted = reserve_pending_admit(
+        let admitted = reserve_own(
+            lanes_counters,
             &st,
             lane,
             &rl,
@@ -18059,7 +18178,8 @@ default_reasoning_effort = "always"
         );
         drop(admitted); // release the reservation the admit took
         // A 1s deadline cannot: SHED, with the estimate as Retry-After.
-        let (resp, outcome) = reserve_pending_admit(
+        let (resp, outcome) = reserve_own(
+            lanes_counters,
             &st,
             lane,
             &rl,
@@ -18076,7 +18196,8 @@ default_reasoning_effort = "always"
     /// inside the worker — the deadline gate here is interactive-only by design).
     #[test]
     fn deadline_shed_is_interactive_only_and_silent_with_free_slots() {
-        let _counters = admission_counters_guard();
+        // WP-A day 56 (`DAY56.md`, OWED item 23): this test's own lane counters, no lock.
+        let lanes_counters = own_admit_counters();
         let st = fake_worker_state();
         let cap = lane_cap(lanes::Lane::Interactive);
         {
@@ -18096,7 +18217,7 @@ default_reasoning_effort = "always"
         // enormous estimate sheds even the minimum deadline whenever the process-global
         // backlog reads > 0 for an instant. The assertion still requires the free-slot
         // admit to prove itself.
-        let g = reserve_interactive_through_contention(&st, &free, TIMEOUT_MS_MIN);
+        let g = reserve_own_interactive(lanes_counters, &st, &free, TIMEOUT_MS_MIN);
         assert!(
             g.is_ok(),
             "free capacity must admit regardless of the estimate"
@@ -18111,10 +18232,11 @@ default_reasoning_effort = "always"
             route: None,
         };
         for lane in [lanes::Lane::Judge, lanes::Lane::Harvest] {
-            let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+            let counter = &lanes_counters.lanes[lane.idx()];
             let prev = counter.swap(1, std::sync::atomic::Ordering::AcqRel); // backlog > 0
             let _restore = CounterRestore(counter, prev);
-            let g = reserve_pending_admit(
+            let g = reserve_own(
+                lanes_counters,
                 &st,
                 lane,
                 &full,
@@ -18136,7 +18258,8 @@ default_reasoning_effort = "always"
     /// today's behavior byte-for-byte, and this test is what holds that line.
     #[test]
     fn a_saturated_queue_with_free_http_slots_queues_silently_without_a_ceiling() {
-        let _counters = admission_counters_guard();
+        // WP-A day 56 (`DAY56.md`, OWED item 23): this test's own lane counters, no lock.
+        let lanes_counters = own_admit_counters();
         let st = fake_worker_state();
         let lane = lanes::Lane::Interactive;
         let cap = lane_cap(lane);
@@ -18146,7 +18269,7 @@ default_reasoning_effort = "always"
             m.tokens_out = 1_000; // mean 100 tok/request...
             m.step_p50_ms = 100.0; // ...x 100 ms = ~10 s/wave; one wave ahead => ~20 s
         }
-        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let counter = &lanes_counters.lanes[lane.idx()];
         let prev = counter.swap(cap, std::sync::atomic::Ordering::AcqRel); // one wave ahead
         let _restore = CounterRestore(counter, prev);
         // The HTTP lane is NOT full: a free slot remains, but the wave ahead means this
@@ -18157,7 +18280,8 @@ default_reasoning_effort = "always"
             reset_s: 0,
             route: None,
         };
-        let g = reserve_pending_admit(
+        let g = reserve_own(
+            lanes_counters,
             &st,
             lane,
             &free,
@@ -18177,7 +18301,8 @@ default_reasoning_effort = "always"
     /// the X-RateLimit trio rides the shed like every other 429 on this surface.
     #[test]
     fn the_queue_wait_ceiling_sheds_with_429_retry_after_and_the_ratelimit_trio() {
-        let _counters = admission_counters_guard();
+        // WP-A day 56 (`DAY56.md`, OWED item 23): this test's own lane counters, no lock.
+        let lanes_counters = own_admit_counters();
         let st = fake_worker_state();
         let lane = lanes::Lane::Interactive;
         let cap = lane_cap(lane);
@@ -18187,7 +18312,7 @@ default_reasoning_effort = "always"
             m.tokens_out = 1_000; // mean 100 tok/request...
             m.step_p50_ms = 100.0; // ...x 100 ms = ~10 s/wave; one wave ahead => ~20 s
         }
-        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let counter = &lanes_counters.lanes[lane.idx()];
         let prev = counter.swap(cap, std::sync::atomic::Ordering::AcqRel); // one wave ahead
         let _restore = CounterRestore(counter, prev);
         let free = RateLimit {
@@ -18196,7 +18321,8 @@ default_reasoning_effort = "always"
             reset_s: 0,
             route: None,
         };
-        let (resp, outcome) = reserve_pending_admit_with_ceiling(
+        let (resp, outcome) = reserve_own_with_ceiling(
+            lanes_counters,
             &st,
             lane,
             &free,
@@ -18234,7 +18360,8 @@ default_reasoning_effort = "always"
     /// dark lanes are never judged by it (the worker's own lane gate owns those).
     #[test]
     fn the_queue_wait_ceiling_admits_under_it_and_never_touches_dark_lanes() {
-        let _counters = admission_counters_guard();
+        // WP-A day 56 (`DAY56.md`, OWED item 23): this test's own lane counters, no lock.
+        let lanes_counters = own_admit_counters();
         let st = fake_worker_state();
         let lane = lanes::Lane::Interactive;
         let cap = lane_cap(lane);
@@ -18244,7 +18371,7 @@ default_reasoning_effort = "always"
             m.tokens_out = 1_000;
             m.step_p50_ms = 100.0; // ~10 s/wave; one wave ahead => ~20 s
         }
-        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let counter = &lanes_counters.lanes[lane.idx()];
         let prev = counter.swap(cap, std::sync::atomic::Ordering::AcqRel);
         let _restore = CounterRestore(counter, prev);
         let free = RateLimit {
@@ -18253,7 +18380,8 @@ default_reasoning_effort = "always"
             reset_s: 0,
             route: None,
         };
-        let g = reserve_pending_admit_with_ceiling(
+        let g = reserve_own_with_ceiling(
+            lanes_counters,
             &st,
             lane,
             &free,
@@ -18273,10 +18401,11 @@ default_reasoning_effort = "always"
             route: None,
         };
         for dark in [lanes::Lane::Judge, lanes::Lane::Harvest] {
-            let counter = &worker::ADMISSION_RESERVATIONS[dark.idx()];
+            let counter = &lanes_counters.lanes[dark.idx()];
             let prev = counter.swap(1, std::sync::atomic::Ordering::AcqRel); // backlog > 0
             let _restore = CounterRestore(counter, prev);
-            let g = reserve_pending_admit_with_ceiling(
+            let g = reserve_own_with_ceiling(
+                lanes_counters,
                 &st,
                 dark,
                 &full,
@@ -18296,7 +18425,8 @@ default_reasoning_effort = "always"
     /// a deadline shorter than the estimate stays `shed_deadline`.
     #[test]
     fn the_queue_wait_ceiling_leaves_the_existing_shed_arms_first_and_unchanged() {
-        let _counters = admission_counters_guard();
+        // WP-A day 56 (`DAY56.md`, OWED item 23): this test's own lane counters, no lock.
+        let lanes_counters = own_admit_counters();
         let st = fake_worker_state();
         let lane = lanes::Lane::Interactive;
         let cap = lane_cap(lane);
@@ -18312,12 +18442,13 @@ default_reasoning_effort = "always"
             reset_s: 1,
             route: None,
         };
-        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let counter = &lanes_counters.lanes[lane.idx()];
         // At the absolute bound: shed_queue wins even with a 1 s ceiling armed.
         let prev = counter.swap(max_queue_depth(cap), std::sync::atomic::Ordering::AcqRel);
         let _restore = CounterRestore(counter, prev);
         assert!(matches!(
-            reserve_pending_admit_with_ceiling(
+            reserve_own_with_ceiling(
+                lanes_counters,
                 &st,
                 lane,
                 &rl,
@@ -18329,7 +18460,8 @@ default_reasoning_effort = "always"
         // Below the bound with a too-short deadline: shed_deadline wins over the ceiling.
         counter.store(cap, std::sync::atomic::Ordering::Release);
         assert!(matches!(
-            reserve_pending_admit_with_ceiling(
+            reserve_own_with_ceiling(
+                lanes_counters,
                 &st,
                 lane,
                 &rl,
@@ -19055,7 +19187,7 @@ default_reasoning_effort = "always"
 
     #[test]
     fn pending_admission_reservation_is_atomic_and_rolls_back_on_drop() {
-        let _counters = admission_counters_guard();
+        let _counters = global_counter_writer_guard();
         let st = fake_worker_state();
         let cap = lane_cap(lanes::Lane::Interactive);
         let bound = max_queue_depth(cap);
@@ -19108,7 +19240,7 @@ default_reasoning_effort = "always"
 
     #[test]
     fn admission_reservations_are_lane_scoped() {
-        let _counters = admission_counters_guard();
+        let _counters = global_counter_writer_guard();
         let st = fake_worker_state();
         let harvest = lanes::Lane::Harvest;
         let interactive = lanes::Lane::Interactive;
@@ -22713,28 +22845,126 @@ temperature = 0.6
         }
     }
 
-    /// WP-A day 53 (`research/spill-a-20260919/DAY53.md` section 6 (a), OWED item 21; CPU census):
-    /// the admission-counter writers are ordered against the handler readers. The counters' guard
-    /// takes `drain_lock()` before its own lock; no test takes both separately (the locks are not
-    /// reentrant); every test that writes `ADMISSION_RESERVATIONS` or `PENDING_ADMITS` takes the
-    /// counters' guard.
+    /// WP-A day 56 (`DAY56.md` section 3a, OWED item 23's addendum): a reservation on a test's own
+    /// counters never moves the process-global gauges, while its guard lives or after it drops.
     #[test]
-    fn day53_the_admission_writers_are_ordered_against_the_handler_readers() {
+    fn day56_an_isolated_reservation_never_moves_the_global_gauges() {
+        let _counters = global_counter_writer_guard();
+        let st = fake_worker_state();
+        let lane = lanes::Lane::Interactive;
+        let rl = RateLimit {
+            limit: lane_cap(lane),
+            remaining: lane_cap(lane),
+            reset_s: 1,
+            route: None,
+        };
+        let read = || {
+            (
+                worker::PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire),
+                worker::ADMISSION_RESERVATIONS
+                    .iter()
+                    .map(|a| a.load(std::sync::atomic::Ordering::Acquire))
+                    .collect::<Vec<_>>(),
+            )
+        };
+        let before = read();
+        let own = own_admit_counters();
+        let guard = reserve_own(
+            own,
+            &st,
+            lane,
+            &rl,
+            RequestDeadline::starting_now(TIMEOUT_MS_MAX),
+        )
+        .map_err(|(_, outcome)| outcome)
+        .expect("a free lane admits");
+        assert_eq!(
+            read(),
+            before,
+            "a live isolated reservation moved a global gauge"
+        );
+        drop(guard);
+        assert_eq!(
+            read(),
+            before,
+            "a dropped isolated reservation moved a global gauge"
+        );
+    }
+
+    /// WP-A day 56 (`research/spill-a-20260919/DAY56.md` section 1 (a), OWED items 21 and 23; CPU
+    /// census, replacing day 53's): the global admission-counter writers are ordered against the
+    /// handler readers, and nothing else waits for them. `global_counter_writer_guard()` takes
+    /// `drain_lock()` before the counters' lock, `admission_counters_guard()` the counters' lock
+    /// alone; every test that writes the process-global `ADMISSION_RESERVATIONS` or `PENDING_ADMITS`
+    /// takes the writer guard; no test takes `drain_lock()` beside either guard (the locks are not
+    /// reentrant); the production entries reserve on the global counters and the guard releases
+    /// where it reserved.
+    #[test]
+    fn day56_the_admission_writers_are_ordered_against_the_handler_readers() {
         let src = include_str!("lib.rs");
+        let prod = &src[..src.find("\nmod tests {").expect("the tests module")];
         let tests = &src[src.find("\nmod tests {").expect("the tests module")..];
-        let guard = &tests[tests
-            .find("    fn admission_counters_guard() -> AdmissionCountersGuard {")
-            .expect("the counters' guard")..];
-        let guard = &guard[..guard.find("\n    }\n").unwrap()];
-        let drain = guard
+        let body_of = |hay: &'static str, start: &str| -> &'static str {
+            let a = hay.find(start).unwrap_or_else(|| panic!("{start} missing"));
+            &hay[a..a + hay[a..].find("\n    }\n").unwrap()]
+        };
+        let writer = body_of(
+            tests,
+            "    fn global_counter_writer_guard() -> AdmissionCountersGuard {",
+        );
+        let drain = writer
             .find("let drain = drain_lock();")
             .expect("the drain lock first");
-        let own = guard
-            .find("let counters = COUNTERS")
-            .expect("then its own lock");
+        let own = writer
+            .find("let counters = admission_counters_lock();")
+            .expect("then the counters' lock");
         assert!(
             drain < own,
             "the drain lock is taken before the counters' lock"
+        );
+        let plain = body_of(
+            tests,
+            "    fn admission_counters_guard() -> std::sync::MutexGuard<'static, ()> {",
+        );
+        assert!(
+            !plain.contains("drain_lock()"),
+            "the route tests' guard never waits for the handlers"
+        );
+        // Production: the wrappers reserve on the global counters; the guard releases where it took.
+        let top = |start: &str| -> &'static str {
+            let a = prod
+                .find(start)
+                .unwrap_or_else(|| panic!("{start} missing"));
+            &prod[a..a + prod[a..].find("\n}\n").unwrap()]
+        };
+        let wrapper = top("fn reserve_pending_admit_with_ceiling(");
+        assert!(wrapper.contains("AdmitCounters::GLOBAL)"));
+        let global = top("impl AdmitCounters {");
+        assert!(global.contains("lanes: &worker::ADMISSION_RESERVATIONS,"));
+        assert!(global.contains("pending: &worker::PENDING_ADMITS,"));
+        // Day 56 section 3: the path and the route path touch only the pair they were handed.
+        for f in ["fn reserve_pending_admit_on(", "fn reserve_route_admit("] {
+            let b = top(f);
+            assert!(
+                !b.contains("worker::ADMISSION_RESERVATIONS")
+                    && !b.contains("worker::PENDING_ADMITS"),
+                "{f} names a global counter"
+            );
+            assert!(
+                b.contains(".pending") && b.contains("fetch_add(1"),
+                "{f} takes the pending gauge it was handed"
+            );
+        }
+        assert!(
+            top("fn reserve_pending_admit_on(")
+                .contains("let reservations_for_lane = &counters.lanes[lane.idx()];")
+        );
+        let drop_body = top("impl Drop for PendingAdmissionGuard {");
+        assert!(drop_body.contains("worker::release_pending_admit_on(self.counters.pending);"));
+        assert!(
+            drop_body.contains(
+                "worker::release_admission_reservation_on(self.counters.lanes, self.lane);"
+            )
         );
         // Every test fn, by its body (up to the next fn at the same indentation).
         let mut starts: Vec<usize> = Vec::new();
@@ -22746,10 +22976,33 @@ temperature = 0.6
             }
         }
         starts.sort_unstable();
-        let mut writers = 0;
+        let (mut writers, mut own_counters) = (0, 0);
         for (k, &a) in starts.iter().enumerate() {
             let b = starts.get(k + 1).copied().unwrap_or(tests.len());
+            // The fn itself: up to its closing brace, so the doc comments of the next item are
+            // not read as this test's code.
             let body = &tests[a..b];
+            let body = &body[..body.find("\n    }\n").map_or(body.len(), |e| e + 6)];
+            // The body without its string literals: a census that names a call in a literal is not a call.
+            let code: String = {
+                let (mut out, mut in_str, mut esc) = (String::new(), false, false);
+                for ch in body.chars() {
+                    if in_str {
+                        if esc {
+                            esc = false;
+                        } else if ch == '\\' {
+                            esc = true;
+                        } else if ch == '"' {
+                            in_str = false;
+                        }
+                    } else if ch == '"' {
+                        in_str = true;
+                    } else {
+                        out.push(ch);
+                    }
+                }
+                out
+            };
             let name = body
                 .trim_start()
                 .trim_start_matches("async ")
@@ -22758,18 +23011,25 @@ temperature = 0.6
                 .next()
                 .unwrap_or("")
                 .to_string();
-            if name == "admission_counters_guard"
-                || name == "drain_lock"
-                || name == "day53_the_admission_writers_are_ordered_against_the_handler_readers"
+            if [
+                "admission_counters_guard",
+                "admission_counters_lock",
+                "global_counter_writer_guard",
+                "drain_lock",
+                "day56_the_admission_writers_are_ordered_against_the_handler_readers",
+            ]
+            .contains(&name.as_str())
             {
                 continue;
             }
+            let guards = body.contains("admission_counters_guard()")
+                || body.contains("global_counter_writer_guard()");
             assert!(
-                !(body.contains("drain_lock()") && body.contains("admission_counters_guard()")),
-                "{name} takes both locks: the counters' guard already holds the drain lock"
+                !(body.contains("drain_lock()") && guards),
+                "{name} takes the drain lock beside a counters' guard"
             );
-            let touches =
-                body.contains("ADMISSION_RESERVATIONS") || body.contains("PENDING_ADMITS");
+            let touches = body.contains("worker::ADMISSION_RESERVATIONS")
+                || body.contains("worker::PENDING_ADMITS");
             let writes = [
                 ".swap(",
                 ".store(",
@@ -22782,14 +23042,66 @@ temperature = 0.6
             if touches && writes {
                 writers += 1;
                 assert!(
-                    body.contains("admission_counters_guard()"),
-                    "{name} writes a process-global admission counter without the counters' guard"
+                    body.contains("global_counter_writer_guard()"),
+                    "{name} writes a process-global admission counter without the writer guard"
+                );
+            }
+            if body.contains("let lanes_counters = own_admit_counters();") {
+                own_counters += 1;
+                assert!(
+                    !touches,
+                    "{name} runs on its own counters and must not touch the globals"
+                );
+            }
+            // Day 56 section 3, the indirect writers: a test that reserves through a global entry
+            // or a handler holds a lock that orders it against the global writers; a test that
+            // reserves on its own path passes its own pair.
+            let global_reserver = [
+                "reserve_pending_admit(",
+                "reserve_pending_admit_with_ceiling(",
+                "reserve_interactive_through_contention(",
+                "chat_completions(",
+                " completions(",
+                "(completions(",
+                " messages(",
+                " responses(",
+                "embeddings_admitted(",
+                "rerank_admitted(",
+                "chat_completion_admitted(",
+            ]
+            .iter()
+            .any(|c| code.contains(c));
+            let locked = body.contains("drain_lock()")
+                || body.contains("admission_counters_guard()")
+                || body.contains("global_counter_writer_guard()");
+            // Only test fns (a `#[test]` or `#[tokio::test]` in the attribute lines above); helpers
+            // are judged through the tests that call them.
+            let attrs: Vec<&str> = tests[..a].lines().rev().take(4).collect();
+            let is_test = attrs
+                .iter()
+                .any(|l| l.contains("#[test]") || l.contains("#[tokio::test"));
+            if global_reserver && is_test {
+                assert!(
+                    locked,
+                    "{name} reserves through a global entry without a lock"
+                );
+            }
+            if is_test
+                && (code.contains("reserve_own(") || code.contains("reserve_pending_admit_on("))
+            {
+                assert!(
+                    body.contains("own_admit_counters()"),
+                    "{name} reserves on the counters path without its own pair"
                 );
             }
         }
         assert!(
-            writers >= 7,
-            "the census found {writers} writers; the survey read seven or more"
+            writers >= 3,
+            "the census found {writers} global writers; the survey read three"
+        );
+        assert!(
+            own_counters >= 7,
+            "the census found {own_counters} own-counter tests; the survey read seven"
         );
     }
 
@@ -22803,7 +23115,7 @@ temperature = 0.6
     #[allow(clippy::await_holding_lock)] // allow: both locks are held across the awaits on purpose: the cell is the writer's window
     async fn day53_a_handler_request_inside_a_writer_window_sheds_429() {
         // Since F1 the counters' guard includes the drain lock (a test takes one or the other).
-        let _counters = admission_counters_guard();
+        let _counters = global_counter_writer_guard();
         let st = fake_worker_state();
         let lane = lanes::Lane::Interactive;
         let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
@@ -24903,7 +25215,10 @@ request = "0"
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK orders this handler test against the admission-counter writers (DAY56 section 3)
     async fn stop_token_ids_handlers_return_named_400s() {
+        // WP-A day 56 section 3: its handlers may reach a reservation; ordered against the admission-counter writers.
+        let _l = drain_lock();
         let mut st = fake_worker_state();
         let model = st.models[0].clone();
         Arc::make_mut(&mut st.caps).insert(

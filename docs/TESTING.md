@@ -2174,6 +2174,16 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   census `day54_the_on_tick_lines_are_log_only` (every `OnTick` answer of both capture routes and of the submit core
   records its reason first; the routes refuse the same conditions as before, one `else if` chain each; no decision reads
   the reason; the publish lines print only under the door; the fanout's snapshot, restores and insert keep their order).
+- The admission-counter isolation (WP-A day 56, `research/spill-a-20260919/DAY56.md`, OWED item 23): the reservation
+  path takes its lane counters (`reserve_pending_admit_on`; production passes the global ones); the seven shed and
+  ceiling tests run on their own counters with no lock; `global_counter_writer_guard()` (the drain lock, then the
+  counters' lock) orders the three tests that set the global counters against the handler tests;
+  `admission_counters_guard()` (the counters' lock alone) orders the route tests against them. Census
+  `day56_the_admission_writers_are_ordered_against_the_handler_readers` (replacing day 53's; since section 3 it also
+  catches indirect writers: a test that reserves through a global entry or a handler holds a lock, a test that reserves
+  on the counters path passes its own pair). Section 3's fix passes the lane counters and the pending-admits gauge as one
+  `AdmitCounters` pair (`AdmitCounters::GLOBAL` on every production path); cell
+  `day56_an_isolated_reservation_never_moves_the_global_gauges`.
 - The starved-runner fixes (WP-A day 55, `research/spill-a-20260919/DAY55.md`, OWED item 22): the health snapshot and
   stall verdict read the clock once (census `day55_a_snapshot_reads_the_clock_once`); the extended-stream commit test on
   tokio's paused clock; the slow-constraint-compile test on its loop's step clock and a test-only virtual health clock
