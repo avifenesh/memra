@@ -3,6 +3,7 @@
 
   rounds --regime capped|bounded --memory-max BYTES --out DIR [--rounds 1..10] [--smoke]
   rounds --regime g2 --memory-max BYTES --out DIR      (the G2 5090 half: one idle-gated cell)
+  rounds --regime anonpeak --memory-max 21474836480 --out DIR  (bounded amendment: size the bound)
   rounds --regime handoff --memory-max BYTES --out DIR --size-bytes N --host-mb M [--rounds 1-10]
       (OWED 18, section E: round k is one cycle pair, buffered,direct for odd k, reversed for even)
 
@@ -79,7 +80,7 @@ def wait_idle(log, label):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    ap.add_argument("--regime", choices=["capped", "bounded", "g2", "handoff"], required=True)
+    ap.add_argument("--regime", choices=["capped", "bounded", "g2", "handoff", "anonpeak"], required=True)
     ap.add_argument("--memory-max", type=int, required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--rounds", default="1-10")
@@ -108,6 +109,10 @@ def main():
                              "--proof", PROOF, "--scratch", B2_SCRATCH, "--out", str(target / "visits"),
                              "--size-bytes", str(a.size_bytes), "--host-mb", str(a.host_mb), "--rig", "rtx5090",
                              "--lock-fd", "@COLLECTOR_LOCK_FD@", "--io-schedule", order]
+                elif a.regime == "anonpeak":
+                    argv += [str(HERE / "m1-anon-peak.py"), "--arms-lock", str(HERE / "m1-prereg/b3-arms.lock.json"),
+                             "--binary", BIN, "--artifact", ART, "--out", str(target / "visits"),
+                             "--lock-fd", "@COLLECTOR_LOCK_FD@"]
                 elif a.regime == "g2":
                     argv += [str(HERE / "m1-g2-5090.py"), "--probe", PROBE, "--out", str(target / "visits"),
                              "--lock-fd", "@COLLECTOR_LOCK_FD@"]
@@ -132,7 +137,7 @@ def main():
                 if not lost:
                     break
                 time.sleep(10)
-            if a.smoke or a.regime == "g2":
+            if a.smoke or a.regime in ("g2", "anonpeak"):
                 break
 
 

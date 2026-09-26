@@ -436,3 +436,13 @@ filesystem; the prompt set is regenerated and checked against `b2-prompts.manife
 Driver: `m1-5090-rounds.py --regime handoff`, round k = one pair, `buffered,direct` for odd k,
 `direct,buffered` for even k, ten rounds. No compile or other CPU campaign of this lane runs
 while a scored cell runs.
+
+Section D, bounded amendment (2026-09-26, after the capped smoke and before any bounded cell):
+the registered bound "measured peak visit RSS plus 7,000,000,000" cannot use ru_maxrss. The
+smoke's ru_maxrss is 17,802,168 kB on every arm, the full artifact, because run-gen maps the whole
+file and file-backed mapped pages count as RSS; that bound (about 25.2 GB) would be looser than the
+20 GiB capped regime. The bound is therefore the peak of RssAnon plus RssShmem (`/proc/<pid>/status`,
+250 ms samples), taken once per arm in a capped-scope cold visit by `m1-anon-peak.py`, maximum over
+the six arms, plus 7,000,000,000. That cell runs after the capped regime and before bounded;
+its visits are sizing only, never scored. Everything else in bounded is unchanged, including the
+per-visit residency check (below 50% of the artifact's pages at visit end).
