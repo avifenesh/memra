@@ -1,0 +1,158 @@
+{
+ "A1_kernel": {
+  "cpu_flag_lines": true,
+  "dmi_virtual_markers": [],
+  "hypervisor_flag": false,
+  "pci_emulated_devices": [],
+  "pci_functions": 40,
+  "sys_hypervisor_type": null
+ },
+ "A2_A3_mount": {
+  "fstype": "ext4",
+  "identity": {
+   "device": 66307,
+   "filesystem_id_sha256_16": "be50e50154277f19",
+   "mount_id": 44
+  },
+  "st_dev": "259:3",
+  "statx": {
+   "dev_major": 259,
+   "dev_minor": 3,
+   "dio_mem_align": null,
+   "dio_offset_align": null,
+   "mask": 5951,
+   "mnt_id": 44
+  }
+ },
+ "A4_block_graph": {
+  "leaves": [
+   {
+    "name": "nvme0n1"
+   }
+  ],
+  "nodes": [
+   {
+    "kind": "partition",
+    "major_minor": "259:3",
+    "name": "nvme0n1p2",
+    "rotational": null,
+    "via": "mount"
+   },
+   {
+    "kind": "nvme-namespace",
+    "major_minor": "259:1",
+    "name": "nvme0n1",
+    "rotational": "0",
+    "via": "nvme0n1p2"
+   }
+  ]
+ },
+ "A5_controllers": [
+  {
+   "controller": "nvme0",
+   "device": "0x5049",
+   "firmware_rev": "63100100",
+   "leaf": "nvme0n1",
+   "link": {
+    "current_link_speed": "16.0 GT/s PCIe",
+    "current_link_width": "4",
+    "max_link_speed": "16.0 GT/s PCIe",
+    "max_link_width": "4"
+   },
+   "model": "WD PC SN8000S SDEQNRG-2T00-1002",
+   "numa_node": "-1",
+   "pci_class": "0x010802",
+   "pci_depth": 3,
+   "serial_sha256_16": "544daf14a153f3fe",
+   "subsystem_vendor": "0x15b7",
+   "transport": "pcie",
+   "vendor": "0x15b7"
+  }
+ ],
+ "A6_io_binding": {
+  "deltas": {
+   "leaf:nvme0n1": {
+    "read_sectors": 2097192,
+    "write_sectors": 2097776
+   },
+   "top": {
+    "read_sectors": 2097192,
+    "write_sectors": 2097776
+   }
+  },
+  "dio_mem_align": null,
+  "dio_offset_align": null,
+  "file": ".m1-proof-1409516-1790346280171917455.bin",
+  "foreign_read_sectors_upper": 40,
+  "foreign_write_sectors_upper": 624,
+  "leaf_read_sectors": 2097192,
+  "leaf_write_sectors": 2097776,
+  "payload_bytes": 1073741824,
+  "read_ns": 1267508961,
+  "read_sha256": "56e189d40cf8dfcf4b5b4fe5f49a9bbc43c13313908616e81d84e8c7082d0912",
+  "removed": true,
+  "required_sectors": 2097152,
+  "snapshots": {
+   "after_read": {
+    "leaf:nvme0n1": {
+     "read_ios": 108771319,
+     "read_sectors": 3837932999,
+     "write_ios": 44441940,
+     "write_sectors": 3109479866
+    },
+    "top": {
+     "read_ios": 108769333,
+     "read_sectors": 3837855146,
+     "write_ios": 44441937,
+     "write_sectors": 3109479864
+    }
+   },
+   "after_write": {
+    "leaf:nvme0n1": {
+     "read_ios": 108763124,
+     "read_sectors": 3835835807,
+     "write_ios": 44441932,
+     "write_sectors": 3109479218
+    },
+    "top": {
+     "read_ios": 108761138,
+     "read_sectors": 3835757954,
+     "write_ios": 44441929,
+     "write_sectors": 3109479216
+    }
+   },
+   "before_write": {
+    "leaf:nvme0n1": {
+     "read_ios": 108763120,
+     "read_sectors": 3835835703,
+     "write_ios": 44433736,
+     "write_sectors": 3107381442
+    },
+    "top": {
+     "read_ios": 108761134,
+     "read_sectors": 3835757850,
+     "write_ios": 44433733,
+     "write_sectors": 3107381440
+    }
+   }
+  },
+  "write_fdatasync_ns": 496910106,
+  "write_sha256": "56e189d40cf8dfcf4b5b4fe5f49a9bbc43c13313908616e81d84e8c7082d0912"
+ },
+ "A7_capacity": {
+  "free_bytes": 480103510016,
+  "reserve_bytes": 21474836480
+ },
+ "A8_identity": {
+  "device": 66307,
+  "filesystem_id_sha256_16": "be50e50154277f19",
+  "mount_id": 44
+ },
+ "class": "nvme-local-direct",
+ "private_capture_sha256": "d7f191d7acfcb5cb7aef9ff19b0f12dd65a1d9b290207cdf10fa37cc5c54a877",
+ "reasons": [],
+ "registration": "research/spill-f-20260919/M1-PREREG.md section A",
+ "schema": "m1-nvme-proof-v1",
+ "utc": "2026-09-25T14:24:40.167096+00:00",
+ "verdict": "PASS"
+}

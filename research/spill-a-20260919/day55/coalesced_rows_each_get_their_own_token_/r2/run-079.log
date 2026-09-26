@@ -1,0 +1,18 @@
+
+running 1 test
+test dsv4_serve::c4_host_budget_tests::coalesced_rows_each_get_their_own_token_once_per_step ... FAILED
+
+failures:
+
+---- dsv4_serve::c4_host_budget_tests::coalesced_rows_each_get_their_own_token_once_per_step stdout ----
+
+thread 'dsv4_serve::c4_host_budget_tests::coalesced_rows_each_get_their_own_token_once_per_step' (144182) panicked at crates/memra-server/src/dsv4_serve.rs:3199:9:
+[2, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    dsv4_serve::c4_host_budget_tests::coalesced_rows_each_get_their_own_token_once_per_step
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 949 filtered out; finished in 0.10s
+

@@ -591,6 +591,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // this timed decode window reports its own hit rate, H2D bytes, and worker-I/O deltas.
             e.moe_cache_reset_counters();
             let pread_before = e.moe_pread_stats();
+            let stages_before = e.moe_pread_stage_stats();
             let cpu_before = e.cpu_expert_stats();
             let cpu_wait_before = e.cpu_expert_exposed_wait_ns();
             let cpu_residency_before = e.cpu_expert_gpu_residency_stats();
@@ -790,6 +791,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     after.4.saturating_sub(before.4),
                 );
             }
+            if let (Some(before), Some(after)) = (stages_before, e.moe_pread_stage_stats()) {
+                println!(
+                    "spill stages DECODE-WINDOW: {}",
+                    after.since(&before).fields()
+                );
+            }
             if let (Some(before), Some(after), Some(wait_before), Some(wait_after)) = (
                 cpu_before,
                 e.cpu_expert_stats(),
@@ -886,6 +893,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         e.moe_cache_reset_counters();
                         let warm_pread_before = e.moe_pread_stats();
+                        let warm_stages_before = e.moe_pread_stage_stats();
                         let warm_cpu_before = e.cpu_expert_stats();
                         let warm_cpu_wait_before = e.cpu_expert_exposed_wait_ns();
                         let warm_residency_before = e.cpu_expert_gpu_residency_stats();
@@ -955,6 +963,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 after.5.saturating_sub(before.5),
                                 after.6.saturating_sub(before.6),
                                 after.4.saturating_sub(before.4),
+                            );
+                        }
+                        if let (Some(before), Some(after)) =
+                            (warm_stages_before, e.moe_pread_stage_stats())
+                        {
+                            println!(
+                                "spill stages STEADY-STATE rep {rep}: {}",
+                                after.since(&before).fields()
                             );
                         }
                         if let (Some(before), Some(after), Some(wait_before), Some(wait_after)) = (

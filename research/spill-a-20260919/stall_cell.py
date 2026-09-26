@@ -31,6 +31,12 @@ from receipt.json by `--replay`; no threshold, no verdict: the cell measures a s
     conversation on the chat surface (two tools declared, an agent system prompt, a run-numbered ask), so its
     retire arms a pause candidate on a `MEMRA_KV_PAUSE_DEMOTE=1` boot and the pause sweep demotes while the
     tenant still streams; the intruder records its `finish_reason`. The earlier arms are byte-for-byte unchanged.)
+    (`fanout`, `fanout-long` and `prime-short`, WP-A day 54, `DAY54.md` section 1, OWED item 10: each timed
+    fanout intruder is FOUR identical fresh prompts posted at once, so the interactive dedup groups them (one
+    leader prime, an on-tick snapshot, three sibling restores), at 72 words (`fanout`) or at the prime arm's
+    length (`fanout-long`); `prime-short` is one fresh 72-word prompt, the single-prime control of `fanout`
+    (`prime` is `fanout-long`'s). The intruder's `wall_ms` is the slowest of the four; each wall and
+    `cached_tokens` is recorded. The earlier arms are byte-for-byte unchanged.)
     stall_cell.py --replay DIR/receipt.json
 
 Client-side only: stdlib, no engine binary, no GPU access of its own.
@@ -237,6 +243,10 @@ def one_run(port, mode, arm, run_id, log_path, log_off, promote_toggle):
             prompt = fresh_prompt(PRIME_TARGET_TOKENS - 4, 2100)  # the ONE seeded prompt, a hit every run
         elif mode == "demote":
             prompt = fresh_prompt(72, 2000 + run_id)
+        elif mode in ("fanout", "prime-short"):
+            prompt = fresh_prompt(72, 5000 + run_id)
+        elif mode == "fanout-long":
+            prompt = fresh_prompt(PRIME_TARGET_TOKENS - 4, 6000 + run_id)
         elif mode == "demote-long":
             prompt = fresh_prompt(PRIME_TARGET_TOKENS - 4, 3000 + run_id)
         elif mode == "promote-long":
@@ -248,7 +258,28 @@ def one_run(port, mode, arm, run_id, log_path, log_off, promote_toggle):
             promote_toggle[0] += 1
         t_i = time.monotonic()
         try:
-            if mode == "pause":
+            if mode in ("fanout", "fanout-long"):
+                # WP-A day 54: four identical prompts at once (the dedup groups them in one tick).
+                outs = [None] * 4
+
+                def one(k):
+                    try:
+                        outs[k] = post(port, {"model": "gate", "prompt": prompt, "max_tokens": 1, "temperature": 0})
+                    except Exception as e:  # recorded below, never swallowed
+                        outs[k] = e
+                ths = [threading.Thread(target=one, args=(k,)) for k in range(4)]
+                for t in ths:
+                    t.start()
+                for t in ths:
+                    t.join(timeout=900)
+                bad = [o for o in outs if not isinstance(o, tuple)]
+                if bad:
+                    raise RuntimeError(f"fanout member failed: {bad[0]!r}")
+                resp, wall = max(outs, key=lambda o: o[1])
+                fan = [{"wall_ms": w, "cached_tokens": ((r.get("usage", {}).get("prompt_tokens_details") or {})
+                                                        .get("cached_tokens", r.get("usage", {}).get("cached_tokens")))}
+                       for r, w in outs]
+            elif mode == "pause":
                 resp, wall = post_chat(port, {"model": "gate", "messages": pause_messages(run_id),
                                               "tools": PAUSE_TOOLS, "max_tokens": 256, "temperature": 0})
             else:
@@ -258,6 +289,8 @@ def one_run(port, mode, arm, run_id, log_path, log_off, promote_toggle):
                         "wall_ms": wall, "prompt_tokens": usage.get("prompt_tokens"),
                         "cached_tokens": (usage.get("prompt_tokens_details") or {}).get("cached_tokens",
                                                                                          usage.get("cached_tokens"))}
+            if mode in ("fanout", "fanout-long"):
+                intruder["fanout"] = fan
             if mode == "pause":
                 ch = (resp.get("choices") or [{}])[0]
                 intruder["finish_reason"] = ch.get("finish_reason")
@@ -311,7 +344,9 @@ def one_run(port, mode, arm, run_id, log_path, log_off, promote_toggle):
         "server_restore_ms": server_restore_ms(tail) if mode == "restore" else [],
         "server_log_lines": [ln for ln in tail.splitlines() if "[prefix-host]" in ln or "[abort]" in ln
                              or "[prefix-cache] capture" in ln or "[prefix-cache] restore" in ln
-                             or "[prefix-cache] hit" in ln][:40],
+                             or "[prefix-cache] hit" in ln
+                             or (mode in ("fanout", "fanout-long", "prime-short")
+                                 and ("[prefix-dedup]" in ln or "[prefix-cache] on-tick publish" in ln))][:40],
     }
     if itl:
         p50 = statistics.median(itl)
@@ -382,7 +417,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int)
     ap.add_argument("--mode", choices=["prime", "demote", "promote", "capture", "restore", "demote-long", "promote-long",
-                                       "pause"])
+                                       "pause", "fanout", "fanout-long", "prime-short"])
     ap.add_argument("--server-log")
     ap.add_argument("--out")
     ap.add_argument("--n", type=int, default=5)

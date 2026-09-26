@@ -1,0 +1,18 @@
+
+running 1 test
+test tests::an_extended_stream_commits_prefill_then_injects_the_original_deadline ... FAILED
+
+failures:
+
+---- tests::an_extended_stream_commits_prefill_then_injects_the_original_deadline stdout ----
+
+thread 'tests::an_extended_stream_commits_prefill_then_injects_the_original_deadline' (192135) panicked at crates/memra-server/src/lib.rs:17426:18:
+the extended stream must commit before first token: ()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::an_extended_stream_commits_prefill_then_injects_the_original_deadline
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 950 filtered out; finished in 0.00s
+

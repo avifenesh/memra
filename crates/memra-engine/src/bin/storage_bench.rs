@@ -29,6 +29,22 @@ pub fn open_uncached(path: &Path) -> Result<std::fs::File> {
     }
 }
 
+fn ns_since(started: std::time::Instant) -> u64 {
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
+}
+
+/// Stage clocks (lane/spill-f-20260919 OWED 9). `read_ns` is the summed wall time of
+/// `ExtentStore::read` calls and is published as the frozen sample's `io_ns`; the rest go to one
+/// stderr line, which the collector's StorageSample join does not consume.
+#[derive(Default)]
+struct Stages {
+    put_ns: u64,
+    commit_ns: u64,
+    lease_ns: u64,
+    read_ns: u64,
+    verify_ns: u64,
+}
+
 fn fixture(offset: usize, len: usize) -> Vec<u8> {
     (offset..offset + len)
         .map(|i| (i.wrapping_mul(17).wrapping_add(3) % 251) as u8)
@@ -82,13 +98,19 @@ pub fn run(args: &[String]) -> std::result::Result<StorageSample, Box<dyn std::e
         std::sync::Arc::new(move || clock.elapsed().as_nanos().try_into().unwrap_or(u64::MAX)),
     )?));
     let mut store = ExtentStore::new(backend, gov.clone());
+    let mut stages = Stages::default();
     let start = std::time::Instant::now();
     if !restore {
         let mut txn = store.begin(key.clone(), len as u64, Durability::Persistent)?;
         for offset in (0..len).step_by(MAX_CHUNK) {
-            store.put(&mut txn, &fixture(offset, MAX_CHUNK.min(len - offset)))?;
+            let chunk = fixture(offset, MAX_CHUNK.min(len - offset));
+            let t = std::time::Instant::now();
+            store.put(&mut txn, &chunk)?;
+            stages.put_ns += ns_since(t);
         }
+        let t = std::time::Instant::now();
         store.commit(&mut txn)?;
+        stages.commit_ns = ns_since(t);
     }
     let manifest = store.lookup(&key)?.ok_or("committed root missing")?;
     let request = BudgetRequest {
@@ -97,7 +119,9 @@ pub fn run(args: &[String]) -> std::result::Result<StorageSample, Box<dyn std::e
         deadline: Deadline(u64::MAX),
         tenant: [0; 32],
     };
+    let t = std::time::Instant::now();
     let lease = store.lease(&manifest, &request)?;
+    stages.lease_ns = ns_since(t);
     use sha2::{Digest as _, Sha256};
     let mut hash = Sha256::new();
     hash.update(b"memra-tier\0v1\0");
@@ -108,11 +132,15 @@ pub fn run(args: &[String]) -> std::result::Result<StorageSample, Box<dyn std::e
     // Bounded readback + byte-by-byte verification; no full-object RAM allocation.
     for (i, c) in manifest.chunks.iter().enumerate() {
         let mut got = vec![0; c.valid_bytes as usize];
+        let t = std::time::Instant::now();
         store.read(&lease, i as u32, &mut got)?;
+        stages.read_ns += ns_since(t);
+        let t = std::time::Instant::now();
         if got != fixture(offset, got.len()) {
             return Err("byte mismatch".into());
         }
         hash.update(&got);
+        stages.verify_ns += ns_since(t);
         offset += got.len();
     }
     if offset != len {
@@ -124,6 +152,10 @@ pub fn run(args: &[String]) -> std::result::Result<StorageSample, Box<dyn std::e
     }
     let total_ns = start.elapsed().as_nanos().try_into()?;
     let payload_checksum = hash.finalize().into();
+    eprintln!(
+        "[storage-bench] stages put_ns={} commit_ns={} lease_ns={} read_ns={} verify_ns={} total_ns={total_ns}",
+        stages.put_ns, stages.commit_ns, stages.lease_ns, stages.read_ns, stages.verify_ns
+    );
     Ok(StorageSample {
         version: 1,
         fixture: format!(
@@ -155,7 +187,7 @@ pub fn run(args: &[String]) -> std::result::Result<StorageSample, Box<dyn std::e
         io_bytes: store.backend().io_bytes(),
         physical_bytes: None,
         queue_ns: None,
-        io_ns: None,
+        io_ns: Some(stages.read_ns),
         h2d_ns: None,
         d2h_ns: None,
         p2p_ns: None,
