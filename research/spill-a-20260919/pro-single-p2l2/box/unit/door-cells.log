@@ -1,0 +1,149 @@
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-b7880578d97a1c04)
+
+running 18 tests
+test worker::tests::option_b_off_tick_demote_hashes_ride_the_helper_and_a_changed_lease_is_refused ... ok
+test worker::tests::option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on ... FAILED
+test worker::tests::option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on ... FAILED
+test worker::tests::option_b_span_attach_fault_hands_every_span_back ... ok
+test worker::tests::option_b_span_postpublish_refusal_returns_the_staging_to_the_set ... ok
+test worker::tests::option_b_span_refusal_returns_every_plane_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_span_staging_charge_refusal_refuses_the_attach_and_keeps_the_tier_on ... FAILED
+test worker::tests::option_b_spans_ride_the_ticket_and_land_bitwise ... ok
+test worker::tests::option_c_first_ready_view_failure_unwinds_through_the_published_arm ... FAILED
+test worker::tests::option_c_off_tick_checksums_ride_the_hash_helper_and_a_corrupt_lease_is_refused ... FAILED
+test worker::tests::option_c_partial_acceptance_unwinds_refused_with_every_destination_released ... FAILED
+test worker::tests::option_c_postpublish_refusal_retires_the_ticket_and_keeps_the_host_twin ... FAILED
+test worker::tests::option_c_presubmit_refusal_releases_every_destination_and_keeps_the_host_twin ... FAILED
+test worker::tests::option_c_promote_routes_every_contract_plane_and_keeps_the_host_twin ... FAILED
+test worker::tests::option_c_receipt_mismatch_cancels_before_publication_and_recovers_the_source ... FAILED
+test worker::tests::option_c_span_attach_fault_hands_every_span_back ... FAILED
+test worker::tests::option_c_span_postpublish_refusal_returns_the_staging_to_the_set ... FAILED
+test worker::tests::option_c_spans_ride_the_promote_ticket_and_land_bitwise ... FAILED
+
+failures:
+
+---- worker::tests::option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on stdout ----
+[prefix-host] contracts door D2H receipt: ticket issuer=5 seq=2 epochs=0/1/1 items=6 (2 KV planes, draft) complete=6 require=ok checksums_sha256=6d766e8c01f53a86f6fb49c282f18d0f293405f556937108894ad7958d310006 retired acknowledged; receipts on the copy stream (source digests, 0.03ms)
+
+thread 'worker::tests::option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on' (614342) panicked at crates/memra-server/src/worker.rs:53496:9:
+assertion `left == right` failed
+  left: (2304, 0, 0)
+ right: (1392, 0, 0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- worker::tests::option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on stdout ----
+[prefix-host] contracts door D2H receipt: ticket issuer=8 seq=1 epochs=0/1/1 items=6 (2 KV planes, draft) complete=6 require=ok checksums_sha256=6d766e8c01f53a86f6fb49c282f18d0f293405f556937108894ad7958d310006 retired acknowledged; receipts on the copy stream (source digests, 0.04ms)
+
+thread 'worker::tests::option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on' (614344) panicked at crates/memra-server/src/worker.rs:52746:9:
+assertion `left == right` failed: six leases hold the pinned charge
+  left: (2304, 0, 0)
+ right: (1392, 0, 0)
+
+---- worker::tests::option_b_span_staging_charge_refusal_refuses_the_attach_and_keeps_the_tier_on stdout ----
+[prefix-host] tier span staging: 4 fresh pinned buffer(s), 163952 bytes charged to the governor's pinned ledger; the set holds 163952 bytes charged
+
+thread 'worker::tests::option_b_span_staging_charge_refusal_refuses_the_attach_and_keeps_the_tier_on' (614352) panicked at crates/memra-server/src/worker.rs:53266:22:
+a staging buffer over the ledger was charged
+
+---- worker::tests::option_c_first_ready_view_failure_unwinds_through_the_published_arm stdout ----
+[prefix-host] contracts door D2H receipt: ticket issuer=26 seq=1 epochs=0/1/1 items=6 (2 KV planes, draft) complete=6 require=ok checksums_sha256=6d766e8c01f53a86f6fb49c282f18d0f293405f556937108894ad7958d310006 retired acknowledged; receipts on the copy stream (source digests, 0.03ms)
+
+thread 'worker::tests::option_c_first_ready_view_failure_unwinds_through_the_published_arm' (614356) panicked at crates/memra-server/src/worker.rs:53521:9:
+assertion `left == right` failed
+  left: (2304, 0, 0)
+ right: (1392, 0, 0)
+
+---- worker::tests::option_c_off_tick_checksums_ride_the_hash_helper_and_a_corrupt_lease_is_refused stdout ----
+[prefix-host] contracts door D2H receipt: ticket issuer=29 seq=1 epochs=0/1/1 items=6 (2 KV planes, draft) complete=6 require=ok checksums_sha256=6d766e8c01f53a86f6fb49c282f18d0f293405f556937108894ad7958d310006 retired acknowledged; receipts on the copy stream (source digests, 0.04ms)
+
+thread 'worker::tests::option_c_off_tick_checksums_ride_the_hash_helper_and_a_corrupt_lease_is_refused' (614358) panicked at crates/memra-server/src/worker.rs:53521:9:
+assertion `left == right` failed
+  left: (2304, 0, 0)
+ right: (1392, 0, 0)
+
+---- worker::tests::option_c_partial_acceptance_unwinds_refused_with_every_destination_released stdout ----
+[prefix-host] contracts door D2H receipt: ticket issuer=32 seq=1 epochs=0/1/1 items=6 (2 KV planes, draft) complete=6 require=ok checksums_sha256=6d766e8c01f53a86f6fb49c282f18d0f293405f556937108894ad7958d310006 retired acknowledged; receipts on the copy stream (source digests, 0.05ms)
+
+thread 'worker::tests::option_c_partial_acceptance_unwinds_refused_with_every_destination_released' (614360) panicked at crates/memra-server/src/worker.rs:53521:9:
+assertion `left == right` failed
+  left: (2304, 0, 0)
+ right: (1392, 0, 0)
+
+---- worker::tests::option_c_postpublish_refusal_retires_the_ticket_and_keeps_the_host_twin stdout ----
+[prefix-host] contracts door D2H receipt: ticket issuer=35 seq=1 epochs=0/1/1 items=6 (2 KV planes, draft) complete=6 require=ok checksums_sha256=6d766e8c01f53a86f6fb49c282f18d0f293405f556937108894ad7958d310006 retired acknowledged; receipts on the copy stream (source digests, 0.04ms)
+
+thread 'worker::tests::option_c_postpublish_refusal_retires_the_ticket_and_keeps_the_host_twin' (614362) panicked at crates/memra-server/src/worker.rs:53521:9:
+assertion `left == right` failed
+  left: (2304, 0, 0)
+ right: (1392, 0, 0)
+
+---- worker::tests::option_c_presubmit_refusal_releases_every_destination_and_keeps_the_host_twin stdout ----
+[prefix-host] contracts door D2H receipt: ticket issuer=38 seq=1 epochs=0/1/1 items=6 (2 KV planes, draft) complete=6 require=ok checksums_sha256=6d766e8c01f53a86f6fb49c282f18d0f293405f556937108894ad7958d310006 retired acknowledged; receipts on the copy stream (source digests, 0.04ms)
+
+thread 'worker::tests::option_c_presubmit_refusal_releases_every_destination_and_keeps_the_host_twin' (614364) panicked at crates/memra-server/src/worker.rs:53521:9:
+assertion `left == right` failed
+  left: (2304, 0, 0)
+ right: (1392, 0, 0)
+
+---- worker::tests::option_c_promote_routes_every_contract_plane_and_keeps_the_host_twin stdout ----
+[prefix-host] contracts door D2H receipt: ticket issuer=41 seq=1 epochs=0/1/1 items=6 (2 KV planes, draft) complete=6 require=ok checksums_sha256=6d766e8c01f53a86f6fb49c282f18d0f293405f556937108894ad7958d310006 retired acknowledged; receipts on the copy stream (source digests, 0.04ms)
+
+thread 'worker::tests::option_c_promote_routes_every_contract_plane_and_keeps_the_host_twin' (614366) panicked at crates/memra-server/src/worker.rs:53521:9:
+assertion `left == right` failed
+  left: (2304, 0, 0)
+ right: (1392, 0, 0)
+
+---- worker::tests::option_c_receipt_mismatch_cancels_before_publication_and_recovers_the_source stdout ----
+[prefix-host] contracts door D2H receipt: ticket issuer=44 seq=1 epochs=0/1/1 items=6 (2 KV planes, draft) complete=6 require=ok checksums_sha256=6d766e8c01f53a86f6fb49c282f18d0f293405f556937108894ad7958d310006 retired acknowledged; receipts on the copy stream (source digests, 0.04ms)
+
+thread 'worker::tests::option_c_receipt_mismatch_cancels_before_publication_and_recovers_the_source' (614368) panicked at crates/memra-server/src/worker.rs:53521:9:
+assertion `left == right` failed
+  left: (2304, 0, 0)
+ right: (1392, 0, 0)
+
+---- worker::tests::option_c_span_attach_fault_hands_every_span_back stdout ----
+[prefix-host] contracts door D2H receipt: ticket issuer=47 seq=1 epochs=0/1/1 items=6 (2 KV planes, draft) complete=6 require=ok checksums_sha256=6d766e8c01f53a86f6fb49c282f18d0f293405f556937108894ad7958d310006 retired acknowledged; receipts on the copy stream (source digests, 0.04ms)
+
+thread 'worker::tests::option_c_span_attach_fault_hands_every_span_back' (614370) panicked at crates/memra-server/src/worker.rs:53521:9:
+assertion `left == right` failed
+  left: (2304, 0, 0)
+ right: (1392, 0, 0)
+
+---- worker::tests::option_c_span_postpublish_refusal_returns_the_staging_to_the_set stdout ----
+[prefix-host] contracts door D2H receipt: ticket issuer=50 seq=1 epochs=0/1/1 items=6 (2 KV planes, draft) complete=6 require=ok checksums_sha256=6d766e8c01f53a86f6fb49c282f18d0f293405f556937108894ad7958d310006 retired acknowledged; receipts on the copy stream (source digests, 0.04ms)
+
+thread 'worker::tests::option_c_span_postpublish_refusal_returns_the_staging_to_the_set' (614372) panicked at crates/memra-server/src/worker.rs:53521:9:
+assertion `left == right` failed
+  left: (2304, 0, 0)
+ right: (1392, 0, 0)
+
+---- worker::tests::option_c_spans_ride_the_promote_ticket_and_land_bitwise stdout ----
+[prefix-host] contracts door D2H receipt: ticket issuer=53 seq=1 epochs=0/1/1 items=6 (2 KV planes, draft) complete=6 require=ok checksums_sha256=6d766e8c01f53a86f6fb49c282f18d0f293405f556937108894ad7958d310006 retired acknowledged; receipts on the copy stream (source digests, 0.03ms)
+
+thread 'worker::tests::option_c_spans_ride_the_promote_ticket_and_land_bitwise' (614374) panicked at crates/memra-server/src/worker.rs:53521:9:
+assertion `left == right` failed
+  left: (2304, 0, 0)
+ right: (1392, 0, 0)
+
+
+failures:
+    worker::tests::option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on
+    worker::tests::option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on
+    worker::tests::option_b_span_staging_charge_refusal_refuses_the_attach_and_keeps_the_tier_on
+    worker::tests::option_c_first_ready_view_failure_unwinds_through_the_published_arm
+    worker::tests::option_c_off_tick_checksums_ride_the_hash_helper_and_a_corrupt_lease_is_refused
+    worker::tests::option_c_partial_acceptance_unwinds_refused_with_every_destination_released
+    worker::tests::option_c_postpublish_refusal_retires_the_ticket_and_keeps_the_host_twin
+    worker::tests::option_c_presubmit_refusal_releases_every_destination_and_keeps_the_host_twin
+    worker::tests::option_c_promote_routes_every_contract_plane_and_keeps_the_host_twin
+    worker::tests::option_c_receipt_mismatch_cancels_before_publication_and_recovers_the_source
+    worker::tests::option_c_span_attach_fault_hands_every_span_back
+    worker::tests::option_c_span_postpublish_refusal_returns_the_staging_to_the_set
+    worker::tests::option_c_spans_ride_the_promote_ticket_and_land_bitwise
+
+test result: FAILED. 5 passed; 13 failed; 0 ignored; 0 measured; 956 filtered out; finished in 0.20s
+
+error: test failed, to rerun pass `-p memra-server --lib`

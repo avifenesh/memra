@@ -216,3 +216,17 @@ identity gates door ON.
   - then `f-reading.py`, whose last line is `F VERDICT -> ..`.
   - The reader was dry-run on DAY64B's receipts mapped as two arms, where base's late count read 87 of 90 per the rule.
   - About 1.25 hours of card time.
+
+## 7. F's sitting: a gap in its unit step, completed before its reading; a measurement condition
+
+- DAY64 section 5 (a) registered "the engine's H2D span cells and the worker's span cells (`option_c_span_*`)".
+  `pro-single-f/unit-cells.sh` runs the engine's three H2D span cells and the censuses, but not the worker's span
+  cells. That is this lane's harness gap, recorded before F's reading, not a change to (a).
+- On F's pair (tip `9fcfd30c7`) the worker cells would fail on the stale arithmetic of DAY63 section 7, since the tip
+  predates `411177fea`. So they run as an added unit step from the lane's later tree: F's production code unchanged,
+  with the corrected cell arithmetic. `pro-single-f/unit-worker.sh`, in its own clone: `bash unit-worker.sh build
+  <lane tip>`, then under one collector hold `bash unit-worker.sh @COLLECTOR_LOCK_FD@`. It runs all 18 of `option_b_
+  option_c_`, the span cells among them.
+- **F's verdict is ADOPT only if `F VERDICT -> ADOPT` and that step reads `door-rc=0`.**
+- Measurement condition: the orphaned GPU sampler (DAY67 section 4) ran through F's first minutes (to 18:13Z). F's
+  build ran outside the hold then, so no timed cell is affected.

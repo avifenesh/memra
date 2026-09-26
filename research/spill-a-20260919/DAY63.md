@@ -339,3 +339,11 @@ W's hold runs its timed boots, nothing of this lane builds.
   - The GPU verification is the lead's battery rerun on the target card. A local 5090 run of the same 18 cells, from
     the branch's frozen test executable, is queued behind the 5090's lock (`/home/avifenesh/spill-a-cells/i69-gpu/`,
     banked when it reads).
+- **The second fix** (integ69's rerun on BOX39, `17 passed; 1 failed`): the refusal cell's later ledger expectation
+  still carried the two-budget co-tenant (`left: (3221223168, 0, 0) right: (2147481344, 0, 0)`). Placed the same way
+  (L1.5's three budgets) and fixed test-only as `28c7aa6c1`. On the integ69 branch it is `6c60d798f`, and on P2's
+  unit-step branch `a2419d3e1`.
+- **The 18 cells on the local RTX 5090**, from the integ69 branch's frozen test executable (sha256 `cdaf8ab8d4361b07..`,
+  tree `6c60d798f`), serial, in one hold taken at 18:23:38Z with the card idle:
+  `worker-span-cells rc=0 test result: ok. 18 passed; 0 failed` (`rtx5090-i69-cells/`; the first-fix attempt,
+  superseded before it held the card, in `superseded/`).

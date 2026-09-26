@@ -103,3 +103,55 @@ decides; the 5090 half follows.
   only `worker.rs`, and every changed line is P2's.
   - `pro-single-p2l2/`, receipts `/root/spill-receipts/a-p2l2`: `build.sh <tip> dba7c0a0c`, then `driver.sh` (the
     same cells as section 2's sitting).
+
+## 4. P2L2, read as registered: (b) to (g) PASS; (a)'s unit step void (a harness defect), repeated whole
+
+- Run by the lead on one RTX PRO 6000 Blackwell Workstation card, `build.sh 064f9fa0d dba7c0a0c` then `driver.sh`,
+  16:25Z to 18:09Z. Mirror `pro-single-p2l2/box/`, sha256-checked against the box manifest (0 mismatches); the
+  executables are recorded by hash.
+- Verbatim (`box/reading-day52.log`), the clause lines:
+
+      DAY52 P2 (b) cell=demote order=o1 minflt p2-median (0.25 x pages)=+0.00 rule <=+9576.42 | copy p2-minus-base=-15.88 rule <=-8.00 | hits fraction of steady demotes=+1.00 rule >=+0.90 -> PASS
+      DAY52 P2 (b) cell=demote order=o2 minflt p2-median (0.25 x pages)=+0.00 rule <=+9576.42 | copy p2-minus-base=-16.29 rule <=-8.00 | hits fraction of steady demotes=+1.00 rule >=+0.90 -> PASS
+      DAY52 P2 (c) cell=demote order=o1 wall p2-minus-base=-12.40 rule <=-8.00 | e2e p2-minus-base=+0.34 rule <=+1.00 -> PASS
+      DAY52 P2 (c) cell=demote order=o2 wall p2-minus-base=-12.40 rule <=-8.00 | e2e p2-minus-base=+0.07 rule <=+1.00 -> PASS
+      DAY52 P2 (d) cell=promote order=o1 pin p2-minus-base=-0.10 rule <=+1.00 | e2e p2-minus-base=-0.03 rule <=+1.00 -> PASS
+      DAY52 P2 (d) cell=promote order=o2 pin p2-minus-base=+0.00 rule <=+1.00 | e2e p2-minus-base=-0.02 rule <=+1.00 -> PASS
+      DAY52 P2 (f) cell=free order=o1 wall p2-minus-base=+0.20 rule <=+2.00 | copy p2-minus-base=+0.03 rule <=+1.00 -> PASS
+      DAY52 P2 (f) cell=free order=o2 wall p2-minus-base=+0.10 rule <=+2.00 | copy p2-minus-base=+0.00 rule <=+1.00 -> PASS
+      DAY52 P2 (g) cell=chain order=o1 chain p2-minus-base=-0.06 rule <=+1.00 | first p2-minus-base=-0.00 rule <=+1.00 -> PASS
+      DAY52 P2 (g) cell=chain order=o2 chain p2-minus-base=-0.03 rule <=+1.00 | first p2-minus-base=-0.02 rule <=+1.00 -> PASS
+      DAY52 P2 (e) hump xp2=+0.028 rule <=0.15 control xgpp=+0.534 (humps) -> PASS
+      (a) every gate 0 | unit [unit-cells parallel=3/3 engine-serial-rc=0 door-rc=101 cpu-rc=0 engine-census-rc=0 tier-rc=0] -> FAIL
+      DAY52 P2 -> FAIL
+
+- Read:
+  - Every timing clause passes. **(g), DAY52's one failure, now reads -0.06 / -0.03 ms against +1.0**, with L' having
+    removed the twin's lease frees, as DAY63's ruling predicted.
+  - (b): the copy is 15.9 / 16.3 ms faster with every steady demote a full hit and no faults. (c): the wall is 12.4
+    ms faster. (e) passes against a humping control. (d) and (f) are flat.
+- **(a)'s unit step:**
+  - Its `door-rc=101` is the same 13 worker GPU cells integ69 found: 12 of `left: (2304, 0, 0) right: (1392, 0, 0)`
+    and the staging refusal cell.
+  - They were placed in DAY63 section 7 as test arithmetic that predates L1.2 and L1.5, not as any defect of P2's
+    tree or of L'. They fail the same way on every tree carrying L' without `411177fea` and `28c7aa6c1`, including
+    P2's base.
+  - A cell whose harness is defective reads nothing. The unit step is **void**, as W's a1 filter was (DAY61 section 3),
+    and it repeats whole once on P2's own tree with the corrected cell arithmetic.
+  - The repeat uses branch `lane/spill-a-p2l2-unit-20260926` at `a2419d3e1`: `064f9fa0d` plus the two test-only
+    commits, with the production code byte for byte P2L2's p2 arm. The server binaries are untouched, so (b) to (g)
+    stand as read.
+  - Script `pro-single-p2l2/unit-rerun.sh`, in its own clone: `bash unit-rerun.sh build`, then under one collector
+    hold `bash unit-rerun.sh @COLLECTOR_LOCK_FD@`. It runs the same unit cells as P2L2's.
+  - **P2's verdict is ADOPT if that step reads all green (`unit-cells parallel=3/3 ... door-rc=0 ...`), and REVERT
+    otherwise.** The same 18 worker cells already read 18 of 18 on the local 5090 from the integ69 branch's frozen
+    binary (DAY63 section 7). This is a proposal under the registration's own rule, for the lead's acceptance.
+- **PLACING nan** is the absent `p` arm, not missing lines. The placing rule compares DAY52's diagnostic `p` against
+  base, and DAY67 section 1 dropped `p`, registering that the rule then prints `not placed` with its deltas absent.
+  The publication split lines are present in the build: 16 `DAY52 SPLIT` lines in the reading.
+- **Measurement condition, recorded.** The stopped P2L sitting's orphaned GPU sampler (an `nvidia-smi --query-gpu`
+  poller) ran from 16:24Z to 18:13Z, through all of P2L2's sitting, both arms interleaved equally
+  (`pro-single-p2l/box-diag-stopped/SAMPLER-NOTE.txt`). It is a light host and driver poll, equal across arms. The
+  timing clauses all passed with wide margins, the tightest being (c)'s e2e at +0.34 against +1.0, so no verdict
+  turns on it. It is stated beside the reading.
+- The stopped diagnostic's mirror is banked as `pro-single-p2l/box-diag-stopped/` (T-H in both arms), not read.
