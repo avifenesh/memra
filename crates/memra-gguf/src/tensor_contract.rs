@@ -165,6 +165,7 @@ pub enum LayerTensor {
     Query,
     Key,
     Value,
+    FusedQkv,
     AttentionOutput,
     QueryNorm,
     KeyNorm,
@@ -987,7 +988,7 @@ fn add_layer(
     );
     match &layer.attention {
         AttentionPlan::Full(attention) | AttentionPlan::SlidingWindow { attention, .. } => {
-            add_full_attention(builder, plan, index, attention);
+            add_full_attention(builder, plan, index, attention)?;
         }
         AttentionPlan::GatedDeltaNet(gdn) => add_gdn(builder, plan, index, *gdn),
         AttentionPlan::KimiDeltaNet(kda) => add_kda(builder, plan, index, *kda),
@@ -1326,12 +1327,13 @@ fn add_mtp_glue(
     }
 }
 
+#[allow(clippy::result_large_err)] // the contract error names the exact rejected tensor
 fn add_full_attention(
     builder: &mut ContractBuilder,
     plan: &ModelPlan,
     index: u32,
     attention: &crate::model_plan::FullAttentionPlan,
-) {
+) -> Result<(), TensorContractError> {
     let gate_multiplier = if attention.output_gate == AttentionGateKind::FusedQ {
         2
     } else {
@@ -1341,6 +1343,41 @@ fn add_full_attention(
     let key_width = attention.kv_heads * attention.key_head_dim;
     let value_width = attention.kv_heads * attention.value_head_dim;
     let output_width = attention.query_heads * attention.value_head_dim;
+    let fused_qkv = attention
+        .mimo_math
+        .is_some_and(|math| math.fused_qkv_checkpoint_shards.is_some());
+    if fused_qkv {
+        let shards = attention
+            .mimo_math
+            .and_then(|math| math.fused_qkv_checkpoint_shards)
+            .unwrap();
+        let rows = query_width + key_width + value_width;
+        if shards == 0
+            || !attention.query_heads.is_multiple_of(shards)
+            || !attention.kv_heads.is_multiple_of(shards)
+            || !rows.is_multiple_of(shards)
+        {
+            return Err(TensorContractError::UnsupportedPlanOperation {
+                operation: "MiMo fused QKV checkpoint shards do not divide attention geometry",
+            });
+        }
+        builder.weight(
+            layer_id(index, LayerTensor::FusedQkv),
+            layer_name(
+                builder.dialect,
+                index,
+                "attn_qkv.weight",
+                "self_attn.qkv_proj.weight",
+            ),
+            matrix_shape(
+                builder.dialect,
+                query_width + key_width + value_width,
+                plan.hidden_size,
+            ),
+            TensorOwner::Layer(index),
+            TensorTransform::Identity,
+        );
+    }
     for (tensor, gguf, hf, out, input) in [
         (
             LayerTensor::Query,
@@ -1364,6 +1401,9 @@ fn add_full_attention(
             output_width,
         ),
     ] {
+        if fused_qkv && tensor != LayerTensor::AttentionOutput {
+            continue;
+        }
         builder.weight(
             layer_id(index, tensor),
             layer_name(builder.dialect, index, gguf, hf),
@@ -1372,7 +1412,7 @@ fn add_full_attention(
             TensorTransform::Identity,
         );
     }
-    if attention.value_projection == ValueProjection::Separate {
+    if attention.value_projection == ValueProjection::Separate && !fused_qkv {
         builder.weight(
             layer_id(index, LayerTensor::Value),
             layer_name(
@@ -1429,6 +1469,7 @@ fn add_full_attention(
             TensorTransform::Identity,
         );
     }
+    Ok(())
 }
 
 #[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
@@ -2704,6 +2745,40 @@ mod tests {
         };
         assert_eq!(gguf_by_id[&id].shape, vec![64, 128]);
         assert_eq!(hf_by_id[&id].shape, vec![128, 64]);
+    }
+
+    #[test]
+    fn mimo_hf_contract_uses_one_qkv_tensor_with_layer_specific_width() {
+        let config = ModelConfig::from_hf(&HfConfig::parse(include_str!(
+            "model_packs/mimo_v2/fixtures/config.json"
+        )));
+        let plan = ModelPlan::compile(&config).unwrap();
+        let contract = TensorContract::for_plan(
+            &plan,
+            CheckpointDialect::HfSafetensors,
+            ContractOptions::default(),
+        )
+        .unwrap();
+        for (layer, fused_rows) in [(0, 13_568), (1, 14_848)] {
+            let qkv = contract
+                .requirements
+                .iter()
+                .find(|req| req.id == layer_id(layer, LayerTensor::FusedQkv))
+                .unwrap();
+            assert_eq!(
+                qkv.names,
+                vec![format!("model.layers.{layer}.self_attn.qkv_proj.weight")]
+            );
+            assert_eq!(qkv.shape, vec![fused_rows, 4_096]);
+            for separate in [LayerTensor::Query, LayerTensor::Key, LayerTensor::Value] {
+                assert!(
+                    !contract
+                        .requirements
+                        .iter()
+                        .any(|req| req.id == layer_id(layer, separate))
+                );
+            }
+        }
     }
 
     #[test]
