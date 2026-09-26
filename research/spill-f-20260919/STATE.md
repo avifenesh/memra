@@ -1,4 +1,4 @@
-# WP-F resumable state (2026-09-26 about 15:25Z; BOX36 sitting read; main ff53e3e50 merged; 5090 queue running)
+# WP-F resumable state (2026-09-26 about 23:10Z; integrable; 5090 queue on f17 then handoff-8g)
 
 - Lane `lane/spill-f-20260919`, worktree `wt-spill-f`; integ68 takes 290fbbc1e after integ67 (#762).
 - Done since 290fbbc1e: OWED 26 routed to F and registered (`M1-PREREG.md` G): G1 visibility in
@@ -40,4 +40,9 @@
   check; each cell stays one continuous hold. Recorded in `~/spill-f-5090/receipts/QUEUE.jsonl`
   (`queue-change`) and in bounded's `waits.jsonl`. Queue relaunched 18:12Z `--from bounded
   --step-rounds bounded=8-10`; bounded rounds 1 to 7 done under the old back-to-back holds.
+- 5090 progress: bounded done and unscored (pre-fix build fallbacks plus contamination), G2 done and
+  replay-validated (OWED 23 closed), f17 round 1 of 10 done (171 s), queue waiting behind lane A's R1
+  cells since 20:42Z. Remaining: f17 rounds 2 to 10, then handoff-8g. After f17: pool with
+  `m1-b3-pool.py ~/spill-f-5090/receipts/f17 --bypass-check --fallback-unclean`; after handoff-8g:
+  `m1-handoff-pairs.py`; then the two doors' decisions (section F and E rules, both rigs).
 
