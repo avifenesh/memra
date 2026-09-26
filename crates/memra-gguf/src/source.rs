@@ -1892,12 +1892,51 @@ impl SafetensorsSource {
         .then_some(self.cfg.n_head_kv as usize)
     }
 
+    /// The official MiMo checkpoint keeps routed experts as OCP MXFP4:
+    /// sequential E2M1 nibbles and one E8M0 exponent byte per 32 inputs.
+    fn mimo_mxfp4_expert(&self, hf_name: &str) -> Option<(usize, usize, &[u8], &[u8])> {
+        if self.cfg.mimo.is_none()
+            || !hf_name.starts_with("model.layers.")
+            || !hf_name.contains(".mlp.experts.")
+            || !hf_name.ends_with(".weight")
+        {
+            return None;
+        }
+        let (weight_info, weight) = self.lookup(hf_name)?;
+        let stem = hf_name.strip_suffix(".weight")?;
+        let (scale_info, scale) = self.lookup(&format!("{stem}.weight_scale"))?;
+        if weight_info.dtype != "U8"
+            || scale_info.dtype != "U8"
+            || weight_info.shape.len() != 2
+            || scale_info.shape.len() != 2
+        {
+            return None;
+        }
+        let out = usize::try_from(weight_info.shape[0]).ok()?;
+        let packed_in = usize::try_from(weight_info.shape[1]).ok()?;
+        let input = packed_in.checked_mul(2)?;
+        if out == 0
+            || input == 0
+            || !input.is_multiple_of(32)
+            || scale_info.shape != [out as u64, (input / 32) as u64]
+            || weight.len() != out.checked_mul(packed_in)?
+            || scale.len() != out.checked_mul(input / 32)?
+        {
+            return None;
+        }
+        Some((out, input, weight, scale))
+    }
+
     /// Dequantize an HF tensor to f32 (used by the value-transform producers). Handles BOTH plain
     /// F32/F16/BF16 tensors AND modelopt (compressed-tensors) NVFP4 weights: a `<name>.weight` stored
     /// `U8` with a sibling `<name>.weight_scale` is dequantized through the NVFP4 path (per-16 UE4M3
     /// block scale × the per-tensor `weight_scale_2`), so the hybrid SSM V-reorder transforms (which
     /// operate on f32) work on an NVFP4 checkpoint exactly as on a BF16 one.
     fn deq_f32(&self, hf_name: &str) -> Option<(Vec<f32>, Vec<u64>)> {
+        if let Some((out, input, weight, scale)) = self.mimo_mxfp4_expert(hf_name) {
+            let decoded = crate::dsv4::dequant_mxfp4_expert(weight, scale, out, input);
+            return Some((decoded, vec![input as u64, out as u64]));
+        }
         // NVFP4 weight (modelopt OR Reza)? Dequant through the NVFP4 path so the hybrid SSM V-reorder
         // transforms (which operate on f32) work on an NVFP4 checkpoint exactly as on a BF16 one.
         if hf_name.ends_with(".weight")
@@ -3107,6 +3146,48 @@ mod tests {
         assert_eq!(layout.format, "NVFP4");
         assert_eq!(layout.block_shape, vec![16]);
         assert_eq!(layout.auxiliaries, vec![scale_name, macro_name, input_name]);
+    }
+
+    #[test]
+    fn mimo_source_mxfp4_expert_dequantizes_from_safetensors() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("memra-mimo-mxfp4-{}-{unique}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("model.safetensors");
+        let name = "model.layers.1.mlp.experts.0.gate_proj.weight";
+        let scale_name = "model.layers.1.mlp.experts.0.gate_proj.weight_scale";
+        let header = format!(
+            r#"{{"{name}":{{"dtype":"U8","shape":[1,32],"data_offsets":[0,32]}},"{scale_name}":{{"dtype":"U8","shape":[1,2],"data_offsets":[32,34]}}}}"#
+        );
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(header.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(header.as_bytes());
+        bytes.extend_from_slice(&[0x21; 16]); // low code 1 = 0.5, high code 2 = 1
+        bytes.extend_from_slice(&[0x43; 16]); // low code 3 = 1.5, high code 4 = 2
+        bytes.extend_from_slice(&[127, 128]); // E8M0 multipliers 1 and 2
+        std::fs::write(&file, bytes).unwrap();
+        let config = ModelConfig::from_hf(&crate::config::HfConfig::parse(include_str!(
+            "model_packs/mimo_v2/fixtures/config.json"
+        )));
+        let source = SafetensorsSource::open_with_config(&file, config).unwrap();
+        let (data, shape) = source.dequant_f32_hf(name).unwrap();
+        assert_eq!(shape, vec![64, 1]);
+        assert_eq!(data.len(), 64);
+        for index in 0usize..64 {
+            let expected = match index {
+                0..=31 if index.is_multiple_of(2) => 0.5,
+                0..=31 => 1.0,
+                _ if index.is_multiple_of(2) => 3.0,
+                _ => 4.0,
+            };
+            assert_eq!(data[index], expected, "element {index}");
+        }
+        drop(source);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
