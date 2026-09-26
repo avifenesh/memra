@@ -960,6 +960,7 @@ pub mod prime_graph;
 pub mod qwen_prime_graph;
 pub mod spill;
 mod spill_pread;
+pub mod step_guard;
 
 // Fatbins are EMBEDDED (crates-release lane, 2026-08-04): build.rs still writes them to
 // OUT_DIR, but the bytes ship inside the binary via include_bytes! and load through

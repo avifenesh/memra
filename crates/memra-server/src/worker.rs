@@ -15240,6 +15240,52 @@ fn reclaim_offtick_pass(
 /// set reaches the host whether or not the arrival that queued it is still waiting. A queued entry
 /// that is no longer evictable (leased, hit or evicted meanwhile) is skipped; a refused submission
 /// dropped its entry (its bytes free now) and the next is tried. Returns the entries removed.
+/// MEMRA_BATCH_OOM_RECOVER (default unset, WP-B day 49, OWED O14): `1` retries a batched decode
+/// chunk once after one reclaim rung when its quoted CUDA OOM came before any session-state write
+/// (`memra_engine::step_guard`). Unset reads nothing.
+fn batch_oom_recover_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_BATCH_OOM_RECOVER").as_deref() == Ok("1"))
+}
+
+/// The batch OOM's reclaim rung (DAY49 1.5): the parked sessions of the three pools are dropped,
+/// the device prefix cache is evicted to half its bytes, the teardown fence runs and the model
+/// pools are trimmed back to the driver. Returns a receipt fragment.
+fn batch_oom_reclaim(
+    engine: &Engine,
+    loaded: &HashMap<String, LoadedModel>,
+    px: &mut PrefixCache,
+    hpx: &mut HostPrefixCache,
+    reuse: &mut HashMap<PoolKey, Vec<ReuseEntry>>,
+    spec_reuse: &mut HashMap<PoolKey, Vec<SpecReuseEntry>>,
+    dspark_reuse: &mut HashMap<PoolKey, Vec<DsparkReuseEntry>>,
+) -> String {
+    let parked = (
+        reuse.values().map(Vec::len).sum::<usize>(),
+        spec_reuse.values().map(Vec::len).sum::<usize>(),
+        dspark_reuse.values().map(Vec::len).sum::<usize>(),
+    );
+    reuse.clear();
+    spec_reuse.clear();
+    dspark_reuse.clear();
+    let before = px.total_bytes;
+    let (evicted_n, _) = px.evict_to_bytes(before / 2);
+    oom_teardown_fence(engine, loaded);
+    host_capture_settle_pending(engine, px, hpx, ContractWait::Block, "a batch OOM");
+    host_restore_settle_pending(px, hpx, ContractWait::Block, "a batch OOM");
+    let reports = trim_model_device_pools(engine, loaded, "batch-oom");
+    let trimmed = reports.len();
+    format!(
+        "parked reuse={} spec={} dspark={} dropped, prefix cache {} entries {}MB -> {}MB, {trimmed} pools trimmed",
+        parked.0,
+        parked.1,
+        parked.2,
+        evicted_n,
+        before >> 20,
+        px.total_bytes >> 20
+    )
+}
+
 /// MEMRA_ADMIT_W_RELEASE (default unset, WP-B day 45, OWED O4): `1` releases each session's prefill
 /// workspace from both admission books when its prime completes. Unset reads nothing.
 fn admit_w_release_on() -> bool {
@@ -30281,56 +30327,115 @@ pub fn run(
                     .map(|&i| active[i].request_id.as_str())
                     .collect::<Vec<_>>()
                     .join(",");
-                let logits = guard_request(&engine, &batch_ids, "batch", "batched decode", || {
-                    // MEMRA_STEP_OOM_FAULT's plain-dispatch injection point (WP-B day 38
-                    // addendum A): the forged quoted OOM stands in for this chunk's step, before
-                    // any device work; the chunk's error arm below is production logic.
-                    if step_oom_fault_fire() {
-                        eprintln!(
-                            "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this batched decode chunk \
+                // WP-B day 49 (O14, MEMRA_BATCH_OOM_RECOVER): a quoted CUDA OOM of a chunk that
+                // wrote no session state (the step guard: before the engine call, or the generic
+                // body before any state write) takes one reclaim rung and runs the same batched
+                // step once more; any other failure is the error arm below, as today.
+                let mut batch_attempt = 0usize;
+                let logits = loop {
+                    memra_engine::step_guard::arm();
+                    let attempt = guard_request(
+                        &engine,
+                        &batch_ids,
+                        "batch",
+                        "batched decode",
+                        || {
+                            // MEMRA_STEP_OOM_FAULT's plain-dispatch injection point (WP-B day 38
+                            // addendum A): the forged quoted OOM stands in for this chunk's step, before
+                            // any device work; the chunk's error arm below is production logic.
+                            if step_oom_fault_fire() {
+                                eprintln!(
+                                    "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this batched decode chunk \
                              reports a synthetic CUDA OOM ({} session(s))",
-                            idxs.len()
-                        );
-                        return Err(STEP_OOM_FAULT_MSG.into());
+                                    idxs.len()
+                                );
+                                return Err(STEP_OOM_FAULT_MSG.into());
+                            }
+                            // split-borrow: pull the caches out via split_at_mut-style indexing
+                            let mut caches: Vec<&mut Cache> = Vec::with_capacity(idxs.len());
+                            // SAFETY: idxs are unique indices into `active`; we take disjoint &mut.
+                            let base = active.as_mut_ptr();
+                            for &i in &idxs {
+                                let s = unsafe { &mut *base.add(i) };
+                                caches.push(s.cache.as_mut().unwrap());
+                            }
+                            // LEAN LOGITS (inc2 component 3): device-sampled rows skip the
+                            // [n_vocab] D2H — their last_logits comes back EMPTY and the row is
+                            // parked on-device (cache.last_logits_dev) for the retire-time pool
+                            // park below.
+                            // SAFETY: mask_ptrs point at Session.mask_dev fields — disjoint from
+                            // the caches taken above; nothing mutates them for this call's life.
+                            let masks: Vec<Option<(&CudaSlice<u32>, usize)>> = mask_ptrs
+                                .iter()
+                                .map(|m| m.map(|(p, w)| (unsafe { &*p }, w)))
+                                .collect();
+                            match wave_mid {
+                                Some(mid) => {
+                                    lm.model.decode_step_batch_sampled_lean_masked_scheduled(
+                                        &engine,
+                                        &toks,
+                                        &mut caches,
+                                        &samp,
+                                        &masks,
+                                        true,
+                                        mid,
+                                    )
+                                }
+                                None => lm.model.decode_step_batch_sampled_lean_masked(
+                                    &engine,
+                                    &toks,
+                                    &mut caches,
+                                    &samp,
+                                    &masks,
+                                    true,
+                                ),
+                            }
+                        },
+                    );
+                    let guard_state = memra_engine::step_guard::take();
+                    match attempt {
+                        Err(err)
+                            if batch_attempt == 0
+                                && batch_oom_recover_on()
+                                && is_cuda_oom(&err.to_string())
+                                && memra_engine::step_guard::recoverable(guard_state) =>
+                        {
+                            batch_attempt += 1;
+                            let reclaimed = batch_oom_reclaim(
+                                &engine,
+                                &loaded,
+                                &mut px,
+                                &mut hpx,
+                                &mut reuse,
+                                &mut spec_reuse,
+                                &mut dspark_reuse,
+                            );
+                            eprintln!(
+                                "[admit-oom] batch OOM: {} sessions untouched ({guard_state:?}); \
+                                 reclaimed {reclaimed}; retrying the same batched step once",
+                                idxs.len()
+                            );
+                        }
+                        Err(err) => {
+                            if batch_attempt > 0 {
+                                eprintln!(
+                                    "[admit-oom] batch OOM: retry failed ({err}); ended as today"
+                                );
+                            } else if batch_oom_recover_on() && is_cuda_oom(&err.to_string()) {
+                                eprintln!(
+                                    "[admit-oom] batch OOM: torn ({guard_state:?}); ended as today"
+                                );
+                            }
+                            break Err(err);
+                        }
+                        Ok(out) => {
+                            if batch_attempt > 0 {
+                                eprintln!("[admit-oom] batch OOM: retried (ok)");
+                            }
+                            break Ok(out);
+                        }
                     }
-                    // split-borrow: pull the caches out via split_at_mut-style indexing
-                    let mut caches: Vec<&mut Cache> = Vec::with_capacity(idxs.len());
-                    // SAFETY: idxs are unique indices into `active`; we take disjoint &mut.
-                    let base = active.as_mut_ptr();
-                    for &i in &idxs {
-                        let s = unsafe { &mut *base.add(i) };
-                        caches.push(s.cache.as_mut().unwrap());
-                    }
-                    // LEAN LOGITS (inc2 component 3): device-sampled rows skip the
-                    // [n_vocab] D2H — their last_logits comes back EMPTY and the row is
-                    // parked on-device (cache.last_logits_dev) for the retire-time pool
-                    // park below.
-                    // SAFETY: mask_ptrs point at Session.mask_dev fields — disjoint from
-                    // the caches taken above; nothing mutates them for this call's life.
-                    let masks: Vec<Option<(&CudaSlice<u32>, usize)>> = mask_ptrs
-                        .iter()
-                        .map(|m| m.map(|(p, w)| (unsafe { &*p }, w)))
-                        .collect();
-                    match wave_mid {
-                        Some(mid) => lm.model.decode_step_batch_sampled_lean_masked_scheduled(
-                            &engine,
-                            &toks,
-                            &mut caches,
-                            &samp,
-                            &masks,
-                            true,
-                            mid,
-                        ),
-                        None => lm.model.decode_step_batch_sampled_lean_masked(
-                            &engine,
-                            &toks,
-                            &mut caches,
-                            &samp,
-                            &masks,
-                            true,
-                        ),
-                    }
-                });
+                };
                 match logits {
                     Ok((rows, next_toks)) => {
                         for (k, &i) in idxs.iter().enumerate() {
@@ -30668,6 +30773,7 @@ pub fn run(
             // re-admits (nothing completed; its replay re-books) and a client abort's
             // length is a disconnect point, not a completion length (the D2 offline
             // history was built from completed rows only; aborts stay load-only).
+            admission_book.retire(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);
             // WP-B day 45 addendum B: a session that retires with its workspace still booked says why.
             if s.booked_w_bytes > 0 {
                 eprintln!(
@@ -30681,7 +30787,6 @@ pub fn run(
                     }
                 );
             }
-            admission_book.retire(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);
             // WP-B day 37 (DAY37 A4): what an on-demand session backed against what it used.
             if crate::kv_vmm::armed() {
                 let (sm, sr) = s.spec.as_ref().map_or((0, 0), |sp| sp.kv_on_demand_bytes());
@@ -57225,6 +57330,34 @@ mod tests {
         assert!(live.contains("match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {"));
     }
 
+    /// WP-B day 49 (DAY49 1.5): the batch-OOM door is read at the batched chunk only; the retry is
+    /// bounded to one and gated on a quoted CUDA OOM and the step guard's recoverable states.
+    #[test]
+    fn batch_oom_recover_door_reaches_the_batched_chunk_only() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let call = format!("batch_oom_recover_on{}", "()");
+        assert_eq!(
+            live.matches(call.as_str()).count(),
+            3,
+            "definition, the retry arm, the torn line"
+        );
+        assert!(live.contains("if batch_attempt == 0 && batch_oom_recover_on() && is_cuda_oom(&err.to_string()) && memra_engine::step_guard::recoverable(guard_state) =>"));
+        assert_eq!(live.matches("memra_engine::step_guard::arm();").count(), 1);
+        assert!(live.contains("let guard_state = memra_engine::step_guard::take();"));
+        assert!(live.contains("batch_attempt += 1;"));
+        // The fault door's batched injection point stays inside the retried call.
+        let arm = live.find("memra_engine::step_guard::arm();").unwrap();
+        let fault = live[arm..]
+            .find("MEMRA_STEP_OOM_FAULT fired: this batched decode chunk")
+            .unwrap();
+        assert!(
+            fault < 800,
+            "the injection is the first statement of the retried call"
+        );
+    }
+
     /// WP-B day 45 (DAY45 1.3): the W-release door is read at the admit seam and the one release
     /// site; the release is exact and happens once.
     #[test]
@@ -57870,7 +58003,7 @@ mod tests {
         assert!(nonbatch.contains("match step_result"));
         let batch = sites
             .iter()
-            .map(|&at| window(live, at, 4000))
+            .map(|&at| window(live, at, 6500))
             .find(|b| b.contains("decode_step_batch_sampled_lean_masked"))
             .expect("the batched site gates the batched decode chunk");
         assert!(batch.contains("\"batch step: {err}\""));
