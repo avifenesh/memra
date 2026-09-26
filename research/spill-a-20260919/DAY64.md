@@ -60,3 +60,75 @@ identity gates door ON.
     when it publishes after the next tick top, and the label at that next tick top's poll names the requirement.
     Named at least half the time, it selects the design.
   - About 25 minutes of card time.
+
+## 3. The placing cell, read as registered: PLACE receipt
+
+- Run by the lead on one RTX PRO 6000 Blackwell Workstation card (a 16-core host), `build.sh c537abdb5` then
+  `driver.sh`, to 13:22Z. Mirror `pro-single-day64/box/`, sha256-checked against the box manifest (0 mismatches);
+  the server is recorded by hash. Start temperatures 40 C to 67 C.
+- Verbatim (`box/reading-day64.log`):
+
+      DAY64 READING steady promotes=180 late=176 labels at the extra poll={'receipt': 176}
+      DAY64 PLACE -> receipt (176 late of 180)
+
+- Read:
+  - On this tree nearly every steady promote (176 of 180) publishes one tick after the next tick top. At that next
+    tick top, every one of them had its copies landed and its sources' checksums in, and waited only on the spans'
+    destination-digest receipt (S4's H2D span receipt).
+  - From the timelines (medians over the late promotes), the poll at the next tick top runs at +13.1 ms from
+    submission and reads `pending on receipt`; the next one, at +25.4 ms, reads `complete`. The copy's own
+    submission-to-completion reads 25.0 to 25.2 ms.
+  - So the receipt lands between one and two ticks after submission. The parked request re-admits and primes one
+    tick (about 11.5 ms on this card) later than its copies would allow.
+- Item 18 is placed at `receipt`. Section 1 named a design for it; section 4 revises that design before any code, and
+  says why.
+
+## 4. The receipt's design, pre-registered (committed before any code)
+
+- **Why section 1's design is set aside.** Section 1 proposed a second non-blocking poll after the tick's decode
+  launch, publishing a promote whose requirements landed during the tick.
+  - A publication mid-tick does not move the parked request's prime: admission runs at the tick top, so the request
+    re-admits at the next tick top either way. The late count would fall to 0 while the request's e2e stayed the
+    same.
+  - Section 1 said so itself ("the parked request primes at the same tick either way"). A design whose only effect is
+    the counted line is not the improvement item 18 is for, so it is not built.
+- **Step 1, the lines (log only).** Three timing events on the copy stream, created with timing and read only at the
+  settle, once complete (never waited on):
+  - after the fill host function;
+  - after the last span copy;
+  - after the digests and the lanes' D2H, the receipt event itself.
+  - The H2D receipt line gains `span receipt: fill X ms, copies Y ms, digests Z ms`, the elapsed times between them.
+  - A census checks that the events decide nothing.
+- **Step 2, the design, selected by step 1's split** on the target card (the promote cell, 20 boots, the same shape
+  as section 2's):
+  - **Digests at least half of the time from the last copy to the receipt, in the median: D1, the overlapped span
+    digests.** The destination digests run on a second stream of the same context. Each group of spans (S2's
+    64-span launch) waits on its own group's copy event and digests as soon as that group lands, overlapping the
+    remaining copies. The lanes' D2H and the receipt event follow the last group, on that stream. The receipt then
+    lands about one group's digest after the last copy, instead of every digest after it.
+    - The digest program is unchanged: `span_receipt_digests` over the same device planes, the same lanes, the same
+      `receipt_digest_from_lanes` fold.
+    - The batch still lands only with its receipt (`h2d_span_batch` rule 2).
+    - The second stream is created with the copy stream, and a creation failure is a construction refusal.
+  - **Otherwise** (the fill or the lanes' D2H dominate): that term is named with its numbers and designed next under
+    its own registration.
+- **D1's acceptance:**
+  - (a) Correctness:
+    - the engine's span digest cells;
+    - the fault gate default and plain, whose span cells include `span-flip-landed` and `span-flip-resident`: a
+      flipped span must still be refused by the receipt;
+    - the identity gate default and plain door OFF and ON;
+    - the hit gate OFF and ON;
+    - the pause gate.
+  - (b) The late count: at most 9 of 180 steady promotes publish after the next tick top (5%), against section 3's 176
+    of 180.
+  - (c) The promote cell's intruder e2e at most base's minus 5.0 ms per order, the parked request re-admitting one
+    tick earlier. The PIN at most base's plus 1.0 ms.
+  - (d) The tenant's stall at most base's plus 1.0 ms. The hump (day 38's HUMP, the digests now overlapping the
+    copies on a second stream) at most base's plus 0.15 ms.
+  - Every per-order clause in both orders.
+- **What each card decides.** The target card: step 1's split and (a) to (d). The 5090 half follows under the
+  per-hardware rule.
+- **Budget.** 0.4 agent-day: the lines 0.05, their sitting 0.05, D1 0.2, its sitting 0.1.
+- **Timing of the work.** This lane builds nothing while W's 5090 cell holds the card (DAY61 section 4). Step 1's
+  code follows its reading.

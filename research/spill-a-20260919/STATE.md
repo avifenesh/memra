@@ -29,8 +29,9 @@
     lines added to the shared `/home/avifenesh/projects/memra/.git/info/exclude`.
 - Item 13 (DAY62) closed: R1 ADOPTED (section 10, code `04554e99f`, for the next integ with L). R2 was reverted
   (section 7).
-- Item 18 (DAY64): step 1 lines built (`193f2634d`); the placing sitting is `pro-single-day64/` (`build.sh <tip>`,
-  then `driver.sh`, last line `DAY64 PLACE -> ..`).
+- Item 18 (DAY64): placed at `receipt` (176 of 180 late, section 3). The design is revised before code (section 4):
+  step 1 timing lines, then D1 (overlapped span digests on a second stream) if the digests dominate. It waits for no
+  build of this lane during W's 5090 cell.
 - B1's 5090 half read ADOPT (DAY59 section 12); B1 goes to integ67.
 - Items 14 and 19 (DAY63): L read REFUTED (a) and was reverted (`bb3f4c1d1`). The fault gate's two staging-fill
   checks encoded the first-demote fill; the timing won by wide margins. The gate change is `217ace3fd`, with its red arm
