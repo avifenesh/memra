@@ -9,6 +9,7 @@ use memra_engine::Engine;
 use memra_engine::model::GpuTensor;
 use memra_gguf::config::{HfConfig, ModelConfig};
 use memra_gguf::model_packs::mimo_v2::inspect_pinned_source_headers;
+use memra_gguf::model_plan::{AttentionPlan, ModelPlan};
 use memra_gguf::safetensors::StModel;
 use memra_gguf::source::{SafetensorsSource, TensorSource};
 
@@ -35,6 +36,7 @@ fn run() -> Result<(), Fail> {
 
     let config_text = std::fs::read_to_string(dir.join("config.json"))?;
     let config = ModelConfig::from_hf(&HfConfig::try_parse(&config_text)?);
+    let plan = ModelPlan::compile(&config)?;
     let model = StModel::open(dir)?;
     let headers = model
         .names()
@@ -59,11 +61,16 @@ fn run() -> Result<(), Fail> {
         })
         .collect();
     let input_device = engine.htod(&input)?;
-    let mut text = String::from("format\tmemra-mimo-qkv-shard-v1\n");
+    let mut text = String::from("format\tmemra-mimo-qkv-shard-v2\n");
     writeln!(text, "gpu_index\t{gpu_index}")?;
     writeln!(text, "input_width\t{}", input.len())?;
 
     for layer in [0u32, 1u32] {
+        let attention = match &plan.layers[layer as usize].attention {
+            AttentionPlan::Full(full) => full,
+            AttentionPlan::SlidingWindow { attention, .. } => attention,
+            _ => return Err(format!("layer {layer}: unexpected attention plan").into()),
+        };
         let name = format!("model.layers.{layer}.self_attn.qkv_proj.weight");
         let views = source
             .find_fp8_mimo_qkv_shards(&name)
@@ -75,12 +82,15 @@ fn run() -> Result<(), Fail> {
             .dequant_f32_hf(&name)
             .ok_or_else(|| format!("{name}: no CPU dequant reference"))?;
         let rows_per_shard = views[0].out_f;
+        let mut projected = Vec::with_capacity(4);
+        let mut projected_host = Vec::with_capacity(4);
         for (shard, view) in views.iter().enumerate() {
             if view.out_f != rows_per_shard || view.in_f != input.len() {
                 return Err(format!("{name} shard {shard}: inconsistent geometry").into());
             }
             let weight = GpuTensor::load_mimo_fp8_qkv_shard(&engine, view)?;
-            let actual = engine.dtoh(&engine.matmul(&weight, &input_device, 1)?)?;
+            let projection = engine.matmul(&weight, &input_device, 1)?;
+            let actual = engine.dtoh(&projection)?;
             if actual.len() != rows_per_shard {
                 return Err(format!("{name} shard {shard}: output width mismatch").into());
             }
@@ -126,6 +136,43 @@ fn run() -> Result<(), Fail> {
             eprintln!(
                 "layer {layer} shard {shard}: rows={rows_per_shard} max_abs={max_abs:.6} cosine={cosine:.8}"
             );
+            projected.push(projection);
+            projected_host.push(actual);
+        }
+        let assembled = engine.mimo_gather_qkv(
+            [&projected[0], &projected[1], &projected[2], &projected[3]],
+            1,
+            attention,
+        )?;
+        let q_width = 3072;
+        let k_width = attention.kv_heads as usize / 4 * 192;
+        let v_width = attention.kv_heads as usize / 4 * 128;
+        for (segment, output, offset, width, scale) in [
+            ("q", &assembled.query, 0, q_width, 1.0f32),
+            ("k", &assembled.key, q_width, k_width, 1.0f32),
+            ("v", &assembled.value, q_width + k_width, v_width, 0.707f32),
+        ] {
+            let observed = engine.dtoh(output)?;
+            if observed.len() != 4 * width {
+                return Err(format!("layer {layer} {segment}: output width mismatch").into());
+            }
+            let mut mismatches = 0usize;
+            for (shard, source) in projected_host.iter().enumerate() {
+                for (column, &value) in source[offset..offset + width].iter().enumerate() {
+                    let expected = value * scale;
+                    if observed[shard * width + column].to_bits() != expected.to_bits() {
+                        mismatches += 1;
+                    }
+                }
+            }
+            writeln!(
+                text,
+                "gather\t{layer}\t{segment}\t{}\t{mismatches}",
+                observed.len()
+            )?;
+            if mismatches != 0 {
+                return Err(format!("layer {layer} {segment}: {mismatches} bit mismatches").into());
+            }
         }
     }
     let temporary = report.with_extension("tsv.writing");

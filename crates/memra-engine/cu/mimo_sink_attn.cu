@@ -1,5 +1,4 @@
-// Standalone f32 MiMo decode attention. This translation unit is intentionally
-// not wired into the engine build or serving path.
+// Bounded f32 MiMo decode attention component. Not a serving path.
 //
 // Q      [64, 192]
 // K      [seq, kv_heads, 192]
@@ -84,7 +83,7 @@ __global__ void mimo_sink_attn_decode_kernel(
 
 }  // namespace
 
-// Return 0 on accepted launch, 40001..40004 for refused contracts, or
+// Return 0 on accepted launch, 40001..40005 for refused contracts, or
 // 10000 + cudaError_t for a CUDA runtime/launch error. Execution is asynchronous;
 // a later stream synchronization must detect device execution failures.
 extern "C" int memra_mimo_sink_attn_decode_f32(
@@ -95,11 +94,14 @@ extern "C" int memra_mimo_sink_attn_decode_f32(
         qk_dim != kQkDim || v_dim != kVDim) {
         return 40001;
     }
-    if (seq <= 0) return 40002;
+    if (seq <= 0 || seq > 4096) return 40002;
     if (window != 0 && window != 128) return 40003;
-    if (q == nullptr || k == nullptr || v == nullptr || output == nullptr) {
+    if ((kv_heads == 4 && (window != 0 || sink != nullptr)) ||
+        (kv_heads == 8 && (window != 128 || sink == nullptr))) {
         return 40004;
     }
+    if (q == nullptr || k == nullptr || v == nullptr || output == nullptr ||
+        stream_v == nullptr) return 40005;
 
     // A prior asynchronous error is a refusal, not evidence that this launch
     // failed. Peek before launching so the error state remains available.

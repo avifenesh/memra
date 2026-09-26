@@ -1,22 +1,27 @@
-//! Standalone MiMo f32 sink-attention decode FFI.
-//!
-//! The CUDA translation unit is `cu/mimo_sink_attn.cu`. Integration must build
-//! that unit and include this module before calling the declaration below.
+//! Bounded MiMo f32 sink-attention decode component.
+//! This does not admit MiMo to the serving backend.
 
 use core::ffi::c_void;
+
+use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
+use memra_gguf::model_plan::{
+    AttentionScale, FullAttentionPlan, TensorPresence, ValueNorm, ValueProjection,
+};
+
+use crate::Engine;
 
 unsafe extern "C" {
     /// Q [64,192], K [seq,kv_heads,192], V [seq,kv_heads,128],
     /// optional sink [64], output [64,128]. All non-null pointers address
     /// contiguous device f32 storage. `seq` includes the current token.
     ///
-    /// `kv_heads` is 4 or 8. `window` is 0 for full history or 128 for the
-    /// last min(seq,128) keys. Returns 0 on accepted asynchronous launch,
-    /// 40001..40004 on invalid arguments, or 10000 + cudaError_t for a CUDA
+    /// Full layers require kv_heads=4, window=0, and no sink. Sliding layers
+    /// require kv_heads=8, window=128, and a sink. Accepts seq=1..4096.
+    /// Returns 0 on accepted asynchronous launch,
+    /// 40001..40005 on invalid arguments, or 10000 + cudaError_t for a CUDA
     /// runtime or launch error. Synchronize the stream to catch execution
     /// failures. Callers must keep input and output storage alive until then.
-    #[allow(dead_code)] // Kept standalone until the owner wires it into the engine.
-    pub(crate) fn memra_mimo_sink_attn_decode_f32(
+    fn memra_mimo_sink_attn_decode_f32(
         q: *const f32,
         k: *const f32,
         v: *const f32,
@@ -32,11 +37,131 @@ unsafe extern "C" {
     ) -> i32;
 }
 
+fn validate_plan(
+    plan: &FullAttentionPlan,
+    window: usize,
+    has_sink: bool,
+) -> Result<usize, &'static str> {
+    let math = plan
+        .mimo_math
+        .ok_or("MiMo attention plan has no family math")?;
+    if math.fused_qkv_checkpoint_shards != Some(4)
+        || math.value_scale_before_cache.to_bits() != 0.707f32.to_bits()
+        || plan.query_heads != 64
+        || plan.key_head_dim != 192
+        || plan.value_head_dim != 128
+        || plan.qk_norm != TensorPresence::Absent
+        || plan.scale != AttentionScale::InverseSqrtKeyDim
+        || plan.value_projection != ValueProjection::Separate
+        || plan.value_norm != ValueNorm::None
+    {
+        return Err("MiMo attention plan differs from pinned source geometry");
+    }
+    match (plan.kv_heads, window, math.sink, has_sink) {
+        (4, 0, TensorPresence::Absent, false) => Ok(4),
+        (8, 128, TensorPresence::Required, true) => Ok(8),
+        _ => Err("MiMo attention window, KV heads, and sink do not match"),
+    }
+}
+
+impl Engine {
+    /// Compute one decode query against a bounded, current-token-inclusive
+    /// contiguous KV sequence. Query and key must already have RoPE applied;
+    /// `value` must already carry the 0.707 scaling from the QKV gather.
+    /// This component synchronizes to catch device errors.
+    pub fn mimo_sink_decode(
+        &self,
+        query: &CudaSlice<f32>,
+        key: &CudaSlice<f32>,
+        value: &CudaSlice<f32>,
+        sink: Option<&CudaSlice<f32>>,
+        seq: usize,
+        plan: &FullAttentionPlan,
+        window: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        if !(1..=4096).contains(&seq) {
+            return Err("MiMo attention component accepts 1..=4096 tokens".into());
+        }
+        let kv_heads = validate_plan(plan, window, sink.is_some())?;
+        if query.len() != 64 * 192
+            || key.len() != seq * kv_heads * 192
+            || value.len() != seq * kv_heads * 128
+            || sink.is_some_and(|slice| slice.len() != 64)
+        {
+            return Err("MiMo attention input length mismatch".into());
+        }
+        self.gpu.ctx.bind_to_thread()?;
+        let stream = self.stream();
+        let device = stream.context().ordinal();
+        if query.ordinal() != device
+            || key.ordinal() != device
+            || value.ordinal() != device
+            || sink.is_some_and(|slice| slice.ordinal() != device)
+        {
+            return Err("MiMo attention input crossed GPU devices".into());
+        }
+        let mut output = self.uninit(64 * 128)?;
+        let sink_ptr = sink.map_or(std::ptr::null(), |slice| {
+            slice.device_ptr(&stream).0 as *const f32
+        });
+        let rc = unsafe {
+            memra_mimo_sink_attn_decode_f32(
+                query.device_ptr(&stream).0 as *const f32,
+                key.device_ptr(&stream).0 as *const f32,
+                value.device_ptr(&stream).0 as *const f32,
+                sink_ptr,
+                output.device_ptr_mut(&stream).0 as *mut f32,
+                seq as i32,
+                64,
+                kv_heads as i32,
+                192,
+                128,
+                window as i32,
+                stream.cu_stream() as *mut c_void,
+            )
+        };
+        if rc != 0 {
+            return Err(format!("MiMo attention GPU decode returned {rc}").into());
+        }
+        stream.synchronize()?;
+        Ok(output)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use memra_gguf::config::{HfConfig, ModelConfig};
+    use memra_gguf::model_plan::{AttentionPlan, ModelPlan};
+
     const HEADS: usize = 64;
     const QK_DIM: usize = 192;
     const V_DIM: usize = 128;
+
+    #[test]
+    fn pinned_plan_rejects_wrong_sink_and_window() {
+        let config = ModelConfig::from_hf(&HfConfig::parse(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../memra-gguf/src/model_packs/mimo_v2/fixtures/config.json"
+        ))));
+        let plan = ModelPlan::compile(&config).unwrap();
+        let AttentionPlan::Full(full) = &plan.layers[0].attention else {
+            panic!("layer 0 must be full");
+        };
+        assert_eq!(validate_plan(full, 0, false), Ok(4));
+        assert!(validate_plan(full, 128, false).is_err());
+        assert!(validate_plan(full, 0, true).is_err());
+        let AttentionPlan::SlidingWindow {
+            attention: sliding,
+            window,
+        } = &plan.layers[1].attention
+        else {
+            panic!("layer 1 must be sliding");
+        };
+        assert_eq!(validate_plan(sliding, *window as usize, true), Ok(8));
+        assert!(validate_plan(sliding, *window as usize, false).is_err());
+        assert!(validate_plan(sliding, 0, true).is_err());
+    }
 
     // CPU contract oracle for future device comparisons. These tests check the
     // layout and semantics only; they never launch the CUDA implementation.
