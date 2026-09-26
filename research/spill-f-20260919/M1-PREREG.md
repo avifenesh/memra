@@ -601,3 +601,18 @@ Section F correctness addition (2026-09-26, before any spec cell with the door o
 K=1..8 self-consistency for `bypass-staged` and `bypass-mapped` on the fix build
 (`m1-spec-cell.py` with the F lock, B3's verdict line `=== SELF-CONSISTENCY PASS ===`), on the 5090
 before the timed cell and again in the PRO 6000 sitting.
+
+Section G, first serving-shape check FAILED (2026-09-26 11:56Z) and its correction, registered
+before the corrected code: the fix build's first visit (`worker2`) generated tokens equal to the
+oracle but ran at 0.65 tok/s and stalled in run-gen's 32-step steady-state window; it was stopped
+after 729.6 s (`owed26/5090/owed26-serve-attempt1`). Cause, from the code: `wait_for_any_buffer`
+reaps H2D completions again; when an event completed between the submit's own reap and this one,
+a buffer is free and no read is in flight, and the code still blocked in `recv_timeout` for the whole
+30 s bound. Correction: if the second reap freed a buffer, or a buffer is free with nothing in
+flight, return at once and retry the submit; every blocking wait on a worker completion is capped
+at 50 ms per iteration and the loop re-evaluates, so a mis-placed wait costs at most 50 ms, and the
+30 s liveness bound still ends the whole demand wait. Red arm: a GPU cell calls the wait with one
+buffer free and nothing in flight, and a second with every H2D event already complete; both must
+return within 1 s. On the e5d899500 build both take the full 30 s (red, run in the scratch worktree
+at e5d899500 with only the cells added); on the corrected build they return at once. The serving-
+shape check then reruns in full.
