@@ -405,6 +405,23 @@ them, names the rerun, and changes no clause, bound or rule of 1.6 and 1.7.
 - **The target class's placement default** moves to inline in code (`kv_vmm_placement_for_device`, the stage-0 rule's
   selection on this class, as addendum A said it would after the sitting). The deciding cells keep the pinned env.
 
+### 1.16 Addendum G (2026-09-26, the repro of 2.7's A1 cause, before it runs)
+
+2.7 reads A1-GATE `admit-mem-burst` FAIL on the 5090's pooled arm (7 parked prefill OOMs) and left the cause unplaced.
+The receipts point at one: every `[admit-mem]` admit line of that gate reads `pending_prime=0` while
+`pending_prime_v1` grows to 21.7 GB, the signature of DAY39's `v2` term, which read red on the target card the same way
+(`peak_pending_prime=0`, 10 parked prefill OOMs; DAY39 2.x). The r4 source `c6f9282c2` carries DAY39's first revision
+(`6262506fc`, the shared slab booked once) and not its addendum B (`be2177ead`, the checkpoint snapshots and the
+call's returned rows). The repro, on the 5090 under `/tmp/memra-5090.lock`, `tools/admit-mem-burst-gate.sh` at its
+defaults (open 8192, burst 64, ctx 65536), door unset for the allocator (pooled):
+
+- `r4` (`target/day37/r4/memra-server`) twice, and `v3` (`target/b2/v3/memra-server`, `a803d3080`, with addendum B) once.
+- Reading: the gate's verdict and `AMB no prefill OOM` line per run, and the peak `pending_prime` against
+  `pending_prime_v1`. If `r4` reds and `v3` greens, the cause is placed on the missing addendum-B terms (the door's
+  booking, not the allocator), and the 5090 class's O1 rule reading stays FAIL (no reading) on the r4 tree as it read;
+  a rerun of O1's 5090 cell on a tree with addendum B is then owed. If `r4` greens on both runs, the cause is not
+  placed and says so. No clause of 1.6 or 1.7 changes.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
