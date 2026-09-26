@@ -94,3 +94,11 @@ GPU. Both registrations said "the 5090 half follows"; this file fixes how, befor
   their target sittings' `markers.txt` byte for byte. All four trees are clean at their tips.
 - `chain-day68.sh` (the frozen copy of `rtx5090-chain-day68.sh` at `33624ff76`) started at 19:42:30Z. R1's half queued
   on the rig's lock at 19:43:00Z behind another lane's hold.
+
+## 6. A recorded overlap: this lane's CPU builds ran inside R1's gates cell, not its timed cell
+
+- R1's half took the hold at 20:43:01Z (`gates-cell start: host load 12.05 9.54 7.13`, no compute app).
+- DAY69's fix and P2's integ branch were built and tested under the rig's CPU cap from 20:32Z to 21:02:51Z. So they
+  overlapped the gates cell's first 20 minutes. The gates read exit codes only, with no timing clause.
+- No build of this lane runs from 21:02:51Z while the chain's timed cells run. The 5 s host-load log
+  (`host-load-5s.log`) records the whole hold.
