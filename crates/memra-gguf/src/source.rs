@@ -2325,15 +2325,16 @@ fn f8_scales_with_shards(
     if n == 1 {
         return Some(F8Scales::PerTensor(vals[0]));
     }
-    if n == out_f {
-        return Some(F8Scales::PerRow(vals));
-    }
-    // Block-128 grid: shape must be exactly [ceil(out/128), ceil(in/128)] (ceil handles
-    // dims that are not multiples of 128; every Qwen3.6-27B dim happens to divide evenly).
+    // Grid shape takes precedence over the per-row count. A [out/128, in/128]
+    // grid can contain exactly `out` elements when in=16384, as MiMo layer 0's
+    // down projection does. Counting first removes its native FP8 operand.
     let (rows, cols) = (out_f.div_ceil(128), in_f.div_ceil(128));
     if sinfo.shape.len() == 2 && sinfo.shape[0] as usize == rows && sinfo.shape[1] as usize == cols
     {
         return Some(F8Scales::Block128 { scales: vals, cols });
+    }
+    if n == out_f {
+        return Some(F8Scales::PerRow(vals));
     }
     None
 }
@@ -4741,6 +4742,31 @@ mod f8_block128 {
         assert!(f8_scales(&info("F32", vec![1]), &f32b(&[0.0]), out_f, in_f).is_none());
         // transposed count that coincidentally matches nothing
         assert!(f8_scales(&info("F32", vec![5]), &f32b(&[1.0; 5]), out_f, in_f).is_none());
+    }
+
+    #[test]
+    fn mimo_down_projection_grid_wins_over_equal_per_row_count() {
+        use crate::safetensors::StInfo;
+
+        let (out_f, in_f) = (4096usize, 16384usize);
+        let values: Vec<f32> = (0..out_f).map(|index| index as f32 + 1.0).collect();
+        let bytes: Vec<u8> = values
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect();
+        let info = |shape| StInfo {
+            dtype: "F32".to_owned(),
+            shape,
+            data_offsets: [0, bytes.len()],
+        };
+        let grid = f8_scales(&info(vec![32, 128]), &bytes, out_f, in_f).unwrap();
+        assert!(matches!(&grid, F8Scales::Block128 { cols: 128, scales } if scales.len() == out_f));
+        assert_eq!(grid.at(0, 0), values[0]);
+        assert_eq!(grid.at(128, 0), values[128]);
+        assert_eq!(grid.at(4095, 16383), values[4095]);
+
+        let rows = f8_scales(&info(vec![out_f as u64, 1]), &bytes, out_f, in_f).unwrap();
+        assert!(matches!(rows, F8Scales::PerRow(scales) if scales.len() == out_f));
     }
 
     #[test]
