@@ -51,9 +51,39 @@ def paired_delta(value):
     )
 
 
-def pooled(domains, label):
-    tokens = sum(domains[domain]["arms"][label]["tokens"] for domain in DOMAINS)
-    seconds = sum(domains[domain]["arms"][label]["seconds"] for domain in DOMAINS)
+def fixed_common(domains):
+    common = {}
+    for domain in DOMAINS:
+        fixed = domains[domain]["eligible_fixed"]
+        common[domain] = [
+            index for index in range(8)
+            if all(
+                not domains[domain]["arms"][label][
+                    "conversations"
+                ][index]["loops"]
+                for label in fixed
+            )
+        ]
+        if len(common[domain]) < 6:
+            raise ValueError(
+                f"{domain} fixed controls lack a common native cohort"
+            )
+    return common
+
+
+def fixed_rate(domains, label, common, selected_domains):
+    tokens = sum(
+        domains[domain]["arms"][label]["conversations"][
+            index
+        ]["tokens"]
+        for domain in selected_domains for index in common[domain]
+    )
+    seconds = sum(
+        domains[domain]["arms"][label]["conversations"][
+            index
+        ]["seconds"]
+        for domain in selected_domains for index in common[domain]
+    )
     if not positive(tokens) or not positive(seconds):
         raise ValueError(f"{label} lacks complete native request time")
     return tokens / seconds
@@ -208,6 +238,7 @@ def choose(validation, arms_path):
         validation, arms_path,
     )
     domains = score["domains"]
+    common = fixed_common(domains)
     global_fixed_options = [
         label for label in fixed
         if all(label in domains[domain]["eligible_fixed"] for domain in DOMAINS)
@@ -216,12 +247,16 @@ def choose(validation, arms_path):
         raise ValueError("no globally quality-eligible fixed control")
     global_fixed = max(
         sorted(global_fixed_options),
-        key=lambda label: pooled(domains, label),
+        key=lambda label: fixed_rate(
+            domains, label, common, DOMAINS,
+        ),
     )
     domain_best_fixed = {
         domain: max(
             sorted(domains[domain]["eligible_fixed"]),
-            key=lambda label: domains[domain]["arms"][label]["tok_s"],
+            key=lambda label: fixed_rate(
+                domains, label, common, (domain,),
+            ),
         )
         for domain in DOMAINS
     }
@@ -304,6 +339,7 @@ def choose(validation, arms_path):
         "gpu_uuid": score["gpu_uuid"],
         "judge_config_sha256": score["judge_config_sha256"],
         "global_fixed": global_fixed,
+        "fixed_common_conversations": common,
         "domain_best_fixed_diagnostic": domain_best_fixed,
         "selected_policy": chosen,
         "candidate_inventory": candidates,

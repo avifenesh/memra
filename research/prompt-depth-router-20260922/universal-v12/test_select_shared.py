@@ -112,6 +112,29 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
 
 
 class SharedSelectionTest(unittest.TestCase):
+    def test_fixed_ranking_uses_one_common_cohort(self):
+        with tempfile.TemporaryDirectory() as folder:
+            score, _ = fixture(Path(folder))
+            domains = json.loads(score.read_text())["domains"]
+            domains["code"]["arms"][
+                "fixed-k3-d1-c0"
+            ]["conversations"][0]["tokens"] = 1000
+            domains["code"]["arms"][
+                "fixed-k20-d2-c0"
+            ]["conversations"][0]["loops"] = 1
+            common = select_shared.fixed_common(domains)
+            self.assertNotIn(0, common["code"])
+            self.assertLess(
+                select_shared.fixed_rate(
+                    domains, "fixed-k3-d1-c0",
+                    common, select_shared.DOMAINS,
+                ),
+                select_shared.fixed_rate(
+                    domains, "fixed-k20-d2-c0",
+                    common, select_shared.DOMAINS,
+                ),
+            )
+
     def test_pooled_margin_matches_unlooped_conversations(self):
         with tempfile.TemporaryDirectory() as folder:
             score, _ = fixture(Path(folder))

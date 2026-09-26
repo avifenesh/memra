@@ -101,9 +101,11 @@ separate sealed commitment.
    diagnostics cannot become the selected universal controller.
 3. Score every arm on the **same** mixed validation conversations.
    Choose one global fixed control among quality-eligible fixed arms
-   by pooled returned tokens / complete native request seconds.
+   by pooled returned tokens / complete native request seconds on
+   the conversations shared by all eligible fixed controls.
    Retain each domain's validation-best fixed arm as a diagnostic
-   regret ceiling; it is not a per-request route.
+   regret ceiling using that same common cohort; it is not a
+   per-request route.
 4. Select one immutable learned policy label and model manifest hash
    on validation. It must clear the quality/cap/loop guards and have
    positive paired native tok/s point estimates against its no-op
