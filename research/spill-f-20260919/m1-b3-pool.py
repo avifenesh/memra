@@ -102,7 +102,12 @@ def main():
             print(f"{label} arm={arm} vs worker16: {x['verdict']} median_ratio={x['median_ratio']} pairs={x['n_pairs']}")
         print(f"{label} regime_scored={s['regime_scored']} contaminated={s['contaminated_visits']}")
     print(f"rounds={sorted(cells)} visits={len(visits)} refused={refused} gpu_cotenant_unclean={gpu_unclean}")
+    if "--require-correct" in sys.argv[2:] and (refused or not visits):
+        print("REFUSED: correctness problems: " + json.dumps(
+            {v["dir"] if "dir" in v else v["arm"]: v["correctness_problems"] for v in visits if v["correctness_problems"]}))
+        return 3
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

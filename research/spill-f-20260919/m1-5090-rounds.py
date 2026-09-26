@@ -89,6 +89,7 @@ def main():
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--size-bytes", type=int)
     ap.add_argument("--host-mb", type=int)
+    ap.add_argument("--tenant-pct", type=int)
     a = ap.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -111,6 +112,8 @@ def main():
                              "--proof", PROOF, "--scratch", B2_SCRATCH, "--out", str(target / "visits"),
                              "--size-bytes", str(a.size_bytes), "--host-mb", str(a.host_mb), "--rig", "rtx5090",
                              "--lock-fd", "@COLLECTOR_LOCK_FD@", "--io-schedule", order]
+                    if a.tenant_pct is not None:
+                        argv += ["--tenant-pct", str(a.tenant_pct)]
                 elif a.regime == "anonpeak":
                     argv += [str(HERE / "m1-anon-peak.py"), "--arms-lock", str(HERE / "m1-prereg/b3-arms.lock.json"),
                              "--binary", BIN, "--artifact", ART, "--out", str(target / "visits"),
