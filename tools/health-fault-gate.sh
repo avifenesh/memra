@@ -31,9 +31,16 @@
 #   f  a graceful shutdown flips readiness first and drains: SIGTERM with a stream open ->
 #      `/readyz` 503 `draining` + Retry-After, `/health` 200 `draining`, a new request 503 with
 #      `code: draining`, the stream runs to `[DONE]` with a finish_reason, exit 0, `drain complete`.
+#   g  a step OOM (MEMRA_STEP_OOM_FAULT=1, the synthetic-OOM door) parks the session back to the
+#      queue and it completes; its two concurrent peers complete; no 5xx (WP-B DAY47 1.1). Red twin
+#      g-red: MEMRA_STEP_OOM_FAULT=4 (one past the default retry budget) walks the same session into
+#      the bounded-retry honest error, and the green assertion must fire there.
+#   h  a client that closes its stream mid-generation is retired within 1,000 ms (`[abort] client
+#      disconnected:`), its peer completes, and the box idles clean (DAY47 1.2). Red twin h-red: the
+#      same shape with no close, and the green assertion must fire there.
 #
 # Usage: tools/health-fault-gate.sh [model.gguf]
-#   HFG_PORT (8189; 8186 is serve-gemma4-batch-gate.sh's, revuto on #621; census of tools/ before choosing a default), HFG_ARMS (a,b,c,d,e,f; a and b share one boot), HFG_OUT (receipt dir).
+#   HFG_PORT (8189; 8186 is serve-gemma4-batch-gate.sh's, revuto on #621; census of tools/ before choosing a default), HFG_ARMS (a,b,c,d,e,f,g,h; a and b share one boot), HFG_OUT (receipt dir).
 #   Run under the rig lock (`flock /tmp/memra-5090.lock`, or the collector on a PRO box); the
 #   gate boots seven servers in sequence and never takes the lock itself, like serve-smoke.
 #   Exit 0 when no arm FAILED (DOCUMENTED arms do not fail the gate); 1 on any FAIL; 2 on setup.
@@ -45,7 +52,7 @@ MODEL="${1:-/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF
 PORT="${HFG_PORT:-8189}"
 ADDR=127.0.0.1:$PORT
 BASE=http://$ADDR
-ARMS="${HFG_ARMS:-a,b,c,d,e,f}"
+ARMS="${HFG_ARMS:-a,b,c,d,e,f,g,h}"
 OUT="${HFG_OUT:-/tmp/health-fault-gate-$(date -u +%Y%m%dT%H%M%SZ)}"
 mkdir -p "$OUT"
 VERDICTS="$OUT/VERDICTS.txt"
@@ -341,6 +348,119 @@ print(fr)')
   else
     verdict "HFG (f) sigterm-drains-and-flips-readiness-first: boot failed -> FAIL"; stop f
   fi
+fi
+
+# sstream <prefix> <prompt> <max_tokens>: one streamed chat request in the background; its pid in SPIDS
+sstream() {
+  : > "$1.body"
+  curl -s -N -m 170 -D "$1.hdr" -o "$1.body" -w '%{http_code}' "$BASE/v1/chat/completions" -H 'Content-Type: application/json' \
+    -d "{\"model\":\"hfg\",\"messages\":[{\"role\":\"user\",\"content\":\"$2\"}],\"max_tokens\":$3,\"temperature\":0,\"stream\":true}" \
+    > "$1.code" 2>/dev/null &
+  SPIDS="$SPIDS $!"
+}
+sframes() { local n; n=$(grep -c '^data: {' "$1.body" 2>/dev/null); echo "${n:-0}"; }
+sdone() { local n; n=$(grep -c '^data: \[DONE\]' "$1.body" 2>/dev/null); echo "${n:-0}"; }
+sfinish() {
+  grep '^data: {' "$1.body" 2>/dev/null | sed 's/^data: //' | python3 -c '
+import json,sys
+fr=""
+for l in sys.stdin:
+    try:
+        for c in json.loads(l).get("choices",[]):
+            if c.get("finish_reason"): fr=c["finish_reason"]
+    except Exception: pass
+print(fr)'
+}
+scode() { local c; c=$(cat "$1.code" 2>/dev/null); echo "${c:-000}"; }
+serror() { grep -o '"message":"[^"]*"' "$1.body" 2>/dev/null | head -1; }
+sok() { [ "$(scode "$1")" = 200 ] && [ "$(sdone "$1")" = 1 ] && [ -n "$(sfinish "$1")" ]; }
+P1="Write one sentence about a mutex."; P2="Name three uses of a semaphore."; P3="Describe a spinlock in two sentences."
+
+# ---------------------------------------------------------------- g: a step OOM parks and completes
+run_g() { # <label> <fault count> <red:true|false>
+  local label=$1 n=$2 red=$3
+  if boot "$label" MEMRA_STEP_OOM_FAULT="$n"; then
+    SPIDS=""
+    sstream "$D/r0" "$P1" 48; sstream "$D/r1" "$P2" 48; sstream "$D/r2" "$P3" 48
+    # shellcheck disable=SC2086
+    wait $SPIDS
+    parked=$(grep -c '\[admit-oom\] step OOM parked session back to queue' "$D/server.log")
+    panics=$(grep -cE 'panicked|\[worker\] PANIC' "$D/server.log")
+    sample /health "$D/health-g.csv"; health_after=$LAST_CODE
+    ok_n=0; c5=0; codes=""; errs=""
+    for r in r0 r1 r2; do
+      c=$(scode "$D/$r"); codes="$codes$r:$c,"
+      sok "$D/$r" && ok_n=$((ok_n+1))
+      case "$c" in 5*) c5=$((c5+1));; esac
+      [ "$(sdone "$D/$r")" = 1 ] && [ -z "$(sfinish "$D/$r")" ] && errs="$errs$r:$(serror "$D/$r");"
+      [ "$c" != 200 ] && errs="$errs$r:$(serror "$D/$r");"
+    done
+    green=false
+    [ "$parked" -ge 1 ] && [ "$ok_n" = 3 ] && [ "$c5" = 0 ] && [ "$panics" = 0 ] && [ "$health_after" = 200 ] && green=true
+    if [ "$red" = false ]; then
+      v=FAIL; [ "$green" = true ] && [ "$parked" = 1 ] && v=PASS
+      verdict "HFG (g) step-oom-parks-and-completes: fault=$n parked_lines=$parked completed=$ok_n/3 codes={${codes%,}} http_5xx=$c5 panic_lines=$panics health_after=$health_after -> $v"
+    else
+      v=FAIL; [ "$green" = false ] && [ "$ok_n" -ge 2 ] && [ "$c5" = 0 ] && [ "$panics" = 0 ] && v=PASS
+      verdict "HFG (g-red) step-oom-past-the-retry-budget: fault=$n parked_lines=$parked completed=$ok_n/3 codes={${codes%,}} faulted_error={${errs:-none}} http_5xx=$c5 panic_lines=$panics green_assertion_fired=$([ "$green" = false ] && echo true || echo false) -> $v"
+    fi
+    stop "$label"
+  else
+    verdict "HFG ($label) step-oom: boot failed -> FAIL"; stop "$label"
+  fi
+}
+if in_arms g; then
+  echo "--- arm g: a step OOM parks, requeues and completes; peers complete (and the red twin) ---"
+  run_g g 1 false
+  run_g g-red 4 true
+fi
+
+# ---------------------------------------------------------------- h: a client disconnect retires the session
+run_h() { # <label> <close:true|false>
+  local label=$1 close=$2
+  if boot "$label"; then
+    SPIDS=""
+    sstream "$D/closed" "Write a long story about a lighthouse keeper." 256; cpid=${SPIDS##* }
+    sstream "$D/peer" "Write a long story about a harbor pilot." 256
+    t_s=$(now_ms); t_close=0
+    while [ $(( $(now_ms) - t_s )) -lt 60000 ]; do
+      [ "$(sframes "$D/closed")" -ge 8 ] && break
+      sleep 0.02
+    done
+    frames_at_close=$(sframes "$D/closed")
+    if [ "$close" = true ]; then kill "$cpid" 2>/dev/null; t_close=$(now_ms); fi
+    t_line=0
+    while [ $(( $(now_ms) - t_s )) -lt 180000 ]; do
+      if grep -q '\[abort\] client disconnected:' "$D/server.log"; then t_line=$(now_ms); break; fi
+      [ "$close" = false ] && ! kill -0 "$cpid" 2>/dev/null && break
+      sleep 0.02
+    done
+    # shellcheck disable=SC2086
+    wait $SPIDS 2>/dev/null
+    abort_lines=$(grep -c '\[abort\] client disconnected:' "$D/server.log")
+    sleep 1
+    active=$(curl -s -m 2 "$BASE/metrics" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("active_sessions"))' 2>/dev/null)
+    sample /health "$D/health-h.csv"; health_after=$LAST_CODE
+    peer_ok=false; sok "$D/peer" && peer_ok=true
+    latency=none; [ "$t_close" -gt 0 ] && [ "$t_line" -gt 0 ] && latency=$(( t_line - t_close ))
+    green=false
+    [ "$abort_lines" -ge 1 ] && [ "$latency" != none ] && [ "$latency" -le 1000 ] && [ "$peer_ok" = true ] && [ "$active" = 0 ] && [ "$health_after" = 200 ] && green=true
+    if [ "$close" = true ]; then
+      v=FAIL; [ "$green" = true ] && v=PASS
+      verdict "HFG (h) client-disconnect-retires-within-1000ms: frames_at_close=$frames_at_close abort_lines=$abort_lines close_to_abort_line_ms=$latency peer_complete=$peer_ok peer_finish=$(sfinish "$D/peer") active_sessions_after=$active health_after=$health_after -> $v"
+    else
+      v=FAIL; [ "$green" = false ] && [ "$abort_lines" = 0 ] && [ "$peer_ok" = true ] && v=PASS
+      verdict "HFG (h-red) no-disconnect: frames_at_close=$frames_at_close abort_lines=$abort_lines closed_request_complete=$(sok "$D/closed" && echo true || echo false) peer_complete=$peer_ok green_assertion_fired=$([ "$green" = false ] && echo true || echo false) -> $v"
+    fi
+    stop "$label"
+  else
+    verdict "HFG ($label) client-disconnect: boot failed -> FAIL"; stop "$label"
+  fi
+}
+if in_arms h; then
+  echo "--- arm h: a client disconnect retires the session within one tick; the peer completes (and the red twin) ---"
+  run_h h true
+  run_h h-red false
 fi
 
 echo "health-fault-gate: arms=$ARMS pass=$PASSN documented=$DOCN fail=$FAILN receipts=$OUT" | tee -a "$VERDICTS"
