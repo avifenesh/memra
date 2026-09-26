@@ -100,6 +100,7 @@ fn check_pattern(
         0 => MiMoMixedAttentionWorkspace::new(engine, seq)?,
         1 => MiMoMixedAttentionWorkspace::new_grouped(engine, seq)?,
         2 => MiMoMixedAttentionWorkspace::new_deep(engine, seq)?,
+        3 => MiMoMixedAttentionWorkspace::new_dp4a(engine, seq)?,
         _ => return Err("MiMo gate attention program is unavailable".into()),
     };
     let start = Instant::now();
@@ -149,6 +150,7 @@ fn check_constant(engine: &Engine, seq: usize, program: u8) -> Result<(), Fail> 
         0 => MiMoMixedAttentionWorkspace::new(engine, seq)?,
         1 => MiMoMixedAttentionWorkspace::new_grouped(engine, seq)?,
         2 => MiMoMixedAttentionWorkspace::new_deep(engine, seq)?,
+        3 => MiMoMixedAttentionWorkspace::new_dp4a(engine, seq)?,
         _ => return Err("MiMo gate attention program is unavailable".into()),
     };
     let start = Instant::now();
@@ -239,11 +241,17 @@ fn check_varied_million(engine: &Engine, program: u8) -> Result<(), Fail> {
     let query_gpu = engine.htod(&query)?;
     let key_gpu = engine.htod_bytes(&key_bytes)?;
     let value_gpu = engine.htod_bytes(&value_bytes)?;
-    let mut baseline = MiMoMixedAttentionWorkspace::new(engine, SEQ)?;
+    let control_program = if program == 3 { 2 } else { 0 };
+    let mut baseline = if control_program == 2 {
+        MiMoMixedAttentionWorkspace::new_deep(engine, SEQ)?
+    } else {
+        MiMoMixedAttentionWorkspace::new(engine, SEQ)?
+    };
     let mut candidate = match program {
         0 => MiMoMixedAttentionWorkspace::new(engine, SEQ)?,
         1 => MiMoMixedAttentionWorkspace::new_grouped(engine, SEQ)?,
         2 => MiMoMixedAttentionWorkspace::new_deep(engine, SEQ)?,
+        3 => MiMoMixedAttentionWorkspace::new_dp4a(engine, SEQ)?,
         _ => return Err("MiMo varied million program is unavailable".into()),
     };
     let timed = |workspace: &mut MiMoMixedAttentionWorkspace| -> Result<(Vec<f32>, f64), Fail> {
@@ -283,7 +291,7 @@ fn check_varied_million(engine: &Engine, program: u8) -> Result<(), Fail> {
     }
     let mean = |values: &[f64]| values.iter().sum::<f64>() / values.len() as f64;
     println!(
-        "varied_million\t{SEQ}\t{max_abs:.9e}\tbaseline_ms={:.4}\tcandidate_ms={:.4}",
+        "varied_million\t{SEQ}\t{max_abs:.9e}\tcontrol_program={control_program}\tcontrol_ms={:.4}\tcandidate_ms={:.4}",
         mean(&times[0]),
         mean(&times[1]),
     );
@@ -294,7 +302,7 @@ fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if !(2..=6).contains(&args.len()) {
         return Err(
-            "usage: mimo_mixed_attn_gate <pinned_config.json> <gpu_index> [--million] [--million-varied] [--attention-only] [--grouped | --deep]"
+            "usage: mimo_mixed_attn_gate <pinned_config.json> <gpu_index> [--million] [--million-varied] [--attention-only] [--grouped | --deep | --dp4a]"
                 .into(),
         );
     }
@@ -303,6 +311,7 @@ fn run() -> Result<(), Fail> {
     let mut attention_only = false;
     let mut grouped = false;
     let mut deep = false;
+    let mut dp4a = false;
     for option in args.iter().skip(2) {
         match option.as_str() {
             "--million" if !million => million = true,
@@ -310,13 +319,16 @@ fn run() -> Result<(), Fail> {
             "--attention-only" if !attention_only => attention_only = true,
             "--grouped" if !grouped => grouped = true,
             "--deep" if !deep => deep = true,
+            "--dp4a" if !dp4a => dp4a = true,
             _ => return Err(format!("unknown or repeated MiMo gate option {option}").into()),
         }
     }
-    if grouped && deep {
-        return Err("--grouped and --deep cannot be combined".into());
+    if u8::from(grouped) + u8::from(deep) + u8::from(dp4a) > 1 {
+        return Err("MiMo gate accepts one attention schedule".into());
     }
-    let program = if deep {
+    let program = if dp4a {
+        3
+    } else if deep {
         2
     } else if grouped {
         1
