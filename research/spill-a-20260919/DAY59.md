@@ -77,3 +77,12 @@ artifact the rig carries, door ON. A reading that selects the design; the design
 - The re-run is the same cell on the tip's binary (`6f844ccf0c00d9a0`, tree `071e1126a`, whose fanout path equals
   `8b5e5e213`'s), with one addition recorded before it runs: each boot's `BOOT.txt` also records the host's load
   average at the boot's start (the rig is shared with lanes B and C, and the cell reads owner-thread time), a reading.
+
+## 4. A target-card twin of the cell, prepared (`pro-single-day59/`)
+
+- The 5090 cell measures owner-thread time on a rig whose lock and CPUs lanes B and C share (the re-run waits behind
+  their queues; their CPU work runs beside any cell that gets the card). So the same cell is prepared for a quiet target
+  card: `build.sh <tip>`, then `driver.sh` (DAY54's short paired cell, 20 boots, one collector hold, then
+  `day59-reading.py` over `/root/spill-receipts/a-d59`). The rule is section 1's and is read on whichever card runs
+  first; if both run, the target card's selection is the one that decides and the 5090's is a reading beside it
+  (stated now, before either result).
