@@ -4,6 +4,7 @@
   rounds --regime capped|bounded --memory-max BYTES --out DIR [--rounds 1..10] [--smoke]
   rounds --regime g2 --memory-max BYTES --out DIR      (the G2 5090 half: one idle-gated cell)
   rounds --regime anonpeak --memory-max 21474836480 --out DIR  (bounded amendment: size the bound)
+  rounds --regime f17 --memory-max 21474836480 --out DIR [--rounds 1-10]  (OWED 17, section F)
   rounds --regime handoff --memory-max BYTES --out DIR --size-bytes N --host-mb M [--rounds 1-10]
       (OWED 18, section E: round k is one cycle pair, buffered,direct for odd k, reversed for even)
 
@@ -33,6 +34,7 @@ PROOF = "/home/avifenesh/.local/share/memra-lane-f-private/rtx5090/m1-proof.json
 PUBLIC_PROOF = HERE / "rtx5090/proof/PROOF.json"
 PROBE = "/home/avifenesh/spill-f-5090/bin/h2d-probe"
 BIN18 = "/home/avifenesh/spill-f-5090/bin18"
+BIN17 = "/home/avifenesh/spill-f-5090/bin17/run-gen"
 B2_PROMPTS = "/home/avifenesh/spill-f-5090/b2-prompts.jsonl"
 B2_SCRATCH = "/data/cache/spill-f-b2"
 
@@ -80,7 +82,7 @@ def wait_idle(log, label):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    ap.add_argument("--regime", choices=["capped", "bounded", "g2", "handoff", "anonpeak"], required=True)
+    ap.add_argument("--regime", choices=["capped", "bounded", "g2", "handoff", "anonpeak", "f17"], required=True)
     ap.add_argument("--memory-max", type=int, required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--rounds", default="1-10")
@@ -117,12 +119,17 @@ def main():
                     argv += [str(HERE / "m1-g2-5090.py"), "--probe", PROBE, "--out", str(target / "visits"),
                              "--lock-fd", "@COLLECTOR_LOCK_FD@"]
                 else:
+                    f17 = a.regime == "f17"  # OWED 17, section F: the capped regime with the F lock
                     argv[-4:-4] = ["--storage-root", "/data/cache", "--storage-proof", str(PUBLIC_PROOF)]
                     argv += [str(HERE / "m1-spill-runner.py"), "run",
-                             "--arms-lock", str(HERE / "m1-prereg/b3-arms.lock.json"),
-                             "--regime", "cold", "--binary", BIN, "--artifact", ART, "--proof", PROOF,
+                             "--arms-lock", str(HERE / ("m1-prereg/f17-arms.lock.json" if f17
+                                                        else "m1-prereg/b3-arms.lock.json")),
+                             "--regime", "cold", "--binary", BIN17 if f17 else BIN, "--artifact", ART,
+                             "--proof", PROOF,
                              "--out", str(target / "visits"), "--rig", "rtx5090", "--lock-fd", "@COLLECTOR_LOCK_FD@",
                              "--gpu-cotenant-gate"] + (["--bound-residency-check"] if a.regime == "bounded" else [])
+                    if f17:
+                        argv += ["--oracle-tokens", str(HERE / "m1-prereg/f17-oracle-tokens.json")]
                     argv += ["--rounds", "1", "--smoke"] if a.smoke else ["--only-round", str(k)]
                 t0 = time.monotonic()
                 with (out / f"round-{k:02d}.driver-attempt{attempt}.log").open("xb") as dl:

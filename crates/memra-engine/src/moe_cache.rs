@@ -100,11 +100,89 @@ impl BlockId {
     }
 }
 
-/// Where a dispatched block landed (always a retained resident slot since the first-miss-admit
-/// policy, 2026-07-08 — the transient staging tier went with the ghost filter).
+/// Where a dispatched block landed. `dispatch_source` and `dispatch` always return a retained
+/// resident slot (first-miss admit, 2026-07-08). Only `dispatch_source_once` can return the two
+/// OWED 17 cold-bypass forms (`MEMRA_MOE_COLD_BYPASS`), and its caller owes `consumed`.
 #[derive(Clone, Copy, Debug)]
 pub enum DispatchSlot {
     Resident(usize),
+    /// `staged`: the block sits in the cache's one bypass scratch buffer, never published.
+    Scratch,
+    /// `mapped`: the kernel reads pinned read-pool buffer `index` in place through its device alias.
+    Mapped(usize),
+}
+
+/// OWED 17 (`M1-PREREG.md` section F): `MEMRA_MOE_COLD_BYPASS`, default `off`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ColdBypass {
+    Off,
+    Staged,
+    Mapped,
+}
+
+impl ColdBypass {
+    pub(crate) fn parse(v: Option<&str>) -> Result<ColdBypass, String> {
+        match v.unwrap_or("") {
+            "" | "off" | "0" => Ok(ColdBypass::Off),
+            "staged" => Ok(ColdBypass::Staged),
+            "mapped" => Ok(ColdBypass::Mapped),
+            other => Err(format!(
+                "MEMRA_MOE_COLD_BYPASS={other:?}: expected off, staged or mapped"
+            )),
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            ColdBypass::Off => "off",
+            ColdBypass::Staged => "staged",
+            ColdBypass::Mapped => "mapped",
+        }
+    }
+}
+
+/// OWED 17 doorkeeper: ids whose first miss was bypassed, in a bounded FIFO. A generation tag
+/// keeps a re-inserted id from being dropped by its own stale FIFO entry.
+#[derive(Debug, Default)]
+pub(crate) struct ColdGhost {
+    cap: usize,
+    next: u64,
+    live: HashMap<BlockId, u64>,
+    fifo: VecDeque<(BlockId, u64)>,
+}
+
+impl ColdGhost {
+    pub(crate) fn new(cap: usize) -> ColdGhost {
+        ColdGhost {
+            cap: cap.max(1),
+            ..ColdGhost::default()
+        }
+    }
+
+    /// `true` when `id` missed before (it leaves the list and admits); otherwise records it.
+    pub(crate) fn seen_before(&mut self, id: BlockId) -> bool {
+        if self.live.remove(&id).is_some() {
+            return true;
+        }
+        self.next += 1;
+        self.live.insert(id, self.next);
+        self.fifo.push_back((id, self.next));
+        // The list remembers the last `cap` first misses: the FIFO itself is bounded (an entry
+        // whose id admitted since is stale and simply ages out), so `live` never exceeds `cap`.
+        while self.fifo.len() > self.cap {
+            let Some((old, tag)) = self.fifo.pop_front() else {
+                break;
+            };
+            if self.live.get(&old) == Some(&tag) {
+                self.live.remove(&old);
+            }
+        }
+        false
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.live.len()
+    }
 }
 
 /// Intrusive-list constants: `NIL` terminates a list; `seg` tags which segment holds a slot.
@@ -391,6 +469,15 @@ pub struct MoeSlotCache {
     pub hits: u64,
     pub misses: u64,
     pub staged_bytes: u64, // total H2D bytes the cache caused (admit + first-miss transient)
+
+    // --- OWED 17 cold read-once bypass (`MEMRA_MOE_COLD_BYPASS`) ---
+    cold_bypass: ColdBypass,
+    /// Set only for the duration of `dispatch_source_once`: other call sites keep first-miss admit.
+    bypass_allowed: bool,
+    cold_ghost: ColdGhost,
+    bypass_scratch: Option<CudaSlice<u8>>,
+    bypassed: u64,
+    ghost_admits: u64,
 }
 
 /// DAY60 (`--moe-dispatch-clock`, log only): the slot cache's dispatch and prefetch entry points
@@ -758,7 +845,17 @@ impl MoeSlotCache {
         }
         let pread_mode = crate::spill_pread::configured_mode();
         let pread_requested = pread_mode != SpillIoMode::Mmap;
-        let pread = if pread_requested {
+        let cold_bypass =
+            ColdBypass::parse(std::env::var("MEMRA_MOE_COLD_BYPASS").ok().as_deref())?;
+        if cold_bypass != ColdBypass::Off && !pread_requested {
+            return Err(format!(
+                "MEMRA_MOE_COLD_BYPASS={} needs the positioned-read spill path \
+                 (MEMRA_SPILL_IO=pread, worker or direct)",
+                cold_bypass.name()
+            )
+            .into());
+        }
+        let mut pread = if pread_requested {
             match PreadPool::try_new(e, max_block_bytes, pread_mode) {
                 Ok(pool) => Some(pool),
                 Err(err) => {
@@ -771,6 +868,33 @@ impl MoeSlotCache {
         } else {
             None
         };
+        let bypass_scratch = match cold_bypass {
+            ColdBypass::Off => None,
+            _ if pread.is_none() => {
+                return Err(format!(
+                    "MEMRA_MOE_COLD_BYPASS={}: the pinned read pool did not initialize",
+                    cold_bypass.name()
+                )
+                .into());
+            }
+            ColdBypass::Staged => Some(e.alloc_u8(max_block_bytes + SLOT_TAIL_PAD_BYTES)?),
+            ColdBypass::Mapped => {
+                pread
+                    .as_mut()
+                    .unwrap()
+                    .enable_mapped()
+                    .map_err(|err| format!("MEMRA_MOE_COLD_BYPASS=mapped refused: {err}"))?;
+                None
+            }
+        };
+        if cold_bypass != ColdBypass::Off {
+            eprintln!(
+                "[moe-bypass] enabled: mode={} ghost_cap={} (first miss served without admission \
+                 on the batch-1 decode expert GEMMs; a repeat miss admits)",
+                cold_bypass.name(),
+                (4 * n).max(64)
+            );
+        }
 
         Ok(MoeSlotCache {
             banked: None,
@@ -816,6 +940,12 @@ impl MoeSlotCache {
             hits: 0,
             misses: 0,
             staged_bytes: 0,
+            cold_bypass,
+            bypass_allowed: false,
+            cold_ghost: ColdGhost::new((4 * n).max(64)),
+            bypass_scratch,
+            bypassed: 0,
+            ghost_admits: 0,
         })
     }
 
@@ -1676,6 +1806,15 @@ impl MoeSlotCache {
             }
         };
 
+        // OWED 17: a cold block's first miss is served without admission.
+        if self.bypass_allowed && self.cold_bypass != ColdBypass::Off && !self.frozen {
+            if self.cold_ghost.seen_before(id) {
+                self.ghost_admits += 1;
+            } else {
+                return self.serve_cold_bypass(index, len, e, id, fallback);
+            }
+        }
+
         // The blocking read happens before eviction, so an I/O failure leaves cache residency
         // untouched and can safely use the mmap oracle.
         let slot = self.reserve_slot(len).ok_or_else(|| {
@@ -1724,6 +1863,106 @@ impl MoeSlotCache {
         self.staged_bytes += len as u64;
         self.publish(id, slot);
         Ok(DispatchSlot::Resident(slot))
+    }
+
+    /// OWED 17: serve a first-miss block from pinned buffer `index` without admitting it.
+    fn serve_cold_bypass(
+        &mut self,
+        index: usize,
+        len: usize,
+        e: &Engine,
+        id: BlockId,
+        fallback: &[u8],
+    ) -> Result<DispatchSlot, Box<dyn std::error::Error>> {
+        self.bypassed += 1;
+        match self.cold_bypass {
+            ColdBypass::Mapped => {
+                let pool = self.pread.as_mut().unwrap();
+                if pool.mapped_view(index).is_none() {
+                    pool.abort_read(index);
+                    return Err("mapped bypass: pinned buffer has no device alias".into());
+                }
+                pool.mark_mapped(index);
+                Ok(DispatchSlot::Mapped(index))
+            }
+            ColdBypass::Staged => {
+                let ready = {
+                    let bytes = match self.pread.as_ref().unwrap().bytes(index, len) {
+                        Ok(bytes) => bytes,
+                        Err(err) => {
+                            self.pread.as_mut().unwrap().abort_read(index);
+                            self.note_pread_fallback(err.as_ref());
+                            return Ok(DispatchSlot::Resident(self.admit(id, fallback, e)?));
+                        }
+                    };
+                    let scratch = self.bypass_scratch.as_mut().expect("staged bypass scratch");
+                    stage_pread_on_compute_stream(e, bytes, scratch)
+                };
+                match ready {
+                    Ok(ready) => {
+                        // The scratch is reused only by a later copy on the same compute stream,
+                        // so stream order fences it; the event returns the pinned buffer.
+                        self.pread.as_mut().unwrap().mark_h2d(index, ready);
+                        self.staged_bytes += len as u64;
+                        Ok(DispatchSlot::Scratch)
+                    }
+                    Err(err) => {
+                        self.pread.as_mut().unwrap().mark_unknown_h2d(index);
+                        Err(format!("staged bypass H2D failed: {err}").into())
+                    }
+                }
+            }
+            ColdBypass::Off => unreachable!("bypass branch with the door off"),
+        }
+    }
+
+    /// OWED 17: `dispatch_source` that may serve a cold first miss without admission
+    /// (`MEMRA_MOE_COLD_BYPASS`). The caller must enqueue its kernel on the compute stream, then
+    /// call `consumed` with the returned slot before any other dispatch.
+    pub(crate) fn dispatch_source_once(
+        &mut self,
+        id: BlockId,
+        source: ExpertSource<'_>,
+        e: &Engine,
+    ) -> Result<DispatchSlot, Box<dyn std::error::Error>> {
+        self.bypass_allowed = true;
+        let result = self.dispatch_source(id, source, e);
+        self.bypass_allowed = false;
+        result
+    }
+
+    /// OWED 17: the kernel reading `slot` is enqueued. A mapped buffer gets the event recorded
+    /// after it and returns to the pool once that fires. If the event cannot be recorded the
+    /// buffer stays owned until a whole-stream drain (never reused early).
+    pub(crate) fn consumed(
+        &mut self,
+        slot: DispatchSlot,
+        e: &Engine,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if let DispatchSlot::Mapped(index) = slot {
+            let ready = Arc::new(e.ctx().new_event(None)?);
+            ready.record(&e.stream())?;
+            self.pread
+                .as_mut()
+                .unwrap()
+                .set_consumer_event(index, ready);
+        }
+        Ok(())
+    }
+
+    /// The device bytes of a dispatched block and the range holding its `len` payload bytes.
+    pub fn payload(&self, d: DispatchSlot, len: usize) -> (&CudaSlice<u8>, std::ops::Range<usize>) {
+        match d {
+            DispatchSlot::Mapped(index) => {
+                let (view, head) = self
+                    .pread
+                    .as_ref()
+                    .and_then(|pool| pool.mapped_view(index))
+                    .expect("mapped dispatch without a mapped pinned buffer");
+                (view, head..head + len)
+            }
+            other => (self.buf(other), 0..len),
+        }
     }
 
     /// The dispatch decision for one (BlockId, host_bytes). Returns where the block landed; resolve
@@ -2208,6 +2447,19 @@ impl MoeSlotCache {
     pub fn buf(&self, d: DispatchSlot) -> &CudaSlice<u8> {
         match d {
             DispatchSlot::Resident(s) => &self.slots[s],
+            DispatchSlot::Scratch => self.bypass_scratch.as_ref().expect("staged bypass scratch"),
+            DispatchSlot::Mapped(index) => {
+                let (view, head) = self
+                    .pread
+                    .as_ref()
+                    .and_then(|pool| pool.mapped_view(index))
+                    .expect("mapped dispatch without a mapped pinned buffer");
+                assert_eq!(
+                    head, 0,
+                    "a direct-window mapped payload must be read through payload()"
+                );
+                view
+            }
         }
     }
 
@@ -2640,6 +2892,55 @@ mod vram_fraction_tests {
     }
 
     #[test]
+    fn cold_ghost_first_miss_bypasses_second_admits() {
+        let mut g = super::ColdGhost::new(4);
+        let a = super::BlockId::new(1, 0, 7);
+        assert!(!g.seen_before(a), "first miss is cold");
+        assert!(g.seen_before(a), "second miss admits");
+        assert!(!g.seen_before(a), "after admitting, the id starts over");
+        assert_eq!(g.len(), 1);
+    }
+
+    #[test]
+    fn cold_ghost_remembers_only_the_last_cap_first_misses() {
+        let mut g = super::ColdGhost::new(3);
+        let ids: Vec<super::BlockId> = (0..5).map(|x| super::BlockId::new(0, 1, x)).collect();
+        for &id in &ids {
+            assert!(!g.seen_before(id));
+        }
+        assert_eq!(g.len(), 3);
+        assert!(!g.seen_before(ids[0]), "aged out of the list, cold again");
+        assert!(g.seen_before(ids[4]), "still remembered");
+        // Stale entries age out without growing the list past cap.
+        for round in 0..100u16 {
+            let id = super::BlockId::new(2, 0, round);
+            assert!(!g.seen_before(id));
+            assert!(g.seen_before(id));
+            assert!(g.fifo.len() <= 3 && g.len() <= 3);
+        }
+    }
+
+    #[test]
+    fn cold_bypass_parse_refuses_unknown_values() {
+        use super::ColdBypass;
+        assert_eq!(ColdBypass::parse(None).unwrap(), ColdBypass::Off);
+        assert_eq!(ColdBypass::parse(Some("off")).unwrap(), ColdBypass::Off);
+        assert_eq!(
+            ColdBypass::parse(Some("staged")).unwrap(),
+            ColdBypass::Staged
+        );
+        assert_eq!(
+            ColdBypass::parse(Some("mapped")).unwrap(),
+            ColdBypass::Mapped
+        );
+        assert!(
+            ColdBypass::parse(Some("zero-copy"))
+                .unwrap_err()
+                .contains("expected off, staged or mapped")
+        );
+    }
+
+    #[test]
     fn size_class_plan_does_not_overflow_on_pathological_sizes() {
         let plan = size_class_plan(&[usize::MAX, usize::MAX], usize::MAX);
         assert!(plan.is_empty());
@@ -2648,6 +2949,15 @@ mod vram_fraction_tests {
 
 impl Drop for MoeSlotCache {
     fn drop(&mut self) {
+        if self.cold_bypass != ColdBypass::Off {
+            eprintln!(
+                "[moe-bypass] mode={} bypassed={} ghost_admits={} ghost_live={}",
+                self.cold_bypass.name(),
+                self.bypassed,
+                self.ghost_admits,
+                self.cold_ghost.len()
+            );
+        }
         // Event tracking is intentionally disabled in Engine. Drain explicit copy-stream handoffs
         // before either the destination slots or pinned read buffers begin field destruction.
         let mut safe_to_drop_slots = true;
