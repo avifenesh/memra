@@ -2,13 +2,108 @@
 //! checkpoint and executable modality contracts are complete.
 
 pub(crate) mod audio;
+pub(crate) mod mint_headers;
 pub(crate) mod mtp;
+pub(crate) mod vision;
 
+use crate::config::ModelConfig;
 use crate::model_plan::{ModelPlan, MoeMlpPlan};
+use crate::safetensors::StInfo;
+use crate::source::census_from_safetensors_headers;
 use crate::tensor_contract::{
-    ExpertTensor, QuantConstraint, TensorId, TensorMatch, TensorOwner, TensorRequirement,
-    TensorTransform,
+    BoundTensorContract, CheckpointDialect, ContractOptions, ExpertTensor, QuantConstraint,
+    TensorContract, TensorId, TensorMatch, TensorOwner, TensorRequirement, TensorTransform,
 };
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
+
+const PINNED_MINT_HEADER_DIGEST: &str =
+    "00403ccacf38567327ec41b4cb0cbd9eade5b830094191dce7e90b24b8efe45a";
+
+fn header_digest(headers: &BTreeMap<String, StInfo>) -> String {
+    let mut digest = Sha256::new();
+    for (name, info) in headers {
+        digest.update(name.as_bytes());
+        digest.update([0]);
+        digest.update(info.dtype.as_bytes());
+        digest.update([0]);
+        for (index, dim) in info.shape.iter().enumerate() {
+            if index != 0 {
+                digest.update(b",");
+            }
+            digest.update(dim.to_string().as_bytes());
+        }
+        digest.update(b"\n");
+    }
+    format!("{:x}", digest.finalize())
+}
+
+/// Bind the full pinned mint's tensor headers without admitting native execution.
+///
+/// The result proves names, shapes and storage classes at the header boundary.
+/// It says nothing about weight values, numerical parity, throughput or serving.
+pub fn inspect_pinned_mint_headers(
+    config: &ModelConfig,
+    headers: &BTreeMap<String, StInfo>,
+) -> Result<BoundTensorContract, String> {
+    let plan = ModelPlan::compile(config).map_err(|error| format!("{error:?}"))?;
+    if plan.arch != crate::config::Arch::MiMoV2 {
+        return Err("pinned MiMo mint inspection requires MiMo V2 config".to_owned());
+    }
+    let mimo = config
+        .mimo
+        .as_ref()
+        .ok_or_else(|| "MiMo config has no family geometry".to_owned())?;
+    let audio = mimo
+        .audio_config
+        .as_ref()
+        .ok_or_else(|| "MiMo config has no audio geometry".to_owned())?;
+    let vision = mimo
+        .vision_config
+        .as_ref()
+        .ok_or_else(|| "MiMo config has no vision geometry".to_owned())?;
+
+    let mut contract = TensorContract::for_plan(
+        &plan,
+        CheckpointDialect::HfSafetensors,
+        ContractOptions::default(),
+    )
+    .map_err(|error| format!("{error:?}"))?;
+    contract
+        .requirements
+        .extend(mtp::mint_mtp_requirements(config).map_err(|error| format!("{error:?}"))?);
+    contract.requirements.extend(
+        audio::pinned_audio_requirements(audio, config.n_embd)
+            .map_err(|error| format!("{error:?}"))?,
+    );
+    contract.requirements.extend(
+        vision::pinned_vision_requirements(vision, config.n_embd)
+            .map_err(|error| format!("{error:?}"))?,
+    );
+    let mut ids = BTreeSet::new();
+    for row in &contract.requirements {
+        if !ids.insert(&row.id) {
+            return Err(format!("MiMo mint tensor ID appears twice: {:?}", row.id));
+        }
+    }
+    mint_headers::verify_mint_expert_headers(&plan, headers)?;
+    let census = census_from_safetensors_headers(headers)?;
+    let entries = census
+        .tensors
+        .into_iter()
+        .map(|record| record.entry)
+        .collect::<Vec<_>>();
+    let bound = contract
+        .bind(&entries)
+        .map_err(|error| format!("{error:?}"))?;
+    let digest = header_digest(headers);
+    if digest != PINNED_MINT_HEADER_DIGEST {
+        return Err(format!(
+            "MiMo mint header digest changed: got {digest}, expected {PINNED_MINT_HEADER_DIGEST}"
+        ));
+    }
+    Ok(bound)
+}
 
 pub(crate) fn mint_expert_requirements(
     plan: &ModelPlan,
