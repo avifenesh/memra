@@ -101,10 +101,15 @@ def screen_verdict(rows):
             for order in ("AB", "BA"):
                 p = rows.get(f"screen-d{depth}-r{rnd}-{order}-psync")
                 u = rows.get(f"screen-d{depth}-r{rnd}-{order}-io_uring")
+                if u and "refused" in u:
+                    out[f"depth{depth}"] = {"verdict": "refused-io_uring-unavailable", "reason": u["refused"]}
+                    break
                 if p and u:
                     ratios.append(u["bw_bytes"] / p["bw_bytes"])
                     by_order[order].append(ratios[-1])
                     cpu.append(u["cpu_s_per_gib"] / p["cpu_s_per_gib"] if p["cpu_s_per_gib"] else None)
+        if f"depth{depth}" in out:
+            continue
         if len(ratios) < 2 * SCREEN_PAIRS:
             out[f"depth{depth}"] = {"verdict": "incomplete", "pairs": len(ratios)}
             continue
@@ -157,6 +162,19 @@ def run(args):
             child.returncode = os.waitstatus_to_exitcode(status)
             sampler.send_signal(signal.SIGTERM)
             sampler.wait(timeout=10)
+            # fio reports an engine init failure on stderr or inside its --output file.
+            err_text = (args.out / f"{step['name']}.stderr").read_text(errors="replace")
+            if raw.exists():
+                err_text += "\n".join(l for l in raw.read_text(errors="replace").splitlines() if l.startswith("fio: "))
+            if child.returncode != 0 and step["engine"] == "io_uring" and "io_queue_init" in err_text:
+                # Registered: an unavailable io_uring is a recorded refusal, never replaced.
+                row = {"name": step["name"], "engine": "io_uring", "depth": step["depth"], "bs": step["bs"],
+                       "refused": err_text.strip().splitlines()[-1]}
+                rows[step["name"]] = row
+                with (args.out / "rows.jsonl").open("a") as rows_out:
+                    rows_out.write(json.dumps(row) + "\n")
+                print(f"M1-FIO {step['name']} REFUSED: {row['refused']}", flush=True)
+                continue
             B.require(child.returncode == 0, f"fio failed in {step['name']}; see {step['name']}.stderr")
             row = parse(raw)
             cpu_s = usage.ru_utime + usage.ru_stime
@@ -170,7 +188,7 @@ def run(args):
     finally:
         if fio_file.exists():
             fio_file.unlink()
-    grid_reads = [r for n, r in rows.items() if n.startswith("grid-")]
+    grid_reads = [r for n, r in rows.items() if n.startswith("grid-") and "refused" not in r]
     summary = {"steps": len(rows), "screen": screen_verdict(rows), "qualified": False,
                "sustained_read_bytes_per_s_max": max(r["bw_bytes"] for r in grid_reads) if grid_reads else None,
                "headroom_70pct_bytes_per_s": 0.7 * max(r["bw_bytes"] for r in grid_reads) if grid_reads else None}

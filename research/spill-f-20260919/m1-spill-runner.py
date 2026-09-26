@@ -47,6 +47,8 @@ SAMPLE = load("sampler", SAMPLER)
 PATTERNS = {
     "gate": r"argmax=(\d+)\s+decode argmax=(\d+)\s+logit maxdiff=\S+\s+(MATCH|MISMATCH)",
     "ttft": r"\[ttft\] prompt_tokens=(\d+) prefill_wall_s=([\d.]+)",
+    "prefill_pp": r"^prefill (\d+) tok in ([\d.]+)s = ([\d.]+) tok/s",
+    "config_invalid": r"^\[spill(?:-pread)?\] invalid (MEMRA_\w+)",
     "generated": r"^generated (\d+) tokens in ([\d.]+)s = ([\d.]+) tok/s",
     "tokens": r"^tokens: \[([\d, ]*)\]",
     "placed": r"\[spill\] experts placed: (\d+) pinned .*?, (\d+) mmap'd",
@@ -114,6 +116,9 @@ def expected_depth(arm):
     return int(arm["env"].get("MEMRA_SPILL_PREAD_DEPTH", "2"))
 
 
+lock_placement = {}
+
+
 def correctness(arm, parsed, oracle_tokens, ngen, overread_per_read):
     problems = []
     if parsed["panics"]:
@@ -124,6 +129,13 @@ def correctness(arm, parsed, oracle_tokens, ngen, overread_per_read):
         problems.append(f"did not generate {ngen} tokens")
     if parsed["tokens"] is None or (oracle_tokens is not None and parsed["tokens"] != oracle_tokens):
         problems.append("token ids differ from the byte oracle")
+    expected = lock_placement.get("expected")
+    if expected is not None:
+        placed = parsed.get("placed")
+        if placed is None or [int(placed[0]), int(placed[1])] != [expected["pinned"], expected["mmapd"]]:
+            problems.append(f"expert placement {placed} != {expected['pinned']} pinned / {expected['mmapd']} on disk")
+    if parsed.get("config_invalid"):
+        problems.append(f"config fallback: {parsed['config_invalid'][0]} rejected")
     depth = expected_depth(arm)
     if depth is None:
         if parsed["pread_enabled"] is not None:
@@ -136,16 +148,12 @@ def correctness(arm, parsed, oracle_tokens, ngen, overread_per_read):
             problems.append("no [spill-pread] totals line")
         elif int(drop[2]) or int(drop[3]):
             problems.append(f"read errors={drop[2]} short_reads={drop[3]}")
-        if arm["name"].startswith("direct"):
-            window = parsed["window"]
-            stages = parsed["stages"]
-            if window is None or stages is None:
-                problems.append("direct arm without window or stage lines")
-            else:
-                if int(window[4]):
-                    problems.append(f"direct arm fell back to mmap {window[4]} times")
-                if int(stages[4]) != overread_per_read * int(window[0]):
-                    problems.append(f"overread_bytes {stages[4]} != {overread_per_read} x reads {window[0]}")
+        if arm["name"].startswith("direct") and drop is not None:
+            # B3 amendment 2: the GGUF path's whole-visit totals line (prefill included).
+            if int(drop[4]):
+                problems.append(f"direct arm fell back to mmap {drop[4]} times")
+            if int(drop[7]) != overread_per_read * int(drop[0]):
+                problems.append(f"overread_bytes {drop[7]} != {overread_per_read} x reads {drop[0]}")
     return problems
 
 
@@ -281,6 +289,7 @@ def verdicts(visits, arms, baseline, contam_limit=0.02, max_contaminated=2):
 
 def run(args):
     lock = json.loads(Path(args.arms_lock).read_text())
+    lock_placement["expected"] = lock.get("expected_placement")
     arms = [a for a in lock["arms"] if not args.arms or a["name"] in args.arms.split(",")]
     names = [a["name"] for a in arms]
     B.require(lock["baseline"] in names, "baseline arm must be in the run")
@@ -311,16 +320,21 @@ def run(args):
     balloon = None
     if args.regime == "bounded":
         nbytes = args.balloon_bytes
-        if nbytes is None:
-            half_bank = lock["artifact"]["expert_bank_bytes"] // 2
-            B.require(args.floor_bytes <= args.bounded_leave_bytes < half_bank,
-                      "bounded regime needs floor <= leave < half the expert bank")
+        half_bank = lock["artifact"]["expert_bank_bytes"] // 2
+        B.require(args.bounded_leave_bytes < half_bank, "bounded regime needs leave < half the expert bank")
+        if nbytes is None and args.balloon_touch:
+            head = CACHE.cgroup_headroom()
+            B.require(head is not None, "touched balloon needs a bounded cgroup memory.max")
+            nbytes = head - args.bounded_leave_bytes
+        elif nbytes is None:
+            B.require(args.floor_bytes <= args.bounded_leave_bytes, "bounded regime needs floor <= leave")
             nbytes = CACHE.meminfo_kb("MemAvailable") * 1024 - args.bounded_leave_bytes
         balloon_log = (args.out / "balloon.log").open("xb")
         balloon = subprocess.Popen([sys.executable, str(HERE / "m1-cache-regime.py"), "balloon",
-                                    "--bytes", str(nbytes), "--floor-bytes", str(args.floor_bytes)],
+                                    "--bytes", str(nbytes), "--floor-bytes", str(args.floor_bytes),
+                                    *(["--touch"] if args.balloon_touch else [])],
                                    stdout=balloon_log, stderr=subprocess.STDOUT)
-        deadline = time.monotonic() + 120
+        deadline = time.monotonic() + 600
         while "LOCKED" not in (args.out / "balloon.log").read_text():
             B.require(balloon.poll() is None and time.monotonic() < deadline,
                       "balloon refused or did not lock; see balloon.log")
@@ -355,6 +369,10 @@ def run(args):
         if oracle is None:
             v["correctness_problems"].append("no byte oracle tokens in this run")
         c = v["contamination"]
+        if args.regime == "bounded":
+            resident, pages = v["residency_end"]
+            v["bound_held"] = bool(pages and resident / pages < args.bound_residency_max)
+            v["regime_ok"] = bool(v.get("regime_ok", True) and v["bound_held"])
         v["clean_timing"] = bool(v["telemetry_ok"] and v["thermal_ok"] and v["identity_after_ok"]
                                  and v.get("regime_ok", True) and c is not None
                                  and c["foreign_share"] <= args.contamination_limit)
@@ -365,6 +383,9 @@ def run(args):
     refused = {n for n in names if any(v["correctness_problems"] for v in visits if v["arm"] == n)}
     summary = verdicts([v for v in visits if v["arm"] not in refused], [n for n in names if n not in refused],
                        lock["baseline"])
+    if args.smoke:
+        summary = {"smoke": True, "scored": False, "arms": {}, "regime_scored": False,
+                   "note": "one-round smoke: line shapes and visit time only, never a verdict"}
     summary.update(refused_arms=sorted(refused), regime=args.regime, visits=len(visits), qualified=False,
                    identity_sha256=sha(args.out / "identity.json"))
     (args.out / "summary.json").write_text(json.dumps(summary, indent=1) + "\n")
@@ -405,8 +426,11 @@ def main(argv=None):
     r.add_argument("--bounded-leave-bytes", type=int, default=7_000_000_000)
     r.add_argument("--floor-bytes", type=int, default=6 << 30)
     r.add_argument("--balloon-bytes", type=int)
+    r.add_argument("--balloon-touch", action="store_true", help="B3 regime (iii) amendment: swapless-cgroup touched balloon")
+    r.add_argument("--bound-residency-max", type=float, default=0.5)
     r.add_argument("--oracle-tokens", help="byte-oracle token ids when the oracle arm is not in the run")
     r.add_argument("--contamination-limit", type=float, default=0.02)
+    r.add_argument("--smoke", action="store_true", help="one round, output labelled smoke and never scored")
     r.add_argument("--stub-no-lock", action="store_true")
     p = sub.add_parser("reparse")
     p.add_argument("dir")
@@ -414,7 +438,8 @@ def main(argv=None):
     if args.cmd == "reparse":
         return reparse(args.dir)
     B.require(args.stub_no_lock or args.lock_fd is not None, "--lock-fd (inherited canonical lock) required")
-    B.require(args.rounds >= 10 or args.stub_no_lock, "registered protocol is 10 rounds")
+    B.require(args.rounds >= 10 or args.stub_no_lock or (args.smoke and args.rounds == 1),
+              "registered protocol is 10 rounds (a smoke is exactly 1 round and never scored)")
     B.require(args.contamination_limit == 0.02 or args.stub_no_lock, "the registered co-tenancy limit is 2%")
     return run(args)
 

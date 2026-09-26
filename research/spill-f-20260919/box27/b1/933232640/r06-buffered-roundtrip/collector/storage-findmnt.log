@@ -1,0 +1,10 @@
+{
+   "filesystems": [
+      {
+         "target": "/scratch",
+         "source": "/dev/nvme0n1p3[/volumes/V.<volume-id>/_data]",
+         "fstype": "xfs",
+         "options": "rw,relatime,inode64,logbufs=8,logbsize=32k,sunit=64,swidth=512,prjquota"
+      }
+   ]
+}

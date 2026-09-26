@@ -5,10 +5,13 @@
                      pages (bounded retries), else FAIL naming the files still resident
   warm FILE...       one full buffered read per file; mincore must then show every page resident
   residency FILE...  report resident/total pages per file (no change)
-  balloon --bytes N --floor-bytes F [--hold-s S]
+  balloon --bytes N --floor-bytes F [--hold-s S] [--touch]
                      mmap + mlock N anonymous bytes to bound the page cache; refuse when
                      RLIMIT_MEMLOCK is below N or MemAvailable - N would fall under F; while held,
-                     release and exit 4 if MemAvailable drops under F; hold until SIGTERM or S
+                     release and exit 4 if MemAvailable drops under F; hold until SIGTERM or S.
+                     --touch (M1-PREREG B3 regime (iii) amendment): no mlock; one write per page;
+                     refused unless the cgroup's memory.swap.max is 0; the floor is then
+                     cgroup memory.max minus anon (the container's /proc/meminfo is host-wide)
 
 Page-cache states only: nothing here drops a global cache, touches a device, or needs
 privilege. POSIX_FADV_DONTNEED cannot evict pages another process has mapped; cold then FAILS,
@@ -121,6 +124,66 @@ def show(files):
     return True
 
 
+def cgroup_dir():
+    for line in open("/proc/self/cgroup"):
+        if line.startswith("0::"):
+            return "/sys/fs/cgroup" + line.split("::", 1)[1].strip().rstrip("/")
+    return None
+
+
+def cgroup_read(name):
+    d = cgroup_dir()
+    try:
+        return open(f"{d}/{name}").read().strip() if d else None
+    except OSError:
+        return None
+
+
+def cgroup_headroom():
+    """memory.max minus anon for this cgroup, or None when unbounded/unreadable."""
+    limit = cgroup_read("memory.max")
+    stat = cgroup_read("memory.stat")
+    if not limit or limit == "max" or not stat:
+        return None
+    anon = next(int(l.split()[1]) for l in stat.splitlines() if l.startswith("anon "))
+    return int(limit) - anon
+
+
+def balloon_touch(nbytes, floor_bytes, hold_s):
+    swap = cgroup_read("memory.swap.max")
+    if swap != "0":
+        report(mode="balloon", state="REFUSED", bytes=nbytes, touch=True, memory_swap_max=swap,
+               reason="touched pages are only unevictable when the cgroup forbids swap (memory.swap.max = 0)")
+        return 2
+    head = cgroup_headroom()
+    if head is None or head - nbytes < floor_bytes:
+        report(mode="balloon", state="REFUSED", bytes=nbytes, touch=True, cgroup_headroom=head,
+               floor_bytes=floor_bytes, reason="cgroup memory.max minus anon would fall under the floor")
+        return 2
+    region = mmap.mmap(-1, nbytes, flags=mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS)
+    for off in range(0, nbytes, PAGE):
+        region[off] = 1
+    stop = {"flag": False}
+    signal.signal(signal.SIGTERM, lambda *_: stop.update(flag=True))
+    signal.signal(signal.SIGINT, lambda *_: stop.update(flag=True))
+    report(mode="balloon", state="LOCKED", bytes=nbytes, touch=True, memory_swap_max=swap,
+           cgroup_headroom_after=cgroup_headroom(), floor_bytes=floor_bytes)
+    code = 0
+    end = time.monotonic() + hold_s if hold_s else None
+    while not stop["flag"] and (end is None or time.monotonic() < end):
+        head = cgroup_headroom()
+        if head is not None and head < floor_bytes:
+            report(mode="balloon", state="RELEASED-FLOOR", bytes=nbytes, touch=True, cgroup_headroom=head,
+                   floor_bytes=floor_bytes)
+            code = 4
+            break
+        time.sleep(0.25)
+    region.close()
+    if code == 0:
+        report(mode="balloon", state="RELEASED", bytes=nbytes, touch=True)
+    return code
+
+
 def balloon(nbytes, floor_bytes, hold_s):
     soft, _ = resource.getrlimit(resource.RLIMIT_MEMLOCK)
     available = meminfo_kb("MemAvailable") * 1024
@@ -172,9 +235,11 @@ def main(argv=None):
     b.add_argument("--bytes", type=int, required=True)
     b.add_argument("--floor-bytes", type=int, required=True)
     b.add_argument("--hold-s", type=float)
+    b.add_argument("--touch", action="store_true")
     args = ap.parse_args(argv)
     if args.cmd == "balloon":
-        return balloon(args.bytes, args.floor_bytes, args.hold_s)
+        fn = balloon_touch if args.touch else balloon
+        return fn(args.bytes, args.floor_bytes, args.hold_s)
     fn = {"cold": cold, "warm": warm, "residency": show}[args.cmd]
     return 0 if fn(args.files) else 3
 

@@ -1,22 +1,18 @@
-# WP-F resumable state (2026-09-25, stopped: box pending; CPU prerequisites complete)
+# WP-F resumable state (2026-09-26, BOX27 campaign complete; box released to the lead)
 
-- Lane `lane/spill-f-20260919`, worktree `wt-spill-f`, branch contains `origin/main` `5228ff0cd`
-  (no newer main at the last fetch). Upstream unset; pushes use
-  `MEMRA_RELEASE_QUALIFICATION_MODE=development` (engine files in range; logged).
-- Plan of record: `M1-PREREG.md` (A proof, B0 to B6 cells, C routes, B2 amendment). Ledger: `OWED.md`.
-  CPU-side registration of the prerequisites: `CPU-PREREG.md`.
-- Landed CPU-verified today: proof tool (`M1-PROOF-CONTROLS.md`); OWED 7 direct over-read
-  (`owed7/`); OWED 8 stage counters (`owed8/`); OWED 9 storage-bench timing (`owed9/`); OWED 10
-  sampler (`owed10/`); OWED 11 cache regimes (`owed11/`); OWED 12 B3 runner (`owed12/`); OWED 13
-  B2 driver plus `kv-handoff-gate` seam (`owed13/`); OWED 14 collector patch and test, not
-  applied (`owed14/`, lead routes to D); B0 runner (`b0/`).
-- Box: the lead rents rank 1 of `LANE-LOCAL-NVME.md` with a 600 GB local volume at `/scratch`
-  after lane A releases it (about 17:00Z), runs the proof first, hands it over only on
-  `M1-PROOF verdict=PASS`.
-- On the box, in order: bootstrap (CUDA 13 toolchain, `apt-get install -y fio`), build
-  `run-gen`, `run-spec`, `memra-server`, `kv-handoff-gate`, `storage-bench`, `h2d_probe` at one
-  commit; stage and re-hash the artifact on `/scratch/spill-f`; generate the B2 prompts and check
-  the manifest; then B0, OWED 7's pinned-pool GPU test, B1, B3 (cold, warm, bounded), `run-spec`
-  cells, B2 (1 GiB, 8 GiB), B4, B6. `direct16` enters B3 only after the pinned-pool test passes.
-- Private receipts (retained, not scratch): `~/.local/share/memra-lane-f-private/`.
-- Scratch: none. No process of this lane is running.
+- Lane `lane/spill-f-20260919`, worktree `wt-spill-f`. Box binaries were built once at
+  `ffff2d89a`; every later checkout on the box carried that engine source unchanged.
+- BOX27 done in full, receipts in `box27/` (9,569 box files mirrored and verified against a
+  box-side full manifest, `MANIFEST-FULL.sha256`; binaries by hash only; volume id sanitized,
+  originals private; large sample files stored gzip with uncompressed hashes in
+  `EXPORT-MANIFEST.json`). Results and verdicts: `box27/RESULTS.md`.
+- Resync note: a rig reboot interrupted this session at about 20:40Z on 2026-09-25; on resume the
+  local tip and origin matched (`c288d19c2`), the box's b3-bounded cell had kept running, and it
+  was left untouched until it finished.
+- Box scratch removed (`/scratch/spill-f`, `/root/wt-f`, helper scripts, `/tmp/f-*`); the
+  background sampler stopped by its recorded pid; no lane process or compute app left. The lead's
+  files and the receipt directories remain for the destroy.
+- Next item: the 5090 halves (OWED 19, 23): the B3 subset and G2 on the local RTX 5090, whose
+  storage is already proven (`M1-PROOF-CONTROLS.md`). Open candidates: OWED 17 (mapped
+  pinned-host arm), 18 (handoff O_DIRECT arm), 20 (above-RAM artifact), 21 (flag to the owning lane).
+- Private receipts: `~/.local/share/memra-lane-f-private/box27/`. Local scratch: none.
