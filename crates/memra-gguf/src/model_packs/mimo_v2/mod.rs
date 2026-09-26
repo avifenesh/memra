@@ -1,6 +1,8 @@
 //! MiMo V2.6 tensor schema slices. The model pack remains unregistered until
 //! checkpoint and executable modality contracts are complete.
 
+pub(crate) mod mtp;
+
 use crate::model_plan::{ModelPlan, MoeMlpPlan};
 use crate::tensor_contract::{
     ExpertTensor, QuantConstraint, TensorId, TensorMatch, TensorOwner, TensorRequirement,
