@@ -498,7 +498,7 @@ pub const DSV4_DOORS: &[DoorRow] = &[
     DoorRow {
         name: "vocab-parallel head",
         env: "MEMRA_DSV4_VOCAB_HEAD",
-        merged: "#VHEAD_PR",
+        merged: "#783",
         declared_default: DeclaredDefault::On,
         declared_served: DoorState::On(DoorShape::DecodeOnlyM1),
         declared_bench: DoorState::On(DoorShape::DecodeOnlyM1),
