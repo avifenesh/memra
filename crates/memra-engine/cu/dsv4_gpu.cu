@@ -6753,14 +6753,13 @@ __global__ void dsv4_c4_split_gather_kernel(
     if (!source) assert(index == -1); // invalid positive indices must not silently become pads
     const int row = q * slots + slot;
     if (lane == 0) out_indices[q * stride + slot] = index == -1 ? -1 : row;
-    auto dst = reinterpret_cast<unsigned*>(out + (long)row * 512);
-    if (is_peer) {
-        // The peer's store over the fabric: never serve a stale cached line.
-        auto src = reinterpret_cast<const volatile unsigned*>(source);
-        for (int x = lane; x < 512; x += blockDim.x) dst[x] = src[x];
-    } else {
-        auto src = reinterpret_cast<const unsigned*>(source);
-        for (int x = lane; x < 512; x += blockDim.x) dst[x] = source ? src[x] : 0;
+    // One 512-float row as 128 16-byte words; a bit copy either way.
+    auto dst = reinterpret_cast<uint4*>(out + (long)row * 512);
+    const auto src = reinterpret_cast<const uint4*>(source);
+    for (int x = lane; x < 128; x += blockDim.x) {
+        if (!source) dst[x] = make_uint4(0, 0, 0, 0);
+        // The peer's store over the fabric: a cache-volatile load, never a stale line.
+        else dst[x] = is_peer ? __ldcv(src + x) : src[x];
     }
 }
 
