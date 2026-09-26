@@ -14519,6 +14519,9 @@ pub struct VerifyWs {
     /// them, zeroed here once; the kernel's last arriver resets its own counter.
     moe_tile_cnt: Option<CudaSlice<i32>>,
     c4_gather: Option<C4Gather>,
+    /// A prefill-width transaction's copy of the peer's live half of one C4 layer's store
+    /// under the position split (memra #710), grown on demand and reused layer after layer.
+    split_stage: Option<CudaSlice<f32>>,
     pub tmax: usize,
     /// Phase identity, not inferred from row count. Spec verification never sets it.
     is_prefill: bool,
@@ -15714,6 +15717,7 @@ impl Dsv4Gpu {
                     None
                 },
                 c4_gather: None,
+                split_stage: None,
                 tmax,
                 is_prefill: false,
                 h_a: f(tmax * hc * hidden)?,
@@ -18020,6 +18024,47 @@ impl Dsv4Gpu {
                 };
                 let local_trans = win + sp_.local_rows;
                 let transient_rows = kvc.len() / hd - local_trans;
+                // A prefill-width transaction reads the same remote rows for many queries:
+                // copy the peer's committed half once per layer and gather from the copy.
+                // Blocks this round emitted come from the recent ring, never from the copy,
+                // so rows the peer is still writing are not read.
+                let mut peer_rows = peer_kvc;
+                if t > 8 && replay_pos.is_none() {
+                    let committed = pos0 / layer.ratio;
+                    let peer_rank = 1 - sp_.rank;
+                    let count = if peer_rank == 0 {
+                        committed.div_ceil(2)
+                    } else {
+                        committed / 2
+                    };
+                    if count > 0 {
+                        let need = count * hd;
+                        if vws.split_stage.as_ref().is_none_or(|b| b.len() < need) {
+                            vws.split_stage = Some(
+                                stream
+                                    .alloc_zeros::<f32>(need)
+                                    .map_err(e("split stage alloc"))?,
+                            );
+                        }
+                        let stage_buf = vws.split_stage.as_mut().expect("split stage");
+                        let peer_st = &self.stages[peer_rank];
+                        let dst = stage_buf.device_ptr_mut(&stream).0;
+                        unsafe {
+                            cudarc::driver::result::memcpy_peer_async(
+                                st.gpu.ctx.cu_ctx(),
+                                dst,
+                                peer_st.gpu.ctx.cu_ctx(),
+                                peer_kvc as cudarc::driver::sys::CUdeviceptr
+                                    + (win * hd * 4) as u64,
+                                need * 4,
+                                stream.cu_stream(),
+                            )
+                            .map_err(e("split stage peer copy"))?;
+                        }
+                        // The gather addresses peer row `win + half`; point it at the copy.
+                        peer_rows = (dst as *const f32).wrapping_sub(win * hd);
+                    }
+                }
                 let mut qs = 0usize;
                 while qs < t {
                     let nq = (t - qs).min(crate::dsv4_c4::SPLIT_GATHER_ROWS);
@@ -18027,7 +18072,7 @@ impl Dsv4Gpu {
                         &mut vws.c4_gather,
                         &stream,
                         dpf!(kvc, &stream),
-                        peer_kvc,
+                        peer_rows,
                         dpf!(sp_.recent, &stream),
                         sp_.tags.device_ptr(&stream).0 as *const i32,
                         sp_.recent_rows,
