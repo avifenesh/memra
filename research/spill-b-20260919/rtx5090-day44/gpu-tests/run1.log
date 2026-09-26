@@ -1,0 +1,24 @@
+
+running 4 tests
+test gpu_model_boundary_capture_is_the_live_state ... ok
+test gpu_model_capture_equals_split_and_resumes_cold_exact ... FAILED
+test gpu_ring_capture_is_the_rows_before_the_capture_point ... ok
+test gpu_scan_capture_equals_the_prefix_scan_state ... ok
+
+failures:
+
+---- gpu_model_capture_equals_split_and_resumes_cold_exact stdout ----
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+
+thread 'gpu_model_capture_equals_split_and_resumes_cold_exact' (1358422) panicked at crates/memra-engine/tests/grid_capture_gpu.rs:179:80:
+called `Result::unwrap()` on an `Err` value: "checkpoint layer 32 len 672 exceeds live 0 or target 4096"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    gpu_model_capture_equals_split_and_resumes_cold_exact
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.97s
+
+rc=101
