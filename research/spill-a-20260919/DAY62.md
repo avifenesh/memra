@@ -217,3 +217,91 @@ per-hardware rule, since the program changes on every card.
   - then `r2-reading.py` (`R2 VERDICT -> ..`) and `day62-reading.py <root> seam-r1 retire-seam-nosource`
     (`DAY62 SELECT -> ..` for R1).
   - About 2 hours of card time.
+
+## 7. R2's sitting, read as registered: REVERT (c); what the stall waits on
+
+- Run by the lead on one RTX PRO 6000 Blackwell Workstation card (a 16-core host), `build.sh f5e9cf798 3641f1f1c`
+  then `driver.sh`, 08:25Z to 10:03Z. Mirror `pro-single-r2/box/`: 819 receipts, sha256-checked against the box
+  manifest (0 mismatches); the two servers are recorded by hash. Start temperatures 47 C to 69 C.
+- Verbatim (`box/reading-r2.log`):
+
+      R2 READING order=o1 mode=prime base hold=86.78 ms (N=45) | r2 deferral=0.002 ms (N=45), r2 retire settles=0 | stall base=281.79 r2=282.02 (+0.23) | e2e base=1455.8 r2=1456.3 ms
+      R2 READING order=o1 mode=retire-seam base hold=86.88 ms (N=45) | r2 deferral=0.002 ms (N=45), r2 retire settles=0 | stall base=281.71 r2=281.94 (+0.23) | e2e base=1787.2 r2=1806.6 ms
+      R2 READING order=o2 mode=prime base hold=86.84 ms (N=45) | r2 deferral=0.002 ms (N=45), r2 retire settles=0 | stall base=282.29 r2=282.28 (-0.01) | e2e base=1457.2 r2=1457.1 ms
+      R2 READING order=o2 mode=retire-seam base hold=86.92 ms (N=45) | r2 deferral=0.002 ms (N=45), r2 retire settles=0 | stall base=282.02 r2=282.12 (+0.10) | e2e base=1786.9 r2=1807.7 ms
+      R2 (b) PASS [True, True, True, True]
+      R2 (c) FAIL [True, False, True, False]
+      R2 VERDICT -> REVERT ((a) passed; failed c): recorded as read, reverted in one commit
+
+  (a) held: all 11 gates 0, and no quarantine line.
+- **What the 282 ms stall waits on.** The stall cell reads the tenant's single largest gap minus its p50. The tenant's
+  four largest gaps in both arms are 293.4 / 268.4 / 265.4 / 262.1 ms (medians over the runs, `retire-seam`; `prime`
+  reads the same): the long 5088-token intruder's own prime segments on the owner thread, one tenant step each. The
+  86.8 ms retire hold was a smaller gap below those. Removing it could not move the largest one, and R2's stall
+  moved +0.23 / -0.01 ms as read. The prime segments are the prime class's price (the day-16 `prime` arm, OWED item
+  4's class), not the seam's.
+- **Why `retire-seam`'s e2e grew 20 ms: the wait moved to the next capture.**
+  - Parts (medians): long 1457.4 ms on base against 1457.7 on r2; short 329.1 against 349.7. The long is unchanged;
+    the short grew.
+  - Routes: on base the long's capture settles at its own retire (`source retiring: yes`, 86.9 ms). On r2 it is
+    still pending when the short's 64-token seed capture is submitted, and the one-capture rule settles it there
+    (`settled synchronously by a second capture`, N=90, median 22.46 ms), inside the short request's own path.
+  - R2 removed the retire's wait and the next capture paid its remainder: the second-capture settle is the same seam
+    one step later. Recorded as a finding for any later design on this seam: removing a `Block` settle must name
+    where the wait goes.
+- **Reverted** as registered, in one commit (`revert(spill-a): design R2 ..`). The code returns to R2's parent's,
+  and R2's receipts stay (`day62-r2/`). The step-1 lines stay.
+- R1's corrected cell ran in the same sitting (section 8).
+
+## 8. R1's cell, read: SELECT R1; R1 pre-registered (committed before any code)
+
+- Verbatim (`box/reading-r1.log`, `retire-seam-nosource` on the base binary, 30 boots):
+
+      DAY62 READING order=o1 stall prime=282.32 retire-seam=282.36 retire-seam-nosource=282.18 ms | holds source N=45 median=86.84 no-source N=45 median=12.53 ms
+      DAY62 READING order=o2 stall prime=282.33 retire-seam=282.26 retire-seam-nosource=282.21 ms | holds source N=45 median=86.87 no-source N=45 median=12.54 ms
+      DAY62 IN-FLIGHT shape=source {'demote': 90}
+      DAY62 IN-FLIGHT shape=no-source {'demote': 90}
+      DAY62 SELECT -> R1 (no-source retires do not settle) and R2 (the source's planes held by the capture)
+
+- Read:
+  - The no-source shape formed (45 per order). A short session unrelated to the capture waits 12.53 / 12.54 ms for
+    it. That is above the 1.0 ms rule, so R1 is selected.
+  - The tenant's largest gap is again the long prime's segment (282.2 ms in all three modes), so the stall cannot
+    read R1 either. A reading over the tenant's mid gaps (the excess over p50 of every gap between p50 + 5 ms and 150
+    ms, summed per run; medians `prime` 161.9, `retire-seam` 355.8, `retire-seam-nosource` 151.5 ms) is where a
+    retire's wait shows.
+  - The short's e2e reads 101.8 ms.
+- **The design, R1.** The retire pass settles the pending capture only when a retiring session is its source; any
+  other retire goes ahead with no settle. The capture copies only its source's planes (the trunk KV rows, and on the
+  spec-boundary route the source's draft scratch), and the recurrent state was cloned at submission. So a non-source
+  session's cache may drop or park while the copy runs.
+  - (R1.1) The source test becomes a decision, so it must never miss. The capture records its source session's
+    request id at submission, threaded through both capture routes (`prefix_insert_from_session`, and
+    `prefix_insert_from_spec_boundary` from all three publishers).
+  - The pass settles when any retiring session has that request id, **or** when any of the retiring session's
+    caches (the plain cache, the MTP spec cache, the DFlash cache) has the recorded layer-vector address. Either
+    match settles.
+  - Every capture's source is an active session at submission (the seed, the lcp split and the spec boundaries all
+    run on live sessions), so its request id is known.
+  - (R1.2) The settle's why stays `a session retire (source retiring: yes)`. A skipped settle prints `[prefix-cache]
+    retire with a capture pending: no retiring session is its source (ticket seq=S); no settle`.
+  - (R1.3) Nothing else changes. The one-capture rule, the second-capture settle, the trim, purge and shutdown
+    settles, and the source's own retire keep today's `Block`.
+- **Acceptance** (section 1's, with R2's lesson folded in):
+  - (a) The identity gate door ON default and plain, door OFF too; the fault and contract fault gates default and
+    plain; the pause gate; the hit gate OFF and ON.
+  - (a) CPU cells: the decision (source by id or by any cache address settles; neither skips).
+  - (a) The census: the settle runs whenever either identity matches; the request id is recorded at every capture
+    submission; no other settle site changes.
+  - (b) In `retire-seam-nosource`, r1's no-source retire hold at most 0.5 ms per order. There is no settle line; the
+    skip line's count must equal base's no-source settle count within 10%.
+  - (c) The tenant's stall, and the long and the short request's e2e separately, each at most base's plus 1.0 ms,
+    per order.
+  - (d) Where the wait goes (R2's lesson), a reading with a bound: r1's second-capture settle count and median hold
+    and its source-retire settle count and median, against base's. A second-capture or source-retire hold that grows
+    by more than 1.0 ms per order fails (d).
+  - Readings: the tenant's mid-gap excess sum, base against r1 per order; the `retire-seam` and `prime` modes in the
+    same hold as regression controls, their stall and e2e under (c).
+  - Every clause read in both orders.
+- **What each card decides.** The target card; the 5090 half follows under the per-hardware rule.
+- **Budget.** 0.3 agent-day: the identity threading and decision 0.15, the cells 0.05, the sitting 0.1.
