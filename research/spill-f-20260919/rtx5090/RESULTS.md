@@ -85,3 +85,32 @@ back to back, rounds 8 to 10 ran with the 300 s card-sharing yield.
 
 Reading: on this rig the B3 comparison cannot be scored with the pre-fix build; the fixed build's
 worker path is what the OWED 17 cell and the PRO sitting measure.
+
+## G2: pinned vs pageable host copies, all ten sizes (OWED 23)
+
+`RESULT {"campaign": "G2-5090", "status": "all-visits-complete", "samples": 400, "n_per_size_direction_arm": 10, "ab_pairs": 5, "ba_pairs": 5, "power_envelope": {"power.limit": "[N/A]", "power.max_limit": "175.00 W"}, "qualification": false}`
+
+One idle-gated cell, 794.9 s; `m1-g2-5090-summary.py` replayed every raw probe log against its
+samples and hashes, the fixed calibration, N=5 in each order, the constant power fields, and
+250 ms collector telemetry (median 251 ms, max 297 ms; GPU 59 to 72 C, SM 1,590 to 2,805 MHz,
+PCIe gen 5 x8). Medians of 10 (`g2/round-01/g2-summary.json`):
+
+| Bytes | h2d pageable GiB/s | h2d pinned GiB/s | h2d pinned/pageable time | d2h pageable GiB/s | d2h pinned GiB/s | d2h pinned/pageable time |
+|---|---|---|---|---|---|---|
+| 4,096 | 0.35 | 0.31 | 1.113 | 0.32 | 0.35 | 0.918 |
+| 16,384 | 1.34 | 1.23 | 1.089 | 1.15 | 1.36 | 0.839 |
+| 65,536 | 3.93 | 4.39 | 0.896 | 3.25 | 4.83 | 0.673 |
+| 262,144 | 9.46 | 11.87 | 0.797 | 6.91 | 12.68 | 0.545 |
+| 1,048,576 | 15.03 | 20.14 | 0.746 | 8.77 | 18.23 | 0.481 |
+| 4,194,304 | 19.36 | 24.63 | 0.786 | 10.64 | 21.15 | 0.503 |
+| 16,777,216 | 16.25 | 25.94 | 0.626 | 9.66 | 19.64 | 0.489 |
+| 67,108,864 | 14.58 | 26.50 | 0.550 | 12.32 | 22.09 | 0.558 |
+| 268,435,456 | 12.63 | 26.58 | 0.475 | 11.84 | 21.43 | 0.552 |
+| 1,073,741,824 | 12.68 | 26.58 | 0.477 | 11.97 | 20.74 | 0.577 |
+
+Reading: pinned wins both directions from 64 KiB up (host to device 26.6 GiB/s against 12.7 at
+1 GiB), and device to host at every size. At 4 KiB and 16 KiB host to
+device, pageable is faster on this card in all 10 visits of each order (pinned takes 1.100 to 1.157x
+and 1.073 to 1.120x the time); BOX27's PRO 6000 had pinned ahead at every size (`../box27/RESULTS.md`
+B6). A per-rig difference in the small-copy path; expert slices (about 860 KB) and KV frames sit far
+above that range.

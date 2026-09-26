@@ -40,7 +40,7 @@ local RTX 5090 after the owner's reset), **closed** (receipt or verdict named).
 | # | Item | Source | Status |
 |---|---|---|---|
 | 22 | The G2 matrix registered in `CELLS-ENVELOPE.md` has ten sizes; D's scored day-10 campaign on the target class covered five (4 KiB, 64 KiB, 1 MiB, 16 MiB, 256 MiB). Unrun: 16 KiB, 256 KiB, 4 MiB, 64 MiB, 1 GiB, through D's runner | `CELLS-ENVELOPE.md`; `spill-d-20260919/DAY10-VERIFICATION.md`, `G2-RESULTS.md` | **closed** 2026-09-26 as B6: 200 samples, pinned wins every size and direction |
-| 23 | G2 5090 half (any size) | `CELLS-ENVELOPE.md` (rented-development 5090 envelope) | tool written (`m1-g2-5090.py`, all ten sizes, constant-power check); probe fixed to record the laptop's `[N/A]` power limit (D resync amendment); queued after bounded |
+| 23 | G2 5090 half (any size) | `CELLS-ENVELOPE.md` (rented-development 5090 envelope) | **closed** 2026-09-26: all ten sizes, 400 samples, replay-validated (`rtx5090/RESULTS.md` G2): pinned wins from 64 KiB up and device to host at every size; pageable wins host to device at 4 KiB and 16 KiB on this card, consistently |
 
 ## Closed or retired
 
