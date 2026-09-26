@@ -49,3 +49,18 @@ jobs:
             research/prompt-depth-router-20260922/universal-v12/replay_evaluation.py \
             research/prompt-depth-router-20260922/universal-v12/supervise_v12.py \
             research/prompt-depth-router-20260922/universal-v12/score_final.py
+      - name: Import native fit and replay source before GPU rental
+        run: |
+          python3 -m venv "$RUNNER_TEMP/v12-imports"
+          "$RUNNER_TEMP/v12-imports/bin/pip" install --no-cache-dir numpy==2.3.3
+          for name in \
+            collect_mixed pilot_depth measurement_rows_fresh \
+            fit_shared preflight_prefix arms_shared eval \
+            quality_tasks prose_packets score_prose \
+            score_validation select_shared score_final \
+            seal_training replay_training seal_evaluation \
+            replay_evaluation supervise_v12; do
+            "$RUNNER_TEMP/v12-imports/bin/python" \
+              "research/prompt-depth-router-20260922/universal-v12/$name.py" \
+              --help >/dev/null
+          done
