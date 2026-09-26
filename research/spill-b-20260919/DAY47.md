@@ -116,3 +116,32 @@ health-fault-gate: arms=g,h pass=3 documented=1 fail=1 receipts=/home/avifenesh/
 
 The gate's `fired` count matches either solo-step injection point (`this step reports` or `this non-batching step
 reports`). Two more runs (`a2`, `a3`) on the 5090 with the revised gate, then the target card. No clause changes.
+
+### 2.3 The target card (the eleventh sitting, one RTX PRO 6000 Blackwell Workstation Edition, 2026-09-26 17:45 to 17:47Z)
+
+Tree `8d870f04e` (the gate as addendum B revised it); the gate's release binary built on the box from that tree,
+sha256 `5c62447d...8c88f112`; the 27B. Receipts at `pro-single-day47/box/` (the box mirror manifest checked, the binary
+by hash only). The card's `card.csv` from the dry run reads `power.limit 505.00 W`; each run's `source.txt` reads
+600.00 W. Nothing in these arms is timed. Verbatim, `b1` then `b2`:
+
+```
+HFG (g) step-oom-parks-and-completes: fault=1 fired_lines=1 parked_lines=1 http=200 finish_reason=length completion_tokens=48 panic_lines=0 health_after=200 -> PASS
+HFG (g-red) step-oom-past-the-retry-budget: fault=4 fired_lines=4 parked_lines=3 http=503 error={the model is temporarily at capacity; retry after the Retry-After delay} panic_lines=0 green_assertion_fired=true -> PASS
+HFG (g-batch) step-oom-on-a-batched-chunk: batched_fired_lines=0 parked_lines=1 completed=3/3 ended_with_error_event=0/3 http_5xx=0 (the chunk's error arm ends every session of the chunk; owed O14) -> DOCUMENTED
+HFG (h) client-disconnect-retires-within-1000ms: frames_at_close=10 abort_lines=1 close_to_abort_line_ms=188 peer_complete=true peer_finish=length active_sessions_after=0 health_after=200 -> PASS
+HFG (h-red) no-disconnect: frames_at_close=10 abort_lines=0 closed_request_complete=true peer_complete=true green_assertion_fired=true -> PASS
+health-fault-gate: arms=g,h pass=4 documented=1 fail=0 receipts=/root/spill-receipts/b-day47/b1
+HFG (g) step-oom-parks-and-completes: fault=1 fired_lines=1 parked_lines=1 http=200 finish_reason=length completion_tokens=48 panic_lines=0 health_after=200 -> PASS
+HFG (g-red) step-oom-past-the-retry-budget: fault=4 fired_lines=4 parked_lines=3 http=503 error={the model is temporarily at capacity; retry after the Retry-After delay} panic_lines=0 green_assertion_fired=true -> PASS
+HFG (g-batch) step-oom-on-a-batched-chunk: batched_fired_lines=1 parked_lines=0 completed=2/3 ended_with_error_event=1/3 http_5xx=0 (the chunk's error arm ends every session of the chunk; owed O14) -> DOCUMENTED
+HFG (h) client-disconnect-retires-within-1000ms: frames_at_close=10 abort_lines=1 close_to_abort_line_ms=187 peer_complete=true peer_finish=length active_sessions_after=0 health_after=200 -> PASS
+HFG (h-red) no-disconnect: frames_at_close=10 abort_lines=0 closed_request_complete=true peer_complete=true green_assertion_fired=true -> PASS
+health-fault-gate: arms=g,h pass=4 documented=1 fail=0 receipts=/root/spill-receipts/b-day47/b2
+```
+
+- **g, g-red, h and h-red PASS on both runs.** The two runs read the same verdicts; the close-to-abort times are 188 and
+  187 ms against the 1,000 ms bound. g-batch is DOCUMENTED on both runs, as registered (O14's subject). In `b1` the
+  fault landed on a solo step (`batched_fired_lines=0 parked_lines=1`), so the probe did not exercise the batched
+  chunk. In `b2` it landed on the batched chunk and ended one of the three streams with the error event.
+- The target card ran before the 5090's `a2` and `a3` (addendum B named the 5090 first): the local card was held by
+  another lane's cells. The 5090 runs follow from queue-l. No clause changes.

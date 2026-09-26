@@ -61,6 +61,27 @@ cause is quoted and the door's charge is revised under a new pre-registration.
 Code: about 0.2 agent-day (the client and reader; no engine or server change). Cells: about 1 h on the 5090, about
 2 h on the target card.
 
+### 1.6 Addendum A (2026-09-26, from DAY45 2.1 and 2.2, before any day-46 code or cell)
+
+Two facts from DAY45 on the target card change this cell before it is built. No bound changes.
+
+- **The shadow arm OOMs at this burst by construction.** DAY45 2.1: with no admission door, the physical gate admits
+  all 64 sessions of 30,720 tokens and the batched prime runs out of memory (55 OOM lines, 53 of 64 end `503`), the same
+  on both arms. `shadow` here has no door either, so P2 as written would fail on the control for a reason already
+  placed. P2 therefore applies to the two enforcing arms, and on `shadow` the OOM, 503 and crash counts are a reading
+  (the before). P1's "no other non-200 on any arm" also becomes the enforcing arms only. P4 compares the requests that
+  are `200` on both boots of the pair, and prints the status mismatches as a reading (DAY45 addendum B's W3 rule).
+- **A burst released together is booked before any prime completes.** DAY45 2.2: a 30,720-token burst session's
+  `w-release` lands 217 to 459 s after its booking, so every admission of that burst reads the same books with or
+  without the release, and `enforce` and `enforce-wrel` would admit the same burst. So the cell gains a second wave:
+  when the burst's first request completes (its prime has completed, so its `W` has been released on
+  `enforce-wrel`), B/2 more requests (distinct prompts, the same L and `max_tokens`) are released together. Then 5 s
+  idle and the probe, as before. Readings add, per wave and arm, the 200 and 429 counts and the `booked_bytes` at the
+  wave's first admission. The second wave's admitted count on `enforce-wrel` against `enforce` is the release's value.
+- **P5 uses DAY45 addendum B's W2 rule:** on `enforce-wrel` every booked id prints exactly one of `w-release` or
+  `w-retire-unreleased` (bytes equal, none twice), and the probe reads `booked_bytes=0 booked_real=0` on every arm.
+- Everything else of section 1 stands. The day stays text only until the ninth sitting (DAY44) has read.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.

@@ -136,3 +136,45 @@ DAY45 W3 card=pro6000 order=O2 rows=69 differ=[] -> PASS
   exactly one of `w-release` or `w-retire-unreleased`, bytes equal, no id twice.
 - **W3 compares the requests that are `200` on both arms** and prints the status mismatches as a reading.
 - W1 and W4 unchanged. Cells: both cards, both orders, 4 boots each.
+
+### 2.2 Addendum B on the target card (the eleventh sitting, one RTX PRO 6000 Blackwell Workstation Edition at 600 W, 2026-09-26 17:07 to 17:41Z)
+
+Tree `0ac7f6413`; the arm binary built on the box from `09badfe57` (addendum B's code), sha256 `2efafc68...a1d525ea` (in
+`box-binaries.sha256`); receipts at `pro-single-day45/box-b/` (107 files, the box mirror manifest checked, the binary by
+hash only). The burst of 64 x 30,720 tokens then a second wave of 32, `MEMRA_ADMIT_BY_MEMORY=1` and the predictive
+shadow on both arms. Verbatim (`read.log`; each boot's three READING lines are the same on all four boots and are
+printed once here):
+
+```
+DAY45 W4 card=pro6000 boot=O1-off oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY45 W1 card=pro6000 boot=O1-off probe_booked=0 probe_booked_real=0 metrics_booked=0 -> PASS
+DAY45 READING card=pro6000 boot=O1-off predict_lines=68 peak_booked_shadow=181785235088 peak_booked_real=181933670544 shadow_reject_kv=47
+DAY45 READING card=pro6000 boot=O1-off wave=burst predict_lines=64 shadow_reject_kv=47 booked_shadow_at_first=0 booked_shadow_at_last=181785235088
+DAY45 READING card=pro6000 boot=O1-off wave=wave2 predict_lines=32 shadow_reject_kv=32 booked_shadow_at_first=181785235088 booked_shadow_at_last=181785235088
+DAY45 W4 card=pro6000 boot=O1-on oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY45 W1 card=pro6000 boot=O1-on probe_booked=0 probe_booked_real=0 metrics_booked=0 -> PASS
+DAY45 W2 card=pro6000 boot=O1-on w_booked=53 w_release=48 w_retire_unreleased=5 reasons={'same-tick': 5} twice=[] bytes_mismatch=[] neither=[] -> PASS
+DAY45 W4 card=pro6000 boot=O2-off oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY45 W1 card=pro6000 boot=O2-off probe_booked=0 probe_booked_real=0 metrics_booked=0 -> PASS
+DAY45 W4 card=pro6000 boot=O2-on oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY45 W1 card=pro6000 boot=O2-on probe_booked=0 probe_booked_real=0 metrics_booked=0 -> PASS
+DAY45 W2 card=pro6000 boot=O2-on w_booked=53 w_release=48 w_retire_unreleased=5 reasons={'same-tick': 5} twice=[] bytes_mismatch=[] neither=[] -> PASS
+DAY45 W3 card=pro6000 order=O1 rows_200_both=53 status_mismatch=0 differ=[] -> PASS
+DAY45 W3 card=pro6000 order=O2 rows_200_both=53 status_mismatch=0 differ=[] -> PASS
+```
+
+- **Every clause PASS on the target card under addendum B:** W1 and W4 on all four boots (no OOM, no 503, no crash;
+  both books 0 at idle), W2 on both `on` boots (each of the 53 booked ids prints exactly one of `w-release` (48) or
+  `w-retire-unreleased` (5, all `same-tick`: the 4 warm requests and the probe), bytes equal, none twice), W3 in both
+  orders (53 rows `200` on both arms, equal digests, no status mismatch).
+- **The memory door shaped the burst identically on every boot** (from each boot's `client.jsonl`): 48 burst requests
+  `200` and 16 typed `429`, all 32 second-wave requests `429`, the 4 warm and the probe `200`.
+- **Readings.** The peak books are 181.8 GB shadow and 181.9 GB real on every boot; the shadow door would refuse 47 of
+  the burst and all 32 of the second wave, on both arms. Time from a burst session's `w-booked` line to its
+  `w-release` line (computed from the two `on` server logs' epoch-ms prefixes; the reader prints no such line): O1-on
+  N=48 p50 458,444 ms, p95 458,512 ms, min 217,550 ms; O2-on N=48 p50 458,318 ms, p95 458,389 ms, min 217,930 ms.
+- **What the shape does not show.** The second wave arrives 10 s after the burst's last admission, and the first burst
+  prime completes 217 s after its booking, so every release lands after the second wave was refused. Both books
+  therefore read the same at every admission on both arms. On this card and shape the release is exact and harmless.
+  Whether it moves a verdict needs arrivals after prime completions. That belongs to O6's `enforce-wrel` arm, the
+  one door that reads the book; DAY46 is revised for it before any code.
