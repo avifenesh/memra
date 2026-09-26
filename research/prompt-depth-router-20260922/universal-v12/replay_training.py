@@ -117,6 +117,18 @@ def replay(archive, manifest_path, rows_out):
             judge_receipt["status"]
             != "independent-judge-template-and-order-qualified"
             or len(judge_receipt["receipts"]) != 2
+            or judge_receipt["packet_renderer_sha256"]
+            != sha(
+                root / "source/universal-v12/prose_packets.py"
+            )
+            or {
+                item["order"]: item["choice"]
+                for item in judge_receipt["receipts"]
+            }.get(0) not in ("A++", "A+")
+            or {
+                item["order"]: item["choice"]
+                for item in judge_receipt["receipts"]
+            }.get(1) not in ("B++", "B+")
             or any(
                 sha(judge / f"response-{item['order']}.json")
                 != item["raw_response_sha256"]
