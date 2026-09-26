@@ -901,11 +901,19 @@ impl PreadPool {
         &mut self,
         deadline: std::time::Instant,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        let free_count = |pool: &Self| {
+            pool.buffers
+                .iter()
+                .filter(|buffer| buffer.phase == BufferPhase::Free)
+                .count()
+        };
+        let before = free_count(self);
         self.reap_completed();
-        let free = self
-            .buffers
-            .iter()
-            .any(|buffer| buffer.phase == BufferPhase::Free);
+        let free = free_count(self) > 0;
+        if free_count(self) > before {
+            // An H2D completed since the refused submit: retry it now (OWED 26 correction).
+            return Ok(true);
+        }
         if !free {
             // The oldest H2D with a recorded event: the copy (or kernel) the stream reaches first.
             let oldest = self
@@ -934,11 +942,18 @@ impl PreadPool {
             .buffers
             .iter()
             .any(|buffer| matches!(buffer.phase, BufferPhase::Reading | BufferPhase::Canceled));
-        if in_flight || free {
-            // A free buffer with a refused submit means the request queue is full: a completion
-            // drains it. Otherwise a read in flight frees its buffer (or makes it Ready) on completion.
+        if free && !in_flight {
+            // Nothing to wait for: the refused submit raced a completion; retry it.
+            return Ok(true);
+        }
+        if in_flight {
+            // A read in flight frees its buffer (or makes it Ready) on completion; with a free
+            // buffer the request queue was full and a completion drains it. Each wait is capped so
+            // a wait placed wrongly costs at most 50 ms; the caller's loop re-evaluates.
             let now = std::time::Instant::now();
-            let wait = deadline.saturating_duration_since(now);
+            let wait = deadline
+                .saturating_duration_since(now)
+                .min(std::time::Duration::from_millis(50));
             let started = std::time::Instant::now();
             let completion = self
                 .workers
@@ -1906,6 +1921,69 @@ mod tests {
         assert_eq!(pool.stats().demand_waits, 1);
         assert_eq!(pool.stats().demand_wait_timeouts, 0);
         engine.stream().synchronize().unwrap();
+        std::fs::remove_file(path).ok();
+    }
+
+    /// OWED 26 correction cell (M1-PREREG G, the failed serving-shape check): with one buffer free
+    /// and nothing in flight, a demand wait must return at once. The e5d899500 build blocked here
+    /// for the whole 30 s bound.
+    #[test]
+    #[ignore = "requires a CUDA GPU"]
+    fn demand_wait_with_a_free_buffer_and_nothing_in_flight_returns_at_once() {
+        let engine = crate::Engine::new(0).unwrap();
+        let bytes: Vec<u8> = (0..4096u32).map(|i| (i ^ 0x33) as u8).collect();
+        let (path, file) = temp_file("demand-free", &bytes);
+        let file = std::sync::Arc::new(file);
+        let mut pool = super::PreadPool::try_new(&engine, 1024, SpillIoMode::Worker).unwrap();
+        assert!(pool.buffers.len() >= 2, "needs depth >= 2");
+        let ticket = pool.submit_worker(file.clone(), 0, 64).unwrap().unwrap();
+        let held = pool.wait_worker(ticket).unwrap();
+        let started = std::time::Instant::now();
+        assert!(
+            pool.wait_for_any_buffer(started + std::time::Duration::from_secs(30))
+                .unwrap()
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(1),
+            "a free buffer with nothing in flight waited {:?}",
+            started.elapsed()
+        );
+        pool.abort_read(held);
+        std::fs::remove_file(path).ok();
+    }
+
+    /// OWED 26 correction cell: every H2D event has completed but nothing reaped it yet; the wait
+    /// must reap and return at once instead of waiting for a worker completion.
+    #[test]
+    #[ignore = "requires a CUDA GPU"]
+    fn demand_wait_after_every_h2d_event_completed_returns_at_once() {
+        let engine = crate::Engine::new(0).unwrap();
+        let bytes: Vec<u8> = (0..4096u32).map(|i| (i ^ 0x77) as u8).collect();
+        let (path, file) = temp_file("demand-reaped", &bytes);
+        let file = std::sync::Arc::new(file);
+        let mut pool = super::PreadPool::try_new(&engine, 1024, SpillIoMode::Worker).unwrap();
+        let depth = pool.buffers.len();
+        let mut held = Vec::new();
+        for _ in 0..depth {
+            let ticket = pool.submit_worker(file.clone(), 0, 64).unwrap().unwrap();
+            held.push(pool.wait_worker(ticket).unwrap());
+        }
+        for &index in &held {
+            let event = std::sync::Arc::new(engine.ctx().new_event(None).unwrap());
+            event.record(&engine.stream()).unwrap();
+            pool.mark_h2d(index, event);
+        }
+        engine.stream().synchronize().unwrap();
+        let started = std::time::Instant::now();
+        assert!(
+            pool.wait_for_any_buffer(started + std::time::Duration::from_secs(30))
+                .unwrap()
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(1),
+            "completed H2D events waited {:?}",
+            started.elapsed()
+        );
         std::fs::remove_file(path).ok();
     }
 
