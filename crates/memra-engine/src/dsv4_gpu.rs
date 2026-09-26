@@ -4651,6 +4651,16 @@ impl Dsv4Gpu {
             .lock()
             .map_err(|_| "TP/EP one-shot reduction state mutex poisoned".to_string())? =
             Some(TpEpArState::new(&self.stages[0].gpu, &self.stages[1].gpu)?);
+        if let Some(ar) = self
+            .tp_ep_ar
+            .get_mut()
+            .map_err(|_| "TP/EP AR mutex poisoned")?
+            .as_mut()
+        {
+            let push = dsv4_ar_push_env()?;
+            ar.set_push(push);
+            eprintln!("[load] TP/EP push joins: {push}");
+        }
         self.ep_enabled = true;
         eprintln!(
             "[TP/EP load] local expert banks resident by ID: rank0=0..{}, rank1={}..{}; peer dispatch disabled",
@@ -6676,7 +6686,7 @@ impl Dsv4Gpu {
                 .ok_or("TP/EP one-shot reduction state missing")?
                 .all_reduce_into(
                     &st0.gpu, &st1.gpu, &plane0, &plane1, &mut out0, &mut out1, plane, false, None,
-                    site,
+                    site, false,
                 )?;
         }
         // Each row's slots in ascending expert id: the order `moe_forward` scatters them in.
@@ -12275,6 +12285,7 @@ impl Dsv4Gpu {
                             plan.local_output_width,
                             capture,
                             None,
+                            true,
                         )?;
                     }
                     // 2. wo_b on this rank's output rows over the full wo_a rows.
@@ -12313,6 +12324,7 @@ impl Dsv4Gpu {
                             plan.local_hidden,
                             capture,
                             fault_inputs.map(|inputs| (inputs, il as i32)),
+                            true,
                         )?;
                     }
                     self.attention_tp_ar_calls.fetch_add(1, Ordering::Relaxed);
@@ -12379,6 +12391,7 @@ impl Dsv4Gpu {
                         capture,
                         None,
                         2 * il as u32 + 1,
+                        true,
                     )?;
             }
             let layer0 = self.stages[0]
@@ -19518,6 +19531,7 @@ impl Dsv4Gpu {
                 half,
                 capture,
                 None,
+                true,
             )?;
         self.stages[1]
             .gpu
@@ -23241,6 +23255,17 @@ pub fn set_dsv4_sampler_order_for_gate(order: Option<Dsv4SamplerOrder>) {
 
 /// `MEMRA_DSV4_VOCAB_HEAD`: the TP/EP vocab-parallel decode head, ON by default since its served
 /// A/B (`research/dsv4f-bringup-20260923/levers-20260926/`); `0` is the rollback seam.
+/// `MEMRA_DSV4_AR_PUSH`: the TP/EP walk's joins push their operand into the peer's output (door,
+/// default OFF until its A/B).
+fn dsv4_ar_push_env() -> Res<bool> {
+    match std::env::var("MEMRA_DSV4_AR_PUSH").as_deref() {
+        Err(std::env::VarError::NotPresent) | Ok("0") => Ok(false),
+        Ok("1") => Ok(true),
+        Ok(other) => Err(format!("MEMRA_DSV4_AR_PUSH must be 0 or 1, got {other:?}")),
+        Err(err) => Err(format!("MEMRA_DSV4_AR_PUSH: {err}")),
+    }
+}
+
 fn dsv4_vocab_head_env() -> Res<bool> {
     match std::env::var("MEMRA_DSV4_VOCAB_HEAD").as_deref() {
         Err(std::env::VarError::NotPresent) | Ok("1") => Ok(true),

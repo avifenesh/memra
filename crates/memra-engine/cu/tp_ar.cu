@@ -449,6 +449,139 @@ extern "C" int memra_tp_ar_gather_rows_f32(const float* in_rank0, const float* i
     return 0;
 }
 
+// PUSH JOINS (memra #710, ceiling lever 4). The pull joins above cross the fabric three times per
+// join: the start barrier, the peer-operand read (a non-posted PCIe read), and the end barrier that
+// keeps each rank's input alive until the peer has read it. Here each rank WRITES its operand into
+// the peer's output buffer (posted writes), fences, and raises one flag in the peer's signal block;
+// the peer waits on its own local flag and then reads only local memory. One crossing per join,
+// and no end barrier, because nothing is ever read remotely.
+//
+// WHY NO END BARRIER IS NEEDED. A rank's push for join k+1 lands in the peer's output buffer while
+// the peer may still be running the kernels after its join k. That is safe when (a) consecutive
+// joins write different output buffers and (b) every consumer of join k's output runs before the
+// consumer rank's join k+1. Then a push for join k+m (m >= 2) into join k's buffer happens after
+// this rank completed join k+m-1, which needed the peer's flag for join k+m-1, which the peer
+// raised only after finishing everything before it on its stream, the consumers of join k's
+// output included. The TP/EP walk's joins (wo_a gather, attention-out gather, expert reduce, the
+// vocab-parallel head gather) each have their own output buffer and are consumed before the next
+// join; `TpEpArState` refuses a push join whose output is the previous join's.
+//
+// Arithmetic: the reduce computes `in_rank0 + in_rank1` in global rank order, as the pull join does,
+// on the same values; a gather is pure bit movement. Epochs are the shared per-block `seq`
+// counters, so push and pull joins can interleave. A bounded wait that expires writes 40043.
+__device__ __forceinline__ int memra_ar_push_wait(MemraArSignal* self_sg, MemraArSignal* peer_sg,
+                                                  unsigned flag, int rank, long long spin_limit) {
+    __shared__ int expired;
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        expired = 0;
+        // Every thread's pushed stores precede this release through the block barrier above.
+        __threadfence_system();
+        memra_ar_st_release(&peer_sg->start[blockIdx.x][rank], flag);
+        long long t0 = clock64();
+        while (memra_ar_ld_acquire(&self_sg->start[blockIdx.x][1 - rank]) != flag) {
+            if (clock64() - t0 > spin_limit) {
+                expired = 1;
+                break;
+            }
+        }
+    }
+    __syncthreads();
+    return expired;
+}
+
+__device__ __forceinline__ void memra_ar_push_fault(const unsigned long long* fault, int site,
+                                                    int rank, int* err) {
+    if (fault && threadIdx.x == 0) {
+        unsigned long long word = *fault;
+        if ((unsigned)(word >> 32) && (int)(word & 0xffffu) == site &&
+            (int)((word >> 16) & 0xffffu) == rank) *(volatile int*)err = (int)(word >> 32);
+    }
+}
+
+__global__ void __launch_bounds__(512, 1) memra_tp_ar_push_reduce_kernel(
+        const float* __restrict__ in_self, float* __restrict__ out, float* __restrict__ peer_out,
+        MemraArSignal* self_sg, MemraArSignal* peer_sg, int rank, long n, int* __restrict__ err,
+        long long spin_limit, const unsigned long long* fault, int site) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    memra_ar_push_fault(fault, site, rank, err);
+    const unsigned flag = self_sg->seq[blockIdx.x] + 1;
+    const long stride = (long)gridDim.x * blockDim.x;
+    const long i0 = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    for (long i = i0; i < n; i += stride) peer_out[i] = in_self[i];
+    if (memra_ar_push_wait(self_sg, peer_sg, flag, rank, spin_limit)) {
+        if (threadIdx.x == 0) {
+            *(volatile int*)err = 40043;
+            self_sg->seq[blockIdx.x] = flag;
+        }
+        return;
+    }
+    // `out` now holds the peer's operand for this block's indices (the grid-stride partition is
+    // the peer's too, both ranks launching the same shape), read and replaced element by element.
+    for (long i = i0; i < n; i += stride) {
+        const float peer = out[i];
+        out[i] = rank == 0 ? in_self[i] + peer : peer + in_self[i];
+    }
+    if (threadIdx.x == 0) self_sg->seq[blockIdx.x] = flag;
+}
+
+__global__ void __launch_bounds__(512, 1) memra_tp_ar_push_gather_rows_kernel(
+        const float* __restrict__ in_self, float* __restrict__ out, float* __restrict__ peer_out,
+        MemraArSignal* self_sg, MemraArSignal* peer_sg, int rank, long rows, long width,
+        int* __restrict__ err, long long spin_limit, const unsigned long long* fault, int site) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    memra_ar_push_fault(fault, site, rank, err);
+    const unsigned flag = self_sg->seq[blockIdx.x] + 1;
+    const long n = rows * width;
+    for (long i = (long)blockIdx.x * blockDim.x + threadIdx.x; i < n;
+         i += (long)gridDim.x * blockDim.x) {
+        const long r = i / width, c = i - r * width;
+        const long at = r * 2 * width + (long)rank * width + c;
+        const float v = in_self[i];
+        out[at] = v;
+        peer_out[at] = v;
+    }
+    if (memra_ar_push_wait(self_sg, peer_sg, flag, rank, spin_limit)) {
+        if (threadIdx.x == 0) *(volatile int*)err = 40043;
+    }
+    if (threadIdx.x == 0) self_sg->seq[blockIdx.x] = flag;
+}
+
+extern "C" int memra_tp_ar_push_reduce(const float* in_self, float* out, float* peer_out,
+                                       void* self_sg, void* peer_sg, int rank, long n, int* err,
+                                       long long spin_limit, int blocks, void* stream_v,
+                                       const void* fault, int site) {
+    if (n <= 0) return 40041;
+    if (spin_limit <= 0) return 40042;
+    if (rank < 0 || rank >= MEMRA_AR_RANKS) return 40045;
+    if (blocks < 1 || blocks > MEMRA_AR_MAX_BLOCKS) return 40046;
+    if (fault && (site < 0 || site >= 43)) return 40047;
+    memra_chain_launch(memra_tp_ar_push_reduce_kernel, (unsigned)blocks, 512u, 0,
+                       (cudaStream_t)stream_v)(
+        in_self, out, peer_out, (MemraArSignal*)self_sg, (MemraArSignal*)peer_sg, rank, n, err,
+        spin_limit, (const unsigned long long*)fault, site);
+    TP_AR_ERR();
+    return 0;
+}
+
+extern "C" int memra_tp_ar_push_gather_rows_f32(const float* in_self, float* out, float* peer_out,
+                                                void* self_sg, void* peer_sg, int rank, long rows,
+                                                long width, int* err, long long spin_limit,
+                                                int blocks, void* stream_v, const void* fault,
+                                                int site) {
+    if (rows <= 0 || width <= 0) return 40041;
+    if (spin_limit <= 0) return 40042;
+    if (rank < 0 || rank >= MEMRA_AR_RANKS) return 40045;
+    if (blocks < 1 || blocks > MEMRA_AR_MAX_BLOCKS) return 40046;
+    if (fault && (site < 0 || site >= 43)) return 40047;
+    memra_chain_launch(memra_tp_ar_push_gather_rows_kernel, (unsigned)blocks, 512u, 0,
+                       (cudaStream_t)stream_v)(
+        in_self, out, peer_out, (MemraArSignal*)self_sg, (MemraArSignal*)peer_sg, rank, rows,
+        width, err, spin_limit, (const unsigned long long*)fault, site);
+    TP_AR_ERR();
+    return 0;
+}
+
 extern "C" int memra_tp_ar_1stage(const float* in_rank0, const float* in_rank1, float* out,
                                   void* self_sg, void* peer_sg, int rank, long n, int* err,
                                   long long spin_limit, int blocks, void* stream_v) {

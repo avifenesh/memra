@@ -1011,6 +1011,11 @@ mod tests {
         ("MEMRA_DSV4_HAVE_NVTX", "build-time profiling switch"),
         ("MEMRA_DSV4_INDEXER_SCORE", "program selector"),
         ("MEMRA_DSV4_NVTX", "profiling ranges"),
+        (
+            "MEMRA_DSV4_AR_PUSH",
+            "join-transport door under its first A/B; the reduce adds the same values in rank \
+             order and the gathers move the same bits",
+        ),
         ("MEMRA_DSV4_PEER_PROBE_POISON", "gate-only fault injection"),
         ("MEMRA_DSV4_PREFILL_DRAFT", "program selector"),
         ("MEMRA_DSV4_PREFILL_HEAD", "program selector"),
