@@ -48,3 +48,15 @@ GPU. Both registrations said "the 5090 half follows"; this file fixes how, befor
 - Receipts go to `rtx5090-r1/cell/` and `rtx5090-l2/cell/`, with the executables recorded by hash and kept outside the
   repo until the lane closes.
 - **Budget:** 0.2 agent-day. Card time is about 2.5 h for R1 and 2 h for L', plus the queue.
+
+## 3. Item 16 (DAY45) runs as registered, from its registration tree
+
+- DAY45 section 1 registered item 16's cell and its scripts (`rtx5090-day45/build.sh`, `hot-hump-run.sh`) in `7b849a817`,
+  to wait for the 5090's reset. The card is back, so the cell runs as registered, with nothing changed.
+- **Frozen:** a detached worktree at `7b849a817` under `/home/avifenesh/spill-a-cells/i16/`. Its `build.sh` builds the
+  four registered servers (base `80039a8de`, g4 `26676c037`, g3 `9ab5c1265`, gpp `358749c9f`), and `hot-hump-run.sh`
+  runs from that tree with that tree's `stall_cell.py` and readers. This worktree's later edits cannot reach it.
+- **The model:** the 9B of DAY38 sections 19 and 20 (`Qwen3.5-9B-NVFP4-MTP-GGUF.gguf`, sha256 `52c9cceb..`), which is
+  the day-35 5090 environment DAY45 names.
+- It queues after the two halves, in its own hold, with DAY45's bounded wait. DAY45's regime check and placing rule
+  read it.
