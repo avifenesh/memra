@@ -215,7 +215,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   payloads and 32 pinned leases freed on the owner thread) in the chain cell's shape. DAY52 section 3 (the publication
   split, log only, its base arm): 8.6 ms of that is the 32 pinned lease frees (about 270 us per
   `cuMemFreeHost`), the heap payloads 0.02 ms; and P's reserve made those frees about 1 ms slower (item 17).
-- Status: open.
+- Status: **pre-registered** (DAY63 section 1: design L, a pinned backing pool (L1) and the staging set at boot
+  (L2), items 14 and 19 together; item 17 re-read on top).
 
 ### 15. The D2H receipt kernel's price at long entries (found by DAY38 section 17)
 
@@ -291,7 +292,8 @@ the card is reset.
 - Acceptance: none registered (the owner's hold priced at a long demote and at the first demote, then a design that
   allocates no pinned memory on the owner thread's serving path, pre-registered with item 14's: one lease design for
   both directions).
-- Status: open.
+- Status: **pre-registered** (DAY63 section 1: design L, a pinned backing pool (L1) and the staging set at boot
+  (L2), items 14 and 19 together; item 17 re-read on top).
 
 ### 20. The hash helper's per-payload work runs on one thread (found by DAY49)
 
