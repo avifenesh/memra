@@ -161,7 +161,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   restores 1.19 ms, its insert's 2.26 ms is the evicted entry's demote pre-submit, item 19; the long cell's +896 ms is
   the four members' own suffix primes past the 1024-token cap, recorded as read); the pause park snapshot **closed as
   priced** (0.73 ms); no route refusal on the 27B; the DFlash, GLM-5 and latent publishers not measured here, owed to
-  their artifacts and rigs. Owed: the fanout design, pre-registered (after items 22 and 23, the lead's order).
+  their artifacts and rigs. The fanout design is **pre-registered** (DAY59 section 1: an attribution of the snapshot's
+  and restores' owner time on the 5090, then design B1 (batched copies) or B2 (one pool reservation) by a stated rule).
 
 ### 11. Move 1 item 4: the decision cell (i), both classes, same window
 
