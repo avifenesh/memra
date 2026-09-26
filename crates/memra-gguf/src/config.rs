@@ -22,6 +22,7 @@ pub enum Arch {
     // 96 swa), head-wise attn gate (separate `attn_gate` tensor), dual rope base,
     // half-rotary on full layers, 288-expert sigmoid-router MoE + shared expert,
     // per-layer swiglu clamp arrays, 3 NextN/MTP blocks (shipped in a separate GGUF)
+    MiMoV2, // Xiaomi MiMo-V2.6: 48-layer full/SWA text trunk; MTP ships separately
     DeepSeekV4, // DeepSeek-V4-Flash: MLA-lineage attention + per-layer KV compressor +
     // DSA lightning indexer (21 of 43 layers), sqrtsoftplus-scored 256-expert MoE with
     // 3 leading HASH-routed layers (tid2eid, still full expert banks — NOT dense FFN),
@@ -61,6 +62,7 @@ impl Arch {
             // StepFun writes 3.5 AND 3.7-Flash under the same arch name (upstream llama.cpp
             // `step35`, PR #23845/#19283 — 3.7 is the 196B-A11B sibling of 3.5).
             "step35" => Arch::Step35,
+            "mimo-v2" => Arch::MiMoV2,
             // No public GGUF writes this arch yet; the name is memra's own (safetensors-first).
             "deepseek-v4" => Arch::DeepSeekV4,
             // Qwen3.8-Flash-Next. Upstream llama.cpp has GGUFs for it, but memra's lane is
@@ -89,6 +91,7 @@ impl Arch {
             // official HF checkpoint (the outer VLM wrapper is `step3p7`). Both are the same
             // `step35` execution architecture used by the GGUF path.
             "step3p5" | "step3p7" => "step35",
+            "mimo_v2" => "mimo-v2",
             // GLM-5/5.2 (HF `GlmMoeDsaForCausalLM`, model_type `glm_moe_dsa`)
             "glm_moe_dsa" => "glm-dsa",
             // DeepSeek-V4-Flash (HF `DeepseekV4ForCausalLM`, model_type `deepseek_v4`)
@@ -160,6 +163,7 @@ impl Arch {
             | Arch::Qwen3
             | Arch::Qwen3Moe
             | Arch::Olmoe
+            | Arch::MiMoV2
             | Arch::Llama => Some(AttentionGateKind::None),
             // DeepSeek-V4-Flash rides its own dsv4 lane (loader/bring-up), never the hybrid
             // q_gate_split path; its attn_q out-features carry no fused gate — declared None
@@ -1108,6 +1112,26 @@ impl MlaConfig {
 }
 
 #[derive(Debug, Clone)]
+pub struct MiMoV2Config {
+    pub hybrid_layer_pattern: Option<Vec<u32>>,
+    pub swa_num_attention_heads: Option<u32>,
+    pub swa_num_key_value_heads: Option<u32>,
+    pub swa_head_dim: Option<u32>,
+    pub swa_v_head_dim: Option<u32>,
+    pub swa_rope_theta: Option<f32>,
+    pub attention_projection_layout: Option<String>,
+    pub attention_value_scale: Option<f32>,
+    pub add_swa_attention_sink_bias: Option<bool>,
+    pub add_full_attention_sink_bias: Option<bool>,
+    pub scoring_func: Option<String>,
+    pub topk_method: Option<String>,
+    pub norm_topk_prob: Option<bool>,
+    pub moe_router_dtype: Option<String>,
+    pub moe_layer_freq: Option<Vec<u32>>,
+    pub separate_mtp_layers: Option<u32>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ModelConfig {
     pub arch: Arch,
     pub prefill_activation: Option<crate::model_packs::qwen35::activation::PrefillFp4>,
@@ -1149,6 +1173,8 @@ pub struct ModelConfig {
     pub step35: Option<Step35Config>,
     // DeepSeek-V4-Flash extras — `deepseek_v4` only (None for every other arch)
     pub dsv4: Option<DeepSeekV4Config>,
+    // MiMo-V2.6 extras — exact hybrid geometry and source-specific attention math.
+    pub mimo: Option<MiMoV2Config>,
     // Qwen3.8-Flash-Next extras — `qwen4_exp` only (None for every other arch)
     pub qwen4exp: Option<Qwen4ExpConfig>,
     /// YaRN rope scaling on the full-attention rope. Populated ONLY by the qwen4_exp HF
@@ -1631,6 +1657,7 @@ impl ModelConfig {
             mla,
             step35,
             dsv4: None, // safetensors-first arch: no GGUF artifact exists (loader lane)
+            mimo: None, // MiMo-V2.6 is safetensors-first and has no GGUF pack.
             qwen4exp: None, // safetensors-first arch: no GGUF artifact exists (loader lane)
             rope_yarn: None,
             glm5: None, // safetensors-first arch: no GGUF artifact exists (bring-up lane)
@@ -1650,17 +1677,26 @@ impl ModelConfig {
         // HF counts only trunk blocks; GGUF block_count includes appended NextN blocks.
         // qwen4_exp nests the depth in an `mtp` sub-object (its flat twin key usually rides
         // beside it; the object is the fallback for a sibling that drops the flat spelling).
-        let nextn = c
-            .num_nextn_predict_layers
-            .or(c.mtp_num_hidden_layers)
-            .or(c.qwen4exp_mtp_num_hidden_layers)
-            .unwrap_or(0);
+        let mut nextn = if matches!(arch, Arch::MiMoV2) {
+            // MiMo's three draft blocks live in model_mtp.safetensors, not the
+            // main checkpoint's 48-layer trunk.
+            0
+        } else {
+            c.num_nextn_predict_layers
+                .or(c.mtp_num_hidden_layers)
+                .or(c.qwen4exp_mtp_num_hidden_layers)
+                .unwrap_or(0)
+        };
         let n_layer = c.num_hidden_layers + nextn;
         let base_n_head = c.num_attention_heads;
         let head_dim_k = c
             .head_dim
             .unwrap_or_else(|| c.hidden_size / base_n_head.max(1));
-        let head_dim_v = head_dim_k;
+        let head_dim_v = if matches!(arch, Arch::MiMoV2) {
+            c.v_head_dim.unwrap_or(head_dim_k)
+        } else {
+            head_dim_k
+        };
         let base_n_head_kv = c.num_key_value_heads.unwrap_or(base_n_head);
 
         let expert_count = c.num_experts.or(c.num_local_experts).unwrap_or(0);
@@ -1874,11 +1910,8 @@ impl ModelConfig {
         // NVIDIA + local text ckpts) uses `mtp_num_hidden_layers`. Same meaning (head depth = 1).
         // qwen4_exp carries both a flat `mtp_num_hidden_layers` and an `mtp` sub-object; the
         // object is the fallback and is cross-checked against the flat key below.
-        let mut nextn = c
-            .num_nextn_predict_layers
-            .or(c.mtp_num_hidden_layers)
-            .or(c.qwen4exp_mtp_num_hidden_layers)
-            .unwrap_or(0);
+        // Start from the family-resolved depth above. In particular, MiMo's
+        // separate MTP artifact must not be re-counted as trunk layers here.
         // deepseek_v4: `num_nextn_predict_layers` is VESTIGIAL on 0731 — still 1 while the
         // drafter is 3 DSpark blocks (the repo's own inference/config.json: n_mtp_layers 3).
         // The load-bearing derivation is len(compress_ratios) − num_hidden_layers, and every
@@ -2317,6 +2350,24 @@ impl ModelConfig {
         } else {
             c.rms_norm_eps
         };
+        let mimo = matches!(arch, Arch::MiMoV2).then(|| MiMoV2Config {
+            hybrid_layer_pattern: c.hybrid_layer_pattern.clone(),
+            swa_num_attention_heads: c.swa_num_attention_heads,
+            swa_num_key_value_heads: c.swa_num_key_value_heads,
+            swa_head_dim: c.swa_head_dim,
+            swa_v_head_dim: c.swa_v_head_dim,
+            swa_rope_theta: c.swa_rope_theta,
+            attention_projection_layout: c.attention_projection_layout.clone(),
+            attention_value_scale: c.attention_value_scale,
+            add_swa_attention_sink_bias: c.add_swa_attention_sink_bias,
+            add_full_attention_sink_bias: c.add_full_attention_sink_bias,
+            scoring_func: c.scoring_func.clone(),
+            topk_method: c.topk_method.clone(),
+            norm_topk_prob: c.norm_topk_prob,
+            moe_router_dtype: c.moe_router_dtype.clone(),
+            moe_layer_freq: c.moe_layer_freq.clone(),
+            separate_mtp_layers: c.num_nextn_predict_layers,
+        });
 
         ModelConfig {
             arch,
@@ -2412,6 +2463,7 @@ impl ModelConfig {
             mla: None, // GGUF-first arch (glm-dsa): HF/safetensors import is a later arc
             step35,
             dsv4,
+            mimo,
             qwen4exp,
             rope_yarn,
             glm5,
@@ -2836,6 +2888,17 @@ pub struct HfConfig {
     pub swiglu_alpha: Option<f32>, // swigluoai clamp params
     pub swiglu_limit: Option<f32>,
     pub moe_layer_freq: Option<Vec<u32>>, // per-layer 0=dense 1=moe
+    // ---- MiMo-V2.6 (`mimo_v2`) ----
+    pub hybrid_layer_pattern: Option<Vec<u32>>, // 0=global, 1=windowed
+    pub swa_num_attention_heads: Option<u32>,
+    pub swa_num_key_value_heads: Option<u32>,
+    pub swa_head_dim: Option<u32>,
+    pub swa_v_head_dim: Option<u32>,
+    pub swa_rope_theta: Option<f32>,
+    pub attention_projection_layout: Option<String>,
+    pub attention_value_scale: Option<f32>,
+    pub add_swa_attention_sink_bias: Option<bool>,
+    pub add_full_attention_sink_bias: Option<bool>,
     // ---- Hy3 (`hy_v3`) ----
     pub first_k_dense_replace: Option<u32>,
     pub moe_router_use_sigmoid: Option<bool>,
@@ -2991,6 +3054,16 @@ impl Default for HfConfig {
             swiglu_alpha: None,
             swiglu_limit: None,
             moe_layer_freq: None,
+            hybrid_layer_pattern: None,
+            swa_num_attention_heads: None,
+            swa_num_key_value_heads: None,
+            swa_head_dim: None,
+            swa_v_head_dim: None,
+            swa_rope_theta: None,
+            attention_projection_layout: None,
+            attention_value_scale: None,
+            add_swa_attention_sink_bias: None,
+            add_full_attention_sink_bias: None,
             first_k_dense_replace: None,
             moe_router_use_sigmoid: None,
             moe_router_enable_expert_bias: None,
@@ -3599,6 +3672,37 @@ impl HfConfig {
         if let Some(v) = o.moe_layer_freq(glm_dsa)? {
             self.moe_layer_freq = Some(v);
         }
+        // MiMo's mixed attention layers and per-layer attention math.
+        if let Some(v) = o.u32_array("hybrid_layer_pattern")? {
+            self.hybrid_layer_pattern = Some(v);
+        }
+        if let Some(v) = o.u32("swa_num_attention_heads")? {
+            self.swa_num_attention_heads = Some(v);
+        }
+        if let Some(v) = o.u32("swa_num_key_value_heads")? {
+            self.swa_num_key_value_heads = Some(v);
+        }
+        if let Some(v) = o.u32("swa_head_dim")? {
+            self.swa_head_dim = Some(v);
+        }
+        if let Some(v) = o.u32("swa_v_head_dim")? {
+            self.swa_v_head_dim = Some(v);
+        }
+        if let Some(v) = o.f32("swa_rope_theta")? {
+            self.swa_rope_theta = Some(v);
+        }
+        if let Some(v) = o.string("attention_projection_layout")? {
+            self.attention_projection_layout = Some(v);
+        }
+        if let Some(v) = o.f32("attention_value_scale")? {
+            self.attention_value_scale = Some(v);
+        }
+        if let Some(v) = o.boolean("add_swa_attention_sink_bias")? {
+            self.add_swa_attention_sink_bias = Some(v);
+        }
+        if let Some(v) = o.boolean("add_full_attention_sink_bias")? {
+            self.add_full_attention_sink_bias = Some(v);
+        }
         // ---- Hy3 keys ----
         if let Some(v) = o.u32("first_k_dense_replace")? {
             self.first_k_dense_replace = Some(v);
@@ -4076,6 +4180,71 @@ fn read_value_raw(b: &[u8], i: &mut usize) -> String {
 #[cfg(test)]
 pub(crate) mod hf_tests {
     use super::*;
+
+    fn pinned_mimo_config() -> ModelConfig {
+        let c = HfConfig::parse(include_str!("model_packs/mimo_v2/fixtures/config.json"));
+        ModelConfig::from_hf(&c)
+    }
+
+    #[test]
+    fn mimo_v2_source_trunk_and_head_geometry() {
+        let config = pinned_mimo_config();
+        assert_eq!(config.arch, Arch::MiMoV2);
+        assert_eq!(config.n_layer, 48);
+        assert_eq!(config.n_layer_total, 48);
+        assert_eq!(config.nextn_predict_layers, 0);
+        assert_eq!(config.head_dim_k, 192);
+        assert_eq!(config.head_dim_v, 128);
+        assert_eq!(config.rope_dim_count, 64);
+        let mimo = config.mimo.as_ref().unwrap();
+        let pattern = mimo.hybrid_layer_pattern.as_ref().unwrap();
+        assert_eq!(pattern.len(), 48);
+        assert_eq!(pattern.iter().filter(|&&layer| layer == 0).count(), 9);
+        assert_eq!(pattern[0], 0);
+        assert_eq!(pattern[47], 0);
+        assert_eq!(mimo.swa_num_key_value_heads, Some(8));
+        assert_eq!(mimo.swa_num_attention_heads, Some(64));
+        assert_eq!(mimo.swa_head_dim, Some(192));
+        assert_eq!(mimo.swa_v_head_dim, Some(128));
+        assert_eq!(mimo.swa_rope_theta, Some(10_000.0));
+    }
+
+    #[test]
+    fn mimo_v2_source_attention_scaling_and_sinks() {
+        let config = pinned_mimo_config();
+        let mimo = config.mimo.as_ref().unwrap();
+        assert_eq!(
+            mimo.attention_projection_layout.as_deref(),
+            Some("fused_qkv")
+        );
+        assert_eq!(mimo.attention_value_scale, Some(0.707));
+        assert_eq!(mimo.add_swa_attention_sink_bias, Some(true));
+        assert_eq!(mimo.add_full_attention_sink_bias, Some(false));
+    }
+
+    #[test]
+    fn mimo_v2_source_router_and_separate_draft() {
+        let source = HfConfig::parse(include_str!("model_packs/mimo_v2/fixtures/config.json"));
+        assert_eq!(source.n_shared_experts, None);
+        assert_eq!(source.routed_scaling_factor, None);
+        let config = ModelConfig::from_hf(&source);
+        assert_eq!(config.moe.as_ref().unwrap().expert_count, 256);
+        assert_eq!(config.moe.as_ref().unwrap().expert_used_count, 8);
+        let mimo = config.mimo.as_ref().unwrap();
+        assert_eq!(mimo.scoring_func.as_deref(), Some("sigmoid"));
+        assert_eq!(mimo.topk_method.as_deref(), Some("noaux_tc"));
+        assert_eq!(mimo.norm_topk_prob, Some(true));
+        assert_eq!(mimo.moe_router_dtype.as_deref(), Some("bfloat16"));
+        assert_eq!(mimo.moe_layer_freq.as_ref().unwrap().len(), 48);
+        assert_eq!(mimo.separate_mtp_layers, Some(3));
+    }
+
+    #[test]
+    fn mimo_v2_source_remains_unregistered() {
+        let config = pinned_mimo_config();
+        assert!(crate::model_packs::for_config(&config).is_none());
+        assert!(crate::model_packs::compile_for_load(&config).is_err());
+    }
 
     const QWEN3_17B: &str = r#"{
       "architectures": ["Qwen3ForCausalLM"],
