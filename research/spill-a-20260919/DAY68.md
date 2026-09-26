@@ -87,3 +87,10 @@ GPU. Both registrations said "the 5090 half follows"; this file fixes how, befor
 - **What a result decides:** as section 2.
 - **Order and card time:** after item 16, S4 (about 1.5 h) then V (about 1 h). All builds finish before the chain
   starts, so none of this lane's builds runs inside any of its holds.
+
+## 5. The chain, started
+
+- Every build finished first: R1's, L''s, item 16's, S4's and V's, each `rc=0`. The markers of R1, L', S4 and V equal
+  their target sittings' `markers.txt` byte for byte. All four trees are clean at their tips.
+- `chain-day68.sh` (the frozen copy of `rtx5090-chain-day68.sh` at `33624ff76`) started at 19:42:30Z. R1's half queued
+  on the rig's lock at 19:43:00Z behind another lane's hold.
