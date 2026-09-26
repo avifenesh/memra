@@ -10834,49 +10834,6 @@ struct HostHashSplit {
     copy_bytes: u64,
     copy_minflt: i64,
     hash_ms: f64,
-    /// WP-A day 65 (`DAY65.md` design T-H, log only): the scoped threads the job ran on; the
-    /// copy and hash terms above are summed over them (thread time), `helper_ms` stays the wall.
-    threads: usize,
-}
-
-/// WP-A day 65 (`DAY65.md` design T-H): the hash helper's thread count, `min(8, parallelism / 2)`,
-/// at least one (design T's rule for the fill is the precedent).
-fn host_hash_threads(parallelism: usize) -> usize {
-    (parallelism / 2).clamp(1, 8)
-}
-
-/// WP-A day 65 (T-H): `f` over `items` on up to `threads` scoped threads in contiguous shares of
-/// the items' order; the results keep that order. One thread (or one item) runs inline. The
-/// program per item is `f`'s, unchanged.
-fn host_scoped_map<T: Send, R: Send>(
-    items: Vec<T>,
-    threads: usize,
-    f: impl Fn(T) -> R + Sync,
-) -> Vec<R> {
-    if threads <= 1 || items.len() <= 1 {
-        return items.into_iter().map(f).collect();
-    }
-    let share = items.len().div_ceil(threads);
-    let mut chunks: Vec<Vec<T>> = Vec::new();
-    let mut it = items.into_iter();
-    loop {
-        let c: Vec<T> = it.by_ref().take(share).collect();
-        if c.is_empty() {
-            break;
-        }
-        chunks.push(c);
-    }
-    let f = &f;
-    std::thread::scope(|scope| {
-        let shares: Vec<_> = chunks
-            .into_iter()
-            .map(|c| scope.spawn(move || c.into_iter().map(f).collect::<Vec<R>>()))
-            .collect();
-        shares
-            .into_iter()
-            .flat_map(|h| h.join().expect("a hash share panicked"))
-            .collect()
-    })
 }
 
 /// WP-A day 35 (`DAY35.md` design M'): which KV lease of the image a view reads and a digest names.
@@ -11125,9 +11082,6 @@ impl HostHashWorker {
             .name("memra-host-hash".into())
             .spawn(move || {
                 let mut fault = fault;
-                // WP-A day 65 (T-H): the helper's shares, read once.
-                let threads =
-                    host_hash_threads(std::thread::available_parallelism().map_or(1, |n| n.get()));
                 for job in jobs_rx {
                     if fault == Some(HostHashFault::HelperGone) {
                         // The red arm: the helper is gone; the job drops with it and the owner
@@ -11175,11 +11129,14 @@ impl HostHashWorker {
                             // WP-A day 34: the promote's H2D completion checksums, off the tick.
                             let t = Instant::now();
                             let bytes = job.views.iter().map(|v| v.len()).sum();
-                            // WP-A day 65 (T-H): the views in contiguous shares, order kept.
-                            let digests = host_scoped_map(job.views, threads, |v| {
-                                let d = v.digest();
-                                (v, d)
-                            });
+                            let digests = job
+                                .views
+                                .into_iter()
+                                .map(|v| {
+                                    let d = v.digest();
+                                    (v, d)
+                                })
+                                .collect();
                             let reply = HostSourcesReply {
                                 seq: if sources_fault == Some(HostHashFault::SourcesForeignReply) {
                                     job.seq.wrapping_add(1)
@@ -11203,45 +11160,33 @@ impl HostHashWorker {
                         }
                     };
                     let t = Instant::now();
-                    let mut split = HostHashSplit {
-                        threads,
-                        ..HostHashSplit::default()
-                    };
-                    // WP-A day 65 (`DAY65.md` design T-H): the payloads in contiguous shares on
-                    // scoped threads, each payload whole on one (its copy, then its digest), the
-                    // reply in the job's order; each share times its own copy and hash.
-                    let per = host_scoped_map(job.payloads, threads, |mut p| {
-                        let mut part = HostHashSplit::default();
-                        // WP-A day 30: a landed f32 span becomes the payload's heap `Vec`.
-                        // Day 49 (log only): the copy and the hash timed apart, in order.
-                        if let Some(staged) = &p.staged {
-                            let (c0, f0) = (Instant::now(), thread_minflt());
-                            p.data = Arc::new(staged.as_f32_slice().to_vec());
-                            part.copy_minflt += thread_minflt() - f0;
-                            part.copy_ms += c0.elapsed().as_secs_f64() * 1e3;
-                            part.copy_bytes += staged.len() as u64;
-                        }
-                        let h0 = Instant::now();
-                        let (n, d) = host_hash_payload_digest(&p.data);
-                        part.hash_ms += h0.elapsed().as_secs_f64() * 1e3;
-                        (p, n, d, part)
-                    });
-                    let hashed = per
+                    let mut split = HostHashSplit::default();
+                    let hashed = job
+                        .payloads
                         .into_iter()
-                        .map(|(p, n, d, part)| {
-                            split.copy_ms += part.copy_ms;
-                            split.copy_bytes += part.copy_bytes;
-                            split.copy_minflt += part.copy_minflt;
-                            split.hash_ms += part.hash_ms;
+                        .map(|mut p| {
+                            // WP-A day 30: a landed f32 span becomes the payload's heap `Vec`.
+                            // Day 49 (log only): the copy and the hash timed apart, in order.
+                            if let Some(staged) = &p.staged {
+                                let (c0, f0) = (Instant::now(), thread_minflt());
+                                p.data = Arc::new(staged.as_f32_slice().to_vec());
+                                split.copy_minflt += thread_minflt() - f0;
+                                split.copy_ms += c0.elapsed().as_secs_f64() * 1e3;
+                                split.copy_bytes += staged.len() as u64;
+                            }
+                            let h0 = Instant::now();
+                            let (n, d) = host_hash_payload_digest(&p.data);
+                            split.hash_ms += h0.elapsed().as_secs_f64() * 1e3;
                             (p, n, d)
                         })
                         .collect();
                     // WP-A day 35 (design M'): the bind's KV re-hash, the same program over the
-                    // same lease bytes; the views end here, before the reply is sent. Day 65: in
-                    // shares too, order kept.
-                    let leases = host_scoped_map(job.leases, threads, |(slot, v)| {
-                        (slot, v.len(), v.digest())
-                    });
+                    // same lease bytes; the views end here, before the reply is sent.
+                    let leases = job
+                        .leases
+                        .into_iter()
+                        .map(|(slot, v)| (slot, v.len(), v.digest()))
+                        .collect();
                     let reply = HostHashReply {
                         seq: job.seq,
                         hashed,
@@ -15864,13 +15809,12 @@ fn host_demote_settle_hashing(
         let sp = reply.split;
         eprintln!(
             "[prefix-host] demote helper split: ticket seq={seq} copy {:.2} ms over {:.1} MB (minflt \
-             +{}), hash {:.2} ms (helper {:.1} ms); {} threads",
+             +{}), hash {:.2} ms (helper {:.1} ms)",
             sp.copy_ms,
             sp.copy_bytes as f64 / 1e6,
             sp.copy_minflt,
             sp.hash_ms,
             reply.helper_ms,
-            sp.threads,
         );
         // WP-A day 52 (`DAY52.md` step 1, log only): the publication segment's parts.
         let ps = host.last_publish_split;
@@ -50270,12 +50214,7 @@ mod tests {
             5,
             "the definition, and two reads around each of the two copies"
         );
-        // (WP-A day 65, design T-H: the split starts with the job's thread count; each payload
-        // keeps its copy then its hash, inside its share.)
-        let job = &production[at(
-            production,
-            "let mut split = HostHashSplit {\n                        threads,",
-        )..];
+        let job = &production[at(production, "let mut split = HostHashSplit::default();")..];
         let copy = at(job, "p.data = Arc::new(staged.as_f32_slice().to_vec());");
         let hash = at(job, "let (n, d) = host_hash_payload_digest(&p.data);");
         assert!(
@@ -50627,61 +50566,6 @@ mod tests {
                 "Ok(PromoteSettle::Pending(c)) => format!(\"pending on {}\", c.waiting),"
             )
         );
-    }
-
-    /// WP-A day 65 (`DAY65.md` design T-H, clause (a), CPU): every digest in shares equals the
-    /// one-thread helper's on the same job, in the same order, at 1 to 8 threads, over payloads of
-    /// the 27B's span shapes (odd and even lengths, a one-element and an empty payload included).
-    #[test]
-    fn day65_the_shared_helper_digests_equal_the_one_thread_helper_bitwise() {
-        use super::{host_hash_payload_digest, host_hash_threads, host_scoped_map};
-        let mut seed = 0x9e37_79b9u64;
-        let mut next = move || {
-            seed ^= seed << 13;
-            seed ^= seed >> 7;
-            seed ^= seed << 17;
-            f32::from_bits(seed as u32)
-        };
-        let lens = [0usize, 1, 3, 3071, 3072, 8192, 65536, 65537];
-        let payloads: Vec<Vec<f32>> = (0..96)
-            .map(|i| (0..lens[i % lens.len()]).map(|_| next()).collect())
-            .collect();
-        let one: Vec<_> = payloads
-            .iter()
-            .map(|p| host_hash_payload_digest(p))
-            .collect();
-        for threads in 1..=8 {
-            let shared = host_scoped_map(payloads.iter().collect::<Vec<_>>(), threads, |p| {
-                host_hash_payload_digest(p)
-            });
-            assert_eq!(shared, one, "{threads} threads");
-        }
-        assert_eq!(host_hash_threads(1), 1);
-        assert_eq!(host_hash_threads(3), 1);
-        assert_eq!(host_hash_threads(8), 4);
-        assert_eq!(host_hash_threads(32), 8);
-        assert_eq!(host_hash_threads(64), 8);
-    }
-
-    /// WP-A day 65 (T-H; CPU census): the helper's three maps (the payloads, the lease views, the
-    /// source views) run through `host_scoped_map` with the thread count read once at spawn; the
-    /// per-payload program (the copy, then `host_hash_payload_digest`) and each view's `digest()`
-    /// are unchanged.
-    #[test]
-    fn day65_the_helper_splits_its_three_maps_and_keeps_the_program() {
-        let worker = include_str!("worker.rs");
-        let production = &worker[..worker.find("\nmod tests {").unwrap()];
-        let spawn = &production[production
-            .find("    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {")
-            .unwrap()..];
-        let spawn = &spawn[..spawn.find("\n    }\n").unwrap()];
-        assert_eq!(spawn.matches("host_hash_threads(").count(), 1);
-        assert_eq!(spawn.matches("host_scoped_map(").count(), 3);
-        assert!(spawn.contains("host_scoped_map(job.views, threads, |v| {"));
-        assert!(spawn.contains("host_scoped_map(job.payloads, threads, |mut p| {"));
-        assert!(spawn.contains("host_scoped_map(job.leases, threads, |(slot, v)| {"));
-        assert!(spawn.contains("let (n, d) = host_hash_payload_digest(&p.data);"));
-        assert!(spawn.contains("p.data = Arc::new(staged.as_f32_slice().to_vec());"));
     }
 
     /// WP-A day 64 (`DAY64.md` section 4 step 1; CPU census): the span receipt's phase timing is
@@ -51612,9 +51496,7 @@ mod tests {
             "the owner-thread fallback stays"
         );
         let helper = body("impl HostHashWorker {");
-        // (WP-A day 65, design T-H: the same map, in scoped shares.)
-        assert!(helper.contains("host_scoped_map(job.leases, threads, |(slot, v)| {"));
-        assert!(helper.contains("(slot, v.len(), v.digest())"));
+        assert!(helper.contains(".map(|(slot, v)| (slot, v.len(), v.digest()))"));
         // Nothing of M1: the copy phase keeps its one landing poll.
         for gone in [
             "d2h_landed_views",
