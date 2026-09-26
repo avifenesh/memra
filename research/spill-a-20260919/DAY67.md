@@ -83,3 +83,23 @@ decides; the 5090 half follows.
   time.
 - T-H's own verdict is pending. P2 on L' carries T-H in both arms, so its A/B isolates P2. If T-H reverts, P2 is
   re-merged onto the revert under its own named resolution.
+
+## 3. T-H reverted: the running P2L sitting becomes a diagnostic; the corrected pair
+
+- The sitting started at 16:10Z on `c03ca6b06` (base `f4e84f11e`) has T-H's shares in both arms. There, P2's reserve
+  buffers are filled inside T-H's parallel shares. Clauses (b), (c), (f) and (g) read the helper's copy time and the
+  walls that T-H changes, so its reading does not transfer to the tree that would ship after T-H's revert (P2's
+  sequential map).
+- By section 2's own sentence ("If T-H reverts, P2 is re-merged onto the revert"), that sitting is a **diagnostic**.
+  If it completes, its reading is banked as one; nothing is decided on it.
+- **The re-merge onto the revert** (`06b2d31db`): P2's payload map is DAY52's sequential code verbatim (the reserve's
+  `take` inside the map, then `copy_from_slice` or `to_vec`, then the hash). The helper split line reads `(helper Y
+  ms); reserve H of S staged`. Two censuses are re-pointed back to that code.
+  - The ledger keeps both third terms (L's pinned, P2's pageable), and the governor test stays at "a fourth charge
+    refuses".
+  - Server lib `948 passed; 0 failed; 26 ignored`; clippy `-D warnings`; fmt.
+- **The corrected pair.** Tip `06b2d31db` (after push). The base is the integ69 branch
+  `lane/spill-a-integ69-20260926` at `dba7c0a0c`, whose crates differ from this tip by P2 alone: `git diff` touches
+  only `worker.rs`, and every changed line is P2's.
+  - `pro-single-p2l2/`, receipts `/root/spill-receipts/a-p2l2`: `build.sh <tip> dba7c0a0c`, then `driver.sh` (the
+    same cells as section 2's sitting).

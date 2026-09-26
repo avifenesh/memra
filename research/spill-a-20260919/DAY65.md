@@ -87,3 +87,32 @@ same way. Design T's thread rule for the fill (item 3) is the precedent.
   executables by hash). Nothing in it is read: its base differs from the tip by more than T-H.
 - The sitting restarted at 14:34Z on section 3's pair (`build.sh 50fdbcfaf c6369b507`). Its gates cell finished rc 0
   at 14:54Z.
+
+## 5. T-H's sitting, read as registered: REVERT (b)
+
+- Run by the lead on one RTX PRO 6000 Blackwell Workstation card, `build.sh 50fdbcfaf c6369b507` then `driver.sh`.
+  Mirror `pro-single-th/box/`, sha256-checked against the box manifest (0 mismatches); the executables are recorded by
+  hash.
+- Verbatim (`box/reading-th.log`):
+
+      TH READING cell=demote order=o1 stall base=64.02 th=64.15 | helper base=82.5 th=24.9 ms (th threads [8], thread time 95.1 ms) | wall base=101.0 th=88.8 ms
+      TH READING cell=chain order=o1 stall base=68.10 th=68.26 | chain base=371.1 th=245.7 ms
+      TH READING cell=promote order=o1 stall base=62.49 th=62.53 | pin base=25.80 th=25.90 | e2e base=113.9 th=114.1 ms
+      TH READING cell=demote order=o2 stall base=64.21 th=64.18 | helper base=82.8 th=25.1 ms (th threads [8], thread time 95.5 ms) | wall base=101.2 th=88.9 ms
+      TH READING cell=chain order=o2 stall base=68.11 th=68.26 | chain base=371.1 th=245.6 ms
+      TH READING cell=promote order=o2 stall base=62.48 th=62.55 | pin base=25.90 th=25.80 | e2e base=113.9 th=114.0 ms
+      TH READING hump base=+0.022 th=+0.029 ms
+      TH (b) FAIL [False, False]
+      TH (c) PASS [True, True]
+      TH (d) PASS [True, True, True, True, True, True, True, True, True]
+      TH VERDICT -> REVERT ((a) passed; failed b): recorded as read, reverted in one commit
+
+- Read:
+  - (b)'s helper half passes: 82.5 / 82.8 against 24.9 / 25.1 ms, a ratio of 0.30. Its wall half fails: 101.0 / 101.2
+    against 88.8 / 88.9 ms, -12.2 / -12.3 against the -20 bound.
+  - (c) passes by far more than its bound: the chained request falls from 371.1 to 245.7 ms (-125 ms against -30).
+  - (d) passes: the stall, the PIN, the e2e and the hump are unchanged.
+- **Reverted** as registered, in one commit (`06b2d31db`), with the receipts kept. P2's reserve, which sat on T-H's
+  shares (DAY67 section 2), returns to its own sequential payload map, DAY52's code verbatim.
+- Whether the 64-token wall was the right measure for T-H is a new registration's question, argued from this
+  section's text before any rerun (section 6), not a moved bound.
