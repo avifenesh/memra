@@ -111,8 +111,8 @@ def main():
                         "--external-lock", "--out", str(target), "--execute", sys.executable]
                 if a.regime in ("owed26cells", "owed26serve"):
                     # Section G: the red/green GPU cells, then the serving-shape check, under the lock.
-                    tail = (["bash", str(HERE / "owed26/run-cells.sh"), str(target), TESTS26 + "/red-lib-tests",
-                             TESTS26 + "/green-lib-tests"] if a.regime == "owed26cells" else
+                    tail = (["bash", str(HERE / "owed26/run-cells2.sh"), str(target), TESTS26 + "/red2-lib-tests",
+                             TESTS26 + "/green2-lib-tests"] if a.regime == "owed26cells" else
                             [sys.executable, str(HERE / "owed26/serve-check.py"), "--binary", BIN26,
                              "--out", str(target)])
                     argv = ["flock", "-n", "-E", "75", LOCK, "systemd-run", "--user", "--scope", "-q",
