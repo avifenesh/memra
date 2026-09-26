@@ -11470,6 +11470,26 @@ struct PendingCapture {
     /// nothing decides on either.
     source_kv: usize,
     queued_ahead: String,
+    /// WP-A day 62 (design R1.1): the source session's request id.
+    source_request: String,
+}
+
+/// WP-A day 62 (`DAY62.md` design R1.1): whether a retiring session is the pending capture's
+/// source. Either identity is enough: the request id recorded at submission, or the cache's
+/// layer-vector address (a session with no cache matches by id only). Conservative by
+/// construction: a miss would let a source's cache drop or park under the copy.
+fn r1_is_source(
+    request_id: &str,
+    kv: Option<usize>,
+    source_request: &str,
+    source_kv: usize,
+) -> bool {
+    request_id == source_request || kv.is_some_and(|k| k == source_kv)
+}
+
+/// WP-A day 62 (R1): the retire pass settles the pending capture only when its source retires.
+fn r1_settle_at_retire(source_retiring: bool) -> bool {
+    source_retiring
 }
 
 /// WP-A day 62 (step 1, log only): the copy-stream tickets in flight on this worker, by kind.
@@ -17185,6 +17205,7 @@ fn prefix_capture_off_tick(
     last_logits: &[f32],
     model: Option<&HybridModel>,
     why: &str,
+    source_request: &str,
 ) -> CaptureRoute {
     // WP-A day 54 (log only): every `OnTick` answer records its reason first.
     if hpx.capture_off_tick_disabled || hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
@@ -17273,6 +17294,7 @@ fn prefix_capture_off_tick(
         CaptureSubmit {
             pool_key,
             why,
+            source_request,
             pos: cache.pos,
             toks,
             cache,
@@ -17300,6 +17322,9 @@ fn prefix_capture_off_tick(
 struct CaptureSubmit<'a> {
     pool_key: &'a PoolKey,
     why: &'a str,
+    /// WP-A day 62 (design R1.1): the source session's request id (every capture's source is an
+    /// active session), the retire pass's first source identity.
+    source_request: &'a str,
     pos: usize,
     toks: &'a [u32],
     cache: &'a Cache,
@@ -17331,6 +17356,7 @@ fn host_capture_submit(
     let CaptureSubmit {
         pool_key,
         why,
+        source_request,
         pos,
         toks,
         cache,
@@ -17719,6 +17745,7 @@ fn host_capture_submit(
         trace_role,
         source_kv: cache.kv.as_ptr() as usize,
         queued_ahead,
+        source_request: source_request.to_string(),
     });
     CaptureRoute::Submitted
 }
@@ -17755,6 +17782,7 @@ fn prefix_spec_capture_off_tick(
     dspark_tail: bool,
     cap: memra_engine::spec::SpecBoundaryCapture,
     why: &str,
+    source_request: &str,
 ) -> SpecCaptureRoute {
     // WP-A day 54 (log only): every `OnTick` answer records its reason first.
     if hpx.capture_off_tick_disabled || hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
@@ -17843,6 +17871,7 @@ fn prefix_spec_capture_off_tick(
         CaptureSubmit {
             pool_key,
             why,
+            source_request,
             pos,
             toks: &committed[..pos],
             cache,
@@ -21971,6 +22000,7 @@ fn prefix_insert_from_spec_boundary(
     dspark_draft: Option<memra_engine::dflash::DflashKvTail>,
     cap: memra_engine::spec::SpecBoundaryCapture,
     why: &str,
+    source_request: &str,
 ) {
     if memra_engine::pp::pp_host_bounce_active() {
         return;
@@ -21997,6 +22027,7 @@ fn prefix_insert_from_spec_boundary(
         dspark_draft.is_some(),
         cap,
         why,
+        source_request,
     ) {
         SpecCaptureRoute::Routed(CaptureRoute::Submitted | CaptureRoute::Refused) => return,
         SpecCaptureRoute::Routed(CaptureRoute::OnTick) => unreachable!(
@@ -22296,6 +22327,7 @@ fn prefix_insert_from_session(
         &s.last_logits,
         model,
         why,
+        &s.request_id,
     ) {
         CaptureRoute::Submitted | CaptureRoute::Refused => return,
         CaptureRoute::OnTick => {}
@@ -23492,6 +23524,7 @@ fn publish_dspark_prefix_capture_inner(
         dspark_tail,
         cap,
         "dspark-boundary",
+        &s.request_id,
     );
 }
 
@@ -23556,6 +23589,7 @@ fn drain_glm5_prefix_capture(
         tail,
         cap,
         "glm5-boundary",
+        &s.request_id,
     );
 }
 
@@ -27729,6 +27763,7 @@ pub fn run(
                             None, // MTP publisher: its draft state rides `draft`, not the dspark tail
                             cap,
                             "spec-boundary",
+                            &s.request_id,
                         );
                     }
                 }
@@ -29262,20 +29297,41 @@ pub fn run(
         // to rewrite; either would run under the in-flight read. Settle the `Capturing` entry
         // BLOCKING before any session leaves `active`. One capture per worker.
         if !finished.is_empty() && hpx.capturing.is_some() {
-            // WP-A day 62 (`DAY62.md` step 1, log only): whether a retiring session is the
-            // capture's source. The settle runs either way (the program is unchanged).
-            let source_kv = hpx.capturing.as_ref().map_or(0, |c| c.source_kv);
+            // WP-A day 62 (`DAY62.md` design R1): the capture copies only its source's planes, so
+            // it settles here only when a retiring session is its source, by either identity
+            // (its request id, or its cache's layer-vector address); any other retire goes on.
+            let (source_kv, source_request, ticket) = hpx
+                .capturing
+                .as_ref()
+                .map(|c| {
+                    (
+                        c.source_kv,
+                        c.source_request.clone(),
+                        c.contract.as_ref().map(|k| k.ticket.sequence),
+                    )
+                })
+                .unwrap_or_default();
             let source_retiring = finished.iter().any(|&i| {
-                active[i]
-                    .cache
-                    .as_ref()
-                    .is_some_and(|c| c.kv.as_ptr() as usize == source_kv)
+                r1_is_source(
+                    &active[i].request_id,
+                    active[i].cache.as_ref().map(|c| c.kv.as_ptr() as usize),
+                    &source_request,
+                    source_kv,
+                )
             });
-            let why = format!(
-                "a session retire (source retiring: {})",
-                if source_retiring { "yes" } else { "no" }
-            );
-            host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, &why);
+            if r1_settle_at_retire(source_retiring) {
+                let why = format!(
+                    "a session retire (source retiring: {})",
+                    if source_retiring { "yes" } else { "no" }
+                );
+                host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, &why);
+            } else if hpx.tier.is_some() {
+                eprintln!(
+                    "[prefix-cache] retire with a capture pending: no retiring session is its \
+                     source (ticket seq={}); no settle",
+                    ticket.map_or_else(|| "none".to_string(), |t| t.to_string())
+                );
+            }
         }
         for &i in finished.iter().rev() {
             let mut s = active.remove(i);
@@ -47150,6 +47206,7 @@ mod tests {
             trace_role: "snapshot",
             source_kv: 0,
             queued_ahead: "none".into(),
+            source_request: "seed-request".into(),
         });
     }
 
@@ -47792,8 +47849,9 @@ mod tests {
         let settle = body[..remove]
             .rfind("host_capture_settle_pending(")
             .expect("a pending capture settles before any session leaves active");
+        // (Design R1, day 62 section 8: the no-source branch's line sits between them.)
         assert!(
-            remove - settle < 400,
+            remove - settle < 900,
             "the settle sits right before the retire loop"
         );
         assert!(body[settle..settle + 200].contains("ContractWait::Block"));
@@ -50149,18 +50207,20 @@ mod tests {
         );
     }
 
-    /// WP-A day 62 (`DAY62.md` step 1; CPU census): the retire seam's lines are log only. The retire
-    /// still settles a pending capture with `Block` before any session leaves `active`, whether or
-    /// not the source retires; `source_kv` and `queued_ahead` are written at submission and read
-    /// only by the retire's why and the publish line.
+    /// WP-A day 62 (`DAY62.md` step 1; CPU census): the retire seam's lines. `source_kv` and
+    /// `queued_ahead` are written at submission and read only by the retire pass and the publish
+    /// line; since design R1 (section 8) the source test decides whether the retire settles, and
+    /// a settle still precedes any session's removal.
     #[test]
     fn day62_the_retire_seam_lines_are_log_only() {
         let worker = include_str!("worker.rs");
         let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        // Design R1 (day 62 section 8) makes the source test a decision: computed, handed to
+        // `r1_settle_at_retire` (its parameter and body), then printed on the settle's why.
         assert_eq!(
             production.matches("source_retiring").count(),
-            2,
-            "computed, then printed"
+            5,
+            "R1's decision and the why"
         );
         assert!(production.contains("if source_retiring { \"yes\" } else { \"no\" }"));
         assert_eq!(
@@ -50174,7 +50234,7 @@ mod tests {
             "the field, the submission's read, the struct literal, the destructure, the print"
         );
         let retire = &production[production
-            .find("let source_kv = hpx.capturing.as_ref()")
+            .find("let (source_kv, source_request, ticket) = hpx")
             .unwrap()..];
         let settle = retire.find(
             "host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, &why);",
@@ -50184,6 +50244,82 @@ mod tests {
             settle.unwrap() < remove.unwrap(),
             "the Block settle still precedes the removal"
         );
+    }
+
+    /// WP-A day 62 design R1 (`DAY62.md` section 8): the source test and the settle decision.
+    #[test]
+    fn day62_r1_settles_only_when_the_source_retires_by_either_identity() {
+        use super::{r1_is_source, r1_settle_at_retire};
+        assert!(
+            r1_is_source("req-7", Some(0x10), "req-7", 0x20),
+            "the request id alone"
+        );
+        assert!(
+            r1_is_source("req-8", Some(0x20), "req-7", 0x20),
+            "the cache address alone"
+        );
+        assert!(
+            r1_is_source("req-7", None, "req-7", 0x20),
+            "no cache, the id"
+        );
+        assert!(!r1_is_source("req-8", Some(0x10), "req-7", 0x20), "neither");
+        assert!(
+            !r1_is_source("req-8", None, "req-7", 0x20),
+            "neither, no cache"
+        );
+        assert!(r1_settle_at_retire(true) && !r1_settle_at_retire(false));
+    }
+
+    /// WP-A day 62 design R1 (CPU census): every capture records its source's request id (the
+    /// seed route from its session, the spec-boundary route from each of its three publishers);
+    /// the retire pass computes the source test from both identities and settles only then; no
+    /// other capture settle site changes.
+    #[test]
+    fn day62_r1_every_capture_names_its_source_and_only_the_retire_settle_changes() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert_eq!(
+            production
+                .matches("source_request: source_request.to_string(),")
+                .count(),
+            1
+        );
+        assert_eq!(
+            production
+                .matches("            source_request,\n            pos")
+                .count(),
+            2,
+            "both routes' submits"
+        );
+        for publisher in [
+            "\"dspark-boundary\",\n        &s.request_id,",
+            "\"glm5-boundary\",\n        &s.request_id,",
+            "\"spec-boundary\",\n                            &s.request_id,",
+            "        why,\n        &s.request_id,\n    ) {",
+        ] {
+            assert!(
+                production.contains(publisher),
+                "{publisher} names its source"
+            );
+        }
+        let retire = &production[production
+            .find("let (source_kv, source_request, ticket) = hpx")
+            .unwrap()..];
+        let test = retire.find("r1_is_source(").unwrap();
+        let decide = retire
+            .find("if r1_settle_at_retire(source_retiring) {")
+            .unwrap();
+        let settle = retire.find("host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, &why);").unwrap();
+        assert!(test < decide && decide < settle);
+        for site in [
+            "\"a second capture\"",
+            "\"a trim\"",
+            "\"a tenant purge\"",
+            "\"shutdown\"",
+        ] {
+            assert!(production.contains(site), "{site} keeps its settle");
+        }
+        assert_eq!(production.matches("\"a second capture\"").count(), 2);
     }
 
     /// WP-A day 66 (`DAY66.md`): a stray timed call of any kind before a scoped call never reaches
