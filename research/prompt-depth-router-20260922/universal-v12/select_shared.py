@@ -230,6 +230,8 @@ def choose(validation, arms_path):
         "scope": "one immutable C/K/D controller, no domain route",
         "validation_score_sha256": sha(validation),
         "validation_arms_sha256": sha(arms_path),
+        "qualification_arms_sha256":
+        arms["qualification_arms_sha256"],
         "source_manifest_sha256": arms["source_manifest_sha256"],
         "model_manifest_sha256": arms["model_manifest_sha256"],
         "quality_sha256": score["quality_sha256"],
@@ -268,7 +270,7 @@ def main():
             selection["model_manifest_sha256"],
             "selected_from_validation": sha(result_path),
             "qualification_arms_sha256":
-            arms["qualification_arms_sha256"],
+            selection["qualification_arms_sha256"],
             "domains": list(DOMAINS),
             "arms": final,
         })

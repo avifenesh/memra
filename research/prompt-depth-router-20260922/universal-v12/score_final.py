@@ -194,8 +194,16 @@ def behavior(rows):
     d = Counter()
     decisions = 0
     stops = 0
+    accepted = 0
+    drafted = 0
+    model_seconds = {"k": 0.0, "cd": 0.0}
+    included = {}
     for domain in DOMAINS:
+        included[domain] = 0
         for row in rows[domain]:
+            if row["loops"]:
+                continue
+            included[domain] += 1
             k.update({
                 int(action): count
                 for action, count in row["k_actions"].items()
@@ -206,10 +214,21 @@ def behavior(rows):
             })
             decisions += row["c_decisions"]
             stops += row["c_stops"]
+            accepted += row["accepted"]
+            drafted += row["drafted"]
+            model_seconds["k"] += row["k_model_s"]
+            model_seconds["cd"] += row["cd_model_s"]
     return {
+        "unlooped_conversations": included,
         "k_actions": dict(sorted(k.items())),
         "d_actions": dict(sorted(d.items())),
         "c_decisions": decisions, "c_stops": stops,
+        "accepted_diagnostic": accepted,
+        "drafted_diagnostic": drafted,
+        "acceptance_diagnostic": (
+            accepted / drafted if drafted else None
+        ),
+        "policy_model_seconds": model_seconds,
         "adaptive_k_observed": len(k) > 1,
         "adaptive_d_observed": len(d) > 1,
         "adaptive_c_observed": 0 < stops < decisions,
