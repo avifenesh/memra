@@ -231,3 +231,30 @@ DAY49D J-VMM card=pro6000 role=red gate_j=PASS gate_j_red=PASS j-ctrl=[door_on=1
   directory`, then `boots stopped rc=1`. The box chain did not export `WT`, so the runner fell back to its local
   default. The chain now exports `WT` and `RIG_LOCK` and has a `BOOTS_ONLY=1` entry point (`09b15280f`). The boots
   run under that name into `b-day49d-boots`. `read-serve.log` is empty and no serving clause is read here.
+
+### 2.4 Addendum D's serving shape on the target card (the boots-only rerun, the same card, 2026-09-26 21:09 to 21:15Z)
+
+Chain tree `09b15280f` (the sitting records HEAD `6cef1bbe3`). Green was rebuilt on the box from `8926ccfb3`, sha256
+`f6252707...761dcf3a6`; the 27B. Burst 8 x 6,144, no warm, `MEMRA_STEP_OOM_FAULT=batch:1`. Receipts at
+`pro-single-day49d/box-boots/` (the lead's `MIRROR-CHECK.txt`: box manifest OK, no ELF). Verbatim (`read-serve.log`):
+
+```
+DAY49D SERVE card=pro6000 boot=O1-off arm=off route=spec-default batch_fired=[8] other_fired=0 retry_lines=0 retried_ok=0 retry_failed=0 rows=9 status={200: 1, 503: 8} error_rows=8 -> READING (the before)
+DAY49D SERVE card=pro6000 boot=O1-on arm=on route=spec-default batch_fired=[8] other_fired=0 retry_lines=1 retried_ok=1 retry_failed=0 rows=9 status={200: 9} error_rows=0 -> PASS
+DAY49D SERVE card=pro6000 boot=O2-off arm=off route=spec-default batch_fired=[8] other_fired=0 retry_lines=0 retried_ok=0 retry_failed=0 rows=9 status={200: 1, 503: 8} error_rows=8 -> READING (the before)
+DAY49D SERVE card=pro6000 boot=O2-on arm=on route=spec-default batch_fired=[8] other_fired=0 retry_lines=1 retried_ok=1 retry_failed=0 rows=9 status={200: 9} error_rows=0 -> PASS
+DAY49D SERVE card=pro6000 boot=P1-off arm=off-plain route=plain batch_fired=[5] other_fired=0 retry_lines=0 retried_ok=0 retry_failed=0 rows=9 status={200: 4, 503: 5} error_rows=5 -> READING (the before)
+DAY49D SERVE card=pro6000 boot=P1-on arm=on-plain route=plain batch_fired=[5] other_fired=0 retry_lines=1 retried_ok=1 retry_failed=0 rows=9 status={200: 9} error_rows=0 -> PASS
+DAY49D SERVE card=pro6000 boot=P2-off arm=off-plain route=plain batch_fired=[5] other_fired=0 retry_lines=0 retried_ok=0 retry_failed=0 rows=9 status={200: 4, 503: 5} error_rows=5 -> READING (the before)
+DAY49D SERVE card=pro6000 boot=P2-on arm=on-plain route=plain batch_fired=[5] other_fired=0 retry_lines=1 retried_ok=1 retry_failed=0 rows=9 status={200: 9} error_rows=0 -> PASS
+DAY49D SERVE-ROUTE card=pro6000 route=plain boots=4 reached=4
+DAY49D SERVE-ROUTE card=pro6000 route=spec-default boots=4 reached=4
+```
+
+- **The serving clause PASS on every `on` boot, both routes, both orders:** 9 of 9 requests `200`, no error row, one
+  retry and one `retried (ok)`. The aimed fault reached the batched chunk on every boot, and nowhere else.
+- **The before (`off`):** one batched OOM ends every session of its chunk. On the spec-default route the chunk held 8
+  sessions, and 8 of the 9 requests end `503` (1 of 9 `200`). On the plain route it held 5 sessions, and 5 of 9 end
+  `503` (4 of 9 `200`). The same on both orders.
+- With 2.3, O14 is read on the target card: the gates' 3-session chunk and the serving shape's 5- and 8-session chunks
+  all recover under `MEMRA_BATCH_OOM_RECOVER=1`. Without it, every session in the faulted chunk is lost.
