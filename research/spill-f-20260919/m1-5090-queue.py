@@ -32,7 +32,7 @@ def steps(rec, first_rounds="1-10"):
         ("anonpeak", lambda: rounds("anonpeak", "anonpeak", "--memory-max", CAP)),
         ("bounded", lambda: rounds("bounded", "bounded", "--memory-max", str(bounded_max(rec)), "--rounds", "1-10")),
         ("g2", lambda: rounds("g2", "g2", "--memory-max", CAP)),
-        ("mapped-gpu-cell", lambda: gpu_cell(rec)),
+        ("mapped-gpu-cell", lambda: rounds("gpucell", "mapped-gpu-cell", "--memory-max", CAP)),
         ("f17-smoke", lambda: rounds("f17", "f17-smoke", "--memory-max", CAP, "--rounds", "1", "--smoke")),
         ("f17-smoke-gate", lambda: [sys.executable, str(HERE / "m1-b3-pool.py"), str(rec / "f17-smoke"),
                                     "--bypass-check", "--require-correct"]),
@@ -52,20 +52,6 @@ def bounded_max(rec):
     if not (result["all_exit_zero"] and result["all_correct"]):
         raise SystemExit("REFUSED: the anon-peak cell did not pass")
     return int(result["bounded_memory_max_bytes"])
-
-
-def gpu_cell(rec):
-    # The GPU cell runs under the canonical lock after the same idle wait as a round cell.
-    wait = [sys.executable, "-c", "import importlib.util,sys;"
-            f"s=importlib.util.spec_from_file_location('r','{ROUNDS}');m=importlib.util.module_from_spec(s);"
-            "s.loader.exec_module(m);"
-            f"m.wait_idle(open('{rec / 'mapped-gpu-cell.waits.jsonl'}','a'),'mapped gpu cell')"]
-    test = ["flock", "-n", "/tmp/memra-5090.lock", "systemd-run", "--user", "--scope", "-q",
-            "-p", "CPUQuota=1200%", "-p", "MemoryMax=20G", "env", "MEMRA_CUDA_ARCH=120a", "cargo", "test",
-            "--release", "-p", "memra-engine", "--lib", "--", "--ignored", "--exact",
-            "spill_pread::tests::mapped_serve_reads_in_place_and_owns_the_buffer_until_its_event",
-            "--nocapture"]
-    return ["bash", "-c", " ".join(f"'{a}'" for a in wait) + " && " + " ".join(f"'{a}'" for a in test)]
 
 
 def main():

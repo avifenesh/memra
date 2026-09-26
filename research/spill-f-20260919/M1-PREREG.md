@@ -493,3 +493,21 @@ it off, 2026-07-06), because every cold block paid two host-to-device copies. It
 cell as the registered control that carries the admission change without zero-copy: `mapped`
 changes the first miss from one copy (baseline) or two (staged) to none. If `staged` loses again,
 its value is deleted from the door in the lane that measures it.
+
+Section D, resync amendment (2026-09-26 08:05Z, after the requested 07:28Z rig reboot, before any
+further 5090 cell):
+1. The reboot remounted `/data` with mount id 250 (was 242; same device and filesystem). The
+   collector correctly refused the stale proof on rounds 5 to 10, and the round driver wrongly
+   continued past the refusal (fixed: a non-lost failure now stops the regime). `/data` is
+   re-proven (`rtx5090/proof/`, PASS, mount id 250; the pre-reboot proof is kept in
+   `rtx5090/proof-prereboot-mount242/`). Capped rounds 1 to 4 ran under the first proof, rounds 5
+   to 10 run under the second; both are the same proven device and filesystem, every visit is a
+   cold start, so the ten rounds still pool. The refused and interrupted cells are kept, never scored.
+2. G2: the laptop reports `power.limit` as `[N/A]`, which the frozen `h2d-probe` refuses
+   ("unknown power limit"). The probe now accepts exactly the literal `[N/A]` and records it
+   verbatim; every other non-watt value still refuses, and the copy and timing code is unchanged.
+   The G2 5090 probe is therefore built from the lane tip (hash in `rtx5090/build-g2/`), not from
+   BOX27's engine source; G2 compares pinned with pageable inside one binary, so no cross-rig
+   binary identity is claimed for it.
+3. The mapped GPU ownership cell runs under `flock -n -E 75 /tmp/memra-5090.lock` after the same
+   idle wait (the queue's first form failed on its own quoting before running anything).

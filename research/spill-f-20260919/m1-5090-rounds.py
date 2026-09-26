@@ -32,7 +32,8 @@ ART = "/data/ai-ml/hf-models/qwen36-35b-a3b-mtp-gguf-5bc3e238/Qwen3.6-35B-A3B-UD
 BIN = "/home/avifenesh/spill-f-5090/bin/run-gen"
 PROOF = "/home/avifenesh/.local/share/memra-lane-f-private/rtx5090/m1-proof.json"
 PUBLIC_PROOF = HERE / "rtx5090/proof/PROOF.json"
-PROBE = "/home/avifenesh/spill-f-5090/bin/h2d-probe"
+PROBE = "/home/avifenesh/spill-f-5090/bin-g2/h2d-probe"  # resync amendment 2: accepts [N/A]
+GPU_CELL = "spill_pread::tests::mapped_serve_reads_in_place_and_owns_the_buffer_until_its_event"
 BIN18 = "/home/avifenesh/spill-f-5090/bin18"
 BIN17 = "/home/avifenesh/spill-f-5090/bin17/run-gen"
 B2_PROMPTS = "/home/avifenesh/spill-f-5090/b2-prompts.jsonl"
@@ -82,7 +83,7 @@ def wait_idle(log, label):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    ap.add_argument("--regime", choices=["capped", "bounded", "g2", "handoff", "anonpeak", "f17"], required=True)
+    ap.add_argument("--regime", choices=["capped", "bounded", "g2", "handoff", "anonpeak", "f17", "gpucell"], required=True)
     ap.add_argument("--memory-max", type=int, required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--rounds", default="1-10")
@@ -104,7 +105,13 @@ def main():
                         "-p", f"MemoryMax={a.memory_max}", "-p", "MemorySwapMax=0",
                         sys.executable, str(ROOT / "tools/tier-battery.py"), "--rig", "rtx5090", "--timeout", "10800",
                         "--external-lock", "--out", str(target), "--execute", sys.executable]
-                if a.regime == "handoff":
+                if a.regime == "gpucell":
+                    # Resync amendment 3: the OWED 17 ownership cell under the canonical lock.
+                    argv = ["flock", "-n", "-E", "75", LOCK, "systemd-run", "--user", "--scope", "-q",
+                            "-p", "CPUQuota=1200%", "-p", f"MemoryMax={a.memory_max}", "env",
+                            "MEMRA_CUDA_ARCH=120a", "cargo", "test", "--release", "-p", "memra-engine", "--lib",
+                            "--", "--ignored", "--exact", GPU_CELL, "--nocapture"]
+                elif a.regime == "handoff":
                     order = "buffered,direct" if k % 2 else "direct,buffered"
                     argv[-4:-4] = ["--storage-root", B2_SCRATCH, "--storage-proof", str(PUBLIC_PROOF)]
                     argv += [str(HERE / "m1-handoff-driver.py"), "run", "--gate", BIN18 + "/kv-handoff-gate",
@@ -138,7 +145,8 @@ def main():
                 with (out / f"round-{k:02d}.driver-attempt{attempt}.log").open("xb") as dl:
                     rc = subprocess.run(argv, stdout=dl, stderr=subprocess.STDOUT, cwd=ROOT).returncode
                 text = (out / f"round-{k:02d}.driver-attempt{attempt}.log").read_text(errors="replace")
-                lost = rc != 0 and "Resource temporarily unavailable" in text and not (target / "visits").exists()
+                lost = (rc == 75 if a.regime == "gpucell" else
+                        rc != 0 and "Resource temporarily unavailable" in text and not (target / "visits").exists())
                 log.write(json.dumps({"utc": now(), "event": "cell", "round": k, "attempt": attempt, "rc": rc,
                                       "seconds": round(time.monotonic() - t0, 1), "lost_lock_race": lost,
                                       "dir": target.name}) + "\n")
@@ -147,9 +155,17 @@ def main():
                 if not lost:
                     break
                 time.sleep(10)
-            if a.smoke or a.regime in ("g2", "anonpeak"):
+            if rc != 0:
+                # A cell that failed for any reason other than a lost lock race stops the regime:
+                # the next round must not run on a state nobody has read (resync 2026-09-26).
+                log.write(json.dumps({"utc": now(), "event": "stopped", "round": k, "rc": rc}) + "\n")
+                log.flush()
+                print(f"M1-5090 regime={a.regime} STOPPED at round {k} rc={rc}", flush=True)
+                return 2
+            if a.smoke or a.regime in ("g2", "anonpeak", "gpucell"):
                 break
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
