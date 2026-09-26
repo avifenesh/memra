@@ -649,16 +649,23 @@ fn validate_plan(plan: &ModelPlan) -> Result<(), Fail> {
     Ok(())
 }
 
+fn device_memory(engine: &Engine) -> Result<(usize, usize), Fail> {
+    engine.gpu.ctx.bind_to_thread()?;
+    Ok(engine.stream().context().mem_get_info()?)
+}
+
 fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() < 5 || args.len() > 11 {
         return Err(
-            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--resident-moe] [--resident-text] [--grouped-moe] [--mirror-o-f32] [--profile-phases]"
+            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--resident-moe] [--resident-text] [--grouped-moe] [--mirror-o-f32] [--profile-phases] [--capacity-probe=N] [--workspace-mib=N]"
                 .into(),
         );
     }
     let mut continue_one = false;
     let mut requested_turns: Option<usize> = None;
+    let mut capacity_sessions: Option<usize> = None;
+    let mut workspace_mib: Option<usize> = None;
     let mut resident_moe = false;
     let mut resident_text = false;
     let mut grouped_moe = false;
@@ -675,6 +682,12 @@ fn run() -> Result<(), Fail> {
             _ if option.starts_with("--tokens=") && requested_turns.is_none() => {
                 requested_turns = Some(option["--tokens=".len()..].parse()?);
             }
+            _ if option.starts_with("--capacity-probe=") && capacity_sessions.is_none() => {
+                capacity_sessions = Some(option["--capacity-probe=".len()..].parse()?);
+            }
+            _ if option.starts_with("--workspace-mib=") && workspace_mib.is_none() => {
+                workspace_mib = Some(option["--workspace-mib=".len()..].parse()?);
+            }
             _ => return Err(format!("unknown or repeated MiMo token option: {option}").into()),
         }
     }
@@ -684,6 +697,19 @@ fn run() -> Result<(), Fail> {
     let turns = requested_turns.unwrap_or(if continue_one { 2 } else { 1 });
     if !(1..=MAX_DIAGNOSTIC_TOKENS).contains(&turns) {
         return Err("MiMo diagnostic token count is outside 1..=256".into());
+    }
+    if let Some(sessions) = capacity_sessions {
+        if !(1..=2).contains(&sessions)
+            || requested_turns.is_some()
+            || continue_one
+            || profile_phases
+            || !resident_text
+            || workspace_mib.is_some_and(|mib| mib > 8192)
+        {
+            return Err("MiMo capacity probe requires 1-2 sessions, resident text, and no token/profile option".into());
+        }
+    } else if workspace_mib.is_some() {
+        return Err("--workspace-mib requires --capacity-probe".into());
     }
     if resident_text {
         resident_moe = true;
@@ -825,6 +851,129 @@ fn run() -> Result<(), Fail> {
         }
         resident_head = Some(ResidentHead::load(&engines[1], &model)?);
         resident_text_load_ms = load_start.elapsed().as_secs_f64() * 1000.0;
+    }
+    if let Some(sessions) = capacity_sessions {
+        let workspace_bytes = workspace_mib.unwrap_or(0) * 1024 * 1024;
+        let before = [device_memory(&engines[0])?, device_memory(&engines[1])?];
+        let mut held = [Vec::<CudaSlice<u8>>::new(), Vec::<CudaSlice<u8>>::new()];
+        let mut kv_bytes = [0usize; 2];
+        let mut plane_count = [0usize; 2];
+        let mut workspace_allocated = [false; 2];
+        let mut failure: Option<String> = None;
+        'layers: for (index, layer) in plan.layers.iter().enumerate() {
+            let stage = usize::from(index >= STAGE_CUT);
+            let engine = &engines[stage];
+            engine.gpu.ctx.bind_to_thread()?;
+            let (attention, global) = checked_attention(layer)?;
+            let stored_tokens = if global { 1_048_576 } else { 128 };
+            let kv_heads = attention.kv_heads as usize;
+            for session in 0..sessions {
+                for (plane, width) in [("key", kv_heads * QK), ("value", kv_heads * VALUE)] {
+                    let bytes = stored_tokens * width;
+                    match engine.alloc_u8(bytes) {
+                        Ok(buffer) => {
+                            held[stage].push(buffer);
+                            kv_bytes[stage] += bytes;
+                            plane_count[stage] += 1;
+                        }
+                        Err(error) => {
+                            failure = Some(format!(
+                                "stage {stage} layer {index} session {session} {plane} allocation of {bytes} bytes: {error}"
+                            ));
+                            break 'layers;
+                        }
+                    }
+                }
+            }
+        }
+        if failure.is_none() && workspace_bytes > 0 {
+            for stage in 0..2 {
+                let engine = &engines[stage];
+                engine.gpu.ctx.bind_to_thread()?;
+                match engine.alloc_u8(workspace_bytes) {
+                    Ok(buffer) => {
+                        held[stage].push(buffer);
+                        workspace_allocated[stage] = true;
+                    }
+                    Err(error) => {
+                        failure = Some(format!(
+                            "stage {stage} workspace allocation of {workspace_bytes} bytes: {error}"
+                        ));
+                        break;
+                    }
+                }
+            }
+        }
+        let mut after = [None, None];
+        for stage in 0..2 {
+            if let Err(error) = engines[stage].stream().synchronize() {
+                failure.get_or_insert_with(|| format!("stage {stage} synchronization: {error}"));
+            }
+            match device_memory(&engines[stage]) {
+                Ok(info) => after[stage] = Some(info),
+                Err(error) => {
+                    failure.get_or_insert_with(|| format!("stage {stage} memory query: {error}"));
+                }
+            }
+        }
+        let mut report = String::from("format\tmemra-mimo-resident-kv-capacity-v1\n");
+        writeln!(report, "model\tXiaomiMiMo/MiMo-V2.6-Flash-RL@{REVISION}")?;
+        writeln!(report, "config_sha256\t{CONFIG_SHA256}")?;
+        writeln!(
+            report,
+            "source_header_digest\t5ebbdd27e45716b805fc2bdf115c8345b4bfc03c6012b860f76b6b222c758aee"
+        )?;
+        writeln!(
+            report,
+            "scope\traw_one_byte_kv_planes_no_scales_no_attention"
+        )?;
+        writeln!(report, "sessions\t{sessions}")?;
+        writeln!(report, "context_tokens_per_session\t1048576")?;
+        writeln!(report, "sliding_window_tokens\t128")?;
+        writeln!(report, "stage_cut_before_layer\t{STAGE_CUT}")?;
+        writeln!(report, "grouped_moe\t{grouped_moe}")?;
+        writeln!(report, "o_proj_f32_mirror\t{mirror_o_f32}")?;
+        writeln!(
+            report,
+            "workspace_reserve_bytes_per_card\t{workspace_bytes}"
+        )?;
+        writeln!(report, "resident_moe_load_ms\t{resident_load_ms:.3}")?;
+        writeln!(report, "resident_text_load_ms\t{resident_text_load_ms:.3}")?;
+        for stage in 0..2 {
+            writeln!(report, "device_ordinal\t{stage}\t{}", [gpu0, gpu1][stage])?;
+            writeln!(report, "memory_total_bytes\t{stage}\t{}", before[stage].1)?;
+            writeln!(
+                report,
+                "memory_free_before_bytes\t{stage}\t{}",
+                before[stage].0
+            )?;
+            writeln!(report, "kv_plane_count\t{stage}\t{}", plane_count[stage])?;
+            writeln!(report, "kv_bytes_allocated\t{stage}\t{}", kv_bytes[stage])?;
+            writeln!(
+                report,
+                "workspace_allocated\t{stage}\t{}",
+                workspace_allocated[stage]
+            )?;
+            if let Some((free, _)) = after[stage] {
+                writeln!(report, "memory_free_after_bytes\t{stage}\t{free}")?;
+            }
+        }
+        writeln!(report, "passed\t{}", failure.is_none())?;
+        writeln!(report, "failure\t{}", failure.as_deref().unwrap_or("none"))?;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&staged_path)?;
+        file.write_all(report.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(staged_path, report_path)?;
+        drop(held);
+        return if let Some(message) = failure {
+            Err(message.into())
+        } else {
+            Ok(())
+        };
     }
     let mut kv: Vec<Option<KvState>> = std::iter::repeat_with(|| None).take(LAYERS).collect();
     let mut report = if turns > 1 {
