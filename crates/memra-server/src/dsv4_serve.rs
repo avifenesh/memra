@@ -1485,7 +1485,10 @@ fn lane_phase(phase: LanePhase) {
 
 /// One watchdog look at the board at `now` ms: when a lane that is not waiting on the queue has
 /// sat at one point for `stall` and was not already reported at that point, the dump line for
-/// every lane; `dumped` remembers each lane's reported `since`.
+/// every lane; `dumped` remembers each lane's reported `since`. A lane queued for the launch turn
+/// counts only when no lane has moved within `stall`: a route that holds the turn for a whole
+/// request (DSpark, the device sampler, a restored prefix) keeps the others waiting while the
+/// holder restamps every step.
 fn lane_watch_once(
     board: &LaneBoard,
     tickets: (u64, u64),
@@ -1493,11 +1496,22 @@ fn lane_watch_once(
     stall: std::time::Duration,
     dumped: &mut [u64],
 ) -> Option<String> {
+    let stall_ms = stall.as_millis() as u64;
+    let point = |slot: &LaneSlot| {
+        (
+            LanePhase::from_u8(slot.phase.load(std::sync::atomic::Ordering::Relaxed)),
+            slot.since_ms.load(std::sync::atomic::Ordering::Relaxed),
+        )
+    };
+    let fresh = board.slots.iter().any(|slot| {
+        let (phase, since) = point(slot);
+        phase != LanePhase::Queue && now.saturating_sub(since) < stall_ms
+    });
     let stuck = board.slots.iter().enumerate().any(|(i, slot)| {
-        let since = slot.since_ms.load(std::sync::atomic::Ordering::Relaxed);
-        LanePhase::from_u8(slot.phase.load(std::sync::atomic::Ordering::Relaxed))
-            != LanePhase::Queue
-            && now.saturating_sub(since) >= stall.as_millis() as u64
+        let (phase, since) = point(slot);
+        phase != LanePhase::Queue
+            && (phase != LanePhase::TurnWait || !fresh)
+            && now.saturating_sub(since) >= stall_ms
             && dumped[i] != since
     });
     if !stuck {
@@ -3276,6 +3290,28 @@ mod lane_watch_tests {
             lane_watch_once(&board, (7, 6), since + 90_000, stall, &mut dumped),
             None
         );
+        // A lane queued for the turn behind a holder that keeps stepping is not a stall; once the
+        // holder stops moving too, it is.
+        let turn_board = LaneBoard::new(2);
+        turn_board.slots[0]
+            .phase
+            .store(LanePhase::TurnWait as u8, Ordering::Relaxed);
+        turn_board.slots[0].since_ms.store(0, Ordering::Relaxed);
+        turn_board.slots[1]
+            .phase
+            .store(LanePhase::Held as u8, Ordering::Relaxed);
+        turn_board.slots[1]
+            .since_ms
+            .store(100_000, Ordering::Relaxed);
+        let mut seen = vec![u64::MAX; 2];
+        assert_eq!(
+            lane_watch_once(&turn_board, (2, 1), 120_000, stall, &mut seen),
+            None
+        );
+        let line = lane_watch_once(&turn_board, (2, 1), 170_000, stall, &mut seen)
+            .expect("a holder that stopped moving is reported");
+        assert!(line.contains("lane 0 TurnWait for 170.0s"), "{line}");
+        assert!(line.contains("lane 1 Held for 70.0s"), "{line}");
         // A step's tick restamps the point, so a lane that keeps stepping inside one phase (a
         // serial route holding the turn) never reads as stalled.
         let b2 = board.clone();
