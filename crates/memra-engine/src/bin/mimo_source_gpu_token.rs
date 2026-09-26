@@ -1,7 +1,6 @@
 //! Layer-streamed, two-device MiMo source text-token diagnostic.
 //! This is an offline arithmetic rung, not resident serving or model support.
 
-use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io::Write as _;
 use std::path::Path;
@@ -10,11 +9,10 @@ use std::time::Instant;
 use cudarc::driver::CudaSlice;
 use memra_engine::Engine;
 use memra_engine::QT_F8_E4M3_BLK;
-use memra_engine::mimo_source_moe::source_moe_token;
+use memra_engine::mimo_source_moe::{PinnedMiMoSource, source_moe_token};
 use memra_engine::model::GpuTensor;
 use memra_gguf::config::{HfConfig, ModelConfig};
 use memra_gguf::model_packs;
-use memra_gguf::model_packs::mimo_v2::inspect_pinned_source_headers;
 use memra_gguf::model_plan::{
     ActivationPlan, AttentionPlan, FullAttentionPlan, LayerPlan, MlpPlan, ModelPlan, NormKind,
     ResidualTopology, RopeFactors, StatePlan, WeightTransform,
@@ -445,15 +443,10 @@ fn run() -> Result<(), Fail> {
         return Err("MiMo source token requires native block-FP8 residency".into());
     }
     let model = StModel::open(dir)?;
-    let headers = model
-        .names()
-        .map(|name| (name.clone(), model.info(name).unwrap().clone()))
-        .collect::<BTreeMap<_, _>>();
-    let binding = inspect_pinned_source_headers(&config, &headers)?;
-    if binding.tensors.len() != 36922 {
+    let pinned = PinnedMiMoSource::bind(&model, &config, &plan)?;
+    if pinned.semantic_tensors() != 36922 {
         return Err("MiMo source semantic binding count changed".into());
     }
-    drop((binding, headers));
     let source = SafetensorsSource::open(dir)?;
     for layer in &plan.layers {
         let index = layer.index as usize;
@@ -566,7 +559,7 @@ fn run() -> Result<(), Fail> {
                     dense_mlp_token(engine, &source, &post_norm, dense)?
                 }
                 MlpPlan::Moe(moe) if index > 0 => {
-                    let result = source_moe_token(engine, &model, index, &post_norm, &config, moe)?;
+                    let result = source_moe_token(engine, &pinned, index, &post_norm, moe)?;
                     writeln!(
                         report,
                         "selected_experts\t{turn}\t{index}\t{:?}",

@@ -26,7 +26,53 @@ pub struct MiMoMoeToken {
     pub weights: Vec<f32>,
 }
 
-fn validate_contract(config: &ModelConfig, plan: &MoeMlpPlan, layer: usize) -> Result<(), Fail> {
+/// A source whose complete pinned header census and model plan were checked
+/// once before any GPU work. Its private fields prevent bypassing that check.
+pub struct PinnedMiMoSource<'a> {
+    model: &'a StModel,
+    config: &'a ModelConfig,
+    plan: &'a ModelPlan,
+    semantic_tensors: usize,
+}
+
+impl<'a> PinnedMiMoSource<'a> {
+    pub fn bind(
+        model: &'a StModel,
+        config: &'a ModelConfig,
+        plan: &'a ModelPlan,
+    ) -> Result<Self, Fail> {
+        if &ModelPlan::compile(config)? != plan {
+            return Err("MiMo source plan does not match its configuration".into());
+        }
+        let headers = model
+            .names()
+            .map(|name| {
+                model
+                    .info(name)
+                    .map(|info| (name.clone(), info.clone()))
+                    .ok_or_else(|| format!("missing MiMo source header {name}"))
+            })
+            .collect::<Result<BTreeMap<_, _>, _>>()?;
+        let bound = inspect_pinned_source_headers(config, &headers)?;
+        Ok(Self {
+            model,
+            config,
+            plan,
+            semantic_tensors: bound.tensors.len(),
+        })
+    }
+
+    pub fn semantic_tensors(&self) -> usize {
+        self.semantic_tensors
+    }
+}
+
+fn validate_contract(
+    config: &ModelConfig,
+    compiled: &ModelPlan,
+    plan: &MoeMlpPlan,
+    layer: usize,
+) -> Result<(), Fail> {
     let mimo = config
         .mimo
         .as_ref()
@@ -60,7 +106,6 @@ fn validate_contract(config: &ModelConfig, plan: &MoeMlpPlan, layer: usize) -> R
     {
         return Err("unsupported MiMo source MoE contract".into());
     }
-    let compiled = ModelPlan::compile(config)?;
     let Some(layer_plan) = compiled.layers.get(layer) else {
         return Err("MiMo source MoE layer is out of range".into());
     };
@@ -272,28 +317,18 @@ fn validate_selection(ids: &[i32], weights: &[f32]) -> Result<Vec<u32>, Fail> {
 /// weighted routed-expert sum before the layer's residual addition.
 pub fn source_moe_token(
     engine: &Engine,
-    source: &StModel,
+    pinned: &PinnedMiMoSource<'_>,
     layer: usize,
     x: &CudaSlice<f32>,
-    config: &ModelConfig,
     plan: &MoeMlpPlan,
 ) -> Result<MiMoMoeToken, Box<dyn Error>> {
-    validate_contract(config, plan, layer)?;
+    validate_contract(pinned.config, pinned.plan, plan, layer)?;
     if x.len() != HIDDEN || x.ordinal() != engine.stream().context().ordinal() {
         return Err("MiMo source MoE input must be one 4096-vector on the engine device".into());
     }
-    // The exact source header digest binds the full official MXFP4 checkpoint
-    // structure. Payload provenance and numerical parity remain caller gates.
-    let headers = source
-        .names()
-        .map(|name| {
-            source
-                .info(name)
-                .map(|info| (name.clone(), info.clone()))
-                .ok_or_else(|| format!("missing MiMo source header {name}"))
-        })
-        .collect::<Result<BTreeMap<_, _>, _>>()?;
-    inspect_pinned_source_headers(config, &headers)?;
+    // `PinnedMiMoSource::bind` checked the full source header digest. Payload
+    // provenance and numerical parity remain separate caller gates.
+    let source = pinned.model;
     engine.gpu.ctx.bind_to_thread()?;
     let router = format!("model.layers.{layer}.mlp.gate");
     let matrix = source_float(source, &format!("{router}.weight"), &[256, 4096])?;
@@ -373,20 +408,20 @@ mod tests {
         let MlpPlan::Moe(plan) = &compiled.layers[1].mlp else {
             panic!("fixture layer 1 must be MoE");
         };
-        validate_contract(&config, plan, 1).unwrap();
-        assert!(validate_contract(&config, plan, 0).is_err());
+        validate_contract(&config, &compiled, plan, 1).unwrap();
+        assert!(validate_contract(&config, &compiled, plan, 0).is_err());
         let mut changed = config.clone();
         changed.mimo.as_mut().unwrap().topk_group = Some(2);
-        assert!(validate_contract(&changed, plan, 1).is_err());
+        assert!(validate_contract(&changed, &compiled, plan, 1).is_err());
         let mut changed = config.clone();
         changed.hidden_act = Some("gelu".into());
-        assert!(validate_contract(&changed, plan, 1).is_err());
+        assert!(validate_contract(&changed, &compiled, plan, 1).is_err());
         let mut changed_plan = plan.clone();
         changed_plan.shared = Some(memra_gguf::model_plan::SharedMlpPlan {
             intermediate_size: 2048,
             gated: false,
         });
-        assert!(validate_contract(&config, &changed_plan, 1).is_err());
+        assert!(validate_contract(&config, &compiled, &changed_plan, 1).is_err());
     }
 
     #[test]
