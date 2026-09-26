@@ -234,3 +234,64 @@ storage rates are about 1.5 GB/s (1 GiB) and 1.7 GB/s (8 GiB) for export end to 
 fsync) and 1.4 GB/s for import (a validated, frame-by-frame buffered read with re-materialization,
 cold file): both are well under the drive's 5.1 to 6.4 GB/s write and 7 GB/s read, so the
 handoff's cost is the engine path, not the storage. Its O_DIRECT arm stays OWED 18.
+
+## B4: serving shape (`memra-server`, warm regime, the server's default spec route)
+
+No challenger won under the registered B3 gate, so `worker16` is the registered descriptive
+row; `mmap-random` and `mmap-normal` ran beside it as the warm regime's post-hoc read-gate
+winners (`M1-PREREG.md` "B4 arms"), in one round-robin schedule: 60 visits, every visit scored
+(zero request errors, valid telemetry, warm regime confirmed). Medians over N visits, each visit
+32 streamed requests of 128 tokens:
+
+| c | Arm | N | tok/s | req/s | TTFT s p50 / p95 / p99 | E2E s p50 / p99 | TPOT ms p50 / p99 | ITL ms p50 / p95 / p99 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | `worker16` | 10 | 19.14 | 0.150 | 0.70 / 0.72 / 1.99 | 6.57 / 8.11 | 46 / 50 | 0 / 139 / 141 |
+| 1 | `mmap-random` | 10 | 22.44 | 0.175 | 0.60 / 0.60 / 1.75 | 5.60 / 6.97 | 39 / 43 | 0 / 118 / 119 |
+| 1 | `mmap-normal` | 10 | 22.42 | 0.175 | 0.60 / 0.60 / 1.75 | 5.60 / 6.97 | 39 / 43 | 0 / 118 / 119 |
+| 4 | `worker16` | 10 | 27.70 | 0.216 | 1.70 / 3.76 / 3.76 | 18.28 / 20.25 | 130 / 131 | 129 / 133 / 135 |
+| 4 | `mmap-random` | 10 | 32.70 | 0.255 | 1.43 / 3.25 / 3.25 | 15.46 / 17.21 | 110 / 111 | 109 / 113 / 114 |
+| 4 | `mmap-normal` | 10 | 32.69 | 0.255 | 1.43 / 3.24 / 3.24 | 15.45 / 17.27 | 110 / 111 | 109 / 112 / 114 |
+
+```text
+M1-B4-VERDICT c1/mmap-random vs worker16: winner median_tok_ratio=1.1727
+M1-B4-VERDICT c1/mmap-normal vs worker16: winner median_tok_ratio=1.1720
+M1-B4-VERDICT c4/mmap-random vs worker16: winner median_tok_ratio=1.1802
+M1-B4-VERDICT c4/mmap-normal vs worker16: winner median_tok_ratio=1.1803
+```
+
+Post-hoc challengers, reported as such: in serving shape the mapped arms beat `worker16` by 17%
+at c=1 and 18% at c=4, with lower TTFT, TPOT and ITL at every percentile, reproducing the warm
+B3 result (1.19x) through a different binary and the spec route. ITL p50 is 0 at c=1 because the
+spec route delivers accepted bursts as consecutive frames.
+
+## B6: the five unrun G2 sizes (D's worker, pinned vs pageable, 5 AB plus 5 BA each)
+
+`RESULT {"campaign": "G2", "status": "all-visits-complete", "samples": 200, ...}`; D's
+summarizer validated the capture (250 ms telemetry, 600/600 W on every sample; GPU 30 to 40 C):
+
+| Bytes | Direction | Arm | N | Median GiB/s | Median us per copy |
+|---|---|---|---|---|---|
+| 16,384 | d2h | pageable | 10 | 1.49 | 10.26 |
+| 16,384 | d2h | pinned-cacheable | 10 | 1.75 | 8.70 |
+| 16,384 | h2d | pageable | 10 | 1.17 | 13.09 |
+| 16,384 | h2d | pinned-cacheable | 10 | 1.58 | 9.69 |
+| 262,144 | d2h | pageable | 10 | 10.18 | 23.98 |
+| 262,144 | d2h | pinned-cacheable | 10 | 19.06 | 12.81 |
+| 262,144 | h2d | pageable | 10 | 10.13 | 24.11 |
+| 262,144 | h2d | pinned-cacheable | 10 | 13.52 | 18.06 |
+| 4,194,304 | d2h | pageable | 10 | 15.99 | 244.30 |
+| 4,194,304 | d2h | pinned-cacheable | 10 | 37.99 | 102.81 |
+| 4,194,304 | h2d | pageable | 10 | 19.18 | 203.67 |
+| 4,194,304 | h2d | pinned-cacheable | 10 | 22.17 | 176.21 |
+| 67,108,864 | d2h | pageable | 10 | 18.13 | 3448.19 |
+| 67,108,864 | d2h | pinned-cacheable | 10 | 49.74 | 1256.54 |
+| 67,108,864 | h2d | pageable | 10 | 19.53 | 3200.70 |
+| 67,108,864 | h2d | pinned-cacheable | 10 | 49.23 | 1269.45 |
+| 1,073,741,824 | d2h | pageable | 10 | 18.37 | 54434.15 |
+| 1,073,741,824 | d2h | pinned-cacheable | 10 | 51.10 | 19568.04 |
+| 1,073,741,824 | h2d | pageable | 10 | 19.30 | 51810.55 |
+| 1,073,741,824 | h2d | pinned-cacheable | 10 | 50.25 | 19898.92 |
+
+Pinned (cacheable) beats pageable at every size in both directions, from 16 KiB up; at 64 MiB and
+1 GiB pinned reaches about 50 GiB/s each way against 18 to 20 GiB/s pageable. Together with D's
+day-10 sizes this completes the registered ten-size G2 matrix on the target class.
