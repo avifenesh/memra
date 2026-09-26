@@ -25,6 +25,8 @@ use super::{
 
 const PINNED_MINT_HEADER_DIGEST: &str =
     "00403ccacf38567327ec41b4cb0cbd9eade5b830094191dce7e90b24b8efe45a";
+const PINNED_SOURCE_HEADER_DIGEST: &str =
+    "5ebbdd27e45716b805fc2bdf115c8345b4bfc03c6012b860f76b6b222c758aee";
 
 /// Explicit inspection profile. It never participates in automatic family selection.
 pub static MINT_PROFILE: ModelPack = ModelPack {
@@ -49,6 +51,33 @@ pub static MINT_PROFILE: ModelPack = ModelPack {
     matches_config: |config| config.arch == crate::config::Arch::MiMoV2 && config.mimo.is_some(),
     plan_builder: canonical_plan,
     tensor_schema: mint_tensor_schema,
+    tiny_plan: None,
+};
+
+/// The quality-tested Xiaomi MXFP4 checkpoint is an explicit inspection profile.
+/// It remains outside automatic serving selection until native parity passes.
+pub static SOURCE_PROFILE: ModelPack = ModelPack {
+    family: "mimo_v2_source",
+    output_head: OutputHeadContract::SeparateHead,
+    tensor_consumption: TensorConsumption::Refuse,
+    aliases: &["mimo_v2_source", "mimo-v2.6-mxfp4"],
+    config_layout: ConfigLayout::Flat,
+    tokenizer_sources: &[TokenizerSource::TokenizerJson],
+    template: TemplateContract::ArtifactRequired,
+    support: None,
+    gates: &[
+        Gate::Config,
+        Gate::TokenizerTemplate,
+        Gate::TensorCensus,
+        Gate::TinyParity,
+        Gate::CheckpointParity,
+        Gate::RewriteParity,
+        Gate::Serve,
+    ],
+    checkpoint_parity: None,
+    matches_config: |config| config.arch == crate::config::Arch::MiMoV2 && config.mimo.is_some(),
+    plan_builder: canonical_plan,
+    tensor_schema: source_tensor_schema,
     tiny_plan: None,
 };
 
@@ -104,6 +133,24 @@ fn mint_tensor_schema(
     Ok(contract)
 }
 
+#[allow(clippy::result_large_err)] // the contract error names the exact rejected tensor
+fn source_tensor_schema(
+    config: &ModelConfig,
+    plan: &ModelPlan,
+    dialect: CheckpointDialect,
+    options: ContractOptions,
+) -> Result<TensorContract, TensorContractError> {
+    let mut contract = mint_tensor_schema(config, plan, dialect, options)?;
+    for requirement in &mut contract.requirements {
+        if matches!(&requirement.id, TensorId::Expert { .. }) {
+            requirement.quant = QuantConstraint::Mxfp4;
+            let stem = requirement.names[0].strip_suffix(".weight").unwrap();
+            requirement.auxiliaries = Some(vec![format!("{stem}.weight_scale")]);
+        }
+    }
+    Ok(contract)
+}
+
 fn header_digest(headers: &BTreeMap<String, StInfo>) -> String {
     let mut digest = Sha256::new();
     for (name, info) in headers {
@@ -152,6 +199,37 @@ pub fn inspect_pinned_mint_headers(
     if digest != PINNED_MINT_HEADER_DIGEST {
         return Err(format!(
             "MiMo mint header digest changed: got {digest}, expected {PINNED_MINT_HEADER_DIGEST}"
+        ));
+    }
+    Ok(bound)
+}
+
+/// Bind the quality-tested Xiaomi MXFP4 source headers without admitting load.
+pub fn inspect_pinned_source_headers(
+    config: &ModelConfig,
+    headers: &BTreeMap<String, StInfo>,
+) -> Result<BoundTensorContract, String> {
+    let plan = ModelPlan::compile(config).map_err(|error| format!("{error:?}"))?;
+    let contract = source_tensor_schema(
+        config,
+        &plan,
+        CheckpointDialect::HfSafetensors,
+        ContractOptions::default(),
+    )
+    .map_err(|error| format!("{error:?}"))?;
+    let census = census_from_safetensors_headers(headers)?;
+    let entries = census
+        .tensors
+        .into_iter()
+        .map(|record| record.entry)
+        .collect::<Vec<_>>();
+    let bound = contract
+        .bind(&entries)
+        .map_err(|error| format!("{error:?}"))?;
+    let digest = header_digest(headers);
+    if digest != PINNED_SOURCE_HEADER_DIGEST {
+        return Err(format!(
+            "MiMo source header digest changed: got {digest}, expected {PINNED_SOURCE_HEADER_DIGEST}"
         ));
     }
     Ok(bound)
@@ -239,6 +317,55 @@ mod tests {
             )
             .unwrap();
         assert!(contract.requirements.len() > 36_922);
+        assert!(
+            profile
+                .compile_tensor_contract(
+                    &config,
+                    &plan,
+                    CheckpointDialect::Gguf,
+                    ContractOptions::default(),
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn source_profile_uses_mxfp4_and_keeps_native_load_closed() {
+        let config = ModelConfig::from_hf(&HfConfig::parse(include_str!("fixtures/config.json")));
+        let profile = crate::model_packs::by_alias("mimo_v2_source").unwrap();
+        assert_eq!(profile.family, "mimo_v2_source");
+        assert!(profile.support.is_none());
+        assert!(profile.matches_config(&config));
+        assert!(crate::model_packs::for_config(&config).is_none());
+        assert!(crate::model_packs::compile_for_load(&config).is_err());
+        let plan = profile.compile_plan(&config).unwrap();
+        let contract = profile
+            .compile_tensor_contract(
+                &config,
+                &plan,
+                CheckpointDialect::HfSafetensors,
+                ContractOptions::default(),
+            )
+            .unwrap();
+        let expert = contract
+            .requirements
+            .iter()
+            .find(|row| {
+                row.id
+                    == TensorId::Expert {
+                        layer: 1,
+                        expert: 0,
+                        tensor: ExpertTensor::Gate,
+                    }
+            })
+            .unwrap();
+        assert_eq!(expert.quant, QuantConstraint::Mxfp4);
+        assert_eq!(
+            expert.auxiliaries,
+            Some(vec![
+                "model.layers.1.mlp.experts.0.gate_proj.weight_scale".to_owned()
+            ])
+        );
         assert!(
             profile
                 .compile_tensor_contract(
