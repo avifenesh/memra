@@ -1,0 +1,26 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-a/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.94s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-b7880578d97a1c04)
+
+running 1 test
+test route_telemetry::tests::day58_a_snapshot_never_counts_an_ended_run_as_running ... FAILED
+
+failures:
+
+---- route_telemetry::tests::day58_a_snapshot_never_counts_an_ended_run_as_running stdout ----
+
+thread 'route_telemetry::tests::day58_a_snapshot_never_counts_an_ended_run_as_running' (2184621) panicked at crates/memra-server/src/route_telemetry.rs:433:9:
+assertion `left == right` failed: 34011 snapshots counted an ended run as running
+  left: 34011
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    route_telemetry::tests::day58_a_snapshot_never_counts_an_ended_run_as_running
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 955 filtered out; finished in 2.32s
+
+error: test failed, to rerun pass `-p memra-server --lib`

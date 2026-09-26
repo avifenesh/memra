@@ -46,3 +46,23 @@ in R3's shape, and nothing else changes until a reproduction exists. A fix that 
 one commit.
 
 **Budget.** 0.2 agent-day.
+
+## 2. As run (`day58/`)
+
+- **Reproduced.** The cell on the tree before the fix (`dfdb1cc85` plus the cell), twice: `34011 snapshots counted an
+  ended run as running` and `27753 ..` of 100,000 (`repro/`). The item's own test in R3's shape (sixteen burners): 99
+  `rc=0`, 1 `rc=101` with `left: (0, 1, 0) right: (0, 0, 0)` (`r3-pre/`). The cause is as section 1 read it.
+- **The fix** (`62a29cfe0`): `RouteRun::leave_running` (once per run, the only decrement of `running`) runs before
+  `finish`, `cancel` and `refuse` count their ends (`Release`) and before `Drop` counts a failure; `snapshot` loads
+  `completed`, `failed`, `cancelled` and `refused` (`Acquire`) before `running`. Census
+  `day58_the_book_orders_ends_after_running_and_reads_them_first`.
+- **Acceptance:** the cell 0 violations in 100,000, twice (`fix/`); the writer's old order restored (a scratch patch,
+  marker in its binary) reads `63926 ..` (`red-writer/`); the reader's old order restored reads `16340 ..`
+  (`red-reader/`); a first reader red arm is kept as `red-reader-void/`: it loaded `running` first but still published
+  the later load, so it was not the old order and read 0; the item's test in R3's shape 100 of 100 (`r3-fix/`); the
+  route-telemetry tests 8 of 8; server lib `932 passed; 0 failed; 25 ignored`; clippy `-D warnings`; fmt; `git diff
+  --check`.
+
+**Verdict, as registered:** a real ordering defect in the route book, reproduced (27 to 34% of snapshots taken at the
+boundary counted the ended run as running) and fixed. Item 25 closes. It reaches production readers of the book (the
+route's X-RateLimit reading and `/metrics`) as a one-run over-count for the instant between the two writes.
