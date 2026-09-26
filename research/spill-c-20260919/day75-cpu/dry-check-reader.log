@@ -1,0 +1,18 @@
+DAY75 host demand sequence i15 sha256 4bdc2610c3534e42 lines=[22077]
+DAY75 host demand sequence i16 sha256 4bdc2610c3534e42 lines=[22077]
+DAY75 host demand sequence i16c sha256 4bdc2610c3534e42 lines=[22077]
+DAY75 I16 CHECKS rig=synthetic runs=40 integrity=ok
+DAY75 ADMISSIBILITY rig=synthetic ceiling=0.005 max_iqr_gen=0.0012 max_iqr_window=0.0010 failing=[] -> admissible
+DAY75 gen-only decode medians (N=10 each): ref=0.255 i15=0.264 i16=0.264 i16c=0.265
+DAY75 STEP i16_vs_i15 gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0012 -> flat
+DAY75 steady window medians (N=10 each): ref=0.226 i15=0.232 i16=0.232 i16c=0.232
+DAY75 STEP i16_vs_i15 steady window: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0010 -> flat
+DAY75 DOOR i16_vs_ref gen-only decode: pooled=+0.0090 o1=+0.0090 o2=+0.0090 noise=0.0012 -> loses
+DAY75 DOOR i16_vs_ref steady window: pooled=+0.0055 o1=+0.0050 o2=+0.0060 noise=0.0010 -> loses
+DAY75 I16C brackets per window token (ms, medians): dispatch_ns=0.0772 prefetch_ns=0.5153 pf_demand_ns=0.1542 pf_resident_ns=0.0456 pf_retire_ns=0.0300 pf_stage_ns=0.2247
+DAY75 B p-ref-r1: window_ms=270.0 gpu_busy=5.3216 gpu_idle=3.1159 h2d_exposed=0.7513 (ms per window token)
+DAY75 B p-on-r1: window_ms=283.0 gpu_busy=5.3190 gpu_idle=3.5248 h2d_exposed=0.7829 (ms per window token)
+DAY75 B p-on-r2: window_ms=282.0 gpu_busy=5.3202 gpu_idle=3.4923 h2d_exposed=0.7794 (ms per window token)
+DAY75 B p-ref-r2: window_ms=270.0 gpu_busy=5.3162 gpu_idle=3.1213 h2d_exposed=0.7575 (ms per window token)
+DAY75 B i16_minus_ref per window token (ms, medians of two; deciding nothing): gpu_busy=+0.0007 gpu_idle=+0.3899 h2d_exposed=+0.0268 kernel_sum=+0.0003
+DAY75 VERDICT rig=synthetic integrity=ok i16=flat door=i16 vs_ref=loses (window: i16=flat vs_ref=loses)

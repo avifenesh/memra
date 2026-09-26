@@ -50,3 +50,22 @@ REF and I16 under Nsight Systems, order REF, I16, I16, REF, per-window rows kept
   `matches` or `loses`. Part B, deciding nothing: I16's `gpu_idle` and `h2d_exposed` against REF's.
 - **What follows.** `regresses` on either card: I16 is reverted with its receipt. `flat` or `improves`: it stays. The
   door against REF is recorded plainly, for the owner's 2026-10-04 read.
+
+## 2a. I16 on the CPU, the binary, and the sitting, before any cell
+
+I16 landed as `eeacfaf50` (`hybrid_forward.rs`: under the door the prefetch of expert `j+1` is recorded and issued
+right after expert `j`'s accumulate in both cached branches; REF's branch unchanged; `native.rs`: census `day75`, and
+`day50`'s count of the prefetch condition's mentions from 1 to 2). CPU gates (`day75-cpu/`): the engine library 574
+passed, 0 failed (`engine-lib-tests.log`), the census tests all pass, `cargo clippy -D warnings` and `cargo fmt
+--check` clean (`clippy-fmt.log`). No `.cu` change, no new flag.
+
+Binaries: `i15=2243b1fe2`, `i16=eeacfaf50`. `day75-cell.sh`, `day75-read.py` (it reuses `day72-read.py`'s profiled
+window reading) and `day75-box.sh` were written after section 2. Dry checks (`day75-cpu/`): the reader on a synthetic
+cell built from DAY72's target `gap15` receipts (`make-synthetic.py`, its reading meaningless;
+`dry-check-reader.log`); the cell's control flow with stub binaries and a stub `nsys` (40 timed runs, 22 on each
+binary including the profiled pair; `dry-check-cell.log`); the driver (`dry-check-driver.log`).
+
+Run as `D75_BUILDS="i15=2243b1fe2 i16=eeacfaf50" bash /root/wt-c/research/spill-c-20260919/day75-box.sh` on a Core
+Ultra 9 285K host with one RTX PRO 6000 Blackwell Workstation Edition (box needs as `DAY72.md` section 1a). Receipts in
+`/root/spill-receipts/c-day75/`, profiles by hash. Expected: two builds about 10 minutes, the cell about 25. The RTX
+5090's half runs from queue v12 (`rtx5090-queue-v12-20260926.sh`).
