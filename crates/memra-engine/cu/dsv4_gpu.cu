@@ -6715,6 +6715,103 @@ extern "C" int memra_dsv4_c4_gather(
     return 0;
 }
 
+// TP/EP position-split C4 store (memra #710). Logical compressed block c of a C4 layer lives
+// on rank c & 1 at row 128 + (c >> 1) of that rank's store. Every rank runs the compressor, so
+// the rank that does not own block c still computes it: it keeps it in a tagged `recent` ring
+// (slot (c >> 1) % recent_rows) and reads it there while the owner's store write may still be
+// in flight on the other card. Blocks from earlier steps are read from the owner's store, whose
+// writes a drained step boundary has made visible. The logical index order and every value are
+// the unsplit store's; only the addresses change.
+__device__ __forceinline__ const float* dsv4_c4_split_source(
+    const float* local, const float* peer, const float* recent, const int* tags, int recent_rows,
+    int rank, int index, int cap_blocks, int logical_transient, int transient_rows,
+    int local_transient, bool& is_peer) {
+    is_peer = false;
+    if (index >= 0 && index < 128) return local + (long)index * 512;
+    if (index >= 128 && index < 128 + cap_blocks) {
+        const int c = index - 128, half = c >> 1;
+        if ((c & 1) == rank) return local + (long)(128 + half) * 512;
+        const int slot = half % recent_rows;
+        if (tags[slot] == c) return recent + (long)slot * 512;
+        is_peer = true;
+        return peer + (long)(128 + half) * 512;
+    }
+    if (index >= logical_transient && index < logical_transient + transient_rows)
+        return local + (long)(local_transient + index - logical_transient) * 512;
+    return nullptr;
+}
+
+__global__ void dsv4_c4_split_gather_kernel(
+    const float* local, const float* peer, const float* recent, const int* tags, int recent_rows,
+    int rank, const int* indices, float* out, int* out_indices, int slots, int stride,
+    int cap_blocks, int logical_transient, int transient_rows, int local_transient) {
+    const int slot = blockIdx.x, q = blockIdx.y, lane = threadIdx.x;
+    const int index = indices[q * stride + slot];
+    bool is_peer = false;
+    const float* source = dsv4_c4_split_source(local, peer, recent, tags, recent_rows, rank,
+        index, cap_blocks, logical_transient, transient_rows, local_transient, is_peer);
+    if (!source) assert(index == -1); // invalid positive indices must not silently become pads
+    const int row = q * slots + slot;
+    if (lane == 0) out_indices[q * stride + slot] = index == -1 ? -1 : row;
+    auto dst = reinterpret_cast<unsigned*>(out + (long)row * 512);
+    if (is_peer) {
+        // The peer's store over the fabric: never serve a stale cached line.
+        auto src = reinterpret_cast<const volatile unsigned*>(source);
+        for (int x = lane; x < 512; x += blockDim.x) dst[x] = src[x];
+    } else {
+        auto src = reinterpret_cast<const unsigned*>(source);
+        for (int x = lane; x < 512; x += blockDim.x) dst[x] = source ? src[x] : 0;
+    }
+}
+
+extern "C" int memra_dsv4_c4_split_gather(
+    const float* local, const float* peer, const float* recent, const int* tags, int recent_rows,
+    int rank, const int* indices, float* out, int* out_indices, int nq, int slots, int stride,
+    int cap_blocks, int logical_transient, int transient_rows, int local_transient,
+    void* stream_v) {
+    if (!local || !peer || !recent || !tags || !indices || !out || !out_indices || nq < 1
+        || nq > 512 || slots < 1 || slots > 640 || stride < slots || cap_blocks < 0
+        || recent_rows < 1 || (rank != 0 && rank != 1) || logical_transient < 128 + cap_blocks
+        || transient_rows < 0 || local_transient < 128) return 40010;
+    dsv4_c4_split_gather_kernel<<<dim3(slots, nq), 128, 0, (cudaStream_t)stream_v>>>(
+        local, peer, recent, tags, recent_rows, rank, indices, out, out_indices, slots, stride,
+        cap_blocks, logical_transient, transient_rows, local_transient);
+    DSV4_ERR();
+    return 0;
+}
+
+// The emitted block's store under the split: the owner writes its row, the other rank its
+// recent slot and tag. `pos` (device, replay) or `block` (host, eager, when pos is null) names
+// the block; under replay a position that emits nothing leaves both untouched.
+__global__ void dsv4_c4_split_store_kernel(const float* row, float* store, float* recent,
+    int* tags, int recent_rows, int rank, const int* pos, int ratio, int block, int d,
+    int row0) {
+    if (pos && !dsv4_replay_emit(pos, ratio)) return;
+    const int c = pos ? *pos / ratio : block;
+    const int half = c >> 1;
+    float* dst;
+    if ((c & 1) == rank) {
+        dst = store + (long)(row0 + half) * d;
+    } else {
+        const int slot = half % recent_rows;
+        dst = recent + (long)slot * d;
+        if (threadIdx.x == 0 && blockIdx.x == 0) tags[slot] = c;
+    }
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < d) dst[i] = row[i];
+}
+
+extern "C" int memra_dsv4_c4_split_store(const float* row, float* store, float* recent,
+    int* tags, int recent_rows, int rank, const int* pos, int ratio, int block, int d, int row0,
+    void* stream_v) {
+    if (!row || !store || !recent || !tags || recent_rows < 1 || (rank != 0 && rank != 1)
+        || ratio < 1 || d < 1 || row0 < 0 || (!pos && block < 0)) return 40010;
+    dsv4_c4_split_store_kernel<<<(d + 255) / 256, 256, 0, (cudaStream_t)stream_v>>>(
+        row, store, recent, tags, recent_rows, rank, pos, ratio, block, d, row0);
+    DSV4_ERR();
+    return 0;
+}
+
 // Exact, bounded recent-row sidecar. Absolute tags distinguish a live row from a
 // slot overwritten by a later (possibly rejected) speculative emission.
 __global__ void dsv4_c4_recent_write_kernel(
@@ -7635,7 +7732,8 @@ __global__ void dsv4_replay_copy_if_kernel(const float* src,float* dst,int n,con
 extern "C" int memra_dsv4_replay_compressor_emit(float* pending_kv,float* pending_score,
     const float* ape,float* emit,const float* norm,const float* cs,float* store,float* shift,
     const int* pos,int ratio,int d,int latent,int overlap,int rotate,int clamp_only,int rd,
-    int row0,float eps,float hadamard_scale,void* raw_stream) {
+    int row0,float eps,float hadamard_scale,void* raw_stream,
+    float* split_recent,int* split_tags,int split_recent_rows,int split_rank) {
     if(!pending_kv || !pending_score || !ape || !emit || !norm || !cs || !store || !shift || !pos ||
        (ratio!=4 && ratio!=128) || d<rd || rd<=0 || rd%2 || latent!=(overlap?2*d:d) ||
        (rotate && (d>1024 || (d&(d-1)) || d%32)) || (!rotate && (d-rd)%64) || row0<0) return 40074;
@@ -7657,7 +7755,13 @@ extern "C" int memra_dsv4_replay_compressor_emit(float* pending_kv,float* pendin
         dsv4_act_quant_kernel<<<dim3(1,(d-rd)/64),64,0,stream>>>(row,d,64,clamp_only,pos,ratio);
         DSV4_ERR();
     }
-    dsv4_replay_copy_row_kernel<<<(d+255)/256,256,0,stream>>>(row,store,pos,d,ratio,row0,1);
+    if(split_recent){
+        // The position-split C4 store: the owner's row or the other rank's recent slot.
+        dsv4_c4_split_store_kernel<<<(d+255)/256,256,0,stream>>>(row,store,split_recent,
+            split_tags,split_recent_rows,split_rank,pos,ratio,0,d,row0);
+    }else{
+        dsv4_replay_copy_row_kernel<<<(d+255)/256,256,0,stream>>>(row,store,pos,d,ratio,row0,1);
+    }
     DSV4_ERR();
     if(overlap) for(float* pending:{pending_kv,pending_score}){
         dsv4_replay_copy_if_kernel<<<(ratio*latent+255)/256,256,0,stream>>>(pending+ratio*latent,shift,ratio*latent,pos,ratio);
