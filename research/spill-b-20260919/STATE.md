@@ -1,3 +1,10 @@
+# WP-B checkpoint 2026-09-26 (later): the seventh sitting read (DAY41 2.2: R1, R3, R4 PASS on both routes, R2 PASS on rewind 60 of 60; spec keep 34 of 60 is today's overshoot miss); O13 pre-registered and coded (MEMRA_SPEC_BUDGET_CLAMP); the eighth sitting ready (NEED TARGET CARD)
+- Resync at resume: `git fetch`; the lead's mirror `pro-single-day41/box-b` checked (no ELF); main merged (`9e75001b0`, 91 commits, no conflict); queue-e at DAY38 done (04:56Z), queue-f and queue-g waiting behind it.
+- DAY41 2.2 (target card): flips keep 24/60 and 6/34, rewind 0; re-primed G+32 rows at 6,144 and 30,720; TTFT plain x2.0 to x2.6, spec x1.01 to x1.32; 122,880 (nominatable, the control token's point) plain x7.3 and x14.9, spec x3.1 and x6.1.
+- O13 (DAY43): the clamp truncates the request's last round at the budget like the grammar truncation; C1 to C5 pre-registered; the reader dry-read on DAY41's spec keep boots.
+- Target card: `pro-single-b-sitting8.sh` (DAY43, 5 boots, about 3.5 h).
+- Local: queue-e, queue-f, queue-g (DAY41B), queue-h (DAY43, behind queue-g).
+
 # WP-B checkpoint 2026-09-26: the third and sixth sittings read (DAY40 V-DOOR PASS; DAY41 rewind EXACT, R2 FAIL placed, addenda B and C coded; DAY42e F1 to F4 PASS, warmth 10 of 24 on both arms); the seventh sitting ready (NEED TARGET CARD); the 5090 healthy and running queue-e, then queue-f, then queue-g
 - Resync at resume (after the rig's reboot): `git fetch`; STATE and OWED re-read; the lead's mirrors at `pro-single-day40/box`, `pro-single-day41/box`, `pro-single-day42/box-e` checked (no ELF committed); queue-e (pid 109603, the lead's relaunch) running DAY37 r4 on the healthy card, queue-f (pid 111251) behind it; main merged (`0543cf5a1`, #727, no conflict).
 - DAY40 2.1 (O3, target card): every DAY34 1.6 term PASS, V-DOOR PASS; SELECT R1 and R2 none, R3 32768; `on32768` 46 x 200 and 18 x 429 (day 36: 44 and 20); the seed cap bound on every ON boot. The box's FAULTS.txt was a chain bug (the boots root passed to the lister); re-listed locally, clean.

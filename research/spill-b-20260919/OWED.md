@@ -180,7 +180,10 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   budget are treated as rejected at that column, the same rollback a rejection takes), so the parked `committed`
   equals the public stream. The design, the one-numeric-program argument (the emitted tokens are the same accepted
   drafts; K=1..8 self-consistency), the census and the cells are pre-registered before code (DAY43).
-- Status: `open`. Price: about 0.5 agent-day plus about 2 h on each card.
+- Status: `running`. Pre-registered (DAY43.md, `952cd6bf0`); `MEMRA_SPEC_BUDGET_CLAMP` coded (`87d9e00d1`, decide-by
+  2026-10-10; memra-engine 577 and memra-server 953 passed, clippy clean); the eighth sitting (`pro-single-b-sitting8.sh`,
+  5 boots, about 3.5 h) and the 5090 (queue-h) run it. Price: about 0.5 agent-day plus about 1.5 h local and 3.5 h on
+  the target card.
 
 ## Owner-only (listed, not worked)
 
