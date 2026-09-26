@@ -694,6 +694,12 @@ pub trait TensorSource: Sync {
     fn find_fp8_native(&self, _ggml_name: &str) -> Option<Fp8Native<'_>> {
         None
     }
+    /// MiMo's physical HF fused-QKV tensor consists of checkpoint shards with
+    /// independent FP8 scale grids. This returns exact byte slices per shard,
+    /// distinct from the continuous-grid `find_fp8_native` operand.
+    fn find_fp8_mimo_qkv_shards(&self, _hf_weight: &str) -> Option<Vec<Fp8Native<'_>>> {
+        None
+    }
     /// Native access for a stacked expert bank. This is deliberately distinct from
     /// `find_fp8_native`: expert and scale-grid strides are part of the checkpoint contract.
     fn find_fp8_stacked_native(&self, _ggml_name: &str) -> Option<Fp8StackedNative<'_>> {
@@ -2141,6 +2147,51 @@ impl F8Scales {
     }
 }
 
+fn split_mimo_fp8_qkv_shards<'a>(
+    bytes: &'a [u8],
+    out_f: usize,
+    in_f: usize,
+    shards: usize,
+    scales: F8Scales,
+) -> Option<Vec<Fp8Native<'a>>> {
+    let F8Scales::ShardedBlock128 {
+        scales,
+        cols,
+        weight_rows_per_shard,
+        scale_rows_per_shard,
+    } = scales
+    else {
+        return None;
+    };
+    let weight_bytes_per_shard = weight_rows_per_shard.checked_mul(in_f)?;
+    let scales_per_shard = scale_rows_per_shard.checked_mul(cols)?;
+    if shards == 0
+        || weight_rows_per_shard.checked_mul(shards)? != out_f
+        || weight_bytes_per_shard.checked_mul(shards)? != bytes.len()
+        || scales_per_shard.checked_mul(shards)? != scales.len()
+    {
+        return None;
+    }
+    Some(
+        (0..shards)
+            .map(|shard| Fp8Native {
+                bytes: Cow::Borrowed(
+                    &bytes[shard * weight_bytes_per_shard..(shard + 1) * weight_bytes_per_shard],
+                ),
+                scale: 1.0,
+                blk: Some(F8BlockGrid {
+                    scales: scales[shard * scales_per_shard..(shard + 1) * scales_per_shard]
+                        .to_vec(),
+                    rows: scale_rows_per_shard,
+                    cols,
+                }),
+                out_f: weight_rows_per_shard,
+                in_f,
+            })
+            .collect(),
+    )
+}
+
 /// Dequantize a full F8-E4M3 `[out_f, in_f]` weight to f32 with any scale granularity.
 /// Block-128 note: within one row the scale changes only every 128 elements, so the inner
 /// loop hoists the multiplier per 128-chunk — same result as `at()` per element.
@@ -2463,6 +2514,19 @@ impl TensorSource for SafetensorsSource {
                 })
             }
         }
+    }
+    fn find_fp8_mimo_qkv_shards(&self, hf_weight: &str) -> Option<Vec<Fp8Native<'_>>> {
+        let shards = self.mimo_fused_qkv_shards(hf_weight)?;
+        let (info, bytes) = self.lookup(hf_weight)?;
+        if info.dtype != "F8_E4M3" || info.shape.len() != 2 {
+            return None;
+        }
+        let stem = hf_weight.strip_suffix(".weight")?;
+        let (scale_info, scale_bytes) = self.f8_scale_sibling(stem)?;
+        let out_f = info.shape[0] as usize;
+        let in_f = info.shape[1] as usize;
+        let scales = f8_scales_with_shards(scale_info, scale_bytes, out_f, in_f, Some(shards))?;
+        split_mimo_fp8_qkv_shards(bytes, out_f, in_f, shards, scales)
     }
 
     fn find_fp8_stacked_native(&self, ggml_name: &str) -> Option<Fp8StackedNative<'_>> {
@@ -4705,6 +4769,101 @@ mod f8_block128 {
                 );
             }
         }
+    }
+
+    #[test]
+    fn mimo_shard_views_borrow_checkpoint_codes_and_keep_independent_grids() {
+        let codes = vec![0x38u8; 384 * 128];
+        let scales = F8Scales::ShardedBlock128 {
+            scales: vec![1.0, 2.0, 3.0, 4.0],
+            cols: 1,
+            weight_rows_per_shard: 192,
+            scale_rows_per_shard: 2,
+        };
+        let views = split_mimo_fp8_qkv_shards(&codes, 384, 128, 2, scales).unwrap();
+        assert_eq!(views.len(), 2);
+        for (index, view) in views.iter().enumerate() {
+            assert!(matches!(&view.bytes, Cow::Borrowed(_)));
+            assert_eq!(view.bytes.len(), 192 * 128);
+            assert_eq!(view.bytes.as_ptr(), codes[index * 192 * 128..].as_ptr());
+            assert_eq!(view.out_f, 192);
+            assert_eq!(view.in_f, 128);
+            assert_eq!(view.scale, 1.0);
+            let grid = view.blk.as_ref().unwrap();
+            assert_eq!(grid.rows, 2);
+            assert_eq!(grid.cols, 1);
+            assert_eq!(
+                grid.scales,
+                if index == 0 {
+                    vec![1.0, 2.0]
+                } else {
+                    vec![3.0, 4.0]
+                }
+            );
+        }
+        assert!(
+            split_mimo_fp8_qkv_shards(
+                &codes[..codes.len() - 1],
+                384,
+                128,
+                2,
+                F8Scales::ShardedBlock128 {
+                    scales: vec![1.0, 2.0, 3.0, 4.0],
+                    cols: 1,
+                    weight_rows_per_shard: 192,
+                    scale_rows_per_shard: 2,
+                }
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn mimo_native_shard_source_reads_a_real_safetensors_header() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("memra-mimo-shards-{}-{unique}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("model.safetensors");
+        let name = "model.layers.0.self_attn.qkv_proj.weight";
+        let scale_name = "model.layers.0.self_attn.qkv_proj.weight_scale_inv";
+        let weight_len = 384 * 128;
+        let header = format!(
+            r#"{{"{name}":{{"dtype":"F8_E4M3","shape":[384,128],"data_offsets":[0,{weight_len}]}},"{scale_name}":{{"dtype":"F32","shape":[4,1],"data_offsets":[{weight_len},{}]}}}}"#,
+            weight_len + 16
+        );
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(header.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(header.as_bytes());
+        bytes.extend(std::iter::repeat_n(0x38u8, weight_len));
+        for scale in [1.0f32, 2.0, 3.0, 4.0] {
+            bytes.extend_from_slice(&scale.to_le_bytes());
+        }
+        std::fs::write(&file, bytes).unwrap();
+        let mut config = ModelConfig::from_hf(&crate::config::HfConfig::parse(include_str!(
+            "model_packs/mimo_v2/fixtures/config.json"
+        )));
+        config.n_head_kv = 2;
+        let source = SafetensorsSource::open_with_config(&file, config).unwrap();
+        let views = TensorSource::find_fp8_mimo_qkv_shards(&source, name).unwrap();
+        assert_eq!(views.len(), 2);
+        assert_eq!(views[0].blk.as_ref().unwrap().scales, vec![1.0, 2.0]);
+        assert_eq!(views[1].blk.as_ref().unwrap().scales, vec![3.0, 4.0]);
+        assert_eq!(views[0].bytes.len(), 192 * 128);
+        assert_eq!(views[1].bytes.len(), 192 * 128);
+        assert!(
+            TensorSource::find_fp8_mimo_qkv_shards(
+                &source,
+                "model.layers.0.self_attn.o_proj.weight"
+            )
+            .is_none()
+        );
+        drop(views);
+        drop(source);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     /// f8_deq_f32 with block-128 scales is BIT-EXACT against the naive per-element reference
