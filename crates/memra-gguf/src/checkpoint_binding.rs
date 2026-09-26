@@ -536,6 +536,10 @@ impl TensorSource for RecordingSource<'_> {
         self.record(ggml_name);
         self.inner.find_mimo_mxfp4_expert_ggml(ggml_name)
     }
+    fn find_mimo_bf16_ggml(&self, ggml_name: &str) -> Option<TensorView<'_>> {
+        self.record(ggml_name);
+        self.inner.find_mimo_bf16_ggml(ggml_name)
+    }
     fn find_fp8_stacked_native(&self, ggml_name: &str) -> Option<Fp8StackedNative<'_>> {
         self.record(ggml_name);
         self.inner.find_fp8_stacked_native(ggml_name)
