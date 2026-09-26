@@ -5,6 +5,7 @@
 
 pub mod hidden_trace;
 pub mod mimo_audio;
+pub mod mimo_audio_attn;
 pub mod mimo_vision;
 pub mod speech;
 
