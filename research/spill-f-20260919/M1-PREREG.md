@@ -518,3 +518,9 @@ pinned buffer is busy (OWED 26), on arms the registered gate does not check. For
 regime and for the OWED 17 cell, a visit whose `[spill-pread]` totals line shows any fallback is
 unclean for timing (it still gates correctness, token ids against the oracle). It counts toward
 the contamination limit like a co-tenant visit. Capped keeps its registered verdict unchanged.
+
+Bounded sizing record (2026-09-26 08:55Z, before any bounded visit): two anon-peak runs, maximum
+RssAnon plus RssShmem 864,223,232 and 864,210,944 bytes. The second run's sizing tool reported
+`all_correct: false` because its direct16 visit fell back to mmap 9 times (OWED 26); that is not a
+sizing fault, and the bound is the larger peak of the two runs plus 7,000,000,000:
+MemoryMax = 7,864,223,232 bytes, passed to the queue explicitly.
