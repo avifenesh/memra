@@ -100,8 +100,9 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   BOX29 `DAY75 VERDICT rig=pro-single integrity=ok i16=regresses door=i15 vs_ref=loses` (admissible; the next
   expert's copy exposed) and reverted (`26aa54c12`); the 5090's `i16` inadmissible. Day 77 (`DAY77.md`): I17
   (`d4ab19f1d`, the group's residency and staging each in one owner-registry entry, the same program), CPU gates
-  green, the profile 70 to 150 ns per block below I15; card cell `i17` ready (`day77-box.sh`, the 285K class); the
-  5090's half in queue v13. Open.
+  green, the profile 70 to 150 ns per block below I15; on BOX32 `DAY77 VERDICT rig=pro-single integrity=ok i17=flat
+  door=i17 vs_ref=loses` (stays; the door 10 ms over 32 tokens behind REF); the 5090's `i17` inadmissible. Open: the
+  next improvement of the prefetch path (`pf_demand_ns` 0.155 ms per window token), registered before code.
 
 ## C12. The door's sensitivity to its owner thread's host placement (the 9950X class)
 
@@ -145,8 +146,10 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   in their span, 1.48x slower per chain step from the gate on, REF never compacting (`DAY74.md` section 5). Day 76
   (`DAY76.md`): does the door's one large pinned allocation draw the compaction: the diagnostic flag
   `--expert-bank-pool-chunk-bytes` (`7a162e6b7`, decide-by 2026-10-10) and cell `chunk` (REF+I, D+I, DC+I under the
-  fragmentation), ready (`day76-box.sh`, the 285K class). Open: `chunk` on the 285K; `induce-b` on a 9950X with at
-  least 98 GiB `MemFree`; DAY71's default half on BOX15's machine, then the class line.
+  fragmentation) on BOX32: `DAY76 CHUNK VERDICT rig=box32-285k integrity=ok -> chunk_does_not`; beside it the slow
+  runs are those whose compaction fails to migrate nearly every page it isolates (`DAY76.md` section 2). Open: which of
+  the door's pages compaction isolates and cannot move, registered next; `induce-b` on a 9950X with at least 98 GiB
+  `MemFree`; DAY71's default half on BOX15's machine, then the class line.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 
