@@ -1,4 +1,4 @@
-# WP-F resumable state (2026-09-26 about 13:10Z; NEED TARGET CARD for the PRO sitting; 5090 queue running)
+# WP-F resumable state (2026-09-26 about 15:25Z; BOX36 sitting read; main ff53e3e50 merged; 5090 queue running)
 
 - Lane `lane/spill-f-20260919`, worktree `wt-spill-f`; integ68 takes 290fbbc1e after integ67 (#762).
 - Done since 290fbbc1e: OWED 26 routed to F and registered (`M1-PREREG.md` G): G1 visibility in
@@ -15,7 +15,12 @@
   7864223232 --step-rounds handoff-1g=3-10 --from f17-spec-staged`; remaining steps f17-spec-staged,
   f17-spec-mapped, handoff-1g rounds 3 to 10, bounded, g2, f17, handoff-8g.
   `touch ~/spill-f-5090/PAUSE` holds it between cells; a failing step stops it.
-- NEED TARGET CARD: the lead rents a box per `pro-sitting/SITTING.md` and runs `run-sitting.sh`.
+- BOX36 (the lead ran `run-sitting.sh` at 114ef768d, 13:08Z to 14:43Z): raw mirror private in
+  `~/.local/share/memra-lane-f-private/box36-f-pro/`, sanitized export and `box36/RESULTS.md` in the
+  lane. OWED 17 and 18 PRO rows done; their decisions follow the 5090 rows.
+- Merged origin/main ff53e3e50 (integ68); SLRU fixture re-pinned to the merged `moe_cache.rs`
+  (3a532fbf...), post-merge battery green. Bounded's first cell OOMed on the runner's whole-file
+  hash; fixed (streamed), queue resumes `--from bounded`.
 - Mirror each finished step into `rtx5090/`, `owed17/5090/`, `owed18/5090/`, `owed26/5090/`; pool
   bounded with `--fallback-unclean`, f17 with `--bypass-check --fallback-unclean`; handoff with
   `m1-handoff-pairs.py`.
