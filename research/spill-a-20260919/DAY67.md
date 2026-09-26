@@ -50,3 +50,36 @@ reader tolerates the missing `p` arm: the placing rule prints `not placed` with 
 decides; the 5090 half follows.
 
 **Budget.** 0.4 agent-day: the re-application 0.15, the sitting 0.1, the card 0.15.
+
+## 2. P2 re-applied on L' (`c58f32f7d`), and the sitting prepared
+
+- The revert of `5d7260a0e` on the tip conflicted in eight places in `worker.rs` and one in `docs/TESTING.md`. Named,
+  as section 1 requires:
+  - **The payload map (not mechanical).** P2 takes a reserve buffer per staged payload inside the payload map. T-H
+    (DAY65) made that map run in shares on scoped threads, and the reserve is the helper thread's own mutable state.
+    - The merge hands the reserve's buffers out first, on the helper thread and in the job's order: the same
+      assignment P2's sequential map made. `staged`, `reserve_hits` and `staged_lengths` are counted there.
+    - Then each share fills its payload's buffer (`copy_from_slice` of the staged slice) or allocates (`to_vec`), and
+      hashes, as T-H's shares do.
+    - The arming rule reads `split.copy_minflt`, now summed over the shares' threads (each share's `thread_minflt`),
+      the same pages counted.
+  - **The ledger.** L added a third pinned term and P2 a third pageable term, so both dimensions are now three host
+    budgets. The unused `twice` closure is removed. The governor test (`..binds_at_twice_the_budget`) now admits a
+    third whole-budget charge and refuses a fourth; its old third-charge refusal came from whichever dimension the
+    tree had left at twice.
+  - **The helper split line** carries both terms: `(helper Y ms); reserve H of S staged; T threads`. DAY52's reader
+    and T-H's reader match their own terms.
+  - **The rest are mechanical merges.** The struct fields, the helper loop's head (T-H's thread count, then P2's
+    refill loop), the censuses re-pointed at the merged lines (day 51's take, day 65's shares map, the D2H spans'
+    order, day 49's split), and TESTING.md's two entries both kept.
+  - Server lib `950 passed; 0 failed; 26 ignored` (P2's six cells among them); clippy `-D warnings`; fmt (`day67/`).
+- **The base** is the tip with P2 taken back out: branch `lane/spill-a-p2l-base-20260926` at `f4e84f11e`. Server lib
+  `944 passed`. It is never merged.
+- `day52-reading.py` reads a sitting without the `p` arm (`26b3a3907`).
+- **The sitting** `pro-single-p2l/`, receipts `/root/spill-receipts/a-p2l`: `build.sh <tip> f4e84f11e` (p2, base and
+  gpp at `358749c9f`), then `driver.sh`. It runs DAY52's cells (demote, free, promote and chain, base against p2, 20
+  boots each), the hump (xgpp xp2 xp2 xgpp), the gates with twin and pause, the hit gate and the unit cells, then
+  `day52-reading.py`. The last line is `DAY52 P2 -> ..`, read here as item 17's verdict on L'. About 3 hours of card
+  time.
+- T-H's own verdict is pending. P2 on L' carries T-H in both arms, so its A/B isolates P2. If T-H reverts, P2 is
+  re-merged onto the revert under its own named resolution.
