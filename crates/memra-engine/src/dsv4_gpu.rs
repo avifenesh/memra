@@ -7506,8 +7506,6 @@ impl Dsv4Gpu {
         ))
     }
 
-    /// Whether a TP/EP state allocated now splits its C4 stores across the ranks (memra #710):
-    /// the default for the attention-TP2 matrix device program, never with host C4.
     /// The program a position-split C4 store can run on, whatever the gate seam says.
     fn c4_split_program(&self) -> bool {
         self.topology.is_tp_ep()
@@ -7549,14 +7547,11 @@ impl Dsv4Gpu {
         Ok(())
     }
 
+    /// Whether a TP/EP state allocated now splits its C4 stores across the ranks (memra #710):
+    /// the default for the attention-TP2 matrix device program, never with host C4.
     fn c4_split_on(&self, host_c4: bool) -> bool {
-        !host_c4
-            && self.c4_split_program()
-            && match DSV4_C4_SPLIT.load(Ordering::SeqCst) {
-                1 => false,
-                2 => true,
-                _ => true,
-            }
+        // 1 is the gate seam's replicated arm; 0 (the default) and 2 split.
+        !host_c4 && self.c4_split_program() && DSV4_C4_SPLIT.load(Ordering::SeqCst) != 1
     }
 
     /// Device bytes the active-C4 gather reserves in one transaction workspace of `width`
