@@ -1,18 +1,24 @@
-# WP-F resumable state (2026-09-26, BOX27 campaign complete; box released to the lead)
+# WP-F resumable state (2026-09-26, 5090 half queued; items 17 and 18 implemented)
 
-- Lane `lane/spill-f-20260919`, worktree `wt-spill-f`. Box binaries were built once at
-  `ffff2d89a`; every later checkout on the box carried that engine source unchanged.
-- BOX27 done in full, receipts in `box27/` (9,569 box files mirrored and verified against a
-  box-side full manifest, `MANIFEST-FULL.sha256`; binaries by hash only; volume id sanitized,
-  originals private; large sample files stored gzip with uncompressed hashes in
-  `EXPORT-MANIFEST.json`). Results and verdicts: `box27/RESULTS.md`.
-- Resync note: a rig reboot interrupted this session at about 20:40Z on 2026-09-25; on resume the
-  local tip and origin matched (`c288d19c2`), the box's b3-bounded cell had kept running, and it
-  was left untouched until it finished.
-- Box scratch removed (`/scratch/spill-f`, `/root/wt-f`, helper scripts, `/tmp/f-*`); the
-  background sampler stopped by its recorded pid; no lane process or compute app left. The lead's
-  files and the receipt directories remain for the destroy.
-- Next item: the 5090 halves (OWED 19, 23): the B3 subset and G2 on the local RTX 5090, whose
-  storage is already proven (`M1-PROOF-CONTROLS.md`). Open candidates: OWED 17 (mapped
-  pinned-host arm), 18 (handoff O_DIRECT arm), 20 (above-RAM artifact), 21 (flag to the owning lane).
-- Private receipts: `~/.local/share/memra-lane-f-private/box27/`. Local scratch: none.
+- Lane `lane/spill-f-20260919`, worktree `wt-spill-f`; origin/main merged at a233f6fe5 (integ65).
+- BOX27 complete and destroyed; receipts and verdicts in `box27/` and `box27/RESULTS.md`.
+- 5090 half (OWED 19, 23; `M1-PREREG.md` section D and its bounded amendment): frozen binaries
+  built at the pre-merge tip, engine source equal to BOX27's (`rtx5090/build/`), in
+  `~/spill-f-5090/bin`. Fresh `/data` proof PASS (`rtx5090/proof/`). Capped smoke done: all six
+  arms correct, 128 tokens equal across arms; ru_maxrss counts the mapped file, so bounded is sized
+  by `m1-anon-peak.py` (amendment); foreign device bytes 1.5% to 35% from desktop co-tenants.
+- OWED 18 (section E): `MEMRA_KV_HOST_HANDOFF_IO=direct`, `crates/memra-server/src/handoff_io.rs`,
+  unit cells green (byte-identical files, cross-readable, truncation). Frozen gate binaries in
+  `~/spill-f-5090/bin18` (`owed18/build/`).
+- OWED 17 (section F): `MEMRA_MOE_COLD_BYPASS=staged|mapped` in `moe_cache.rs` and
+  `spill_pread.rs`, CPU cells green, GPU ownership cell queued. Frozen run-gen in
+  `~/spill-f-5090/bin17` (`owed17/build/`). Arms lock `m1-prereg/f17-arms.lock.json`.
+- OWED 20: candidates written in `ITEM20-CANDIDATES.md`; owner pick.
+- Running: `m1-5090-queue.py --receipts ~/spill-f-5090/receipts` (detached), order capped,
+  anonpeak, bounded, g2, mapped-gpu-cell, f17-smoke, f17-smoke-gate, f17, handoff-1g, handoff-8g.
+  Each round waits for an idle card and a free `/tmp/memra-5090.lock` (waits recorded);
+  `touch ~/spill-f-5090/PAUSE` holds it between cells for this lane's compiles. Resume a stopped
+  queue with `--from <step>`. Progress: `~/spill-f-5090/receipts/QUEUE.jsonl`.
+- After each regime: `m1-b3-pool.py <dir>` (f17: `--bypass-check`), mirror the receipts into
+  `rtx5090/` (then `owed17/`, `owed18/`), record verdicts in OWED and a 5090 RESULTS file.
+- Local scratch to remove at the end: `~/spill-f-5090/`, `/data/cache/spill-f-b2/`.
