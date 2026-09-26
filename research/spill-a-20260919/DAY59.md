@@ -204,3 +204,40 @@ with the three 5090 cells already queued.
   the owner thread between fanouts. The door-ON captures went off the tick, and the fanout's fresh prompts never hit.
   **The selection stands as read**, and no rerun is needed for it. Under the fix the same cell would print the same
   lines.
+
+## 9. Design B1 as built (`e522a9417`), and its target sitting prepared
+
+- (B1.1) The kernel `copy_batch_items_u8` (`cu/kernels.cu`) and `Engine::copy_batch_items_u8` (`lib.rs`), with a
+  KERNELS.md row. Zero-byte items are dropped host-side, and the grid is `(min(64, max_bytes / 4096), n + 1)`.
+- (B1.2) `prefix_snapshot`: `prefix_plane_alloc` gives a KV plane with bytes an uninitialized buffer and a zero-byte
+  plane a zeroed 1-byte one; the recurrent planes use `alloc_f32_uninit`. Then `prefix_snapshot_batch` runs, with one
+  launch, before the TP shards.
+- (B1.3) `prefix_restore_at` calls `prefix_restore_batch` right after the validation: the KV `[0, kb)` copies, the
+  recurrent copies and the length sets in one launch, every range checked before any device write. The host lengths
+  and the latent restores follow in the loop, and the TP shards after that.
+- (B1.4) Both batch fns hold the source (read) and destination (write) guards across the launch and drop them after
+  it.
+- (B1.5) The census `day59_the_fanout_copy_split_is_log_only` is rewritten as registered: allocate, then batch, then
+  TP; validate, then batch, then the host lengths; one launch per batch fn, with the guards dropped after it; no
+  per-plane `copy_u8_into`, `clone_dtod`, `copy_into` or `set_i32_one` in the four fns. The split lines keep their
+  wording (clones and length sets now read `0 over 0`).
+- The cells (a1) `fused_gate_bounds_tests::copy_batch_items_u8_is_the_memcpy_program` (engine) and (a2)
+  `worker::tests::b1_snapshot_and_restore_are_the_copy_program` (server) are `#[ignore]` GPU cells. They were not run
+  here: the 5090's lock was free, but another project's compute app held 1.4 GiB of the card, so by the lane's rule
+  I waited rather than share it. The target card runs them.
+- CPU: server lib `935 passed; 0 failed; 26 ignored` (`b1/server-lib.log`); clippy `-D warnings` on the server and
+  the engine, all targets (`b1/clippy.log`); fmt clean.
+- **The sitting** `pro-single-b1/`, receipts root `/root/spill-receipts/a-b1`:
+  - `build.sh <tip> 9ab479d9c` builds b1 (the tip's server plus its engine and server lib test executables), red
+    (`red-arm.patch`: the kernel copies each item's bytes minus one, and the wrapper prints `[b1 red arm] ..`; test
+    executables only) and base (the tip's crates taken to B1's parent). One clone, the tree checked back after each
+    arm, and the markers in `markers.txt`.
+  - `driver.sh`, each step under one collector hold:
+    - `unit-cells.sh`: (a1) and (a2) green on b1 with `MEMRA_B1_MODEL` set to the 27B; both must fail on red with
+      the marker printed; the day54, day59 and day66 censuses.
+    - `gates.sh`: the identity gate default and plain, door OFF and ON.
+    - `hitgate.sh`: the hit gate, OFF then ON.
+    - `ab.sh short fanout prime-short 256`: 40 boots.
+  - Then `b1-reading.py`, whose last line is `B1 VERDICT -> ..`. The reader was dry-run on DAY59's receipts mapped
+    as identical arms. It read (b) and (c) FAIL and (d) PASS, which is right for two identical arms.
+  - About 75 minutes of card time plus the three builds.
