@@ -4147,6 +4147,10 @@ per enqueue, on every path; nothing decides on them) and printed on the fanout's
 - GPU battery rerun on BOX31 (`integ65-pro-f2b/`, 467 receipts mirrored and checked), binary `629d5a96`, one collector
   hold 02:22Z to 02:34Z: every cell green as above (identity 12 ok, fault 255 ok per arm, hit 61 and 68 ok, admit-mem
   burst and spec-ctx-edge ALL GREEN), the pause gate with the 27B `ALL GREEN` (40 ok).
+- Main moved to `2c5edcb4c` (#730, the DSv4 TP/EP B-row graphs, engine and server code) before the merge; merged in
+  clean (`86f6b4478`) and both batteries ran again on it: CPU 15 of 15 rc=0 (`integ65-cpu-battery-main730/`, server
+  942, engine lib 573); GPU on BOX31 (`integ65-pro-main730/`, 467 receipts mirrored and checked), binary `8ba7f6b1`,
+  one hold 02:42Z to 02:57Z, every cell green as above and the pause gate `ALL GREEN` (40 ok).
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
