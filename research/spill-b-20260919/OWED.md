@@ -175,8 +175,10 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   i-vmm green PASS (one reap per retry, before it), red FAIL on the same placement (its i-red shows the missing reap).
   Addendum D aims the fault: `MEMRA_STEP_OOM_FAULT=batch:<n>` (a batched chunk of two or more sessions only;
   `8926ccfb3`, memra-server lib 959 passed, clippy clean), gate arm j on the plain route, `j-vmm`, and the serving shape
-  on both routes. The fourteenth sitting (`pro-single-b-sitting14.sh`, about 30 min) waits on BOX35; the 5090 half
-  runs from `rtx5090-day49d/run.sh`.
+  on both routes. The fourteenth sitting (DAY49 2.3): arm j PASS four times on a 3-session chunk (j1, j2, and both
+  sides of the VMM pair), its red twin red each time; j-vmm green one reap per retry, red none. The serving boots did not
+  start (the box chain did not export `WT`); fixed in `09b15280f`, and the boots-only rerun (`BOOTS_ONLY=1`) waits on
+  BOX35. The 5090 half runs from `rtx5090-day49d/run.sh`.
 
 ### O9. memra#464's guard seed
 

@@ -1,3 +1,5 @@
+# WP-B checkpoint 2026-09-26 21:1xZ (NEED TARGET CARD, the DAY49D boots-only rerun on BOX35): DAY49 2.3 read (arm j
+PASS x4 on a 3-session chunk; j-vmm as registered); the chain's WT export fixed with a BOOTS_ONLY=1 entry (`09b15280f`)
 # WP-B checkpoint 2026-09-26 (NEED TARGET CARD, fourteenth sitting on BOX35): DAY49 2.1 and 2.2 read (the fault never
 reached a multi-session batched chunk; i-vmm green PASS); addendum D coded (`8926ccfb3`, `batch:<n>`, arm j); the rc
 audit done (lane scripts fixed, DAY31-D4, DAY32 and DAY37 2.8 corrected); the ninth still on BOX33
