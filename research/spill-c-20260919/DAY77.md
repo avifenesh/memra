@@ -49,3 +49,33 @@ reports by hash.
   primary) and the door (I17, or I15 if I17 `regresses`) against REF (`beats`, `matches` or `loses`); I17C's brackets and
   Part B beside, deciding nothing.
 - **What follows.** `regresses` on either card: I17 is reverted with its receipt; `flat` or `improves`: it stays.
+
+## 2a. I17 on the CPU, the binary, and the sitting, before any cell
+
+I17 landed as `d4ab19f1d`: `owner_proxy.rs` gains `host_resident_many` and `with_bytes_each`; `moe_cache.rs`
+`prefetch_banked_group` validates every wanted member first, asks the group's residency once, reserves the resident
+members' slots in the same order, demands them in one call, and stages them in one `with_bytes_each`, recording each
+pending block as before (the error paths keep their meaning: a failed copy releases the later members' slots, a
+refused borrow leaves the group's lease open). CPU gates (`day77-cpu/gates.log`): the engine library 574 passed; the
+tier suites all green, the two new proxy tests among them (`tests/bank/day77.rs`); the censuses updated (`day48`'s
+memo site, `day50`'s prefetch path: the two group calls present, the per-member calls gone); the day-4 fixture
+re-pinned (no SLRU statement changed); clippy and fmt clean.
+
+**The CPU profile** (`day77-cpu/profile.log`, the local CPU, one pinned core, three invocations; the rig was shared
+with other lanes' agents at the time, so the absolute values sit above DAY64's): the day-61 profile's P8 (I15's
+grouped cycle) and the new P9 (I17's) read in one window, P8 again after P9: P9 2386.5 to 2413.2 ns per block against
+P8 2456.7 to 2566.7 before and after it. About 70 to 150 ns per block, 0.2 to 0.45 us per prefetched expert: smaller
+than section 0's reading of the proxy entries suggested (most of `host_resident`'s 450 ns is the query inside the
+owner, not the entry). At the card's 88.6 prefetches per window token that is about 0.02 to 0.04 ms per token, near
+the target card's noise (0.001 s over 32 tokens); the cell decides.
+
+Binaries: `i15=2243b1fe2`, `i17=d4ab19f1d`. `day77-cell.sh`, `day77-read.py` (DAY75's reader with the host demand
+sequence equality of section 2) and `day77-box.sh` were written after section 2. Dry checks (`day77-cpu/`): the reader
+on two synthetic cells from DAY75's receipts (`dry-check-reader.log`: with I16's runs as I17 the sequence check voids,
+as it must; with I15's runs as I17 it reads); the cell's control flow (`dry-check-cell.log`: 22 runs per binary); the
+driver (`dry-check-driver.log`).
+
+Run as `D77_BUILDS="i15=2243b1fe2 i17=d4ab19f1d" bash /root/wt-c/research/spill-c-20260919/day77-box.sh` on a Core
+Ultra 9 285K host with one RTX PRO 6000 Blackwell Workstation Edition (nsys; box needs as `DAY72.md` section 1a).
+Expected: two builds about 10 minutes, the cell about 25. The RTX 5090's half: queue v13
+(`rtx5090-queue-v13-20260926.sh`).
