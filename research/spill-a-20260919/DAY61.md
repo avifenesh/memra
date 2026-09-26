@@ -137,3 +137,47 @@ its own pre-registration.
   - No build of this lane runs until the cell reads.
   - The reading states the overlap. If a clause is decided within the spread of those two boots, the cell repeats
     whole without them, as its own run.
+
+## 5. The 5090 half, read as registered: FAIL (a, d); W reverted
+
+- The local RTX 5090 Laptop GPU; the hold taken at 12:58:05Z; the paired cell from 13:12:35Z to 14:17Z; receipts
+  `rtx5090-w/cell/` (the executables' hashes in `binaries.sha256` and `binaries-at-banking.sha256`, the executables
+  removed). 40 boots with no compute app at any boot's start. Start temperatures 68 C to 82 C.
+- Verbatim (`rtx5090-w/cell/reading-w.log`):
+
+      W (a) UNIT a1-green=0 a2-green=0 a1-red=101 (marker 1) a2-red=101 (marker 1) censuses=0
+      W (a) gates {'contract-fault-plain': '2', 'contract-fault': '0', 'identity-default-off': '0', 'identity-default-on': '0', 'identity-plain-off': '0', 'identity-plain-on': '0'}
+      W READING card=5090 order=o1 mode=demote N_helper=40 helper base=16.93 w=0.68 ms (ratio 0.04) | stall base=130.57 w=131.42 | e2e base=357.3 w=354.7 ms
+      W READING card=5090 order=o1 mode=promote N_helper=45 helper base=21.00 w=1.00 ms (ratio 0.05) | stall base=123.70 w=123.66 | e2e base=202.9 w=200.4 ms
+      W READING card=5090 order=o2 mode=demote N_helper=40 helper base=17.31 w=0.75 ms (ratio 0.04) | stall base=143.75 w=140.41 | e2e base=378.4 w=380.7 ms
+      W READING card=5090 order=o2 mode=promote N_helper=45 helper base=21.50 w=1.10 ms (ratio 0.05) | stall base=129.70 w=132.98 | e2e base=216.3 w=219.4 ms
+      W (b) PASS [True, True, True, True]
+      W (d) FAIL [True, True, False, False]
+      W VERDICT card=5090 -> FAIL (a, d)
+
+- Read:
+  - **(a)**:
+    - The unit cells read as required: a1 now runs 1 test.
+    - The plain fault gate's exit 2 is this lane's harness disturbance, not W. Its log ends in
+      `tools/kv-host-contract-fault-gate.sh: line 949: syntax error near unexpected token ')'`. The cell ran the gate
+      from this worktree, and this lane edited that script (DAY63's gate change, committed 13:12:37Z) while the
+      plain arm was running. Bash reads a script as it runs, so the changed file broke the run.
+    - Recorded as void, and as a rule for this lane's local cells: they run their scripts from a frozen copy, never
+      from a worktree being edited.
+  - **(b)** is a large win on the 5090's write-combined leases, as DAY38's survey predicted: the demote's re-hash
+    share falls from 16.9 / 17.3 ms to 0.68 / 0.75 ms, and the promote's `Sources` job from 21.0 / 21.5 ms to
+    1.0 / 1.1 ms (ratio 0.04 to 0.05 against the 0.5 bound).
+  - **(d) fails in o2's promote mode.** The stall is 129.70 against 132.98 ms (+3.28) and the e2e 216.3 against
+    219.4 ms (+3.1), against +1.0 ms. The failing boots are o2's promote boots, not the two boots of the recorded
+    overlap (o1's first two), so section 4's repeat condition does not apply.
+    - Their `host load at start` reads 1.9 to 17.8, most of it 10 to 18 from the other lanes on the rig (B, C and F
+      were active; this lane built nothing after 13:15Z). Recorded as the condition, not removed.
+    - The helper's time is off the owner thread, so the tenant's stall and e2e had no path to gain from W. What (d)
+      measures here is noise against a +1.0 ms bound under that load, and the bound is not relaxed.
+- **Per the registration** (section 1: a 5090 half that fails (a), (b) or (d) reverts W): **W is reverted** in one
+  commit, with the receipts kept.
+  - The target half (section 3) already ruled W out as the target's program. The 5090 half does not qualify it as a
+    per-card arm.
+  - The lesson for any later design: the 5090's write-combined reads are real and large (DAY38; (b) here), but W
+    moves only helper time, which no tenant clause reads. A later registration would need a clause the tenant
+    feels, and a quiet window on the shared rig.
