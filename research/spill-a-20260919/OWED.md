@@ -196,7 +196,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
 - Acceptance: none registered (the seam's owner hold priced with a capture queued behind a known amount of copy-stream
   work, then a design that does not block the owner there, for example the retiring session's source planes held by
   the pending capture until it lands).
-- Status: open.
+- Status: **pre-registered** (DAY62 section 1: the lines, a price cell with the source and no-source shapes, designs
+  R1 and R2 selected by it).
 
 ### 14. The host tier's pinned lease frees run `cuMemFreeHost` on the owner thread (found by DAY37 and DAY38)
 
