@@ -1207,6 +1207,7 @@ struct RouteProgress {
 impl RouteProgress {
     fn round(&mut self) {
         let now = Instant::now();
+        lane_tick();
         self.health.note_round();
         self.load
             .note_round(now.duration_since(self.last_round).as_millis() as u64);
@@ -1327,6 +1328,7 @@ fn serve_lane(
     let _latch = ExitLatch(health.clone());
     let sink = health.clone();
     let _progress = memra_engine::progress::ProgressSinkScope::install(Box::new(move |rows| {
+        lane_tick();
         sink.note_rows(rows)
     }));
     loop {
@@ -1381,13 +1383,6 @@ fn serve_lane(
     }
 }
 
-/// The route's launch turn (memra #667): a FIFO ticket lock beside the parked-prefix cache it
-/// guards. A session holds it for every engine call, so one session's work is queued whole on
-/// the stage streams before another's. A pipelined plain step gives it up while it waits for its
-/// own readbacks, a chunked plain prefill between chunks, and the memory door while it sleeps.
-/// Tickets are served in arrival order, so a session that gives the turn up and asks again at
-/// once queues behind every lane already waiting; a plain mutex would hand it straight back
-/// and starve the waiter for a whole prompt. With one serving lane nobody else ever asks for it.
 /// Where a serving lane is (memra #722). Each lane thread publishes its wait point here; the
 /// route's watchdog prints every lane's once one busy lane has sat at a single point for
 /// [`LANE_STALL_DUMP`]. Diagnostic only: nothing reads it to decide anything.
@@ -1456,6 +1451,19 @@ thread_local! {
     /// This thread's lane on its route's board, set by `serve_lane`.
     static LANE: std::cell::RefCell<Option<(Arc<LaneBoard>, usize)>> =
         const { std::cell::RefCell::new(None) };
+}
+
+/// Restamp this lane's current point: the lane made progress there (a decode step, a spec round,
+/// a prefill chunk). A serial route holds the turn for a whole request, so without this a healthy
+/// long decode would read as a lane that has not moved.
+fn lane_tick() {
+    LANE.with(|lane| {
+        if let Some((board, i)) = lane.borrow().as_ref() {
+            board.slots[*i]
+                .since_ms
+                .store(board.now_ms(), std::sync::atomic::Ordering::Relaxed);
+        }
+    });
 }
 
 /// Publish this lane's wait point. A no-op on threads that are not serving lanes.
@@ -1541,6 +1549,13 @@ fn spawn_lane_watch(name: String, board: Arc<LaneBoard>, turn: Arc<TurnLock>) {
         });
 }
 
+/// The route's launch turn (memra #667): a FIFO ticket lock beside the parked-prefix cache it
+/// guards. A session holds it for every engine call, so one session's work is queued whole on
+/// the stage streams before another's. A pipelined plain step gives it up while it waits for its
+/// own readbacks, a chunked plain prefill between chunks, and the memory door while it sleeps.
+/// Tickets are served in arrival order, so a session that gives the turn up and asks again at
+/// once queues behind every lane already waiting; a plain mutex would hand it straight back
+/// and starve the waiter for a whole prompt. With one serving lane nobody else ever asks for it.
 struct TurnLock {
     /// (next ticket, ticket now served).
     tickets: std::sync::Mutex<(u64, u64)>,
@@ -3210,7 +3225,8 @@ fn argmax(v: &[f32]) -> u32 {
 #[cfg(test)]
 mod lane_watch_tests {
     use super::{
-        Dsv4HostCache, LANE, LaneBoard, LanePhase, Turn, TurnLock, lane_phase, lane_watch_once,
+        Dsv4HostCache, LANE, LaneBoard, LanePhase, Turn, TurnLock, lane_phase, lane_tick,
+        lane_watch_once,
     };
     use std::sync::Arc;
     use std::sync::atomic::Ordering;
@@ -3260,6 +3276,17 @@ mod lane_watch_tests {
             lane_watch_once(&board, (7, 6), since + 90_000, stall, &mut dumped),
             None
         );
+        // A step's tick restamps the point, so a lane that keeps stepping inside one phase (a
+        // serial route holding the turn) never reads as stalled.
+        let b2 = board.clone();
+        std::thread::spawn(move || {
+            LANE.with(|slot| *slot.borrow_mut() = Some((b2.clone(), 1)));
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            lane_tick();
+        })
+        .join()
+        .unwrap();
+        assert!(board.slots[1].since_ms.load(Ordering::Relaxed) > since);
         // Lane 0 never published; a thread with no lane is a no-op.
         lane_phase(LanePhase::Held);
         assert_eq!(
