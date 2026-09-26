@@ -19,6 +19,12 @@
   and hash-verified, the queue gone. Capped rounds 1 to 4 complete and mirrored; round 5 died
   mid visit 5, banked as `capped/interrupted-round-05-reboot` (never scored); queue relaunched
   with `--capped-rounds 5-10`.
+- Second relaunch at 07:54Z: rounds 5 to 10 had been refused by the collector (stale proof after
+  the reboot, mount id 242 -> 250) and the driver had wrongly gone on; bounded, G2 (probe refused
+  `[N/A]` power) and the GPU cell (quoting) failed fast. Fixed per the D resync amendment:
+  `/data` re-proven, driver stops on a non-lost failure, probe accepts `[N/A]` (new G2 probe in
+  `~/spill-f-5090/bin-g2`), GPU cell via `flock -n -E 75`. Failed cells banked as `refused-*`;
+  the first valid anon-peak run kept as `anonpeak-run1` (bound 7,864,223,232 bytes).
 - Running: `m1-5090-queue.py --receipts ~/spill-f-5090/receipts` (detached), order capped,
   anonpeak, bounded, g2, mapped-gpu-cell, f17-smoke, f17-smoke-gate, f17, handoff-1g, handoff-8g.
   Each round waits for an idle card and a free `/tmp/memra-5090.lock` (waits recorded);
