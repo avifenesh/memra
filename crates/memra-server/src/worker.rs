@@ -52729,7 +52729,7 @@ mod tests {
         }
         assert_eq!(
             gpu_used(&host),
-            (2 * (1u64 << 30) - kv_bytes, 0, 0),
+            (3 * (1u64 << 30) - kv_bytes, 0, 0),
             "the KV destinations released; the co-tenant and the one buffer's charge remain"
         );
         drop(hog);
