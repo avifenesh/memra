@@ -2473,7 +2473,7 @@ fn processed_prefix_tokens(
 #[derive(Debug)]
 pub(crate) enum Served {
     Done(ServeStats),
-    /// The client left while the request waited for memory.
+    /// The client left while the request waited for memory or during its chunked prefill.
     Cancelled,
     /// The memory door turned it away (memra#503); the error is the client's answer.
     Refused(EngineError),
@@ -2807,22 +2807,31 @@ fn serve_one(
                 .request_state(session_capacity, None)
                 .map_err(EngineError::engine)?;
             let logits = if m.prefill_chunk > 0 && !short_monolithic {
-                if m.sessions > 1 {
-                    // Give the turn up between chunks so another session's steps keep going.
-                    m.gpu.prefill_with_cache_chunked_yielding(
-                        &prompt,
-                        &mut state,
-                        m.prefill_chunk,
-                        &mut || {
+                let mut client_left = false;
+                let tx = &req.tx;
+                let prefilled = m.gpu.prefill_with_cache_chunked_yielding(
+                    &prompt,
+                    &mut state,
+                    m.prefill_chunk,
+                    &mut || {
+                        // A client that left stops its prompt at the next chunk rather than
+                        // holding the GPU (and a graceful shutdown, #739) for the rest of it.
+                        if tx.is_closed() {
+                            client_left = true;
+                            return Err("client left during prefill".into());
+                        }
+                        if m.sessions > 1 {
+                            // Give the turn up so another session's steps keep going.
                             turn.release();
                             turn.acquire();
-                        },
-                    )
-                } else {
-                    m.gpu
-                        .prefill_with_cache_chunked(&prompt, &mut state, m.prefill_chunk)
+                        }
+                        Ok(())
+                    },
+                );
+                if client_left {
+                    return Ok(Served::Cancelled);
                 }
-                .map_err(EngineError::engine)?
+                prefilled.map_err(EngineError::engine)?
             } else {
                 m.gpu
                     .prefill_with_cache(&prompt, &mut state)

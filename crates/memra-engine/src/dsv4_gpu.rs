@@ -6770,18 +6770,20 @@ impl Dsv4Gpu {
         state: &mut DecodeState,
         chunk: usize,
     ) -> Res<Vec<f32>> {
-        self.prefill_with_cache_chunked_yielding(ids, state, chunk, &mut || {})
+        self.prefill_with_cache_chunked_yielding(ids, state, chunk, &mut || Ok(()))
     }
 
     /// [`Self::prefill_with_cache_chunked`], calling `between` after every committed chunk but
     /// the last. A pipelined serve loop gives its launch turn up there, so another session's
-    /// step is not stalled for the whole prompt. Same transactions, same bits.
+    /// step is not stalled for the whole prompt. Same transactions, same bits. An error from
+    /// `between` ends the prefill with that error; the state then holds a committed prefix
+    /// only and must be dropped (a serve loop does so when its client has left).
     pub fn prefill_with_cache_chunked_yielding(
         &self,
         ids: &[u32],
         state: &mut DecodeState,
         chunk: usize,
-        between: &mut dyn FnMut(),
+        between: &mut dyn FnMut() -> Res<()>,
     ) -> Res<Vec<f32>> {
         assert_eq!(state.pos, 0, "chunked prefill needs a fresh DecodeState");
         if ids.is_empty() {
@@ -6808,7 +6810,7 @@ impl Dsv4Gpu {
         if ids.len() == 1 {
             return Ok(first);
         }
-        between();
+        between()?;
         self.continue_prefix_chunked_yielding(&ids[1..], state, chunk, between)
     }
 
@@ -6820,7 +6822,7 @@ impl Dsv4Gpu {
         state: &mut DecodeState,
         chunk: usize,
     ) -> Res<Vec<f32>> {
-        self.continue_prefix_chunked_yielding(suffix, state, chunk, &mut || {})
+        self.continue_prefix_chunked_yielding(suffix, state, chunk, &mut || Ok(()))
     }
 
     /// [`Self::continue_prefix_chunked`] with a `between` hook after every committed chunk but
@@ -6830,7 +6832,7 @@ impl Dsv4Gpu {
         suffix: &[u32],
         state: &mut DecodeState,
         chunk: usize,
-        between: &mut dyn FnMut(),
+        between: &mut dyn FnMut() -> Res<()>,
     ) -> Res<Vec<f32>> {
         if suffix.is_empty() {
             return Err("dsv4 chunked continuation needs a non-empty suffix".into());
@@ -6865,7 +6867,7 @@ impl Dsv4Gpu {
             // completion point (a wedge is then caught one stall bound after that stamp).
             crate::progress::note_prime_rows(toks.len());
             if !final_chunk {
-                between();
+                between()?;
             }
             if let Some(rows) = logits {
                 last_logits = Some(if output == VerifyOutput::Last {
