@@ -58,6 +58,7 @@ def replay(archive, manifest_path, rows_out):
             "native/cuda-accept.json",
             "native/run-meta.json",
             "native/pilot-result.json",
+            "inputs/parent-custody.json",
         }
         for name in manifest["members"]
     ):
@@ -119,6 +120,13 @@ def replay(archive, manifest_path, rows_out):
             )
         ):
             raise ValueError("sealed independent judge access differs")
+        if sha(root / "inputs/parent-custody.json") != (
+            manifest["parent_custody_sha256"]
+        ):
+            raise ValueError("sealed older training parent custody changed")
+        parents = json.loads(
+            (root / "inputs/parent-custody.json").read_text()
+        )
         metadata = json.loads(
             (root / "native/run-meta.json").read_text()
         )
@@ -133,6 +141,10 @@ def replay(archive, manifest_path, rows_out):
             != sha(root / "native/rental.json")
             or metadata["cuda_accept_sha256"]
             != sha(root / "native/cuda-accept.json")
+            or metadata["parent_custody_sha256"]
+            != sha(root / "inputs/parent-custody.json")
+            or metadata["v11_training_archive_sha256"]
+            != parents["v11_archive_sha256"]
             or metadata["ops_source_sha256"]
             != sha(root / "source/private_ops/run_meta_v12.py")
         ):

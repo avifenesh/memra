@@ -83,6 +83,10 @@ def inventory(base):
         if not path.is_file():
             raise ValueError(f"training run metadata missing: {name}")
         files[f"native/{name}"] = path
+    parents = base / "parents/parent-custody.json"
+    if not parents.is_file():
+        raise ValueError("V12 training parent custody missing")
+    files["inputs/parent-custody.json"] = parents
     results = list((base / "training-prose-results").glob(
         "training-*.result.json"
     ))
@@ -122,6 +126,8 @@ def seal(base, out):
         != sha(base / "ops/run_meta_v12.py")
         or metadata["judge_preflight_sha256"]
         != sha(base / "judge-preflight/manifest.json")
+        or metadata["parent_custody_sha256"]
+        != sha(base / "parents/parent-custody.json")
     ):
         raise ValueError("research host identity or CUDA proof differs")
     for name, expected in metadata["source_files_sha256"].items():
@@ -133,6 +139,9 @@ def seal(base, out):
         ):
             raise ValueError("research training source changed after run metadata")
     pilot = json.loads((base / "pilot-result.json").read_text())
+    parents = json.loads(
+        (base / "parents/parent-custody.json").read_text()
+    )
     if (
         pilot["status"] != "fixed-D1-D2-full-head-and-KV-engaged"
         or pilot["model_sha256"] != MODEL_SHA
@@ -140,6 +149,8 @@ def seal(base, out):
         or pilot["training_workloads_sha256"] != TRAIN_SHA
         or pilot["run_meta_sha256"] != sha(base / "run-meta.json")
         or pilot["gpu_uuid"] != metadata["gpu_uuid"]
+        or metadata["v11_training_archive_sha256"]
+        != parents["v11_archive_sha256"]
     ):
         raise ValueError("fixed D1/D2 pilot does not match research host")
     files = inventory(base)
@@ -173,6 +184,8 @@ def seal(base, out):
         "pilot_sha256": sha(base / "pilot-result.json"),
         "judge_preflight_sha256":
         sha(base / "judge-preflight/manifest.json"),
+        "parent_custody_sha256":
+        sha(base / "parents/parent-custody.json"),
         "archive_sha256": sha(archive),
         "members": members,
     }
