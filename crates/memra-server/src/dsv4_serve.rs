@@ -1266,7 +1266,7 @@ pub fn spawn(
             health.clone(),
             load.clone(),
         );
-        std::thread::Builder::new()
+        let handle = std::thread::Builder::new()
             .name(if lanes == 1 {
                 format!("dsv4-serve-{name}")
             } else {
@@ -1274,8 +1274,36 @@ pub fn spawn(
             })
             .spawn(move || serve_lane(&m, &rx, &turn, &health, &load, lanes))
             .expect("spawn dsv4 serve thread");
+        LANES.lock().unwrap_or_else(|p| p.into_inner()).push(handle);
     }
     tx
+}
+
+/// Every serving lane ever spawned, so a graceful shutdown can wait for them.
+static LANES: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Wait for the serving lanes to exit, at most `deadline`; returns how many are still live.
+///
+/// A lane leaves its loop once every admission sender is gone (the GPU worker owns them, so
+/// call this after the worker join) and its current request ends. Returning from `main` while
+/// a lane is still inside an engine call deinitializes CUDA under it: a full-token replay
+/// capture then fails and the replay fail-stop aborts the process on an orderly SIGTERM.
+pub fn join_lanes(deadline: std::time::Duration) -> usize {
+    let lanes = std::mem::take(&mut *LANES.lock().unwrap_or_else(|p| p.into_inner()));
+    let t0 = Instant::now();
+    while lanes.iter().any(|h| !h.is_finished()) && t0.elapsed() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let mut live = 0;
+    for h in lanes {
+        if h.is_finished() {
+            let _ = h.join();
+        } else {
+            live += 1;
+        }
+    }
+    live
 }
 
 /// One serving lane. With one lane this is the serial route. With several (memra #667) the
@@ -2445,7 +2473,7 @@ fn processed_prefix_tokens(
 #[derive(Debug)]
 pub(crate) enum Served {
     Done(ServeStats),
-    /// The client left while the request waited for memory.
+    /// The client left while the request waited for memory or during its chunked prefill.
     Cancelled,
     /// The memory door turned it away (memra#503); the error is the client's answer.
     Refused(EngineError),
@@ -2779,22 +2807,31 @@ fn serve_one(
                 .request_state(session_capacity, None)
                 .map_err(EngineError::engine)?;
             let logits = if m.prefill_chunk > 0 && !short_monolithic {
-                if m.sessions > 1 {
-                    // Give the turn up between chunks so another session's steps keep going.
-                    m.gpu.prefill_with_cache_chunked_yielding(
-                        &prompt,
-                        &mut state,
-                        m.prefill_chunk,
-                        &mut || {
+                let mut client_left = false;
+                let tx = &req.tx;
+                let prefilled = m.gpu.prefill_with_cache_chunked_yielding(
+                    &prompt,
+                    &mut state,
+                    m.prefill_chunk,
+                    &mut || {
+                        // A client that left stops its prompt at the next chunk rather than
+                        // holding the GPU (and a graceful shutdown, #739) for the rest of it.
+                        if tx.is_closed() {
+                            client_left = true;
+                            return Err("client left during prefill".into());
+                        }
+                        if m.sessions > 1 {
+                            // Give the turn up so another session's steps keep going.
                             turn.release();
                             turn.acquire();
-                        },
-                    )
-                } else {
-                    m.gpu
-                        .prefill_with_cache_chunked(&prompt, &mut state, m.prefill_chunk)
+                        }
+                        Ok(())
+                    },
+                );
+                if client_left {
+                    return Ok(Served::Cancelled);
                 }
-                .map_err(EngineError::engine)?
+                prefilled.map_err(EngineError::engine)?
             } else {
                 m.gpu
                     .prefill_with_cache(&prompt, &mut state)
