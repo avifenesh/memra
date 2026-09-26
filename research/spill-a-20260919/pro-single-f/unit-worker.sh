@@ -3,7 +3,9 @@
 # unit-cells.sh omitted; this step completes it. The worker's door cells `option_b_ option_c_` (the 18, the span cells
 # among them) run serially from a server test executable built at <sha> (F's production code with the corrected worker
 # cell arithmetic, 411177fea and 28c7aa6c1), in its own clone (/root/wt-a-funit). `bash unit-worker.sh build <sha>`,
-# then `tools/tier-battery.py --rig pro-single --external-lock --execute bash unit-worker.sh @COLLECTOR_LOCK_FD@`.
+# then `tools/tier-battery.py --rig pro-single --timeout 5400 --out /root/spill-receipts/a-f/unit-worker-collector
+#  --external-lock --execute bash unit-worker.sh @COLLECTOR_LOCK_FD@` (the collector refuses a run without --out and
+#  --timeout; the first invocation from this header ran nothing, DAY69 section 6).
 set -uo pipefail
 R=/root/spill-receipts/a-f/unit-worker
 W=/root/wt-a-funit

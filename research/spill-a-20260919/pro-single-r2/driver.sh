@@ -27,7 +27,7 @@ cell gates-cell 10800 $D/gates.sh @COLLECTOR_LOCK_FD@
 cell ab-r2-cell 14400 $D/ab.sh @COLLECTOR_LOCK_FD@ seam prime retire-seam 448
 cell ab-r1-cell 14400 $D/ab-r1.sh @COLLECTOR_LOCK_FD@ seam-r1 prime retire-seam retire-seam-nosource 448
 python3 research/spill-a-20260919/r2-reading.py "$R" > "$R/reading-r2.log" 2>&1
-echo "$(date -u +%FT%TZ) reading rc=$? $(tail -1 "$R/reading-r2.log")" | tee -a "$R/progress.log"
+step_rc=$?; echo "$(date -u +%FT%TZ) reading rc=$step_rc $(tail -1 "$R/reading-r2.log")" | tee -a "$R/progress.log"
 python3 research/spill-a-20260919/day62-reading.py "$R" seam-r1 retire-seam-nosource > "$R/reading-r1.log" 2>&1
-echo "$(date -u +%FT%TZ) r1 reading rc=$? $(tail -1 "$R/reading-r1.log")" | tee -a "$R/progress.log"
+step_rc=$?; echo "$(date -u +%FT%TZ) r1 reading rc=$step_rc $(tail -1 "$R/reading-r1.log")" | tee -a "$R/progress.log"
 echo "$(date -u +%FT%TZ) driver-done" | tee -a "$R/progress.log"

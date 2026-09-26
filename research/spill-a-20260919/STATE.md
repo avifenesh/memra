@@ -1,4 +1,4 @@
-# WP-A resumable state (2026-09-26, NEED TARGET CARD: F's sitting (running), then /root/units-chain.sh on BOX31; T-H' awaits the owner)
+# WP-A resumable state (2026-09-27: integ69 fix `4f297e7bd` (DAY69 design P) pushed for the lead; P2 ADOPTED for the next integ (`d9f75500a`); F REVERTED; the DAY68 5090 chain running)
 
 - Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ67 takes B1 (`e522a9417`, adopted on both cards) and the
   grid refusal (`231fba087`, cherry-picked as 95f275859).
@@ -8,17 +8,20 @@
   go to integ69.
 - **Item 18 (DAY64).** The split selected the fill (8.63 ms of 12.9), not D1 (section 5). Design F (the fill on its
   own stream in chunks) is built (`568f33c7b`), with its sitting `pro-single-f/` (`build.sh <tip> 0a835a75b`, then
-  `driver.sh`, last line `F VERDICT -> ..`), running on BOX31. F adopts only on `F VERDICT -> ADOPT` AND the added
-  worker span step `pro-single-f/unit-worker.sh` at `01ce7ed10` reading `door-rc=0` (section 7, accepted). F2 (pinned
-  resident payloads) is recorded for after P2's verdict.
+  `driver.sh`). **F read REVERT ((a) passed with the worker step; (b), (c) failed) and is reverted (`ef8cd47d8`,
+  DAY64 section 8).** Item 18 stays open; F2 (pinned resident payloads) is due next, registration first.
 - **Item 20 (DAY65).** T-H read REVERT (b) and was reverted (`06b2d31db`). T-H' is registered (section 6: (b')
   measured at long entries, from DAY65's own text), awaiting the lead's and the owner's acceptance before any code.
 - **Item 17 (DAY67).** P2 on L': the first sitting was stopped as a diagnostic (T-H was in both arms). The corrected
-  pair P2L2 read (b) to (g) PASS; (a)'s unit step is void (the stale cell arithmetic) and repeats whole on
-  `lane/spill-a-p2l2-unit-20260926` (`a2419d3e1`) via `pro-single-p2l2/unit-rerun.sh`. ADOPT if all green, else
-  REVERT (section 4, accepted). Queued on BOX31 after F's sitting, in `/root/units-chain.sh`.
-- **integ69** takes `6c60d798f` (L' + R1 + the gate change + the two test-only cell fixes `411177fea`, `28c7aa6c1`); its
-  18 worker span cells read 18 of 18 on the local 5090 (DAY63 section 7). Its BOX39 rerun follows lane C's DAY82.
+  pair P2L2 read (b) to (g) PASS and (a)'s repeated unit step read all green on `a2419d3e1`: **P2 ADOPTED** (DAY67
+  section 5). For the next integ: `lane/spill-a-p2-20260926` (`d9f75500a`, P2 on integ69's fix tip). P2's 5090 half
+  is owed after the DAY68 chain.
+- **integ69** took `6c60d798f` (L' + R1 + the gate change + the two test-only cell fixes); revuto found the purge
+  retention defect (DAY69): **design P, `4f297e7bd` on `lane/spill-a-integ69-20260926`**, is the fix (the pool
+  drained with an epoch, the staging set zeroed, at every purge); CPU battery green, both red arms caught; its two GPU
+  cells run in the lead's battery. On this lane it is `59376ebeb`. Worktree `wt-spill-a-i69` holds that branch until
+  integ69 merges; remove it then. Owed after the fix: the GLM-5 arena's purge scrub and the pooled-lease read guard
+  (DAY69 sections 1 and 2).
 - **The owed 5090 cells (DAY68), registered and built:** R1's half and L''s half (section 1, the target sittings' own
   pairs and scripts, derived by `rtx5090-derive.py`), item 16 (section 3, DAY45's cell from `7b849a817`), then S4's and
   V's halves (section 4). All run from frozen copies under `/home/avifenesh/spill-a-cells/`, chained by

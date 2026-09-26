@@ -4,7 +4,9 @@
 # code is 064f9fa0d's, byte for byte). Its own clone (/root/wt-a-p2unit), so no running sitting's tree is touched. Step
 # 1 builds the test executables outside any hold; step 2 is the same unit cells as unit-cells.sh, under ONE collector
 # hold: `bash unit-rerun.sh build`, then
-# `tools/tier-battery.py --rig pro-single --external-lock --execute bash unit-rerun.sh @COLLECTOR_LOCK_FD@`.
+# `tools/tier-battery.py --rig pro-single --timeout 5400 --out /root/spill-receipts/a-p2l2/unit-rerun-collector
+#  --external-lock --execute bash unit-rerun.sh @COLLECTOR_LOCK_FD@` (the collector refuses a run without --out and
+#  --timeout; the first invocation from this header ran nothing, DAY69 section 6).
 set -uo pipefail
 R=/root/spill-receipts/a-p2l2/unit-rerun
 W=/root/wt-a-p2unit

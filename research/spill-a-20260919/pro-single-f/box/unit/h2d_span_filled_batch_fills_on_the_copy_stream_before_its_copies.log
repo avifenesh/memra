@@ -1,0 +1,8 @@
+
+running 1 test
+test tier_transfer::tests::h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies ... HOLD READING cell=h2d_span_filled_batch first_item_seen_ms=2.58 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=h2d_span_filled_batch pinned-alloc@-15.36+0.68 device-alloc@-14.67+0.02 pinned-alloc@-14.66+0.94 device-alloc@-13.72+0.01 pinned-alloc@-13.71+0.75 device-alloc@-12.95+0.01 delay@0.00+0.02 pinned-alloc@0.02+0.59 device-alloc@0.61+0.01 pinned-alloc@0.62+0.97 device-alloc@1.59+0.00 pinned-alloc@1.59+0.74 device-alloc@2.33+0.00 submit@2.34+0.23
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 626 filtered out; finished in 1.69s
+

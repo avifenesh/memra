@@ -158,3 +158,29 @@ decides; the 5090 half follows.
 - **Accepted by the lead** (2026-09-26): (a)'s unit step is void and repeats whole on `a2419d3e1`. P2 is ADOPT if that
   step is all green and REVERT otherwise, with (b) to (g) read as they read. It is queued on BOX31 after F's sitting,
   as the first half of `/root/units-chain.sh` (receipts `a-p2l2/unit-rerun`).
+
+## 5. (a)'s unit step, repeated whole on `a2419d3e1`: all green. P2 ADOPTED
+
+- Run by the lead on the same BOX31 card, 2026-09-26, in one collector hold (`/root/units-chain.sh`'s rerun,
+  `units2-chain.out`: it captures the step's rc first). Mirror `pro-single-p2l2/unit-rerun/box/` and `box-collector/`,
+  sha256-checked against the box manifest (`MIRROR-CHECK.txt`: OK). The tree is `a2419d3e1` (`tree.sha`).
+  - The lead's first units chain ran nothing: the collector refused both steps for want of `--out`, which the
+    scripts' documented invocation omitted (DAY69 section 6).
+- Verbatim (`box/run.log`):
+
+      parallel run 1 rc=0 test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 609 filtered out; finished in 2.51s
+      parallel run 2 rc=0 test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 609 filtered out; finished in 2.26s
+      parallel run 3 rc=0 test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 609 filtered out; finished in 2.25s
+      unit-cells parallel=3/3 engine-serial-rc=0 door-rc=0 cpu-rc=0 engine-census-rc=0 tier-rc=0
+
+  The door cells (`box/door-cells.log`): `test result: ok. 18 passed; 0 failed`.
+- **Per section 4's accepted rule: (a) passes, with every gate 0 as read there. So (a) to (g) pass, and P2 is ADOPTED
+  as the naked program.**
+- **For the next integ:** `lane/spill-a-p2-20260926` at `d9f75500a` is P2 on integ69's fix tip `4f297e7bd`: the p2
+  arm's program, the crates diff `dba7c0a0c..064f9fa0d` (`worker.rs` only), which applied cleanly.
+  - CPU: fmt; server lib `949 passed; 0 failed; 27 ignored`; clippy `-p memra-server --all-targets -D warnings`
+    clean. The engine is unchanged by P2.
+  - On this lane P2 is `c58f32f7d` (re-applied on L') and stays.
+- **Owed:** P2's 5090 half. P2 changes the naked demote program on every card. It is registered after the DAY68
+  chain, whose card time it would otherwise queue behind.
+- **Item 17 closes as P2.** F2 (DAY64 section 5, recorded for after this verdict) is now due, as item 18's next design.

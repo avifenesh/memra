@@ -1,0 +1,10 @@
+F (a) UNIT native=0 censuses=0
+F (a) gates {'contract-fault-plain': '0', 'contract-fault': '0', 'failure-off': '0', 'failure-on': '0', 'hitgate-off': '0', 'hitgate-on': '0', 'identity-default-off': '0', 'identity-default-on': '0', 'identity-plain-off': '0', 'identity-plain-on': '0', 'pause-demote': '0'}
+F READING order=o1 late base=44/45 f=38/45 | e2e base=113.8 f=113.8 | pin base=25.80 f=25.70 | stall base=62.43 f=62.49 ms | phases base fill 8.49 copies 3.30 digests 1.07; f fill 0.01 copies 11.51 digests 1.16 ms
+F READING order=o2 late base=42/45 f=41/45 | e2e base=113.8 f=113.8 | pin base=25.80 f=25.70 | stall base=62.48 f=62.48 ms | phases base fill 8.44 copies 3.30 digests 1.03; f fill 0.01 copies 11.51 digests 1.18 ms
+F READING hump base=+0.027 f=+0.020 ms
+F READING late pooled base=86/90 f=79/90
+F (b) FAIL [False]
+F (c) FAIL [False, False]
+F (d) PASS [True, True, True]
+F VERDICT -> REVERT ((a) passed; failed b, c): recorded as read, reverted in one commit

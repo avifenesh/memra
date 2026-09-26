@@ -32,5 +32,5 @@ cell gates 7200 $D/gates.sh @COLLECTOR_LOCK_FD@
 bash $D/hitgate.sh >> "$R/progress.log" 2>&1
 cell unit-cell 5400 $D/unit-cells.sh @COLLECTOR_LOCK_FD@
 python3 research/spill-a-20260919/day52-reading.py "$R" > "$R/reading-day52.log" 2>&1
-echo "$(date -u +%FT%TZ) reading rc=$? $(tail -1 "$R/reading-day52.log")" | tee -a "$R/progress.log"
+step_rc=$?; echo "$(date -u +%FT%TZ) reading rc=$step_rc $(tail -1 "$R/reading-day52.log")" | tee -a "$R/progress.log"
 echo "$(date -u +%FT%TZ) driver-done" | tee -a "$R/progress.log"

@@ -233,3 +233,40 @@ identity gates door ON.
 - **Accepted by the lead** (2026-09-26): F adopts only on `F VERDICT -> ADOPT` AND the worker step's `door-rc=0`. The step
   is queued on BOX31 as the second half of `/root/units-chain.sh` (`unit-worker.sh build 01ce7ed10`, receipts
   `a-f/unit-worker`).
+
+## 8. F's sitting, read as registered: REVERT ((a) passed; (b) and (c) failed). F reverted
+
+- Run by the lead on BOX31 (a Ryzen 9 9950X class host, one RTX PRO 6000 Blackwell Workstation card), `build.sh
+  <tip> 0a835a75b` then `driver.sh`, to 18:52:50Z. Mirror `pro-single-f/box/` (682 files), sha256-checked against the
+  box manifest (`MIRROR-CHECK.txt`: OK); the executables are recorded by hash.
+  - The driver's `reading rc=0` line printed the date's rc, not the reader's (DAY69 section 6). The verdict below is
+    the reading file's own last line.
+- Verbatim (`box/reading-f.log`):
+
+      F (a) UNIT native=0 censuses=0
+      F (a) gates {'contract-fault-plain': '0', 'contract-fault': '0', 'failure-off': '0', 'failure-on': '0', 'hitgate-off': '0', 'hitgate-on': '0', 'identity-default-off': '0', 'identity-default-on': '0', 'identity-plain-off': '0', 'identity-plain-on': '0', 'pause-demote': '0'}
+      F READING order=o1 late base=44/45 f=38/45 | e2e base=113.8 f=113.8 | pin base=25.80 f=25.70 | stall base=62.43 f=62.49 ms | phases base fill 8.49 copies 3.30 digests 1.07; f fill 0.01 copies 11.51 digests 1.16 ms
+      F READING order=o2 late base=42/45 f=41/45 | e2e base=113.8 f=113.8 | pin base=25.80 f=25.70 | stall base=62.48 f=62.48 ms | phases base fill 8.44 copies 3.30 digests 1.03; f fill 0.01 copies 11.51 digests 1.18 ms
+      F READING hump base=+0.027 f=+0.020 ms
+      F READING late pooled base=86/90 f=79/90
+      F (b) FAIL [False]
+      F (c) FAIL [False, False]
+      F (d) PASS [True, True, True]
+      F VERDICT -> REVERT ((a) passed; failed b, c): recorded as read, reverted in one commit
+
+- **The added worker step (section 7):** `pro-single-f/unit-worker/box/`, built at `01ce7ed10`, in one collector
+  hold. Verbatim: `UNIT-WORKER door-rc=0 test result: ok. 18 passed; 0 failed`. So (a) is complete and green.
+- **Read:**
+  - F took the fill off the copy stream's accounting (8.49 -> 0.01 ms). But the span copies' term grew by the same
+    8.2 ms (3.30 -> 11.51 ms): the copy stream waited on the chunks' events for the whole fill.
+  - The fill did not overlap the KV item copies as F.3 expected. The receipt lands as before: 79 of 90 promotes late
+    against (b)'s at most 9 of 180, the e2e unchanged at 113.8 ms against (c)'s base minus 5.0, and the PIN 0.1 ms
+    lower.
+  - The stall and the hump are flat ((d) passes).
+  - Why the chunked fill ran after the KV copies instead of beside them is not placed by these receipts. The
+    candidates are that the fill stream's first host function started only as the KV copies finished, or that the
+    four chunks ran one after another. A probe of the fill stream's own event times would place it.
+- **Reverted as registered:** `ef8cd47d8`. The code only; F's receipts (`day64f/`) and this record stay.
+- **Item 18 stays open.** Its next design is F2 (section 5: the resident recurrent payloads held in pinned memory,
+  removing the fill itself), registered next now that P2's verdict is in. F2 is a memory-model change: 157 MB per 27B
+  entry from the pageable to the pinned ledger. Its registration prices that before any code.

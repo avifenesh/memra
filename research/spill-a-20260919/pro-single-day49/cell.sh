@@ -64,7 +64,7 @@ run() { # $1 arm
   if ! boot "$host" "$px" "$D/server.log"; then log "$arm boot NOT READY within 480 s"; echo boot-failed >> "$D/BOOT.txt"; stop; return; fi
   python3 research/spill-a-20260919/stall_cell.py --port "$PORT" --mode "$mode" --n 5 --server-log "$D/server.log" \
     --out "$D/$mode" --tag "d49-$arm" > "$D/$mode.log" 2>&1
-  log "$arm $(basename "$D") rc=$? $(grep -h 'STALL rule' "$D/$mode.log" | cut -c1-100)"
+  step_rc=$?; log "$arm $(basename "$D") rc=$step_rc $(grep -h 'STALL rule' "$D/$mode.log" | cut -c1-100)"
   stop
   { echo "== $arm/$(basename "$D")"; python3 research/spill-a-20260919/stall_cell.py --replay "$D/$mode/receipt.json"; } >> "$R/cell/replays.log" 2>&1
 }

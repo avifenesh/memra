@@ -143,3 +143,38 @@ No, in production, for three reasons:
   - `git diff --check`.
   - On this lane's tip (`59376ebeb`, carrying F): engine `579 passed`, server `949 passed`, and workspace clippy clean.
 - No new flag and no steady-path change beyond the epoch compare.
+
+## 6. Two process defects the lead found on BOX31, placed and fixed
+
+- **The unit scripts' documented invocation ran nothing.** The headers of `pro-single-p2l2/unit-rerun.sh` (line 7) and
+  `pro-single-f/unit-worker.sh` (line 6) gave `tier-battery.py .. --external-lock --execute ..` without `--out`. The
+  collector refuses that (`--execute requires argv, new --out and positive timeout`), so the lead's first units chain
+  ran nothing.
+  - Both headers now name `--timeout 5400 --out /root/spill-receipts/<dir>-collector`. The lead's rerun used its own
+    correct invocation, which is what DAY67 section 5 and DAY64 section 8 read.
+- **A driver rc line printed after a `$(..)` expansion reads that expansion's status, not the step's.**
+  - For example `echo "$(date -u +%FT%TZ) reading rc=$? .."` always prints `rc=0`. Checked on this rig: `false; echo
+    "$(date -u +%T) rc=$?"` prints `rc=0`, and `rc=$?` placed before the expansion prints `rc=1`.
+  - **The audit of this lane's scripts:** 31 lines in 23 scripts had the pattern. They are the `reading rc=` line of
+    the `pro-single-*` drivers (b1, day54, day59, day60, day62, day64, day64b, f, l, l2, p, p2, p2l, p2l2, r1, r2 x2,
+    th, w), the per-boot `rc=` log of `pro-single-day49/cell.sh` and `pro-single-day54/pause.sh` (after
+    `$(basename ..)`), `rtx5090-day33/stall-pair.sh` and `rtx5090-day33/nsys/run.sh`, and the mirrored day-38
+    `diagN-run.sh` copies under `pro-single-day38/box/`.
+  - **Fixed:** each line now captures `step_rc=$?` first and prints `rc=$step_rc`. The mirrors under `*/box/` are left
+    as mirrored. Git history keeps every script as it ran.
+  - **Did any record use such an rc as evidence? No verdict rests on one.**
+    - Every reader takes its codes from its own files, each written from an rc captured at the step: the gates'
+      `.exit` files (`run()`: `local rc=$?` right after the gate), the unit cells' `run.log` (`cell()`: `local rc=$?`),
+      the collector cells' rc (the drivers' `cell()`: `rc=$?` right after `tier-battery.py`), the replays' `STALL
+      REPLAY: PASS` counts, and the receipts' completeness.
+    - The records that quote an rc token: DAY38's `diag4-cell rc=0` to `diag8-cell rc=0` came from the mirrored
+      `diagN-run.sh` (the date's rc). So they are completion notes, not evidence. Each of those sections reads its
+      verdict from its `reading-hump.log`.
+    - DAY38's `diagN-build rc=0` tokens print the build log's own last line and are sound. DAY39, DAY49, DAY51,
+      DAY52, DAY54 and DAY59's `*-cell rc=0` tokens came from the drivers' `cell()`, which captured the rc, and are
+      sound.
+    - The per-boot `rc=` of day49 and day54 (the basename's) was never read; those readers count receipts and
+      replays.
+    - DAY64 section 8's `reading rc=0` is noted there as the date's.
+  - This lane's DAY68 scripts (`rtx5090-half*.sh`, `rtx5090-chain-day68.sh`) print `rc=$?` before any expansion, and
+    were checked the same way.

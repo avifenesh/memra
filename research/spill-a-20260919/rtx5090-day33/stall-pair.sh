@@ -59,7 +59,7 @@ for arm in d32-on d33-on off d33-on d32-on; do
     if ! boot "$bin" "$extra" "$D/server.log"; then echo "$(date -u +%FT%TZ) $arm boot FAILED" | tee -a "$ROOT/stall.log"; continue; fi
     python3 research/spill-a-20260919/stall_cell.py --port "$PORT" --mode promote --n 5 --server-log "$D/server.log" \
         --out "$D/promote" --tag "stall-promote-$arm" > "$D/promote.log" 2>&1
-    echo "$(date -u +%FT%TZ) $arm rc=$? $(grep -h 'STALL rule' "$D/promote.log" | cut -c1-200)" | tee -a "$ROOT/stall.log"
+    step_rc=$?; echo "$(date -u +%FT%TZ) $arm rc=$step_rc $(grep -h 'STALL rule' "$D/promote.log" | cut -c1-200)" | tee -a "$ROOT/stall.log"
     stop
     python3 research/spill-a-20260919/stall_cell.py --replay "$D/promote/receipt.json" >> "$ROOT/replays.log" 2>&1
 done
