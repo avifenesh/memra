@@ -81,3 +81,38 @@ No bound moves.
 
 **Verdict, as registered: F2 passes (a) to (c).** Item 23 closes. Items 24 and 25 now read one red each in arm A's
 shape as well (they were arm B's only), which their own items take.
+
+## 3. Addendum, pre-registered (the integ65 review's finding, before any code)
+
+**The hole** (revuto on integ65, #731): F2 isolated the shed tests from `ADMISSION_RESERVATIONS`, but the reservation
+path still adds to the process-global `worker::PENDING_ADMITS` on every successful reservation (`lib.rs` around 2918,
+and the route path around 3017), and `PendingAdmissionGuard`'s drop releases the global through
+`worker::release_pending_admit()`. Four shed tests reserve successfully and now hold no lock
+(`admission_sheds_only_when_..`, `deadline_shed_is_interactive_only_..`, `a_saturated_queue_with_free_http_slots_..`,
+`the_queue_wait_ceiling_admits_under_it_..`), so their reserve or drop can land inside
+`pending_admission_reservation_is_atomic_and_rolls_back_on_drop` (which resets the gauge to 0 and asserts 1, then 0),
+and the darklane and admission-yield readers that expect the gauge at 0 can see a stray increment. The day-56 census
+missed it: it matched the literal `worker::PENDING_ADMITS` in a test body, and `reserve_own` writes it through the path.
+
+**The fix (F2b), the lead's shape.** One `AdmitCounters` pair (the lane counters and the pending-admits gauge) passed
+through `reserve_pending_admit_on` and the route path and kept by the guard, which releases both to the pair it
+reserved on; every production entry passes the globals (`AdmitCounters::GLOBAL`), so production reads and writes
+exactly the counters it did; the committed path is unchanged (the worker releases the global gauge at its pop). The
+shed tests take their own pair (`own_admit_counters()`).
+
+**The census, extended to indirect writers:** every test fn that reserves through a global entry
+(`reserve_pending_admit(`, `reserve_pending_admit_with_ceiling(`, `reserve_interactive_through_contention(`) or through
+a handler (`chat_completions(`, `completions(`, `messages(`, `responses(`, `embeddings_admitted(`, `rerank_admitted(`,
+`chat_completion_admitted(`) holds `drain_lock()`, `admission_counters_guard()` or `global_counter_writer_guard()`;
+every test fn that calls `reserve_own` or `reserve_pending_admit_on` passes counters from `own_admit_counters()`; and
+the production path names `PENDING_ADMITS` only through `AdmitCounters::GLOBAL`. Tests the extended rule finds calling
+a handler without a lock get `drain_lock()` (their handlers may reach a reservation).
+
+**The reproduction and its red arm** (the harness: R3's one-CPU scope with sixteen burners, the group run in one
+process with default threads: the pending test beside the four shed tests, `--exact` each, 200 runs). The red arm is the
+tree before the fix (the shed tests on their own lanes but the global gauge, `aa325f056`'s code): it must fail the
+pending test at least once in 200. The fix: 0 of 200 in the same shape.
+
+**Acceptance.** The red arm reads the race (at least 1 of 200); the fix reads 0 of 200; the census green and its teeth
+(one shed test given the global pair fails it; one reserving test without a lock fails it); server lib, clippy and fmt
+green. On a miss, F2b is reverted in one commit and the shed tests go back under a lock (the order F1 gave them).
