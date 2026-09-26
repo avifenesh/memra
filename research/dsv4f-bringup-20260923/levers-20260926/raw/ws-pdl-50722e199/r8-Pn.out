@@ -1,0 +1,27 @@
+START utc=2026-09-26T09:19:47Z bin=/root/lane/target-pdl/release/memra-server env=MEMRA_ENV_AUDIT=on MEMRA_DSV4_PDL=1
+BOOT_FAIL
+[server] build: memra-0.138.0-e6bfaa6eeb86 (id: source-tree, git: 50722e199e25)
+[server] starting; models config = [("dsv4f", "/data/dsv4f/nvfp4", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "dsv4f" <- /data/dsv4f/nvfp4
+[load] programmatic dependent launch on the decode chain: true
+[load] sampled candidate order: Radix
+[load] placement: split_at=22 trunk_layers=43 dspark_tail_reserve=0.00 GiB
+[load] plain sampler: Device (the topology's default)
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] topology: TpEpAllLayers | layers=43 per-rank-resident=all
+[load] indexer score: Knee
+[load] prefill head: All
+[load] prefill DSpark prime: All
+[load] sampled DSpark proposal: Greedy
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[server] FATAL: worker init failed: load dsv4f: dsv4 PP peer byte-integrity probe FAILED: boundary=0 dev0->dev1 bytes=16384: 16384 mismatched byte(s) of 16384; refusing the device PP path (silent hidden-state corruption class — fix the P2P fabric or serve a non-device MEMRA_DSV4_DECODE_PATH) (TP/EP is the default placement; MEMRA_DSV4_TOPOLOGY=pp loads PP-2)
+TERMINAL rc=71 utc=2026-09-26T09:19:51Z

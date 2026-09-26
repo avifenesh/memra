@@ -34,6 +34,17 @@ row, median of N=3 rows (N=2 for DSpark), 2026-09-24/25, same text on every requ
 | DSpark (`MEMRA_DSV4_DRAFTER=dspark`), TP/EP | 82.73 | 72.79 / 63.57 | 207 ms |
 | DSpark, PP-2 | 70.60 | 61.72 / 53.90 | 267 ms |
 
+Since 2026-09-26 the TP/EP decode chain runs with programmatic dependent launch, a
+vocab-parallel head, one kernel for the compressor snapshots and push joins
+(`research/dsv4f-bringup-20260923/levers-20260926/`). The same bits, and on the Server Edition
+pair, greedy aggregate tok/s:
+
+| cell | before (N=5) | levers on (N=5) |
+|---|---|---|
+| c1 | 67.53 | 77.19 (decode 80.95) |
+| c2 | 93.74 | 104.42 |
+| c4 | 123.39 | 130.44 to 135.10 |
+
 Concurrency: the plain TP/EP route serves four lanes whose steps share one captured B-row
 graph step (memra #710). Aggregate on the Workstation pair:
 

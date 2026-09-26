@@ -3,11 +3,13 @@
 #include <cuda_runtime.h>
 #include <stdint.h>
 #include <math.h>
+#include "memra_pdl_chain.cuh"
 
 static constexpr int B = 256;
 __global__ void dsv4_sample_prepare(const float* logits, float* values,
     uint64_t* keys, const int* counts, int n, float repeat, float freq,
     float present, unsigned* result) {
+    MEMRA_PDL_CHAIN_ENTRY();
     int i = blockIdx.x * B + threadIdx.x;
     if (i >= n) return;
     float v = logits[i];
@@ -26,6 +28,7 @@ __global__ void dsv4_sample_prepare(const float* logits, float* values,
 // Unique keys include token ID. Each item binary-searches the adjacent sorted run;
 // its rank plus its within-run offset is a unique output location. Ragged safe.
 __global__ void dsv4_sample_merge(const uint64_t* src, uint64_t* dst, int n, int width) {
+    MEMRA_PDL_CHAIN_ENTRY();
     int i = blockIdx.x * B + threadIdx.x;
     if (i >= n) return;
     int base = (i / (2 * width)) * (2 * width);
@@ -43,6 +46,7 @@ __global__ void dsv4_sample_merge(const uint64_t* src, uint64_t* dst, int n, int
 }
 __global__ void dsv4_sample_exp_scan(const float* values, const uint64_t* keys,
     double* prefix, double* blocks, int k, double temperature) {
+    MEMRA_PDL_CHAIN_ENTRY();
     __shared__ double x[B];
     int lane = threadIdx.x, i = blockIdx.x * B + lane;
     double m = (double)values[(unsigned)keys[0]];
@@ -58,6 +62,7 @@ __global__ void dsv4_sample_exp_scan(const float* values, const uint64_t* keys,
     if (lane == B - 1) blocks[blockIdx.x] = x[lane];
 }
 __global__ void dsv4_sample_offsets(double* blocks, int nb) {
+    MEMRA_PDL_CHAIN_ENTRY();
     if (threadIdx.x || blockIdx.x) return;
     double sum = 0.0;
     for (int i = 0; i < nb; ++i) {
@@ -72,6 +77,7 @@ __device__ double dsv4_sample_cdf(const double* prefix, const double* blocks, in
 }
 __global__ void dsv4_sample_draw(const uint64_t* keys, const double* prefix,
     const double* blocks, int k, double top_p, double uniform, unsigned* result, const double* uniform_dev = nullptr) {
+    MEMRA_PDL_CHAIN_ENTRY();
     if (uniform_dev) uniform = *uniform_dev;
     if (threadIdx.x || blockIdx.x) return;
     if (result[1]) { result[0] = 0xffffffffu; return; }
@@ -100,19 +106,19 @@ static int dsv4_sample_device_enqueue(const float* logits, float* values,
     cudaStream_t stream = (cudaStream_t)raw_stream;
     cudaError_t err = cudaMemsetAsync(result, 0, 2 * sizeof(unsigned), stream);
     if (err != cudaSuccess) return 10000 + (int)err;
-    dsv4_sample_prepare<<<(n + B - 1) / B, B, 0, stream>>>(logits, values, keys0, counts, n, repeat, freq, present, result);
+    memra_chain_launch(dsv4_sample_prepare,(n + B - 1) / B, B, 0, stream)(logits, values, keys0, counts, n, repeat, freq, present, result);
     err = cudaGetLastError(); if (err != cudaSuccess) return 10000 + (int)err;
     for (int width = 1; width < n; width *= 2) {
-        dsv4_sample_merge<<<(n + B - 1) / B, B, 0, stream>>>(keys0, keys1, n, width);
+        memra_chain_launch(dsv4_sample_merge,(n + B - 1) / B, B, 0, stream)(keys0, keys1, n, width);
         err = cudaGetLastError(); if (err != cudaSuccess) return 10000 + (int)err;
         uint64_t* tmp = keys0; keys0 = keys1; keys1 = tmp;
     }
     int nb = (k + B - 1) / B;
-    dsv4_sample_exp_scan<<<nb, B, 0, stream>>>(values, keys0, prefix, blocks, k, temperature);
+    memra_chain_launch(dsv4_sample_exp_scan,nb, B, 0, stream)(values, keys0, prefix, blocks, k, temperature);
     err = cudaGetLastError(); if (err != cudaSuccess) return 10000 + (int)err;
-    dsv4_sample_offsets<<<1, 1, 0, stream>>>(blocks, nb);
+    memra_chain_launch(dsv4_sample_offsets,1, 1, 0, stream)(blocks, nb);
     err = cudaGetLastError(); if (err != cudaSuccess) return 10000 + (int)err;
-    dsv4_sample_draw<<<1, 1, 0, stream>>>(keys0, prefix, blocks, k, top_p, uniform, result, uniform_dev);
+    memra_chain_launch(dsv4_sample_draw,1, 1, 0, stream)(keys0, prefix, blocks, k, top_p, uniform, result, uniform_dev);
     return (int)cudaGetLastError();
 }
 

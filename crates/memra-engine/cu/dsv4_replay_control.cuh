@@ -1,6 +1,7 @@
 #pragma once
 #include <cuda_runtime.h>
 #include <stdint.h>
+#include "memra_pdl_chain.cuh"
 
 // Component-stage ABI. Allocations containing these objects must outlive both
 // rank executables. One upload per rank/token; no kernel-node parameter updates.
@@ -32,6 +33,7 @@ struct Dsv4ReplayControl {
 __global__ void dsv4_replay_control_kernel(
     const Dsv4ReplayInput* input, Dsv4ReplayControl* control,
     cudaGraphConditionalHandle c4, cudaGraphConditionalHandle c128) {
+    MEMRA_PDL_CHAIN_ENTRY();
     if (threadIdx.x || blockIdx.x) return;
     const auto in = *input;
     *control = {};
