@@ -21,11 +21,11 @@ const TENSOR_ROWS: usize = 828;
 const F32_ROWS: usize = 459;
 const BF16_ROWS: usize = 369;
 const TENSOR_BYTES: usize = 1_872_525_336;
-const LFS_FILE_BYTES: usize = 1_872_610_384;
+const LFS_FILE_BYTES: usize = 1_872_618_384;
 const SAFETENSORS_PREFIX_BYTES: usize = 8;
-// Derived from the LFS file length and final data offset. The JSON sidecar is
-// reserialized metadata, so its byte length is not the in-file header length.
-const IN_FILE_HEADER_BYTES: usize = 85_040;
+// The fixture is the exact raw safetensors header after the 8-byte prefix.
+// Prefix + header + final tensor offset equals the pinned LFS file length.
+const IN_FILE_HEADER_BYTES: usize = 93_040;
 const CODEBOOK_SIZES: [usize; 20] = [
     1_024, 1_024, 256, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
     128, 128,
@@ -208,8 +208,7 @@ fn check_header_rows(headers: &HashMap<String, StInfo>) -> Result<(), String> {
 ///
 /// `lfs_oid` and `lfs_file_bytes` must come from the model file's LFS pointer
 /// or another trusted source manifest. Matching them does not verify payload
-/// contents. The sidecar's JSON byte length must not be used as an in-file
-/// safetensors header length.
+/// contents. The supplied header is the raw in-file JSON header.
 pub fn verify_pinned_auxiliary(
     source: &str,
     config_bytes: &[u8],
@@ -236,6 +235,7 @@ pub fn verify_pinned_auxiliary(
         return Err("MiMo audio tokenizer LFS weight SHA256 differs from pin".into());
     }
     if lfs_file_bytes != LFS_FILE_BYTES
+        || header_bytes.len() != IN_FILE_HEADER_BYTES
         || lfs_file_bytes.checked_sub(TENSOR_BYTES + SAFETENSORS_PREFIX_BYTES)
             != Some(IN_FILE_HEADER_BYTES)
     {
@@ -299,9 +299,9 @@ mod tests {
         assert_eq!(receipt.f32_rows, 459);
         assert_eq!(receipt.bf16_rows, 369);
         assert_eq!(receipt.tensor_bytes, 1_872_525_336);
-        assert_eq!(receipt.file_bytes, 1_872_610_384);
-        assert_eq!(receipt.in_file_header_bytes, 85_040);
-        assert_ne!(header.len(), receipt.in_file_header_bytes);
+        assert_eq!(receipt.file_bytes, 1_872_618_384);
+        assert_eq!(receipt.in_file_header_bytes, 93_040);
+        assert_eq!(header.len(), receipt.in_file_header_bytes);
     }
 
     #[test]
