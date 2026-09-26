@@ -9,7 +9,7 @@ cd "$WT" || exit 1
 echo "$(date -u +%FT%TZ) WP-B DAY47 release build (nice 19, CPUQuota=600%)" >> research/spill-b-20260919/cpu-concurrency.log
 systemd-run --user --scope -q -p CPUQuota=600% -p MemoryMax=20G nice -n 19 cargo build --release -p memra-server \
   > "$D/build.log" 2>&1 || { echo "$(date -u +%FT%TZ) build failed" >> "$D/run.log"; exit 2; }
-for run in r1 r2; do
+for run in ${RUNS:-r1 r2}; do
   deadline=$((SECONDS + 14400))
   until flock -n /tmp/memra-5090.lock true && [ -z "$(nvidia-smi --query-compute-apps=pid --format=csv,noheader)" ]; do
     [ $SECONDS -ge $deadline ] && { echo "$(date -u +%FT%TZ) $run: card not idle after 14400 s; not run" >> "$D/run.log"; exit 3; }
