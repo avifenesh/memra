@@ -67,6 +67,43 @@ Both are pure bit movement.
 | E, the round lane | 92.20 (91.74..92.43), N=4, +5.60% | 77.85, +5.40% |
 | F, E plus the two drafter doors | 91.13, N=4, -1.16% against E | 77.10 |
 
+## Prefill TTFT
+
+The row placement kernel also serves the chunked prefill: a prime chunk's rows used to go into
+their pending slots as 2 t memcpy nodes per compressor. Plain route, snap binary (C) against the
+round lane (E), one boot per row, order C E E C C E, N=3 (`raw/se2-prefill-s2g/`):
+
+| cell | C TTFT p50 | E TTFT p50 | delta |
+|---|---|---|---|
+| c2, 1500-word context | 10385 ms (9590..11236) | 8154 ms (8094..8492) | -21.5% |
+| c1, 12000-word context | 41795 ms (38863..44856) | 34265 ms (33620..34732) | -18.0% |
+| c1 decode p50 | 74.55 tok/s | 74.45 tok/s | -0.13% |
+
+Every E row is under every C row in both TTFT cells. C drifted down across its three boots (11236,
+10385, 9590 ms at 2k) and E did not; the cause is not measured. The plain c1 decode and aggregate
+(71.60 against 71.35) sit 0.1% to 0.3% lower on E in every row, although the plain step runs none
+of the changed code: the replay step appends rows through `memra_dsv4_replay_copy_row` and the
+one-row eager step projects straight into its slot. Recorded as measured, not explained. Every
+greedy text is identical across both arms.
+
+## Rebased on main (push joins merged)
+
+The lane was rebased onto `d04d9b817`, which carries the push joins, and re-gated on the second SE
+pair (`raw/se2-rebased-s2h/`):
+- the long gate's `PROGRAM_SHA256` is `fbce1a0492d69635`, as before;
+- `dsv4_kv_split_gate` passes;
+- the DSpark TP/EP gate's proposal shas equal the pre-rebase E and C shas.
+
+Served DSpark against main at the same base, one boot per row, order M R R M R M, N=3:
+
+| arm | greedy c1 agg | sampled c1 agg |
+|---|---|---|
+| M, main `d04d9b817` | 89.16 (87.78..89.57) | 75.84 (73.50..76.01) |
+| R, the rebased lane | 93.17 (92.93..93.86), +4.50% | 78.65 (78.48..79.05), +3.71% |
+
+Every R row is above every M row in both cells, and every greedy and sampled text is identical
+across both arms.
+
 ## The two drafter doors, one at a time
 
 `MEMRA_DSV4_DSPARK_MARKOV=rowblk` and `MEMRA_DSV4_DSPARK_CHAIN=device` were default-OFF doors from

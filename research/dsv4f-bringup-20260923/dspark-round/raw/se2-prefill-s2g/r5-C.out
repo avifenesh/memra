@@ -1,0 +1,8 @@
+START utc=2026-09-26T18:22:54Z bin=/root/lane/target-snap/release/memra-server env=MEMRA_ENV_AUDIT=on MEMRA_DSV4_PDL=1 MEMRA_DSV4_VOCAB_HEAD=1
+READY after=221s port=56955
+CELL warmup c=1 ok=1/1 agg=48.44 tok/s decode_p50=64.64 tok/s ttft_p50=180 ms tpot_p50=15.47 ms errs=[]
+CELL greedy-c1 c=1 ok=8/8 agg=71.60 tok/s decode_p50=74.48 tok/s ttft_p50=158 ms tpot_p50=13.43 ms errs=[]
+CELL greedy-c2-2k c=2 ok=8/8 agg=20.13 tok/s decode_p50=40.80 tok/s ttft_p50=9590 ms tpot_p50=24.51 ms errs=[]
+CELL greedy-c1-12k c=1 ok=2/2 agg=5.95 tok/s decode_p50=60.93 tok/s ttft_p50=38863 ms tpot_p50=16.41 ms errs=[]
+CELLS_DONE utc=2026-09-26T18:29:21Z
+TERMINAL rc=0 utc=2026-09-26T18:29:28Z
