@@ -13,7 +13,7 @@ for route in plain spec; do
   BIN=$WT/target/day41b/tip/memra-server PREV_BIN=$WT/target/day41b/offprev/memra-server bash "$D/day41-run.sh" "$R" \
     "rx-$route-O1-keep:keep:$route:RX" "rx-$route-O1-rewind:rewind:$route:RX" "rx-$route-O2-rewind:rewind:$route:RX" \
     "rx-$route-O2-keep:keep:$route:RX"
-  echo "$(date -u +%FT%TZ) $route boots rc=$?" >> "$R/chain.log"
+  _rc=$?; echo "$(date -u +%FT%TZ) $route boots rc=$_rc" >> "$R/chain.log"
 done
 BIN=$WT/target/day41b/tip/memra-server PREV_BIN=$WT/target/day41b/offprev/memra-server bash "$D/day41-run.sh" "$R" offprev:offprev:plain:RX6
 python3 "$D/day41-read.py" rtx5090 "$R" > "$R/read.log" 2>&1

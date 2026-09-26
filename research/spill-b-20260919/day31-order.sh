@@ -13,7 +13,10 @@ fd=${1:?fd}; order=${2:?O1|O2}
 cd "$WT" || exit 1
 mkdir -p "$R/boots"
 python3 tools/tier-lock-proof.py --fd "$fd" --lock "$RIG_LOCK" --owner collector > "$R/LOCK-$order.json" 2>&1
-echo "$(date -u +%FT%TZ) order=$order lock-proof rc=$?" >> "$R/order.log"
+# The step's exit is captured on its own line: inside "$(date ...) rc=$?" bash runs date first and $? is date's (lead,
+# 2026-09-26). Until this fix every rc= this script wrote was date's 0.
+rc=$?
+echo "$(date -u +%FT%TZ) order=$order lock-proof rc=$rc" >> "$R/order.log"
 sha256sum "$BIN" > "$R/binary-$order.sha256"
 if [ "$order" = O1 ]; then arms="off on2048 on8192 on32768"; inner=AB; else arms="on32768 on8192 on2048 off"; inner=BA; fi
 export CLIENT=day31-client.py PARSER=day31-parse.py CLIENT_ARGS="--burst $BURST" LOCK=none N=5 \
@@ -28,7 +31,8 @@ for arm in $arms; do
     env MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS="${arm#on}" \
       bash research/spill-b-20260919/run-day26-cell.sh "$cell" "$inner" "$BIN" > "$R/boots/$cell.launch.log" 2>&1
   fi
-  echo "$(date -u +%FT%TZ) boot $cell rc=$? $(grep -h '^DAY31 V-BOOT' "$R/boots/$cell/REPORT.txt" 2>/dev/null)" >> "$R/order.log"
+  rc=$?
+  echo "$(date -u +%FT%TZ) boot $cell rc=$rc $(grep -h '^DAY31 V-BOOT' "$R/boots/$cell/REPORT.txt" 2>/dev/null)" >> "$R/order.log"
   sleep 5
 done
 echo "$(date -u +%FT%TZ) order=$order done" >> "$R/order.log"

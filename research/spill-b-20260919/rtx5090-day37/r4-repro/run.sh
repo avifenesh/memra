@@ -16,5 +16,5 @@ for spec in r4-1:target/day37/r4/memra-server v3-1:target/b2/v3/memra-server r4-
   echo "$(date -u +%FT%TZ) $name start bin=$(sha256sum "$bin" | cut -c1-16)" >> "$D/run.log"
   env -u MEMRA_KV_ALLOCATOR flock -w 600 /tmp/memra-5090.lock tools/admit-mem-burst-gate.sh "$MODEL" "$bin" "$D/$name" \
     > "$D/$name.gate.log" 2>&1
-  echo "$(date -u +%FT%TZ) $name rc=$? $(tail -1 "$D/$name.gate.log")" >> "$D/run.log"
+  _rc=$?; echo "$(date -u +%FT%TZ) $name rc=$_rc $(tail -1 "$D/$name.gate.log")" >> "$D/run.log"
 done

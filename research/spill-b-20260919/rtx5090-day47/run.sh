@@ -17,6 +17,6 @@ for run in ${RUNS:-r1 r2}; do
   done
   echo "$(date -u +%FT%TZ) $run start HEAD=$(git rev-parse HEAD)" >> "$D/run.log"
   HFG_ARMS=g,h HFG_OUT="$D/$run" flock -w 600 /tmp/memra-5090.lock tools/health-fault-gate.sh > "$D/$run.log" 2>&1
-  echo "$(date -u +%FT%TZ) $run rc=$? $(tail -1 "$D/$run.log")" >> "$D/run.log"
+  _rc=$?; echo "$(date -u +%FT%TZ) $run rc=$_rc $(tail -1 "$D/$run.log")" >> "$D/run.log"
   sleep 240
 done

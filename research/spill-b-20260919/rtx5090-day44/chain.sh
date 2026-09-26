@@ -16,7 +16,7 @@ for route in plain spec; do
     S=$( [ "$shape" = rx ] && echo RX || echo RXg )
     bash "$D/day44-run.sh" "$R" "rx-$route-$shape-O1-keep:keep:$route:$S" "rx-$route-$shape-O1-exact:exact:$route:$S" \
       "rx-$route-$shape-O2-exact:exact:$route:$S" "rx-$route-$shape-O2-keep:keep:$route:$S"
-    echo "$(date -u +%FT%TZ) $route $shape boots rc=$?" >> "$R/chain.log"
+    _rc=$?; echo "$(date -u +%FT%TZ) $route $shape boots rc=$_rc" >> "$R/chain.log"
   done
 done
 bash "$D/day44-run.sh" "$R" offprev:offprev:plain:RX6 fault-plain-rxg6:fault:plain:RXg6

@@ -780,6 +780,11 @@ v3-1: AMB no prefill OOM: oom_lines=0 status={200: 44, 429: 20} -> PASS
 r4-2: AMB no prefill OOM: oom_lines=8 status={200: 45, 429: 19} -> FAIL
 ```
 
+- **Correction (2026-09-26, the lead's rc audit):** the `rc=0` in the three `run.log` lines above is not the gate's
+  exit. queue-k wrote `echo "$(date -u ...) $name rc=$? ..."`, and bash runs `date` before it expands `$?`, so the
+  value is `date`'s 0 on every line. The gate's own exit was not recorded. The verdicts come from each gate's own
+  `ADMIT-MEM BURST GATE:` line and its `AMB no prefill OOM` line, which stand. The placement below does not use the
+  rc. queue-k's line is fixed in the script (queue-k is stopped).
 - **Placed:** the r4 binary reds twice (8 parked prefill OOMs each, as 2.7 read 7), and the addendum-B binary (`v3`,
   DAY39's `be2177ead`) greens on the same gate. 2.7's A1 red is the door's booking without DAY39 addendum B's terms,
   not the pooled allocator. The 5090 class's rule reading on the r4 tree stays FAIL (no reading) as it read; a rerun

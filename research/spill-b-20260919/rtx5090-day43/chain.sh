@@ -12,6 +12,6 @@ echo "$(date -u +%FT%TZ) chain start HEAD=$(git rev-parse HEAD) $(tr '\n' ' ' < 
 BIN=$WT/target/day43/tip/memra-server PREV_BIN=$WT/target/day43/offprev/memra-server bash "$D/day43-run.sh" "$R" \
   rx-spec-O1-unset:unset:spec:RX rx-spec-O1-clamp:clamp:spec:RX rx-spec-O2-clamp:clamp:spec:RX \
   rx-spec-O2-unset:unset:spec:RX offprev:offprev:spec:RX
-echo "$(date -u +%FT%TZ) boots rc=$?" >> "$R/chain.log"
+_rc=$?; echo "$(date -u +%FT%TZ) boots rc=$_rc" >> "$R/chain.log"
 python3 "$D/day43-read.py" rtx5090 "$R" > "$R/read.log" 2>&1
 echo "$(date -u +%FT%TZ) chain done" >> "$R/chain.log"

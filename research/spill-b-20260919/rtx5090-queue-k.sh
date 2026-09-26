@@ -45,7 +45,7 @@ for spec in r4-1:target/day37/r4/memra-server v3-1:target/b2/v3/memra-server r4-
   name=${spec%%:*}; bin=${spec#*:}
   echo "$(date -u +%FT%TZ) $name start bin=$(sha256sum "$bin" | cut -c1-16)" >> "$RG/run.log"
   gate "$RG/$name" "$bin"
-  echo "$(date -u +%FT%TZ) $name rc=$? $(tail -1 "$RG/$name.gate.log")" >> "$RG/run.log"
+  _rc=$?; echo "$(date -u +%FT%TZ) $name rc=$_rc $(tail -1 "$RG/$name.gate.log")" >> "$RG/run.log"
 done
 log "day 37 addendum G repro done"
 # 2. DAY39 addendum B.

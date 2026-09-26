@@ -18,9 +18,9 @@ for run in g1 g2; do
   until idle; do [ $SECONDS -ge $deadline ] && { echo "$(date -u +%FT%TZ) $run: not idle; not run" >> "$D/run.log"; exit 3; }; sleep 30; done
   echo "$(date -u +%FT%TZ) gate $run start HEAD=$(git rev-parse HEAD)" >> "$D/run.log"
   HFG_ARMS=i HFG_OUT="$D/$run" flock -w 600 /tmp/memra-5090.lock tools/health-fault-gate.sh > "$D/$run.log" 2>&1
-  echo "$(date -u +%FT%TZ) gate $run rc=$? $(tail -1 "$D/$run.log")" >> "$D/run.log"
+  _rc=$?; echo "$(date -u +%FT%TZ) gate $run rc=$_rc $(tail -1 "$D/$run.log")" >> "$D/run.log"
   sleep 240
 done
 BIN=$WT/target/day49/tip/memra-server YIELD_S=240 CLIENT_EXTRA="--warm-n 0 --burst 8 --length 6144 --max-tokens 64" \
   bash research/spill-b-20260919/day49-run.sh "$D" O1-off:off O1-on:on O2-on:on O2-off:off
-echo "$(date -u +%FT%TZ) boots rc=$?" >> "$D/run.log"
+_rc=$?; echo "$(date -u +%FT%TZ) boots rc=$_rc" >> "$D/run.log"
