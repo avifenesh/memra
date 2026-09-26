@@ -23253,8 +23253,6 @@ pub fn set_dsv4_sampler_order_for_gate(order: Option<Dsv4SamplerOrder>) {
     SAMPLER_ORDER_GATE.with(|current| current.set(order));
 }
 
-/// `MEMRA_DSV4_VOCAB_HEAD`: the TP/EP vocab-parallel decode head, ON by default since its served
-/// A/B (`research/dsv4f-bringup-20260923/levers-20260926/`); `0` is the rollback seam.
 /// `MEMRA_DSV4_AR_PUSH`: the TP/EP walk's joins push their operand into the peer's output (door,
 /// default OFF until its A/B).
 fn dsv4_ar_push_env() -> Res<bool> {
@@ -23266,6 +23264,8 @@ fn dsv4_ar_push_env() -> Res<bool> {
     }
 }
 
+/// `MEMRA_DSV4_VOCAB_HEAD`: the TP/EP vocab-parallel decode head, ON by default since its served
+/// A/B (`research/dsv4f-bringup-20260923/levers-20260926/`); `0` is the rollback seam.
 fn dsv4_vocab_head_env() -> Res<bool> {
     match std::env::var("MEMRA_DSV4_VOCAB_HEAD").as_deref() {
         Err(std::env::VarError::NotPresent) | Ok("1") => Ok(true),
