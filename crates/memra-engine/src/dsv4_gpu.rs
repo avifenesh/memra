@@ -23253,12 +23253,13 @@ pub fn set_dsv4_sampler_order_for_gate(order: Option<Dsv4SamplerOrder>) {
     SAMPLER_ORDER_GATE.with(|current| current.set(order));
 }
 
-/// `MEMRA_DSV4_AR_PUSH`: the TP/EP walk's joins push their operand into the peer's output (door,
-/// default OFF until its A/B).
+/// `MEMRA_DSV4_AR_PUSH`: the TP/EP walk's joins push their operand into the peer's output, ON by
+/// default since its served A/B (`research/dsv4f-bringup-20260923/levers-20260926/`); `0` is the
+/// rollback seam.
 fn dsv4_ar_push_env() -> Res<bool> {
     match std::env::var("MEMRA_DSV4_AR_PUSH").as_deref() {
-        Err(std::env::VarError::NotPresent) | Ok("0") => Ok(false),
-        Ok("1") => Ok(true),
+        Err(std::env::VarError::NotPresent) | Ok("1") => Ok(true),
+        Ok("0") => Ok(false),
         Ok(other) => Err(format!("MEMRA_DSV4_AR_PUSH must be 0 or 1, got {other:?}")),
         Err(err) => Err(format!("MEMRA_DSV4_AR_PUSH: {err}")),
     }

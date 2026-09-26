@@ -451,6 +451,15 @@ fn resolve_replay_cadence(p: &Dsv4Program) -> DoorState {
     }
 }
 
+fn resolve_ar_push(p: &Dsv4Program) -> DoorState {
+    // The TP/EP walk's joins, decode and prefill; the DSpark EP combine stays pull.
+    if p.tp_ep {
+        DoorState::On(DoorShape::AllRoutedShapes)
+    } else {
+        DoorState::OffProgram("the all-layer TP/EP topology")
+    }
+}
+
 fn resolve_vocab_head(p: &Dsv4Program) -> DoorState {
     // The decode heads of the TP/EP program (one-row, replay, B-row); prefill and verify keep
     // the one-rank head, whose logits are the same bits.
@@ -495,6 +504,18 @@ fn resolve_hc_dot_split(p: &Dsv4Program) -> DoorState {
 /// clean receipt becomes the code (owner, 2026-09-10). See the removed-doors
 /// ledger in `docs/FLAGS.md`.
 pub const DSV4_DOORS: &[DoorRow] = &[
+    DoorRow {
+        name: "push joins",
+        env: "MEMRA_DSV4_AR_PUSH",
+        merged: "#PUSH_PR",
+        declared_default: DeclaredDefault::On,
+        declared_served: DoorState::On(DoorShape::AllRoutedShapes),
+        declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
+        resolve: resolve_ar_push,
+        admitted_by: AdmittingProgram::TpEpOnly,
+        merged_gain_pct: (8.37, 7.57),
+        measured_on: "2x RTX PRO 6000 Blackwell Server Edition pair",
+    },
     DoorRow {
         name: "vocab-parallel head",
         env: "MEMRA_DSV4_VOCAB_HEAD",
@@ -1011,11 +1032,6 @@ mod tests {
         ("MEMRA_DSV4_HAVE_NVTX", "build-time profiling switch"),
         ("MEMRA_DSV4_INDEXER_SCORE", "program selector"),
         ("MEMRA_DSV4_NVTX", "profiling ranges"),
-        (
-            "MEMRA_DSV4_AR_PUSH",
-            "join-transport door under its first A/B; the reduce adds the same values in rank \
-             order and the gathers move the same bits",
-        ),
         ("MEMRA_DSV4_PEER_PROBE_POISON", "gate-only fault injection"),
         ("MEMRA_DSV4_PREFILL_DRAFT", "program selector"),
         ("MEMRA_DSV4_PREFILL_HEAD", "program selector"),
@@ -1141,6 +1157,7 @@ mod tests {
         // permanence disposition asserted when this list holds nobody.
         const PERMANENTLY_UNREACHABLE: &[&str] = &[];
         const ENGAGED: &[&str] = &[
+            "push joins",
             "vocab-parallel head",
             "PDL chain",
             "dense exact-tail transport",
@@ -1292,7 +1309,7 @@ mod tests {
         // checks. Same lesson as the red arms above, one level up. Two anchors
         // now, neither of them a door name.
         assert!(!DSV4_DOORS.is_empty(), "an empty registry loops zero times");
-        assert_eq!(DSV4_DOORS.len(), 6);
+        assert_eq!(DSV4_DOORS.len(), 7);
         // 1. The machinery is alive and program-sensitive, by construction and
         //    permanently: the synthetic stand-in cannot be fixed.
         assert_ne!(

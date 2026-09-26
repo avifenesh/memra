@@ -27,7 +27,8 @@ the gates compare bits, not tolerances.
 - **Snapshot kernel** (`lane/dsv4-snap-copy-20260926`, no door). A compressor checkpoint's two
   snapshots are one PDL-chained copy kernel instead of two memcpy nodes: 62 compressors per rank
   per step, and a memcpy node breaks the launch chain.
-- **Push joins** (`MEMRA_DSV4_AR_PUSH`, `lane/dsv4-ar-push-20260926`). See the section below.
+- **Push joins** (`MEMRA_DSV4_AR_PUSH`, `lane/dsv4-ar-push-20260926`): one fabric crossing per
+  join and no end barrier (section below).
 
 ## Correctness
 
@@ -78,7 +79,54 @@ probe, so the WS rows stop at N=2. A WS confirmation row is each door's decide-b
 
 ## Push joins
 
-PUSH_SECTION
+`MEMRA_DSV4_AR_PUSH`, `lane/dsv4-ar-push-20260926`, `cu/tp_ar.cu`.
+
+**What changed.**
+- **The pull join it replaces** crosses the PCIe fabric three times per join: a start barrier, a
+  non-posted peer read of the operand, and an end barrier that keeps each rank's input alive until
+  the peer has read it.
+- **Push join.** Each rank writes its operand into the peer's output buffer (posted writes),
+  fences, and raises one flag in the peer's signal block. It then waits on its own local flag and
+  reads only local memory. That is one crossing per join, with no end barrier.
+- **Arithmetic.** The reduce computes `in_rank0 + in_rank1` on the same values, and the gathers
+  move the same bits.
+- **Why no end barrier is needed.** Each walk join (wo_a gather, attention-out gather, expert
+  reduce, vocab head gather) writes its own persistent buffer, and every consumer of that buffer
+  runs before the next join. `TpEpArState` refuses a push join that writes the previous push
+  join's output. Joins on temporary buffers (the DSpark EP combine) stay pull.
+- **The race the first cut had.** The peer can finish join k and raise join k+1's flag in the same
+  slot before this rank has read join k's. The wait is therefore "at least this epoch", as a
+  signed difference so the counter can wrap. A later epoch still means this join's push has
+  landed, and the peer cannot run two joins ahead. The first cut waited for an exact epoch and
+  refused `[40043, 0]` in the long gate's back-to-back timing phase (`raw/se2-push-s2c/`, the
+  voided run).
+
+**Correctness.**
+- On the second SE pair, `PROGRAM_SHA256` equals the pull joins' (`fbce1a0492d69635`), through the
+  long gate's timing phase.
+- `dsv4_rows_gate` TP/EP and `dsv4_kv_split_gate` are bit-identical.
+- The DSpark TP/EP gate gives the same proposal shas as the pull control on the same pod.
+- Every greedy served text is identical in both A/Bs.
+
+**Served.**
+
+| pair, protocol | cell | pull | push | delta |
+|---|---|---|---|---|
+| second SE pair, C D D C x5 boots (`raw/se2-push-s2c/`) | greedy c1 | 71.64 (71.23..71.81) | 77.19 (77.09..77.73) | +7.75% (forward +8.37%, reverse +7.57%) |
+| | sampled c1 | 71.51 | 77.33 | +8.14% |
+| | greedy c2 | 95.99 | 104.42 | +8.78% |
+| | greedy c4 | 125.95 (125.60..127.56) | 130.44 (105.47..133.60) | +3.56% |
+| SE pair, one binary, P Q Q P x4 boots, 5 c4 cells per boot (`raw/se-push-c4-v5p/`) | greedy c1 | 73.20 | 77.56 | +5.96% |
+| | greedy c2 | 100.16 | 106.29 | +6.13% |
+| | greedy c4, 20 cells per arm | 130.75 (129.51..131.40) | 135.10 (134.51..135.71) | +3.32% |
+
+**Unexplained.** On the second SE pair, two of five push boots ran c4 about 20% slow (105.47 and
+111.26 aggregate, TPOT 36 and 34 ms against 28), with c1 and c2 in the same boots normal and SM
+clocks unchanged. It did not reproduce in 20 push c4 cells over four boots on the SE pair, and the
+pull arm never showed it. Cause unknown; recorded here, not explained away.
+
+The long gate's replay timing on the second SE pair agrees: 13.46 ms per token with pull and 12.41
+with push.
 
 ## Profiling note
 
