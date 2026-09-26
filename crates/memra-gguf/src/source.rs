@@ -1965,6 +1965,7 @@ impl SafetensorsSource {
             || scale_info.shape != [out as u64, (input / 32) as u64]
             || weight.len() != out.checked_mul(packed_in)?
             || scale.len() != out.checked_mul(input / 32)?
+            || scale.contains(&0xff)
         {
             return None;
         }
@@ -3298,6 +3299,16 @@ mod tests {
             };
             assert_eq!(observed, expected, "element {index}");
         }
+        drop(recorded);
+        drop(source);
+        let mut malformed = std::fs::read(&file).unwrap();
+        *malformed.last_mut().unwrap() = 0xff;
+        std::fs::write(&file, malformed).unwrap();
+        let config = ModelConfig::from_hf(&crate::config::HfConfig::parse(include_str!(
+            "model_packs/mimo_v2/fixtures/config.json"
+        )));
+        let source = SafetensorsSource::open_with_config(&file, config).unwrap();
+        assert!(source.find_mimo_mxfp4_expert_ggml(ggml).is_none());
         drop(source);
         std::fs::remove_dir_all(dir).unwrap();
     }

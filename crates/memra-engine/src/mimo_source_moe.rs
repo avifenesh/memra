@@ -11,9 +11,11 @@ use memra_gguf::config::{Arch, ModelConfig};
 use memra_gguf::model_packs::mimo_v2::inspect_pinned_source_headers;
 use memra_gguf::model_plan::{ActivationPlan, MlpPlan, ModelPlan, MoeMlpPlan, RouterPlan};
 use memra_gguf::safetensors::StModel;
+use memra_gguf::source::MimoMxfp4Native;
 
 use crate::Engine;
 use crate::dsv4_ffi::{memra_dsv4_act_quant_fp8, memra_dsv4_fp4_gemm, memra_dsv4_fp4_gemm_sel};
+use crate::mimo_moe_load::MiMoRoutedSource;
 
 type Fail = Box<dyn Error>;
 const HIDDEN: usize = 4096;
@@ -313,31 +315,11 @@ struct ResidentProjection {
 }
 
 impl ResidentProjection {
-    fn load(
-        engine: &Engine,
-        source: &StModel,
-        layer: usize,
-        projection: &str,
-        rows: usize,
-        cols: usize,
-    ) -> Result<Self, Fail> {
+    fn empty(engine: &Engine, rows: usize, cols: usize) -> Result<Self, Fail> {
         let weight_stride = rows * cols / 2;
         let scale_stride = rows * cols / 32;
-        let mut weight = engine.alloc_u8_uninit(EXPERTS * weight_stride)?;
-        let mut scales = engine.alloc_u8_uninit(EXPERTS * scale_stride)?;
-        let stream = engine.stream();
-        for expert in 0..EXPERTS {
-            let stem = format!("model.layers.{layer}.mlp.experts.{expert}.{projection}");
-            let (source_weight, source_scales) = source_mxfp4(source, &stem, rows, cols)?;
-            stream.memcpy_htod(
-                source_weight,
-                &mut weight.slice_mut(expert * weight_stride..(expert + 1) * weight_stride),
-            )?;
-            stream.memcpy_htod(
-                source_scales,
-                &mut scales.slice_mut(expert * scale_stride..(expert + 1) * scale_stride),
-            )?;
-        }
+        let weight = engine.alloc_u8_uninit(EXPERTS * weight_stride)?;
+        let scales = engine.alloc_u8_uninit(EXPERTS * scale_stride)?;
         Ok(Self {
             weight,
             scales,
@@ -346,6 +328,36 @@ impl ResidentProjection {
             rows,
             cols,
         })
+    }
+
+    fn upload(
+        &mut self,
+        engine: &Engine,
+        expert: usize,
+        view: &MimoMxfp4Native<'_>,
+    ) -> Result<(), Fail> {
+        if expert >= EXPERTS
+            || view.out_f != self.rows
+            || view.in_f != self.cols
+            || view.weight.len() != self.weight_stride
+            || view.scales.len() != self.scale_stride
+        {
+            return Err("MiMo bound expert projection shape changed".into());
+        }
+        let stream = engine.stream();
+        stream.memcpy_htod(
+            view.weight,
+            &mut self
+                .weight
+                .slice_mut(expert * self.weight_stride..(expert + 1) * self.weight_stride),
+        )?;
+        stream.memcpy_htod(
+            view.scales,
+            &mut self
+                .scales
+                .slice_mut(expert * self.scale_stride..(expert + 1) * self.scale_stride),
+        )?;
+        Ok(())
     }
 
     fn run(
@@ -418,30 +430,25 @@ struct InterleavedExperts {
 }
 
 impl InterleavedExperts {
-    fn load(engine: &Engine, source: &StModel, layer: usize) -> Result<Self, Fail> {
+    fn load(engine: &Engine, source: &MiMoRoutedSource<'_>) -> Result<Self, Fail> {
         let weight_stride = EXPERT_WIDTH * HIDDEN / 2;
         let scale_stride = EXPERT_WIDTH * HIDDEN / 32;
         let mut weight = engine.alloc_u8_uninit(EXPERTS * 3 * weight_stride)?;
         let mut scales = engine.alloc_u8_uninit(EXPERTS * 3 * scale_stride)?;
         let stream = engine.stream();
         for expert in 0..EXPERTS {
-            for (projection, name, rows, cols) in [
-                (0, "gate_proj", EXPERT_WIDTH, HIDDEN),
-                (1, "down_proj", HIDDEN, EXPERT_WIDTH),
-                (2, "up_proj", EXPERT_WIDTH, HIDDEN),
-            ] {
-                let stem = format!("model.layers.{layer}.mlp.experts.{expert}.{name}");
-                let (source_weight, source_scales) = source_mxfp4(source, &stem, rows, cols)?;
-                if source_weight.len() != weight_stride || source_scales.len() != scale_stride {
-                    return Err(format!("{stem}: interleaved stride changed").into());
+            let views = source.acquire_expert(expert)?;
+            for (projection, view) in [(0, &views.gate), (1, &views.down), (2, &views.up)] {
+                if view.weight.len() != weight_stride || view.scales.len() != scale_stride {
+                    return Err("MiMo bound interleaved expert stride changed".into());
                 }
                 let index = expert * 3 + projection;
                 stream.memcpy_htod(
-                    source_weight,
+                    view.weight,
                     &mut weight.slice_mut(index * weight_stride..(index + 1) * weight_stride),
                 )?;
                 stream.memcpy_htod(
-                    source_scales,
+                    view.scales,
                     &mut scales.slice_mut(index * scale_stride..(index + 1) * scale_stride),
                 )?;
             }
@@ -554,27 +561,32 @@ impl ResidentMiMoMoeLayer {
         pinned: &PinnedMiMoSource<'_>,
         layer: usize,
         plan: &MoeMlpPlan,
+        source: &MiMoRoutedSource<'_>,
     ) -> Result<Self, Fail> {
         validate_contract(pinned.config, pinned.plan, plan, layer)?;
         engine.gpu.ctx.bind_to_thread()?;
-        let source = pinned.model;
-        let router = format!("model.layers.{layer}.mlp.gate");
-        let matrix = engine.htod(&source_float(
-            source,
-            &format!("{router}.weight"),
+        let matrix = engine.htod(&float_tensor(
+            "BF16",
+            &[EXPERTS as u64, HIDDEN as u64],
+            &source.router.bytes,
             &[EXPERTS as u64, HIDDEN as u64],
         )?)?;
-        let bias = engine.htod(&source_float(
-            source,
-            &format!("{router}.e_score_correction_bias"),
+        let bias = engine.htod(&float_tensor(
+            "F32",
+            &[EXPERTS as u64],
+            &source.correction_bias.bytes,
             &[EXPERTS as u64],
         )?)?;
         let active = engine.htod_bytes(&[1u8; EXPERTS])?;
-        let gate =
-            ResidentProjection::load(engine, source, layer, "gate_proj", EXPERT_WIDTH, HIDDEN)?;
-        let up = ResidentProjection::load(engine, source, layer, "up_proj", EXPERT_WIDTH, HIDDEN)?;
-        let down =
-            ResidentProjection::load(engine, source, layer, "down_proj", HIDDEN, EXPERT_WIDTH)?;
+        let mut gate = ResidentProjection::empty(engine, EXPERT_WIDTH, HIDDEN)?;
+        let mut up = ResidentProjection::empty(engine, EXPERT_WIDTH, HIDDEN)?;
+        let mut down = ResidentProjection::empty(engine, HIDDEN, EXPERT_WIDTH)?;
+        for expert in 0..EXPERTS {
+            let views = source.acquire_expert(expert)?;
+            gate.upload(engine, expert, &views.gate)?;
+            up.upload(engine, expert, &views.up)?;
+            down.upload(engine, expert, &views.down)?;
+        }
         Ok(Self {
             layer,
             matrix,
@@ -667,23 +679,24 @@ impl GroupedMiMoMoeLayer {
         pinned: &PinnedMiMoSource<'_>,
         layer: usize,
         plan: &MoeMlpPlan,
+        source: &MiMoRoutedSource<'_>,
     ) -> Result<Self, Fail> {
         validate_contract(pinned.config, pinned.plan, plan, layer)?;
         engine.gpu.ctx.bind_to_thread()?;
-        let source = pinned.model;
-        let router = format!("model.layers.{layer}.mlp.gate");
-        let matrix = engine.htod(&source_float(
-            source,
-            &format!("{router}.weight"),
+        let matrix = engine.htod(&float_tensor(
+            "BF16",
+            &[EXPERTS as u64, HIDDEN as u64],
+            &source.router.bytes,
             &[EXPERTS as u64, HIDDEN as u64],
         )?)?;
-        let bias = engine.htod(&source_float(
-            source,
-            &format!("{router}.e_score_correction_bias"),
+        let bias = engine.htod(&float_tensor(
+            "F32",
+            &[EXPERTS as u64],
+            &source.correction_bias.bytes,
             &[EXPERTS as u64],
         )?)?;
         let active = engine.htod_bytes(&[1u8; EXPERTS])?;
-        let experts = InterleavedExperts::load(engine, source, layer)?;
+        let experts = InterleavedExperts::load(engine, source)?;
         Ok(Self {
             layer,
             matrix,
