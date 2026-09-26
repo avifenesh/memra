@@ -451,6 +451,31 @@ fn resolve_replay_cadence(p: &Dsv4Program) -> DoorState {
     }
 }
 
+fn resolve_ar_push(p: &Dsv4Program) -> DoorState {
+    // The TP/EP walk's joins, decode and prefill; the DSpark EP combine stays pull.
+    if p.tp_ep {
+        DoorState::On(DoorShape::AllRoutedShapes)
+    } else {
+        DoorState::OffProgram("the all-layer TP/EP topology")
+    }
+}
+
+fn resolve_vocab_head(p: &Dsv4Program) -> DoorState {
+    // The decode heads of the TP/EP program (one-row, replay, B-row); prefill and verify keep
+    // the one-rank head, whose logits are the same bits.
+    if p.tp_ep {
+        DoorState::On(DoorShape::DecodeOnlyM1)
+    } else {
+        DoorState::OffProgram("the all-layer TP/EP topology")
+    }
+}
+
+fn resolve_pdl_chain(_p: &Dsv4Program) -> DoorState {
+    // Every DSv4 chain launch on every program, prefill chunks included: the attribute moves
+    // block dispatch only (memra_pdl_chain.cuh).
+    DoorState::On(DoorShape::AllRoutedShapes)
+}
+
 fn resolve_dense_exact_tail(_p: &Dsv4Program) -> DoorState {
     // Generic dense entry points, so the served program does reach it, but
     // `Dsv4DenseExactTailControlScope control(m != 1)` suppresses it for every
@@ -479,6 +504,42 @@ fn resolve_hc_dot_split(p: &Dsv4Program) -> DoorState {
 /// clean receipt becomes the code (owner, 2026-09-10). See the removed-doors
 /// ledger in `docs/FLAGS.md`.
 pub const DSV4_DOORS: &[DoorRow] = &[
+    DoorRow {
+        name: "push joins",
+        env: "MEMRA_DSV4_AR_PUSH",
+        merged: "#788",
+        declared_default: DeclaredDefault::On,
+        declared_served: DoorState::On(DoorShape::AllRoutedShapes),
+        declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
+        resolve: resolve_ar_push,
+        admitted_by: AdmittingProgram::TpEpOnly,
+        merged_gain_pct: (8.37, 7.57),
+        measured_on: "2x RTX PRO 6000 Blackwell Server Edition pair",
+    },
+    DoorRow {
+        name: "vocab-parallel head",
+        env: "MEMRA_DSV4_VOCAB_HEAD",
+        merged: "#783",
+        declared_default: DeclaredDefault::On,
+        declared_served: DoorState::On(DoorShape::DecodeOnlyM1),
+        declared_bench: DoorState::On(DoorShape::DecodeOnlyM1),
+        resolve: resolve_vocab_head,
+        admitted_by: AdmittingProgram::TpEpOnly,
+        merged_gain_pct: (2.31, 2.48),
+        measured_on: "2x RTX PRO 6000 Blackwell Server Edition pair",
+    },
+    DoorRow {
+        name: "PDL chain",
+        env: "MEMRA_DSV4_PDL",
+        merged: "#782",
+        declared_default: DeclaredDefault::On,
+        declared_served: DoorState::On(DoorShape::AllRoutedShapes),
+        declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
+        resolve: resolve_pdl_chain,
+        admitted_by: AdmittingProgram::ServedProgram,
+        merged_gain_pct: (5.04, 4.92),
+        measured_on: "2x RTX PRO 6000 Blackwell Server Edition pair",
+    },
     DoorRow {
         name: "replay cadence",
         env: "MEMRA_DSV4_REPLAY_CADENCE",
@@ -1096,6 +1157,9 @@ mod tests {
         // permanence disposition asserted when this list holds nobody.
         const PERMANENTLY_UNREACHABLE: &[&str] = &[];
         const ENGAGED: &[&str] = &[
+            "push joins",
+            "vocab-parallel head",
+            "PDL chain",
             "dense exact-tail transport",
             "dense-fast",
             "HC dot split S16",
@@ -1245,7 +1309,7 @@ mod tests {
         // checks. Same lesson as the red arms above, one level up. Two anchors
         // now, neither of them a door name.
         assert!(!DSV4_DOORS.is_empty(), "an empty registry loops zero times");
-        assert_eq!(DSV4_DOORS.len(), 4);
+        assert_eq!(DSV4_DOORS.len(), 7);
         // 1. The machinery is alive and program-sensitive, by construction and
         //    permanently: the synthetic stand-in cannot be fixed.
         assert_ne!(

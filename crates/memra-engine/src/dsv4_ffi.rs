@@ -405,6 +405,18 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     // iteration-5 F-itemisation instrument (see dsv4_gpu.rs Dsv4Phase).
+    /// The DSv4 chain's programmatic dependent launch switch (`cu/memra_pdl_chain.cuh`).
+    pub fn memra_pdl_chain_set(on: i32);
+    /// Two same-length f32 copies in one PDL-chained launch (`n` a multiple of 4, 16-byte
+    /// aligned pointers).
+    pub fn memra_dsv4_copy2_f32(
+        a: *const f32,
+        a_out: *mut f32,
+        b: *const f32,
+        b_out: *mut f32,
+        n: i64,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_nvtx_push(name: *const std::os::raw::c_char) -> i32;
     pub fn memra_dsv4_nvtx_pop() -> i32;
     pub fn memra_dsv4_nvfp4_deq_bf16(

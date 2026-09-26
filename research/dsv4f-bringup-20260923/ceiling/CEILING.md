@@ -87,6 +87,17 @@ The profile mode is `DSV4_REPLAY_GATE_PROFILE`. A step takes 14.07 ms:
 The earlier split-K replay (`raw/tp-anatomy-se/`, 17.62 ms per step) spent 5.8 ms per card in
 `moe_kq_sktail_gu` plus `moe_kq_sktail`. The stream visitor does that work in 1.9 ms.
 
+## Levers taken, 2026-09-26
+
+`../levers-20260926/`, SE pair, greedy c1 aggregate 67.53 to 77.19 tok/s (decode p50 80.95), every
+gate bit-identical:
+- programmatic dependent launch: +4.99%;
+- vocab-parallel head: +2.44% (lever 3 below);
+- one kernel for the compressor snapshots: +0.94%;
+- push joins: +7.75% (lever 4 below). That is more than the 2026-09-10 AR instrument's ceiling
+  for removing both barriers (1.9% of that program's token); what the extra comes from is not
+  measured yet.
+
 ## The gap, by lever, largest first
 
 1. **Concurrency on TP/EP.** The B-row step: several requests' rows in one TP step, each weight

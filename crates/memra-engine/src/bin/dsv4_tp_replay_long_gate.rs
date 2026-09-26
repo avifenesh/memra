@@ -224,6 +224,9 @@ fn main() {
     };
     let (mut te, mut tr) = (first, first);
     let mut tokens = Vec::with_capacity(steps);
+    // Every step's logits hash and digests, so two processes (a launch-scheduling door on and
+    // off, two binaries) can compare their whole numeric program, not only their tokens.
+    let mut program = Sha256::new();
     let mut first_bad = None;
     let mut armed = true;
     let mut after = before;
@@ -263,6 +266,7 @@ fn main() {
             first_bad = Some((step, pos, te, tr, ie, ir));
             break;
         }
+        program.update(format!("{step} {te} {ie:?}\n").as_bytes());
     }
     if armed {
         after = gpu
@@ -293,6 +297,10 @@ fn main() {
         hash.update(t.to_le_bytes());
     }
     let tokens_sha = format!("{:x}", hash.finalize());
+    println!(
+        "PROGRAM_SHA256 {:x} (every step's token, logits bits hash and digests)",
+        program.finalize()
+    );
     if let Some((step, pos, te, tr, ie, ir)) = first_bad {
         println!(
             "FIRST DIVERGENCE step={step} pos={pos} eager=(tok {te}, {ie:?}) replay=(tok {tr}, {ir:?})"

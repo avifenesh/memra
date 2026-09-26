@@ -182,6 +182,13 @@ pub(crate) struct TpEpArState {
     launches: u64,
     gathers: u64,
     instrument: Option<ArInstrument>,
+    /// `MEMRA_DSV4_AR_PUSH`: joins whose caller marks them `push_ok` take the push kernels
+    /// (`memra_tp_ar_push_*`, one fabric crossing, no end barrier).
+    push: bool,
+    /// Both ranks' output addresses of the last push join. A push join lands in the peer's output
+    /// before the peer reaches it, which is safe only when consecutive joins write different
+    /// buffers; a repeat is refused rather than raced.
+    last_push_out: [usize; 2],
 }
 
 /// Gate-only causal instrument for the residual all-reduce pool. Allocated ONLY when the process
@@ -243,7 +250,35 @@ impl TpEpArState {
             launches: 0,
             gathers: 0,
             instrument: None,
+            push: false,
+            last_push_out: [0; 2],
         })
+    }
+
+    /// Select the push joins for `push_ok` call sites (the load's `MEMRA_DSV4_AR_PUSH`).
+    pub(crate) fn set_push(&mut self, on: bool) {
+        self.push = on;
+    }
+
+    /// Whether this join takes a push kernel, and if so, that it does not write the previous push
+    /// join's output buffers.
+    fn push_join(&mut self, push_ok: bool, outputs: [usize; 2]) -> Res<bool> {
+        if !(self.push && push_ok && self.instrument.is_none()) {
+            return Ok(false);
+        }
+        if outputs
+            .iter()
+            .zip(self.last_push_out)
+            .any(|(&o, last)| o == last)
+        {
+            return Err(
+                "TP/EP push join writes the previous push join's output; consecutive push joins \
+                 need distinct buffers"
+                    .into(),
+            );
+        }
+        self.last_push_out = outputs;
+        Ok(true)
     }
 
     /// Arm the gate-only phase instrument. `capacity` is records PER RANK for one collection
@@ -415,6 +450,9 @@ impl TpEpArState {
         // for the expert join. Distinct from the replay fault word's `site`, which is the layer
         // index and whose meaning the injection gates already depend on.
         phase_site: u32,
+        // The outputs are persistent workspace buffers consumed before the next join, so a push
+        // join may write them early (`memra_tp_ar_push_reduce`); false keeps the pull join.
+        push_ok: bool,
     ) -> Res<()> {
         if n == 0
             || owner_input.len() < n
@@ -454,6 +492,60 @@ impl TpEpArState {
             return Err("TP/EP one-shot reduction output aliases an input".into());
         }
         let blocks = crate::tp_ar::ar_blocks_for(n);
+        if self.push_join(
+            push_ok,
+            [owner_output_ptr as usize, peer_output_ptr as usize],
+        )? {
+            for (rank, gpu, input, out, peer_out, self_signal, peer_signal, error) in [
+                (
+                    0,
+                    owner,
+                    owner_input_ptr,
+                    owner_output_ptr,
+                    peer_output_ptr,
+                    owner_signal_ptr,
+                    peer_signal_ptr,
+                    owner_error_ptr,
+                ),
+                (
+                    1,
+                    peer,
+                    peer_input_ptr,
+                    peer_output_ptr,
+                    owner_output_ptr,
+                    peer_signal_ptr,
+                    owner_signal_ptr,
+                    peer_error_ptr,
+                ),
+            ] {
+                if capture {
+                    gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+                }
+                let stream = gpu.stream();
+                let rc = unsafe {
+                    crate::tp_ar::memra_tp_ar_push_reduce(
+                        input,
+                        out,
+                        peer_out,
+                        self_signal,
+                        peer_signal,
+                        rank,
+                        n as i64,
+                        error,
+                        crate::tp_ar::AR_SPIN_LIMIT,
+                        blocks,
+                        stream.cu_stream().cast(),
+                        fault.map_or(std::ptr::null(), |(inputs, _)| inputs[rank as usize].cast()),
+                        fault.map_or(-1, |(_, site)| site),
+                    )
+                };
+                if rc != 0 {
+                    return Err(format!("TP/EP push reduction launch rc {rc} rank {rank}"));
+                }
+            }
+            self.launches += 1;
+            return Ok(());
+        }
         // Gate-only instrument pointers, resolved once per join. `None` on every serving process:
         // `arm_instrument` is reachable only from the armed gate path, so the ordinary walk below
         // takes exactly the launch entries it took before this lane.
@@ -590,6 +682,8 @@ impl TpEpArState {
         width: usize,
         capture: bool,
         fault: Option<([*const u64; 2], i32)>,
+        // As `all_reduce_into`'s: persistent outputs consumed before the next join.
+        push_ok: bool,
     ) -> Res<()> {
         let n = rows * width;
         if n == 0
@@ -629,6 +723,39 @@ impl TpEpArState {
             return Err("TP/EP row gather output aliases an input".into());
         }
         let blocks = crate::tp_ar::ar_blocks_for(n);
+        if self.push_join(push_ok, [ptrs[0].1 as usize, ptrs[1].1 as usize])? {
+            for (rank, gpu) in [owner, peer].into_iter().enumerate() {
+                if capture {
+                    gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+                }
+                let stream = gpu.stream();
+                let (input, out, self_signal, error) = ptrs[rank];
+                let (_, peer_out, peer_signal, _) = ptrs[1 - rank];
+                let rc = unsafe {
+                    crate::tp_ar::memra_tp_ar_push_gather_rows_f32(
+                        input,
+                        out,
+                        peer_out,
+                        self_signal,
+                        peer_signal,
+                        rank as i32,
+                        rows as i64,
+                        width as i64,
+                        error,
+                        crate::tp_ar::AR_SPIN_LIMIT,
+                        blocks,
+                        stream.cu_stream().cast(),
+                        fault.map_or(std::ptr::null(), |(inputs, _)| inputs[rank].cast()),
+                        fault.map_or(-1, |(_, site)| site),
+                    )
+                };
+                if rc != 0 {
+                    return Err(format!("TP/EP push row gather launch rc {rc} rank {rank}"));
+                }
+            }
+            self.gathers += 1;
+            return Ok(());
+        }
         for (rank, gpu) in [owner, peer].into_iter().enumerate() {
             if capture {
                 gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
