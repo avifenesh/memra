@@ -4218,6 +4218,65 @@ iterated for an answer without the pinned order. The legacy path is the old loop
   fault default and plain 255 ok each; hit OFF and ON 61 and 68 ok; `ADMIT-MEM BURST GATE: ALL GREEN`;
   `SPEC-CTX-EDGE GATE: ALL GREEN`; the pause gate with the 27B `ALL GREEN` (40 ok).
 
+## integ67 (`lane/spill-integ67-20260926`): A's design B1, the prefix snapshot's and restore's per-plane copies as one launch, adopted on both cards; its gridDim.y guard
+Lane A merged through `457321806` (B1's adoption record; W's code `34a348fd2` sits after it and stays out until both of
+its verdicts land), on main `649fe632a` (#744), clean; the gridDim.y guard cherry-picked as `95f275859` (from `231fba087`,
+which sits above W on A's line). The change:
+- `cu/kernels.cu`: `copy_batch_items_u8`, one launch copies every `(src, dst, bytes)` item (16-byte vectors when both
+  pointers are aligned, then bytes) and writes every i32 set; the items are disjoint whole ranges, so the bytes equal the
+  memcpy sequence it replaces.
+- `lib.rs`: its wrapper (the table uploaded once and freed in stream order; zero-byte items dropped; more items than
+  CUDA's 65535-row gridDim.y refused before any device work, with the count named) and the GPU cell (a1) over aligned,
+  unaligned and 4 MiB + 5 shapes.
+- `worker.rs`: the snapshot allocates each plane at exactly `len x tok_bytes` without a memset (a zero-byte plane keeps its
+  zeroed 1-byte buffer) and fills them in one launch holding the cudarc guards across it; the restore does its KV copies,
+  recurrent copies and length sets in one launch, every range checked before any device write; the census and cell (a2).
+- `docs/KERNELS.md` (the kernel row) and `docs/FLAGS.md` (`MEMRA_B1_MODEL`, a cell's test input). B1 has no door: it is
+  the naked program, with the previous binary as the rollback.
+
+**A's DAY59 sections 7 to 10, verbatim.** Target card (BOX31, a Ryzen 9 9950X): `B1 VERDICT -> ADOPT (B1 is the naked
+program)`, `o1 N_own=45 own base=1.36 b1=0.25 ms | fanout-minus-prime base=+4.77 b1=+3.74 (gain +1.03)`, o2 `1.34`
+against `0.25`, gain `+1.15`; (a) the unit cells green 0 and red 101 with the marker, all six gates 0; (b), (c), (d) PASS
+in both orders. Local RTX 5090 (A's `rtx5090-b1/cell`): `B1 VERDICT -> ADOPT`, `own base=1.93 b1=0.49 ms`, gains
+`+1.46` and `+5.61`, (a) to (d) PASS. DAY59's selection of B1 over B2 stands on the split's call counts after DAY66's
+scoped take (integ65).
+
+**Lead review.** The kernel's vector path runs only when both pointers are 16-byte aligned and the byte tail covers the
+rest; each item is a whole disjoint range, so no ordering between blocks matters. The wrapper filters zero-byte items and
+refuses an oversized grid before any upload (found in this review, fixed by A with a CPU test and a red arm). The
+uninitialized planes are written whole by the same launch (allocated at the copy's byte count), and a failed batch fails
+the snapshot, so no uninitialized byte is ever published. The guards held across the launch keep the cross-stream events
+the per-plane copies had. One numeric program per request: the bytes are the memcpy program's.
+
+**Ruling 62:** B1 is adopted as the naked prefix snapshot and restore program on both cards (a per-hardware check, both
+read ADOPT). The fanout publisher's owed items (the DFlash, GLM-5 and latent publishers) stay with A. W (item 12) waits
+on its 5090 half; R2 (item 13) is refuted and reverted on the target card, R1 selected (not in this merge).
+
+**Checks.**
+- CPU battery on `2fa7b33b3` (before the guard's cherry-pick), 15 of 15 on the lead's rig (`integ67-cpu-battery/`); on
+  the head `5ad621b75` run on BOX31 to keep load off the lanes' local 5090 cells (`integ67-cpu-battery-head/`): 12 of 15,
+  server 943, engine lib 577, the three others refused by the box's environment (no `rg`, a clone without `origin/main`),
+  then rerun on the lead's rig on the same tree: check-flags, docs registry and `git diff --check` rc=0
+  (`local-rerun-3-steps.txt`).
+- GPU battery on BOX31 (`integ67-pro/`, 467 receipts mirrored and checked), binary `ca86899f`, one hold 07:57Z to 08:12Z:
+  serve-smoke `0 failed`; engine span cells `10 passed`, worker cells `18 passed`; identity 12 ok; fault default and plain
+  255 ok each; hit OFF and ON 61 and 68 ok; `ADMIT-MEM BURST GATE: ALL GREEN`; `SPEC-CTX-EDGE GATE: ALL GREEN`; the pause
+  gate with the 27B `ALL GREEN` (40 ok).
+- Main moved to `8f93ccd99` (#752, the DSv4 position-split C4 store, engine code) before the merge; merged in clean
+  (`e6f969234`) and both batteries ran again on it, on BOX31: GPU (`integ67-pro-main752/`, binary `efc0d5ad`, one hold
+  10:18Z to 10:33Z) every cell green as above and the pause gate `ALL GREEN` (40 ok); CPU (`integ67-cpu-main752/`, the
+  box now with `rg` and `origin/main`) 15 of 15 rc=0, server 943, engine lib 578 (577 on the tree before main's merge).
+- Main moved again to `51bc5b438` (#740, the DSv4 serving lanes' graceful shutdown: `lib.rs` 11 lines, a dsv4 prefill
+  that stops once its client leaves, docs) after revuto's two approving rounds; merged in clean (`9041a1772`). CPU battery
+  on it, 15 of 15 rc=0 (`integ67-cpu-main740/`, server 943, engine lib 578), run on the lead's rig at nice 19 under a
+  600% quota. The GPU battery was not rerun for this merge: #740 changes only the DSv4 two-card serving path, which no
+  cell of the single-card 9B and 27B battery reaches, and the battery ran green on the tree just before it (the
+  `integ67-pro-main752/` run on `e6f969234`).
+- And again to `e3a8402cb` (#763, a DSv4 lane watchdog in `dsv4_serve.rs` only); merged in clean. With main moving
+  every few minutes on DSv4-only changes, this last merge is gated by the PR's CI on the merge head (build, clippy, server
+  and engine tests, portable suites, gates) and the lead's quick censuses (check-flags, docs registry, `git diff --check`,
+  fmt all rc=0), not a fourth battery; nothing in #763 is reachable from the spill battery's cells.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

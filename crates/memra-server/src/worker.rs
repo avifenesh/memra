@@ -20771,6 +20771,85 @@ fn prefix_copy_timed<T>(kind: u8, f: impl FnOnce() -> T) -> T {
     out
 }
 
+/// Design B1 (DAY59 section 7): a snapshot plane of `bytes`. A plane with bytes is written whole
+/// by [`prefix_snapshot_batch`], so it is allocated without a memset; a zero-byte plane keeps the
+/// zeroed 1-byte buffer the per-plane program allocated.
+fn prefix_plane_alloc(
+    engine: &Engine,
+    bytes: usize,
+) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
+    if bytes > 0 {
+        engine.alloc_u8_uninit(bytes)
+    } else {
+        engine.alloc_u8(1)
+    }
+}
+
+/// Design B1: the snapshot's KV and recurrent copies as ONE launch. Every source keeps its read
+/// event and every destination its write event: the guards are held across the launch, so a
+/// consumer on another stream waits for the batch as it waited for the per-plane copies.
+fn prefix_snapshot_batch(
+    engine: &Engine,
+    cache: &Cache,
+    kv: &mut [Option<PrefixPlane>],
+    conv: &mut [Option<CudaSlice<f32>>],
+    ssm: &mut [Option<CudaSlice<f32>>],
+) -> Result<(), Box<dyn std::error::Error>> {
+    use cudarc::driver::{DevicePtr, DevicePtrMut};
+    let st = engine.stream();
+    let mut items: Vec<(u64, u64, u64)> = Vec::new();
+    let mut guards = Vec::new();
+    for (il, slot) in kv.iter_mut().enumerate() {
+        let (Some(dst), Some(src)) = (slot.as_mut(), cache.kv[il].as_ref()) else {
+            continue;
+        };
+        for (to, from, n) in [
+            (&mut dst.k, &*src.k, dst.len * dst.k_tok_bytes),
+            (&mut dst.v, &*src.v, dst.len * dst.v_tok_bytes),
+        ] {
+            if n == 0 {
+                continue;
+            }
+            if from.len() < n || to.len() < n {
+                return Err(format!(
+                    "prefix snapshot layer {il}: a {n}-byte copy from {} into {} bytes",
+                    from.len(),
+                    to.len()
+                )
+                .into());
+            }
+            let (s, gs) = from.device_ptr(&st);
+            let (d, gd) = to.device_ptr_mut(&st);
+            items.push((s, d, n as u64));
+            guards.push(gs);
+            guards.push(gd);
+        }
+    }
+    for (il, (c, s)) in conv.iter_mut().zip(ssm.iter_mut()).enumerate() {
+        let (Some(c), Some(s), Some(r)) = (c.as_mut(), s.as_mut(), cache.recur[il].as_ref()) else {
+            continue;
+        };
+        for (to, from) in [(c, &r.conv_state), (s, &r.ssm_state)] {
+            if to.len() != from.len() {
+                return Err(format!(
+                    "prefix snapshot recur {il}: {} words into {}",
+                    from.len(),
+                    to.len()
+                )
+                .into());
+            }
+            let (sp, gs) = from.device_ptr(&st);
+            let (dp, gd) = to.device_ptr_mut(&st);
+            items.push((sp, dp, (from.len() * 4) as u64));
+            guards.push(gs);
+            guards.push(gd);
+        }
+    }
+    engine.copy_batch_items_u8(&items, &[])?;
+    drop(guards);
+    Ok(())
+}
+
 fn prefix_snapshot(
     engine: &Engine,
     cache: &Cache,
@@ -20857,14 +20936,10 @@ fn prefix_snapshot(
                 }
                 let kb = l.len * l.k_tok_bytes;
                 let vb = l.len * l.v_tok_bytes;
-                let mut k = prefix_copy_timed(0, || engine.alloc_u8(kb.max(1)))?;
-                let mut v = prefix_copy_timed(0, || engine.alloc_u8(vb.max(1)))?;
-                if kb > 0 {
-                    prefix_copy_timed(1, || engine.copy_u8_into(&mut k, 0, &l.k, kb))?;
-                }
-                if vb > 0 {
-                    prefix_copy_timed(1, || engine.copy_u8_into(&mut v, 0, &l.v, vb))?;
-                }
+                // Design B1 (DAY59 section 7): a plane with bytes is written whole by the batch
+                // below, so it skips the memset; a zero-byte plane keeps its zeroed 1-byte buffer.
+                let k = prefix_copy_timed(0, || prefix_plane_alloc(engine, kb))?;
+                let v = prefix_copy_timed(0, || prefix_plane_alloc(engine, vb))?;
                 bytes += kb + vb;
                 kv.push(Some(PrefixPlane {
                     k,
@@ -20878,11 +20953,11 @@ fn prefix_snapshot(
         }
         match &cache.recur[il] {
             Some(r) => {
-                conv.push(Some(prefix_copy_timed(2, || {
-                    engine.clone_dtod(&r.conv_state)
+                conv.push(Some(prefix_copy_timed(0, || {
+                    engine.alloc_f32_uninit(r.conv_state.len())
                 })?));
-                ssm.push(Some(prefix_copy_timed(2, || {
-                    engine.clone_dtod(&r.ssm_state)
+                ssm.push(Some(prefix_copy_timed(0, || {
+                    engine.alloc_f32_uninit(r.ssm_state.len())
                 })?));
                 bytes += (r.conv_state.len() + r.ssm_state.len()) * 4;
             }
@@ -20892,6 +20967,10 @@ fn prefix_snapshot(
             }
         }
     }
+    // Design B1: every KV and recurrent plane's bytes in one launch, before the TP shards.
+    prefix_copy_timed(1, || {
+        prefix_snapshot_batch(engine, cache, &mut kv, &mut conv, &mut ssm)
+    })?;
     // glm5 TP-2: every rank's shards, on their own devices (gated above).
     let tp = if tp_cache {
         let shards = model
@@ -21173,6 +21252,99 @@ fn prefix_restore_validate(
     Ok(())
 }
 
+/// Design B1: a restore's KV copies (`[0, restore_len * tok_bytes)` of each plane), its length
+/// sets and its recurrent copies as ONE launch. A range too long for its source or destination
+/// fails the request with a named error before any device write. Guards as in
+/// [`prefix_snapshot_batch`].
+fn prefix_restore_batch(
+    engine: &Engine,
+    cache: &mut Cache,
+    e: &PrefixEntry,
+    restore_len: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use cudarc::driver::{DevicePtr, DevicePtrMut};
+    let st = engine.stream();
+    let len_value = i32::try_from(restore_len).map_err(|_| "prefix restore length exceeds i32")?;
+    let mut kv_views = Vec::new();
+    let mut lens = Vec::new();
+    for (il, slot) in cache.kv.iter_mut().enumerate() {
+        let (Some(dst), Some(src)) = (slot.as_mut(), e.kv[il].as_ref()) else {
+            continue;
+        };
+        let kb = restore_len * dst.k_tok_bytes;
+        let vb = restore_len * dst.v_tok_bytes;
+        for (plane, from, n, what) in [(&mut dst.k, &src.k, kb, "K"), (&mut dst.v, &src.v, vb, "V")]
+        {
+            if n == 0 {
+                continue;
+            }
+            let cap = plane.capacity_bytes();
+            if n > cap {
+                return Err(format!(
+                    "prefix restore layer {il} {what}: copy_u8_into dst range [0,{n}) exceeds capacity {cap}"
+                )
+                .into());
+            }
+            if from.len() < n {
+                return Err(format!(
+                    "prefix restore layer {il} {what}: the entry holds {} of {n} bytes",
+                    from.len()
+                )
+                .into());
+            }
+            kv_views.push((plane.as_view_mut(), from, n));
+        }
+        lens.push(&mut dst.len_d);
+    }
+    let mut recur = Vec::new();
+    for (il, slot) in cache.recur.iter_mut().enumerate() {
+        let (Some(dst), Some(c), Some(s)) =
+            (slot.as_mut(), e.conv[il].as_ref(), e.ssm[il].as_ref())
+        else {
+            continue;
+        };
+        for (to, from, what) in [
+            (&mut dst.conv_state, c, "conv"),
+            (&mut dst.ssm_state, s, "ssm"),
+        ] {
+            if to.len() < from.len() {
+                return Err(format!(
+                    "prefix restore recur {il} {what}: {} words into {}",
+                    from.len(),
+                    to.len()
+                )
+                .into());
+            }
+            recur.push((to, from));
+        }
+    }
+    let mut items: Vec<(u64, u64, u64)> = Vec::new();
+    let mut sets: Vec<(u64, i32)> = Vec::new();
+    let mut guards = Vec::new();
+    for (view, from, n) in kv_views.iter_mut() {
+        let (s, gs) = from.device_ptr(&st);
+        let (d, gd) = view.device_ptr_mut(&st);
+        items.push((s, d, *n as u64));
+        guards.push(gs);
+        guards.push(gd);
+    }
+    for (to, from) in recur.iter_mut() {
+        let (s, gs) = from.device_ptr(&st);
+        let (d, gd) = to.device_ptr_mut(&st);
+        items.push((s, d, (from.len() * 4) as u64));
+        guards.push(gs);
+        guards.push(gd);
+    }
+    for len_d in lens.iter_mut() {
+        let (d, gd) = len_d.device_ptr_mut(&st);
+        sets.push((d, len_value));
+        guards.push(gd);
+    }
+    engine.copy_batch_items_u8(&items, &sets)?;
+    drop(guards);
+    Ok(())
+}
+
 fn prefix_restore_at(
     engine: &Engine,
     cache: &mut Cache,
@@ -21183,22 +21355,12 @@ fn prefix_restore_at(
 ) -> Result<(), Box<dyn std::error::Error>> {
     prefix_restore_validate(cache, e, expected_key, restore_len, model)?;
     let max_ctx = cache.max_ctx;
+    // Design B1 (DAY59 section 7): the KV copies, the length sets and the recurrent copies in one
+    // launch, checked before any device write.
+    prefix_copy_timed(1, || prefix_restore_batch(engine, cache, e, restore_len))?;
     for il in 0..cache.kv.len() {
-        if let (Some(dst), Some(src)) = (cache.kv[il].as_mut(), &e.kv[il]) {
-            let kb = restore_len * dst.k_tok_bytes;
-            let vb = restore_len * dst.v_tok_bytes;
-            if kb > 0 {
-                prefix_copy_timed(1, || engine.copy_u8_into(&mut dst.k, 0, &src.k, kb))?;
-            }
-            if vb > 0 {
-                prefix_copy_timed(1, || engine.copy_u8_into(&mut dst.v, 0, &src.v, vb))?;
-            }
+        if let (Some(dst), Some(_)) = (cache.kv[il].as_mut(), &e.kv[il]) {
             dst.len = restore_len;
-            prefix_copy_timed(3, || engine.set_i32_one(&mut dst.len_d, restore_len as i32))?;
-        }
-        if let (Some(dst), Some(c), Some(s)) = (cache.recur[il].as_mut(), &e.conv[il], &e.ssm[il]) {
-            prefix_copy_timed(1, || engine.copy_into(&mut dst.conv_state, 0, c, c.len()))?;
-            prefix_copy_timed(1, || engine.copy_into(&mut dst.ssm_state, 0, s, s.len()))?;
         }
         if let (Some(dst), Some(src)) = (cache.latent[il].as_mut(), &e.latent[il]) {
             dst.restore_plane(engine, src, max_ctx)
@@ -49827,17 +49989,18 @@ mod tests {
         assert!(production.contains("[prefix-host] demote helper split: ticket seq={seq}"));
     }
 
-    /// WP-A day 59 (`DAY59.md` step 1; CPU census): the fanout's owner-time split is log only. The
-    /// snapshot and the restore issue the same device calls in the same order, each only wrapped in
-    /// `prefix_copy_timed`; the split is taken only by the fanout's line and decides nothing.
+    /// WP-A day 59 (`DAY59.md` step 1, then design B1 of section 7; CPU census): the fanout's
+    /// owner-time split is log only, and B1's program is pinned. The snapshot allocates its planes
+    /// (kind 0) and then issues ONE batch (kind 1); the restore issues ONE batch before its host
+    /// lengths; each batch fn launches `copy_batch_items_u8` once and drops its guards after it; no
+    /// per-plane copy, clone or length set is left in any of the four; the split is taken only by
+    /// the fanout's line and decides nothing.
     #[test]
     fn day59_the_fanout_copy_split_is_log_only() {
         let worker = include_str!("worker.rs");
         let production = &worker[..worker.find("\nmod tests {").unwrap()];
         let at =
             |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
-        let snap = &production[at(production, "fn prefix_snapshot(")..];
-        let snap = &snap[..at(snap, "\n}\n")];
         // Compare on the source with whitespace and braces removed (rustfmt wraps long closures
         // in a block).
         let squash = |x: &str| {
@@ -49845,35 +50008,60 @@ mod tests {
                 .collect::<String>()
                 .replace(['{', '}'], "")
         };
-        let snap = &squash(snap);
+        let body = |start: &str| {
+            let b = &production[at(production, start)..];
+            squash(&b[..at(b, "\n}\n")])
+        };
+        let snap = body("fn prefix_snapshot(");
         let order = [
-            "prefix_copy_timed(0, || engine.alloc_u8(kb.max(1)))",
-            "prefix_copy_timed(0, || engine.alloc_u8(vb.max(1)))",
-            "prefix_copy_timed(1, || engine.copy_u8_into(&mut k, 0, &l.k, kb))",
-            "prefix_copy_timed(1, || engine.copy_u8_into(&mut v, 0, &l.v, vb))",
-            "prefix_copy_timed(2, || engine.clone_dtod(&r.conv_state))",
-            "prefix_copy_timed(2, || engine.clone_dtod(&r.ssm_state))",
+            "prefix_copy_timed(0, || prefix_plane_alloc(engine, kb))",
+            "prefix_copy_timed(0, || prefix_plane_alloc(engine, vb))",
+            "prefix_copy_timed(0, || engine.alloc_f32_uninit(r.conv_state.len()))",
+            "prefix_copy_timed(0, || engine.alloc_f32_uninit(r.ssm_state.len()))",
+            "prefix_copy_timed(1, || prefix_snapshot_batch(engine, cache, &mut kv, &mut conv, &mut ssm))",
+            ".glm5_tp_prefix_snapshot(",
         ];
-        let pos: Vec<usize> = order.iter().map(|n| at(snap, &squash(n))).collect();
+        let pos: Vec<usize> = order.iter().map(|n| at(&snap, &squash(n))).collect();
         assert!(
             pos.windows(2).all(|w| w[0] < w[1]),
-            "the snapshot's calls keep their order"
+            "the snapshot allocates, then batches, then takes the TP shards"
         );
-        let restore = &production[at(production, "fn prefix_restore_at(")..];
-        let restore = &restore[..at(restore, "\n}\n")];
-        let restore = &squash(restore);
+        let restore = body("fn prefix_restore_at(");
         let order = [
-            "prefix_copy_timed(1, || engine.copy_u8_into(&mut dst.k, 0, &src.k, kb))",
-            "prefix_copy_timed(1, || engine.copy_u8_into(&mut dst.v, 0, &src.v, vb))",
-            "prefix_copy_timed(3, || engine.set_i32_one(&mut dst.len_d, restore_len as i32))",
-            "prefix_copy_timed(1, || engine.copy_into(&mut dst.conv_state, 0, c, c.len()))",
-            "prefix_copy_timed(1, || engine.copy_into(&mut dst.ssm_state, 0, s, s.len()))",
+            "prefix_restore_validate(",
+            "prefix_copy_timed(1, || prefix_restore_batch(engine, cache, e, restore_len))",
+            "dst.len = restore_len;",
+            ".glm5_tp_prefix_restore(",
         ];
-        let pos: Vec<usize> = order.iter().map(|n| at(restore, &squash(n))).collect();
+        let pos: Vec<usize> = order.iter().map(|n| at(&restore, &squash(n))).collect();
         assert!(
             pos.windows(2).all(|w| w[0] < w[1]),
-            "the restore's calls keep their order"
+            "the restore validates, batches, then sets the host lengths"
         );
+        for f in ["fn prefix_snapshot_batch(", "fn prefix_restore_batch("] {
+            let b = body(f);
+            assert_eq!(
+                b.matches("engine.copy_batch_items_u8(").count(),
+                1,
+                "{f}: one launch"
+            );
+            assert!(
+                at(&b, "engine.copy_batch_items_u8(") < at(&b, "drop(guards);"),
+                "{f}: the guards outlive the launch"
+            );
+        }
+        for f in [
+            "fn prefix_snapshot(",
+            "fn prefix_restore_at(",
+            "fn prefix_snapshot_batch(",
+            "fn prefix_restore_batch(",
+        ] {
+            let b = body(f);
+            for call in ["copy_u8_into(", "clone_dtod(", "copy_into(", "set_i32_one("] {
+                assert!(!b.contains(call), "{f} keeps no per-plane {call}");
+            }
+            assert!(!b.contains("prefix_copy_timed(2,") && !b.contains("prefix_copy_timed(3,"));
+        }
         assert_eq!(
             production.matches("prefix_copy_split_take()").count(),
             4,
@@ -49946,6 +50134,169 @@ mod tests {
         })
         .join()
         .unwrap();
+    }
+
+    /// WP-A design B1 (`DAY59.md` section 7, cell (a2)): the batched snapshot and restore are the
+    /// copy program. A tiny hybrid config always, and the checkpoint's own geometry when
+    /// `MEMRA_B1_MODEL` names a GGUF (metadata only). The source planes are filled with random
+    /// bytes at `pos`; the entry's planes equal the source's `[0, len * tok_bytes)`; a restore into
+    /// a cache pre-filled with a pattern writes exactly `[0, kb)`, the lengths and the recurrent
+    /// planes, and leaves a layer absent at capture untouched.
+    #[test]
+    #[ignore = "requires a CUDA GPU (WP-A design B1 cell (a2)); MEMRA_B1_MODEL adds a checkpoint's geometry"]
+    fn b1_snapshot_and_restore_are_the_copy_program() {
+        use super::{Cache, PoolKey, prefix_restore, prefix_snapshot};
+        use memra_gguf::config::{HfConfig, ModelConfig};
+        let engine = memra_engine::Engine::new(0).unwrap();
+        let mut cfgs = vec![(
+            "tiny".to_string(),
+            ModelConfig::from_hf(&HfConfig::parse(
+                r#"{"model_type":"qwen3_5","num_hidden_layers":4,"hidden_size":64,
+                "num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,
+                "intermediate_size":128,"vocab_size":16,"max_position_embeddings":256,
+                "full_attention_interval":2,"linear_conv_kernel_dim":3,
+                "linear_key_head_dim":32,"linear_value_head_dim":32,
+                "linear_num_key_heads":1,"linear_num_value_heads":2}"#,
+            )),
+        )];
+        if let Ok(path) = std::env::var("MEMRA_B1_MODEL") {
+            let g = memra_gguf::GgufFile::open(&path).unwrap();
+            cfgs.push((path, ModelConfig::from_gguf(&g)));
+        }
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let key: PoolKey = ("b1".into(), String::new());
+        for (name, cfg) in &cfgs {
+            for pos in [1usize, 97] {
+                let mut src = Cache::new(&engine, cfg, 256).unwrap();
+                let n_kv = src.kv.iter().flatten().count();
+                assert!(
+                    n_kv > 0 && src.recur.iter().flatten().count() > 0,
+                    "{name}: a hybrid"
+                );
+                // The last attention layer stands for an allocated-but-unexecuted MTP layer.
+                let absent = src
+                    .kv
+                    .iter()
+                    .rposition(Option::is_some)
+                    .filter(|_| n_kv > 1);
+                let mut kv_fill: Vec<Option<(Vec<u8>, Vec<u8>)>> = vec![None; src.kv.len()];
+                for (il, slot) in src.kv.iter_mut().enumerate() {
+                    let Some(l) = slot.as_mut() else { continue };
+                    if Some(il) == absent {
+                        continue;
+                    }
+                    let k: Vec<u8> = (0..pos * l.k_tok_bytes).map(|_| next() as u8).collect();
+                    let v: Vec<u8> = (0..pos * l.v_tok_bytes).map(|_| next() as u8).collect();
+                    engine.htod_u8_into(&mut l.k, 0, &k).unwrap();
+                    engine.htod_u8_into(&mut l.v, 0, &v).unwrap();
+                    l.len = pos;
+                    kv_fill[il] = Some((k, v));
+                }
+                let mut recur_fill: Vec<Option<(Vec<f32>, Vec<f32>)>> = vec![None; src.recur.len()];
+                for (il, slot) in src.recur.iter_mut().enumerate() {
+                    let Some(r) = slot.as_mut() else { continue };
+                    let c: Vec<f32> = (0..r.conv_state.len())
+                        .map(|_| f32::from_bits(next() as u32))
+                        .collect();
+                    let s: Vec<f32> = (0..r.ssm_state.len())
+                        .map(|_| f32::from_bits(next() as u32))
+                        .collect();
+                    engine.htod_f32_into(&c, &mut r.conv_state).unwrap();
+                    engine.htod_f32_into(&s, &mut r.ssm_state).unwrap();
+                    recur_fill[il] = Some((c, s));
+                }
+                src.pos = pos;
+                let toks: Vec<u32> = (0..pos as u32).collect();
+                let entry = prefix_snapshot(&engine, &src, &key, &toks, &[0.5], None).unwrap();
+                let bits = |x: &[f32]| x.iter().map(|f| f.to_bits()).collect::<Vec<u32>>();
+                for (il, fill) in kv_fill.iter().enumerate() {
+                    match (fill, &entry.kv[il]) {
+                        (Some((k, v)), Some(p)) => {
+                            assert_eq!(
+                                engine.dtoh_u8(&p.k).unwrap(),
+                                *k,
+                                "{name} pos {pos} K {il}"
+                            );
+                            assert_eq!(
+                                engine.dtoh_u8(&p.v).unwrap(),
+                                *v,
+                                "{name} pos {pos} V {il}"
+                            );
+                        }
+                        (None, None) => {}
+                        _ => panic!("{name} pos {pos}: layer {il} captured out of kind"),
+                    }
+                }
+                for (il, fill) in recur_fill.iter().enumerate() {
+                    if let Some((c, s)) = fill {
+                        let (ec, es) = (
+                            entry.conv[il].as_ref().unwrap(),
+                            entry.ssm[il].as_ref().unwrap(),
+                        );
+                        assert_eq!(bits(&engine.dtoh(ec).unwrap()), bits(c), "{name} conv {il}");
+                        assert_eq!(bits(&engine.dtoh(es).unwrap()), bits(s), "{name} ssm {il}");
+                    }
+                }
+                // Restore into a fresh cache whose planes carry a pattern.
+                let mut dst = Cache::new(&engine, cfg, 256).unwrap();
+                for l in dst.kv.iter_mut().flatten() {
+                    let kc = l.k.capacity_bytes();
+                    let vc = l.v.capacity_bytes();
+                    engine.htod_u8_into(&mut l.k, 0, &vec![0xa5; kc]).unwrap();
+                    engine.htod_u8_into(&mut l.v, 0, &vec![0x5a; vc]).unwrap();
+                    engine.set_i32_one(&mut l.len_d, -7).unwrap();
+                }
+                prefix_restore(&engine, &mut dst, &entry, &key, None).unwrap();
+                assert_eq!(dst.pos, pos);
+                for (il, slot) in dst.kv.iter().enumerate() {
+                    let Some(l) = slot.as_ref() else { continue };
+                    let (k, v) = (engine.dtoh_u8(&l.k).unwrap(), engine.dtoh_u8(&l.v).unwrap());
+                    let len_d = engine.dtoh_i32(&l.len_d).unwrap();
+                    match &kv_fill[il] {
+                        Some((fk, fv)) => {
+                            assert_eq!(&k[..fk.len()], &fk[..], "{name} pos {pos} restored K {il}");
+                            assert_eq!(&v[..fv.len()], &fv[..], "{name} pos {pos} restored V {il}");
+                            assert!(k[fk.len()..].iter().all(|&b| b == 0xa5), "K {il} past kb");
+                            assert!(v[fv.len()..].iter().all(|&b| b == 0x5a), "V {il} past vb");
+                            assert_eq!((l.len, len_d), (pos, vec![pos as i32]), "len {il}");
+                        }
+                        None => {
+                            assert!(k.iter().all(|&b| b == 0xa5) && v.iter().all(|&b| b == 0x5a));
+                            assert_eq!(
+                                (l.len, len_d),
+                                (0, vec![-7]),
+                                "absent layer {il} untouched"
+                            );
+                        }
+                    }
+                }
+                for (il, fill) in recur_fill.iter().enumerate() {
+                    if let Some((c, s)) = fill {
+                        let r = dst.recur[il].as_ref().unwrap();
+                        assert_eq!(
+                            bits(&engine.dtoh(&r.conv_state).unwrap()),
+                            bits(c),
+                            "{name} rc {il}"
+                        );
+                        assert_eq!(
+                            bits(&engine.dtoh(&r.ssm_state).unwrap()),
+                            bits(s),
+                            "{name} rs {il}"
+                        );
+                    }
+                }
+                eprintln!(
+                    "[b1 cell] {name} pos={pos}: {n_kv} attention and {} recurrent layers equal",
+                    recur_fill.iter().flatten().count()
+                );
+            }
+        }
     }
 
     /// WP-A day 54 (`DAY54.md` step 1; CPU census): the on-tick lines are log only. Every `OnTick`
