@@ -77,3 +77,13 @@ same way. Design T's thread rule for the fill (item 3) is the precedent.
   Server lib `942 passed`. It is never merged.
 - `pro-single-th/build.sh` fetches that branch too. The sitting's commands are `build.sh <tip> c6369b507`, then
   `driver.sh`, still only after L' adopts: the tip carries L'.
+
+## 4. The void first start of T-H's sitting, banked
+
+- The lead's chain started T-H at 14:27Z with the old pair (`build.sh 21984b527 1cba80185`), before section 3's base
+  reached it. The lead stopped it in its gates cell (the lead's processes only; the card emptied) and banked it as
+  `/root/spill-receipts/a-th-void-stale-base-1cba80185/` with a `VOID.txt`.
+- Mirrored as `pro-single-th/box-void-stale-base/` (200 receipts, sha256-checked against the box manifest; the
+  executables by hash). Nothing in it is read: its base differs from the tip by more than T-H.
+- The sitting restarted at 14:34Z on section 3's pair (`build.sh 50fdbcfaf c6369b507`). Its gates cell finished rc 0
+  at 14:54Z.

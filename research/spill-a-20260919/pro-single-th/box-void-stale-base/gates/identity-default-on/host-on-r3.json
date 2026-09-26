@@ -1,0 +1,29 @@
+{
+ "object": "text_completion",
+ "model": "gate",
+ "choices": [
+  {
+   "index": 0,
+   "text": "\n\n<think>\nThe user is asking me to report on a \"coastal tide-gauge network\" with twelve stations ordered north to south, with specific details for each: gauge type, datum epoch, sampling interval in minutes, last calibration",
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 102,
+  "completion_tokens": 48,
+  "total_tokens": 150,
+  "prompt_tokens_details": {
+   "cached_tokens": 64
+  },
+  "elapsed_s": 0.328047024,
+  "spec": {
+   "rounds": 16,
+   "drafted": 48,
+   "accepted": 34,
+   "acceptance_rate": 0.7083333333333334
+  }
+ },
+ "id": "cmpl-3a5e56c9d23db8a4914d0dfd1cfa8955",
+ "created": 1790432866,
+ "system_fingerprint": "memra-0.138.0-eb893f67ca72"
+}
