@@ -93,6 +93,10 @@ def code_grade(answer, task):
                 "hidden_tests_pass": passed, "reason": "timeout",
             }
         if result.returncode:
+            if "bwrap:" in result.stderr[:300].lower():
+                raise RuntimeError(
+                    "MBPP sandbox failed during hidden grading"
+                )
             return {
                 "pass": False, "format": True, "syntax": True,
                 "hidden_tests_pass": passed, "reason": "hidden-test",
