@@ -116,3 +116,15 @@ pending test at least once in 200. The fix: 0 of 200 in the same shape.
 **Acceptance.** The red arm reads the race (at least 1 of 200); the fix reads 0 of 200; the census green and its teeth
 (one shed test given the global pair fails it; one reserving test without a lock fails it); server lib, clippy and fmt
 green. On a miss, F2b is reverted in one commit and the shed tests go back under a lock (the order F1 gave them).
+
+### 3a. The red arm as run, and a deterministic cell added (before any F2b code)
+
+- The group in R3's shape on the tree before F2b (`70be30d39`; the pending test beside the four shed tests, one
+  process, 200 runs): **200 of 200 green** (`day56/addendum/red/`). The clause "the red arm reads the race" is **not
+  met** by this harness: the tests reserve and drop inside microseconds, and a scheduler-driven overlap did not land in
+  200 runs. Recorded as read; the hole is in the code whatever the harness shows (the path writes the global gauge).
+- Added, before the fix: `day56_an_isolated_reservation_never_moves_the_global_gauges`, holding
+  `global_counter_writer_guard()`: it records the global lane counters and `PENDING_ADMITS`, reserves through
+  `reserve_own` on its own pair, and asserts that while the guard lives and after it drops the globals read exactly what
+  they did. On the tree before F2b this cell fails at the first read (the gauge one higher); F2b must make it pass. Its
+  run on the old tree is the red arm the rule asks for; the 200-run group repeats on the fix as registered.

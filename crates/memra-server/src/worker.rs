@@ -2022,7 +2022,13 @@ fn decrement_atomic(counter: &std::sync::atomic::AtomicUsize) {
 /// Release the command-channel portion of an HTTP admission. This is separate from the hard
 /// queue reservation because the latter survives while a request waits in the worker queue.
 pub(crate) fn release_pending_admit() {
-    decrement_atomic(&PENDING_ADMITS);
+    release_pending_admit_on(&PENDING_ADMITS);
+}
+
+/// The same on the gauge a reservation was taken on (WP-A day 56 section 3: a pending-admission guard
+/// releases where it reserved; every production reservation is on `PENDING_ADMITS`).
+pub(crate) fn release_pending_admit_on(gauge: &std::sync::atomic::AtomicUsize) {
+    decrement_atomic(gauge);
 }
 
 /// Release a request's hard admission reservation. This is intentionally saturating because
