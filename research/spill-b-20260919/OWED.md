@@ -162,6 +162,11 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   and server suites pass, clippy clean). The gate's arm i with its red twin and the serving shape run locally
   (`rtx5090-day49/run.sh`, waiting for the card) and in the twelfth sitting (`pro-single-b-sitting12.sh`, queued on
   BOX35 behind the eleventh; receipts `b-day49`).
+  Addendum C (the review-pattern reading of the built arm): the batch reclaim skipped the VMM reap the other two
+  reclaim paths run before their trim; fixed in `95d35c383` (census pins all three; memra-server lib 958 passed,
+  clippy clean). Unreachable without the VMM door, so the registered cells stand on `02dbdfa40`. Its cell `i-vmm` (the
+  gate's arm i under `MEMRA_KV_ALLOCATOR=vmm`, fix green against `02dbdfa40` red) runs locally
+  (`rtx5090-day49/run-c.sh`); its target-card half rides the next B sitting after the twelfth.
 
 ### O9. memra#464's guard seed
 

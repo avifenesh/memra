@@ -1,4 +1,9 @@
 # WP-B checkpoint 2026-09-26 (O14 queued): the eleventh and twelfth sittings queued on BOX35 (the lead's /root/b11-chain.sh, then /root/b12-chain.sh behind it; receipts /root/spill-receipts/b-day45b, b-day47, b-day49); the ninth sitting still on BOX33
+- DAY49 addendum C: the seven review patterns read against O14's arm found the batch reclaim skipping the VMM reap
+  (the other two reclaim paths reap before their trim); fix `95d35c383`, census pins all three. Cell `i-vmm` local
+  (`rtx5090-day49/run-c.sh`, worktrees `target/wt-day49c-*`, removed at its end); the target half rides the next sitting.
+- Rule kept: after any engine or server commit, rebuild the lane's `target/release` under the quota at once, because
+  `tools/health-fault-gate.sh` builds in its tree inside the lock hold with no quota (DAY47's and DAY49's local gates run it).
 - O1's 5090 rerun registered (DAY37 addendum H, 1.17): the whole cell on the addendum-B tree r5 (`02dbdfa40`, main
   `2c5edcb4c`), `rtx5090-day37/build-r5.sh` then `chain-r5.sh` (runner from 16:28Z; receipts `rtx5090-day37/r5/`).
 - OWED statuses refreshed: every half that named queue-e, f, i or j now names its queue-k item (queue-k: item 1 done,
