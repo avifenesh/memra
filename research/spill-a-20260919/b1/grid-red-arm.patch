@@ -1,0 +1,14 @@
+diff --git a/crates/memra-engine/src/lib.rs b/crates/memra-engine/src/lib.rs
+index 16f05464a..116bf8c0b 100644
+--- a/crates/memra-engine/src/lib.rs
++++ b/crates/memra-engine/src/lib.rs
+@@ -7444,7 +7444,8 @@ impl Engine {
+     /// after the table upload.
+     pub fn copy_batch_items_rows(n: usize) -> Result<u32, String> {
+         const GRID_Y_MAX: usize = 65535;
+-        if n + 1 > GRID_Y_MAX {
++        eprintln!("[b1 grid red arm] the row check is skipped");
++        if n + 1 > GRID_Y_MAX && n == usize::MAX {
+             return Err(format!(
+                 "batched copy of {n} items refused: {} grid rows exceed CUDA's gridDim.y limit of {GRID_Y_MAX}",
+                 n + 1
