@@ -4861,10 +4861,7 @@ fn host_tier_governor(
             .ok_or("host tier governor: capacity overflow")
     };
     let mut capacity = TierBudget::zero(dimensions);
-    // WP-A day 63 (`DAY63.md` design L1.5): one more host budget on the pinned dimension, the lease
-    // pool's idle backings (capped at one budget), so a lease's charge taken while its pooled
-    // backing's charge is still held never refuses.
-    capacity.pinned = thrice(host_budget)?;
+    capacity.pinned = twice(host_budget)?;
     capacity.pageable = twice(host_budget)?;
     capacity.device[device] = thrice(device_budget)?;
     // Option B: the transfer engine charges one in-flight op per K or V plane of the batch
@@ -5038,13 +5035,7 @@ fn host_tier_context(
         "[prefix-host] contracts door: D2H demotes and H2D promotes ride the transfer engine's \
          copy stream and publish at the tick top (memra#536 Move 1)"
     );
-    // WP-A day 63 (`DAY63.md` design L1.5): the lease pool's cap is one host budget.
-    transfers.set_lease_pool_cap(hpx.budget as u64);
-    let lease_pool = Some(transfers.lease_pool());
-    // WP-A day 63 (L2.1): the span staging set's lengths, one image's worth over the loaded
-    // models (the max count per length, one demote in flight per worker).
-    let staging_lengths = host_staging_lengths(loaded.values().map(|lm| &lm.model.plan));
-    let ctx = HostTierContext {
+    Ok(HostTierContext {
         governor,
         programs,
         device: u32::try_from(device)
@@ -5054,85 +5045,7 @@ fn host_tier_context(
         fault: std::cell::Cell::new(HostContractFault::from_door(kv_host_fault())),
         hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()))?,
         staging: std::cell::RefCell::new(HostStaging::default()),
-        lease_pool,
-    };
-    // WP-A day 63 (L2.2, L2.3): the staging set allocated at boot, charged as today; a refusal
-    // leaves the set partial (the first demote allocates the rest) and never fails the boot.
-    let t0 = Instant::now();
-    let (mut n, mut bytes) = (0usize, 0u64);
-    let mut taken = Vec::new();
-    let mut refused = None;
-    'lengths: for &(len, count) in &staging_lengths {
-        for _ in 0..count {
-            match ctx.staging_take(len) {
-                Ok((buf, _)) => {
-                    n += 1;
-                    bytes += len as u64;
-                    taken.push(buf);
-                }
-                Err(e) => {
-                    refused = Some(e);
-                    break 'lengths;
-                }
-            }
-        }
-    }
-    for buf in taken {
-        ctx.staging_put(buf);
-    }
-    match refused {
-        None => eprintln!(
-            "[prefix-host] contracts door: span staging set allocated at boot: {n} buffers, {:.1} \
-             MB in {:.1} ms",
-            bytes as f64 / 1e6,
-            t0.elapsed().as_secs_f64() * 1e3
-        ),
-        Some(e) => eprintln!(
-            "[prefix-host] contracts door: span staging set at boot stopped after {n} buffers \
-             ({:.1} MB): {e}; the first demote allocates the rest",
-            bytes as f64 / 1e6
-        ),
-    }
-    Ok(ctx)
-}
-
-/// WP-A day 63 (`DAY63.md` design L2.1): the span staging lengths of one image over the loaded
-/// models' plans: each recurrent layer's conv plane (`conv_width x (conv_kernel - 1)` f32) and ssm
-/// plane (`state_width` f32), trunk and MTP blocks, as (bytes, count) with each length's count the
-/// maximum over the models (one demote is in flight per worker). Sorted by length.
-fn host_staging_lengths<'a>(
-    plans: impl Iterator<Item = &'a memra_gguf::model_plan::ModelPlan>,
-) -> Vec<(usize, usize)> {
-    use memra_gguf::model_plan::StatePlan;
-    let mut need: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
-    for plan in plans {
-        let mut here: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
-        for layer in plan
-            .layers
-            .iter()
-            .chain(plan.mtp_blocks.iter().map(|b| &b.layer))
-        {
-            if let StatePlan::Recurrent {
-                conv_width,
-                conv_kernel,
-                state_width,
-            } = layer.state
-            {
-                let conv = conv_width as usize * (conv_kernel as usize).saturating_sub(1) * 4;
-                let ssm = state_width as usize * 4;
-                for len in [conv, ssm] {
-                    if len > 0 {
-                        *here.entry(len).or_default() += 1;
-                    }
-                }
-            }
-        }
-        for (len, c) in here {
-            let e = need.entry(len).or_default();
-            *e = (*e).max(c);
-        }
-    }
-    need.into_iter().collect()
+    })
 }
 
 fn kv_host_budget_bytes() -> usize {
@@ -9370,15 +9283,6 @@ impl HostPrefixCache {
                 .close("the tier latched off", HOST_HASH_LATCH_JOIN);
             // WP-A day 30: a latched tier demotes nothing more; its span staging set frees.
             tier.staging.borrow_mut().clear();
-            // WP-A day 63 (L1.6): and its lease pool: idle backings free, pool charges release.
-            if let Some(pool) = &tier.lease_pool {
-                let (n, bytes) = pool.close();
-                eprintln!(
-                    "[prefix-host] lease pool closed (the tier latched off): {n} idle backings, \
-                     {:.1} MB freed",
-                    bytes as f64 / 1e6
-                );
-            }
         }
     }
 
@@ -9720,8 +9624,6 @@ struct HostTierContext {
     /// buffer is charged to the governor's pinned ledger when it is allocated (`HostStaging`);
     /// the set and its charges free at the tier's latch.
     staging: std::cell::RefCell<HostStaging>,
-    /// WP-A day 63 (`DAY63.md` design L1.6): the transfer engine's lease pool, closed at the latch.
-    lease_pool: Option<std::rc::Rc<memra_engine::tier_transfer::LeasePool>>,
 }
 /// WP-A day 31 (DAY30 owed items: the governor charge of the staging, the staging back on every
 /// post-take refusal): the context's span staging set and its pinned charges. A buffer is
@@ -10445,8 +10347,6 @@ struct ContractPlanned {
 struct DemotePresubmitSplit {
     leases_ms: f64,
     leases: usize,
-    /// WP-A day 63 (`DAY63.md` L1.7, log only): the leases the pool served.
-    pooled: u64,
     lease_bytes: u64,
     leases_minflt: i64,
     register_submit_ms: f64,
@@ -12002,7 +11902,6 @@ fn host_kv_planes_submit_contract(
     let mut hosts = Vec::with_capacity(planned.len() * 2);
     // WP-A day 49 (log only): the pinned destinations' time, count, bytes and minor faults.
     let (leases_t0, leases_f0) = (Instant::now(), thread_minflt());
-    let pooled0 = t.lease_pool_counts().0;
     for p in &planned {
         for n in [p.kb, p.vb] {
             if kv_host_fault() == "alloc-fail" {
@@ -12021,7 +11920,6 @@ fn host_kv_planes_submit_contract(
     let mut split = DemotePresubmitSplit {
         leases_ms: leases_t0.elapsed().as_secs_f64() * 1e3,
         leases: hosts.len(),
-        pooled: t.lease_pool_counts().0 - pooled0,
         lease_bytes: planned.iter().map(|p| (p.kb + p.vb) as u64).sum(),
         leases_minflt: thread_minflt() - leases_f0,
         ..DemotePresubmitSplit::default()
@@ -14791,11 +14689,9 @@ fn host_demote_prefix_ref(
                 let total = pending.owner.presubmit_ms;
                 eprintln!(
                     "[prefix-host] demote pre-submit split: ticket seq={seq} leases {:.2} ms ({} \
-                     pinned, pooled {} of {}, {:.1} MB, minflt +{}), register {:.2} ms, spans {:.2} ms, \
-                     other {:.2} ms (pre-submit {total:.2} ms)",
+                     pinned, {:.1} MB, minflt +{}), register {:.2} ms, spans {:.2} ms, other {:.2} ms \
+                     (pre-submit {total:.2} ms)",
                     sp.leases_ms,
-                    sp.leases,
-                    sp.pooled,
                     sp.leases,
                     sp.lease_bytes as f64 / 1e6,
                     sp.leases_minflt,
@@ -47118,7 +47014,6 @@ mod tests {
             fault: std::cell::Cell::new(None),
             hasher: super::HostHashWorker::spawn(None).unwrap(),
             staging: std::cell::RefCell::new(super::HostStaging::default()),
-            lease_pool: None,
         }
     }
 
@@ -50523,79 +50418,6 @@ mod tests {
         assert_eq!(production.matches("\"a second capture\"").count(), 2);
     }
 
-    /// WP-A day 63 (`DAY63.md` design L2.1): the staging lengths of one image, the max count per
-    /// length over the loaded models, trunk and MTP blocks.
-    #[test]
-    fn day63_the_staging_set_at_boot_is_one_image_over_the_models() {
-        use memra_gguf::config::{HfConfig, ModelConfig};
-        let plan = |layers: u32, heads: u32| {
-            memra_gguf::model_plan::ModelPlan::compile(&ModelConfig::from_hf(&HfConfig::parse(
-                &format!(
-                    r#"{{"model_type":"qwen3_5","num_hidden_layers":{layers},"hidden_size":64,
-                "num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,
-                "intermediate_size":128,"vocab_size":16,"max_position_embeddings":128,
-                "full_attention_interval":2,"linear_conv_kernel_dim":3,
-                "linear_key_head_dim":32,"linear_value_head_dim":32,
-                "linear_num_key_heads":1,"linear_num_value_heads":{heads}}}"#
-                ),
-            )))
-            .unwrap()
-        };
-        let a = plan(4, 2);
-        let recurrent = |p: &memra_gguf::model_plan::ModelPlan| {
-            p.layers
-                .iter()
-                .chain(p.mtp_blocks.iter().map(|b| &b.layer))
-                .filter(|l| matches!(l.state, memra_gguf::model_plan::StatePlan::Recurrent { .. }))
-                .count()
-        };
-        let one = super::host_staging_lengths([&a].into_iter());
-        assert_eq!(
-            one.iter().map(|&(_, c)| c).sum::<usize>(),
-            2 * recurrent(&a),
-            "two planes per layer"
-        );
-        assert!(one.iter().all(|&(len, _)| len > 0 && len % 4 == 0));
-        let b = plan(8, 2);
-        let two = super::host_staging_lengths([&a, &b].into_iter());
-        assert_eq!(
-            two,
-            super::host_staging_lengths([&b].into_iter()),
-            "the max count, never the sum"
-        );
-        let c = plan(4, 4);
-        let mixed = super::host_staging_lengths([&a, &c].into_iter());
-        let total: usize = mixed.iter().map(|&(_, n)| n).sum();
-        assert!(total <= 2 * recurrent(&a) + 2 * recurrent(&c));
-        assert!(
-            mixed.windows(2).all(|w| w[0].0 < w[1].0),
-            "sorted by length"
-        );
-    }
-
-    /// WP-A day 63 (design L1.5, L1.6, L2; CPU census): the pinned capacity is three host budgets;
-    /// the lease pool's cap is set to one budget at the context's build and it closes at the latch;
-    /// the staging set is allocated at boot through `staging_take` and put back.
-    #[test]
-    fn day63_the_pool_and_the_boot_staging_are_wired_as_stated() {
-        let worker = include_str!("worker.rs");
-        let production = &worker[..worker.find("\nmod tests {").unwrap()];
-        assert!(production.contains("capacity.pinned = thrice(host_budget)?;"));
-        let build = &production[production.find("fn host_tier_context(").unwrap()..];
-        let build = &build[..build.find("\n}\n").unwrap()];
-        let cap = build
-            .find("transfers.set_lease_pool_cap(hpx.budget as u64);")
-            .unwrap();
-        let take = build.find("match ctx.staging_take(len) {").unwrap();
-        let put = build.find("ctx.staging_put(buf);").unwrap();
-        assert!(cap < take && take < put);
-        let disable = &production[production
-            .find("    fn disable(&mut self, why: &str) {")
-            .unwrap()..];
-        let disable = &disable[..disable.find("\n    }\n").unwrap()];
-        assert!(disable.contains("let (n, bytes) = pool.close();"));
-    }
-
     /// WP-A day 64 (`DAY64.md` step 1; CPU census): the promote's waiting labels are log only. The
     /// engine's parts query is read only by `host_promote_waiting`; `waiting` is written only at the
     /// two `Pending` answers and read only by the timeline's outcome; no decision reads either.
@@ -51948,7 +51770,6 @@ mod tests {
             fault: std::cell::Cell::new(None),
             hasher: super::HostHashWorker::spawn(None).unwrap(),
             staging: std::cell::RefCell::new(super::HostStaging::default()),
-            lease_pool: None,
         }
     }
 
