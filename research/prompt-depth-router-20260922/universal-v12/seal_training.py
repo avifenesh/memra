@@ -60,6 +60,7 @@ def inventory(base):
         "source/joint-v9": base / "joint-v9",
         "source/joint-v11": base / "joint-v11",
         "source/private_ops": base / "ops",
+        "diagnostic/pilot-results": base / "pilot-results",
         "native/training-prose-results":
         base / "training-prose-results",
     }
@@ -72,7 +73,10 @@ def inventory(base):
                 raise ValueError("training seal contains symlink")
             if path.is_file() and path.suffix != ".pyc":
                 files[f"{prefix}/{path.relative_to(root).as_posix()}"] = path
-    for name in ("rental.json", "cuda-accept.json", "run-meta.json"):
+    for name in (
+        "rental.json", "cuda-accept.json", "run-meta.json",
+        "pilot-result.json",
+    ):
         path = base / name
         if not path.is_file():
             raise ValueError(f"training run metadata missing: {name}")
@@ -80,8 +84,13 @@ def inventory(base):
     results = list((base / "training-prose-results").glob(
         "training-*.result.json"
     ))
+    pilot_results = list((base / "pilot-results").glob(
+        "pilot-*.result.json"
+    ))
     if len(results) != 112:
         raise ValueError("randomized prose training session count differs")
+    if len(pilot_results) != 6:
+        raise ValueError("fixed D1/D2 native pilot session count differs")
     for path in results:
         row = json.loads(path.read_text())
         if row["name"] != path.name.removesuffix(".result.json"):
@@ -119,6 +128,16 @@ def seal(base, out):
             or sha(base / name) != expected
         ):
             raise ValueError("research training source changed after run metadata")
+    pilot = json.loads((base / "pilot-result.json").read_text())
+    if (
+        pilot["status"] != "fixed-D1-D2-full-head-and-KV-engaged"
+        or pilot["model_sha256"] != MODEL_SHA
+        or pilot["binary_sha256"] != BINARY_SHA
+        or pilot["training_workloads_sha256"] != TRAIN_SHA
+        or pilot["run_meta_sha256"] != sha(base / "run-meta.json")
+        or pilot["gpu_uuid"] != metadata["gpu_uuid"]
+    ):
+        raise ValueError("fixed D1/D2 pilot does not match research host")
     files = inventory(base)
     if out.exists():
         raise ValueError("sealed prose training destination exists")
@@ -147,6 +166,7 @@ def seal(base, out):
         "binary_sha256": BINARY_SHA,
         "training_workloads_sha256": TRAIN_SHA,
         "source_full_manifest_sha256": FULL_SHA,
+        "pilot_sha256": sha(base / "pilot-result.json"),
         "archive_sha256": sha(archive),
         "members": members,
     }

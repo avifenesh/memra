@@ -12,6 +12,7 @@ BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE / "joint-v11"))
 import training_replay as prior_replay
 import measurement_rows_prose
+import pilot_depth
 import seal_training
 
 
@@ -46,6 +47,7 @@ def replay(archive, manifest_path, rows_out):
         "source/joint-v9/",
         "source/joint-v11/",
         "source/private_ops/",
+        "diagnostic/pilot-results/",
         "native/training-prose-results/",
     )
     if any(
@@ -54,6 +56,7 @@ def replay(archive, manifest_path, rows_out):
             "native/rental.json",
             "native/cuda-accept.json",
             "native/run-meta.json",
+            "native/pilot-result.json",
         }
         for name in manifest["members"]
     ):
@@ -69,6 +72,7 @@ def replay(archive, manifest_path, rows_out):
                 "measurement_rows_prose.py",
                 "seal_training.py",
                 "replay_training.py",
+                "pilot_depth.py",
             ),
             "joint-v9": (
                 "collect.py", "eval.py", "measurement_rows.py",
@@ -85,6 +89,15 @@ def replay(archive, manifest_path, rows_out):
                     raise ValueError("sealed prose training source differs")
         workloads = root / "inputs/phase-training"
         seal_training.expected_workloads(workloads)
+        if sha(root / "native/pilot-result.json") != (
+            manifest["pilot_sha256"]
+        ):
+            raise ValueError("fixed depth pilot archive member changed")
+        pilot_depth.replay(
+            root / "diagnostic/pilot-results",
+            root / "native/pilot-result.json",
+            workloads, root / "native/run-meta.json",
+        )
         metadata = json.loads(
             (root / "native/run-meta.json").read_text()
         )

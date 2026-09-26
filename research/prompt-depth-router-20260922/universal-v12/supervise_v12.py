@@ -114,6 +114,12 @@ def pipeline(base, credential_file, log):
     sandbox_preflight()
     stage(log, base / "ops", "run_meta_v12.py",
           "--base", base)
+    stage(log, scripts, "pilot_depth.py",
+          "--binary", binary, "--model", model,
+          "--workloads", base / "phase-training",
+          "--run-meta", base / "run-meta.json",
+          "--out", base / "pilot-results",
+          "--receipt", base / "pilot-result.json")
     stage(log, v11, "prepare_code_training.py",
           "--archive", parents / "v9/native-data.tar.gz",
           "--manifest", parents / "v9/manifest.json",
@@ -311,6 +317,8 @@ def main():
     parser.add_argument("--credential-file", type=Path, required=True)
     args = parser.parse_args()
     base = args.base.resolve()
+    with (base / "supervisor.pid").open("x") as handle:
+        handle.write(str(os.getpid()) + "\n")
     with (base / "supervisor.log").open("x") as log:
         try:
             pipeline(base, args.credential_file.resolve(), log)

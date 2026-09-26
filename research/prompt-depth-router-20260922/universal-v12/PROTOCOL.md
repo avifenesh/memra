@@ -85,6 +85,9 @@ separate sealed commitment.
    at training and every evaluation phase, and carry it through
    validation selection and final scoring. Price and tag the rental under
    the development-provider policy before allocating it.
+   Before the long training battery, run D=1 and D=2 fixed controls
+   on the pinned binary and replay their native depth, sampler,
+   and KV receipts from the training-only archive.
    The menu contains nine fixed controls including K=3, D=1/2/3/4
    and three C cutoffs measured from training offers, plus three
    selectable joint C/K/D candidates, two component diagnostics,

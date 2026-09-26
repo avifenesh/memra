@@ -32,7 +32,8 @@ class PhaseContractTest(unittest.TestCase):
             "eval.py", "collect_prose.py",
             "measurement_rows_prose.py", "fit_shared.py",
             "arms_shared.py", "seal_training.py",
-            "replay_training.py", "supervise_v12.py",
+            "replay_training.py", "pilot_depth.py",
+            "supervise_v12.py",
         ):
             with self.subTest(name=name):
                 self.assertEqual(constants(name)["TRAIN_SHA"], TRAIN)
