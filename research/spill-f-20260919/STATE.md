@@ -35,4 +35,9 @@
   `research/spill-c-20260919/fixtures/slru-synthetic.json` after checking no SLRU statement changed.
 - After integ68 lands: merge origin/main (its clippy fix is cherry-picked here as 93214be84, same
   bytes), re-pin the SLRU fixture to the merged `moe_cache.rs`, rerun the list above.
+- Card sharing (coordinator, 2026-09-26 ~18:10Z): the 5090 driver now releases the lock after every
+  registered cell and sits out a recorded 300 s `yield` (longer than lane B's 240 s) before its idle
+  check; each cell stays one continuous hold. Recorded in `~/spill-f-5090/receipts/QUEUE.jsonl`
+  (`queue-change`) and in bounded's `waits.jsonl`. Queue relaunched 18:12Z `--from bounded
+  --step-rounds bounded=8-10`; bounded rounds 1 to 7 done under the old back-to-back holds.
 
