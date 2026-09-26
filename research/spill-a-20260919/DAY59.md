@@ -52,3 +52,19 @@ artifact the rig carries, door ON. A reading that selects the design; the design
 
 **Budget.** 0.5 agent-day: the lines 0.1, the 5090 reading 0.1, the design and its GPU cell 0.2, the target sitting
 0.1.
+
+## 2. Step 1 as built (`8b5e5e213`), and the 5090 sitting prepared
+
+- The split: `prefix_copy_timed(kind, f)` wraps each device call of `prefix_snapshot` (the KV planes' `alloc_u8` and
+  `copy_u8_into`, the recurrent planes' `clone_dtod`) and of `prefix_restore_at` (the KV `copy_u8_into`, the length
+  `set_i32_one`, the recurrent `copy_into`), accumulating owner time and counts on the calling thread; the fanout takes
+  the split after the snapshot and after the restores and prints `[prefix-dedup] on-tick split: ..` under the door.
+  Census `day59_the_fanout_copy_split_is_log_only` (the calls and their order unchanged; two takes; no decision).
+  Server lib `933 passed; 0 failed; 25 ignored`; clippy `-D warnings`; fmt.
+- Read from the code while building: each restore also writes each KV layer's length to the device with
+  `set_i32_one`, a 4-byte host-to-device copy from pageable memory. **Before the cell runs**, the rule's "calls"
+  includes these length sets (a restore's device calls), and the reader prints them apart.
+- The sitting `rtx5090-day59/card-run.sh <out> <model> <memra-server>` (one bounded hold of `/tmp/memra-5090.lock`, 60 x
+  120 s; the card idle with 20000 MiB free; DAY54's short cell shape, 20 boots) and the reader `day59-reading.py`, both
+  written before the cell runs. The model is the local copy of the target's artifact
+  (`Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`, sha256 `1facf36c2db359dc..`).
