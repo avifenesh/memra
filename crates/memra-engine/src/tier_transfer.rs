@@ -781,6 +781,10 @@ struct H2dSpanBatch {
     /// WP-A day 40 (design S): the spans' destination digests, 32 bytes per span, sealed by
     /// `receipt.event` after them; the batch lands only with it.
     receipt: Option<ReceiptScratch>,
+    /// WP-A day 64 (`DAY64.md` section 4 step 1, log only): four timing events on the copy stream
+    /// (the span work's start, after the fill, after the last span copy, after the digests and the
+    /// lanes' D2H), read by `h2d_span_timing` once complete and never waited on.
+    timing: Vec<CudaEvent>,
 }
 /// WP-A day 42 (`DAY42.md` design S2): the by-value argument of `span_receipt_digests`
 /// (`cu/tier_receipt.cu` `SpanItems`): up to `SPAN_ITEMS` spans per launch, their device
@@ -3073,6 +3077,13 @@ impl CudaTransfers {
             Ok(admitted) => admitted,
             Err(error) => return Err((error, spans, fills)),
         };
+        // WP-A day 64 (`DAY64.md` section 4 step 1, log only): a timing event at each phase
+        // boundary of the span work (the start, after the fill, after the copies, after the seal).
+        let timed = |copy: &Arc<CudaStream>| {
+            copy.record_event(Some(sys::CUevent_flags::CU_EVENT_DEFAULT))
+                .ok()
+        };
+        let mut timing: Vec<CudaEvent> = timed(&copy).into_iter().collect();
         // Day 33 (design F): the fill, ONE host function on the copy stream ahead of every copy;
         // day 39 (design T): split inside it across the engine's fill threads.
         if let Some(fills) = fills {
@@ -3108,6 +3119,7 @@ impl CudaTransfers {
                 return Err((cuda::<()>(Err(e)).unwrap_err(), spans, Some(fills)));
             }
         }
+        timing.extend(timed(&copy));
         #[cfg(test)]
         let mut fault = std::mem::take(&mut self.span_enqueue_fault);
         let mut failed = false;
@@ -3144,6 +3156,7 @@ impl CudaTransfers {
             failed |= event.is_none();
             slots.push((span, event));
         }
+        timing.extend(timed(&copy));
         // WP-A day 40 (design S): after every copy, each span's DESTINATION digest over its device
         // plane (design S2: ONE launch per 64 spans), then one D2H of the lanes into the twin and
         // the span receipt's event: the batch lands only with it.
@@ -3167,12 +3180,14 @@ impl CudaTransfers {
             })();
             failed |= sealed.is_err();
         }
+        timing.extend(timed(&copy));
         let e = self.entries.get_mut(ticket).unwrap();
         e.h2d_spans = Some(H2dSpanBatch {
             slots,
             landed: false,
             fenced: false,
             receipt: scratch,
+            timing,
         });
         if failed {
             e.unknown = true;
@@ -3308,6 +3323,25 @@ impl CudaTransfers {
             }
         }
         Ok((copies, receipt))
+    }
+    /// WP-A day 64 (`DAY64.md` section 4 step 1, log only): the span work's (fill, copies, digests
+    /// and the lanes' D2H) elapsed milliseconds from its four timing events; `None` unless every
+    /// event is complete (never a wait) or when the batch carries no timing.
+    pub fn h2d_span_timing(&self, ticket: &TransferTicket) -> Option<(f32, f32, f32)> {
+        let b = self.entries.get(ticket)?.h2d_spans.as_ref()?;
+        let [t0, fill, copies, sealed] = b.timing.as_slice() else {
+            return None;
+        };
+        for e in [t0, fill, copies, sealed] {
+            if !event_done(e).ok()? {
+                return None;
+            }
+        }
+        Some((
+            t0.elapsed_ms(fill).ok()?,
+            fill.elapsed_ms(copies).ok()?,
+            copies.elapsed_ms(sealed).ok()?,
+        ))
     }
     pub fn take_h2d_spans(&mut self, ticket: &TransferTicket) -> Result<Vec<LandedH2dSpan>> {
         self.progress(ticket)?;

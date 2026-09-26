@@ -13684,6 +13684,9 @@ fn host_kv_planes_settle_promote(
         bufs: Vec::with_capacity(spans.len()),
     };
     let mut recur: Vec<(HostHashSlot, CudaSlice<f32>)> = Vec::with_capacity(spans.len());
+    // WP-A day 64 (`DAY64.md` section 4 step 1, log only): the span work's phases, read before the
+    // take while the batch still holds its timing events (complete by now; never a wait).
+    let span_timing = t.h2d_span_timing(&ticket);
     if !spans.is_empty() {
         let back = match t.take_h2d_spans(&ticket) {
             Ok(back) => back,
@@ -13977,8 +13980,11 @@ fn host_kv_planes_settle_promote(
         String::new()
     } else {
         format!(
-            "; {} f32 spans landed under the ticket and taken back before the retire",
-            recur.len()
+            "; {} f32 spans landed under the ticket and taken back before the retire{}",
+            recur.len(),
+            span_timing.map_or_else(String::new, |(fill, copies, digests)| format!(
+                " (span receipt: fill {fill:.2} ms, copies {copies:.2} ms, digests {digests:.2} ms)"
+            ))
         )
     };
     // WP-A day 34: where the KV items' checksums ran, after the span term.
@@ -50676,6 +50682,30 @@ mod tests {
         assert!(spawn.contains("host_scoped_map(job.leases, threads, |(slot, v)| {"));
         assert!(spawn.contains("let (n, d) = host_hash_payload_digest(&p.data);"));
         assert!(spawn.contains("p.data = Arc::new(staged.as_f32_slice().to_vec());"));
+    }
+
+    /// WP-A day 64 (`DAY64.md` section 4 step 1; CPU census): the span receipt's phase timing is
+    /// log only: read once before the take, printed on the H2D receipt line, never compared.
+    #[test]
+    fn day64_the_span_receipt_timing_is_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert_eq!(production.matches("h2d_span_timing(").count(), 1);
+        assert_eq!(
+            production.matches("span_timing").count(),
+            3,
+            "the engine call, the binding, the print"
+        );
+        let settle = &production[production
+            .find("let span_timing = t.h2d_span_timing(&ticket);")
+            .unwrap()..];
+        assert!(
+            settle.find("let span_timing").unwrap()
+                < settle.find("t.take_h2d_spans(&ticket)").unwrap()
+        );
+        assert!(
+            !production.contains("if span_timing") && !production.contains("span_timing.is_some()")
+        );
     }
 
     /// WP-A day 66 (`DAY66.md`): a stray timed call of any kind before a scoped call never reaches
