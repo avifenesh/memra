@@ -229,13 +229,15 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> SlruExpertDispatch<H, R> {
 impl<H: Hotness<ExpertDomain>, R: ExactReader> SlruExpertDispatch<H, R> {
     /// The record behind `local` when its payload holds exactly `bytes`: the one validation
     /// `validate` and `demand` share.
-    fn validated(&self, local: ExpertDispatchId, bytes: usize) -> Result<&BankId> {
-        let id = self.ids.get(&local).ok_or(Error::NotFound)?;
-        let layout = self.bank.layout(id)?;
+    /// Day 85 (I22, `research/spill-c-20260919/DAY85.md`): by catalog position (I21's dense table, then the catalog's
+    /// id and layout at it), with the errors the id map and `layout` gave; the position comes back for `stage_at`.
+    fn validated(&self, local: ExpertDispatchId, bytes: usize) -> Result<(&BankId, usize)> {
+        let position = self.positions.get(local).ok_or(Error::NotFound)?;
+        let (id, layout) = self.bank.layout_at(position)?;
         if layout.segments[0].valid_bytes != bytes as u64 {
             return Err(Error::InvalidLayout);
         }
-        Ok(id)
+        Ok((id, position))
     }
 }
 impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpertDispatch<H, R> {
@@ -243,13 +245,18 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpert
         self.validated(local, bytes).map(|_| ())
     }
     fn demand(&mut self, local: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand> {
-        // Day 61 (I11 change 4): the id validated is the id staged; one lookup.
-        let ids = vec![self.validated(local, bytes)?.clone()];
-        let ticket = self.bank.stage(BankBatch {
-            ids,
-            epochs: self.epochs,
-            request: self.request.clone(),
-        })?;
+        // Day 61 (I11 change 4): the id validated is the id staged; one lookup. Day 85 (I22): staged with
+        // its catalog position.
+        let (id, position) = self.validated(local, bytes)?;
+        let ids = vec![id.clone()];
+        let ticket = self.bank.stage_at(
+            BankBatch {
+                ids,
+                epochs: self.epochs,
+                request: self.request.clone(),
+            },
+            vec![position],
+        )?;
         let result = (|| {
             while !self.bank.progress(&ticket)? {}
             let mut leases = self.bank.publish(&ticket, self.epochs)?;
@@ -297,15 +304,22 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpert
         if blocks.len() > MAX_GROUP {
             return Err(Error::Capacity);
         }
-        let ids = blocks
-            .iter()
-            .map(|&(local, bytes)| self.validated(local, bytes).cloned())
-            .collect::<Result<Vec<_>>>()?;
-        let ticket = self.bank.stage(BankBatch {
-            ids,
-            epochs: self.epochs,
-            request: self.request.clone(),
-        })?;
+        // Day 85 (I22): each block's id and catalog position, staged together.
+        let mut ids = Vec::with_capacity(blocks.len());
+        let mut positions = Vec::with_capacity(blocks.len());
+        for &(local, bytes) in blocks {
+            let (id, position) = self.validated(local, bytes)?;
+            ids.push(id.clone());
+            positions.push(position);
+        }
+        let ticket = self.bank.stage_at(
+            BankBatch {
+                ids,
+                epochs: self.epochs,
+                request: self.request.clone(),
+            },
+            positions,
+        )?;
         let result = (|| {
             while !self.bank.progress(&ticket)? {}
             let leases = self.bank.publish(&ticket, self.epochs)?;

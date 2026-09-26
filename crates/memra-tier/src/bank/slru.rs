@@ -226,6 +226,18 @@ impl SlruPolicy {
         let Some(slot) = self.resident(id) else {
             return false;
         };
+        self.hit_slot(slot)
+    }
+    /// Day 85 (I22, `research/spill-c-20260919/DAY85.md`): `hit` for the record at catalog `position`, its slot read
+    /// from the position view (`false` when the view holds none, as `hit` answers for a record not resident).
+    pub fn hit_at(&mut self, position: usize) -> bool {
+        let Some(slot) = self.resident_at(position) else {
+            return false;
+        };
+        self.hit_slot(slot)
+    }
+    /// The promotion `hit` makes once it has the resident record's slot.
+    fn hit_slot(&mut self, slot: usize) -> bool {
         let class = &mut self.classes[self.slot_class[slot]];
         if !class.free.is_empty() {
             return true;

@@ -342,10 +342,11 @@ fn catalog_positions_are_the_bankid_order_and_the_charge_counts_the_view() {
     }
     let (unknown, _) = spread_id(99, 9, Projection::Gate, 1);
     assert_eq!(d.bank().catalog_position(&unknown), Err(Error::NotFound));
-    // With no slot the formula's slot terms vanish: the constant plus one `u32` per catalog id.
+    // With no slot the formula's slot terms vanish: the constant plus one `u32` per catalog id (and, since day 85,
+    // one 8-byte lease handle per catalog id for the host cache's view).
     assert_eq!(
         d.bank().slru_metadata_bytes(0),
-        Ok(4096 + 4 * ids.len() as u64)
+        Ok(4096 + (4 + 8) * ids.len() as u64)
     );
     let per_slot =
         d.bank().slru_metadata_bytes(2).unwrap() - d.bank().slru_metadata_bytes(1).unwrap();
