@@ -1,3 +1,6 @@
+# WP-B checkpoint 2026-09-26 (eleventh sitting read; NEED TARGET CARD for the thirteenth): DAY45 2.2 every clause PASS
+on the target card; DAY47 2.3 g, g-red, h, h-red PASS twice; DAY46 addendum A registered; the twelfth running on BOX35
+since 17:48Z (tree 77fe12114), the thirteenth follows; the ninth still on BOX33
 # WP-B checkpoint 2026-09-26 (NEED TARGET CARD, thirteenth sitting): DAY49 addendum C (the batch reclaim's VMM reap,
 - 17:48Z: queue-k stopped by the lane in an idle wait (DAY39B's boots after v2-G2 went unrun: v2-L64's 7200 s idle
   wait ran out at 17:38Z and day39-run.sh stops the call there). queue-m (pid 2617798) runs queue-k's items 2 to 9 with

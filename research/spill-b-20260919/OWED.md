@@ -74,7 +74,7 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   the rerun says what the cap moved rather than only repeating day 36.
 - Status: target card `read` (DAY40 2.1): every DAY34 1.6 term PASS on 8 boots, V-DOOR PASS; SELECT R1 and R2 select
   none, R3's registry value 32,768; `on32768` admits 46 of 64 against day 36's 44; the seed cap bound on every ON boot.
-  The 5090 half runs from queue-k (item 3, `rtx5090-day40/chain.sh`). Pre-registered (DAY40.md), on the final booking (the capped seed and day 39's revised prime term, GREEN on
+  The 5090 half runs from queue-m (item 3, `rtx5090-day40/chain.sh`). Pre-registered (DAY40.md), on the final booking (the capped seed and day 39's revised prime term, GREEN on
   the target card). Was `open`, DAY40. It follows O5 (DAY39): O5 corrects the door's own prime booking (a burst books the
   shared slab once per session today), and the ON rows are only the owner's input on the booking that would ship.
   Running them first would bank a second known over-booking beside day 36's.
@@ -94,8 +94,10 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   (no admission door: the 64 x 30,720 burst was admitted past the card and the batched prime OOMed, today's program);
   W2 FAIL (the unreleased are OOM-dropped and same-tick sessions, retired by design); W3 O1 FAIL on two drop-set rows.
   Addendum B (the memory door on both arms, a second wave, a retire receipt `09badfe57`, W3 over both-200 rows) runs in
-  the eleventh sitting (BOX35, receipts `b-day45b`); the 5090 half in queue-k (item 9, `rtx5090-day45/chain.sh` on
-  `target/day45` from `09badfe57`).
+  the eleventh sitting: DAY45 2.2, every clause PASS on the target card (W1 and W4 on 4 boots, W2 53 booked = 48
+  released + 5 same-tick retire receipts, W3 53 rows equal in both orders; no OOM, no 503). The release lands 217 to
+  459 s after booking, after the second wave was refused, so the books read the same on both arms: its value is read
+  by O6's `enforce-wrel` (DAY46 addendum A). The 5090 half runs from queue-m (item 9, `target/day45` from `09badfe57`).
 
 ### O5. The shared prime slab charged per request
 
@@ -117,7 +119,8 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   the fuller charge"). Dropped from STATE at day 33 with no closing record; restored here.
 - Acceptance to pre-register: `MEMRA_ADMIT_PREDICT_ENFORCE=1` against a budget arm on both cards, the day-24 sequence
   and a burst, before and after the day-24 charge, every refusal a typed 429 with its `Retry-After`, no OOM.
-- Status: `pre-registered` (DAY46.md, text only until DAY37 addendum G's repro and the ninth and tenth sittings read):
+- Status: `pre-registered` (DAY46.md; addendum A from DAY45's target-card facts: P2 on the enforcing arms, a second
+  wave after the burst's first completion; text only until the ninth sitting reads):
   arms `shadow`, `enforce`, `enforce-wrel` (with DAY45's W release) at the boot-derived budget, both orders, both cards,
   DAY24's sequence then a burst; P1 typed refusals, P2 no OOM, P3 within the budget, P4 identity, P5 the release reaches
   the door. No new engine or server code. Price: about 0.2 agent-day plus about 1 h on the 5090 and 2 h on the target
@@ -132,8 +135,8 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   `client_disconnected`, peers unaffected. Each with a red twin, added to `tools/health-fault-gate.sh`.
 - Status: `running`. The 5090: h and h-red PASS on every run (96 to 97 ms from the close to the retire); addendum A's
   g meets every registered term but read FAIL on the gate's extra `fired` literal (addendum B fixes it; runs a2, a3);
-  g-red PASS; g-batch DOCUMENTED (O14). The reruns a2 and a3 (`rtx5090-day47/run.sh`) wait for the card. The target
-  card runs in the eleventh sitting (BOX35, receipts `b-day47`).
+  g-red PASS; g-batch DOCUMENTED (O14). The target card (DAY47 2.3, the eleventh sitting): g, g-red, h, h-red PASS
+  on both runs (close to abort 188 and 187 ms), g-batch DOCUMENTED. The 5090 reruns a2 and a3 run from queue-l.
 
 ### O8. The `[spec-vg]` predictive gap on MoE and linear families
 
@@ -200,8 +203,8 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   from it and a settle then resume are cold-exact. Local smoke (not registered): 0 flips against cold on both routes
   (keep 12 of 20); gapped turns resume from settled points faster than keep (plain 42 to 43 against 45 ms, spec 52 to
   54 against 99 to 107 ms); a next turn that arrives before or during a G=256 settle pays the re-prime (plain x2.3,
-  spec x1.29). The ninth sitting (`pro-single-b-sitting9.sh`, about 12 h from 12:13Z, BOX33) and queue-k (item 8,
-  `rtx5090-day44/chain.sh`) run the registered cells; DAY41's and DAY41B's 5090 halves are queue-k items 4 and 6. The measurement arms' readings stay banked (DAY41 2.1 and 2.2); `MEMRA_RESUME_GRID_REWIND` stays a
+  spec x1.29). The ninth sitting (`pro-single-b-sitting9.sh`, about 12 h from 12:13Z, BOX33) and queue-m (item 8,
+  `rtx5090-day44/chain.sh`) run the registered cells; DAY41's and DAY41B's 5090 halves are queue-m items 4 and 6. The measurement arms' readings stay banked (DAY41 2.1 and 2.2); `MEMRA_RESUME_GRID_REWIND` stays a
   measurement arm until DAY44 reads.
 
 ### O12. The admission reclaim flush off the tick (lead's ruling at integ62)
@@ -220,7 +223,7 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   (`0cf59870a`). The sixth sitting read it (DAY42 2.3): P0 EXERCISED, F1 to F4 PASS on all boots, warmth 10 of 24 on
   both arms, the tenants' largest gap 4.0 and 3.96 s against 8.9 and 9.0 s, burst TTFT p50 7.9 and 6.9 s against 11.8
   and 12.0 s; `offtick` admits 15 and 16 of 64 against 17 (arrivals deferred on the landing, refused at the defer
-  budget). Target card done; the 5090 half runs from queue-k (item 5, `rtx5090-day42e`).
+  budget). Target card done; the 5090 half runs from queue-m (item 5, `rtx5090-day42e`).
 
 ### O13. The spec pool's exact-extension miss after an overshooting final burst (DAY41 2.1)
 
@@ -234,7 +237,7 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - Status: target card `read` (DAY43 2.1): C2 to C5 PASS; C1 FAIL as registered (turn-3 prompts follow turn 2's
   completion; every same-prompt row equal on both arms). The clamp resumes 60 of 60 spec turns (today 34), later-turn
   TTFT p50 211 against 1,622 ms, p95 417 against 9,149 ms, throughput 9.91 against 9.34 tokens/s; the resumed turns
-  carry the keep residual (24 of 60 flip), which O11's exact resume removes. The 5090 half runs from queue-k (item 7,
+  carry the keep residual (24 of 60 flip), which O11's exact resume removes. The 5090 half runs from queue-m (item 7,
   `rtx5090-day43`). Code
   `87d9e00d1`, `MEMRA_SPEC_BUDGET_CLAMP` default-OFF, decide-by 2026-10-10.
 
