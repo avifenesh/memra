@@ -186,3 +186,33 @@ identity gates door ON.
 - **The sitting**, after its code: the promote cell (base against F, 20 boots each), the hump, and the 11 gates. The
   5090 half follows.
 - **Budget.** 0.4 agent-day.
+
+## 6. Design F as built (`568f33c7b`), and its sitting prepared
+
+- (F.1) `CudaTransfers.fill`, a stream created with the copy stream in `new_with_copy_stream`.
+- (F.2) The span attach cuts the fill into K = min(4, spans) contiguous chunks. Each chunk is its own
+  `SpanFillTask` host function on the fill stream, with an event after it.
+  - A first chunk that does not launch hands every span and fill back, as the single launch did.
+  - A failure once a chunk has launched sets the batch failed, so it is quarantined and the engine keeps every
+    span. The attach never waits on the host: DAY32's rule, kept in the census.
+- (F.3) In the copies loop, chunk k's first span copy is preceded by `copy.wait(chunk k's event)`. The digests, the
+  lanes' D2H and the receipt stay on the copy stream after the last copy.
+  - Step 1's timing events stay on the copy stream. With F its `fill` term reads about 0, and `copies` includes the
+    waits on the fill chunks, as the log-only term was defined.
+- Censuses:
+  - The new `day64_the_span_fill_runs_on_its_own_stream_in_chunks`.
+  - `one_side_stream_beside_the_owner` now counts two created streams. Its intent, no second stream for GPU work or
+    receipts (DAY38's placement ruling), is kept as a check that the fill stream carries no kernel launch.
+  - `h2d_span_rules_are_as_stated` is re-pointed at the enumerated copies loop.
+- The `enqueue_to_device_f32_after_fill` safety contract now names the event-ordered fill.
+- Engine lib `577 passed; 0 failed; 50 ignored`, server lib `948 passed`; clippy `-D warnings` on both; fmt (`day64f/`).
+- **The sitting** `pro-single-f/`, receipts `/root/spill-receipts/a-f`: `build.sh <tip> 0a835a75b` (f and its engine
+  test executable, and base, F's parent), then `driver.sh`, each step under one collector hold:
+  - `unit-cells.sh`: the three native H2D span cells (the filled batch, the plain batch, the fill off the owner
+    thread) and the censuses;
+  - `gates.sh`: the 11 gates on f;
+  - `ab.sh promote`: base against f, 20 boots;
+  - `hump.sh`: 4 boots;
+  - then `f-reading.py`, whose last line is `F VERDICT -> ..`.
+  - The reader was dry-run on DAY64B's receipts mapped as two arms, where base's late count read 87 of 90 per the rule.
+  - About 1.25 hours of card time.

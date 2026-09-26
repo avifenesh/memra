@@ -1,4 +1,4 @@
-# WP-A resumable state (2026-09-26, NEED TARGET CARD: item 17's re-read on L'; T-H and DAY64's split running on BOX31)
+# WP-A resumable state (2026-09-26, NEED TARGET CARD: design F's sitting after P2L2 (running); T-H' registered, awaiting acceptance)
 
 - Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ67 takes B1 (`e522a9417`, adopted on both cards) and the
   grid refusal (`231fba087`, cherry-picked as 95f275859).
@@ -6,14 +6,13 @@
   21 to 25; DAY66 (the fanout split's scope).
 - **Items 14 and 19 (DAY63) closed: L' ADOPTED** (section 6, `348d2e8f3`, with the gate change `217ace3fd`); L' and R1
   go to integ69.
-- **Item 17 (DAY67).** P2 re-applied on L' (`c58f32f7d`, merged with T-H's shares, section 2). Base branch
-  `lane/spill-a-p2l-base-20260926` at `f4e84f11e`. Sitting `pro-single-p2l/` (`build.sh <tip> f4e84f11e`, then
-  `driver.sh`, last line `DAY52 P2 -> ..`).
-- **Item 18 (DAY64).** Placed at `receipt` (176 of 180 late, section 3). The design was revised before code (section 4).
-  Step 1's timing lines are built (`08cdd9736`); their sitting is `pro-single-day64b/` (`build.sh <tip>`, then
-  `driver.sh`, last line `DAY64B SELECT -> ..`). D1 (overlapped span digests) follows if the digests dominate.
-- **Item 20 (DAY65, T-H).** Built (`a839d3494`). Its sitting `pro-single-th/` (`build.sh <tip> c6369b507`, the base branch
-  `lane/spill-a-th-base-20260926` = the tip with T-H taken out, DAY65 section 3) runs only if L' adopts.
+- **Item 18 (DAY64).** The split selected the fill (8.63 ms of 12.9), not D1 (section 5). Design F (the fill on its
+  own stream in chunks) is built (`568f33c7b`), with its sitting `pro-single-f/` (`build.sh <tip> 0a835a75b`, then
+  `driver.sh`, last line `F VERDICT -> ..`). F2 (pinned resident payloads) is recorded for after P2's verdict.
+- **Item 20 (DAY65).** T-H read REVERT (b) and was reverted (`06b2d31db`). T-H' is registered (section 6: (b')
+  measured at long entries, from DAY65's own text), awaiting the lead's and the owner's acceptance before any code.
+- **Item 17 (DAY67).** P2 on L': the first sitting was stopped as a diagnostic (T-H was in both arms). The corrected
+  pair P2L2 (`064f9fa0d` against `dba7c0a0c`) is running on BOX31.
 - The owed 5090 cells: S4's half, V's half, item 16, R1's half, and L''s and T-H's halves once they adopt.
 - Local cells run their scripts from a frozen copy of the tree, never from this worktree (DAY61 section 5's
   lesson). No build of this lane runs while one of its own timed cells holds the 5090.
