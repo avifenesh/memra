@@ -178,3 +178,29 @@ compatibility reading, not a veto (5090 rows follow per-hardware rules). The 509
 with the three 5090 cells already queued.
 
 **Budget.** 0.3 agent-day: the kernel and seams 0.1, the cells 0.1, the sitting 0.1.
+
+## 8. Revuto's finding on the split (#731), and whether it moved the selection
+
+- **The defect** (revuto on #731, review at `3214d1e13`, inline on `worker.rs:34774`). `PREFIX_COPY_SPLIT` is a
+  thread-local that every `prefix_snapshot` and `prefix_restore_at` call adds to, but only the fanout takes it, and
+  only after its snapshot returns. So whatever another owner-thread caller left since the previous fanout lands in the
+  next fanout's snapshot line. Those callers are the retire capture's on-tick snapshot (`worker.rs:22104`), the park
+  snapshot (`:29550`), the hit restores (`:32048`, `:32203`) and the `prefix_restore` wrapper. Restore-kind calls
+  (kinds 1 and 3) then inflate `a.copy_ms` and `a.copies`, and the gap between two fanouts is unbounded. The step 1
+  comment ("the take also drops whatever an earlier caller left") is wrong: the take adds the leftover to the line
+  rather than dropping it. The fix is DAY66, its own registered step.
+- **Could it have moved `DAY59 SELECT -> DESIGN B1`?** Every timed call adds to its kind's count, so a leftover shows
+  in the line's counts. The clean counts follow from the 27B's layout:
+  - the snapshot: 2 allocations and 2 copies per attention layer (16 layers: 32 and 32) and 2 clones per recurrent
+    layer (48 layers: 96);
+  - three sibling restores: 3 x (32 + 96) = 384 copies and 3 x 16 = 48 length sets.
+
+  All 100 fanout split lines in the twin's receipts, including each boot's first tick, carry exactly those counts:
+
+      100 on-tick split: snapshot alloc X ms over 32, copies X ms over 32, clones X ms over 96; restores copies X ms over 384, len sets X ms over 48
+
+  (`grep -ho 'on-tick split: .*' box/short/ab/*/b*-fanout/server.log`, the times masked, `sort | uniq -c`). No line
+  took a leftover call, so no line took a leftover's time: in this cell's shape no other snapshot or restore ran on
+  the owner thread between fanouts. The door-ON captures went off the tick, and the fanout's fresh prompts never hit.
+  **The selection stands as read**, and no rerun is needed for it. Under the fix the same cell would print the same
+  lines.
