@@ -15398,7 +15398,8 @@ fn exact_settle_plain(
 }
 
 /// The spec settle: rewind to the turn checkpoint, prime the public stream's rows up to `S` with
-/// no decode (the MTP walker then a zero-round burst, the session tail committing them).
+/// the MTP walker's trunk and draft fill only (`spec_prime_settle`: no boundary token, no init
+/// feed), so every committed row is a prime-program row.
 fn exact_settle_spec(
     engine: &Engine,
     lm: &LoadedModel,
@@ -15425,16 +15426,7 @@ fn exact_settle_spec(
         return Err("fault injection (MEMRA_RESUME_EXACT_FAULT=settle-fail)".into());
     }
     lm.model
-        .generate_spec_session_sampled_prime_split(
-            engine,
-            &mut e.sess,
-            &tokens,
-            0,
-            spec_k_pin().filter(|&k| k > 0).unwrap_or(3),
-            None,
-            None,
-            None,
-        )
+        .spec_prime_settle(engine, &mut e.sess, &tokens)
         .map_err(|err| format!("prime failed: {err}"))?;
     if e.sess.committed.len() != to {
         return Err(format!(

@@ -50,6 +50,10 @@ pub struct MtpPrimeState {
     /// keeps the legacy prompt-end checkpoint from overwriting it.
     grid_rel: Option<usize>,
     grid_requested: bool,
+    /// EXACT RESUME SETTLE (WP-B day 44): trunk and draft fill only; no boundary token, no init
+    /// feed (a T=1 decode row), no draft preparation. `finish` commits the prompt rows to the
+    /// session directly, so every committed row is a prime-program row.
+    prime_only: bool,
     k: usize,
     sampling: SpecSampling,
     graph_draft: bool,
@@ -59,6 +63,11 @@ pub struct MtpPrimeState {
 }
 
 impl MtpPrimeState {
+    /// WP-B day 44: the settle's walk (trunk and fill only).
+    pub(crate) fn set_prime_only(&mut self) {
+        self.prime_only = true;
+    }
+
     /// WP-B day 39 addendum B: the walker has not yet run the chunk that ends on its turn
     /// checkpoint row, so that checkpoint's `Cache::snapshot` is still owed.
     pub fn owes_turn_checkpoint(&self) -> bool {
@@ -346,6 +355,7 @@ impl HybridModel {
             ckpt_rel,
             grid_rel,
             grid_requested,
+            prime_only: false,
             k,
             sampling: resolve_spec_sampling(sampling),
             graph_draft,
@@ -509,6 +519,10 @@ impl MtpPrimeWalker<'_> {
                 }),
                 _ => None,
             };
+        }
+        if s.prime_only {
+            // WP-B day 44: the settle's walk ends here: no boundary token, no init feed.
+            return Ok(());
         }
         let sp = s.sampling;
         let pen_on = sp.temp > 0.0
@@ -726,6 +740,23 @@ impl PrimeWalker for MtpPrimeWalker<'_> {
             return Err("MTP prime incomplete".into());
         }
         let mut s = self.state.take().ok_or("MTP prime already finalized")?;
+        if s.prime_only {
+            // WP-B day 44 (the exact resume's settle): commit the primed rows directly. The
+            // session holds exactly `committed` under the prime program; `last_h` is the hidden
+            // of the last row (the next prime's fill anchor), `next_pred` the prime logits' argmax.
+            let n = self.model.cfg.n_embd as usize;
+            let tp = s.prompt.len();
+            let h = s.hiddens.as_ref().ok_or("MTP hidden stack missing")?;
+            let mut last_h = self.e.uninit(n)?;
+            self.e
+                .copy_view_into(&mut last_h, 0, &h.slice((tp - 1) * n..tp * n), n)?;
+            self.sess.committed.extend_from_slice(&s.prompt);
+            self.sess.last_h = Some(last_h);
+            self.sess.next_pred = Some(argmax(&s.logits) as u32);
+            self.sess.pending_tok = None;
+            debug_assert_eq!(self.sess.cache.pos, self.sess.committed.len());
+            return Ok(());
+        }
         let mut ready = s.prepared.take().ok_or("MTP setup incomplete")?;
         ready.hiddens = s.hiddens.take();
         ready.wall = s.wall;
@@ -766,6 +797,7 @@ mod tests {
             ckpt_rel,
             grid_rel: None,
             grid_requested: false,
+            prime_only: false,
             k: 1,
             sampling: resolve_spec_sampling(None),
             graph_draft: false,

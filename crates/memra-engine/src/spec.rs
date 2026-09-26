@@ -10127,6 +10127,32 @@ impl HybridModel {
         Ok(Some(ckpt.pos))
     }
 
+    /// EXACT RESUME SETTLE (WP-B day 44): prime `tokens` onto the session with the MTP walker's
+    /// trunk and draft fill only (no boundary token, no init feed, no draft preparation), and
+    /// commit them. Every committed row is then a prime-program row, so a later prime from the
+    /// session's end is cold-exact by the grid law when the session ends on the grid.
+    pub fn spec_prime_settle(
+        &self,
+        e: &Engine,
+        sess: &mut SpecSession,
+        tokens: &[u32],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if tokens.len() < crate::hybrid_forward::PRIME_MIN_T {
+            return Err("settle prime below PRIME_MIN_T".into());
+        }
+        if sess.pending_tok.is_some() {
+            return Err("settle on a session with a carried pending token".into());
+        }
+        let mut state = Some(self.mtp_prime_start(e, sess, tokens, 1, None, None)?);
+        if let Some(s) = state.as_mut() {
+            s.set_prime_only();
+        }
+        let mut walker = self.mtp_prime_walker(e, sess, &mut state, None);
+        crate::prime_walker::advance_prime(&mut walker, false, |_, _| {})?;
+        crate::prime_walker::finish_prime(walker)?;
+        Ok(())
+    }
+
     /// `spec_rewind_to_checkpoint` that keeps the turn checkpoint on the session afterwards
     /// (WP-B day 44, the exact resume): the restore only copies FROM the snapshot, so the same
     /// checkpoint stays valid for a later rewind until the next prime walk captures a newer one.
