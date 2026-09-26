@@ -41,3 +41,34 @@ parks a capture source before its landing.
 **What each card decides.** The target card (the long demote's receipt kernel is the queue the seam waits behind).
 
 **Budget.** 0.5 agent-day: the lines 0.05, the mode and the sitting 0.1, the card 0.1, the design(s) 0.25.
+
+## 2. Step 1 as built (`17a1c8076`), and the price sitting prepared
+
+- The lines (log only):
+  - At submission, `PendingCapture` records the source cache's identity (its layer vector's heap address, which
+    stays stable while the cache moves between owners) and the copy-stream tickets the worker had in flight, by kind
+    (`host_copy_stream_in_flight`: demote, promote, restore, or `none`).
+  - The retire pass computes whether a retiring session's cache is the source, and the settle's why reads `a session
+    retire (source retiring: yes|no)`. The settle is unchanged: `Block`, before any session leaves `active`.
+  - The publish line gains `copy stream in flight at submission: ..`.
+  - The census `day62_the_retire_seam_lines_are_log_only` checks: the two new fields are read only by the why and
+    the line, and the `Block` settle still precedes the removal. The older retire census now finds the why by its
+    new literal.
+- CPU: server lib `936 passed; 0 failed; 26 ignored` (`day62/server-lib.log`); clippy `-D warnings`; fmt.
+- The modes `retire-seam` and `retire-seam-other` in `stall_cell.py`:
+  - Both share one untimed long seed in setup.
+  - Each timed intruder posts a fresh long prompt (max_tokens 1), whose insert demotes the resident long entry.
+  - The moment it returns, `retire-seam` posts one fresh 72-word prompt at max_tokens 1: the source shape, retiring
+    with its own capture pending.
+  - `retire-seam-other` posts two at once: a 72-word source at max_tokens 32, still decoding, and a second 72-word
+    prompt at max_tokens 1 that retires meanwhile: the no-source shape.
+  - The earlier modes are unchanged.
+- **The sitting** `pro-single-day62/`, receipts `/root/spill-receipts/a-d62`:
+  - `build.sh <tip>` builds the tip's server and checks both line wordings in `markers.txt`.
+  - `driver.sh` runs one collector hold: `prime`, `retire-seam`, `retire-seam-other`, o1 in that order x5 and o2
+    in reverse x5 (30 boots), with the prefix cache at 448 MB (the chain cell's long-entry shape),
+    `MEMRA_MAX_SESSIONS=4`, `MEMRA_KV_HOST_MB=8192`, door ON, then `day62-reading.py`.
+  - Its last line is `DAY62 SELECT -> ..`, by section 1's rule: the median hold above 1.0 ms in both orders selects
+    R1 for the no-source shape and R2 for the source shape. A shape that forms no line in an order is named and
+    selects nothing.
+  - About 35 minutes of card time.

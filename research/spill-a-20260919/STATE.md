@@ -1,4 +1,4 @@
-# WP-A resumable state (2026-09-26, stopped at NEED TARGET CARD: W's target sitting; W's 5090 cell running)
+# WP-A resumable state (2026-09-26, NEED TARGET CARD: W's target sitting (queued) and DAY62's price sitting)
 
 - Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ65 took `9ab479d9c` (DAY66); integ67 takes B1 after integ66.
 - Items 21 to 25 closed (DAY53 to DAY58); item 23's addendum F2b (`b4d6f95c2`) accepted.
@@ -19,7 +19,9 @@
     (untracked; bank it without `bins/`, and remove `bins/` when the cell closes). It holds the 5090 lock under the
     idle rule.
   - W is adopted only if both cards pass their clauses (and (a), (d)).
-- Pre-registered and waiting in order: item 13 (DAY62, the retire seam: lines, a price, R1
+- Item 13 (DAY62): step 1 lines built (`17a1c8076`); price sitting `pro-single-day62/` ready (`build.sh <tip>`,
+  then `driver.sh`, last line `DAY62 SELECT -> ..`), then the selected design(s).
+- Pre-registered and waiting in order: item 13's design (DAY62, the retire seam: lines, a price, R1
   or R2), items 14 and 19 (DAY63, design L; item 17 re-read on top), item 18 (DAY64), item 20 (DAY65, design T-H).
 - The owed 5090 cells (S4's half, V's half, item 16, and B1's (a1) and (a2) as a compatibility reading) queue on the
   5090.
