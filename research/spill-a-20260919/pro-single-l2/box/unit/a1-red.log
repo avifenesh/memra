@@ -1,0 +1,16 @@
+
+running 1 test
+test tier_transfer::tests::day63_a_dropped_lease_backs_the_next_same_class_lease ... [day63 red arm] a pooled backing keeps its capacity as its length
+
+thread 'tier_transfer::tests::day63_a_dropped_lease_backs_the_next_same_class_lease' (487629) panicked at crates/memra-engine/src/tier_transfer.rs:5505:42:
+called `Result::unwrap()` on an `Err` value: InvalidLayout
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    tier_transfer::tests::day63_a_dropped_lease_backs_the_next_same_class_lease
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 628 filtered out; finished in 1.16s
+

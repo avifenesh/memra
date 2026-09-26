@@ -259,3 +259,40 @@ W's hold runs its timed boots, nothing of this lane builds.
   - About 1.75 hours of card time.
 - T-H's sitting (DAY65 section 2) has L in its base and waits for L's verdict. Its `build.sh <tip> 1cba80185` stays
   valid on the tip, since L' is L's code.
+
+## 6. L''s sitting, read as registered: ADOPT; the gate change stands
+
+- Run by the lead on one RTX PRO 6000 Blackwell Workstation card (a 16-core host), `build.sh 21984b527 217ace3fd`
+  then `driver.sh`, to 14:26Z. Mirror `pro-single-l2/box/`: 913 receipts, sha256-checked against the box manifest (0
+  mismatches); the seven executables are recorded by hash. `markers.txt`: the red and redgate markers are present in
+  their binaries and absent from l's. Start temperatures 47 C to 68 C.
+- Verbatim (`box/reading-l2.log`):
+
+      L (a) gates {'contract-fault-plain': '0', 'contract-fault': '0', 'failure-off': '0', 'failure-on': '0', 'hitgate-off': '0', 'hitgate-on': '0', 'identity-default-off': '0', 'identity-default-on': '0', 'identity-plain-off': '0', 'identity-plain-on': '0', 'pause-demote': '0'}
+      L READING cell=chain order=o1 twin kv base=9.78 l=0.05 ms (N=95) | long leases base=26.27 l=0.04 ms (N=95, pooled median 32) | stall base=94.91 l=68.26 | e2e base=151.0 l=124.3 | chain base=282.4 l=245.9 ms
+      L READING cell=demote order=o1 first spans base=28.83 l=0.18 ms (N=5) | boot staging l=28.6 ms | stall base=63.88 l=64.15 | e2e base=175.4 l=175.9 ms
+      L READING cell=chain order=o2 twin kv base=9.87 l=0.05 ms (N=95) | long leases base=26.27 l=0.04 ms (N=95, pooled median 32) | stall base=95.05 l=68.36 | e2e base=151.0 l=124.3 | chain base=282.4 l=246.1 ms
+      L READING cell=demote order=o2 first spans base=28.50 l=0.17 ms (N=5) | boot staging l=28.9 ms | stall base=63.94 l=64.18 | e2e base=175.5 l=175.6 ms
+      L (b) PASS [True, True]
+      L (c) PASS [True, True]
+      L (d) PASS [True, True, True, True]
+      L VERDICT -> ADOPT (L is the naked program)
+      L2 GATE RED ARM rc=1 staging-fill FAILs=2 of 2 marker=True -> caught (as required)
+      L2 VERDICT -> ADOPT (L' is the naked program; the gate change stands)
+
+- Read:
+  - All 11 gates pass with the changed staging-fill checks. The gate change's red arm is caught: both checks fail
+    on the binary whose refusals drop their staging buffers.
+  - The chain cell: the replaced twin's `kv` drop falls from 9.8 to 0.05 ms, the long `leases` from 26.3 to 0.04 ms
+    (32 of 32 pooled), the tenant's stall from 95.0 to 68.3 ms, the chain's first request from 151.0 to 124.3 ms and
+    the chained request from 282.4 to 246.0 ms.
+  - The demote cell: the first demote's `spans` falls from 28.7 to 0.17 ms, and the boot pays 28.6 to 28.9 ms for the
+    staging set instead.
+  - This sitting's chain e2e numbers are lower than the refuted L sitting's (base 151.0 against 199.5). They are the
+    same cell on another box session; only the same sitting's base and l are compared.
+- **Adopted** as registered: L' is the naked program, and the fault gate's changed checks stand.
+  - L' and R1 go to integ69.
+  - **Items 14 and 19 close.** No `cuMemFreeHost` and no fresh pinned allocation reach the serving path in the steady
+    state, and the staging set is allocated at boot.
+  - The growth phase (before any entry leaves the tier) still allocates fresh, as section 1 stated.
+- The 5090 half follows under the per-hardware rule. Item 17 is re-read on top of L' (DAY67).
