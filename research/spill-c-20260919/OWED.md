@@ -96,8 +96,12 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   the 5090 as new holds (i15 void with a foreign compute app on the card; gap15 inadmissible again). The target card
   (BOX29, `DAY72.md` section 3): `DAY72 GAP15 VERDICT rig=pro-single integrity=ok admissible=yes partA=cpu_side
   partB=gpu_stall`: the door's GPU work equals REF's and its GPU waits on the door's prefetch path. Day 75
-  (`DAY75.md`): I16 (`eeacfaf50`, the door's next-expert prefetch issued after the current expert's launch), CPU gates
-  green, card cell `i16` ready (`day75-box.sh`, the 285K class); the 5090's half in queue v12. Open.
+  (`DAY75.md`): I16 (`eeacfaf50`, the door's next-expert prefetch issued after the current expert's launch) read on
+  BOX29 `DAY75 VERDICT rig=pro-single integrity=ok i16=regresses door=i15 vs_ref=loses` (admissible; the next
+  expert's copy exposed) and reverted (`26aa54c12`); the 5090's `i16` inadmissible. Day 77 (`DAY77.md`): I17
+  (`d4ab19f1d`, the group's residency and staging each in one owner-registry entry, the same program), CPU gates
+  green, the profile 70 to 150 ns per block below I15; card cell `i17` ready (`day77-box.sh`, the 285K class); the
+  5090's half in queue v13. Open.
 
 ## C12. The door's sensitivity to its owner thread's host placement (the 9950X class)
 
@@ -136,9 +140,13 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   (`DAY74.md`): compaction induced on purpose in half the runs of REF and the door, cell `induce`, sitting ready
   (`day74-box.sh`): BOX31 `not_run` (page cache), then `not_induced` (every huge-page burst came back whole); BOX29
   `void` (no `RDPRU` on Intel). `DAY74.md` section 4 registers `induce-b` (all but 2 GiB of free memory fragmented,
-  the artifact reread before every run, the wall-time state on Intel), ready (`day74b-box.sh`). Open: `induce-b` on a
-  9950X machine and the 285K class, each with at least 98 GiB `MemFree`; DAY71's default half on BOX15's machine,
-  then the class line.
+  the artifact reread before every run, the wall-time state on Intel), ready (`day74b-box.sh`); on BOX29 (285K):
+  `not_induced` by rule (REF+I 0 of 6), and beside it the 285K's first slow state: the 3 door+I runs with compaction
+  in their span, 1.48x slower per chain step from the gate on, REF never compacting (`DAY74.md` section 5). Day 76
+  (`DAY76.md`): does the door's one large pinned allocation draw the compaction: the diagnostic flag
+  `--expert-bank-pool-chunk-bytes` (`7a162e6b7`, decide-by 2026-10-10) and cell `chunk` (REF+I, D+I, DC+I under the
+  fragmentation), ready (`day76-box.sh`, the 285K class). Open: `chunk` on the 285K; `induce-b` on a 9950X with at
+  least 98 GiB `MemFree`; DAY71's default half on BOX15's machine, then the class line.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 
