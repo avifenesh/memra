@@ -51936,6 +51936,13 @@ mod tests {
             })
     }
 
+    /// WP-A day 63 (`DAY63.md` section 7, design L1.2): the pinned charge of `gpu_entry`'s six KV
+    /// leases, each charged its size class (three planes of 8 rows: K 272 bytes, V 192 bytes).
+    fn gpu_lease_charge() -> u64 {
+        use memra_engine::tier_transfer::lease_class;
+        3 * (lease_class(8 * 34) + lease_class(8 * 24)) as u64
+    }
+
     fn gpu_used(host: &super::HostPrefixCache) -> (u64, u64, u64) {
         let used = host.tier.as_ref().unwrap().governor.lock().unwrap().used();
         (used.pinned, used.inflight, used.device.iter().sum())
@@ -52175,7 +52182,7 @@ mod tests {
         assert!(gpu_entry_whole(&engine, &entry, &want));
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "six leases hold the pinned charge"
         );
         drop(image);
@@ -52668,8 +52675,10 @@ mod tests {
             first,
             "the second span needs a second buffer"
         );
-        // A co-tenant charge that leaves room for the six KV destinations and ONE staging buffer.
-        let kv_bytes = 3 * 8 * 58;
+        // A co-tenant charge that leaves room for the six KV destinations and ONE staging buffer
+        // (DAY63 section 7: the pinned capacity is three budgets, design L1.5, and each KV lease is
+        // charged its size class, design L1.2).
+        let kv_bytes = gpu_lease_charge();
         let governor = host.tier.as_ref().unwrap().governor.clone();
         let hog = {
             let dimensions = governor.lock().unwrap().used().device.len();
@@ -52679,7 +52688,7 @@ mod tests {
                 deadline: Deadline(u64::MAX),
                 tenant: hostprefix::tenant_salt("co-tenant"),
             };
-            request.bytes.pinned = 2 * (1u64 << 30) - kv_bytes - first;
+            request.bytes.pinned = 3 * (1u64 << 30) - kv_bytes - first;
             hostprefix::ResidentCharge::reserve(governor.clone(), &request).unwrap()
         };
         let why = match super::host_entry_from_device(
@@ -52923,7 +52932,7 @@ mod tests {
         .map(super::HostImage::whole)
         .expect("a clean demote after the aborted ticket");
         assert!(gpu_entry_whole(&engine, &entry, &want));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
     }
@@ -52948,7 +52957,7 @@ mod tests {
                 .all(|p| p.k.receipt().is_some() && p.v.receipt().is_some()),
             "every plane crossed through the contract"
         );
-        assert_eq!(gpu_used(host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(host), (gpu_lease_charge(), 0, 0));
         image
     }
 
@@ -53014,12 +53023,12 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "the twins dropped with retire_source, the destinations left the registry, in-flight \
              released"
         );
         drop(promoted);
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
     }
@@ -53059,14 +53068,14 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "nothing but the image's leases charged after the unwind"
         );
         let promoted = super::device_entry_from_host(&engine, &image, route)
             .expect("a clean promote after the refusal");
         assert!(gpu_entry_whole(&engine, &promoted, &want));
         gpu_image_intact_and_sole_owner(&mut image, &want);
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(promoted);
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -53108,13 +53117,13 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "in-flight released by retire, twins by retire_source, destinations by take_plane"
         );
         let promoted = super::device_entry_from_host(&engine, &image, route)
             .expect("a clean promote after the aborted ticket");
         assert!(gpu_entry_whole(&engine, &promoted, &want));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(promoted);
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -53156,13 +53165,13 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "the cancelled ticket retired: in-flight released, destinations released"
         );
         let promoted = super::device_entry_from_host(&engine, &image, route)
             .expect("a clean promote once the bytes match the receipt again");
         assert!(gpu_entry_whole(&engine, &promoted, &want));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(promoted);
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -53207,13 +53216,13 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "the ticket retired, every fresh destination released, the twins dropped"
         );
         let promoted = super::device_entry_from_host(&engine, &image, route)
             .expect("a clean promote after the partial acceptance");
         assert!(gpu_entry_whole(&engine, &promoted, &want));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(promoted);
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -53260,13 +53269,13 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "in-flight released by retire against the consumer fence, destinations released"
         );
         let promoted = super::device_entry_from_host(&engine, &image, route)
             .expect("a clean promote after the aborted published ticket");
         assert!(gpu_entry_whole(&engine, &promoted, &want));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge(), 0, 0));
         drop(promoted);
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -53409,7 +53418,7 @@ mod tests {
             assert_eq!(set.charged, span_bytes, "charged once, at allocation");
         }
         drop((shell, landed));
-        assert_eq!(gpu_used(&host), (3 * 8 * 58 + span_bytes, 0, 0));
+        assert_eq!(gpu_used(&host), (gpu_lease_charge() + span_bytes, 0, 0));
         drop(image);
         host.disable("day-32 cell: the latch releases the staging charge");
         assert_eq!(gpu_used(&host), (0, 0, 0));
@@ -53477,7 +53486,7 @@ mod tests {
         gpu_image_intact_and_sole_owner(&mut image, &want);
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58, 0, 0),
+            (gpu_lease_charge(), 0, 0),
             "nothing in flight, nothing leaked"
         );
         let (mut shell, kv, draft) = settle(&host, &image).expect("the next clean promote");
@@ -53649,7 +53658,7 @@ mod tests {
         }
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58 + span_bytes, 0, 0),
+            (gpu_lease_charge() + span_bytes, 0, 0),
             "nothing in flight, no destination charged"
         );
         gpu_image_intact_and_sole_owner(&mut image, &want);
@@ -53736,7 +53745,7 @@ mod tests {
         }
         assert_eq!(
             gpu_used(&host),
-            (3 * 8 * 58 + span_bytes, 0, 0),
+            (gpu_lease_charge() + span_bytes, 0, 0),
             "the ledger is clean"
         );
         gpu_image_intact_and_sole_owner(&mut image, &want);
