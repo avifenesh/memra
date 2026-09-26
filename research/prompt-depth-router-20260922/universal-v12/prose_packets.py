@@ -89,6 +89,8 @@ def freeze(args):
             selected["status"] != "selected"
             or arms["selected_from_validation"]
             != sha(args.arms.with_name("shared-selected.json"))
+            or sha(args.judge_config)
+            != selected["judge_config_sha256"]
         ):
             raise ValueError("final prose judge lacks shared selection")
         candidate = selected["selected_policy"]["label"]
@@ -183,12 +185,16 @@ def packets(args):
 
 def main():
     parser = argparse.ArgumentParser()
-    for name in ("root", "workloads", "arms", "template", "out"):
+    for name in (
+        "root", "workloads", "arms", "template", "judge-config", "out",
+    ):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--phase", choices=("validation", "final"),
                         required=True)
     args = parser.parse_args()
-    for name in ("root", "workloads", "arms", "template", "out"):
+    for name in (
+        "root", "workloads", "arms", "template", "judge_config", "out",
+    ):
         setattr(args, name, getattr(args, name).resolve())
     manifest, entries = packets(args)
     args.out.mkdir(exist_ok=False)

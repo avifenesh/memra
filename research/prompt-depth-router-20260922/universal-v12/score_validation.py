@@ -247,6 +247,7 @@ def score(args):
         or prose["arms_sha256"] != sha(args.arms)
         or prose["workloads_sha256"] != WORKLOAD_SHA
         or prose["packets_manifest_sha256"] == ""
+        or not prose["judge_config_sha256"]
     ):
         raise ValueError("mixed validation quality receipt differs")
     quality = hashlib.sha256(
@@ -259,6 +260,7 @@ def score(args):
         "model_manifest_sha256": arms["model_manifest_sha256"],
         "source_manifest_sha256": WORKLOAD_SHA,
         "quality_sha256": quality,
+        "judge_config_sha256": prose["judge_config_sha256"],
         "domains": {
             domain: report(
                 args.root, domain, arms, tasks, prose,

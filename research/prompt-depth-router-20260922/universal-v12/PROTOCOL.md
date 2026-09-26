@@ -60,6 +60,13 @@ separate sealed commitment.
    remain observational; C labels come only from actual offers.
    Source-specific complete-request rates price K utility, while
    same-GPU randomized rounds price D/C actions.
+   The fresh prose collector runs K=3/10/20 fixed-D3 and randomized-D
+   sessions plus one randomized-K session on each of 16 training
+   conversations. The fit pools those labels with the pinned code and
+   V11 non-code rows. Candidate weights use the same bounded prompt
+   prefix, generated-token history, and prior-turn features at runtime.
+   A prose-balanced candidate explicitly triples the weight of fresh
+   prose rows during fitting; validation remains disjoint and unweighted.
 2. Before validation, freeze one candidate inventory and a bounded
    fixed C/K/D menu that includes D=1/2 as controls, plus exact
    model-running no-op twins. Hold the target sampler at top-k 20,
@@ -67,6 +74,11 @@ separate sealed commitment.
    `max_new=4096`, `ctx=65536`, full embedded MTP engagement and
    eight-turn native KV receipts. Price and tag the rental under
    the development-provider policy before allocating it.
+   The menu contains nine fixed controls including K=3, D=1/2/3/4
+   and three C cutoffs measured from training offers, plus three
+   selectable joint C/K/D candidates, two component diagnostics,
+   and their exact model-running no-op twins. The K-only and C/D-only
+   diagnostics cannot become the selected universal controller.
 3. Score every arm on the **same** mixed validation conversations.
    Choose one global fixed control among quality-eligible fixed arms
    by pooled returned tokens / complete native request seconds.
@@ -104,7 +116,9 @@ the pool rises. No exact-loop conversation enters a rate; caps,
 loops and actual K/D/C action counts remain visible.
 
 Code quality uses two hidden MBPP tests per task, format and syntax
-checks in a credential-free bounded execution environment. Math
+checks in a credential-free bubblewrap namespace with no network or
+host data mounted. The sandbox must pass a runtime preflight before
+any generated code is executed. Math
 quality requires a complete numeric `#### <number>` final line.
 Prose quality uses the frozen WildBench checklist for the current
 standalone prompt in a blinded pairwise comparison, with both
@@ -120,3 +134,6 @@ Sampled target-distribution parity and vendor-default endpoint
 qualification are additional requirements before a serving
 setting changes. A bounded final result does not prove optimal
 C/K/D choices for every possible prompt.
+Report the actual K/D/C action counts. If K never varies, the
+result cannot be called adaptive K, even if a learned C/D controller
+improves the global rate.

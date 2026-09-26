@@ -71,6 +71,7 @@ def inspect(validation, arms_path):
         or len(labels) != len(by_label)
         or len(labels) < 8
         or not SHA.fullmatch(score["quality_sha256"])
+        or not SHA.fullmatch(score["judge_config_sha256"])
         or not SHA.fullmatch(arms["source_manifest_sha256"])
         or not SHA.fullmatch(arms["model_manifest_sha256"])
         or score["model_manifest_sha256"]
@@ -91,6 +92,16 @@ def inspect(validation, arms_path):
     }
     if not REQUIRED_FIXED.issubset(fixed) or not learned or not noops:
         raise ValueError("mixed validation lacks bounded fixed or learned controls")
+    selectable = {
+        label for label in learned
+        if by_label[label].get("selectable") is True
+        and by_label[label].get("arm") == "joint-ckd"
+    }
+    if not selectable or any(
+        by_label[label].get("selectable") not in (False, True)
+        for label in learned
+    ):
+        raise ValueError("mixed validation has no shared C/K/D candidate")
     if any(
         not SHA.fullmatch(by_label[label]["policy_sha256"])
         or by_label[label]["noop_label"] not in noops
@@ -120,11 +131,13 @@ def inspect(validation, arms_path):
                 raise ValueError(f"{domain} fixed quality or rate differs: {label}")
     if not SHA.fullmatch(score["domains"]["prose"]["judge_receipt_sha256"]):
         raise ValueError("prose quality lacks pinned checklist judge")
-    return score, arms, by_label, fixed, learned
+    return score, arms, by_label, fixed, learned, selectable
 
 
 def choose(validation, arms_path):
-    score, arms, by_label, fixed, learned = inspect(validation, arms_path)
+    score, arms, by_label, fixed, learned, selectable = inspect(
+        validation, arms_path,
+    )
     domains = score["domains"]
     global_fixed_options = [
         label for label in fixed
@@ -144,7 +157,7 @@ def choose(validation, arms_path):
         for domain in DOMAINS
     }
     candidates = []
-    for label in sorted(learned):
+    for label in sorted(selectable):
         margins = {}
         for domain in DOMAINS:
             result = domains[domain]
@@ -217,6 +230,7 @@ def choose(validation, arms_path):
         "source_manifest_sha256": arms["source_manifest_sha256"],
         "model_manifest_sha256": arms["model_manifest_sha256"],
         "quality_sha256": score["quality_sha256"],
+        "judge_config_sha256": score["judge_config_sha256"],
         "global_fixed": global_fixed,
         "domain_best_fixed_diagnostic": domain_best_fixed,
         "selected_policy": chosen,

@@ -32,6 +32,8 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
                 "label": label, "role": "learned",
                 "noop_label": NOOPS[label],
                 "policy_sha256": policy,
+                "selectable": True,
+                "arm": "joint-ckd",
             },
             {
                 "label": NOOPS[label], "role": "noop",
@@ -90,6 +92,7 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
         "arms_sha256": select_shared.sha(arms),
         "model_manifest_sha256": "d" * 64,
         "quality_sha256": "e" * 64,
+        "judge_config_sha256": "f" * 64,
         "domains": domains,
     })
     return score, arms
