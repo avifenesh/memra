@@ -28,7 +28,10 @@ DRAM dependent-load chases on the main thread after every timed phase, `DAY67.md
 Day 71 adds `run-gen --cpu-probe-counters` (log only, with `--cpu-probe-phases`: the thread's TSC and its CPU's MPERF
 and APERF, read with `RDPRU`, around each phase chain; `counters=unavailable` on a CPU without it) and `run-gen
 --cpu-probe-counters-check` (one counted chain, then exit before any engine work), `DAY71.md`, decide-by 2026-10-09
-(14 days after landing); they go with the probe when OWED C12 closes.
+(14 days after landing); they go with the probe when OWED C12 closes. Day 76 adds `run-gen
+--expert-bank-pool-chunk-bytes=<N>` (a diagnostic door, with the door only: the pinned host pool made of allocations
+of at most N bytes; without it the one allocation), `DAY76.md`, decide-by 2026-10-10; it goes when C12 closes, or
+becomes the default by its own registration if it clears the compaction state and qualifies.
 
 Day 40 (`DAY40.md` section 2): `--expert-bank-stages` (no value, requires the door) installs
 the door's log-only stage clock, an explanatory diagnostic: `Instant` brackets around every

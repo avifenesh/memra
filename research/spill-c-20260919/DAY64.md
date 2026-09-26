@@ -281,3 +281,14 @@ C, SM median 1590 MHz, N=2515. Verbatim:
 halves the owner's demand against I13S on this card too (0.141 against 0.260 ms per window token; `stage` 0.084 on
 33.3 stages). The 5090 half of the i15 question stays open. The same cell runs again on this card as a new hold
 (queue v11, `rtx5090-day64-rerun1/`), read by the same clause; the ceiling does not move.
+
+### 6a. The RTX 5090 rerun (queue v11, 2026-09-26 02:55Z to 03:09Z; `rtx5090-day64-rerun1/i15/`)
+
+The same cell as section 6, a new hold. Verbatim: `DAY64 ADMISSIBILITY rig=rtx5090 ceiling=0.005 max_iqr_gen=0.2238
+max_iqr_window=0.9712 failing=[...every arm...] -> inadmissible`, `DAY64 VERDICT rig=rtx5090 integrity=ok -> void
+(inadmissible)`. The cause is on record: from `o2-i13-r1.before.snap` (03:03:03Z) on, 47 run-boundary snapshots show a
+compute app on the card that the cell did not start and that took no rig lock (`279749,
+/home/avifenesh/projects/colbert-2/.venv/bin/python, 2072 MiB`, verbatim), and five runs of order 2 took 1.2 to 4.6 s
+gen-only against about 0.37. Void, recorded; the process was not touched. Note: an intermediate snapshot of this
+directory, taken while the cell was running, went into commit `d36857771` by mistake; the directory's final state is
+committed with this record, and `MIRROR` checks do not apply (it is a local cell).

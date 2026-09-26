@@ -1568,28 +1568,30 @@ impl MoeSlotCache {
         let mut chosen = [(BlockId::new(0, 0, 0), 0usize, 0usize); memra_tier::bank::MAX_GROUP];
         let mut locals = [((0u16, 0u8, 0u16), 0usize); memra_tier::bank::MAX_GROUP];
         let mut taken = 0;
-        for &(id, bytes) in wanted {
+        let mut asked = [(0u16, 0u8, 0u16); memra_tier::bank::MAX_GROUP];
+        for (n, &(id, bytes)) in wanted.iter().enumerate() {
             let local = (id.layer, id.proj, id.ex);
             if !self.banked_validated.holds(id, bytes) {
-                if let Err(err) = bank.validate(local, bytes) {
-                    self.release_chosen(&chosen[..taken]);
-                    return Err(err.into());
-                }
+                bank.validate(local, bytes)?;
                 self.banked_validated.insert(id, bytes);
             }
-            let asking = self.dispatch_clock.is_some().then(std::time::Instant::now);
-            let resident = bank.host_resident(local);
-            let reserving = self.dispatch_clock_mark(asking, |c, ns| c.pf_resident_ns += ns);
-            match resident {
-                Ok(true) => {}
-                Ok(false) => continue,
-                Err(err) => {
-                    self.release_chosen(&chosen[..taken]);
-                    return Err(err.into());
-                }
+            asked[n] = local;
+        }
+        // DAY77 (I17): the group's host residency in one registry entry; reserving a GPU slot
+        // touches no host state, so the answers are the ones one query per member gave.
+        let asking = self.dispatch_clock.is_some().then(std::time::Instant::now);
+        let resident = bank.host_resident_many(&asked[..wanted.len()]);
+        let mut reserving = self.dispatch_clock_mark(asking, |c, ns| c.pf_resident_ns += ns);
+        let resident = resident?;
+        for (n, &(id, bytes)) in wanted.iter().enumerate() {
+            let local = asked[n];
+            if !resident[n] {
+                continue;
             }
             let reserved = self.reserve_prefetch_slot(bytes, keep);
-            self.dispatch_clock_mark(reserving, |c, ns| c.pf_reserve_ns += ns);
+            reserving = self
+                .dispatch_clock_mark(reserving, |c, ns| c.pf_reserve_ns += ns)
+                .or(reserving);
             let Some(slot) = reserved else {
                 continue;
             };
@@ -1626,12 +1628,14 @@ impl MoeSlotCache {
         self.next_group += 1;
         let mut last_ready: Option<Arc<CudaEvent>> = None;
         let mut staged = 0;
-        for (index, &(id, bytes, slot)) in chosen.iter().enumerate() {
-            let copied = bank.with_bytes_at(&token, index, |payload| {
-                stage_on_copy_stream(e, payload, &mut self.slots[slot])
-            });
-            match copied {
-                Ok(Ok(ready)) => {
+        // DAY77 (I17): every member staged in one registry entry, in order; each member's copy and
+        // record exactly as one `with_bytes_at` per member did.
+        let mut entered = 0;
+        let walked = bank.with_bytes_each(&token, |index, payload| {
+            entered = index + 1;
+            let (id, bytes, slot) = chosen[index];
+            match stage_on_copy_stream(e, payload, &mut self.slots[slot]) {
+                Ok(ready) => {
                     self.occupant[slot] = Some(id);
                     self.pending.insert(
                         id,
@@ -1648,36 +1652,42 @@ impl MoeSlotCache {
                     if let Some(clock) = self.bank_clock.as_mut() {
                         clock.prefetches += 1;
                     }
+                    Ok(())
                 }
-                Ok(Err((err, reusable))) => {
-                    // The members after this one were never staged: their slots go back.
-                    self.release_chosen(&chosen[index + 1..]);
-                    if reusable {
-                        // The copy stream drained: this slot is free and every staged member's
-                        // copy landed.
-                        self.release_reserved_slot(slot);
-                        match last_ready {
-                            Some(last_ready) => self.keep_group(group, token, staged, last_ready),
-                            None => bank.finish_group(&token)?,
-                        }
-                    } else {
-                        // Unknown copy completion: this slot stays outside every table and the
-                        // whole group's lease stays open; the copy stream is marked for Drop's
-                        // drain.
-                        self.copy_stream_unknown = true;
-                        self.banked_pending = Some(BankedLease::Group(token));
+                Err(failed) => Err((index, failed)),
+            }
+        });
+        match walked {
+            Ok(Ok(())) => {}
+            Ok(Err((index, (err, reusable)))) => {
+                let slot = chosen[index].2;
+                // The members after this one were never staged: their slots go back.
+                self.release_chosen(&chosen[index + 1..]);
+                if reusable {
+                    // The copy stream drained: this slot is free and every staged member's
+                    // copy landed.
+                    self.release_reserved_slot(slot);
+                    match last_ready {
+                        Some(last_ready) => self.keep_group(group, token, staged, last_ready),
+                        None => bank.finish_group(&token)?,
                     }
-                    self.dispatch_clock_mark(staging, |c, ns| c.pf_stage_ns += ns);
-                    return Err(err);
-                }
-                Err(err) => {
-                    // The registry refused the borrow: the lease stays open and further
-                    // admissions refuse (fail closed).
-                    self.release_chosen(&chosen[index..]);
+                } else {
+                    // Unknown copy completion: this slot stays outside every table and the
+                    // whole group's lease stays open; the copy stream is marked for Drop's
+                    // drain.
+                    self.copy_stream_unknown = true;
                     self.banked_pending = Some(BankedLease::Group(token));
-                    self.dispatch_clock_mark(staging, |c, ns| c.pf_stage_ns += ns);
-                    return Err(err.into());
                 }
+                self.dispatch_clock_mark(staging, |c, ns| c.pf_stage_ns += ns);
+                return Err(err);
+            }
+            Err(err) => {
+                // The registry refused the borrow (before member `entered` was lent): the lease
+                // stays open and further admissions refuse (fail closed).
+                self.release_chosen(&chosen[entered..]);
+                self.banked_pending = Some(BankedLease::Group(token));
+                self.dispatch_clock_mark(staging, |c, ns| c.pf_stage_ns += ns);
+                return Err(err.into());
             }
         }
         self.dispatch_clock_mark(staging, |c, ns| c.pf_stage_ns += ns);

@@ -113,3 +113,45 @@ host-to-device copies and 45.57 MB per window token in every run). The door's GP
 less than REF's (its expert kernels run slightly shorter) and idle 0.16 ms more: the GPU waits on something between
 kernels in the door's decode that it does not wait on in REF's, with no extra copy time exposed. That is the kind of
 reading the target card's Part B is registered to decide.
+
+## 3. The target card (BOX29, the 285K class, run by the lead as registered; `pro-single-day72/`)
+
+The lead ran `D72_BUILDS="i15=2243b1fe2" bash .../day72-box.sh` on BOX29 (a Core Ultra 9 285K, 188 GB, one RTX PRO
+6000 Blackwell Workstation Edition), on the tree `d36857771`, after lane B's sitting on the same card, 05:14Z to
+`box done 2026-09-26T05:24:39Z`. Receipts: 218 of 218 `OK` against `box-mirror-manifest.sha256` (re-checked;
+`MIRROR-CHECK.txt`), the ELF by hash; the eight profiler reports and exports (about 330 MB) by hash only in
+`profiles.sha256`, not in the repository; the four window-row files in `gap15/ev/`. Regime: 35 to 48 C, SM median
+2617 MHz, N=1808. Verbatim (`gap15/reading.log`):
+
+- `DAY72 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0012 max_iqr_window=0.0010 failing=[] -> admissible`
+- `DAY60 GAP CHECKS rig=pro-single runs=40 integrity=ok`
+- `DAY60 R1 window_gap_ms_per_token on_minus_ref pooled=+0.172 o1=+0.156 o2=+0.188 | medians ref=0.226 refc=0.226 on=0.232 onc=0.232 (N=10 each)`
+- `DAY60 R2 instrument_ms_per_token refc_minus_ref=+0.000 onc_minus_on=+0.016 bound=0.017 -> within_bound`
+- `DAY60 R3 window per token: dispatch_ns=-0.008 prefetch_ns=+0.266 pf_reserve_ns=+0.000 pf_stage_ns=+0.021 pf_retire_ns=+0.030 pf_resident_ns=+0.046 pf_demand_ns=+0.154 | ...`
+- `DAY60 R4 window wall_gap=+0.172 cpu_gap=+0.258 residual=-0.087 top=prefetch_ns (+0.266) -> cpu_side`
+- `DAY72 B door_minus_ref per window token (ms, medians of two): gpu_busy=+0.0007 gpu_idle=+0.3899 kernel_sum=+0.0003 h2d_busy=+0.0241 h2d_exposed=+0.0268 h2d_count=+0.1406 h2d_mb=+0.0892`
+- `DAY72 B3 kernels differing most (door minus ref, ms per window token): qmatvec_q6_K_mmvq_rp=+0.0041, qmatvec_q8_0_mmvq_fused2=-0.0027, qmatvec_expert_q8=+0.0023, router_gemv_f32_w8=-0.0014, qmatvec_q8_0_mmvq_rp_g2=-0.0013`
+- `DAY72 B rule: half of Part A's window_gap=+0.0860 ms per token`
+- `DAY72 GAP15 VERDICT rig=pro-single integrity=ok admissible=yes partA=cpu_side partB=gpu_stall`
+
+**Read as registered: admissible, `partA=cpu_side`, `partB=gpu_stall`.** The two parts agree and together say where the
+gap is. The door's GPU work is the same as REF's (kernel time within 0.0003 ms per window token, the same kernels,
+0.14 more copies per token and 0.03 ms more exposed copy time), and the GPU sits idle 0.39 ms per window token longer
+under the profiler: the GPU waits for work the CPU has not yet issued. The CPU brackets say which work: the door's
+prefetch path is 0.266 ms per window token longer than REF's, most of it the owner's demand for the host-hit lease
+(`pf_demand_ns` +0.154, 1.7 us per issued prefetch), then the residency check (+0.046), the retire (+0.030) and the
+copy enqueue (+0.021). So the gap is the door's prefetch path delaying the next kernels' launch: CPU work on the
+critical path, not a GPU program. I14 and I15 halved the stage-clock parts of that path without moving the wall
+because the parts they cut were overlapped; what is left, measured by the dispatch clock, still sits before a launch.
+
+**What follows (section 1).** The improvement this points to is its own registration: `DAY75.md`, before any code.
+
+## 2a. The RTX 5090 rerun (queue v11, 2026-09-26 03:09Z to 05:17Z; `rtx5090-day72-rerun1/gap15/`)
+
+The same cell and binary as section 2, a new hold, no compute app on the card at any run boundary. Regime: 64 to 72 C,
+SM median 1590 MHz, N=2019. Verbatim: `DAY72 ADMISSIBILITY rig=rtx5090 ceiling=0.005 max_iqr_gen=0.0070
+max_iqr_window=0.0040 failing=['onc:gen_s=0.0070'] -> inadmissible`, `DAY72 GAP15 VERDICT rig=rtx5090 integrity=ok
+admissible=no partA=cpu_side partB=gpu_stall`. Inadmissible again (one arm's spread, 0.0070), so it decides nothing on
+this card; the ceiling does not move. Beside it, deciding nothing: the same picture as the target card (`cpu_gap`
++0.329 against a +0.234 wall gap, `top=prefetch_ns`; under the profiler the door's GPU idles 0.28 ms per window token
+more with its kernel time 0.10 lower). The 5090 half of this attribution rides with DAY75's 5090 cell.

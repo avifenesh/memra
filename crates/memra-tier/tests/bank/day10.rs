@@ -134,7 +134,8 @@ fn expert_bank_cli_parses_only_behind_the_door() {
         Ok(Some(ExpertBankBudget {
             host_bytes: 1,
             gpu_bytes: None,
-            stage_clock: false
+            stage_clock: false,
+            pool_chunk_bytes: None,
         }))
     );
     assert_eq!(
@@ -146,7 +147,8 @@ fn expert_bank_cli_parses_only_behind_the_door() {
         Ok(Some(ExpertBankBudget {
             host_bytes: 256 * 1024 * 1024,
             gpu_bytes: Some(6_881_344),
-            stage_clock: false
+            stage_clock: false,
+            pool_chunk_bytes: None,
         }))
     );
     assert_eq!(
@@ -158,7 +160,8 @@ fn expert_bank_cli_parses_only_behind_the_door() {
         Ok(Some(ExpertBankBudget {
             host_bytes: 268_435_456,
             gpu_bytes: Some(6_021_176),
-            stage_clock: false
+            stage_clock: false,
+            pool_chunk_bytes: None,
         }))
     );
     // Usage errors, never silent: budget without the door, bare flag, junk, negative, repeat.
@@ -215,14 +218,51 @@ fn expert_bank_cli_parses_only_behind_the_door() {
         ])),
         Err(
             "unknown expert bank flag \"--expert-bank-host-bytes-x\"; expected \
-             --experts-via-tier, --expert-bank-host-bytes=<bytes>, --expert-bank-gpu-bytes=<bytes> \
-             or --expert-bank-stages"
+             --experts-via-tier, --expert-bank-host-bytes=<bytes>, --expert-bank-gpu-bytes=<bytes>, \
+             --expert-bank-pool-chunk-bytes=<bytes> or --expert-bank-stages"
                 .to_owned()
         )
     );
     // The exact key still parses next to a look-alike-free argv, and the slot pad is shared.
     assert_eq!(SLOT_TAIL_PAD_BYTES, 8);
     assert_eq!(gpu_slot_bytes(RECORD), Some(RECORD + 8));
+}
+
+/// Day 76: `--expert-bank-pool-chunk-bytes` (a diagnostic door) parses only behind the door,
+/// needs a positive byte count, refuses a repeat, and leaves the other budgets as they were.
+#[test]
+fn expert_bank_pool_chunk_parses_only_behind_the_door() {
+    assert_eq!(
+        expert_bank_cli(argv(&[
+            "--experts-via-tier",
+            "--expert-bank-pool-chunk-bytes=268435456"
+        ])),
+        Ok(Some(ExpertBankBudget {
+            pool_chunk_bytes: Some(268_435_456),
+            ..ExpertBankBudget::default()
+        }))
+    );
+    assert_eq!(ExpertBankBudget::default().pool_chunk_bytes, None);
+    assert_eq!(
+        expert_bank_cli(argv(&["--expert-bank-pool-chunk-bytes=1"])),
+        Err("expert bank budgets require --experts-via-tier".to_owned())
+    );
+    assert_eq!(
+        expert_bank_cli(argv(&[
+            "--experts-via-tier",
+            "--expert-bank-pool-chunk-bytes=0"
+        ])),
+        Err("--expert-bank-pool-chunk-bytes expects a positive byte count".to_owned())
+    );
+    assert!(
+        expert_bank_cli(argv(&[
+            "--experts-via-tier",
+            "--expert-bank-pool-chunk-bytes=1",
+            "--expert-bank-pool-chunk-bytes=2"
+        ]))
+        .unwrap_err()
+        .contains("given more than once")
+    );
 }
 
 /// Day 40: `--expert-bank-stages` is the door's log-only stage clock. It parses only behind
@@ -246,7 +286,8 @@ fn expert_bank_stage_clock_parses_only_behind_the_door() {
         Ok(Some(ExpertBankBudget {
             host_bytes: 256 * 1024 * 1024,
             gpu_bytes: Some(6_881_344),
-            stage_clock: true
+            stage_clock: true,
+            pool_chunk_bytes: None,
         }))
     );
     assert!(!ExpertBankBudget::default().stage_clock);

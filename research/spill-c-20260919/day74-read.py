@@ -4,7 +4,10 @@ scripts): integrity, R1 each run's cycles per chain step at `gate` and `window` 
 R2 per arm the medians, R3 per arm the timing medians (deciding nothing), and the verdict. DAY71's reader supplies the
 run parsing, the sampler rows and the counters.
 
-usage: day74-read.py <cell-dir> [--rig NAME]
+With --induce-b (DAY74 section 4): where the counters check reads `counters=unavailable`, the state is the phase
+probe's wall nanoseconds per chain step (`compute_ns`) and the counters are not an integrity condition.
+
+usage: day74-read.py <cell-dir> [--rig NAME] [--induce-b]
 """
 import importlib.util
 import statistics
@@ -26,6 +29,11 @@ def med(xs):
     return statistics.median(xs) if xs else float("nan")
 
 
+def wall_ns(r, phase):
+    p = r["phases"].get(phase)
+    return p["ns"] if p else None
+
+
 def cycles(r, phase):
     p = r["phases"].get(phase)
     c = p and p["counters"]
@@ -45,6 +53,11 @@ def main():
         return 0
     counters_on = (ev / "counters.txt").exists() and \
         (ev / "counters.txt").read_text().strip() == "counters=--cpu-probe-counters"
+    check = (ev / "counters-check.txt").read_text() if (ev / "counters-check.txt").exists() else ""
+    wall_mode = "--induce-b" in sys.argv and not counters_on and "counters=unavailable" in check
+    unit = "ns_per_step" if wall_mode else "cycles"
+    state = wall_ns if wall_mode else cycles
+    print(f"DAY74 STATE rig={rig} reading={unit}")
     runs = d71.parse_runs(ev)
     fails = []
     if len(runs) != 24 or sorted({r["arm"] for r in runs.values()}) != sorted(ARMS):
@@ -60,7 +73,7 @@ def main():
             fails.append(f"{label} fill={r['fill_ms']} physical_reads={r.get('physical_reads')}")
     if len({r.get("tokens") for r in runs.values()}) != 1:
         fails.append("tapes differ across arms")
-    if not counters_on:
+    if not counters_on and not wall_mode:
         fails.append("the counters check did not pass (the cycle readings need it)")
     s = d71.load_sampler(ev)
     marks = {}
@@ -95,7 +108,7 @@ def main():
             if t0 < t <= t1:
                 for k, x in d.items():
                     vm[k] += x
-        r["cg"], r["cw"] = cycles(r, "gate"), cycles(r, "window")
+        r["cg"], r["cw"] = state(r, "gate"), state(r, "window")
         r["iso"], r["fail"] = vm["compact_isolated"] / wall, vm["pgmigrate_fail"] / wall
         r["compacted"] = vm["compact_isolated"] > 0
         per[r["arm"]].append(r)
@@ -103,13 +116,13 @@ def main():
         def show(x):
             return "not_read" if x is None else f"{x:.3f}"
 
-        print(f"DAY74 R1 {label}: gen={r['gen_s']:.3f} window={r['window_s']:.3f} gate_cycles={show(r['cg'])}"
-              f" window_cycles={show(r['cw'])} compacted={'yes' if r['compacted'] else 'no'}"
+        print(f"DAY74 R1 {label}: gen={r['gen_s']:.3f} window={r['window_s']:.3f} gate_{unit}={show(r['cg'])}"
+              f" window_{unit}={show(r['cw'])} compacted={'yes' if r['compacted'] else 'no'}"
               f" compact_isolated={r['iso']:.0f}/s migrate_fail={r['fail']:.0f}/s")
     for arm in ARMS:
         rs = per[arm]
         cw = [r["cw"] for r in rs if r["cw"] is not None]
-        print(f"DAY74 R2 rig={rig} {arm}: window_cycles median={med(cw):.3f} (N={len(cw)})"
+        print(f"DAY74 R2 rig={rig} {arm}: window_{unit} median={med(cw):.3f} (N={len(cw)})"
               f" compacted={sum(r['compacted'] for r in rs)} of {len(rs)}"
               f" compact_isolated median={med([r['iso'] for r in rs]):.0f}/s"
               f" migrate_fail median={med([r['fail'] for r in rs]):.0f}/s"

@@ -87,11 +87,12 @@ type FillBuffers = Arc<dyn Fn(usize) -> Option<HostBytes> + Send + Sync>;
 /// Day 47 (`research/spill-c-20260919/DAY47.md`): the door's pinned host tier. One cached
 /// allocation (`CU_MEMHOSTALLOC_PORTABLE`, never write-combined: the fill and the verify read these
 /// bytes on the CPU) carved into fixed buffers per host-plan class, the class's planned slots
-/// plus `POOL_HEADROOM`. Each buffer is owned by at most one `PooledBuffer` at a time (the free
+/// plus `POOL_HEADROOM`. DAY76 (a diagnostic door): with a chunk size, the same buffers are
+/// spread over allocations of at most that many bytes, whole buffers each. Each buffer is owned by at most one `PooledBuffer` at a time (the free
 /// lists sit under one mutex) and zeroed the first time it is handed out; dropping the
 /// `PooledBuffer` returns it. The allocation is freed when the pool and its last buffer are gone.
 struct PinnedPool {
-    base: *mut u8,
+    allocations: Vec<*mut u8>,
     context: Arc<cudarc::driver::CudaContext>,
     classes: Vec<PoolClass>,
     state: std::sync::Mutex<PoolState>,
@@ -99,13 +100,15 @@ struct PinnedPool {
 }
 struct PoolClass {
     capacity: usize,
-    start: usize,
+    /// Buffers per allocation, and each allocation's first buffer (one entry without chunks).
+    per_chunk: usize,
+    chunks: Vec<*mut u8>,
 }
 struct PoolState {
     free: Vec<Vec<usize>>,
     touched: Vec<Vec<bool>>,
 }
-// SAFETY: `base` is one pinned host allocation that never moves and is freed only in `Drop`, after
+// SAFETY: every allocation is pinned host memory that never moves and is freed only in `Drop`, after
 // every `PooledBuffer` (each holds an `Arc` of the pool) is gone. Each buffer range is taken and
 // returned under `state`'s mutex, so at most one `PooledBuffer` ever reaches a given range, and
 // the pool itself exposes no byte access.
@@ -116,21 +119,33 @@ unsafe impl Sync for PinnedPool {}
 const POOL_HEADROOM: usize = crate::moe_cache::BANKED_INFLIGHT + 1 + 64 + 8 + 1;
 /// Buffers per class the fill never takes, so a demand's read always finds one.
 const FILL_RESERVE: usize = crate::moe_cache::BANKED_INFLIGHT + 2;
+/// DAY76: a class of `count` buffers of `capacity` bytes spread over allocations of at most
+/// `chunk` bytes, whole buffers each (one buffer per allocation when a buffer exceeds `chunk`):
+/// the buffers per allocation and each allocation's buffer count, in order.
+fn pool_chunks(capacity: usize, count: usize, chunk: usize) -> (usize, Vec<usize>) {
+    let per_chunk = (chunk / capacity.max(1)).max(1);
+    let mut buffers = Vec::with_capacity(count.div_ceil(per_chunk));
+    let mut left = count;
+    while left > 0 {
+        let here = left.min(per_chunk);
+        buffers.push(here);
+        left -= here;
+    }
+    (per_chunk, buffers)
+}
 impl PinnedPool {
     fn new(
         context: Arc<cudarc::driver::CudaContext>,
         classes: &[(u64, usize)],
+        chunk_bytes: Option<u64>,
     ) -> std::result::Result<Arc<Self>, Box<dyn std::error::Error>> {
-        let mut layout = Vec::with_capacity(classes.len());
+        let mut sizes = Vec::with_capacity(classes.len());
         let mut counts = Vec::with_capacity(classes.len());
         let mut total = 0usize;
         for &(bytes, slots) in classes {
             let capacity = usize::try_from(bytes)?;
             let count = slots.checked_add(POOL_HEADROOM).ok_or(Error::Overflow)?;
-            layout.push(PoolClass {
-                capacity,
-                start: total,
-            });
+            sizes.push(capacity);
             counts.push(count);
             total = capacity
                 .checked_mul(count)
@@ -138,20 +153,58 @@ impl PinnedPool {
                 .ok_or(Error::Overflow)?;
         }
         context.bind_to_thread()?;
-        // SAFETY: documented FFI (`cuMemHostAlloc`); the returned range is owned by this pool.
-        let base = unsafe {
-            cudarc::driver::result::malloc_host(
-                total.max(1),
-                cudarc::driver::sys::CU_MEMHOSTALLOC_PORTABLE,
-            )?
+        let alloc = |len: usize| -> std::result::Result<*mut u8, Box<dyn std::error::Error>> {
+            // SAFETY: documented FFI (`cuMemHostAlloc`); the returned range is owned by this pool.
+            let ptr = unsafe {
+                cudarc::driver::result::malloc_host(
+                    len.max(1),
+                    cudarc::driver::sys::CU_MEMHOSTALLOC_PORTABLE,
+                )?
+            };
+            Ok(ptr.cast::<u8>())
+        };
+        let mut allocations = Vec::new();
+        let mut layout = Vec::with_capacity(classes.len());
+        match chunk_bytes {
+            None => {
+                let base = alloc(total)?;
+                allocations.push(base);
+                let mut start = 0usize;
+                for (&capacity, &count) in sizes.iter().zip(&counts) {
+                    // SAFETY: `start` is this class's offset inside the one allocation of `total`.
+                    let first = unsafe { base.add(start) };
+                    layout.push(PoolClass {
+                        capacity,
+                        per_chunk: count.max(1),
+                        chunks: vec![first],
+                    });
+                    start += capacity * count;
+                }
+            }
+            Some(chunk) => {
+                let chunk = usize::try_from(chunk)?;
+                for (&capacity, &count) in sizes.iter().zip(&counts) {
+                    let (per_chunk, buffers) = pool_chunks(capacity, count, chunk);
+                    let mut chunks = Vec::with_capacity(buffers.len());
+                    for here in buffers {
+                        let ptr = alloc(capacity.checked_mul(here).ok_or(Error::Overflow)?)?;
+                        allocations.push(ptr);
+                        chunks.push(ptr);
+                    }
+                    layout.push(PoolClass {
+                        capacity,
+                        per_chunk,
+                        chunks,
+                    });
+                }
+            }
         }
-        .cast::<u8>();
         let state = PoolState {
             free: counts.iter().map(|&n| (0..n).rev().collect()).collect(),
             touched: counts.iter().map(|&n| vec![false; n]).collect(),
         };
         Ok(Arc::new(Self {
-            base,
+            allocations,
             context,
             classes: layout,
             state: std::sync::Mutex::new(state),
@@ -171,9 +224,12 @@ impl PinnedPool {
             (class, index, first)
         };
         let spec = &self.classes[class];
-        // SAFETY: `index < count` of this class, so the range lies inside the allocation, and it
-        // was just popped from the free list, so no other `PooledBuffer` holds it.
-        let ptr = unsafe { self.base.add(spec.start + index * spec.capacity) };
+        // SAFETY: `index < count` of this class, so buffer `index % per_chunk` of allocation
+        // `index / per_chunk` lies inside that allocation, and it was just popped from the free
+        // list, so no other `PooledBuffer` holds it.
+        let ptr = unsafe {
+            spec.chunks[index / spec.per_chunk].add((index % spec.per_chunk) * spec.capacity)
+        };
         if first {
             // SAFETY: the exclusive range above; zeroed once so every later slice is initialized.
             unsafe { ptr.write_bytes(0, spec.capacity) };
@@ -195,8 +251,10 @@ impl PinnedPool {
 impl Drop for PinnedPool {
     fn drop(&mut self) {
         let _ = self.context.bind_to_thread();
-        // SAFETY: every `PooledBuffer` holds an `Arc` of this pool, so none is alive here.
-        let _ = unsafe { cudarc::driver::result::free_host(self.base.cast()) };
+        for &ptr in &self.allocations {
+            // SAFETY: every `PooledBuffer` holds an `Arc` of this pool, so none is alive here.
+            let _ = unsafe { cudarc::driver::result::free_host(ptr.cast()) };
+        }
     }
 }
 /// One pooled buffer: exclusive owner of `len` bytes at `ptr` inside the pool.
@@ -665,6 +723,7 @@ impl Engine {
         // auto) is untouched; with one, the exact count is fixed here, before any allocation,
         // and a MEMRA_MOE_SLOTS request alongside it is a conflict, never a silent loser.
         let host_bytes = budget.host_bytes;
+        let pool_chunk_bytes = budget.pool_chunk_bytes;
         // Day 43: the host tier is planned per record size under the budget, refused above
         // three quarters of the host's MemAvailable read now (never an environment variable).
         let record_sizes = entries
@@ -770,11 +829,14 @@ impl Engine {
         };
         // DAY47: the host tier lives in one cached pinned pool; every read lands in a buffer
         // from it, and the fill takes from it above the demand reserve.
-        let pool = PinnedPool::new(self.ctx().clone(), &plan.classes)?;
+        let pool = PinnedPool::new(self.ctx().clone(), &plan.classes, pool_chunk_bytes)?;
         eprintln!(
-            "[experts-via-tier] host pinned pool bytes={} classes={} headroom={POOL_HEADROOM} fill_reserve={FILL_RESERVE}",
+            "[experts-via-tier] host pinned pool bytes={} classes={} headroom={POOL_HEADROOM} fill_reserve={FILL_RESERVE}{}",
             pool.bytes,
-            pool.classes.len()
+            pool.classes.len(),
+            pool_chunk_bytes
+                .map(|c| format!(" chunk_bytes={c} allocations={}", pool.allocations.len()))
+                .unwrap_or_default()
         );
         let bank = bank.with_host_buffers(Box::new(PoolSource(pool.clone())))?;
         let fill_pool = pool.clone();
@@ -1631,7 +1693,9 @@ mod day48_census {
             1,
             "the demand's guarded insertion"
         );
-        let grouped = "            if !self.banked_validated.holds(id, bytes) {\n                if let Err(err) = bank.validate(local, bytes) {\n                    self.release_chosen(&chosen[..taken]);\n                    return Err(err.into());\n                }\n                self.banked_validated.insert(id, bytes);\n            }";
+        // DAY77 (I17): the grouped prefetch validates every wanted member before it reserves any
+        // slot, so a refusal has no chosen slot to return.
+        let grouped = "            if !self.banked_validated.holds(id, bytes) {\n                bank.validate(local, bytes)?;\n                self.banked_validated.insert(id, bytes);\n            }";
         assert_eq!(
             CACHE.matches(grouped).count(),
             1,
@@ -1817,6 +1881,34 @@ mod day49_record_pass {
 }
 
 #[cfg(test)]
+mod day76_pool_chunks {
+    use super::pool_chunks;
+
+    /// Every buffer index lands in exactly one allocation at the offset `take` computes, every
+    /// allocation holds whole buffers, none exceeds the chunk unless one buffer does.
+    #[test]
+    fn chunks_cover_every_buffer_once_within_the_chunk() {
+        for (capacity, count, chunk) in [
+            (860_160usize, 30_720 + 90, 268_435_456usize),
+            (1_000, 7, 3_000),
+            (1_000, 7, 999),
+            (4_096, 1, 1 << 30),
+            (4_096, 3, 4_096),
+        ] {
+            let (per_chunk, buffers) = pool_chunks(capacity, count, chunk);
+            assert_eq!(buffers.iter().sum::<usize>(), count);
+            assert!(buffers.iter().all(|&n| n >= 1 && n <= per_chunk));
+            assert!(buffers[..buffers.len() - 1].iter().all(|&n| n == per_chunk));
+            assert!(per_chunk * capacity <= chunk || per_chunk == 1);
+            for index in 0..count {
+                let (allocation, slot) = (index / per_chunk, index % per_chunk);
+                assert!(allocation < buffers.len() && slot < buffers[allocation]);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod day50_census {
     //! DAY50: a pending prefetch is consumed only after the compute stream waits on its copy,
     //! the door's prefetch takes its lease through the proxy, and only the door's installer
@@ -1838,9 +1930,13 @@ mod day50_census {
         // DAY64 (I15): the prefetch is grouped; residency, the lease and the staging still go through the owner.
         let prefetch = &CACHE[CACHE.find("fn prefetch_banked_group(").unwrap()..];
         let prefetch = &prefetch[..prefetch.find("\n    fn ").unwrap_or(prefetch.len())];
-        assert!(prefetch.contains("bank.host_resident(local)"));
+        // DAY77 (I17): residency and staging each in one registry entry for the group.
+        assert!(prefetch.contains("bank.host_resident_many(&asked[..wanted.len()])"));
         assert!(prefetch.contains("bank.demand_many(&locals[..taken])"));
+        assert!(prefetch.contains("bank.with_bytes_each(&token, |index, payload| {"));
         assert!(prefetch.contains("stage_on_copy_stream(e, payload, &mut self.slots[slot])"));
+        assert!(!prefetch.contains("bank.host_resident(local)"));
+        assert!(!prefetch.contains("bank.with_bytes_at("));
         assert_eq!(FORWARD.matches("e.expert_bank_prefetch()").count(), 1);
         // Count in this file's code, not in these tests' own literals.
         let code = &SRC[..SRC.find("#[cfg(test)]").unwrap()];
@@ -2270,6 +2366,50 @@ mod day61_profile {
         println!(
             "DAY64 P8 grouped per_block_ns cycle={:.1}",
             p8[0] as f64 / (seq.len() / 3 * 3) as f64
+        );
+        // DAY77 P9: I17's form of P8, the group's residency and its staging each in one registry
+        // entry; then P8 again, so the two forms bracket each other in one window.
+        let p9 = median_repeat(|| {
+            let started = Instant::now();
+            for expert in seq.chunks_exact(3) {
+                let blocks: Vec<(ExpertDispatchId, usize)> =
+                    expert.iter().map(|&l| (l, LEN as usize)).collect();
+                let ids: Vec<ExpertDispatchId> = blocks.iter().map(|b| b.0).collect();
+                let resident = proxy.host_resident_many(&ids).unwrap();
+                assert!(resident[..ids.len()].iter().all(|&r| r));
+                let token = proxy.demand_many(&blocks).unwrap();
+                proxy
+                    .with_bytes_each(&token, |_, b| {
+                        std::hint::black_box(b[0]);
+                        Ok::<(), ()>(())
+                    })
+                    .unwrap()
+                    .unwrap();
+                proxy.finish_group(&token).unwrap();
+            }
+            [ns(started.elapsed())]
+        });
+        let p8b = median_repeat(|| {
+            let started = Instant::now();
+            for expert in seq.chunks_exact(3) {
+                let blocks: Vec<(ExpertDispatchId, usize)> =
+                    expert.iter().map(|&l| (l, LEN as usize)).collect();
+                for &(local, _) in &blocks {
+                    assert!(proxy.host_resident(local).unwrap());
+                }
+                let token = proxy.demand_many(&blocks).unwrap();
+                for index in 0..blocks.len() {
+                    std::hint::black_box(proxy.with_bytes_at(&token, index, |b| b[0]).unwrap());
+                }
+                proxy.finish_group(&token).unwrap();
+            }
+            [ns(started.elapsed())]
+        });
+        let per_block = |v: u64| v as f64 / (seq.len() / 3 * 3) as f64;
+        println!(
+            "DAY77 P9 group calls per_block_ns cycle={:.1} | P8 again cycle={:.1}",
+            per_block(p9[0]),
+            per_block(p8b[0])
         );
         owner.close().unwrap();
         drop(owner);
