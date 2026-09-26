@@ -596,3 +596,8 @@ ring-busy fallbacks (smoke: 2,372, 3,646 and 8,287), which the fallback amendmen
 that cell could only come out unscored while measuring a mixed program. It runs only after the
 OWED 26 red/green cells and the serving-shape check pass. Arms, oracle, regime and verdict rule
 are unchanged. Both PRO 6000 sittings use the same fix build.
+
+Section F correctness addition (2026-09-26, before any spec cell with the door on): `run-spec`
+K=1..8 self-consistency for `bypass-staged` and `bypass-mapped` on the fix build
+(`m1-spec-cell.py` with the F lock, B3's verdict line `=== SELF-CONSISTENCY PASS ===`), on the 5090
+before the timed cell and again in the PRO 6000 sitting.

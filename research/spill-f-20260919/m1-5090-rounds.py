@@ -86,7 +86,7 @@ def wait_idle(log, label):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     ap.add_argument("--regime", choices=["capped", "bounded", "g2", "handoff", "anonpeak", "f17", "gpucell", "diag",
-                                              "owed26cells", "owed26serve"], required=True)
+                                              "owed26cells", "owed26serve", "spec"], required=True)
     ap.add_argument("--memory-max", type=int, required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--rounds", default="1-10")
@@ -94,6 +94,7 @@ def main():
     ap.add_argument("--size-bytes", type=int)
     ap.add_argument("--host-mb", type=int)
     ap.add_argument("--tenant-pct", type=int)
+    ap.add_argument("--arm", help="spec regime: the F lock arm to run run-spec with")
     a = ap.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -127,6 +128,10 @@ def main():
                             "-p", "CPUQuota=1200%", "-p", f"MemoryMax={a.memory_max}", "env",
                             "MEMRA_CUDA_ARCH=120a", "cargo", "test", "--release", "-p", "memra-engine", "--lib",
                             "--", "--ignored", "--exact", GPU_CELL, "--nocapture"]
+                elif a.regime == "spec":
+                    argv[-4:-4] = ["--storage-root", "/data/cache", "--storage-proof", str(PUBLIC_PROOF)]
+                    argv += [str(HERE / "m1-spec-cell.py"), "--arms-lock", str(HERE / "m1-prereg/f17-arms.lock.json"),
+                             "--arm", a.arm, "--binary", BIN26.replace("run-gen", "run-spec"), "--artifact", ART]
                 elif a.regime == "handoff":
                     order = "buffered,direct" if k % 2 else "direct,buffered"
                     argv[-4:-4] = ["--storage-root", B2_SCRATCH, "--storage-proof", str(PUBLIC_PROOF)]
@@ -178,7 +183,7 @@ def main():
                 log.flush()
                 print(f"M1-5090 regime={a.regime} STOPPED at round {k} rc={rc}", flush=True)
                 return 2
-            if a.smoke or a.regime in ("g2", "anonpeak", "gpucell", "diag", "owed26cells", "owed26serve"):
+            if a.smoke or a.regime in ("g2", "anonpeak", "gpucell", "diag", "owed26cells", "owed26serve", "spec"):
                 break
     return 0
 

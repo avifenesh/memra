@@ -38,6 +38,8 @@ def steps(rec, first_rounds="1-10", bounded_bytes=None, over=None):
                                     "--bypass-check", "--fallback-unclean", "--require-correct"]),
         ("owed26-cells", lambda: rounds("owed26cells", "owed26-cells", "--memory-max", CAP)),
         ("owed26-serve", lambda: rounds("owed26serve", "owed26-serve", "--memory-max", CAP)),
+        ("f17-spec-staged", lambda: rounds("spec", "f17-spec-staged", "--memory-max", CAP, "--arm", "bypass-staged")),
+        ("f17-spec-mapped", lambda: rounds("spec", "f17-spec-mapped", "--memory-max", CAP, "--arm", "bypass-mapped")),
         ("handoff-1g", lambda: rounds("handoff", "handoff-1g", "--memory-max", CAP, "--rounds", over.get("handoff-1g", "1-10"),
                                       "--size-bytes", str(1 << 30), "--host-mb", "4096", "--tenant-pct", "100")),
         ("bounded", lambda: rounds("bounded", "bounded", "--memory-max", str(bounded_bytes or bounded_max(rec)), "--rounds", "1-10")),
