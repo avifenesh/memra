@@ -378,7 +378,9 @@ Arms, order, correctness and verdict rule: exactly B3's (lock file, amendment 2 
 card, each round of six visits is its own collector cell holding the lock only for that round;
 before each round the driver waits until the lock is free and no compute application is on the
 card, and records every wait (start, end, blocking processes by name and memory). Rounds keep
-their registered forward/reverse order, and verdicts pool the ten rounds of a regime. The
+their registered forward/reverse order, and verdicts pool the ten rounds of a regime. Inside a round, a visit
+during which any other compute application appears on the card (polled every 5 s) is unclean
+for timing, like a co-tenant on the drive. The
 co-tenancy gate is unchanged; `/data` also carries this desktop's `~/.cache`, so contaminated
 visits are expected and are excluded by the registered rule, not argued away.
 
