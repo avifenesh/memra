@@ -106,6 +106,30 @@ Served: every request's text sha is equal across every arm of every cell below.
 One boot per row, median of the rows. `agg` is the cell's aggregate completion tok/s. `dec` is
 the per-request decode p50.
 
+### Final head 7150cb5f1, Workstation pair (`raw/ws-final/`, N=3, order Gd Pp Mn Mn Pp Gd Gd Pp Mn)
+
+| cell | TP/EP default (four lanes, graphs) | main (the flip, one lane) | PP-2 (`pp`) |
+|---|---|---|---|
+| greedy c1 dec | 80.60 | 80.69 | 68.48 |
+| greedy c2 agg | 103.17 | 76.85 | 120.79 |
+| greedy c4 agg | 135.76 | 76.69 | 120.63 |
+| sampled c2 agg | 102.79 | 76.41 | 107.39 |
+| greedy c2 TTFT p50 | 242 ms | 3488 ms | 309 ms |
+| greedy c4 TTFT p50 | 430 ms | 10155 ms | 4462 ms |
+| 2k-context c2 agg | 20.26 | 18.96 | 21.57 |
+
+Against main: c2 +34%, c4 +77%, c1 -0.1%. Against PP-2: c4 +12.5% with a tenth of the TTFT,
+c2 -15%.
+
+### Server Edition pair, graph lane before the hoist, 47df550b2 (`raw/se-graph/`, N=3)
+
+| cell | TP/EP default (four lanes) | two lanes | main | PP-2 |
+|---|---|---|---|---|
+| greedy c1 dec | 71.20 | 71.43 | 71.43 | 62.36 |
+| greedy c2 agg | 93.36 | 93.40 | 69.75 | 113.15 |
+| greedy c4 agg | 121.94 | 93.39 | 69.71 | 112.95 |
+| greedy c4 TTFT p50 | 452 ms | 5697 ms | 11168 ms | 4783 ms |
+
 ### Workstation pair, graph lane 88907ed28 (`raw/ws-graph/`, N=3; Pp N=2, see below)
 
 | cell | two lanes, graphs | four lanes, graphs | flip (main, one lane) | PP-2 (`pp`) |
