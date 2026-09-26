@@ -4262,6 +4262,10 @@ on its 5090 half; R2 (item 13) is refuted and reverted on the target card, R1 se
   serve-smoke `0 failed`; engine span cells `10 passed`, worker cells `18 passed`; identity 12 ok; fault default and plain
   255 ok each; hit OFF and ON 61 and 68 ok; `ADMIT-MEM BURST GATE: ALL GREEN`; `SPEC-CTX-EDGE GATE: ALL GREEN`; the pause
   gate with the 27B `ALL GREEN` (40 ok).
+- Main moved to `8f93ccd99` (#752, the DSv4 position-split C4 store, engine code) before the merge; merged in clean
+  (`e6f969234`) and both batteries ran again on it, on BOX31: GPU (`integ67-pro-main752/`, binary `efc0d5ad`, one hold
+  10:18Z to 10:33Z) every cell green as above and the pause gate `ALL GREEN` (40 ok); CPU (`integ67-cpu-main752/`, the
+  box now with `rg` and `origin/main`) 15 of 15 rc=0, server 943, engine lib 577 plus one of main's, 578.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
