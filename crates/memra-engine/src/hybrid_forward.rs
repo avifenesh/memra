@@ -19917,16 +19917,27 @@ impl HybridModel {
         keep: &[crate::moe_cache::BlockId],
     ) -> Result<(), Box<dyn std::error::Error>> {
         use crate::moe_cache::{BlockId, PROJ_DOWN, PROJ_GATE, PROJ_UP};
+        // DAY64 (I15): the expert's three blocks in one cache call; the legacy cache takes them
+        // one per block as before, the door under one ticket.
         e.with_moe_cache(max_block, |c, eng| {
-            for (proj, exps) in [
-                (PROJ_GATE, &m.gate_exps),
-                (PROJ_UP, &m.up_exps),
-                (PROJ_DOWN, &m.down_exps),
-            ] {
-                let id = BlockId::new(il, proj, ex as u16);
-                let _ = c.prefetch_source(id, exps.expert_source(ex), keep, eng)?;
-            }
-            Ok(())
+            c.prefetch_expert(
+                [
+                    (
+                        BlockId::new(il, PROJ_GATE, ex as u16),
+                        m.gate_exps.expert_source(ex),
+                    ),
+                    (
+                        BlockId::new(il, PROJ_UP, ex as u16),
+                        m.up_exps.expert_source(ex),
+                    ),
+                    (
+                        BlockId::new(il, PROJ_DOWN, ex as u16),
+                        m.down_exps.expert_source(ex),
+                    ),
+                ],
+                keep,
+                eng,
+            )
         })
     }
 

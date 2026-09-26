@@ -1,0 +1,30 @@
+cell rc=0
+== nsys.txt
+nsys=/tmp/c72cell.1vDox4/bin/nsys
+NVIDIA Nsight Systems version stub
+== calls: 53 lines; the profiled ones:
+nsys profile --trace=cuda --sample=none --cpuctxsw=none --force-overwrite=true -o D/R/gap15/ev/p-ref-r1 env MEMRA_MOE_RESIDENT=0 MEMRA_NGEN=32 MEMRA_MOE_SLOTS=9986 MEMRA_
+nsys export --type sqlite --force-overwrite=true -o D/R/gap15/ev/p-ref-r1.sqlite D/R/gap15/ev/p-ref-r1.nsys-rep
+nsys profile --trace=cuda --sample=none --cpuctxsw=none --force-overwrite=true -o D/R/gap15/ev/p-on-r1 env MEMRA_MOE_RESIDENT=0 MEMRA_NGEN=32 MEMRA_MOE_SLOTS=9986 D/bins/
+nsys export --type sqlite --force-overwrite=true -o D/R/gap15/ev/p-on-r1.sqlite D/R/gap15/ev/p-on-r1.nsys-rep
+nsys profile --trace=cuda --sample=none --cpuctxsw=none --force-overwrite=true -o D/R/gap15/ev/p-on-r2 env MEMRA_MOE_RESIDENT=0 MEMRA_NGEN=32 MEMRA_MOE_SLOTS=9986 D/bins/
+nsys export --type sqlite --force-overwrite=true -o D/R/gap15/ev/p-on-r2.sqlite D/R/gap15/ev/p-on-r2.nsys-rep
+nsys profile --trace=cuda --sample=none --cpuctxsw=none --force-overwrite=true -o D/R/gap15/ev/p-ref-r2 env MEMRA_MOE_RESIDENT=0 MEMRA_NGEN=32 MEMRA_MOE_SLOTS=9986 MEMRA_
+nsys export --type sqlite --force-overwrite=true -o D/R/gap15/ev/p-ref-r2.sqlite D/R/gap15/ev/p-ref-r2.nsys-rep
+== run exits
+o1-onc-r1=0 o1-onc-r2=0 o1-onc-r3=0 o1-onc-r4=0 o1-onc-r5=0 o1-on-r1=0 o1-on-r2=0 o1-on-r3=0 o1-on-r4=0 o1-on-r5=0 o1-refc-r1=0 o1-refc-r2=0 o1-refc-r3=0 o1-refc-r4=0 o1-refc-r5=0 o1-ref-r1=0 o1-ref-r2=0 o1-ref-r3=0 o1-ref-r4=0 o1-ref-r5=0 o2-onc-r1=0 o2-onc-r2=0 o2-onc-r3=0 o2-onc-r4=0 o2-onc-r5=0 o2-on-r1=0 o2-on-r2=0 o2-on-r3=0 o2-on-r4=0 o2-on-r5=0 o2-refc-r1=0 o2-refc-r2=0 o2-refc-r3=0 o2-refc-r4=0 o2-refc-r5=0 o2-ref-r1=0 o2-ref-r2=0 o2-ref-r3=0 o2-ref-r4=0 o2-ref-r5=0 p-on-r1=0 p-on-r2=0 p-ref-r1=0 p-ref-r2=0
+== profile files
+D/R/gap15/ev/p-on-r1.export.log
+D/R/gap15/ev/p-on-r1.nsys-rep
+D/R/gap15/ev/p-on-r1.sqlite
+D/R/gap15/ev/p-on-r2.export.log
+D/R/gap15/ev/p-on-r2.nsys-rep
+D/R/gap15/ev/p-on-r2.sqlite
+D/R/gap15/ev/p-ref-r1.export.log
+D/R/gap15/ev/p-ref-r1.nsys-rep
+D/R/gap15/ev/p-ref-r1.sqlite
+D/R/gap15/ev/p-ref-r2.export.log
+D/R/gap15/ev/p-ref-r2.nsys-rep
+D/R/gap15/ev/p-ref-r2.sqlite
+== cell tail
+gap15 cell done:      44 0 

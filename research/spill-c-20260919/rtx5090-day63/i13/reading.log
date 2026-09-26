@@ -1,0 +1,13 @@
+DAY63 host demand sequence sha256 4bdc2610c3534e42 lines=[22077]
+DAY63 I13 CHECKS rig=rtx5090 runs=40 integrity=ok
+DAY63 gen-only decode medians (N=10 each): ref=0.363 i12=0.369 i13=0.367 i13s=0.370
+DAY63 STEP i13_vs_i12 gen-only decode: pooled=-0.0025 o1=-0.0010 o2=-0.0030 noise=0.0035 -> flat
+DAY63 steady window medians (N=10 each): ref=0.399 i12=0.401 i13=0.401 i13s=0.403
+DAY63 STEP i13_vs_i12 steady window: pooled=+0.0000 o1=+0.0000 o2=+0.0010 noise=0.0053 -> flat
+DAY63 DOOR i13_vs_ref gen-only decode: pooled=+0.0040 o1=+0.0050 o2=+0.0040 noise=0.0035 -> loses
+DAY63 DOOR i13_vs_ref steady window: pooled=+0.0025 o1=+0.0020 o2=+0.0030 noise=0.0053 -> matches
+DAY63 SPLIT cache per window token (N=10 runs): admits=471.0 copy_events=3.8 copy_gpu_ns=0.0980ms demand_ns=0.0222ms drain_ns=0.0000ms enqueue_ns=0.0074ms event_errors=0.0 finish_ns=0.0001ms gpu_hits=378.7 gpu_misses=92.3 miss_total_ns=0.0487ms prefetch_hits=88.6 prefetches=88.6 reserve_ns=0.0005ms retire_ns=0.0804ms sync2_ns=0.0000ms validate_ns=0.0311ms wait_ns=0.0000ms
+DAY63 SPLIT owner per window token (N=10 runs): host_hits=92.3 host_misses=0.0 inner_demand_ns=0.2599ms pread_ns=0.0000ms reads=0.0 trace_ns=0.0173ms
+DAY63 SPLIT fill per window token (N=10 runs): fill_admitted=0.0 fill_dropped=0.0 fill_errors=0.0 fill_ns=0.0024ms fill_read_errors=0.0 fill_reads=0.0 fill_refused=0.0
+DAY63 SPLIT bank per window token (N=10 runs): ack_ns=0.0342ms ack_release_ns=0.0142ms alloc_ns=0.0000ms collect_ns=0.0014ms host_use_ns=0.0038ms publish_ns=0.0260ms publish_output_ns=0.0027ms publish_policy_ns=0.0173ms retire_ns=0.0391ms retire_only_ns=0.0011ms stage_cache_ns=0.0931ms stage_charge_ns=0.0402ms stage_lookup_ns=0.0151ms stage_ns=0.1745ms stages=92.3 step_ns=0.0000ms steps=0.0 verified=0.0 verify_ns=0.0000ms
+DAY63 VERDICT rig=rtx5090 integrity=ok i13=flat door=i13 vs_ref=loses (window: i13=flat vs_ref=matches)

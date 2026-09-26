@@ -1,0 +1,10 @@
+cell=identity-dspark-off gate=tools/kv-host-spill-identity-gate.sh
+env=MEMRA_HOSTGATE_CACHE_MB=256 MEMRA_DSPARK_SPEC=1 MEMRA_DSPARK_DRAFT=/data/ai-ml/models/q38-dflash2 MEMRA_DSPARK_PREFIX_RESTORE=1
+lock=/tmp/memra-5090.lock owner=gate-internal-canonical
+tree=4130a4916e9bfb309949253ed11f8900b7b6c076
+binary_sha256=c050f6ff039fc1e7c4824d4b2c98bc2b2a97c167e00494eef263401b7e6ce348
+drafter_config_sha256=873e3556509b0da06e29654ba00d4944888d4b5e8a33afde25f7eb27d321e980
+drafter_model_sha256=67fc76d68dc5a9415511a4f394ef744d67510cd20e93b37cc2cc7d28e4bab65c
+model=Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+gpu=NVIDIA GeForce RTX 5090 Laptop GPU, [N/A]
+status=executed-not-qualified

@@ -1,0 +1,45 @@
+box start 2026-09-25T07:34:16Z tree 6d099c0fd7a3355cfad0a23c6daae022be2e45ba
+name, driver_version, memory.total [MiB], power.limit [W], clocks.max.sm [MHz]
+NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 595.84, 97887 MiB, 600.00 W, 3090 MHz
+
+==============NVSMI LOG==============
+
+Timestamp                                              : Fri Sep 25 07:34:16 2026
+Driver Version                                         : 595.84
+CUDA Version                                           : 13.2
+
+Attached GPUs                                          : 1
+GPU 00000000:01:00.0
+    Performance State                                  : P8
+    Clocks Event Reasons
+        Idle                                           : Not Active
+        Applications Clocks Setting                    : Not Active
+        SW Power Cap                                   : Not Active
+        HW Slowdown                                    : Not Active
+            HW Thermal Slowdown                        : Not Active
+            HW Power Brake Slowdown                    : Not Active
+        Sync Boost                                     : Not Active
+        SW Thermal Slowdown                            : Not Active
+        Display Clock Setting                          : Not Active
+    Clocks Event Reasons Counters
+        SW Power Capping                               : 534294875606 us
+        Sync Boost                                     : 0 us
+        SW Thermal Slowdown                            : 0 us
+        HW Thermal Slowdown                            : 0 us
+        HW Power Braking                               : 0 us
+    Sparse Operation Mode                              : N/A
+
+32
+CPU(s):                                  32
+Model name:                              AMD Ryzen 9 9950X 16-Core Processor
+Thread(s) per core:                      2
+Socket(s):                               1
+CPU(s) scaling MHz:                      24%
+MemTotal:       197333444 kB
+MemAvailable:   190437308 kB
+SwapTotal:             0 kB
+Filesystem      Size  Used Avail Use% Mounted on
+overlay         200G   27G  174G  14% /
+overlay         200G   27G  174G  14% /
+/root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf: OK
+cpu cap: taskset -c 0-11 (no systemd scope on this box)

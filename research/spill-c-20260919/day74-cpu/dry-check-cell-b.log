@@ -1,0 +1,80 @@
+cell rc=0
+== pins and counters
+home_l3=0-23
+one=0,1,2,3,4,5,6,7,8,9,10,11
+sampler_cpu=23
+counters=--cpu-probe-counters
+== counters check
+[cpu-probe] counters-check cpu=1 rdpru=ok cpu_after=1 wall_ns=1528888 tsc=6571234 mperf=6571000 aperf=8745000
+rc=0
+== calls (first 3 and count)
+--cpu-probe-counters-check
+D/art.gguf 55 88 13 --cpu-probe --cpu-probe-phases --cpu-probe-counters
+D/art.gguf 55 88 13 --cpu-probe --cpu-probe-phases --cpu-probe-counters
+25
+== run exits
+     24 0
+== sampler row kinds
+    483 B    3864 C    3603 D      96 DH       3 EH     161 H    3030 I     126 IH     161 N     882 S      10 SH    1198 T     160 V 
+== inducer
+memfree_gib=22 F_gib=1 induce=1
+== rewarm rows: 24
+05:49:11.555478575	o1-ref-r1	6 ms
+05:49:13.85115369	o1-refi-r1	6 ms
+== compactor rows (labels, ready, loop, stopped)
+o1-refi-r1
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.4
+loop	trigger=none
+stopped	maps=26	triggers=0	cpu_s=1.3
+o1-i15i-r1
+ready	fragmented_gib=1.0	setup_s=0.5	cpu_s=0.3
+loop	trigger=none
+stopped	maps=26	triggers=0	cpu_s=1.3
+o1-refi-r2
+ready	fragmented_gib=1.0	setup_s=0.4	cpu_s=0.3
+loop	trigger=none
+stopped	maps=33	triggers=0	cpu_s=1.3
+o1-i15i-r2
+ready	fragmented_gib=1.0	setup_s=0.5	cpu_s=0.4
+loop	trigger=none
+stopped	maps=31	triggers=0	cpu_s=1.4
+o1-refi-r3
+ready	fragmented_gib=1.0	setup_s=0.7	cpu_s=0.4
+loop	trigger=none
+stopped	maps=33	triggers=0	cpu_s=1.4
+o1-i15i-r3
+ready	fragmented_gib=1.0	setup_s=0.5	cpu_s=0.4
+loop	trigger=none
+stopped	maps=32	triggers=0	cpu_s=1.4
+o2-i15i-r1
+ready	fragmented_gib=1.0	setup_s=0.6	cpu_s=0.4
+loop	trigger=none
+stopped	maps=34	triggers=0	cpu_s=1.4
+o2-refi-r1
+ready	fragmented_gib=1.0	setup_s=0.5	cpu_s=0.4
+loop	trigger=none
+stopped	maps=32	triggers=0	cpu_s=1.4
+o2-i15i-r2
+ready	fragmented_gib=1.0	setup_s=0.7	cpu_s=0.4
+loop	trigger=none
+stopped	maps=34	triggers=0	cpu_s=1.4
+o2-refi-r2
+ready	fragmented_gib=1.0	setup_s=0.5	cpu_s=0.4
+loop	trigger=none
+stopped	maps=32	triggers=0	cpu_s=1.4
+o2-i15i-r3
+ready	fragmented_gib=1.0	setup_s=0.5	cpu_s=0.4
+loop	trigger=none
+stopped	maps=31	triggers=0	cpu_s=1.3
+o2-refi-r3
+ready	fragmented_gib=1.0	setup_s=0.7	cpu_s=0.4
+loop	trigger=none
+stopped	maps=33	triggers=0	cpu_s=1.4
+== host state files
+host-after.txt 176 lines, kernel 7.0.0-34-generic
+host-before.txt 176 lines, kernel 7.0.0-34-generic
+== cell tail
+memfree_gib=22 F_gib=1 induce=1
+induce-b cell done:      24 0 
+== leftover processes (none expected)
+none

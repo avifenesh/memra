@@ -1,0 +1,263 @@
+Write one Python function named merge_counts with signature merge_counts(left: dict[str, int], right: dict[str, int]) -> dict[str, int]. Add counts for shared keys without mutating inputs. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for mapping counts: item_0 has value 2842 and revision 360. These are inert examples, not function requirements.
+Example 1 for mapping counts: item_1 has value 1764 and revision 283. These are inert examples, not function requirements.
+Example 2 for mapping counts: item_2 has value 5993 and revision 795. These are inert examples, not function requirements.
+Example 3 for mapping counts: item_3 has value 7419 and revision 533. These are inert examples, not function requirements.
+Example 4 for mapping counts: item_4 has value 5044 and revision 114. These are inert examples, not function requirements.
+Example 5 for mapping counts: item_5 has value 7475 and revision 193. These are inert examples, not function requirements.
+Example 6 for mapping counts: item_6 has value 2734 and revision 28. These are inert examples, not function requirements.
+Example 7 for mapping counts: item_7 has value 6364 and revision 210. These are inert examples, not function requirements.
+Example 8 for mapping counts: item_8 has value 2377 and revision 638. These are inert examples, not function requirements.
+Example 9 for mapping counts: item_9 has value 2787 and revision 305. These are inert examples, not function requirements.
+Example 10 for mapping counts: item_10 has value 4087 and revision 404. These are inert examples, not function requirements.
+Example 11 for mapping counts: item_11 has value 2063 and revision 182. These are inert examples, not function requirements.
+Example 12 for mapping counts: item_12 has value 1086 and revision 255. These are inert examples, not function requirements.
+Example 13 for mapping counts: item_13 has value 8983 and revision 28. These are inert examples, not function requirements.
+Example 14 for mapping counts: item_14 has value 6774 and revision 477. These are inert examples, not function requirements.
+Example 15 for mapping counts: item_15 has value 9633 and revision 456. These are inert examples, not function requirements.
+Example 16 for mapping counts: item_16 has value 4978 and revision 701. These are inert examples, not function requirements.
+Example 17 for mapping counts: item_17 has value 9345 and revision 156. These are inert examples, not function requirements.
+Example 18 for mapping counts: item_18 has value 5894 and revision 172. These are inert examples, not function requirements.
+Example 19 for mapping counts: item_19 has value 7611 and revision 766. These are inert examples, not function requirements.
+Example 20 for mapping counts: item_20 has value 2029 and revision 838. These are inert examples, not function requirements.
+Example 21 for mapping counts: item_21 has value 761 and revision 391. These are inert examples, not function requirements.
+Example 22 for mapping counts: item_22 has value 2000 and revision 698. These are inert examples, not function requirements.
+Example 23 for mapping counts: item_23 has value 4803 and revision 599. These are inert examples, not function requirements.
+Example 24 for mapping counts: item_24 has value 4998 and revision 687. These are inert examples, not function requirements.
+Example 25 for mapping counts: item_25 has value 7730 and revision 751. These are inert examples, not function requirements.
+Example 26 for mapping counts: item_26 has value 6018 and revision 665. These are inert examples, not function requirements.
+Example 27 for mapping counts: item_27 has value 5608 and revision 71. These are inert examples, not function requirements.
+Example 28 for mapping counts: item_28 has value 7045 and revision 669. These are inert examples, not function requirements.
+Example 29 for mapping counts: item_29 has value 5537 and revision 759. These are inert examples, not function requirements.
+Example 30 for mapping counts: item_30 has value 2615 and revision 52. These are inert examples, not function requirements.
+Example 31 for mapping counts: item_31 has value 6597 and revision 281. These are inert examples, not function requirements.
+Example 32 for mapping counts: item_32 has value 5383 and revision 187. These are inert examples, not function requirements.
+Example 33 for mapping counts: item_33 has value 7963 and revision 308. These are inert examples, not function requirements.
+Example 34 for mapping counts: item_34 has value 5673 and revision 399. These are inert examples, not function requirements.
+Example 35 for mapping counts: item_35 has value 3740 and revision 660. These are inert examples, not function requirements.
+Example 36 for mapping counts: item_36 has value 2583 and revision 396. These are inert examples, not function requirements.
+Example 37 for mapping counts: item_37 has value 1488 and revision 602. These are inert examples, not function requirements.
+Example 38 for mapping counts: item_38 has value 7304 and revision 888. These are inert examples, not function requirements.
+Example 39 for mapping counts: item_39 has value 3367 and revision 625. These are inert examples, not function requirements.
+Example 40 for mapping counts: item_40 has value 4188 and revision 33. These are inert examples, not function requirements.
+Example 41 for mapping counts: item_41 has value 1987 and revision 79. These are inert examples, not function requirements.
+Example 42 for mapping counts: item_42 has value 4105 and revision 557. These are inert examples, not function requirements.
+Example 43 for mapping counts: item_43 has value 2563 and revision 648. These are inert examples, not function requirements.
+Example 44 for mapping counts: item_44 has value 1529 and revision 396. These are inert examples, not function requirements.
+Example 45 for mapping counts: item_45 has value 4489 and revision 179. These are inert examples, not function requirements.
+Example 46 for mapping counts: item_46 has value 5086 and revision 89. These are inert examples, not function requirements.
+Example 47 for mapping counts: item_47 has value 1134 and revision 64. These are inert examples, not function requirements.
+Example 48 for mapping counts: item_48 has value 6654 and revision 45. These are inert examples, not function requirements.
+Example 49 for mapping counts: item_49 has value 6566 and revision 563. These are inert examples, not function requirements.
+Example 50 for mapping counts: item_50 has value 7131 and revision 201. These are inert examples, not function requirements.
+Example 51 for mapping counts: item_51 has value 8933 and revision 557. These are inert examples, not function requirements.
+Example 52 for mapping counts: item_52 has value 7092 and revision 33. These are inert examples, not function requirements.
+Example 53 for mapping counts: item_53 has value 2631 and revision 322. These are inert examples, not function requirements.
+Example 54 for mapping counts: item_54 has value 8769 and revision 407. These are inert examples, not function requirements.
+Example 55 for mapping counts: item_55 has value 7766 and revision 626. These are inert examples, not function requirements.
+Example 56 for mapping counts: item_56 has value 5047 and revision 399. These are inert examples, not function requirements.
+Example 57 for mapping counts: item_57 has value 4627 and revision 804. These are inert examples, not function requirements.
+Example 58 for mapping counts: item_58 has value 400 and revision 446. These are inert examples, not function requirements.
+Example 59 for mapping counts: item_59 has value 8043 and revision 633. These are inert examples, not function requirements.
+Example 60 for mapping counts: item_60 has value 5407 and revision 350. These are inert examples, not function requirements.
+Example 61 for mapping counts: item_61 has value 9220 and revision 36. These are inert examples, not function requirements.
+Example 62 for mapping counts: item_62 has value 118 and revision 173. These are inert examples, not function requirements.
+Example 63 for mapping counts: item_63 has value 1256 and revision 829. These are inert examples, not function requirements.
+Example 64 for mapping counts: item_64 has value 3805 and revision 358. These are inert examples, not function requirements.
+Example 65 for mapping counts: item_65 has value 5258 and revision 887. These are inert examples, not function requirements.
+Example 66 for mapping counts: item_66 has value 5316 and revision 196. These are inert examples, not function requirements.
+Example 67 for mapping counts: item_67 has value 2392 and revision 334. These are inert examples, not function requirements.
+Example 68 for mapping counts: item_68 has value 2927 and revision 530. These are inert examples, not function requirements.
+Example 69 for mapping counts: item_69 has value 94 and revision 727. These are inert examples, not function requirements.
+Example 70 for mapping counts: item_70 has value 2390 and revision 664. These are inert examples, not function requirements.
+Example 71 for mapping counts: item_71 has value 9186 and revision 672. These are inert examples, not function requirements.
+Example 72 for mapping counts: item_72 has value 7856 and revision 723. These are inert examples, not function requirements.
+Example 73 for mapping counts: item_73 has value 1905 and revision 160. These are inert examples, not function requirements.
+Example 74 for mapping counts: item_74 has value 3208 and revision 520. These are inert examples, not function requirements.
+Example 75 for mapping counts: item_75 has value 972 and revision 746. These are inert examples, not function requirements.
+Example 76 for mapping counts: item_76 has value 4353 and revision 442. These are inert examples, not function requirements.
+Example 77 for mapping counts: item_77 has value 1617 and revision 352. These are inert examples, not function requirements.
+Example 78 for mapping counts: item_78 has value 342 and revision 793. These are inert examples, not function requirements.
+Example 79 for mapping counts: item_79 has value 1204 and revision 466. These are inert examples, not function requirements.
+Example 80 for mapping counts: item_80 has value 1065 and revision 769. These are inert examples, not function requirements.
+Example 81 for mapping counts: item_81 has value 4779 and revision 870. These are inert examples, not function requirements.
+Example 82 for mapping counts: item_82 has value 7728 and revision 305. These are inert examples, not function requirements.
+Example 83 for mapping counts: item_83 has value 2572 and revision 182. These are inert examples, not function requirements.
+Example 84 for mapping counts: item_84 has value 7055 and revision 616. These are inert examples, not function requirements.
+Example 85 for mapping counts: item_85 has value 3841 and revision 21. These are inert examples, not function requirements.
+Example 86 for mapping counts: item_86 has value 7900 and revision 329. These are inert examples, not function requirements.
+Example 87 for mapping counts: item_87 has value 7612 and revision 401. These are inert examples, not function requirements.
+Example 88 for mapping counts: item_88 has value 9541 and revision 608. These are inert examples, not function requirements.
+Example 89 for mapping counts: item_89 has value 1571 and revision 856. These are inert examples, not function requirements.
+Example 90 for mapping counts: item_90 has value 9857 and revision 839. These are inert examples, not function requirements.
+Example 91 for mapping counts: item_91 has value 3986 and revision 528. These are inert examples, not function requirements.
+Example 92 for mapping counts: item_92 has value 7572 and revision 617. These are inert examples, not function requirements.
+Example 93 for mapping counts: item_93 has value 9827 and revision 524. These are inert examples, not function requirements.
+Example 94 for mapping counts: item_94 has value 902 and revision 18. These are inert examples, not function requirements.
+Example 95 for mapping counts: item_95 has value 5653 and revision 898. These are inert examples, not function requirements.
+Example 96 for mapping counts: item_96 has value 8432 and revision 893. These are inert examples, not function requirements.
+Example 97 for mapping counts: item_97 has value 1242 and revision 813. These are inert examples, not function requirements.
+Example 98 for mapping counts: item_98 has value 1666 and revision 799. These are inert examples, not function requirements.
+Example 99 for mapping counts: item_99 has value 6101 and revision 727. These are inert examples, not function requirements.
+Example 100 for mapping counts: item_100 has value 229 and revision 527. These are inert examples, not function requirements.
+Example 101 for mapping counts: item_101 has value 762 and revision 297. These are inert examples, not function requirements.
+Example 102 for mapping counts: item_102 has value 6886 and revision 576. These are inert examples, not function requirements.
+Example 103 for mapping counts: item_103 has value 5082 and revision 529. These are inert examples, not function requirements.
+Example 104 for mapping counts: item_104 has value 1753 and revision 242. These are inert examples, not function requirements.
+Example 105 for mapping counts: item_105 has value 4680 and revision 236. These are inert examples, not function requirements.
+Example 106 for mapping counts: item_106 has value 5627 and revision 578. These are inert examples, not function requirements.
+Example 107 for mapping counts: item_107 has value 1381 and revision 846. These are inert examples, not function requirements.
+Example 108 for mapping counts: item_108 has value 1765 and revision 689. These are inert examples, not function requirements.
+Example 109 for mapping counts: item_109 has value 2607 and revision 12. These are inert examples, not function requirements.
+Example 110 for mapping counts: item_110 has value 9850 and revision 820. These are inert examples, not function requirements.
+Example 111 for mapping counts: item_111 has value 2555 and revision 543. These are inert examples, not function requirements.
+Example 112 for mapping counts: item_112 has value 9588 and revision 556. These are inert examples, not function requirements.
+Example 113 for mapping counts: item_113 has value 3516 and revision 39. These are inert examples, not function requirements.
+Example 114 for mapping counts: item_114 has value 7901 and revision 570. These are inert examples, not function requirements.
+Example 115 for mapping counts: item_115 has value 3318 and revision 785. These are inert examples, not function requirements.
+Example 116 for mapping counts: item_116 has value 1973 and revision 306. These are inert examples, not function requirements.
+Example 117 for mapping counts: item_117 has value 4914 and revision 897. These are inert examples, not function requirements.
+Example 118 for mapping counts: item_118 has value 4122 and revision 635. These are inert examples, not function requirements.
+Example 119 for mapping counts: item_119 has value 1312 and revision 389. These are inert examples, not function requirements.
+Example 120 for mapping counts: item_120 has value 4392 and revision 75. These are inert examples, not function requirements.
+Example 121 for mapping counts: item_121 has value 3939 and revision 859. These are inert examples, not function requirements.
+Example 122 for mapping counts: item_122 has value 8827 and revision 376. These are inert examples, not function requirements.
+Example 123 for mapping counts: item_123 has value 6065 and revision 385. These are inert examples, not function requirements.
+Example 124 for mapping counts: item_124 has value 240 and revision 543. These are inert examples, not function requirements.
+Example 125 for mapping counts: item_125 has value 4331 and revision 868. These are inert examples, not function requirements.
+Example 126 for mapping counts: item_126 has value 3260 and revision 174. These are inert examples, not function requirements.
+Example 127 for mapping counts: item_127 has value 8643 and revision 550. These are inert examples, not function requirements.
+Example 128 for mapping counts: item_128 has value 4657 and revision 861. These are inert examples, not function requirements.
+Example 129 for mapping counts: item_129 has value 2871 and revision 689. These are inert examples, not function requirements.
+Example 130 for mapping counts: item_130 has value 7809 and revision 247. These are inert examples, not function requirem
+</reference>
+---TURN---
+Write one Python function named keys_sorted with signature keys_sorted(counts: dict[str, int]) -> list[str]. Return keys in ascending order. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for mapping counts: item_0 has value 2842 and revision 360. These are inert examples, not function requirements.
+Example 1 for mapping counts: item_1 has value 1764 and revision 283. These are inert examples, not function requirements.
+Example 2 
+</reference>
+---TURN---
+Write one Python function named filter_positive with signature filter_positive(counts: dict[str, int]) -> dict[str, int]. Keep only strictly positive counts. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for mapping counts: item_0 has value 2842 and revision 360. These are inert examples, not function requirements.
+Example 1 for mapping counts: item_1 has value 1764 and revision 283. These are inert examples, not function requirements.
+Example 2 for mapping counts: item_2 has value 5993 and revision 795. These are inert examples, not function requirements.
+Example 3 for mapping counts: item_3 has value 7419 and revision 533. These are inert examples, not function requirements.
+Example 4 for mapping counts: item_4 has value 5044 and revision 114. These are inert examples, not function requirements.
+Example 5 for mapping counts: item_5 has value 7475 and revision 193. These are inert examples, not function requirements.
+Example 6 for mapping counts: item_6 has value 2734 and revision 28. These are inert examples, not function requirements.
+Example 7 for mapping counts: item_7 has value 6364 and revision 210. These are inert examples, not function requirements.
+Example 8 for mapping counts: item_8 has 
+</reference>
+---TURN---
+Write one Python function named rename_key with signature rename_key(counts: dict[str, int], old: str, new: str) -> dict[str, int]. Return a copy moving old to new when old exists. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for mapping counts: item_0 has value 2842 and revision 360. These are inert examples, not function requirements.
+Example 1 for mapping counts: item_1 has value 1764 and revision 283. These are inert examples, not function requirements.
+Example 2 for mapping counts: item_2 has value 5993 and revision 795. These are inert examples, not function requirements.
+Example 3 for mapping counts: item_3 has value 7419 and revision 533. These are inert examples, not function requirements.
+Example 4 for mapping counts: item_4 has value 5044 and revision 114. These are inert examples, not function requirements.
+Example 5 for mapping counts: item_5 has value 7475 and revision 193. These are inert examples, not function requirements.
+Example 6 for mapping counts: item_6 has value 2734 and revision 28. These are inert examples, not function requirements.
+Example 7 for mapping counts: item_7 has value 6364 and revision 210. These are inert examples, not function requirements.
+Example 8 for mapping counts: item_8 has value 2377 and revision 638. These are inert examples, not function requirements.
+Example 9 for mapping counts: item_9 has value 2787 and revision 305. These are inert examples, not function requirements.
+Example 10 for mapping counts: item_10 has value 4087 and revision 404. These are inert examples, not function requirements.
+Example 11 for mapping counts: item_11 has value 2063 and revision 182. These are inert examples, not function requirements.
+Example 12 for mapping counts: item_12 has value 1086 and revision 255. These are inert examples, not function requirements.
+Example 13 for mapping counts: item_13 has value 8983 and revision 28. These are inert examples, not function requirements.
+Example 14 for mapping counts: item_14 has value 6774 and revision 477. These are inert examples, not function requirements.
+Example 15 for mapping counts: item_15 has value 9633 and revision 456. These are inert examples, not function requirements.
+Example 16 for mapping counts: item_16 has value 4978 and revision 701. These are inert examples, not function requirements.
+Example 17 for mapping counts: item_17 has value 9345 and revision 156. These are inert examples, not function requirements.
+Example 18 for mapping counts: item_18 has value 5894 and revision 172. These are inert examples, not function requirements.
+Example 19 for mapping counts: item_19 has value 7611 and revision 766. These are inert examples, not function requirements.
+Example 20 for mapping counts: item_20 has value 2029 and revision 838. These are inert examples, not function requirements.
+Example 21 for mapping counts: item_21 has value 761 and revision 391. These are inert examples, not function requirements.
+Example 22 for mapping counts: item_22 has value 2000 and revision 698. These are inert examples, not function requirements.
+Example 23 for mapping counts: item_23 has value 4803 and revision 599. These are inert examples, not function requirements.
+Example 24 for mapping counts: item_24 has value 4998 and revision 687. These are inert examples, not function requirements.
+Example 25 for mapping counts: item_25 has value 7730 and revision 751. These are inert examples, not function requirements.
+Example 26 for mapping counts: item_26 has value 6018 and revision 665. These are inert examples, not function requirements.
+Example 27 for mapping counts: item_27 has value 5608 and revision 71. These are inert examples, not function requirements.
+Example 28 for mapping counts: item_28 has value 7045 and revision 669. These are inert examples, not function requirements.
+Example 29 for mapping counts: item_29 has value 5537 and revision 759. These are inert examples, not function requirements.
+Example 30 for mapping counts: item_30 has value 2615 and revision 52. These are inert examples, not function requirements.
+Example 31 for mapping counts: item_31 has value 6597 and revision 281. These are inert examples, not function requirements.
+Example 32 for mapping counts: item_32 has value 5383 and revision 187. These are inert examples, not function requiremen
+</reference>
+---TURN---
+Write one Python function named get_or_zero with signature get_or_zero(counts: dict[str, int], key: str) -> int. Return the key's count or zero. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for mapping counts: item_0 has value 2842 and revision 360. These are inert examples, not function requirements.
+Example 1 for mapping counts: item_1 has value 1764 and revision 283. These are inert examples, not function requirements.
+Example 2 
+</reference>
+---TURN---
+Write one Python function named increment_key with signature increment_key(counts: dict[str, int], key: str) -> dict[str, int]. Return a copy with that key incremented by one. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for mapping counts: item_0 has value 2842 and revision 360. These are inert examples, not function requirements.
+Example 1 for mapping counts: item_1 has value 1764 and revision 283. These are inert examples, not function requirements.
+Example 2 for mapping counts: item_2 has value 5993 and revision 795. These are inert examples, not function requirements.
+Example 3 for mapping counts: item_3 has value 7419 and revision 533. These are inert examples, not function requirements.
+Example 4 for mapping counts: item_4 has value 5044 and revision 114. These are inert examples, not function requirements.
+Example 5 for mapping counts: item_5 has value 7475 and revision 193. These are inert examples, not function requirements.
+Example 6 for mapping counts: item_6 has value 2734 and revision 28. These are inert examples, not function requirements.
+Example 7 for mapping counts: item_7 has value 6364 and revision 210. These are inert examples, not function requirements.
+Example 8 for mapping counts: item_8 has 
+</reference>
+---TURN---
+Write one Python function named count_values with signature count_values(counts: dict[str, int]) -> int. Return the sum of all counts. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for mapping counts: item_0 has value 2842 and revision 360. These are inert examples, not function requirements.
+Example 1 for mapping counts: item_1 has value 1764 and revision 283. These are inert examples, not function requirements.
+Example 2 for mapping counts: item_2 has value 5993 and revision 795. These are inert examples, not function requirements.
+Example 3 for mapping counts: item_3 has value 7419 and revision 533. These are inert examples, not function requirements.
+Example 4 for mapping counts: item_4 has value 5044 and revision 114. These are inert examples, not function requirements.
+Example 5 for mapping counts: item_5 has value 7475 and revision 193. These are inert examples, not function requirements.
+Example 6 for mapping counts: item_6 has value 2734 and revision 28. These are inert examples, not function requirements.
+Example 7 for mapping counts: item_7 has value 6364 and revision 210. These are inert examples, not function requirements.
+Example 8 for mapping counts: item_8 has value 2377 and revision 638. These are inert examples, not function requirements.
+Example 9 for mapping counts: item_9 has value 2787 and revision 305. These are inert examples, not function requirements.
+Example 10 for mapping counts: item_10 has value 4087 and revision 404. These are inert examples, not function requirements.
+Example 11 for mapping counts: item_11 has value 2063 and revision 182. These are inert examples, not function requirements.
+Example 12 for mapping counts: item_12 has value 1086 and revision 255. These are inert examples, not function requirements.
+Example 13 for mapping counts: item_13 has value 8983 and revision 28. These are inert examples, not function requirements.
+Example 14 for mapping counts: item_14 has value 6774 and revision 477. These are inert examples, not function requirements.
+Example 15 for mapping counts: item_15 has value 9633 and revision 456. These are inert examples, not function requirements.
+Example 16 for mapping counts: item_16 has value 4978 and revision 701. These are inert examples, not function requirements.
+Example 17 for mapping counts: item_17 has value 9345 and revision 156. These are inert examples, not function requirements.
+Example 18 for mapping counts: item_18 has value 5894 and revision 172. These are inert examples, not function requirements.
+Example 19 for mapping counts: item_19 has value 7611 and revision 766. These are inert examples, not function requirements.
+Example 20 for mapping counts: item_20 has value 2029 and revision 838. These are inert examples, not function requirements.
+Example 21 for mapping counts: item_21 has value 761 and revision 391. These are inert examples, not function requirements.
+Example 22 for mapping counts: item_22 has value 2000 and revision 698. These are inert examples, not function requirements.
+Example 23 for mapping counts: item_23 has value 4803 and revision 599. These are inert examples, not function requirements.
+Example 24 for mapping counts: item_24 has value 4998 and revision 687. These are inert examples, not function requirements.
+Example 25 for mapping counts: item_25 has value 7730 and revision 751. These are inert examples, not function requirements.
+Example 26 for mapping counts: item_26 has value 6018 and revision 665. These are inert examples, not function requirements.
+Example 27 for mapping counts: item_27 has value 5608 and revision 71. These are inert examples, not function requirements.
+Example 28 for mapping counts: item_28 has value 7045 and revision 669. These are inert examples, not function requirements.
+Example 29 for mapping counts: item_29 has value 5537 and revision 759. These are inert examples, not function requirements.
+Example 30 for mapping counts: item_30 has value 2615 and revision 52. These are inert examples, not function requirements.
+Example 31 for mapping counts: item_31 has value 6597 and revision 281. These are inert examples, not function requirements.
+Example 32 for mapping counts: item_32 has value 5383 and revision 187. These are inert examples, not function requiremen
+</reference>
+---TURN---
+Write one Python function named invert_unique with signature invert_unique(mapping: dict[str, int]) -> dict[int, str]. Swap keys and values, rejecting duplicate values. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for mapping counts: item_0 has value 2842 and revision 360. These are inert examples, not function requirements.
+Example 1 for mapping counts: item_1 has value 1764 and revision 283. These are inert examples, not function requirements.
+Example 2 
+</reference>

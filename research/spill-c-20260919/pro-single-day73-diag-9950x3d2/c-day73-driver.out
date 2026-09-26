@@ -1,0 +1,50 @@
+box start 2026-09-25T23:33:30Z tree 4130a4916e9bfb309949253ed11f8900b7b6c076 rig diag-9950x3d2
+name, driver_version, memory.total [MiB], power.limit [W], clocks.max.sm [MHz]
+NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 595.84, 97887 MiB, 600.00 W, 3090 MHz
+
+==============NVSMI LOG==============
+
+Timestamp                                              : Fri Sep 25 23:33:30 2026
+Driver Version                                         : 595.84
+CUDA Version                                           : 13.2
+
+Attached GPUs                                          : 1
+GPU 00000000:01:00.0
+    Performance State                                  : P8
+    Clocks Event Reasons
+        Idle                                           : Not Active
+        Applications Clocks Setting                    : Not Active
+        SW Power Cap                                   : Not Active
+        HW Slowdown                                    : Not Active
+            HW Thermal Slowdown                        : Not Active
+            HW Power Brake Slowdown                    : Not Active
+        Sync Boost                                     : Not Active
+        SW Thermal Slowdown                            : Not Active
+        Display Clock Setting                          : Not Active
+    Clocks Event Reasons Counters
+        SW Power Capping                               : 550655321341 us
+        Sync Boost                                     : 0 us
+        SW Thermal Slowdown                            : 3408558733 us
+        HW Thermal Slowdown                            : 544125 us
+        HW Power Braking                               : 0 us
+    Sparse Operation Mode                              : N/A
+
+32
+CPU(s):                                  32
+Model name:                              AMD Ryzen 9 9950X3D2 16-Core Processor
+Thread(s) per core:                      2
+Socket(s):                               1
+CPU(s) scaling MHz:                      69%
+MemTotal:       129463036 kB
+MemAvailable:   123747272 kB
+SwapTotal:       8388604 kB
+Filesystem      Size  Used Avail Use% Mounted on
+overlay         200G   59G  142G  30% /
+overlay         200G   59G  142G  30% /
+/root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf: OK
+built p71
+cpu cap: each run pinned by the cell to its arm's 12 CPUs (DAY73 section 1); the runner unpinned
+compact rc=0 2026-09-25T23:40:20Z
+compact validate rc=0
+compact reader rc=0
+box done 2026-09-25T23:40:21Z

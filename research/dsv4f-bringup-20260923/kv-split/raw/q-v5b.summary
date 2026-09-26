@@ -1,0 +1,4 @@
+build d5b0bbcea rc=0
+dspark-tpep 62b368f10f1becea d404da5fe101077f d404da5fe101077f  | verdict (c) batched==sequential: 14 cells, 77 logit rows, 3206 cache-class comparisons — ALL BIT-IDENTICAL verdict (d) accepted-position ring writes: 3 ring classes compared, 0 mismatching GPU DSPARK GATE [PASS] GATE_DONE rc=0 utc=2026-09-26T03:35:42Z 
+split-1m rc=0 [load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 353.7ms CACHE BYTES replicated=235765760 split=208262144 (88.3% of replicated) PASS: chunked prefill of 3000 tokens bit-identical, split against replicated PASS: 100 eager steps bit-identical, split against replicated PASS: 100 full-token replay steps on the split state bit-identical to replicated eager PASS: park, restore and 50 more steps bit-identical, split against replicated PASS: position-split C4 store bit-identical to the replicated program 
+V5B_DONE d5b0bbcea

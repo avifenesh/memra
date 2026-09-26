@@ -1,0 +1,34 @@
+# DAY74 reader dry check on make-synthetic.py's cell (machine b's DAY71 runs relabelled into the four arms; the reading means nothing)
+DAY74 INDUCER rig=synthetic memfree_gib=80 F_gib=64 induce=1
+DAY74 INDUCE CHECKS rig=synthetic runs=24 integrity=ok
+DAY74 R1 o1-ref-r1: gen=0.369 window=0.300 gate_cycles=6.000 window_cycles=7.477 compacted=yes compact_isolated=812054/s migrate_fail=1325/s
+DAY74 R1 o1-i15-r1: gen=0.327 window=0.386 gate_cycles=6.000 window_cycles=13.444 compacted=yes compact_isolated=42455/s migrate_fail=42430/s
+DAY74 R1 o1-ref-r2: gen=0.371 window=0.292 gate_cycles=6.746 window_cycles=8.002 compacted=yes compact_isolated=856457/s migrate_fail=59/s
+DAY74 R1 o1-i15-r2: gen=0.467 window=0.386 gate_cycles=13.852 window_cycles=13.462 compacted=yes compact_isolated=77401/s migrate_fail=77403/s
+DAY74 R1 o1-ref-r3: gen=0.323 window=0.256 gate_cycles=6.000 window_cycles=6.000 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o1-i15-r3: gen=0.487 window=0.399 gate_cycles=12.979 window_cycles=13.439 compacted=yes compact_isolated=72066/s migrate_fail=72066/s
+DAY74 R1 o1-refi-r1: gen=0.322 window=0.256 gate_cycles=6.000 window_cycles=6.000 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o1-i15i-r1: gen=0.463 window=0.379 gate_cycles=13.340 window_cycles=13.203 compacted=yes compact_isolated=72364/s migrate_fail=72364/s
+DAY74 R1 o1-refi-r2: gen=0.322 window=0.256 gate_cycles=6.000 window_cycles=6.015 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o1-i15i-r2: gen=0.488 window=0.396 gate_cycles=13.659 window_cycles=13.965 compacted=yes compact_isolated=77462/s migrate_fail=77819/s
+DAY74 R1 o1-refi-r3: gen=0.323 window=0.256 gate_cycles=6.026 window_cycles=6.000 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o1-i15i-r3: gen=0.482 window=0.393 gate_cycles=14.194 window_cycles=14.134 compacted=yes compact_isolated=72359/s migrate_fail=72360/s
+DAY74 R1 o2-i15-r1: gen=0.469 window=0.409 gate_cycles=13.306 window_cycles=14.321 compacted=yes compact_isolated=70345/s migrate_fail=69785/s
+DAY74 R1 o2-ref-r1: gen=0.322 window=0.256 gate_cycles=6.000 window_cycles=6.000 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o2-i15-r2: gen=0.462 window=0.381 gate_cycles=13.342 window_cycles=13.381 compacted=yes compact_isolated=73776/s migrate_fail=73394/s
+DAY74 R1 o2-ref-r2: gen=0.323 window=0.256 gate_cycles=6.000 window_cycles=6.000 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o2-i15-r3: gen=0.473 window=0.386 gate_cycles=13.345 window_cycles=13.089 compacted=yes compact_isolated=72393/s migrate_fail=72284/s
+DAY74 R1 o2-ref-r3: gen=0.323 window=0.256 gate_cycles=6.013 window_cycles=6.000 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o2-i15i-r1: gen=0.483 window=0.394 gate_cycles=12.401 window_cycles=13.555 compacted=yes compact_isolated=75657/s migrate_fail=75446/s
+DAY74 R1 o2-refi-r1: gen=0.323 window=0.256 gate_cycles=6.000 window_cycles=6.022 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o2-i15i-r2: gen=0.469 window=0.380 gate_cycles=13.257 window_cycles=13.141 compacted=yes compact_isolated=75598/s migrate_fail=75307/s
+DAY74 R1 o2-refi-r2: gen=0.323 window=0.256 gate_cycles=6.000 window_cycles=6.000 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o2-i15i-r3: gen=0.467 window=0.383 gate_cycles=13.226 window_cycles=13.149 compacted=yes compact_isolated=75581/s migrate_fail=75475/s
+DAY74 R1 o2-refi-r3: gen=0.322 window=0.256 gate_cycles=6.000 window_cycles=6.008 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R2 rig=synthetic ref: window_cycles median=6.000 (N=6) compacted=2 of 6 compact_isolated median=0/s migrate_fail median=0/s | R3 gen median=0.323 window median=0.256
+DAY74 R2 rig=synthetic refi: window_cycles median=6.004 (N=6) compacted=0 of 6 compact_isolated median=0/s migrate_fail median=0/s | R3 gen median=0.323 window median=0.256
+DAY74 R2 rig=synthetic i15: window_cycles median=13.441 (N=6) compacted=6 of 6 compact_isolated median=72229/s migrate_fail median=72175/s | R3 gen median=0.468 window median=0.386
+DAY74 R2 rig=synthetic i15i: window_cycles median=13.379 (N=6) compacted=6 of 6 compact_isolated median=75589/s migrate_fail median=75377/s | R3 gen median=0.475 window median=0.388
+DAY74 INDUCE VERDICT rig=synthetic integrity=ok -> not_induced (compaction in 0 of 6 REF+I and 6 of 6 door+I spans)
+# with induce=0 (F below 8 GiB): expected not_run
+DAY74 INDUCE VERDICT rig=synthetic-small -> not_run

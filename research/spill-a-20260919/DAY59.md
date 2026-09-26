@@ -204,3 +204,78 @@ with the three 5090 cells already queued.
   the owner thread between fanouts. The door-ON captures went off the tick, and the fanout's fresh prompts never hit.
   **The selection stands as read**, and no rerun is needed for it. Under the fix the same cell would print the same
   lines.
+
+## 9. Design B1 as built (`e522a9417`), and its target sitting prepared
+
+- (B1.1) The kernel `copy_batch_items_u8` (`cu/kernels.cu`) and `Engine::copy_batch_items_u8` (`lib.rs`), with a
+  KERNELS.md row. Zero-byte items are dropped host-side, and the grid is `(min(64, max_bytes / 4096), n + 1)`.
+- (B1.2) `prefix_snapshot`: `prefix_plane_alloc` gives a KV plane with bytes an uninitialized buffer and a zero-byte
+  plane a zeroed 1-byte one; the recurrent planes use `alloc_f32_uninit`. Then `prefix_snapshot_batch` runs, with one
+  launch, before the TP shards.
+- (B1.3) `prefix_restore_at` calls `prefix_restore_batch` right after the validation: the KV `[0, kb)` copies, the
+  recurrent copies and the length sets in one launch, every range checked before any device write. The host lengths
+  and the latent restores follow in the loop, and the TP shards after that.
+- (B1.4) Both batch fns hold the source (read) and destination (write) guards across the launch and drop them after
+  it.
+- (B1.5) The census `day59_the_fanout_copy_split_is_log_only` is rewritten as registered: allocate, then batch, then
+  TP; validate, then batch, then the host lengths; one launch per batch fn, with the guards dropped after it; no
+  per-plane `copy_u8_into`, `clone_dtod`, `copy_into` or `set_i32_one` in the four fns. The split lines keep their
+  wording (clones and length sets now read `0 over 0`).
+- The cells (a1) `fused_gate_bounds_tests::copy_batch_items_u8_is_the_memcpy_program` (engine) and (a2)
+  `worker::tests::b1_snapshot_and_restore_are_the_copy_program` (server) are `#[ignore]` GPU cells. They were not run
+  here: the 5090's lock was free, but another project's compute app held 1.4 GiB of the card, so by the lane's rule
+  I waited rather than share it. The target card runs them.
+- CPU: server lib `935 passed; 0 failed; 26 ignored` (`b1/server-lib.log`); clippy `-D warnings` on the server and
+  the engine, all targets (`b1/clippy.log`); fmt clean.
+- **The sitting** `pro-single-b1/`, receipts root `/root/spill-receipts/a-b1`:
+  - `build.sh <tip> 9ab479d9c` builds b1 (the tip's server plus its engine and server lib test executables), red
+    (`red-arm.patch`: the kernel copies each item's bytes minus one, and the wrapper prints `[b1 red arm] ..`; test
+    executables only) and base (the tip's crates taken to B1's parent). One clone, the tree checked back after each
+    arm, and the markers in `markers.txt`.
+  - `driver.sh`, each step under one collector hold:
+    - `unit-cells.sh`: (a1) and (a2) green on b1 with `MEMRA_B1_MODEL` set to the 27B; both must fail on red with
+      the marker printed; the day54, day59 and day66 censuses.
+    - `gates.sh`: the identity gate default and plain, door OFF and ON.
+    - `hitgate.sh`: the hit gate, OFF then ON.
+    - `ab.sh short fanout prime-short 256`: 40 boots.
+  - Then `b1-reading.py`, whose last line is `B1 VERDICT -> ..`. The reader was dry-run on DAY59's receipts mapped
+    as identical arms. It read (b) and (c) FAIL and (d) PASS, which is right for two identical arms.
+  - About 75 minutes of card time plus the three builds.
+
+## 10. B1's sitting, read as registered: ADOPT
+
+- Run by the lead on one RTX PRO 6000 Blackwell Workstation card (a 16-core host), `build.sh 7edc329d9 9ab479d9c`
+  then `driver.sh`, 05:0xZ to 05:50Z. Mirror `pro-single-b1/box/`: 346 receipts, sha256-checked against the box
+  manifest. The six executables are recorded by hash only (`binaries.sha256`): b1 server `806579de14f7317f..`, base
+  `e8f8de9794c0990d..`, b1 tests `ee1f8d97..` (engine) and `bf6a2356..` (server), red tests `3bbae521..` and
+  `7d24dfa7..`. `markers.txt`: the batch wording is in b1 (3) and absent from base (0); the red marker is in both red
+  test binaries and absent from b1's. 40 boots with start temperatures of 44 C to 65 C, and 250 ms telemetry in
+  `ab-short-cell/`.
+- Verbatim (`box/reading-b1.log`):
+
+      B1 (a) UNIT a1-green=0 a2-green=0 a1-red=101 (marker 1) a2-red=101 (marker 1) censuses=0
+      B1 (a) gates {'identity-default-off': '0', 'identity-default-on': '0', 'identity-plain-off': '0', 'identity-plain-on': '0', 'hitgate-off': '0', 'hitgate-on': '0'}
+      B1 READING order=o1 N_own=45 own base=1.36 b1=0.25 ms | fanout-minus-prime base=+4.77 b1=+3.74 (gain +1.03) ms | members wall base=95.9 b1=94.9 ms
+      B1 READING order=o2 N_own=45 own base=1.34 b1=0.25 ms | fanout-minus-prime base=+4.90 b1=+3.75 (gain +1.15) ms | members wall base=96.0 b1=94.8 ms
+      B1 (b) PASS per order [True, True]
+      B1 (c) PASS per order [True, True]
+      B1 (d) PASS per order [True, True]
+      B1 VERDICT -> ADOPT (B1 is the naked program)
+
+- (a2) ran on the tiny config and on the 27B's own geometry at pos 1 and 97. The 27B has 17 attention layers, the
+  last of them the MTP layer, which the cell holds absent at capture, and 48 recurrent layers
+  (`[b1 cell] /root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf pos=97: 17 attention and 48 recurrent layers equal`).
+  The red arm failed each cell on its first shortened item: `tiny pos 1 K 1` in (a2), and (a1)'s byte check.
+- **Read.**
+  - The fanout's own owner time falls from 1.36 / 1.34 ms to 0.25 ms per publish, 18% of base (the bound was 50%).
+  - The tenant's stall over one prime falls by 1.03 / 1.15 ms (the bound was 1.0 ms). Both orders clear it, o1 by
+    0.03 ms.
+  - The members' walls are 1.0 / 1.2 ms faster.
+  - Every clause of (a) holds: the bytes are the per-plane program's on both configs, and the six gates are green.
+- **Adopted** as registered: B1 is the naked program, with no door; the rollback is the previous binary. It goes to
+  integ67 after integ66 merges.
+  - `MEMRA_B1_MODEL` stays as the adopted cell's test input. Its FLAGS row drops the decide-by, because a flag a gate
+    sets stays under the door-hygiene rule.
+  - The 5090's (a1) and (a2) stay owed as a compatibility reading, not a gate.
+- Item 10's remaining publishers (DFlash, GLM-5, latent) stay owed to their artifacts and rigs (DAY54). The fanout's
+  insert (2.2 ms, the evicted entry's demote pre-submit) is item 19's.

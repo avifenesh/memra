@@ -1,0 +1,142 @@
+{
+  "code_transfer_supported": false,
+  "confidence_fraction": [
+    4,
+    5
+  ],
+  "cpu_report_sha256": "e0516bc1236f8ce3ff1b9f2622f2052461df3d192ce5be375fecfc472d2cfd01",
+  "input_manifest_sha256": "2c6558fbc158ff936ea1d47c54c66659fd884982ea6afd7222a41cb8a842352d",
+  "minimum_leaf": 64,
+  "minimum_positive_examples_for_a_confident_64_row_leaf": 52,
+  "models": {
+    "gemma": {
+      "answer_records": [
+        {
+          "file": "native/gemma/heldout/00-held-a/20322000-calibrated/turn-2.answer.txt",
+          "final_answer_bytes": 953
+        },
+        {
+          "file": "native/gemma/heldout/00-held-a/20322000-calibrated/turn-5.answer.txt",
+          "final_answer_bytes": 1741
+        },
+        {
+          "file": "native/gemma/heldout/01-held-b/20322001-calibrated/turn-2.answer.txt",
+          "final_answer_bytes": 1454
+        },
+        {
+          "file": "native/gemma/heldout/01-held-b/20322001-calibrated/turn-5.answer.txt",
+          "final_answer_bytes": 1789
+        },
+        {
+          "file": "native/gemma/heldout/02-held-c/20322002-calibrated/turn-2.answer.txt",
+          "final_answer_bytes": 920
+        },
+        {
+          "file": "native/gemma/heldout/02-held-c/20322002-calibrated/turn-5.answer.txt",
+          "final_answer_bytes": 1773
+        },
+        {
+          "file": "native/gemma/heldout/03-held-d/20322003-calibrated/turn-2.answer.txt",
+          "final_answer_bytes": 1655
+        },
+        {
+          "file": "native/gemma/heldout/03-held-d/20322003-calibrated/turn-5.answer.txt",
+          "final_answer_bytes": 1768
+        },
+        {
+          "file": "native/gemma/heldout/04-held-e/20322004-calibrated/turn-2.answer.txt",
+          "final_answer_bytes": 1120
+        },
+        {
+          "file": "native/gemma/heldout/04-held-e/20322004-calibrated/turn-5.answer.txt",
+          "final_answer_bytes": 1783
+        },
+        {
+          "file": "native/gemma/heldout/05-held-f/20322005-calibrated/turn-2.answer.txt",
+          "final_answer_bytes": 1333
+        },
+        {
+          "file": "native/gemma/heldout/05-held-f/20322005-calibrated/turn-5.answer.txt",
+          "final_answer_bytes": 1762
+        }
+      ],
+      "empty_final_answers": 0,
+      "evaluation_classes": {
+        "code": 2364,
+        "numeric": 891,
+        "prose": 4429
+      },
+      "requested_code_turns": 12,
+      "training_classes": {
+        "code": 1458,
+        "numeric": 540,
+        "prose": 2102
+      }
+    },
+    "qwen": {
+      "answer_records": [
+        {
+          "file": "native/qwen/heldout/00-held-a/20312000-calibrated/turn-2.answer.txt",
+          "final_answer_bytes": 0
+        },
+        {
+          "file": "native/qwen/heldout/00-held-a/20312000-calibrated/turn-5.answer.txt",
+          "final_answer_bytes": 0
+        },
+        {
+          "file": "native/qwen/heldout/01-held-b/20312001-calibrated/turn-2.answer.txt",
+          "final_answer_bytes": 0
+        },
+        {
+          "file": "native/qwen/heldout/01-held-b/20312001-calibrated/turn-5.answer.txt",
+          "final_answer_bytes": 0
+        },
+        {
+          "file": "native/qwen/heldout/02-held-c/20312002-calibrated/turn-2.answer.txt",
+          "final_answer_bytes": 0
+        },
+        {
+          "file": "native/qwen/heldout/02-held-c/20312002-calibrated/turn-5.answer.txt",
+          "final_answer_bytes": 0
+        },
+        {
+          "file": "native/qwen/heldout/03-held-d/20312003-calibrated/turn-2.answer.txt",
+          "final_answer_bytes": 0
+        },
+        {
+          "file": "native/qwen/heldout/03-held-d/20312003-calibrated/turn-5.answer.txt",
+          "final_answer_bytes": 0
+        },
+        {
+          "file": "native/qwen/heldout/04-held-e/20312004-calibrated/turn-2.answer.txt",
+          "final_answer_bytes": 0
+        },
+        {
+          "file": "native/qwen/heldout/04-held-e/20312004-calibrated/turn-5.answer.txt",
+          "final_answer_bytes": 0
+        },
+        {
+          "file": "native/qwen/heldout/05-held-f/20312005-calibrated/turn-2.answer.txt",
+          "final_answer_bytes": 0
+        },
+        {
+          "file": "native/qwen/heldout/05-held-f/20312005-calibrated/turn-5.answer.txt",
+          "final_answer_bytes": 0
+        }
+      ],
+      "empty_final_answers": 12,
+      "evaluation_classes": {
+        "code": 0,
+        "numeric": 965,
+        "prose": 8178
+      },
+      "requested_code_turns": 12,
+      "training_classes": {
+        "code": 17,
+        "numeric": 517,
+        "prose": 4017
+      }
+    }
+  },
+  "source_commit": "2f11a16f2ffb996649b919dd93b5ed7e286fe2a9"
+}

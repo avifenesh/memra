@@ -4167,6 +4167,167 @@ per enqueue, on every path; nothing decides on them) and printed on the fanout's
   on BOX31 (`integ65-pro-day66/`, 467 receipts mirrored and checked), binary `921a2098`, one hold 04:49Z to 05:01Z,
   every cell green as above and the pause gate `ALL GREEN` (40 ok).
 
+## integ66 (`lane/spill-integ66-20260926`): lane F's M1 local-NVMe program closed on the target card (mmap readahead wins when the bank fits, worker16 under pressure) and lane C days 63 to 74 (the door's I13 to I15, the slow-boot probes, the gap placed on the prefetch path)
+Lane tips merged: F `ef5640af8` and C `d36857771` on main `a233f6fe5` (#731), clean. The crate change is C's:
+- `memra-tier` bank (I13 to I15, each a registered improvement of the MoE slot cache door): the governor charges and
+  releases without temporaries; one body per `BankLease`; `BankService::finish_ticket`; the SLRU maps, the catalog and
+  the host cache index on an in-crate Fx hash with the orders the ordered maps gave pinned by randomized references; one
+  ticket per prefetched expert (`demand_many`, `finish_group`).
+- `memra-engine` (`moe_cache.rs`, `banked_residency/native.rs`): the door's grouped prefetch and lease accounting.
+  `hybrid_forward.rs` now hands an expert's three blocks to `prefetch_expert`, whose legacy arm is the old per-block
+  `prefetch_source` loop in the same gate, up, down order, so the naked path is unchanged.
+- `cpu_probe.rs` and `run_gen.rs`: `--cpu-probe`, `--cpu-probe-phases`, `--cpu-probe-counters` (log only; RDPRU
+  counters where CPUID reports them).
+- F adds research only in this merge (its engine and collector changes landed in integ63). No new `MEMRA_*` name.
+
+**Lane F, the M1 program on BOX27 (a host-local NVMe volume), verbatim.** `M1-PROOF verdict=PASS
+class=nvme-local-direct reasons=0`. B3 cold (second window, scored): `mmap-normal ... winner median_ratio=1.1913`;
+B3 bounded (scored): `worker16` beats every arm (`mmap-random` 0.093, `mmap-normal` 0.435, `pread16` 0.407,
+`direct16` 0.893); B3 warm unscored under the registered gate (its write-noise divisor), the post-hoc read-gate
+rescoring labelled as such. B1: buffered beats both O_DIRECT modes at every size; the ceiling is the ObjectStore read
+path (500 to 800 MB/s), not the drive. B0: `io_uring` refused by the container's seccomp. B2 handoff 1 GiB and 8 GiB 5
+of 5. `run-spec` `SELF-CONSISTENCY PASS` for `worker16` and `direct16`. Each amendment was registered before its passing
+run, the failed attempt kept.
+
+**Lane C days 63 to 74, verbatim.** I13, I14 and I15 read `flat` on the target card (DAY63, DAY64 and the i15b rerun,
+admissible) and the door stays behind REF (`DAY64 DOOR i15_vs_ref gen-only decode: pooled=+0.0090 -> loses`); the CPU
+side halved while the wall did not move. DAY72 placed the remaining gap: `DAY72 GAP15 VERDICT rig=pro-single
+integrity=ok admissible=yes partA=cpu_side partB=gpu_stall`, the door's GPU idle +0.39 ms per window token with the same
+kernels and copies, its prefetch path +0.27 ms on the CPU. The slow-boot question (DAY67 to DAY74): the registered
+DAY73 on a plain 9950X `-> not_reproduced` (0 slow of 10), a 9950X3D2 diagnostic `not_reproduced` (its one slow run the
+sitting's only span with compaction), DAY74 `not_induced` on the 9950X and `void` on the 285K (RDPRU is AMD only).
+
+**Lead review.** The grouped lease keeps the in-flight bound counting leases (`banked_inflight_leases`), finishes a group
+once after its last staged member is consumed and its copy lands, and refuses a reversed bank; the Fx indexes are never
+iterated for an answer without the pinned order. The legacy path is the old loop. The probes run outside the timed spans.
+
+**Ruling 61:**
+- F's M1 program is read as registered: storage proven, the per-regime winners above; the mapped pinned-host arm, a
+  handoff O_DIRECT arm and an above-RAM artifact stay owed (the artifact is the owner's pick).
+- C's I13 to I15 stay as registered (`flat` keeps a step); the door's remaining gap is the prefetch path's CPU work
+  delaying the next launch, which C's I16 (not in this merge, not card-qualified) addresses. DAY74's registration gains
+  the Intel fallback as `induce-b`.
+- Owner decisions carried: C1(c) the door's promotion (decide-by 2026-10-04) and C10 `MEMRA_MOE_PREFETCH=1` as the
+  naked default.
+
+**Checks.**
+- CPU battery on `15550883c`, 15 of 15 rc=0 (`integ66-cpu-battery/`: server 943, engine lib 576, tier 309); the tree gained only `.gitattributes` for
+  verbatim logs after it, and `git diff --check origin/main HEAD` reads clean at the head.
+- GPU battery on BOX31 (`integ66-pro/`, 467 receipts mirrored and checked), binary `79469039`, one collector hold 06:05Z
+  to 06:20Z: serve-smoke `0 failed`; the engine span cells `10 passed` and the worker cells `18 passed`; identity 12 ok;
+  fault default and plain 255 ok each; hit OFF and ON 61 and 68 ok; `ADMIT-MEM BURST GATE: ALL GREEN`;
+  `SPEC-CTX-EDGE GATE: ALL GREEN`; the pause gate with the 27B `ALL GREEN` (40 ok).
+
+## integ67 (`lane/spill-integ67-20260926`): A's design B1, the prefix snapshot's and restore's per-plane copies as one launch, adopted on both cards; its gridDim.y guard
+Lane A merged through `457321806` (B1's adoption record; W's code `34a348fd2` sits after it and stays out until both of
+its verdicts land), on main `649fe632a` (#744), clean; the gridDim.y guard cherry-picked as `95f275859` (from `231fba087`,
+which sits above W on A's line). The change:
+- `cu/kernels.cu`: `copy_batch_items_u8`, one launch copies every `(src, dst, bytes)` item (16-byte vectors when both
+  pointers are aligned, then bytes) and writes every i32 set; the items are disjoint whole ranges, so the bytes equal the
+  memcpy sequence it replaces.
+- `lib.rs`: its wrapper (the table uploaded once and freed in stream order; zero-byte items dropped; more items than
+  CUDA's 65535-row gridDim.y refused before any device work, with the count named) and the GPU cell (a1) over aligned,
+  unaligned and 4 MiB + 5 shapes.
+- `worker.rs`: the snapshot allocates each plane at exactly `len x tok_bytes` without a memset (a zero-byte plane keeps its
+  zeroed 1-byte buffer) and fills them in one launch holding the cudarc guards across it; the restore does its KV copies,
+  recurrent copies and length sets in one launch, every range checked before any device write; the census and cell (a2).
+- `docs/KERNELS.md` (the kernel row) and `docs/FLAGS.md` (`MEMRA_B1_MODEL`, a cell's test input). B1 has no door: it is
+  the naked program, with the previous binary as the rollback.
+
+**A's DAY59 sections 7 to 10, verbatim.** Target card (BOX31, a Ryzen 9 9950X): `B1 VERDICT -> ADOPT (B1 is the naked
+program)`, `o1 N_own=45 own base=1.36 b1=0.25 ms | fanout-minus-prime base=+4.77 b1=+3.74 (gain +1.03)`, o2 `1.34`
+against `0.25`, gain `+1.15`; (a) the unit cells green 0 and red 101 with the marker, all six gates 0; (b), (c), (d) PASS
+in both orders. Local RTX 5090 (A's `rtx5090-b1/cell`): `B1 VERDICT -> ADOPT`, `own base=1.93 b1=0.49 ms`, gains
+`+1.46` and `+5.61`, (a) to (d) PASS. DAY59's selection of B1 over B2 stands on the split's call counts after DAY66's
+scoped take (integ65).
+
+**Lead review.** The kernel's vector path runs only when both pointers are 16-byte aligned and the byte tail covers the
+rest; each item is a whole disjoint range, so no ordering between blocks matters. The wrapper filters zero-byte items and
+refuses an oversized grid before any upload (found in this review, fixed by A with a CPU test and a red arm). The
+uninitialized planes are written whole by the same launch (allocated at the copy's byte count), and a failed batch fails
+the snapshot, so no uninitialized byte is ever published. The guards held across the launch keep the cross-stream events
+the per-plane copies had. One numeric program per request: the bytes are the memcpy program's.
+
+**Ruling 62:** B1 is adopted as the naked prefix snapshot and restore program on both cards (a per-hardware check, both
+read ADOPT). The fanout publisher's owed items (the DFlash, GLM-5 and latent publishers) stay with A. W (item 12) waits
+on its 5090 half; R2 (item 13) is refuted and reverted on the target card, R1 selected (not in this merge).
+
+**Checks.**
+- CPU battery on `2fa7b33b3` (before the guard's cherry-pick), 15 of 15 on the lead's rig (`integ67-cpu-battery/`); on
+  the head `5ad621b75` run on BOX31 to keep load off the lanes' local 5090 cells (`integ67-cpu-battery-head/`): 12 of 15,
+  server 943, engine lib 577, the three others refused by the box's environment (no `rg`, a clone without `origin/main`),
+  then rerun on the lead's rig on the same tree: check-flags, docs registry and `git diff --check` rc=0
+  (`local-rerun-3-steps.txt`).
+- GPU battery on BOX31 (`integ67-pro/`, 467 receipts mirrored and checked), binary `ca86899f`, one hold 07:57Z to 08:12Z:
+  serve-smoke `0 failed`; engine span cells `10 passed`, worker cells `18 passed`; identity 12 ok; fault default and plain
+  255 ok each; hit OFF and ON 61 and 68 ok; `ADMIT-MEM BURST GATE: ALL GREEN`; `SPEC-CTX-EDGE GATE: ALL GREEN`; the pause
+  gate with the 27B `ALL GREEN` (40 ok).
+- Main moved to `8f93ccd99` (#752, the DSv4 position-split C4 store, engine code) before the merge; merged in clean
+  (`e6f969234`) and both batteries ran again on it, on BOX31: GPU (`integ67-pro-main752/`, binary `efc0d5ad`, one hold
+  10:18Z to 10:33Z) every cell green as above and the pause gate `ALL GREEN` (40 ok); CPU (`integ67-cpu-main752/`, the
+  box now with `rg` and `origin/main`) 15 of 15 rc=0, server 943, engine lib 578 (577 on the tree before main's merge).
+- Main moved again to `51bc5b438` (#740, the DSv4 serving lanes' graceful shutdown: `lib.rs` 11 lines, a dsv4 prefill
+  that stops once its client leaves, docs) after revuto's two approving rounds; merged in clean (`9041a1772`). CPU battery
+  on it, 15 of 15 rc=0 (`integ67-cpu-main740/`, server 943, engine lib 578), run on the lead's rig at nice 19 under a
+  600% quota. The GPU battery was not rerun for this merge: #740 changes only the DSv4 two-card serving path, which no
+  cell of the single-card 9B and 27B battery reaches, and the battery ran green on the tree just before it (the
+  `integ67-pro-main752/` run on `e6f969234`).
+- And again to `e3a8402cb` (#763, a DSv4 lane watchdog in `dsv4_serve.rs` only); merged in clean. With main moving
+  every few minutes on DSv4-only changes, this last merge is gated by the PR's CI on the merge head (build, clippy, server
+  and engine tests, portable suites, gates) and the lead's quick censuses (check-flags, docs registry, `git diff --check`,
+  fmt all rc=0), not a fourth battery; nothing in #763 is reachable from the spill battery's cells.
+
+## integ68 (`lane/spill-integ68-20260926`): lane F's items 17 and 18 (two default-off doors: a cold read-once bypass for spilled experts and O_DIRECT host-tier handoff files) and lane C days 75 to 77 (I16 reverted, I17 kept flat, the chunk flag)
+Lane tips merged: F `290fbbc1e` and C `2983d31d7` on main `6581fecfc` (#762), clean. C's later I18 and the pageable-pool
+flag stay out (not card-qualified). The change:
+- `moe_cache.rs`, `spill_pread.rs`, `hybrid_forward.rs` (F, item 17, `MEMRA_MOE_COLD_BYPASS=staged|mapped`, default
+  `off`, decide-by 2026-10-10): a cold first-miss expert block can be served once without admission; the dispatch goes
+  through `dispatch_source_once`, `payload` and `consumed`, and with the flag off `dispatch_source_once` returns only
+  `Resident`, `payload` gives the slot and `0..len`, `consumed` does nothing, so the naked program is the old one.
+- `handoff_io.rs`, `worker.rs` (F, item 18, `MEMRA_KV_HOST_HANDOFF_IO=direct`, default `buffered`, decide-by
+  2026-10-10): the host-tier handoff export and import through one file layer; `buffered` is the historical 4 MiB
+  BufWriter and BufReader with `sync_all`; both arms write byte-identical files, cross-readable.
+- `h2d-probe` records an `[N/A]` power limit (F). C's I17 (grouped owner calls), the I16 revert, and the
+  `--expert-bank-pool-chunk-bytes` diagnostic flag. `docs/FLAGS.md` rows for both of F's doors.
+
+**Lanes, verbatim.** F: item 17 `test spill_pread::tests::mapped_serve_reads_in_place_and_owns_the_buffer_until_its_event
+... ok`, the smoke's tokens equal the oracle on all three arms; item 18 `M1-B2-CYCLE 1 passed=True` (buffered) and
+`M1-B2-CYCLE 2 passed=True` (direct), export 4,353 against 1,385 ms in that pair (the fsync 2,798 to 1.0 ms), import
+2.0 s both ways; the 5090 capped regime unscored (`regime_scored=False`, the build volume shares the proven device).
+C: `DAY75 VERDICT ... i16=regresses` (+0.018 s gen-only, reverted), `DAY77 VERDICT ... i17=flat` (kept),
+`DAY76 CHUNK VERDICT ... -> chunk_does_not`, `DAY74 INDUCE VERDICT rig=box29-285k ... -> not_induced (compaction in
+0 of 6 REF+I and 3 of 6 door+I spans)`.
+
+**Integration fixes, each its own commit.**
+- F's code failed the battery's `clippy -D warnings --all-targets` in both forms: `memcpy_dtov` (deprecated, a test) and
+  three `x % DIRECT_ALIGN == 0` as `is_multiple_of` (DIRECT_ALIGN is 4096; the same values). F had not run clippy; it
+  now runs both forms on every push and took the fix byte for byte.
+- memra-tier's day-4 SLRU test pins the sha256 of `moe_cache.rs`; C and F both edited it, so the merged file matched
+  neither pin. The merged diff changes no SLRU statement (the bypass branch runs only with the flag set and
+  `bypass_allowed`); the fixture is re-pinned to the merged file and its 2,013-row replay passes.
+- Location words scrubbed from four of lane C's tracked records (host class only).
+
+**Found in the battery, pre-existing on main: #777.** serve-smoke's Q35 mixed c=4 cold-prefill arm ran on a box for
+the first time (the 35B linked at its rig path) and reads `FAIL: Q35 mixed c=4 exact-token regression`, although all
+20 requests return exactly 60 tokens with `golden_ok`: every hit reports `cached_tokens` 4832 against
+`expected_cached_tokens` 4860. Main's own tree `6581fecfc`, run on the same box, reads the same (`Counter({(4832,
+4860): 18})`, `integ68-q35ab/`). The harness expects the full prompt length while, since #602, the prompt-end seed
+publishes on the 32-token GDN grid and `cached_tokens` reports the aligned length. The expectation is stale, not the
+tokens; the fix is filed as #777 and is not this integ's.
+
+**Ruling 63:** F's items 17 and 18 land as default-off doors with their correctness receipts; their target-card timing
+is F's running sitting. C's I16 revert and I17 stand as read. The Q35 arm's failure is main's, owned by #777.
+
+**Checks.**
+- CPU battery on `ff385ce1f`: 11 of 15, red on exactly the clippy and fixture-pin failures above
+  (`integ68-cpu-battery/`); on the fixed head `d74ccb7fe`, 15 of 15 rc=0 (`integ68-cpu-battery-fix/`).
+- GPU battery on BOX35 (a Ryzen 9 5900XT with one RTX PRO 6000 WS; `integ68-pro/`, 467 receipts mirrored and checked),
+  on `af4b145c1`, before the lint and pin commits (they change no program a GPU cell runs: a test, a debug assertion,
+  two same-value checks, a fixture hash, record text): serve-smoke 1 failed (the Q35 arm, #777; every other arm ok);
+  engine span cells `10 passed`, worker cells `18 passed`; identity 12 ok; fault default and plain 255 ok each; hit OFF
+  and ON 61 and 68 ok; `ADMIT-MEM BURST GATE: ALL GREEN`; `SPEC-CTX-EDGE GATE: ALL GREEN`; the pause gate with the 27B
+  `ALL GREEN` (40 ok).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

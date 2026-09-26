@@ -2,7 +2,11 @@
 //! their Rc-backed leases never enter a cache/PP worker's Send/Sync object graph.
 //! This is deliberately NOT an RPC implementation: a migrated worker refuses
 //! WrongOwner instead of staging on an arbitrary thread or silently falling back.
-use super::{ExpertDemand, ExpertDispatchBank, ExpertDispatchId, HostBuffer, dispatch_id};
+use super::{
+    ExpertDemand, ExpertDemands, ExpertDispatchBank, ExpertDispatchId, HostBuffer, MAX_GROUP,
+    dispatch_id,
+};
+use crate::contracts::BankLease;
 use crate::contracts::{Digest, Epochs, Error, Result};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -15,9 +19,14 @@ static NEXT_OWNER: AtomicU64 = AtomicU64::new(1);
 thread_local! {
     static OWNERS: RefCell<BTreeMap<u64, Entry>> = const { RefCell::new(BTreeMap::new()) };
 }
+/// What a pending lease number holds: one record's demand, or (day 64, I15) one grouped demand.
+enum Leased {
+    One(ExpertDemand),
+    Many(ExpertDemands),
+}
 struct Entry {
     bank: Option<Box<dyn ExpertDispatchBank>>,
-    pending: BTreeMap<u64, ExpertDemand>,
+    pending: BTreeMap<u64, Leased>,
     next_lease: u64,
     limit: usize,
 }
@@ -72,6 +81,67 @@ impl ExpertLeaseToken {
     pub fn epochs(&self) -> Epochs {
         self.epochs
     }
+}
+/// Day 64 (I15, `research/spill-c-20260919/DAY64.md`): the token of one grouped demand, up to `MAX_GROUP` records
+/// under one ticket. It carries the identity the registry holds for the group (every record's dispatch key in order,
+/// the one artifact digest, the ticket's epochs); `with_bytes_at` and `finish_group` refuse a token that does not
+/// name it. Every field is `Copy`; the token stays `Send + Sync`.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ExpertGroupToken {
+    owner: u64,
+    lease: u64,
+    records: [ExpertDispatchId; MAX_GROUP],
+    count: u8,
+    artifact: Digest,
+    epochs: Epochs,
+}
+impl ExpertGroupToken {
+    /// The group's records' `(layer, proj, expert)` keys, in the order demanded.
+    pub fn records(&self) -> &[ExpertDispatchId] {
+        &self.records[..usize::from(self.count)]
+    }
+    pub fn artifact(&self) -> Digest {
+        self.artifact
+    }
+    pub fn epochs(&self) -> Epochs {
+        self.epochs
+    }
+}
+/// A group's identity from the registry's own `ExpertDemands`: every lease's key in order, their one artifact.
+fn group_identity(
+    demands: &ExpertDemands,
+) -> Result<([ExpertDispatchId; MAX_GROUP], u8, Digest, Epochs)> {
+    if demands.leases.is_empty() || demands.leases.len() > MAX_GROUP {
+        return Err(Error::Incomplete);
+    }
+    let artifact = demands.leases[0].id().tensor.artifact;
+    let mut records = [(0u16, 0u8, 0u16); MAX_GROUP];
+    for (slot, lease) in records.iter_mut().zip(&demands.leases) {
+        if lease.id().tensor.artifact != artifact {
+            return Err(Error::ProgramMismatch);
+        }
+        *slot = dispatch_id(&lease.id().record)?;
+    }
+    Ok((
+        records,
+        demands.leases.len() as u8,
+        artifact,
+        demands.ticket.epochs,
+    ))
+}
+fn require_group(demands: &ExpertDemands, token: &ExpertGroupToken) -> Result<()> {
+    if group_identity(demands)? != (token.records, token.count, token.artifact, token.epochs) {
+        return Err(Error::ForeignLease);
+    }
+    Ok(())
+}
+/// A lease's bytes, a heap `Vec` or a pooled buffer, lent to `f` for the borrow only.
+fn lend<T>(lease: &BankLease, f: impl FnOnce(&[u8]) -> T) -> Result<T> {
+    if let Ok(bytes) = lease.resource::<Vec<u8>>() {
+        return Ok(f(&bytes));
+    }
+    let buffer = lease.resource::<Box<dyn HostBuffer>>()?;
+    Ok(f(buffer.as_slice()))
 }
 /// The identity a pending lease carries, read from the registry's own `ExpertDemand`.
 fn identity(demand: &ExpertDemand) -> Result<(ExpertDispatchId, Digest, Epochs)> {
@@ -159,6 +229,21 @@ impl ExpertBankProxy {
     pub fn host_resident(&self, id: ExpertDispatchId) -> Result<bool> {
         self.access(|e| e.bank.as_ref().ok_or(Error::NotFound)?.host_resident(id))
     }
+    /// Day 77 (I17): `host_resident` for each record of `ids` (at most `MAX_GROUP`), in order, in
+    /// one registry entry; entries past `ids.len()` read `false`.
+    pub fn host_resident_many(&self, ids: &[ExpertDispatchId]) -> Result<[bool; MAX_GROUP]> {
+        if ids.len() > MAX_GROUP {
+            return Err(Error::Capacity);
+        }
+        self.access(|e| {
+            let bank = e.bank.as_ref().ok_or(Error::NotFound)?;
+            let mut out = [false; MAX_GROUP];
+            for (slot, &id) in out.iter_mut().zip(ids) {
+                *slot = bank.host_resident(id)?;
+            }
+            Ok(out)
+        })
+    }
     /// The registered bank's stage clock line (`ExpertDispatchBank::stage_report`), read on
     /// the owner thread like every other call; `Ok(None)` when no clock is installed.
     pub fn stage_report(&self) -> Result<Option<String>> {
@@ -185,7 +270,7 @@ impl ExpertBankProxy {
                     });
                 }
             };
-            e.pending.insert(lease, demand);
+            e.pending.insert(lease, Leased::One(demand));
             e.next_lease = next;
             Ok(ExpertLeaseToken {
                 owner: self.id,
@@ -203,15 +288,14 @@ impl ExpertBankProxy {
             return Err(Error::ForeignLease);
         }
         self.access(|e| {
-            let demand = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?;
+            let Leased::One(demand) = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
+            else {
+                return Err(Error::ForeignLease);
+            };
             require(demand, token)?;
             // A heap `Vec` (no buffer source) or a pooled buffer (day 47): the same bytes lent
             // the same way; the borrow ends before this returns.
-            if let Ok(bytes) = demand.lease.resource::<Vec<u8>>() {
-                return Ok(f(&bytes));
-            }
-            let buffer = demand.lease.resource::<Box<dyn HostBuffer>>()?;
-            Ok(f(buffer.as_slice()))
+            lend(&demand.lease, f)
         })
     }
     /// Explicit completion observation by the CUDA owner, never Drop. On error
@@ -221,7 +305,10 @@ impl ExpertBankProxy {
             return Err(Error::ForeignLease);
         }
         self.access(|e| {
-            let demand = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?;
+            let Leased::One(demand) = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
+            else {
+                return Err(Error::ForeignLease);
+            };
             require(demand, token)?;
             // Retain the original alias if finish fails partway through retirement.
             let submitted = ExpertDemand {
@@ -229,6 +316,130 @@ impl ExpertBankProxy {
                 lease: demand.lease.clone(),
             };
             e.bank.as_mut().ok_or(Error::NotFound)?.finish(submitted)?;
+            e.pending.remove(&token.lease);
+            Ok(())
+        })
+    }
+    /// Day 64 (I15): one ticket leasing every block of `blocks` (1 to `MAX_GROUP` records, in order) under the same
+    /// pending bound as `demand` (one lease number per ticket). A bank that publishes other records than the ones
+    /// demanded, in another order, or of more than one artifact, is refused after its group is finished through it.
+    pub fn demand_many(&self, blocks: &[(ExpertDispatchId, usize)]) -> Result<ExpertGroupToken> {
+        if blocks.is_empty() {
+            return Err(Error::EmptyBatch);
+        }
+        if blocks.len() > MAX_GROUP {
+            return Err(Error::Capacity);
+        }
+        self.access(|e| {
+            if e.pending.len() >= e.limit {
+                return Err(Error::Capacity);
+            }
+            let lease = e.next_lease;
+            let next = lease.checked_add(1).ok_or(Error::Overflow)?;
+            let demands = e
+                .bank
+                .as_mut()
+                .ok_or(Error::NotFound)?
+                .demand_many(blocks)?;
+            let identity = match group_identity(&demands) {
+                Ok(identity)
+                    if usize::from(identity.1) == blocks.len()
+                        && identity
+                            .0
+                            .iter()
+                            .zip(blocks)
+                            .all(|(got, (want, _))| got == want) =>
+                {
+                    identity
+                }
+                outcome => {
+                    e.bank
+                        .as_mut()
+                        .ok_or(Error::NotFound)?
+                        .finish_many(demands)?;
+                    return Err(match outcome {
+                        Ok(_) => Error::ProgramMismatch,
+                        Err(err) => err,
+                    });
+                }
+            };
+            e.pending.insert(lease, Leased::Many(demands));
+            e.next_lease = next;
+            let (records, count, artifact, epochs) = identity;
+            Ok(ExpertGroupToken {
+                owner: self.id,
+                lease,
+                records,
+                count,
+                artifact,
+                epochs,
+            })
+        })
+    }
+    /// Day 64 (I15): the bytes of the group's `index`-th record, lent as `with_bytes` lends one.
+    pub fn with_bytes_at<T>(
+        &self,
+        token: &ExpertGroupToken,
+        index: usize,
+        f: impl FnOnce(&[u8]) -> T,
+    ) -> Result<T> {
+        if token.owner != self.id {
+            return Err(Error::ForeignLease);
+        }
+        self.access(|e| {
+            let Leased::Many(demands) = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
+            else {
+                return Err(Error::ForeignLease);
+            };
+            require_group(demands, token)?;
+            lend(demands.leases.get(index).ok_or(Error::NotFound)?, f)
+        })
+    }
+    /// Day 77 (I17): each record's bytes of the group lent to `f(index, bytes)`, in order, in one
+    /// registry entry, with `with_bytes_at`'s checks (the group's identity, then each lease). The
+    /// first `Err` from `f` stops the walk and is returned as `Ok(Err(..))`, like `with_bytes_at`'s
+    /// value; the leases stay pending either way.
+    pub fn with_bytes_each<E>(
+        &self,
+        token: &ExpertGroupToken,
+        mut f: impl FnMut(usize, &[u8]) -> std::result::Result<(), E>,
+    ) -> Result<std::result::Result<(), E>> {
+        if token.owner != self.id {
+            return Err(Error::ForeignLease);
+        }
+        self.access(|e| {
+            let Leased::Many(demands) = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
+            else {
+                return Err(Error::ForeignLease);
+            };
+            require_group(demands, token)?;
+            for (index, lease) in demands.leases.iter().enumerate() {
+                if let Err(err) = lend(lease, |bytes| f(index, bytes))? {
+                    return Ok(Err(err));
+                }
+            }
+            Ok(Ok(()))
+        })
+    }
+    /// Day 64 (I15): finish every lease of a group, once; the same retention on error as `finish`.
+    pub fn finish_group(&self, token: &ExpertGroupToken) -> Result<()> {
+        if token.owner != self.id {
+            return Err(Error::ForeignLease);
+        }
+        self.access(|e| {
+            let Leased::Many(demands) = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
+            else {
+                return Err(Error::ForeignLease);
+            };
+            require_group(demands, token)?;
+            let submitted = ExpertDemands {
+                ticket: demands.ticket,
+                leases: demands.leases.clone(),
+            };
+            e.bank
+                .as_mut()
+                .ok_or(Error::NotFound)?
+                .finish_many(submitted)?;
             e.pending.remove(&token.lease);
             Ok(())
         })

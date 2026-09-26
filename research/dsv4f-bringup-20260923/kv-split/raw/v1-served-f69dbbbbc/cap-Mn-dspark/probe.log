@@ -1,0 +1,11 @@
+max_tokens=100000 status=200 admitted=True first=data: {"object":"chat.completion.chunk","model":"dsv4f","choices":[{"index":0,"delta":{"reasoning":"1","role":"assistant
+max_tokens=200000 status=200 admitted=True first=data: {"object":"chat.completion.chunk","model":"dsv4f","choices":[{"index":0,"delta":{"reasoning":"1","role":"assistant
+max_tokens=300000 status=200 admitted=True first=data: {"object":"chat.completion.chunk","model":"dsv4f","choices":[{"index":0,"delta":{"reasoning":"1","role":"assistant
+max_tokens=400000 status=400 admitted=False body=b'{"error":{"message":"a 400010-token session (prompt 10 + max_tokens 400000) needs 10102661080 bytes on device 0, above the 10036142872 bytes this route offers there; the largest session that fits is 3'
+max_tokens=500000 status=400 admitted=False body=b'{"error":{"message":"a 500010-token session (prompt 10 + max_tokens 500000) needs 11478650840 bytes on device 0, above the 10036142872 bytes this route offers there; the largest session that fits is 3'
+max_tokens=600000 status=400 admitted=False body=b'{"error":{"message":"a 600010-token session (prompt 10 + max_tokens 600000) needs 12854640600 bytes on device 0, above the 10036142872 bytes this route offers there; the largest session that fits is 3'
+max_tokens=700000 status=400 admitted=False body=b'{"error":{"message":"a 700010-token session (prompt 10 + max_tokens 700000) needs 14230630360 bytes on device 0, above the 10036142872 bytes this route offers there; the largest session that fits is 3'
+max_tokens=800000 status=400 admitted=False body=b'{"error":{"message":"a 800010-token session (prompt 10 + max_tokens 800000) needs 15606661080 bytes on device 0, above the 10036142872 bytes this route offers there; the largest session that fits is 3'
+max_tokens=900000 status=400 admitted=False body=b'{"error":{"message":"a 900010-token session (prompt 10 + max_tokens 900000) needs 16982650840 bytes on device 0, above the 10036142872 bytes this route offers there; the largest session that fits is 3'
+max_tokens=1000000 status=400 admitted=False body=b'{"error":{"message":"a 1000010-token session (prompt 10 + max_tokens 1000000) needs 18358640600 bytes on device 0, above the 10036142872 bytes this route offers there; the largest session that fits is'
+LARGEST_ADMITTED 300000

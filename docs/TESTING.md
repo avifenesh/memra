@@ -1100,6 +1100,24 @@ shapes. The dense test's red arm moves one output row's weight codes and require
 move in every token row and its neighbour in none. Output buffers start as a NaN pattern, so an
 unwritten element fails, and the dense test also requires the stride gaps to stay unwritten. `_tile_timing` prints device time against the loop. Receipts:
 `research/dsv4f-bringup-20260923/prefill-tile/`.
+### DSv4 TP/EP position-split C4 store (#710)
+
+`dsv4_kv_split_gate <model-dir> <source-tape> [prompt-tokens] [steps]` (a 2x RTX PRO 6000 pair,
+under `/tmp/memra-gpu.lock`, defaults 3000 and 300) loads the TP/EP program once and allocates
+one state with replicated caches (the reference) and one with the C4 stores split by block
+parity across the ranks (`set_c4_split_for_gate`). The prompt is long enough that the indexer
+picks from more blocks than its top-k.
+
+Each check compares full logits bits against the replicated state:
+- The chunked prefill (512-token chunks) of both states.
+- Every eager greedy step after it.
+- A third, split state primed the same way, decoding on the full-token replay graphs.
+- Both eager states parked to host and restored, then continued.
+
+It also prints both states' cache bytes. With the split the TP/EP default, the long replay gate,
+the TP/EP rows gate and the DSpark gate on TP/EP run on split states and must keep their receipts'
+tokens and accept shas. Receipts: `research/dsv4f-bringup-20260923/kv-split/`.
+
 ### DSv4 TP/EP B-row steps and their graphs (#710)
 
 `DSV4_ROWS_GATE_TOPOLOGY=tp_ep dsv4_rows_gate <model-dir> <source-tape> 24 64` (a 2x RTX PRO 6000

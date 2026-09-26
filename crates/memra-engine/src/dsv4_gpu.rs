@@ -1138,6 +1138,11 @@ pub struct Dsv4Gpu {
     /// between the two rank launches; this is a correctness lock, not a timing
     /// drain or a concurrency qualification.
     tp_ep_walk_lock: std::sync::Mutex<()>,
+    /// Per rank: a prefill-width split transaction's copy of the peer's committed half of one C4
+    /// store (memra #710). Sized at load for `max_seq`, so the memory calibration sees it and
+    /// no session grows it later; every walk holds `tp_ep_walk_lock` and runs stream-ordered on
+    /// the rank's stream, so one buffer serves every session and layer.
+    split_stage: [std::sync::Mutex<Option<CudaSlice<f32>>>; 2],
     pub model: Dsv4Model,
     pub stages: Vec<Stage>,
     pub layer_stage: Vec<usize>, // trunk layer -> stage idx
@@ -1233,6 +1238,9 @@ pub struct LayerCache {
     pub kvc: CudaSlice<f32>,
     // Some: kvc contains only SWA + transient rows; compressed C4 lives on host.
     c4_host: Option<C4HostStore>,
+    // Some: a C4 layer of a TP/EP position-split state; kvc holds this rank's parity of the
+    // compressed blocks (memra #710).
+    split: Option<C4Split>,
     pub n_blocks: usize,
     pub pend_kv: Option<CudaSlice<f32>>,
     pub pend_score: Option<CudaSlice<f32>>,
@@ -1242,6 +1250,52 @@ pub struct LayerCache {
     pub i_blocks: usize,
     pub ipend_kv: Option<CudaSlice<f32>>,
     pub ipend_score: Option<CudaSlice<f32>>,
+}
+
+/// A C4 layer's store under the TP/EP position split (memra #710): logical compressed block c
+/// lives on rank `c & 1` at kvc row `win + (c >> 1)`. Both ranks compute every block; the rank
+/// that does not own one keeps it in `recent` (slot `(c >> 1) % recent_rows`, tagged `c`) so a
+/// round reads its own new blocks locally while the owner's write crosses the fabric. The
+/// transient rows sit at `win + local_rows`.
+pub(crate) struct C4Split {
+    rank: usize,
+    cap_blocks: usize,
+    local_rows: usize,
+    recent_rows: usize,
+    recent: CudaSlice<f32>,
+    tags: CudaSlice<i32>,
+}
+
+impl C4Split {
+    /// Blocks one rank stores out of a logical capacity: the even ones on rank 0, odd on rank 1,
+    /// allocated as the larger half on both.
+    fn local_rows(cap_blocks: usize) -> usize {
+        cap_blocks.div_ceil(2)
+    }
+
+    /// Recent slots a state needs: every block a round of `transient_rows` rows emits that the
+    /// rank does not own, with headroom.
+    fn recent_rows(transient_rows: usize) -> usize {
+        (transient_rows / 8 + 4).next_power_of_two()
+    }
+}
+
+/// Whether TP/EP states split their C4 stores across the ranks: 0 = the load's default (on for
+/// the attention-TP2 device program), 1 = off, 2 = on. A gate sets it before allocating states;
+/// each state keeps what it was allocated with.
+static DSV4_C4_SPLIT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Gate-only: allocate TP/EP states with the position-split C4 store (`Some(true)`), replicated
+/// (`Some(false)`), or at the load's default (`None`).
+pub fn set_c4_split_for_gate(split: Option<bool>) {
+    DSV4_C4_SPLIT.store(
+        match split {
+            None => 0,
+            Some(false) => 1,
+            Some(true) => 2,
+        },
+        Ordering::SeqCst,
+    );
 }
 
 /// Lane-8 per-stage decode workspace: every per-step buffer preallocated ONCE (the
@@ -1533,6 +1587,10 @@ struct LayerCacheShape {
     cap_blocks: usize,
     /// The compressed C4 history lives in pinned host RAM, not in `kvc`.
     c4_host: bool,
+    /// The compressed C4 history is split by block parity across the TP/EP ranks (memra #710):
+    /// `kvc` holds `C4Split::local_rows` of it, plus `recent_rows` recent slots.
+    split: bool,
+    recent_rows: usize,
     kvc_rows: usize,
     pend: Option<(usize, usize)>,
     /// Indexer key-store elements; `Some(0)` still allocates (a zero-row store).
@@ -1547,13 +1605,28 @@ impl LayerCacheShape {
         transient_rows: usize,
         host_c4: bool,
         win: usize,
+        split: bool,
     ) -> Self {
         let cap_blocks = dsv4_cache_cap_blocks(capacity, geom.ratio);
         let c4_host = host_c4 && geom.ratio == 4 && geom.idx.is_some() && cap_blocks > 0;
+        let split = split && !c4_host && geom.ratio == 4 && geom.idx.is_some();
+        let stored = if c4_host {
+            0
+        } else if split {
+            C4Split::local_rows(cap_blocks)
+        } else {
+            cap_blocks
+        };
         LayerCacheShape {
             cap_blocks,
             c4_host,
-            kvc_rows: win + if c4_host { 0 } else { cap_blocks } + transient_rows,
+            split,
+            recent_rows: if split {
+                C4Split::recent_rows(transient_rows)
+            } else {
+                0
+            },
+            kvc_rows: win + stored + transient_rows,
             pend: geom.cmp,
             ikvc_elems: geom.idx.map(|(d, _, _)| cap_blocks * d),
             ipend: geom.idx.map(|(_, latent, slots)| (latent, slots)),
@@ -1566,6 +1639,7 @@ impl LayerCacheShape {
         let pair =
             |p: Option<(usize, usize)>| p.map_or(0, |(latent, slots)| 2 * slots * latent * 4);
         (self.kvc_rows * hd * 4
+            + self.recent_rows * (hd * 4 + 4)
             + pair(self.pend)
             + self.ikvc_elems.unwrap_or(0) * 4
             + pair(self.ipend)) as u64
@@ -1582,6 +1656,7 @@ impl LayerCacheShape {
 }
 
 /// Per-stage `(device, pinned host)` session-cache bytes of a layout.
+#[allow(clippy::too_many_arguments)]
 fn plan_cache_bytes(
     layout: &[CacheSlot],
     n_stages: usize,
@@ -1590,11 +1665,12 @@ fn plan_cache_bytes(
     host_c4: bool,
     win: usize,
     hd: usize,
+    split: bool,
 ) -> (Vec<u64>, Vec<u64>) {
     let mut device = vec![0u64; n_stages];
     let mut host = vec![0u64; n_stages];
     for slot in layout {
-        let shape = LayerCacheShape::new(slot.geom, capacity, transient_rows, host_c4, win);
+        let shape = LayerCacheShape::new(slot.geom, capacity, transient_rows, host_c4, win, split);
         device[slot.stage] += shape.device_bytes(hd);
         host[slot.stage] += shape.host_bytes();
     }
@@ -3887,6 +3963,7 @@ impl Dsv4Gpu {
             tp_ep_rank_layer_calls: std::array::from_fn(|_| std::sync::atomic::AtomicU64::new(0)),
             tp_ep_ar: std::sync::Mutex::new(None),
             tp_ep_walk_lock: std::sync::Mutex::new(()),
+            split_stage: std::array::from_fn(|_| std::sync::Mutex::new(None)),
             model,
             stages,
             layer_stage: if topology.is_tp_ep() {
@@ -4351,6 +4428,7 @@ impl Dsv4Gpu {
         if me.attention_tp.is_some() {
             me.pack_attention_tp_layers()?;
         }
+        me.alloc_split_stage()?;
         for line in crate::dsv4_doors::door_receipt_lines(&me.door_program()) {
             eprintln!("{line}");
         }
@@ -6770,18 +6848,20 @@ impl Dsv4Gpu {
         state: &mut DecodeState,
         chunk: usize,
     ) -> Res<Vec<f32>> {
-        self.prefill_with_cache_chunked_yielding(ids, state, chunk, &mut || {})
+        self.prefill_with_cache_chunked_yielding(ids, state, chunk, &mut || Ok(()))
     }
 
     /// [`Self::prefill_with_cache_chunked`], calling `between` after every committed chunk but
     /// the last. A pipelined serve loop gives its launch turn up there, so another session's
-    /// step is not stalled for the whole prompt. Same transactions, same bits.
+    /// step is not stalled for the whole prompt. Same transactions, same bits. An error from
+    /// `between` ends the prefill with that error; the state then holds a committed prefix
+    /// only and must be dropped (a serve loop does so when its client has left).
     pub fn prefill_with_cache_chunked_yielding(
         &self,
         ids: &[u32],
         state: &mut DecodeState,
         chunk: usize,
-        between: &mut dyn FnMut(),
+        between: &mut dyn FnMut() -> Res<()>,
     ) -> Res<Vec<f32>> {
         assert_eq!(state.pos, 0, "chunked prefill needs a fresh DecodeState");
         if ids.is_empty() {
@@ -6808,7 +6888,7 @@ impl Dsv4Gpu {
         if ids.len() == 1 {
             return Ok(first);
         }
-        between();
+        between()?;
         self.continue_prefix_chunked_yielding(&ids[1..], state, chunk, between)
     }
 
@@ -6820,7 +6900,7 @@ impl Dsv4Gpu {
         state: &mut DecodeState,
         chunk: usize,
     ) -> Res<Vec<f32>> {
-        self.continue_prefix_chunked_yielding(suffix, state, chunk, &mut || {})
+        self.continue_prefix_chunked_yielding(suffix, state, chunk, &mut || Ok(()))
     }
 
     /// [`Self::continue_prefix_chunked`] with a `between` hook after every committed chunk but
@@ -6830,7 +6910,7 @@ impl Dsv4Gpu {
         suffix: &[u32],
         state: &mut DecodeState,
         chunk: usize,
-        between: &mut dyn FnMut(),
+        between: &mut dyn FnMut() -> Res<()>,
     ) -> Res<Vec<f32>> {
         if suffix.is_empty() {
             return Err("dsv4 chunked continuation needs a non-empty suffix".into());
@@ -6865,7 +6945,7 @@ impl Dsv4Gpu {
             // completion point (a wedge is then caught one stall bound after that stamp).
             crate::progress::note_prime_rows(toks.len());
             if !final_chunk {
-                between();
+                between()?;
             }
             if let Some(rows) = logits {
                 last_logits = Some(if output == VerifyOutput::Last {
@@ -7424,7 +7504,56 @@ impl Dsv4Gpu {
             host_c4,
             d.sliding_window as usize,
             d.head_dim as usize,
+            self.c4_split_on(host_c4),
         ))
+    }
+
+    /// The program a position-split C4 store can run on, whatever the gate seam says.
+    fn c4_split_program(&self) -> bool {
+        self.topology.is_tp_ep()
+            && self.attention_tp.is_some()
+            && self.matrix_moe
+            && self.decode_path == (DecodePath::Device { host_math: false })
+    }
+
+    /// Allocate each rank's split staging copy at load: the peer's committed half of the
+    /// largest C4 store `max_seq` can hold, `ceil(max_seq / ratio / 2)` rows.
+    fn alloc_split_stage(&mut self) -> Res<()> {
+        if !self.c4_split_program() {
+            return Ok(());
+        }
+        let hd = self.model.cfg().head_dim as usize;
+        let rows = self
+            .cache_layout()
+            .iter()
+            .filter(|slot| slot.geom.ratio == 4 && slot.geom.idx.is_some())
+            .map(|slot| (self.max_seq / slot.geom.ratio).div_ceil(2))
+            .max()
+            .unwrap_or(0);
+        if rows == 0 {
+            return Ok(());
+        }
+        for rank in 0..2 {
+            let stream = self.stages[rank].gpu.stream().clone();
+            let buf = stream
+                .alloc_zeros::<f32>(rows * hd)
+                .map_err(e("split stage alloc"))?;
+            *self.split_stage[rank]
+                .lock()
+                .map_err(|_| "split stage mutex poisoned")? = Some(buf);
+        }
+        eprintln!(
+            "[load] position-split staging: {rows} rows ({} MiB) per rank",
+            (rows * hd * 4) >> 20
+        );
+        Ok(())
+    }
+
+    /// Whether a TP/EP state allocated now splits its C4 stores across the ranks (memra #710):
+    /// the default for the attention-TP2 matrix device program, never with host C4.
+    fn c4_split_on(&self, host_c4: bool) -> bool {
+        // 1 is the gate seam's replicated arm; 0 (the default) and 2 split.
+        !host_c4 && self.c4_split_program() && DSV4_C4_SPLIT.load(Ordering::SeqCst) != 1
     }
 
     /// Device bytes the active-C4 gather reserves in one transaction workspace of `width`
@@ -7535,6 +7664,7 @@ impl Dsv4Gpu {
             );
         }
         let layout = self.cache_layout();
+        let split = self.c4_split_on(host_c4);
         let mut caches = Vec::with_capacity(layout.len());
         let mut rank1 = Vec::new();
         let mut cache_bytes = vec![0u64; self.stages.len()];
@@ -7554,7 +7684,8 @@ impl Dsv4Gpu {
                 .bind_to_thread()
                 .map_err(e(lbl("bind ctx cache", "bind ctx tp cache")))?;
             let stream = st.gpu.stream();
-            let shape = LayerCacheShape::new(slot.geom, capacity, transient_rows, host_c4, win);
+            let shape =
+                LayerCacheShape::new(slot.geom, capacity, transient_rows, host_c4, win, split);
             let c4_host = if shape.c4_host {
                 let store =
                     C4HostStore::with_recent(stream.clone(), shape.cap_blocks, recent_rows)?;
@@ -7590,9 +7721,26 @@ impl Dsv4Gpu {
             let (ipend_kv, ipend_score) = mk_pend(shape.ipend)?;
             cache_bytes[stage_i] +=
                 shape.device_bytes(hd) + c4_host.as_ref().map_or(0, C4HostStore::device_bytes);
+            let split = if shape.split {
+                Some(C4Split {
+                    rank: usize::from(slot.replica),
+                    cap_blocks: shape.cap_blocks,
+                    local_rows: C4Split::local_rows(shape.cap_blocks),
+                    recent_rows: shape.recent_rows,
+                    recent: stream
+                        .alloc_zeros::<f32>(shape.recent_rows * hd)
+                        .map_err(e(lbl("split recent alloc", "tp split recent alloc")))?,
+                    tags: stream
+                        .clone_htod(&vec![-1i32; shape.recent_rows])
+                        .map_err(e(lbl("split tags alloc", "tp split tags alloc")))?,
+                })
+            } else {
+                None
+            };
             let cache = LayerCache {
                 kvc,
                 c4_host,
+                split,
                 n_blocks: 0,
                 pend_kv,
                 pend_score,
@@ -7738,6 +7886,86 @@ impl Dsv4Gpu {
     /// model's compressed-state advantage. Instead this copies the 128-token SWA rings,
     /// append-only compressed rows through each high-water mark, and the compressor/indexer
     /// pending state. Copy commands are queued per stage and synchronized once per stage.
+    /// A position-split layer's canonical kvc image, `[window, live compressed rows]` in
+    /// logical block order, read from rank 0's plane (window and even blocks) and rank 1's (odd
+    /// blocks) into `out` (memra #710).
+    fn split_kvc_to_host(
+        &self,
+        rank0: &LayerCache,
+        rank1: &LayerCache,
+        n_blocks: usize,
+        out: &mut [f32],
+    ) -> Res<()> {
+        let win = self.model.cfg().sliding_window as usize;
+        let hd = self.model.cfg().head_dim as usize;
+        if out.len() != (win + n_blocks) * hd {
+            return Err("split snapshot image length mismatch".into());
+        }
+        let halves = [n_blocks.div_ceil(2), n_blocks / 2];
+        let mut parts: Vec<Vec<f32>> = Vec::with_capacity(2);
+        for (rank, (cache, rows)) in [(rank0, halves[0]), (rank1, halves[1])]
+            .into_iter()
+            .enumerate()
+        {
+            let st = &self.stages[rank];
+            st.gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("bind split snapshot"))?;
+            let stream = st.gpu.stream();
+            let mut part = vec![0f32; (if rank == 0 { win } else { 0 } + rows) * hd];
+            let src_start = if rank == 0 { 0 } else { win * hd };
+            stream
+                .memcpy_dtoh(
+                    &cache.kvc.slice(src_start..src_start + part.len()),
+                    &mut part[..],
+                )
+                .map_err(e("split snapshot dtoh"))?;
+            stream.synchronize().map_err(e("split snapshot sync"))?;
+            parts.push(part);
+        }
+        out[..win * hd].copy_from_slice(&parts[0][..win * hd]);
+        for c in 0..n_blocks {
+            let (part, base) = if c % 2 == 0 {
+                (&parts[0], win * hd)
+            } else {
+                (&parts[1], 0)
+            };
+            let src = base + (c / 2) * hd;
+            out[(win + c) * hd..(win + c + 1) * hd].copy_from_slice(&part[src..src + hd]);
+        }
+        Ok(())
+    }
+
+    /// Write a canonical `[window, live compressed rows]` image into one rank's position-split
+    /// plane: the window, then the blocks of the plane's parity at `win + c / 2`.
+    fn split_kvc_from_host(
+        stream: &std::sync::Arc<cudarc::driver::CudaStream>,
+        values: &[f32],
+        n_blocks: usize,
+        cache: &mut LayerCache,
+    ) -> Res<()> {
+        let sp_ = cache
+            .split
+            .as_ref()
+            .ok_or("split restore on an unsplit plane")?;
+        let rank = sp_.rank;
+        let hd = 512usize;
+        let win = values.len() / hd - n_blocks;
+        let mut plane: Vec<f32> = values[..win * hd].to_vec();
+        for c in (rank..n_blocks).step_by(2) {
+            plane.extend_from_slice(&values[(win + c) * hd..(win + c + 1) * hd]);
+        }
+        if plane.len() > cache.kvc.len() {
+            return Err("split restore image exceeds the plane".into());
+        }
+        stream
+            .memcpy_htod(&plane[..], &mut cache.kvc.slice_mut(..plane.len()))
+            .map_err(e("split restore htod"))?;
+        stream.synchronize().map_err(e("split restore sync"))?;
+        Ok(())
+    }
+
     pub fn snapshot_decode_state(&self, state: &DecodeState) -> Res<Dsv4HostDecodeState> {
         // Under TP/EP `layer_stage` is all 0, so the image is the rank-0 plane. Both ranks
         // run the same replicated cache writes (the TP/EP gates hold the digests equal), so
@@ -7782,8 +8010,12 @@ impl Dsv4Gpu {
             let kvc_elems = (win + cache.n_blocks)
                 .checked_mul(hd)
                 .ok_or_else(|| format!("layer {il} kvc live-size overflow"))?;
-            let logical_kvc_len =
-                cache.kvc.len() + cache.c4_host.as_ref().map_or(0, |h| h.rows * hd);
+            let logical_kvc_len = cache.kvc.len()
+                + cache.c4_host.as_ref().map_or(0, |h| h.rows * hd)
+                + cache
+                    .split
+                    .as_ref()
+                    .map_or(0, |sp_| (sp_.cap_blocks - sp_.local_rows) * hd);
             if kvc_elems > logical_kvc_len {
                 return Err(format!(
                     "layer {il} live kvc rows exceed allocation: {kvc_elems} > {}",
@@ -7855,6 +8087,16 @@ impl Dsv4Gpu {
                 stream
                     .memcpy_dtoh(&cache.kvc.slice(..win * hd), &mut all[..win * hd])
                     .map_err(e("C4 snapshot window"))?;
+            } else if cache.split.is_some() {
+                // Position-split store (memra #710): the canonical image interleaves the two
+                // ranks' halves back into logical block order.
+                let rank1 = state
+                    .tp_ep_caches
+                    .as_ref()
+                    .and_then(|r| r.get(il))
+                    .ok_or("split snapshot rank-1 layer missing")?;
+                let all = dsv4_pinned_f32_mut(slab, meta.kvc.range.clone());
+                self.split_kvc_to_host(cache, rank1, meta.n_blocks, all)?;
             } else {
                 dsv4_dtoh_span(&stream, &cache.kvc, slab, &meta.kvc)?;
             }
@@ -8006,6 +8248,10 @@ impl Dsv4Gpu {
                     range: meta.kvc.range.start..meta.kvc.range.start + win * hd,
                 };
                 dsv4_htod_span(&stream, slab, &window, &mut cache.kvc)?;
+            } else if cache.split.is_some() {
+                // Rank 0's half here, rank 1's with its plane below (memra #710).
+                let values = dsv4_pinned_f32(slab, meta.kvc.range.clone());
+                Self::split_kvc_from_host(&stream, values, meta.n_blocks, cache)?;
             } else {
                 dsv4_htod_span(&stream, slab, &meta.kvc, &mut cache.kvc)?;
             }
@@ -8037,7 +8283,12 @@ impl Dsv4Gpu {
                 let cache = rank1
                     .get_mut(il)
                     .ok_or("TP/EP restore rank-1 layer missing")?;
-                dsv4_htod_span(&stream, slab, &meta.kvc, &mut cache.kvc)?;
+                if cache.split.is_some() {
+                    let values = dsv4_pinned_f32(slab, meta.kvc.range.clone());
+                    Self::split_kvc_from_host(&stream, values, meta.n_blocks, cache)?;
+                } else {
+                    dsv4_htod_span(&stream, slab, &meta.kvc, &mut cache.kvc)?;
+                }
                 for (dst, span) in [
                     (cache.pend_kv.as_mut(), meta.pend_kv.as_ref()),
                     (cache.pend_score.as_mut(), meta.pend_score.as_ref()),
@@ -8421,6 +8672,7 @@ impl Dsv4Gpu {
         let LayerCache {
             kvc,
             c4_host: _,
+            split,
             n_blocks,
             pend_kv,
             pend_score,
@@ -8429,6 +8681,9 @@ impl Dsv4Gpu {
             ipend_kv,
             ipend_score,
         } = cache;
+        if split.is_some() {
+            return Err("the position-split C4 store runs on the TP/EP row walk only".into());
+        }
 
         // ---- attention sub-block
         let (y, post, comb) = Self::hc_pre(
@@ -10122,6 +10377,7 @@ impl Dsv4Gpu {
         let LayerCache {
             kvc,
             c4_host,
+            split,
             n_blocks,
             pend_kv,
             pend_score,
@@ -10130,6 +10386,9 @@ impl Dsv4Gpu {
             ipend_kv,
             ipend_score,
         } = cache;
+        if split.is_some() {
+            return Err("the position-split C4 store runs on the TP/EP row walk only".into());
+        }
 
         // ---- attention sub-block
         {
@@ -11901,15 +12160,20 @@ impl Dsv4Gpu {
                 let vws = &mut verify.ws[rank];
                 if self.attention_tp.is_some() {
                     let mut row0 = 0usize;
+                    let peer_stream = self.stages[1 - rank].gpu.stream();
                     let mut rows: Vec<AttnRows<'_>> = groups
                         .iter_mut()
                         .map(|g| {
+                            // A position-split cache gathers the peer's parity from its store.
+                            let peer_kvc =
+                                g.caches[1 - rank][il].kvc.device_ptr(&peer_stream).0 as *const f32;
                             let rows = AttnRows {
                                 cache: &mut g.caches[rank][il],
                                 lck: &mut g.ckpts[rank][il],
                                 pos0: g.pos0,
                                 t: g.t,
                                 row0,
+                                peer_kvc,
                             };
                             row0 += g.t;
                             rows
@@ -14484,6 +14748,9 @@ struct AttnRows<'a> {
     pos0: usize,
     t: usize,
     row0: usize,
+    /// The other TP/EP rank's store for this layer, read by a position-split cache's gather
+    /// (memra #710); null elsewhere.
+    peer_kvc: *const f32,
 }
 
 /// One request's rows in a TP/EP walk: its caches and verify checkpoints on each rank
@@ -15586,6 +15853,19 @@ impl Dsv4Gpu {
                 bytes[stage_index] += ep.owner_bytes;
                 bytes[1 - stage_index] += ep.peer_bytes;
             }
+            if self.c4_split_on(false) {
+                // The position-split gather's workspace, sized before any graph captures this
+                // workspace (memra #710): at most SPLIT_GATHER_ROWS query rows per gather.
+                let mut w = w;
+                bytes[stage_index] += C4Gather::ensure(
+                    &mut w.c4_gather,
+                    &s,
+                    tmax.min(crate::dsv4_c4::SPLIT_GATHER_ROWS),
+                    idx_stride,
+                )?;
+                ws.push(w);
+                continue;
+            }
             ws.push(w);
         }
         // per-layer §3.1 checkpoints, each on the layer's own device
@@ -16301,6 +16581,7 @@ impl Dsv4Gpu {
         replay_pos: Option<*const i32>,
         replay_cadence: Option<crate::dsv4_graph::ReplayCadence>,
         pre: Option<(*const f32, *const f32)>,
+        mut split: Option<&mut C4Split>,
     ) -> Res<()> {
         if replay_pos.is_some() && (t != 1 || host_store.is_some() || !matches!(cmp.ratio, 4 | 128))
         {
@@ -16429,6 +16710,14 @@ impl Dsv4Gpu {
                                 eps,
                                 (d as f32).powf(-0.5),
                                 sp(&stream),
+                                split.as_deref_mut().map_or(std::ptr::null_mut(), |sp_| {
+                                    sp_.recent.device_ptr_mut(&stream).0 as *mut f32
+                                }),
+                                split.as_deref_mut().map_or(std::ptr::null_mut(), |sp_| {
+                                    sp_.tags.device_ptr_mut(&stream).0 as *mut i32
+                                }),
+                                split.as_deref().map_or(0, |sp_| sp_.recent_rows as i32),
+                                split.as_deref().map_or(0, |sp_| sp_.rank as i32),
                             ),
                         )?;
                     }
@@ -16523,6 +16812,27 @@ impl Dsv4Gpu {
                 let src = emit.slice(row_off..row_off + d);
                 if let Some(host) = host_store.as_deref_mut() {
                     host.write(j, src)?;
+                } else if let Some(sp_) = split.as_deref_mut() {
+                    // Position-split store (memra #710): the owner's row or the recent slot.
+                    unsafe {
+                        ck(
+                            "split emit store",
+                            k::memra_dsv4_c4_split_store(
+                                src.device_ptr(&stream).0 as *const f32,
+                                dpm!(*store, &stream),
+                                sp_.recent.device_ptr_mut(&stream).0 as *mut f32,
+                                sp_.tags.device_ptr_mut(&stream).0 as *mut i32,
+                                sp_.recent_rows as i32,
+                                sp_.rank as i32,
+                                std::ptr::null(),
+                                ratio as i32,
+                                j as i32,
+                                d as i32,
+                                row0 as i32,
+                                sp(&stream),
+                            ),
+                        )?;
+                    }
                 } else {
                     let mut dst = store.slice_mut((row0 + j) * d..(row0 + j + 1) * d);
                     stream
@@ -16689,8 +16999,160 @@ impl Dsv4Gpu {
             pos0,
             t,
             row0: 0,
+            peer_kvc: std::ptr::null(),
         }];
         self.attention_rows_dev(st, layer, &mut rows, vws, input_rx, t, host_math)
+    }
+
+    /// The sparse sink attention over `nq` query rows starting at workspace row `qrow0`,
+    /// reading `slots` rows of `kv` through `idx` (the unchanged store, a host or split gather).
+    #[allow(clippy::too_many_arguments)]
+    fn sink_attention_rows(
+        &self,
+        vws: &mut VerifyWs,
+        stream: &std::sync::Arc<cudarc::driver::CudaStream>,
+        layer: &LayerDev,
+        sink: *const f32,
+        kv: *const f32,
+        idx: *const i32,
+        qrow0: usize,
+        nq: usize,
+        slots: usize,
+        heads: usize,
+        hd: usize,
+        win: usize,
+        sink_st: bool,
+        replay_pos: Option<*const i32>,
+    ) -> Res<()> {
+        let scale = (hd as f64).powf(-0.5) as f32;
+        unsafe {
+            if let Some(pos_dev) = replay_pos {
+                let topk = layer.idx.as_ref().map_or(i32::MAX, |ix| ix.topk as i32);
+                let slots_max = win
+                    + vws
+                        .replay_limit
+                        .checked_div(layer.ratio)
+                        .map_or(0, |n| n.min(topk as usize));
+                if sink_st {
+                    ck(
+                        "replay attention st",
+                        k::memra_dsv4_sink_attn_st_f32acc(
+                            dpf_row!(vws.q, stream, qrow0, heads * hd),
+                            kv,
+                            idx,
+                            sink,
+                            dpm!(vws.sink_scores, stream),
+                            dpm_row!(vws.o, stream, qrow0, heads * hd),
+                            1,
+                            heads as i32,
+                            hd as i32,
+                            slots_max as i32,
+                            vws.idx_stride as i32,
+                            scale,
+                            pos_dev,
+                            win as i32,
+                            layer.ratio as i32,
+                            topk,
+                            sp(stream),
+                        ),
+                    )?;
+                    self.sink_st_calls
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                } else {
+                    ck(
+                        "replay attention",
+                        k::memra_dsv4_replay_attention(
+                            dpf_row!(vws.qt, stream, qrow0, heads * hd),
+                            kv,
+                            idx,
+                            sink,
+                            dpm!(vws.sink_scores, stream),
+                            dpm!(vws.sink_evals, stream),
+                            vws.sink_den.device_ptr_mut(stream).0 as *mut f32,
+                            dpm_row!(vws.o, stream, qrow0, heads * hd),
+                            pos_dev,
+                            heads as i32,
+                            hd as i32,
+                            slots_max as i32,
+                            vws.idx_stride as i32,
+                            scale,
+                            win as i32,
+                            layer.ratio as i32,
+                            topk,
+                            sp(stream),
+                        ),
+                    )?;
+                }
+            } else if sink_st {
+                ck(
+                    "sink_attn_st_f32acc",
+                    k::memra_dsv4_sink_attn_st_f32acc(
+                        dpf_row!(vws.q, stream, qrow0, heads * hd),
+                        kv,
+                        idx,
+                        sink,
+                        dpm!(vws.sink_scores, stream),
+                        dpm_row!(vws.o, stream, qrow0, heads * hd),
+                        nq as i32,
+                        heads as i32,
+                        hd as i32,
+                        slots as i32,
+                        vws.idx_stride as i32,
+                        scale,
+                        std::ptr::null(),
+                        0,
+                        0,
+                        0,
+                        sp(stream),
+                    ),
+                )?;
+                self.sink_st_calls
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            } else if self.chains_f32 {
+                ck(
+                    "sink_attn_dec_mq_f32acc",
+                    k::memra_dsv4_sink_attn_dec_mq_f32acc(
+                        dpf_row!(vws.qt, stream, qrow0, heads * hd),
+                        kv,
+                        idx,
+                        sink,
+                        dpm!(vws.sink_scores, stream),
+                        dpm!(vws.sink_evals, stream),
+                        vws.sink_den.device_ptr_mut(stream).0 as *mut f32,
+                        dpm_row!(vws.o, stream, qrow0, heads * hd),
+                        nq as i32,
+                        heads as i32,
+                        hd as i32,
+                        slots as i32,
+                        vws.idx_stride as i32,
+                        scale,
+                        sp(stream),
+                    ),
+                )?;
+            } else {
+                ck(
+                    "sink_attn_dec_mq",
+                    k::memra_dsv4_sink_attn_dec_mq(
+                        dpf_row!(vws.q, stream, qrow0, heads * hd),
+                        kv,
+                        idx,
+                        sink,
+                        dpm!(vws.sink_scores, stream),
+                        dpm!(vws.sink_evals, stream),
+                        vws.sink_den.device_ptr_mut(stream).0 as *mut f64,
+                        dpm_row!(vws.o, stream, qrow0, heads * hd),
+                        nq as i32,
+                        heads as i32,
+                        hd as i32,
+                        slots as i32,
+                        vws.idx_stride as i32,
+                        scale,
+                        sp(stream),
+                    ),
+                )?;
+            }
+        }
+        Ok(())
     }
 
     /// The attention sub-block over `t` workspace rows made of row groups (memra #667 lever 2).
@@ -17112,9 +17574,11 @@ impl Dsv4Gpu {
             let replay_pos = replay_pos.map(|p| unsafe { p.add(row0) });
             let lck = &mut *g.lck;
             let trans_base = lck.trans_base;
+            let peer_kvc = g.peer_kvc;
             let LayerCache {
                 kvc,
                 c4_host,
+                split,
                 n_blocks,
                 pend_kv,
                 pend_score,
@@ -17125,7 +17589,13 @@ impl Dsv4Gpu {
             } = &mut *g.cache;
             {
                 let src = vws.kv.slice(row0 * hd..(row0 + t) * hd);
-                let physical_trans = if c4_host.is_some() { win } else { trans_base };
+                let physical_trans = if c4_host.is_some() {
+                    win
+                } else if let Some(sp) = split.as_ref() {
+                    win + sp.local_rows
+                } else {
+                    trans_base
+                };
                 let mut dst = kvc.slice_mut(physical_trans * hd..(physical_trans + t) * hd);
                 stream
                     .memcpy_dtod(&src, &mut dst)
@@ -17177,6 +17647,7 @@ impl Dsv4Gpu {
                             replay_pos,
                             replay_cadence,
                             pre,
+                            None,
                         )?;
                     }
                     debug_assert_eq!(*i_blocks, nbs[t - 1], "indexer block count (batch)");
@@ -17537,6 +18008,7 @@ impl Dsv4Gpu {
                         replay_pos,
                         replay_cadence,
                         pre,
+                        split.as_mut(),
                     )?;
                 }
                 debug_assert_eq!(*n_blocks, nbs[t - 1], "attn block count (batch)");
@@ -17574,6 +18046,103 @@ impl Dsv4Gpu {
 
             // sparse sink attention, T queries in one launch (uniform `slots`, -1 pads —
             // bit-inert by the pinned pad contract) + per-position de-rotation
+            if let Some(sp_) = split.as_ref() {
+                // Position-split C4 store (memra #710): each query's selected rows gathered
+                // from this rank, its recent ring and the peer, then the unchanged attention,
+                // in sub-batches of query rows.
+                let slots_g = match replay_pos {
+                    Some(_) => {
+                        let topk = layer.idx.as_ref().map_or(usize::MAX, |ix| ix.topk);
+                        win + vws
+                            .replay_limit
+                            .checked_div(layer.ratio)
+                            .map_or(0, |n| n.min(topk))
+                    }
+                    None => slots,
+                };
+                let local_trans = win + sp_.local_rows;
+                let transient_rows = kvc.len() / hd - local_trans;
+                // A prefill-width transaction reads the same remote rows for many queries:
+                // copy the peer's committed half once per layer and gather from the copy.
+                // Blocks this round emitted come from the recent ring, never from the copy,
+                // so rows the peer is still writing are not read.
+                let mut peer_rows = peer_kvc;
+                if t > 8 && replay_pos.is_none() {
+                    let committed = pos0 / layer.ratio;
+                    let peer_rank = 1 - sp_.rank;
+                    let count = if peer_rank == 0 {
+                        committed.div_ceil(2)
+                    } else {
+                        committed / 2
+                    };
+                    if count > 0 {
+                        let need = count * hd;
+                        let mut stage_guard = self.split_stage[sp_.rank]
+                            .lock()
+                            .map_err(|_| "split stage mutex poisoned")?;
+                        let stage_buf = stage_guard
+                            .as_mut()
+                            .filter(|b| b.len() >= need)
+                            .ok_or("split stage missing or smaller than the committed half")?;
+                        let peer_st = &self.stages[peer_rank];
+                        let dst = stage_buf.device_ptr_mut(&stream).0;
+                        unsafe {
+                            cudarc::driver::result::memcpy_peer_async(
+                                st.gpu.ctx.cu_ctx(),
+                                dst,
+                                peer_st.gpu.ctx.cu_ctx(),
+                                peer_kvc as cudarc::driver::sys::CUdeviceptr
+                                    + (win * hd * 4) as u64,
+                                need * 4,
+                                stream.cu_stream(),
+                            )
+                            .map_err(e("split stage peer copy"))?;
+                        }
+                        // The gather addresses peer row `win + half`; point it at the copy.
+                        peer_rows = (dst as *const f32).wrapping_sub(win * hd);
+                    }
+                }
+                let mut qs = 0usize;
+                while qs < t {
+                    let nq = (t - qs).min(crate::dsv4_c4::SPLIT_GATHER_ROWS);
+                    let (kv_g, idx_g) = crate::dsv4_c4::split_gather(
+                        &mut vws.c4_gather,
+                        &stream,
+                        dpf!(kvc, &stream),
+                        peer_rows,
+                        dpf!(sp_.recent, &stream),
+                        sp_.tags.device_ptr(&stream).0 as *const i32,
+                        sp_.recent_rows,
+                        sp_.rank,
+                        idx_row!(vws.idx, &stream, row0 + qs, vws.idx_stride) as *const i32,
+                        nq,
+                        slots_g,
+                        vws.idx_stride,
+                        sp_.cap_blocks,
+                        trans_base,
+                        transient_rows,
+                        local_trans,
+                    )?;
+                    self.sink_attention_rows(
+                        vws,
+                        &stream,
+                        layer,
+                        sink,
+                        kv_g,
+                        idx_g,
+                        row0 + qs,
+                        nq,
+                        slots,
+                        heads,
+                        hd,
+                        win,
+                        sink_st,
+                        replay_pos,
+                    )?;
+                    qs += nq;
+                }
+                continue;
+            }
             let (attention_kv, attention_indices) = if let Some(host) = c4_host.as_ref() {
                 host.gather(
                     kvc,
@@ -17591,134 +18160,22 @@ impl Dsv4Gpu {
                     idx_row!(vws.idx, &stream, row0, vws.idx_stride) as *const i32,
                 )
             };
-            let scale = (hd as f64).powf(-0.5) as f32;
-            unsafe {
-                if let Some(pos_dev) = replay_pos {
-                    let topk = layer.idx.as_ref().map_or(i32::MAX, |ix| ix.topk as i32);
-                    let slots_max = win
-                        + vws
-                            .replay_limit
-                            .checked_div(layer.ratio)
-                            .map_or(0, |n| n.min(topk as usize));
-                    if sink_st {
-                        ck(
-                            "replay attention st",
-                            k::memra_dsv4_sink_attn_st_f32acc(
-                                dpf_row!(vws.q, &stream, row0, heads * hd),
-                                attention_kv,
-                                attention_indices,
-                                sink,
-                                dpm!(vws.sink_scores, &stream),
-                                dpm_row!(vws.o, &stream, row0, heads * hd),
-                                1,
-                                heads as i32,
-                                hd as i32,
-                                slots_max as i32,
-                                vws.idx_stride as i32,
-                                scale,
-                                pos_dev,
-                                win as i32,
-                                layer.ratio as i32,
-                                topk,
-                                sp(&stream),
-                            ),
-                        )?;
-                        self.sink_st_calls
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    } else {
-                        ck(
-                            "replay attention",
-                            k::memra_dsv4_replay_attention(
-                                dpf_row!(vws.qt, &stream, row0, heads * hd),
-                                attention_kv,
-                                attention_indices,
-                                sink,
-                                dpm!(vws.sink_scores, &stream),
-                                dpm!(vws.sink_evals, &stream),
-                                vws.sink_den.device_ptr_mut(&stream).0 as *mut f32,
-                                dpm_row!(vws.o, &stream, row0, heads * hd),
-                                pos_dev,
-                                heads as i32,
-                                hd as i32,
-                                slots_max as i32,
-                                vws.idx_stride as i32,
-                                scale,
-                                win as i32,
-                                layer.ratio as i32,
-                                topk,
-                                sp(&stream),
-                            ),
-                        )?;
-                    }
-                } else if sink_st {
-                    ck(
-                        "sink_attn_st_f32acc",
-                        k::memra_dsv4_sink_attn_st_f32acc(
-                            dpf_row!(vws.q, &stream, row0, heads * hd),
-                            attention_kv,
-                            attention_indices,
-                            sink,
-                            dpm!(vws.sink_scores, &stream),
-                            dpm_row!(vws.o, &stream, row0, heads * hd),
-                            t as i32,
-                            heads as i32,
-                            hd as i32,
-                            slots as i32,
-                            vws.idx_stride as i32,
-                            scale,
-                            std::ptr::null(),
-                            0,
-                            0,
-                            0,
-                            sp(&stream),
-                        ),
-                    )?;
-                    self.sink_st_calls
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                } else if self.chains_f32 {
-                    ck(
-                        "sink_attn_dec_mq_f32acc",
-                        k::memra_dsv4_sink_attn_dec_mq_f32acc(
-                            dpf_row!(vws.qt, &stream, row0, heads * hd),
-                            attention_kv,
-                            attention_indices,
-                            sink,
-                            dpm!(vws.sink_scores, &stream),
-                            dpm!(vws.sink_evals, &stream),
-                            vws.sink_den.device_ptr_mut(&stream).0 as *mut f32,
-                            dpm_row!(vws.o, &stream, row0, heads * hd),
-                            t as i32,
-                            heads as i32,
-                            hd as i32,
-                            slots as i32,
-                            vws.idx_stride as i32,
-                            scale,
-                            sp(&stream),
-                        ),
-                    )?;
-                } else {
-                    ck(
-                        "sink_attn_dec_mq",
-                        k::memra_dsv4_sink_attn_dec_mq(
-                            dpf_row!(vws.q, &stream, row0, heads * hd),
-                            attention_kv,
-                            attention_indices,
-                            sink,
-                            dpm!(vws.sink_scores, &stream),
-                            dpm!(vws.sink_evals, &stream),
-                            vws.sink_den.device_ptr_mut(&stream).0 as *mut f64,
-                            dpm_row!(vws.o, &stream, row0, heads * hd),
-                            t as i32,
-                            heads as i32,
-                            hd as i32,
-                            slots as i32,
-                            vws.idx_stride as i32,
-                            scale,
-                            sp(&stream),
-                        ),
-                    )?;
-                }
-            }
+            self.sink_attention_rows(
+                vws,
+                &stream,
+                layer,
+                sink,
+                attention_kv,
+                attention_indices,
+                row0,
+                t,
+                slots,
+                heads,
+                hd,
+                win,
+                sink_st,
+                replay_pos,
+            )?;
         }
         unsafe {
             ck(
@@ -20251,6 +20708,7 @@ impl Dsv4Gpu {
                     lck: &mut step.verify.layers[il],
                     t: 1,
                     row0: r,
+                    peer_kvc: std::ptr::null(),
                 })
                 .collect();
             self.block_rows_dev(
@@ -21358,6 +21816,9 @@ impl Dsv4Gpu {
             let cache = &mut caches[il];
             let trans_base = if cache.c4_host.is_some() {
                 win
+            } else if let Some(sp_) = cache.split.as_ref() {
+                // Position-split store (memra #710): its transient rows follow its own half.
+                win + sp_.local_rows
             } else {
                 lck.trans_base
             };
@@ -22204,12 +22665,18 @@ impl Dsv4Gpu {
                 let hd = self.model.cfg().head_dim as usize;
                 read(cache.kvc.slice(..win * hd))?;
                 if let Some(cmp) = &layer.cmp {
+                    // A position-split plane holds its parity of the live blocks (memra #710).
+                    let live = cache.split.as_ref().map_or(cache.n_blocks, |sp_| {
+                        if sp_.rank == 0 {
+                            cache.n_blocks.div_ceil(2)
+                        } else {
+                            cache.n_blocks / 2
+                        }
+                    });
                     let end = win
                         .checked_mul(hd)
                         .and_then(|start| {
-                            cache
-                                .n_blocks
-                                .checked_mul(cmp.d)
+                            live.checked_mul(cmp.d)
                                 .and_then(|rows| start.checked_add(rows))
                         })
                         .ok_or("TP/EP cache digest compressed range overflow")?;
@@ -22326,6 +22793,16 @@ impl Dsv4Gpu {
                     format!("l{il}.cmp_store"),
                     if let Some(host) = &cache.c4_host {
                         host.read(cache.n_blocks)?
+                    } else if cache.split.is_some() {
+                        // The position-split store's logical rows, from both ranks (#710).
+                        let rank1 = state
+                            .tp_ep_caches
+                            .as_ref()
+                            .and_then(|r| r.get(il))
+                            .ok_or("split cache classes rank-1 layer missing")?;
+                        let mut all = vec![0f32; (win + cache.n_blocks) * hd];
+                        self.split_kvc_to_host(cache, rank1, cache.n_blocks, &mut all)?;
+                        all.split_off(win * hd)
                     } else {
                         read(cache.kvc.slice(win * hd..(win + cache.n_blocks) * cmp.d))?
                     },
@@ -24272,7 +24749,7 @@ mod session_plan_tests {
     #[test]
     fn a_layer_shape_is_the_allocators_arithmetic() {
         // capacity 4096, 512 transient rows: the default chunk min(512, ctx) at a 4k session
-        let s = LayerCacheShape::new(c4(), 4096, 512, false, WIN);
+        let s = LayerCacheShape::new(c4(), 4096, 512, false, WIN, false);
         assert_eq!(s.cap_blocks, 1024);
         assert!(!s.c4_host);
         assert_eq!(s.kvc_rows, WIN + 1024 + 512);
@@ -24283,7 +24760,7 @@ mod session_plan_tests {
         assert_eq!(s.host_bytes(), 0);
 
         // host C4 moves the compressed rows off kvc and onto pinned host, nothing else
-        let h = LayerCacheShape::new(c4(), 4096, 512, true, WIN);
+        let h = LayerCacheShape::new(c4(), 4096, 512, true, WIN, false);
         assert!(h.c4_host);
         assert_eq!(h.kvc_rows, WIN + 512);
         assert_eq!(
@@ -24293,14 +24770,14 @@ mod session_plan_tests {
         assert_eq!(h.host_bytes(), (1024 * 512 * 4) as u64);
 
         // host C4 never applies to a layer without the indexer or at another ratio
-        assert!(!LayerCacheShape::new(c128(), 4096, 512, true, WIN).c4_host);
-        assert!(!LayerCacheShape::new(swa(), 4096, 512, true, WIN).c4_host);
+        assert!(!LayerCacheShape::new(c128(), 4096, 512, true, WIN, false).c4_host);
+        assert!(!LayerCacheShape::new(swa(), 4096, 512, true, WIN, false).c4_host);
         // a ratio-0 layer holds the window and the transient rows only
-        let w = LayerCacheShape::new(swa(), 4096, 512, false, WIN);
+        let w = LayerCacheShape::new(swa(), 4096, 512, false, WIN, false);
         assert_eq!(w.device_bytes(HD), ((WIN + 512) * HD * 4) as u64);
         assert_eq!(w.ikvc_elems, None);
         // below one block the indexer store still exists at zero rows, and C4 stays on device
-        let tiny = LayerCacheShape::new(c4(), 3, 1, true, WIN);
+        let tiny = LayerCacheShape::new(c4(), 3, 1, true, WIN, false);
         assert_eq!(
             (tiny.cap_blocks, tiny.c4_host, tiny.ikvc_elems),
             (0, false, Some(0))
@@ -24315,8 +24792,8 @@ mod session_plan_tests {
             slot(1, false, c128()),
             slot(1, false, c4()),
         ];
-        let (dev, host) = plan_cache_bytes(&pp, 2, 8192, 512, false, WIN, HD);
-        let b = |g, cap| LayerCacheShape::new(g, cap, 512, false, WIN).device_bytes(HD);
+        let (dev, host) = plan_cache_bytes(&pp, 2, 8192, 512, false, WIN, HD, false);
+        let b = |g, cap| LayerCacheShape::new(g, cap, 512, false, WIN, false).device_bytes(HD);
         assert_eq!(
             dev,
             vec![
@@ -24333,10 +24810,34 @@ mod session_plan_tests {
             slot(1, true, swa()),
             slot(1, true, c4()),
         ];
-        let (dev, host) = plan_cache_bytes(&tp, 2, 8192, 512, true, WIN, HD);
+        let (dev, host) = plan_cache_bytes(&tp, 2, 8192, 512, true, WIN, HD, false);
         assert_eq!(dev[0], dev[1]);
         assert_eq!(host[0], host[1]);
         assert_eq!(host[0], (8192 / 4 * 512 * 4) as u64);
+    }
+
+    #[test]
+    fn a_split_c4_store_holds_half_its_blocks_plus_the_recent_ring() {
+        // Position split (memra #710): a C4 layer keeps ceil(cap_blocks / 2) compressed rows
+        // per rank plus the tagged recent ring; the window, transient and every non-C4 layer
+        // are unchanged.
+        let (cap, t) = (65536usize, 512usize);
+        let rep = LayerCacheShape::new(c4(), cap, t, false, WIN, false);
+        let spl = LayerCacheShape::new(c4(), cap, t, false, WIN, true);
+        let blocks = cap / 4;
+        assert_eq!(rep.kvc_rows - spl.kvc_rows, blocks - blocks.div_ceil(2));
+        assert_eq!(spl.recent_rows, (t / 8 + 4).next_power_of_two());
+        assert_eq!(rep.recent_rows, 0);
+        assert_eq!(
+            rep.device_bytes(HD) - spl.device_bytes(HD),
+            ((blocks / 2) * HD * 4 - spl.recent_rows * (HD * 4 + 4)) as u64
+        );
+        for g in [swa(), c128()] {
+            assert_eq!(
+                LayerCacheShape::new(g, cap, t, false, WIN, true).device_bytes(HD),
+                LayerCacheShape::new(g, cap, t, false, WIN, false).device_bytes(HD)
+            );
+        }
     }
 
     #[test]
@@ -24349,14 +24850,14 @@ mod session_plan_tests {
             slot(0, false, c4()),
             slot(1, false, c128()),
         ];
-        let at = |cap| plan_cache_bytes(&layout, 2, cap, 512, false, WIN, HD).0;
+        let at = |cap| plan_cache_bytes(&layout, 2, cap, 512, false, WIN, HD, false).0;
         let (a, b, c) = (at(1024), at(2048), at(4096));
         for s in 0..2 {
             assert_eq!(b[s] - a[s], (c[s] - b[s]) / 2, "stage {s}");
         }
         // the transient width is capacity-independent: the same delta at any capacity
-        let wide = |cap| plan_cache_bytes(&layout, 2, cap, 512, false, WIN, HD).0;
-        let narrow = |cap| plan_cache_bytes(&layout, 2, cap, 17, false, WIN, HD).0;
+        let wide = |cap| plan_cache_bytes(&layout, 2, cap, 512, false, WIN, HD, false).0;
+        let narrow = |cap| plan_cache_bytes(&layout, 2, cap, 17, false, WIN, HD, false).0;
         for s in 0..2 {
             assert_eq!(
                 wide(1024)[s] - narrow(1024)[s],
