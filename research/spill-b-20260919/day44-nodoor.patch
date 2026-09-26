@@ -1,0 +1,1993 @@
+diff --git a/crates/memra-engine/src/grid_capture.rs b/crates/memra-engine/src/grid_capture.rs
+deleted file mode 100644
+index d3947c8ad..000000000
+--- a/crates/memra-engine/src/grid_capture.rs
++++ /dev/null
+@@ -1,260 +0,0 @@
+-//! GRID CAPTURE INSIDE ONE PRIME CALL (WP-B day 44, `research/spill-b-20260919/DAY44.md` 1.2 (a)).
+-//!
+-//! A resumable session needs a checkpoint at a GDN grid point near its prompt end: the state a
+-//! cold prime of the same tokens has there (the grid law). Taking it as a prime STOP splits the
+-//! call in two, and the second call costs a whole trunk pass at small T (the rewind arm's TTFT
+-//! x2, DAY41 2.2). This module takes it INSIDE the call instead:
+-//!
+-//! - GDN layers: after the layer's chunked scan, one extra state-pass launch over the call's first
+-//!   `rel / 32` chunks writes the f32 state at the capture point (the same kernel on a prefix of
+-//!   the same K1 to K3 buffers: the state pass is sequential over chunks, so its state after chunk
+-//!   `k` does not depend on later chunks); the conv ring at the capture point is the ring update
+-//!   kernel over the call's first `rel` input rows (a copy of rows `rel - 3 .. rel`).
+-//! - Full-attention layers: nothing; the KV rows below the capture point are the call's rows.
+-//!
+-//! The capture is armed by the caller for ONE prime call on this thread (`arm`), read by the
+-//! prime walk (`begin_call`, `layer_rel`, `put_conv`, `put_ssm`), and collected after the call
+-//! (`take`). A call that does not reach every GDN layer through the per-sequence chunked scan
+-//! (the batched, varlen, pipelined, Hopper wgmma or sequential-scan paths) leaves the capture
+-//! incomplete, and `take` returns `None`: no checkpoint, never a partial one.
+-
+-use std::cell::RefCell;
+-
+-use cudarc::driver::CudaSlice;
+-
+-/// GDN chunk grid (rows) the capture point must sit on; `Engine::gdn_chunk_size`.
+-fn grain() -> usize {
+-    crate::Engine::gdn_chunk_size()
+-}
+-
+-struct Pending {
+-    /// Absolute capture position.
+-    pos: usize,
+-    /// Rows into the current call, once `begin_call` accepted it.
+-    rel: Option<usize>,
+-    conv: Vec<Option<CudaSlice<f32>>>,
+-    ssm: Vec<Option<CudaSlice<f32>>>,
+-    /// Layers that must be filled (the linear-attention layers of the cache).
+-    need: Vec<bool>,
+-    /// Filled from the live cache at a call boundary (`note_boundary`).
+-    boundary: bool,
+-    /// A call accepted the capture (its layers fill `conv` and `ssm`).
+-    accepted: bool,
+-}
+-
+-thread_local! {
+-    static PENDING: RefCell<Option<Pending>> = const { RefCell::new(None) };
+-}
+-
+-/// A completed capture: the recurrent planes of every linear-attention layer at `pos`.
+-pub struct GridCapture {
+-    pub pos: usize,
+-    pub conv: Vec<Option<CudaSlice<f32>>>,
+-    pub ssm: Vec<Option<CudaSlice<f32>>>,
+-}
+-
+-/// The capture point rule (DAY44 1.2 (a)): the largest grid point `g` in `(base, base + t)` with
+-/// at least `floor` rows of the call before it and at least `floor` rows after it. `None` when
+-/// the call is too short to hold one.
+-pub fn capture_point(base: usize, t: usize, floor: usize, grain: usize) -> Option<usize> {
+-    let end = base + t;
+-    let hi = end.checked_sub(floor)?;
+-    let g = hi / grain * grain;
+-    (g >= base + floor && g > base && base.is_multiple_of(grain)).then_some(g)
+-}
+-
+-/// Disarms on drop, so an error path that skips `take` never leaves a capture armed for the next
+-/// session's prime on this thread.
+-#[must_use = "the capture stays armed only while the guard lives"]
+-pub struct ArmGuard(());
+-
+-impl Drop for ArmGuard {
+-    fn drop(&mut self) {
+-        disarm();
+-    }
+-}
+-
+-/// Arm a capture at absolute `pos` for the next prime call on this thread. `need[il]` is true for
+-/// every linear-attention layer. Replaces any earlier arming. Collect with `take` while the guard
+-/// lives.
+-pub fn arm(pos: usize, need: Vec<bool>) -> ArmGuard {
+-    let n = need.len();
+-    PENDING.with(|p| {
+-        *p.borrow_mut() = Some(Pending {
+-            pos,
+-            rel: None,
+-            conv: (0..n).map(|_| None).collect(),
+-            ssm: (0..n).map(|_| None).collect(),
+-            need,
+-            boundary: false,
+-            accepted: false,
+-        })
+-    });
+-    ArmGuard(())
+-}
+-
+-/// Disarm without collecting.
+-pub fn disarm() {
+-    PENDING.with(|p| *p.borrow_mut() = None);
+-}
+-
+-/// True while a capture is armed on this thread (the prime graph and batched paths refuse it).
+-pub fn armed() -> bool {
+-    PENDING.with(|p| p.borrow().is_some())
+-}
+-
+-/// Called by the prime walk once per call with the call's base and row count. Accepts the armed
+-/// capture for this call when its position lies inside it, on the grid, with `PRIME_MIN_T` rows on
+-/// each side; returns the rows into the call.
+-pub(crate) fn begin_call(base: usize, t: usize) -> Option<usize> {
+-    let floor = crate::hybrid_forward::PRIME_MIN_T;
+-    PENDING.with(|p| {
+-        let mut p = p.borrow_mut();
+-        let pending = p.as_mut()?;
+-        pending.rel = None;
+-        if pending.boundary || pending.accepted {
+-            return None;
+-        }
+-        let rel = pending.pos.checked_sub(base)?;
+-        let ok = pending.pos.is_multiple_of(grain())
+-            && rel.is_multiple_of(grain())
+-            && rel >= floor
+-            && t >= rel + floor;
+-        if ok {
+-            pending.rel = Some(rel);
+-            pending.accepted = true;
+-        }
+-        pending.rel
+-    })
+-}
+-
+-/// At a prime call boundary: when the armed position is the cache's position and nothing was
+-/// captured inside a call, the live state IS the capture (a plain snapshot, no split).
+-pub(crate) fn note_boundary(e: &crate::Engine, cache: &crate::cache::Cache) {
+-    let want = PENDING.with(|p| {
+-        p.borrow()
+-            .as_ref()
+-            .is_some_and(|x| x.pos == cache.pos && !x.boundary && !x.accepted)
+-    });
+-    if !want {
+-        return;
+-    }
+-    let Ok(snap) = cache.snapshot(e) else { return };
+-    PENDING.with(|p| {
+-        if let Some(x) = p.borrow_mut().as_mut() {
+-            x.conv = snap.conv;
+-            x.ssm = snap.ssm;
+-            x.boundary = true;
+-        }
+-    });
+-}
+-
+-/// The accepted capture's rows into the current call, if any.
+-pub(crate) fn layer_rel() -> Option<usize> {
+-    PENDING.with(|p| p.borrow().as_ref().and_then(|x| x.rel))
+-}
+-
+-pub(crate) fn put_conv(il: usize, buf: CudaSlice<f32>) {
+-    PENDING.with(|p| {
+-        if let Some(x) = p.borrow_mut().as_mut()
+-            && il < x.conv.len()
+-        {
+-            x.conv[il] = Some(buf);
+-        }
+-    });
+-}
+-
+-pub(crate) fn put_ssm(il: usize, buf: CudaSlice<f32>) {
+-    PENDING.with(|p| {
+-        if let Some(x) = p.borrow_mut().as_mut()
+-            && il < x.ssm.len()
+-        {
+-            x.ssm[il] = Some(buf);
+-        }
+-    });
+-}
+-
+-/// Collect and disarm. `Some` only when the call accepted the capture and every needed layer
+-/// was filled.
+-pub fn take() -> Option<GridCapture> {
+-    let x = PENDING.with(|p| p.borrow_mut().take())?;
+-    if !x.accepted && !x.boundary {
+-        return None;
+-    }
+-    let complete = x
+-        .need
+-        .iter()
+-        .enumerate()
+-        .all(|(il, &need)| !need || (x.conv[il].is_some() && x.ssm[il].is_some()));
+-    complete.then_some(GridCapture {
+-        pos: x.pos,
+-        conv: x.conv,
+-        ssm: x.ssm,
+-    })
+-}
+-
+-impl GridCapture {
+-    /// The capture as a `CacheSnapshot` of `cache` (the cache it was taken from, now past it):
+-    /// every full-attention layer's length is the capture position, the recurrent planes are the
+-    /// captured ones. Refuses planes a snapshot cannot rewind (TP KV, latent), as
+-    /// `maybe_plain_checkpoint` does.
+-    pub fn into_snapshot(
+-        self,
+-        cache: &crate::cache::Cache,
+-    ) -> Result<crate::cache::CacheSnapshot, String> {
+-        if cache.tp_kv.iter().any(Option::is_some) || cache.latent.iter().any(Option::is_some) {
+-            return Err(
+-                "grid capture: TP KV or latent planes are not rewound by a snapshot".into(),
+-            );
+-        }
+-        let n = cache.kv.len();
+-        if self.conv.len() != n || self.ssm.len() != n || cache.recur.len() != n {
+-            return Err("grid capture: layer count differs from the cache".into());
+-        }
+-        if cache.pos < self.pos {
+-            return Err(format!(
+-                "grid capture at {} is past the cache position {}",
+-                self.pos, cache.pos
+-            ));
+-        }
+-        // A layer the prime walk does not advance (the MTP head's trunk-cache slot) keeps its
+-        // own length, below the capture point.
+-        let kv_len = cache
+-            .kv
+-            .iter()
+-            .map(|kv| kv.as_ref().map(|kv| kv.len.min(self.pos)))
+-            .collect();
+-        let tp_kv_len = (0..n).map(|_| None).collect();
+-        Ok(crate::cache::CacheSnapshot {
+-            kv_len,
+-            tp_kv_len,
+-            conv: self.conv,
+-            ssm: self.ssm,
+-            pos: self.pos,
+-        })
+-    }
+-}
+-
+-/// The linear-attention layers of `cache` (the layers a capture must fill).
+-pub fn needed_layers(cache: &crate::cache::Cache) -> Vec<bool> {
+-    cache.recur.iter().map(Option::is_some).collect()
+-}
+-
+-#[cfg(test)]
+-mod tests {
+-    use super::capture_point;
+-
+-    #[test]
+-    fn the_capture_point_is_the_last_grid_point_with_a_floor_on_each_side() {
+-        // A resume from 6112 priming 128 rows (to 6240): the last grid point at or below 6224.
+-        assert_eq!(capture_point(6112, 128, 16, 32), Some(6208));
+-        // A cold prime of 6144 rows from 0: 6112 (6128 floored to the grid).
+-        assert_eq!(capture_point(0, 6144, 16, 32), Some(6112));
+-        // Too short: 40 rows from 6112 hold no grid point with 16 rows on each side.
+-        assert_eq!(capture_point(6112, 40, 16, 32), None);
+-        // 48 rows from 6112: 6144 has 32 rows before and 16 after.
+-        assert_eq!(capture_point(6112, 48, 16, 32), Some(6144));
+-        // A call that does not start on the grid holds no grid-law capture.
+-        assert_eq!(capture_point(6113, 128, 16, 32), None);
+-    }
+-}
+diff --git a/crates/memra-engine/src/hybrid_forward.rs b/crates/memra-engine/src/hybrid_forward.rs
+index 0f94a4cf3..4497482ef 100644
+--- a/crates/memra-engine/src/hybrid_forward.rs
++++ b/crates/memra-engine/src/hybrid_forward.rs
+@@ -6672,10 +6672,6 @@ impl HybridModel {
+             seq_end >= base + t,
+             "prime_chunk: seq_end must cover this chunk"
+         );
+-        // GRID CAPTURE (WP-B day 44, `grid_capture`): a capture at this call's start is the live
+-        // state; one inside it rides the layer walk below; one at its end is taken after it.
+-        crate::grid_capture::note_boundary(e, cache);
+-        crate::grid_capture::begin_call(base, t);
+         let pos: Vec<i32> = (base as i32..(base + t) as i32).collect();
+         let pos_d = e.htod_i32(&pos)?;
+ 
+@@ -6728,9 +6724,7 @@ impl HybridModel {
+             cache.qwen_prime_graph = None;
+             e.trim_device_graph_mem()?;
+         }
+-        let out = self.prime_chunk_epilogue(e, x, t, cache)?;
+-        crate::grid_capture::note_boundary(e, cache);
+-        Ok(out)
++        self.prime_chunk_epilogue(e, x, t, cache)
+     }
+ 
+     /// PRIME RANGE SUBGRAPH (lane/pp-leverb, 2026-08-08): layers `[lo, hi)` of the chunked
+@@ -9165,14 +9159,6 @@ impl HybridModel {
+             hk,
+             pad_len,
+         )?;
+-        // GRID CAPTURE (WP-B day 44, `grid_capture`): the ring at the capture point inside this
+-        // call, from this call's own input rows. Unpadded per-sequence primes only.
+-        if pad_len.is_none()
+-            && let Some(rows) = crate::grid_capture::layer_rel()
+-        {
+-            let ring = e.ssm_conv_ring_capture(qkv_mixed, conv_dim, rows, d_conv)?;
+-            crate::grid_capture::put_conv(il, ring);
+-        }
+         let mut q_l2 = e.uninit(d_state * hk * t)?;
+         // mirror-fold (round 35): q's bf16 twin (wgmma K45/K2 A-operand) in-epilogue too.
+         // Emitted only where a consumer exists (the wgmma config) — on other arches the
+@@ -9476,21 +9462,13 @@ impl HybridModel {
+         // verify keep the sequential kernel).
+         let mut o = e.uninit(d_state * num_v * t)?;
+         let rl = cache.recur[il].as_mut().unwrap();
+-        // GRID CAPTURE (WP-B day 44, `grid_capture`): the scan also writes the state at the
+-        // capture point inside this call. Unpadded per-sequence primes only.
+-        let capture_rows = if pad_len.is_none() {
+-            crate::grid_capture::layer_rel()
+-        } else {
+-            None
+-        };
+-        let mut captured: Option<CudaSlice<f32>> = None;
+         {
+             let crate::cache::RecurLayer {
+                 ssm_state,
+                 ssm_state_alt,
+                 ..
+             } = rl;
+-            e.gdn_scan_prefill_capture(
++            e.gdn_scan_prefill(
+                 &prep.q_l2,
+                 &prep.k_l2,
+                 &prep.v_g,
+@@ -9505,12 +9483,8 @@ impl HybridModel {
+                 t,
+                 scale,
+                 prep.hk,
+-                capture_rows.map(|rows| (rows, &mut captured)),
+             )?;
+         }
+-        if let Some(state) = captured {
+-            crate::grid_capture::put_ssm(il, state);
+-        }
+         std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
+ 
+         // gated RMSNorm + out projection (prefill dispatch). task #17: the f16out twin also
+diff --git a/crates/memra-engine/src/lib.rs b/crates/memra-engine/src/lib.rs
+index cd520c1b5..3385cf3bd 100644
+--- a/crates/memra-engine/src/lib.rs
++++ b/crates/memra-engine/src/lib.rs
+@@ -953,7 +953,6 @@ pub mod dsv4_topology;
+ pub mod f16_ffi;
+ pub mod fp8_ffi;
+ pub mod glm5_tp_sampler;
+-pub mod grid_capture;
+ pub mod mmq_ffi;
+ pub mod moe_cache;
+ pub mod prime_graph;
+@@ -34013,38 +34012,12 @@ impl Engine {
+             && std::env::var("MEMRA_GDN_WGMMA").as_deref() != Ok("0")
+     }
+ 
+-    /// GRID CAPTURE (WP-B day 44, `grid_capture`): the conv ring at `rows` into the call, i.e.
+-    /// the ring update of a call that ended there: rows `rows - (d_conv - 1) .. rows` of the
+-    /// token-major conv input, through the same ring-update kernel (a copy).
+-    pub fn ssm_conv_ring_capture(
+-        &self,
+-        qkv_tm: &cudarc::driver::CudaView<f32>,
+-        conv_dim: usize,
+-        rows: usize,
+-        d_conv: usize,
+-    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+-        assert!(rows >= d_conv - 1, "ring capture needs rows >= pad");
+-        let n = conv_dim * (d_conv - 1);
+-        let mut dst = self.uninit(n)?;
+-        let f = self.func("ssm_conv_ring_update_f32");
+-        let cfg = LaunchConfig::for_num_elems(n as u32);
+-        let (cd, ti, dc) = (conv_dim as i32, rows as i32, d_conv as i32);
+-        let __s_b = self.gpu.stream();
+-        let mut b = __s_b.launch_builder(&f);
+-        b.arg(qkv_tm).arg(&mut dst).arg(&cd).arg(&ti).arg(&dc);
+-        unsafe {
+-            b.launch(cfg)?;
+-        }
+-        Ok(dst)
+-    }
+-
+     /// task #18 conv-fuse: carried-ring conv + SiLU + GDN repack in ONE pass (the
+     /// conv_out intermediate and its transposed re-read disappear — 11.8ms of the
+     /// T=2048 prime). Ring update stays the separate follow-up launch (pad-aware).
+     /// BIT-IDENTICAL values to ssm_conv1d_tm_state_pad + qkv_to_gdn_repack.
+     #[allow(clippy::too_many_arguments)]
+-    #[allow(clippy::manual_div_ceil)]
+-    // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
++    #[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
+     pub fn ssm_conv1d_gdn_state_pad(
+         &self,
+         qkv_tm: &cudarc::driver::CudaView<f32>,
+@@ -34609,42 +34582,8 @@ impl Engine {
+         scale: f32,
+         c: usize,
+         hk: usize,
+-    ) -> Result<(), Box<dyn std::error::Error>> {
+-        self.gdn_scan_chunked_capture(
+-            q, k, v, g, beta, kb16_pre, qb16_pre, state_in, state_out, o, n_head, t, scale, c, hk,
+-            None,
+-        )
+-    }
+-
+-    /// `gdn_scan_chunked` plus the in-call grid capture (WP-B day 44, `grid_capture`): with
+-    /// `capture = Some((rows, slot))`, after the scan one extra state-pass launch over the first
+-    /// `rows / c` chunks writes the f32 state at `rows` into `slot`. The state pass is sequential
+-    /// over chunks and reads only prefix-indexed buffers, so that state is the one the full pass
+-    /// carried through chunk `rows / c`. The Hopper fused K4+K5 arm leaves `slot` empty (no
+-    /// capture; the caller then keeps its previous checkpoint). `None`: byte-identical to the
+-    /// plain scan.
+-    #[allow(clippy::too_many_arguments)]
+-    pub fn gdn_scan_chunked_capture(
+-        &self,
+-        q: &CudaSlice<f32>,
+-        k: &CudaSlice<f32>,
+-        v: &CudaSlice<f32>,
+-        g: &CudaSlice<f32>,
+-        beta: &CudaSlice<f32>,
+-        kb16_pre: Option<&CudaSlice<u8>>,
+-        qb16_pre: Option<&CudaSlice<u8>>,
+-        state_in: &CudaSlice<f32>,
+-        state_out: &mut CudaSlice<f32>,
+-        o: &mut CudaSlice<f32>,
+-        n_head: usize,
+-        t: usize,
+-        scale: f32,
+-        c: usize,
+-        hk: usize,
+-        capture: Option<(usize, &mut Option<CudaSlice<f32>>)>,
+     ) -> Result<(), Box<dyn std::error::Error>> {
+         const D: usize = 128;
+-        let capture = capture.filter(|(rows, _)| *rows > 0 && *rows < t && rows.is_multiple_of(c));
+         const NSPLIT: u32 = 4;
+         assert!(
+             (1..=128).contains(&c),
+@@ -34872,39 +34811,6 @@ impl Engine {
+                     b.launch(cfg)?;
+                 }
+             }
+-            // GRID CAPTURE (WP-B day 44): the same K4 over the prefix, after K5 consumed the
+-            // full pass's Y and Ssnap (the rerun rewrites their first chunks with the same values).
+-            if let Some((rows, slot)) = capture
+-                && crate::qwen_prime_graph::current().is_none()
+-            {
+-                let mut st = self.uninit(state_out.len())?;
+-                let f = self.func("gdn_chunk_state_mma");
+-                let cfg = LaunchConfig {
+-                    grid_dim: (h as u32, NSPLIT, 1),
+-                    block_dim: (256, 1, 1),
+-                    shared_mem_bytes: 0,
+-                };
+-                let (hki, ri) = (hk as i32, rows as i32);
+-                let __s_b = self.gpu.stream();
+-                let mut b = __s_b.launch_builder(&f);
+-                b.arg(kb16_ref)
+-                    .arg(&gcum)
+-                    .arg(beta)
+-                    .arg(&u)
+-                    .arg(&wb16)
+-                    .arg(&mut y16)
+-                    .arg(&mut ssnap16)
+-                    .arg(state_in)
+-                    .arg(&mut st)
+-                    .arg(&hi)
+-                    .arg(&ri)
+-                    .arg(&ci)
+-                    .arg(&hki);
+-                unsafe {
+-                    b.launch(cfg)?;
+-                }
+-                *slot = Some(st);
+-            }
+             return Ok(());
+         }
+         {
+@@ -34960,35 +34866,6 @@ impl Engine {
+                 b.launch(cfg)?;
+             }
+         }
+-        // GRID CAPTURE (WP-B day 44): the f32 K4 over the prefix, after K5.
+-        if let Some((rows, slot)) = capture {
+-            let mut st = self.uninit(state_out.len())?;
+-            let f = self.func("gdn_chunk_state_f32");
+-            let cfg = LaunchConfig {
+-                grid_dim: (h as u32, NSPLIT, 1),
+-                block_dim: (256, 1, 1),
+-                shared_mem_bytes: 0,
+-            };
+-            let ri = rows as i32;
+-            let __s_b = self.gpu.stream();
+-            let mut b = __s_b.launch_builder(&f);
+-            b.arg(k)
+-                .arg(&gcum)
+-                .arg(beta)
+-                .arg(&u)
+-                .arg(&w)
+-                .arg(&mut y)
+-                .arg(&mut ssnap)
+-                .arg(state_in)
+-                .arg(&mut st)
+-                .arg(&hi)
+-                .arg(&ri)
+-                .arg(&ci);
+-            unsafe {
+-                b.launch(cfg)?;
+-            }
+-            *slot = Some(st);
+-        }
+         Ok(())
+     }
+ 
+@@ -35018,40 +34895,13 @@ impl Engine {
+         t: usize,
+         scale: f32,
+         hk: usize,
+-    ) -> Result<(), Box<dyn std::error::Error>> {
+-        self.gdn_scan_prefill_capture(
+-            q, k, v, g, beta, kb16_pre, qb16_pre, state_in, state_out, o, n_head, t, scale, hk,
+-            None,
+-        )
+-    }
+-
+-    /// `gdn_scan_prefill` plus the in-call grid capture (WP-B day 44): only the chunked form
+-    /// captures; the oracle and sequential forms leave the slot empty.
+-    #[allow(clippy::too_many_arguments)]
+-    pub fn gdn_scan_prefill_capture(
+-        &self,
+-        q: &CudaSlice<f32>,
+-        k: &CudaSlice<f32>,
+-        v: &CudaSlice<f32>,
+-        g: &CudaSlice<f32>,
+-        beta: &CudaSlice<f32>,
+-        kb16_pre: Option<&CudaSlice<u8>>,
+-        qb16_pre: Option<&CudaSlice<u8>>,
+-        state_in: &CudaSlice<f32>,
+-        state_out: &mut CudaSlice<f32>,
+-        o: &mut CudaSlice<f32>,
+-        n_head: usize,
+-        t: usize,
+-        scale: f32,
+-        hk: usize,
+-        capture: Option<(usize, &mut Option<CudaSlice<f32>>)>,
+     ) -> Result<(), Box<dyn std::error::Error>> {
+         if std::env::var("MEMRA_GDN_DIFF").is_ok() && t >= 16 {
+             assert!(hk == n_head, "GDN_DIFF oracle is broadcast-only");
+             return self.gdn_scan_diff(q, k, v, g, beta, state_in, state_out, o, n_head, t, scale);
+         }
+         if Self::gdn_chunked_enabled() && t >= 16 {
+-            self.gdn_scan_chunked_capture(
++            self.gdn_scan_chunked(
+                 q,
+                 k,
+                 v,
+@@ -35067,7 +34917,6 @@ impl Engine {
+                 scale,
+                 Self::gdn_chunk_size(),
+                 hk,
+-                capture,
+             )
+         } else {
+             assert!(
+diff --git a/crates/memra-engine/src/qwen_prime_graph.rs b/crates/memra-engine/src/qwen_prime_graph.rs
+index f405d3dac..7ad27f34e 100644
+--- a/crates/memra-engine/src/qwen_prime_graph.rs
++++ b/crates/memra-engine/src/qwen_prime_graph.rs
+@@ -132,9 +132,6 @@ pub(crate) fn eligible(
+             p.rows == t && p.capacity >= seq_end && p.attention_fa2 == e.prime_attn_fa2_enabled()
+         });
+     supported(m, e)
+-        // WP-B day 44: a call carrying a grid capture runs the eager twin (byte-identical by
+-        // this module's contract) so the capture's extra launches ride the eager walk.
+-        && !crate::grid_capture::armed()
+         && crate::spec::graph_launch_headroom_ok(e)
+         // A one-off restored suffix or boundary tail cannot amortize capture.
+         // It executes the identical eager chunk rather than padding/reusing a graph.
+diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
+index 04967d828..774bc7851 100644
+--- a/crates/memra-engine/src/spec.rs
++++ b/crates/memra-engine/src/spec.rs
+@@ -1606,10 +1606,6 @@ pub struct SpecSession {
+     /// The burst's clamp firing, `(truncated slot, accepted drafts, room left)`, for the
+     /// worker's receipt line; written only when the clamp truncated a round.
+     pub budget_clamp_fired: Option<(usize, usize, usize)>,
+-    /// EXACT RESUME (`MEMRA_RESUME_EXACT`, WP-B day 44): the absolute grid point the next MTP prime
+-    /// walk captures its turn checkpoint at INSIDE the call (`grid_capture`), with no prime stop.
+-    /// One-shot, consumed by `mtp_prime_start`; `None` is today's program.
+-    pub grid_capture_at: Option<usize>,
+     /// SESSION-AFFINITY TURN CHECKPOINT (lane/session-affinity, 2026-08-05): the state at this
+     /// turn's PROMPT-END boundary, retained so a later turn can REWIND here. See
+     /// [`SpecCheckpoint`]. Refreshed by every non-empty prime; None until the first one, and on
+@@ -9308,7 +9304,6 @@ impl HybridModel {
+             pending_tok: None,
+             budget_room: None,
+             budget_clamp_fired: None,
+-            grid_capture_at: None,
+             turn_ckpt: None,
+             telem: SpecTelemetryCounters::default(),
+             capture_at: None,
+@@ -10047,7 +10042,6 @@ impl HybridModel {
+             pending_tok: None,
+             budget_room: None,
+             budget_clamp_fired: None,
+-            grid_capture_at: None,
+             // Stable-boundary capture from the split feed above (None on the legacy shape):
+             // a restored session previously parked WITHOUT a checkpoint, so the next turn's
+             // affinity probe declined ("no turn checkpoint retained") and the conversation
+@@ -10127,38 +10121,6 @@ impl HybridModel {
+         Ok(Some(ckpt.pos))
+     }
+ 
+-    /// `spec_rewind_to_checkpoint` that keeps the turn checkpoint on the session afterwards
+-    /// (WP-B day 44, the exact resume): the restore only copies FROM the snapshot, so the same
+-    /// checkpoint stays valid for a later rewind until the next prime walk captures a newer one.
+-    pub fn spec_rewind_to_checkpoint_retaining(
+-        &self,
+-        e: &Engine,
+-        sess: &mut SpecSession,
+-    ) -> Result<Option<usize>, Box<dyn std::error::Error>> {
+-        let Some(ckpt) = sess.turn_ckpt.as_ref() else {
+-            return Ok(None);
+-        };
+-        if !sess.cache.can_rollback(&ckpt.snap, 0) || !sess.scratch.can_rewind_to(ckpt.pos) {
+-            return Err(
+-                "SWA ring rewind checkpoint has been lapped; full re-prime required".into(),
+-            );
+-        }
+-        let pos = ckpt.pos;
+-        assert!(
+-            pos <= sess.committed.len(),
+-            "checkpoint past committed ({pos} > {})",
+-            sess.committed.len()
+-        );
+-        crate::pp::restore_cache_checkpoint(e, self, None, &mut sess.cache, &ckpt.snap)?;
+-        debug_assert_eq!(sess.cache.pos, pos, "rollback landed off the checkpoint");
+-        sess.scratch.set_len(e, pos)?;
+-        sess.committed.truncate(pos);
+-        sess.last_h = Some(e.clone_dtod(&ckpt.last_h)?);
+-        sess.next_pred = None;
+-        sess.pending_tok = None;
+-        Ok(Some(pos))
+-    }
+-
+     /// Grow a parked speculative session to `target_cap` and rewind it to its retained turn
+     /// checkpoint without re-priming the checkpoint prefix.
+     ///
+@@ -11688,7 +11650,6 @@ impl HybridModel {
+                     prime_ready: _,
+                     budget_room: s_budget_room,
+                     budget_clamp_fired,
+-                    grid_capture_at: _,
+                 } = sr;
+                 budget_room = s_budget_room.take();
+                 *budget_clamp_fired = None;
+diff --git a/crates/memra-engine/src/spec/prime.rs b/crates/memra-engine/src/spec/prime.rs
+index 35091c2c9..488eacb69 100644
+--- a/crates/memra-engine/src/spec/prime.rs
++++ b/crates/memra-engine/src/spec/prime.rs
+@@ -45,11 +45,6 @@ pub struct MtpPrimeState {
+     logits: Vec<f32>,
+     capture_at: Option<usize>,
+     ckpt_rel: Option<usize>,
+-    /// EXACT RESUME (WP-B day 44): the turn checkpoint's grid point, relative to `base`, taken
+-    /// inside the trunk call that contains it (`grid_capture`), never a stop. `grid_requested`
+-    /// keeps the legacy prompt-end checkpoint from overwriting it.
+-    grid_rel: Option<usize>,
+-    grid_requested: bool,
+     k: usize,
+     sampling: SpecSampling,
+     graph_draft: bool,
+@@ -63,7 +58,6 @@ impl MtpPrimeState {
+     /// checkpoint row, so that checkpoint's `Cache::snapshot` is still owed.
+     pub fn owes_turn_checkpoint(&self) -> bool {
+         self.ckpt_rel
+-            .or(self.grid_rel)
+             .is_some_and(|r| self.chunks.get(self.cursor).is_some_and(|c| c.start < r))
+     }
+ }
+@@ -297,12 +291,6 @@ impl HybridModel {
+             .take()
+             .and_then(|b| b.checked_sub(base))
+             .filter(|&b| b > 0 && b < tp);
+-        let grid_rel = sess
+-            .grid_capture_at
+-            .take()
+-            .and_then(|g| g.checked_sub(base))
+-            .filter(|&r| r > 0 && r < tp);
+-        let grid_requested = grid_rel.is_some();
+         let first = prime_split.into_iter().chain(ckpt_rel).min();
+         if first == prime_split && first.is_some_and(|b| b < crate::hybrid_forward::PRIME_MIN_T) {
+             return Err("MTP prime split below PRIME_MIN_T".into());
+@@ -344,8 +332,6 @@ impl HybridModel {
+             logits: Vec::new(),
+             capture_at: sess.capture_at.take(),
+             ckpt_rel,
+-            grid_rel,
+-            grid_requested,
+             k,
+             sampling: resolve_spec_sampling(sampling),
+             graph_draft,
+@@ -377,17 +363,6 @@ impl MtpPrimeWalker<'_> {
+         let s = self.state.as_mut().ok_or("MTP prime already finalized")?;
+         let n = self.model.cfg.n_embd as usize;
+         let h_all = s.hiddens.as_mut().ok_or("MTP hidden stack missing")?;
+-        // EXACT RESUME (WP-B day 44): the turn checkpoint at the grid point inside this trunk
+-        // call, captured by the call itself (no stop).
+-        let grid_here = s
+-            .grid_rel
+-            .filter(|&r| chunk.batched && chunk.start <= r && r <= chunk.end);
+-        let _grid_guard = grid_here.map(|r| {
+-            crate::grid_capture::arm(
+-                s.base + r,
+-                crate::grid_capture::needed_layers(&self.sess.cache),
+-            )
+-        });
+         if chunk.batched {
+             let (logits, seed, h) = self.model.prime_chunk(
+                 self.e,
+@@ -406,28 +381,6 @@ impl MtpPrimeWalker<'_> {
+                 .copy_into(h_all, chunk.start * n, &h, (chunk.end - chunk.start) * n)?;
+             drop(seed);
+             s.logits = logits;
+-            if let Some(r) = grid_here {
+-                s.grid_rel = None;
+-                let cap = crate::grid_capture::take()
+-                    .ok_or("grid capture not taken")
+-                    .and_then(|c| {
+-                        c.into_snapshot(&self.sess.cache)
+-                            .map_err(|_| "grid capture refused")
+-                    });
+-                let anchor = self.e.uninit(n).and_then(|mut a| {
+-                    self.e
+-                        .copy_view_into(&mut a, 0, &h_all.slice((r - 1) * n..r * n), n)?;
+-                    Ok(a)
+-                });
+-                self.sess.turn_ckpt = match (cap, anchor) {
+-                    (Ok(snap), Ok(last_h)) => Some(SpecCheckpoint {
+-                        snap,
+-                        pos: s.base + r,
+-                        last_h,
+-                    }),
+-                    _ => None,
+-                };
+-            }
+         } else {
+             for i in chunk.start..chunk.end {
+                 let (logits, h) = if chunk.target_step {
+@@ -495,7 +448,7 @@ impl MtpPrimeWalker<'_> {
+                 latent_tails: Vec::new(),
+             });
+         }
+-        if s.ckpt_rel.is_none() && !s.grid_requested {
++        if s.ckpt_rel.is_none() {
+             let anchor = self.e.uninit(n).and_then(|mut a| {
+                 self.e
+                     .copy_view_into(&mut a, 0, &h.slice((tp - 1) * n..tp * n), n)?;
+@@ -764,8 +717,6 @@ mod tests {
+             logits: Vec::new(),
+             capture_at: None,
+             ckpt_rel,
+-            grid_rel: None,
+-            grid_requested: false,
+             k: 1,
+             sampling: resolve_spec_sampling(None),
+             graph_draft: false,
+@@ -780,12 +731,6 @@ mod tests {
+         );
+         assert!(!state(Some(1024), 2).owes_turn_checkpoint());
+         assert!(!state(None, 0).owes_turn_checkpoint());
+-        // WP-B day 44: a grid capture the walker has not yet reached is owed the same way.
+-        let mut grid = state(None, 0);
+-        grid.grid_rel = Some(1024);
+-        assert!(grid.owes_turn_checkpoint());
+-        grid.cursor = 1;
+-        assert!(!grid.owes_turn_checkpoint());
+     }
+ 
+     #[test]
+diff --git a/crates/memra-engine/tests/grid_capture_gpu.rs b/crates/memra-engine/tests/grid_capture_gpu.rs
+deleted file mode 100644
+index 352d479e3..000000000
+--- a/crates/memra-engine/tests/grid_capture_gpu.rs
++++ /dev/null
+@@ -1,277 +0,0 @@
+-//! WP-B day 44 (`research/spill-b-20260919/DAY44.md` 1.5): the in-call grid capture.
+-//!
+-//! GPU-gated (`#[ignore]`, CI is compile-only). Run on the rig under the card's lock:
+-//!   flock /tmp/memra-5090.lock cargo test -p memra-engine --test grid_capture_gpu -- --ignored --test-threads=1
+-//! The model-level tests read `MEMRA_TEST_QWEN_GGUF` (a Qwen3.5/3.8 hybrid GGUF, e.g. the 9B).
+-
+-use memra_engine::Engine;
+-use memra_engine::cache::Cache;
+-use memra_engine::grid_capture;
+-use memra_engine::hybrid::HybridModel;
+-use memra_gguf::GgufFile;
+-
+-fn pr(i: usize, seed: u64) -> f32 {
+-    let mut x = (i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ seed;
+-    x ^= x >> 33;
+-    x = x.wrapping_mul(0xff51_afd7_ed55_8ccd);
+-    x ^= x >> 33;
+-    ((x >> 40) as f32 / 16_777_216.0) - 0.5
+-}
+-
+-/// The chunked scan's capture at `rows` equals the final state of the same scan over the first
+-/// `rows` rows alone, bitwise, on the mma pair and on the f32 pair.
+-#[test]
+-#[ignore = "needs a CUDA device; run under flock /tmp/memra-5090.lock"]
+-fn gpu_scan_capture_equals_the_prefix_scan_state() {
+-    let e = Engine::new(0).expect("CUDA device 0");
+-    let (s_v, h, t, c) = (128usize, 4usize, 160usize, 32usize);
+-    let scale = 1.0 / (s_v as f32).sqrt();
+-    for mma in ["1", "0"] {
+-        // SAFETY: single-threaded test body; the scan reads this env per call.
+-        unsafe { std::env::set_var("MEMRA_GDN_MMA", mma) };
+-        for rows in [32usize, 96, 128] {
+-            let q: Vec<f32> = (0..s_v * h * t).map(|i| pr(i, 1) * 0.1).collect();
+-            let k: Vec<f32> = (0..s_v * h * t).map(|i| pr(i, 2) * 0.1).collect();
+-            let v: Vec<f32> = (0..s_v * h * t).map(|i| pr(i, 3) * 0.1).collect();
+-            let g: Vec<f32> = (0..h * t).map(|i| -0.05 - pr(i, 4).abs() * 0.1).collect();
+-            let beta: Vec<f32> = (0..h * t).map(|i| 0.5 + pr(i, 5) * 0.2).collect();
+-            let st0: Vec<f32> = (0..s_v * s_v * h).map(|i| pr(i, 6) * 0.01).collect();
+-            let up = |x: &[f32]| e.htod(x).unwrap();
+-            let (qd, kd, vd, gd, bd, sid) = (up(&q), up(&k), up(&v), up(&g), up(&beta), up(&st0));
+-            let mut sod = e.zeros(s_v * s_v * h).unwrap();
+-            let mut od = e.zeros(s_v * h * t).unwrap();
+-            let mut slot = None;
+-            e.gdn_scan_chunked_capture(
+-                &qd,
+-                &kd,
+-                &vd,
+-                &gd,
+-                &bd,
+-                None,
+-                None,
+-                &sid,
+-                &mut sod,
+-                &mut od,
+-                h,
+-                t,
+-                scale,
+-                c,
+-                h,
+-                Some((rows, &mut slot)),
+-            )
+-            .unwrap();
+-            let captured = e.dtoh(slot.as_ref().expect("capture taken")).unwrap();
+-            // The same scan over the first `rows` rows (token-major inputs: a prefix slice).
+-            let (qp, kp, vp) = (
+-                up(&q[..s_v * h * rows]),
+-                up(&k[..s_v * h * rows]),
+-                up(&v[..s_v * h * rows]),
+-            );
+-            let (gp, bp) = (up(&g[..h * rows]), up(&beta[..h * rows]));
+-            let mut sp = e.zeros(s_v * s_v * h).unwrap();
+-            let mut op = e.zeros(s_v * h * rows).unwrap();
+-            e.gdn_scan_chunked(
+-                &qp, &kp, &vp, &gp, &bp, None, None, &sid, &mut sp, &mut op, h, rows, scale, c, h,
+-            )
+-            .unwrap();
+-            let split = e.dtoh(&sp).unwrap();
+-            let differ = captured
+-                .iter()
+-                .zip(&split)
+-                .filter(|(a, b)| a.to_bits() != b.to_bits())
+-                .count();
+-            assert_eq!(
+-                differ, 0,
+-                "mma={mma} rows={rows}: {differ} state values differ"
+-            );
+-            // The full scan's own output is unchanged by the capture.
+-            let mut sod2 = e.zeros(s_v * s_v * h).unwrap();
+-            let mut od2 = e.zeros(s_v * h * t).unwrap();
+-            e.gdn_scan_chunked(
+-                &qd, &kd, &vd, &gd, &bd, None, None, &sid, &mut sod2, &mut od2, h, t, scale, c, h,
+-            )
+-            .unwrap();
+-            assert_eq!(
+-                e.dtoh(&sod).unwrap(),
+-                e.dtoh(&sod2).unwrap(),
+-                "mma={mma}: final state"
+-            );
+-            assert_eq!(
+-                e.dtoh(&od).unwrap(),
+-                e.dtoh(&od2).unwrap(),
+-                "mma={mma}: output"
+-            );
+-        }
+-    }
+-    unsafe { std::env::remove_var("MEMRA_GDN_MMA") };
+-}
+-
+-/// The ring capture is rows `rows - 3 .. rows` of the token-major conv input, in the ring layout.
+-#[test]
+-#[ignore = "needs a CUDA device; run under flock /tmp/memra-5090.lock"]
+-fn gpu_ring_capture_is_the_rows_before_the_capture_point() {
+-    let e = Engine::new(0).expect("CUDA device 0");
+-    let (conv_dim, t, d_conv, rows) = (64usize, 96usize, 4usize, 64usize);
+-    let x: Vec<f32> = (0..t * conv_dim).map(|i| pr(i, 7)).collect();
+-    let xd = e.htod(&x).unwrap();
+-    let ring = e
+-        .ssm_conv_ring_capture(&xd.slice(0..t * conv_dim), conv_dim, rows, d_conv)
+-        .unwrap();
+-    let got = e.dtoh(&ring).unwrap();
+-    let pad = d_conv - 1;
+-    for c in 0..conv_dim {
+-        for j in 0..pad {
+-            let tt = rows - pad + j;
+-            assert_eq!(got[c * pad + j].to_bits(), x[tt * conv_dim + c].to_bits());
+-        }
+-    }
+-}
+-
+-fn model() -> Option<(Engine, HybridModel)> {
+-    let path = std::env::var("MEMRA_TEST_QWEN_GGUF").ok()?;
+-    let e = Engine::new(0).expect("CUDA device 0");
+-    let g = GgufFile::open(&path).expect("gguf");
+-    let m = HybridModel::load_without_mtp(&e, &g).expect("hybrid model");
+-    Some((e, m))
+-}
+-
+-fn prompt(n: usize, seed: u64) -> Vec<u32> {
+-    (0..n)
+-        .map(|i| 1000 + (pr(i, seed).abs() * 20_000.0) as u32)
+-        .collect()
+-}
+-
+-fn bits(v: &[f32]) -> Vec<u32> {
+-    v.iter().map(|x| x.to_bits()).collect()
+-}
+-
+-/// Model level: a capture inside one prime call equals the split prime's state at the capture
+-/// point, and a resume from it primes the next prompt to the cold prime's logits bitwise.
+-#[test]
+-#[ignore = "needs a CUDA device and MEMRA_TEST_QWEN_GGUF; run under flock /tmp/memra-5090.lock"]
+-fn gpu_model_capture_equals_split_and_resumes_cold_exact() {
+-    let Some((e, m)) = model() else {
+-        eprintln!("MEMRA_TEST_QWEN_GGUF unset; skipped");
+-        return;
+-    };
+-    let ctx = 4096;
+-    let p1 = prompt(700, 11);
+-    let mut p2 = p1.clone();
+-    p2.extend(prompt(96, 13));
+-    let g = grid_capture::capture_point(0, p1.len(), 16, Engine::gdn_chunk_size()).unwrap();
+-    assert_eq!(g, 672);
+-
+-    // A: one call over p1 carrying the capture.
+-    let mut ca = Cache::new(&e, &m.cfg, ctx).unwrap();
+-    let guard = grid_capture::arm(g, grid_capture::needed_layers(&ca));
+-    m.prime_cache(&e, &p1, &mut ca, 0).unwrap();
+-    let cap = grid_capture::take().expect("capture taken inside the call");
+-    drop(guard);
+-    let snap_a = cap.into_snapshot(&ca).unwrap();
+-
+-    // B: the split prime, stopped at g.
+-    let mut cb = Cache::new(&e, &m.cfg, ctx).unwrap();
+-    m.prime_cache(&e, &p1[..g], &mut cb, p1.len() - g).unwrap();
+-    let snap_b = cb.snapshot(&e).unwrap();
+-    for il in 0..snap_a.ssm.len() {
+-        match (&snap_a.ssm[il], &snap_b.ssm[il]) {
+-            (Some(a), Some(b)) => {
+-                assert_eq!(
+-                    bits(&e.dtoh(a).unwrap()),
+-                    bits(&e.dtoh(b).unwrap()),
+-                    "ssm layer {il}"
+-                );
+-                let (ca_, cb_) = (
+-                    snap_a.conv[il].as_ref().unwrap(),
+-                    snap_b.conv[il].as_ref().unwrap(),
+-                );
+-                assert_eq!(
+-                    bits(&e.dtoh(ca_).unwrap()),
+-                    bits(&e.dtoh(cb_).unwrap()),
+-                    "conv layer {il}"
+-                );
+-            }
+-            (None, None) => {}
+-            _ => panic!("layer {il}: plane presence differs"),
+-        }
+-    }
+-
+-    // C: restore the capture into A's cache and prime p2's tail in one call.
+-    memra_engine::pp::restore_cache_checkpoint(&e, &m, None, &mut ca, &snap_a).unwrap();
+-    assert_eq!(ca.pos, g);
+-    let (resumed, _, _) = m.prime_cache(&e, &p2[g..], &mut ca, 0).unwrap();
+-
+-    // D: a cold prime of p2.
+-    let mut cd = Cache::new(&e, &m.cfg, ctx).unwrap();
+-    let (cold, _, _) = m.prime_cache(&e, &p2, &mut cd, 0).unwrap();
+-    assert_eq!(
+-        bits(&resumed),
+-        bits(&cold),
+-        "resume from the capture is cold-exact"
+-    );
+-}
+-
+-/// A capture point on a call boundary is the live state (no in-call capture needed).
+-#[test]
+-#[ignore = "needs a CUDA device and MEMRA_TEST_QWEN_GGUF; run under flock /tmp/memra-5090.lock"]
+-fn gpu_model_boundary_capture_is_the_live_state() {
+-    let Some((e, m)) = model() else {
+-        eprintln!("MEMRA_TEST_QWEN_GGUF unset; skipped");
+-        return;
+-    };
+-    let p = prompt(640, 17);
+-    let mut ca = Cache::new(&e, &m.cfg, 4096).unwrap();
+-    let guard = grid_capture::arm(640, grid_capture::needed_layers(&ca));
+-    m.prime_cache(&e, &p, &mut ca, 0).unwrap();
+-    let cap = grid_capture::take().expect("boundary capture at the call end");
+-    drop(guard);
+-    let snap = cap.into_snapshot(&ca).unwrap();
+-    let live = ca.snapshot(&e).unwrap();
+-    for il in 0..snap.ssm.len() {
+-        if let (Some(a), Some(b)) = (&snap.ssm[il], &live.ssm[il]) {
+-            assert_eq!(
+-                bits(&e.dtoh(a).unwrap()),
+-                bits(&e.dtoh(b).unwrap()),
+-                "ssm layer {il}"
+-            );
+-        }
+-    }
+-    assert!(!grid_capture::armed(), "the guard disarmed");
+-}
+-
+-/// The settle (DAY44 1.2 (c)): from the capture, a prime of the committed rows up to the last
+-/// grid point with 16 rows after it (its own call, the request end unknown), then the next
+-/// prompt's tail primes from there to the cold prime's logits bitwise.
+-#[test]
+-#[ignore = "needs a CUDA device and MEMRA_TEST_QWEN_GGUF; run under flock /tmp/memra-5090.lock"]
+-fn gpu_model_settle_then_resume_is_cold_exact() {
+-    let Some((e, m)) = model() else {
+-        eprintln!("MEMRA_TEST_QWEN_GGUF unset; skipped");
+-        return;
+-    };
+-    let ctx = 4096;
+-    let p1 = prompt(700, 21);
+-    let mut committed = p1.clone();
+-    committed.extend(prompt(40, 23)); // the reply's tokens
+-    let mut p2 = committed.clone();
+-    p2.extend(prompt(64, 29));
+-    let g = 672;
+-    let s = 704;
+-    let mut c = Cache::new(&e, &m.cfg, ctx).unwrap();
+-    let guard = grid_capture::arm(g, grid_capture::needed_layers(&c));
+-    m.prime_cache(&e, &p1, &mut c, 0).unwrap();
+-    let snap = grid_capture::take().unwrap().into_snapshot(&c).unwrap();
+-    drop(guard);
+-    // (the decoded reply rows would sit here; the settle discards them)
+-    memra_engine::pp::restore_cache_checkpoint(&e, &m, None, &mut c, &snap).unwrap();
+-    m.prime_cache(&e, &committed[g..s], &mut c, 0).unwrap();
+-    assert_eq!(c.pos, s);
+-    let (resumed, _, _) = m.prime_cache(&e, &p2[s..], &mut c, 0).unwrap();
+-    let mut cold_c = Cache::new(&e, &m.cfg, ctx).unwrap();
+-    let (cold, _, _) = m.prime_cache(&e, &p2, &mut cold_c, 0).unwrap();
+-    assert_eq!(
+-        bits(&resumed),
+-        bits(&cold),
+-        "settle then resume is cold-exact"
+-    );
+-}
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index 09de61318..06cf7d56c 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -2278,17 +2278,6 @@ struct ReuseEntry {
+     /// Global park age used by admission and preemptive ceiling reclaim. Per-key vector order
+     /// remains unchanged.
+     parked_at: Instant,
+-    /// EXACT RESUME (WP-B day 44): the entry's id in the settle queue (`next_parked_id`).
+-    id: u64,
+-    /// EXACT RESUME: the cache holds exactly `fed` under the prime program, on the grid (a settle
+-    /// landed); a resume primes the tail from `fed.len()` with no restore.
+-    settled: bool,
+-}
+-
+-/// Monotonic ids for parked entries (the settle queue holds ids, never references).
+-fn next_parked_id() -> u64 {
+-    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+-    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+ }
+ /// A retired PLAIN session's PROMPT-END-class boundary state — the rewind target for
+ /// plain-session affinity resume (lane/plain-affinity, 2026-08-09). The plain twin of
+@@ -2330,11 +2319,6 @@ struct SpecReuseEntry {
+     /// as llama serve's cache_prompt: the suffix's boundary tokenization may differ from a cold
+     /// full-retok — committed tokens stay authoritative, spec==greedy exactness is untouched.
+     committed_text: String,
+-    /// EXACT RESUME (WP-B day 44): the entry's id in the settle queue.
+-    id: u64,
+-    /// EXACT RESUME: the session holds exactly `committed` under the prime program, on the grid (a
+-    /// settle landed); a resume primes the tail with no rewind.
+-    settled: bool,
+     /// The public stream's length (`spec_public_len`, WP-B day 41 addendum B3): `committed`
+     /// minus the final burst's accepted drafts past the budget. Read only by the armed
+     /// `MEMRA_RESUME_GRID_REWIND` exact probe, which always rewinds below it.
+@@ -3253,135 +3237,6 @@ fn grid_rewind_plain(
+     Some(e)
+ }
+ 
+-/// The spec pool's exact resume (MEMRA_RESUME_EXACT, DAY44 1.2 (b)): a settled entry resumes
+-/// where it stands; an unsettled one rewinds to its turn checkpoint and keeps it (the carry
+-/// until the walker captures a newer one). At least `PRIME_MIN_T` rows prime. `None`: cold.
+-fn exact_resume_spec(
+-    engine: &Engine,
+-    lm: &LoadedModel,
+-    mut entry: SpecReuseEntry,
+-    prompt: &[u32],
+-    model: &str,
+-) -> Option<memra_engine::spec::SpecSession> {
+-    let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+-    let committed = entry.sess.committed.len();
+-    if entry.settled {
+-        if prompt.len() < committed + floor || prompt[..committed] != entry.sess.committed[..] {
+-            eprintln!(
+-                "[kv-reuse] exact: declined (the prompt extends the settled rows by fewer than \
+-                 the prime floor); cold"
+-            );
+-            return None;
+-        }
+-        eprintln!(
+-            "[kv-reuse] exact: spec resume from {committed} of {committed} committed rows \
+-             (priming {} rows, settled; model {model})",
+-            prompt.len() - committed
+-        );
+-        return Some(entry.sess);
+-    }
+-    let Some(pos) = entry.sess.rewind_pos() else {
+-        eprintln!("[kv-reuse] exact: declined (no turn checkpoint); cold");
+-        return None;
+-    };
+-    if !entry.sess.rewind_is_resident() {
+-        eprintln!("[kv-reuse] exact: declined (ring lapped the checkpoint); cold");
+-        return None;
+-    }
+-    if pos > committed || prompt.len() < pos + floor || prompt[..pos] != entry.sess.committed[..pos]
+-    {
+-        eprintln!(
+-            "[kv-reuse] exact: declined (the prompt diverges before the checkpoint or extends \
+-             it by fewer than the floor); cold"
+-        );
+-        return None;
+-    }
+-    match lm
+-        .model
+-        .spec_rewind_to_checkpoint_retaining(engine, &mut entry.sess)
+-    {
+-        Ok(Some(p)) => {
+-            eprintln!(
+-                "[kv-reuse] exact: spec resume from {p} of {committed} committed rows (priming \
+-                 {} rows, checkpoint; model {model})",
+-                prompt.len() - p
+-            );
+-            Some(entry.sess)
+-        }
+-        Ok(None) => {
+-            eprintln!("[kv-reuse] exact: declined (no turn checkpoint); cold");
+-            None
+-        }
+-        Err(err) => {
+-            eprintln!("[kv-reuse] exact: declined (rewind failed: {err}); cold");
+-            None
+-        }
+-    }
+-}
+-
+-/// The plain pool's exact resume (MEMRA_RESUME_EXACT, DAY44 1.2 (b)). A settled entry's cache
+-/// holds exactly its `fed` under the prime program on the grid, so the request resumes there. An
+-/// unsettled entry restores its grid checkpoint (captured inside the prime call that contained
+-/// it) and the tail past it primes in one call, cold-exact by the grid law; the checkpoint is
+-/// returned as the new session's carry. Every resume primes at least `PRIME_MIN_T` rows, so no
+-/// prompt row rides the tokenwise program. `None`: declined, the request primes cold.
+-fn exact_resume_plain(
+-    engine: &Engine,
+-    lm: &LoadedModel,
+-    mut e: ReuseEntry,
+-    prompt: &[u32],
+-    model: &str,
+-) -> (Option<ReuseEntry>, Option<PlainCheckpoint>) {
+-    let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+-    let committed = e.fed.len();
+-    let decline = |why: &str| {
+-        eprintln!("[kv-reuse] exact: declined ({why}); cold");
+-    };
+-    if e.settled {
+-        if prompt.len() < committed + floor {
+-            decline("the prompt extends the settled rows by fewer than the prime floor");
+-            return (None, None);
+-        }
+-        eprintln!(
+-            "[kv-reuse] exact: plain resume from {committed} of {committed} committed rows \
+-             (priming {} rows, settled; model {model})",
+-            prompt.len() - committed
+-        );
+-        return (Some(e), None);
+-    }
+-    let Some(mut ckpt) = e.ckpt.take() else {
+-        decline("no checkpoint");
+-        return (None, None);
+-    };
+-    if !e.cache.can_rollback(&ckpt.snap, 0) {
+-        decline("ring lapped the checkpoint");
+-        return (None, None);
+-    }
+-    let pos = ckpt.pos;
+-    if pos > committed || prompt.len() < pos + floor || prompt[..pos] != e.fed[..pos] {
+-        decline("the prompt diverges before the checkpoint or extends it by fewer than the floor");
+-        return (None, None);
+-    }
+-    if let Err(err) = memra_engine::pp::restore_cache_checkpoint(
+-        engine,
+-        &lm.model,
+-        None,
+-        &mut e.cache,
+-        &ckpt.snap,
+-    ) {
+-        decline(&format!("restore failed: {err}"));
+-        return (None, None);
+-    }
+-    e.fed.truncate(pos);
+-    e.last_logits = std::mem::take(&mut ckpt.last_logits);
+-    eprintln!(
+-        "[kv-reuse] exact: plain resume from {pos} of {committed} committed rows (priming {} \
+-         rows, checkpoint; model {model})",
+-        prompt.len() - pos
+-    );
+-    (Some(e), Some(ckpt))
+-}
+-
+ /// The spec pool's grid rewind (DAY41 1.1): `spec_rewind_to_checkpoint` (trunk cache, draft
+ /// scratch, committed tokens), then the token suffix primes. `None` (cold) when the session keeps
+ /// no turn checkpoint, the prompt does not reproduce the committed tokens through it, or the
+@@ -3453,41 +3308,10 @@ fn spec_budget_clamp_on() -> bool {
+     })
+ }
+ 
+-/// MEMRA_RESUME_EXACT (default unset, WP-B day 44, OWED O11 revised): the exact and fast resume.
+-/// `1`: every resumable prime call captures its grid checkpoint inside the call with no stop
+-/// (`memra_engine::grid_capture`), an exact-extension hit restores it and primes the prompt's tail
+-/// in one call (cold-exact by the grid law), and an off-path settle re-primes a parked entry's
+-/// reply rows with the prime program after an idle grace, so the next resume primes only the
+-/// tail. It takes precedence over `MEMRA_RESUME_GRID_REWIND`. Unset reads nothing.
+-fn resume_exact_on() -> bool {
+-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+-    *ON.get_or_init(|| {
+-        let on = std::env::var("MEMRA_RESUME_EXACT").as_deref() == Ok("1");
+-        if on {
+-            eprintln!(
+-                "[kv-reuse] MEMRA_RESUME_EXACT=1: in-call grid checkpoints, one-call exact \
+-                 resumes, off-path settles (DAY44 door)"
+-            );
+-        }
+-        on
+-    })
+-}
+-
+-/// MEMRA_RESUME_EXACT_FAULT (fault injection of the DAY44 fault boot): `settle-fail` makes every
+-/// settle fail after its restore, so the entry is dropped and the next turn primes cold.
+-fn resume_exact_fault_settle() -> bool {
+-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+-    *ON.get_or_init(|| std::env::var("MEMRA_RESUME_EXACT_FAULT").as_deref() == Ok("settle-fail"))
+-}
+-
+-/// The settle's idle grace (DAY44 1.2 (c)): a zero-gap next turn finds no settle in flight.
+-const EXACT_SETTLE_GRACE: Duration = Duration::from_millis(100);
+-
+ fn resume_grid_rewind_on() -> bool {
+     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+     *ON.get_or_init(|| {
+-        let on = std::env::var("MEMRA_RESUME_GRID_REWIND").as_deref() == Ok("1")
+-            && std::env::var("MEMRA_RESUME_EXACT").as_deref() != Ok("1");
++        let on = std::env::var("MEMRA_RESUME_GRID_REWIND").as_deref() == Ok("1");
+         if on {
+             eprintln!(
+                 "[kv-reuse] MEMRA_RESUME_GRID_REWIND=1: exact-extension resumes rewind to the \
+@@ -6913,11 +6737,7 @@ fn session_snapshot_bytes_owed(s: &Session) -> usize {
+             }
+         }
+         None => match s.cache.as_ref() {
+-            // WP-B day 44: an owed in-call grid capture allocates a snapshot even while a carried
+-            // checkpoint is held (both live until the capture replaces the carry).
+-            Some(cache)
+-                if (s.ckpt_at.is_some() && s.ckpt_snap.is_none()) || s.exact_at.is_some() =>
+-            {
++            Some(cache) if s.ckpt_at.is_some() && s.ckpt_snap.is_none() => {
+                 cache_snapshot_bytes(cache)
+             }
+             _ => 0,
+@@ -15240,221 +15060,6 @@ fn reclaim_offtick_pass(
+ /// set reaches the host whether or not the arrival that queued it is still waiting. A queued entry
+ /// that is no longer evictable (leased, hit or evicted meanwhile) is skipped; a refused submission
+ /// dropped its entry (its bytes free now) and the next is tried. Returns the entries removed.
+-/// One queued settle (WP-B day 44, DAY44 1.2 (c)): an entry id in a pool, never a reference.
+-#[derive(Clone, Debug, PartialEq, Eq)]
+-struct SettleJob {
+-    pool: ParkedPool,
+-    key: PoolKey,
+-    id: u64,
+-}
+-
+-/// The exact resume's settle queue, newest first: the entry parked last is the one whose next
+-/// turn is likeliest to come next. A job whose entry is gone (resumed, evicted, purged) is
+-/// skipped when its turn comes (DAY44 1.3 cases 1, 4, 5).
+-#[derive(Default)]
+-struct SettleQueue {
+-    jobs: VecDeque<SettleJob>,
+-}
+-
+-impl SettleQueue {
+-    /// Bounded: a busy worker that never idles keeps only the newest jobs (older entries are the
+-    /// likeliest to have been resumed or evicted anyway).
+-    const CAP: usize = 64;
+-    fn push(&mut self, job: SettleJob) {
+-        if !self.jobs.contains(&job) {
+-            self.jobs.push_back(job);
+-        }
+-        while self.jobs.len() > Self::CAP {
+-            self.jobs.pop_front();
+-        }
+-    }
+-    fn is_empty(&self) -> bool {
+-        self.jobs.is_empty()
+-    }
+-    fn pop(&mut self) -> Option<SettleJob> {
+-        self.jobs.pop_back()
+-    }
+-    /// A tenant purge drops the tenant's jobs (the purge's own namespace predicate).
+-    fn purge_tenant(&mut self, tenant: &str) {
+-        let row = crate::auth::meter_key(&crate::auth::scope_namespace(tenant, "")).to_string();
+-        self.jobs
+-            .retain(|j| crate::auth::meter_key(&j.key.1) != row);
+-    }
+-}
+-
+-/// The settle point (DAY44 1.2 (c)): the last grid point with `PRIME_MIN_T` committed rows after
+-/// it; `None` when it is not at least `PRIME_MIN_T` rows past the checkpoint.
+-fn exact_settle_point(committed: usize, ckpt: usize) -> Option<usize> {
+-    let floor = memra_engine::hybrid_forward::PRIME_MIN_T;
+-    let s = grid_align_boundary_within(committed, committed);
+-    (committed >= floor && s >= ckpt + floor && committed - s >= floor).then_some(s)
+-}
+-
+-/// Run the next settle job whose entry still exists (DAY44 1.2 (c)). The entry is moved out of its
+-/// pool, restored to its checkpoint, its committed rows up to the settle point primed in one call,
+-/// and put back settled; a failure drops it with its line (DAY44 1.3 case 7).
+-fn settle_one(
+-    engine: &Engine,
+-    loaded: &HashMap<String, LoadedModel>,
+-    reuse: &mut HashMap<PoolKey, Vec<ReuseEntry>>,
+-    spec_reuse: &mut HashMap<PoolKey, Vec<SpecReuseEntry>>,
+-    queue: &mut SettleQueue,
+-) {
+-    while let Some(job) = queue.pop() {
+-        let Some(lm) = loaded.get(&job.key.0) else {
+-            continue;
+-        };
+-        match job.pool {
+-            ParkedPool::Plain => {
+-                let Some(i) = reuse
+-                    .get(&job.key)
+-                    .and_then(|pool| pool.iter().position(|e| e.id == job.id))
+-                else {
+-                    continue;
+-                };
+-                let mut e = reuse.get_mut(&job.key).expect("found above").remove(i);
+-                let t0 = Instant::now();
+-                match exact_settle_plain(engine, lm, &mut e) {
+-                    Ok(Some((from, to))) => {
+-                        eprintln!(
+-                            "[kv-reuse] exact: settle {} {from} -> {to} ({} rows, {:.1} ms)",
+-                            job.id,
+-                            to - from,
+-                            t0.elapsed().as_secs_f64() * 1e3
+-                        );
+-                        reuse.entry(job.key).or_default().insert(i, e);
+-                    }
+-                    Ok(None) => reuse.entry(job.key).or_default().insert(i, e),
+-                    Err(err) => {
+-                        eprintln!("[kv-reuse] exact: settle failed ({err}); entry dropped");
+-                    }
+-                }
+-            }
+-            ParkedPool::Spec => {
+-                let Some(i) = spec_reuse
+-                    .get(&job.key)
+-                    .and_then(|pool| pool.iter().position(|e| e.id == job.id))
+-                else {
+-                    continue;
+-                };
+-                let mut e = spec_reuse.get_mut(&job.key).expect("found above").remove(i);
+-                let t0 = Instant::now();
+-                match exact_settle_spec(engine, lm, &mut e) {
+-                    Ok(Some((from, to))) => {
+-                        eprintln!(
+-                            "[kv-reuse] exact: settle {} {from} -> {to} ({} rows, {:.1} ms)",
+-                            job.id,
+-                            to - from,
+-                            t0.elapsed().as_secs_f64() * 1e3
+-                        );
+-                        spec_reuse.entry(job.key).or_default().insert(i, e);
+-                    }
+-                    Ok(None) => spec_reuse.entry(job.key).or_default().insert(i, e),
+-                    Err(err) => {
+-                        eprintln!("[kv-reuse] exact: settle failed ({err}); entry dropped");
+-                    }
+-                }
+-            }
+-            ParkedPool::Dspark => continue,
+-        }
+-        return;
+-    }
+-}
+-
+-/// The plain settle: restore the checkpoint, prime `fed[ckpt..S]` in one call. `Ok(None)` when
+-/// there is nothing to settle (the entry is unchanged).
+-fn exact_settle_plain(
+-    engine: &Engine,
+-    lm: &LoadedModel,
+-    e: &mut ReuseEntry,
+-) -> Result<Option<(usize, usize)>, String> {
+-    if e.settled {
+-        return Ok(None);
+-    }
+-    let Some(ckpt) = e.ckpt.as_ref() else {
+-        return Ok(None);
+-    };
+-    let from = ckpt.pos;
+-    let Some(to) = exact_settle_point(e.fed.len(), from) else {
+-        return Ok(None);
+-    };
+-    if !e.cache.can_rollback(&ckpt.snap, 0) {
+-        return Ok(None);
+-    }
+-    memra_engine::pp::restore_cache_checkpoint(engine, &lm.model, None, &mut e.cache, &ckpt.snap)
+-        .map_err(|err| format!("restore failed: {err}"))?;
+-    if resume_exact_fault_settle() {
+-        return Err("fault injection (MEMRA_RESUME_EXACT_FAULT=settle-fail)".into());
+-    }
+-    let (logits, _, _) = lm
+-        .model
+-        .prime_cache(engine, &e.fed[from..to], &mut e.cache, 0)
+-        .map_err(|err| format!("prime failed: {err}"))?;
+-    e.fed.truncate(to);
+-    e.last_logits = logits;
+-    e.ckpt = None;
+-    e.settled = true;
+-    Ok(Some((from, to)))
+-}
+-
+-/// The spec settle: rewind to the turn checkpoint, prime the public stream's rows up to `S` with
+-/// no decode (the MTP walker then a zero-round burst, the session tail committing them).
+-fn exact_settle_spec(
+-    engine: &Engine,
+-    lm: &LoadedModel,
+-    e: &mut SpecReuseEntry,
+-) -> Result<Option<(usize, usize)>, String> {
+-    if e.settled {
+-        return Ok(None);
+-    }
+-    let Some(from) = e.sess.rewind_pos() else {
+-        return Ok(None);
+-    };
+-    let public = e.public_len.min(e.sess.committed.len());
+-    let Some(to) = exact_settle_point(public, from) else {
+-        return Ok(None);
+-    };
+-    if !e.sess.rewind_is_resident() {
+-        return Ok(None);
+-    }
+-    let tokens = e.sess.committed[from..to].to_vec();
+-    lm.model
+-        .spec_rewind_to_checkpoint(engine, &mut e.sess)
+-        .map_err(|err| format!("rewind failed: {err}"))?;
+-    if resume_exact_fault_settle() {
+-        return Err("fault injection (MEMRA_RESUME_EXACT_FAULT=settle-fail)".into());
+-    }
+-    lm.model
+-        .generate_spec_session_sampled_prime_split(
+-            engine,
+-            &mut e.sess,
+-            &tokens,
+-            0,
+-            spec_k_pin().filter(|&k| k > 0).unwrap_or(3),
+-            None,
+-            None,
+-            None,
+-        )
+-        .map_err(|err| format!("prime failed: {err}"))?;
+-    if e.sess.committed.len() != to {
+-        return Err(format!(
+-            "settle left {} committed rows, expected {to}",
+-            e.sess.committed.len()
+-        ));
+-    }
+-    let skip = lm
+-        .tok
+-        .bos_id()
+-        .map(|b| e.sess.committed.first() == Some(&b))
+-        .unwrap_or(false) as usize;
+-    e.committed_text = lm.tok.decode_special(&e.sess.committed[skip..], true);
+-    e.fingerprint =
+-        conversation_fingerprint(&e.sess.committed, &|t| lm.tok.token_is_control(t), false);
+-    e.public_len = to;
+-    e.settled = true;
+-    Ok(Some((from, to)))
+-}
+-
+ fn reclaim_queue_drain(
+     engine: &Engine,
+     px: &mut PrefixCache,
+@@ -24340,9 +23945,6 @@ struct Session {
+     /// The captured plain checkpoint, taken when prefill crosses `ckpt_at`. Moved into the parked
+     /// `ReuseEntry` at retire. `None` until the boundary is crossed (or if capture failed silently).
+     ckpt_snap: Option<PlainCheckpoint>,
+-    /// EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): the grid point this session's prime
+-    /// captures its checkpoint at, inside the call that contains it (`grid_capture`); taken once.
+-    exact_at: Option<usize>,
+     /// The LCP sample recorded for a cold prefix-cache miss at admission. Same-window
+     /// fanout siblings rewrite this provisional miss into a hit after the leader primes.
+     prefix_miss_lcp: Option<usize>,
+@@ -26288,9 +25890,6 @@ pub fn run(
+     let mut vmm_pending = false;
+     // WP-B day 42 addendum E (MEMRA_ADMIT_RECLAIM_OFFTICK): the worker's off-tick demote queue.
+     let mut reclaim_queue = ReclaimQueue::default();
+-    // WP-B day 44: the exact resume's settle queue and the last instant the worker had work.
+-    let mut settle_queue = SettleQueue::default();
+-    let mut last_work = Instant::now();
+     // Served-path receipts (lane/dspark-sampled-wave-20260825): admission-time route
+     // classification, published to /metrics for the deploy gate's sampled probe.
+     let mut n_served_dspark = 0u64;
+@@ -26525,7 +26124,6 @@ pub fn run(
+                 && hpx.restoring.is_none()
+                 && !vmm_pending
+                 && reclaim_queue.ids.is_empty()
+-                && settle_queue.is_empty()
+             {
+                 // Do not let an already-arrived request sit behind an idle-only probe. Once the
+                 // channel is observed empty, one pending expensive rung may run before the worker
+@@ -26608,24 +26206,6 @@ pub fn run(
+                 if !reclaim_queue.ids.is_empty() {
+                     wait = wait.min(Duration::from_millis(2));
+                 }
+-                // WP-B day 44: a queued settle is idle work: after the grace with no work, one
+-                // settle runs per idle pass; before it, the wait ends at the grace.
+-                if !settle_queue.is_empty() {
+-                    let ready = last_work + EXACT_SETTLE_GRACE;
+-                    let now = Instant::now();
+-                    if now >= ready {
+-                        settle_one(
+-                            &engine,
+-                            &loaded,
+-                            &mut reuse,
+-                            &mut spec_reuse,
+-                            &mut settle_queue,
+-                        );
+-                        wait = Duration::ZERO;
+-                    } else {
+-                        wait = wait.min(ready - now);
+-                    }
+-                }
+                 match rx.recv_timeout(wait) {
+                     Ok(cmd) => handle_cmd(
+                         cmd,
+@@ -26642,10 +26222,6 @@ pub fn run(
+                 }
+             }
+         }
+-        // WP-B day 44: the settle grace counts from the last pass with work.
+-        if !active.is_empty() || !queue.is_empty() {
+-            last_work = Instant::now();
+-        }
+         // BUSY PHASE: work is in flight, so the beat MUST advance every iteration. The
+         // stamp is a bare atomic store (no mutex, no syscall) — unlike the metrics publish
+         // below it is NOT throttled, because a heartbeat sampled every 32nd tick would give
+@@ -26717,8 +26293,6 @@ pub fn run(
+         // bytes straight back into host RAM. Worker-thread execution, same reason as
+         // trim: the pools live in this scope and the sweep must not race a demote.
+         for (tenant, tx) in pending_purges.drain(..) {
+-            // WP-B day 44 (DAY44 1.3 case 5): the purged tenant's settle jobs go with it.
+-            settle_queue.purge_tenant(&tenant);
+             release_promoted_pin_for_tenant(&mut hpx, &mut px, &tenant);
+             // WP-A day 21: the `Restoring` request settles first and the purged tenant's is dropped
+             // (cache freed, pin released) before either index purges.
+@@ -29768,8 +29342,6 @@ pub fn run(
+                             // plain-affinity checkpoint capture needs the same per-session
+                             // boundary stop the concat prime cannot honor — prime alone.
+                             && s.ckpt_at.is_none()
+-                            // WP-B day 44: an in-call grid capture needs the per-sequence prime.
+-                            && s.exact_at.is_none()
+                             // the grid-aligned seed boundary (memra#602) is the same class
+                             // when it stops inside the prompt; a seed at the prompt end is not
+                             // a stop and keeps the concat prime.
+@@ -30382,7 +29954,6 @@ pub fn run(
+                         || s.capture.is_some()
+                         || s.snapshot_at.is_some()
+                         || s.ckpt_at.is_some()
+-                        || s.exact_at.is_some()
+                         || seed_boundary_inside_prompt(
+                             s.seed_at,
+                             s.fed.len() + s.prefill_queue.len(),
+@@ -30827,22 +30398,10 @@ pub fn run(
+                                 );
+                             }
+                         }
+-                        let parked_id = next_parked_id();
+-                        // EXACT RESUME (WP-B day 44): an entry with a turn checkpoint queues its
+-                        // off-path settle.
+-                        if resume_exact_on() && sess.rewind_pos().is_some() {
+-                            settle_queue.push(SettleJob {
+-                                pool: ParkedPool::Spec,
+-                                key: pool_key.clone(),
+-                                id: parked_id,
+-                            });
+-                        }
+                         spec_reuse
+                             .entry(pool_key)
+                             .or_default()
+                             .push(SpecReuseEntry {
+-                                id: parked_id,
+-                                settled: false,
+                                 public_len,
+                                 sess,
+                                 committed_text,
+@@ -30991,16 +30550,6 @@ pub fn run(
+                                     );
+                                 }
+                             }
+-                            let parked_id = next_parked_id();
+-                            // EXACT RESUME (WP-B day 44): an entry with a grid checkpoint queues
+-                            // its off-path settle.
+-                            if resume_exact_on() && ckpt.is_some() {
+-                                settle_queue.push(SettleJob {
+-                                    pool: ParkedPool::Plain,
+-                                    key: pool_key.clone(),
+-                                    id: parked_id,
+-                                });
+-                            }
+                             reuse.entry(pool_key).or_default().push(ReuseEntry {
+                                 fed: s.fed,
+                                 cache,
+@@ -31010,8 +30559,6 @@ pub fn run(
+                                 affinity,
+                                 fingerprint,
+                                 parked_at: Instant::now(),
+-                                id: parked_id,
+-                                settled: false,
+                             });
+                         }
+                     }
+@@ -33053,9 +32600,6 @@ fn admit(
+     // prompt (and whose cache has room) resumes — only the suffix gets primed. The sampler's
+     // penalty history is replayed on host (cheap) so sampling matches a cold run exactly.
+     let mut reused: Option<ReuseEntry> = None;
+-    // EXACT RESUME (WP-B day 44): the checkpoint a resume restored from, carried as the new
+-    // session's checkpoint until its own prime captures a newer one (DAY44 1.3 case 9).
+-    let mut exact_carry: Option<PlainCheckpoint> = None;
+     // DEFAULT-ON (2026-07-05): the identity gate now exists at the engine level — session-gate
+     // (bins) pins 3-turn continuation-prime output == fresh-greedy oracle on both models, and the
+     // continuation path the reuse pool takes (prime_cache with cache.pos>0 / decode_step) is
+@@ -33145,13 +32689,6 @@ fn admit(
+     // GRID REWIND (MEMRA_RESUME_GRID_REWIND, WP-B day 41): the exact-extension hit resumes from the
+     // entry's grid checkpoint, not from its decoded rows; no usable checkpoint drops the entry and
+     // the request primes cold. Unset, nothing here runs.
+-    // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): a settled entry resumes where it stands; an
+-    // unsettled one restores its grid checkpoint; either way the tail primes in one call.
+-    if resume_exact_on()
+-        && let Some(e) = reused.take()
+-    {
+-        (reused, exact_carry) = exact_resume_plain(engine, lm, e, &prompt, &req.model);
+-    }
+     if resume_grid_rewind_on()
+         && let Some(e) = reused.take()
+     {
+@@ -33673,8 +33210,6 @@ fn admit(
+                     affinity: None,
+                     fingerprint: Vec::new(),
+                     parked_at: Instant::now(),
+-                    id: next_parked_id(),
+-                    settled: false,
+                 })
+             } else {
+                 let e = &px.entries[&pool_key][i];
+@@ -33705,8 +33240,6 @@ fn admit(
+                                     affinity: None,
+                                     fingerprint: Vec::new(),
+                                     parked_at: Instant::now(),
+-                                    id: next_parked_id(),
+-                                    settled: false,
+                                 }
+                             }),
+                             Err(err) => Err(format!("restore failed: {err}")),
+@@ -33879,8 +33412,6 @@ fn admit(
+                                         affinity: None,
+                                         fingerprint: Vec::new(),
+                                         parked_at: Instant::now(),
+-                                        id: next_parked_id(),
+-                                        settled: false,
+                                     })
+                                 }
+                                 Err(err) => Err(format!("partial restore failed: {err}")),
+@@ -34251,8 +33782,6 @@ fn admit(
+                             affinity: None,
+                             fingerprint: Vec::new(),
+                             parked_at: Instant::now(),
+-                            id: next_parked_id(),
+-                            settled: false,
+                         });
+                     }
+                     Err((None, why)) => {
+@@ -34720,7 +34249,7 @@ fn admit(
+                 // DAY41 addendum B3: armed, the exact key is the public stream (the final
+                 // burst's overshoot rows are not required); the hit always rewinds below it.
+                 let exact_key = |e: &SpecReuseEntry| -> usize {
+-                    if resume_grid_rewind_on() || resume_exact_on() {
++                    if resume_grid_rewind_on() {
+                         e.public_len.min(e.sess.committed.len())
+                     } else {
+                         e.sess.committed.len()
+@@ -34843,20 +34372,6 @@ fn admit(
+                 // GRID REWIND (MEMRA_RESUME_GRID_REWIND, WP-B day 41): an exact or text hit
+                 // resumes from the session's turn checkpoint and primes the token suffix; no
+                 // usable checkpoint primes cold. Unset, both arms are today's.
+-                // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): a settled entry resumes where it
+-                // stands, an unsettled one rewinds to its turn checkpoint keeping it as the carry;
+-                // either way the tail primes in one walk. A text hit is declined (cold).
+-                Some(SpecResumeProbe::Exact(index)) if resume_exact_on() => {
+-                    let entry = spec_reuse
+-                        .get_mut(&pool_key)
+-                        .expect("spec exact candidate pool vanished")
+-                        .remove(index);
+-                    exact_resume_spec(engine, lm, entry, &prompt, &req.model)
+-                }
+-                Some(SpecResumeProbe::Text { .. }) if resume_exact_on() => {
+-                    eprintln!("[kv-reuse] exact: declined (a text-prefix hit); cold");
+-                    None
+-                }
+                 Some(SpecResumeProbe::Exact(index)) if resume_grid_rewind_on() => {
+                     let sess = spec_reuse
+                         .get_mut(&pool_key)
+@@ -35981,23 +35496,7 @@ fn admit(
+     //     prefix cannot be captured by a prime-stop; that turn simply re-primes next time).
+     // The boundary is derived from the prompt's own turn markers (`plain_checkpoint_boundary`),
+     // never a hardcoded offset; the exact diff at resume still decides on bytes.
+-    // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): the checkpoint is captured INSIDE the
+-    // prime call that contains it (`exact_at`), never a stop, at the last grid point with the
+-    // prime floor after it and past the resumed depth; no `ckpt_at` stop is armed.
+-    let exact_at = (resume_exact_on()
+-        && affinity_enabled()
+-        && spec.is_none()
+-        && vision_state.is_none()
+-        && !eager_only_model(lm)
+-        && !confidence_trace_enabled())
+-    .then(|| {
+-        grid_rewind_checkpoint_boundary(&prompt, seed_fed.len(), false, &|t| {
+-            lm.tok.token_is_control(t)
+-        })
+-    })
+-    .flatten();
+-    let ckpt_at = if !resume_exact_on()
+-        && affinity_enabled()
++    let ckpt_at = if affinity_enabled()
+         && spec.is_none()
+         && vision_state.is_none()
+         && !eager_only_model(lm)
+@@ -36125,8 +35624,7 @@ fn admit(
+         n_cached,
+         snapshot_at,
+         ckpt_at,
+-        exact_at,
+-        ckpt_snap: exact_carry,
++        ckpt_snap: None,
+         prefix_miss_lcp,
+         seed_prefix,
+         seed_at,
+@@ -36479,8 +35977,6 @@ fn prefix_fanout_eligible(s: &Session, eager_only: &std::collections::HashSet<St
+         // a checkpoint-capturing session needs its own boundary-stopped prime — fanout
+         // primes the shared prefix monolithically and cannot honor the per-session stop.
+         && s.ckpt_at.is_none()
+-        // WP-B day 44: an in-call grid capture needs the session's own per-sequence prime.
+-        && s.exact_at.is_none()
+         && s.cache.as_ref().is_some_and(|c| c.pos == 0 && !c.has_swa_ring())
+         && !eager_only.contains(&s.model)
+         && s.prefill_queue.len() >= PREFIX_CACHE_MIN_TOKENS
+@@ -36927,15 +36423,6 @@ fn prefill_tick(
+                 let tx = s.tx.clone();
+                 Box::new(move || tx.is_closed())
+             });
+-            // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): this call captures the session's grid
+-            // checkpoint inside it when the point lies in it (no stop); the guard disarms on
+-            // every path, error included.
+-            let exact_here = s.exact_at.filter(|&g| fed_len <= g && g <= fed_len + take);
+-            let _exact_guard = exact_here.and_then(|g| {
+-                s.cache.as_ref().map(|c| {
+-                    memra_engine::grid_capture::arm(g, memra_engine::grid_capture::needed_layers(c))
+-                })
+-            });
+             let (l, _h, x) = lm.model.prime_cache_overlaid(
+                 engine,
+                 &chunk,
+@@ -36943,29 +36430,6 @@ fn prefill_tick(
+                 s.prefill_queue.len(),
+                 ov_window.as_ref(),
+             )?;
+-            if let Some(g) = exact_here {
+-                s.exact_at = None;
+-                let cache = s.cache.as_ref().unwrap();
+-                match memra_engine::grid_capture::take().map(|cap| cap.into_snapshot(cache)) {
+-                    Some(Ok(snap)) => {
+-                        s.ckpt_snap = Some(PlainCheckpoint {
+-                            snap,
+-                            pos: g,
+-                            last_logits: Vec::new(),
+-                        });
+-                    }
+-                    Some(Err(why)) => eprintln!(
+-                        "[kv-reuse] exact: capture refused at {g} ({why}); the previous \
+-                         checkpoint stays (model {})",
+-                        s.model
+-                    ),
+-                    None => eprintln!(
+-                        "[kv-reuse] exact: capture missed at {g} (call {fed_len}+{take}); the \
+-                         previous checkpoint stays (model {})",
+-                        s.model
+-                    ),
+-                }
+-            }
+             (l, x)
+         };
+         s.last_logits = l;
+@@ -38006,23 +37470,7 @@ fn step_session(
+         // undercounts the conversation's segments. Empty-suffix continuation bursts remain
+         // zero-prime, and MEMRA_AFFINITY=0 preserves the monolithic control arm.
+         let cold = spec.committed.is_empty();
+-        // EXACT RESUME (MEMRA_RESUME_EXACT, WP-B day 44): the turn checkpoint is captured inside
+-        // the MTP walker's trunk call that contains it, at the last grid point with the prime
+-        // floor after it; no stop, no split. The resume point this suffix primes from is on the
+-        // grid (a cold prime, a settled entry or a restored checkpoint), so the suffix-relative
+-        // boundary is on the absolute grid.
+-        if resume_exact_on()
+-            && !suffix.is_empty()
+-            && affinity_enabled()
+-            && cooperative_prime
+-            && s.mtp_prime.is_none()
+-        {
+-            spec.grid_capture_at =
+-                grid_rewind_checkpoint_boundary(&suffix, 0, false, &|t| lm.tok.token_is_control(t))
+-                    .map(|b| spec.committed.len() + b);
+-        }
+-        let boundary = if !resume_exact_on()
+-            && !suffix.is_empty()
++        let boundary = if !suffix.is_empty()
+             && affinity_enabled()
+             && (cold
+                 && (s.affinity.is_some()
+@@ -56938,7 +56386,7 @@ mod tests {
+         let worker = squash(include_str!("worker.rs"));
+         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+         assert!(live.contains(
+-            "&& hpx.restoring.is_none() && !vmm_pending && reclaim_queue.ids.is_empty() && settle_queue.is_empty() {"
++            "&& hpx.restoring.is_none() && !vmm_pending && reclaim_queue.ids.is_empty() {"
+         ));
+         assert!(live.contains("if vmm_pending { wait = wait.min(Duration::from_millis(2)); }"));
+         assert!(live.contains("let (reaped, pending) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse); vmm_pending = pending > 0;"));
+@@ -56952,7 +56400,7 @@ mod tests {
+         assert!(
+             at < live
+                 .find(
+-                    "&& hpx.restoring.is_none() && !vmm_pending && reclaim_queue.ids.is_empty() && settle_queue.is_empty() {"
++                    "&& hpx.restoring.is_none() && !vmm_pending && reclaim_queue.ids.is_empty() {"
+                 )
+                 .unwrap()
+         );
+@@ -56985,9 +56433,7 @@ mod tests {
+         let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+         let worker = squash(include_str!("worker.rs"));
+         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+-        assert!(live.contains(
+-            "&& !vmm_pending && reclaim_queue.ids.is_empty() && settle_queue.is_empty() {"
+-        ));
++        assert!(live.contains("&& !vmm_pending && reclaim_queue.ids.is_empty() {"));
+         assert!(live.contains(
+             "if !reclaim_queue.ids.is_empty() { wait = wait.min(Duration::from_millis(2)); }"
+         ));
+@@ -57130,7 +56576,7 @@ mod tests {
+         assert!(live.contains("if cold && resume_grid_rewind_on() {"));
+         assert!(live.contains("grid_rewind_checkpoint_boundary(&suffix, 0, markers, &|t| {"));
+         // B3: unset, the exact key is the whole committed stream (today's probe).
+-        assert!(live.contains("if resume_grid_rewind_on() || resume_exact_on() { e.public_len.min(e.sess.committed.len()) } else { e.sess.committed.len() }"));
++        assert!(live.contains("if resume_grid_rewind_on() { e.public_len.min(e.sess.committed.len()) } else { e.sess.committed.len() }"));
+         assert!(live.contains("&& prompt.starts_with(&e.sess.committed[..exact_key(e)])"));
+         assert!(live.contains("let public_len = spec_public_len(toks, s.n_prompt, &s.generated);"));
+         assert!(live.contains("|| plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t)) || resume_grid_rewind_on())"));
+@@ -57155,90 +56601,6 @@ mod tests {
+         assert!(live.contains("match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {"));
+     }
+ 
+-    /// WP-B day 44 (DAY44 1.5): the exact-resume door is read at the two arming sites (plain
+-    /// `exact_at` with the `ckpt_at` stop disarmed; spec `grid_capture_at` with the boundary stop
+-    /// disarmed), the two exact hits, the two park enqueues, and nowhere else.
+-    #[test]
+-    fn exact_resume_door_reaches_its_sites_only() {
+-        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+-        let worker = squash(include_str!("worker.rs"));
+-        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+-        let call = format!("resume_exact_on{}", "()");
+-        // The definition, 2 park enqueues, the plain hit, the spec exact key, the spec exact and
+-        // text arms, the plain arming pair, the spec arming pair.
+-        assert_eq!(live.matches(call.as_str()).count(), 11);
+-        assert!(live.contains("let exact_at = (resume_exact_on() && affinity_enabled()"));
+-        assert!(live.contains("let ckpt_at = if !resume_exact_on() && affinity_enabled()"));
+-        assert!(live.contains("let boundary = if !resume_exact_on() && !suffix.is_empty()"));
+-        assert!(live.contains(
+-            "if resume_exact_on() && let Some(e) = reused.take() { (reused, exact_carry) = exact_resume_plain(engine, lm, e, &prompt, &req.model); }"
+-        ));
+-        assert!(live.contains("Some(SpecResumeProbe::Exact(index)) if resume_exact_on() =>"));
+-        assert!(
+-            live.contains("if resume_exact_on() && ckpt.is_some() { settle_queue.push(SettleJob {")
+-        );
+-        assert!(live.contains(
+-            "if resume_exact_on() && sess.rewind_pos().is_some() { settle_queue.push(SettleJob {"
+-        ));
+-        // The exact door takes precedence over the grid rewind door.
+-        assert!(live.contains(
+-            "std::env::var(\"MEMRA_RESUME_GRID_REWIND\").as_deref() == Ok(\"1\") && std::env::var(\"MEMRA_RESUME_EXACT\").as_deref() != Ok(\"1\");"
+-        ));
+-        // The capture rides the prefill tick's own prime call, disarmed on every path.
+-        assert!(live.contains(
+-            "let exact_here = s.exact_at.filter(|&g| fed_len <= g && g <= fed_len + take);"
+-        ));
+-        assert!(live.contains(
+-            "memra_engine::grid_capture::arm(g, memra_engine::grid_capture::needed_layers(c))"
+-        ));
+-        // A capturing session primes alone (no batch, fanout or concat path).
+-        assert!(live.contains("&& s.ckpt_at.is_none() // WP-B day 44: an in-call grid capture needs the per-sequence prime. && s.exact_at.is_none()"));
+-        assert!(live.contains(
+-            "|| s.ckpt_at.is_some() || s.exact_at.is_some() || seed_boundary_inside_prompt("
+-        ));
+-        // The settle runs only on an idle worker, after the grace, and the idle block's
+-        // indefinite wait requires an empty settle queue.
+-        assert!(live.contains("&& reclaim_queue.ids.is_empty() && settle_queue.is_empty() {"));
+-        assert!(live.contains("let ready = last_work + EXACT_SETTLE_GRACE;"));
+-        assert!(live.contains("settle_queue.purge_tenant(&tenant);"));
+-    }
+-
+-    /// WP-B day 44 (DAY44 1.2 (c), 1.3): the settle point and the settle queue.
+-    #[test]
+-    fn exact_settle_point_and_queue_follow_day44() {
+-        use super::{ParkedPool, SettleJob, SettleQueue, exact_settle_point};
+-        let grain = memra_engine::Engine::gdn_chunk_size();
+-        assert_eq!(grain, 32);
+-        // A 6,144-token prompt, checkpoint 6112, a 32-token reply: committed 6176 settles at 6144.
+-        assert_eq!(exact_settle_point(6176, 6112), Some(6144));
+-        // 6,144 plus 256: committed 6400 settles at 6368 (32 rows after it).
+-        assert_eq!(exact_settle_point(6400, 6112), Some(6368));
+-        // Nothing past the checkpoint by the floor: no settle.
+-        assert_eq!(exact_settle_point(6140, 6112), None);
+-        assert_eq!(
+-            exact_settle_point(6160, 6112),
+-            Some(6144),
+-            "32 rows past the checkpoint"
+-        );
+-        let job = |id: u64, ns: &str| SettleJob {
+-            pool: ParkedPool::Plain,
+-            key: ("m".into(), ns.into()),
+-            id,
+-        };
+-        let mut q = SettleQueue::default();
+-        q.push(job(1, "a"));
+-        q.push(job(1, "a"));
+-        q.push(job(2, "b"));
+-        assert_eq!(q.pop(), Some(job(2, "b")), "newest first");
+-        assert_eq!(q.pop(), Some(job(1, "a")), "one job per entry");
+-        assert!(q.is_empty());
+-        for id in 0..100 {
+-            q.push(job(id, "c"));
+-        }
+-        assert_eq!(q.jobs.len(), SettleQueue::CAP);
+-        assert_eq!(q.pop(), Some(job(99, "c")), "the newest kept");
+-    }
+-
+     /// WP-B day 43 (DAY43 1.3): the budget-clamp door is read once, where the qwen spec arm hands
+     /// the session its request budget; the firing is reported with the model.
+     #[test]
+@@ -57431,7 +56793,7 @@ mod tests {
+         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+         // Plain: armed and untaken owes one; a taken checkpoint owes none.
+         assert!(live.contains(
+-            "Some(cache) if (s.ckpt_at.is_some() && s.ckpt_snap.is_none()) || s.exact_at.is_some() => { cache_snapshot_bytes(cache) }"
++            "Some(cache) if s.ckpt_at.is_some() && s.ckpt_snap.is_none() => { cache_snapshot_bytes(cache) }"
+         ));
+         // Spec: the session's armed `ckpt_at` before the walker, the walker's own row after it.
+         assert!(live.contains(
