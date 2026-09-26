@@ -9697,7 +9697,27 @@ impl HostPrefixCache {
         self.purges += 1;
         self.purged_entries += entries as u64;
         self.purged_bytes += bytes as u64;
+        // WP-A day 69 (`DAY69.md` design P.4): the scrub, after the settles and the entries' drop.
+        self.purge_scrub();
         (victims.len(), entries, bytes)
+    }
+
+    /// WP-A day 69 (`DAY69.md` design P.4): the pinned host memory the tier keeps for reuse holds
+    /// no revoked tenant's bytes after a purge. The lease pool drains (every idle backing frees, and
+    /// a lease allocated before the drain frees at its drop instead of parking), and every idle
+    /// buffer of the span staging set is zeroed in place. Every purge, whichever tenant it names.
+    fn purge_scrub(&self) {
+        let Some(tier) = &self.tier else {
+            return;
+        };
+        let (pooled, pooled_bytes) = tier.lease_pool.as_ref().map_or((0, 0), |p| p.drain());
+        let (zeroed, zeroed_bytes) = tier.staging.borrow_mut().scrub();
+        eprintln!(
+            "[prefix-host] purge scrub: lease pool drained ({pooled} idle backings, {:.1} MB freed; \
+             earlier leases free at their drop), staging set zeroed ({zeroed} buffers, {:.1} MB)",
+            pooled_bytes as f64 / 1e6,
+            zeroed_bytes as f64 / 1e6
+        );
     }
 }
 
@@ -9769,6 +9789,17 @@ impl HostStaging {
         self.idle.clear();
         self.charges.clear();
         self.charged = 0;
+    }
+    /// WP-A day 69 (`DAY69.md` design P.4): every idle buffer zeroed in place (an idle buffer holds
+    /// the last span that used it); the set keeps its buffers and their charges. Returns (buffers,
+    /// bytes).
+    fn scrub(&mut self) -> (usize, u64) {
+        let mut bytes = 0u64;
+        for buf in &mut self.idle {
+            buf.fill(0);
+            bytes += buf.len() as u64;
+        }
+        (self.idle.len(), bytes)
     }
 }
 /// One loaded model's programs under the door: the plain program (day 13) and, for a model with
@@ -52283,6 +52314,228 @@ mod tests {
         })
     }
 
+    /// WP-A day 69 (`DAY69.md` design P, cell (d)): a purge leaves no tenant bytes in the pinned
+    /// memory the tier keeps for reuse. An entry demotes through the real contract route (day 30's
+    /// cell, to its staging back in the set); its KV leases drop into the lease pool; then a purge.
+    /// The pool holds no idle backing and has drained, every idle staging buffer is zero (the set
+    /// keeps its buffers and charges), and the ledger holds the staging charge alone.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_b_purge_drains_the_pool_and_zeroes_the_staging_set() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        let mut ctx = gpu_contracts_context(&engine, "m", generation, 3);
+        {
+            let t = ctx.transfers.as_ref().unwrap().borrow();
+            t.set_lease_pool_cap(1 << 30);
+            ctx.lease_pool = Some(t.lease_pool());
+        }
+        host.tier = Some(ctx);
+        let (mut entry, want) = gpu_entry(&engine);
+        let recur = gpu_recurrent(&engine, &mut entry, None);
+        let (image, pending) = match super::host_entry_from_device(
+            &engine,
+            &mut host,
+            &mut entry,
+            None,
+            super::ContractD2h::OffTick,
+        ) {
+            Ok(super::HostImage::Demoting(image, pending)) => (image, pending),
+            Ok(super::HostImage::Whole(_)) => panic!("an off-tick contract demote came back whole"),
+            Err(e) => panic!("the off-tick demote failed: {e:?}"),
+        };
+        let slots: Vec<super::HostHashSlot> = recur.iter().map(|(s, _)| *s).collect();
+        assert_eq!(
+            pending.spans, slots,
+            "every recurrent plane rides the ticket"
+        );
+        for slot in &slots {
+            let (shell, placeholder) = match *slot {
+                super::HostHashSlot::Conv(i) => (&entry.conv[i], &image.conv[i]),
+                super::HostHashSlot::Ssm(i) => (&entry.ssm[i], &image.ssm[i]),
+                _ => unreachable!(),
+            };
+            assert!(shell.is_none(), "{slot:?}: the engine owns the source");
+            assert!(
+                matches!(placeholder, Some(super::HostF32::Heap(v)) if v.is_empty()),
+                "{slot:?}: the image holds an empty heap placeholder"
+            );
+        }
+        let tier = host.tier.as_ref().unwrap();
+        let (kv, draft, staged, span_id) = match super::host_kv_planes_settle_contract(
+            tier,
+            &mut entry,
+            pending,
+            super::ContractWait::Block,
+        ) {
+            Ok(super::ContractSettle::Done(kv, draft, staged, span_id)) => {
+                (kv, draft, staged, span_id)
+            }
+            Ok(super::ContractSettle::Pending(_)) => panic!("a blocking settle came back pending"),
+            Err(
+                super::HostContractFailure::Alloc(why)
+                | super::HostContractFailure::Refused(why)
+                | super::HostContractFailure::SourceQuarantined(why)
+                | super::HostContractFailure::TicketLeaked(why),
+            ) => panic!("the settle failed: {why}"),
+        };
+        assert_eq!(staged.len(), recur.len());
+        for ((slot, buf), (want_slot, pattern)) in staged.iter().zip(&recur) {
+            assert_eq!(slot, want_slot);
+            assert_eq!(
+                f32_bits(buf.as_f32_slice()),
+                f32_bits(pattern),
+                "{slot:?}: the span landed bit for bit"
+            );
+        }
+        assert!(
+            gpu_recurrent_whole(&engine, &entry, &recur),
+            "every source back in its slot with its bytes"
+        );
+        assert!(gpu_entry_whole(&engine, &entry, &want));
+        assert!(
+            kv.iter()
+                .flatten()
+                .chain(draft.iter())
+                .all(|p| p.k.receipt().is_some() && p.v.receipt().is_some()),
+            "every KV plane crossed through the contract"
+        );
+        // WP-A day 42 (`DAY42.md` design S2): the hand-off as the `Done` arm runs it: every staging
+        // buffer guarded, the quiet flag cleared, the span receipt sealed over the staging in attach
+        // order, then the job to the helper; the receipt observed (its pairs each the four-lane
+        // program over the pattern, source and landed alike) before any staging goes back.
+        let quiet = super::HostStagingQuiet::new();
+        let payloads: Vec<super::HostHashPayload> = staged
+            .into_iter()
+            .map(|(slot, buf)| super::HostHashPayload {
+                slot,
+                data: Default::default(),
+                staged: Some(super::HostStagingHeld::new(buf, &quiet)),
+            })
+            .collect();
+        let id = span_id.expect("a span receipt on the contracts route");
+        quiet.set(false);
+        {
+            let refs: Vec<&memra_engine::PinnedHostBuf> = payloads
+                .iter()
+                .map(|p| p.staged.as_ref().unwrap().buf())
+                .collect();
+            let mut t = tier.transfers.as_ref().unwrap().borrow_mut();
+            t.seal_d2h_span_receipt(id, &refs).unwrap();
+        }
+        tier.hasher
+            .submit(super::HostHashJob {
+                seq: 1,
+                payloads,
+                leases: Vec::new(),
+            })
+            .unwrap();
+        let pairs = tier
+            .transfers
+            .as_ref()
+            .unwrap()
+            .borrow_mut()
+            .d2h_span_receipt_wait(id)
+            .unwrap();
+        assert_eq!(pairs.len(), recur.len());
+        for ((source, landed), (slot, pattern)) in pairs.iter().zip(&recur) {
+            let bytes: Vec<u8> = pattern.iter().flat_map(|x| x.to_le_bytes()).collect();
+            let oracle = memra_engine::tier_transfer::receipt_digest(&bytes);
+            assert_eq!(*source, oracle, "{slot:?}: the source digest");
+            assert_eq!(*landed, oracle, "{slot:?}: the landed digest");
+        }
+        quiet.set(true);
+        let reply = tier
+            .hasher
+            .reply_within(std::time::Duration::from_secs(10))
+            .unwrap()
+            .expect("the helper replied");
+        assert_eq!(reply.hashed.len(), recur.len());
+        for ((p, n, d), (slot, pattern)) in reply.hashed.iter().zip(&recur) {
+            assert_eq!(p.slot, *slot);
+            assert_eq!(
+                (*n, *d),
+                super::host_hash_payload_digest(pattern),
+                "{slot:?}: the helper's digest of the landed span is the owner thread's"
+            );
+            assert_eq!(
+                f32_bits(&p.data),
+                f32_bits(pattern),
+                "{slot:?}: the heap copy"
+            );
+            assert!(p.staged.is_some(), "{slot:?}: the staging comes back");
+        }
+        // WP-A day 31: the staging goes back to the set as the driver puts it; the set's charge
+        // (every buffer charged once, at allocation) is the ledger's only pinned bytes once the
+        // KV planes drop, and the latch frees the set and releases it.
+        let span_bytes: u64 = recur.iter().map(|(_, p)| p.len() as u64 * 4).sum();
+        for (p, _, _) in reply.hashed {
+            let guard = p.staged.expect("the staging came back");
+            tier.staging_put(
+                guard
+                    .into_quiet()
+                    .expect("quiet once the receipt was observed"),
+            );
+        }
+        drop((kv, draft, image));
+        // WP-A day 69 (`DAY69.md` design P, cell (d)): the demote's KV leases parked in the pool and
+        // its landed spans idle in the staging set, both holding the tenant's bytes; the purge's
+        // scrub drains the pool and zeroes the set in place.
+        let pool = tier.lease_pool.clone().expect("the pool");
+        let (taken0, fresh0, idle0) = tier
+            .transfers
+            .as_ref()
+            .unwrap()
+            .borrow()
+            .lease_pool_counts();
+        assert!(idle0 > 0, "the demote's KV leases parked");
+        {
+            let set = tier.staging.borrow();
+            assert_eq!(set.idle.len(), recur.len(), "every buffer back in the set");
+            assert!(
+                set.idle
+                    .iter()
+                    .any(|b| b.as_slice().iter().any(|&x| x != 0)),
+                "the set holds the spans' bytes"
+            );
+        }
+        assert_eq!(gpu_used(&host), (span_bytes + idle0, 0, 0));
+        let epoch = pool.epoch();
+        let _ = host.purge_tenant("org-a");
+        let tier = host.tier.as_ref().unwrap();
+        assert_eq!(pool.epoch(), epoch + 1, "the purge drained the pool");
+        assert_eq!(
+            tier.transfers
+                .as_ref()
+                .unwrap()
+                .borrow()
+                .lease_pool_counts(),
+            (taken0, fresh0, 0),
+            "no idle backing is left"
+        );
+        {
+            let set = tier.staging.borrow();
+            assert_eq!(set.idle.len(), recur.len(), "the set keeps its buffers");
+            assert_eq!(set.charged, span_bytes, "and their charges");
+            assert!(
+                set.idle
+                    .iter()
+                    .all(|b| b.as_slice().iter().all(|&x| x == 0)),
+                "every idle buffer zeroed"
+            );
+        }
+        assert_eq!(
+            gpu_used(&host),
+            (span_bytes, 0, 0),
+            "the staging set's charge alone"
+        );
+        host.disable("day-69 cell: the latch releases the staging charge");
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
     /// WP-A day 30 (memra#536 Move 2 owed item 1, the D2H half; `d2h_span_batch` through the
     /// server): an entry with recurrent planes demotes OFF the tick with every conv and ssm plane
     /// as an f32 span on the KV ticket. While the copy runs the image holds empty heap
@@ -55075,6 +55328,46 @@ mod tests {
         ));
         assert!(h.promoted_pin.is_some());
         assert_eq!(px.entries[&beta][0].pins, 1);
+    }
+
+    /// WP-A day 69 (`DAY69.md` design P, cell (c), CPU census): the purge's last work is the scrub,
+    /// after its settles and after the tenant's entries drop; the scrub drains the lease pool and
+    /// zeroes the staging set's idle buffers in place (their charges kept).
+    #[test]
+    fn day69_the_purge_ends_with_the_pool_drain_and_the_staging_zero() {
+        let src = include_str!("worker.rs");
+        let code = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        let body = |sig: &str| {
+            let at = code.find(sig).unwrap_or_else(|| panic!("{sig}"));
+            &code[at..at + code[at..].find("\n    }\n").unwrap()]
+        };
+        let purge = body("    fn purge_tenant(&mut self, tenant: &str) -> (usize, usize, usize) {");
+        let scrub = purge.find("self.purge_scrub();").expect("the purge scrubs");
+        for before in [
+            "host_demote_settle_pending(self, ContractWait::Block, \"a tenant purge\");",
+            "host_promote_settle_contract(self, ContractWait::Block, \"a tenant purge\");",
+            "host_capture_settle_contract(self, ContractWait::Block, \"a tenant purge\");",
+            "if let Some(pool) = self.entries.remove(key) {",
+            "self.tenant_bytes.remove(&row);",
+        ] {
+            assert!(
+                purge.find(before).unwrap() < scrub,
+                "{before} precedes the scrub"
+            );
+        }
+        assert!(
+            purge[scrub..]
+                .trim_start_matches("self.purge_scrub();")
+                .trim()
+                == "(victims.len(), entries, bytes)",
+            "the scrub is the purge's last work"
+        );
+        let f = body("    fn purge_scrub(&self) {");
+        assert!(f.contains("tier.lease_pool.as_ref().map_or((0, 0), |p| p.drain())"));
+        assert!(f.contains("tier.staging.borrow_mut().scrub()"));
+        let staging = body("    fn scrub(&mut self) -> (usize, u64) {");
+        assert!(staging.contains("for buf in &mut self.idle {\n            buf.fill(0);"));
+        assert!(!staging.contains("charges"), "the set keeps its charges");
     }
 
     #[test]
