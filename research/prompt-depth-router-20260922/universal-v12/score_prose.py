@@ -8,6 +8,8 @@ import math
 from pathlib import Path
 import random
 
+from judge_bedrock import quoted_usd
+
 
 CHOICES = {"A++", "A+", "A=B", "B+", "B++"}
 TEMPLATE_SHA = "ccd57bd8c4c73f4f83cf8963ef3c2697c1c7b9e907ead91e0d0512cca4ae7a11"
@@ -71,6 +73,9 @@ def score(packets_dir, results_dir, config_path,
     results_manifest = json.loads(
         (results_dir / "manifest.json").read_text()
     )
+    price = json.loads(
+        (results_dir / "pricing.json").read_text()
+    )
     config = json.loads(config_path.read_text())
     packet_path = packets_dir / "packets.jsonl"
     result_path = results_dir / "results.jsonl"
@@ -85,6 +90,22 @@ def score(packets_dir, results_dir, config_path,
         or results_manifest["model_id"] != config["model_id"]
         or results_manifest["pricing_sha256"]
         != sha(results_dir / "pricing.json")
+        or price["model_id"] != config["model_id"]
+        or price["region"] != config["region"]
+        or config["spend_basis"] != "live_global_standard_quote"
+        or any(
+            not isinstance(
+                price["global_standard"][kind]["usd_per_million"],
+                (int, float),
+            )
+            or not math.isfinite(
+                price["global_standard"][kind]["usd_per_million"]
+            )
+            or price["global_standard"][kind]["usd_per_million"] <= 0
+            or price["global_standard"][kind]["usd_per_million"]
+            > config[f"{kind}_usd_per_million_budget"]
+            for kind in ("input", "output")
+        )
         or config["template_sha256"] != TEMPLATE_SHA
         or not config["model_id"]
         or not all(
@@ -135,11 +156,9 @@ def score(packets_dir, results_dir, config_path,
             result["choice"],
             packet["response_a"] == packet["candidate"],
         )
-    projected_usd = (
-        usage["input_tokens"] * config["input_usd_per_million_budget"]
-        + usage["output_tokens"]
-        * config["output_usd_per_million_budget"]
-    ) / 1_000_000
+    projected_usd = quoted_usd(
+        price, usage["input_tokens"], usage["output_tokens"],
+    )
     prior_sha = None
     total_usage = dict(usage)
     if packets_manifest["phase"] == "final":
@@ -164,15 +183,18 @@ def score(packets_dir, results_dir, config_path,
     ):
         raise ValueError("prose judge validation budget phase differs")
     cumulative_usd = (
-        total_usage["input_tokens"]
-        * config["input_usd_per_million_budget"]
-        + total_usage["output_tokens"]
-        * config["output_usd_per_million_budget"]
-    ) / 1_000_000
+        projected_usd
+        + (
+            prior["cumulative_quoted_spend_usd"]
+            if prior_sha is not None else 0
+        )
+    )
     if not math.isfinite(cumulative_usd) or (
         cumulative_usd > config["total_usd_cap"]
+        or results_manifest["cumulative_usage"] != total_usage
         or abs(
-            cumulative_usd - results_manifest["budgeted_usd_ceiling"]
+            cumulative_usd
+            - results_manifest["cumulative_quoted_spend_usd"]
         ) > 1e-8
     ):
         raise ValueError("prose judge cost cap exceeded")
@@ -225,9 +247,10 @@ def score(packets_dir, results_dir, config_path,
         "judge_config_sha256": sha(config_path),
         "judge_model_id": config["model_id"],
         "judge_usage": usage,
+        "cumulative_judge_usage": total_usage,
         "prior_judge_manifest_sha256": prior_sha,
-        "budgeted_usd_ceiling": projected_usd,
-        "cumulative_budgeted_usd_ceiling": cumulative_usd,
+        "quoted_spend_usd": projected_usd,
+        "cumulative_quoted_spend_usd": cumulative_usd,
         "comparisons": comparisons,
     }
 

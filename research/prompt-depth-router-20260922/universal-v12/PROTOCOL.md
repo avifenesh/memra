@@ -152,11 +152,12 @@ standalone prompt in a blinded pairwise comparison, with both
 response orders judged. The independent judge model, prompt
 template, parsing rule and budget are pinned in the private
 `judge-config.json` with SHA-256
-`dd01fb5c3fa3cc22919dc3ef6f09931935a2b9fe5db67d4151b79cd6a7806fe7`.
+`624cbb8478326ec7662d6e5aaa959e713cb3bf0330128dd42a7e0dc9b8a05bdd`.
 The pinned Bedrock global Sonnet 5 profile was reported active
-by the provider control plane on 2026-09-26. The conservative
-accounting ceiling is not a provider price quote; actual pricing
-must be checked before judge requests. A disagreement between
+by the provider control plane on 2026-09-26. The higher configured
+rates guard against a price rise. The $400 cumulative cap uses
+the live AWS quote and actual token usage, with a worst-case
+allowance before each call. A disagreement between
 reversed judgments counts as a tie. The prose comparison with its
 validation-best fixed arm
 must have point win fraction at least 0.5 and a nonnegative lower

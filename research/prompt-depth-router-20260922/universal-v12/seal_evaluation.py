@@ -81,7 +81,7 @@ def seal(base, out):
         or sha(base / "phase-validation/manifest.json")
         != VALIDATION_SHA
         or sha(base / "judge-config.json")
-        != "dd01fb5c3fa3cc22919dc3ef6f09931935a2b9fe5db67d4151b79cd6a7806fe7"
+        != "624cbb8478326ec7662d6e5aaa959e713cb3bf0330128dd42a7e0dc9b8a05bdd"
     ):
         raise ValueError("mixed evaluation model, source or judge changed")
     arms = base / "policy-arms"

@@ -57,10 +57,12 @@ def credential(path):
     return value
 
 
-def budgeted_usd(config, input_tokens, output_tokens):
+def quoted_usd(price, input_tokens, output_tokens):
     return (
-        input_tokens * config["input_usd_per_million_budget"]
-        + output_tokens * config["output_usd_per_million_budget"]
+        input_tokens
+        * price["global_standard"]["input"]["usd_per_million"]
+        + output_tokens
+        * price["global_standard"]["output"]["usd_per_million"]
     ) / 1_000_000
 
 
@@ -71,6 +73,7 @@ def validate_config(config):
         or config["model_id"] != "global.anthropic.claude-sonnet-5"
         or config["region"] != "us-east-1"
         or config["template_sha256"] != TEMPLATE_SHA
+        or config["spend_basis"] != "live_global_standard_quote"
         or config["max_output_tokens"] != 4096
         or config["max_prompt_bytes"] != 120000
         or config["total_usd_cap"] <= 0
@@ -227,6 +230,7 @@ def run(packets_dir, config_path, credential_file, out,
         raise ValueError("independent judge packet count differs")
     live_price = price_quote(config)
     prior_usage = {"input_tokens": 0, "output_tokens": 0}
+    prior_spend = 0.0
     prior_sha = None
     if manifest["phase"] == "final":
         if prior_manifest_path is None:
@@ -240,6 +244,14 @@ def run(packets_dir, config_path, credential_file, out,
         ):
             raise ValueError("final judge budget lineage differs")
         prior_usage = prior["usage"]
+        prior_spend = prior["cumulative_quoted_spend_usd"]
+        if (
+            not isinstance(prior_spend, (int, float))
+            or not math.isfinite(prior_spend)
+            or prior_spend < 0
+            or prior_spend > config["total_usd_cap"]
+        ):
+            raise ValueError("validation judge spend receipt differs")
         prior_sha = sha(prior_manifest_path)
     elif manifest["phase"] != "validation" or (
         prior_manifest_path is not None
@@ -293,6 +305,15 @@ def run(packets_dir, config_path, credential_file, out,
     output_tokens = sum(row["output_tokens"] for row in completed)
     token = credential(credential_file)
     for index in range(len(completed), len(packets)):
+        if index and index % 100 == 0:
+            refreshed = price_quote(config)
+            if (
+                refreshed["global_standard"]
+                != live_price["global_standard"]
+            ):
+                raise ValueError(
+                    "live Bedrock judge price changed during batch"
+                )
         packet = packets[index]
         prompt = packet["prompt"]
         if hashlib.sha256(prompt.encode()).hexdigest() != (
@@ -302,11 +323,10 @@ def run(packets_dir, config_path, credential_file, out,
         byte_count = len(prompt.encode())
         if byte_count > config["max_prompt_bytes"]:
             raise ValueError("independent judge prompt exceeds byte limit")
-        if budgeted_usd(
-            config,
-            prior_usage["input_tokens"] + input_tokens + byte_count,
-            prior_usage["output_tokens"] + output_tokens
-            + config["max_output_tokens"],
+        if prior_spend + quoted_usd(
+            live_price,
+            input_tokens + byte_count,
+            output_tokens + config["max_output_tokens"],
         ) > config["total_usd_cap"]:
             raise ValueError("Bedrock judgment budget ceiling reached")
         response_path = responses / f"{index:05d}.json"
@@ -327,10 +347,9 @@ def run(packets_dir, config_path, credential_file, out,
         print(json.dumps({
             "judged": index + 1,
             "total": len(packets),
-            "budgeted_usd_ceiling": budgeted_usd(
-                config,
-                prior_usage["input_tokens"] + input_tokens,
-                prior_usage["output_tokens"] + output_tokens,
+            "cumulative_quoted_spend_usd": prior_spend + quoted_usd(
+                live_price,
+                input_tokens, output_tokens,
             ),
         }), flush=True)
     save(out / "manifest.json", {
@@ -342,16 +361,23 @@ def run(packets_dir, config_path, credential_file, out,
         "model_id": config["model_id"],
         "region": config["region"],
         "pricing_sha256": sha(pricing_path),
+        "pricing": live_price["global_standard"],
         "prior_judge_manifest_sha256": prior_sha,
         "requests": len(packets),
         "usage": {
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
         },
-        "budgeted_usd_ceiling": budgeted_usd(
-            config,
-            prior_usage["input_tokens"] + input_tokens,
-            prior_usage["output_tokens"] + output_tokens,
+        "cumulative_usage": {
+            key: prior_usage[key] + value
+            for key, value in {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+            }.items()
+        },
+        "cumulative_quoted_spend_usd": prior_spend + quoted_usd(
+            live_price,
+            input_tokens, output_tokens,
         ),
     })
 

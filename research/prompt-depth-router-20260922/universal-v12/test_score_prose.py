@@ -20,14 +20,23 @@ class ProseOrderTest(unittest.TestCase):
             judged = root / "judged"
             packets.mkdir()
             judged.mkdir()
-            (judged / "pricing.json").write_text("{}\n")
             config = root / "config.json"
             write(config, {
                 "model_id": "pinned-test-judge",
+                "region": "test-region",
                 "template_sha256": score_prose.TEMPLATE_SHA,
                 "input_usd_per_million_budget": 1,
                 "output_usd_per_million_budget": 1,
                 "total_usd_cap": 1,
+                "spend_basis": "live_global_standard_quote",
+            })
+            write(judged / "pricing.json", {
+                "model_id": "pinned-test-judge",
+                "region": "test-region",
+                "global_standard": {
+                    kind: {"usd_per_million": 1}
+                    for kind in ("input", "output")
+                },
             })
             source = []
             answers = []
@@ -77,7 +86,11 @@ class ProseOrderTest(unittest.TestCase):
                     judged / "pricing.json"
                 ),
                 "prior_judge_manifest_sha256": None,
-                "budgeted_usd_ceiling": 0.00192,
+                "cumulative_usage": {
+                    "input_tokens": 1600,
+                    "output_tokens": 320,
+                },
+                "cumulative_quoted_spend_usd": 0.00192,
             })
             result = score_prose.score(packets, judged, config)
             comparison = result["comparisons"]["learned::vs::fixed"]
@@ -99,7 +112,11 @@ class ProseOrderTest(unittest.TestCase):
                     judged / "pricing.json"
                 ),
                 "prior_judge_manifest_sha256": None,
-                "budgeted_usd_ceiling": 0.00192,
+                "cumulative_usage": {
+                    "input_tokens": 1600,
+                    "output_tokens": 320,
+                },
+                "cumulative_quoted_spend_usd": 0.00192,
             })
             with self.assertRaises(ValueError):
                 score_prose.score(packets, judged, config)
