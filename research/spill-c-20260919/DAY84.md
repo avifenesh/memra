@@ -102,3 +102,24 @@ relabelled (`day84-cpu/make-synthetic.py`; meaningless) reads 50 runs, integrity
 (`dry-check-reader.log`); the cell under stubs exits 0 with 10 calls of `run-gen-i15`, 22 of `run-gen-i20` (REF's 10 and
 2 profiled, I20's 10) and 22 of `run-gen-i21` (`dry-check-cell.log`); the driver under stubs names the three builds, the
 cell, `--validate` and the reader, in order (`dry-check-driver.log`).
+
+**The local check and the in-situ split** (queue v18, 2026-09-26 20:08Z to 20:15Z, `rtx5090-day84/`; run-gen-i20
+`3f58bca9...`, run-gen-i21 built by `c-local-build.sh` from `b555b4141`; pinned to P-cores 0-7; the host shared with
+other lanes' work, load average 3.4 to 7.0; the card 63 to 68 C):
+- `check/reading.log`: `DAY84 GPU CHECK PASS`: every run exits 0 with `MATCH`; I21's tape and host demand sequence
+  (`4bdc2610c3534e42`, 22077 lines, every `victim` field included) are I20's in both orders.
+- `split21/reading.log`: `DAY83 SPLIT CHECKS rig=rtx5090 runs=20 integrity=ok`, then, verbatim:
+  `DAY84 CHANGE rig=rtx5090 generate (i21s minus i20s, us per token, deciding nothing): outer=-129.5
+  dispatch_inner=+26.1 own_trace=-0.5 bank_stage_lookup=+0.2 bank_stage_cache=+13.1 bank_stage_charge=-0.2
+  stage_rest=-0.0 bank_publish_output=+0.5 bank_publish_policy=+53.6 publish_rest=+0.1 pf_resident=-113.1
+  bank_host_use=+0.1 bank_retire_only=-0.0 bank_ack=-1.1 bank_collect=-0.1 retire_outer=+0.3 pf_demand=-26.1
+  pf_retire=+0.2 pf_stage=+4.7`.
+
+**Read, deciding nothing.** The two targeted leaves lost 243 us per generated token (`outer` -129.5, `pf_resident`
+-113.1), as section 0 said. About 93 of it reappeared in the next reads of the same records, each still hashed and now
+the first to touch its entry: the bank's SLRU `hit` in `publish_policy` (+53.6), the dispatch adapter's `validated`
+(its id tree and the catalog's layout, `dispatch_inner` +26.1) and the host cache lookup (`stage_cache` +13.1). Net,
+the door-only leaves fell by about 150 us per token here (673 to about 523, 22 percent), and `pf_demand` by 26. So
+most of the per-record cost is the first cold touch of a record's entries, wherever it happens; the next cut takes
+those three reads by position too (the bank's `hit`, `validated`, the host cache), which is `DAY85.md`'s registration.
+The card cell measures I21 as it stands.

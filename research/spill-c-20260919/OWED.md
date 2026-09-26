@@ -115,7 +115,15 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   over 32 tokens behind REF gen-only; beside it I20 against I15 -1 ms, `flat`); the local RTX 5090 check `PASS`; on
   BOX40 (a 9950X) `DAY82 VERDICT rig=pro-single integrity=ok i20=flat door=i20 vs_ref=loses (window: i20=flat
   vs_ref=loses)` (admissible; I20 stays on both classes; the door 3 ms gen-only and 1 ms on the window behind REF;
-  beside it I20 against I15 -1 ms, one printed tick, `improves` by the rule, deciding nothing).
+  beside it I20 against I15 -1 ms, one printed tick, `improves` by the rule, deciding nothing). Day 83 (`DAY83.md`):
+  the card cells' own clocks put the door-only work at about 2.4 us per prefetched block (453 us per generated token
+  on BOX39); the in-situ split on the local RTX 5090 (cell `split20`) named `outer` the largest leaf at I20 (171 us per
+  token, 26 percent), then `pf_resident` (125), both largely one per-record read (the id tree and the SLRU table).
+  Day 84 (`DAY84.md`): I21 (`b555b4141`, residency by catalog position: the SLRU's position view, the adapter's dense
+  position table), CPU gates green, the day-61 profile's residency check 574-607 to 47-51 ns per call; the local check
+  `PASS`; in situ the two leaves -243 us per token, 93 of it moved to the next hashed reads of the same records, net
+  -150 (22 percent of the door-only leaves). The card cell `i21` is ready (`day84-box.sh`, the 285K class, then a
+  9950X); the next cut (those three reads by position) is `DAY85.md`'s.
 
 ## C12. The door's sensitivity to its owner thread's host placement (the 9950X class)
 
