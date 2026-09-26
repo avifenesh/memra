@@ -19,10 +19,16 @@
   REVERT (section 4, accepted). Queued on BOX31 after F's sitting, in `/root/units-chain.sh`.
 - **integ69** takes `6c60d798f` (L' + R1 + the gate change + the two test-only cell fixes `411177fea`, `28c7aa6c1`); its
   18 worker span cells read 18 of 18 on the local 5090 (DAY63 section 7). Its BOX39 rerun follows lane C's DAY82.
-- The owed 5090 cells: S4's half, V's half, item 16, R1's half, and L''s and T-H's halves once they adopt.
+- **The owed 5090 cells (DAY68), registered and built:** R1's half and L''s half (section 1, the target sittings' own
+  pairs and scripts, derived by `rtx5090-derive.py`), item 16 (section 3, DAY45's cell from `7b849a817`), then S4's and
+  V's halves (section 4). All run from frozen copies under `/home/avifenesh/spill-a-cells/`, chained by
+  `rtx5090-chain-day68.sh` (run as the copy `spill-a-cells/chain-day68.sh`), each in its own bounded hold after every
+  build has finished. Receipts go to `rtx5090-{r1,l2,s4,v}/cell/` and `rtx5090-day45/cell/`; then `rtx5090-half*.sh
+  clean` and the i16 worktree removal.
 - Local cells run their scripts from a frozen copy of the tree, never from this worktree (DAY61 section 5's
   lesson). No build of this lane runs while one of its own timed cells holds the 5090.
 - The local 5090 is shared: lanes B, C and F queue on it, and another project's process sometimes lands on it. The
   idle rule stays.
 - Scratch to remove when the lane closes: the four lines added to the shared
-  `/home/avifenesh/projects/memra/.git/info/exclude`, and `/home/avifenesh/spill-a-cells/` (empty).
+  `/home/avifenesh/projects/memra/.git/info/exclude`, and `/home/avifenesh/spill-a-cells/` (the DAY68 trees, target
+  dirs and binaries while the halves run).
