@@ -86,3 +86,11 @@ artifact the rig carries, door ON. A reading that selects the design; the design
   `day59-reading.py` over `/root/spill-receipts/a-d59`). The rule is section 1's and is read on whichever card runs
   first; if both run, the target card's selection is the one that decides and the 5090's is a reading beside it
   (stated now, before either result).
+
+## 5. The 5090 re-run: NOT RUN
+
+- The re-run (`rtx5090-day59/cell-not-run/`) waited through the lock queue behind lanes B and C, took the hold, and
+  then read a compute app on the card for all 15 idle checks (`card not idle under the hold (apps=[279749] free=22581
+  MiB)`, 03:09Z to 03:23Z) and stopped as registered: `NOT RUN: the card never went idle under the hold`. The process is
+  not this lane's and was not touched. No boot ran; nothing is read.
+- The attribution waits for the target-card twin (section 4), whose selection decides.
