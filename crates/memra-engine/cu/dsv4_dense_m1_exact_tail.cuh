@@ -295,7 +295,7 @@ __global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
                                        const uint16_t* __restrict__ x, float* __restrict__ y,
                                        int n, int k, int xstride, int ystride,
                                        int group_xstride, int group_ystride) {
-    MEMRA_PDL_CHAIN_ENTRY();
+    MEMRA_PDL_PRE_WAIT(w, sc);
     static_assert(M == 1 || !GROUPED, "the grouped plane is one token row");
     const int leaf = threadIdx.x % 128;
     const int tile_row = threadIdx.x / 128;
@@ -303,69 +303,66 @@ __global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
     const int group = GROUPED ? flat / n : 0;
     const int row = GROUPED ? flat % n : flat;
     const int weight_row = flat;
-    const uint16_t* x_group = x + (long)group * group_xstride;
-    float* y_group = y + (long)group * group_ystride;
     // smem e4m3 LUT — see dsv4_gemv_fp8_kernel's note (bit-inert decode transport).
     __shared__ float e4m3_tab[256];
     for (int i = threadIdx.x; i < 256; i += blockDim.x) e4m3_tab[i] = dsv4_e4m3((uint8_t)i);
+    // Before the wait (memra #710, PDL prologue): the codes and block scales of a leaf's first
+    // PRE chunks are checkpoint constants no kernel writes, so they load while the predecessor
+    // still runs. Every served k (1024 to 8192) fits in PRE; a longer row streams the rest in
+    // the loop below. The chunks are consumed in ascending order, as before.
+    constexpr int PRE = 8;
+    const int stride = 128 * 8;
+    const uint8_t* wr = w + (long)weight_row * k;
+    const float* srow = sc + (long)(weight_row >> 7) * sc_cols;
+    uint2 wpre[PRE];
+    float spre[PRE];
+    if (row < n) {
+#pragma unroll
+        for (int c = 0; c < PRE; c++) {
+            const int i = leaf * 8 + c * stride;
+            if (i < k) {
+                wpre[c] = *(const uint2*)(wr + i);
+                spre[c] = srow[i >> 7];
+            }
+        }
+    }
+    MEMRA_PDL_CHAIN_ENTRY();
+    const uint16_t* x_group = x + (long)group * group_xstride;
+    float* y_group = y + (long)group * group_ystride;
     __syncthreads();
     __shared__ float red[ROWS * 128];
     float part[M];
 #pragma unroll
     for (int t = 0; t < M; t++) part[t] = 0.0f;
     if (row < n) {
-    const uint8_t* wr = w + (long)weight_row * k;
-    const float* srow = sc + (long)(weight_row >> 7) * sc_cols;
-    // Unroll-by-2, early weight loads — the m=1 twin's note applies: load scheduling
-    // only, per-(t)-accumulation order verbatim, bit-identical.
-    int stride = 128 * 8;
-    int i0 = leaf * 8;
-    for (; i0 + stride < k; i0 += 2 * stride) {
-        int i1 = i0 + stride;
-        uint2 wva = *(const uint2*)(wr + i0);
-        uint2 wvb = *(const uint2*)(wr + i1);
-        float sa = srow[i0 >> 7];
-        float sb = srow[i1 >> 7];
-        unsigned wba[2] = {wva.x, wva.y};
-        unsigned wbb[2] = {wvb.x, wvb.y};
-        float wua[8], wub[8];
 #pragma unroll
-        for (int j = 0; j < 4; j++) {
-            wua[2 * j] = e4m3_tab[(wba[j >> 1] >> (((j & 1) * 2) * 8)) & 0xFFu] * sa;
-            wua[2 * j + 1] = e4m3_tab[(wba[j >> 1] >> (((j & 1) * 2 + 1) * 8)) & 0xFFu] * sa;
-            wub[2 * j] = e4m3_tab[(wbb[j >> 1] >> (((j & 1) * 2) * 8)) & 0xFFu] * sb;
-            wub[2 * j + 1] = e4m3_tab[(wbb[j >> 1] >> (((j & 1) * 2 + 1) * 8)) & 0xFFu] * sb;
-        }
-#pragma unroll
-        for (int t = 0; t < M; t++) {
-            uint4 xv = *(const uint4*)(x_group + (long)t * xstride + i0);
-            unsigned xw[4] = {xv.x, xv.y, xv.z, xv.w};
-            float acc = part[t];
+    for (int c = 0; c < PRE; c++) {
+        const int i0 = leaf * 8 + c * stride;
+        if (i0 < k) {
+            unsigned wb[2] = {wpre[c].x, wpre[c].y};
+            float wu[8];
 #pragma unroll
             for (int j = 0; j < 4; j++) {
-                float x0 = __uint_as_float((xw[j] & 0xFFFFu) << 16);
-                float x1 = __uint_as_float(xw[j] & 0xFFFF0000u);
-                acc += wua[2 * j] * x0;
-                acc += wua[2 * j + 1] * x1;
+                wu[2 * j] = e4m3_tab[(wb[j >> 1] >> (((j & 1) * 2) * 8)) & 0xFFu] * spre[c];
+                wu[2 * j + 1] = e4m3_tab[(wb[j >> 1] >> (((j & 1) * 2 + 1) * 8)) & 0xFFu] * spre[c];
             }
-            part[t] = acc;
-        }
 #pragma unroll
-        for (int t = 0; t < M; t++) {
-            uint4 xv = *(const uint4*)(x_group + (long)t * xstride + i1);
-            unsigned xw[4] = {xv.x, xv.y, xv.z, xv.w};
-            float acc = part[t];
+            for (int t = 0; t < M; t++) {
+                uint4 xv = *(const uint4*)(x_group + (long)t * xstride + i0);
+                unsigned xw[4] = {xv.x, xv.y, xv.z, xv.w};
+                float acc = part[t];
 #pragma unroll
-            for (int j = 0; j < 4; j++) {
-                float x0 = __uint_as_float((xw[j] & 0xFFFFu) << 16);
-                float x1 = __uint_as_float(xw[j] & 0xFFFF0000u);
-                acc += wub[2 * j] * x0;
-                acc += wub[2 * j + 1] * x1;
+                for (int j = 0; j < 4; j++) {
+                    float x0 = __uint_as_float((xw[j] & 0xFFFFu) << 16);
+                    float x1 = __uint_as_float(xw[j] & 0xFFFF0000u);
+                    acc += wu[2 * j] * x0;
+                    acc += wu[2 * j + 1] * x1;
+                }
+                part[t] = acc;
             }
-            part[t] = acc;
         }
     }
-    for (; i0 < k; i0 += stride) {
+    for (int i0 = leaf * 8 + PRE * stride; i0 < k; i0 += stride) {
         uint2 wv = *(const uint2*)(wr + i0);
         float s = srow[i0 >> 7];
         unsigned wb[2] = {wv.x, wv.y};
@@ -407,17 +404,31 @@ template <int M>
 __global__ void dsv4_dense_fast_dots_kernel(const float* __restrict__ x,
                                              const void* __restrict__ w, int w_is_bf16,
                                              float* __restrict__ y, int k, int n) {
-    MEMRA_PDL_CHAIN_ENTRY();
+    MEMRA_PDL_PRE_WAIT(w);
     int j = blockIdx.x;
     if (j >= n) return;
+    // Before the wait (memra #710, PDL prologue): a BF16 row's first PRE chunks per thread are
+    // checkpoint constants, loaded while the predecessor still runs (k 4096 is four chunks at
+    // the 128 threads every launcher uses). The chunks are consumed in ascending order, as
+    // before; the f32 island weights keep their loads after the wait.
+    constexpr int PRE = 4;
+    const int stride = blockDim.x * 8;
+    uint4 wpre[PRE];
+    if (w_is_bf16) {
+        const uint16_t* wr = (const uint16_t*)w + (long)j * k;
+#pragma unroll
+        for (int c = 0; c < PRE; c++) {
+            const int i = threadIdx.x * 8 + c * stride;
+            if (i < k) wpre[c] = *(const uint4*)(wr + i);
+        }
+    }
+    MEMRA_PDL_CHAIN_ENTRY();
     float part[M];
 #pragma unroll
     for (int t = 0; t < M; t++) part[t] = 0.0f;
     if (w_is_bf16) {
         const uint16_t* wr = (const uint16_t*)w + (long)j * k;
-        #pragma unroll 4
-        for (int i0 = threadIdx.x * 8; i0 < k; i0 += blockDim.x * 8) {
-            uint4 wv = *(const uint4*)(wr + i0);
+        auto chunk = [&](int i0, uint4 wv) {
             unsigned ww[4] = {wv.x, wv.y, wv.z, wv.w};
 #pragma unroll
             for (int t = 0; t < M; t++) {
@@ -435,7 +446,15 @@ __global__ void dsv4_dense_fast_dots_kernel(const float* __restrict__ x,
                 }
                 part[t] = acc;
             }
+        };
+#pragma unroll
+        for (int c = 0; c < PRE; c++) {
+            const int i0 = threadIdx.x * 8 + c * stride;
+            if (i0 < k) chunk(i0, wpre[c]);
         }
+        #pragma unroll 4
+        for (int i0 = threadIdx.x * 8 + PRE * stride; i0 < k; i0 += stride)
+            chunk(i0, *(const uint4*)(wr + i0));
     } else {
         const float* wr = (const float*)w + (long)j * k;
         #pragma unroll 4
@@ -550,19 +569,36 @@ extern "C" int memra_dsv4_hc_dot_split_slices_for_gate() {
 template<int S>
 __global__ void dsv4_hc_dot_split_partial_kernel(const float* __restrict__ x,
     const float* __restrict__ w, float* __restrict__ partial) {
-    MEMRA_PDL_CHAIN_ENTRY();
-    x += (long)blockIdx.y * 16384;
-    partial += (long)blockIdx.y * 24 * S;
+    MEMRA_PDL_PRE_WAIT(w);
     const int row = blockIdx.x / S;
     const int slice = blockIdx.x % S;
     constexpr int width = 16384 / S;
+    // Before the wait (memra #710, PDL prologue): the HC mixing weights are checkpoint constants.
+    // A thread's slice holds at most two eight-float chunks for every admitted S (8, 16, 32).
+    constexpr int PRE = (width + 128 * 8 - 1) / (128 * 8);
+    static_assert(PRE <= 2, "HC split slices hold at most two chunks per thread");
+    float4 wpa[PRE], wpb[PRE];
+#pragma unroll
+    for (int c = 0; c < PRE; c++) {
+        const int offset = threadIdx.x * 8 + c * 128 * 8;
+        if (offset < width) {
+            wpa[c] = *(const float4*)(w + row * 16384 + slice * width + offset);
+            wpb[c] = *(const float4*)(w + row * 16384 + slice * width + offset + 4);
+        }
+    }
+    MEMRA_PDL_CHAIN_ENTRY();
+    x += (long)blockIdx.y * 16384;
+    partial += (long)blockIdx.y * 24 * S;
     float acc = 0.0f;
-    for (int offset = threadIdx.x * 8; offset < width; offset += 128 * 8) {
+#pragma unroll
+    for (int c = 0; c < PRE; c++) {
+        const int offset = threadIdx.x * 8 + c * 128 * 8;
+        if (offset >= width) break;
         const int i = slice * width + offset;
         const float4 xa = *(const float4*)(x + i);
         const float4 xb = *(const float4*)(x + i + 4);
-        const float4 wa = *(const float4*)(w + row * 16384 + i);
-        const float4 wb = *(const float4*)(w + row * 16384 + i + 4);
+        const float4 wa = wpa[c];
+        const float4 wb = wpb[c];
         acc = __fadd_rn(acc, __fmul_rn(xa.x, wa.x));
         acc = __fadd_rn(acc, __fmul_rn(xa.y, wa.y));
         acc = __fadd_rn(acc, __fmul_rn(xa.z, wa.z));
