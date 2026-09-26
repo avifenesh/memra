@@ -134,7 +134,11 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   as `vg_debt`; the predictive book does not carry it; not measurable on the dense 9B and 27B).
 - Needs a MoE plus linear-attention model: a 35B-A3B NVFP4 artifact of that family is on the local disk (20 GB, a
   tight fit on the 24 GB card) and must be staged on the target card.
-- Status: `open`. Price: about 0.5 agent-day plus a cell on each card.
+- Status: `pre-registered` (DAY48.md, text only until DAY46 reads): `MEMRA_ADMIT_PREDICT_VG_DEBT` makes the
+  predictive verdict subtract the same `vg_debt` the physical side reserves; the cell runs the Ornith-1.5-35B-A3B NVFP4
+  MTP artifact (20 GB, on the local disk, to be staged on the target card) with `enforce` against `enforce-vg`, V1 the
+  pool engages, V2 no OOM, V3 typed refusals, V4 identity. Price: about 0.3 agent-day plus about 1 h on the 5090 and
+  1.5 h on the target card.
 
 ### O9. memra#464's guard seed
 
