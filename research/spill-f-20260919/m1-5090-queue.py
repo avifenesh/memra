@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""The 5090 half's queue, in the registered order (M1-PREREG.md sections D, E, F).
+"""The 5090 half's queue (M1-PREREG.md sections D, E, F): both doors' correctness gates first
+(GPU ownership cell, f17 smoke and gate, the handoff 1 GiB pairs), then the timing regimes.
 
 Each step is one `m1-5090-rounds.py` invocation (idle-gated per round cell) or one GPU unit cell
 under the canonical lock. A step's exit code and times go to `QUEUE.jsonl`; a failing step stops
@@ -30,17 +31,18 @@ def steps(rec, first_rounds="1-10", bounded_bytes=None):
     return [
         ("capped", lambda: rounds("capped", "capped", "--memory-max", CAP, "--rounds", first_rounds)),
         ("anonpeak", lambda: rounds("anonpeak", "anonpeak", "--memory-max", CAP)),
-        ("bounded", lambda: rounds("bounded", "bounded", "--memory-max", str(bounded_bytes or bounded_max(rec)), "--rounds", "1-10")),
-        ("g2", lambda: rounds("g2", "g2", "--memory-max", CAP)),
         ("mapped-gpu-cell", lambda: rounds("gpucell", "mapped-gpu-cell", "--memory-max", CAP)),
         ("f17-smoke", lambda: rounds("f17", "f17-smoke", "--memory-max", CAP, "--rounds", "1", "--smoke")),
         ("f17-smoke-gate", lambda: [sys.executable, str(HERE / "m1-b3-pool.py"), str(rec / "f17-smoke"),
                                     "--bypass-check", "--fallback-unclean", "--require-correct"]),
-        ("f17", lambda: rounds("f17", "f17", "--memory-max", CAP, "--rounds", "1-10")),
         ("handoff-1g", lambda: rounds("handoff", "handoff-1g", "--memory-max", CAP, "--rounds", "1-10",
                                       "--size-bytes", str(1 << 30), "--host-mb", "4096")),
+        ("bounded", lambda: rounds("bounded", "bounded", "--memory-max", str(bounded_bytes or bounded_max(rec)), "--rounds", "1-10")),
+        ("g2", lambda: rounds("g2", "g2", "--memory-max", CAP)),
+        ("f17", lambda: rounds("f17", "f17", "--memory-max", CAP, "--rounds", "1-10")),
         ("handoff-8g", lambda: rounds("handoff", "handoff-8g", "--memory-max", CAP, "--rounds", "1-10",
                                       "--size-bytes", str(8 << 30), "--host-mb", "12288", "--tenant-pct", "100")),
+
     ]
 
 
