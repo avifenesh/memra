@@ -4129,6 +4129,25 @@ Lane tip merged: A `aa325f056` (which already carries main `968c0fa68`) on main 
   - `ADMIT-MEM BURST GATE: ALL GREEN`; `SPEC-CTX-EDGE GATE: ALL GREEN`;
   - the pause gate with the 27B: `KV-HOST-PAUSE-DEMOTE GATE: ALL GREEN` (40 ok).
 
+**Addendum (revuto on #731): item 23's isolation was incomplete, fixed as F2b.** The lock-free shed tests were isolated
+from `ADMISSION_RESERVATIONS` but each successful reservation still moved the process-global `PENDING_ADMITS` (the
+reserve's `fetch_add` and the guard's drop), so `pending_admission_reservation_is_atomic_and_rolls_back_on_drop` and
+the readers expecting 0 could race them; the day-56 census matched only the literal name. Routed to A as its own
+registered step (DAY56 section 3). F2b (`b4d6f95c2`, records `071e1126a`): the lane counters and the pending-admits
+gauge travel as one `AdmitCounters` pair through `reserve_pending_admit_on`, `reserve_route_admit` and the guard, whose
+drop releases both where they were taken; every production entry passes `AdmitCounters::GLOBAL`. The census now judges
+`#[test]` fns for indirect writers (it found one more unlocked handler test, `stop_token_ids_handlers_return_named_400s`,
+now on `drain_lock()`), with both teeth checked. The stochastic harness did not show the microsecond window (0 of 200 on
+the old tree, recorded), so a deterministic cell `day56_an_isolated_reservation_never_moves_the_global_gauges` came
+first: on the old path `a live isolated reservation moved a global gauge .. left: (1, [0, 0, 0]) right: (0, [0, 0,
+0])`; on F2b it passes and the group reads 200 of 200. The merge also carries A's log-only fanout owner-time split
+(`8b5e5e213`, DAY59 step 1): each snapshot and restore device call is timed by kind on the owner thread (two clock reads
+per enqueue, on every path; nothing decides on them) and printed on the fanout's on-tick line.
+- CPU battery on `3214d1e13`, 15 of 15 rc=0 (`integ65-cpu-battery-f2b/`), server 941.
+- GPU battery rerun on BOX31 (`integ65-pro-f2b/`, 467 receipts mirrored and checked), binary `629d5a96`, one collector
+  hold 02:22Z to 02:34Z: every cell green as above (identity 12 ok, fault 255 ok per arm, hit 61 and 68 ok, admit-mem
+  burst and spec-ctx-edge ALL GREEN), the pause gate with the 27B `ALL GREEN` (40 ok).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

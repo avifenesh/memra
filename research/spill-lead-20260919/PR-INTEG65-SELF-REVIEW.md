@@ -31,3 +31,11 @@ Author's review of the full diff `main..lane/spill-integ65-20260926`, posted as 
 Server source changed, so the branch goes up with `MEMRA_RELEASE_QUALIFICATION_MODE=development` (announced, logged).
 Every other hook ran. No tag: the release decision stays with the owner. Revuto: if capped or unavailable, this comment
 is the review.
+
+## Addendum after revuto
+Revuto was right: the isolated shed tests still moved the global `PENDING_ADMITS`. A's F2b passes the pending gauge with
+the lane counters as one pair (global on every production path), extends the census to indirect writers, and adds a
+deterministic cell that fails on the old path. I read the F2b diff: production passes `AdmitCounters::GLOBAL` at both
+reserve sites and the guard releases both gauges where taken. The merge also brings A's log-only fanout copy timers
+(two clock reads per device enqueue in snapshot and restore, on every path, printed only on the fanout line). CPU
+battery 15 of 15 (server 941) and the GPU battery rerun all green on the merged tree.
