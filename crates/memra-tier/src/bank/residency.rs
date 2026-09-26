@@ -2,7 +2,7 @@ use super::fx::FxMap;
 use super::*;
 use crate::contracts::*;
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, HashMap},
     marker::PhantomData,
     sync::atomic::{AtomicU64, Ordering},
     time::Instant,
@@ -95,12 +95,80 @@ fn clock_add(
 }
 
 static NEXT_SERVICE: AtomicU64 = AtomicU64::new(1);
+/// Day 79 (`research/spill-c-20260919/DAY79.md`, I18): a ticket's records by position instead of
+/// in a map keyed by cloned ids. Each unique batch id (its first position in `first`) has its lease
+/// in `leases` (`None` until a missing record is published), `at` maps every batch position to its
+/// unique id, and a lease published for an id outside the batch is kept in `extra`, as the map kept
+/// it. Every answer and order is the map's: see each method.
+struct TicketRecords {
+    first: Vec<usize>,
+    leases: Vec<Option<BankLease>>,
+    at: Vec<usize>,
+    extra: Vec<BankLease>,
+}
+impl TicketRecords {
+    /// The batch's unique ids by first occurrence; a batch holds at most `BankLimits::items` ids,
+    /// so the comparison in place replaces the set.
+    fn new(ids: &[BankId]) -> Self {
+        let mut first: Vec<usize> = Vec::with_capacity(ids.len());
+        let mut at = Vec::with_capacity(ids.len());
+        for (pos, id) in ids.iter().enumerate() {
+            match first.iter().position(|&f| ids[f] == *id) {
+                Some(k) => at.push(k),
+                None => {
+                    at.push(first.len());
+                    first.push(pos);
+                }
+            }
+        }
+        let leases = vec![None; first.len()];
+        Self {
+            first,
+            leases,
+            at,
+            extra: Vec::new(),
+        }
+    }
+    /// Every lease the ticket holds (the map's values).
+    fn values(&self) -> impl Iterator<Item = &BankLease> {
+        self.leases.iter().flatten().chain(&self.extra)
+    }
+    /// The lease at batch position `pos`; like indexing the map, it panics when the record was
+    /// never staged or published.
+    fn lease_at(&self, pos: usize) -> &BankLease {
+        self.leases[self.at[pos]]
+            .as_ref()
+            .expect("a ticket record indexed before it was published")
+    }
+    /// The map's `insert`: the lease replaces whatever the ticket held for its id.
+    fn insert(&mut self, ids: &[BankId], lease: BankLease) {
+        if let Some(k) = self.first.iter().position(|&f| ids[f] == *lease.id()) {
+            self.leases[k] = Some(lease);
+        } else if let Some(old) = self.extra.iter_mut().find(|l| l.id() == lease.id()) {
+            *old = lease;
+        } else {
+            self.extra.push(lease);
+        }
+    }
+    /// The map's iteration: every (id, lease) pair in `BankId` order.
+    fn sorted_pairs<'a>(&'a self, ids: &'a [BankId]) -> Vec<(&'a BankId, &'a BankLease)> {
+        let mut pairs: Vec<(&BankId, &BankLease)> = self
+            .first
+            .iter()
+            .zip(&self.leases)
+            .filter_map(|(&f, l)| l.as_ref().map(|l| (&ids[f], l)))
+            .chain(self.extra.iter().map(|l| (l.id(), l)))
+            .collect();
+        pairs.sort_by(|a, b| a.0.cmp(b.0));
+        pairs
+    }
+}
 struct Pending {
     ids: Vec<BankId>,
     work: Option<ReadWork>,
     missing: Vec<(BankId, CatalogRecord)>,
     charges: Vec<ChargedLease>,
-    records: BTreeMap<BankId, BankLease>,
+    records: TicketRecords,
     unpublished: Vec<BankPublication>,
     completion: Completion,
     expected: Vec<Vec<SegmentExpectation>>,
@@ -866,23 +934,20 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             return Err(Error::Capacity);
         }
         let caching = clock_start(&self.clock);
-        let unique: BTreeSet<_> = batch.ids.iter().cloned().collect();
         // Day 61 (I11 change 2): the host cache is read once per unique id, for a cached lease
         // or a missing record. Nothing below changes the cache before the ticket is recorded.
+        // Day 79 (I18): the unique ids by position, no id cloned for a cached record; the missing
+        // records sorted by id, the order the set gave them.
+        let mut records = TicketRecords::new(&batch.ids);
         let mut missing = Vec::new();
-        let mut records = BTreeMap::new();
-        for id in unique {
-            match self.cache.get(&id) {
-                Some(lease) => {
-                    let lease = lease.clone();
-                    records.insert(id, lease);
-                }
-                None => {
-                    let record = self.catalog.record(&id)?.clone();
-                    missing.push((id, record));
-                }
+        for k in 0..records.first.len() {
+            let id = &batch.ids[records.first[k]];
+            match self.cache.get(id) {
+                Some(lease) => records.leases[k] = Some(lease.clone()),
+                None => missing.push((id.clone(), self.catalog.record(id)?.clone())),
             }
         }
+        missing.sort_by(|a, b| a.0.cmp(&b.0));
         clock_add(&mut self.clock, caching, |c, ns| c.stage_cache_ns += ns);
         let plan = plan_reads(&missing, logical, &self.reader, self.policy)?;
         let sequence = self.sequence.checked_add(1).ok_or(Error::Overflow)?;
@@ -1053,7 +1118,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             ) {
                 Ok(lease) => {
                     self.owned.insert(lease.charge().id(), lease.clone());
-                    p.records.insert(lease.id().clone(), lease);
+                    p.records.insert(&p.ids, lease);
                 }
                 Err(rejected) => {
                     // Preserve every resource and retry/release handle on refusal.
@@ -1064,7 +1129,9 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             }
         }
         let outputting = clock_start(&self.clock);
-        let output: Vec<_> = p.ids.iter().map(|id| p.records[id].clone()).collect();
+        let output: Vec<_> = (0..p.ids.len())
+            .map(|pos| p.records.lease_at(pos).clone())
+            .collect();
         clock_add(&mut self.clock, outputting, |c, ns| {
             c.publish_output_ns += ns
         });
@@ -1078,7 +1145,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         if let Some((policy, _)) = &mut self.slru {
             // Host-only adapter serializes policy decisions at successful publication.
             // A prefetch hit is a no-op, not demand heat. Duplicate IDs retain order.
-            for id in &p.ids {
+            for (pos, id) in p.ids.iter().enumerate() {
                 // Day 61 (I11 change 3): one SLRU lookup per id; `hit` answers residency and
                 // promotes as it did after the separate check.
                 let resident = if p.demand {
@@ -1089,7 +1156,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                 if resident {
                     continue;
                 }
-                let lease = &p.records[id];
+                let lease = p.records.lease_at(pos);
                 if let Some(decision) = policy.reserve(id, lease.layout().storage_bytes()?, &[])? {
                     if let Some(old) = decision.evicted {
                         self.cache.remove_evicted(&old);
@@ -1102,7 +1169,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                 }
             }
         } else {
-            for (id, lease) in &p.records {
+            for (id, lease) in p.records.sorted_pairs(&p.ids) {
                 self.cache.insert(id.clone(), lease.clone());
             }
             self.trim();
