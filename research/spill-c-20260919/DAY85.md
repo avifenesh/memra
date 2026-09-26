@@ -114,3 +114,8 @@ I21's step and I21 for I20's, REF on `run-gen-i21`): the reader on a synthetic c
 relabelled (`day85-cpu/make-synthetic.py`; meaningless) reads 50 runs, integrity ok (`dry-check-reader.log`); the cell
 under stubs exits 0 with 10 calls of `run-gen-i15`, 22 of `run-gen-i21` and 22 of `run-gen-i22` (`dry-check-cell.log`);
 the driver under stubs names the three builds, the cell, `--validate` and the reader, in order (`dry-check-driver.log`).
+
+**Before the card: the local check's place.** Queue v19 waits for the local RTX 5090 (other lanes' work holds it). As
+in `DAY82.md` section 2a, recorded before any result: if the card cell `i22` runs first, its own integrity reads the
+same two properties on the target card (`MATCH` in every run, one host demand sequence across I15, I21 and I22), the
+local check is read when it lands, and the in-situ split beside it decides nothing either way.

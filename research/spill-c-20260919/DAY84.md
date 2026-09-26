@@ -200,3 +200,37 @@ lead runs it on BOX42, a fresh 9950X with one RTX PRO 6000 WS, 184 GB, driver 58
 compaction sampled per run and the registered pool as the control (`DAY86.md`; BOX31 is released, so it waits for such
 a host). The registered pool as the door's default stays the owner's question
 (`DAY80.md` section 4a); this reading is more evidence for it.
+
+## 3b. The 9950X rerun (BOX42, a fresh Ryzen 9 9950X; run by the lead as registered; `pro-single-day84-9950x-r2/`)
+
+BOX42: one RTX PRO 6000 Blackwell Workstation Edition, 184 GB, driver 580.65.06, a fresh host (not DAY82's 9950X
+machine; the same class). The chain fetched the lane tip at launch, `2bebd4900`; the cell, reader, driver and runner
+scripts are byte-for-byte those of `012e76a1d` (`git diff` empty), and the arms are the registered builds (`build-*.log`
+name `tree=2243b1fe2...`, `tree=8efea3a54...`, `tree=b555b4141...`, each `rc=0`; the cell's `binary.sha256` equals
+`BINARIES.sha256`). `box start 2026-09-26T20:56:27Z` to `box done 2026-09-26T21:13:09Z`. Receipts: 261 `OK` against
+`MANIFEST.sha256`, ELFs and profiles by hash; the reader re-run here on the mirror prints `reading.log` byte for byte.
+Regime: 31 to 47 C, SM median 2850 MHz, P0 and P1, N=578 busy samples of 2612; the power brake not active. No slow boot
+in any arm (every door run 0.320 to 0.338 s gen-only). Verbatim (`i21/reading.log`):
+
+- `DAY84 I21 CHECKS rig=pro-single runs=50 integrity=ok` (one host demand sequence, `4bdc2610c3534e42`, in every door arm)
+- `DAY84 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0012 max_iqr_window=0.0010 failing=[] -> admissible`
+- `DAY84 gen-only decode medians (N=10 each): ref=0.319 i15=0.323 i20=0.323 i21=0.321 i21c=0.322`
+- `DAY84 STEP i21_vs_i20 gen-only decode: pooled=-0.0020 o1=-0.0020 o2=-0.0020 noise=0.0010 -> improves`
+- `DAY84 STEP i21_vs_i20 steady window: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0003 -> flat`
+- `DAY84 BESIDE i21_vs_i15 gen-only decode: pooled=-0.0020 o1=-0.0020 o2=-0.0030 noise=0.0010 -> improves (deciding
+  nothing)`
+- `DAY84 DOOR i21_vs_ref gen-only decode: pooled=+0.0020 o1=+0.0030 o2=+0.0020 noise=0.0010 -> loses`
+- `DAY84 DOOR i21_vs_ref steady window: pooled=+0.0010 o1=+0.0010 o2=+0.0000 noise=0.0010 -> matches`
+- `DAY84 I21C brackets per window token (ms, medians): dispatch_ns=0.0721 prefetch_ns=0.4386 pf_demand_ns=0.1246
+  pf_resident_ns=0.0020 pf_retire_ns=0.0203 pf_stage_ns=0.2292`
+- `DAY84 B i21_minus_ref per window token (ms, medians of two; deciding nothing): gpu_busy=+0.0076 gpu_idle=+0.1330
+  h2d_exposed=+0.0021 kernel_sum=+0.0076`
+- `DAY84 VERDICT rig=pro-single integrity=ok i21=improves door=i21 vs_ref=loses (window: i21=flat vs_ref=matches)`
+
+**Read as registered, the pair: I21 `improves` on the 9950X class (-2 ms over 32 tokens gen-only in both orders, a 1
+ms noise term; the window flat) and is `flat` on the 285K class (-1 ms inside a 2.2 ms noise term). Neither class
+regresses, so I21 stays. I21 is the first cut of the door's prefetch path since I15 that one class resolves on its own
+step.** The door still `loses` to REF by 2 ms gen-only on both classes and `matches` it on the window on both. On this
+host `pf_resident` reads 0.0020 ms per window token (0.0443 at I20 on BOX39's 285K) and `pf_demand` 0.1246. The DAY86
+question (whether the cuts make C12's slow state more frequent on a long-running 9950X) stays open: this fresh host
+had no slow boot, as BOX40 had none.
