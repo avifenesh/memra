@@ -152,6 +152,25 @@ Code: about 3 agent-days (the in-call capture on the plain and spec prime paths 
 the exact hits, the settle queue and its race handling, about 1; the client, runner and reader, about 0.5). Cells: the
 5090 about 5 h, the target card about 8 h.
 
+### 1.10 Addendum A (2026-09-26, the implementation as built, before any cell)
+
+No clause, bound or reading changes. What the code settled that section 1 left open:
+
+- **The capture:** `memra_engine::grid_capture` (armed per call by a drop guard, collected after it), the extra state
+  pass in `gdn_scan_chunked_capture` (mma and f32 pairs; the Hopper fused arm takes none), the ring in
+  `ssm_conv_ring_capture`, the call-boundary case in `prime_chunk`. The spec capture runs on the cooperative MTP walker
+  only (the served default); without the walker a spec session takes no in-call capture and its next resume declines
+  cold.
+- **GPU checks already run on the 5090 (the 9B, `rtx5090-day44/gpu-tests/`):** the scan capture equals the prefix
+  scan's state bitwise on both pairs; a capture inside one call equals the split prime's state at the point; a resume
+  from it, and a settle (its own call, with the request end unknown) then a resume, give the cold prime's logits
+  bitwise.
+- **The settle queue** runs newest parked entry first and keeps at most 64 jobs; a settle's zero-decode spec burst
+  uses K = `MEMRA_SPEC_K` or 3.
+- **`offprev`** is the tip with every DAY44 code commit reverted (`day44-nodoor.patch`, crates only).
+- **Price, corrected:** 16 serving boots plus two on the target card take about 12 h (the seventh sitting's 9 boots took
+  6.4 h), not the 8 h of 1.9; the 5090 about 5 h.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
