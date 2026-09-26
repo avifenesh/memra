@@ -198,6 +198,10 @@ fn dense_projection<'a>(
         || grid.rows != out.div_ceil(128)
         || grid.cols != input.div_ceil(128)
         || grid.scales.len() != grid.rows * grid.cols
+        || grid
+            .scales
+            .iter()
+            .any(|scale| !scale.is_finite() || *scale <= 0.0)
     {
         return Err(format!("{name}: dense FP8 code or scale geometry changed").into());
     }
@@ -329,6 +333,7 @@ impl<'a> MiMoRoutedSource<'a> {
             || view.in_f != input
             || view.weight.len() != out * input / 2
             || view.scales.len() != out * input / 32
+            || view.scales.contains(&0xff)
         {
             return Err(format!("{name}: MXFP4 code or scale geometry changed").into());
         }
@@ -626,6 +631,14 @@ mod tests {
             );
             assert!(layer.acquire_expert(EXPERTS).is_err());
         }
+        source.scales[0] = 0xff;
+        let MiMoMlpSource::Routed(layer) =
+            MiMoMlpSource::acquire(&source, &binding, &plan, 1).unwrap()
+        else {
+            panic!("layer 1 should route")
+        };
+        assert!(layer.acquire_expert(0).is_err());
+        source.scales[0] = 127;
         source.scales.pop();
         let MiMoMlpSource::Routed(layer) =
             MiMoMlpSource::acquire(&source, &binding, &plan, 1).unwrap()

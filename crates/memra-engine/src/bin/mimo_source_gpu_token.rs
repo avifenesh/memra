@@ -11,6 +11,7 @@ use memra_engine::Engine;
 use memra_engine::QT_F8_E4M3_BLK;
 use memra_engine::mimo_attn_load::MiMoSourceAttention;
 use memra_engine::mimo_mixed_attn_ffi::MiMoMixedAttentionWorkspace;
+use memra_engine::mimo_moe_load::MiMoMlpSource;
 use memra_engine::mimo_source_moe::{
     GroupedMiMoMoeLayer, PinnedMiMoSource, ResidentMiMoMoeLayer, source_moe_token,
 };
@@ -27,6 +28,7 @@ use memra_gguf::model_plan::{
 use memra_gguf::nvfp4_repack::{f32_to_fp8_e4m3, f32_to_nvfp4, f32_to_q8_0, fp8_e4m3_to_f32};
 use memra_gguf::safetensors::StModel;
 use memra_gguf::source::{SafetensorsSource, TensorSource};
+use memra_gguf::tensor_contract::{LayerTensor, TensorId};
 use sha2::{Digest, Sha256};
 
 type Fail = Box<dyn std::error::Error>;
@@ -696,7 +698,6 @@ struct ResidentTextLayer {
 
 struct ResidentTextSources<'a> {
     model: &'a StModel,
-    source: &'a SafetensorsSource,
     attention_source: &'a dyn TensorSource,
     binding: &'a CheckpointBinding,
     plan: &'a ModelPlan,
@@ -740,24 +741,30 @@ impl ResidentTextLayer {
             HIDDEN,
         )?)?;
         let dense = if layer == 0 {
+            if !matches!(
+                MiMoMlpSource::acquire(sources.attention_source, sources.binding, sources.plan, 0,)?,
+                MiMoMlpSource::Dense(_)
+            ) {
+                return Err("MiMo layer 0 has no bound dense MLP".into());
+            }
             Some(ResidentDense {
                 gate: native_fp8_matrix(
                     engine,
-                    sources.source,
+                    sources.attention_source,
                     "blk.0.ffn_gate.weight",
                     16384,
                     HIDDEN,
                 )?,
                 up: native_fp8_matrix(
                     engine,
-                    sources.source,
+                    sources.attention_source,
                     "blk.0.ffn_up.weight",
                     16384,
                     HIDDEN,
                 )?,
                 down: native_fp8_matrix(
                     engine,
-                    sources.source,
+                    sources.attention_source,
                     "blk.0.ffn_down.weight",
                     HIDDEN,
                     16384,
@@ -1123,7 +1130,7 @@ fn attention_token(
 
 fn native_fp8_matrix(
     engine: &Engine,
-    source: &SafetensorsSource,
+    source: &dyn TensorSource,
     name: &str,
     rows: usize,
     cols: usize,
@@ -1503,6 +1510,7 @@ fn run() -> Result<(), Fail> {
     let mut resident_bytes = [0usize; 2];
     let mut resident_load_ms = 0.0f64;
     if resident_moe {
+        let mlp_source = RecordingSource::new(&source);
         let load_start = Instant::now();
         for (index, layer) in plan.layers.iter().enumerate().skip(1) {
             let stage = usize::from(index >= STAGE_CUT);
@@ -1511,13 +1519,18 @@ fn run() -> Result<(), Fail> {
             let MlpPlan::Moe(moe) = &layer.mlp else {
                 return Err(format!("MiMo resident layer {index} has no MoE plan").into());
             };
+            let MiMoMlpSource::Routed(bound) =
+                MiMoMlpSource::acquire(&mlp_source, &binding, &plan, index)?
+            else {
+                return Err(format!("MiMo resident layer {index} has no bound routed MLP").into());
+            };
             let before = Instant::now();
             if grouped_moe {
-                let grouped = GroupedMiMoMoeLayer::load(engine, &pinned, index, moe)?;
+                let grouped = GroupedMiMoMoeLayer::load(engine, &pinned, index, moe, &bound)?;
                 resident_bytes[stage] += grouped.resident_bytes();
                 grouped_layers[index] = Some(grouped);
             } else {
-                let resident = ResidentMiMoMoeLayer::load(engine, &pinned, index, moe)?;
+                let resident = ResidentMiMoMoeLayer::load(engine, &pinned, index, moe, &bound)?;
                 resident_bytes[stage] += resident.resident_bytes();
                 resident_layers[index] = Some(resident);
             }
@@ -1525,6 +1538,20 @@ fn run() -> Result<(), Fail> {
                 "MiMo resident layer {index} stage {stage} loaded in {:.3}s; cumulative stage bytes {}",
                 before.elapsed().as_secs_f64(),
                 resident_bytes[stage]
+            );
+        }
+        let missing =
+            binding.audit_consumption(&mlp_source.requested(), &config, |id, _| match id {
+                TensorId::Expert { .. } => false,
+                TensorId::Layer {
+                    index,
+                    tensor: LayerTensor::MoeRouter | LayerTensor::MoeRouterBias,
+                } if *index > 0 => false,
+                _ => true,
+            });
+        if !missing.is_empty() {
+            return Err(
+                format!("MiMo routed source left bound tensors unread: {missing:?}").into(),
             );
         }
         resident_load_ms = load_start.elapsed().as_secs_f64() * 1000.0;
@@ -1537,7 +1564,6 @@ fn run() -> Result<(), Fail> {
         let attention_source = RecordingSource::new(&source);
         let text_sources = ResidentTextSources {
             model: &model,
-            source: &source,
             attention_source: &attention_source,
             binding: &binding,
             plan: &plan,
@@ -1561,11 +1587,14 @@ fn run() -> Result<(), Fail> {
         let missing = binding.audit_consumption(&attention_source.requested(), &config, |id, _| {
             !matches!(
                 id,
-                memra_gguf::tensor_contract::TensorId::Layer {
-                    tensor: memra_gguf::tensor_contract::LayerTensor::FusedQkv
-                        | memra_gguf::tensor_contract::LayerTensor::AttentionOutput
-                        | memra_gguf::tensor_contract::LayerTensor::AttentionSink,
+                TensorId::Layer {
+                    tensor: LayerTensor::FusedQkv
+                        | LayerTensor::AttentionOutput
+                        | LayerTensor::AttentionSink,
                     ..
+                } | TensorId::Layer {
+                    index: 0,
+                    tensor: LayerTensor::MlpGate | LayerTensor::MlpUp | LayerTensor::MlpDown,
                 }
             )
         });
