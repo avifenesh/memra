@@ -353,7 +353,7 @@ the card is reset.
   (3000ms) waiting for: yield to T` (darklane.rs:602).
 - Acceptance: none registered (reproduce and place it as DAY55 did: a defect, or a wall-clock bound).
   DAY56 section 2: 1 of 400 in arm A's shape too (run 179).
-- Status: open.
+- Status: **pre-registered** (DAY57 section 1).
 
 ### 25. `tests::a_fake_route_memory_door_refuses_defers_and_recovers_through_the_handler` reads a running row after the cancel (found by DAY55)
 
