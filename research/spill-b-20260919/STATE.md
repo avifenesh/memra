@@ -1,3 +1,6 @@
+# WP-B checkpoint 2026-09-26 (NEED TARGET CARD, thirteenth sitting): DAY49 addendum C (the batch reclaim's VMM reap,
+`95d35c383`) and its i-vmm cell ready for the target card (`pro-single-b-sitting13.sh`, about 45 min, can follow the
+twelfth on BOX35); O1's 5090 rerun (r5) and queue-l running locally; the ninth sitting still on BOX33
 # WP-B checkpoint 2026-09-26 (O14 queued): the eleventh and twelfth sittings queued on BOX35 (the lead's /root/b11-chain.sh, then /root/b12-chain.sh behind it; receipts /root/spill-receipts/b-day45b, b-day47, b-day49); the ninth sitting still on BOX33
 - Local runners now: queue-k (pid 2946742, DAY39B onward), chain-r5 (O1's r5), and queue-l (pid 2114207, from
   17:07Z: DAY47 a2 a3, DAY49 g1 g2 on the 02dbdfa40 worktree, DAY49C green and red, DAY49's boots). queue-l replaced

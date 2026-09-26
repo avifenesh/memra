@@ -166,7 +166,7 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   reclaim paths run before their trim; fixed in `95d35c383` (census pins all three; memra-server lib 958 passed,
   clippy clean). Unreachable without the VMM door, so the registered cells stand on `02dbdfa40`. Its cell `i-vmm` (the
   gate's arm i under `MEMRA_KV_ALLOCATOR=vmm`, fix green against `02dbdfa40` red) runs locally
-  (`rtx5090-day49/run-c.sh`); its target-card half rides the next B sitting after the twelfth.
+  (queue-l); its target-card half is the thirteenth sitting (`pro-single-b-sitting13.sh`, about 45 min, ready).
 
 ### O9. memra#464's guard seed
 
