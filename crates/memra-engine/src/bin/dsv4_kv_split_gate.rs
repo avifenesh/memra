@@ -122,6 +122,25 @@ fn main() {
         tape.sha256
     );
 
+    // The session byte plans at the served context, per rank (planning only, no allocation).
+    let plan = |split: bool, cap: usize| {
+        set_c4_split_for_gate(Some(split));
+        let (dev, _) = gpu
+            .plan_session_cache_bytes(cap, CHUNK, false)
+            .expect("session plan");
+        set_c4_split_for_gate(None);
+        dev
+    };
+    for cap in [65536usize, 262144, 1048576] {
+        if cap <= gpu.max_seq {
+            let (r, sp) = (plan(false, cap), plan(true, cap));
+            println!(
+                "PLAN capacity={cap} replicated={r:?} split={sp:?} bytes/token/rank replicated={:.0} split={:.0}",
+                r[0] as f64 / cap as f64,
+                sp[0] as f64 / cap as f64
+            );
+        }
+    }
     let (mut rep, t_rep, pre_rep) = prime(&gpu, &prompt, capacity, false);
     let (mut spl, t_spl, pre_spl) = prime(&gpu, &prompt, capacity, true);
     let bytes = |s: &DecodeState| s.cache_bytes.iter().sum::<u64>();
