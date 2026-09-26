@@ -72,6 +72,10 @@ separate sealed commitment.
    weights use the same bounded prompt prefix, generated-token
    history, and prior-turn features at runtime. Validation remains
    disjoint and unweighted.
+   Historic K utility uses a reference rate from each source. D/C
+   acceptance labels may use historic rows, while D timing and
+   marginal C cost come only from randomized rounds on the current
+   V12 GPU.
    Before freezing arms, a training-conversation-heldout preflight
    must show that the same first-16/32 token buckets used by the K
    controller distinguish code, open prose and math above a 0.6

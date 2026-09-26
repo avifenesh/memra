@@ -62,26 +62,27 @@ def model_inventory(models):
     return manifest, files
 
 
-def quantiles(v11_rows, fresh_rows):
+def quantiles(fresh_rows):
     values = {k: [] for k in (3, 10, 20)}
-    for root in (v11_rows, fresh_rows):
-        manifest = json.loads((root / "manifest.json").read_text())
-        if manifest["schema"] != 1 or manifest["use"] != "training-only":
-            raise ValueError("C fixed control lacks training-only source")
-        source = root / "c.jsonl.gz"
-        if sha(source) != manifest["rows"]["c"]["sha256"]:
-            raise ValueError("C fixed control training rows changed")
-        with gzip.open(source, "rt") as stream:
-            for line in stream:
-                item = json.loads(line)
-                if (
-                    item["draft_k"] in values
-                    and item["offer_position"] == 1
-                    and item["source"].startswith(("v11-", "v12-"))
-                ):
-                    values[item["draft_k"]].append(
-                        item["chosen_probability"]
-                    )
+    manifest = json.loads(
+        (fresh_rows / "manifest.json").read_text()
+    )
+    if manifest["schema"] != 1 or manifest["use"] != "training-only":
+        raise ValueError("C fixed control lacks training-only source")
+    source = fresh_rows / "c.jsonl.gz"
+    if sha(source) != manifest["rows"]["c"]["sha256"]:
+        raise ValueError("C fixed control training rows changed")
+    with gzip.open(source, "rt") as stream:
+        for line in stream:
+            item = json.loads(line)
+            if (
+                item["draft_k"] in values
+                and item["offer_position"] == 1
+                and item["source"].startswith("v12-")
+            ):
+                values[item["draft_k"]].append(
+                    item["chosen_probability"]
+                )
     for k in values:
         values[k].sort()
         if len(values[k]) < 150:
@@ -136,7 +137,7 @@ def freeze(models, v11_rows, fresh_rows, fresh_replay,
         != manifest["v12_fresh_training_replay_sha256"]
     ):
         raise ValueError("mixed candidate training or prefix preflight differs")
-    cutoffs = quantiles(v11_rows, fresh_rows)
+    cutoffs = quantiles(fresh_rows)
 
     def weight(source, name):
         try:

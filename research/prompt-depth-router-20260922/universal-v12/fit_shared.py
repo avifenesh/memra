@@ -99,7 +99,7 @@ def pooled_reference(rows):
     reference = [
         row for row in rows
         if row["draft_k"] == 20
-        and row["source"].startswith(("v11-", "v12-"))
+        and row["source"].startswith("v12-")
         and row["assignment"] == "fixed-arm"
     ]
     if not reference:
@@ -160,7 +160,7 @@ def build(v9_new, v9_old, v9_k_manifest, v9_table, v11_rows,
         randomized = [
             row for row in chosen["d"]
             if row["assignment"] == "randomized-round"
-            and row["source"].startswith(("v11-", "v12-"))
+            and row["source"].startswith("v12-")
         ]
         rate = pooled_reference(chosen["k"])
         k_models = []
