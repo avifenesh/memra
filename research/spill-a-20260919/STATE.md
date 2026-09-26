@@ -1,15 +1,13 @@
-# WP-A resumable state (2026-09-26, day 55 closed; stopped at an integrable milestone)
+# WP-A resumable state (2026-09-26, days 56 to 58 closed; stopped at an integrable milestone)
 
-- Lane `lane/spill-a-20260919`; worktree `wt-spill-a`; remote tip `50fb33bc9`. The lead carries days 49 to 54 into
-  integ63; days 55 onward are new.
-- Resync after the rig reboot: the interrupted R2 cell (51 runs of T-a, its binary lost with `/tmp`) is void and banked
-  as `day55/no_progress_source_is_the_pre_fix_beat_a/r2-interrupted/`; R2 was re-run whole.
-- Item 22 closed (DAY55): T-a fixed in `health.rs` (one clock sample per snapshot and verdict); T-b, T-c and T-e fixed in
-  their tests (tokio's paused clock; the step clock with a test-only health clock and a non-blocking guard; the
-  coalescer's window a field with two mechanism cells). Accepted: R1 and R2 0 of 100 each, red arms 10 of 10, arm A 100
-  of 100 and arm B 98 of 100 full suites. T-d not reproduced, unchanged. New: items 24 and 25 (arm B's two other reds).
-- Item 10: priced (DAY54); the fanout design owed. Item 17 blocked on 14. Item 21 closed.
-- Next: item 23 (F1's +1.47 s: the admission counters injected so the writer tests need no lock), then 24 and 25, then
-  the fanout design, then items 11 to 14 (19 with 14, 17 on top), 18 and 20; the 5090 is back, so its three owed cells
-  (S4's half, V's half, item 16) run under `/tmp/memra-5090.lock` in their place in the order.
+- Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. origin/main `968c0fa68` (integ63) merged into the lane
+  (`621502678`); integ64 takes `90fe89abf`; days 56 to 58 are new.
+- Item 23 closed (DAY56, F2 `10b9329cc`): the reservation path takes its lane counters; the shed tests isolated; the
+  suite's median 6.62 s against 6.70 (N=400).
+- Item 24 closed (DAY57, `a327f486c`): the darklane stop-mode cycle waits for acknowledgements under a 30 s guard
+  (reproduced 1 of 100 beside sixteen burners; 0 of 100 after).
+- Item 25 closed (DAY58, `62a29cfe0`): a real route-book ordering defect (an ended run counted as running in 27 to 34%
+  of boundary snapshots); fixed in `route_telemetry.rs`.
+- Next: the fanout publisher's design (DAY54's price), items 11 to 14 (19 with 14, 17 re-read on top), 18 and 20, and
+  the owed 5090 cells (S4's half, V's half, item 16) under `/tmp/memra-5090.lock`.
 - Local scratch: none.
