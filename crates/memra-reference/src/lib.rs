@@ -1280,6 +1280,19 @@ fn add_full_attention_fixture(
         } else {
             1
         };
+    let fused_qkv = attention
+        .mimo_math
+        .is_some_and(|math| math.fused_qkv_checkpoint_shards.is_some());
+    if fused_qkv {
+        weights.insert(
+            layer_id(layer, LayerTensor::FusedQkv),
+            generated_tensor(
+                &[q_width + kv_heads * key_dim + kv_heads * value_dim, hidden],
+                10 + layer as u64 * 31,
+                1.0 / (hidden as f32).sqrt(),
+            )?,
+        );
+    }
     for (tensor, output, input, salt) in [
         (LayerTensor::Query, q_width, hidden, 10),
         (LayerTensor::Key, kv_heads * key_dim, hidden, 11),
@@ -1290,6 +1303,9 @@ fn add_full_attention_fixture(
             13,
         ),
     ] {
+        if fused_qkv && tensor != LayerTensor::AttentionOutput {
+            continue;
+        }
         weights.insert(
             layer_id(layer, tensor),
             generated_tensor(
@@ -1299,7 +1315,7 @@ fn add_full_attention_fixture(
             )?,
         );
     }
-    if attention.value_projection == ValueProjection::Separate {
+    if attention.value_projection == ValueProjection::Separate && !fused_qkv {
         weights.insert(
             layer_id(layer, LayerTensor::Value),
             generated_tensor(
@@ -7111,22 +7127,111 @@ fn full_attention(
     let q_projection_width = q_width * if fused { 2 } else { 1 };
     let k_width = kv_heads * key_dim;
     let v_width = kv_heads * value_dim;
-    let q_weight = tensor(
-        weights,
-        &layer_id(layer, LayerTensor::Query),
-        &[q_projection_width, hidden],
-    )?;
-    let k_weight = tensor(
-        weights,
-        &layer_id(layer, LayerTensor::Key),
-        &[k_width, hidden],
-    )?;
+    let fused_qkv_shards = plan
+        .mimo_math
+        .and_then(|math| math.fused_qkv_checkpoint_shards);
+    let fused_qkv = fused_qkv_shards.is_some();
+    if fused_qkv && (fused || plan.value_projection != ValueProjection::Separate) {
+        return Err(ReferenceError::InvalidPlan {
+            layer: Some(layer),
+            reason: "fused QKV requires separate V and no fused Q output gate",
+        });
+    }
+    if let Some(shards) = fused_qkv_shards
+        && (shards == 0 || query_heads % shards as usize != 0 || kv_heads % shards as usize != 0)
+    {
+        return Err(ReferenceError::InvalidPlan {
+            layer: Some(layer),
+            reason: "fused QKV checkpoint shards must divide Q and KV heads",
+        });
+    }
     let output_weight = tensor(
         weights,
         &layer_id(layer, LayerTensor::AttentionOutput),
         &[hidden, query_heads * value_dim],
     )?;
-    let q_projected = linear(x, q_weight, tokens, hidden, q_projection_width);
+    let (q_projected, mut key, mut value) = if fused_qkv {
+        let shards = fused_qkv_shards.unwrap() as usize;
+        let q_per_shard = q_projection_width / shards;
+        let k_per_shard = k_width / shards;
+        let v_per_shard = v_width / shards;
+        let width_per_shard = q_per_shard + k_per_shard + v_per_shard;
+        let projected = linear(
+            x,
+            tensor(
+                weights,
+                &layer_id(layer, LayerTensor::FusedQkv),
+                &[q_projection_width + k_width + v_width, hidden],
+            )?,
+            tokens,
+            hidden,
+            q_projection_width + k_width + v_width,
+        );
+        let mut query = Vec::with_capacity(tokens * q_projection_width);
+        let mut key = Vec::with_capacity(tokens * k_width);
+        let mut value = Vec::with_capacity(tokens * v_width);
+        for row in projected.chunks_exact(q_projection_width + k_width + v_width) {
+            for shard in 0..shards {
+                let start = shard * width_per_shard;
+                query.extend_from_slice(&row[start..start + q_per_shard]);
+            }
+            for shard in 0..shards {
+                let start = shard * width_per_shard + q_per_shard;
+                key.extend_from_slice(&row[start..start + k_per_shard]);
+            }
+            for shard in 0..shards {
+                let start = shard * width_per_shard + q_per_shard + k_per_shard;
+                value.extend_from_slice(&row[start..start + v_per_shard]);
+            }
+        }
+        (query, key, value)
+    } else {
+        let query = linear(
+            x,
+            tensor(
+                weights,
+                &layer_id(layer, LayerTensor::Query),
+                &[q_projection_width, hidden],
+            )?,
+            tokens,
+            hidden,
+            q_projection_width,
+        );
+        let key = linear(
+            x,
+            tensor(
+                weights,
+                &layer_id(layer, LayerTensor::Key),
+                &[k_width, hidden],
+            )?,
+            tokens,
+            hidden,
+            k_width,
+        );
+        let value = match plan.value_projection {
+            ValueProjection::Separate => linear(
+                x,
+                tensor(
+                    weights,
+                    &layer_id(layer, LayerTensor::Value),
+                    &[v_width, hidden],
+                )?,
+                tokens,
+                hidden,
+                v_width,
+            ),
+            ValueProjection::ReuseKey => {
+                if value_dim != key_dim {
+                    return Err(ReferenceError::InvalidPlan {
+                        layer: Some(layer),
+                        reason: "K-as-V requires equal key/value head widths",
+                    });
+                }
+                key.clone()
+            }
+        };
+        (query, key, value)
+    };
     let mut query = vec![0.0; tokens * q_width];
     let mut fused_gate = None;
     if fused {
@@ -7145,29 +7250,6 @@ fn full_attention(
     } else {
         query.copy_from_slice(&q_projected);
     }
-    let mut key = linear(x, k_weight, tokens, hidden, k_width);
-    let mut value = match plan.value_projection {
-        ValueProjection::Separate => linear(
-            x,
-            tensor(
-                weights,
-                &layer_id(layer, LayerTensor::Value),
-                &[v_width, hidden],
-            )?,
-            tokens,
-            hidden,
-            v_width,
-        ),
-        ValueProjection::ReuseKey => {
-            if value_dim != key_dim {
-                return Err(ReferenceError::InvalidPlan {
-                    layer: Some(layer),
-                    reason: "K-as-V requires equal key/value head widths",
-                });
-            }
-            key.clone()
-        }
-    };
     if let Some(math) = plan.mimo_math {
         for element in &mut value {
             *element *= math.value_scale_before_cache;
@@ -9111,6 +9193,7 @@ mod tests {
             mimo_math: Some(MiMoAttentionMath {
                 sink: TensorPresence::Required,
                 value_scale_before_cache: 0.707,
+                fused_qkv_checkpoint_shards: None,
             }),
         };
         let identity = [1.0, 0.0, 0.0, 1.0];
@@ -9128,8 +9211,7 @@ mod tests {
         );
 
         let (output, state) =
-            full_attention(0, &plan, Some(128), 1e-6, &weights, &[2.0, 4.0], 1, 2, None)
-                .unwrap();
+            full_attention(0, &plan, Some(128), 1e-6, &weights, &[2.0, 4.0], 1, 2, None).unwrap();
         // One real logit 0 and sink logit ln(3): real probability 1/4.
         // The sink has no value vector. V is scaled before attention/cache.
         assert!((output[0] - 0.3535).abs() < 1e-6);
@@ -9140,12 +9222,85 @@ mod tests {
         assert!((value[0] - 1.414).abs() < 1e-6);
         assert!((value[1] - 2.828).abs() < 1e-6);
 
-        weights.insert(layer_id(0, LayerTensor::AttentionSink), weight(&[1], &[0.0]));
+        weights.insert(
+            layer_id(0, LayerTensor::AttentionSink),
+            weight(&[1], &[0.0]),
+        );
         let (equal_logits, _) =
-            full_attention(0, &plan, Some(128), 1e-6, &weights, &[2.0, 4.0], 1, 2, None)
-                .unwrap();
+            full_attention(0, &plan, Some(128), 1e-6, &weights, &[2.0, 4.0], 1, 2, None).unwrap();
         assert!((equal_logits[0] - 0.707).abs() < 1e-6);
         assert!((equal_logits[1] - 1.414).abs() < 1e-6);
+    }
+
+    #[test]
+    fn mimo_fused_qkv_rows_match_separate_projections() {
+        use memra_gguf::model_plan::{FullAttentionPlan, MiMoAttentionMath, RopeFactors};
+
+        let mut plan = FullAttentionPlan {
+            query_heads: 2,
+            kv_heads: 2,
+            key_head_dim: 2,
+            value_head_dim: 2,
+            rope: RopePlan {
+                dimensions: 2,
+                base: 10_000.0,
+                factors: RopeFactors::None,
+            },
+            qk_norm: TensorPresence::Absent,
+            output_gate: AttentionGateKind::None,
+            scale: AttentionScale::InverseSqrtKeyDim,
+            value_projection: ValueProjection::Separate,
+            value_norm: ValueNorm::None,
+            mimo_math: Some(MiMoAttentionMath {
+                sink: TensorPresence::Absent,
+                value_scale_before_cache: 0.707,
+                fused_qkv_checkpoint_shards: None,
+            }),
+        };
+        let query = [1.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 2.0];
+        let key = [0.5, 0.0, 0.0, 0.5, 0.25, 0.0, 0.0, 0.25];
+        let value = [0.0, 1.0, 1.0, 0.0, 0.0, 2.0, 2.0, 0.0];
+        let output = [1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0];
+        let input = [2.0, 4.0, 1.0, 3.0];
+        let mut split = ReferenceWeights::new();
+        for (tensor_id, rows) in [
+            (LayerTensor::Query, &query),
+            (LayerTensor::Key, &key),
+            (LayerTensor::Value, &value),
+        ] {
+            split.insert(layer_id(0, tensor_id), weight(&[4, 2], rows));
+        }
+        split.insert(
+            layer_id(0, LayerTensor::AttentionOutput),
+            weight(&[2, 4], &output),
+        );
+        let expected = full_attention(0, &plan, None, 1e-6, &split, &input, 2, 2, None).unwrap();
+
+        plan.mimo_math.as_mut().unwrap().fused_qkv_checkpoint_shards = Some(2);
+        let mut packed = ReferenceWeights::new();
+        packed.insert(
+            layer_id(0, LayerTensor::FusedQkv),
+            weight(
+                &[12, 2],
+                &[
+                    &query[..4],
+                    &key[..4],
+                    &value[..4],
+                    &query[4..],
+                    &key[4..],
+                    &value[4..],
+                ]
+                .concat(),
+            ),
+        );
+        packed.insert(
+            layer_id(0, LayerTensor::AttentionOutput),
+            weight(&[2, 4], &output),
+        );
+        assert_eq!(
+            full_attention(0, &plan, None, 1e-6, &packed, &input, 2, 2, None).unwrap(),
+            expected
+        );
     }
 
     /// N-gram id math recomputed independently below (wrapping i64 multiply, XOR, floor
