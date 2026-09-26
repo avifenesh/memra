@@ -1,0 +1,4 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-f/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 0.41s
+systemd-run --user --scope -q -p CPUQuota=1200% -p MemoryMax=20G env  cargo    0.57s user 0.16s system 157% cpu 0.462 total
