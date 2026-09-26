@@ -256,6 +256,10 @@ pub struct ExpertBankBudget {
     pub host_bytes: u64,
     pub gpu_bytes: Option<u64>,
     pub stage_clock: bool,
+    /// DAY76 (`research/spill-c-20260919/DAY76.md`, a diagnostic door, decide-by 2026-10-10):
+    /// `--expert-bank-pool-chunk-bytes=N` makes the pinned host pool out of allocations of at
+    /// most N bytes; `None` keeps the one allocation.
+    pub pool_chunk_bytes: Option<u64>,
 }
 impl Default for ExpertBankBudget {
     fn default() -> Self {
@@ -263,6 +267,7 @@ impl Default for ExpertBankBudget {
             host_bytes: 256 * 1024 * 1024,
             gpu_bytes: None,
             stage_clock: false,
+            pool_chunk_bytes: None,
         }
     }
 }
@@ -297,11 +302,13 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
     const HOST: &str = "--expert-bank-host-bytes";
     const GPU: &str = "--expert-bank-gpu-bytes";
     const STAGES: &str = "--expert-bank-stages";
+    const CHUNK: &str = "--expert-bank-pool-chunk-bytes";
     const FAMILY: &str = "--expert-bank-";
     let mut door = false;
     let mut stages = false;
     let mut host = None;
     let mut gpu = None;
+    let mut chunk = None;
     for arg in args {
         let (key, value) = match arg.split_once('=') {
             Some((key, value)) => (key, Some(value)),
@@ -326,9 +333,10 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
             }
             HOST => &mut host,
             GPU => &mut gpu,
+            CHUNK => &mut chunk,
             _ if key.starts_with(FAMILY) || key.starts_with(DOOR) => {
                 return Err(format!(
-                    "unknown expert bank flag {key:?}; expected {DOOR}, {HOST}=<bytes>, {GPU}=<bytes> or {STAGES}"
+                    "unknown expert bank flag {key:?}; expected {DOOR}, {HOST}=<bytes>, {GPU}=<bytes>, {CHUNK}=<bytes> or {STAGES}"
                 ));
             }
             _ => continue,
@@ -341,8 +349,11 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
             return Err(format!("{key} given more than once"));
         }
     }
+    if chunk == Some(0) {
+        return Err(format!("{CHUNK} expects a positive byte count"));
+    }
     if !door {
-        if host.is_some() || gpu.is_some() {
+        if host.is_some() || gpu.is_some() || chunk.is_some() {
             return Err(format!("expert bank budgets require {DOOR}"));
         }
         if stages {
@@ -356,6 +367,7 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
     }
     budget.gpu_bytes = gpu;
     budget.stage_clock = stages;
+    budget.pool_chunk_bytes = chunk;
     Ok(Some(budget))
 }
 
