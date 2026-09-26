@@ -1704,7 +1704,7 @@ mod tests {
         stream
             .memcpy_dtod(&view.slice(head..head + 777), &mut dev)
             .unwrap();
-        let back = stream.memcpy_dtov(&dev).unwrap();
+        let back = stream.clone_dtoh(&dev).unwrap();
         assert_eq!(back, &bytes[100..877], "the alias reads the landed bytes");
         assert_eq!(pool.stats().mapped_serves, 1);
         assert_eq!(pool.stats().h2d_submits, 0, "a mapped serve is not a copy");
