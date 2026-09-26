@@ -126,3 +126,40 @@ as `DAY79.md` section 3 read it, not the cuts. The window matches REF on BOX34 a
 
 **The 9950X half stands.** Section 3 registered the 285K class, then a 9950X, and `regresses` on either class reverts
 I20; a `flat` on one class does not answer the other. It runs the same command on a 9950X host.
+
+## 4b. The 9950X (BOX40, a Ryzen 9 9950X; run by the lead as registered; `pro-single-day82-9950x/`)
+
+BOX40: one RTX PRO 6000 Blackwell Workstation Edition, 123 GB, driver 610.57.04. The same command on the tree
+`2bf48ed9f`, `box start 2026-09-26T18:41:34Z` to `box done 2026-09-26T18:58:04Z`. Receipts: 260 `OK` against the box
+manifest, ELFs by hash; the profiler's 8 files `OK` against `profiles.sha256` and moved out of the tree; the reader
+re-run here on the mirror prints `i20/reading.log` byte for byte. Regime: 31 to 44 C, SM median 2857 MHz (2610 to
+2880), P0 and P1, N=469 busy samples of 2566; the power brake not active. Verbatim (`i20/reading.log`):
+
+- `DAY82 host demand sequence i15 sha256 4bdc2610c3534e42 lines=[22077]`, and the same for `i18`, `i20` and `i20c`
+- `DAY82 I20 CHECKS rig=pro-single runs=50 integrity=ok`
+- `DAY82 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0010 max_iqr_window=0.0003 failing=[] -> admissible`
+- `DAY82 gen-only decode medians (N=10 each): ref=0.248 i15=0.252 i18=0.251 i20=0.251 i20c=0.252`
+- `DAY82 STEP i20_vs_i18 gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0000 -> flat`
+- `DAY82 steady window medians (N=10 each): ref=0.219 i15=0.220 i18=0.220 i20=0.220 i20c=0.220`
+- `DAY82 STEP i20_vs_i18 steady window: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0003 -> flat`
+- `DAY82 BESIDE i20_vs_i15 gen-only decode: pooled=-0.0010 o1=-0.0010 o2=-0.0010 noise=0.0000 -> improves (deciding
+  nothing)`
+- `DAY82 BESIDE i20_vs_i15 steady window: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0000 -> flat (deciding nothing)`
+- `DAY82 DOOR i20_vs_ref gen-only decode: pooled=+0.0030 o1=+0.0030 o2=+0.0020 noise=0.0010 -> loses`
+- `DAY82 DOOR i20_vs_ref steady window: pooled=+0.0010 o1=+0.0010 o2=+0.0010 noise=0.0000 -> loses`
+- `DAY82 I20C brackets per window token (ms, medians): dispatch_ns=0.0729 prefetch_ns=0.4454 pf_demand_ns=0.1221
+  pf_resident_ns=0.0358 pf_retire_ns=0.0203 pf_stage_ns=0.2110`
+- `DAY82 B i20_minus_ref per window token (ms, medians of two; deciding nothing): gpu_busy=-0.0055 gpu_idle=+0.1930
+  h2d_exposed=+0.0187 kernel_sum=-0.0055`
+- `DAY82 VERDICT rig=pro-single integrity=ok i20=flat door=i20 vs_ref=loses (window: i20=flat vs_ref=loses)`
+
+**Read as registered: I20 `flat` on the 9950X too, so it stays on both classes; the door `loses` to REF, by 3 ms over 32
+tokens gen-only (2 to 3 by order) and by 1 ms on the window.** No slow state in this cell (every arm's gen-only IQR at
+most 1 ms), and the host demand sequence is one across I15, I18 and I20.
+
+**Beside it, deciding nothing.** I20 against I15 reads -1 ms gen-only in both orders with a zero noise term, so the
+rule prints `improves`; -1 ms is one tick of run-gen's printed resolution (the gen line prints milliseconds), about
+0.4% of 0.252 s. On the 285K it read the same -1 ms inside a 2.5 ms noise term. So the cumulative cut since I15 is at
+most about 1 ms over 32 tokens on both classes, a third of the door's remaining 3 ms. Part B holds its shape here too:
+the door's GPU idles 0.19 ms per window token more than REF's with the same kernels (`kernel_sum` -0.006), and its copy
+exposure is +0.02.
