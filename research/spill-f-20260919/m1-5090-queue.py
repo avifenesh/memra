@@ -36,7 +36,7 @@ def steps(rec, first_rounds="1-10", bounded_bytes=None):
         ("f17-smoke-gate", lambda: [sys.executable, str(HERE / "m1-b3-pool.py"), str(rec / "f17-smoke"),
                                     "--bypass-check", "--fallback-unclean", "--require-correct"]),
         ("handoff-1g", lambda: rounds("handoff", "handoff-1g", "--memory-max", CAP, "--rounds", "1-10",
-                                      "--size-bytes", str(1 << 30), "--host-mb", "4096")),
+                                      "--size-bytes", str(1 << 30), "--host-mb", "4096", "--tenant-pct", "100")),
         ("bounded", lambda: rounds("bounded", "bounded", "--memory-max", str(bounded_bytes or bounded_max(rec)), "--rounds", "1-10")),
         ("g2", lambda: rounds("g2", "g2", "--memory-max", CAP)),
         ("f17", lambda: rounds("f17", "f17", "--memory-max", CAP, "--rounds", "1-10")),

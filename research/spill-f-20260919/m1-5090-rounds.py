@@ -83,7 +83,7 @@ def wait_idle(log, label):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    ap.add_argument("--regime", choices=["capped", "bounded", "g2", "handoff", "anonpeak", "f17", "gpucell"], required=True)
+    ap.add_argument("--regime", choices=["capped", "bounded", "g2", "handoff", "anonpeak", "f17", "gpucell", "diag"], required=True)
     ap.add_argument("--memory-max", type=int, required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--rounds", default="1-10")
@@ -105,7 +105,12 @@ def main():
                         "-p", f"MemoryMax={a.memory_max}", "-p", "MemorySwapMax=0",
                         sys.executable, str(ROOT / "tools/tier-battery.py"), "--rig", "rtx5090", "--timeout", "10800",
                         "--external-lock", "--out", str(target), "--execute", sys.executable]
-                if a.regime == "gpucell":
+                if a.regime == "diag":
+                    # Unscored door-off diagnostic (m1-doorless-diag.py) under the canonical lock.
+                    argv = ["flock", "-n", "-E", "75", LOCK, "systemd-run", "--user", "--scope", "-q",
+                            "-p", "CPUQuota=1200%", "-p", f"MemoryMax={a.memory_max}", "-p", "MemorySwapMax=0",
+                            sys.executable, str(HERE / "m1-doorless-diag.py"), "--out", str(target), "--pairs", "3"]
+                elif a.regime == "gpucell":
                     # Resync amendment 3: the OWED 17 ownership cell under the canonical lock.
                     argv = ["flock", "-n", "-E", "75", LOCK, "systemd-run", "--user", "--scope", "-q",
                             "-p", "CPUQuota=1200%", "-p", f"MemoryMax={a.memory_max}", "env",
@@ -145,7 +150,7 @@ def main():
                 with (out / f"round-{k:02d}.driver-attempt{attempt}.log").open("xb") as dl:
                     rc = subprocess.run(argv, stdout=dl, stderr=subprocess.STDOUT, cwd=ROOT).returncode
                 text = (out / f"round-{k:02d}.driver-attempt{attempt}.log").read_text(errors="replace")
-                lost = (rc == 75 if a.regime == "gpucell" else
+                lost = (rc == 75 if a.regime in ("gpucell", "diag") else
                         rc != 0 and "Resource temporarily unavailable" in text and not (target / "visits").exists())
                 log.write(json.dumps({"utc": now(), "event": "cell", "round": k, "attempt": attempt, "rc": rc,
                                       "seconds": round(time.monotonic() - t0, 1), "lost_lock_race": lost,
@@ -162,7 +167,7 @@ def main():
                 log.flush()
                 print(f"M1-5090 regime={a.regime} STOPPED at round {k} rc={rc}", flush=True)
                 return 2
-            if a.smoke or a.regime in ("g2", "anonpeak", "gpucell"):
+            if a.smoke or a.regime in ("g2", "anonpeak", "gpucell", "diag"):
                 break
     return 0
 

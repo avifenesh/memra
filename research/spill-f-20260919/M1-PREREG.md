@@ -524,3 +524,12 @@ RssAnon plus RssShmem 864,223,232 and 864,210,944 bytes. The second run's sizing
 `all_correct: false` because its direct16 visit fell back to mmap 9 times (OWED 26); that is not a
 sizing fault, and the bound is the larger peak of the two runs plus 7,000,000,000:
 MemoryMax = 7,864,223,232 bytes, passed to the queue explicitly.
+
+Section E, 5090 sizing correction (2026-09-26 about 10:08Z, after the first 1 GiB pair failed,
+before any rerun): with `--host-mb 4096` the default 50% tenant share cap is 2,147 MB, below the
+1 GiB cell's 17 entries (17 x 127.2 MB = 2,162 MB), so the oldest entry (probe 1's prefix) was
+evicted before export, in both arms alike (`handoff-1g` round 1: probes 2 to 4 restored 6,496
+cached tokens with text identical to cold, probe 1 missed). BOX27's 16 GiB budget never bound the
+cap. The 1 GiB cell therefore also runs with `--tenant-pct 100` (B2 amendment 3's rule, already
+registered for the 8 GiB cell); host budget unchanged. The failed pair is kept as
+`refused-handoff-1g-tenant-cap`, never scored.
