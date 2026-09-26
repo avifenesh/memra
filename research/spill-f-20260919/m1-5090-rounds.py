@@ -35,7 +35,9 @@ PUBLIC_PROOF = HERE / "rtx5090/proof/PROOF.json"
 PROBE = "/home/avifenesh/spill-f-5090/bin-g2/h2d-probe"  # resync amendment 2: accepts [N/A]
 GPU_CELL = "spill_pread::tests::mapped_serve_reads_in_place_and_owns_the_buffer_until_its_event"
 BIN18 = "/home/avifenesh/spill-f-5090/bin18"
-BIN17 = "/home/avifenesh/spill-f-5090/bin17/run-gen"
+BIN17 = "/home/avifenesh/spill-f-5090/bin26/run-gen"  # section G: the OWED 17 cell runs on the fix build
+BIN26 = "/home/avifenesh/spill-f-5090/bin26/run-gen"
+TESTS26 = "/home/avifenesh/spill-f-5090/bin26-tests"
 B2_PROMPTS = "/home/avifenesh/spill-f-5090/b2-prompts.jsonl"
 B2_SCRATCH = "/data/cache/spill-f-b2"
 
@@ -83,7 +85,8 @@ def wait_idle(log, label):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    ap.add_argument("--regime", choices=["capped", "bounded", "g2", "handoff", "anonpeak", "f17", "gpucell", "diag"], required=True)
+    ap.add_argument("--regime", choices=["capped", "bounded", "g2", "handoff", "anonpeak", "f17", "gpucell", "diag",
+                                              "owed26cells", "owed26serve"], required=True)
     ap.add_argument("--memory-max", type=int, required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--rounds", default="1-10")
@@ -105,7 +108,15 @@ def main():
                         "-p", f"MemoryMax={a.memory_max}", "-p", "MemorySwapMax=0",
                         sys.executable, str(ROOT / "tools/tier-battery.py"), "--rig", "rtx5090", "--timeout", "10800",
                         "--external-lock", "--out", str(target), "--execute", sys.executable]
-                if a.regime == "diag":
+                if a.regime in ("owed26cells", "owed26serve"):
+                    # Section G: the red/green GPU cells, then the serving-shape check, under the lock.
+                    tail = (["bash", str(HERE / "owed26/run-cells.sh"), str(target), TESTS26 + "/red-lib-tests",
+                             TESTS26 + "/green-lib-tests"] if a.regime == "owed26cells" else
+                            [sys.executable, str(HERE / "owed26/serve-check.py"), "--binary", BIN26,
+                             "--out", str(target)])
+                    argv = ["flock", "-n", "-E", "75", LOCK, "systemd-run", "--user", "--scope", "-q",
+                            "-p", "CPUQuota=1200%", "-p", f"MemoryMax={a.memory_max}", "-p", "MemorySwapMax=0"] + tail
+                elif a.regime == "diag":
                     # Unscored door-off diagnostic (m1-doorless-diag.py) under the canonical lock.
                     argv = ["flock", "-n", "-E", "75", LOCK, "systemd-run", "--user", "--scope", "-q",
                             "-p", "CPUQuota=1200%", "-p", f"MemoryMax={a.memory_max}", "-p", "MemorySwapMax=0",
@@ -150,7 +161,7 @@ def main():
                 with (out / f"round-{k:02d}.driver-attempt{attempt}.log").open("xb") as dl:
                     rc = subprocess.run(argv, stdout=dl, stderr=subprocess.STDOUT, cwd=ROOT).returncode
                 text = (out / f"round-{k:02d}.driver-attempt{attempt}.log").read_text(errors="replace")
-                lost = (rc == 75 if a.regime in ("gpucell", "diag") else
+                lost = (rc == 75 if a.regime in ("gpucell", "diag", "owed26cells", "owed26serve") else
                         rc != 0 and "Resource temporarily unavailable" in text and not (target / "visits").exists())
                 log.write(json.dumps({"utc": now(), "event": "cell", "round": k, "attempt": attempt, "rc": rc,
                                       "seconds": round(time.monotonic() - t0, 1), "lost_lock_race": lost,
@@ -167,7 +178,7 @@ def main():
                 log.flush()
                 print(f"M1-5090 regime={a.regime} STOPPED at round {k} rc={rc}", flush=True)
                 return 2
-            if a.smoke or a.regime in ("g2", "anonpeak", "gpucell", "diag"):
+            if a.smoke or a.regime in ("g2", "anonpeak", "gpucell", "diag", "owed26cells", "owed26serve"):
                 break
     return 0
 

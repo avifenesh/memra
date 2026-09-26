@@ -588,3 +588,11 @@ every timed visit (runner visits, handoff export and import windows, G2 visits) 
 median and minimum, power draw median and maximum, maximum temperature, and the share of samples
 with each active throttle reason. Recording only, never a gate. Recorded cells get the same
 per-visit summary post hoc from the collector CSV (no reason bits there).
+
+Section F build amendment (2026-09-26, after the OWED 26 fix and before any timed OWED 17 visit):
+the OWED 17 ten-round cell runs on the fix build (`owed26/build/`, the OWED 17 door plus the
+OWED 26 demand wait), not on `owed17/build/`. Reason: on the earlier build every arm's visits carry
+ring-busy fallbacks (smoke: 2,372, 3,646 and 8,287), which the fallback amendment makes unclean, so
+that cell could only come out unscored while measuring a mixed program. It runs only after the
+OWED 26 red/green cells and the serving-shape check pass. Arms, oracle, regime and verdict rule
+are unchanged. Both PRO 6000 sittings use the same fix build.

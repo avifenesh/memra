@@ -25,7 +25,8 @@ def now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
-def steps(rec, first_rounds="1-10", bounded_bytes=None):
+def steps(rec, first_rounds="1-10", bounded_bytes=None, over=None):
+    over = over or {}
     def rounds(regime, out, *extra):
         return [sys.executable, str(ROUNDS), "--regime", regime, "--out", str(rec / out), *extra]
     return [
@@ -35,7 +36,9 @@ def steps(rec, first_rounds="1-10", bounded_bytes=None):
         ("f17-smoke", lambda: rounds("f17", "f17-smoke", "--memory-max", CAP, "--rounds", "1", "--smoke")),
         ("f17-smoke-gate", lambda: [sys.executable, str(HERE / "m1-b3-pool.py"), str(rec / "f17-smoke"),
                                     "--bypass-check", "--fallback-unclean", "--require-correct"]),
-        ("handoff-1g", lambda: rounds("handoff", "handoff-1g", "--memory-max", CAP, "--rounds", "1-10",
+        ("owed26-cells", lambda: rounds("owed26cells", "owed26-cells", "--memory-max", CAP)),
+        ("owed26-serve", lambda: rounds("owed26serve", "owed26-serve", "--memory-max", CAP)),
+        ("handoff-1g", lambda: rounds("handoff", "handoff-1g", "--memory-max", CAP, "--rounds", over.get("handoff-1g", "1-10"),
                                       "--size-bytes", str(1 << 30), "--host-mb", "4096", "--tenant-pct", "100")),
         ("bounded", lambda: rounds("bounded", "bounded", "--memory-max", str(bounded_bytes or bounded_max(rec)), "--rounds", "1-10")),
         ("g2", lambda: rounds("g2", "g2", "--memory-max", CAP)),
@@ -63,10 +66,12 @@ def main():
     ap.add_argument("--capped-rounds", default="1-10",
                     help="resume: the capped step's rounds (a reboot-interrupted round is banked, then rerun)")
     ap.add_argument("--bounded-max", type=int, help="the registered bounded MemoryMax (bounded sizing record)")
+    ap.add_argument("--step-rounds", action="append", default=[],
+                    help="resume a rounds step mid-way, e.g. handoff-1g=3-10")
     a = ap.parse_args()
     rec = Path(a.receipts)
     rec.mkdir(parents=True, exist_ok=True)
-    plan = steps(rec, a.capped_rounds, a.bounded_max)
+    plan = steps(rec, a.capped_rounds, a.bounded_max, dict(x.split("=", 1) for x in a.step_rounds))
     names = [n for n, _ in plan]
     with (rec / "QUEUE.jsonl").open("a") as q:
         for name, argv in plan[names.index(a.start):]:
