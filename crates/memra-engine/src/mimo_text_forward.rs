@@ -46,7 +46,7 @@ pub struct MiMoTextForward<'a> {
     failed: bool,
 }
 
-fn validate_forward_plan(config: &ModelConfig, plan: &ModelPlan) -> Result<(), Fail> {
+pub(crate) fn validate_forward_plan(config: &ModelConfig, plan: &ModelPlan) -> Result<(), Fail> {
     if ModelPlan::compile(config)? != *plan
         || plan.hidden_size as usize != HIDDEN
         || plan.vocab_size as usize != VOCAB
@@ -85,7 +85,10 @@ fn validate_forward_plan(config: &ModelConfig, plan: &ModelPlan) -> Result<(), F
     Ok(())
 }
 
-fn validate_residency(weights: &MiMoTextWeights, engines: [&Engine; 2]) -> Result<(), Fail> {
+pub(crate) fn validate_residency(
+    weights: &MiMoTextWeights,
+    engines: [&Engine; 2],
+) -> Result<(), Fail> {
     let devices = [
         engines[0].stream().context().ordinal(),
         engines[1].stream().context().ordinal(),

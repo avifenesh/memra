@@ -521,6 +521,8 @@ fn main() {
             "cu/mimo_vision_attn.cu",
             // Source-inspection split attention over q8_0 K and NVFP4 V.
             "cu/mimo_mixed_attn.cu",
+            // Model-owned local attention over a fixed 128-token KV ring.
+            "cu/mimo_swa_ring_attn.cu",
             // Source-inspection NVFP4 cache row codec.
             "cu/mimo_kv_nvfp4.cu",
             // Source BF16 speech-table gather for the MiMo audio patch encoder.
