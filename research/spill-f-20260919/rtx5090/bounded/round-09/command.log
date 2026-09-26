@@ -1,0 +1,17 @@
+M1-CACHE {"attempts": 1, "file": "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", "mode": "cold", "pages": 4445566, "resident_pages": 0, "state": "PASS"}
+M1-VISIT r09-1-worker16 exit=0 tok_s=8.54
+M1-CACHE {"attempts": 1, "file": "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", "mode": "cold", "pages": 4445566, "resident_pages": 0, "state": "PASS"}
+M1-VISIT r09-2-mmap-random exit=0 tok_s=1.36
+M1-CACHE {"attempts": 1, "file": "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", "mode": "cold", "pages": 4445566, "resident_pages": 0, "state": "PASS"}
+M1-VISIT r09-3-mmap-normal exit=0 tok_s=3.52
+M1-CACHE {"attempts": 1, "file": "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", "mode": "cold", "pages": 4445566, "resident_pages": 0, "state": "PASS"}
+M1-VISIT r09-4-pread16 exit=0 tok_s=5.31
+M1-CACHE {"attempts": 1, "file": "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", "mode": "cold", "pages": 4445566, "resident_pages": 0, "state": "PASS"}
+M1-VISIT r09-5-worker2 exit=0 tok_s=3.90
+M1-CACHE {"attempts": 1, "file": "Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", "mode": "cold", "pages": 4445566, "resident_pages": 0, "state": "PASS"}
+M1-VISIT r09-6-direct16 exit=0 tok_s=5.77
+M1-SUMMARY {"regime": "cold", "visits": 6, "regime_scored": true, "refused_arms": ["direct16"], "mmap_fallback_visits": {"worker16": 1, "mmap-random": 0, "mmap-normal": 0, "pread16": 0, "worker2": 1, "direct16": 1}}
+M1-VERDICT regime=cold arm=mmap-random vs worker16: insufficient median_ratio=None pairs=0
+M1-VERDICT regime=cold arm=mmap-normal vs worker16: insufficient median_ratio=None pairs=0
+M1-VERDICT regime=cold arm=pread16 vs worker16: insufficient median_ratio=None pairs=0
+M1-VERDICT regime=cold arm=worker2 vs worker16: insufficient median_ratio=None pairs=0

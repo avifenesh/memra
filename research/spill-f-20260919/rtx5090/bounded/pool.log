@@ -1,0 +1,11 @@
+M1-5090-VERDICT arm=mmap-random vs worker16: unscored-regime median_ratio=None pairs=0
+M1-5090-VERDICT arm=mmap-normal vs worker16: unscored-regime median_ratio=None pairs=0
+M1-5090-VERDICT arm=pread16 vs worker16: unscored-regime median_ratio=None pairs=0
+M1-5090-VERDICT arm=worker2 vs worker16: unscored-regime median_ratio=None pairs=0
+M1-5090-VERDICT regime_scored=False contaminated={'worker16': 10, 'mmap-random': 10, 'mmap-normal': 4, 'pread16': 5, 'worker2': 10}
+M1-5090-VERDICT-READGATE(post-hoc) arm=mmap-random vs worker16: unscored-regime median_ratio=None pairs=0
+M1-5090-VERDICT-READGATE(post-hoc) arm=mmap-normal vs worker16: unscored-regime median_ratio=None pairs=0
+M1-5090-VERDICT-READGATE(post-hoc) arm=pread16 vs worker16: unscored-regime median_ratio=None pairs=0
+M1-5090-VERDICT-READGATE(post-hoc) arm=worker2 vs worker16: unscored-regime median_ratio=None pairs=0
+M1-5090-VERDICT-READGATE(post-hoc) regime_scored=False contaminated={'worker16': 10, 'mmap-random': 7, 'mmap-normal': 1, 'pread16': 2, 'worker2': 10}
+rounds=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10] visits=60 refused=['direct16'] gpu_cotenant_unclean=2 visits_with_mmap_fallbacks=29

@@ -50,3 +50,38 @@ Record of the run: round 5's first attempt was interrupted by the requested rebo
 (`capped/interrupted-round-05-reboot`); rounds 5 to 10's second attempt was refused by the
 collector on the stale proof (`capped/refused-round-*-stale-proof`); both are kept, never scored.
 The waits and every blocker are in `capped/waits.jsonl`.
+
+## B3 bounded regime (ten rounds, 60 visits, MemoryMax 7,864,223,232): unscored
+
+Registered verdict with the D and F fallback amendment (`bounded/pool.log`):
+
+```
+M1-5090-VERDICT regime_scored=False contaminated={'worker16': 10, 'mmap-random': 10, 'mmap-normal': 4, 'pread16': 5, 'worker2': 10}
+rounds=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10] visits=60 refused=['direct16'] gpu_cotenant_unclean=2 visits_with_mmap_fallbacks=29
+```
+
+Two registered causes, per arm below. The B3 build (engine source equal to BOX27's, as section D
+requires) predates the OWED 26 fix, so under the bounded page cache every `worker16` visit took
+ring-busy mmap fallbacks (10 to 2,294 per visit) and every `worker2` visit too (1,248 to 14,492);
+`direct16` fell back in 9 visits and is refused. Foreign device traffic on the shared volume
+contaminated 3 to 10 visits per arm. `pread16`, the blocking arm, had zero fallbacks. The residency
+bound held in all 60 visits (below 50% of the artifact's pages at visit end). Per-visit GPU telemetry
+shows no active throttle reason; maximum temperature 83 C.
+
+Descriptive only:
+
+| Arm | Median tok/s | Range | Visits with fallbacks | Foreign share > 2% | Unclean |
+|---|---|---|---|---|---|
+| worker16 | 8.81 | 8.07 to 11.88 | 10 | 4 | 10 |
+| mmap-random | 1.46 | 0.93 to 1.53 | 0 | 10 | 10 |
+| mmap-normal | 4.30 | 2.79 to 4.41 | 0 | 4 | 4 |
+| pread16 | 4.57 | 3.34 to 5.31 | 0 | 5 | 5 |
+| worker2 | 4.02 | 1.47 to 5.23 | 10 | 6 | 10 |
+| direct16 (refused) | 6.30 | 2.07 to 6.51 | 9 | 3 | 3 |
+
+The first bounded cell was killed by the cgroup OOM killer on the runner's whole-file hash
+(`refused-bounded-oom-runner-hash`, fixed before any visit); bounded rounds 1 to 7 held the card
+back to back, rounds 8 to 10 ran with the 300 s card-sharing yield.
+
+Reading: on this rig the B3 comparison cannot be scored with the pre-fix build; the fixed build's
+worker path is what the OWED 17 cell and the PRO sitting measure.

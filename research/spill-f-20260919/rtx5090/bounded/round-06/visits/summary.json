@@ -1,0 +1,55 @@
+{
+ "regime_scored": true,
+ "contaminated_visits": {
+  "worker2": 1,
+  "pread16": 1,
+  "mmap-normal": 1,
+  "mmap-random": 1,
+  "worker16": 1
+ },
+ "arms": {
+  "mmap-random": {
+   "verdict": "insufficient",
+   "n_pairs": 0,
+   "median_ratio": null,
+   "ratios_forward": [],
+   "ratios_reverse": []
+  },
+  "mmap-normal": {
+   "verdict": "insufficient",
+   "n_pairs": 0,
+   "median_ratio": null,
+   "ratios_forward": [],
+   "ratios_reverse": []
+  },
+  "pread16": {
+   "verdict": "insufficient",
+   "n_pairs": 0,
+   "median_ratio": null,
+   "ratios_forward": [],
+   "ratios_reverse": []
+  },
+  "worker2": {
+   "verdict": "insufficient",
+   "n_pairs": 0,
+   "median_ratio": null,
+   "ratios_forward": [],
+   "ratios_reverse": []
+  }
+ },
+ "mmap_fallback_visits": {
+  "worker16": 1,
+  "mmap-random": 0,
+  "mmap-normal": 0,
+  "pread16": 0,
+  "worker2": 1,
+  "direct16": 1
+ },
+ "refused_arms": [
+  "direct16"
+ ],
+ "regime": "cold",
+ "visits": 6,
+ "qualified": false,
+ "identity_sha256": "726436db731aa443cdd186cd41856e36d7d27926259112cfc1570cae2e1f7c52"
+}
