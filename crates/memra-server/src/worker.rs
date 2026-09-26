@@ -15248,24 +15248,31 @@ struct SettleJob {
     id: u64,
 }
 
-/// The exact resume's settle queue, FIFO. A job whose entry is gone (resumed, evicted, purged)
-/// is skipped when its turn comes (DAY44 1.3 cases 1, 4, 5).
+/// The exact resume's settle queue, newest first: the entry parked last is the one whose next
+/// turn is likeliest to come next. A job whose entry is gone (resumed, evicted, purged) is
+/// skipped when its turn comes (DAY44 1.3 cases 1, 4, 5).
 #[derive(Default)]
 struct SettleQueue {
     jobs: VecDeque<SettleJob>,
 }
 
 impl SettleQueue {
+    /// Bounded: a busy worker that never idles keeps only the newest jobs (older entries are the
+    /// likeliest to have been resumed or evicted anyway).
+    const CAP: usize = 64;
     fn push(&mut self, job: SettleJob) {
         if !self.jobs.contains(&job) {
             self.jobs.push_back(job);
+        }
+        while self.jobs.len() > Self::CAP {
+            self.jobs.pop_front();
         }
     }
     fn is_empty(&self) -> bool {
         self.jobs.is_empty()
     }
     fn pop(&mut self) -> Option<SettleJob> {
-        self.jobs.pop_front()
+        self.jobs.pop_back()
     }
     /// A tenant purge drops the tenant's jobs (the purge's own namespace predicate).
     fn purge_tenant(&mut self, tenant: &str) {
@@ -57222,9 +57229,14 @@ mod tests {
         q.push(job(1, "a"));
         q.push(job(1, "a"));
         q.push(job(2, "b"));
-        assert_eq!(q.pop(), Some(job(1, "a")), "FIFO, one job per entry");
-        assert_eq!(q.pop(), Some(job(2, "b")));
+        assert_eq!(q.pop(), Some(job(2, "b")), "newest first");
+        assert_eq!(q.pop(), Some(job(1, "a")), "one job per entry");
         assert!(q.is_empty());
+        for id in 0..100 {
+            q.push(job(id, "c"));
+        }
+        assert_eq!(q.jobs.len(), SettleQueue::CAP);
+        assert_eq!(q.pop(), Some(job(99, "c")), "the newest kept");
     }
 
     /// WP-B day 43 (DAY43 1.3): the budget-clamp door is read once, where the qwen spec arm hands
