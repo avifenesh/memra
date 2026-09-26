@@ -167,6 +167,8 @@ and against its own no-op and the global fixed setting separately
 for code, prose and math. Failure of any domain is a no-go even if
 the pool rises. No exact-loop conversation enters a rate; caps,
 loops and actual K/D/C action counts remain visible.
+The final quality comparisons also include the selected policy's
+same-K fixed oracle, which produces the byte-identical no-op output.
 Report paired final native-rate intervals for the full fresh trio.
 The window-history arm versus last-token arm isolates the longer
 D/C token window. Full fresh versus window-history isolates K's

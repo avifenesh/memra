@@ -97,9 +97,13 @@ def freeze(args):
         ):
             raise ValueError("final prose judge lacks shared selection")
         candidate = selected["selected_policy"]["label"]
+        same_k = (
+            f"fixed-k{by_label[candidate]['k']}-d3-c0"
+        )
         controls = {
             selected["global_fixed"],
             selected["domain_best_fixed_diagnostic"]["prose"],
+            same_k,
         }
         for ablation in (
             LAST_TOKEN, NO_K_PRIOR, FRESH_FULL,

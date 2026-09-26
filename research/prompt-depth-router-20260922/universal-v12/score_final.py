@@ -399,7 +399,13 @@ def score(args):
     domains = {}
     for domain in DOMAINS:
         noops_identical(args.root, domain, noops)
-        controls = {global_fixed, best[domain]}
+        selected_k = selected["selected_policy"][
+            "configured_draft_k"
+        ]
+        controls = {
+            global_fixed, best[domain],
+            f"fixed-k{selected_k}-d3-c0",
+        }
         controls.update(
             label for label in (
                 LAST_TOKEN, NO_K_PRIOR, FRESH_FULL,
