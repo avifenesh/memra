@@ -664,6 +664,12 @@ fn run() -> Result<(), Fail> {
     if resident_text {
         resident_moe = true;
     }
+    let direct_bf16 = match std::env::var("MEMRA_BF16_MMV") {
+        Ok(value) if value == "1" => true,
+        Ok(value) if value == "0" => false,
+        Err(std::env::VarError::NotPresent) => false,
+        _ => return Err("MiMo diagnostic requires MEMRA_BF16_MMV to be 0, 1, or unset".into()),
+    };
     let dir = Path::new(&args[0]);
     let gpu0: usize = args[1].parse()?;
     let gpu1: usize = args[2].parse()?;
@@ -786,8 +792,14 @@ fn run() -> Result<(), Fail> {
     )?;
     writeln!(
         report,
-        "numeric_class\tmemra_block_fp8_q8_1_act_and_mxfp4_pow2_e4m3_moe_act"
+        "numeric_class\t{}",
+        if direct_bf16 {
+            "memra_block_fp8_q8_1_act_mxfp4_pow2_e4m3_moe_act_bf16_direct_f32acc"
+        } else {
+            "memra_block_fp8_q8_1_act_and_mxfp4_pow2_e4m3_moe_act"
+        }
     )?;
+    writeln!(report, "direct_bf16_matvec\t{direct_bf16}")?;
     writeln!(report, "stage_cut_before_layer\t{STAGE_CUT}")?;
     writeln!(report, "stage_transfer\thost_bounce")?;
     writeln!(
