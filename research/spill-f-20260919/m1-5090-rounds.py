@@ -63,6 +63,10 @@ def lock_free():
 
 
 PAUSE = Path("/home/avifenesh/spill-f-5090/PAUSE")
+# Card sharing (coordinator, 2026-09-26): after every cell this driver releases the lock and sits
+# out YIELD_S before its idle check, longer than lane B's 240 s post-boot yield, so other lanes'
+# polls find the lock free. A registered cell stays one continuous hold; only the gaps change.
+YIELD_S = 300
 
 
 def wait_idle(log, label):
@@ -179,6 +183,10 @@ def main():
                 if not lost:
                     break
                 time.sleep(10)
+            log.write(json.dumps({"utc": now(), "event": "yield", "after_round": k, "seconds": YIELD_S,
+                                  "why": "release the shared card between registered cells"}) + "\n")
+            log.flush()
+            time.sleep(YIELD_S)
             if rc != 0:
                 # A cell that failed for any reason other than a lost lock race stops the regime:
                 # the next round must not run on a state nobody has read (resync 2026-09-26).

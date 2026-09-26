@@ -42,10 +42,10 @@ def steps(rec, first_rounds="1-10", bounded_bytes=None, over=None):
         ("f17-spec-mapped", lambda: rounds("spec", "f17-spec-mapped", "--memory-max", CAP, "--arm", "bypass-mapped")),
         ("handoff-1g", lambda: rounds("handoff", "handoff-1g", "--memory-max", CAP, "--rounds", over.get("handoff-1g", "1-10"),
                                       "--size-bytes", str(1 << 30), "--host-mb", "4096", "--tenant-pct", "100")),
-        ("bounded", lambda: rounds("bounded", "bounded", "--memory-max", str(bounded_bytes or bounded_max(rec)), "--rounds", "1-10")),
+        ("bounded", lambda: rounds("bounded", "bounded", "--memory-max", str(bounded_bytes or bounded_max(rec)), "--rounds", over.get("bounded", "1-10"))),
         ("g2", lambda: rounds("g2", "g2", "--memory-max", CAP)),
-        ("f17", lambda: rounds("f17", "f17", "--memory-max", CAP, "--rounds", "1-10")),
-        ("handoff-8g", lambda: rounds("handoff", "handoff-8g", "--memory-max", CAP, "--rounds", "1-10",
+        ("f17", lambda: rounds("f17", "f17", "--memory-max", CAP, "--rounds", over.get("f17", "1-10"))),
+        ("handoff-8g", lambda: rounds("handoff", "handoff-8g", "--memory-max", CAP, "--rounds", over.get("handoff-8g", "1-10"),
                                       "--size-bytes", str(8 << 30), "--host-mb", "12288", "--tenant-pct", "100")),
 
     ]
