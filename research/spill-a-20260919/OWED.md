@@ -183,7 +183,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   `Hashing` job, DAY35 section 8), the verify arm's host digest, and hash 1 until item 2 lands.
 - Acceptance: none registered (a streaming read for write-combined pinned sources in the hash path, the program
   unchanged, bitwise, priced on the 5090 and a no-regression reading on the target card's cached leases).
-- Status: open.
+- Status: **pre-registered** (DAY61 section 1: design W, a streamed read through a cached bounce buffer into the
+  same checksum program).
 
 ### 13. The capture retire seam's `Block` settle holds the owner thread when the capture's copy is queued behind other copy-stream work (found by DAY38; see DAY38 section 7: part of the observed hold is the receipt twin's free, item 2's G'')
 
