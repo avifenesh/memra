@@ -16724,13 +16724,9 @@ impl Dsv4Gpu {
                 sc_rows,
             )?;
         }
+        let mut seg_start = 0usize;
         for i in 0..t {
             let pos = pos0 + i;
-            let slot = if cmp.overlap {
-                ratio + pos % ratio
-            } else {
-                pos % ratio
-            };
             if let Some(pos_dev) = replay_pos {
                 unsafe {
                     for (src, dst) in [
@@ -16790,15 +16786,32 @@ impl Dsv4Gpu {
                 *blocks = (pos + 1) / ratio;
                 continue;
             } else {
-                if !direct {
-                    let src = ck_dev.rows_kv.slice(i * latent..(i + 1) * latent);
-                    let mut dst = pend_kv.slice_mut(slot * latent..(slot + 1) * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("pend kv b"))?;
-                    let src = ck_dev.rows_sc.slice(i * latent..(i + 1) * latent);
-                    let mut dst = pend_score.slice_mut(slot * latent..(slot + 1) * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("pend sc b"))?;
+                // Rows up to the next block boundary go into their slots as one launch, before
+                // the emission that pools them (memra #710 DSpark round: 2 t memcpy nodes were
+                // one host launch each).
+                let boundary = (pos + 1) % ratio == 0;
+                if !direct && (boundary || i + 1 == t) {
+                    unsafe {
+                        ck(
+                            "pend rows to slots",
+                            k::memra_dsv4_cmp_rows_to_slots(
+                                dpm!(*pend_kv, &stream),
+                                dpm!(*pend_score, &stream),
+                                dpf!(ck_dev.rows_kv, &stream),
+                                dpf!(ck_dev.rows_sc, &stream),
+                                seg_start as i32,
+                                (i + 1) as i32,
+                                pos0 as i32,
+                                ratio as i32,
+                                latent as i32,
+                                if cmp.overlap { ratio as i32 } else { 0 },
+                                sp(&stream),
+                            ),
+                        )?;
+                    }
+                    seg_start = i + 1;
                 }
-                if (pos + 1) % ratio != 0 {
+                if !boundary {
                     continue;
                 }
             }
@@ -16942,37 +16955,41 @@ impl Dsv4Gpu {
         }
         let stream = st.gpu.stream();
         let (ratio, latent, overlap) = (ck_dev.ratio, ck_dev.latent, ck_dev.overlap);
-        stream
-            .memcpy_dtod(&ck_dev.kv_snap, pend_kv)
-            .map_err(e("rb kv snap"))?;
-        stream
-            .memcpy_dtod(&ck_dev.sc_snap, pend_score)
-            .map_err(e("rb sc snap"))?;
-        *blocks = ck_dev.n_blocks0;
-        for i in 0..n_commit {
-            let pos = pos0 + i;
-            let slot = if overlap {
-                ratio + pos % ratio
-            } else {
-                pos % ratio
-            };
-            {
-                let src = ck_dev.rows_kv.slice(i * latent..(i + 1) * latent);
-                let mut dst = pend_kv.slice_mut(slot * latent..(slot + 1) * latent);
-                stream.memcpy_dtod(&src, &mut dst).map_err(e("rb row kv"))?;
-                let src = ck_dev.rows_sc.slice(i * latent..(i + 1) * latent);
-                let mut dst = pend_score.slice_mut(slot * latent..(slot + 1) * latent);
-                stream.memcpy_dtod(&src, &mut dst).map_err(e("rb row sc"))?;
-            }
-            if (pos + 1) % ratio != 0 {
-                continue;
-            }
-            if overlap {
-                cmp_shift_halves(&stream, pend_kv, ratio * latent, "rbshift kv")?;
-                cmp_shift_halves(&stream, pend_score, ratio * latent, "rbshift sc")?;
-            }
-            *blocks += 1;
+        let slots = if overlap { 2 * ratio } else { ratio };
+        if ck_dev.kv_snap.len() != slots * latent
+            || ck_dev.sc_snap.len() != slots * latent
+            || pend_kv.len() < slots * latent
+            || pend_score.len() < slots * latent
+            || ck_dev.rows_kv.len() < n_commit * latent
+            || ck_dev.rows_sc.len() < n_commit * latent
+        {
+            return Err("compressor rollback buffer shape mismatch".into());
         }
+        // The snapshot restore, the committed rows' slot writes and the overlap half shifts, in
+        // position order, as one launch (the moves are the memcpy sequence's own).
+        unsafe {
+            ck(
+                "compressor rollback",
+                k::memra_dsv4_cmp_rollback(
+                    dpm!(*pend_kv, &stream),
+                    dpm!(*pend_score, &stream),
+                    dpf!(ck_dev.kv_snap, &stream),
+                    dpf!(ck_dev.sc_snap, &stream),
+                    dpf!(ck_dev.rows_kv, &stream),
+                    dpf!(ck_dev.rows_sc, &stream),
+                    n_commit as i32,
+                    pos0 as i32,
+                    ratio as i32,
+                    latent as i32,
+                    i32::from(overlap),
+                    sp(&stream),
+                ),
+            )?;
+        }
+        *blocks = ck_dev.n_blocks0
+            + (pos0..pos0 + n_commit)
+                .filter(|p| (p + 1) % ratio == 0)
+                .count();
         Ok(())
     }
 }
