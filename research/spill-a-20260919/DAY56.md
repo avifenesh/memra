@@ -81,3 +81,71 @@ No bound moves.
 
 **Verdict, as registered: F2 passes (a) to (c).** Item 23 closes. Items 24 and 25 now read one red each in arm A's
 shape as well (they were arm B's only), which their own items take.
+
+## 3. Addendum, pre-registered (the integ65 review's finding, before any code)
+
+**The hole** (revuto on integ65, #731): F2 isolated the shed tests from `ADMISSION_RESERVATIONS`, but the reservation
+path still adds to the process-global `worker::PENDING_ADMITS` on every successful reservation (`lib.rs` around 2918,
+and the route path around 3017), and `PendingAdmissionGuard`'s drop releases the global through
+`worker::release_pending_admit()`. Four shed tests reserve successfully and now hold no lock
+(`admission_sheds_only_when_..`, `deadline_shed_is_interactive_only_..`, `a_saturated_queue_with_free_http_slots_..`,
+`the_queue_wait_ceiling_admits_under_it_..`), so their reserve or drop can land inside
+`pending_admission_reservation_is_atomic_and_rolls_back_on_drop` (which resets the gauge to 0 and asserts 1, then 0),
+and the darklane and admission-yield readers that expect the gauge at 0 can see a stray increment. The day-56 census
+missed it: it matched the literal `worker::PENDING_ADMITS` in a test body, and `reserve_own` writes it through the path.
+
+**The fix (F2b), the lead's shape.** One `AdmitCounters` pair (the lane counters and the pending-admits gauge) passed
+through `reserve_pending_admit_on` and the route path and kept by the guard, which releases both to the pair it
+reserved on; every production entry passes the globals (`AdmitCounters::GLOBAL`), so production reads and writes
+exactly the counters it did; the committed path is unchanged (the worker releases the global gauge at its pop). The
+shed tests take their own pair (`own_admit_counters()`).
+
+**The census, extended to indirect writers:** every test fn that reserves through a global entry
+(`reserve_pending_admit(`, `reserve_pending_admit_with_ceiling(`, `reserve_interactive_through_contention(`) or through
+a handler (`chat_completions(`, `completions(`, `messages(`, `responses(`, `embeddings_admitted(`, `rerank_admitted(`,
+`chat_completion_admitted(`) holds `drain_lock()`, `admission_counters_guard()` or `global_counter_writer_guard()`;
+every test fn that calls `reserve_own` or `reserve_pending_admit_on` passes counters from `own_admit_counters()`; and
+the production path names `PENDING_ADMITS` only through `AdmitCounters::GLOBAL`. Tests the extended rule finds calling
+a handler without a lock get `drain_lock()` (their handlers may reach a reservation).
+
+**The reproduction and its red arm** (the harness: R3's one-CPU scope with sixteen burners, the group run in one
+process with default threads: the pending test beside the four shed tests, `--exact` each, 200 runs). The red arm is the
+tree before the fix (the shed tests on their own lanes but the global gauge, `aa325f056`'s code): it must fail the
+pending test at least once in 200. The fix: 0 of 200 in the same shape.
+
+**Acceptance.** The red arm reads the race (at least 1 of 200); the fix reads 0 of 200; the census green and its teeth
+(one shed test given the global pair fails it; one reserving test without a lock fails it); server lib, clippy and fmt
+green. On a miss, F2b is reverted in one commit and the shed tests go back under a lock (the order F1 gave them).
+
+### 3a. The red arm as run, and a deterministic cell added (before any F2b code)
+
+- The group in R3's shape on the tree before F2b (`70be30d39`; the pending test beside the four shed tests, one
+  process, 200 runs): **200 of 200 green** (`day56/addendum/red/`). The clause "the red arm reads the race" is **not
+  met** by this harness: the tests reserve and drop inside microseconds, and a scheduler-driven overlap did not land in
+  200 runs. Recorded as read; the hole is in the code whatever the harness shows (the path writes the global gauge).
+- Added, before the fix: `day56_an_isolated_reservation_never_moves_the_global_gauges`, holding
+  `global_counter_writer_guard()`: it records the global lane counters and `PENDING_ADMITS`, reserves through
+  `reserve_own` on its own pair, and asserts that while the guard lives and after it drops the globals read exactly what
+  they did. On the tree before F2b this cell fails at the first read (the gauge one higher); F2b must make it pass. Its
+  run on the old tree is the red arm the rule asks for; the 200-run group repeats on the fix as registered.
+
+### 3b. F2b as built (`b4d6f95c2`), as run
+
+- `AdmitCounters { lanes, pending }` (`AdmitCounters::GLOBAL` names `worker::ADMISSION_RESERVATIONS` and
+  `worker::PENDING_ADMITS`) through `reserve_pending_admit_on` and `reserve_route_admit`, kept by
+  `PendingAdmissionGuard::counters`; the guard's drop releases through `worker::release_pending_admit_on` and
+  `worker::release_admission_reservation_on`; every production entry passes `GLOBAL`. The test helper is
+  `own_admit_counters()` (renamed from `own_lane_counters()`, now a pair).
+- The census, extended: only test fns are judged (helpers through the tests that call them), and calls are matched
+  outside string literals (a census that quotes a call is not a caller). Its new rule found one handler test without a
+  lock, `stop_token_ids_handlers_return_named_400s`, which now takes `drain_lock()`. Teeth, each checked: a shed test on
+  `AdmitCounters::GLOBAL` fails it (`.. reserves on the counters path without its own pair`); the handler test without
+  its lock fails it (`.. reserves through a global entry without a lock`).
+- **The red arm:** the stochastic group read 0 of 200 on the old tree (3a); the deterministic cell on the old tree fails
+  as required: `a live isolated reservation moved a global gauge .. left: (1, [0, 0, 0]) right: (0, [0, 0, 0])`
+  (`addendum/red-cell/`).
+- **The fix:** the cell passes; the group with the cell added, in R3's shape, **200 of 200 green** (`addendum/fix/`).
+  Server lib `934 passed; 0 failed; 25 ignored`; clippy `-D warnings`; fmt; `git diff --check`.
+
+**Verdict:** F2b meets the addendum's acceptance, with its red arm read by the deterministic cell (the stochastic
+harness could not show a microsecond window; recorded in 3a). Item 23 closes again, with the pending gauge isolated.

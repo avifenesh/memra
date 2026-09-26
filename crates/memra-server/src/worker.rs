@@ -2022,7 +2022,13 @@ fn decrement_atomic(counter: &std::sync::atomic::AtomicUsize) {
 /// Release the command-channel portion of an HTTP admission. This is separate from the hard
 /// queue reservation because the latter survives while a request waits in the worker queue.
 pub(crate) fn release_pending_admit() {
-    decrement_atomic(&PENDING_ADMITS);
+    release_pending_admit_on(&PENDING_ADMITS);
+}
+
+/// The same on the gauge a reservation was taken on (WP-A day 56 section 3: a pending-admission guard
+/// releases where it reserved; every production reservation is on `PENDING_ADMITS`).
+pub(crate) fn release_pending_admit_on(gauge: &std::sync::atomic::AtomicUsize) {
+    decrement_atomic(gauge);
 }
 
 /// Release a request's hard admission reservation. This is intentionally saturating because
@@ -20701,6 +20707,61 @@ fn unsupported_prefix_restore(
     )
 }
 
+/// WP-A day 59 (`research/spill-a-20260919/DAY59.md` step 1, OWED item 10, log only): the owner
+/// thread's time in a snapshot's or a restore's device calls, by kind, accumulated on this thread
+/// and read (and reset) by the fanout's on-tick line. Nothing decides on it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct PrefixCopySplit {
+    alloc_ms: f64,
+    allocs: u32,
+    copy_ms: f64,
+    copies: u32,
+    clone_ms: f64,
+    clones: u32,
+    set_ms: f64,
+    sets: u32,
+}
+
+thread_local! {
+    static PREFIX_COPY_SPLIT: std::cell::Cell<PrefixCopySplit> =
+        const { std::cell::Cell::new(PrefixCopySplit { alloc_ms: 0.0, allocs: 0, copy_ms: 0.0, copies: 0, clone_ms: 0.0, clones: 0, set_ms: 0.0, sets: 0 }) };
+}
+
+/// Take the split accumulated on this thread since the last take.
+fn prefix_copy_split_take() -> PrefixCopySplit {
+    PREFIX_COPY_SPLIT.with(|c| c.replace(PrefixCopySplit::default()))
+}
+
+/// Time one device call of `kind` into this thread's split (log only; the call is unchanged).
+fn prefix_copy_timed<T>(kind: u8, f: impl FnOnce() -> T) -> T {
+    let t = Instant::now();
+    let out = f();
+    let ms = t.elapsed().as_secs_f64() * 1e3;
+    PREFIX_COPY_SPLIT.with(|c| {
+        let mut sp = c.get();
+        match kind {
+            0 => {
+                sp.alloc_ms += ms;
+                sp.allocs += 1;
+            }
+            1 => {
+                sp.copy_ms += ms;
+                sp.copies += 1;
+            }
+            2 => {
+                sp.clone_ms += ms;
+                sp.clones += 1;
+            }
+            _ => {
+                sp.set_ms += ms;
+                sp.sets += 1;
+            }
+        }
+        c.set(sp);
+    });
+    out
+}
+
 fn prefix_snapshot(
     engine: &Engine,
     cache: &Cache,
@@ -20787,13 +20848,13 @@ fn prefix_snapshot(
                 }
                 let kb = l.len * l.k_tok_bytes;
                 let vb = l.len * l.v_tok_bytes;
-                let mut k = engine.alloc_u8(kb.max(1))?;
-                let mut v = engine.alloc_u8(vb.max(1))?;
+                let mut k = prefix_copy_timed(0, || engine.alloc_u8(kb.max(1)))?;
+                let mut v = prefix_copy_timed(0, || engine.alloc_u8(vb.max(1)))?;
                 if kb > 0 {
-                    engine.copy_u8_into(&mut k, 0, &l.k, kb)?;
+                    prefix_copy_timed(1, || engine.copy_u8_into(&mut k, 0, &l.k, kb))?;
                 }
                 if vb > 0 {
-                    engine.copy_u8_into(&mut v, 0, &l.v, vb)?;
+                    prefix_copy_timed(1, || engine.copy_u8_into(&mut v, 0, &l.v, vb))?;
                 }
                 bytes += kb + vb;
                 kv.push(Some(PrefixPlane {
@@ -20808,8 +20869,12 @@ fn prefix_snapshot(
         }
         match &cache.recur[il] {
             Some(r) => {
-                conv.push(Some(engine.clone_dtod(&r.conv_state)?));
-                ssm.push(Some(engine.clone_dtod(&r.ssm_state)?));
+                conv.push(Some(prefix_copy_timed(2, || {
+                    engine.clone_dtod(&r.conv_state)
+                })?));
+                ssm.push(Some(prefix_copy_timed(2, || {
+                    engine.clone_dtod(&r.ssm_state)
+                })?));
                 bytes += (r.conv_state.len() + r.ssm_state.len()) * 4;
             }
             None => {
@@ -21114,17 +21179,17 @@ fn prefix_restore_at(
             let kb = restore_len * dst.k_tok_bytes;
             let vb = restore_len * dst.v_tok_bytes;
             if kb > 0 {
-                engine.copy_u8_into(&mut dst.k, 0, &src.k, kb)?;
+                prefix_copy_timed(1, || engine.copy_u8_into(&mut dst.k, 0, &src.k, kb))?;
             }
             if vb > 0 {
-                engine.copy_u8_into(&mut dst.v, 0, &src.v, vb)?;
+                prefix_copy_timed(1, || engine.copy_u8_into(&mut dst.v, 0, &src.v, vb))?;
             }
             dst.len = restore_len;
-            engine.set_i32_one(&mut dst.len_d, restore_len as i32)?;
+            prefix_copy_timed(3, || engine.set_i32_one(&mut dst.len_d, restore_len as i32))?;
         }
         if let (Some(dst), Some(c), Some(s)) = (cache.recur[il].as_mut(), &e.conv[il], &e.ssm[il]) {
-            engine.copy_into(&mut dst.conv_state, 0, c, c.len())?;
-            engine.copy_into(&mut dst.ssm_state, 0, s, s.len())?;
+            prefix_copy_timed(1, || engine.copy_into(&mut dst.conv_state, 0, c, c.len()))?;
+            prefix_copy_timed(1, || engine.copy_into(&mut dst.ssm_state, 0, s, s.len()))?;
         }
         if let (Some(dst), Some(src)) = (cache.latent[il].as_mut(), &e.latent[il]) {
             dst.restore_plane(engine, src, max_ctx)
@@ -34704,6 +34769,9 @@ fn dedup_interactive_prefixes(
             loaded.get(&key.0).map(|l| &l.model),
         );
         let fanout_snapshot_ms = t_snap.elapsed().as_secs_f64() * 1e3;
+        // WP-A day 59 (log only): the snapshot's calls by kind; the take also drops whatever an
+        // earlier caller on this thread left in the split.
+        let snap_split = prefix_copy_split_take();
         {
             let s = &mut active[leader_i];
             s.last_logits = leader_logits;
@@ -34793,6 +34861,7 @@ fn dedup_interactive_prefixes(
         }
 
         let fanout_restores_ms = t_restores.elapsed().as_secs_f64() * 1e3;
+        let restore_split = prefix_copy_split_take();
         let t_insert = Instant::now();
         let pin = px.insert_pinned_demoting(
             &key,
@@ -34809,6 +34878,22 @@ fn dedup_interactive_prefixes(
                  {:.2} ms",
                 participants.len().saturating_sub(1),
                 t_insert.elapsed().as_secs_f64() * 1e3,
+            );
+            let (a, r) = (snap_split, restore_split);
+            eprintln!(
+                "[prefix-dedup] on-tick split: snapshot alloc {:.2} ms over {}, copies {:.2} ms over \
+                 {}, clones {:.2} ms over {}; restores copies {:.2} ms over {}, len sets {:.2} ms \
+                 over {}",
+                a.alloc_ms,
+                a.allocs,
+                a.copy_ms,
+                a.copies,
+                a.clone_ms,
+                a.clones,
+                r.copy_ms,
+                r.copies,
+                r.set_ms,
+                r.sets,
             );
         }
         for &i in &participants {
@@ -49729,6 +49814,77 @@ mod tests {
         assert!(!production.contains("if sp.") && !production.contains("split.leases_ms >"));
         assert!(production.contains("[prefix-host] demote pre-submit split: ticket seq={seq}"));
         assert!(production.contains("[prefix-host] demote helper split: ticket seq={seq}"));
+    }
+
+    /// WP-A day 59 (`DAY59.md` step 1; CPU census): the fanout's owner-time split is log only. The
+    /// snapshot and the restore issue the same device calls in the same order, each only wrapped in
+    /// `prefix_copy_timed`; the split is taken only by the fanout's line and decides nothing.
+    #[test]
+    fn day59_the_fanout_copy_split_is_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let snap = &production[at(production, "fn prefix_snapshot(")..];
+        let snap = &snap[..at(snap, "\n}\n")];
+        // Compare on the source with whitespace and braces removed (rustfmt wraps long closures
+        // in a block).
+        let squash = |x: &str| {
+            x.split_whitespace()
+                .collect::<String>()
+                .replace(['{', '}'], "")
+        };
+        let snap = &squash(snap);
+        let order = [
+            "prefix_copy_timed(0, || engine.alloc_u8(kb.max(1)))",
+            "prefix_copy_timed(0, || engine.alloc_u8(vb.max(1)))",
+            "prefix_copy_timed(1, || engine.copy_u8_into(&mut k, 0, &l.k, kb))",
+            "prefix_copy_timed(1, || engine.copy_u8_into(&mut v, 0, &l.v, vb))",
+            "prefix_copy_timed(2, || engine.clone_dtod(&r.conv_state))",
+            "prefix_copy_timed(2, || engine.clone_dtod(&r.ssm_state))",
+        ];
+        let pos: Vec<usize> = order.iter().map(|n| at(snap, &squash(n))).collect();
+        assert!(
+            pos.windows(2).all(|w| w[0] < w[1]),
+            "the snapshot's calls keep their order"
+        );
+        let restore = &production[at(production, "fn prefix_restore_at(")..];
+        let restore = &restore[..at(restore, "\n}\n")];
+        let restore = &squash(restore);
+        let order = [
+            "prefix_copy_timed(1, || engine.copy_u8_into(&mut dst.k, 0, &src.k, kb))",
+            "prefix_copy_timed(1, || engine.copy_u8_into(&mut dst.v, 0, &src.v, vb))",
+            "prefix_copy_timed(3, || engine.set_i32_one(&mut dst.len_d, restore_len as i32))",
+            "prefix_copy_timed(1, || engine.copy_into(&mut dst.conv_state, 0, c, c.len()))",
+            "prefix_copy_timed(1, || engine.copy_into(&mut dst.ssm_state, 0, s, s.len()))",
+        ];
+        let pos: Vec<usize> = order.iter().map(|n| at(restore, &squash(n))).collect();
+        assert!(
+            pos.windows(2).all(|w| w[0] < w[1]),
+            "the restore's calls keep their order"
+        );
+        assert_eq!(
+            production.matches("prefix_copy_split_take()").count(),
+            3,
+            "the fn and the fanout's two takes"
+        );
+        for f in [
+            "a.alloc",
+            "a.cop",
+            "a.clon",
+            "r.cop",
+            "r.set",
+            "snap_split.",
+            "restore_split.",
+        ] {
+            assert!(
+                !production.contains(&format!("if {f}")),
+                "{f} decides nothing"
+            );
+        }
+        assert!(
+            production.contains("[prefix-dedup] on-tick split: snapshot alloc {:.2} ms over {}")
+        );
     }
 
     /// WP-A day 54 (`DAY54.md` step 1; CPU census): the on-tick lines are log only. Every `OnTick`

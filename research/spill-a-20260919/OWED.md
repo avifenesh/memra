@@ -161,7 +161,8 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   restores 1.19 ms, its insert's 2.26 ms is the evicted entry's demote pre-submit, item 19; the long cell's +896 ms is
   the four members' own suffix primes past the 1024-token cap, recorded as read); the pause park snapshot **closed as
   priced** (0.73 ms); no route refusal on the 27B; the DFlash, GLM-5 and latent publishers not measured here, owed to
-  their artifacts and rigs. Owed: the fanout design, pre-registered (after items 22 and 23, the lead's order).
+  their artifacts and rigs. The fanout design is **pre-registered** (DAY59 section 1: an attribution of the snapshot's
+  and restores' owner time on the 5090, then design B1 (batched copies) or B2 (one pool reservation) by a stated rule).
 
 ### 11. Move 1 item 4: the decision cell (i), both classes, same window
 
@@ -344,8 +345,9 @@ the card is reset.
 - Acceptance: none registered (the writers isolated without serializing them, for example `reserve_pending_admit`'s
   test entry taking its lane counters as a parameter so a writer never touches the process-global ones; the same 400-run
   shape green for the target and its siblings, the suite's time back to A''s).
-- Status: **closed** (DAY56 section 2: F2 `10b9329cc`; the suite's median `finished in` 6.62 s against 6.70 s, N=400;
-  item 21's target and siblings 400 of 400 green, no handler 429; arm B 100 of 100).
+- Status: **closed** (DAY56 section 2: F2 `10b9329cc`, the median 6.62 s against 6.70; section 3, from integ65's review:
+  the pending-admits gauge the path still wrote, now one `AdmitCounters` pair, F2b `b4d6f95c2`; its deterministic red
+  arm `(1, [0, 0, 0])` against `(0, [0, 0, 0])`, 200 of 200 green in R3's shape on the fix).
 
 ### 24. `darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown` times out under starvation (found by DAY55)
 
