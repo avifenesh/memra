@@ -101,6 +101,7 @@ fn check_pattern(
         1 => MiMoMixedAttentionWorkspace::new_grouped(engine, seq)?,
         2 => MiMoMixedAttentionWorkspace::new_deep(engine, seq)?,
         3 => MiMoMixedAttentionWorkspace::new_dp4a(engine, seq)?,
+        4 => MiMoMixedAttentionWorkspace::new_dp4a_native_vscale(engine, seq)?,
         _ => return Err("MiMo gate attention program is unavailable".into()),
     };
     let start = Instant::now();
@@ -151,6 +152,7 @@ fn check_constant(engine: &Engine, seq: usize, program: u8) -> Result<(), Fail> 
         1 => MiMoMixedAttentionWorkspace::new_grouped(engine, seq)?,
         2 => MiMoMixedAttentionWorkspace::new_deep(engine, seq)?,
         3 => MiMoMixedAttentionWorkspace::new_dp4a(engine, seq)?,
+        4 => MiMoMixedAttentionWorkspace::new_dp4a_native_vscale(engine, seq)?,
         _ => return Err("MiMo gate attention program is unavailable".into()),
     };
     let start = Instant::now();
@@ -214,6 +216,45 @@ fn check_codec(engine: &Engine, width: usize) -> Result<(), Fail> {
     Ok(())
 }
 
+fn check_native_scale_grid(engine: &Engine) -> Result<(), Fail> {
+    let query = engine.htod(&vec![0.0f32; HEADS * QK])?;
+    let key = engine.htod_bytes(&vec![0u8; KV_HEADS * (QK / 32) * 34])?;
+    let mut manual = MiMoMixedAttentionWorkspace::new_dp4a(engine, 1)?;
+    let mut native = MiMoMixedAttentionWorkspace::new_dp4a_native_vscale(engine, 1)?;
+    for code in 0..=127u8 {
+        let mut value_bytes = vec![0u8; KV_HEADS * (VALUE / 64) * 36];
+        for head in 0..KV_HEADS {
+            const ROW_BYTES: usize = (VALUE / 64) * 36;
+            value_bytes[head * ROW_BYTES] = code;
+            value_bytes[head * ROW_BYTES + 4] = 1;
+        }
+        let value = engine.htod_bytes(&value_bytes)?;
+        let old = engine.dtoh(&engine.mimo_global_q8_nvfp4_decode(
+            &query,
+            &key,
+            &value,
+            1,
+            &mut manual,
+        )?)?;
+        let new = engine.dtoh(&engine.mimo_global_q8_nvfp4_decode(
+            &query,
+            &key,
+            &value,
+            1,
+            &mut native,
+        )?)?;
+        if old
+            .iter()
+            .zip(&new)
+            .any(|(a, b)| a.to_bits() != b.to_bits())
+        {
+            return Err(format!("MiMo native UE4M3 scale differs at code {code:#04x}").into());
+        }
+    }
+    println!("native_scale_grid\t128\t0\t0");
+    Ok(())
+}
+
 fn check_varied_million(engine: &Engine, program: u8) -> Result<(), Fail> {
     const SEQ: usize = 1_048_576;
     let query: Vec<f32> = (0..HEADS * QK)
@@ -241,17 +282,25 @@ fn check_varied_million(engine: &Engine, program: u8) -> Result<(), Fail> {
     let query_gpu = engine.htod(&query)?;
     let key_gpu = engine.htod_bytes(&key_bytes)?;
     let value_gpu = engine.htod_bytes(&value_bytes)?;
-    let control_program = if program == 3 { 2 } else { 0 };
-    let mut baseline = if control_program == 2 {
-        MiMoMixedAttentionWorkspace::new_deep(engine, SEQ)?
+    let control_program = if program == 4 {
+        3
+    } else if program == 3 {
+        2
     } else {
-        MiMoMixedAttentionWorkspace::new(engine, SEQ)?
+        0
+    };
+    let mut baseline = match control_program {
+        0 => MiMoMixedAttentionWorkspace::new(engine, SEQ)?,
+        2 => MiMoMixedAttentionWorkspace::new_deep(engine, SEQ)?,
+        3 => MiMoMixedAttentionWorkspace::new_dp4a(engine, SEQ)?,
+        _ => return Err("MiMo varied million control program is unavailable".into()),
     };
     let mut candidate = match program {
         0 => MiMoMixedAttentionWorkspace::new(engine, SEQ)?,
         1 => MiMoMixedAttentionWorkspace::new_grouped(engine, SEQ)?,
         2 => MiMoMixedAttentionWorkspace::new_deep(engine, SEQ)?,
         3 => MiMoMixedAttentionWorkspace::new_dp4a(engine, SEQ)?,
+        4 => MiMoMixedAttentionWorkspace::new_dp4a_native_vscale(engine, SEQ)?,
         _ => return Err("MiMo varied million program is unavailable".into()),
     };
     let timed = |workspace: &mut MiMoMixedAttentionWorkspace| -> Result<(Vec<f32>, f64), Fail> {
@@ -275,6 +324,14 @@ fn check_varied_million(engine: &Engine, program: u8) -> Result<(), Fail> {
         .zip(&actual)
         .map(|(a, b)| (a - b).abs())
         .fold(0.0f32, f32::max);
+    if program == 4
+        && reference
+            .iter()
+            .zip(&actual)
+            .any(|(a, b)| a.to_bits() != b.to_bits())
+    {
+        return Err("MiMo native UE4M3 scale changed varied million output bits".into());
+    }
     if max_abs > 0.001 {
         return Err(format!("MiMo varied million candidate max error {max_abs}").into());
     }
@@ -302,7 +359,7 @@ fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if !(2..=6).contains(&args.len()) {
         return Err(
-            "usage: mimo_mixed_attn_gate <pinned_config.json> <gpu_index> [--million] [--million-varied] [--attention-only] [--grouped | --deep | --dp4a]"
+            "usage: mimo_mixed_attn_gate <pinned_config.json> <gpu_index> [--million] [--million-varied] [--attention-only] [--grouped | --deep | --dp4a | --native-vscale]"
                 .into(),
         );
     }
@@ -312,6 +369,7 @@ fn run() -> Result<(), Fail> {
     let mut grouped = false;
     let mut deep = false;
     let mut dp4a = false;
+    let mut native_vscale = false;
     for option in args.iter().skip(2) {
         match option.as_str() {
             "--million" if !million => million = true,
@@ -320,13 +378,16 @@ fn run() -> Result<(), Fail> {
             "--grouped" if !grouped => grouped = true,
             "--deep" if !deep => deep = true,
             "--dp4a" if !dp4a => dp4a = true,
+            "--native-vscale" if !native_vscale => native_vscale = true,
             _ => return Err(format!("unknown or repeated MiMo gate option {option}").into()),
         }
     }
-    if u8::from(grouped) + u8::from(deep) + u8::from(dp4a) > 1 {
+    if u8::from(grouped) + u8::from(deep) + u8::from(dp4a) + u8::from(native_vscale) > 1 {
         return Err("MiMo gate accepts one attention schedule".into());
     }
-    let program = if dp4a {
+    let program = if native_vscale {
+        4
+    } else if dp4a {
         3
     } else if deep {
         2
@@ -349,6 +410,9 @@ fn run() -> Result<(), Fail> {
         for width in [128, 192] {
             check_codec(&engine, width)?;
         }
+    }
+    if native_vscale {
+        check_native_scale_grid(&engine)?;
     }
     for seq in [1, 127, 128, 129, 255, 256, 257, 512] {
         check_pattern(&engine, seq, attention_only, program)?;

@@ -5,6 +5,7 @@
 // This is a source-inspection component, not a serving admission path.
 
 #include <cuda_fp16.h>
+#include <cuda_fp8.h>
 #include <cuda_runtime.h>
 #include <math_constants.h>
 #include <cmath>
@@ -56,7 +57,15 @@ __device__ __forceinline__ float ue4m3_scale(uint8_t code) {
                           ldexpf(1.0f, exp - 8);
 }
 
-__device__ __forceinline__ float nvfp4_value(const uint8_t* row, int dim) {
+__device__ __forceinline__ float ue4m3_scale_native(uint8_t code) {
+    const uint32_t bits = code == 0x7f ? 0u : static_cast<uint32_t>(code);
+    const __nv_fp8_e4m3 value =
+        *reinterpret_cast<const __nv_fp8_e4m3*>(&bits);
+    return static_cast<float>(value) * 0.5f;
+}
+
+template <bool kNativeScale>
+__device__ __forceinline__ float nvfp4_value_t(const uint8_t* row, int dim) {
     const int block = dim / 64;
     const int sub = (dim & 63) / 16;
     const int local = dim & 15;
@@ -69,7 +78,17 @@ __device__ __forceinline__ float nvfp4_value(const uint8_t* row, int dim) {
                        : mag_index == 5 ? 6.0f
                        : mag_index == 6 ? 8.0f
                                         : 12.0f;
-    return (code & 8 ? -mag : mag) * ue4m3_scale(bytes[sub]);
+    float scale;
+    if constexpr (kNativeScale) {
+        scale = ue4m3_scale_native(bytes[sub]);
+    } else {
+        scale = ue4m3_scale(bytes[sub]);
+    }
+    return (code & 8 ? -mag : mag) * scale;
+}
+
+__device__ __forceinline__ float nvfp4_value(const uint8_t* row, int dim) {
+    return nvfp4_value_t<false>(row, dim);
 }
 
 __device__ __forceinline__ float q8_scale(const uint8_t* block) {
@@ -270,7 +289,7 @@ __global__ void mixed_grouped_tile(const float* __restrict__ q,
 // Eight query heads share the staged K/V tile; two CTAs cover the 16 heads
 // that map to one MiMo global KV head. kDp4a changes only the Q operand and
 // score program. V storage, softmax, and split reduction stay identical.
-template <bool kDp4a>
+template <bool kDp4a, bool kNativeScale>
 __global__ void mixed_deep_tile(const float* __restrict__ q,
                                 const uint8_t* __restrict__ k,
                                 const uint8_t* __restrict__ v,
@@ -358,7 +377,7 @@ __global__ void mixed_deep_tile(const float* __restrict__ q,
             const uint8_t* row =
                 v + (static_cast<size_t>(t0 + token) * kKvHeads + kv_head) *
                         kNvfp4RowBytes;
-            value_tile[index] = nvfp4_value(row, dim);
+            value_tile[index] = nvfp4_value_t<kNativeScale>(row, dim);
         }
         __syncthreads();
 
@@ -496,7 +515,7 @@ static int dispatch(
     if (seq <= 0 || seq > kMaxSeq) return 41002;
     if (!q || !k || !v || !output || !scratch1 || !scratch2 ||
         !scratch3 || !stream_v) return 41003;
-    if (program < 0 || program > 3) return 41005;
+    if (program < 0 || program > 4) return 41005;
     const int tile_size =
         program >= 2 ? kDeepSplit : program == 1 ? kGroupedTile : kTile;
     const int tiles = (seq + tile_size - 1) / tile_size;
@@ -525,11 +544,14 @@ static int dispatch(
         const cudaError_t recorded = cudaEventRecord(marks[0], stream);
         if (recorded != cudaSuccess) return fail(recorded);
     }
-    if (program == 3) {
-        mixed_deep_tile<true><<<dim3(kKvHeads, 2, tiles), dim3(32, 8), 0, stream>>>(
+    if (program == 4) {
+        mixed_deep_tile<true, true><<<dim3(kKvHeads, 2, tiles), dim3(32, 8), 0, stream>>>(
+            q, k, v, scratch1, seq, tiles);
+    } else if (program == 3) {
+        mixed_deep_tile<true, false><<<dim3(kKvHeads, 2, tiles), dim3(32, 8), 0, stream>>>(
             q, k, v, scratch1, seq, tiles);
     } else if (program == 2) {
-        mixed_deep_tile<false><<<dim3(kKvHeads, 2, tiles), dim3(32, 8), 0, stream>>>(
+        mixed_deep_tile<false, false><<<dim3(kKvHeads, 2, tiles), dim3(32, 8), 0, stream>>>(
             q, k, v, scratch1, seq, tiles);
     } else if (program == 1) {
         mixed_grouped_tile<<<dim3(kKvHeads, tiles), 1024, 0, stream>>>(
@@ -571,6 +593,7 @@ static int dispatch(
             if (launch != cudaSuccess) return fail(launch);
         }
         std::fprintf(stderr, "mimo_split_stage_ms\t%s\t%.6f\t%.6f\t%.6f\t%.6f\n",
+                     program == 4 ? "deep_dp4a_native_vscale" :
                      program == 3 ? "deep_dp4a" : program == 2 ? "deep" :
                      program == 1 ? "grouped" : "baseline",
                      stage_ms[0], stage_ms[1],
@@ -626,4 +649,16 @@ extern "C" int memra_mimo_global_q8_nvfp4_decode_dp4a(
                     seq, heads, kv_heads, qk_dim, v_dim,
                     scratch1_floats, scratch2_floats, scratch3_floats,
                     stream_v, 3);
+}
+
+extern "C" int memra_mimo_global_q8_nvfp4_decode_dp4a_native_vscale(
+    const float* q, const uint8_t* k, const uint8_t* v,
+    float* output, float* scratch1, float* scratch2, float* scratch3,
+    int seq, int heads, int kv_heads, int qk_dim, int v_dim,
+    size_t scratch1_floats, size_t scratch2_floats,
+    size_t scratch3_floats, void* stream_v) {
+    return dispatch(q, k, v, output, scratch1, scratch2, scratch3,
+                    seq, heads, kv_heads, qk_dim, v_dim,
+                    scratch1_floats, scratch2_floats, scratch3_floats,
+                    stream_v, 4);
 }
