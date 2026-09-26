@@ -31,7 +31,7 @@ local RTX 5090 after the owner's reset), **closed** (receipt or verdict named).
 | 17 | Mapped pinned-host (zero-copy) cold read-once arm: not implemented in the engine | CLAUDE.md "Hy3 spilling" pipeline list; `per-expert-quant/README.md` ladder rung 5 | open (candidate; needs B3 baseline first) |
 | 18 | KV handoff O_DIRECT arm: not implemented (the handoff writes through a 4 MiB `BufWriter` and reads through `BufReader`) | `crates/memra-server/src/worker.rs` `host_handoff_export` / `open_host_handoff_import` | open (candidate; needs B2 baseline first) |
 | 19 | 5090 halves: prove the local rig's spill path, then run the B3 subset there after the owner's reset | CLAUDE.md "Per-hardware arm selection" (both rigs before a default) | proof part **closed** 2026-09-25; the 5090 is healthy again (lead, 2026-09-26): the B3 subset there is the next item |
-| 20 | An above-RAM expert-bank artifact for a storage-bound steady state without a balloon (the pinned 35B bank is 15.6 GB and fits every candidate box's page cache) | `M1-PREREG.md` B3 regime note | open (lead picks the artifact; lead-owned pins) |
+| 20 | An above-RAM expert-bank artifact for a storage-bound steady state without a balloon (the pinned 35B bank is 15.6 GB and fits every candidate box's page cache) | `M1-PREREG.md` B3 regime note | candidates written 2026-09-26 in `ITEM20-CANDIDATES.md` (five options with sizes and what each proves); **owner pick**, then lead-owned pins |
 | 21 | Historical "local NVMe `/scratch`" spill numbers from 2026-07-10 carry no in-repo ancestry proof. Not relabelled here; flagged to the owning lane | `per-expert-quant/evidence/spill-prefetch-cloudbox-20260710.md`, `spill-worker-ab-cloudbox-20260710.md` | open (flag only; not F-owned) |
 
 ## G2: host/device copies
