@@ -262,3 +262,22 @@ stages (from 0.149 on 92.3: one ticket per prefetched expert), `ack` 0.015 (from
 the window did not move. So the CPU-side door work is no longer on the decode's critical path; the 0.19 ms per window
 token the door still loses is somewhere else. DAY60's attribution (`cpu_side`, `top=prefetch_ns`) was read on I10's
 program; it does not describe I15's. The next registration (`DAY72.md`) re-attributes the gap at I15 before any code.
+
+## 6. The RTX 5090's `i15` (queue v9, 2026-09-26 01:32Z to 01:43Z; `rtx5090-day64/i15/`)
+
+Queue v9 ran it after the rig's reboot, with binaries rebuilt from their named commits (`c-local-build.sh`, CUDA 13.1; hashes differ from the pre-reboot builds, trees the same), behind `/tmp/memra-5090.lock` with the card idle before the hold. `run-gen-c60` `809132ce...`, `run-gen-i13` `c719ebf2...`, `run-gen-i14` `bbdfc3db...` (tree `83f03d9b7`),
+`run-gen-i15` `de00c256...` (tree `2243b1fe2`); read with `--admissibility` as section 5 registers. Regime: 56 to 62
+C, SM median 1590 MHz, N=2515. Verbatim:
+
+- `DAY64 I15 CHECKS rig=rtx5090 runs=50 integrity=ok`
+- `DAY64 gen-only decode medians (N=10 each): ref=0.363 i13=0.368 i14=0.367 i15=0.368 i15s=0.371`
+- `DAY64 steady window medians (N=10 each): ref=0.398 i13=0.402 i14=0.400 i15=0.402 i15s=0.403`
+- `DAY64 ADMISSIBILITY rig=rtx5090 ceiling=0.005 max_iqr_gen=0.0058 max_iqr_window=0.0070 failing=['i13:gen_s=0.0058', 'i13:window_s=0.0070', 'i15:window_s=0.0055'] -> inadmissible`
+- `DAY64 VERDICT rig=rtx5090 integrity=ok -> void (inadmissible)`
+
+**Read as registered: inadmissible, so the cell decides nothing on the RTX 5090.** Three arm spreads exceed the
+0.005 s ceiling (I13's gen-only 0.0058 and window 0.0070, I15's window 0.0055). Recorded as they read: the step lines
+`flat` and `flat`, the door (I15) 5.5 ms behind REF gen-only and inside the noise on the window. The split (I15S)
+halves the owner's demand against I13S on this card too (0.141 against 0.260 ms per window token; `stage` 0.084 on
+33.3 stages). The 5090 half of the i15 question stays open. The same cell runs again on this card as a new hold
+(queue v11, `rtx5090-day64-rerun1/`), read by the same clause; the ceiling does not move.

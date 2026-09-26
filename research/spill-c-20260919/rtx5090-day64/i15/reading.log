@@ -1,0 +1,16 @@
+DAY64 host demand sequence sha256 4bdc2610c3534e42 lines=[22077]
+DAY64 I15 CHECKS rig=rtx5090 runs=50 integrity=ok
+DAY64 gen-only decode medians (N=10 each): ref=0.363 i13=0.368 i14=0.367 i15=0.368 i15s=0.371
+DAY64 STEP i14_vs_i13 gen-only decode: pooled=-0.0010 o1=-0.0020 o2=+0.0000 noise=0.0058 -> flat
+DAY64 STEP i15_vs_i14 gen-only decode: pooled=+0.0015 o1=+0.0010 o2=+0.0030 noise=0.0042 -> flat
+DAY64 steady window medians (N=10 each): ref=0.398 i13=0.402 i14=0.400 i15=0.402 i15s=0.403
+DAY64 STEP i14_vs_i13 steady window: pooled=-0.0025 o1=-0.0040 o2=+0.0000 noise=0.0070 -> flat
+DAY64 STEP i15_vs_i14 steady window: pooled=+0.0020 o1=+0.0040 o2=-0.0020 noise=0.0055 -> flat
+DAY64 ADMISSIBILITY rig=rtx5090 ceiling=0.005 max_iqr_gen=0.0058 max_iqr_window=0.0070 failing=['i13:gen_s=0.0058', 'i13:window_s=0.0070', 'i15:window_s=0.0055'] -> inadmissible
+DAY64 DOOR i15_vs_ref gen-only decode: pooled=+0.0055 o1=+0.0050 o2=+0.0070 noise=0.0042 -> loses
+DAY64 DOOR i15_vs_ref steady window: pooled=+0.0035 o1=+0.0050 o2=+0.0010 noise=0.0055 -> matches
+DAY64 SPLIT cache per window token (N=10 runs): admits=471.0 copy_events=3.8 copy_gpu_ns=0.1037ms demand_ns=0.0225ms drain_ns=0.0000ms enqueue_ns=0.0074ms event_errors=0.0 finish_ns=0.0001ms gpu_hits=378.7 gpu_misses=92.3 miss_total_ns=0.0475ms prefetch_hits=88.6 prefetches=88.6 reserve_ns=0.0005ms retire_ns=0.0390ms sync2_ns=0.0000ms validate_ns=0.0337ms wait_ns=0.0000ms
+DAY64 SPLIT owner per window token (N=10 runs): host_hits=92.3 host_misses=0.0 inner_demand_ns=0.1407ms pread_ns=0.0000ms reads=0.0 trace_ns=0.0220ms
+DAY64 SPLIT fill per window token (N=10 runs): fill_admitted=0.0 fill_dropped=0.0 fill_errors=0.0 fill_ns=0.0010ms fill_read_errors=0.0 fill_reads=0.0 fill_refused=0.0
+DAY64 SPLIT bank per window token (N=10 runs): ack_ns=0.0143ms ack_release_ns=0.0058ms alloc_ns=0.0000ms collect_ns=0.0005ms host_use_ns=0.0015ms publish_ns=0.0214ms publish_output_ns=0.0028ms publish_policy_ns=0.0164ms retire_ns=0.0163ms retire_only_ns=0.0004ms stage_cache_ns=0.0515ms stage_charge_ns=0.0182ms stage_lookup_ns=0.0037ms stage_ns=0.0836ms stages=33.3 step_ns=0.0000ms steps=0.0 verified=0.0 verify_ns=0.0000ms
+DAY64 VERDICT rig=rtx5090 integrity=ok -> void (inadmissible)

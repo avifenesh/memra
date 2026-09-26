@@ -85,3 +85,31 @@ host with one RTX PRO 6000 Blackwell Workstation Edition (the class of BOX12, BO
 section 3a, plus `nsys` in the CUDA 13 toolkit, which the cell records or reads `nsys=none`). Receipts land in
 `/root/spill-receipts/c-day72/`. Expected: one build about 5 minutes, the cell about 20 (40 timed runs, 4 profiled
 runs and their exports).
+
+## 2. The RTX 5090 (queue v10, 2026-09-26 01:43Z to 02:08Z; `rtx5090-day72/gap15/`)
+
+Queue v10 ran the cell after queue v9, on `run-gen-i15` `de00c256...` (tree `2243b1fe2`, rebuilt after the rig's
+reboot by `c-local-build.sh`, CUDA 13.1), behind `/tmp/memra-5090.lock` with the card idle before the hold; Nsight
+Systems 2025.5.2 from the CUDA 13.1 toolkit. The four reports and exports are kept by hash (`profiles.sha256`); the
+reader's window rows are in `ev/p-*.window.tsv`. Regime: 56 to 68 C, SM median 1590 MHz, N=2043. Verbatim
+(`reading.log`):
+
+- `DAY72 ADMISSIBILITY rig=rtx5090 ceiling=0.005 max_iqr_gen=0.0090 max_iqr_window=0.0062 failing=['on:gen_s=0.0090', 'on:window_s=0.0062', 'onc:gen_s=0.0065'] -> inadmissible`
+- `DAY60 GAP CHECKS rig=rtx5090 runs=40 integrity=ok`
+- `DAY60 R1 window_gap_ms_per_token on_minus_ref pooled=+0.109 o1=+0.219 o2=+0.094 | medians ref=0.402 refc=0.400 on=0.406 onc=0.404 (N=10 each)`
+- `DAY60 R4 window wall_gap=+0.109 cpu_gap=+0.356 residual=-0.246 top=prefetch_ns (+0.378) -> cpu_side`
+- `DAY72 B door_minus_ref per window token (ms, medians of two): gpu_busy=-0.1117 gpu_idle=+0.1586 kernel_sum=-0.1113 h2d_busy=-0.0091 h2d_exposed=-0.0049 h2d_count=+0.0000 h2d_mb=+0.0000`
+- `DAY72 B3 kernels differing most (door minus ref, ms per window token): qmatvec_expert_q8=-0.0274, moe_gate_up_silu8_q8=-0.0157, qmatvec_q8_0_mmvq_fused2=-0.0128, quantize_q8_1=-0.0080, fa_decode_f32=-0.0072`
+- `DAY72 B rule: half of Part A's window_gap=+0.0545 ms per token`
+- `DAY72 GAP15 VERDICT rig=rtx5090 integrity=ok admissible=no partA=cpu_side partB=gpu_stall`
+
+**Read as registered: `admissible=no`, so Part A decides nothing on this card,** and Part B's threshold is half of that
+inadmissible gap, so its `gpu_stall` is recorded as it reads and decides nothing either. The ceiling does not move; the
+cell runs again on this card as a new hold (queue v11, `rtx5090-day72-rerun1/`).
+
+**What the profiled runs show beside it, deciding nothing.** Under the profiler (411 to 413 ms windows against about
+400 unprofiled) the door and REF launch the same kernels (1866.6 to 1867.2 per window token) and the same copies (94.3
+host-to-device copies and 45.57 MB per window token in every run). The door's GPU is busy 0.11 ms per window token
+less than REF's (its expert kernels run slightly shorter) and idle 0.16 ms more: the GPU waits on something between
+kernels in the door's decode that it does not wait on in REF's, with no extra copy time exposed. That is the kind of
+reading the target card's Part B is registered to decide.

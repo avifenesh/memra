@@ -197,3 +197,19 @@ reading. The owner side of the door now spends 0.216 ms per window token on 92.3
 the retire side (0.036), the governor's charge (0.031), `publish` (0.022) and the catalog loop (0.015); on the cache
 side, retiring leases costs 0.075 ms per window token (0.8 us per lease, each a proxy `finish`). The RTX 5090's cell
 waits on its reset (queue v7). The next improvement is registered from this split in `DAY64.md`, before its code.
+
+## 5. The RTX 5090 (queue v9, 2026-09-26 01:24Z to 01:32Z; `rtx5090-day63/i13/`)
+
+Queue v9 ran it after the rig's reboot, with binaries rebuilt from their named commits (`c-local-build.sh`, CUDA 13.1; hashes differ from the pre-reboot builds, trees the same), behind `/tmp/memra-5090.lock` with the card idle before the hold. `run-gen-c60` `809132ce...`, `run-gen-i12` `285adc69...`, `run-gen-i13` `c719ebf2...` (tree `c9379c051`).
+Regime: 56 to 63 C, SM median 1590 MHz, N=1942. Verbatim:
+
+- `DAY63 I13 CHECKS rig=rtx5090 runs=40 integrity=ok`
+- `DAY63 gen-only decode medians (N=10 each): ref=0.363 i12=0.369 i13=0.367 i13s=0.370`
+- `DAY63 STEP i13_vs_i12 gen-only decode: pooled=-0.0025 o1=-0.0010 o2=-0.0030 noise=0.0035 -> flat`
+- `DAY63 STEP i13_vs_i12 steady window: pooled=+0.0000 o1=+0.0000 o2=+0.0010 noise=0.0053 -> flat`
+- `DAY63 DOOR i13_vs_ref gen-only decode: pooled=+0.0040 o1=+0.0050 o2=+0.0040 noise=0.0035 -> loses`
+- `DAY63 VERDICT rig=rtx5090 integrity=ok i13=flat door=i13 vs_ref=loses (window: i13=flat vs_ref=matches)`
+
+**Read as registered: I13 `flat` on the RTX 5090; it stays.** The door (I13) loses to REF gen-only by 4 ms over 32
+tokens and matches it on the window. The split (I13S) reads the owner's demand at 0.260 ms per window token and the
+bank's `stage` at 0.175 on 92.3 stages.

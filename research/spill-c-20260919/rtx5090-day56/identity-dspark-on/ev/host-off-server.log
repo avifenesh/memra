@@ -1,0 +1,63 @@
+[server] build: memra-0.138.0-0415869fea39 (id: source-tree, git: 1b130f1ef9f1)
+[env-audit] warning: 1 MEMRA_* name(s) in the environment that nothing in this build reads and docs/FLAGS.md does not list: MEMRA_HOSTGATE_CACHE_MB. Left alone: launchers and gate scripts own names outside the engine's families.
+[server] starting; models config = [("gate", "/home/avifenesh/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /home/avifenesh/ai-ml/models/q38-gguf/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "gate": 65 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[worker] gate: DSPARK SPEC route armed (drafter attached (/data/ai-ml/models/q38-dflash2); greedy+sampled [T>0 rejection verify, sampled penalties included; greedy penalties verified by penalised argmax (MEMRA_DSPARK_GREEDY_PENALTY=1)]/unconstrained/text-only; greedy LOW-wave admission + HIGH demotion, sampled solo admission; MTP spec DISABLED for this model — refuse-on-ambiguity; MEMRA_DSPARK_SPEC unset = off)
+[dspark] gate: DFlash2 draft head FULL target vocab (external_mtp_d2t_ignored=false; set MEMRA_FRSPEC_TRIM=<ranks.txt> to trim)
+[kv-host-contracts] MEMRA_KV_HOST_CONTRACTS=1 with no host tier on this boot (MEMRA_KV_HOST_MB=0): nothing to route, no program identity built
+[prefix-cache] on: budget 268MB (268435456 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": dspark owns the spec program: spec coefficient = plain (no MTP scratch term); the draft plane is charged per session, 169MB at a 30k cap (ring on: constant above two windows)
+[admission] "gate": plain 29696 B/token, spec 29696 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="gate" route=dspark supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[dspark-vg] serve pool ENGAGED (vt_cap=8)
+[topk-shards] engaged: rows=7 cols=248320 k=16 shards=16 (MEMRA_TOPK_SHARDS=1)
+[fa-pool] grow #0 dev=0 o_len 0 -> 3194880 ml_len 0 -> 12480 (retired kept, zero=false)
+[dflash-kv-ring] compact keep_from=2064 kept=2056 phys_rows=4120
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1811939328,"still_owned_bytes":19560811392,"pool_reserved_bytes":19662897152,"pool_cached_bytes":102085760,"driver_free_bytes":4788387840,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1728MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=dspark transient floor 1608MB (static was 1536MB; measured 1608MB; probe kv charge 119MB, draft-state 0MB, drafted 68 accepted 46; [dev0 peak-mapped 20480MB rest-mapped 18752MB charged 119MB -> 1608MB]; 5.5s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18109
+[meter] admit id=cmpl-e6ae898f3389c73fc99ab983226bc19a tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +9MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=201 path=spec = 29696 B/token x ctx + 43MB prefill-workspace + 0MB fixed = 49MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=89 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=89 burst=19/42 cum=19/42=0.452
+[prefix-cache] insert (dspark-boundary): 89 tokens, 163.2MB (resident 163.2MB / 268MB, model gate)
+[dspark-acc] ctx=121 burst=14/14 cum=33/56=0.589
+[meter] admit id=cmpl-118a57b81506f95b3b06ce2e7c178810 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +8MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=198 path=spec = 29696 B/token x ctx + 41MB prefill-workspace + 0MB fixed = 47MB
+[worker] dspark-reuse MISS: 1 parked, best text overlap 0B                              of 449B prompt; serving COLD (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=86 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=86 burst=23/40 cum=23/40=0.575
+[prefix-cache] insert (dspark-boundary): 86 tokens, 163.0MB (resident 326.2MB / 268MB, model gate)
+[prefix-cache] evict (LRU): 89 tokens, 163.2MB (model gate)
+[dspark-acc] ctx=119 burst=14/16 cum=37/56=0.661
+[meter] admit id=cmpl-59d72e3bab090291f4d989223824d139 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +9MB (DFlash draft plane at this cap)
+[admission] request cost: model="gate" ctx=201 path=spec = 29696 B/token x ctx + 43MB prefill-workspace + 0MB fixed = 49MB
+[worker] dspark-reuse MISS: 2 parked, best text overlap 445B                              of 445B prompt; serving COLD (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=89 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[dspark-acc] ctx=89 burst=19/42 cum=19/42=0.452
+[prefix-cache] insert (dspark-boundary): 89 tokens, 163.2MB (resident 326.2MB / 268MB, model gate)
+[prefix-cache] evict (LRU): 86 tokens, 163.0MB (model gate)
+[dspark-acc] ctx=121 burst=14/14 cum=33/56=0.589
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

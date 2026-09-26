@@ -110,7 +110,7 @@ BOX15's machine and machine `b` did, this one did not.
   about 33.4 GB for the door against 22 to 33 GB for REF.
 - R4: this container exposes no `/proc/buddyinfo` (no `B` rows); the reader printed `normal_free_order9plus=None`
   where `not read` is meant. R4 decides nothing; the printing is recorded, not changed after the reading.
-- R5: the door's two traced runs make 57,556 more `futex` calls and 35,062 more `pread64` calls than REF's (the host
+- R5: the door's two traced runs make 57,556 more `futex` calls and 35,062 more `pread64` calls than REF's (likely the host
   fill's reads and its workers' waits), 11,194 fewer `sched_yield`, and no system-call family that a compaction or a
   remapping would need (`madvise`, `munmap`, `mbind`, `move_pages` are not among the ten).
 

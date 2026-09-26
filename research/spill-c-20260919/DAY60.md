@@ -109,3 +109,18 @@ prefetch_ns`, +0.607), within it the owner demand (`pf_demand_ns` +0.464, the ho
 prefetch). The CPU side exceeds the wall gap because part of the CPU time overlaps GPU work already queued. The
 hypothesis of section 0 is the reading. The improvement it points to is `DAY61.md`'s I11, measured in the same sitting
 (`DAY61.md` section 3).
+
+## 3. The RTX 5090 (queue v9, 2026-09-26 01:09Z to 01:16Z; `rtx5090-day60/gap/`)
+
+Queue v9 ran it after the rig's reboot, with binaries rebuilt from their named commits (`c-local-build.sh`, CUDA 13.1; hashes differ from the pre-reboot builds, trees the same), behind `/tmp/memra-5090.lock` with the card idle before the hold. `run-gen-c60` `809132ce...` (tree `da649107c`). Regime: 57 to 68 C, SM median 1590 MHz, N=1738. Verbatim:
+
+- `DAY60 GAP CHECKS rig=rtx5090 runs=40 integrity=ok`
+- `DAY60 R1 window_gap_ms_per_token on_minus_ref pooled=+0.172 o1=+0.188 o2=+0.188 | medians ref=0.399 refc=0.399 on=0.404 onc=0.405 (N=10 each)`
+- `DAY60 R2 instrument_ms_per_token refc_minus_ref=+0.000 onc_minus_on=+0.016 bound=0.017 -> within_bound`
+- `DAY60 R4 window wall_gap=+0.172 cpu_gap=+0.794 residual=-0.622 top=prefetch_ns (+0.707) -> cpu_side`
+- `DAY60 GAP rig=rtx5090 integrity=ok window: wall_gap=+0.172 cpu_gap=+0.794 top=prefetch_ns cpu_side; gen: wall_gap=+0.234 cpu_gap=+1.629 top=prefetch_ns cpu_side`
+
+**Read as registered: `cpu_side`, `top=prefetch_ns`, the instrument `within_bound`,** the same attribution as the
+target card: the door's CPU brackets exceed REF's by 0.794 ms per window token against a 0.172 wall gap, most of it the
+prefetch path (`pf_demand_ns` +0.542). The wall gap is smaller than on the target card (0.17 against 0.44 ms per
+window token): more of the door's CPU work overlaps GPU work on this card.
