@@ -4272,6 +4272,10 @@ on its 5090 half; R2 (item 13) is refuted and reverted on the target card, R1 se
   600% quota. The GPU battery was not rerun for this merge: #740 changes only the DSv4 two-card serving path, which no
   cell of the single-card 9B and 27B battery reaches, and the battery ran green on the tree just before it (the
   `integ67-pro-main752/` run on `e6f969234`).
+- And again to `e3a8402cb` (#763, a DSv4 lane watchdog in `dsv4_serve.rs` only); merged in clean. With main moving
+  every few minutes on DSv4-only changes, this last merge is gated by the PR's CI on the merge head (build, clippy, server
+  and engine tests, portable suites, gates) and the lead's quick censuses (check-flags, docs registry, `git diff --check`,
+  fmt all rc=0), not a fourth battery; nothing in #763 is reachable from the spill battery's cells.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
