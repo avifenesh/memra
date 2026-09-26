@@ -3,7 +3,7 @@
 
 use memra_engine::Engine;
 use memra_gguf::config::{HfConfig, ModelConfig};
-use memra_gguf::model_plan::{AttentionPlan, FullAttentionPlan, ModelPlan};
+use memra_gguf::model_plan::{AttentionPlan, ModelPlan};
 
 type Fail = Box<dyn std::error::Error>;
 
@@ -60,12 +60,16 @@ fn cpu_decode(
 
 fn check(
     engine: &Engine,
-    plan: &FullAttentionPlan,
+    plan: &AttentionPlan,
     seq: usize,
     window: usize,
     label: &str,
 ) -> Result<(), Fail> {
-    let kv_heads = plan.kv_heads as usize;
+    let kv_heads = match plan {
+        AttentionPlan::Full(full) => full.kv_heads as usize,
+        AttentionPlan::SlidingWindow { attention, .. } => attention.kv_heads as usize,
+        _ => return Err("MiMo gate requires full or sliding attention".into()),
+    };
     let query: Vec<f32> = (0..HEADS * QK)
         .map(|index| ((index * 13 % 29) as f32 - 14.0) / 32.0)
         .collect();
@@ -97,7 +101,6 @@ fn check(
         sink_gpu.as_ref(),
         seq,
         plan,
-        window,
     )?)?;
     if actual.len() != expected.len() || actual.iter().any(|value| !value.is_finite()) {
         return Err(format!("{label} seq={seq}: non-finite or wrong-size GPU output").into());
@@ -125,14 +128,12 @@ fn run() -> Result<(), Fail> {
         "/../memra-gguf/src/model_packs/mimo_v2/fixtures/config.json"
     ))));
     let plan = ModelPlan::compile(&config)?;
-    let AttentionPlan::Full(full) = &plan.layers[0].attention else {
+    let full = &plan.layers[0].attention;
+    let AttentionPlan::Full(_) = full else {
         return Err("pinned layer 0 is not full attention".into());
     };
-    let AttentionPlan::SlidingWindow {
-        attention: sliding,
-        window,
-    } = &plan.layers[1].attention
-    else {
+    let sliding = &plan.layers[1].attention;
+    let AttentionPlan::SlidingWindow { window, .. } = sliding else {
         return Err("pinned layer 1 is not sliding attention".into());
     };
     if *window != 128 {

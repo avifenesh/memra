@@ -5,7 +5,7 @@ use core::ffi::c_void;
 
 use cudarc::driver::{CudaSlice, DevicePtr, DevicePtrMut};
 use memra_gguf::model_plan::{
-    AttentionScale, FullAttentionPlan, TensorPresence, ValueNorm, ValueProjection,
+    AttentionPlan, AttentionScale, TensorPresence, ValueNorm, ValueProjection,
 };
 
 use crate::Engine;
@@ -38,10 +38,14 @@ unsafe extern "C" {
 }
 
 fn validate_plan(
-    plan: &FullAttentionPlan,
-    window: usize,
+    attention: &AttentionPlan,
     has_sink: bool,
-) -> Result<usize, &'static str> {
+) -> Result<(usize, usize), &'static str> {
+    let (plan, window) = match attention {
+        AttentionPlan::Full(plan) => (plan, 0),
+        AttentionPlan::SlidingWindow { attention, window } => (attention, *window as usize),
+        _ => return Err("MiMo component requires full or sliding attention"),
+    };
     let math = plan
         .mimo_math
         .ok_or("MiMo attention plan has no family math")?;
@@ -58,8 +62,8 @@ fn validate_plan(
         return Err("MiMo attention plan differs from pinned source geometry");
     }
     match (plan.kv_heads, window, math.sink, has_sink) {
-        (4, 0, TensorPresence::Absent, false) => Ok(4),
-        (8, 128, TensorPresence::Required, true) => Ok(8),
+        (4, 0, TensorPresence::Absent, false) => Ok((4, 0)),
+        (8, 128, TensorPresence::Required, true) => Ok((8, 128)),
         _ => Err("MiMo attention window, KV heads, and sink do not match"),
     }
 }
@@ -76,13 +80,12 @@ impl Engine {
         value: &CudaSlice<f32>,
         sink: Option<&CudaSlice<f32>>,
         seq: usize,
-        plan: &FullAttentionPlan,
-        window: usize,
+        attention: &AttentionPlan,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         if !(1..=4096).contains(&seq) {
             return Err("MiMo attention component accepts 1..=4096 tokens".into());
         }
-        let kv_heads = validate_plan(plan, window, sink.is_some())?;
+        let (kv_heads, window) = validate_plan(attention, sink.is_some())?;
         if query.len() != 64 * 192
             || key.len() != seq * kv_heads * 192
             || value.len() != seq * kv_heads * 128
@@ -132,7 +135,7 @@ impl Engine {
 mod tests {
     use super::*;
     use memra_gguf::config::{HfConfig, ModelConfig};
-    use memra_gguf::model_plan::{AttentionPlan, ModelPlan};
+    use memra_gguf::model_plan::ModelPlan;
 
     const HEADS: usize = 64;
     const QK_DIM: usize = 192;
@@ -145,22 +148,23 @@ mod tests {
             "/../memra-gguf/src/model_packs/mimo_v2/fixtures/config.json"
         ))));
         let plan = ModelPlan::compile(&config).unwrap();
-        let AttentionPlan::Full(full) = &plan.layers[0].attention else {
+        let full = &plan.layers[0].attention;
+        let AttentionPlan::Full(_) = full else {
             panic!("layer 0 must be full");
         };
-        assert_eq!(validate_plan(full, 0, false), Ok(4));
-        assert!(validate_plan(full, 128, false).is_err());
-        assert!(validate_plan(full, 0, true).is_err());
-        let AttentionPlan::SlidingWindow {
-            attention: sliding,
-            window,
-        } = &plan.layers[1].attention
-        else {
+        assert_eq!(validate_plan(full, false), Ok((4, 0)));
+        assert!(validate_plan(full, true).is_err());
+        let sliding = &plan.layers[1].attention;
+        let AttentionPlan::SlidingWindow { .. } = sliding else {
             panic!("layer 1 must be sliding");
         };
-        assert_eq!(validate_plan(sliding, *window as usize, true), Ok(8));
-        assert!(validate_plan(sliding, *window as usize, false).is_err());
-        assert!(validate_plan(sliding, 0, true).is_err());
+        assert_eq!(validate_plan(sliding, true), Ok((8, 128)));
+        assert!(validate_plan(sliding, false).is_err());
+        let mut wrong_window = sliding.clone();
+        if let AttentionPlan::SlidingWindow { window, .. } = &mut wrong_window {
+            *window = 0;
+        }
+        assert!(validate_plan(&wrong_window, true).is_err());
     }
 
     // CPU contract oracle for future device comparisons. These tests check the
