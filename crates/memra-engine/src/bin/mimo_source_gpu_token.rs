@@ -162,13 +162,74 @@ fn checked_attention(plan: &LayerPlan) -> Result<(&FullAttentionPlan, bool), Fai
     Ok((attention, global))
 }
 
+struct KvState {
+    key: CudaSlice<f32>,
+    value: CudaSlice<f32>,
+    tokens: usize,
+}
+
+fn append_kv(
+    engine: &Engine,
+    slot: &mut Option<KvState>,
+    position: usize,
+    key: CudaSlice<f32>,
+    value: CudaSlice<f32>,
+    kv_heads: usize,
+) -> Result<usize, Fail> {
+    let key_width = kv_heads * QK;
+    let value_width = kv_heads * VALUE;
+    let device = engine.stream().context().ordinal();
+    if position > 1
+        || key.len() != key_width
+        || value.len() != value_width
+        || key.ordinal() != device
+        || value.ordinal() != device
+    {
+        return Err("MiMo two-token KV append geometry changed".into());
+    }
+    if position == 0 {
+        if slot.is_some() {
+            return Err("MiMo KV slot already holds a prior token".into());
+        }
+        *slot = Some(KvState {
+            key,
+            value,
+            tokens: 1,
+        });
+        return Ok(0);
+    }
+    let prior = slot.take().ok_or("MiMo continuation has no cached KV")?;
+    if prior.tokens != position
+        || prior.key.len() != position * key_width
+        || prior.value.len() != position * value_width
+        || prior.key.ordinal() != device
+        || prior.value.ordinal() != device
+    {
+        return Err("MiMo continuation KV position or shape differs".into());
+    }
+    let mut keys = engine.uninit((position + 1) * key_width)?;
+    let mut values = engine.uninit((position + 1) * value_width)?;
+    engine.dtod_copy_into(&prior.key, &mut keys, 0)?;
+    engine.dtod_copy_into(&key, &mut keys, position * key_width)?;
+    engine.dtod_copy_into(&prior.value, &mut values, 0)?;
+    engine.dtod_copy_into(&value, &mut values, position * value_width)?;
+    *slot = Some(KvState {
+        key: keys,
+        value: values,
+        tokens: position + 1,
+    });
+    Ok(position)
+}
+
 fn attention_token(
     engine: &Engine,
     model: &StModel,
     source: &SafetensorsSource,
     plan: &LayerPlan,
     hidden: &CudaSlice<f32>,
-) -> Result<CudaSlice<f32>, Fail> {
+    position: usize,
+    kv_slot: &mut Option<KvState>,
+) -> Result<(CudaSlice<f32>, usize), Fail> {
     let layer = plan.index as usize;
     let (attention, global) = checked_attention(plan)?;
     let kv_heads = attention.kv_heads as usize;
@@ -207,10 +268,10 @@ fn attention_token(
         attention,
     )?;
     drop((projections, norm));
-    let position = engine.htod_i32(&[0])?;
+    let position_gpu = engine.htod_i32(&[position as i32])?;
     engine.rope_neox(
         &mut qkv.query,
-        &position,
+        &position_gpu,
         QK,
         64,
         64,
@@ -220,7 +281,7 @@ fn attention_token(
     )?;
     engine.rope_neox(
         &mut qkv.key,
-        &position,
+        &position_gpu,
         QK,
         64,
         kv_heads,
@@ -237,15 +298,17 @@ fn attention_token(
     } else {
         None
     };
+    let cached_before = append_kv(engine, kv_slot, position, qkv.key, qkv.value, kv_heads)?;
+    let cache = kv_slot.as_ref().ok_or("MiMo KV append lost its state")?;
     let context = engine.mimo_sink_decode(
         &qkv.query,
-        &qkv.key,
-        &qkv.value,
+        &cache.key,
+        &cache.value,
         sink.as_ref(),
-        1,
+        position + 1,
         &plan.attention,
     )?;
-    drop((qkv, sink));
+    drop((qkv.query, sink));
     let output = bf16_matrix(
         engine,
         model,
@@ -253,7 +316,7 @@ fn attention_token(
         HIDDEN,
         64 * VALUE,
     )?;
-    engine.matmul(&output, &context, 1)
+    Ok((engine.matmul(&output, &context, 1)?, cached_before))
 }
 
 fn native_fp8_matrix(
@@ -347,12 +410,16 @@ fn validate_plan(plan: &ModelPlan) -> Result<(), Fail> {
 
 fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() != 5 {
-        return Err(
-            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv>"
-                .into(),
-        );
-    }
+    let continue_one = match args.len() {
+        5 => false,
+        6 if args[5] == "--continue-one" => true,
+        _ => {
+            return Err(
+                "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one]"
+                    .into(),
+            );
+        }
+    };
     let dir = Path::new(&args[0]);
     let gpu0: usize = args[1].parse()?;
     let gpu1: usize = args[2].parse()?;
@@ -416,11 +483,15 @@ fn run() -> Result<(), Fail> {
             return Err(format!("{name}: native block-FP8 geometry changed").into());
         }
     }
-    let initial = embedding_row(&model, token)?;
+    embedding_row(&model, token)?;
     let engines = [Engine::new(gpu0)?, Engine::new(gpu1)?];
-    engines[0].gpu.ctx.bind_to_thread()?;
-    let mut hidden = engines[0].htod(&initial)?;
-    let mut report = String::from("format\tmemra-mimo-source-gpu-token-v1\n");
+    let mut kv: Vec<Option<KvState>> = std::iter::repeat_with(|| None).take(LAYERS).collect();
+    let turns = if continue_one { 2 } else { 1 };
+    let mut report = if continue_one {
+        String::from("format\tmemra-mimo-source-gpu-token-v2\n")
+    } else {
+        String::from("format\tmemra-mimo-source-gpu-token-v1\n")
+    };
     writeln!(report, "model\tXiaomiMiMo/MiMo-V2.6-Flash-RL@{REVISION}")?;
     writeln!(report, "payload_verification\texternal_hf_verify_required")?;
     writeln!(report, "config_sha256\t{CONFIG_SHA256}")?;
@@ -435,80 +506,122 @@ fn run() -> Result<(), Fail> {
     writeln!(report, "stage_cut_before_layer\t{STAGE_CUT}")?;
     writeln!(report, "stage_transfer\thost_bounce")?;
     writeln!(report, "weight_residency\tlayer_streamed")?;
-    writeln!(report, "kv_sequence_length\t1")?;
+    writeln!(report, "kv_format\tf32_contiguous_component")?;
+    writeln!(report, "kv_append\tdevice_copy_of_prior_plus_current")?;
+    writeln!(report, "kv_sequence_length\t{turns}")?;
     writeln!(report, "gpu0_ordinal\t{gpu0}")?;
     writeln!(report, "gpu1_ordinal\t{gpu1}")?;
     writeln!(report, "token_id\t{token}")?;
-    for (index, layer) in plan.layers.iter().enumerate() {
-        let stage = usize::from(index >= STAGE_CUT);
-        if index == STAGE_CUT {
-            let values = engines[0].dtoh(&hidden)?;
-            if values.len() != HIDDEN || values.iter().any(|value| !value.is_finite()) {
-                return Err("MiMo stage transfer carried invalid hidden values".into());
-            }
-            engines[1].gpu.ctx.bind_to_thread()?;
-            hidden = engines[1].htod(&values)?;
+    writeln!(report, "generated_continuation\t{continue_one}")?;
+    let mut current_token = token;
+    let mut last_logits: Option<Vec<f32>> = None;
+    let mut last_argmax: Option<usize> = None;
+    for turn in 0..turns {
+        if turn > 0
+            && kv
+                .iter()
+                .any(|slot| slot.as_ref().is_none_or(|cached| cached.tokens != turn))
+        {
+            return Err("MiMo continuation did not retain every layer's native KV".into());
         }
-        let engine = &engines[stage];
-        engine.gpu.ctx.bind_to_thread()?;
-        let before = Instant::now();
-        let attention = attention_token(engine, &model, &source, layer, &hidden)?;
-        let mut after_attention = engine.uninit(HIDDEN)?;
-        engine.add(&hidden, &attention, &mut after_attention, HIDDEN)?;
-        drop((hidden, attention));
-        let post_norm = normalized(
-            engine,
+        engines[0].gpu.ctx.bind_to_thread()?;
+        let initial = embedding_row(&model, current_token)?;
+        let mut hidden = engines[0].htod(&initial)?;
+        writeln!(report, "processed_token\t{turn}\t{current_token}")?;
+        for (index, layer) in plan.layers.iter().enumerate() {
+            let stage = usize::from(index >= STAGE_CUT);
+            if index == STAGE_CUT {
+                let values = engines[0].dtoh(&hidden)?;
+                if values.len() != HIDDEN || values.iter().any(|value| !value.is_finite()) {
+                    return Err("MiMo stage transfer carried invalid hidden values".into());
+                }
+                engines[1].gpu.ctx.bind_to_thread()?;
+                hidden = engines[1].htod(&values)?;
+            }
+            let engine = &engines[stage];
+            engine.gpu.ctx.bind_to_thread()?;
+            let before = Instant::now();
+            let (attention, cached_before) = attention_token(
+                engine,
+                &model,
+                &source,
+                layer,
+                &hidden,
+                turn,
+                &mut kv[index],
+            )?;
+            writeln!(report, "kv_reuse\t{turn}\t{index}\t{cached_before}\t1")?;
+            let mut after_attention = engine.uninit(HIDDEN)?;
+            engine.add(&hidden, &attention, &mut after_attention, HIDDEN)?;
+            drop((hidden, attention));
+            let post_norm = normalized(
+                engine,
+                &model,
+                &after_attention,
+                &format!("model.layers.{index}.post_attention_layernorm.weight"),
+                &layer.pre_mlp_norm,
+            )?;
+            let mlp = match &layer.mlp {
+                MlpPlan::Dense(dense) if index == 0 => {
+                    dense_mlp_token(engine, &source, &post_norm, dense)?
+                }
+                MlpPlan::Moe(moe) if index > 0 => {
+                    let result = source_moe_token(engine, &model, index, &post_norm, &config, moe)?;
+                    writeln!(
+                        report,
+                        "selected_experts\t{turn}\t{index}\t{:?}",
+                        result.selected
+                    )?;
+                    writeln!(
+                        report,
+                        "routing_weights\t{turn}\t{index}\t{:?}",
+                        result.weights
+                    )?;
+                    result.output
+                }
+                _ => return Err(format!("layer {index}: unsupported MiMo MLP plan").into()),
+            };
+            let mut after_mlp = engine.uninit(HIDDEN)?;
+            engine.add(&after_attention, &mlp, &mut after_mlp, HIDDEN)?;
+            hidden = after_mlp;
+            let observed = engine.dtoh(&hidden)?;
+            if observed.len() != HIDDEN || observed.iter().any(|value| !value.is_finite()) {
+                return Err(format!("turn {turn} layer {index}: non-finite hidden row").into());
+            }
+            writeln!(
+                report,
+                "layer_ms\t{turn}\t{index}\t{stage}\t{:.3}",
+                before.elapsed().as_secs_f64() * 1000.0
+            )?;
+            eprintln!("MiMo GPU turn {turn} layer {index} stage {stage} complete");
+        }
+        let last = &engines[1];
+        let final_norm = normalized(
+            last,
             &model,
-            &after_attention,
-            &format!("model.layers.{index}.post_attention_layernorm.weight"),
-            &layer.pre_mlp_norm,
+            &hidden,
+            "model.norm.weight",
+            &plan.output_norm,
         )?;
-        let mlp = match &layer.mlp {
-            MlpPlan::Dense(dense) if index == 0 => {
-                dense_mlp_token(engine, &source, &post_norm, dense)?
-            }
-            MlpPlan::Moe(moe) if index > 0 => {
-                let result = source_moe_token(engine, &model, index, &post_norm, &config, moe)?;
-                writeln!(report, "selected_experts\t{index}\t{:?}", result.selected)?;
-                writeln!(report, "routing_weights\t{index}\t{:?}", result.weights)?;
-                result.output
-            }
-            _ => return Err(format!("layer {index}: unsupported MiMo MLP plan").into()),
-        };
-        let mut after_mlp = engine.uninit(HIDDEN)?;
-        engine.add(&after_attention, &mlp, &mut after_mlp, HIDDEN)?;
-        hidden = after_mlp;
-        let observed = engine.dtoh(&hidden)?;
-        if observed.len() != HIDDEN || observed.iter().any(|value| !value.is_finite()) {
-            return Err(format!("layer {index}: non-finite hidden row").into());
+        let head = bf16_matrix(last, &model, "lm_head.weight", VOCAB, HIDDEN)?;
+        let logits_gpu = last.matmul(&head, &final_norm, 1)?;
+        let logits = last.dtoh(&logits_gpu)?;
+        if logits.len() != VOCAB || logits.iter().any(|value| !value.is_finite()) {
+            return Err("MiMo GPU output logits are non-finite or wrong width".into());
         }
-        writeln!(
-            report,
-            "layer_ms\t{index}\t{stage}\t{:.3}",
-            before.elapsed().as_secs_f64() * 1000.0
-        )?;
-        eprintln!("MiMo GPU layer {index} stage {stage} complete");
-    }
-    let last = &engines[1];
-    let final_norm = normalized(
-        last,
-        &model,
-        &hidden,
-        "model.norm.weight",
-        &plan.output_norm,
-    )?;
-    let head = bf16_matrix(last, &model, "lm_head.weight", VOCAB, HIDDEN)?;
-    let logits_gpu = last.matmul(&head, &final_norm, 1)?;
-    let logits = last.dtoh(&logits_gpu)?;
-    if logits.len() != VOCAB || logits.iter().any(|value| !value.is_finite()) {
-        return Err("MiMo GPU output logits are non-finite or wrong width".into());
-    }
-    let mut argmax = 0usize;
-    for index in 1..VOCAB {
-        if logits[index].total_cmp(&logits[argmax]).is_gt() {
-            argmax = index;
+        let mut argmax = 0usize;
+        for index in 1..VOCAB {
+            if logits[index].total_cmp(&logits[argmax]).is_gt() {
+                argmax = index;
+            }
         }
+        writeln!(report, "argmax_turn\t{turn}\t{argmax}")?;
+        current_token = argmax;
+        last_argmax = Some(argmax);
+        last_logits = Some(logits);
     }
+    let logits = last_logits.ok_or("MiMo token runner produced no logit row")?;
+    let argmax = last_argmax.ok_or("MiMo token runner produced no argmax")?;
     writeln!(report, "vocab\t{VOCAB}")?;
     writeln!(report, "argmax\t{argmax}")?;
     writeln!(report, "wall_s\t{:.3}", started.elapsed().as_secs_f64())?;
