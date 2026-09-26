@@ -1,0 +1,73 @@
+## 2.verify_batch: 148 instances, wall 27.493 ms, kernel-sum per device dev0 37.884 ms, dev1 38.764 ms
+   dev1   7.532 ms   492.3/inst  void dsv4_dense_fast_fp8_kernel<
+   dev0   7.500 ms   492.3/inst  void dsv4_dense_fast_fp8_kernel<
+   dev0   7.283 ms   127.3/inst  void moe_kq_mrow_stream_kernel<
+   dev1   7.209 ms   127.3/inst  void moe_kq_mrow_stream_kernel<
+   dev1   3.063 ms   169.0/inst  void dsv4_dense_fast_dots_kernel<
+   dev0   2.259 ms   167.0/inst  void dsv4_dense_fast_dots_kernel<
+   dev1   2.185 ms    43.0/inst  dsv4_combine_rows_m_kernel
+   dev1   2.169 ms    43.0/inst  memra_tp_ar_1stage_kernel
+   dev0   2.157 ms    43.0/inst  dsv4_combine_rows_m_kernel
+   dev0   2.140 ms    43.0/inst  memra_tp_ar_1stage_kernel
+   dev0   1.681 ms    86.0/inst  memra_tp_ar_gather_rows_f32_kernel
+   dev1   1.484 ms    86.0/inst  memra_tp_ar_gather_rows_f32_kernel
+   dev0   1.329 ms   123.4/inst  dsv4_topk_idx_numeric_kernel
+   dev1   1.327 ms   123.4/inst  dsv4_topk_idx_numeric_kernel
+   dev1   1.133 ms   150.0/inst  dsv4_rope_kernel
+   dev0   1.127 ms   150.0/inst  dsv4_rope_kernel
+   dev0   1.043 ms   123.4/inst  dsv4_indexer_score_f32acc_kernel
+   dev1   1.034 ms   123.4/inst  dsv4_indexer_score_f32acc_kernel
+   dev1   1.001 ms    43.0/inst  dsv4_sink_softout_st_f32acc_kernel
+   dev0   1.001 ms    43.0/inst  dsv4_sink_softout_st_f32acc_kernel
+   dev1   0.938 ms   929.5/inst  memcpy kind 8
+   dev0   0.886 ms   929.5/inst  memcpy kind 8
+   dev1   0.861 ms    86.0/inst  void dsv4_hc_finish_f32_fixed_order_kernel<
+   dev0   0.859 ms    86.0/inst  void dsv4_hc_finish_f32_fixed_order_kernel<
+## 1d.drafter_blocks: 148 instances, wall 5.614 ms, kernel-sum per device dev0 1.626 ms, dev1 5.931 ms
+   dev1   1.184 ms    76.7/inst  dsv4_fp4_gemm_kernel
+   dev0   1.136 ms    73.3/inst  dsv4_fp4_gemm_kernel
+   dev1   0.931 ms     9.0/inst  dsv4_rope_kernel
+   dev1   0.905 ms     3.0/inst  dsv4_sink_attn_kernel
+   dev1   0.645 ms    45.0/inst  void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_b
+   dev1   0.523 ms     3.0/inst  memra_tp_ar_1stage_kernel
+   dev1   0.449 ms     9.0/inst  dsv4_dots_f32_kernel
+   dev1   0.431 ms     6.0/inst  dsv4_rowsq_scale_kernel
+   dev1   0.187 ms    28.6/inst  dsv4_swiglu_kernel
+   dev0   0.173 ms    24.4/inst  dsv4_swiglu_kernel
+   dev1   0.140 ms    12.0/inst  dsv4_rmsnorm_kernel
+   dev1   0.102 ms    25.6/inst  dsv4_scatter_add_kernel
+   dev0   0.097 ms    24.4/inst  dsv4_scatter_add_kernel
+   dev1   0.079 ms    39.0/inst  void cublasLt::splitKreduce_kernel<
+   dev1   0.073 ms    28.6/inst  dsv4_act_quant_fp8_kernel
+   dev0   0.064 ms     3.0/inst  memra_tp_ar_1stage_kernel
+   dev0   0.064 ms    24.4/inst  dsv4_act_quant_fp8_kernel
+   dev1   0.062 ms    51.2/inst  dsv4_gather_rows_u8_kernel
+   dev0   0.059 ms    48.9/inst  dsv4_gather_rows_u8_kernel
+   dev1   0.050 ms    24.0/inst  dsv4_place_cols_kernel
+   dev1   0.047 ms   103.7/inst  memcpy kind 1
+   dev1   0.042 ms    42.0/inst  dsv4_cvt_bf16_kernel
+   dev0   0.034 ms    73.3/inst  memcpy kind 1
+   dev1   0.026 ms    24.0/inst  dsv4_take_cols_kernel
+## 3.commit_rollback: 148 instances, wall 2.449 ms, kernel-sum per device dev0 0.476 ms, dev1 0.491 ms
+   dev1   0.426 ms   357.8/inst  memcpy kind 8
+   dev0   0.411 ms   357.8/inst  memcpy kind 8
+   dev1   0.066 ms    43.0/inst  dsv4_scatter_rows_kernel
+   dev0   0.064 ms    43.0/inst  dsv4_scatter_rows_kernel
+   dev0   0.001 ms     1.0/inst  memcpy kind 1
+   dev1   0.000 ms     1.0/inst  memcpy kind 1
+## 1i.markov_chain: 148 instances, wall 2.725 ms, kernel-sum per device dev1 1.861 ms
+   dev1   1.733 ms    10.0/inst  dsv4_dots_f32_kernel
+   dev1   0.077 ms     5.0/inst  dsv4_argmax_kernel
+   dev1   0.029 ms     5.0/inst  dsv4_add_inplace_kernel
+   dev1   0.017 ms    15.0/inst  memcpy kind 8
+   dev1   0.005 ms    10.0/inst  memcpy kind 2
+## 4.ring_writes: 148 instances, wall 0.428 ms, kernel-sum per device dev1 0.360 ms
+   dev1   0.129 ms     3.4/inst  void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_b
+   dev1   0.083 ms    13.8/inst  dsv4_rmsnorm_kernel
+   dev1   0.052 ms    10.3/inst  std::enable_if<!T7, void>::type internal::gemvx::kernel<int,
+   dev1   0.039 ms    10.3/inst  dsv4_rope_kernel
+   dev1   0.017 ms    10.3/inst  dsv4_act_quant_kernel
+   dev1   0.015 ms    13.8/inst  memcpy kind 8
+   dev1   0.014 ms    13.8/inst  dsv4_cvt_bf16_kernel
+   dev1   0.007 ms     3.4/inst  void cublasLt::splitKreduce_kernel<
+   dev1   0.005 ms    10.3/inst  memcpy kind 1
