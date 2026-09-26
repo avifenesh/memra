@@ -1,0 +1,212 @@
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2080197, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 1 passed=False problems=['prompts exhausted before the host tier reached the size', 'a probe missed the restored prefix (cached_tokens 0)', 'a probe missed the restored prefix (cached_tokens 0)', 'a probe missed the restored prefix (cached_tokens 0)', 'a probe missed the restored prefix (cached_tokens 0)']
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2080197, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 2 passed=False problems=['prompts exhausted before the host tier reached the size', 'a probe missed the restored prefix (cached_tokens 0)', 'a probe missed the restored prefix (cached_tokens 0)', 'a probe missed the restored prefix (cached_tokens 0)', 'a probe missed the restored prefix (cached_tokens 0)']
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2080197, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 3 passed=False problems=['prompts exhausted before the host tier reached the size', 'a probe missed the restored prefix (cached_tokens 0)', 'a probe missed the restored prefix (cached_tokens 0)', 'a probe missed the restored prefix (cached_tokens 0)', 'a probe missed the restored prefix (cached_tokens 0)']
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2080197, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 4 passed=False problems=['prompts exhausted before the host tier reached the size', 'a probe missed the restored prefix (cached_tokens 0)', 'a probe missed the restored prefix (cached_tokens 0)', 'a probe missed the restored prefix (cached_tokens 0)', 'a probe missed the restored prefix (cached_tokens 0)']
+M1-CACHE {"attempts": 1, "file": "handoff.bin", "mode": "cold", "pages": 2080197, "resident_pages": 0, "state": "PASS"}
+M1-B2-CYCLE 5 passed=False problems=['prompts exhausted before the host tier reached the size', 'a probe missed the restored prefix (cached_tokens 0)', 'a probe missed the restored prefix (cached_tokens 0)', 'a probe missed the restored prefix (cached_tokens 0)', 'a probe missed the restored prefix (cached_tokens 0)']
+M1-B2-SUMMARY {"cycles": 5, "passed": 0, "size_bytes": 8589934592, "median_export_ms": null, "median_fsync_ms": null, "median_import_s": null, "n": 0, "qualified": false}
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "python3",
+    "research/spill-f-20260919/m1-handoff-driver.py",
+    "run",
+    "--gate",
+    "/scratch/spill-f/bin/kv-handoff-gate",
+    "--server",
+    "/scratch/spill-f/bin/memra-server",
+    "--artifact",
+    "/scratch/spill-f/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+    "--prompts",
+    "/scratch/spill-f/b2-prompts.jsonl",
+    "--proof",
+    "/root/f-private/m1-proof.json",
+    "--scratch",
+    "/scratch/spill-f/b2",
+    "--out",
+    "/root/spill-receipts/f-box27/b2-8g/visits",
+    "--size-bytes",
+    "8589934592",
+    "--rig",
+    "pro-single",
+    "--lock-fd",
+    "3"
+  ],
+  "exit_code": 3,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "failed",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 407527759873163,
+  "ended_monotonic_ns": 408017204177694,
+  "started_utc": "2026-09-25T23:26:49.082949+00:00",
+  "ended_utc": "2026-09-25T23:34:58.527254+00:00",
+  "elapsed_seconds": 489.444304531,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": {
+    "class": "nvme-local-direct",
+    "nvme_proven": true,
+    "nvme_name_hint": false,
+    "label": "M1 proof: physical local NVMe (nvme-local-direct); not measured spill speed",
+    "allow_unproven_storage": false,
+    "root": "/scratch/spill-f",
+    "commands": [
+      {
+        "command": [
+          "findmnt",
+          "-J",
+          "-T",
+          "/scratch/spill-f"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-findmnt.log",
+          "bytes": 260,
+          "sha256": "a78a7aff744771d0a0b292844a2908e8dc3d38bf959fdcb3f7f4265e94dde138"
+        }
+      },
+      {
+        "command": [
+          "lsblk",
+          "-J",
+          "-o",
+          "NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-lsblk.log",
+          "bytes": 4174,
+          "sha256": "2289aa6d5b1944536abc239309cb48358e3c170a8752677e2ccea800442bef64"
+        }
+      },
+      {
+        "command": [
+          "findmnt",
+          "-n",
+          "-o",
+          "SOURCE",
+          "-T",
+          "/scratch/spill-f"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-source.log",
+          "bytes": 42,
+          "sha256": "0c45cc2bb3ee8c12068aa3404b5f748ddb35dae115994d2cfdbece44721d0cb6"
+        }
+      },
+      {
+        "command": [
+          "lsblk",
+          "-s",
+          "-r",
+          "-n",
+          "-o",
+          "KNAME",
+          "/dev/nvme0n1p3"
+        ],
+        "exit_code": 32,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-ancestry.log",
+          "bytes": 42,
+          "sha256": "b67470269669175458deed3ea5edc911c509b799a5fa2fcefff20fe54d29b718"
+        }
+      }
+    ],
+    "qualification": false,
+    "m1_proof": {
+      "receipt": {
+        "path": "STORAGE-PROOF.json",
+        "bytes": 3710,
+        "sha256": "6e08ea9a5f468273f14b9192a1aa4afff2897af76ad1e051d8b78002e2c000f9"
+      },
+      "tool_sha256": "d59851b624339e16d2290b21b94567a593645266eb0e5dd83d4490decbb78864",
+      "identity": {
+        "device": 66307,
+        "filesystem_id": 66307,
+        "mount_id": 577
+      },
+      "proof_utc": "2026-09-25T16:41:09.179488+00:00"
+    }
+  },
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 2371,
+    "sha256": "d4cfffb7347f038d9442914a8c6625221f103b449779ea8d1b956dfda9e1d340"
+  },
+  "failure_quote": "died, cause unknown \u2014 repro needed",
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 213161,
+      "sha256": "eff2f1b330ca92b2001329f7353770c5ae923d90ca08384916c383ee503ff282"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "failure": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.failure.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 183,
+    "sha256": "4d7e2356010c1337744420fcfff186ae76675a0c6d9f886fa04e2b6e18a1bcc8"
+  }
+}

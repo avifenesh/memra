@@ -1,0 +1,59 @@
+    Checking memra-gguf v0.138.0 (/Users/avifen/.codex/worktrees/b6ce/memra/crates/memra-gguf)
+error: unused import: `std::os::fd::AsRawFd`
+  --> crates/memra-gguf/src/source.rs:20:5
+   |
+20 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `-D unused-imports` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(unused_imports)]`
+
+error: could not compile `memra-gguf` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: the `Err`-variant returned from this closure is very large
+   --> crates/memra-gguf/src/model_plan/semantics_tests.rs:44:20
+    |
+ 44 |           let bind = |config| {
+    |  ____________________^
+ 45 | |             for_config(config)
+ 46 | |                 .unwrap()
+ 47 | |                 .compile_tensor_contract(config, &plan, census.dialect, ContractOptions::default())
+ 48 | |                 .and_then(|contract| contract.bind(&entries))
+ 49 | |         };
+    | |_________^
+    |
+   ::: crates/memra-gguf/src/tensor_contract.rs:396:5
+    |
+396 | /     QuantLayoutMismatch {
+397 | |         id: TensorId,
+398 | |         name: String,
+399 | |         expected: QuantConstraint,
+400 | |         actual: StorageLayout,
+401 | |     },
+    | |_____- the largest variant contains at least 137 bytes
+    |
+    = help: try reducing the size of `tensor_contract::TensorContractError`, for example by boxing large elements or replacing it with `Box<tensor_contract::TensorContractError>`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#result_large_err
+    = note: `-D clippy::result-large-err` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::result_large_err)]`
+
+error: the `Err`-variant returned from this closure is very large
+   --> crates/memra-gguf/src/model_plan/semantics_tests.rs:48:27
+    |
+ 48 |                   .and_then(|contract| contract.bind(&entries))
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+   ::: crates/memra-gguf/src/tensor_contract.rs:396:5
+    |
+396 | /     QuantLayoutMismatch {
+397 | |         id: TensorId,
+398 | |         name: String,
+399 | |         expected: QuantConstraint,
+400 | |         actual: StorageLayout,
+401 | |     },
+    | |_____- the largest variant contains at least 137 bytes
+    |
+    = help: try reducing the size of `tensor_contract::TensorContractError`, for example by boxing large elements or replacing it with `Box<tensor_contract::TensorContractError>`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#result_large_err
+
+error: could not compile `memra-gguf` (lib test) due to 3 previous errors

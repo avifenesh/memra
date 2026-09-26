@@ -54,6 +54,15 @@ unsafe extern "C" {
         counter: *mut u64,
         stream: *mut c_void,
     ) -> i32;
+    pub fn memra_dsv4_replay_rows_input(
+        input: *const u64,
+        token: *mut i32,
+        pos: *mut i32,
+        slot: *mut i32,
+        rows: i32,
+        window: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_replay_tick(counter: *mut u64, stream: *mut c_void) -> i32;
     pub fn memra_dsv4_replay_capture_begin(graph: *mut *mut c_void, stream: *mut c_void) -> i32;
     pub fn memra_dsv4_replay_capture_end(
@@ -149,15 +158,18 @@ unsafe extern "C" {
         present: f32,
         stream: *mut c_void,
     ) -> i32;
-    pub fn memra_dsv4_sink_scores_tiled_init() -> i32;
-    pub fn memra_dsv4_sink_attn_dec_mq_f32acc_tiled(
+    /// Nonzero when the two-launch sink attention program takes (heads, hd).
+    pub fn memra_dsv4_sink_attn_st_admits(heads: i32, hd: i32) -> i32;
+    /// Two-launch sink attention (memra #683), bit-identical to the three-kernel f32acc
+    /// program. `q` is [nq][heads][hd]. `replay_pos` null: `slots` live slots per query;
+    /// set: graph replay (nq 1), `slots` is slots_max and the live count comes from the
+    /// device position exactly as `memra_dsv4_replay_attention` derives it.
+    pub fn memra_dsv4_sink_attn_st_f32acc(
         q: *const f32,
         kv: *const f32,
         idxs: *const i32,
         sink: *const f32,
         scores: *mut f32,
-        evals: *mut f32,
-        den: *mut f32,
         o: *mut f32,
         nq: i32,
         heads: i32,
@@ -165,6 +177,10 @@ unsafe extern "C" {
         slots: i32,
         idx_stride: i32,
         scale: f32,
+        replay_pos: *const i32,
+        replay_win: i32,
+        replay_ratio: i32,
+        replay_topk: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_grouped_routes_partition(
@@ -188,6 +204,32 @@ unsafe extern "C" {
         topk: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// `memra_dsv4_grouped_routes_partition` that also ORs `fault_bit` into `*fault` when an
+    /// id is outside the global table (memra #679).
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_grouped_routes_partition_fault(
+        selected: *const i32,
+        weights: *const f32,
+        scale2: *const f32,
+        counts: *mut i32,
+        offsets: *mut i32,
+        expert_ids: *mut i32,
+        pairs: *mut i32,
+        tokens: *mut i32,
+        route_weights: *mut f32,
+        macro1: *mut f32,
+        macro2: *mut f32,
+        macro3: *mut f32,
+        status: *mut i32,
+        slots: i32,
+        global_experts: i32,
+        first: i32,
+        expert_count: i32,
+        topk: i32,
+        fault: *mut i32,
+        fault_bit: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_grouped_routes(
         selected: *const i32,
         weights: *const f32,
@@ -205,6 +247,28 @@ unsafe extern "C" {
         slots: i32,
         experts: i32,
         topk: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_grouped_routes` that also ORs `fault_bit` into `*fault` when a slot is lost.
+    pub fn memra_dsv4_grouped_routes_fault(
+        selected: *const i32,
+        weights: *const f32,
+        scale2: *const f32,
+        counts: *mut i32,
+        offsets: *mut i32,
+        expert_ids: *mut i32,
+        pairs: *mut i32,
+        tokens: *mut i32,
+        route_weights: *mut f32,
+        macro1: *mut f32,
+        macro2: *mut f32,
+        macro3: *mut f32,
+        status: *mut i32,
+        slots: i32,
+        experts: i32,
+        topk: i32,
+        fault: *mut i32,
+        fault_bit: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_fp4_gemm_sel_ep(
@@ -358,6 +422,63 @@ unsafe extern "C" {
         cols: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// `memra_dsv4_fp8_gather_half` that also ORs `fault_bit` into `*fault` on a lossy row.
+    /// A non-null `live` (the route's device live-row count) makes rows at or past it inert.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_fp8_gather_half_fault(
+        codes: *const c_void,
+        scales: *const f32,
+        row_ids: *const i32,
+        out: *mut c_void,
+        row_scale: *mut f32,
+        row_status: *mut i32,
+        rows: i32,
+        cols: i32,
+        fault: *mut i32,
+        fault_bit: i32,
+        live: *const i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Fused one-token MoE, first half: the x FP8-QAT mirror, gate and up of every selected
+    /// slot, macro1/macro3 and the weighted SwiGLU into `h[topk][out_f]`. Bit-identical to the
+    /// grouped chain it replaces; fault bits 0x1 (dead slot) and 0x2 (lossy x mirror).
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_moe_fused_gu(
+        table: *const u64,
+        n_expert: i32,
+        sel: *const i32,
+        selw: *const f32,
+        scale2: *const f32,
+        xf: *const f32,
+        h: *mut f32,
+        topk: i32,
+        in_f: i32,
+        out_f: i32,
+        limit: f32,
+        fault: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Fused one-token MoE, second half: the h mirror, down and macro2 into
+    /// `contrib[topk][out_f]`, then the slot sum in `order` into `y[out_f]`. `tile_cnt` holds
+    /// `out_f / 32` counters zeroed once; the kernel leaves them zero. Fault bit 0x4.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_moe_fused_down(
+        table: *const u64,
+        n_expert: i32,
+        sel: *const i32,
+        scale2: *const f32,
+        h: *const f32,
+        contrib: *mut f32,
+        order: *const i32,
+        y: *mut f32,
+        tile_cnt: *mut i32,
+        topk: i32,
+        in_f: i32,
+        out_f: i32,
+        fault: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    pub fn memra_dsv4_moe_fused_dispatches() -> u64;
     pub fn memra_dsv4_scale_rows(
         y: *mut f32,
         scale: *const f32,
@@ -837,6 +958,41 @@ unsafe extern "C" {
         eps: f32,
         stream: *mut c_void,
     ) -> i32;
+    /// Partial half of the HC24 split dots: `m * 24 * slices` floats into `partial`.
+    pub fn memra_dsv4_hc_dot_split_partial(
+        x: *const f32,
+        w: *const f32,
+        partial: *mut f32,
+        partial_len: i32,
+        m: i32,
+        n: i32,
+        k: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// Split-dot slice sum + small HC + entry rmsnorm (+ bf16 pack), one CTA per position.
+    /// `y` and `out_b` may be null.
+    pub fn memra_dsv4_hc_finish_f32_fixed_order(
+        partial: *const f32,
+        slices: i32,
+        x: *const f32,
+        mixes: *mut f32,
+        scale: *const f32,
+        base: *const f32,
+        pre: *mut f32,
+        post: *mut f32,
+        comb: *mut f32,
+        y: *mut f32,
+        norm_w: *const f32,
+        out: *mut f32,
+        out_b: *mut c_void,
+        s: i32,
+        hc: i32,
+        d: i32,
+        iters: i32,
+        hc_eps: f32,
+        eps: f32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_rmsnorm_f32acc(
         x: *const f32,
         w: *const f32,
@@ -1022,6 +1178,11 @@ unsafe extern "C" {
         ystride: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// Gate seam for the prefill dense tile (memra #472): `0` forces the per-32-row GEMV loop at
+    /// m > 32 so one process can compare the two; returns the previous setting.
+    pub fn memra_dsv4_gemm_fp8_tile_set_for_gate(on: i32) -> i32;
+    /// Launches of the prefill dense tile since process start (engagement receipt).
+    pub fn memra_dsv4_gemm_fp8_tile_launches() -> u64;
     /// FP8 dense t=1 grouped output projection. The weight rows are grouped
     /// contiguously; each group reads its own activation/output slice while
     /// retaining the ordinary m=1 accumulation and reduction body.

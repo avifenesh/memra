@@ -1,0 +1,10 @@
+SURVEY header gpu=NVIDIA GeForce RTX 5090 Laptop GPU fatbin=/tmp/wt-a-d40-tier_receipt.fatbin
+SURVEY UVA checked=128 mismatches=0 -> BITWISE
+SURVEY PRICE shape=27B arm=device spans=96 bytes=156893184 N=5 ms median=0.588 min=0.586 max=0.593 gbps=266.71 bitwise=true
+SURVEY PRICE shape=27B arm=staging spans=96 bytes=156893184 N=5 ms median=6.725 min=6.683 max=6.910 gbps=23.33 bitwise=true
+SURVEY PRICE shape=27B arm=staging-queued spans=96 bytes=156893184 N=5 ms median=6.290 min=6.222 max=6.306 gbps=24.94 bitwise=true
+SURVEY CPU-ORACLE shape=27B bytes=156893184 N=5 ms median=51.983 min=51.288 max=52.404 gbps=3.02
+SURVEY PRICE shape=9B arm=device spans=48 bytes=52690944 N=5 ms median=0.204 min=0.197 max=0.207 gbps=257.76 bitwise=true
+SURVEY PRICE shape=9B arm=staging spans=48 bytes=52690944 N=5 ms median=2.462 min=2.415 max=2.469 gbps=21.40 bitwise=true
+SURVEY PRICE shape=9B arm=staging-queued spans=48 bytes=52690944 N=5 ms median=2.219 min=2.206 max=2.253 gbps=23.75 bitwise=true
+SURVEY CPU-ORACLE shape=9B bytes=52690944 N=5 ms median=17.153 min=17.132 max=17.235 gbps=3.07

@@ -1,0 +1,5 @@
+--label warmup --conc 1 --n 1 --max-tokens 32 --greedy
+--label ts1 --conc 4 --n 48 --max-tokens 32
+--label tg1 --conc 4 --n 48 --greedy --keep-text --max-tokens 32
+--label ts2 --conc 4 --n 48 --max-tokens 32
+--label tg2 --conc 4 --n 48 --greedy --keep-text --max-tokens 32

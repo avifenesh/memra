@@ -76,8 +76,7 @@ fn graph_state(gpu: &Dsv4Gpu, prefix: &DecodeState, cfg: Dsv4SampleCfg) -> Decod
     gpu.restore_full_token_prefix_for_gate(&mut result, prefix)
         .unwrap();
     unsafe {
-        gpu.arm_full_token_replay_for_gate(&mut result, cfg)
-            .unwrap();
+        gpu.arm_full_token_replay(&mut result, cfg).unwrap();
     }
     result
 }
@@ -251,13 +250,13 @@ fn window(gpu: &Dsv4Gpu, walk: &mut Walk) -> (Vec<u32>, [Vec<ArPhaseRecord>; 2],
     let mut tokens = Vec::with_capacity(STEPS + 1);
     tokens.push(carry);
     carry = gpu
-        .decode_sample_full_token_for_gate(carry, &mut walk.graph)
+        .decode_sample_full_token(carry, &mut walk.graph)
         .unwrap();
     let since = gpu.ar_phase_cursor_for_gate().unwrap();
     for _ in 0..STEPS {
         tokens.push(carry);
         carry = gpu
-            .decode_sample_full_token_for_gate(carry, &mut walk.graph)
+            .decode_sample_full_token(carry, &mut walk.graph)
             .unwrap();
     }
     assert_eq!(gpu.tp_ep_ar_refusal_words().unwrap(), [0, 0]);
@@ -375,16 +374,11 @@ fn main() {
         args.len() >= 5,
         "usage: dsv4_ar_phase_gate <model-dir> <source-tape> <out-dir> <cell> [args]"
     );
-    for (name, value) in [
-        ("MEMRA_DSV4_SAMPLER", "device"),
-        ("MEMRA_DSV4_SMALL_KERNEL_DIET", "1"),
-    ] {
-        assert_eq!(
-            std::env::var(name).as_deref(),
-            Ok(value),
-            "requires {name}={value}"
-        );
-    }
+    assert_eq!(
+        std::env::var("MEMRA_DSV4_SAMPLER").as_deref(),
+        Ok("device"),
+        "requires MEMRA_DSV4_SAMPLER=device"
+    );
     // The instrument measures the DEFAULT program or it measures nothing anyone serves. Doors that
     // are ON by default must be unset or explicitly 1 here; nothing may be pinned OFF.
     for name in [
@@ -485,7 +479,7 @@ fn main() {
             for _ in 0..=STEPS {
                 tokens.push(carry);
                 carry = gpu
-                    .decode_sample_full_token_for_gate(carry, &mut walk.graph)
+                    .decode_sample_full_token(carry, &mut walk.graph)
                     .unwrap();
             }
             let ident = identity(&gpu, &walk.graph);
@@ -648,7 +642,7 @@ fn main() {
             for _ in 0..=STEPS {
                 tokens.push(carry);
                 carry = gpu
-                    .decode_sample_full_token_for_gate(carry, &mut walk.graph)
+                    .decode_sample_full_token(carry, &mut walk.graph)
                     .unwrap();
             }
             let elapsed = start.elapsed().as_secs_f64();

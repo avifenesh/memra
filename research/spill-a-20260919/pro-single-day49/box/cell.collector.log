@@ -1,0 +1,101 @@
+2026-09-25T10:42:30Z model sha256: 1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+2026-09-25T10:43:21Z nofree b01 rc=0 STALL rule cell=d49-nofree arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12
+2026-09-25T10:44:12Z free b01 rc=0 STALL rule cell=d49-free arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.6 idle_p95=12.8
+2026-09-25T10:45:04Z nofree b02 rc=0 STALL rule cell=d49-nofree arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.6 idle_p95=12
+2026-09-25T10:45:56Z free b02 rc=0 STALL rule cell=d49-free arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.6 idle_p95=12.8
+2026-09-25T10:46:48Z nofree b03 rc=0 STALL rule cell=d49-nofree arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12
+2026-09-25T10:47:40Z free b03 rc=0 STALL rule cell=d49-free arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.6 idle_p95=12.8
+2026-09-25T10:48:32Z nofree b04 rc=0 STALL rule cell=d49-nofree arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.6 idle_p95=12
+2026-09-25T10:49:24Z free b04 rc=0 STALL rule cell=d49-free arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.6 idle_p95=12.8
+2026-09-25T10:50:16Z nofree b05 rc=0 STALL rule cell=d49-nofree arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.6 idle_p95=12
+2026-09-25T10:51:07Z free b05 rc=0 STALL rule cell=d49-free arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.6 idle_p95=12.8
+2026-09-25T10:52:14Z long b01 rc=0 STALL rule cell=d49-long arm=demote-long n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.6 idle_p95
+2026-09-25T10:53:20Z long b02 rc=0 STALL rule cell=d49-long arm=demote-long n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.6 idle_p95
+2026-09-25T10:54:27Z long b03 rc=0 STALL rule cell=d49-long arm=demote-long n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95
+2026-09-25T10:55:19Z promote b01 rc=0 STALL rule cell=d49-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.6 idle_p95=
+2026-09-25T10:56:10Z promote b02 rc=0 STALL rule cell=d49-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=
+2026-09-25T10:57:02Z promote b03 rc=0 STALL rule cell=d49-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.6 idle_p95=
+2026-09-25T10:57:03Z cell done; reading rc=0 DAY49 ITEM7 -> b1 step attributed to H (the heap first touch) (the current pre-submit split above)
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "research/spill-a-20260919/pro-single-day49/cell.sh",
+    "3"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 1173057141286359,
+  "ended_monotonic_ns": 1173936219887279,
+  "started_utc": "2026-09-25T10:42:24.215641+00:00",
+  "ended_utc": "2026-09-25T10:57:03.294243+00:00",
+  "elapsed_seconds": 879.07860092,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 2470,
+    "sha256": "04b3151dfa39deebc05984c5161cbdeac7b5f2faf6a06db91b94ff8814ee4b63"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 386872,
+      "sha256": "f1cbfdc68d1ac1f69acbf66a2a5eda0cffe5124e27219d4d52abd27a6b8a5573"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 183,
+    "sha256": "13b88f4d6174eb3adc9756f6c20179d107fa0cc0252d5d9b96cc9a948469ebed"
+  }
+}

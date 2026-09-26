@@ -84,7 +84,7 @@ or nonempty receipt namespace before launching the synthetic NVFP4/FP8/kernel-ch
 |---|---|---|---|
 | 0 | seconds (~2 s kernel-check scoped + build) | workspace compile + kernel-check scoped to the touched sections | every edit-compile loop |
 | 1 | ~1–2 min | tier 0 + golden-token argmax probe on ONE model per affected kernel class (+ one single-K spec probe when the diff touches the spec pipeline) | before every dev-loop commit |
-| 2 | tens of minutes | the full battery, `tools/local-ci.sh`: kernel-check ALL GREEN (~4.5 min), prime-gate, run-gen argmax per model, VERIFY-GATE, `run-spec` K=1..8 self-consistency on the Qwen 35B target + external MTP draft (`MEMRA_CI_RUNSPEC=0` skips), Gemma-4 31B stream agreement 64/64, decode-batch-gate (config + Q8_0 strict, the serving tick's exactness, wired in 2026-08-05), graph-warmup stress (`tools/graph-warmup-stress-gate.sh`, pool-growth adversarial bit-identity behind the `MEMRA_GRAPH_WARMUPS=1` default, wired 2026-08-05), serve-smoke, health-fault-gate (`tools/health-fault-gate.sh`, readiness, panic-respawn, gpu-watch latch and drain arms on the real server, wired 2026-09-22; `MEMRA_CI_HEALTH_FAULT=0` skips), serve-stress (`tools/serve-stress-gate.sh`, the c=64 concurrency contract behind the admission spec-headroom fix, wired 2026-08-06; `MEMRA_CI_STRESS=0` skips), accept-gate (`tools/accept-gate.sh`, exact served-spec acceptance counts + a 128-token text sha at the production drafter/K, wired 2026-08-06; smoke cell by default, `--full` for the 6-cell matrix, `MEMRA_CI_ACCEPT=0` skips) | **every merge, every tag** (unchanged) |
+| 2 | tens of minutes | the full battery, `tools/local-ci.sh`: kernel-check ALL GREEN (~4.5 min), prime-gate, run-gen argmax per model, VERIFY-GATE, `run-spec` K=1..8 self-consistency on the Qwen 35B target + external MTP draft (`MEMRA_CI_RUNSPEC=0` skips), Gemma-4 31B stream agreement 64/64, decode-batch-gate (config + Q8_0 strict, the serving tick's exactness, wired in 2026-08-05), prime exactness on the 9B (`tools/prime-batch-exact-gate.sh` and `tools/prime-tick-exact-gate.sh`, each with its canary, memra#641, wired 2026-09-23; `MEMRA_CI_PRIME_EXACT=0` skips), graph-warmup stress (`tools/graph-warmup-stress-gate.sh`, pool-growth adversarial bit-identity behind the `MEMRA_GRAPH_WARMUPS=1` default, wired 2026-08-05), serve-smoke, health-fault-gate (`tools/health-fault-gate.sh`, readiness, panic-respawn, gpu-watch latch and drain arms on the real server, wired 2026-09-22; `MEMRA_CI_HEALTH_FAULT=0` skips), serve-stress (`tools/serve-stress-gate.sh`, the c=64 concurrency contract behind the admission spec-headroom fix, wired 2026-08-06; `MEMRA_CI_STRESS=0` skips), spec-ctx-edge (`tools/spec-ctx-edge-gate.sh`, open requests at their cap under default spec, wired 2026-09-23; `MEMRA_CI_SPEC_CTX_EDGE=0` skips), admit-mem-burst (`tools/admit-mem-burst-gate.sh`, the memory-admission door under a 64-request open burst, wired 2026-09-23; `MEMRA_CI_ADMIT_MEM_BURST=0` skips), accept-gate (`tools/accept-gate.sh`, exact served-spec acceptance counts + a 128-token text sha at the production drafter/K, wired 2026-08-06; smoke cell by default, `--full` for the 6-cell matrix, `MEMRA_CI_ACCEPT=0` skips) | **every merge, every tag** (unchanged) |
 
 The battery's last correctness stage runs every memra-engine `#[ignore]` GPU test serially
 (`--test-threads=1`): the tests flip process-global gate doors and share one device, so
@@ -141,12 +141,27 @@ Route policy contract (memra#504, `route_contract.rs`): every serve route declar
 nine policy surfaces as implemented or refused by name; `RouteRegistry::check` runs before the
 ready handoff. CPU teeth in `route_contract::tests`: a stub route that declares nothing fails the
 same gate the production routes pass (the red arm), a partially declared route names exactly what
-it omitted, the hybrid worker implements every surface, the DSv4 contract refuses its six open gaps
-with their issues, `MEMRA_REWRITE_BUNDLE` beside a DSv4 route refuses at boot by name (#449's
+it omitted, the hybrid worker implements every surface, the DSv4 contract refuses its two open gaps
+(#449, #535) with their issues and implements memory-cost, `MEMRA_REWRITE_BUNDLE` beside a DSv4 route refuses at boot by name (#449's
 minimum), and the wiring gate: every `Implemented` declaration's evidence token must exist outside
 comments in the route's source file (`include_str!` over `worker.rs` and `dsv4_serve.rs`), the
 generalization of `progress::tests::the_prime_walks_actually_call_the_odometer` from one engine
 file to the registry. Receipt: `research/route-contract-20260922/`.
+
+Dedicated route health, admission and memory (memra#500, #501, #503): CPU teeth in
+`health::tests` (route phases, the stall verdict on a busy route, readiness while a route loads,
+the aggregate phase and idle), `route_telemetry::tests` (tickets, the service estimate, cancelled
+and refused runs that are neither served nor failed), `dsv4_admit::tests` (per-card folding, a
+short peer card that defers then refuses, memory freed mid-defer, a client leaving mid-defer, host
+eviction that buys the admission and never a device shortfall, the budget clamp, the largest
+fitting capacity), `dsv4_serve::host_reclaim_tests` (the LRU victim spares the restore source) and
+`memra-engine` `dsv4_gpu::session_plan_tests` (the planned cache and gather arithmetic, including
+the default chunk `min(512, ctx)`). Two fake routes run end to end through the completions
+handler: `a_fake_route_serves_through_its_own_admission_and_books_its_metrics` (#501) and
+`a_fake_route_memory_door_refuses_defers_and_recovers_through_the_handler` (#503: 429 with
+`Retry-After: 5` on a short peer card, 400 naming the largest fitting session, 200 after memory
+frees mid-defer, a client abort booked `cancelled` with nothing held, and the `/metrics` row).
+Receipt: `research/dsv4-route-policies-20260922/`. The two-card receipt is pending.
 
 Loader tensor-contract boundary (memra#541, `memra_gguf::checkpoint_binding`): both loaders
 bind the pack's tensor contract against the source census before any upload and refuse
@@ -168,6 +183,26 @@ control round's byte for byte; `request_faults_total` reads 1, `worker_respawns_
 `[worker] PANIC`. The classification itself (request fault vs re-raised worker fault, driver-looking
 payloads, pass-through of returned errors) is CPU-only unit tests, `request_fault_guard_tests` in
 worker.rs. Receipts: `research/request-fault-20260922/`.
+
+Speculative context edge (memra#659, `tools/spec-ctx-edge-gate.sh`, in `tools/local-ci.sh`,
+`MEMRA_CI_SPEC_CTX_EDGE=0` skips): three boots of the real server on the 9B's default spec route.
+Door ON with open output 64: four open requests each 200, `finish_reason: length`, exactly 64
+tokens, then a bounded control. The same door with `MEMRA_SERVE_SPEC=0`: one open request whose
+message equals the spec arm's first byte for byte. Door OFF at `MEMRA_CTX=384`: three runaways each
+200 with `finish_reason: length` inside the cap. Every boot: no `panicked`, `argmax sentinel`,
+`[worker] FATAL`, respawn or `spec verify refused` line, `/health` 200 after the last request. The
+engine side is a CPU source census (`spec::ctx_edge_659_census`) of the round guards in the qwen
+and gemma burst loops and of the verify funnel's refusal. Receipts: `research/spec-ctx-edge-20260923/`.
+
+Memory-admission burst (memra#680, `tools/admit-mem-burst-gate.sh`, in `tools/local-ci.sh`,
+`MEMRA_CI_ADMIT_MEM_BURST=0` skips): one boot of the real server on the 9B with
+`MEMRA_ADMIT_BY_MEMORY=1` at open output 8192 and 64 open requests released on one barrier. No
+`CUDA_ERROR_OUT_OF_MEMORY` line and no 503; every refusal a 429 with Retry-After in 1..=60, as many
+as the `verdict=refuse` lines; every `verdict=admit` line with `est_bytes <= device_free` (the booked
+reading, `pending_prime=` on the line); no crash line; `/health` 200 after the burst. On the unfixed
+tree 34 of 64 died in prefill as 503s. The door's arithmetic is covered by CPU tests in
+`admit_memory` and `worker` (the booked reading per decision arm, the pending-prime rows, the
+prefill-OOM park predicate). Receipts: `research/spill-b-20260919/rtx5090-day33/`.
 
 The docs-fit owner call is closed: tier 2 now runs the full `run-spec` K=1..8 sweep and requires
 eight per-K PASS lines plus the final `SELF-CONSISTENCY PASS` marker. The raw run is logged before
@@ -294,6 +329,27 @@ world, not the label) and must be caught. Note: the serve-level solo-vs-loaded b
 (`spec-gate` REF/REF_LOAD) is **not** this class: it is the `b_n==1` fused-trunk↔batched-body
 config flip at the co-residence boundary (`research/iso-gap-20260807/`); this arm pins the
 within-config isolation that any fix for that flip relies on.
+
+`ptick` / `ptickc` landed 2026-09-23 (`tools/prime-tick-exact-gate.sh`, memra#641,
+`research/decode-exact-641-20260923/`): the **prime-shape** axis of the one-program law. A peer's
+prompt primed inside a fresh then a carried `[A, B, C]` concat batch (`prime_cache_batch`), in
+solo tick calls, or followed by a `[B, C]` decode wave must give logits, hidden rows, cache
+digests and 32 teacher-forced decode steps bit-identical to `prime_cache(B)` in one call
+(`concat-prime-probe <model> tickshape`, the prime-fairness gate's exact ids, tick 1024). It was
+registered red on `9c07b398b`: the fresh batch's varlen FA arm attended bf16 of the
+pre-quantization K/V while the solo prime attends the quantized cache view, and greedy text
+diverged at token 8. The gate refuses a log where `prime_cache_batch` fell back to solo primes
+(the vacuous pass). `ptickc` changes B's first token inside the batches only and must see bp and
+bps DIFFER while ref2, tick and wave stay EXACT.
+
+`pbg9` / `pbg9c` landed 2026-09-23 beside them (`tools/prime-batch-exact-gate.sh`, memra#641):
+`prime-batch-gate --exact` on the 9B, `prime_cache_batch` against `prime_cache` bitwise per
+sequence (prefill logits, h_seed, the hidden stack, teacher-forced decode logits) at b3-p24,
+b4-p1100 and carried b3-p600. The binary already existed, but only step35's `pbatch35` rows ran
+it, so it sat red on the 9B at `9c07b398b` (`seq 0: exact logits diff 248320/248320`) in no
+battery. `pbg9c` changes seq 0's first token inside the batched prime only: seq 0 must differ and
+seqs 1 and 2 must stay bit-identical. Both pairs also run in `tools/local-ci.sh`
+(`MEMRA_CI_PRIME_EXACT=0` skips).
 
 `amargin` / `amarginc` landed 2026-08-06 (`tools/argmax-margin-gate.sh`, + its `--canary` teeth):
 run-gen's prefill-vs-decode argmax assert calibrated against the **top-2 margin at the deciding
@@ -940,6 +996,187 @@ fresh child processes for unset, 0, 1, 16, 8, 32, invalid and empty values, chec
 explicit gate rollback and refusal, and verify a new thread's environment policy.
 `tools/test-dsv4-dense-control-policy.sh` exercises the actual exact-tail and
 all five dense-TC drivers under unset, explicit S16 and zero before CUDA calls.
+
+### DSv4 DSpark spec == plain on the served program (#660)
+
+`dsv4-gpu-dspark-gate <model-dir> <fixtures.json> <out-dir> [runs] [dev0,dev1] --served` runs plain,
+sequential-verify and batched T=k+1 verify arms in one process on the served defaults
+(`MEMRA_DSV4_DRAFTER=dspark MEMRA_DSV4_DECODE_PATH=device`, chunked prefill and prime, the
+matrix expert program, the serve route's depth cap and verify threshold). It requires greedy
+spec == plain byte-exact, batched verify logits and every live cache class after commit bit-equal
+to sequential decode over every compressor phase and accept count, accepted-position ring writes,
+and determinism across runs. Without `--served` it pins `MEMRA_DSV4_HC_DOT_SPLIT=0` and
+`MEMRA_DSV4_DENSE_FAST=0`, the historical program. Run it on the pair under `/tmp/memra-gpu.lock`
+for any change that touches a DSv4 dense, HC, verify or commit path. Before #660 the served run
+failed every bit-gate cell: the HC24 split ran only on one-row calls, so verify rows took the
+sequential class. Receipts: `research/dsv4f-bringup-20260923/`.
+
+### DSv4 one-token MoE stream visitor (#664)
+
+`cargo test -p memra-engine --release --lib cuda_m1_stream_matches_sktail_bit_for_bit -- --ignored`
+(one CUDA card) compares the stream visitor against the sktail launch bit for bit: an exhaustive
+B-value probe over every E4M3FN scale byte and E2M1 code, then gate, up, H and the down
+contribution over a full bank and both EP halves, four route patterns (empty groups, one shard
+owning every route, duplicate routes, contiguous). It also pins engagement (3 enqueues per live
+step ON, 0 OFF) and precedence (a gate-armed half2 down tail keeps down; the stream takes gate
+and up). On the pair, `dsv4-gpu-dspark-gate ... --served` takes the stream and fails unless arm
+P enqueued it; without `--served` the historical pins hold the sktail program and fail if it did.
+Both invocations must PASS every DSpark bit gate.
+
+### DSv4 multi-row MoE stream visitor (#669)
+
+`cargo test -p memra-engine --release --lib cuda_mrow_stream_matches_sktail_bit_for_bit -- --ignored`
+(one CUDA card) compares the multi-row visitor against the sktail launch bit for bit on steps of
+2, 3, 5, 8, 16 and 17 rows: gate, up, H and the down contribution over a full bank and both EP
+halves, five route patterns (scattered distinct experts, every token on the same six, one shard
+owning every route, a within-token duplicate, seeded random top-6), with at least one group wider
+than a 16-row chunk. It pins engagement (3 enqueues per live step for 2..=16 rows, 0 at 17 rows
+and with the gate setter off) and that the one-token visitor never enqueues on a multi-row step.
+On the pair, `dsv4-gpu-dspark-gate ... --served` must PASS every DSpark bit gate and its batched
+arm DB must log a nonzero `mrow stream ON dispatches` count; without `--served` the historical
+pins must log zero.
+
+
+### DSv4 fused one-token MoE (#694)
+
+`cargo test -p memra-engine --release --lib dsv4_grouped:: -- --ignored --nocapture --test-threads=1`
+(one CUDA card, `NVIDIA_TF32_OVERRIDE=0`, under the rig's lock) runs the grouped suite, including
+`cuda_fused_one_token_moe_is_the_grouped_chain_bit_for_bit`: the two fused launches against the
+16-launch grouped chain, requiring the intermediate H, every slot's down contribution and the
+combined row to compare `to_bits`-equal, and each deferred fault (a dead slot, a lossy x mirror, a
+lossy h mirror) to land in the same fault word bit the chain sets. `dsv4-gpu-dspark-gate
+--served` counts the fused dispatches on its plain arm, so a served run that fell back to the
+chain fails. Receipts: `research/dsv4f-bringup-20260923/moe-fused/`.
+
+### DSv4 gate source tape (#657)
+
+The DSv4 perf and identity gates take `<source.txt>`, the prompt tape. The originally pinned
+tape (sha256 `f6e175a6...`) was cut from a dirty tree and no reachable machine holds it.
+Rebuild the clean tape with `tools/dsv4-source-tape.py <out.txt>` from any checkout that has
+commit 9e3c8b550; it refuses a digest other than `11e4bd80...`. The two tapes share their first
+3,736,115 bytes, and `memra_engine::dsv4_source_tape::SourceTape` tokenizes only that prefix and
+asserts a 4096-token margin, so both tapes give the same gate prompt tokens. The one mode that
+reads past the prefix, the `dsv4_hc_dot_split_gate` 64-window sampler, still requires the pinned
+tape and refuses the rebuild.
+
+### DSv4 small-kernel diet at the kernel boundary (#339)
+
+`cargo test -p memra-engine --release --test dsv4_small_diet_gpu -- --ignored --test-threads=1`
+(one CUDA card, `NVIDIA_TF32_OVERRIDE=0`, under the rig's lock) runs the fused HC finish and the
+fused Q norm/pack against the unfused chains they replace and requires every output to compare
+`to_bits`-equal: scaled mixes, pre, post, comb and the collapsed row over 96 HC cases (four
+residual and three mix magnitude ranges), and the normalized row plus its bf16 pack over 128
+cases (eight row widths, including tails on both sides of the unrolled body). Red arms perturb
+each gate scale and one norm weight by 2^-10 relative and require the fed output to move. The
+multi-row cases run 2, 6, 7, 16, 17 and 64 rows with a different magnitude range per row and
+require each row to equal both the unfused multi-row chain and the same row launched alone; the
+HC red arm moves one mix of row 5 and requires rows 0..5 to stay bit-equal. The diet is the code
+on every row count, so this is the proof that plain and verify rows stay one numeric program. Receipts:
+`research/dsv4f-bringup-20260923/small-diet/`.
+
+### DSv4 HC finish at the kernel boundary (HC2 lane)
+
+`cargo test -p memra-engine --release --test dsv4_hc_finish_gpu -- --ignored --test-threads=1 dsv4_hc_finish_is_bit_identical`
+(one CUDA card, `NVIDIA_TF32_OVERRIDE=0`, under the rig's lock) runs the split-dot partials plus
+the fused HC finish against the unfused chain they replace (split dots, rowsq, Sinkhorn,
+collapse, entry RMSNorm, bf16 pack) and requires all seven outputs to compare `to_bits`-equal:
+144 cases over slice counts 8, 16 and 32, four residual and three weight magnitude ranges, and
+1, 2, 5 and 6 rows. The served launch passes no y; the other six outputs must not move. Red arms
+bump one HC weight row, one gate scale and one norm weight by 2^-10 relative and require the fed
+output to move (one weight element alone sits below the dot's ulp and proved nothing on the
+first target-card run). `dsv4_hc_finish_timing` prints the device time per HC entry site for the
+unfused chain, main's diet and the fused pair at 1 and 6 rows. Receipts:
+`research/dsv4f-bringup-20260923/hc-finish/`.
+
+### DSv4 prefill tiles at the kernel boundary (#700)
+
+`cargo test -p memra-engine --release --test dsv4_gemm_tile_gpu -- --ignored --test-threads=1 _is_the_`
+(one CUDA card, `NVIDIA_TF32_OVERRIDE=0`, under the rig's lock) runs the prefill dense tile against
+the per-32-row FP8 GEMV loop it replaces, and the compressor dots tile against the 32-row dots
+loop, and requires `to_bits`-equal outputs. Dense: 106 cases over nine (n, k) shapes (the DSv4
+projections plus ragged ones), widths 33 to 512, strided x and y. Dots: 40 cases over BF16 and
+f32 weight storage at the compressor latents 1024, 512 and 256 over hidden 4096, plus ragged
+shapes. The dense test's red arm moves one output row's weight codes and requires that row to
+move in every token row and its neighbour in none. Output buffers start as a NaN pattern, so an
+unwritten element fails, and the dense test also requires the stride gaps to stay unwritten. `_tile_timing` prints device time against the loop. Receipts:
+`research/dsv4f-bringup-20260923/prefill-tile/`.
+### DSv4 TP/EP B-row steps and their graphs (#710)
+
+`DSV4_ROWS_GATE_TOPOLOGY=tp_ep dsv4_rows_gate <model-dir> <source-tape> 24 64` (a 2x RTX PRO 6000
+pair, under `/tmp/memra-gpu.lock`) runs the B-row identity gate on the served TP/EP program.
+Four sessions decode alone for the solo trace. Every arm then compares each step's logits
+bits against it:
+- The eager B-row step, as the sessions join and leave (widths 1 to 4) and their rows rotate.
+- A replay arm: session 0 replays alone, rides B-row steps beside session 1 while still
+  armed, then replays again.
+- A graph arm through `decode_rows_draw`, whose steps of two or more rows run a captured graph
+  per batch. It must capture and then replay.
+- A sampled arm, which draws four rows at the vendor default through the eager B-row step and
+  through the graph; the draws must match.
+
+Timing adds the graph step at B=2 and 4. `cargo test -p memra-engine --release --test
+dsv4_dense_fast_rows_gpu -- --ignored --test-threads=1` (one card) checks the multi-row
+dense-fast FP8 GEMV against the m-row kernel and each row's one-row launch at the served
+shapes, bit for bit, with a red arm. Receipts: `research/dsv4f-bringup-20260923/tp-rows/`.
+
+### DSv4 TP/EP full-token replay past position 512 (#710)
+
+`dsv4_tp_replay_long_gate <model-dir> <source-tape> [steps]` (a 2x RTX PRO 6000 pair, under
+`/tmp/memra-gpu.lock`) pins the full-token TP2/EP program and restores one eager prefix to
+position 400 into two states. It steps one through the unarmed program and one through the armed
+replay graphs, then requires every step to match: sampled token, logits bits, and the TP/EP cache
+and hidden digests. It also requires the replay variant counters to advance by the step count on
+both ranks. The default 304 steps cross position 512 and the C4 and C128 emission cadences. A
+timing arm then runs the same continuation eager and replayed in alternating order. Receipts:
+`research/dsv4f-bringup-20260923/tp-replay-long/`.
+
+The replayed state hands off to the eager step once the replay no longer covers its position
+(`min(capacity, 16384)`), the way the served TP/EP route does (#710): it reads the replay counters,
+drops the graphs (`disarm_full_token_replay`) and keeps stepping, and every later step must still
+match the eager state. `DSV4_REPLAY_GATE_LIMIT=N` arms a smaller limit so a run crosses the handoff
+in a few hundred steps (`DSV4_REPLAY_GATE_CAPACITY=2048 DSV4_REPLAY_GATE_LIMIT=640`, 500 steps);
+`DSV4_REPLAY_GATE_CAPACITY=20000` with 16100 steps crosses the served 16384 limit itself. At that
+capacity the cache and hidden digests read tens of megabytes per step, so such a run sets
+`DSV4_REPLAY_GATE_DIGEST_EVERY=256`: tokens and logits bits every step, the digests every 256
+steps and on the 64 steps either side of the handoff. A run with a handoff checks that it
+happened at the limit and skips the timing arm. `DSV4_REPLAY_GATE_PROFILE=replay|eager` replaces
+the timing arm with one warm run and one run bracketed by `cuProfilerStart`/`Stop`, for
+`nsys --capture-range=cudaProfilerApi`. Receipts:
+`research/dsv4f-bringup-20260923/tpep-default/`.
+
+### DSv4 compressor BF16 island storage (#695)
+
+`cargo test -p memra-engine --release --test dsv4_island_bf16_gpu -- --ignored --test-threads=1`
+(one CUDA card, `NVIDIA_TF32_OVERRIDE=0`, under the rig's lock) runs all five dots entries the
+compressor reaches from the BF16 checkpoint plane (`w_is_bf16 = 1`) and from its exact f32
+widening, and requires `to_bits`-equal outputs: 60 cases over the three compressor shapes
+(latent 1024, 512 and 256 over hidden 4096) and 1, 2, 6 and 33 rows. The red arm moves one
+row's BF16 weights by one ulp and requires that row to move and its neighbour not to. Receipts:
+`research/dsv4f-bringup-20260923/cmp-diet/`.
+
+### DSv4 batch-1 latency kernels (latency lane)
+
+`cargo test -p memra-engine --release --test dsv4_latency_kernels_gpu -- --ignored --test-threads=1 --skip latency_kernel_timing`
+(one CUDA card, `NVIDIA_TF32_OVERRIDE=0`, under the rig's lock) checks the register-resident
+rmsnorm against the exact CPU oracle (240 cases, bit-identical), the one-warp expert prefix
+against a CPU oracle (1755 cases), and the one-warp router against a pinned output hash
+(`0xa883c1c05022dc87`, 360 cases) plus its structure (range, no duplicates, value-desc/index-asc
+order, no unpicked expert above the last pick, weights summing to `route_scale`, hash layers on
+their `tid2eid` row). Each has a red arm. `latency_kernel_timing` is the timing instrument (run
+it without `--skip`). The grouped `wo_a` dense-fast twin is checked by the ignored
+`dsv4_gpu::dense_wo_a_grouped_fp8_component_tests` in the lib test binary: 27 cells bit-exact
+against every slice program. Receipts: `research/dsv4f-bringup-20260923/latency/`.
+
+### DSv4 deferred MoE route and mirror checks (#670)
+
+`cargo test -p memra-engine --release --lib cuda_deferred_moe_faults_match_the_synchronous_checks -- --ignored`
+(one CUDA card) runs one routed MoE chain (`prepare`, `gate_up`, `down`) with the synchronous
+checks and again with the checks routed to a device fault word. On valid routes at 1, 2, 5 and
+16 rows, gate, up, H and the down contribution must be bit-equal and the word must stay 0. Three
+red arms must each set their own bit while the synchronous arm refuses the same input: an expert
+id outside the bank (route), an E4M3 NaN code in the routed input (input mirror) and one in the H
+row before down (intermediate mirror). On the pair, `dsv4-gpu-dspark-gate ... --served` covers
+the served transaction with the deferred checks on.
 
 
 ### Model-owned device admission and reclaim (#544)
@@ -1611,9 +1848,13 @@ before any bank demand:
   names equal the former literal `blk.N.ffn_{gate,up,down}_exps.weight` spelling on a
   qwen3_5_moe plan with an MTP block, plus one test per refusal).
 - `--expert-bank-host-bytes=N` (default 256 MiB) sets the host bank budget. `host_bank_budget`
-  refuses `experts-via-tier host bank budget cannot hold one expert record` below one record
-  and `experts-via-tier host bank budget exceeds qualification ceiling` above 256 MiB, each
-  suffixed `(requested N, minimum M, ceiling C)`, and caps the bank at 16 records.
+  plans it into one SLRU class per exact record size of the catalog (slots proportional to each
+  size's record count, capped at it) and refuses `experts-via-tier host bank budget cannot hold
+  one expert record` below one record of the largest size and `experts-via-tier host bank
+  budget exceeds the machine ceiling` above three quarters of the host's `MemAvailable` read at
+  install, each suffixed `(requested N, minimum M, ceiling C)`; an unreadable `MemAvailable`
+  refuses too. The installer prints `[experts-via-tier] host_bank_plan requested= planned=
+  classes= records_held= ceiling=` (day 43, `research/spill-c-20260919/DAY43.md`).
 - `--expert-bank-gpu-bytes=N` fixes the GPU slot count before any allocation
   (`MoeSlotCache::with_exact_slots`, never clamps). `gpu_bank_budget` refuses
   `experts-via-tier GPU bank budget cannot hold the eight-slot minimum` below eight slots and
@@ -1819,6 +2060,143 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   all; the aborted ticket's sequence number is consumed, no `TIER DISABLED`, no drop, no `Capacity`, no
   leaked wording). Evidence: `research/spill-c-20260919/DAY16.md` (review section), `pro-single-day16-review/`,
   replay `verify-day16-review.py`.
+- The recurrent f32 state's span cells of the same door (WP-A days 31 to 33, memra#536 Move 2 owed item 1):
+  `tools/kv-host-contract-fault-gate.sh` cells `span-refusal` (`MEMRA_KV_HOST_FAULT=contract-spans`, the
+  demote's D2H span attach refused after every span was built) and `promote-span-refusal`
+  (`MEMRA_KV_HOST_FAULT=contract-promote-spans`, the promote's H2D span attach refused after every span was
+  built; since day 33 the staging is filled by a host function on the copy stream ahead of the copies, and since
+  day 39 that fill is split across `min(12, cpus / 2)` scoped threads inside it, one thread under 8 MiB; CPU
+  cells `day39_fill_shares_cover_every_byte_once` and `day39_threaded_fill_is_bitwise_the_planes`, and the
+  native filled-batch cell runs its fill on three threads with a cut inside a plane).
+  Each is two boots, door ON with the one-shot fault and door OFF as the byte reference, and asserts one typed refusal naming `N f32 spans handed back` with N the span
+  count of the next receipt of the same direction, one `tier span staging:` fill in the boot, the next
+  demote or promote landing its spans and publishing, no latch, quarantine, leak or other refusal, and the
+  four responses byte-equal to the door-OFF boot. GPU cells (`worker::tests`, `#[ignore]` without a device):
+  `option_b_span_attach_fault_hands_every_span_back`, `option_c_span_attach_fault_hands_every_span_back`,
+  `option_c_spans_ride_the_promote_ticket_and_land_bitwise` (the promoted planes read bitwise equal to the
+  resident bytes) and `option_c_span_postpublish_refusal_returns_the_staging_to_the_set`; engine cells
+  `d2h_span_batch_lands_with_its_ticket_on_the_copy_stream`, `h2d_span_batch_lands_with_its_ticket_on_the_copy_stream`
+  and (day 33) `h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies`. Since WP-A day 37 every native
+  cell of `tier_transfer.rs` takes its own non-primary context from a process-lifetime pool (`cell_context()`,
+  census `native_cells_own_their_context`), so the cells run in parallel in one process: on the shared primary
+  context a pinned free, a synchronous device free or a module load on one cell's thread held every other cell's
+  driver calls until the context drained, and a cell whose first poll came after its own 300 ms hold failed
+  `a batch with a running span has not landed` (reproduced 17 of 20 and 20 of 20 runs; fixed 100 of 100 in
+  parallel, the red arm failing both rule-2 checks). Evidence: `research/spill-a-20260919/DAY31.md`, `DAY32.md`,
+  `DAY33.md`, `DAY37.md`.
+- The DFlash tail class of the contracts door (lane/spill-c-20260919 day 56, `research/spill-c-20260919/DAY56.md`,
+  the rule of `DAY19.md` Task 3): `tools/kv-host-spill-identity-gate.sh`'s drafter arm (the caller sets
+  `MEMRA_DSPARK_SPEC=1 MEMRA_DSPARK_DRAFT=<export dir> MEMRA_DSPARK_PREFIX_RESTORE=1`) requires the ON boot's
+  `[prefix-cache] DSPARK restore:` line and, door ON, the `contracts door tail bound:` receipt and no `refused
+  (contracts door)` line; door OFF against door ON on the 27B with the DFlash2 drafter. CPU cells (`worker::tests`):
+  `host_tier_entry_class_admits_plain_mtp_draft_and_dflash_tail_and_refuses_glm_and_both_by_name`,
+  `host_tier_tail_program_is_a_pure_function_of_the_drafter_sources`,
+  `host_tier_tail_shape_frames_the_geometry_after_the_v2_blob`, `host_tier_dflash_tail_census`.
+- Verify digest v3 (lane/spill-c-20260919 day 53, `research/spill-c-20260919/DAY53.md`): `MEMRA_KV_HOST_VERIFY`'s
+  round-trip digest covers the MTP draft plane, the boundary hidden row, the boundary logits and the DFlash tail
+  beside the unchanged v2 trunk digest. `tools/kv-host-spill-failure-gate.sh` cells `digest-draft`,
+  `digest-hidden`, `digest-logits` (`MEMRA_KV_HOST_FAULT=flip-demote-{draft,hidden,logits}`, door OFF): spec
+  entries must refuse the promote `VERIFY FAILED: promoted digest`, zero promotions, r3 byte-equal to the pool-full
+  reference; under `MEMRA_SERVE_SPEC=0` the draft and hidden cells, and under `MEMRA_KV_HOST_CONTRACTS=1` all three,
+  must flip nothing and promote with `verify ok`.
+  CPU cells (`worker::tests`): `verify_digest_check_types_program_and_byte_mismatches`,
+  `verify_digest_v3_row_flip_touches_one_byte`, `verify_digest_v3_census` (v2's text pinned by SHA-256, the red
+  arms only behind the legacy copy path); GPU cell `verify_digest_v3_covers_every_round_tripped_plane_and_v2_stays_trunk_only`
+  (`#[ignore]` without a device: v3 moves on one byte of each of five planes, v2 on the trunk byte only).
+- The promote's KV completion checksums on the hash helper (WP-A day 34, `research/spill-a-20260919/DAY34.md`,
+  `memra_tier::conformance::h2d_deferred_checksum_lands_with_its_digests`): under the door the off-tick promote
+  defers its H2D items' checksums (`CudaTransfers::defer_h2d_checksums`), the helper digests each item's host
+  source with the engine's own program, and the settle supplies them (`supply_h2d_checksums`) before the receipt
+  `require` against the demote-time checksums. CPU binding `h2d_deferred_checksum_bindings` (with its red arm: an
+  item that lands on its copy alone); engine cells `h2d_deferred_checksum_rules_are_as_stated` (CPU) and
+  `h2d_deferred_checksum_lands_with_the_supplied_digests` (a card: the digest on another thread, a wrong digest
+  `Corrupt` at the gate); GPU cell `option_c_off_tick_checksums_ride_the_hash_helper_and_a_corrupt_lease_is_refused`
+  (a flipped lease byte refused `ReceiptMismatch`, nothing published). The failure gate's `digest` cell on the door ON
+  arm is the served-path check: the settle's `plane host bytes differ from the D2H receipt as injected` line is the
+  helper's digest seeing the flipped byte, and `VERIFY FAILED` refuses the entry.
+- The demote's re-hash on the hash helper (WP-A day 35, `research/spill-a-20260919/DAY35.md` design M'): under the
+  door, after the off-tick demote's settle and the `flip-demote` point, the KV planes wait in a guard that leaks on any
+  drop before the helper's reply, and the helper re-hashes read views of their leases (`CudaPinnedLease::read_view`)
+  for the bind (hash 2); hash 1, the D2H receipt, stays in the engine's poll. Server census
+  `day35_the_demote_rehash_rides_the_hash_helper_in_the_stated_order`; GPU cell
+  `option_b_off_tick_demote_hashes_ride_the_helper_and_a_changed_lease_is_refused` (through the production sink: the
+  clean arm's receipts are the checksums of the lease bytes; a byte changed after hash 1 is refused at the bind,
+  nothing published). The failure gate's `digest` cell's bind line is the helper's re-hash seeing the flipped byte.
+- The demote's D2H receipt on the device and the copy-phase park (WP-A day 38, `research/spill-a-20260919/DAY38.md`
+  designs G4 and P, `memra_tier::conformance::d2h_device_receipt_lands_with_the_source_digest`): under the door the
+  copy stream digests every D2H item's DEVICE source with the receipt program (`d2h_receipt_sha256`) ahead of its copy, the
+  item lands with that digest (hash 1 leaves the owner thread), and the bind's re-hash of the landed bytes witnesses
+  landed equal to source; a hit on a `Demoting` entry parks in either phase. CPU binding `d2h_device_receipt_bindings`
+  (with its red arm: an item that lands on its copy alone); engine census `d2h_device_receipt_rules_are_as_stated` and
+  native cells `d2h_device_receipt_lands_with_the_source_digest` (every receipt bitwise the CPU program over its source
+  and over its landed bytes) and `d2h_source_flip_is_witnessed_by_the_landed_bytes` (the flip's red arm); the fault
+  gate's `source-flip` cell (`MEMRA_KV_HOST_FAULT=d2h-source-flip`: one typed bind refusal, nothing published, r1 to
+  r4 byte-equal to door OFF) and `copy-phase-hit` cell (`MEMRA_KV_HOST_FAULT=d2h-delay`, a host-side 3 s hold of the
+  demote's landing since design G''': one copy-phase park, the publication, a promote instead of a cold prime, r1 to r4
+  byte-equal to door OFF); the day-29 park test extended to the copy phase
+  (`hashing_hit_parks_the_request_once_per_id_and_a_miss_does_not`). Design G4 (DAY38 section 17): every piece of side
+  work on ONE stream beside the owner's, the copy stream (the D2H receipt ahead of the copies, the D2D classes, the H2D
+  items, spans and fills); engine census `one_side_stream_beside_the_owner`, the tenant's decode hump cell
+  `day38-hump-reading.py` (sections 13e to 16: a second side stream running kernels moved every later owner kernel
+  boundary, on BOX7 with kernels on both side streams and on the 5090 even with the copy stream kernel-free).
+- The span receipts (WP-A day 48, `research/spill-a-20260919/DAY48.md` design S4: day 46's S3, day 42's S2 revising
+  day 40's design S, with the digests' grid bounded, `day46_span_digest_grids_leave_room_for_the_owner`, and the release
+  paths draining the owner stream only, `day48_release_paths_drain_the_owner_stream_only` and the native
+  `day48_a_take_back_waits_for_its_own_lease_only`;
+  `memra_tier::conformance::span_receipt`): the four-lane digest of every D2H f32 span's device source (one batched
+  launch ahead of the copies) and landed staging (one batched launch at the hand-off to the hash helper, off the
+  landing) and of every H2D span's device destination (one batched launch after the copies), on the copy stream; the
+  demote publishes only after its span receipt is observed and only spans whose pair agrees, and keeps each source
+  digest with the entry; the promote only spans whose destination digest equals it; the staging under a sealed receipt
+  travels guarded (a leak, never a free, before the observation). CPU binding `span_receipt_bindings` (three red arms:
+  a caller that publishes before the receipt is observed, an H2D batch landed on its copies alone, a caller that
+  publishes a differing span); engine census `span_receipt_rules_are_as_stated`; server census
+  `day42_the_span_receipt_is_required_before_the_publication`; native cells `span_receipt_digests_are_the_program_per_span`
+  (the batched kernel bitwise against the CPU oracle) and `d2h_span_batch_lands_with_its_ticket_on_the_copy_stream`
+  (the take, the seal's refusals, the pairs, the `span-flip-landed` arm with span 0 alone differing, the abandon and
+  displacement reaps); the fault gate's `span-flip-landed` and `span-flip-resident` cells (one typed refusal each, r1
+  to r4 byte-equal to door OFF).
+- The agent-pause demote off the tick (WP-A day 47, `research/spill-a-20260919/DAY47.md` design V, OWED item 6):
+  `tools/kv-host-pause-demote-gate.sh` (a tool conversation whose turn 1 must end in a tool call; `clean`, `race`
+  under `d2h-delay` and `failure` under `contract-presubmit`, each in the plain and the default boot, every turn
+  byte-equal to a door-OFF pause-OFF reference); CPU cells `day47_the_pause_sweep_demotes_off_the_tick` and
+  `day47_the_demote_shell_reinstates_only_unpublished_shells`; the pause stall cell (`stall_cell.py --mode pause`,
+  `day47-reading.py`).
+- Design K's promote-side fail-closed arms (WP-A day 41, `research/spill-a-20260919/DAY41.md`): the fault gate's
+  `sources-helper-gone`, `sources-never-land` and `sources-foreign-reply` cells (the hash helper's first `Sources` job
+  takes the fault; one typed latch in the arm's own words, no promote publication, the helper joined, r1 to r4
+  byte-equal to door OFF) and the CPU cell `day41_the_sources_faults_key_on_the_first_sources_job`.
+- The demote publication split (WP-A day 52, `research/spill-a-20260919/DAY52.md` step 1, log only): the CPU census
+  `day52_the_publication_split_is_log_only` (the drop helper names and releases every host entry field in declaration
+  order, the compiler's own drop order; the insert's replaced twin and LRU victims drop through it at their old points;
+  no decision reads a split figure).
+- The on-tick publish lines (WP-A day 54, `research/spill-a-20260919/DAY54.md` step 1, OWED item 10, log only): the CPU
+  census `day54_the_on_tick_lines_are_log_only` (every `OnTick` answer of both capture routes and of the submit core
+  records its reason first; the routes refuse the same conditions as before, one `else if` chain each; no decision reads
+  the reason; the publish lines print only under the door; the fanout's snapshot, restores and insert keep their order).
+- The admission-counter isolation (WP-A day 56, `research/spill-a-20260919/DAY56.md`, OWED item 23): the reservation
+  path takes its lane counters (`reserve_pending_admit_on`; production passes the global ones); the seven shed and
+  ceiling tests run on their own counters with no lock; `global_counter_writer_guard()` (the drain lock, then the
+  counters' lock) orders the three tests that set the global counters against the handler tests;
+  `admission_counters_guard()` (the counters' lock alone) orders the route tests against them. Census
+  `day56_the_admission_writers_are_ordered_against_the_handler_readers` (replacing day 53's; since section 3 it also
+  catches indirect writers: a test that reserves through a global entry or a handler holds a lock, a test that reserves
+  on the counters path passes its own pair). Section 3's fix passes the lane counters and the pending-admits gauge as one
+  `AdmitCounters` pair (`AdmitCounters::GLOBAL` on every production path); cell
+  `day56_an_isolated_reservation_never_moves_the_global_gauges`.
+- The starved-runner fixes (WP-A day 55, `research/spill-a-20260919/DAY55.md`, OWED item 22): the health snapshot and
+  stall verdict read the clock once (census `day55_a_snapshot_reads_the_clock_once`); the extended-stream commit test on
+  tokio's paused clock; the slow-constraint-compile test on its loop's step clock and a test-only virtual health clock
+  (`health::TestClock`) with a per-step non-blocking guard; the coalescer's window a field, with the cells
+  `a_partial_batch_waits_out_its_window` and `a_full_batch_does_not_wait_for_its_window` (the full-batch count of
+  `coalesced_rows_each_get_their_own_token_once_per_step` is printed). Each fix's red arm is recorded in DAY55.
+- The admission-counter test ordering (WP-A day 53, `research/spill-a-20260919/DAY53.md` section 6, OWED item 21): the
+  test helper `admission_counters_guard()` takes `drain_lock()` before its own lock, so the tests that write the
+  process-global admission counters (the queue-bound swaps) are ordered against the handler tests that read them
+  through a request; census `day53_the_admission_writers_are_ordered_against_the_handler_readers` (the order, no test
+  holding both separately, every counter writer under the guard) and cell
+  `day53_a_handler_request_inside_a_writer_window_sheds_429` (the mechanism: a request inside a writer's window sheds
+  429 `shed_queue` and holds no slot).
 - The hit gate's door arm (C day 27, `tools/spec-on-cache-hit-gate.sh qwen`): the door batteries run the
   hit gate twice, door OFF (`MEMRA_KV_HOST_CONTRACTS` unset) and door ON (`MEMRA_KV_HOST_CONTRACTS=1`).
   Until day 27 the ON arm booted with no `MEMRA_KV_HOST_MB`, so the server built no program identity

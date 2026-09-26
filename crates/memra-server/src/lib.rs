@@ -100,6 +100,7 @@ mod audio_api;
 /// the id from the working tree instead of pinning a second copy of the algorithm.
 #[allow(dead_code)] // one implementation, two callers: each uses a subset.
 mod build_id;
+mod dsv4_admit;
 mod dsv4_serve;
 mod embed_api;
 /// The admission/accounting seam: the server admits, denies, and reports counts;
@@ -113,6 +114,7 @@ mod prefill_receipt;
 pub mod prime_fairness;
 mod responses_api;
 pub mod route_contract;
+mod route_telemetry;
 mod surfaces;
 mod toolcall;
 mod ttft;
@@ -2202,6 +2204,10 @@ struct InflightGuard {
     idx: usize,
     tenants: TenantGauge,
     tenant: String,
+    /// The route-side slot when a dedicated route serves this request (memra#501). The lane
+    /// gauge above still counts it (drain waits on every response); the route's own count is
+    /// what its X-RateLimit reads and what the hybrid lane's reading subtracts.
+    route: Option<route_telemetry::RouteInflight>,
 }
 
 impl InflightGuard {
@@ -2232,6 +2238,7 @@ impl InflightGuard {
                 idx,
                 tenants,
                 tenant: tenant.to_string(),
+                route: None,
             },
             n,
             nt,
@@ -2273,6 +2280,12 @@ fn reset_estimate_s(m: &worker::Metrics) -> u64 {
         let mean_toks = m.tokens_out as f64 / m.completed as f64;
         return ((mean_toks * m.step_p50_ms as f64 / 1000.0).ceil() as u64).clamp(1, 600);
     }
+    rl_reset_fallback_s()
+}
+
+/// The no-signal service estimate, `MEMRA_RL_RESET_S` (default 2). Shared by the hybrid
+/// estimate above and every dedicated route's (`RouteLoad::service_estimate_s`). Read once.
+fn rl_reset_fallback_s() -> u64 {
     static D: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
     *D.get_or_init(|| {
         std::env::var("MEMRA_RL_RESET_S")
@@ -2695,26 +2708,67 @@ fn queue_wait_ceiling_s() -> u64 {
 /// the estimator-based backpressure check it replaced is gone, but a
 /// successful admission must use this compare-exchange immediately before the
 /// command send so concurrent handlers cannot all pass one stale snapshot.
+/// The admission counters a reservation reads and takes: the lane counters and the handler-to-worker
+/// pending-admits gauge (WP-A day 56, `research/spill-a-20260919/DAY56.md` sections 1 and 3). Every
+/// production path uses `AdmitCounters::GLOBAL`; the isolated shed tests pass their own pair.
+#[derive(Clone, Copy)]
+pub(crate) struct AdmitCounters {
+    lanes: &'static [std::sync::atomic::AtomicUsize; 3],
+    pending: &'static std::sync::atomic::AtomicUsize,
+}
+
+impl AdmitCounters {
+    pub(crate) const GLOBAL: AdmitCounters = AdmitCounters {
+        lanes: &worker::ADMISSION_RESERVATIONS,
+        pending: &worker::PENDING_ADMITS,
+    };
+}
+
 pub(crate) struct PendingAdmissionGuard {
     reserved: bool,
     lane: lanes::Lane,
+    /// The counters this reservation was taken on (`AdmitCounters::GLOBAL` on every production
+    /// path; a test's own pair on the isolated shed tests), so a dropped guard releases the lane slot
+    /// and the pending-admits gauge where it took them.
+    counters: AdmitCounters,
+    /// A dedicated route admitted this request (memra#501): its hard reservation is the route
+    /// ticket, not a lane slot. `ticket` holds it until `bind` moves it into the request.
+    route_bound: bool,
+    ticket: Option<route_telemetry::RouteTicket>,
 }
 
 impl PendingAdmissionGuard {
+    /// Move a route ticket into the request it admitted, immediately before the send. From
+    /// here the ticket travels with the request and releases at the route's dequeue, or with
+    /// the request wherever it is dropped first (a failed send included). A no-op for a
+    /// lane-admitted request.
+    pub(crate) fn bind(&mut self, req: &mut worker::Request) {
+        if let Some(ticket) = self.ticket.take() {
+            req.route_ticket = Some(ticket);
+        }
+    }
+
     /// Transfer the reservation to the worker. The command-channel gauge is released when the
     /// worker pops the command; the hard queue reservation remains until actual model admission
     /// or terminal rejection. Dropping a guard before send rolls both counters back.
     pub(crate) fn commit(mut self) {
+        // A route ticket still here was never bound: the request travels without it, so it
+        // must not outlive this guard as a phantom backlog entry. Dropping it releases it.
+        debug_assert!(
+            self.ticket.is_none(),
+            "a route-admitted request must be bound before commit"
+        );
         self.reserved = false;
-        std::mem::forget(self);
     }
 }
 
 impl Drop for PendingAdmissionGuard {
     fn drop(&mut self) {
         if self.reserved {
-            worker::release_pending_admit();
-            worker::release_admission_reservation(self.lane);
+            worker::release_pending_admit_on(self.counters.pending);
+            if !self.route_bound {
+                worker::release_admission_reservation_on(self.counters.lanes, self.lane);
+            }
         }
     }
 }
@@ -2740,13 +2794,32 @@ fn reserve_pending_admit_with_ceiling(
     deadline: RequestDeadline,
     ceiling_s: u64,
 ) -> Result<PendingAdmissionGuard, (Response, &'static str)> {
+    reserve_pending_admit_on(st, lane, rl, deadline, ceiling_s, AdmitCounters::GLOBAL)
+}
+
+/// The reservation path over the lane counters it reads and takes (WP-A day 56,
+/// `research/spill-a-20260919/DAY56.md`, OWED item 23). Every production path passes
+/// `worker::ADMISSION_RESERVATIONS`; the shed tests pass their own, so they need no order against
+/// the handler tests that move the global backlog.
+#[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
+fn reserve_pending_admit_on(
+    st: &AppState,
+    lane: lanes::Lane,
+    rl: &RateLimit,
+    deadline: RequestDeadline,
+    ceiling_s: u64,
+    counters: AdmitCounters,
+) -> Result<PendingAdmissionGuard, (Response, &'static str)> {
+    if let Some(route) = rl.route.as_ref() {
+        return reserve_route_admit(route, lane, deadline, ceiling_s, counters);
+    }
     // The queue bound is a capacity safety property, not a quota-only feature. A key with
     // remaining rate-limit headroom can still open hundreds of concurrent requests; applying
-    // the same bound to every interactive request keeps the normal and DSV4 unbounded channels
+    // the same bound to every interactive request keeps the central worker's unbounded channel
     // finite even before a per-key window reaches zero.
     let cap = lane_cap(lane).max(1);
     let bound = max_queue_depth(cap);
-    let reservations_for_lane = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+    let reservations_for_lane = &counters.lanes[lane.idx()];
     loop {
         let m = st.metrics.lock().map(|m| m.clone()).unwrap_or_default();
         let reservations = reservations_for_lane.load(std::sync::atomic::Ordering::Acquire);
@@ -2851,10 +2924,119 @@ fn reserve_pending_admit_with_ceiling(
             // Keep the command-channel signal for speculative-burst yield decisions. It is
             // released when the worker pops the command, while the hard reservation above is
             // held until actual model admission or terminal rejection.
-            worker::PENDING_ADMITS.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+            counters
+                .pending
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
             return Ok(PendingAdmissionGuard {
                 reserved: true,
                 lane,
+                counters,
+                route_bound: false,
+                ticket: None,
+            });
+        }
+    }
+}
+
+/// The same three sheds for a request a dedicated route serves (memra#501), judged against
+/// THAT route instead of the lane it arrived on. Before this, a DSv4 request was priced as one
+/// of the hybrid lane's 64 sessions: it queued behind a serial route while its estimate read an
+/// empty lane, and it took a lane slot the hybrid worker's requests then waited behind.
+///
+///   * the queue bound is `max_queue_depth(route capacity)` per lane, over the route's own
+///     reserved-not-dequeued count, so a flood on one route cannot shed another's traffic;
+///   * the wait estimate is the route's service p50 (the `MEMRA_RL_RESET_S` fallback until it
+///     has one) times the waves ahead: `(waiting / capacity + 1)`, with `waiting` over every
+///     lane because the route is one FIFO;
+///   * a request waits only when `running + waiting >= capacity`, so a lone request on an idle
+///     route is admitted however large the estimate;
+///   * the deadline and wait-ceiling sheds stay interactive-only, as on the hybrid lane: the
+///     dark lanes' bound is the per-lane queue bound above.
+///
+/// The ticket is the hard reservation. It rides the request and releases when the route
+/// dequeues it, never at the central worker's pop, so the queue a new arrival reads includes
+/// everything still in the route's channel.
+#[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
+fn reserve_route_admit(
+    route: &std::sync::Arc<route_telemetry::RouteLoad>,
+    lane: lanes::Lane,
+    deadline: RequestDeadline,
+    ceiling_s: u64,
+    counters: AdmitCounters,
+) -> Result<PendingAdmissionGuard, (Response, &'static str)> {
+    let cap = route.capacity();
+    let bound = max_queue_depth(cap);
+    let shed = |msg: String, est_wait_s: u64, code: &'static str| {
+        let resp = retry_contract_response(
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(error_body(&msg, "rate_limit_error", None, Some(code))),
+            )
+                .into_response(),
+            Some(est_wait_s),
+        );
+        Err((resp, code))
+    };
+    loop {
+        let waiting_lane = route.waiting(lane.idx());
+        let backlog = route.waiting_total();
+        let est_wait_s = route
+            .service_estimate_s(rl_reset_fallback_s())
+            .saturating_mul((backlog / cap + 1) as u64);
+        if waiting_lane >= bound {
+            return shed(
+                format!(
+                    "{} queue on route {:?} is at its bound ({waiting_lane} queued, bound \
+                     {bound}); this request was not admitted and is not billed; retry after \
+                     ~{est_wait_s}s (a coarse estimate, not a promise)",
+                    lane.as_str(),
+                    route.name()
+                ),
+                est_wait_s,
+                "shed_queue",
+            );
+        }
+        let waits_for_capacity = route.running() + backlog >= cap;
+        let interactive = lane == lanes::Lane::Interactive;
+        let remaining_ms = deadline.remaining().as_millis() as u64;
+        if interactive && waits_for_capacity && est_wait_s.saturating_mul(1_000) > remaining_ms {
+            return shed(
+                format!(
+                    "estimated queue wait ~{est_wait_s}s on route {:?} exceeds this request's \
+                     remaining timeout_ms deadline ({remaining_ms} ms); this request was not \
+                     admitted and is not billed; retry after ~{est_wait_s}s or raise timeout_ms \
+                     (a coarse estimate, not a promise)",
+                    route.name()
+                ),
+                est_wait_s,
+                "shed_deadline",
+            );
+        }
+        if interactive && waits_for_capacity && ceiling_s > 0 && est_wait_s > ceiling_s {
+            return shed(
+                format!(
+                    "estimated queue wait ~{est_wait_s}s on route {:?} exceeds this \
+                     deployment's queue-wait ceiling ({ceiling_s}s); this request was not \
+                     admitted and is not billed; retry after ~{est_wait_s}s (a coarse \
+                     estimate, not a promise)",
+                    route.name()
+                ),
+                est_wait_s,
+                "shed_queue_wait",
+            );
+        }
+        if let Ok(ticket) = route.try_reserve(lane.idx(), waiting_lane) {
+            counters
+                .pending
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+            return Ok(PendingAdmissionGuard {
+                reserved: true,
+                lane,
+                // A route-bound guard never releases a lane slot (`route_bound`); its pending-admits
+                // gauge is released where it was taken.
+                counters,
+                route_bound: true,
+                ticket: Some(ticket),
             });
         }
     }
@@ -2915,6 +3097,9 @@ struct RateLimit {
     limit: usize,
     remaining: usize,
     reset_s: u64,
+    /// The dedicated route serving this request, when one does (memra#501). Its presence
+    /// selects the route arm of `reserve_pending_admit`.
+    route: Option<std::sync::Arc<route_telemetry::RouteLoad>>,
 }
 
 impl RateLimit {
@@ -2952,6 +3137,36 @@ impl RateLimit {
             limit,
             remaining,
             reset_s,
+            route: None,
+        }
+    }
+
+    /// The route arm (memra#501): limit = the route's capacity (the tenant override still only
+    /// narrows it), remaining = capacity minus the route's HTTP in-flight INCLUDING this
+    /// request, reset = the route's own service estimate. A serial route therefore reads
+    /// `limit 1` and, with a request of its own in flight, `remaining 0`.
+    fn at_admit_route(
+        route: std::sync::Arc<route_telemetry::RouteLoad>,
+        tenant: &auth::TenantCtx,
+        n_tenant: usize,
+    ) -> Self {
+        let cap = route.capacity();
+        let mut remaining = cap.saturating_sub(route.inflight_total());
+        let mut limit = cap;
+        if let Some(t) = tenant.rate_limit.filter(|&t| t < cap) {
+            limit = t;
+            remaining = remaining.min(t.saturating_sub(n_tenant));
+        }
+        let reset_s = if remaining > 0 {
+            0
+        } else {
+            route.service_estimate_s(rl_reset_fallback_s())
+        };
+        RateLimit {
+            limit,
+            remaining,
+            reset_s,
+            route: Some(route),
         }
     }
 
@@ -2971,18 +3186,49 @@ impl RateLimit {
     }
 }
 
+/// The dedicated routes this state serves (memra#501). The route registry is process-global,
+/// so a book whose name is none of this state's served models (a second state in the process,
+/// a test's fake route) is not this server's traffic: it neither folds into `/metrics`, nor
+/// comes off the hybrid lane's in-flight reading, nor selects a request's route.
+fn served_routes(st: &AppState) -> Vec<std::sync::Arc<route_telemetry::RouteLoad>> {
+    route_telemetry::all()
+        .into_iter()
+        .filter(|r| st.models.iter().any(|m| m == r.name()))
+        .collect()
+}
+
 /// Take the HTTP-layer request slot or reject a tenant whose configured override is already
 /// full. Global interactive capacity still queues as before; this gate exists only when the
 /// key's override is narrower than the lane cap.
+///
+/// `model` selects the route (memra#501): a model this state serves on a dedicated route gets that route's
+/// X-RateLimit reading and, through `RateLimit::route`, its admission arm. `None` (the token
+/// utility routes, embeddings) and a centrally served model read the lane, with the in-flight
+/// count net of every dedicated route's traffic on that lane.
 #[allow(clippy::result_large_err)] // allow: the fat error type is the diagnostic contract here; boxing it would change the error surface
 fn acquire_request_slot(
     st: &AppState,
     lane: lanes::Lane,
+    model: Option<&str>,
     tenant: &auth::TenantCtx,
     env: &Envelope,
 ) -> Result<(InflightGuard, RateLimit), Response> {
     let global = lane_cap(lane);
     let tenant_cap = tenant.rate_limit.filter(|&cap| cap < global);
+    let route = model
+        .filter(|m| st.models.iter().any(|served| served == m))
+        .and_then(route_telemetry::lookup);
+    let reading = |n_inflight: usize, n_tenant: usize, route| match route {
+        Some(route) => RateLimit::at_admit_route(route, tenant, n_tenant),
+        None => {
+            let routed = served_routes(st)
+                .iter()
+                .map(|r| r.inflight(lane.idx()))
+                .sum::<usize>();
+            let hybrid = n_inflight.saturating_sub(routed);
+            RateLimit::at_admit(lane, hybrid, &st.metrics, tenant, n_tenant)
+        }
+    };
     match InflightGuard::try_acquire(
         st.inflight.clone(),
         lane,
@@ -2990,13 +3236,14 @@ fn acquire_request_slot(
         &tenant.tenant,
         tenant_cap,
     ) {
-        Ok((guard, n_inflight, n_tenant)) => {
-            let rl = RateLimit::at_admit(lane, n_inflight, &st.metrics, tenant, n_tenant);
+        Ok((mut guard, n_inflight, n_tenant)) => {
+            guard.route = route.as_ref().map(|r| r.enter(lane.idx()));
+            let rl = reading(n_inflight, n_tenant, route);
             Ok((guard, rl))
         }
         Err(n_tenant) => {
             let n_inflight = st.inflight[lane.idx()].load(std::sync::atomic::Ordering::SeqCst);
-            let rl = RateLimit::at_admit(lane, n_inflight, &st.metrics, tenant, n_tenant);
+            let rl = reading(n_inflight, n_tenant, route);
             let error =
                 worker::EngineError::rate_limit("api key concurrent request limit reached; retry");
             Err(rl.attach(with_request_id(&env.id, engine_error_response(&error))))
@@ -3022,8 +3269,10 @@ struct CompletionReq {
     /// raw token-id prompt (the exact-token validation-gate path; bypasses the tokenizer).
     #[serde(default)]
     prompt_ids: Vec<u32>,
-    /// Omitted (gap-scan F2) => context-bounded (session ctx - prompt, model-capped), the
-    /// OpenAI default-when-omitted semantics — NOT a silent 128-token truncation.
+    /// Omitted (gap-scan F2) => context-bounded (session ctx - prompt, model-capped), never a
+    /// silent 128-token truncation. Under `MEMRA_ADMIT_BY_MEMORY=1` the bound is the charged open
+    /// output instead (`admit_memory::charged_ctx_tokens`, `worker::request_budget`). The OpenAI
+    /// contract does not pin this bound (`research/spill-b-20260919/OPEN-OUTPUT-SURVEY.md`).
     #[serde(default)]
     max_tokens: Option<usize>,
     /// Omitted (dogfood F4) => NOT 0.0/greedy. `serde(default)` on an f32 yielded 0.0, which
@@ -3223,8 +3472,10 @@ impl StopSequences {
 struct ChatCompletionReq {
     model: String,
     messages: Vec<ChatMessage>,
-    /// Omitted (gap-scan F2) => context-bounded (session ctx - prompt, model-capped), the
-    /// OpenAI default-when-omitted semantics — NOT a silent 128-token truncation.
+    /// Omitted (gap-scan F2) => context-bounded (session ctx - prompt, model-capped), never a
+    /// silent 128-token truncation. Under `MEMRA_ADMIT_BY_MEMORY=1` the bound is the charged open
+    /// output instead (`admit_memory::charged_ctx_tokens`, `worker::request_budget`). The OpenAI
+    /// contract does not pin this bound (`research/spill-b-20260919/OPEN-OUTPUT-SURVEY.md`).
     #[serde(default, alias = "max_completion_tokens")]
     max_tokens: Option<usize>,
     /// Kept as Option so loaded-model capabilities can apply a provider-published default only
@@ -6194,6 +6445,25 @@ fn health_payload(st: &AppState, status: &str, detail: Option<&str>) -> serde_js
                 "degraded_reason": s.gpu_probe.degraded_reason,
                 "latched_reason": s.gpu_probe.latched_reason,
             },
+            // memra#500: `phase` above is the process aggregate (busy while any route serves);
+            // this is the central scheduler's own phase, and `routes` the dedicated serve
+            // threads' own records, each judged against the same stall threshold.
+            "scheduler_phase": health::phase_name(s.scheduler_phase),
+            "idle_for_ms": s.idle_for_ms,
+            "routes": s.routes.iter().map(|r| json!({
+                "name": r.name,
+                "phase": health::phase_name(r.phase),
+                "registered_age_ms": r.registered_age_ms,
+                "beat_age_ms": r.beat_age_ms,
+                "progress_age_ms": r.progress_age_ms,
+                "forward_progress_age_ms": r.forward_progress_age_ms,
+                "prime_rows": r.rows,
+                "rounds": r.rounds,
+                "requests": r.requests,
+                "request_faults": r.request_faults,
+                "waiting": r.waiting,
+                "dead_reason": r.dead_reason,
+            })).collect::<Vec<_>>(),
         },
     });
     if let Some(d) = detail {
@@ -6470,7 +6740,22 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
         Ok(scope) => scope,
         Err(response) => return response,
     };
-    let m = st.metrics.lock().map(|m| m.clone()).unwrap_or_default();
+    let mut m = st.metrics.lock().map(|m| m.clone()).unwrap_or_default();
+    // Dedicated routes (memra#501) serve outside the central worker, so its meter never sees
+    // their requests. Fold each route's served counters into this scrape's copy: `admitted`,
+    // `completed`, `tokens_out` and the prompt split then describe the whole process. The step
+    // percentiles stay central-only; a route's own timing is in its `routes` row below.
+    let routes = served_routes(&st)
+        .iter()
+        .map(|r| r.snapshot())
+        .collect::<Vec<_>>();
+    for r in &routes {
+        m.admitted += r.admitted;
+        m.completed += r.completed;
+        m.tokens_out += r.tokens_out;
+        m.prompt_tokens_in += r.prompt_tokens_in;
+        m.cached_tokens_in += r.cached_tokens_in;
+    }
     // These counters describe the whole process, not the authenticated tenant. Preserve them for
     // the legacy single-key completion domain, but fail closed when a multi-tenant keyring caller
     // has no explicit operator scrape token.
@@ -6531,6 +6816,36 @@ async fn get_metrics(State(st): State<AppState>, headers: HeaderMap) -> Response
         body["prefix_cache_evictions"] = json!(m.prefix_evictions);
         body["prefix_cache_skips_budget"] = json!(m.prefix_skips_budget);
         body["prefix_cache_skips_pinned"] = json!(m.prefix_skips_pinned);
+        // memra#501: one row per dedicated route. `capacity` is the route's concurrency (1 for
+        // the DSv4 serial route); `waiting` is reserved and not yet dequeued, the backlog its
+        // admission prices; `service_*_ms` is request wall time, `round_*_ms` the decode or
+        // speculative round cadence.
+        body["routes"] = json!(
+            routes
+                .iter()
+                .map(|r| json!({
+                    "name": r.name,
+                    "capacity": r.capacity,
+                    "waiting": r.waiting,
+                    "inflight": r.inflight,
+                    "running": r.running,
+                    "admitted": r.admitted,
+                    "completed": r.completed,
+                    "failed": r.failed,
+                    "cancelled": r.cancelled,
+                    "refused": r.refused,
+                    "tokens_out": r.tokens_out,
+                    "prompt_tokens_in": r.prompt_tokens_in,
+                    "cached_tokens_in": r.cached_tokens_in,
+                    "computed_tokens_in": r.prompt_tokens_in.saturating_sub(r.cached_tokens_in),
+                    "rounds": r.rounds,
+                    "service_p50_ms": r.service_p50_ms,
+                    "service_p99_ms": r.service_p99_ms,
+                    "round_p50_ms": r.round_p50_ms,
+                    "round_p99_ms": r.round_p99_ms,
+                }))
+                .collect::<Vec<_>>()
+        );
         // memra#525 fault policy: request faults retire one request and keep the worker;
         // worker respawns are the supervisor's ladder. A truncated-200 class shows up here.
         body["request_faults_total"] = json!(worker::request_faults_total());
@@ -7808,6 +8123,7 @@ fn build_request_with_trace(
         step_images: Vec::new(),
         vision_memory: None,
         wire_deadline: None, // stamped by the handler at submission (with request_id)
+        route_ticket: None,
         ttft,
         tx,
     }
@@ -8312,6 +8628,7 @@ fn build_chat_request_with_trace(
             capture: None, // set only by the embeddings/rerank routes
             vision_memory: None,
             wire_deadline: None, // stamped by the handler at submission (with request_id)
+            route_ticket: None,
             ttft,
             tx,
         },
@@ -9523,7 +9840,7 @@ async fn completions_with_admission(
     let receipt = arm_capture(receipt, || json!({ "prompt": req.prompt }));
     // RATE-LIMIT SNAPSHOT (gap-scan F12): take the in-flight slot at submission time;
     // the guard rides the response (stream included) and frees the slot at completion.
-    let (guard, rl) = match acquire_request_slot(&st, lane, &tenant, &env) {
+    let (guard, rl) = match acquire_request_slot(&st, lane, Some(&request.model), &tenant, &env) {
         Ok(slot) => slot,
         Err(resp) => {
             return ledger_rejected(receipt, resp, "rate_limit_exceeded", &env.id);
@@ -9534,7 +9851,8 @@ async fn completions_with_admission(
     }
     // BACKPRESSURE (lane/deadline-billing): shed at submission — never after — when the
     // queue is at its bound or the estimated wait cannot fit the request's deadline.
-    let pending_admit = match reserve_pending_admit(&st, lane, &rl, deadline.preheader(stream)) {
+    let mut pending_admit = match reserve_pending_admit(&st, lane, &rl, deadline.preheader(stream))
+    {
         Ok(guard) => guard,
         Err((resp, outcome)) => {
             return ledger_unbilled(receipt, rl.attach(resp), outcome, outcome, &env.id);
@@ -9550,6 +9868,7 @@ async fn completions_with_admission(
     if let Some(trace) = ttft.as_ref() {
         trace.mark_submitted();
     }
+    pending_admit.bind(&mut request);
     if st.cmd_tx.send(Cmd::Generate(Box::new(request))).is_err() {
         drop(pending_admit);
         return ledger_rejected(
@@ -9791,7 +10110,8 @@ async fn tokenize_admitted(
     // Same per-tenant concurrency gate and x-ratelimit trio as every other authenticated
     // surface. The request's semantic validation happens inside the render below, so unlike
     // chat a named 400 here holds the slot for the length of that CPU pass.
-    let (_slot, rl) = match acquire_request_slot(&st, lanes::Lane::Interactive, &tenant, &env) {
+    let (_slot, rl) = match acquire_request_slot(&st, lanes::Lane::Interactive, None, &tenant, &env)
+    {
         Ok(slot) => slot,
         Err(response) => return response,
     };
@@ -9868,7 +10188,8 @@ async fn detokenize_admitted(
         return with_request_id(&id, bad_request(&message, Some("prompt_ids")));
     }
     // Slot after validation (a named 400 never held one), then decode off the async workers.
-    let (_slot, rl) = match acquire_request_slot(&st, lanes::Lane::Interactive, &tenant, &env) {
+    let (_slot, rl) = match acquire_request_slot(&st, lanes::Lane::Interactive, None, &tenant, &env)
+    {
         Ok(slot) => slot,
         Err(response) => return response,
     };
@@ -10138,18 +10459,20 @@ async fn chat_completions_with_admission(
     // RATE-LIMIT SNAPSHOT (gap-scan F12): slot taken at submission (post-validation —
     // a 400 never held a slot); freed when the response completes (guard). It is deliberately
     // acquired BEFORE vision decode so a rejected/rate-limited request cannot expand canvases.
-    let (guard, rl) = match acquire_request_slot(&st, lane, &tenant, &env) {
-        Ok(slot) => slot,
-        Err(resp) => {
-            return ledger_rejected(receipt, resp, "rate_limit_exceeded", &env.id);
-        }
-    };
+    let (guard, rl) =
+        match acquire_request_slot(&st, lane, Some(&plan.request.model), &tenant, &env) {
+            Ok(slot) => slot,
+            Err(resp) => {
+                return ledger_rejected(receipt, resp, "rate_limit_exceeded", &env.id);
+            }
+        };
     if let Some(admission) = body_admission.as_mut() {
         admission.release();
     }
     // BACKPRESSURE (lane/deadline-billing): shed at submission — never after — when the
     // queue is at its bound or the estimated wait cannot fit the request's deadline.
-    let pending_admit = match reserve_pending_admit(&st, lane, &rl, deadline.preheader(stream)) {
+    let mut pending_admit = match reserve_pending_admit(&st, lane, &rl, deadline.preheader(stream))
+    {
         Ok(guard) => guard,
         Err((resp, outcome)) => {
             return ledger_unbilled(receipt, rl.attach(resp), outcome, outcome, &env.id);
@@ -10182,6 +10505,7 @@ async fn chat_completions_with_admission(
     if let Some(trace) = ttft.as_ref() {
         trace.mark_submitted();
     }
+    pending_admit.bind(&mut plan.request);
     if st
         .cmd_tx
         .send(Cmd::Generate(Box::new(plan.request)))
@@ -17127,7 +17451,11 @@ default_reasoning_effort = "always"
         );
     }
 
-    #[tokio::test]
+    /// WP-A day 55 (`research/spill-a-20260919/DAY55.md`, OWED item 22, T-b): on tokio's paused
+    /// clock. Every timer on the bridge's path is `tokio::time`, so the 10 ms commit, the 60 ms bound,
+    /// the 80 ms deadline and the 150 ms wait are virtual and exact; on the wall clock a runner that
+    /// starves this task for 60 ms read the commit as late (2 of 100 beside eight burners).
+    #[tokio::test(start_paused = true)]
     async fn an_extended_stream_commits_prefill_then_injects_the_original_deadline() {
         let (tx, rx) = worker::event_channel();
         tx.send(Event::PromptUsage {
@@ -17621,11 +17949,41 @@ default_reasoning_effort = "always"
     /// local-ci window 2026-08-30 — `deadline_shed_is_interactive_only...` shed on a free
     /// slot because a sibling had the interactive counter at max_queue_depth for that
     /// instant). Every test that WRITES these counters serializes here.
+    ///
+    /// WP-A day 53 (`research/spill-a-20260919/DAY53.md` section 6, OWED item 21) and day 56
+    /// (`DAY56.md`, OWED item 23): two guards over this one lock. `admission_counters_guard()` is the
+    /// lock alone, for the route tests, which never set the global backlog and retry through the
+    /// contention a handler request makes. `global_counter_writer_guard()` takes `drain_lock()` FIRST,
+    /// then this lock, for the tests that set the process-global counters: a handler test holds only
+    /// `drain_lock()`, and before day 53 a handler request could land inside a writer's window (the
+    /// backlog swapped to the queue bound) and shed 429 `shed_queue`. The shed tests run on their
+    /// own counters (`own_admit_counters`) and take neither. No test takes `drain_lock()` together
+    /// with either guard (the census `day56_the_admission_writers_are_ordered_against_the_handler_readers`).
     fn admission_counters_guard() -> std::sync::MutexGuard<'static, ()> {
+        admission_counters_lock()
+    }
+
+    fn admission_counters_lock() -> std::sync::MutexGuard<'static, ()> {
         static COUNTERS: std::sync::Mutex<()> = std::sync::Mutex::new(());
         COUNTERS
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn global_counter_writer_guard() -> AdmissionCountersGuard {
+        let drain = drain_lock();
+        let counters = admission_counters_lock();
+        AdmissionCountersGuard {
+            _counters: counters,
+            _drain: drain,
+        }
+    }
+
+    /// Both locks of `global_counter_writer_guard()`; fields drop in declaration order, so the
+    /// counters' lock is released before the drain lock (the reverse of acquisition).
+    struct AdmissionCountersGuard {
+        _counters: std::sync::MutexGuard<'static, ()>,
+        _drain: std::sync::MutexGuard<'static, ()>,
     }
 
     /// Put an admission counter back on DROP — including the drop that unwinds a failed
@@ -17677,23 +18035,86 @@ default_reasoning_effort = "always"
         g
     }
 
+    /// WP-A day 56 (`research/spill-a-20260919/DAY56.md`, OWED item 23): a shed test's own lane
+    /// counters (leaked, one set per test), so the bound's arithmetic runs on a backlog no other
+    /// test can move and the test needs no lock against the handler tests.
+    fn own_admit_counters() -> AdmitCounters {
+        AdmitCounters {
+            lanes: Box::leak(Box::default()),
+            pending: Box::leak(Box::default()),
+        }
+    }
+
+    /// `reserve_pending_admit` over a test's own lane counters.
+    #[allow(clippy::result_large_err)] // allow: the reservation path's own error type, passed through
+    fn reserve_own(
+        lanes_counters: AdmitCounters,
+        st: &AppState,
+        lane: lanes::Lane,
+        rl: &RateLimit,
+        deadline: RequestDeadline,
+    ) -> Result<PendingAdmissionGuard, (Response, &'static str)> {
+        reserve_pending_admit_on(
+            st,
+            lane,
+            rl,
+            deadline,
+            queue_wait_ceiling_s(),
+            lanes_counters,
+        )
+    }
+
+    /// `reserve_pending_admit_with_ceiling` over a test's own lane counters.
+    #[allow(clippy::result_large_err)] // allow: the reservation path's own error type, passed through
+    fn reserve_own_with_ceiling(
+        lanes_counters: AdmitCounters,
+        st: &AppState,
+        lane: lanes::Lane,
+        rl: &RateLimit,
+        deadline: RequestDeadline,
+        ceiling_s: u64,
+    ) -> Result<PendingAdmissionGuard, (Response, &'static str)> {
+        reserve_pending_admit_on(st, lane, rl, deadline, ceiling_s, lanes_counters)
+    }
+
+    /// The interactive reservation over a test's own counters: nothing else moves them, so there
+    /// is no contention to retry through.
+    #[allow(clippy::result_large_err)] // allow: the reservation path's own error type, passed through
+    fn reserve_own_interactive(
+        lanes_counters: AdmitCounters,
+        st: &AppState,
+        rl: &RateLimit,
+        deadline_ms: u64,
+    ) -> Result<PendingAdmissionGuard, (Response, &'static str)> {
+        reserve_own(
+            lanes_counters,
+            st,
+            lanes::Lane::Interactive,
+            rl,
+            RequestDeadline::starting_now(deadline_ms),
+        )
+    }
+
     /// BACKPRESSURE, absolute bound: at MEMRA_MAX_QUEUE_DEPTH the request sheds with 429 +
     /// Retry-After, outcome `shed_queue`, no bill, X-RateLimit trio present.
     #[test]
     fn the_queue_bound_sheds_with_429_retry_after_and_the_ratelimit_trio() {
-        let _counters = admission_counters_guard();
+        // WP-A day 56 (`DAY56.md`, OWED item 23): this test's own lane counters, no lock.
+        let lanes_counters = own_admit_counters();
         let st = fake_worker_state();
         let lane = lanes::Lane::Interactive;
         let cap = lane_cap(lane);
-        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let counter = &lanes_counters.lanes[lane.idx()];
         let prev = counter.swap(max_queue_depth(cap), std::sync::atomic::Ordering::AcqRel);
         let _restore = CounterRestore(counter, prev);
         let rl = RateLimit {
             limit: cap,
             remaining: 0,
             reset_s: 1,
+            route: None,
         };
-        let (resp, outcome) = reserve_pending_admit(
+        let (resp, outcome) = reserve_own(
+            lanes_counters,
             &st,
             lane,
             &rl,
@@ -17723,7 +18144,8 @@ default_reasoning_effort = "always"
     /// keyed on the caller's own deadline, not on load alone.
     #[test]
     fn admission_sheds_only_when_the_estimated_wait_cannot_fit_the_deadline() {
-        let _counters = admission_counters_guard();
+        // WP-A day 56 (`DAY56.md`, OWED item 23): this test's own lane counters, no lock.
+        let lanes_counters = own_admit_counters();
         let st = fake_worker_state();
         let lane = lanes::Lane::Interactive;
         let cap = lane_cap(lane);
@@ -17733,16 +18155,18 @@ default_reasoning_effort = "always"
             m.tokens_out = 1_000;
             m.step_p50_ms = 10.0; // mean service ~1s
         }
-        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let counter = &lanes_counters.lanes[lane.idx()];
         let prev = counter.swap(cap, std::sync::atomic::Ordering::AcqRel); // one wave ahead
         let _restore = CounterRestore(counter, prev);
         let rl = RateLimit {
             limit: cap,
             remaining: 0,
             reset_s: 1,
+            route: None,
         };
         // A 90s deadline absorbs a ~2s wait: ADMIT (never shed a request that can wait).
-        let admitted = reserve_pending_admit(
+        let admitted = reserve_own(
+            lanes_counters,
             &st,
             lane,
             &rl,
@@ -17754,7 +18178,8 @@ default_reasoning_effort = "always"
         );
         drop(admitted); // release the reservation the admit took
         // A 1s deadline cannot: SHED, with the estimate as Retry-After.
-        let (resp, outcome) = reserve_pending_admit(
+        let (resp, outcome) = reserve_own(
+            lanes_counters,
             &st,
             lane,
             &rl,
@@ -17771,7 +18196,8 @@ default_reasoning_effort = "always"
     /// inside the worker — the deadline gate here is interactive-only by design).
     #[test]
     fn deadline_shed_is_interactive_only_and_silent_with_free_slots() {
-        let _counters = admission_counters_guard();
+        // WP-A day 56 (`DAY56.md`, OWED item 23): this test's own lane counters, no lock.
+        let lanes_counters = own_admit_counters();
         let st = fake_worker_state();
         let cap = lane_cap(lanes::Lane::Interactive);
         {
@@ -17785,12 +18211,13 @@ default_reasoning_effort = "always"
             limit: cap,
             remaining: 1,
             reset_s: 0,
+            route: None,
         };
         // Retried through the transient sibling-reservation shed (see the helper): this
         // enormous estimate sheds even the minimum deadline whenever the process-global
         // backlog reads > 0 for an instant. The assertion still requires the free-slot
         // admit to prove itself.
-        let g = reserve_interactive_through_contention(&st, &free, TIMEOUT_MS_MIN);
+        let g = reserve_own_interactive(lanes_counters, &st, &free, TIMEOUT_MS_MIN);
         assert!(
             g.is_ok(),
             "free capacity must admit regardless of the estimate"
@@ -17802,12 +18229,14 @@ default_reasoning_effort = "always"
             limit: cap,
             remaining: 0,
             reset_s: 5,
+            route: None,
         };
         for lane in [lanes::Lane::Judge, lanes::Lane::Harvest] {
-            let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+            let counter = &lanes_counters.lanes[lane.idx()];
             let prev = counter.swap(1, std::sync::atomic::Ordering::AcqRel); // backlog > 0
             let _restore = CounterRestore(counter, prev);
-            let g = reserve_pending_admit(
+            let g = reserve_own(
+                lanes_counters,
                 &st,
                 lane,
                 &full,
@@ -17829,7 +18258,8 @@ default_reasoning_effort = "always"
     /// today's behavior byte-for-byte, and this test is what holds that line.
     #[test]
     fn a_saturated_queue_with_free_http_slots_queues_silently_without_a_ceiling() {
-        let _counters = admission_counters_guard();
+        // WP-A day 56 (`DAY56.md`, OWED item 23): this test's own lane counters, no lock.
+        let lanes_counters = own_admit_counters();
         let st = fake_worker_state();
         let lane = lanes::Lane::Interactive;
         let cap = lane_cap(lane);
@@ -17839,7 +18269,7 @@ default_reasoning_effort = "always"
             m.tokens_out = 1_000; // mean 100 tok/request...
             m.step_p50_ms = 100.0; // ...x 100 ms = ~10 s/wave; one wave ahead => ~20 s
         }
-        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let counter = &lanes_counters.lanes[lane.idx()];
         let prev = counter.swap(cap, std::sync::atomic::Ordering::AcqRel); // one wave ahead
         let _restore = CounterRestore(counter, prev);
         // The HTTP lane is NOT full: a free slot remains, but the wave ahead means this
@@ -17848,8 +18278,10 @@ default_reasoning_effort = "always"
             limit: cap,
             remaining: 1,
             reset_s: 0,
+            route: None,
         };
-        let g = reserve_pending_admit(
+        let g = reserve_own(
+            lanes_counters,
             &st,
             lane,
             &free,
@@ -17869,7 +18301,8 @@ default_reasoning_effort = "always"
     /// the X-RateLimit trio rides the shed like every other 429 on this surface.
     #[test]
     fn the_queue_wait_ceiling_sheds_with_429_retry_after_and_the_ratelimit_trio() {
-        let _counters = admission_counters_guard();
+        // WP-A day 56 (`DAY56.md`, OWED item 23): this test's own lane counters, no lock.
+        let lanes_counters = own_admit_counters();
         let st = fake_worker_state();
         let lane = lanes::Lane::Interactive;
         let cap = lane_cap(lane);
@@ -17879,15 +18312,17 @@ default_reasoning_effort = "always"
             m.tokens_out = 1_000; // mean 100 tok/request...
             m.step_p50_ms = 100.0; // ...x 100 ms = ~10 s/wave; one wave ahead => ~20 s
         }
-        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let counter = &lanes_counters.lanes[lane.idx()];
         let prev = counter.swap(cap, std::sync::atomic::Ordering::AcqRel); // one wave ahead
         let _restore = CounterRestore(counter, prev);
         let free = RateLimit {
             limit: cap,
             remaining: 1,
             reset_s: 0,
+            route: None,
         };
-        let (resp, outcome) = reserve_pending_admit_with_ceiling(
+        let (resp, outcome) = reserve_own_with_ceiling(
+            lanes_counters,
             &st,
             lane,
             &free,
@@ -17925,7 +18360,8 @@ default_reasoning_effort = "always"
     /// dark lanes are never judged by it (the worker's own lane gate owns those).
     #[test]
     fn the_queue_wait_ceiling_admits_under_it_and_never_touches_dark_lanes() {
-        let _counters = admission_counters_guard();
+        // WP-A day 56 (`DAY56.md`, OWED item 23): this test's own lane counters, no lock.
+        let lanes_counters = own_admit_counters();
         let st = fake_worker_state();
         let lane = lanes::Lane::Interactive;
         let cap = lane_cap(lane);
@@ -17935,15 +18371,17 @@ default_reasoning_effort = "always"
             m.tokens_out = 1_000;
             m.step_p50_ms = 100.0; // ~10 s/wave; one wave ahead => ~20 s
         }
-        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let counter = &lanes_counters.lanes[lane.idx()];
         let prev = counter.swap(cap, std::sync::atomic::Ordering::AcqRel);
         let _restore = CounterRestore(counter, prev);
         let free = RateLimit {
             limit: cap,
             remaining: 1,
             reset_s: 0,
+            route: None,
         };
-        let g = reserve_pending_admit_with_ceiling(
+        let g = reserve_own_with_ceiling(
+            lanes_counters,
             &st,
             lane,
             &free,
@@ -17960,12 +18398,14 @@ default_reasoning_effort = "always"
             limit: cap,
             remaining: 0,
             reset_s: 5,
+            route: None,
         };
         for dark in [lanes::Lane::Judge, lanes::Lane::Harvest] {
-            let counter = &worker::ADMISSION_RESERVATIONS[dark.idx()];
+            let counter = &lanes_counters.lanes[dark.idx()];
             let prev = counter.swap(1, std::sync::atomic::Ordering::AcqRel); // backlog > 0
             let _restore = CounterRestore(counter, prev);
-            let g = reserve_pending_admit_with_ceiling(
+            let g = reserve_own_with_ceiling(
+                lanes_counters,
                 &st,
                 dark,
                 &full,
@@ -17985,7 +18425,8 @@ default_reasoning_effort = "always"
     /// a deadline shorter than the estimate stays `shed_deadline`.
     #[test]
     fn the_queue_wait_ceiling_leaves_the_existing_shed_arms_first_and_unchanged() {
-        let _counters = admission_counters_guard();
+        // WP-A day 56 (`DAY56.md`, OWED item 23): this test's own lane counters, no lock.
+        let lanes_counters = own_admit_counters();
         let st = fake_worker_state();
         let lane = lanes::Lane::Interactive;
         let cap = lane_cap(lane);
@@ -17999,13 +18440,15 @@ default_reasoning_effort = "always"
             limit: cap,
             remaining: 0,
             reset_s: 1,
+            route: None,
         };
-        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let counter = &lanes_counters.lanes[lane.idx()];
         // At the absolute bound: shed_queue wins even with a 1 s ceiling armed.
         let prev = counter.swap(max_queue_depth(cap), std::sync::atomic::Ordering::AcqRel);
         let _restore = CounterRestore(counter, prev);
         assert!(matches!(
-            reserve_pending_admit_with_ceiling(
+            reserve_own_with_ceiling(
+                lanes_counters,
                 &st,
                 lane,
                 &rl,
@@ -18017,7 +18460,8 @@ default_reasoning_effort = "always"
         // Below the bound with a too-short deadline: shed_deadline wins over the ceiling.
         counter.store(cap, std::sync::atomic::Ordering::Release);
         assert!(matches!(
-            reserve_pending_admit_with_ceiling(
+            reserve_own_with_ceiling(
+                lanes_counters,
                 &st,
                 lane,
                 &rl,
@@ -18054,9 +18498,696 @@ default_reasoning_effort = "always"
         );
     }
 
+    // ---- dedicated-route admission (memra#501) ----------------------------------------
+    //
+    // Every route test registers its own route name: the registry is process-global. Tests
+    // that read `PENDING_ADMITS`-adjacent state or a route's in-flight count serialize on
+    // `admission_counters_guard` like the lane tests above.
+
+    fn route_rl(route: &std::sync::Arc<route_telemetry::RouteLoad>) -> RateLimit {
+        RateLimit {
+            limit: route.capacity(),
+            remaining: 0,
+            reset_s: 1,
+            route: Some(route.clone()),
+        }
+    }
+
+    fn deadline_ms(ms: u64) -> RequestDeadline {
+        RequestDeadline::starting_now(ms)
+    }
+
+    /// A route shed's client text is one readable sentence naming its route: no whitespace
+    /// run (the three route literals once lost their line continuations and answered with
+    /// 22-space gaps mid-sentence).
+    fn assert_route_shed_text(resp: Response, route: &str) {
+        let body = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(body_value(resp));
+        let msg = body["error"]["message"].as_str().expect("error message");
+        assert!(msg.contains(&format!("route {route:?}")), "{msg}");
+        assert!(!msg.contains("  "), "whitespace run in {msg:?}");
+    }
+
+    /// No service signal yet: the route's estimate is the `MEMRA_RL_RESET_S` fallback (2 s by
+    /// default) times the waves ahead, `backlog / capacity + 1`. The deadline shed on that
+    /// estimate is reachable, and a wider route divides the same backlog into fewer waves.
+    #[test]
+    fn a_route_prices_its_wait_from_the_fallback_times_its_waves_of_backlog() {
+        let _counters = admission_counters_guard();
+        let st = fake_worker_state();
+        let lane = lanes::Lane::Interactive;
+        let f = rl_reset_fallback_s();
+        assert!(f > 0, "the test needs a nonzero fallback estimate");
+        let serial = route_telemetry::register("t501-fallback-serial", 1);
+        let rl = route_rl(&serial);
+        let first = reserve_pending_admit(&st, lane, &rl, deadline_ms(TIMEOUT_MS_MIN))
+            .map_err(|(_, o)| o)
+            .expect("a lone request on an idle route is admitted");
+        assert!(first.route_bound && first.ticket.is_some());
+        assert_eq!(serial.waiting(lane.idx()), 1);
+        let (resp, outcome) = reserve_pending_admit(&st, lane, &rl, deadline_ms(TIMEOUT_MS_MIN))
+            .map(|_| ())
+            .expect_err("one wave ahead of a 1 s deadline must shed");
+        assert_eq!(outcome, "shed_deadline");
+        assert_eq!(retry_after(&resp), Some((2 * f).clamp(1, 60).to_string()));
+        assert_route_shed_text(resp, "t501-fallback-serial");
+        let second = reserve_pending_admit(&st, lane, &rl, deadline_ms(TIMEOUT_MS_MAX))
+            .map_err(|(_, o)| o)
+            .expect("a deadline that covers the estimate is admitted");
+        let (resp, outcome) = reserve_pending_admit(&st, lane, &rl, deadline_ms(TIMEOUT_MS_MIN))
+            .map(|_| ())
+            .expect_err("two waves ahead");
+        assert_eq!(outcome, "shed_deadline");
+        assert_eq!(retry_after(&resp), Some((3 * f).clamp(1, 60).to_string()));
+        drop((first, second));
+        assert_eq!(
+            serial.waiting_total(),
+            0,
+            "a dropped guard frees its ticket"
+        );
+
+        // Capacity 2: one request ahead leaves a free slot, so no wait is judged at all; two
+        // ahead is one full wave, `f * (2 / 2 + 1)`.
+        let wide = route_telemetry::register("t501-fallback-wide", 2);
+        let rl = route_rl(&wide);
+        let a = reserve_pending_admit(&st, lane, &rl, deadline_ms(TIMEOUT_MS_MIN))
+            .map_err(|(_, o)| o)
+            .expect("empty");
+        let b = reserve_pending_admit(&st, lane, &rl, deadline_ms(TIMEOUT_MS_MIN))
+            .map_err(|(_, o)| o)
+            .expect("one ahead of a capacity-2 route still has a slot");
+        let (resp, outcome) = reserve_pending_admit(&st, lane, &rl, deadline_ms(TIMEOUT_MS_MIN))
+            .map(|_| ())
+            .expect_err("a full wave ahead");
+        assert_eq!(outcome, "shed_deadline");
+        assert_eq!(retry_after(&resp), Some((2 * f).clamp(1, 60).to_string()));
+        drop((a, b));
+    }
+
+    /// The occupancy the judgement reads is `running + waiting`: a lone request on an idle
+    /// route is admitted however large the observed service time, and the same request is
+    /// judged once the route is serving one. Both interactive sheds are reachable through the
+    /// route arm; the dark lanes are bounded by the queue bound only.
+    #[test]
+    fn an_idle_route_admits_a_lone_request_and_a_busy_one_judges_it_on_observed_service() {
+        let _counters = admission_counters_guard();
+        let st = fake_worker_state();
+        let lane = lanes::Lane::Interactive;
+        let route = route_telemetry::register("t501-observed", 1);
+        route.seed_service_ms(60_000);
+        let rl = route_rl(&route);
+        let lone = reserve_pending_admit(&st, lane, &rl, deadline_ms(TIMEOUT_MS_MIN))
+            .map_err(|(_, o)| o)
+            .expect("an idle route never deadline-judges a lone request");
+        drop(lone);
+        let serving = route.begin();
+        let (resp, outcome) = reserve_pending_admit(&st, lane, &rl, deadline_ms(TIMEOUT_MS_MIN))
+            .map(|_| ())
+            .expect_err("a 60 s service time cannot fit a 1 s deadline behind a running request");
+        assert_eq!(outcome, "shed_deadline");
+        assert_eq!(retry_after(&resp), Some("60".into()));
+        let (resp, outcome) =
+            reserve_pending_admit_with_ceiling(&st, lane, &rl, deadline_ms(TIMEOUT_MS_MAX), 30)
+                .map(|_| ())
+                .expect_err("the 30 s ceiling sheds a 60 s estimate the deadline could absorb");
+        assert_eq!(outcome, "shed_queue_wait");
+        assert_route_shed_text(resp, "t501-observed");
+        let dark = reserve_pending_admit_with_ceiling(
+            &st,
+            lanes::Lane::Harvest,
+            &rl,
+            deadline_ms(TIMEOUT_MS_MIN),
+            30,
+        )
+        .map_err(|(_, o)| o)
+        .expect("the dark lanes are not deadline-judged");
+        drop((dark, serving));
+        assert_eq!((route.running(), route.waiting_total()), (0, 0));
+    }
+
+    /// Overload on one route: the queue bound is `max_queue_depth(capacity)` over the route's
+    /// own backlog, a shed takes nothing (the queue cannot grow past its bound), and neither
+    /// the hybrid lane nor another route is affected. Route tickets hold no lane slot.
+    #[test]
+    fn a_route_at_its_bound_sheds_alone_and_leaves_the_hybrid_lane_and_other_routes_alone() {
+        let _counters = admission_counters_guard();
+        let st = fake_worker_state();
+        let lane = lanes::Lane::Interactive;
+        let busy = route_telemetry::register("t501-busy", 1);
+        let other = route_telemetry::register("t501-other", 1);
+        let bound = max_queue_depth(1);
+        let mut held: Vec<_> = (0..bound)
+            .map(|k| busy.try_reserve(lane.idx(), k).expect("under the bound"))
+            .collect();
+        let rl = route_rl(&busy);
+        for _ in 0..3 {
+            let (resp, outcome) =
+                reserve_pending_admit(&st, lane, &rl, deadline_ms(TIMEOUT_MS_MAX))
+                    .map(|_| ())
+                    .expect_err("at the bound");
+            assert_eq!(outcome, "shed_queue");
+            assert!(retry_after(&resp).is_some());
+            assert_route_shed_text(resp, "t501-busy");
+            assert_eq!(
+                busy.waiting(lane.idx()),
+                bound,
+                "a shed request takes nothing"
+            );
+        }
+        // Each lane has its own bound on the route, as on the hybrid path.
+        let judge =
+            reserve_pending_admit(&st, lanes::Lane::Judge, &rl, deadline_ms(TIMEOUT_MS_MAX))
+                .map_err(|(_, o)| o)
+                .expect("the judge lane's queue on the route is empty");
+        assert!(judge.route_bound);
+        drop(judge);
+        let hybrid = RateLimit {
+            limit: lane_cap(lane),
+            remaining: 1,
+            reset_s: 0,
+            route: None,
+        };
+        let g = reserve_interactive_through_contention(&st, &hybrid, TIMEOUT_MS_MAX)
+            .map_err(|(_, o)| o)
+            .expect("a route backlog is not the hybrid lane's backlog");
+        assert!(!g.route_bound && g.ticket.is_none());
+        drop(g);
+        let g = reserve_pending_admit(&st, lane, &route_rl(&other), deadline_ms(TIMEOUT_MS_MIN))
+            .map_err(|(_, o)| o)
+            .expect("another route's backlog is not this one's");
+        drop(g);
+        // One dequeue reopens exactly one slot.
+        drop(held.pop());
+        let g = reserve_pending_admit(&st, lane, &rl, deadline_ms(TIMEOUT_MS_MAX))
+            .map_err(|(_, o)| o)
+            .expect("a dequeue frees a slot");
+        assert_eq!(busy.waiting(lane.idx()), bound);
+        drop((g, held));
+        assert_eq!(busy.waiting_total(), 0);
+    }
+
+    /// The route's hard reservation outlives the central worker's pop: the ticket rides the
+    /// request and releases at the route's dequeue, or wherever the request is dropped first.
+    /// A guard dropped before the send frees the ticket too.
+    #[test]
+    fn a_route_ticket_rides_the_request_and_releases_at_the_routes_dequeue() {
+        let _counters = admission_counters_guard();
+        let st = fake_worker_state();
+        let lane = lanes::Lane::Interactive;
+        let route = route_telemetry::register("t501-ticket", 1);
+        let rl = route_rl(&route);
+        let request = || {
+            let req: CompletionReq = serde_json::from_value(json!({
+                "model": "t501-ticket",
+                "prompt_ids": [7, 7],
+            }))
+            .unwrap();
+            let (tx, _rx) = worker::event_channel();
+            build_request(&req, tx, lane, None)
+        };
+        let mut req = request();
+        let mut guard = reserve_pending_admit(&st, lane, &rl, deadline_ms(TIMEOUT_MS_MAX))
+            .map_err(|(_, o)| o)
+            .expect("idle route");
+        guard.bind(&mut req);
+        assert!(guard.ticket.is_none() && req.route_ticket.is_some());
+        guard.commit();
+        worker::release_pending_admit(); // handle_cmd's pop
+        assert_eq!(
+            route.waiting(lane.idx()),
+            1,
+            "the central pop keeps the route slot"
+        );
+        worker::release_request_reservation(&mut req); // the route's dequeue
+        assert!(req.route_ticket.is_none());
+        assert_eq!(route.waiting(lane.idx()), 0);
+
+        let mut req = request();
+        let mut guard = reserve_pending_admit(&st, lane, &rl, deadline_ms(TIMEOUT_MS_MAX))
+            .map_err(|(_, o)| o)
+            .expect("idle route");
+        guard.bind(&mut req);
+        guard.commit();
+        worker::release_pending_admit();
+        drop(req); // a dead route's channel dropping its queue
+        assert_eq!(route.waiting(lane.idx()), 0);
+
+        let guard = reserve_pending_admit(&st, lane, &rl, deadline_ms(TIMEOUT_MS_MAX))
+            .map_err(|(_, o)| o)
+            .expect("idle route");
+        assert_eq!(route.waiting(lane.idx()), 1);
+        drop(guard); // a failed send
+        assert_eq!(route.waiting(lane.idx()), 0);
+    }
+
+    /// X-RateLimit-* read the selected route: a serial route answers `limit 1`, `remaining 0`
+    /// with its own request in flight and the route's service estimate as the reset; the
+    /// hybrid reading on the same lane nets the route's traffic out.
+    #[test]
+    fn the_ratelimit_trio_reads_the_route_the_model_selects() {
+        let _counters = admission_counters_guard();
+        let mut st = fake_worker_state();
+        st.models = Arc::new(vec!["m".into(), "t501-trio".into()]);
+        let lane = lanes::Lane::Interactive;
+        let route = route_telemetry::register("t501-trio", 1);
+        let tenant = auth::TenantCtx {
+            tenant: "t501".into(),
+            lane_class: auth::LaneClass::Interactive,
+            rate_limit: None,
+            key_prefix: None,
+        };
+        let env = Envelope::new(true);
+        let Ok((guard, rl)) = acquire_request_slot(&st, lane, Some("t501-trio"), &tenant, &env)
+        else {
+            panic!("the route slot must be acquired");
+        };
+        assert_eq!((rl.limit, rl.remaining), (1, 0));
+        assert_eq!(rl.reset_s, route.service_estimate_s(rl_reset_fallback_s()));
+        assert!(rl.route.is_some());
+        assert_eq!(route.inflight(lane.idx()), 1);
+        let env2 = Envelope::new(true);
+        let Ok((hybrid_guard, hybrid)) = acquire_request_slot(&st, lane, Some("m"), &tenant, &env2)
+        else {
+            panic!("the hybrid slot must be acquired");
+        };
+        assert!(hybrid.route.is_none());
+        assert_eq!(hybrid.limit, lane_cap(lane));
+        assert_eq!(
+            hybrid.remaining,
+            lane_cap(lane) - 1,
+            "the route's request is not the hybrid lane's occupancy"
+        );
+        drop((guard, hybrid_guard));
+        assert_eq!(route.inflight(lane.idx()), 0);
+    }
+
+    /// The route registry is process-global: a book whose model this state does not serve
+    /// neither selects the request's reading nor comes off this state's hybrid in-flight count.
+    #[test]
+    fn a_route_book_this_state_does_not_serve_is_not_its_traffic() {
+        let _counters = admission_counters_guard();
+        let st = fake_worker_state();
+        let lane = lanes::Lane::Interactive;
+        let foreign = route_telemetry::register("t501-foreign", 1);
+        let held = foreign.enter(lane.idx());
+        let tenant = auth::TenantCtx {
+            tenant: "t501-foreign".into(),
+            lane_class: auth::LaneClass::Interactive,
+            rate_limit: None,
+            key_prefix: None,
+        };
+        let env = Envelope::new(true);
+        let Ok((guard, rl)) = acquire_request_slot(&st, lane, Some("t501-foreign"), &tenant, &env)
+        else {
+            panic!("the lane slot must be acquired");
+        };
+        assert!(
+            rl.route.is_none(),
+            "a model this state does not serve selects no route"
+        );
+        assert_eq!(rl.limit, lane_cap(lane));
+        assert_eq!(
+            rl.remaining,
+            lane_cap(lane) - 1,
+            "a foreign book's in-flight is not netted off this state's lane"
+        );
+        assert_eq!(
+            foreign.inflight(lane.idx()),
+            1,
+            "the foreign book is untouched"
+        );
+        drop((guard, held));
+    }
+
+    /// Wiring: every production ingress that commits a pending admission binds it to the
+    /// request first, or a route ticket would release at commit and the route's queue would
+    /// read empty while the request waits in it. Needles are built at runtime so this test's
+    /// own text cannot satisfy them.
+    #[test]
+    fn every_pending_admit_commit_is_preceded_by_its_bind() {
+        let commit = ["pending_admit", ".commit();"].concat();
+        let bind = ["pending_admit", ".bind(&mut "].concat();
+        for (file, src) in [
+            ("lib.rs", include_str!("lib.rs")),
+            ("surfaces.rs", include_str!("surfaces.rs")),
+            ("embed_api.rs", include_str!("embed_api.rs")),
+        ] {
+            let code: String = src
+                .lines()
+                .map(|l| l.split("//").next().unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let commits: Vec<usize> = code.match_indices(&commit).map(|(i, _)| i).collect();
+            assert!(!commits.is_empty(), "{file}: no commit site found");
+            let mut floor = 0;
+            for at in commits {
+                let bound = code[floor..at].rfind(&bind).is_some();
+                assert!(
+                    bound,
+                    "{file}: a pending_admit commit at byte {at} has no bind before it"
+                );
+                floor = at;
+            }
+        }
+    }
+
+    /// A fake route end to end through the completions handler: the model selects its route,
+    /// the route's trio and admission apply, the route books the request, and /metrics folds
+    /// it into the process counters and lists the route. At the route's bound the handler
+    /// sheds that model alone while the hybrid model keeps serving.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: the admission counters guard serializes this test against its route-reading peers
+    async fn a_fake_route_serves_through_its_own_admission_and_books_its_metrics() {
+        let _counters = admission_counters_guard();
+        let mut st = fake_worker_state_with_steps(3, std::time::Duration::ZERO);
+        st.models = Arc::new(vec!["m".into(), "t501-fake-route".into()]);
+        let route = route_telemetry::register("t501-fake-route", 1);
+        let complete = |model: &'static str| {
+            let st = st.clone();
+            async move {
+                completions(
+                    State(st),
+                    HeaderMap::new(),
+                    None,
+                    Json(serde_json::from_value(json!({"model": model, "prompt": "t"})).unwrap()),
+                )
+                .await
+            }
+        };
+        let resp = complete("t501-fake-route").await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(resp.headers()["x-ratelimit-limit"], "1");
+        let s = route.snapshot();
+        assert_eq!((s.admitted, s.completed, s.failed), (1, 1, 0));
+        assert_eq!((s.tokens_out, s.prompt_tokens_in), (3, 1));
+        assert_eq!((s.waiting, s.running, s.inflight), (0, 0, 0));
+        assert!(s.service_p50_ms.is_some());
+
+        let metrics = get_metrics(State(st.clone()), HeaderMap::new()).await;
+        assert_eq!(metrics.status(), StatusCode::OK);
+        let body = body_value(metrics).await;
+        let row = body["routes"]
+            .as_array()
+            .expect("an operator scrape lists the routes")
+            .iter()
+            .find(|r| r["name"] == "t501-fake-route")
+            .expect("the fake route's row")
+            .clone();
+        assert_eq!(row["capacity"], 1);
+        assert_eq!(row["completed"], 1);
+        assert_eq!(row["tokens_out"], 3);
+        assert!(
+            body["completed"].as_u64().unwrap() >= 1 && body["tokens_out"].as_u64().unwrap() >= 3,
+            "the process counters fold the route's served requests in: {body}"
+        );
+
+        let held: Vec<_> = (0..max_queue_depth(1))
+            .map(|k| route.try_reserve(0, k).expect("under the bound"))
+            .collect();
+        let shed = complete("t501-fake-route").await;
+        assert_eq!(shed.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(retry_after(&shed).is_some());
+        assert_eq!(shed.headers()["x-ratelimit-limit"], "1");
+        let shed_body = body_value(shed).await;
+        assert_eq!(shed_body["error"]["code"], "shed_queue");
+        let hybrid = complete("m").await;
+        assert_eq!(
+            hybrid.status(),
+            StatusCode::OK,
+            "the route's overload is its own"
+        );
+        drop(held);
+        assert_eq!(
+            route.snapshot().completed,
+            1,
+            "the shed request was never served"
+        );
+    }
+
+    /// A fake DSv4-shaped route whose worker runs the route's real memory door
+    /// (`dsv4_admit::admit_session`), outcome mapping (`dsv4_serve::admission_answer`) and
+    /// booking (`dsv4_serve::settle`) against scripted per-card readings (memra#503), end to end
+    /// through the completions handler: a peer card that stays short refuses 429 with the
+    /// shared Retry-After, a session above a card's ceiling answers 400 naming the largest
+    /// session that fits, memory freed mid-defer admits and serves, and a client that leaves
+    /// mid-defer is booked cancelled with nothing left held.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: the admission counters guard serializes this test against its route-reading peers
+    async fn a_fake_route_memory_door_refuses_defers_and_recovers_through_the_handler() {
+        use crate::dsv4_admit::{self, DeviceNeed, MemoryProbe, SessionNeed};
+        use crate::dsv4_serve::{Served, admission_answer, settle};
+
+        struct Scripted {
+            free: Vec<Vec<u64>>,
+            polls: usize,
+            clock_ms: u64,
+            tx: worker::EventSender,
+            deferring: std::sync::mpsc::Sender<()>,
+        }
+        impl MemoryProbe for Scripted {
+            fn device_free(&mut self, devs: &[usize]) -> Result<Vec<u64>, String> {
+                let row = self.free[self.polls.min(self.free.len() - 1)].clone();
+                self.polls += 1;
+                assert_eq!(row.len(), devs.len());
+                Ok(row)
+            }
+            fn host(&mut self) -> Option<(u64, u64)> {
+                None
+            }
+            fn reclaim_host(&mut self, _: u64) -> u64 {
+                0
+            }
+            fn cancelled(&self) -> bool {
+                self.tx.is_closed()
+            }
+            fn elapsed_ms(&self) -> u64 {
+                self.clock_ms
+            }
+            fn wait(&mut self, ms: u64) {
+                if self.polls == 1 {
+                    let _ = self.deferring.send(());
+                }
+                self.clock_ms += ms;
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+        }
+        /// One request's script: its per-card charge, the readings, and the defer budget.
+        struct Plan {
+            need: [u64; 2],
+            free: Vec<Vec<u64>>,
+            budget_ms: u64,
+        }
+        const CEILING: u64 = 200;
+        const FITS: usize = 777;
+
+        let _counters = admission_counters_guard();
+        let mut st = fake_worker_state_with_steps(1, std::time::Duration::ZERO);
+        st.models = Arc::new(vec!["m".into(), "t503-fake-route".into()]);
+        let route = route_telemetry::register("t503-fake-route", 1);
+        let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Cmd>();
+        let (plan_tx, plan_rx) = std::sync::mpsc::channel::<Plan>();
+        let (deferring_tx, deferring_rx) = std::sync::mpsc::channel::<()>();
+        st.cmd_tx = cmd_tx;
+        std::thread::spawn(move || {
+            while let Ok(Cmd::Generate(mut req)) = cmd_rx.recv() {
+                worker::release_pending_admit();
+                let mut run = route_telemetry::lookup(&req.model)
+                    .expect("the fake route is registered")
+                    .begin();
+                worker::release_request_reservation(&mut req);
+                run.admit();
+                let plan = plan_rx.recv().expect("one plan per request");
+                let need = SessionNeed {
+                    devices: (0..2)
+                        .map(|dev| DeviceNeed {
+                            dev,
+                            need: plan.need[dev],
+                            ceiling: CEILING,
+                        })
+                        .collect(),
+                    host: 0,
+                };
+                let mut probe = Scripted {
+                    free: plan.free,
+                    polls: 0,
+                    clock_ms: 0,
+                    tx: req.tx.clone(),
+                    deferring: deferring_tx.clone(),
+                };
+                let outcome = dsv4_admit::admit_session(&need, &mut probe, plan.budget_ms)
+                    .expect("the scripted probe reads both cards");
+                let (answer, _) = admission_answer(&outcome, 64, 1, || FITS);
+                let Some(turned_away) = answer else {
+                    let _ = req.tx.send(Event::PromptUsage {
+                        n_prompt: 1,
+                        n_cached: 0,
+                    });
+                    let _ = req.tx.send(Event::Token {
+                        id: 1,
+                        text: "ok".into(),
+                    });
+                    settle(
+                        run,
+                        &mut req,
+                        Ok(Served::Done(route_telemetry::ServeStats {
+                            tokens_out: 1,
+                            n_prompt: 1,
+                            n_cached: 0,
+                        })),
+                    );
+                    let _ = req.tx.send(Event::Done {
+                        stop_reason: "Eos".into(),
+                        n_tokens: 1,
+                        n_prompt: 1,
+                        n_cached: 0,
+                        elapsed_s: 0.01,
+                        spec: None,
+                    });
+                    continue;
+                };
+                settle(run, &mut req, Ok(turned_away));
+            }
+        });
+        let complete = || {
+            let st = st.clone();
+            async move {
+                completions(
+                    State(st),
+                    HeaderMap::new(),
+                    None,
+                    Json(
+                        serde_json::from_value(json!({"model": "t503-fake-route", "prompt": "t"}))
+                            .unwrap(),
+                    ),
+                )
+                .await
+            }
+        };
+
+        // Card 0 fits; its peer, card 1, stays short for the whole budget.
+        plan_tx
+            .send(Plan {
+                need: [100, 100],
+                free: vec![vec![180, 50]],
+                budget_ms: 200,
+            })
+            .unwrap();
+        let refused = complete().await;
+        assert_eq!(refused.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(retry_after(&refused).as_deref(), Some("5"));
+        let body = body_value(refused).await;
+        assert_eq!(body["error"]["code"], "rate_limit_exceeded");
+        assert_eq!(
+            body["error"]["message"],
+            crate::admit_memory::MEMORY_REFUSE_MESSAGE
+        );
+        assert_eq!(
+            deferring_rx.try_recv(),
+            Ok(()),
+            "it deferred before refusing"
+        );
+
+        // Card 1's charge is above what the route offers there even idle: no wait can fit it.
+        plan_tx
+            .send(Plan {
+                need: [100, 300],
+                free: vec![vec![180, 180]],
+                budget_ms: 200,
+            })
+            .unwrap();
+        let never = complete().await;
+        assert_eq!(never.status(), StatusCode::BAD_REQUEST);
+        assert!(retry_after(&never).is_none(), "a retry cannot fit it");
+        let body = body_value(never).await;
+        assert_eq!(body["error"]["code"], "context_length_exceeded");
+        let msg = body["error"]["message"].as_str().unwrap();
+        assert!(
+            msg.contains("300 bytes on device 1") && msg.contains("fits is 777 tokens"),
+            "{msg}"
+        );
+        assert!(
+            deferring_rx.try_recv().is_err(),
+            "it answered without waiting"
+        );
+
+        // The peer frees memory on the third reading: the waiting request is served.
+        plan_tx
+            .send(Plan {
+                need: [100, 100],
+                free: vec![vec![180, 50], vec![180, 50], vec![180, 150]],
+                budget_ms: 10_000,
+            })
+            .unwrap();
+        let recovered = complete().await;
+        assert_eq!(recovered.status(), StatusCode::OK);
+        assert_eq!(
+            deferring_rx.try_recv(),
+            Ok(()),
+            "it deferred before admitting"
+        );
+        let s = route.snapshot();
+        assert_eq!(
+            (s.admitted, s.completed, s.failed, s.refused, s.cancelled),
+            (3, 1, 0, 2, 0)
+        );
+
+        // The client leaves while the peer stays short: booked cancelled, nothing held.
+        plan_tx
+            .send(Plan {
+                need: [100, 100],
+                free: vec![vec![180, 50]],
+                budget_ms: 600_000,
+            })
+            .unwrap();
+        let task = tokio::spawn(complete());
+        let mut deferred = false;
+        for _ in 0..10_000 {
+            if deferring_rx.try_recv().is_ok() {
+                deferred = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        }
+        assert!(deferred, "the fourth request reached its defer");
+        task.abort();
+        let _ = task.await;
+        let mut s = route.snapshot();
+        for _ in 0..10_000 {
+            if s.cancelled == 1 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            s = route.snapshot();
+        }
+        assert_eq!(
+            (s.admitted, s.completed, s.failed, s.refused, s.cancelled),
+            (4, 1, 0, 2, 1)
+        );
+        assert_eq!((s.waiting, s.running, s.inflight), (0, 0, 0));
+        assert!(
+            s.service_p50_ms.is_some(),
+            "the served request is the only sample"
+        );
+
+        let body = body_value(get_metrics(State(st.clone()), HeaderMap::new()).await).await;
+        let row = body["routes"]
+            .as_array()
+            .expect("an operator scrape lists the routes")
+            .iter()
+            .find(|r| r["name"] == "t503-fake-route")
+            .expect("the fake route's row")
+            .clone();
+        assert_eq!(
+            (&row["refused"], &row["cancelled"], &row["completed"]),
+            (&json!(2), &json!(1), &json!(1))
+        );
+    }
+
     #[test]
     fn pending_admission_reservation_is_atomic_and_rolls_back_on_drop() {
-        let _counters = admission_counters_guard();
+        let _counters = global_counter_writer_guard();
         let st = fake_worker_state();
         let cap = lane_cap(lanes::Lane::Interactive);
         let bound = max_queue_depth(cap);
@@ -18065,6 +19196,7 @@ default_reasoning_effort = "always"
             limit: cap,
             remaining: 0,
             reset_s: 1,
+            route: None,
         };
         let _ = worker::PENDING_ADMITS.fetch_update(
             std::sync::atomic::Ordering::AcqRel,
@@ -18108,7 +19240,7 @@ default_reasoning_effort = "always"
 
     #[test]
     fn admission_reservations_are_lane_scoped() {
-        let _counters = admission_counters_guard();
+        let _counters = global_counter_writer_guard();
         let st = fake_worker_state();
         let harvest = lanes::Lane::Harvest;
         let interactive = lanes::Lane::Interactive;
@@ -18124,6 +19256,7 @@ default_reasoning_effort = "always"
             limit: lane_cap(interactive),
             remaining: 1,
             reset_s: 0,
+            route: None,
         };
         // Two arms, because the harvest bound (max_queue_depth of its cap 8 = 32) is far
         // below every interactive threshold: a cross-lane backlog leak (a lane.idx()
@@ -18155,6 +19288,7 @@ default_reasoning_effort = "always"
             limit: lane_cap(harvest),
             remaining: 0,
             reset_s: 1,
+            route: None,
         };
         assert!(matches!(
             reserve_pending_admit(
@@ -20660,7 +21794,14 @@ temperature = 0.6
                 // queue bound before send. A fake worker must release both at its admission
                 // boundary or leak process-global state into unrelated tests.
                 worker::release_pending_admit();
-                worker::release_admission_reservation(req.lane);
+                // A model with a registered dedicated route is served the way that route
+                // serves it (memra#501, dsv4_serve's loop): running rises, then the ticket
+                // releases at dequeue, then the run is admitted and booked on the route.
+                let mut route_run = route_telemetry::lookup(&req.model).map(|l| l.begin());
+                worker::release_request_reservation(&mut req);
+                if let Some(run) = route_run.as_mut() {
+                    run.admit();
+                }
                 h.beat_busy();
                 if let Some(ready) = req.constraint_ready.take() {
                     let _ = ready.send(Ok(()));
@@ -20693,6 +21834,14 @@ temperature = 0.6
                     if !step_delay.is_zero() {
                         std::thread::sleep(step_delay);
                     }
+                }
+                // Booked before Done so a test reading the route after its response sees it.
+                if let Some(run) = route_run {
+                    run.finish(route_telemetry::ServeStats {
+                        tokens_out: steps,
+                        n_prompt: 1,
+                        n_cached: 0,
+                    });
                 }
                 let _ = req.tx.send(Event::Done {
                     stop_reason: "Eos".into(),
@@ -21483,7 +22632,7 @@ temperature = 0.6
         };
         let first_env = Envelope::new(true);
         let (guard, first_rl) =
-            match acquire_request_slot(&st, lanes::Lane::Interactive, &tenant, &first_env) {
+            match acquire_request_slot(&st, lanes::Lane::Interactive, None, &tenant, &first_env) {
                 Ok(slot) => slot,
                 Err(_) => panic!("the first request must acquire the tenant slot"),
             };
@@ -21491,7 +22640,7 @@ temperature = 0.6
 
         let second_env = Envelope::new(true);
         let response =
-            match acquire_request_slot(&st, lanes::Lane::Interactive, &tenant, &second_env) {
+            match acquire_request_slot(&st, lanes::Lane::Interactive, None, &tenant, &second_env) {
                 Err(response) => response,
                 Ok(_) => panic!("the second request must be rejected at the tenant cap"),
             };
@@ -21694,6 +22843,335 @@ temperature = 0.6
         fn drop(&mut self) {
             DRAINING.store(false, std::sync::atomic::Ordering::SeqCst);
         }
+    }
+
+    /// WP-A day 56 (`DAY56.md` section 3a, OWED item 23's addendum): a reservation on a test's own
+    /// counters never moves the process-global gauges, while its guard lives or after it drops.
+    #[test]
+    fn day56_an_isolated_reservation_never_moves_the_global_gauges() {
+        let _counters = global_counter_writer_guard();
+        let st = fake_worker_state();
+        let lane = lanes::Lane::Interactive;
+        let rl = RateLimit {
+            limit: lane_cap(lane),
+            remaining: lane_cap(lane),
+            reset_s: 1,
+            route: None,
+        };
+        let read = || {
+            (
+                worker::PENDING_ADMITS.load(std::sync::atomic::Ordering::Acquire),
+                worker::ADMISSION_RESERVATIONS
+                    .iter()
+                    .map(|a| a.load(std::sync::atomic::Ordering::Acquire))
+                    .collect::<Vec<_>>(),
+            )
+        };
+        let before = read();
+        let own = own_admit_counters();
+        let guard = reserve_own(
+            own,
+            &st,
+            lane,
+            &rl,
+            RequestDeadline::starting_now(TIMEOUT_MS_MAX),
+        )
+        .map_err(|(_, outcome)| outcome)
+        .expect("a free lane admits");
+        assert_eq!(
+            read(),
+            before,
+            "a live isolated reservation moved a global gauge"
+        );
+        drop(guard);
+        assert_eq!(
+            read(),
+            before,
+            "a dropped isolated reservation moved a global gauge"
+        );
+    }
+
+    /// WP-A day 56 (`research/spill-a-20260919/DAY56.md` section 1 (a), OWED items 21 and 23; CPU
+    /// census, replacing day 53's): the global admission-counter writers are ordered against the
+    /// handler readers, and nothing else waits for them. `global_counter_writer_guard()` takes
+    /// `drain_lock()` before the counters' lock, `admission_counters_guard()` the counters' lock
+    /// alone; every test that writes the process-global `ADMISSION_RESERVATIONS` or `PENDING_ADMITS`
+    /// takes the writer guard; no test takes `drain_lock()` beside either guard (the locks are not
+    /// reentrant); the production entries reserve on the global counters and the guard releases
+    /// where it reserved.
+    #[test]
+    fn day56_the_admission_writers_are_ordered_against_the_handler_readers() {
+        let src = include_str!("lib.rs");
+        let prod = &src[..src.find("\nmod tests {").expect("the tests module")];
+        let tests = &src[src.find("\nmod tests {").expect("the tests module")..];
+        let body_of = |hay: &'static str, start: &str| -> &'static str {
+            let a = hay.find(start).unwrap_or_else(|| panic!("{start} missing"));
+            &hay[a..a + hay[a..].find("\n    }\n").unwrap()]
+        };
+        let writer = body_of(
+            tests,
+            "    fn global_counter_writer_guard() -> AdmissionCountersGuard {",
+        );
+        let drain = writer
+            .find("let drain = drain_lock();")
+            .expect("the drain lock first");
+        let own = writer
+            .find("let counters = admission_counters_lock();")
+            .expect("then the counters' lock");
+        assert!(
+            drain < own,
+            "the drain lock is taken before the counters' lock"
+        );
+        let plain = body_of(
+            tests,
+            "    fn admission_counters_guard() -> std::sync::MutexGuard<'static, ()> {",
+        );
+        assert!(
+            !plain.contains("drain_lock()"),
+            "the route tests' guard never waits for the handlers"
+        );
+        // Production: the wrappers reserve on the global counters; the guard releases where it took.
+        let top = |start: &str| -> &'static str {
+            let a = prod
+                .find(start)
+                .unwrap_or_else(|| panic!("{start} missing"));
+            &prod[a..a + prod[a..].find("\n}\n").unwrap()]
+        };
+        let wrapper = top("fn reserve_pending_admit_with_ceiling(");
+        assert!(wrapper.contains("AdmitCounters::GLOBAL)"));
+        let global = top("impl AdmitCounters {");
+        assert!(global.contains("lanes: &worker::ADMISSION_RESERVATIONS,"));
+        assert!(global.contains("pending: &worker::PENDING_ADMITS,"));
+        // Day 56 section 3: the path and the route path touch only the pair they were handed.
+        for f in ["fn reserve_pending_admit_on(", "fn reserve_route_admit("] {
+            let b = top(f);
+            assert!(
+                !b.contains("worker::ADMISSION_RESERVATIONS")
+                    && !b.contains("worker::PENDING_ADMITS"),
+                "{f} names a global counter"
+            );
+            assert!(
+                b.contains(".pending") && b.contains("fetch_add(1"),
+                "{f} takes the pending gauge it was handed"
+            );
+        }
+        assert!(
+            top("fn reserve_pending_admit_on(")
+                .contains("let reservations_for_lane = &counters.lanes[lane.idx()];")
+        );
+        let drop_body = top("impl Drop for PendingAdmissionGuard {");
+        assert!(drop_body.contains("worker::release_pending_admit_on(self.counters.pending);"));
+        assert!(
+            drop_body.contains(
+                "worker::release_admission_reservation_on(self.counters.lanes, self.lane);"
+            )
+        );
+        // Every test fn, by its body (up to the next fn at the same indentation).
+        let mut starts: Vec<usize> = Vec::new();
+        for pat in ["\n    fn ", "\n    async fn "] {
+            let mut at = 0;
+            while let Some(i) = tests[at..].find(pat) {
+                starts.push(at + i);
+                at += i + pat.len();
+            }
+        }
+        starts.sort_unstable();
+        let (mut writers, mut own_counters) = (0, 0);
+        for (k, &a) in starts.iter().enumerate() {
+            let b = starts.get(k + 1).copied().unwrap_or(tests.len());
+            // The fn itself: up to its closing brace, so the doc comments of the next item are
+            // not read as this test's code.
+            let body = &tests[a..b];
+            let body = &body[..body.find("\n    }\n").map_or(body.len(), |e| e + 6)];
+            // The body without its string literals: a census that names a call in a literal is not a call.
+            let code: String = {
+                let (mut out, mut in_str, mut esc) = (String::new(), false, false);
+                for ch in body.chars() {
+                    if in_str {
+                        if esc {
+                            esc = false;
+                        } else if ch == '\\' {
+                            esc = true;
+                        } else if ch == '"' {
+                            in_str = false;
+                        }
+                    } else if ch == '"' {
+                        in_str = true;
+                    } else {
+                        out.push(ch);
+                    }
+                }
+                out
+            };
+            let name = body
+                .trim_start()
+                .trim_start_matches("async ")
+                .trim_start_matches("fn ")
+                .split('(')
+                .next()
+                .unwrap_or("")
+                .to_string();
+            if [
+                "admission_counters_guard",
+                "admission_counters_lock",
+                "global_counter_writer_guard",
+                "drain_lock",
+                "day56_the_admission_writers_are_ordered_against_the_handler_readers",
+            ]
+            .contains(&name.as_str())
+            {
+                continue;
+            }
+            let guards = body.contains("admission_counters_guard()")
+                || body.contains("global_counter_writer_guard()");
+            assert!(
+                !(body.contains("drain_lock()") && guards),
+                "{name} takes the drain lock beside a counters' guard"
+            );
+            let touches = body.contains("worker::ADMISSION_RESERVATIONS")
+                || body.contains("worker::PENDING_ADMITS");
+            let writes = [
+                ".swap(",
+                ".store(",
+                "fetch_add(",
+                "fetch_update(",
+                "fetch_sub(",
+            ]
+            .iter()
+            .any(|w| body.contains(w));
+            if touches && writes {
+                writers += 1;
+                assert!(
+                    body.contains("global_counter_writer_guard()"),
+                    "{name} writes a process-global admission counter without the writer guard"
+                );
+            }
+            if body.contains("let lanes_counters = own_admit_counters();") {
+                own_counters += 1;
+                assert!(
+                    !touches,
+                    "{name} runs on its own counters and must not touch the globals"
+                );
+            }
+            // Day 56 section 3, the indirect writers: a test that reserves through a global entry
+            // or a handler holds a lock that orders it against the global writers; a test that
+            // reserves on its own path passes its own pair.
+            let global_reserver = [
+                "reserve_pending_admit(",
+                "reserve_pending_admit_with_ceiling(",
+                "reserve_interactive_through_contention(",
+                "chat_completions(",
+                " completions(",
+                "(completions(",
+                " messages(",
+                " responses(",
+                "embeddings_admitted(",
+                "rerank_admitted(",
+                "chat_completion_admitted(",
+            ]
+            .iter()
+            .any(|c| code.contains(c));
+            let locked = body.contains("drain_lock()")
+                || body.contains("admission_counters_guard()")
+                || body.contains("global_counter_writer_guard()");
+            // Only test fns (a `#[test]` or `#[tokio::test]` in the attribute lines above); helpers
+            // are judged through the tests that call them.
+            let attrs: Vec<&str> = tests[..a].lines().rev().take(4).collect();
+            let is_test = attrs
+                .iter()
+                .any(|l| l.contains("#[test]") || l.contains("#[tokio::test"));
+            if global_reserver && is_test {
+                assert!(
+                    locked,
+                    "{name} reserves through a global entry without a lock"
+                );
+            }
+            if is_test
+                && (code.contains("reserve_own(") || code.contains("reserve_pending_admit_on("))
+            {
+                assert!(
+                    body.contains("own_admit_counters()"),
+                    "{name} reserves on the counters path without its own pair"
+                );
+            }
+        }
+        assert!(
+            writers >= 3,
+            "the census found {writers} global writers; the survey read three"
+        );
+        assert!(
+            own_counters >= 7,
+            "the census found {own_counters} own-counter tests; the survey read seven"
+        );
+    }
+
+    /// WP-A day 53 (`research/spill-a-20260919/DAY53.md` section 4, cell D; OWED item 21): a handler
+    /// request made inside an admission-counter writer's window sheds 429 `shed_queue`. The writers
+    /// (`the_queue_bound_sheds_..` and its siblings) hold `admission_counters_guard()` and set the
+    /// process-global interactive backlog to the queue bound; a handler test that holds only
+    /// `drain_lock()` is not ordered against them, which is item 21's placed mechanism. After the
+    /// restore the same request answers 200 and holds its slot.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: both locks are held across the awaits on purpose: the cell is the writer's window
+    async fn day53_a_handler_request_inside_a_writer_window_sheds_429() {
+        // Since F1 the counters' guard includes the drain lock (a test takes one or the other).
+        let _counters = global_counter_writer_guard();
+        let st = fake_worker_state();
+        let lane = lanes::Lane::Interactive;
+        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let stream_req = || {
+            Json(
+                serde_json::from_value(serde_json::json!({
+                    "model": "m", "prompt": "t", "stream": true
+                }))
+                .unwrap(),
+            )
+        };
+        {
+            let prev = counter.swap(
+                max_queue_depth(lane_cap(lane)),
+                std::sync::atomic::Ordering::AcqRel,
+            );
+            let _restore = CounterRestore(counter, prev);
+            let resp = completions(
+                State(st.clone()),
+                axum::http::HeaderMap::new(),
+                None,
+                stream_req(),
+            )
+            .await;
+            assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+            let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(v["error"]["code"], "shed_queue", "{v}");
+            assert_eq!(
+                st.inflight[0].load(std::sync::atomic::Ordering::SeqCst),
+                0,
+                "a shed request holds no slot"
+            );
+        }
+        let resp = completions(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            stream_req(),
+        )
+        .await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "after the restore the request is admitted"
+        );
+        assert_eq!(
+            st.inflight[0].load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "stream in flight holds the slot"
+        );
+        let _ = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -23737,7 +25215,10 @@ request = "0"
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: DRAIN_LOCK orders this handler test against the admission-counter writers (DAY56 section 3)
     async fn stop_token_ids_handlers_return_named_400s() {
+        // WP-A day 56 section 3: its handlers may reach a reservation; ordered against the admission-counter writers.
+        let _l = drain_lock();
         let mut st = fake_worker_state();
         let model = st.models[0].clone();
         Arc::make_mut(&mut st.caps).insert(

@@ -1,0 +1,41 @@
+
+running 11 tests
+owner-thread work while the copy stream's host function sleeps: 3.30 ms; the copy behind the host function still pending: true
+test tier_transfer::tests::h2d_fill_host_function_does_not_hold_the_owner_thread ... ok
+HOLD STEPS cell=h2d_span_filled_batch pinned-alloc@-37.88+1.00 device-alloc@-36.88+0.02 pinned-alloc@-36.85+1.46 device-alloc@-35.39+0.02 pinned-alloc@-35.37+1.15 device-alloc@-34.22+0.01 delay@0.00+146.08 pinned-alloc@146.09+311.37 device-alloc@457.46+0.04 pinned-alloc@457.50+6.05 device-alloc@463.54+3.50 pinned-alloc@467.04+1.12 device-alloc@468.16+0.06 submit@468.22+0.12
+
+thread 'tier_transfer::tests::h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies' (444188) panicked at crates/memra-engine/src/tier_transfer.rs:4573:9:
+the owner thread does not wait for the fill at the attach (322.26 ms; HOLD STEPS cell=h2d_span_filled_batch pinned-alloc@-37.88+1.00 device-alloc@-36.88+0.02 pinned-alloc@-36.85+1.46 device-alloc@-35.39+0.02 pinned-alloc@-35.37+1.15 device-alloc@-34.22+0.01 delay@0.00+146.08 pinned-alloc@146.09+311.37 device-alloc@457.46+0.04 pinned-alloc@457.50+6.05 device-alloc@463.54+3.50 pinned-alloc@467.04+1.12 device-alloc@468.16+0.06 submit@468.22+0.12)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle ... ok
+test tier_transfer::tests::d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait ... ok
+test tier_transfer::tests::pinned_kind_arm_is_honoured_by_the_driver ... ok
+test tier_transfer::tests::h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies ... FAILED
+HOLD READING cell=d2h_span_batch first_item_seen_ms=986.08 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=true
+HOLD STEPS cell=d2h_span_batch htod-pageable@-37.25+1.94 pinned-alloc@-35.30+1.04 htod-pageable@-34.26+0.39 pinned-alloc@-33.87+1.78 htod-pageable@-32.09+0.30 pinned-alloc@-31.80+1.30 delay@0.00+161.22 htod-pageable@161.24+306.03 pinned-alloc@467.27+4.01 htod-pageable@471.29+1.95 pinned-alloc@473.24+1.51 htod-pageable@474.75+1.58 pinned-alloc@476.33+3.71 submit@480.04+0.04 htod-pageable@480.08+0.26 pinned-alloc@480.35+0.87 htod-pageable@481.21+0.91 pinned-alloc@482.12+500.20 htod-pageable@982.33+2.59 pinned-alloc@984.92+1.14 submit-busy@986.07+0.00
+
+thread 'tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream' (444183) panicked at crates/memra-engine/src/tier_transfer.rs:4139:9:
+a batch with a running span has not landed (HOLD READING cell=d2h_span_batch first_item_seen_ms=986.08 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=true) (HOLD STEPS cell=d2h_span_batch htod-pageable@-37.25+1.94 pinned-alloc@-35.30+1.04 htod-pageable@-34.26+0.39 pinned-alloc@-33.87+1.78 htod-pageable@-32.09+0.30 pinned-alloc@-31.80+1.30 delay@0.00+161.22 htod-pageable@161.24+306.03 pinned-alloc@467.27+4.01 htod-pageable@471.29+1.95 pinned-alloc@473.24+1.51 htod-pageable@474.75+1.58 pinned-alloc@476.33+3.71 submit@480.04+0.04 htod-pageable@480.08+0.26 pinned-alloc@480.35+0.87 htod-pageable@481.21+0.91 pinned-alloc@482.12+500.20 htod-pageable@982.33+2.59 pinned-alloc@984.92+1.14 submit-busy@986.07+0.00)
+test tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... FAILED
+test tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt ... ok
+HOLD READING cell=h2d_span_batch first_item_seen_ms=325.19 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=true
+HOLD STEPS cell=h2d_span_batch pinned-alloc@-702.37+1.11 pinned-write@-701.25+0.23 device-alloc@-701.02+2.70 pinned-alloc@-698.32+1.74 pinned-write@-696.58+0.41 device-alloc@-696.17+0.09 pinned-alloc@-696.08+1.16 pinned-write@-694.91+0.32 device-alloc@-694.60+2.27 pinned-alloc@-207.94+1.16 pinned-write@-206.78+0.28 device-alloc@-206.50+2.93 pinned-alloc@-203.57+1.66 device-alloc@-201.91+2.42 pinned-alloc@-199.49+3.21 pinned-write@-196.28+0.42 device-alloc@-195.85+7.23 delay@0.00+0.01 pinned-alloc@0.03+4.38 pinned-write@4.41+0.26 device-alloc@4.67+305.69 pinned-alloc@310.37+1.69 pinned-write@312.06+0.53 device-alloc@312.59+1.26 pinned-alloc@313.86+1.26 pinned-write@315.12+0.38 device-alloc@315.50+0.09 submit@315.59+4.32 pinned-alloc@319.92+1.04 pinned-write@320.95+0.24 device-alloc@321.20+0.22 pinned-alloc@321.42+1.68 pinned-write@323.10+0.45 device-alloc@323.55+0.01 pinned-alloc@323.56+1.24 pinned-write@324.80+0.37 device-alloc@325.17+0.01 submit-busy@325.18+0.00
+
+thread 'tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream' (444187) panicked at crates/memra-engine/src/tier_transfer.rs:4404:9:
+a batch with a running span has not landed (HOLD READING cell=h2d_span_batch first_item_seen_ms=325.19 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=true) (HOLD STEPS cell=h2d_span_batch pinned-alloc@-702.37+1.11 pinned-write@-701.25+0.23 device-alloc@-701.02+2.70 pinned-alloc@-698.32+1.74 pinned-write@-696.58+0.41 device-alloc@-696.17+0.09 pinned-alloc@-696.08+1.16 pinned-write@-694.91+0.32 device-alloc@-694.60+2.27 pinned-alloc@-207.94+1.16 pinned-write@-206.78+0.28 device-alloc@-206.50+2.93 pinned-alloc@-203.57+1.66 device-alloc@-201.91+2.42 pinned-alloc@-199.49+3.21 pinned-write@-196.28+0.42 device-alloc@-195.85+7.23 delay@0.00+0.01 pinned-alloc@0.03+4.38 pinned-write@4.41+0.26 device-alloc@4.67+305.69 pinned-alloc@310.37+1.69 pinned-write@312.06+0.53 device-alloc@312.59+1.26 pinned-alloc@313.86+1.26 pinned-write@315.12+0.38 device-alloc@315.50+0.09 submit@315.59+4.32 pinned-alloc@319.92+1.04 pinned-write@320.95+0.24 device-alloc@321.20+0.22 pinned-alloc@321.42+1.68 pinned-write@323.10+0.45 device-alloc@323.55+0.01 pinned-alloc@323.56+1.24 pinned-write@324.80+0.37 device-alloc@325.17+0.01 submit-busy@325.18+0.00)
+test tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream ... FAILED
+test tier_transfer::tests::h2d_deferred_checksum_lands_with_the_supplied_digests ... ok
+D2D-RECEIPT PRICE order=copy-first bytes=165675008 n_per_arm=5 copy_ms=[0.394944, 0.401984, 0.396736, 0.399904, 0.39872] copy_median=0.399 digest_ms=[0.221632, 0.223424, 0.221024, 0.222368, 0.222528] digest_median=0.222 pair_median=0.445 pair_over_copy=1.12
+D2D-RECEIPT PRICE order=digest-first bytes=165675008 n_per_arm=5 copy_ms=[0.371648, 0.398688, 0.399648, 0.39888, 0.40048] copy_median=0.399 digest_ms=[0.228256, 0.22336, 0.22048, 0.221952, 0.220864] digest_median=0.222 pair_median=0.444 pair_over_copy=1.11
+test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ok
+test tier_transfer::tests::d2d_receipt_digest_price_against_the_copy ... ok
+
+failures:
+
+failures:
+    tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream
+    tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream
+    tier_transfer::tests::h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies
+
+test result: FAILED. 8 passed; 3 failed; 0 ignored; 0 measured; 575 filtered out; finished in 1.38s
+

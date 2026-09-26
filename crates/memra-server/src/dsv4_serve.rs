@@ -33,12 +33,16 @@
 //!   - streaming granularity is the spec ROUND (or every plain token) — the commit
 //!     callback seam on the gated drivers, `None` = byte-identical bench behavior.
 
-use crate::worker::{EngineError, Event, ModelCaps, Request, SpecUsage};
+use crate::dsv4_admit::{self, Admission, AdmissionLine, MemoryProbe, SessionNeed};
+use crate::health::RouteHealth;
+use crate::route_telemetry::{RouteLoad, RouteRun, ServeStats};
+use crate::worker::{EngineError, Event, EventSender, ModelCaps, Request, SpecUsage};
 use memra_engine::dsv4_gpu::{
-    DSV4_BATCH_WIDTH_MAX, DecodeState, DsparkState, Dsv4Gpu, Dsv4HostDecodeState,
-    Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4SampleCfg, RoundTake, dsv4_penalize_row,
-    dsv4_sample_row, resolve_vt,
+    DSV4_BATCH_WIDTH_MAX, DecodePath, DecodeState, DsparkState, Dsv4Gpu, Dsv4HostDecodeState,
+    Dsv4HostDsparkState, Dsv4PenaltyCfg, Dsv4RowDraw, Dsv4SampleCfg, Dsv4Vt, REPLAY_MIN_CAPACITY,
+    RoundTake, StageMemory, dsv4_penalize_row, dsv4_sample_row, resolve_vt,
 };
+use memra_engine::dsv4_topology::Dsv4Placement;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::{Tokenizer, chat};
 use std::collections::HashMap;
@@ -120,6 +124,66 @@ pub struct Dsv4Model {
     pub host_cache_bytes: usize,
     pub c4_host_bytes: usize,
     pub prefill_chunk: usize,
+    /// The route's memory book, calibrated at load (memra#503).
+    pub memory: Dsv4Memory,
+    /// Serving lanes (`MEMRA_DSV4_SESSIONS`, memra #667).
+    pub sessions: usize,
+    /// B-row step coalescing across the lanes (`MEMRA_DSV4_ROWS`, memra #667 lever 2).
+    pub rows: Option<Arc<RowBatcher>>,
+    /// The spec route's verify policy, resolved once at load.
+    pub spec_policy: Dsv4SpecPolicy,
+}
+
+/// The spec route's verify policy: the per-round depth ceiling (`MEMRA_DSV4_SPEC_DEPTH`,
+/// unset = the drafter's own `block_size + 1`) and the confidence window (`MEMRA_DSV4_VT`,
+/// `MEMRA_DSV4_VT_TAU`, `MEMRA_DSV4_VT_FLOOR`). Resolved at load, so a bad value refuses the
+/// boot instead of failing every spec request with an engine error.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Dsv4SpecPolicy {
+    pub depth_cap: usize,
+    pub vt: Dsv4Vt,
+}
+
+fn resolve_spec_policy(
+    depth: Option<&str>,
+    vt: Option<&str>,
+    tau: Option<&str>,
+    floor: Option<&str>,
+) -> Result<Dsv4SpecPolicy, String> {
+    let depth_cap = match depth {
+        None => usize::MAX,
+        Some(raw) => match raw.trim().parse::<usize>() {
+            Ok(d) if d > 0 => d,
+            _ => {
+                return Err(format!(
+                    "MEMRA_DSV4_SPEC_DEPTH {raw:?} is not a positive integer (unset = the \
+                     drafter's own depth)"
+                ));
+            }
+        },
+    };
+    Ok(Dsv4SpecPolicy {
+        depth_cap,
+        vt: resolve_vt(vt, tau, floor)?,
+    })
+}
+
+/// What a session costs on each stage beyond its capacity-planned layer caches, and the most
+/// each card offers with the route idle. Measured once at load, by allocating the route's own
+/// state around two `stage_memory` readings (memra#503): the step workspace, the matrix
+/// width-1 transaction and the transaction scratch are sized by the model, not the session, so
+/// one small calibration session prices every larger one.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Dsv4Memory {
+    /// Owning device of each stage.
+    pub devs: Vec<usize>,
+    /// Per-stage device bytes a plain session holds beyond its layer caches.
+    pub fixed_plain: Vec<u64>,
+    /// The same for a speculative session: the drafter state plus the larger of the two
+    /// transactions it holds in turn (the chunked prefill with its tap capture, then verify).
+    pub fixed_spec: Vec<u64>,
+    /// Effective free per stage after calibration, nothing resident.
+    pub ceiling: Vec<u64>,
 }
 
 fn env_text(name: &str, raw: Option<OsString>) -> Result<Option<String>, String> {
@@ -129,6 +193,75 @@ fn env_text(name: &str, raw: Option<OsString>) -> Result<Option<String>, String>
             .into_string()
             .map(Some)
             .map_err(|_| format!("{name} is not valid Unicode")),
+    }
+}
+
+/// `MEMRA_DSV4_SESSIONS` (memra #667): serving lanes that share the route's queue and launch
+/// turn. `1` is the serial route; `2..=4` pipeline plain steps across sessions. Unset or empty
+/// takes `default`, which the load derives from the program it loaded.
+fn resolve_sessions(raw: Option<&str>, default: usize) -> Result<usize, String> {
+    match raw.map(str::trim) {
+        None | Some("") => Ok(default),
+        Some(text) => match text.parse::<usize>() {
+            Ok(n @ 1..=4) => Ok(n),
+            _ => Err(format!("MEMRA_DSV4_SESSIONS {text:?} must be 1..=4")),
+        },
+    }
+}
+
+/// The lanes a load of this program gets when `MEMRA_DSV4_SESSIONS` is unset: two on the
+/// plain PP matrix device program over two or more stages, where two requests' steps overlap
+/// on the two cards (+48% aggregate at c2 on 2x RTX PRO 6000,
+/// `research/dsv4f-bringup-20260923/pp-pipeline/`); one everywhere else. A DSpark route holds
+/// the launch turn for a whole request, so a second lane there would only wait, and it was
+/// not measured: it keeps one.
+fn default_sessions(pipelined_steps: bool, drafter: bool) -> usize {
+    if pipelined_steps && !drafter { 2 } else { 1 }
+}
+
+/// The lanes a TP/EP load gets when `MEMRA_DSV4_SESSIONS` is unset (memra #710 B-row): four on
+/// the plain route, whose requests then share TP/EP B-row graph steps; one with a drafter,
+/// whose rounds hold the launch turn for a whole request. Four against two on 2x RTX PRO 6000
+/// WS: c4 aggregate 132.8 against 102.0 tok/s, TTFT p50 0.42 s against 5.2 s, c1 and c2 the
+/// same (`research/dsv4f-bringup-20260923/tp-rows/`).
+fn default_tp_ep_sessions(rows_steps: bool, drafter: bool) -> usize {
+    if rows_steps && !drafter { 4 } else { 1 }
+}
+
+/// `MEMRA_DSV4_ROWS` (memra #667 lever 2): the most plain rows one step runs across the lanes.
+/// `0` or `1` keeps each lane's own step; `2..=8` coalesces them. Unset or empty takes
+/// `default`: one on PP-2, the lane count on TP/EP (memra #710), where lanes only help by
+/// sharing steps.
+fn resolve_rows(raw: Option<&str>, default: usize) -> Result<usize, String> {
+    match raw.map(str::trim) {
+        None | Some("") => Ok(default),
+        Some(text) => match text.parse::<usize>() {
+            Ok(0) => Ok(1),
+            Ok(n @ 1..=8) => Ok(n),
+            _ => Err(format!("MEMRA_DSV4_ROWS {text:?} must be 0..=8")),
+        },
+    }
+}
+
+/// The serving lanes for a load: `MEMRA_DSV4_SESSIONS` when set, else [`default_sessions`].
+pub fn sessions_from_env(default: usize) -> Result<usize, String> {
+    resolve_sessions(
+        configured_env_text("MEMRA_DSV4_SESSIONS")?.as_deref(),
+        default,
+    )
+}
+
+/// `MEMRA_DSV4_TOPOLOGY` (memra #710): where a two-card load places the model. Unset, empty or
+/// `tp_ep` is the default since 2026-09-25: every layer on both cards, experts split by id and
+/// attention split by head (exact attention TP2). `pp` is the PP-2 rollback. Anything else
+/// refuses the boot.
+fn resolve_topology(raw: Option<&str>) -> Result<Dsv4Placement, String> {
+    match raw.map(str::trim) {
+        None | Some("") | Some("tp_ep") => Ok(Dsv4Placement::TpEp { attention_tp: true }),
+        Some("pp") => Ok(Dsv4Placement::Pp),
+        Some(other) => Err(format!(
+            "MEMRA_DSV4_TOPOLOGY {other:?} unknown (tp_ep | pp)"
+        )),
     }
 }
 
@@ -183,6 +316,70 @@ fn admit_c4_host_bytes(budget: usize, per_stage: &[u64]) -> Result<usize, String
 }
 
 impl Dsv4Model {
+    /// Transient rows every session state is allocated with: wide enough for the chunked
+    /// prefill and for a verify round.
+    fn transient_rows(&self) -> usize {
+        self.prefill_chunk.max(self.gpu.verify_tmax())
+    }
+
+    /// The device charge of a session at `capacity`, per owning card, plus `host_c4` pinned
+    /// host bytes (memra#503). Layer caches come from the allocator's own plan; the fixed term
+    /// from the load calibration; the active-C4 gather, grown lazily at a workspace's first
+    /// round and so invisible to the calibration, is added for each workspace width the
+    /// session runs (decode, prefill chunk, and verify when speculative).
+    fn session_need(
+        &self,
+        capacity: usize,
+        spec: bool,
+        host_c4: u64,
+    ) -> Result<SessionNeed, String> {
+        let host_c4_on = self.c4_host_bytes > 0;
+        let (mut need, _) =
+            self.gpu
+                .plan_session_cache_bytes(capacity, self.transient_rows(), host_c4_on)?;
+        let mem = &self.memory;
+        let fixed = if spec {
+            &mem.fixed_spec
+        } else {
+            &mem.fixed_plain
+        };
+        if fixed.len() != need.len() || mem.ceiling.len() != need.len() {
+            return Err(format!(
+                "dsv4 memory book covers {} stages, the session plan {}",
+                fixed.len(),
+                need.len()
+            ));
+        }
+        for (n, f) in need.iter_mut().zip(fixed) {
+            *n = n.saturating_add(*f);
+        }
+        if host_c4_on {
+            let mut widths = vec![1, self.prefill_chunk];
+            if spec {
+                widths.push(self.gpu.verify_tmax());
+            }
+            for w in widths.into_iter().filter(|&w| w > 0) {
+                for (n, g) in need.iter_mut().zip(self.gpu.c4_gather_bytes_for_width(w)) {
+                    *n = n.saturating_add(g);
+                }
+            }
+        }
+        Ok(SessionNeed {
+            devices: dsv4_admit::per_device(&mem.devs, &need, &mem.ceiling),
+            host: host_c4,
+        })
+    }
+
+    /// Whether the session's charge fits every card with the route idle and its active C4
+    /// history fits the host budget: what no wait can change.
+    fn fits_ceiling(&self, capacity: usize, spec: bool) -> bool {
+        let Ok(host) = self.planned_c4_host_bytes(capacity) else {
+            return false;
+        };
+        self.session_need(capacity, spec, host as u64)
+            .is_ok_and(|n| n.devices.iter().all(|d| d.need <= d.ceiling))
+    }
+
     fn planned_c4_host_bytes(&self, capacity: usize) -> Result<usize, String> {
         if self.c4_host_bytes == 0 {
             return Ok(0);
@@ -199,7 +396,7 @@ impl Dsv4Model {
         host: Option<&Dsv4HostDecodeState>,
     ) -> Result<DecodeState, String> {
         let planned = self.planned_c4_host_bytes(capacity)?;
-        let transient = self.prefill_chunk.max(self.gpu.verify_tmax());
+        let transient = self.transient_rows();
         let state = match (self.c4_host_bytes > 0, host) {
             (true, Some(host)) => self
                 .gpu
@@ -489,32 +686,154 @@ impl Dsv4HostCache {
         self.total_bytes += entry.bytes;
         self.entries.entry(cache_ns).or_default().push(entry);
         while self.total_bytes > self.budget {
-            let victim = self
-                .entries
-                .iter()
-                .flat_map(|(ns, pool)| {
-                    pool.iter()
-                        .enumerate()
-                        .map(move |(i, e)| (e.last_use, e.id, ns.clone(), i))
-                })
-                .min_by_key(|(last_use, id, _, _)| (*last_use, *id));
-            let Some((_, _, ns, i)) = victim else {
+            if self.evict_lru(None, "LRU").is_none() {
                 break;
-            };
-            let pool = self.entries.get_mut(&ns).expect("victim pool exists");
-            let dead = pool.swap_remove(i);
-            self.total_bytes = self.total_bytes.saturating_sub(dead.bytes);
-            if pool.is_empty() {
-                self.entries.remove(&ns);
             }
-            eprintln!(
-                "[dsv4-host] evict LRU: {} tokens, {:.1} MiB (resident {:.1}/{:.1} MiB)",
-                dead.toks.len(),
-                dead.bytes as f64 / 1048576.0,
-                self.total_bytes as f64 / 1048576.0,
-                self.budget as f64 / 1048576.0,
-            );
         }
+    }
+
+    /// The entry `take` would restore for this request, by id, without consuming it: the one
+    /// parked entry a memory reclaim for this request must spare.
+    fn restore_candidate(
+        &self,
+        cache_ns: &str,
+        affinity: Option<&str>,
+        prompt: &[u32],
+        need_dspark: bool,
+    ) -> Option<u64> {
+        if !self.armed() {
+            return None;
+        }
+        let pool = self.entries.get(cache_ns)?;
+        let i = select_prefix(
+            pool.iter().map(|e| Candidate {
+                toks: &e.toks,
+                has_dspark: e.dspark.is_some(),
+                affinity: e.affinity.as_deref(),
+                id: e.id,
+            }),
+            affinity,
+            prompt,
+            need_dspark,
+        )
+        .ok()?;
+        Some(pool[i].id)
+    }
+
+    /// Parked bytes an eviction sparing `spare` can return.
+    fn reclaimable(&self, spare: Option<u64>) -> usize {
+        self.entries
+            .values()
+            .flatten()
+            .filter(|e| Some(e.id) != spare)
+            .map(|e| e.bytes)
+            .sum()
+    }
+
+    /// Evict least-recently-used entries, sparing `spare`, until at least `bytes` are freed or
+    /// nothing else is evictable (memra#503: the host tier's yield to a memory admission).
+    fn reclaim(&mut self, bytes: usize, spare: Option<u64>) -> usize {
+        let mut got = 0usize;
+        while got < bytes {
+            match self.evict_lru(spare, "for admission") {
+                Some(freed) => got += freed,
+                None => break,
+            }
+        }
+        got
+    }
+
+    /// Evict the least-recently-used entry other than `spare`, returning its bytes.
+    fn evict_lru(&mut self, spare: Option<u64>, why: &str) -> Option<usize> {
+        let (ns, i) = lru_victim(
+            self.entries.iter().flat_map(|(ns, pool)| {
+                pool.iter()
+                    .enumerate()
+                    .map(move |(i, e)| (ns.as_str(), i, e.last_use, e.id))
+            }),
+            spare,
+        )?;
+        let pool = self.entries.get_mut(&ns).expect("victim pool exists");
+        let dead = pool.swap_remove(i);
+        self.total_bytes = self.total_bytes.saturating_sub(dead.bytes);
+        if pool.is_empty() {
+            self.entries.remove(&ns);
+        }
+        eprintln!(
+            "[dsv4-host] evict {why}: {} tokens, {:.1} MiB (resident {:.1}/{:.1} MiB)",
+            dead.toks.len(),
+            dead.bytes as f64 / 1048576.0,
+            self.total_bytes as f64 / 1048576.0,
+            self.budget as f64 / 1048576.0,
+        );
+        Some(dead.bytes)
+    }
+}
+
+/// The least-recently-used `(namespace, index)` among `(namespace, index, last_use, id)`
+/// entries, oldest use first and the lower id on a tie, never `spare`.
+fn lru_victim<'a>(
+    entries: impl Iterator<Item = (&'a str, usize, Instant, u64)>,
+    spare: Option<u64>,
+) -> Option<(String, usize)> {
+    entries
+        .filter(|&(_, _, _, id)| Some(id) != spare)
+        .min_by_key(|&(_, _, last_use, id)| (last_use, id))
+        .map(|(ns, i, _, _)| (ns.to_string(), i))
+}
+
+/// The live readings behind the route's memory admission (memra#503).
+struct LiveProbe<'a, 'b> {
+    gpu: &'a Dsv4Gpu,
+    /// The launch turn, which owns the parked-prefix cache. The door holds it for every reading
+    /// and gives it up only while it sleeps, so a session already in flight on another lane
+    /// can keep stepping (and finish, freeing the memory this request waits for).
+    turn: &'a mut Turn<'b>,
+    /// The parked entry this request would restore from; never evicted for its admission.
+    spare: Option<u64>,
+    tx: &'a EventSender,
+    t0: Instant,
+}
+
+impl MemoryProbe for LiveProbe<'_, '_> {
+    fn device_free(&mut self, devs: &[usize]) -> Result<Vec<u64>, String> {
+        let stages = self.gpu.stage_memory()?;
+        devs.iter()
+            .map(|&dev| {
+                stages
+                    .iter()
+                    .find(|s| s.dev == dev)
+                    .map(StageMemory::effective_free)
+                    .ok_or_else(|| format!("dsv4 memory probe: no stage on device {dev}"))
+            })
+            .collect()
+    }
+
+    fn host(&mut self) -> Option<(u64, u64)> {
+        let meminfo = std::fs::read_to_string("/proc/meminfo").ok()?;
+        let available = crate::worker::meminfo_available_bytes(&meminfo)?;
+        Some((
+            available as u64,
+            self.turn.cache().reclaimable(self.spare) as u64,
+        ))
+    }
+
+    fn reclaim_host(&mut self, bytes: u64) -> u64 {
+        self.turn
+            .cache()
+            .reclaim(usize::try_from(bytes).unwrap_or(usize::MAX), self.spare) as u64
+    }
+
+    fn cancelled(&self) -> bool {
+        self.tx.is_closed()
+    }
+
+    fn elapsed_ms(&self) -> u64 {
+        self.t0.elapsed().as_millis() as u64
+    }
+
+    fn wait(&mut self, ms: u64) {
+        sleep_without_turn(self.turn, std::time::Duration::from_millis(ms));
     }
 }
 
@@ -555,6 +874,13 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         std::env::var_os("MEMRA_DSV4_KV_HOST_MB"),
     )?;
     let host_cache_mb = host_cache_bytes / (1024 * 1024);
+    let spec_policy = resolve_spec_policy(
+        configured_env_text("MEMRA_DSV4_SPEC_DEPTH")?.as_deref(),
+        configured_env_text("MEMRA_DSV4_VT")?.as_deref(),
+        configured_env_text("MEMRA_DSV4_VT_TAU")?.as_deref(),
+        configured_env_text("MEMRA_DSV4_VT_FLOOR")?.as_deref(),
+    )
+    .map_err(|e| format!("dsv4 model {name:?}: {e}"))?;
     let prefill_chunk_raw = configured_env_text("MEMRA_DSV4_PREFILL_CHUNK")?;
     let prefill_chunk = resolve_prefill_chunk(prefill_chunk_raw.as_deref(), max_seq)?;
     let c4_host_raw = configured_env_text("MEMRA_DSV4_C4_HOST_MB")?;
@@ -562,7 +888,29 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
     if c4_host_bytes > 0 && prefill_chunk == 0 {
         return Err("MEMRA_DSV4_C4_HOST_MB requires nonzero MEMRA_DSV4_PREFILL_CHUNK".into());
     }
-    let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq)?;
+    let topology_raw = configured_env_text("MEMRA_DSV4_TOPOLOGY")?;
+    let placement = resolve_topology(topology_raw.as_deref())?;
+    let gpu = Dsv4Gpu::load_placed(dir, &devices, variant, max_seq, placement).map_err(|e| {
+        if placement.is_tp_ep() {
+            format!("{e} (TP/EP is the default placement; MEMRA_DSV4_TOPOLOGY=pp loads PP-2)")
+        } else {
+            e
+        }
+    })?;
+    eprintln!(
+        "[dsv4-serve] {name}: placement {}{}, plain sampler {:?}",
+        if placement.is_tp_ep() {
+            "TP/EP (expert-ID EP pair, attention TP2)"
+        } else {
+            "PP-2"
+        },
+        if topology_raw.is_some() {
+            " (MEMRA_DSV4_TOPOLOGY)"
+        } else {
+            " (default)"
+        },
+        gpu.plain_sampler(),
+    );
     if gpu.matrix_moe_enabled() && prefill_chunk == 0 {
         return Err("experimental matrix program requires nonzero MEMRA_DSV4_PREFILL_CHUNK".into());
     }
@@ -598,7 +946,77 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
             format!("{prefill_chunk} tokens")
         },
     );
-    Ok(Dsv4Model {
+    let pipelined = gpu.pipelined_steps_supported();
+    let tp_ep_rows = gpu.topology().is_tp_ep() && gpu.rows_steps_supported();
+    let sessions = sessions_from_env(if gpu.topology().is_tp_ep() {
+        default_tp_ep_sessions(tp_ep_rows, spec)
+    } else {
+        default_sessions(pipelined, spec)
+    })?;
+    if sessions > 1 && !pipelined && !tp_ep_rows {
+        return Err(format!(
+            "MEMRA_DSV4_SESSIONS={sessions} needs the PP matrix device program (pipelined steps) or \
+             the TP/EP attention-TP2 program (B-row steps); this load runs another"
+        ));
+    }
+    let rows = resolve_rows(
+        configured_env_text("MEMRA_DSV4_ROWS")?.as_deref(),
+        if tp_ep_rows { sessions } else { 1 },
+    )?;
+    if rows > 1 && (!gpu.rows_steps_supported() || rows > sessions) {
+        return Err(format!(
+            "MEMRA_DSV4_ROWS={rows} coalesces the lanes' plain steps: it needs the PP matrix or \
+             TP/EP attention-TP2 device program and at least {rows} serving lanes \
+             (MEMRA_DSV4_SESSIONS={sessions})"
+        ));
+    }
+    if sessions > 1 && tp_ep_rows && rows < sessions {
+        return Err(format!(
+            "MEMRA_DSV4_SESSIONS={sessions} on TP/EP needs MEMRA_DSV4_ROWS >= {sessions}: its lanes \
+             only help by sharing B-row steps (MEMRA_DSV4_ROWS={rows})"
+        ));
+    }
+    // The B-row workspace is the route's, allocated before calibration so the memory book's
+    // idle readings already exclude it.
+    let row_batcher = if rows > 1 {
+        // Two groups in flight let a PP pair overlap them; a TP/EP step uses both cards.
+        let groups = if 2 * rows <= sessions && pipelined {
+            2
+        } else {
+            1
+        };
+        let ws = (0..groups)
+            .map(|_| gpu.alloc_rows_state(rows))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("MEMRA_DSV4_ROWS={rows} workspace: {e}"))?;
+        eprintln!(
+            "[dsv4-serve] {name}: B-row steps up to {rows} rows, {groups} group(s) in flight (MEMRA_DSV4_ROWS)"
+        );
+        let sampler = if gpu.plain_sampler() == memra_engine::dsv4_sampler::Dsv4Sampler::Device {
+            Some(
+                gpu.device_sampler()
+                    .map_err(|e| format!("B-row device sampler: {e}"))?,
+            )
+        } else {
+            None
+        };
+        Some(Arc::new(RowBatcher::new(rows, ws, sampler)))
+    } else {
+        None
+    };
+    eprintln!(
+        "[dsv4-serve] {name}: {sessions} serving lane(s){}",
+        if std::env::var_os("MEMRA_DSV4_SESSIONS").is_some() {
+            " (MEMRA_DSV4_SESSIONS)"
+        } else if sessions > 1 && tp_ep_rows {
+            " (default on the plain TP/EP program, sharing B-row steps; MEMRA_DSV4_SESSIONS=1 is the serial route)"
+        } else if sessions > 1 {
+            " (default on the plain PP matrix program; MEMRA_DSV4_SESSIONS=1 is the serial route)"
+        } else {
+            " (default)"
+        }
+    );
+    let mut m = Dsv4Model {
         gpu: Arc::new(gpu),
         tok,
         max_seq,
@@ -607,14 +1025,142 @@ pub fn load(name: &str, dir: &Path, tok: Arc<Tokenizer>) -> Result<Dsv4Model, St
         host_cache_bytes,
         c4_host_bytes,
         prefill_chunk,
+        memory: Dsv4Memory::default(),
+        sessions,
+        rows: row_batcher,
+        spec_policy,
+    };
+    m.memory = calibrate_memory(&m).map_err(|e| format!("dsv4 memory calibration: {e}"))?;
+    let per_stage = |v: &[u64]| {
+        m.memory
+            .devs
+            .iter()
+            .zip(v)
+            .map(|(d, b)| format!("{d}:{b}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    eprintln!(
+        "[admit-mem] route=dsv4-thread model={name:?} calibrated fixed_plain={} fixed_spec={} \
+         ceiling={} defer_budget_ms={}",
+        per_stage(&m.memory.fixed_plain),
+        per_stage(&m.memory.fixed_spec),
+        per_stage(&m.memory.ceiling),
+        route_defer_budget_ms(),
+    );
+    Ok(m)
+}
+
+/// Tokens of the calibration session: small, so it costs the boot nothing it cannot return.
+const CALIBRATION_CAPACITY: usize = 1024;
+
+/// Per-stage bytes the readings `now` hold beyond `base`, less the layer caches the plan
+/// already prices. A reading is device-wide, so stages sharing a card share one delta: the
+/// card's first stage (its `carrier`) holds it, net of every co-located stage's cache, and
+/// the others hold 0, so `dsv4_admit::per_device` sums the card back to one delta.
+fn fixed_delta(now: &[StageMemory], base: &[StageMemory], cache: &[u64]) -> Vec<u64> {
+    let mut out = vec![0; now.len()];
+    for (i, (n, b)) in now.iter().zip(base).enumerate() {
+        if carrier(now, i) != i {
+            continue;
+        }
+        let card_cache = now
+            .iter()
+            .zip(cache)
+            .filter(|(s, _)| s.dev == n.dev)
+            .fold(0u64, |acc, (_, c)| acc.saturating_add(*c));
+        out[i] = n
+            .occupied()
+            .saturating_sub(b.occupied())
+            .saturating_sub(card_cache);
+    }
+    out
+}
+
+/// The first stage on stage `i`'s card: the one whose fixed term carries the card's delta.
+fn carrier(stages: &[StageMemory], i: usize) -> usize {
+    stages
+        .iter()
+        .position(|s| s.dev == stages[i].dev)
+        .unwrap_or(i)
+}
+
+/// Measure the route's fixed per-session cost and its idle ceiling (memra#503). Allocates, in
+/// the order a request does, a calibration session, the chunked-prefill transaction and (with
+/// a drafter) the drafter state and the verify transaction, reading every stage around them.
+/// Everything is dropped before the ceiling is read, so the ceiling is what a request can
+/// claim with the route idle and co-tenants as they were at boot.
+fn calibrate_memory(m: &Dsv4Model) -> Result<Dsv4Memory, String> {
+    let gpu = &m.gpu;
+    let cap = m.max_seq.min(CALIBRATION_CAPACITY);
+    let base = gpu.stage_memory()?;
+    let devs: Vec<usize> = base.iter().map(|s| s.dev).collect();
+    let (cache, _) = gpu.plan_session_cache_bytes(cap, m.transient_rows(), m.c4_host_bytes > 0)?;
+    // Chunked prefill runs batched transactions on the device path, PP or TP/EP; the legacy
+    // path has no transaction.
+    let transactions = m.prefill_chunk > 0 && matches!(gpu.decode_path, DecodePath::Device { .. });
+    let state = m.request_state(cap, None)?;
+    let prefill = if transactions {
+        Some(gpu.alloc_prefill_state_for(cap, m.prefill_chunk)?)
+    } else {
+        None
+    };
+    let fixed_plain = fixed_delta(&gpu.stage_memory()?, &base, &cache);
+    let fixed_spec = if m.spec {
+        let dstate = gpu.dspark_alloc_state()?;
+        let mut with_prefill = fixed_delta(&gpu.stage_memory()?, &base, &cache);
+        if transactions && !base.is_empty() {
+            // the continuation's tap capture, allocated inside the chunk loop on the last
+            // stage's card, booked on that card's carrier with the rest of its delta
+            let at = carrier(&base, base.len() - 1);
+            with_prefill[at] =
+                with_prefill[at].saturating_add(gpu.dspark_prefill_tap_bytes(m.prefill_chunk));
+        }
+        drop(prefill);
+        let verify = gpu.alloc_verify_state_for(cap)?;
+        let with_verify = fixed_delta(&gpu.stage_memory()?, &base, &cache);
+        drop(verify);
+        drop(dstate);
+        with_prefill
+            .iter()
+            .zip(&with_verify)
+            .map(|(p, v)| *p.max(v))
+            .collect()
+    } else {
+        drop(prefill);
+        fixed_plain.clone()
+    };
+    drop(state);
+    let ceiling = gpu
+        .stage_memory()?
+        .iter()
+        .map(StageMemory::effective_free)
+        .collect();
+    Ok(Dsv4Memory {
+        devs,
+        fixed_plain,
+        fixed_spec,
+        ceiling,
     })
+}
+
+/// The defer budget this route spends (memra#503): `MEMRA_ADMIT_DEFER_BUDGET_MS`, clamped
+/// under the stall bound.
+fn route_defer_budget_ms() -> u64 {
+    dsv4_admit::defer_budget_ms(
+        crate::admit_memory::MemoryAdmitConfig::from_env().defer_budget_ms,
+        crate::health::stall_threshold_ms(),
+    )
 }
 
 /// The route's policy contract (memra#504): declared in `route_contract.rs`, not here, so the
 /// registry's wiring test greps THIS file for the call sites the declarations name without the
 /// declarations themselves satisfying it.
-pub fn contract(model: &str) -> crate::route_contract::RouteContract {
-    crate::route_contract::RouteContract::dsv4_thread(model)
+///
+/// `sessions` is the loaded route's lane count (`Dsv4Model::sessions`). Before the load only
+/// the environment is known, and the pre-load registry checks armed policies, not capacity.
+pub fn contract(model: &str, sessions: usize) -> crate::route_contract::RouteContract {
+    crate::route_contract::RouteContract::dsv4_thread_sessions(model, sessions)
 }
 
 /// ModelCaps for the /v1/models surface + the HTTP layer's gates — the same
@@ -650,53 +1196,766 @@ pub fn caps(m: &Dsv4Model) -> ModelCaps {
     }
 }
 
+/// The route's two books, borrowed by one request's `Emit`: health gets a round stamp, load a
+/// round-time sample, at every committed decode step or speculative round.
+struct RouteProgress {
+    health: Arc<RouteHealth>,
+    load: Arc<RouteLoad>,
+    last_round: Instant,
+}
+
+impl RouteProgress {
+    fn round(&mut self) {
+        let now = Instant::now();
+        self.health.note_round();
+        self.load
+            .note_round(now.duration_since(self.last_round).as_millis() as u64);
+        self.last_round = now;
+    }
+}
+
+/// Latches the route DEAD when the serving thread ends for any reason: the channel closed, a
+/// panic outside the per-request catch, or a respawn dropping the old sender. The record is the
+/// one registered for THIS thread, so a late latch cannot mark a successor dead.
+struct ExitLatch(Arc<RouteHealth>);
+
+impl Drop for ExitLatch {
+    fn drop(&mut self) {
+        self.0.mark_dead(if std::thread::panicking() {
+            "dsv4 serving thread panicked"
+        } else {
+            "dsv4 serving thread exited"
+        });
+    }
+}
+
+/// Answer a request with an error. Constraint-carrying requests wait on the constraint_ready
+/// channel, not the event stream: failing only via tx leaves the HTTP layer to a 503 compile
+/// timeout (rung-3 serve finding: response_format 503 instead of the named 400). Same
+/// dispatch as the worker's fail_request.
+fn fail_request(req: &mut Request, err: EngineError) {
+    if let Some(ready) = req.constraint_ready.take() {
+        let _ = ready.send(Err(err));
+    } else {
+        let _ = req.tx.send(Event::Error(err));
+    }
+}
+
 /// Spawn the serving thread; the returned Sender is the model's admission queue.
-pub fn spawn(name: String, m: Dsv4Model) -> std::sync::mpsc::Sender<Box<Request>> {
+///
+/// `health` is this thread's own liveness record (memra#500) and `load` its route book
+/// (memra#501): the thread publishes idle before every wait, busy at every dequeue, rows at every
+/// completed prime chunk (its progress sink) and a stamp at every decode step or spec round, so
+/// the central worker's idle beat can neither mask nor be masked by this route.
+pub fn spawn(
+    name: String,
+    m: Dsv4Model,
+    health: Arc<RouteHealth>,
+    load: Arc<RouteLoad>,
+) -> std::sync::mpsc::Sender<Box<Request>> {
     let (tx, rx) = std::sync::mpsc::channel::<Box<Request>>();
-    std::thread::Builder::new()
-        .name(format!("dsv4-serve-{name}"))
-        .spawn(move || {
-            let mut host_cache = Dsv4HostCache::new(m.host_cache_bytes);
-            while let Ok(mut req) = rx.recv() {
-                // The worker's DSV4 channel is unbounded, so the hard admission reservation
-                // remains held until this serving thread actually receives the request. Merely
-                // forwarding it from the command channel must not make the queue appear empty.
-                crate::worker::release_admission_reservation(req.lane);
-                if req.tx.is_closed() {
-                    continue; // client gone while queued
+    let lanes = m.sessions.max(1);
+    let rx = Arc::new(std::sync::Mutex::new(rx));
+    let turn = Arc::new(TurnLock::new(Dsv4HostCache::new(m.host_cache_bytes)));
+    let m = Arc::new(m);
+    for lane in 0..lanes {
+        let (m, rx, turn, health, load) = (
+            m.clone(),
+            rx.clone(),
+            turn.clone(),
+            health.clone(),
+            load.clone(),
+        );
+        std::thread::Builder::new()
+            .name(if lanes == 1 {
+                format!("dsv4-serve-{name}")
+            } else {
+                format!("dsv4-serve-{name}-{lane}")
+            })
+            .spawn(move || serve_lane(&m, &rx, &turn, &health, &load, lanes))
+            .expect("spawn dsv4 serve thread");
+    }
+    tx
+}
+
+/// One serving lane. With one lane this is the serial route. With several (memra #667) the
+/// lanes share the queue and the launch turn: every engine call runs holding the turn, and a
+/// pipelined greedy step gives it up only while it waits for its own readbacks, so another
+/// lane's step is queued whole on the stage streams behind it.
+fn serve_lane(
+    m: &Dsv4Model,
+    rx: &std::sync::Mutex<std::sync::mpsc::Receiver<Box<Request>>>,
+    turn_lock: &TurnLock,
+    health: &Arc<RouteHealth>,
+    load: &Arc<RouteLoad>,
+    lanes: usize,
+) {
+    let _latch = ExitLatch(health.clone());
+    let sink = health.clone();
+    let _progress = memra_engine::progress::ProgressSinkScope::install(Box::new(move |rows| {
+        sink.note_rows(rows)
+    }));
+    loop {
+        if lanes == 1 {
+            health.set_idle();
+        } else {
+            health.set_idle_if_free();
+        }
+        let next = match rx.lock() {
+            Ok(queue) => queue.recv(),
+            Err(poisoned) => poisoned.into_inner().recv(),
+        };
+        let Ok(mut req) = next else { break };
+        // Occupancy rises before the ticket falls (`RouteLoad::begin`), so an arrival
+        // never reads a free route between the two.
+        let mut run = load.begin();
+        // The worker's DSV4 channel is unbounded, so the hard admission reservation
+        // remains held until this serving thread actually receives the request. Merely
+        // forwarding it from the command channel must not make the queue appear empty.
+        crate::worker::release_request_reservation(&mut req);
+        if req.tx.is_closed() {
+            continue; // client gone while queued
+        }
+        run.admit();
+        health.begin_request();
+        let mut progress = RouteProgress {
+            health: health.clone(),
+            load: load.clone(),
+            last_round: Instant::now(),
+        };
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut turn = Turn::take(turn_lock);
+            serve_one(m, &mut turn, &mut req, Some(&mut progress))
+        }));
+        match r {
+            Ok(served) => settle(run, &mut req, served),
+            Err(payload) => {
+                health.note_request_fault();
+                let why = payload
+                    .downcast_ref::<String>()
+                    .cloned()
+                    .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+                    .unwrap_or_else(|| "non-string panic payload".into());
+                let _ = req.tx.send(Event::Error(EngineError::engine(format!(
+                    "dsv4 generation panicked: {why}"
+                ))));
+            }
+        }
+        health.end_request();
+    }
+}
+
+/// The route's launch turn (memra #667): a FIFO ticket lock beside the parked-prefix cache it
+/// guards. A session holds it for every engine call, so one session's work is queued whole on
+/// the stage streams before another's. A pipelined plain step gives it up while it waits for its
+/// own readbacks, a chunked plain prefill between chunks, and the memory door while it sleeps.
+/// Tickets are served in arrival order, so a session that gives the turn up and asks again at
+/// once queues behind every lane already waiting; a plain mutex would hand it straight back
+/// and starve the waiter for a whole prompt. With one serving lane nobody else ever asks for it.
+struct TurnLock {
+    /// (next ticket, ticket now served).
+    tickets: std::sync::Mutex<(u64, u64)>,
+    cv: std::sync::Condvar,
+    cache: std::sync::Mutex<Dsv4HostCache>,
+}
+
+impl TurnLock {
+    fn new(cache: Dsv4HostCache) -> Self {
+        TurnLock {
+            tickets: std::sync::Mutex::new((0, 0)),
+            cv: std::sync::Condvar::new(),
+            cache: std::sync::Mutex::new(cache),
+        }
+    }
+
+    fn lock(&self) {
+        let mut t = self.tickets.lock().unwrap_or_else(|p| p.into_inner());
+        let mine = t.0;
+        t.0 += 1;
+        while t.1 != mine {
+            t = self.cv.wait(t).unwrap_or_else(|p| p.into_inner());
+        }
+    }
+
+    fn unlock(&self) {
+        let mut t = self.tickets.lock().unwrap_or_else(|p| p.into_inner());
+        t.1 += 1;
+        drop(t);
+        self.cv.notify_all();
+    }
+}
+
+/// One session's hold on the [`TurnLock`]. Dropping it (including by unwinding) gives the turn
+/// up, so a panicking request cannot wedge the other lanes.
+struct Turn<'a> {
+    lock: &'a TurnLock,
+    held: bool,
+    cache: Option<std::sync::MutexGuard<'a, Dsv4HostCache>>,
+}
+
+impl<'a> Turn<'a> {
+    fn take(lock: &'a TurnLock) -> Self {
+        let mut turn = Turn {
+            lock,
+            held: false,
+            cache: None,
+        };
+        turn.acquire();
+        turn
+    }
+
+    fn acquire(&mut self) {
+        if !self.held {
+            self.lock.lock();
+            self.held = true;
+        }
+    }
+
+    fn release(&mut self) {
+        self.cache = None;
+        if self.held {
+            self.held = false;
+            self.lock.unlock();
+        }
+    }
+
+    fn cache(&mut self) -> &mut Dsv4HostCache {
+        self.acquire();
+        let lock = self.lock;
+        self.cache
+            .get_or_insert_with(|| lock.cache.lock().unwrap_or_else(|p| p.into_inner()))
+    }
+}
+
+impl Drop for Turn<'_> {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+/// Sleep with the turn given up, then queue for it again (the memory door's defer wait).
+fn sleep_without_turn(turn: &mut Turn, d: std::time::Duration) {
+    turn.release();
+    std::thread::sleep(d);
+    turn.acquire();
+}
+
+/// Step coalescing core (memra #667 lever 2): lanes deposit one row each; a lane whose deposit
+/// completes the batch, or that has waited out [`ROW_BATCH_WAIT`], leads. The leader takes up
+/// to `bmax` deposits including its own, runs them, and publishes every ticket's result. A
+/// waiting lane holds no launch turn, so the leader can always take it. Generic over the row
+/// payload so the coordination is testable without a GPU.
+struct Coalescer<S, A = bool> {
+    bmax: usize,
+    /// Batches that can be in flight at once (the B-row workspaces). A batch targets
+    /// `ceil(members / groups)` rows, so the lanes split into that many groups: with two
+    /// groups, two concurrent requests run as two pipelined one-row steps (the two cards
+    /// overlap) and four run as two pipelined groups of two.
+    groups: usize,
+    /// How long a partial batch waits for the remaining lanes (`ROW_BATCH_WAIT` in production;
+    /// WP-A day 55, `research/spill-a-20260919/DAY55.md`: a field so the mechanism's cells can set
+    /// a window a starved test runner cannot race).
+    window: std::time::Duration,
+    inner: std::sync::Mutex<CoalesceState<S, A>>,
+    cv: std::sync::Condvar,
+}
+
+struct CoalesceState<S, A> {
+    /// Lanes inside a coalesced decode loop; a batch is full when every one of them that is not
+    /// already riding a batch in flight has deposited.
+    members: usize,
+    /// Rows taken by batches that have not published yet.
+    in_flight: usize,
+    next: u64,
+    waiting: Vec<(u64, u32, A, Lent<S>)>,
+    done: std::collections::HashMap<u64, Result<RowOut, String>>,
+}
+
+/// One row's result: its next token (the device argmax for a greedy row) and, when the row
+/// asked for it, its full logits row for the host sampler or a penalty.
+#[derive(Clone, Debug, PartialEq)]
+struct RowOut {
+    tok: u32,
+    logits: Option<Vec<f32>>,
+}
+
+/// A lane's `&mut S`, lent to the batch leader for one step.
+struct Lent<S>(*mut S);
+
+// SAFETY: the lending lane blocks in `Coalescer::step` until the leader publishes its ticket,
+// and the leader dereferences the pointer only between taking the deposit and publishing, so
+// the two never touch the state at once. Engine calls bind their stage contexts on the calling
+// thread, and the launch turn serializes GPU work across lanes.
+unsafe impl<S> Send for Lent<S> {}
+
+/// Runs one batch: the rows' tokens, what each asks for (its logits, or a device draw), and
+/// their states in deposit order; returns each row's result in the same order.
+type BatchRun<'r, S, A> =
+    dyn FnMut(&[u32], &[A], &mut [&mut S]) -> Result<Vec<RowOut>, String> + 'r;
+
+/// How long a partial batch waits for the remaining lanes before it runs anyway.
+const ROW_BATCH_WAIT: std::time::Duration = std::time::Duration::from_micros(500);
+
+impl<S, A: Copy> Coalescer<S, A> {
+    fn new(bmax: usize, groups: usize) -> Self {
+        Self::with_window(bmax, groups, ROW_BATCH_WAIT)
+    }
+    fn with_window(bmax: usize, groups: usize, window: std::time::Duration) -> Self {
+        Coalescer {
+            bmax,
+            groups: groups.max(1),
+            window,
+            inner: std::sync::Mutex::new(CoalesceState {
+                members: 0,
+                in_flight: 0,
+                next: 0,
+                waiting: Vec::new(),
+                done: std::collections::HashMap::new(),
+            }),
+            cv: std::sync::Condvar::new(),
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, CoalesceState<S, A>> {
+        self.inner.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    fn join(&self) {
+        self.lock().members += 1;
+    }
+
+    fn leave(&self) {
+        let mut g = self.lock();
+        g.members = g.members.saturating_sub(1);
+        drop(g);
+        // A smaller membership may complete a batch that is already waiting.
+        self.cv.notify_all();
+    }
+
+    /// Deposit `(tok, state)` and return this row's result; `ask` says what the row needs
+    /// besides the argmax (its full row, a device draw). `run` executes one batch and returns
+    /// its rows' results in order (or one error for all).
+    fn step(
+        &self,
+        tok: u32,
+        ask: A,
+        state: &mut S,
+        run: &mut BatchRun<'_, S, A>,
+    ) -> Result<RowOut, String> {
+        let mut g = self.lock();
+        let ticket = g.next;
+        g.next += 1;
+        g.waiting.push((ticket, tok, ask, Lent(state as *mut S)));
+        let t0 = std::time::Instant::now();
+        loop {
+            if let Some(result) = g.done.remove(&ticket) {
+                return result;
+            }
+            let pos = g.waiting.iter().position(|d| d.0 == ticket);
+            let free = g.members.saturating_sub(g.in_flight);
+            let target = g.members.div_ceil(self.groups).clamp(1, self.bmax);
+            let full = g.waiting.len() >= target.min(free).max(1);
+            if let Some(mine) = pos
+                && (full || t0.elapsed() >= self.window)
+            {
+                // Lead: the oldest deposits, with ours among them.
+                let mut take: Vec<usize> = (0..g.waiting.len()).collect();
+                take.truncate(target);
+                if !take.contains(&mine) {
+                    *take.last_mut().expect("bmax >= 1") = mine;
                 }
-                let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    serve_one(&m, &mut host_cache, &mut req)
+                take.sort_unstable();
+                let batch: Vec<(u64, u32, A, Lent<S>)> = take
+                    .into_iter()
+                    .rev()
+                    .map(|i| g.waiting.remove(i))
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                g.in_flight += batch.len();
+                drop(g);
+                let toks: Vec<u32> = batch.iter().map(|d| d.1).collect();
+                let wants: Vec<A> = batch.iter().map(|d| d.2).collect();
+                // SAFETY: see `Lent`; every lender is blocked on its ticket.
+                let mut states: Vec<&mut S> =
+                    batch.iter().map(|d| unsafe { &mut *d.3.0 }).collect();
+                // A panicking step must not wedge the lanes that lent it their rows: every member
+                // gets an error, `in_flight` comes down, and the leader then unwinds as before.
+                let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    run(&toks, &wants, &mut states)
                 }));
-                match r {
-                    Ok(Ok(())) => {}
-                    Ok(Err(err)) => {
-                        // constraint-carrying requests wait on the constraint_ready
-                        // channel, not the event stream — failing only via tx leaves
-                        // the HTTP layer to a 503 compile timeout (rung-3 serve
-                        // finding: response_format 503 instead of the named 400).
-                        // Same dispatch as the worker's fail_request.
-                        if let Some(ready) = req.constraint_ready.take() {
-                            let _ = ready.send(Err(err));
-                        } else {
-                            let _ = req.tx.send(Event::Error(err));
+                drop(states);
+                g = self.lock();
+                g.in_flight -= batch.len();
+                let out = match out {
+                    Ok(out) => out,
+                    Err(panic) => {
+                        for d in &batch {
+                            g.done.insert(d.0, Err("B-row step panicked".to_string()));
+                        }
+                        drop(g);
+                        self.cv.notify_all();
+                        std::panic::resume_unwind(panic);
+                    }
+                };
+                match out {
+                    Ok(next) if next.len() == batch.len() => {
+                        for (d, r) in batch.iter().zip(next) {
+                            g.done.insert(d.0, Ok(r));
                         }
                     }
-                    Err(payload) => {
-                        let why = payload
-                            .downcast_ref::<String>()
-                            .cloned()
-                            .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
-                            .unwrap_or_else(|| "non-string panic payload".into());
-                        let _ = req.tx.send(Event::Error(EngineError::engine(format!(
-                            "dsv4 generation panicked: {why}"
-                        ))));
+                    Ok(next) => {
+                        let why = format!(
+                            "B-row step returned {} rows for {}",
+                            next.len(),
+                            batch.len()
+                        );
+                        for d in &batch {
+                            g.done.insert(d.0, Err(why.clone()));
+                        }
+                    }
+                    Err(why) => {
+                        for d in &batch {
+                            g.done.insert(d.0, Err(why.clone()));
+                        }
                     }
                 }
+                self.cv.notify_all();
+                continue;
             }
-        })
-        .expect("spawn dsv4 serve thread");
-    tx
+            g = if pos.is_some() {
+                let left = self.window.saturating_sub(t0.elapsed());
+                self.cv
+                    .wait_timeout(g, left.max(std::time::Duration::from_micros(20)))
+                    .unwrap_or_else(|p| p.into_inner())
+                    .0
+            } else {
+                self.cv.wait(g).unwrap_or_else(|p| p.into_inner())
+            };
+        }
+    }
+}
+
+/// What a row asks of a B-row step besides its device argmax.
+#[derive(Clone, Copy, Debug)]
+enum RowAsk {
+    /// The argmax only (greedy).
+    Argmax,
+    /// The full logits row (the host sampler, a penalty).
+    Logits,
+    /// A device-sampler draw at the row's position (memra #710: TP/EP sampled rows).
+    Draw(Dsv4SampleCfg),
+}
+
+impl RowAsk {
+    fn logits(self) -> bool {
+        matches!(self, RowAsk::Logits)
+    }
+}
+
+/// The route's B-row batcher (`MEMRA_DSV4_ROWS`): the coalescer plus the B-row workspace the
+/// leader uses under the launch turn.
+pub struct RowBatcher {
+    core: Coalescer<DecodeState, RowAsk>,
+    /// The device sampler a leader draws `RowAsk::Draw` rows with: draws are keyed on (seed,
+    /// position), so one sampler serves every request's rows. Present when the load's plain
+    /// sampler is the device one.
+    sampler: std::sync::Mutex<Option<DeviceSampler>>,
+    /// One B-row workspace per batch that can be in flight: two when the lanes can fill two
+    /// groups (`2 * B <= lanes`), so one group's stage 0 runs while the other's stage 1 does.
+    pool: std::sync::Mutex<Vec<RowsWorkspace>>,
+    freed: std::sync::Condvar,
+}
+
+struct RowsWorkspace(memra_engine::dsv4_gpu::VerifyState);
+
+// SAFETY: only a batch leader touches it, holding both this mutex and the launch turn.
+unsafe impl Send for RowsWorkspace {}
+
+struct DeviceSampler(memra_engine::dsv4_sampler::Dsv4DeviceSampler);
+
+// SAFETY: only a batch leader touches it, holding both this mutex and the launch turn.
+unsafe impl Send for DeviceSampler {}
+
+impl RowBatcher {
+    fn new(
+        bmax: usize,
+        ws: Vec<memra_engine::dsv4_gpu::VerifyState>,
+        sampler: Option<memra_engine::dsv4_sampler::Dsv4DeviceSampler>,
+    ) -> Self {
+        RowBatcher {
+            sampler: std::sync::Mutex::new(sampler.map(DeviceSampler)),
+            core: Coalescer::new(bmax, ws.len()),
+            pool: std::sync::Mutex::new(ws.into_iter().map(RowsWorkspace).collect()),
+            freed: std::sync::Condvar::new(),
+        }
+    }
+
+    fn take_ws(&self) -> RowsWorkspace {
+        let mut pool = self.pool.lock().unwrap_or_else(|p| p.into_inner());
+        loop {
+            if let Some(ws) = pool.pop() {
+                return ws;
+            }
+            pool = self.freed.wait(pool).unwrap_or_else(|p| p.into_inner());
+        }
+    }
+
+    fn put_ws(&self, ws: RowsWorkspace) {
+        self.pool.lock().unwrap_or_else(|p| p.into_inner()).push(ws);
+        self.freed.notify_one();
+    }
+}
+
+/// A lane's membership in the coalesced decode loop; leaving on drop keeps the batch count
+/// right on every exit, including an unwind.
+struct RowMember<'a>(&'a RowBatcher);
+
+impl<'a> RowMember<'a> {
+    fn join(b: &'a RowBatcher) -> Self {
+        b.core.join();
+        RowMember(b)
+    }
+}
+
+impl Drop for RowMember<'_> {
+    fn drop(&mut self) {
+        self.0.core.leave();
+    }
+}
+
+/// One plain step through the B-row batcher: the next token, and the full logits row when the
+/// row asks for it (the host sampler, a penalty). The lane gives the turn up while its row
+/// waits; the leader takes it for the batch. One row runs the one-row program: the full-token
+/// replay when the request is armed and covered, else the one-row eager step. Several run one
+/// B-row step, full-logits only when some row asked for it. A greedy row's token is always the
+/// device argmax, the one-row greedy step's selection; a `Draw` row's is the device sampler's
+/// draw at its position; and every row's bits equal its one-row step (`dsv4_rows_gate`).
+fn rows_step(
+    m: &Dsv4Model,
+    batcher: &RowBatcher,
+    turn: &mut Turn,
+    tok: u32,
+    ask: RowAsk,
+    state: &mut DecodeState,
+) -> Result<RowOut, String> {
+    turn.release();
+    let lock = turn.lock;
+    let result = batcher
+        .core
+        .step(tok, ask, state, &mut |toks, asks, states| {
+            let full = asks.iter().any(|a| a.logits());
+            if let [one] = states {
+                let mut lead = Turn::take(lock);
+                if m.gpu.full_token_replay_covers(one) {
+                    // An armed request draws its own token in graph, greedy or sampled.
+                    return m
+                        .gpu
+                        .decode_sample_full_token(toks[0], one)
+                        .map(|tok| vec![RowOut { tok, logits: None }]);
+                }
+                return match asks[0] {
+                    RowAsk::Logits => logits_step(m, &mut lead, toks[0], one).map(|row| {
+                        vec![RowOut {
+                            tok: argmax(&row),
+                            logits: Some(row),
+                        }]
+                    }),
+                    RowAsk::Argmax => greedy_step(m, &mut lead, toks[0], one)
+                        .map(|tok| vec![RowOut { tok, logits: None }]),
+                    RowAsk::Draw(cfg) => {
+                        m.gpu.decode_step_device_logits(toks[0], one)?;
+                        let mut sampler = batcher.sampler.lock().unwrap_or_else(|p| p.into_inner());
+                        let sampler = sampler
+                            .as_mut()
+                            .ok_or("B-row device draw without a device sampler")?;
+                        m.gpu
+                            .sample_device_logits(one, &mut sampler.0, &cfg, &[], None)
+                            .map(|tok| vec![RowOut { tok, logits: None }])
+                    }
+                };
+            }
+            let mut ws = batcher.take_ws();
+            let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if m.gpu.topology().is_tp_ep() {
+                    // TP/EP: both ranks work on every row, so the whole step runs holding the
+                    // turn; there is no stage to overlap another group with.
+                    let _lead = Turn::take(lock);
+                    if !full {
+                        // Argmax and device-draw rows: the captured B-row step when the batch
+                        // admits it (memra #710 B-row graphs), the eager one otherwise.
+                        let draws: Vec<Dsv4RowDraw> = asks
+                            .iter()
+                            .map(|a| match *a {
+                                RowAsk::Draw(cfg) => Dsv4RowDraw::Sample(cfg),
+                                _ => Dsv4RowDraw::Argmax,
+                            })
+                            .collect();
+                        return m.gpu.decode_rows_draw(toks, states, &mut ws.0, &draws).map(
+                            |tokens| {
+                                tokens
+                                    .into_iter()
+                                    .map(|tok| RowOut { tok, logits: None })
+                                    .collect()
+                            },
+                        );
+                    }
+                    let (rows, am) = if full {
+                        let (rows, am) = m.gpu.decode_rows_full(toks, states, &mut ws.0)?;
+                        (Some(rows), am)
+                    } else {
+                        (None, m.gpu.decode_rows_greedy(toks, states, &mut ws.0)?)
+                    };
+                    let mut rows = rows.map(Vec::into_iter);
+                    let mut out = Vec::with_capacity(toks.len());
+                    for (i, (&tok, ask)) in am.iter().zip(asks).enumerate() {
+                        let row = rows.as_mut().and_then(Iterator::next);
+                        out.push(match *ask {
+                            RowAsk::Argmax => RowOut { tok, logits: None },
+                            RowAsk::Logits => RowOut { tok, logits: row },
+                            RowAsk::Draw(cfg) => {
+                                let mut sampler =
+                                    batcher.sampler.lock().unwrap_or_else(|p| p.into_inner());
+                                let sampler = sampler
+                                    .as_mut()
+                                    .ok_or("B-row device draw without a device sampler")?;
+                                RowOut {
+                                    tok: m.gpu.sample_rows_device(
+                                        &ws.0,
+                                        i,
+                                        states[i].pos,
+                                        &mut sampler.0,
+                                        &cfg,
+                                    )?,
+                                    logits: None,
+                                }
+                            }
+                        });
+                    }
+                    return Ok(out);
+                }
+                // PP: queue the group holding the turn, wait for its own readbacks without it
+                // (so another group can queue behind it and the two cards overlap), then commit.
+                let mut lead = Turn::take(lock);
+                m.gpu.decode_rows_enqueue(toks, states, &mut ws.0, full)?;
+                lead.release();
+                let waited = m.gpu.decode_rows_wait(&mut ws.0);
+                lead.acquire();
+                waited?;
+                let (rows, am) = m.gpu.decode_rows_complete(states, &mut ws.0)?;
+                Ok(match rows {
+                    Some(rows) => rows
+                        .into_iter()
+                        .zip(am)
+                        .zip(asks)
+                        .map(|((row, tok), a)| RowOut {
+                            tok,
+                            logits: a.logits().then_some(row),
+                        })
+                        .collect(),
+                    None => am
+                        .into_iter()
+                        .map(|tok| RowOut { tok, logits: None })
+                        .collect(),
+                })
+            }));
+            // The workspace goes back to the pool on every exit, a panic included.
+            batcher.put_ws(ws);
+            match out {
+                Ok(out) => out,
+                Err(panic) => std::panic::resume_unwind(panic),
+            }
+        });
+    turn.acquire();
+    result
+}
+
+/// A session's cache capacity. TP/EP plain requests serve on the full-token replay graphs,
+/// which need a capacity of at least [`REPLAY_MIN_CAPACITY`], so a shorter session is rounded
+/// up so it can arm, never past the model context: a boot with a smaller context serves the
+/// eager step, because the arm refuses the capacity.
+fn session_capacity(replay_route: bool, need: usize, max_seq: usize) -> usize {
+    if replay_route {
+        need.max(REPLAY_MIN_CAPACITY).min(max_seq).max(need)
+    } else {
+        need
+    }
+}
+
+/// The greedy program a TP/EP replay arms: the device argmax, no draw.
+const GREEDY_REPLAY: Dsv4SampleCfg = Dsv4SampleCfg {
+    temperature: 0.0,
+    top_p: 1.0,
+    top_k: 0,
+    seed: 0,
+};
+
+/// Arm a TP/EP plain request on the full-token replay graphs (memra #710). A refused arm
+/// leaves the request on the eager step, the same numeric program, and logs why.
+fn arm_replay(m: &Dsv4Model, state: &mut DecodeState, cfg: Dsv4SampleCfg) -> bool {
+    // SAFETY: the route holds the model behind an `Arc` for the whole request, so it outlives
+    // the state at a stable address, and nothing replaces its weights or reconfigures its
+    // kernels after load.
+    match unsafe { m.gpu.arm_full_token_replay(state, cfg) } {
+        Ok(()) => true,
+        Err(why) => {
+            eprintln!("[dsv4-serve] TP/EP replay not armed: {why}");
+            false
+        }
+    }
+}
+
+/// Whether an armed request's next step still replays. Past the replay limit the request
+/// drops its graphs and continues on the eager step, the same numeric program
+/// (`dsv4_tp_replay_long_gate` crosses that handoff).
+fn keep_replay(m: &Dsv4Model, state: &mut DecodeState) -> Result<bool, String> {
+    if m.gpu.full_token_replay_covers(state) {
+        return Ok(true);
+    }
+    m.gpu.disarm_full_token_replay(state)?;
+    Ok(false)
+}
+
+/// One plain greedy step. Serial lanes, and TP/EP lanes (whose steps use both cards), take the
+/// one-call step. Pipelined PP lanes queue the step holding the turn, wait for its readbacks
+/// without it, then take the turn back to commit.
+fn greedy_step(
+    m: &Dsv4Model,
+    turn: &mut Turn,
+    tok: u32,
+    state: &mut DecodeState,
+) -> Result<u32, String> {
+    if m.sessions <= 1 || !m.gpu.pipelined_steps_supported() {
+        return m.gpu.decode_step_greedy(tok, state);
+    }
+    turn.acquire();
+    m.gpu.decode_step_greedy_enqueue(tok, state)?;
+    turn.release();
+    let waited = m.gpu.decode_step_greedy_wait(state);
+    turn.acquire();
+    waited?;
+    m.gpu.decode_step_greedy_complete(state)
+}
+
+/// One plain step that returns the logits row (host-sampled and penalized routes), serial or
+/// pipelined exactly as [`greedy_step`].
+fn logits_step(
+    m: &Dsv4Model,
+    turn: &mut Turn,
+    tok: u32,
+    state: &mut DecodeState,
+) -> Result<Vec<f32>, String> {
+    if m.sessions <= 1 || !m.gpu.pipelined_steps_supported() {
+        return m.gpu.decode_step(tok, state);
+    }
+    turn.acquire();
+    m.gpu.decode_step_logits_enqueue(tok, state)?;
+    turn.release();
+    let waited = m.gpu.decode_step_greedy_wait(state);
+    turn.acquire();
+    waited?;
+    m.gpu.decode_step_logits_complete(state)
 }
 
 /// Streaming state shared by every route: incremental detok, EOS, stop strings,
@@ -752,6 +2011,8 @@ struct Emit<'a> {
     /// so it is part of the token boundary the parked-prefix tier has to name; without it an
     /// eos-terminated session cannot park at all (see `processed_prefix_tokens`).
     terminal: Option<u32>,
+    /// The serving route's books; `None` off the serving thread (unit tests).
+    progress: Option<&'a mut RouteProgress>,
 }
 
 impl<'a> Emit<'a> {
@@ -775,6 +2036,7 @@ impl<'a> Emit<'a> {
             stop_reason: None,
             client_gone: false,
             terminal: None,
+            progress: None,
         }
     }
 
@@ -784,6 +2046,10 @@ impl<'a> Emit<'a> {
     /// `park_prefix` can name. A swallowed EOS COUNTS as taken: the device consumed it and
     /// the next turn's render replays it after the assistant content.
     fn push_round(&mut self, new: &[u32]) -> RoundTake {
+        // Every call is one committed decode step or speculative round: forward progress.
+        if let Some(p) = self.progress.as_mut() {
+            p.round();
+        }
         let mut taken = 0usize;
         for &id in new {
             if self.stop_reason.is_some() || self.client_gone {
@@ -967,6 +2233,8 @@ fn continue_plain_prefix(
         } else {
             let _ = m.gpu.decode_step_greedy(tok, state)?;
         }
+        // Each step read its token or row back: one completed prime row (memra#500).
+        memra_engine::progress::note_prime_rows(1);
     }
     Ok(last.expect("non-empty suffix has final logits"))
 }
@@ -1173,11 +2441,110 @@ fn processed_prefix_tokens(
     Ok(toks)
 }
 
+/// How one dequeued request left the route.
+#[derive(Debug)]
+pub(crate) enum Served {
+    Done(ServeStats),
+    /// The client left while the request waited for memory.
+    Cancelled,
+    /// The memory door turned it away (memra#503); the error is the client's answer.
+    Refused(EngineError),
+}
+
+/// The client's answer for one admission outcome: `None` serves the request, `Some` turns it
+/// away, with the Retry-After a refusal carries (for the receipt line). `fits` is the largest
+/// session the route can hold; it runs only for a session no wait can fit.
+pub(crate) fn admission_answer(
+    outcome: &Admission,
+    capacity: usize,
+    prompt_len: usize,
+    fits: impl FnOnce() -> usize,
+) -> (Option<Served>, Option<u64>) {
+    match *outcome {
+        Admission::Admit { .. } => (None, None),
+        Admission::Cancelled { .. } => (Some(Served::Cancelled), None),
+        Admission::Refuse { .. } => {
+            let s = crate::admit_memory::clamp_retry_after_s(None);
+            let err = EngineError::rate_limit_after(crate::admit_memory::MEMORY_REFUSE_MESSAGE, s);
+            (Some(Served::Refused(err)), Some(s))
+        }
+        Admission::NeverFits { dev, need, ceiling } => {
+            let err = EngineError::context_length(format!(
+                "a {capacity}-token session (prompt {prompt_len} + max_tokens {}) needs {need} \
+                 bytes on device {dev}, above the {ceiling} bytes this route offers there; the \
+                 largest session that fits is {} tokens",
+                capacity.saturating_sub(prompt_len),
+                fits(),
+            ));
+            (Some(Served::Refused(err)), None)
+        }
+    }
+}
+
+/// Book how a served request left the route and answer its client when it was turned away.
+pub(crate) fn settle(run: RouteRun, req: &mut Request, served: Result<Served, EngineError>) {
+    match served {
+        Ok(Served::Done(stats)) => run.finish(stats),
+        Ok(Served::Cancelled) => run.cancel(),
+        Ok(Served::Refused(err)) => {
+            run.refuse();
+            fail_request(req, err);
+        }
+        Err(err) => fail_request(req, err),
+    }
+}
+
+/// The route's memory door (memra#503), run before a parked prefix is consumed or any state
+/// is allocated. `None` admits. A refusal answers 429 with `Retry-After`; a session no wait
+/// can fit answers a context-length error naming the largest session that fits.
+fn admit_request(
+    m: &Dsv4Model,
+    turn: &mut Turn,
+    req: &Request,
+    prompt: &[u32],
+    capacity: usize,
+    spec: bool,
+    host_c4: u64,
+) -> Result<Option<Served>, EngineError> {
+    let need = m
+        .session_need(capacity, spec, host_c4)
+        .map_err(EngineError::engine)?;
+    let spare =
+        turn.cache()
+            .restore_candidate(&req.cache_ns, req.affinity.as_deref(), prompt, spec);
+    let mut probe = LiveProbe {
+        gpu: &m.gpu,
+        turn,
+        spare,
+        tx: &req.tx,
+        t0: Instant::now(),
+    };
+    let outcome = dsv4_admit::admit_session(&need, &mut probe, route_defer_budget_ms())
+        .map_err(EngineError::engine)?;
+    let (answer, retry_after_s) = admission_answer(&outcome, capacity, prompt.len(), || {
+        dsv4_admit::largest_fitting_capacity(m.max_seq, |c| m.fits_ceiling(c, spec))
+    });
+    eprintln!(
+        "{}",
+        dsv4_admit::admission_line(&AdmissionLine {
+            request_id: &req.request_id,
+            model: &req.model,
+            capacity,
+            spec,
+            need: &need,
+            outcome: &outcome,
+            retry_after_s,
+        })
+    );
+    Ok(answer)
+}
+
 fn serve_one(
     m: &Dsv4Model,
-    host_cache: &mut Dsv4HostCache,
+    turn: &mut Turn,
     req: &mut Request,
-) -> Result<(), EngineError> {
+    progress: Option<&mut RouteProgress>,
+) -> Result<Served, EngineError> {
     let t0 = std::time::Instant::now();
     if req.grammar.is_some() {
         return Err(EngineError::invalid_param(
@@ -1226,11 +2593,29 @@ fn serve_one(
         ));
     }
     let use_spec = m.spec && !(greedy && penalties_set);
-    let session_capacity = prompt.len() + budget;
-    // Refuse before consuming a parked prefix or starting any state allocation.
-    // This is a single-active-request reservation, not concurrency admission.
-    m.planned_c4_host_bytes(session_capacity)
-        .map_err(EngineError::overloaded)?;
+    let session_capacity = session_capacity(
+        m.gpu.topology().is_tp_ep() && !use_spec,
+        prompt.len() + budget,
+        m.max_seq,
+    );
+    // Memory admission (memra#503), before consuming a parked prefix or starting any state
+    // allocation: the active C4 history against its configured budget (a session past it can
+    // never fit, so it is the client's error, not a retryable one), then the whole session
+    // against every owning card and the host.
+    let host_c4 = m
+        .planned_c4_host_bytes(session_capacity)
+        .map_err(EngineError::context_length)?;
+    if let Some(turned_away) = admit_request(
+        m,
+        turn,
+        req,
+        &prompt,
+        session_capacity,
+        use_spec,
+        host_c4 as u64,
+    )? {
+        return Ok(turned_away);
+    }
     // In the reference program, a prompt no wider than one configured chunk gets the canonical
     // monolithic prime. It is deliberately not parked: a later, longer cold prompt
     // uses the chunked numeric regime, so retaining this state would make cache use
@@ -1240,7 +2625,8 @@ fn serve_one(
     let short_monolithic = !m.gpu.matrix_moe_enabled()
         && m.prefill_chunk > 0
         && !use_chunked_prefill(m.prefill_chunk, prompt.len());
-    let mut restored = try_restore_prefix(m, host_cache, req, &prompt, session_capacity, use_spec);
+    let mut restored =
+        try_restore_prefix(m, turn.cache(), req, &prompt, session_capacity, use_spec);
     let n_cached = restored.as_ref().map_or(0, |hit| hit.n_cached);
     let _ = req.tx.send(Event::PromptUsage {
         n_prompt: prompt.len(),
@@ -1259,24 +2645,14 @@ fn serve_one(
         &req.stop_token_ids,
         budget,
     );
+    emit.progress = progress;
     let mut spec_usage: Option<SpecUsage> = None;
     let state_to_park: DecodeState;
     let mut dstate_to_park: Option<DsparkState> = None;
 
     if use_spec {
-        // the env-seam depth/window policy — exactly the bench drivers' law
-        let depth_cap = std::env::var("MEMRA_DSV4_SPEC_DEPTH")
-            .ok()
-            .and_then(|v| v.trim().parse::<usize>().ok())
-            .filter(|t| *t > 0)
-            .unwrap_or(usize::MAX)
-            .max(1);
-        let vt = resolve_vt(
-            std::env::var("MEMRA_DSV4_VT").ok().as_deref(),
-            std::env::var("MEMRA_DSV4_VT_TAU").ok().as_deref(),
-            std::env::var("MEMRA_DSV4_VT_FLOOR").ok().as_deref(),
-        )
-        .map_err(EngineError::engine)?;
+        // the depth/window policy resolved at load — exactly the bench drivers' law
+        let Dsv4SpecPolicy { depth_cap, vt } = m.spec_policy;
         let (mut state, mut dstate, initial_logits) = if let Some(hit) = restored.take() {
             (
                 hit.state,
@@ -1403,9 +2779,22 @@ fn serve_one(
                 .request_state(session_capacity, None)
                 .map_err(EngineError::engine)?;
             let logits = if m.prefill_chunk > 0 && !short_monolithic {
-                m.gpu
-                    .prefill_with_cache_chunked(&prompt, &mut state, m.prefill_chunk)
-                    .map_err(EngineError::engine)?
+                if m.sessions > 1 {
+                    // Give the turn up between chunks so another session's steps keep going.
+                    m.gpu.prefill_with_cache_chunked_yielding(
+                        &prompt,
+                        &mut state,
+                        m.prefill_chunk,
+                        &mut || {
+                            turn.release();
+                            turn.acquire();
+                        },
+                    )
+                } else {
+                    m.gpu
+                        .prefill_with_cache_chunked(&prompt, &mut state, m.prefill_chunk)
+                }
+                .map_err(EngineError::engine)?
             } else {
                 m.gpu
                     .prefill_with_cache(&prompt, &mut state)
@@ -1430,6 +2819,15 @@ fn serve_one(
                 argmax(&pre_logits)
             };
             let mut step = 0usize;
+            // Greedy rows coalesce across the lanes when the route batches them; a penalized
+            // row asks for its logits.
+            let batcher = m.rows.as_deref();
+            let _member = batcher.map(RowMember::join);
+            // A TP/EP greedy row without penalties replays its steps (memra #710); through
+            // the batcher it replays whenever it steps alone.
+            let mut replay = m.gpu.topology().is_tp_ep()
+                && pen_cfg.is_none()
+                && arm_replay(m, &mut state, GREEDY_REPLAY);
             while emit.push(&[t]) {
                 if pen_cfg.is_some() {
                     window.push(t);
@@ -1438,18 +2836,28 @@ fn serve_one(
                 if step >= budget {
                     break;
                 }
-                t = if let Some(pc) = &pen_cfg {
+                replay = replay && keep_replay(m, &mut state).map_err(EngineError::engine)?;
+                t = if replay && batcher.is_none() {
+                    m.gpu
+                        .decode_sample_full_token(t, &mut state)
+                        .map_err(EngineError::engine)?
+                } else if let Some(pc) = &pen_cfg {
                     // penalized greedy needs the full row (argmax AFTER penalties)
-                    let mut row = m
-                        .gpu
-                        .decode_step(t, &mut state)
-                        .map_err(EngineError::engine)?;
+                    let mut row = match batcher {
+                        Some(b) => rows_step(m, b, turn, t, RowAsk::Logits, &mut state)
+                            .map_err(EngineError::engine)?
+                            .logits
+                            .ok_or_else(|| EngineError::engine("B-row logits missing"))?,
+                        None => logits_step(m, turn, t, &mut state).map_err(EngineError::engine)?,
+                    };
                     dsv4_penalize_row(&mut row, &window, pc);
                     argmax(&row)
-                } else {
-                    m.gpu
-                        .decode_step_greedy(t, &mut state)
+                } else if let Some(b) = batcher {
+                    rows_step(m, b, turn, t, RowAsk::Argmax, &mut state)
                         .map_err(EngineError::engine)?
+                        .tok
+                } else {
+                    greedy_step(m, turn, t, &mut state).map_err(EngineError::engine)?
                 };
             }
         } else {
@@ -1465,14 +2873,12 @@ fn serve_one(
                 }
                 dsv4_sample_row(row, pos, &cfg)
             };
-            let mut device_sampler = if memra_engine::dsv4_sampler::dsv4_sampler()
-                .map_err(EngineError::engine)?
-                == memra_engine::dsv4_sampler::Dsv4Sampler::Device
-            {
-                Some(m.gpu.device_sampler().map_err(EngineError::engine)?)
-            } else {
-                None
-            };
+            let mut device_sampler =
+                if m.gpu.plain_sampler() == memra_engine::dsv4_sampler::Dsv4Sampler::Device {
+                    Some(m.gpu.device_sampler().map_err(EngineError::engine)?)
+                } else {
+                    None
+                };
             let mut row0 = pre_logits;
             let mut t = if let Some(sampler) = &mut device_sampler {
                 sampler.sample_host_row(&row0, p0, &cfg, &window, pen_cfg.as_ref())
@@ -1481,6 +2887,24 @@ fn serve_one(
             }
             .map_err(EngineError::engine)?;
             let mut step = 0usize;
+            // Host-sampled rows coalesce too. On PP the device sampler keeps its own step; on
+            // TP/EP its unpenalized rows draw on the device inside the B-row step (memra #710),
+            // and a penalized one asks for its row and draws it with the same program.
+            let batcher = m
+                .rows
+                .as_deref()
+                .filter(|_| device_sampler.is_none() || m.gpu.topology().is_tp_ep());
+            let _member = batcher.map(RowMember::join);
+            // A TP/EP device-sampled row at the vendor default (temperature 1, top-p 1, no
+            // top-k) without penalties replays its steps: the in-graph draw is the device
+            // sampler's position-keyed program (memra #710).
+            let mut replay = m.gpu.topology().is_tp_ep()
+                && device_sampler.is_some()
+                && pen_cfg.is_none()
+                && cfg.temperature == 1.0
+                && cfg.top_p == 1.0
+                && cfg.top_k == 0
+                && arm_replay(m, &mut state, cfg);
             while emit.push(&[t]) {
                 if pen_cfg.is_some() {
                     window.push(t);
@@ -1489,17 +2913,33 @@ fn serve_one(
                 if step >= budget {
                     break;
                 }
-                t = if let Some(sampler) = &mut device_sampler {
+                replay = replay && keep_replay(m, &mut state).map_err(EngineError::engine)?;
+                t = if replay && batcher.is_none() {
+                    m.gpu.decode_sample_full_token(t, &mut state)
+                } else if let (Some(b), Some(sampler)) = (batcher, &mut device_sampler) {
+                    if pen_cfg.is_some() {
+                        let row = rows_step(m, b, turn, t, RowAsk::Logits, &mut state)
+                            .map_err(EngineError::engine)?
+                            .logits
+                            .ok_or_else(|| EngineError::engine("B-row logits missing"))?;
+                        sampler.sample_host_row(&row, state.pos, &cfg, &window, pen_cfg.as_ref())
+                    } else {
+                        rows_step(m, b, turn, t, RowAsk::Draw(cfg), &mut state).map(|out| out.tok)
+                    }
+                } else if let Some(sampler) = &mut device_sampler {
                     m.gpu
                         .decode_step_device_logits(t, &mut state)
                         .map_err(EngineError::engine)?;
                     m.gpu
                         .sample_device_logits(&state, sampler, &cfg, &window, pen_cfg.as_ref())
                 } else {
-                    let mut row = m
-                        .gpu
-                        .decode_step(t, &mut state)
-                        .map_err(EngineError::engine)?;
+                    let mut row = match batcher {
+                        Some(b) => rows_step(m, b, turn, t, RowAsk::Logits, &mut state)
+                            .map_err(EngineError::engine)?
+                            .logits
+                            .ok_or_else(|| EngineError::engine("B-row logits missing"))?,
+                        None => logits_step(m, turn, t, &mut state).map_err(EngineError::engine)?,
+                    };
                     draw(&mut row, p0 + step, &window)
                 }
                 .map_err(EngineError::engine)?;
@@ -1527,6 +2967,11 @@ fn serve_one(
             }
         }
     };
+    let stats = ServeStats {
+        tokens_out: emit.ids.len(),
+        n_prompt: prompt.len(),
+        n_cached,
+    };
     emit.finish(
         prompt.len(),
         n_cached,
@@ -1536,14 +2981,14 @@ fn serve_one(
     if let Some(toks) = park_toks {
         park_prefix(
             m,
-            host_cache,
+            turn.cache(),
             req,
             toks,
             &state_to_park,
             dstate_to_park.as_ref(),
         );
     }
-    Ok(())
+    Ok(Served::Done(stats))
 }
 
 fn argmax(v: &[f32]) -> u32 {
@@ -1554,6 +2999,112 @@ fn argmax(v: &[f32]) -> u32 {
         }
     }
     best as u32
+}
+
+#[cfg(test)]
+mod spec_policy_tests {
+    use super::{Dsv4SpecPolicy, resolve_spec_policy};
+    use memra_engine::dsv4_gpu::Dsv4Vt;
+
+    /// Unset knobs are the drafter's own depth and no window; a valid depth and `slot` pass
+    /// through. Anything else refuses at load and names its value, so a typo cannot boot a
+    /// server that fails every spec request (`slot@0.5` did exactly that on 2026-09-24).
+    #[test]
+    fn a_bad_spec_knob_refuses_by_name() {
+        assert_eq!(
+            resolve_spec_policy(None, None, None, None),
+            Ok(Dsv4SpecPolicy {
+                depth_cap: usize::MAX,
+                vt: Dsv4Vt::Off
+            })
+        );
+        assert_eq!(
+            resolve_spec_policy(Some("4"), Some("off"), None, None).map(|p| p.depth_cap),
+            Ok(4)
+        );
+        assert!(matches!(
+            resolve_spec_policy(None, Some("slot"), None, None).map(|p| p.vt),
+            Ok(Dsv4Vt::Slot { floor: 0, .. })
+        ));
+        for depth in ["0", "", "four", "-1"] {
+            let err = resolve_spec_policy(Some(depth), None, None, None).unwrap_err();
+            assert!(err.contains("MEMRA_DSV4_SPEC_DEPTH"), "{depth:?}: {err}");
+        }
+        let err = resolve_spec_policy(None, Some("slot@0.5"), None, None).unwrap_err();
+        assert!(err.contains("slot@0.5"), "{err}");
+        let err = resolve_spec_policy(None, None, Some("0.5"), None).unwrap_err();
+        assert!(err.contains("MEMRA_DSV4_VT_TAU"), "{err}");
+    }
+}
+
+#[cfg(test)]
+mod calibration_tests {
+    use super::{carrier, fixed_delta};
+    use crate::dsv4_admit::per_device;
+    use memra_engine::dsv4_gpu::StageMemory;
+
+    fn reading(dev: usize, occupied: u64) -> StageMemory {
+        StageMemory {
+            dev,
+            driver_free: 1000 - occupied,
+            total: 1000,
+            pool_reserved: 0,
+            pool_used: 0,
+        }
+    }
+
+    /// Two stages on card 0 and one on card 1. Each reading is device-wide, so card 0's delta
+    /// (300) covers both of its stages' caches (100 + 50) and one fixed term: the card is
+    /// charged its delta once, not once per stage.
+    #[test]
+    fn co_located_stages_share_one_card_delta() {
+        let base = [reading(0, 100), reading(0, 100), reading(1, 40)];
+        let now = [reading(0, 400), reading(0, 400), reading(1, 120)];
+        let cache = [100, 50, 60];
+        let fixed = fixed_delta(&now, &base, &cache);
+        assert_eq!(fixed, vec![150, 0, 20]);
+        assert_eq!((carrier(&now, 1), carrier(&now, 2)), (0, 2));
+        let need: Vec<u64> = cache.iter().zip(&fixed).map(|(c, f)| c + f).collect();
+        let cards = per_device(&[0, 0, 1], &need, &[900, 900, 880]);
+        assert_eq!(
+            cards.iter().map(|d| (d.dev, d.need)).collect::<Vec<_>>(),
+            vec![(0, 300), (1, 80)],
+            "each card's charge is its measured delta"
+        );
+    }
+}
+
+#[cfg(test)]
+mod host_reclaim_tests {
+    use super::lru_victim;
+    use std::time::{Duration, Instant};
+
+    /// The admission reclaim evicts least-recently-used first, breaks a tie by id, and never
+    /// picks the entry the waiting request would restore from.
+    #[test]
+    fn the_victim_is_the_oldest_entry_other_than_the_spared_one() {
+        let t0 = Instant::now();
+        let old = t0;
+        let newer = t0 + Duration::from_millis(5);
+        let entries = [
+            ("ns-a", 0, newer, 7),
+            ("ns-b", 1, old, 9),
+            ("ns-b", 2, old, 3),
+        ];
+        let pick = |spare| lru_victim(entries.iter().copied(), spare);
+        assert_eq!(
+            pick(None),
+            Some(("ns-b".to_string(), 2)),
+            "oldest, then lowest id"
+        );
+        assert_eq!(pick(Some(3)), Some(("ns-b".to_string(), 1)));
+        assert_eq!(
+            lru_victim(entries[..1].iter().copied(), Some(7)),
+            None,
+            "the spared entry alone is never evicted"
+        );
+        assert_eq!(lru_victim(std::iter::empty(), None), None);
+    }
 }
 
 #[cfg(test)]
@@ -1735,8 +3286,482 @@ mod declared_context_tests {
 
 #[cfg(test)]
 mod c4_host_budget_tests {
-    use super::{admit_c4_host_bytes, env_text, resolve_c4_host_bytes, resolve_env_mb};
+    use super::{
+        admit_c4_host_bytes, default_sessions, env_text, resolve_c4_host_bytes, resolve_env_mb,
+        resolve_sessions, resolve_topology,
+    };
+    use memra_engine::dsv4_topology::Dsv4Placement;
     use std::ffi::OsString;
+
+    /// The replay round-up never passes the model context (revuto on #727): a boot with a
+    /// context below 512 keeps each session at its own need and serves eager.
+    #[test]
+    fn the_replay_round_up_stays_inside_the_context() {
+        use super::session_capacity;
+        assert_eq!(session_capacity(true, 300, 1_048_576), 512);
+        assert_eq!(session_capacity(true, 900, 1_048_576), 900);
+        assert_eq!(session_capacity(true, 300, 400), 400);
+        assert_eq!(session_capacity(true, 300, 300), 300);
+        assert_eq!(session_capacity(false, 300, 1_048_576), 300);
+    }
+
+    /// TP/EP with attention TP2 is the default placement (memra #710); `pp` is the rollback,
+    /// and any other value, the retired `tp_ep_attn` measurement name included, refuses.
+    #[test]
+    fn the_topology_defaults_to_tp_ep_and_pp_is_the_rollback() {
+        for raw in [None, Some(""), Some("tp_ep"), Some(" tp_ep ")] {
+            assert_eq!(
+                resolve_topology(raw),
+                Ok(Dsv4Placement::TpEp { attention_tp: true }),
+                "{raw:?}"
+            );
+        }
+        assert_eq!(resolve_topology(Some("pp")), Ok(Dsv4Placement::Pp));
+        for raw in ["tp_ep_attn", "tp", "PP", "pp2"] {
+            let err = resolve_topology(Some(raw)).unwrap_err();
+            assert!(err.contains("MEMRA_DSV4_TOPOLOGY"), "{raw}: {err}");
+        }
+    }
+
+    #[test]
+    fn serving_lanes_resolve_literally() {
+        for default in [1, 2] {
+            for raw in [None, Some("")] {
+                assert_eq!(resolve_sessions(raw, default), Ok(default));
+            }
+            for raw in [Some("1"), Some(" 1 ")] {
+                assert_eq!(resolve_sessions(raw, default), Ok(1));
+            }
+            for n in 2..=4 {
+                assert_eq!(resolve_sessions(Some(&n.to_string()), default), Ok(n));
+            }
+            for raw in ["0", "5", "two", "-1", "2.0"] {
+                assert!(resolve_sessions(Some(raw), default).is_err(), "{raw}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_turn_is_served_in_arrival_order() {
+        use super::{Dsv4HostCache, Turn, TurnLock};
+        use std::sync::{Arc, Mutex};
+        let lock = Arc::new(TurnLock::new(Dsv4HostCache::new(0)));
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let mut a = Turn::take(&lock);
+        let b = {
+            let (lock, order) = (lock.clone(), order.clone());
+            std::thread::spawn(move || {
+                let _b = Turn::take(&lock);
+                order.lock().unwrap().push("b");
+            })
+        };
+        // B holds ticket 1 and waits.
+        while lock.tickets.lock().unwrap().0 < 2 {
+            std::thread::yield_now();
+        }
+        // A gives the turn up and asks at once, as the chunked prefill's yield does: it must
+        // queue behind B, not take the turn straight back.
+        a.release();
+        a.acquire();
+        order.lock().unwrap().push("a");
+        b.join().unwrap();
+        assert_eq!(*order.lock().unwrap(), ["b", "a"]);
+    }
+
+    #[test]
+    fn a_dropped_or_unwound_turn_is_given_up() {
+        use super::{Dsv4HostCache, Turn, TurnLock};
+        let lock = TurnLock::new(Dsv4HostCache::new(0));
+        {
+            let mut t = Turn::take(&lock);
+            let _ = t.cache();
+        }
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _t = Turn::take(&lock);
+            panic!("request fault");
+        }));
+        assert!(r.is_err());
+        // Both holds gave the turn up: a third take does not block.
+        let _t = Turn::take(&lock);
+        assert_eq!(*lock.tickets.lock().unwrap(), (3, 2));
+    }
+
+    #[test]
+    fn the_memory_door_sleeps_without_the_turn() {
+        use super::{Dsv4HostCache, Turn, TurnLock, sleep_without_turn};
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let lock = Arc::new(TurnLock::new(Dsv4HostCache::new(0)));
+        let stepped = Arc::new(AtomicBool::new(false));
+        let mut door = Turn::take(&lock);
+        let other = {
+            let (lock, stepped) = (lock.clone(), stepped.clone());
+            std::thread::spawn(move || {
+                let _t = Turn::take(&lock);
+                stepped.store(true, Ordering::SeqCst);
+            })
+        };
+        while lock.tickets.lock().unwrap().0 < 2 {
+            std::thread::yield_now();
+        }
+        // The in-flight lane gets its step in while the door waits for memory.
+        sleep_without_turn(&mut door, std::time::Duration::from_millis(50));
+        assert!(stepped.load(Ordering::SeqCst));
+        other.join().unwrap();
+    }
+
+    #[test]
+    fn b_row_width_resolves_literally() {
+        use super::resolve_rows;
+        // Unset takes the load's default (1 on PP-2, the lane count on TP/EP); an explicit
+        // value wins over it.
+        for default in [1usize, 2, 4] {
+            for raw in [None, Some("")] {
+                assert_eq!(resolve_rows(raw, default), Ok(default));
+            }
+            for raw in [Some("0"), Some("1")] {
+                assert_eq!(resolve_rows(raw, default), Ok(1));
+            }
+            for n in 2..=8 {
+                assert_eq!(resolve_rows(Some(&n.to_string()), default), Ok(n));
+            }
+            for raw in ["9", "two", "-1", "2.5"] {
+                assert!(resolve_rows(Some(raw), default).is_err(), "{raw}");
+            }
+        }
+    }
+
+    /// TP/EP lanes only help by sharing B-row steps, so the plain route gets four and a
+    /// drafter route one (memra #710).
+    #[test]
+    fn tp_ep_lanes_default_to_four_on_the_plain_route() {
+        use super::default_tp_ep_sessions;
+        assert_eq!(default_tp_ep_sessions(true, false), 4);
+        assert_eq!(default_tp_ep_sessions(true, true), 1);
+        assert_eq!(default_tp_ep_sessions(false, false), 1);
+    }
+
+    /// (batch widths in run order, each lane's per-step results, each lane's final counter)
+    type CoalesceOutcome = (Vec<usize>, Vec<Vec<Result<u32, String>>>, Vec<u32>);
+
+    /// Runs `lanes` threads that each take `steps` coalesced steps on their own counter.
+    /// The batch runner records each batch's width and bumps every row's counter once.
+    fn coalesce_run(
+        bmax: usize,
+        lanes: usize,
+        steps: usize,
+        fail_at: Option<usize>,
+    ) -> CoalesceOutcome {
+        use super::{Coalescer, RowOut};
+        use std::sync::{Arc, Mutex};
+        let core = Arc::new(Coalescer::<u32>::new(bmax, 1));
+        let widths = Arc::new(Mutex::new(Vec::new()));
+        let barrier = Arc::new(std::sync::Barrier::new(lanes));
+        let handles: Vec<_> = (0..lanes)
+            .map(|lane| {
+                let (core, widths, barrier) = (core.clone(), widths.clone(), barrier.clone());
+                std::thread::spawn(move || {
+                    core.join();
+                    barrier.wait();
+                    let mut counter = 0u32;
+                    let mut out = Vec::new();
+                    for step in 0..steps {
+                        let tok = (lane * 1000 + step) as u32;
+                        // Odd lanes ask for logits, so batches mix both kinds of row.
+                        let want = lane % 2 == 1;
+                        let r = core.step(tok, want, &mut counter, &mut |toks, wants, states| {
+                            let mut w = widths.lock().unwrap();
+                            w.push(toks.len());
+                            if fail_at == Some(w.len() - 1) {
+                                return Err("injected".into());
+                            }
+                            for s in states.iter_mut() {
+                                **s += 1;
+                            }
+                            Ok(toks
+                                .iter()
+                                .zip(wants)
+                                .map(|(t, &w)| RowOut {
+                                    tok: t + 7,
+                                    logits: w.then(|| vec![*t as f32]),
+                                })
+                                .collect())
+                        });
+                        // Each row gets its own token, and its own logits exactly when it asked.
+                        if let Ok(o) = &r {
+                            assert_eq!(o.logits, want.then(|| vec![tok as f32]));
+                        }
+                        out.push(r.map(|o| o.tok));
+                    }
+                    core.leave();
+                    (out, counter)
+                })
+            })
+            .collect();
+        let mut results = Vec::new();
+        let mut counters = Vec::new();
+        for h in handles {
+            let (out, counter) = h.join().unwrap();
+            results.push(out);
+            counters.push(counter);
+        }
+        let w = widths.lock().unwrap().clone();
+        (w, results, counters)
+    }
+
+    #[test]
+    fn coalesced_rows_each_get_their_own_token_once_per_step() {
+        let (widths, results, counters) = coalesce_run(4, 3, 20, None);
+        for (lane, out) in results.iter().enumerate() {
+            for (step, r) in out.iter().enumerate() {
+                assert_eq!(*r, Ok((lane * 1000 + step) as u32 + 7));
+            }
+        }
+        // Every row of every step ran exactly once.
+        assert_eq!(counters, vec![20, 20, 20]);
+        assert_eq!(widths.iter().sum::<usize>(), 60);
+        assert!(widths.iter().all(|&w| (1..=3).contains(&w)));
+        // Three members keep batches full most of the time; a partial batch only waits out
+        // the window. WP-A day 55 (`research/spill-a-20260919/DAY55.md`, OWED item 22, T-e): the
+        // full-batch count depends on the OS delivering the lanes inside 500 us, so it is printed
+        // here, and the mechanism it rests on is asserted by the two window cells below.
+        eprintln!(
+            "coalesced rows: {} of {} batches full, widths {widths:?}",
+            widths.iter().filter(|&&w| w == 3).count(),
+            widths.len()
+        );
+    }
+
+    /// WP-A day 55 (T-e): a partial batch runs only after its window. Three members, one deposits
+    /// alone: its batch is one row, and it ran no earlier than the window after the deposit.
+    #[test]
+    fn a_partial_batch_waits_out_its_window() {
+        use super::{Coalescer, RowOut};
+        let window = std::time::Duration::from_millis(20);
+        let core = Coalescer::<u32>::with_window(4, 1, window);
+        for _ in 0..3 {
+            core.join();
+        }
+        let mut widths = Vec::new();
+        let mut state = 0u32;
+        let t = std::time::Instant::now();
+        let r = core.step(5, false, &mut state, &mut |toks, _, _| {
+            widths.push(toks.len());
+            Ok(toks
+                .iter()
+                .map(|&tok| RowOut { tok, logits: None })
+                .collect())
+        });
+        let waited = t.elapsed();
+        assert_eq!(
+            r,
+            Ok(RowOut {
+                tok: 5,
+                logits: None
+            })
+        );
+        assert_eq!(widths, vec![1]);
+        assert!(
+            waited >= window,
+            "a partial batch ran after {waited:?}, inside its {window:?} window"
+        );
+    }
+
+    /// WP-A day 55 (T-e): a full batch does not wait for its window. Three members all deposit with
+    /// a 10 s window: one batch of three rows, well inside the window.
+    #[test]
+    fn a_full_batch_does_not_wait_for_its_window() {
+        use super::{Coalescer, RowOut};
+        use std::sync::{Arc, Mutex};
+        let core = Arc::new(Coalescer::<u32>::with_window(
+            4,
+            1,
+            std::time::Duration::from_secs(10),
+        ));
+        let widths = Arc::new(Mutex::new(Vec::new()));
+        for _ in 0..3 {
+            core.join();
+        }
+        let t = std::time::Instant::now();
+        let handles: Vec<_> = (0..3u32)
+            .map(|lane| {
+                let (core, widths) = (core.clone(), widths.clone());
+                std::thread::spawn(move || {
+                    let mut state = 0u32;
+                    core.step(lane, false, &mut state, &mut |toks, _, _| {
+                        widths.lock().unwrap().push(toks.len());
+                        Ok(toks
+                            .iter()
+                            .map(|&tok| RowOut { tok, logits: None })
+                            .collect())
+                    })
+                })
+            })
+            .collect();
+        for (lane, h) in handles.into_iter().enumerate() {
+            assert_eq!(
+                h.join().unwrap(),
+                Ok(RowOut {
+                    tok: lane as u32,
+                    logits: None
+                })
+            );
+        }
+        let took = t.elapsed();
+        assert_eq!(*widths.lock().unwrap(), vec![3], "one full batch");
+        assert!(
+            took < std::time::Duration::from_secs(5),
+            "a full batch waited {took:?} of its 10 s window"
+        );
+    }
+
+    #[test]
+    fn two_groups_split_the_lanes_in_half() {
+        use super::{Coalescer, RowOut};
+        use std::sync::{Arc, Mutex};
+        let core = Arc::new(Coalescer::<u32>::new(4, 2));
+        let widths = Arc::new(Mutex::new(Vec::new()));
+        for lanes in [2usize, 4] {
+            let barrier = Arc::new(std::sync::Barrier::new(lanes));
+            let handles: Vec<_> = (0..lanes)
+                .map(|lane| {
+                    let (core, widths, barrier) = (core.clone(), widths.clone(), barrier.clone());
+                    std::thread::spawn(move || {
+                        core.join();
+                        barrier.wait();
+                        let mut c = 0u32;
+                        for step in 0..8u32 {
+                            core.step(step, false, &mut c, &mut |toks, _, _| {
+                                widths.lock().unwrap().push((lanes, toks.len()));
+                                std::thread::sleep(std::time::Duration::from_millis(1));
+                                Ok(toks
+                                    .iter()
+                                    .map(|&tok| RowOut { tok, logits: None })
+                                    .collect())
+                            })
+                            .unwrap();
+                        }
+                        barrier.wait();
+                        core.leave();
+                        let _ = lane;
+                    })
+                })
+                .collect();
+            for h in handles {
+                h.join().unwrap();
+            }
+        }
+        let w = widths.lock().unwrap();
+        // Two lanes never batch together (two pipelined one-row steps); four lanes batch in
+        // pairs, never four at once.
+        assert!(w.iter().filter(|x| x.0 == 2).all(|x| x.1 == 1), "{w:?}");
+        assert!(w.iter().filter(|x| x.0 == 4).all(|x| x.1 <= 2), "{w:?}");
+        assert!(w.iter().filter(|x| x.0 == 4).any(|x| x.1 == 2), "{w:?}");
+    }
+
+    #[test]
+    fn a_batch_never_exceeds_its_width() {
+        let (widths, results, counters) = coalesce_run(2, 5, 12, None);
+        assert!(widths.iter().all(|&w| w <= 2), "{widths:?}");
+        assert_eq!(counters, vec![12; 5]);
+        assert!(results.iter().flatten().all(|r| r.is_ok()));
+    }
+
+    #[test]
+    fn a_failed_batch_fails_every_row_in_it_and_only_them() {
+        let (widths, results, _) = coalesce_run(4, 3, 6, Some(2));
+        let failed: usize = results
+            .iter()
+            .flatten()
+            .filter(|r| r.as_ref().err().map(String::as_str) == Some("injected"))
+            .count();
+        assert_eq!(failed, widths[2], "every row of batch 2 and no other");
+    }
+
+    /// A step that panics fails every row that lent it a state and lowers `in_flight`, so the
+    /// other lanes get an error instead of waiting forever, and the next batch still runs.
+    #[test]
+    fn a_panicking_batch_fails_its_rows_and_the_next_batch_runs() {
+        use super::Coalescer;
+        use std::sync::Arc;
+        let core = Arc::new(Coalescer::<u32>::new(2, 1));
+        core.join();
+        core.join();
+        let lanes: Vec<_> = (0..2u32)
+            .map(|lane| {
+                let core = core.clone();
+                std::thread::spawn(move || {
+                    let mut c = 0u32;
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        core.step(lane, false, &mut c, &mut |_, _, _| panic!("injected panic"))
+                            .map(|o| o.tok)
+                    }))
+                })
+            })
+            .collect();
+        let outcomes: Vec<_> = lanes.into_iter().map(|h| h.join().unwrap()).collect();
+        let panicked = outcomes.iter().filter(|o| o.is_err()).count();
+        let failed = outcomes
+            .iter()
+            .filter(|o| matches!(o, Ok(Err(e)) if e == "B-row step panicked"))
+            .count();
+        assert_eq!(
+            panicked + failed,
+            2,
+            "the leader unwinds, every other row gets the error"
+        );
+        assert!(panicked >= 1, "the leader's own panic is not swallowed");
+        let mut c = 0u32;
+        core.leave();
+        let next = core.step(7, false, &mut c, &mut |toks, _, _| {
+            Ok(toks
+                .iter()
+                .map(|&tok| super::RowOut { tok, logits: None })
+                .collect())
+        });
+        assert_eq!(next.map(|o| o.tok), Ok(7), "in_flight came back down");
+    }
+
+    #[test]
+    fn a_leaving_lane_completes_the_waiting_batch() {
+        use super::Coalescer;
+        use std::sync::Arc;
+        let core = Arc::new(Coalescer::<u32>::new(4, 1));
+        core.join();
+        core.join();
+        let waiter = {
+            let core = core.clone();
+            std::thread::spawn(move || {
+                let mut c = 0u32;
+                let t0 = std::time::Instant::now();
+                let r = core
+                    .step(5, false, &mut c, &mut |toks, _, _| {
+                        Ok(toks
+                            .iter()
+                            .map(|&tok| super::RowOut { tok, logits: None })
+                            .collect())
+                    })
+                    .map(|o| o.tok);
+                (r, t0.elapsed())
+            })
+        };
+        std::thread::sleep(std::time::Duration::from_micros(50));
+        core.leave();
+        let (r, _) = waiter.join().unwrap();
+        assert_eq!(r, Ok(5));
+    }
+
+    #[test]
+    fn two_lanes_are_the_default_only_on_the_plain_pipelined_program() {
+        assert_eq!(default_sessions(true, false), 2);
+        assert_eq!(
+            default_sessions(true, true),
+            1,
+            "a DSpark route holds the turn per request"
+        );
+        assert_eq!(default_sessions(false, false), 1);
+        assert_eq!(default_sessions(false, true), 1);
+    }
 
     #[test]
     fn budget_is_opt_in_and_strictly_parsed() {

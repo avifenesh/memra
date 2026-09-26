@@ -1,0 +1,34 @@
+   Compiling memra-gguf v0.138.0 (<worktree>/crates/memra-gguf)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.27s
+     Running tests/canonical_config.rs (target/debug/deps/canonical_config-BUILD_ID)
+
+running 10 tests
+test malformed_and_duplicate_decoded_declarations_refuse_recursively ... ok
+
+thread 'fractional_integer_fields_cannot_round_to_a_whole_number' (27307163) panicked at crates/memra-gguf/tests/canonical_config.rs:106:9:
+2.0000000000000001
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'numeric_literals_are_not_rounded_through_f64_before_normalization' (27307166) panicked at crates/memra-gguf/tests/canonical_config.rs:99:5:
+assertion `left == right` failed
+  left: 1065353216
+ right: 1065353217
+test decoded_activation_declarations_cannot_disappear_before_pack_admission ... ok
+test fractional_integer_fields_cannot_round_to_a_whole_number ... FAILED
+test numeric_literals_are_not_rounded_through_f64_before_normalization ... FAILED
+test present_wrong_types_and_lossy_numeric_conversions_refuse ... ok
+test explicit_config_override_does_not_hide_a_malformed_present_config_file ... ok
+test malformed_file_config_refuses_before_checkpoint_io ... ok
+test equivalent_decoded_keys_values_and_arrays_keep_the_same_plan ... ok
+test documented_absence_null_and_scalar_vector_forms_remain_distinct_from_errors ... ok
+test valid_literal_plan_hashes_match_frozen_pre_repair_ac3c39712 ... ok
+
+failures:
+
+failures:
+    fractional_integer_fields_cannot_round_to_a_whole_number
+    numeric_literals_are_not_rounded_through_f64_before_normalization
+
+test result: FAILED. 8 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-gguf --test canonical_config`

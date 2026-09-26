@@ -12,6 +12,7 @@ use memra_engine::dsv4_gpu::{
     dsv4_sampler_order,
 };
 use memra_engine::dsv4_sampler::{Dsv4DeviceSampler, Dsv4Sampler, dsv4_sampler};
+use memra_engine::dsv4_source_tape::SourceTape;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -27,13 +28,13 @@ const PROMPT_TOKENS: usize = 256;
 const OUTPUT_TOKENS: usize = 256;
 const REPEATS: usize = 2;
 const ATTENTION_REPEATS: usize = 5;
-const SOURCE_SHA256: &str = "f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded";
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Counters {
     rank_layer: [u64; 2],
     ep: u64,
     ar: u64,
+    gathers: u64,
     attention_rank: [u64; 2],
     attention_ar: u64,
     gu_m1: u64,
@@ -49,6 +50,7 @@ fn counters(gpu: &Dsv4Gpu) -> Counters {
         rank_layer: gpu.tp_ep_rank_layer_calls(),
         ep: gpu.ep_calls(),
         ar: gpu.tp_ep_ar_dispatches(),
+        gathers: gpu.tp_ep_row_gathers(),
         attention_rank: gpu.attention_tp_rank_calls(),
         attention_ar: gpu.attention_tp_ar_calls(),
         gu_m1: memra_engine::moe_f16g_gu_m1_tc_dispatches(),
@@ -68,6 +70,7 @@ fn delta(after: Counters, before: Counters) -> Counters {
         ],
         ep: after.ep - before.ep,
         ar: after.ar - before.ar,
+        gathers: after.gathers - before.gathers,
         attention_rank: std::array::from_fn(|rank| {
             after.attention_rank[rank] - before.attention_rank[rank]
         }),
@@ -191,8 +194,13 @@ fn assert_engagement(gpu: &Dsv4Gpu, c: Counters, prime: usize, decode: usize) {
     );
     assert_eq!(
         c.ar,
-        (prime + decode) as u64 * layers + attention_steps,
-        "one-shot AR engagement"
+        (prime + decode) as u64 * layers,
+        "one-shot AR engagement: the expert join only; the attention join gathers"
+    );
+    assert_eq!(
+        c.gathers,
+        2 * attention_steps,
+        "attention TP2 row gathers: wo_a groups and wo_b rows"
     );
     assert_eq!(
         c.attention_rank, [attention_steps; 2],
@@ -224,9 +232,8 @@ fn assert_engagement(gpu: &Dsv4Gpu, c: Counters, prime: usize, decode: usize) {
         c.gu_m1, c.gu_half2, c.down_half2
     );
     assert_eq!(
-        c.wo_a,
-        if attention_mode { 0 } else { local_steps },
-        "attention TP uses per-group wo_a; replicated attention uses qualified grouped wo_a"
+        c.wo_a, local_steps,
+        "both attention programs take the grouped wo_a launch (8 groups replicated, 4 per rank)"
     );
     // At prompt+output <= 512, the radix selector's N=2048 eligibility is
     // intentionally inert. The arm is still reported and checked as zero.
@@ -411,23 +418,26 @@ fn run_once(
         let snapshot = gpu
             .attention_tp_last_join_for_gate(&state)
             .expect("actual final attention join");
-        let hidden = gpu.attention_tp_geometry().unwrap().hidden;
+        let plan = gpu.attention_tp_geometry().unwrap();
+        for plane in &snapshot.partials {
+            assert_eq!(plane.len(), plan.local_hidden);
+        }
         for plane in snapshot.partials.iter().chain(snapshot.joined.iter()) {
-            assert_eq!(plane.len(), hidden);
             assert!(plane.iter().all(|value| value.is_finite()));
         }
-        for (column, (&rank0, &rank1)) in snapshot.partials[0]
+        // The join is the two wo_b row halves in rank order, bit for bit.
+        let expected: Vec<u32> = snapshot.partials[0]
             .iter()
-            .zip(&snapshot.partials[1])
-            .enumerate()
-        {
-            let expected = rank0 + rank1;
-            assert!(expected.is_finite());
-            for joined in &snapshot.joined {
+            .chain(&snapshot.partials[1])
+            .map(|value| value.to_bits())
+            .collect();
+        for joined in &snapshot.joined {
+            assert_eq!(joined.len(), plan.hidden);
+            for (column, value) in joined.iter().enumerate() {
                 assert_eq!(
-                    joined[column].to_bits(),
-                    expected.to_bits(),
-                    "actual attention GPU sum vs CPU f32 at {column}"
+                    value.to_bits(),
+                    expected[column],
+                    "attention join vs rank-order row halves at {column}"
                 );
             }
         }
@@ -613,24 +623,20 @@ fn main() {
         "sampled plain TP/EP gate refuses DSpark"
     );
     let dir = Path::new(&args[1]);
-    let source = std::fs::read_to_string(&args[2]).expect("source");
-    assert_eq!(
-        format!("{:x}", Sha256::digest(source.as_bytes())),
-        SOURCE_SHA256,
-        "pinned source"
-    );
+    let tape = SourceTape::read(&args[2]).expect("source tape");
     let tokenizer = Tokenizer::from_hf_dir(dir).expect("tokenizer");
-    let prompt = tokenizer.encode(
-        &format!("Review this inference engine source:\n\n{source}"),
-        true,
+    let prompt = tape.prompt(
+        &tokenizer,
+        "Review this inference engine source:\n\n",
+        PROMPT_TOKENS,
     );
-    assert!(prompt.len() >= PROMPT_TOKENS);
 
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
     Dsv4Gpu::set_attention_tp_for_gate(attention_mode);
     println!("NUMERIC_CLASS {numeric_class}");
     println!(
-        "PROTOCOL {{\"plain_only\":true,\"sampled\":true,\"topology\":\"tp_ep_all_layers\",\"attention_tp\":{attention_mode},\"prompt_tokens\":{PROMPT_TOKENS},\"output_tokens\":{OUTPUT_TOKENS},\"repeats\":{repeats},\"temperature\":1.0,\"top_p\":1.0,\"top_k\":0,\"seed\":20260907,\"sampler_order\":\"{sampler_name}\",\"timing_scope\":\"sample_plus_forward_envelope\",\"sampling_in_timing\":true,\"source_sha256\":\"{SOURCE_SHA256}\",\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false}}"
+        "PROTOCOL {{\"plain_only\":true,\"sampled\":true,\"topology\":\"tp_ep_all_layers\",\"attention_tp\":{attention_mode},\"prompt_tokens\":{PROMPT_TOKENS},\"output_tokens\":{OUTPUT_TOKENS},\"repeats\":{repeats},\"temperature\":1.0,\"top_p\":1.0,\"top_k\":0,\"seed\":20260907,\"sampler_order\":\"{sampler_name}\",\"timing_scope\":\"sample_plus_forward_envelope\",\"sampling_in_timing\":true,\"source_sha256\":\"{}\",\"speculative\":false,\"pp_timing\":false,\"cache_hash_in_timing\":false}}",
+        tape.sha256
     );
     // memra #458: this is a bench process, so it may run the matrix expert program
     // with the default-ON split-K arm; a serving process cannot arm it and refuses
@@ -655,7 +661,7 @@ fn main() {
     memra_engine::set_moe_f16g_gu_m1_tc_for_gate(true);
     memra_engine::set_moe_f16g_gu_half2_for_gate(true);
     memra_engine::set_moe_f16g_down_m1_half2_for_gate(true);
-    gpu.set_dense_wo_a_grouped_for_gate(!attention_mode);
+    gpu.set_dense_wo_a_grouped_for_gate(true);
     gpu.set_index_topk_radix_for_gate(true);
 
     if full_replay {

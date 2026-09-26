@@ -1,0 +1,10 @@
+## red: swap allowed
+M1-CACHE {"bytes": 268435456, "memory_swap_max": "max", "mode": "balloon", "reason": "touched pages are only unevictable when the cgroup forbids swap (memory.swap.max = 0)", "state": "REFUSED", "touch": true}
+exit=2
+## green: MemorySwapMax=0
+M1-CACHE {"bytes": 268435456, "cgroup_headroom_after": 1869246464, "floor_bytes": 268435456, "memory_swap_max": "0", "mode": "balloon", "state": "LOCKED", "touch": true}
+M1-CACHE {"bytes": 268435456, "mode": "balloon", "state": "RELEASED", "touch": true}
+exit=0
+## red: floor
+M1-CACHE {"bytes": 1900000000, "cgroup_headroom": 2137681920, "floor_bytes": 268435456, "mode": "balloon", "reason": "cgroup memory.max minus anon would fall under the floor", "state": "REFUSED", "touch": true}
+exit=2

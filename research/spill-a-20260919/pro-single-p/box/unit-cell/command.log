@@ -1,0 +1,54 @@
+parallel run 1 rc=0 test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 601 filtered out; finished in 2.38s
+parallel run 2 rc=0 test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 601 filtered out; finished in 2.25s
+parallel run 3 rc=0 test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 601 filtered out; finished in 2.26s
+test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ok
+test tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt ... ok
+test tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle ... ok
+test tier_transfer::tests::d2d_receipt_digest_price_against_the_copy ... D2D-RECEIPT PRICE order=copy-first bytes=165675008 n_per_arm=5 copy_ms=[0.197536, 0.197888, 0.199552, 0.196, 0.198016] copy_median=0.198 digest_ms=[0.120032, 0.121856, 0.121824, 0.120352, 0.1208] digest_median=0.121 pair_median=0.242 pair_over_copy=1.22
+test tier_transfer::tests::d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait ... ok
+test tier_transfer::tests::d2h_device_receipt_lands_with_the_source_digest ... D2H DEVICE RECEIPT cell flip=false items=3 gpu_ms=22.445
+test tier_transfer::tests::d2h_source_flip_is_witnessed_by_the_landed_bytes ... D2H DEVICE RECEIPT cell flip=true items=3 gpu_ms=22.440
+test tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... HOLD READING cell=d2h_span_batch first_item_seen_ms=19.69 polls=12448 longest_poll_ms=0.06 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+test tier_transfer::tests::day48_a_take_back_waits_for_its_own_lease_only ... ok
+test tier_transfer::tests::h2d_deferred_checksum_lands_with_the_supplied_digests ... ok
+test tier_transfer::tests::h2d_fill_host_function_does_not_hold_the_owner_thread ... owner-thread work while the copy stream's host function sleeps: 0.44 ms; the copy behind the host function still pending: true
+test tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream ... HOLD READING cell=h2d_span_batch first_item_seen_ms=4.40 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+test tier_transfer::tests::h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies ... HOLD READING cell=h2d_span_filled_batch first_item_seen_ms=2.29 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+test tier_transfer::tests::pinned_kind_arm_is_honoured_by_the_driver ... ok
+test tier_transfer::tests::span_receipt_digests_are_the_program_per_span ... ok
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 601 filtered out; finished in 7.14s
+test worker::tests::option_b_off_tick_demote_hashes_ride_the_helper_and_a_changed_lease_is_refused ... ok
+test worker::tests::option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_span_attach_fault_hands_every_span_back ... ok
+test worker::tests::option_b_span_postpublish_refusal_returns_the_staging_to_the_set ... ok
+test worker::tests::option_b_span_refusal_returns_every_plane_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_span_staging_charge_refusal_refuses_the_attach_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_spans_ride_the_ticket_and_land_bitwise ... ok
+test worker::tests::option_c_first_ready_view_failure_unwinds_through_the_published_arm ... ok
+test worker::tests::option_c_off_tick_checksums_ride_the_hash_helper_and_a_corrupt_lease_is_refused ... ok
+test worker::tests::option_c_partial_acceptance_unwinds_refused_with_every_destination_released ... ok
+test worker::tests::option_c_postpublish_refusal_retires_the_ticket_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_presubmit_refusal_releases_every_destination_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_promote_routes_every_contract_plane_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_receipt_mismatch_cancels_before_publication_and_recovers_the_source ... ok
+test worker::tests::option_c_span_attach_fault_hands_every_span_back ... ok
+test worker::tests::option_c_span_postpublish_refusal_returns_the_staging_to_the_set ... ok
+test worker::tests::option_c_spans_ride_the_promote_ticket_and_land_bitwise ... ok
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 932 filtered out; finished in 0.26s
+test result: ok. 38 passed; 0 failed; 1 ignored; 0 measured; 911 filtered out; finished in 0.30s
+test tier_transfer::tests::day39_fill_shares_cover_every_byte_once ... ok
+test tier_transfer::tests::d2d_restore_rules_are_as_stated ... ok
+test tier_transfer::tests::copy_stream_issue_and_owner_wait_rules_are_as_stated ... ok
+test tier_transfer::tests::d2h_device_receipt_rules_are_as_stated ... ok
+test tier_transfer::tests::d2h_span_rules_are_as_stated ... ok
+test tier_transfer::tests::d2d_capture_rules_are_as_stated ... ok
+test tier_transfer::tests::h2d_deferred_checksum_rules_are_as_stated ... ok
+test tier_transfer::tests::native_cells_own_their_context ... ok
+test tier_transfer::tests::one_side_stream_beside_the_owner ... ok
+test tier_transfer::tests::h2d_span_rules_are_as_stated ... ok
+test tier_transfer::tests::span_receipt_rules_are_as_stated ... ok
+test tier_transfer::tests::day39_threaded_fill_is_bitwise_the_planes ... ok
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 604 filtered out; finished in 0.04s
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 69 filtered out; finished in 0.00s
+unit-cells parallel=3/3 engine-serial-rc=0 door-rc=0 cpu-rc=0 engine-census-rc=0 tier-rc=0

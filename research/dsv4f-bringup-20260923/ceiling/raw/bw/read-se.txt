@@ -1,0 +1,8 @@
+# bw_read.cu on one RTX PRO 6000 Blackwell Server Edition (dev card, 600 W limit, 12481 MHz memory clock),
+# 2026-09-24, nvcc -O3 -arch=sm_120a. Best of 20 timed passes per size, over 4, 8 and 16 blocks per SM
+# of 512 threads, 128-bit streaming loads. Single run.
+DEVICE NVIDIA RTX PRO 6000 Blackwell Server Edition sms=188
+READ bytes=67108864 best_ms=0.0468 GBps=1432.5
+READ bytes=268435456 best_ms=0.1778 GBps=1509.6
+READ bytes=1073741824 best_ms=0.6928 GBps=1549.9
+READ bytes=4294967296 best_ms=2.7927 GBps=1537.9

@@ -1,0 +1,25 @@
+2026-09-22T23:55:15Z hold attempt 1: the lock stayed busy for 120 s
+2026-09-22T23:57:15Z hold attempt 2: the lock stayed busy for 120 s
+2026-09-22T23:59:15Z hold attempt 3: the lock stayed busy for 120 s
+2026-09-23T00:01:13Z attempt stopped by the lead before its bound: lane B day 31's two-order chain holds the lock (its first boot 50 min in); relaunch after that chain releases it
+2026-09-23T03:09:07Z lane B's chain exited; relaunch
+2026-09-23T03:10:48Z relaunch stopped by the lead inside its first lock wait: lane B's D4 cell (its own pre-registered boot, collector timeout 7200 s) took the lock at 03:08Z; relaunch after that collector exits
+2026-09-23T03:43:28Z lane B's D4 collector exited; relaunch
+2026-09-23T03:44:50Z collector hold taken on /tmp/memra-5090.lock (fd 9) tree=aceef3589d58663805a6573ff78f9ae0777bc142
+2026-09-23T03:44:50Z start serve-smoke env=[]
+2026-09-23T03:45:20Z done serve-smoke rc=0 serve-smoke: 0 failed
+2026-09-23T03:45:20Z start engine-gpu-cells env=[]
+2026-09-23T03:47:48Z done engine-gpu-cells rc=0 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 564 filtered out; finished in 5.05s
+2026-09-23T03:47:48Z start worker-span-cells env=[]
+2026-09-23T03:47:58Z done worker-span-cells rc=0 test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 879 filtered out; finished in 0.66s
+2026-09-23T03:47:58Z start identity-default-on env=[MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-23T03:48:20Z done identity-default-on rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-23T03:48:20Z start fault-default env=[MEMRA_HOSTGATE_CACHE_MB=64]
+2026-09-23T03:50:11Z done fault-default rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-23T03:50:11Z start fault-plain env=[MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_SERVE_SPEC=0]
+2026-09-23T03:51:45Z done fault-plain rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-23T03:51:45Z start hit-off env=[]
+2026-09-23T03:52:08Z done hit-off rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-23T03:52:08Z start hit-on env=[MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-23T03:52:37Z done hit-on rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-23T03:52:37Z collector hold released; INTEG49-5090-DONE

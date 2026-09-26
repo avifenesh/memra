@@ -1,0 +1,46 @@
+START utc=2026-09-23T19:11:00Z cmd=/root/lane/target-sink/release/deps/dsv4_sink_attn_st_gpu-5922bc9ecec358f5 --ignored --nocapture --test-threads=1
+
+running 5 tests
+test sink_attn_st_matches_three_kernel_batched ... sink_attn_st batched: 208 cases bit-identical to the three-kernel program
+ok
+test sink_attn_st_matches_three_kernel_replay ... sink_attn_st replay: 86 cases bit-identical to the three-kernel program
+ok
+test sink_attn_st_matches_three_kernel_single_query ... sink_attn_st single query: 26 cases bit-identical to the three-kernel program
+ok
+test sink_attn_st_red_arm ... sink_attn_st red arm: a 2^-10 change to one live kv element is caught
+ok
+test sink_attn_st_timing ... TIMING tree=unlabeled kernel=sink_attn shape=h64_r0_live128 rep=0 old_us=30.735 st_us=12.282
+TIMING tree=unlabeled kernel=sink_attn shape=h64_r0_live128 rep=1 old_us=30.734 st_us=12.282
+TIMING tree=unlabeled kernel=sink_attn shape=h64_r0_live128 rep=2 old_us=30.734 st_us=12.282
+TIMING tree=unlabeled kernel=sink_attn shape=h64_r0_live128 rep=3 old_us=30.735 st_us=12.282
+TIMING tree=unlabeled kernel=sink_attn shape=h64_r0_live128 rep=4 old_us=30.804 st_us=12.282
+TIMING tree=unlabeled kernel=sink_attn shape=h64_r4_live187 rep=0 old_us=38.896 st_us=14.338
+TIMING tree=unlabeled kernel=sink_attn shape=h64_r4_live187 rep=1 old_us=38.896 st_us=14.339
+TIMING tree=unlabeled kernel=sink_attn shape=h64_r4_live187 rep=2 old_us=38.896 st_us=14.339
+TIMING tree=unlabeled kernel=sink_attn shape=h64_r4_live187 rep=3 old_us=38.896 st_us=14.339
+TIMING tree=unlabeled kernel=sink_attn shape=h64_r4_live187 rep=4 old_us=38.896 st_us=14.339
+TIMING tree=unlabeled kernel=sink_attn shape=h64_r4_live640 rep=0 old_us=69.651 st_us=32.750
+TIMING tree=unlabeled kernel=sink_attn shape=h64_r4_live640 rep=1 old_us=69.649 st_us=32.752
+TIMING tree=unlabeled kernel=sink_attn shape=h64_r4_live640 rep=2 old_us=69.649 st_us=32.752
+TIMING tree=unlabeled kernel=sink_attn shape=h64_r4_live640 rep=3 old_us=69.650 st_us=32.750
+TIMING tree=unlabeled kernel=sink_attn shape=h64_r4_live640 rep=4 old_us=69.649 st_us=32.751
+TIMING tree=unlabeled kernel=sink_attn shape=h32_r0_live128 rep=0 old_us=30.733 st_us=12.282
+TIMING tree=unlabeled kernel=sink_attn shape=h32_r0_live128 rep=1 old_us=30.733 st_us=12.282
+TIMING tree=unlabeled kernel=sink_attn shape=h32_r0_live128 rep=2 old_us=30.733 st_us=12.282
+TIMING tree=unlabeled kernel=sink_attn shape=h32_r0_live128 rep=3 old_us=30.733 st_us=12.282
+TIMING tree=unlabeled kernel=sink_attn shape=h32_r0_live128 rep=4 old_us=30.733 st_us=12.282
+TIMING tree=unlabeled kernel=sink_attn shape=h32_r4_live187 rep=0 old_us=34.824 st_us=14.329
+TIMING tree=unlabeled kernel=sink_attn shape=h32_r4_live187 rep=1 old_us=34.825 st_us=14.329
+TIMING tree=unlabeled kernel=sink_attn shape=h32_r4_live187 rep=2 old_us=34.825 st_us=14.329
+TIMING tree=unlabeled kernel=sink_attn shape=h32_r4_live187 rep=3 old_us=34.825 st_us=14.329
+TIMING tree=unlabeled kernel=sink_attn shape=h32_r4_live187 rep=4 old_us=34.825 st_us=14.329
+TIMING tree=unlabeled kernel=sink_attn shape=h32_r4_live640 rep=0 old_us=69.649 st_us=26.428
+TIMING tree=unlabeled kernel=sink_attn shape=h32_r4_live640 rep=1 old_us=69.649 st_us=26.447
+TIMING tree=unlabeled kernel=sink_attn shape=h32_r4_live640 rep=2 old_us=69.649 st_us=26.416
+TIMING tree=unlabeled kernel=sink_attn shape=h32_r4_live640 rep=3 old_us=69.649 st_us=26.388
+TIMING tree=unlabeled kernel=sink_attn shape=h32_r4_live640 rep=4 old_us=69.649 st_us=26.444
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.80s
+
+GATE_DONE rc=0 utc=2026-09-23T19:11:07Z

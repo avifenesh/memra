@@ -1,0 +1,94 @@
+# WP-C day 74 (2026-09-26): OWED C12, compaction induced on purpose, registered before any cell or script
+
+`DAY73.md` section 2a ends: "That points to compaction running while the process runs as the trigger, and to the door's
+process being the one it lands on, but no registered cell has read it ... The next registration tests it directly."
+Tree at start: `8d0d01d01`.
+
+## 0. Why induce it
+
+Across the three 9950X-family sittings with the sampler, the slow state appeared only in door runs whose span had
+compaction (machine `b` 19 of 20, BOX30 1 of 10, BOX31 none of either), and REF saw compaction only in its first two
+runs on `b`, where it read 7.4 to 8.4 cycles per step later in those runs. Whether compaction happens is set by the host
+(its memory and fragmentation), so waiting for it gives a cell that reads `not_reproduced` on a clean host (BOX31) and
+cannot place cause on a host where it always happens (`b`). Inducing it in half the runs, for both programs, on the
+same host, separates the two questions: does compaction running during a run slow the core of whatever process it
+lands on, and does it land on the door's process and not on REF's.
+
+## 1. Pre-registration: the cell `induce` (any Ryzen 9 9950X machine, then the 285K class; before its scripts)
+
+A measurement cell; no code, no default, no host setting changes. The binary `p71=6bad38150`, DAY73's run shape (ONE
+pin, `--cpu-probe`, `--cpu-probe-phases`, `--cpu-probe-counters` when its check passes, the day-18 pressure shape),
+DAY73's sampler, one collector hold.
+
+**The inducer (`day74-compactor.py`, one Python process started and stopped by the cell, pinned to the sampler's CPU,
+which lies outside the ONE pin and its SMT siblings).** Before an induced run it fragments host memory:
+it maps `F` GiB of anonymous memory with `MADV_NOHUGEPAGE`, touches every page, and returns every other 4 KiB page with
+`MADV_DONTNEED`, leaving the free memory in order-0 holes. During the run it asks for huge pages: in a loop it maps
+256 MiB with `MADV_HUGEPAGE`, touches it and unmaps it, so the kernel compacts (directly, in the inducer's context, as
+`defrag=madvise` on these hosts does). It stops when the run ends and releases everything. `F` is the host's
+`MemAvailable` at the cell's start minus 56 GiB, capped at 64 GiB (at least 8 GiB, or the induced arms do not run and
+the cell reads `not_run`). The inducer writes its own row per second (`ev/compactor.tsv`: pages held, huge-page maps
+done, its CPU time) so its activity is on record.
+
+**Arms and order (24 runs):** REF, REF+I (REF with the inducer running), door, door+I; order 1 (REF, REF+I, door,
+door+I) x 3, order 2 reversed x 3. Each induced run's fragmentation is set up before the run starts and held until it
+ends; an uninduced run follows a released inducer.
+
+**Readings** (each run over its gate-to-window span; the state from the gate probe and from the `window` phase probe):
+- R1 per run: `cycles_per_step` at `gate` and at `window` (APERF over 2^20 steps), and whether the span had compaction
+  (`compact_isolated` moved).
+- R2 per arm: the median `cycles_per_step` at `window`, and the median `compact_isolated` and `pgmigrate_fail` per
+  second over the span.
+- R3 per arm: gen-only and window medians (deciding nothing here; the timing cells decide timing).
+
+**The verdict** (`DAY74 INDUCE VERDICT rig=<rig>`):
+- `void` if integrity fails (24 runs, exit 0, `MATCH`, 32 generated and 32 window tokens, one tape, the door's fill
+  and zero physical reads, the sampler bracketing every span), `not_run` if the inducer could not run (`F` below 8 GiB
+  or its setup failed), and `not_induced` if fewer than 5 of the 6 induced door runs, or fewer than 5 of the 6 induced
+  REF runs, had compaction in their span (the inducer did not reach its goal on this host).
+- Otherwise two fields, each by the strict rule over the runs' `window` probes: `door_slows` when every door+I run's
+  `cycles_per_step` is above every door run's; `ref_slows` when every REF+I run's is above every REF run's. The verdict
+  names the fields that hold, or `neither`.
+
+**What it decides, stated before the cell.** `door_slows` and `ref_slows`: compaction running on the host slows any
+process's core, and the door is exposed because its runs see more of it; the remedy question becomes the host's
+memory state and the door's share of it. `door_slows` alone: compaction lands on the door's process specifically
+(what it maps or pins), and the remedy is the door's memory. `neither`: induced compaction does not produce the state
+and the association in `DAY73.md` section 2a was not the cause. A remedy is its own registration after this reads.
+
+**If the local dry check cannot induce compaction** (section 1a, on the development host, at a small `F`), the inducer's
+design is amended here, before any cell, and the amendment is stated.
+
+## 1a. Amendment after the local dry check, before any cell; the sitting prepared
+
+**What the local dry check showed** (`day74-cpu/dry-check-compactor.log`, the development host, one core under the cap).
+At `F` = 6 GiB and then 2 GiB the inducer fragments and loops as designed, but every 256 MiB burst came back fully as
+huge pages (`AnonHugePages` 262144 kB) and `compact_stall` did not move during the loop: on a host with free high-order
+blocks it does not force compaction at a small `F`. A larger `F` could not be tried here (the rig is shared). So, as
+section 1 provides, the inducer's design is amended before any cell:
+- **Its size comes from free memory, not available memory.** `F` = min(64, 2 x (`MemFree` - 48 GiB)) at the cell's
+  start: the fragmented half it holds comes out of free pages, and at least 48 GiB of free memory stays in order-0 holes
+  for the run, so the inducer does not push the artifact's page cache out (a door run needs the fill from the page
+  cache, `physical_reads=0`). Below `F` = 8 GiB the induced arms do not run and the cell reads `not_run`.
+- **Its huge-page loop starts at the run's `gate` line**, not before the run: the cell watches the run's log and signals
+  the inducer (SIGUSR1) when the gate probe prints, so the load and the door's fill are never under induced
+  compaction, and the loop covers the span the readings measure.
+- **It also triggers compaction directly when it can**: at the loop's start it opens `/proc/sys/vm/compact_memory`; when
+  the file is writable (root with a writable `/proc/sys`), every loop pass writes `1` to it. That is a one-shot
+  kernel action per write, not a setting; whether it was writable is on record (`loop trigger=writable|none`).
+The fragmentation before the run and the verdict's `not_induced` guard are unchanged; `not_induced` is the reading if
+the host still gives huge pages without compacting.
+
+**Scripts and dry checks** (`day74-cpu/`): `day74-compactor.py` as amended; `day74-cell.sh` (DAY73's run shape and
+sampler, four arms, the inducer's start, ready wait, gate signal and stop by its own pid; one knob, `D74_DRY_F`, used
+only by the dry check to run a 1 GiB inducer, never set by the driver); `day74-read.py`; `day74-box.sh`. The cell's
+control flow with stub binaries (`dry-check-cell.log`: 24 runs, each of the 12 induced runs shows its inducer
+`ready`, `loop` at the gate, `stopped`; nothing outlives the cell); the reader on machine `b`'s runs relabelled into the
+four arms (`dry-check-reader.log`, its reading meaningless) and with `induce=0` (`not_run`); the driver's control flow
+(`dry-check-driver.log`).
+
+Run as `D74_BUILDS="p71=6bad38150" [D74_RIG=<name>] bash /root/wt-c/research/spill-c-20260919/day74-box.sh` on a Ryzen 9
+9950X machine with one RTX PRO 6000 Blackwell Workstation Edition and at least 56 GiB `MemFree` at the start (else
+`not_run`), root in the container; the 285K class after it. Receipts land in `/root/spill-receipts/c-day74-<rig>/`.
+Expected: the build about 5 minutes when not shared, the cell about 12 minutes (24 runs, each induced run adding its
+setup of up to about 20 s).

@@ -1,0 +1,30 @@
+d32: owner thread tid=300436637695747; anchors=4
+-- anchor 0
+   owner api cuMemcpyDtoHAsync_v2         start  +13.928 ms dur  29.296 ms
+   gpu H2D    stream   15 n=  24     50.33 MB first   +0.000 ms last end   +1.829 ms
+   gpu D2H    stream   15 n=  64     53.64 MB first   +8.687 ms last end  +11.175 ms
+   gpu H2D    stream   13 n=  22      0.00 MB first   +9.224 ms last end  +21.574 ms
+   gpu D2D    stream   13 n= 107     94.19 MB first   +9.610 ms last end  +24.365 ms
+   gpu kernel stream   13 n= 494     14.79 ms busy first  +10.104 ms last end  +25.088 ms
+-- anchor 1
+   owner api cuMemHostAlloc               start   +8.552 ms dur   1.482 ms
+   owner api cuMemcpyDtoHAsync_v2         start  +15.513 ms dur  29.767 ms
+   gpu H2D    stream   15 n=  24     50.33 MB first   +0.000 ms last end   +1.823 ms
+   gpu D2H    stream   15 n=  64     53.64 MB first  +10.185 ms last end  +12.676 ms
+   gpu H2D    stream   13 n=  22      0.00 MB first  +10.662 ms last end  +23.474 ms
+   gpu D2D    stream   13 n= 101     84.28 MB first  +11.029 ms last end  +24.292 ms
+   gpu kernel stream   13 n= 426     13.34 ms busy first  +11.525 ms last end  +25.060 ms
+-- anchor 2
+   owner api cuMemcpyDtoHAsync_v2         start  +13.810 ms dur  28.874 ms
+   gpu H2D    stream   15 n=  24     50.33 MB first   +0.000 ms last end   +1.834 ms
+   gpu D2H    stream   15 n=  64     53.64 MB first   +8.608 ms last end  +11.101 ms
+   gpu H2D    stream   13 n=  22      0.00 MB first   +9.092 ms last end  +21.229 ms
+   gpu D2D    stream   13 n= 110     97.06 MB first   +9.441 ms last end  +24.891 ms
+   gpu kernel stream   13 n= 504     14.92 ms busy first   +9.931 ms last end  +25.072 ms
+-- anchor 3
+   owner api cuMemcpyDtoHAsync_v2         start  +13.755 ms dur  29.745 ms
+   gpu H2D    stream   15 n=  24     50.33 MB first   +0.000 ms last end   +1.837 ms
+   gpu D2H    stream   15 n=  64     53.64 MB first   +8.627 ms last end  +11.123 ms
+   gpu H2D    stream   13 n=  22      0.00 MB first   +9.026 ms last end  +21.566 ms
+   gpu D2D    stream   13 n= 107     89.33 MB first   +9.368 ms last end  +24.410 ms
+   gpu kernel stream   13 n= 494     15.08 ms busy first   +9.850 ms last end  +25.148 ms

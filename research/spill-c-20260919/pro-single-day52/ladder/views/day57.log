@@ -1,0 +1,9 @@
+DAY52 VIEW day=57 reader=day57-fillwait.py arms=off<-off,i4<-i4,i10<-i10 rc=0
+DAY57 FILLWAIT CHECKS rig=pro-single runs=30 integrity=ok
+DAY57 ARM i4 window_door_ms_per_token=-0.27 gen_door_ms_per_token=4.05 window_s median=0.242 iqr=0.001 | per window token: gpu_misses=92.3 host_hits=92.3 prefetches=88.6 prefetch_hits=88.6 demand=0.024 enqueue=0.007 copy_gpu=0.066 wait=0.000 retire=0.055 miss_total=0.046
+DAY57 ARM i10 window_door_ms_per_token=-0.25 gen_door_ms_per_token=-0.88 window_s median=0.243 iqr=0.000 | per window token: gpu_misses=92.3 host_hits=92.3 prefetches=88.6 prefetch_hits=88.6 demand=0.025 enqueue=0.007 copy_gpu=0.066 wait=0.000 retire=0.053 miss_total=0.047
+DAY57 CLAUSE (i) i10 physical_reads per run=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0] rule all 0 -> PASS
+DAY57 CLAUSE (ii) i10_minus_i4 gen o1=-0.158 o2=-0.157 noise=0.003 rule < -noise both orders -> PASS
+DAY57 CLAUSE (iii) i10_minus_i4 window pooled=+0.001 o1=+0.001 o2=+0.000 noise=0.001 rule <= noise pooled and both orders -> PASS
+DAY57 READING install_s median i4=8.87 i10=9.90 (i10 - i4 +1.03) fill_complete_ms median=1006.0 gen_s median off=0.310 i4=0.440 i10=0.282
+DAY57 FILLWAIT rig=pro-single integrity=ok clause_i=PASS clause_ii=PASS clause_iii=PASS

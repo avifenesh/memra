@@ -4,6 +4,7 @@ use memra_engine::dsv4_gpu::{
     dsv4_replay_cadence_default, restore_dense_exact_tail_default_for_gate,
 };
 use memra_engine::dsv4_sampler::{Dsv4Sampler, dsv4_sampler};
+use memra_engine::dsv4_source_tape::SourceTape;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -103,17 +104,9 @@ fn main() {
         assert_eq!(std::env::var(key).as_deref(), Ok(value));
     }
     let dir = Path::new(&args[1]);
-    let source = std::fs::read_to_string(&args[2]).unwrap();
-    assert_eq!(
-        format!("{:x}", Sha256::digest(source.as_bytes())),
-        "f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded"
-    );
+    let tape = SourceTape::read(&args[2]).expect("source tape");
     let tokenizer = Tokenizer::from_hf_dir(dir).unwrap();
-    let prompt = tokenizer.encode(
-        &format!("Review this inference engine source:\n\n{source}"),
-        true,
-    );
-    assert!(prompt.len() >= 256);
+    let prompt = tape.prompt(&tokenizer, "Review this inference engine source:\n\n", 256);
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
     Dsv4Gpu::set_attention_tp_for_gate(true);
     // This instrument retains the sktail census and control program.
@@ -160,13 +153,10 @@ fn main() {
         .unwrap();
     // The model, weights and request allocations remain stable throughout both arms.
     unsafe {
-        gpu.arm_full_token_replay_for_gate(&mut measured, cfg)
-            .unwrap();
+        gpu.arm_full_token_replay(&mut measured, cfg).unwrap();
     }
     // Capture the default variants and commit graph, outside the 64 steps.
-    let warm = gpu
-        .decode_sample_full_token_for_gate(first, &mut measured)
-        .unwrap();
+    let warm = gpu.decode_sample_full_token(first, &mut measured).unwrap();
     census(&gpu, &measured);
     unsafe { prepare() };
     gpu.restore_full_token_prefix_for_gate(&mut measured, &prefix)
@@ -181,9 +171,7 @@ fn main() {
         assert_ne!(carry, tokenizer.eos_id());
         tokens.push(carry);
         unsafe { begin() };
-        carry = gpu
-            .decode_sample_full_token_for_gate(carry, &mut measured)
-            .unwrap();
+        carry = gpu.decode_sample_full_token(carry, &mut measured).unwrap();
         unsafe { finish(position) };
         assert_eq!(measured.pos, position as usize + 1);
     }
@@ -215,9 +203,7 @@ fn main() {
     carry = first;
     for &token in &tokens {
         assert_eq!(carry, token);
-        carry = gpu
-            .decode_sample_full_token_for_gate(carry, &mut measured)
-            .unwrap();
+        carry = gpu.decode_sample_full_token(carry, &mut measured).unwrap();
     }
     assert_eq!((carry, identity(&gpu, &measured)), actual);
     let mut hash = Sha256::new();

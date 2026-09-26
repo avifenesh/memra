@@ -1,0 +1,81 @@
+lock attempt 1: held elsewhere 2026-09-23T09:49:05+03:00
+lock attempt 2: held elsewhere 2026-09-23T09:51:05+03:00
+lock attempt 3: held elsewhere 2026-09-23T09:53:05+03:00
+lock attempt 4: held elsewhere 2026-09-23T09:55:05+03:00
+lock attempt 5: held elsewhere 2026-09-23T09:57:05+03:00
+lock attempt 6: held elsewhere 2026-09-23T09:59:05+03:00
+lock attempt 7: held elsewhere 2026-09-23T10:01:05+03:00
+lock attempt 8: held elsewhere 2026-09-23T10:03:05+03:00
+lock attempt 9: held elsewhere 2026-09-23T10:05:05+03:00
+lock attempt 10: held elsewhere 2026-09-23T10:07:05+03:00
+lock attempt 11: held elsewhere 2026-09-23T10:09:05+03:00
+lock attempt 12: held elsewhere 2026-09-23T10:11:05+03:00
+lock attempt 13: held elsewhere 2026-09-23T10:13:05+03:00
+lock attempt 14: held elsewhere 2026-09-23T10:15:05+03:00
+lock attempt 15: held elsewhere 2026-09-23T10:17:05+03:00
+GAVE UP on /tmp/memra-5090.lock after 15 x 120 s
+lock attempt 1: held elsewhere 2026-09-23T10:19:24+03:00
+lock attempt 2: held elsewhere 2026-09-23T10:21:24+03:00
+lock attempt 3: held elsewhere 2026-09-23T10:23:24+03:00
+lock attempt 4: held elsewhere 2026-09-23T10:25:24+03:00
+lock attempt 5: held elsewhere 2026-09-23T10:27:24+03:00
+lock attempt 6: held elsewhere 2026-09-23T10:29:24+03:00
+lock attempt 7: held elsewhere 2026-09-23T10:31:24+03:00
+lock attempt 8: held elsewhere 2026-09-23T10:33:24+03:00
+lock attempt 9: held elsewhere 2026-09-23T10:35:24+03:00
+lock attempt 10: held elsewhere 2026-09-23T10:37:24+03:00
+lock attempt 11: held elsewhere 2026-09-23T10:39:24+03:00
+lock attempt 12: held elsewhere 2026-09-23T10:41:24+03:00
+lock attempt 13: held elsewhere 2026-09-23T10:43:24+03:00
+lock attempt 14: held elsewhere 2026-09-23T10:45:24+03:00
+lock attempt 15: held elsewhere 2026-09-23T10:47:24+03:00
+lock attempt 16: held elsewhere 2026-09-23T10:49:24+03:00
+lock attempt 17: held elsewhere 2026-09-23T10:51:24+03:00
+lock attempt 18: held elsewhere 2026-09-23T10:53:24+03:00
+lock attempt 19: held elsewhere 2026-09-23T10:55:24+03:00
+lock attempt 20: held elsewhere 2026-09-23T10:57:24+03:00
+lock attempt 21: held elsewhere 2026-09-23T10:59:24+03:00
+lock attempt 22: held elsewhere 2026-09-23T11:01:24+03:00
+stopped by lane E at 2026-09-23T11:02:23+03:00 (the lead: wait for lane B's local order.log to report its chain done; never take the lock between B's boots)
+waiting for lane B's local chain to log 'chain done' from 2026-09-23T11:02:56+03:00
+lane B's chain.log: 2026-09-23T10:57:13Z chain done (seen 2026-09-23T13:57:56+03:00)
+== window 9 lock acquired 2026-09-23T13:57:56+03:00
+tree ddb14abc2a0a60461d47033dd8aaea4593d23f42 dirty=[?? research/decode-exact-641-20260923/raw/merged/window9.log ]
+bins: probe cdc2d747fd87b111 pbg 98b11407e398b051 dbg 621a87a0e2842487 server-before-smoke 9ae7010f397f5e82
+model: /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf (5657607424 bytes; sha256 52c9cceb...a8f39de per RESULTS.md, not re-hashed)
+card at start: apps=[] mem/temp/clock=[15 MiB, 24463 MiB, 69, 180 MHz]
+-- ptick start 2026-09-23T13:57:57+03:00 apps=[]
+   ptick rc=0
+prime-tick-exact-gate: PASS (every prime shape is bit-identical to the solo prime; log /home/avifenesh/projects/wt-decode-exact-641/research/decode-exact-641-20260923/raw/merged/ptick-naked.probe.log)
+-- ptickc start 2026-09-23T13:58:08+03:00 apps=[]
+   ptickc rc=0
+prime-tick-exact-gate: CANARY OK (bp and bps DIFFER with B's batch prompt changed; log /home/avifenesh/projects/wt-decode-exact-641/research/decode-exact-641-20260923/raw/merged/ptick-canary.probe.log)
+-- pbg9 start 2026-09-23T13:58:18+03:00 apps=[]
+   pbg9 rc=0
+    exact-b3-p24 rc=0 ALL GREEN: prime-batch gate (batch=3, uneven lengths)
+    exact-b4-p1100 rc=0 ALL GREEN: prime-batch gate (batch=4, uneven lengths)
+    carried-b3-exact rc=0 ALL GREEN: prime-batch gate (batch=3, uneven lengths)
+prime-batch-exact-gate: PASS (every batched prime is bit-identical to its individual prime)
+-- pbg9c start 2026-09-23T13:58:30+03:00 apps=[]
+   pbg9c rc=0
+    canary-b3-p24 rc=1 Error: "prime-batch-gate: 4 FAIL(s)"
+prime-batch-exact-gate: CANARY OK (seq 0 DIFFERS: exact logits diff 248320/248320 h_seed diff 4096/4096 hidden diff 98304/98304; seqs 1 and 2 bit-identical)
+-- dbg-config start 2026-09-23T13:58:32+03:00 apps=[]
+   dbg-config rc=0
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; global setting = OFF; effective for this architecture = OFF)
+ALL GREEN: decode_step_batch exactness battery
+-- dbg-strict start 2026-09-23T13:58:43+03:00 apps=[]
+   dbg-strict rc=0
+ALL GREEN: decode_step_batch exactness battery
+-- serve-smoke start 2026-09-23T13:58:51+03:00 apps=[]
+   serve-smoke rc=0
+== serve-smoke: spec arm SKIP (no draft at /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/draft-9b-owntrim-nvfp4head-q4blk.gguf)
+== serve-smoke: gemma4 arm SKIP (no model at /data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf)
+== serve-smoke: Q35 coldhol arm SKIP (no model at /data/ai-ml/hf-models/qwen36-35b-moe/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf)
+serve-smoke: 0 failed
+server after serve-smoke: a0b0a711b2f548e6 build line: memra-0.138.0-97cdff00ed9f (id: source-tree, git: ddb14abc2a0a)
+-- spec-ctx-edge start 2026-09-23T14:02:08+03:00 apps=[]
+   spec-ctx-edge rc=0
+SPEC-CTX-EDGE GATE: ALL GREEN
+card at end: apps=[]
+== window 9 done 2026-09-23T14:02:26+03:00

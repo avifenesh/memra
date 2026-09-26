@@ -1,0 +1,8 @@
+DAY52 VIEW day=47 reader=day47-pinned.py arms=off<-off,i1<-i1,i2<-i2 rc=0
+DAY47 PINNED CHECKS rig=pro-single runs=30 integrity=ok
+DAY47 ARM i1 window_door_ms_per_token=3.52 gen_door_ms_per_token=11.09 window_s median=0.363 iqr=0.005 | per window token: gpu_misses=92.3 host_hits=92.3 demand=1.025 enqueue=2.780 copy_gpu=3.774 wait=0.000 retire=0.060 finish=0.002 alloc=0.000 step=0.000 miss_total=4.231
+DAY47 ARM i2 window_door_ms_per_token=0.63 gen_door_ms_per_token=5.31 window_s median=0.271 iqr=0.001 | per window token: gpu_misses=92.3 host_hits=92.3 demand=0.945 enqueue=0.169 copy_gpu=1.429 wait=0.000 retire=0.055 finish=0.002 alloc=0.000 step=0.000 miss_total=1.477
+DAY47 CLAUSE (i) i2_minus_i1 window o1=-0.093 o2=-0.093 noise=0.005 rule < -noise both orders -> PASS
+DAY47 CLAUSE (ii) enqueue per window token i1=2.780 i2=0.169 rule i2 < 0.5 x i1 -> PASS
+DAY47 READING copy_gpu per window token i1=3.774 i2=1.429 -> copy_lower
+DAY47 PINNED rig=pro-single integrity=ok clause_i=PASS clause_ii=PASS

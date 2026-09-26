@@ -16434,8 +16434,9 @@ pub fn read_checkpoint_with(dir: &std::path::Path, opts: LoadOptions) -> Res<Loa
     use memra_gguf::model_packs::qwen4_exp::{ExpertDialect, tensor_contract_for};
     use memra_gguf::tensor_contract::{TensorMatch, TensorOwner};
     let config = std::fs::read_to_string(dir.join("config.json"))?;
-    let cfg =
-        memra_gguf::config::ModelConfig::from_hf(&memra_gguf::config::HfConfig::parse(&config));
+    let cfg = memra_gguf::config::ModelConfig::from_hf(&memra_gguf::config::HfConfig::try_parse(
+        &config,
+    )?);
     let pack = memra_gguf::model_packs::for_config(&cfg)
         .ok_or("qwen4exp_gpu: no model pack matches this config")?;
     if pack.family != "qwen4_exp" {

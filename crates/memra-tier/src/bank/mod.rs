@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 mod adapters;
 mod device_rows;
+mod fx;
 pub use device_rows::*;
 mod residency;
 mod rows;
@@ -28,3 +29,6 @@ pub use expert_dispatch::*;
 
 mod owner_proxy;
 pub use owner_proxy::*;
+
+mod host_buffer;
+pub use host_buffer::*;

@@ -1,0 +1,13 @@
+    Checking memra-gguf v0.138.0 (/Users/avifen/.codex/worktrees/b6ce/memra/crates/memra-gguf)
+error: unused import: `std::os::fd::AsRawFd`
+  --> crates/memra-gguf/src/source.rs:20:5
+   |
+20 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `-D unused-imports` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(unused_imports)]`
+
+error: could not compile `memra-gguf` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `memra-gguf` (lib test) due to 1 previous error

@@ -1,0 +1,440 @@
+From b7e8379930d4c94e82783330e668b83d6130e26a Mon Sep 17 00:00:00 2001
+From: memra-lane <lane@localhost>
+Date: Wed, 23 Sep 2026 13:09:15 +0300
+Subject: [PATCH] perf(dsv4): the small-kernel diet takes every row count, one
+ block per row
+
+The fused HC finish and Q-LoRA norm/pack ran only on t=1 steps, so a
+DSpark server, which runs its target on T=6 verify rows, kept five
+unfused launches per layer site. Both fused kernels now index their row
+by blockIdx.x, as the unfused kernels do, and the dispatch drops t == 1.
+tests/dsv4_small_diet_gpu.rs adds multi-row cases (2, 6, 7, 16, 17, 64
+rows, one magnitude range per row) that require each row to equal the
+unfused multi-row chain and the same row launched alone.
+
+Signed-off-by: memra-lane <lane@localhost>
+---
+ crates/memra-engine/cu/dsv4_gpu.cu            |  24 ++-
+ crates/memra-engine/src/dsv4_gpu.rs           |   4 +-
+ .../memra-engine/tests/dsv4_small_diet_gpu.rs | 170 +++++++++++++++---
+ docs/KERNELS.md                               |   9 +-
+ docs/TESTING.md                               |   6 +-
+ 5 files changed, 176 insertions(+), 37 deletions(-)
+
+diff --git a/crates/memra-engine/cu/dsv4_gpu.cu b/crates/memra-engine/cu/dsv4_gpu.cu
+index 30ae515c7..ba1833300 100644
+--- a/crates/memra-engine/cu/dsv4_gpu.cu
++++ b/crates/memra-engine/cu/dsv4_gpu.cu
+@@ -2994,9 +2994,13 @@ extern "C" int memra_dsv4_rmsnorm_f32acc(const float* x, const float* w, float*
+ 
+ // Q-LoRA normalization plus the following bf16 pack. Same 128-thread tree,
+ // eight-load accumulation order and f32 intermediate as the separate pair.
++// One CTA per row, as the separate pair launches, so a verify row carries the
++// bits of the same row decoded alone.
+ extern "C" __global__ void dsv4_small_norm_pack_f32_fixed_order_kernel(
+         float* x, const float* w, __nv_bfloat16* packed, int n, float eps) {
+     constexpr int B = 128;
++    x += (long)blockIdx.x * n;
++    packed += (long)blockIdx.x * n;
+     float acc = 0.0f;
+     int i = threadIdx.x;
+     for (; i + 7*B < n; i += 8*B) {
+@@ -3018,8 +3022,8 @@ extern "C" __global__ void dsv4_small_norm_pack_f32_fixed_order_kernel(
+ 
+ extern "C" int memra_dsv4_small_norm_pack_f32_fixed_order(
+         float* x, const float* w, void* packed, int s, int n, float eps, void* stream_v) {
+-    if (s != 1 || n < 1) return 40027;
+-    dsv4_small_norm_pack_f32_fixed_order_kernel<<<1, 128, 0, (cudaStream_t)stream_v>>>(
++    if (s < 1 || n < 1) return 40027;
++    dsv4_small_norm_pack_f32_fixed_order_kernel<<<(unsigned)s, 128, 0, (cudaStream_t)stream_v>>>(
+         x, w, (__nv_bfloat16*)packed, n, eps);
+     DSV4_ERR();
+     return 0;
+@@ -4402,14 +4406,22 @@ extern "C" int memra_dsv4_hc_sinkhorn_m(const float* mixes, const float* scale,
+     return 0;
+ }
+ 
+-// DSV4 plain t=1 diet. Keep the f32x rowsq tree at exactly 128 threads.
++// DSV4 diet. Keep the f32x rowsq tree at exactly 128 threads.
+ // Sinkhorn owns one matrix element per lane and gathers each sum in the
+ // original ascending order. No early exit or reassociation. This TU uses
+-// -fmad=false, as do the three unfused kernels.
++// -fmad=false, as do the three unfused kernels. One CTA per position, the
++// row the unfused kernels give that position.
+ extern "C" __global__ void dsv4_small_hc_f32_fixed_order_kernel(
+         const float* x, float* mixes, const float* scale, const float* base,
+         float* pre, float* post, float* comb, float* y, int d, int iters, float eps) {
+     constexpr int HC = 4, B = 128, ROWS = 24;
++    long p = blockIdx.x;
++    x += p * HC * d;
++    mixes += p * ROWS;
++    pre += p * HC;
++    post += p * HC;
++    comb += p * HC * HC;
++    y += p * d;
+     int t = threadIdx.x;
+     int w = HC * d;
+     float acc = 0.0f;
+@@ -4470,8 +4482,8 @@ extern "C" int memra_dsv4_small_hc_f32_fixed_order(
+         const float* x, float* mixes, const float* scale, const float* base,
+         float* pre, float* post, float* comb, float* y, int s, int hc, int d,
+         int iters, float eps, void* stream_v) {
+-    if (s != 1 || hc != 4 || d != 4096 || iters < 0) return 40027;
+-    dsv4_small_hc_f32_fixed_order_kernel<<<1, 128, 0, (cudaStream_t)stream_v>>>(
++    if (s < 1 || hc != 4 || d != 4096 || iters < 0) return 40027;
++    dsv4_small_hc_f32_fixed_order_kernel<<<(unsigned)s, 128, 0, (cudaStream_t)stream_v>>>(
+         x, mixes, scale, base, pre, post, comb, y, d, iters, eps);
+     DSV4_ERR();
+     return 0;
+diff --git a/crates/memra-engine/src/dsv4_gpu.rs b/crates/memra-engine/src/dsv4_gpu.rs
+index 92b51b990..4014d00c9 100644
+--- a/crates/memra-engine/src/dsv4_gpu.rs
++++ b/crates/memra-engine/src/dsv4_gpu.rs
+@@ -14758,7 +14758,7 @@ impl Dsv4Gpu {
+                 st, h_ptr, &vws.mixes, scale_dev, base_dev, hidden, iters, hc_eps,
+             )?;
+         }
+-        if self.small_kernel_diet && t == 1 && !host_math {
++        if self.small_kernel_diet && !host_math {
+             unsafe {
+                 ck(
+                     "small HC f32 fixed order",
+@@ -15351,7 +15351,7 @@ impl Dsv4Gpu {
+         if t == 1 && !host_math && self.small_component_claim(st.dev, 1) {
+             self.small_component_norm(st, &vws.qr, &layer.q_norm, q_lora, eps)?;
+         }
+-        if self.small_kernel_diet && t == 1 && !host_math {
++        if self.small_kernel_diet && !host_math {
+             unsafe {
+                 ck(
+                     "small Q norm pack f32 fixed order",
+diff --git a/crates/memra-engine/tests/dsv4_small_diet_gpu.rs b/crates/memra-engine/tests/dsv4_small_diet_gpu.rs
+index 0f8a5caf4..772d6c47c 100644
+--- a/crates/memra-engine/tests/dsv4_small_diet_gpu.rs
++++ b/crates/memra-engine/tests/dsv4_small_diet_gpu.rs
+@@ -1,16 +1,18 @@
+ //! Kernel-boundary bit gate for the DSV4 small-kernel diet (#339), which is the code on every
+ //! f32x device program of the HC4 / hidden 4096 shape, PP-2 and TP/EP alike.
+ //!
+-//! The diet replaces two unfused chains on the plain t=1 step:
++//! The diet replaces two unfused chains on every row count (plain t=1 steps, verify rows,
++//! prefill rows):
+ //!
+ //! - HC finish: `memra_dsv4_rowsq_scale_f32acc` + `memra_dsv4_hc_sinkhorn_m` +
+ //!   `memra_dsv4_hc_collapse` becomes `memra_dsv4_small_hc_f32_fixed_order`.
+ //! - Q-LoRA norm/pack: `memra_dsv4_rmsnorm_f32acc` (in place) + `memra_dsv4_cvt_bf16` becomes
+ //!   `memra_dsv4_small_norm_pack_f32_fixed_order`.
+ //!
+-//! A multi-row verify or prefill row keeps the unfused chain, so the claim is bit identity, not
+-//! a band: every output (scaled mixes, pre, post, comb, y; normalized f32 row, bf16 pack) must
+-//! compare `to_bits`-equal. The fixtures sweep magnitudes over many decades so the rowsq tree,
++//! The claim is bit identity, not a band: every output (scaled mixes, pre, post, comb, y;
++//! normalized f32 row, bf16 pack) must compare `to_bits`-equal, and a row of a multi-row launch
++//! must carry the bits of the same row launched alone, so a request that alternates plain steps
++//! and verify transactions stays one numeric program. The fixtures sweep magnitudes over many decades so the rowsq tree,
+ //! the Sinkhorn divisions and the collapse sums see rounding in every exponent range. The live
+ //! checkpoint twin of this gate is `dsv4_tp_ep_sampled_perf_gate --small-kernel-components`.
+ //!
+@@ -89,6 +91,7 @@ fn bits(v: &[f32]) -> Vec<u32> {
+ }
+ 
+ struct HcCase {
++    s: usize,
+     x: Vec<f32>,
+     mixes: Vec<f32>,
+     scale: Vec<f32>,
+@@ -99,19 +102,20 @@ struct HcCase {
+ type HcOut = [Vec<u32>; 5];
+ 
+ fn hc_unfused(e: &Engine, c: &HcCase) -> HcOut {
++    let s = c.s;
+     let x = e.htod(&c.x).unwrap();
+     let mut mixes = e.htod(&c.mixes).unwrap();
+     let scale = e.htod(&c.scale).unwrap();
+     let base = e.htod(&c.base).unwrap();
+-    let mut pre = e.uninit(HC).unwrap();
+-    let mut post = e.uninit(HC).unwrap();
+-    let mut comb = e.uninit(HC * HC).unwrap();
+-    let mut y = e.uninit(D).unwrap();
++    let mut pre = e.uninit(s * HC).unwrap();
++    let mut post = e.uninit(s * HC).unwrap();
++    let mut comb = e.uninit(s * HC * HC).unwrap();
++    let mut y = e.uninit(s * D).unwrap();
+     unsafe {
+         let rc = k::memra_dsv4_rowsq_scale_f32acc(
+             dp(&x, e),
+             dpm(&mut mixes, e),
+-            1,
++            s as i32,
+             (HC * D) as i32,
+             ROWS as i32,
+             HC_EPS,
+@@ -125,7 +129,7 @@ fn hc_unfused(e: &Engine, c: &HcCase) -> HcOut {
+             dpm(&mut pre, e),
+             dpm(&mut post, e),
+             dpm(&mut comb, e),
+-            1,
++            s as i32,
+             HC as i32,
+             ITERS,
+             HC_EPS,
+@@ -136,7 +140,7 @@ fn hc_unfused(e: &Engine, c: &HcCase) -> HcOut {
+             dp(&x, e),
+             dp(&pre, e),
+             dpm(&mut y, e),
+-            1,
++            s as i32,
+             HC as i32,
+             D as i32,
+             sv(e),
+@@ -147,14 +151,15 @@ fn hc_unfused(e: &Engine, c: &HcCase) -> HcOut {
+ }
+ 
+ fn hc_fused(e: &Engine, c: &HcCase) -> HcOut {
++    let s = c.s;
+     let x = e.htod(&c.x).unwrap();
+     let mut mixes = e.htod(&c.mixes).unwrap();
+     let scale = e.htod(&c.scale).unwrap();
+     let base = e.htod(&c.base).unwrap();
+-    let mut pre = e.uninit(HC).unwrap();
+-    let mut post = e.uninit(HC).unwrap();
+-    let mut comb = e.uninit(HC * HC).unwrap();
+-    let mut y = e.uninit(D).unwrap();
++    let mut pre = e.uninit(s * HC).unwrap();
++    let mut post = e.uninit(s * HC).unwrap();
++    let mut comb = e.uninit(s * HC * HC).unwrap();
++    let mut y = e.uninit(s * D).unwrap();
+     unsafe {
+         let rc = k::memra_dsv4_small_hc_f32_fixed_order(
+             dp(&x, e),
+@@ -165,7 +170,7 @@ fn hc_fused(e: &Engine, c: &HcCase) -> HcOut {
+             dpm(&mut post, e),
+             dpm(&mut comb, e),
+             dpm(&mut y, e),
+-            1,
++            s as i32,
+             HC as i32,
+             D as i32,
+             ITERS,
+@@ -179,6 +184,7 @@ fn hc_fused(e: &Engine, c: &HcCase) -> HcOut {
+ 
+ fn hc_case(seed: u64, x_range: (i32, i32), mix_range: (i32, i32)) -> HcCase {
+     HcCase {
++        s: 1,
+         x: fixture(HC * D, seed ^ 0x11, x_range.0, x_range.1),
+         mixes: fixture(ROWS, seed ^ 0x22, mix_range.0, mix_range.1),
+         scale: fixture(3, seed ^ 0x33, -1, 2),
+@@ -186,21 +192,47 @@ fn hc_case(seed: u64, x_range: (i32, i32), mix_range: (i32, i32)) -> HcCase {
+     }
+ }
+ 
++/// `s` positions stacked row-major, each drawn as its own single-row case with its own
++/// magnitude ranges, so one launch mixes exponent regimes across its rows.
++fn hc_rows(seed: u64, s: usize) -> (HcCase, Vec<HcCase>) {
++    const X: [(i32, i32); 4] = [(-12, -6), (-4, 2), (0, 6), (-10, 8)];
++    const MIX: [(i32, i32); 3] = [(-6, -1), (-2, 3), (2, 6)];
++    let one: Vec<HcCase> = (0..s)
++        .map(|p| {
++            let mut c = hc_case(seed ^ ((p as u64) << 20), X[p % 4], MIX[p % 3]);
++            // The gate scale is per layer, shared by every row of the launch.
++            c.scale = fixture(3, seed ^ 0x33, -1, 2);
++            c.base = fixture(ROWS, seed ^ 0x44, -3, 1);
++            c
++        })
++        .collect();
++    let all = HcCase {
++        s,
++        x: one.iter().flat_map(|c| c.x.iter().copied()).collect(),
++        mixes: one.iter().flat_map(|c| c.mixes.iter().copied()).collect(),
++        scale: one[0].scale.clone(),
++        base: one[0].base.clone(),
++    };
++    (all, one)
++}
++
+ /// Output order: normalized f32 row, bf16 pack (as u16 widened to u32).
+ fn norm_unfused(e: &Engine, x0: &[f32], w: &[f32]) -> [Vec<u32>; 2] {
+-    let n = x0.len();
++    let s = x0.len() / w.len();
++    let n = w.len();
+     let mut x = e.htod(x0).unwrap();
+     let wd = e.htod(w).unwrap();
+     let stream = e.stream();
+-    let mut packed = stream.alloc_zeros::<u16>(n).unwrap();
++    let mut packed = stream.alloc_zeros::<u16>(s * n).unwrap();
+     unsafe {
+         let xp = dpm(&mut x, e);
+-        let rc = k::memra_dsv4_rmsnorm_f32acc(xp, dp(&wd, e), xp, 1, n as i32, RMS_EPS, sv(e));
++        let rc =
++            k::memra_dsv4_rmsnorm_f32acc(xp, dp(&wd, e), xp, s as i32, n as i32, RMS_EPS, sv(e));
+         assert_eq!(rc, 0, "rmsnorm_f32acc");
+         let rc = k::memra_dsv4_cvt_bf16(
+             dp(&x, e),
+             packed.device_ptr_mut(&stream).0 as *mut c_void,
+-            n as i64,
++            (s * n) as i64,
+             sv(e),
+         );
+         assert_eq!(rc, 0, "cvt_bf16");
+@@ -213,17 +245,18 @@ fn norm_unfused(e: &Engine, x0: &[f32], w: &[f32]) -> [Vec<u32>; 2] {
+ }
+ 
+ fn norm_fused(e: &Engine, x0: &[f32], w: &[f32]) -> [Vec<u32>; 2] {
+-    let n = x0.len();
++    let s = x0.len() / w.len();
++    let n = w.len();
+     let mut x = e.htod(x0).unwrap();
+     let wd = e.htod(w).unwrap();
+     let stream = e.stream();
+-    let mut packed = stream.alloc_zeros::<u16>(n).unwrap();
++    let mut packed = stream.alloc_zeros::<u16>(s * n).unwrap();
+     unsafe {
+         let rc = k::memra_dsv4_small_norm_pack_f32_fixed_order(
+             dpm(&mut x, e),
+             dp(&wd, e),
+             packed.device_ptr_mut(&stream).0 as *mut c_void,
+-            1,
++            s as i32,
+             n as i32,
+             RMS_EPS,
+             sv(e),
+@@ -310,3 +343,94 @@ fn dsv4_small_norm_pack_diet_is_bit_identical_to_the_unfused_pair() {
+     );
+     println!("DSV4_SMALL_NORM_PACK_DIET EXACT cases={cases} outputs=2 red_arms=1");
+ }
++
++/// Row counts: DSpark verify (T=6), the 16-row prime segment, tails on both sides, and one
++/// prefill-sized chunk.
++const MROWS: [usize; 6] = [2, 6, 7, 16, 17, 64];
++
++#[test]
++#[ignore = "needs a CUDA device; run under flock /tmp/memra-5090.lock"]
++fn dsv4_small_hc_diet_multirow_is_bit_identical_to_the_unfused_chain_and_to_each_row_alone() {
++    let _gpu = gpu_guard();
++    force_true_f32();
++    let e = Engine::new(0).expect("CUDA engine on device 0");
++    let (mut cases, mut rows) = (0, 0);
++    for &s in &MROWS {
++        for rep in 0..4u64 {
++            let seed = 0xD54F_A000 ^ ((s as u64) << 8) ^ rep;
++            let (all, one) = hc_rows(seed, s);
++            let case = format!("hc s={s} seed {seed:#x}");
++            let (u, f) = (hc_unfused(&e, &all), hc_fused(&e, &all));
++            for (i, what) in ["mixes", "pre", "post", "comb", "y"].iter().enumerate() {
++                assert_bits_eq(what, &f[i], &u[i], &case);
++            }
++            // Each row of the launch against the same row as a plain t=1 step.
++            for (p, c) in one.iter().enumerate() {
++                let alone = hc_fused(&e, c);
++                for (i, what) in ["mixes", "pre", "post", "comb", "y"].iter().enumerate() {
++                    let w = alone[i].len();
++                    assert_bits_eq(
++                        what,
++                        &f[i][p * w..(p + 1) * w],
++                        &alone[i],
++                        &format!("{case} row {p} alone"),
++                    );
++                }
++                rows += 1;
++            }
++            cases += 1;
++        }
++    }
++    // Red arm: one mix of the last row moves, and only that row's outputs may move.
++    let (mut all, _) = hc_rows(0xBAD8, 6);
++    let clean = hc_fused(&e, &all);
++    all.mixes[5 * ROWS + 9] = f32::from_bits(all.mixes[5 * ROWS + 9].to_bits() + (1 << 13));
++    let red = hc_fused(&e, &all);
++    assert_ne!(
++        red[3][5 * HC * HC..],
++        clean[3][5 * HC * HC..],
++        "red arm: row 5 comb stayed bit-equal"
++    );
++    assert_eq!(
++        red[3][..5 * HC * HC],
++        clean[3][..5 * HC * HC],
++        "red arm: a row 5 change reached rows 0..5"
++    );
++    println!("DSV4_SMALL_HC_DIET_MROW EXACT cases={cases} rows={rows} outputs=5 red_arms=1");
++}
++
++#[test]
++#[ignore = "needs a CUDA device; run under flock /tmp/memra-5090.lock"]
++fn dsv4_small_norm_pack_diet_multirow_is_bit_identical_to_the_unfused_pair_and_to_each_row_alone() {
++    let _gpu = gpu_guard();
++    force_true_f32();
++    let e = Engine::new(0).expect("CUDA engine on device 0");
++    let (mut cases, mut rows) = (0, 0);
++    const RANGES: [(i32, i32); 4] = [(-14, -8), (-4, 3), (2, 9), (-12, 10)];
++    for &n in &[1024usize, 1023, 129] {
++        for &s in &MROWS {
++            let seed = 0x0A0C_0000 ^ ((n as u64) << 12) ^ s as u64;
++            let w = fixture(n, seed ^ 0x66, -2, 1);
++            let one: Vec<Vec<f32>> = (0..s)
++                .map(|p| {
++                    let r = RANGES[p % 4];
++                    fixture(n, seed ^ 0x55 ^ ((p as u64) << 20), r.0, r.1)
++                })
++                .collect();
++            let x: Vec<f32> = one.iter().flatten().copied().collect();
++            let case = format!("norm n={n} s={s} seed {seed:#x}");
++            let (u, f) = (norm_unfused(&e, &x, &w), norm_fused(&e, &x, &w));
++            assert_bits_eq("row", &f[0], &u[0], &case);
++            assert_bits_eq("pack", &f[1], &u[1], &case);
++            for (p, xr) in one.iter().enumerate() {
++                let alone = norm_fused(&e, xr, &w);
++                let pc = format!("{case} row {p} alone");
++                assert_bits_eq("row", &f[0][p * n..(p + 1) * n], &alone[0], &pc);
++                assert_bits_eq("pack", &f[1][p * n..(p + 1) * n], &alone[1], &pc);
++                rows += 1;
++            }
++            cases += 1;
++        }
++    }
++    println!("DSV4_SMALL_NORM_PACK_DIET_MROW EXACT cases={cases} rows={rows} outputs=2");
++}
+diff --git a/docs/KERNELS.md b/docs/KERNELS.md
+index c2ce3d040..e2785e961 100644
+--- a/docs/KERNELS.md
++++ b/docs/KERNELS.md
+@@ -119,15 +119,16 @@ Evidence: `research/glm5-tp-indexer-split-20260908/DESIGN.md`, and the 2026-09-1
+ 
+ Both kernels live in `cu/dsv4_gpu.cu`, compiled with `-fmad=false`. Since 2026-09-23 (#339)
+ they are the code on every device f32x HC4 / hidden 4096 load, PP-2 and TP/EP alike, with no
+-door (`Dsv4Gpu::small_kernel_diet_shape`); multi-row rows keep the unfused kernels, which match
+-bit for bit. Kernel-boundary gate: `tests/dsv4_small_diet_gpu.rs`. Receipts:
++door (`Dsv4Gpu::small_kernel_diet_shape`). Since the multi-row lane (2026-09-23) they take every
++row count, one block per row: plain steps, DSpark verify rows and prefill rows. Each row matches
++the unfused kernels and the same row launched alone, bit for bit. Kernel-boundary gate: `tests/dsv4_small_diet_gpu.rs`. Receipts:
+ `research/dsv4f-small-kernel-diet-20260907/README.md` (TP/EP),
+ `research/dsv4f-bringup-20260923/small-diet/RESULTS.md` (PP-2 served).
+ 
+ | Kernel | Replaced launches and numeric contract | Geometry |
+ | --- | --- | --- |
+-| `dsv4_small_hc_f32_fixed_order_kernel` | rowsq f32x + Sinkhorn + collapse, 3 to 1. `dsv4_hc_f32_fixed_order`: same 128-thread rowsq tree, register Sinkhorn with ascending sums, same iteration count, ascending collapse. Bitwise gate required. | One block of 128, t=1, HC4, hidden4096. |
+-| `dsv4_small_norm_pack_f32_fixed_order_kernel` | Q-LoRA RMSNorm f32x + bf16 conversion, 2 to 1. `dsv4_norm_pack_f32_fixed_order`: same 128-thread reduction tree and f32 intermediate, bf16 RNE. Retains normalized f32 Q as well as packed Q. Bitwise gate required. | One block of 128, t=1. |
++| `dsv4_small_hc_f32_fixed_order_kernel` | rowsq f32x + Sinkhorn + collapse, 3 to 1. `dsv4_hc_f32_fixed_order`: same 128-thread rowsq tree, register Sinkhorn with ascending sums, same iteration count, ascending collapse. Bitwise gate required. | One block of 128 per row, HC4, hidden4096. |
++| `dsv4_small_norm_pack_f32_fixed_order_kernel` | Q-LoRA RMSNorm f32x + bf16 conversion, 2 to 1. `dsv4_norm_pack_f32_fixed_order`: same 128-thread reduction tree and f32 intermediate, bf16 RNE. Retains normalized f32 Q as well as packed Q. Bitwise gate required. | One block of 128 per row. |
+ 
+ The gate counts successful enqueues in the replaced families and requires 8 to
+ 3 launches per layer per rank. This counter excludes all other kernels; total
+diff --git a/docs/TESTING.md b/docs/TESTING.md
+index 6aecc351f..ddbe2ee11 100644
+--- a/docs/TESTING.md
++++ b/docs/TESTING.md
+@@ -1026,8 +1026,10 @@ fused Q norm/pack against the unfused chains they replace and requires every out
+ residual and three mix magnitude ranges), and the normalized row plus its bf16 pack over 128
+ cases (eight row widths, including tails on both sides of the unrolled body). Red arms perturb
+ each gate scale and one norm weight by 2^-10 relative and require the fed output to move. The
+-diet is the code on the served plain step and multi-row rows keep the unfused chain, so this is
+-the proof that plain and verify rows stay one numeric program. Receipts:
++multi-row cases run 2, 6, 7, 16, 17 and 64 rows with a different magnitude range per row and
++require each row to equal both the unfused multi-row chain and the same row launched alone; the
++HC red arm moves one mix of row 5 and requires rows 0..5 to stay bit-equal. The diet is the code
++on every row count, so this is the proof that plain and verify rows stay one numeric program. Receipts:
+ `research/dsv4f-bringup-20260923/small-diet/`.
+ 
+ ### DSv4 deferred MoE route and mirror checks (#670)
+-- 
+2.53.0
+

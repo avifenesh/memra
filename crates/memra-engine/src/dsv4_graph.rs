@@ -148,6 +148,9 @@ pub(crate) struct ReplayPair {
     counters: [CudaSlice<u64>; 2],
     streams: [Arc<CudaStream>; 2],
     pub cfg: crate::dsv4_gpu::Dsv4SampleCfg,
+    /// Temperature 0: the commit graph captures the device argmax the eager greedy step runs,
+    /// instead of the sampler (memra #710).
+    pub greedy: bool,
     pub ready: bool,
     pub owner: usize,
     pub captures: [u64; 2],
@@ -210,6 +213,7 @@ impl ReplayPair {
         Ok(Self {
             graphs: std::array::from_fn(|_| std::array::from_fn(|_| None)),
             sampler,
+            greedy: cfg.temperature == 0.0,
             input: inputs.try_into().map_err(|_| "replay input rank count")?,
             host: hosts.try_into().map_err(|_| "replay host rank count")?,
             counters: counts.try_into().map_err(|_| "replay counter rank count")?,
@@ -270,7 +274,9 @@ impl ReplayPair {
                 .end()?;
             let census = self.graphs[rank][segment].as_ref().expect("capture").census;
             if census[6] != 0
-                || (segment != 1 && (census[2] != 86 || census[3] != 1 || census[4] != 86))
+                // 129 joins: per layer the expert reduction and the exact attention join's two
+                // row gathers.
+                || (segment != 1 && (census[2] != 129 || census[3] != 1 || census[4] != 86))
             {
                 return Err(format!(
                     "incomplete full-token graph rank {rank} segment {segment}: {census:?}"
@@ -396,6 +402,216 @@ impl Drop for ReplayPair {
         }
         if let Err(error) = self.drain_both() {
             replay_fail_stop("ReplayPair drop drain", &error);
+        }
+    }
+}
+
+/// What a row of a captured B-row step draws: the device argmax, or the device sampler at a
+/// fixed configuration (the seed rides the row's uniform input word).
+#[derive(Clone, Copy, Debug)]
+pub enum RowDraw {
+    Argmax,
+    Sample(crate::dsv4_gpu::Dsv4SampleCfg),
+}
+
+impl PartialEq for RowDraw {
+    /// Two draws capture the same program when their temperature, top-p and top-k match; the
+    /// seed is a runtime input (the row's uniform word), not part of the graph.
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Argmax, Self::Argmax) => true,
+            (Self::Sample(a), Self::Sample(b)) => {
+                a.temperature.to_bits() == b.temperature.to_bits()
+                    && a.top_p.to_bits() == b.top_p.to_bits()
+                    && a.top_k == b.top_k
+            }
+            _ => false,
+        }
+    }
+}
+
+/// A TP/EP B-row step captured for one ordered batch of requests (memra #710 B-row graphs):
+/// a forward graph and a commit graph per rank over the batch's rows. Each row's token,
+/// position and uniform live in device words the graphs read, so the same graphs step the same
+/// requests at every position below `limit`. Any change of membership, order or row draw
+/// recaptures. Drop drains both ranks before any captured resource is released.
+pub(crate) struct RowsReplay {
+    graphs: [[Option<ReplayGraph>; 2]; 2],
+    /// One sampler per sampled row: each owns its scratch and its result word.
+    pub samplers: Vec<Option<crate::dsv4_sampler::Dsv4DeviceSampler>>,
+    input: [CudaSlice<u64>; 2],
+    host: [crate::PinnedHostBuf; 2],
+    streams: [Arc<CudaStream>; 2],
+    /// Per row: the request state's serial and its draw.
+    pub key: Vec<(u64, RowDraw)>,
+    pub limit: usize,
+    pub ready: bool,
+    pub owner: usize,
+    pub captures: u64,
+    pub launches: u64,
+}
+
+impl RowsReplay {
+    pub fn new(
+        streams: [Arc<CudaStream>; 2],
+        key: Vec<(u64, RowDraw)>,
+        samplers: Vec<Option<crate::dsv4_sampler::Dsv4DeviceSampler>>,
+        limit: usize,
+        owner: usize,
+    ) -> Result<Self, String> {
+        let rows = key.len();
+        if !(2..=32).contains(&rows) || samplers.len() != rows {
+            return Err(format!("B-row replay of {rows} rows"));
+        }
+        let mut inputs = Vec::new();
+        let mut hosts = Vec::new();
+        for stream in &streams {
+            stream
+                .context()
+                .bind_to_thread()
+                .map_err(|e| e.to_string())?;
+            inputs.push(stream.alloc_zeros(3 * rows).map_err(|e| e.to_string())?);
+            hosts.push(crate::PinnedHostBuf::new(24 * rows).map_err(|e| e.to_string())?);
+            stream.synchronize().map_err(|e| e.to_string())?;
+        }
+        Ok(Self {
+            graphs: std::array::from_fn(|_| std::array::from_fn(|_| None)),
+            samplers,
+            input: inputs
+                .try_into()
+                .map_err(|_| "B-row replay input rank count")?,
+            host: hosts
+                .try_into()
+                .map_err(|_| "B-row replay host rank count")?,
+            streams,
+            key,
+            limit,
+            ready: false,
+            owner,
+            captures: 0,
+            launches: 0,
+        })
+    }
+    /// Row r's words: token and position, the uniform its draw reads, a zero fault word.
+    pub fn upload(&mut self, rows: &[(u32, usize, f64)]) -> Result<(), String> {
+        if rows.len() != self.key.len() {
+            return Err("B-row replay upload row count".into());
+        }
+        let words: Vec<u64> = rows
+            .iter()
+            .flat_map(|&(token, pos, uniform)| {
+                [
+                    u64::from(token) | ((pos as u64) << 32),
+                    uniform.to_bits(),
+                    0,
+                ]
+            })
+            .collect();
+        for rank in 0..2 {
+            let stream = &self.streams[rank];
+            stream
+                .context()
+                .bind_to_thread()
+                .map_err(|e| e.to_string())?;
+            let src = unsafe {
+                std::slice::from_raw_parts_mut(
+                    self.host[rank].as_mut_slice().as_mut_ptr().cast::<u64>(),
+                    words.len(),
+                )
+            };
+            src.copy_from_slice(&words);
+            stream
+                .memcpy_htod(&src[..], &mut self.input[rank])
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+    pub fn begin(&mut self, segment: usize) -> Result<(), String> {
+        for rank in 0..2 {
+            if segment >= 2 || self.graphs[rank][segment].is_some() {
+                return Err("B-row replay recapture refused".into());
+            }
+            self.graphs[rank][segment] = Some(ReplayGraph::begin(self.streams[rank].clone())?);
+        }
+        Ok(())
+    }
+    pub fn end(&mut self, segment: usize) -> Result<(), String> {
+        for rank in 0..2 {
+            self.graphs[rank][segment]
+                .as_mut()
+                .ok_or("B-row replay capture missing")?
+                .end()?;
+            let census = self.graphs[rank][segment].as_ref().expect("capture").census;
+            // The forward segment carries every layer's three one-shot joins and one embedding.
+            if census[6] != 0 || (segment == 0 && (census[2] != 129 || census[3] != 1)) {
+                return Err(format!(
+                    "incomplete B-row graph rank {rank} segment {segment}: {census:?}"
+                ));
+            }
+        }
+        if segment == 1 {
+            self.captures += 1;
+        }
+        Ok(())
+    }
+    pub fn launch(&mut self, segment: usize) -> Result<(), String> {
+        for rank in 0..2 {
+            self.graphs[rank][segment]
+                .as_ref()
+                .ok_or("B-row replay graph missing")?
+                .launch()?;
+        }
+        if segment == 1 {
+            self.launches += 1;
+        }
+        Ok(())
+    }
+    /// Row r's three input words on `rank`.
+    pub fn input_ptr(&self, rank: usize) -> *const u64 {
+        self.input[rank].device_ptr(&self.streams[rank]).0 as *const u64
+    }
+    pub fn abort_capture_both(&self) -> Result<(), String> {
+        let mut errors = Vec::new();
+        for (rank, stream) in self.streams.iter().enumerate() {
+            let result = stream
+                .context()
+                .bind_to_thread()
+                .map_err(|e| e.to_string())
+                .and_then(|()| unsafe {
+                    crate::dsv4_ffi::ck(
+                        "B-row replay capture abort",
+                        crate::dsv4_ffi::memra_dsv4_replay_abort(stream.cu_stream().cast()),
+                    )
+                });
+            if let Err(error) = result {
+                errors.push(format!("rank {rank}: {error}"));
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
+    }
+    pub fn drain_both(&self) -> Result<(), String> {
+        require_pair_completion("RowsReplay drain", |rank| {
+            let stream = &self.streams[rank];
+            stream
+                .context()
+                .bind_to_thread()
+                .and_then(|()| stream.synchronize())
+                .map_err(|e| e.to_string())
+        });
+        Ok(())
+    }
+}
+impl Drop for RowsReplay {
+    fn drop(&mut self) {
+        if let Err(error) = self.abort_capture_both() {
+            replay_fail_stop("RowsReplay drop capture abort", &error);
+        }
+        if let Err(error) = self.drain_both() {
+            replay_fail_stop("RowsReplay drop drain", &error);
         }
     }
 }

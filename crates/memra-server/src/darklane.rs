@@ -12,7 +12,10 @@
 //! queue.is_empty()` (worker.rs loop top) and `set_phase` stamps the beat on entry — so
 //! `phase == IDLE` + `beat_age_ms` IS the idle duration, to the millisecond, with zero new
 //! hot-path cost. `PENDING_ADMITS` closes the HTTP→worker handoff gap (a request the handler
-//! has submitted but the worker hasn't popped yet is traffic, not idleness).
+//! has submitted but the worker hasn't popped yet is traffic, not idleness). A dedicated serve
+//! route (the DSv4 thread) is not the scheduler, so the snapshot's `idle_for_ms` folds every
+//! registered route in: the process is idle only while the scheduler AND every route are idle
+//! with nothing queued, and for as long as the most recently idled of them (memra#500).
 //!
 //! THE LANE CLASS: below EVERY serving lane. Harvest is still a *request* class the engine
 //! admits and schedules; a background job is not a request at all — it runs only while the
@@ -55,7 +58,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 
-use crate::health::{PHASE_IDLE, SharedHealth};
+use crate::health::SharedHealth;
 use crate::worker::PENDING_ADMITS;
 
 // ---------------------------------------------------------------------------
@@ -89,14 +92,14 @@ impl ValleySignal {
     }
 
     /// Seconds the worker has been completely idle; 0.0 the instant there is ANY work
-    /// (active/queued sessions => phase != IDLE; submitted-not-yet-popped requests =>
-    /// PENDING_ADMITS > 0; loading/dead phases are not idleness either).
+    /// (active/queued sessions => phase != IDLE; a busy or backlogged serve route => no
+    /// `idle_for_ms`; submitted-not-yet-popped requests => PENDING_ADMITS > 0; loading/dead
+    /// phases are not idleness either).
     pub fn idle_seconds(&self) -> f64 {
         let s = self.health.snapshot();
-        if s.phase == PHASE_IDLE && PENDING_ADMITS.load(Ordering::Acquire) == 0 {
-            s.beat_age_ms as f64 / 1000.0
-        } else {
-            0.0
+        match s.idle_for_ms {
+            Some(ms) if PENDING_ADMITS.load(Ordering::Acquire) == 0 => ms as f64 / 1000.0,
+            _ => 0.0,
         }
     }
 
@@ -577,6 +580,7 @@ fn preempt_wait(c: &mut std::process::Child, st: &BgJobState, grace_ms: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::health::PHASE_IDLE;
     use crate::health::WorkerHealth;
 
     /// /proc/<pid>/stat field 3 — 'T' is stopped, 'R'/'S' running/sleeping, gone = None.
@@ -585,6 +589,25 @@ mod tests {
         // field 2 (comm) may contain spaces/parens — state is the char after the LAST ')'.
         s.rfind(')')
             .and_then(|i| s[i + 1..].trim_start().chars().next())
+    }
+
+    /// WP-A day 57 (`research/spill-a-20260919/DAY57.md`, OWED item 24): wait for an
+    /// acknowledgement under a 30 s hang guard. The stop-mode cycle's claim is the wiring (the
+    /// runner acts on each signal and the job reaches the state it names); a wall bound on how soon
+    /// the scheduler runs the runner thread failed under starvation (1 of 100 beside sixteen
+    /// burners at 3 s). A runner that never acts never acknowledges and fails at the guard. The
+    /// latency each wait read is printed.
+    fn wait_acknowledged<F: Fn() -> bool>(what: &str, f: F) {
+        let t0 = std::time::Instant::now();
+        let guard = std::time::Duration::from_secs(30);
+        while t0.elapsed() < guard {
+            if f() {
+                println!("{what}: acknowledged after {}ms", t0.elapsed().as_millis());
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        panic!("no acknowledgement within the 30 s guard: {what}");
     }
 
     fn wait_for<F: Fn() -> bool>(what: &str, ms: u64, f: F) {
@@ -652,6 +675,30 @@ mod tests {
         assert_eq!(v.idle_seconds(), 0.0);
     }
 
+    /// memra#500: a DSv4 request runs on its own thread, so the scheduler sits IDLE through
+    /// it. Before routes published, the valley read that as quiet and resumed a background job
+    /// on top of a live request.
+    #[test]
+    fn a_busy_serve_route_is_not_a_valley() {
+        let h = WorkerHealth::new();
+        let v = ValleySignal::new(h.clone());
+        h.set_phase(PHASE_IDLE);
+        let load = crate::route_telemetry::RouteLoad::new("valley-route", 1);
+        let r = h.register_route("valley-route", load.clone());
+        r.set_idle();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        wait_for("idle age accrues", 2000, || v.idle_seconds() >= 0.02);
+        r.begin_request();
+        assert_eq!(v.idle_seconds(), 0.0, "the route is serving");
+        r.set_idle();
+        // idle again but with a request reserved on the route's queue: traffic
+        let ticket = load.try_reserve(0, 0).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        assert_eq!(v.idle_seconds(), 0.0, "a queued route request is traffic");
+        drop(ticket);
+        wait_for("idle age accrues again", 2000, || v.idle_seconds() >= 0.02);
+    }
+
     #[test]
     fn stop_mode_full_cycle_launch_yield_resume_shutdown() {
         let (sig, v, b) = sigs();
@@ -667,38 +714,35 @@ mod tests {
         assert_eq!(st.state.load(Ordering::Acquire), BG_WAITING);
         // valley -> launch.
         sig.valley.store(true, Ordering::Release);
-        wait_for("launch", 1000, || {
-            st.state.load(Ordering::Acquire) == BG_RUNNING
-        });
+        wait_acknowledged("launch", || st.state.load(Ordering::Acquire) == BG_RUNNING);
         let pid = st.job_pid.load(Ordering::Acquire);
         assert!(pid > 0);
-        wait_for("job running", 1000, || {
-            matches!(proc_state(pid), Some('R' | 'S'))
-        });
+        wait_acknowledged("job running", || matches!(proc_state(pid), Some('R' | 'S')));
         // busy edge -> SIGSTOP. The wiring claim is the yield itself plus the counters;
         // wall-clock tightness is poll_ms config, not an OS promise — a 500ms bound
         // starved out under a co-running perf battery (2026-08-30, local-ci full load:
-        // the runner thread didn't get scheduled for >500ms). 3s keeps the gate loud on
-        // real wiring breaks without asserting scheduler latency.
+        // the runner thread didn't get scheduled for >500ms), and the 3s bound that replaced it
+        // starved out too (WP-A day 57: 1 of 100 beside sixteen burners). The runner acknowledges
+        // the yield (its state), then the job reads stopped.
         sig.valley.store(false, Ordering::Release);
         sig.busy.store(true, Ordering::Release);
-        let t0 = std::time::Instant::now();
-        wait_for("yield to T", 3000, || proc_state(pid) == Some('T'));
-        println!("yield latency: {}ms", t0.elapsed().as_millis());
+        wait_acknowledged("the runner yields", || {
+            st.state.load(Ordering::Acquire) == BG_YIELDED
+        });
+        wait_acknowledged("yield to T", || proc_state(pid) == Some('T'));
         assert_eq!(st.state.load(Ordering::Acquire), BG_YIELDED);
         assert_eq!(st.yields.load(Ordering::Relaxed), 1);
         // back to valley -> SIGCONT.
         sig.busy.store(false, Ordering::Release);
         sig.valley.store(true, Ordering::Release);
-        wait_for("resume", 1000, || {
-            matches!(proc_state(pid), Some('R' | 'S'))
+        wait_acknowledged("the runner resumes", || {
+            st.resumes.load(Ordering::Relaxed) == 1
         });
+        wait_acknowledged("resume", || matches!(proc_state(pid), Some('R' | 'S')));
         assert_eq!(st.resumes.load(Ordering::Relaxed), 1);
         // shutdown never leaves an orphan (stopped or otherwise).
         h.shutdown();
-        wait_for("job reaped", 3000, || {
-            proc_state(pid).is_none_or(|s| s == 'Z')
-        });
+        wait_acknowledged("job reaped", || proc_state(pid).is_none_or(|s| s == 'Z'));
     }
 
     #[test]

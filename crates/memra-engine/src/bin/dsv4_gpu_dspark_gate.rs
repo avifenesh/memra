@@ -46,9 +46,14 @@
 //!
 //! Requires MEMRA_DSV4_DRAFTER=dspark and MEMRA_DSV4_DECODE_PATH=device.
 //!
+//! `--tpep` runs every arm on the all-layer TP/EP walk (memra #454), the drafter resident on
+//! rank 1 with its full expert slab; it needs the TP/EP load environment
+//! (`MEMRA_DSV4_EP=pair` and the matrix program).
+//!
 //! Usage: dsv4-gpu-dspark-gate <model-dir> <fixtures.json> <out-dir> [runs] [dev0,dev1]
+//! [--served] [--tpep]
 
-use memra_engine::dsv4_gpu::Dsv4Gpu;
+use memra_engine::dsv4_gpu::{DSV4_BATCH_WIDTH_MAX, DecodeState, DsparkState, Dsv4Gpu, resolve_vt};
 use memra_gguf::dsv4_dspark::DsparkFixtureSpec;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use std::io::Write;
@@ -97,13 +102,40 @@ fn vram_line(gpu: &Dsv4Gpu, tag: &str) {
     }
 }
 
+/// The serving prefill width (`MEMRA_DSV4_PREFILL_CHUNK` unset). The matrix expert
+/// program refuses the monolithic reference prefill, so every arm primes through the
+/// same chunked walk a served request takes: the first token as a decode step, the
+/// rest as committed batched transactions.
+const PREFILL_CHUNK: usize = DSV4_BATCH_WIDTH_MAX;
+
+fn fresh_state(gpu: &Dsv4Gpu) -> DecodeState {
+    gpu.alloc_decode_state_for_transient(gpu.max_seq, PREFILL_CHUNK)
+        .expect("alloc decode state")
+}
+
+/// Trunk-only chunked prefill; returns the next-token row after the prompt.
+fn prefill(gpu: &Dsv4Gpu, prompt: &[u32]) -> (DecodeState, Vec<f32>) {
+    let mut state = fresh_state(gpu);
+    let logits = gpu
+        .prefill_with_cache_chunked(prompt, &mut state, PREFILL_CHUNK)
+        .expect("chunked prefill");
+    (state, logits)
+}
+
+/// Trunk + DSpark chunked prefill and prime, the served spec route's cold prime.
+fn prime(gpu: &Dsv4Gpu, prompt: &[u32]) -> (DecodeState, DsparkState, Vec<f32>) {
+    let mut state = fresh_state(gpu);
+    let mut dstate = gpu.dspark_alloc_state().expect("alloc dspark state");
+    let logits = gpu
+        .dspark_prefill_prime_chunked(prompt, &mut state, &mut dstate, PREFILL_CHUNK)
+        .expect("chunked prefill + prime");
+    (state, dstate, logits)
+}
+
 /// Arm P: plain device greedy from `prompt`, `n_new` tokens.
 fn run_plain(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> Vec<u32> {
-    let mut state = gpu.alloc_decode_state().expect("alloc decode state");
-    let pre = gpu
-        .prefill_with_cache(prompt, &mut state)
-        .expect("plain prefill");
-    let mut t = argmax(&pre.logits);
+    let (mut state, logits) = prefill(gpu, prompt);
+    let mut t = argmax(&logits);
     let mut tokens = Vec::with_capacity(n_new);
     for step in 0..n_new {
         tokens.push(t);
@@ -119,12 +151,8 @@ fn run_plain(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> Vec<u32> {
 /// arm's accepted-position rule must reproduce bit for bit (verdict (d)).
 fn run_plain_with_rings(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> Vec<(String, Vec<f32>)> {
     let p0 = prompt.len();
-    let mut state = gpu.alloc_decode_state().expect("alloc decode state");
-    let mut dstate = gpu.dspark_alloc_state().expect("alloc dspark state");
-    let pre = gpu
-        .dspark_prefill_prime(prompt, &mut state, &mut dstate)
-        .expect("prefill + prime");
-    let mut t = argmax(&pre.logits);
+    let (mut state, mut dstate, logits) = prime(gpu, prompt);
+    let mut t = argmax(&logits);
     for step in 0..n_new {
         if step + 1 == n_new {
             break;
@@ -146,6 +174,9 @@ struct DraftedOut {
     verified: usize,
     /// per-round accepted counts, digested for cross-run determinism
     accept_sha: String,
+    /// per-round drafter proposals (draft ids and fp32 confidence bits), digested so two
+    /// binaries or topologies can be compared on the drafter itself (memra #718)
+    proposal_sha: String,
     /// batched arm only: mean forwarded depth per round (the perf-model observable)
     mean_t_batch: f64,
     rings: Option<Vec<(String, Vec<f32>)>>,
@@ -155,12 +186,8 @@ struct DraftedOut {
 /// Mirrors `spec_oracle::run_spec_greedy` step for step.
 fn run_drafted_seq(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> DraftedOut {
     let p0 = prompt.len();
-    let mut state = gpu.alloc_decode_state().expect("alloc decode state");
-    let mut dstate = gpu.dspark_alloc_state().expect("alloc dspark state");
-    let pre = gpu
-        .dspark_prefill_prime(prompt, &mut state, &mut dstate)
-        .expect("drafted prefill + prime");
-    let mut t = argmax(&pre.logits);
+    let (mut state, mut dstate, logits) = prime(gpu, prompt);
+    let mut t = argmax(&logits);
     let mut tokens: Vec<u32> = Vec::with_capacity(n_new);
     let mut pending: std::collections::VecDeque<u32> = Default::default();
     let mut rounds = 0usize;
@@ -169,6 +196,7 @@ fn run_drafted_seq(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> DraftedOut {
     let mut accept_bytes: Vec<u8> = Vec::new();
     let mut cur_accepts = 0u32;
     let mut open_round = false;
+    let mut proposal_bytes: Vec<u8> = Vec::new();
     for step in 0..n_new {
         let m = p0 + step; // t sits at index m
         if pending.is_empty() {
@@ -178,6 +206,12 @@ fn run_drafted_seq(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> DraftedOut {
             let prop = gpu
                 .dspark_forward_spec(&mut dstate, t, 0, m - 1, false)
                 .expect("dspark propose");
+            for id in &prop.out_ids[1..] {
+                proposal_bytes.extend_from_slice(&id.to_le_bytes());
+            }
+            for c in &prop.confidence {
+                proposal_bytes.extend_from_slice(&c.to_bits().to_le_bytes());
+            }
             pending = prop.out_ids[1..].iter().cloned().collect();
             rounds += 1;
             cur_accepts = 0;
@@ -211,26 +245,59 @@ fn run_drafted_seq(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> DraftedOut {
         accepted,
         verified,
         accept_sha: sha256_hex(&accept_bytes),
+        proposal_sha: sha256_hex(&proposal_bytes),
         mean_t_batch: 1.0,
         rings: None,
     }
 }
 
-/// Arm DB: the batched T=k+1 device verify loop (`spec_greedy_batched_with`).
+/// Arm DB: the batched T=k+1 device verify loop the served spec route runs
+/// (`spec_greedy_batched_stream_restored` after the chunked prime), with the same
+/// `MEMRA_DSV4_SPEC_DEPTH` / `MEMRA_DSV4_VT*` reads.
 fn run_drafted_batched(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> DraftedOut {
-    let mut state = gpu.alloc_decode_state().expect("alloc decode state");
-    let mut dstate = gpu.dspark_alloc_state().expect("alloc dspark state");
-    let mut vstate = gpu.alloc_verify_state().expect("alloc verify state");
+    let (mut state, mut dstate, logits) = prime(gpu, prompt);
+    let mut vstate = gpu
+        .alloc_verify_state_for(state.capacity)
+        .expect("alloc verify state");
+    let depth_cap = std::env::var("MEMRA_DSV4_SPEC_DEPTH")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|t| *t > 0)
+        .unwrap_or(usize::MAX)
+        .max(1);
+    let vt = resolve_vt(
+        std::env::var("MEMRA_DSV4_VT").ok().as_deref(),
+        std::env::var("MEMRA_DSV4_VT_TAU").ok().as_deref(),
+        std::env::var("MEMRA_DSV4_VT_FLOOR").ok().as_deref(),
+    )
+    .expect("vt policy");
     let out = gpu
-        .spec_greedy_batched_with(prompt, n_new, &mut state, &mut dstate, &mut vstate)
+        .spec_greedy_batched_stream_restored(
+            prompt.len(),
+            &logits,
+            n_new,
+            &mut state,
+            &mut dstate,
+            &mut vstate,
+            depth_cap,
+            vt,
+            None,
+        )
         .expect("batched drafted run");
     let mut accept_bytes: Vec<u8> = Vec::new();
+    let mut proposal_bytes: Vec<u8> = Vec::new();
     let mut accepted = 0usize;
     let mut verified = 0usize;
     let mut t_sum = 0usize;
     let mut t_n = 0usize;
     for r in &out.rounds {
         accept_bytes.extend_from_slice(&(r.accepts as u32).to_le_bytes());
+        for id in &r.drafts {
+            proposal_bytes.extend_from_slice(&id.to_le_bytes());
+        }
+        for c in &r.confidence {
+            proposal_bytes.extend_from_slice(&c.to_bits().to_le_bytes());
+        }
         accepted += r.accepts;
         verified += r.verified;
         if r.t_batch > 0 {
@@ -245,6 +312,7 @@ fn run_drafted_batched(gpu: &Dsv4Gpu, prompt: &[u32], n_new: usize) -> DraftedOu
         accepted,
         verified,
         accept_sha: sha256_hex(&accept_bytes),
+        proposal_sha: sha256_hex(&proposal_bytes),
         mean_t_batch: if t_n > 0 {
             t_sum as f64 / t_n as f64
         } else {
@@ -269,12 +337,9 @@ fn gate_bit_equal(
     let mut fails = Vec::new();
 
     // --- warm a cache state, deterministically, and learn the round's real head token
-    let warm_up = |gpu: &Dsv4Gpu| -> (memra_engine::dsv4_gpu::DecodeState, u32) {
-        let mut state = gpu.alloc_decode_state().expect("alloc decode state");
-        let pre = gpu
-            .prefill_with_cache(prompt, &mut state)
-            .expect("bitgate prefill");
-        let mut t = argmax(&pre.logits);
+    let warm_up = |gpu: &Dsv4Gpu| -> (DecodeState, u32) {
+        let (mut state, logits) = prefill(gpu, prompt);
+        let mut t = argmax(&logits);
         for _ in 0..warm {
             t = gpu
                 .decode_step_greedy(t, &mut state)
@@ -288,7 +353,9 @@ fn gate_bit_equal(
     let mut ids = vec![t0];
     ids.extend_from_slice(&drafts[..t_batch - 1]);
 
-    let mut vstate = gpu.alloc_verify_state().expect("alloc verify state");
+    let mut vstate = gpu
+        .alloc_verify_state_for(state_a.capacity)
+        .expect("alloc verify state");
     let (logits_b, _am) = gpu
         .verify_batch_dev(&ids, &mut state_a, &mut vstate, None, true)
         .expect("batched verify");
@@ -386,23 +453,44 @@ fn gate_bit_equal(
 }
 
 fn main() {
-    // Freeze this historical instrument independently of the newer defaults.
+    // `--served` runs the program a served request runs: the current default doors.
+    // Without it the historical instrument stays frozen on the pre-door numeric class.
+    let served = std::env::args().any(|a| a == "--served");
+    let tp_ep = std::env::args().any(|a| a == "--tpep");
     // This is process startup, before any model or worker threads exist.
     unsafe {
-        std::env::set_var("MEMRA_DSV4_HC_DOT_SPLIT", "0");
-        std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
+        if !served {
+            std::env::set_var("MEMRA_DSV4_HC_DOT_SPLIT", "0");
+            std::env::set_var("MEMRA_DSV4_DENSE_FAST", "0");
+        }
         // Gate-only AR phase instrument: pinned off here so no other bin can inherit
         // an exported instrument or null collective from the environment.
         std::env::set_var("MEMRA_DSV4_AR_PHASE", "0");
     }
+    // The M1 stream visitor (memra #664) has no environment read; the historical pins keep
+    // the sktail program it replaced, so the two invocations are the OFF and ON arms.
+    if !served {
+        memra_engine::set_dsv4_moe_m1_stream_for_gate(false);
+    }
 
-    let args: Vec<String> = std::env::args().collect();
+    let args: Vec<String> = std::env::args()
+        .filter(|a| a != "--served" && a != "--tpep")
+        .collect();
     if args.len() < 4 {
         eprintln!(
-            "usage: dsv4-gpu-dspark-gate <model-dir> <fixtures.json> <out-dir> [runs] [dev0,dev1]"
+            "usage: dsv4-gpu-dspark-gate <model-dir> <fixtures.json> <out-dir> [runs] [dev0,dev1] \
+             [--served] [--tpep]"
         );
         std::process::exit(2);
     }
+    eprintln!(
+        "program: {}",
+        if served {
+            "served defaults"
+        } else {
+            "historical pins"
+        }
+    );
     let t0 = std::time::Instant::now();
     let dir = Path::new(&args[1]);
     let spec = DsparkFixtureSpec::load(Path::new(&args[2]));
@@ -447,9 +535,29 @@ fn main() {
         other => panic!("the spec==plain identity gate runs the REF contract, got {other:?}"),
     };
     let max_seq = (p0 + n_new + 32).max(256);
+    // `--tpep` also takes the exact attention TP2 program when the gate selector asks for it.
+    let attention_tp = match std::env::var("MEMRA_DSV4_ATTENTION_TP_GATE").as_deref() {
+        Err(std::env::VarError::NotPresent) | Ok("0") => false,
+        Ok("1") if tp_ep => true,
+        _ => panic!("MEMRA_DSV4_ATTENTION_TP_GATE requires 0, or 1 with --tpep"),
+    };
+    Dsv4Gpu::set_tp_ep_topology_for_gate(tp_ep);
+    Dsv4Gpu::set_attention_tp_for_gate(attention_tp);
     let gpu = Dsv4Gpu::load(dir, &devices, variant, max_seq).expect("load");
+    Dsv4Gpu::set_attention_tp_for_gate(false);
+    assert_eq!(
+        gpu.topology().is_tp_ep(),
+        tp_ep,
+        "no silent topology fallback"
+    );
+    assert_eq!(
+        gpu.attention_tp_geometry().is_some(),
+        attention_tp,
+        "no silent attention program fallback"
+    );
     println!(
-        "loaded: split at layer {}, verify tmax {}, t={:.0}s",
+        "loaded: topology {}, split at layer {}, verify tmax {}, t={:.0}s",
+        if tp_ep { "tp_ep" } else { "pp" },
         gpu.split_at,
         gpu.verify_tmax(),
         t0.elapsed().as_secs_f64()
@@ -520,12 +628,46 @@ fn main() {
     }
 
     // ---- arm P
+    // The one-token streaming visitor (memra #664) is an engagement claim as much as an
+    // identity one: a forced-ON run whose plain arm never took it proves nothing, and an OFF
+    // run that took it is not the OFF program.
+    // The fused one-token pair takes that step ahead of the visitor when its checks are
+    // deferred, so a fused-ON plain arm claims fused dispatches instead of stream ones.
+    let stream_before = memra_engine::dsv4_moe_m1_stream_dispatches();
+    let fused_before = memra_engine::dsv4_moe_fused_dispatches();
     let plain = run_plain(&gpu, &prompt, n_new);
+    let stream_taken = memra_engine::dsv4_moe_m1_stream_dispatches() - stream_before;
+    let fused_taken = memra_engine::dsv4_moe_fused_dispatches() - fused_before;
+    let stream_on = memra_engine::dsv4_moe_m1_stream_on();
+    let fused_on = memra_engine::dsv4_moe_fused_on();
     println!(
-        "arm P (plain device greedy): {} tokens t={:.0}s",
+        "arm P (plain device greedy): {} tokens t={:.0}s | m1 stream {} dispatches {} | \
+         fused MoE {} dispatches {}",
         plain.len(),
-        t0.elapsed().as_secs_f64()
+        t0.elapsed().as_secs_f64(),
+        if stream_on { "ON" } else { "OFF" },
+        stream_taken,
+        if fused_on { "ON" } else { "OFF" },
+        fused_taken
     );
+    // The pair only replaces the visitor, so a stream-OFF (reference) arm takes neither. Under
+    // TP/EP every layer runs the expert-id EP path (`execute_matrix_local`), which the fused
+    // pair never reaches, so a TP/EP plain arm takes none either.
+    let fused_expected = fused_on && stream_on && !tp_ep;
+    if fused_expected == (fused_taken == 0) {
+        fails.push(format!(
+            "FUSED MOE ENGAGEMENT: fused {} stream {} but the plain arm took {fused_taken} \
+             fused dispatches",
+            if fused_on { "ON" } else { "OFF" },
+            if stream_on { "ON" } else { "OFF" }
+        ));
+    }
+    if !fused_expected && stream_on == (stream_taken == 0) {
+        fails.push(format!(
+            "M1 STREAM ENGAGEMENT: stream {} but the plain arm took {stream_taken} dispatches",
+            if stream_on { "ON" } else { "OFF" }
+        ));
+    }
 
     // ---- arm P + per-position ring writes (verdict (d) reference)
     let plain_rings = run_plain_with_rings(&gpu, &prompt, n_new);
@@ -539,24 +681,28 @@ fn main() {
     let ds = run_drafted_seq(&gpu, &prompt, n_new);
     println!(
         "arm DS (drafted, sequential verify): {} tokens | rounds {} | accepted {} (mean \
-         {:.4}/round) | verified {} | accept sha {} | t={:.0}s",
+         {:.4}/round) | verified {} | accept sha {} | proposal sha {} | t={:.0}s",
         ds.tokens.len(),
         ds.rounds,
         ds.accepted,
         ds.accepted as f64 / ds.rounds as f64,
         ds.verified,
         ds.accept_sha,
+        ds.proposal_sha,
         t0.elapsed().as_secs_f64()
     );
 
     // ---- arm DB (batched verify) x runs
+    // The multi-row visitor (memra #669) takes the T=k+1 verify rows under the same switch, so
+    // the batched arm carries the same engagement claim arm P carries for the one-token one.
+    let mrow_before = memra_engine::dsv4_moe_mrow_stream_dispatches();
     let mut db_runs: Vec<DraftedOut> = Vec::new();
     for r in 0..runs {
         let d = run_drafted_batched(&gpu, &prompt, n_new);
         println!(
             "arm DB run{r} (drafted, BATCHED T=k+1 verify): {} tokens | rounds {} | accepted \
              {} (mean {:.4}/round) | verified {} | mean T forwarded {:.4} | accept sha {} | \
-             t={:.0}s",
+             proposal sha {} | t={:.0}s",
             d.tokens.len(),
             d.rounds,
             d.accepted,
@@ -564,9 +710,21 @@ fn main() {
             d.verified,
             d.mean_t_batch,
             d.accept_sha,
+            d.proposal_sha,
             t0.elapsed().as_secs_f64()
         );
         db_runs.push(d);
+    }
+    let mrow_taken = memra_engine::dsv4_moe_mrow_stream_dispatches() - mrow_before;
+    println!(
+        "arm DB mrow stream {} dispatches {mrow_taken}",
+        if stream_on { "ON" } else { "OFF" }
+    );
+    if stream_on == (mrow_taken == 0) {
+        fails.push(format!(
+            "MROW STREAM ENGAGEMENT: stream {} but the batched arm took {mrow_taken} dispatches",
+            if stream_on { "ON" } else { "OFF" }
+        ));
     }
     vram_line(&gpu, "post-drafted");
 

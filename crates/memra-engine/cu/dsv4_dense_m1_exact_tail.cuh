@@ -280,31 +280,38 @@ __global__ void dsv4_dense_exact_tail_dots_kernel(const float* __restrict__ x,
 // Reduction: p[t]+p[t+64], then + (p[t+32]+p[t+96]), then 16/8/4/2/1.
 // FP8 shares only the identical LUT among two rows. Dot unrolling schedules
 // loads across four loop iterations; it never uses independent accumulators.
-template <int ROWS>
+// GROUPED: n is rows per group and the grid covers every group's rows; a flat
+// row is group*n+row, the weight row stays flat, and only the activation and
+// output planes move by group. The launcher sizes the grid exactly.
+// M > 1 (memra #710 B-row, verify rows): M token rows share each weight load, each with
+// its own accumulator in the same leaf order, and each row reduces through the same
+// tree, so row t's bits equal its M=1 launch (and dsv4_gemv_fp8_m_kernel<M>'s).
+template <int ROWS, bool GROUPED = false, int M = 1>
 __global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
                                        const float* __restrict__ sc, int sc_cols,
                                        const uint16_t* __restrict__ x, float* __restrict__ y,
                                        int n, int k, int xstride, int ystride,
                                        int group_xstride, int group_ystride) {
-    constexpr int M = 1;
+    static_assert(M == 1 || !GROUPED, "the grouped plane is one token row");
     const int leaf = threadIdx.x % 128;
     const int tile_row = threadIdx.x / 128;
-    const int row = blockIdx.x * ROWS + tile_row;
-    const int weight_row = row;
-    const uint16_t* x_group = x;
-    float* y_group = y;
+    const int flat = blockIdx.x * ROWS + tile_row;
+    const int group = GROUPED ? flat / n : 0;
+    const int row = GROUPED ? flat % n : flat;
+    const int weight_row = flat;
+    const uint16_t* x_group = x + (long)group * group_xstride;
+    float* y_group = y + (long)group * group_ystride;
     // smem e4m3 LUT — see dsv4_gemv_fp8_kernel's note (bit-inert decode transport).
     __shared__ float e4m3_tab[256];
     for (int i = threadIdx.x; i < 256; i += blockDim.x) e4m3_tab[i] = dsv4_e4m3((uint8_t)i);
     __syncthreads();
     __shared__ float red[ROWS * 128];
-    float leaf_sum = 0.0f;
-    if (row < n) {
-    const uint8_t* wr = w + (long)weight_row * k;
-    const float* srow = sc + (long)(weight_row >> 7) * sc_cols;
     float part[M];
 #pragma unroll
     for (int t = 0; t < M; t++) part[t] = 0.0f;
+    if (row < n) {
+    const uint8_t* wr = w + (long)weight_row * k;
+    const float* srow = sc + (long)(weight_row >> 7) * sc_cols;
     // Unroll-by-2, early weight loads — the m=1 twin's note applies: load scheduling
     // only, per-(t)-accumulation order verbatim, bit-identical.
     int stride = 128 * 8;
@@ -379,13 +386,16 @@ __global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
             part[t] = acc;
         }
     }
-    leaf_sum = part[0];
     }
-    red[threadIdx.x] = leaf_sum;
-    __syncthreads();
-    if (leaf < 32) {
-        float v = dsv4_dense_exact_tail_reduce(red + tile_row * 128);
-        if (leaf == 0 && row < n) y_group[row] = v;
+#pragma unroll
+    for (int t = 0; t < M; t++) {
+        if (t > 0) __syncthreads();  // red free from the previous row's tree
+        red[threadIdx.x] = part[t];
+        __syncthreads();
+        if (leaf < 32) {
+            float v = dsv4_dense_exact_tail_reduce(red + tile_row * 128);
+            if (leaf == 0 && row < n) y_group[(long)t * ystride + row] = v;
+        }
     }
 }
 
@@ -445,13 +455,18 @@ __global__ void dsv4_dense_fast_dots_kernel(const float* __restrict__ x,
             }
         }
     }
-    static_assert(M == 1, "exact-tail candidate is M=1 only");
+    // M > 1 (memra #710 B-row, verify rows): each row reduces through the same tree as
+    // dsv4_dots_f32acc_mrow_kernel<M>, so row t's bits equal its M=1 launch.
     __shared__ float red[128];
-    red[threadIdx.x] = part[0];
-    __syncthreads();
-    if (threadIdx.x < 32) {
-        float v = dsv4_dense_exact_tail_reduce(red);
-        if (threadIdx.x == 0) y[j] = v;
+#pragma unroll
+    for (int t = 0; t < M; t++) {
+        if (t > 0) __syncthreads();  // red free from the previous row's tree
+        red[threadIdx.x] = part[t];
+        __syncthreads();
+        if (threadIdx.x < 32) {
+            float v = dsv4_dense_exact_tail_reduce(red);
+            if (threadIdx.x == 0) y[(long)t * n + j] = v;
+        }
     }
 }
 
@@ -508,6 +523,9 @@ extern "C" int memra_dsv4_dense_exact_tail_dots(const float* x, const void* w,
 // HC24 split numeric class: contiguous K slices, original eight-element leaf
 // order within each slice, original 128-leaf tree, then ascending slice sum.
 // Association differs from exact-tail dots. No atomics or capture allocations.
+// Token rows ride blockIdx.y (partial) and blockIdx.x (reduce) through the one
+// kernel body, so a verify or prefill row is bit-identical to the same row
+// decoded alone: spec == plain needs every routed shape in this class (#660).
 static thread_local int dsv4_hc_dot_split_slices = [] {
     const char* value = std::getenv("MEMRA_DSV4_HC_DOT_SPLIT");
     // Owner accepted S16 on 2026-09-09. Other slice counts stay explicit.
@@ -527,6 +545,8 @@ extern "C" int memra_dsv4_hc_dot_split_slices_for_gate() {
 template<int S>
 __global__ void dsv4_hc_dot_split_partial_kernel(const float* __restrict__ x,
     const float* __restrict__ w, float* __restrict__ partial) {
+    x += (long)blockIdx.y * 16384;
+    partial += (long)blockIdx.y * 24 * S;
     const int row = blockIdx.x / S;
     const int slice = blockIdx.x % S;
     constexpr int width = 16384 / S;
@@ -557,6 +577,8 @@ __global__ void dsv4_hc_dot_split_partial_kernel(const float* __restrict__ x,
 template<int S>
 __global__ void dsv4_hc_dot_split_reduce_kernel(const float* __restrict__ partial,
     float* __restrict__ y) {
+    partial += (long)blockIdx.x * 24 * S;
+    y += (long)blockIdx.x * 24;
     const int row = threadIdx.x;
     if (row >= 24) return;
     float acc = 0.0f;
@@ -566,24 +588,43 @@ __global__ void dsv4_hc_dot_split_reduce_kernel(const float* __restrict__ partia
     y[row] = acc;
 }
 template<int S> static int dsv4_hc_dot_split_launch(const float* x, const float* w,
-    float* partial, float* y, cudaStream_t stream) {
-    dsv4_hc_dot_split_partial_kernel<S><<<24 * S, 128, 0, stream>>>(x, w, partial);
+    float* partial, float* y, int m, cudaStream_t stream) {
+    dsv4_hc_dot_split_partial_kernel<S><<<dim3(24 * S, m), 128, 0, stream>>>(x, w, partial);
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) return (int)err;
-    dsv4_hc_dot_split_reduce_kernel<S><<<1, 32, 0, stream>>>(partial, y);
+    dsv4_hc_dot_split_reduce_kernel<S><<<m, 32, 0, stream>>>(partial, y);
     return (int)cudaGetLastError();
 }
+// `m` token rows of x [m][k] into y [m][n]; partial holds m * 24 * slices floats.
 extern "C" int memra_dsv4_hc_dot_split(const float* x, const float* w,
-    float* partial, int partial_len, float* y, int n, int k, void* raw_stream) {
+    float* partial, int partial_len, float* y, int m, int n, int k, void* raw_stream) {
     const int slices = dsv4_hc_dot_split_slices;
-    if (n != 24 || k != 16384 || partial_len < 24 * slices ||
+    if (m < 1 || m > 65535 || n != 24 || k != 16384 || partial_len / 24 / m < slices ||
         !dsv4_dense_exact_tail_dots_admits(x, w, 0, y, 1, n, k) ||
         !dsv4_dense_exact_tail_aligned(partial, 4)) return 40075;
     const auto stream = (cudaStream_t)raw_stream;
     switch (slices) {
-        case 8: return dsv4_hc_dot_split_launch<8>(x, w, partial, y, stream);
-        case 16: return dsv4_hc_dot_split_launch<16>(x, w, partial, y, stream);
-        case 32: return dsv4_hc_dot_split_launch<32>(x, w, partial, y, stream);
+        case 8: return dsv4_hc_dot_split_launch<8>(x, w, partial, y, m, stream);
+        case 16: return dsv4_hc_dot_split_launch<16>(x, w, partial, y, m, stream);
+        case 32: return dsv4_hc_dot_split_launch<32>(x, w, partial, y, m, stream);
         default: return 40075;
     }
+}
+// The partial half alone, for memra_dsv4_hc_finish_f32_fixed_order, which owns the
+// slice sum. Same admission and slice count as the pair above.
+extern "C" int memra_dsv4_hc_dot_split_partial(const float* x, const float* w,
+    float* partial, int partial_len, int m, int n, int k, void* raw_stream) {
+    const int slices = dsv4_hc_dot_split_slices;
+    if (m < 1 || m > 65535 || n != 24 || k != 16384 || partial_len / 24 / m < slices ||
+        !dsv4_dense_exact_tail_dots_admits(x, w, 0, partial, 1, n, k) ||
+        !dsv4_dense_exact_tail_aligned(partial, 4)) return 40075;
+    const auto stream = (cudaStream_t)raw_stream;
+    const dim3 grid(24 * slices, m);
+    switch (slices) {
+        case 8: dsv4_hc_dot_split_partial_kernel<8><<<grid, 128, 0, stream>>>(x, w, partial); break;
+        case 16: dsv4_hc_dot_split_partial_kernel<16><<<grid, 128, 0, stream>>>(x, w, partial); break;
+        case 32: dsv4_hc_dot_split_partial_kernel<32><<<grid, 128, 0, stream>>>(x, w, partial); break;
+        default: return 40075;
+    }
+    return (int)cudaGetLastError();
 }

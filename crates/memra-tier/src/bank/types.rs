@@ -1,3 +1,4 @@
+use super::fx::FxMap;
 use crate::contracts::*;
 use std::{
     cell::RefCell,
@@ -15,17 +16,35 @@ pub struct CatalogRecord {
     pub layout: RecordLayout,
     pub checksums: Vec<Digest>,
 }
-impl CatalogRecord {
-    pub(crate) fn resident_charge_bytes(&self, id: &BankId) -> Result<u64> {
-        self.layout
+/// A ticket's metadata allowance for one record: the canonical encodings of its id and layout
+/// plus a conservative 1024-byte per-node allowance. A pure function of the immutable catalog
+/// entry, so `Catalog::new` computes it once per record (day 61, I11 change 1,
+/// `research/spill-c-20260919/DAY61.md`); every ticket reads that value.
+pub(crate) fn ticket_metadata(id: &BankId, layout: &RecordLayout) -> Result<u64> {
+    Ok((id.encode()?.len() + layout.encode()?.len() + 1024) as u64)
+}
+/// One retained catalog record with its ticket metadata allowance.
+pub(crate) struct CatalogEntry {
+    pub(crate) record: CatalogRecord,
+    /// `ticket_metadata(id, &record.layout)`, computed at `Catalog::new`.
+    pub(crate) metadata: u64,
+}
+impl CatalogEntry {
+    /// The record's resident charge: its storage bytes plus its metadata allowance.
+    pub(crate) fn resident_charge_bytes(&self) -> Result<u64> {
+        self.record
+            .layout
             .storage_bytes()?
-            .checked_add((id.encode()?.len() + self.layout.encode()?.len() + 1024) as u64)
+            .checked_add(self.metadata)
             .ok_or(Error::Overflow)
     }
 }
 pub struct Catalog {
     pub(crate) class: LayoutClass,
-    pub(crate) entries: BTreeMap<BankId, Option<CatalogRecord>>,
+    /// Day 64 (I14 change 1, `research/spill-c-20260919/DAY64.md`): the records in `BankId` order (the order the
+    /// map this replaced iterated in), found through `index`, an Fx-hashed map from each id to its position.
+    entries: Vec<(BankId, Option<CatalogEntry>)>,
+    index: FxMap<BankId, usize>,
 }
 impl Catalog {
     pub fn new(class: LayoutClass, entries: Vec<(BankId, Option<CatalogRecord>)>) -> Result<Self> {
@@ -62,22 +81,52 @@ impl Catalog {
                     uniform = Some(layout.clone());
                 }
             }
-            if map.insert(id, record).is_some() {
+            let entry = match record {
+                Some(record) => Some(CatalogEntry {
+                    metadata: ticket_metadata(&id, &record.layout)?,
+                    record,
+                }),
+                None => None,
+            };
+            if map.insert(id, entry).is_some() {
                 return Err(Error::Conflict);
             }
         }
+        let entries: Vec<_> = map.into_iter().collect();
+        let index = entries
+            .iter()
+            .enumerate()
+            .map(|(position, (id, _))| (id.clone(), position))
+            .collect();
         Ok(Self {
             class,
-            entries: map,
+            entries,
+            index,
         })
     }
-    pub fn record(&self, id: &BankId) -> Result<&CatalogRecord> {
-        id.validate()?;
+    /// Every id in `BankId` order.
+    pub(crate) fn ids(&self) -> impl Iterator<Item = &BankId> {
+        self.entries.iter().map(|(id, _)| id)
+    }
+    /// Every retained record in `BankId` order.
+    pub(crate) fn records(&self) -> impl Iterator<Item = &CatalogRecord> {
         self.entries
-            .get(id)
-            .ok_or(Error::NotFound)?
-            .as_ref()
-            .ok_or(Error::MaskedId)
+            .iter()
+            .filter_map(|(_, entry)| entry.as_ref().map(|e| &e.record))
+    }
+    pub fn record(&self, id: &BankId) -> Result<&CatalogRecord> {
+        Ok(&self.entry(id)?.record)
+    }
+    /// The ticket metadata allowance `Catalog::new` computed for `id` (day 61); the same
+    /// refusals as `record`.
+    pub fn metadata_allowance(&self, id: &BankId) -> Result<u64> {
+        Ok(self.entry(id)?.metadata)
+    }
+    /// The record with its ticket metadata allowance; the same refusals as `record`.
+    pub(crate) fn entry(&self, id: &BankId) -> Result<&CatalogEntry> {
+        id.validate()?;
+        let position = *self.index.get(id).ok_or(Error::NotFound)?;
+        self.entries[position].1.as_ref().ok_or(Error::MaskedId)
     }
 }
 
@@ -157,4 +206,81 @@ pub trait ExactReader {
     fn begin_request(&mut self, _request: &BudgetRequest, _epochs: Epochs) {}
     fn storage_bytes(&self, tensor: &TensorId) -> Result<u64>;
     fn read_exact(&mut self, tensor: &TensorId, offset: u64, dst: &mut [u8]) -> Result<()>;
+}
+
+#[cfg(test)]
+mod day64_order {
+    //! Day 64 (I14 change 1): the catalog's ordered iterations read `BankId` order, the order of the map it replaced.
+    use super::*;
+
+    #[test]
+    fn ids_and_records_iterate_in_bank_id_order() {
+        let tensor = TensorId {
+            version: WIRE_VERSION,
+            artifact: [3; 32],
+            name: "t".into(),
+        };
+        let mut entries = Vec::new();
+        for n in [7u32, 2, 9, 4] {
+            let segment = ByteSegment {
+                version: WIRE_VERSION,
+                group: 0,
+                page: 0,
+                owner: 0,
+                role: Role::Payload,
+                tensor: Some(tensor.clone()),
+                offset: u64::from(n) * 16,
+                valid_bytes: 16,
+                storage_bytes: 16,
+                alignment: 1,
+                encoding: EncodingId {
+                    version: WIRE_VERSION,
+                    program: digest("e", &[1]),
+                    row_bytes: 16,
+                },
+            };
+            let layout = RecordLayout {
+                version: WIRE_VERSION,
+                requirements: vec![GroupRequirement {
+                    version: WIRE_VERSION,
+                    group: 0,
+                    owner: 0,
+                    role: Role::Payload,
+                    page_count: 1,
+                    pages: PageRequirement::AllPages,
+                }],
+                segments: vec![segment],
+            };
+            let id = BankId {
+                version: WIRE_VERSION,
+                tensor: tensor.clone(),
+                record: RecordId::Expert {
+                    layer: 1,
+                    original_id: n,
+                    projection: Projection::Up,
+                },
+                layout: layout.identity().unwrap(),
+            };
+            let record = (n != 9).then(|| CatalogRecord {
+                layout,
+                checksums: vec![[0; 32]],
+            });
+            entries.push((id, record));
+        }
+        let reference: BTreeMap<_, _> = entries.iter().cloned().collect();
+        let catalog = Catalog::new(LayoutClass::PerRecord, entries).unwrap();
+        assert!(catalog.ids().eq(reference.keys()));
+        let retained: Vec<_> = reference
+            .values()
+            .flatten()
+            .map(|r| r.layout.clone())
+            .collect();
+        assert_eq!(
+            catalog
+                .records()
+                .map(|r| r.layout.clone())
+                .collect::<Vec<_>>(),
+            retained
+        );
+    }
 }

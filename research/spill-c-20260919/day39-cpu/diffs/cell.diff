@@ -1,0 +1,116 @@
+--- day37-stall-cell.sh	2026-09-22 22:38:35.011508909 +0300
++++ day39-stall-cell.sh	2026-09-23 00:40:48.450900400 +0300
+@@ -1,47 +1,57 @@
+ #!/usr/bin/env bash
+-# Day 37: day 35's tenant-stall cell (day35-stall-cell.sh) run with TWO binaries in ONE collector lock hold on
+-# /tmp/memra-5090.lock, interleaved in both orders (DAY37.md section 1, pre-registered before this ran). The base
+-# binary is built from `091a931c0` (day 35's tree, no option (a)); the option (a) binary from the lane tree (A day
+-# 28's hash helper, A day 29's park, integ45's bounded latch close). Four programs in this order:
+-#   p1-base, p2-opta, p3-opta, p4-base
++# Day 39: day 37's two-binary tenant-stall cell (day37-stall-cell.sh) moved to the target card (one RTX PRO 6000
++# Blackwell, collector rig `pro-single`, lock /tmp/memra-gpu.lock) and run with THREE binaries in ONE collector lock
++# hold, interleaved in both orders (DAY39.md section 1, pre-registered and pushed before this ran). The binaries (built
++# on the box by day39-box-build.sh from the SHAs of DAY39.md section 0): B0 `091a931c0` (day 37's base tree, no option
++# (a)), B1 `9717e8d57` (option (a) without the D2H spans), B2 `160929a92` (option (a) plus A day 30's D2H spans). Six
++# programs in this order:
++#   p1-b0, p2-b1, p3-b2, p4-b2, p5-b1, p6-b0
+ # and each program is day 35's six boots unchanged:
+ #   pass 1: prime (cache off: MEMRA_PREFIX_CACHE_MB=0 MEMRA_KV_HOST_MB=0), off (door OFF), on (MEMRA_KV_HOST_CONTRACTS=1)
+ #   pass 2: on, off, prime
+ # The prime boot runs --mode prime; the off and on boots run --mode demote then --mode promote, N=5 per arm per
+-# order, both orders inside every harness run. The harness is day35_stall_cell.py byte-for-byte; boot env, budgets,
+-# port, tenant max_tokens and the per-run landing rule are day 35's. What changed from day 35's script: the two
+-# binaries, the program loop and its per-program directory (ev/<program>/pass{1,2}/<kind>/), the CELL.txt labels
+-# and the mark names. The collector samples the card at 250 ms; this script's own 1 s sampler writes
+-# ev/card.during.csv beside it. Every receipt is replayed (`STALL REPLAY`). Every cell is executed-not-qualified
+-# development evidence. No host, id or price here; nothing here is compared to the target card.
+-# usage: day37-stall-cell.sh <lockfd> <tree> <receipts_root> <model.gguf> <base_bin> <opta_bin>
++# order, both orders inside every harness run. The harness is day35_stall_cell.py byte-for-byte. What changed from
++# day 37's script, all of it the rig: the lock (/tmp/memra-gpu.lock), the target card's budgets and tenant window
++# (A day 16's shape: MEMRA_PREFIX_CACHE_MB=256 MEMRA_KV_HOST_MB=8192, --tenant-max-tokens 160, A's constant), the port
++# (18132, day 23's), the PATH export, three binaries and six programs, and each binary's tree read from the build
++# receipt (the binaries are copies, not in their build tree). The collector samples the card at 250 ms; this
++# script's own 1 s sampler writes ev/card.during.csv beside it. Every receipt is replayed (`STALL REPLAY`). Every
++# cell is executed-not-qualified development evidence. No host, id or price here; nothing here is compared to the
++# RTX 5090.
++# usage: day39-stall-cell.sh <lockfd> <tree> <receipts_root> <model.gguf> <bin_dir>
+ set -uo pipefail
+-fd=$1; TREE=$2; R=$3; MODEL=$4; BASE_BIN=$5; OPTA_BIN=$6
++fd=$1; TREE=$2; R=$3; MODEL=$4; BINDIR=$5
+ BIN=""
++export PATH=/root/.cargo/bin:/usr/local/cuda/bin:$HOME/.cargo/bin:$PATH
++B0_BIN=$BINDIR/bin/B0-memra-server; B1_BIN=$BINDIR/bin/B1-memra-server; B2_BIN=$BINDIR/bin/B2-memra-server
+ cd "$TREE" || exit 1
+ EV=$R/stall/ev
+ mkdir -p "$EV"
+-python3 tools/tier-lock-proof.py --fd "$fd" --lock /tmp/memra-5090.lock --owner collector > "$EV/LOCK.json"
+-BASE_TREE=$(git -C "$(dirname "$BASE_BIN")/../.." rev-parse HEAD)
+-OPTA_TREE=$(git -C "$(dirname "$OPTA_BIN")/../.." rev-parse HEAD)
+-{ echo "base $(sha256sum "$BASE_BIN")"; echo "opta $(sha256sum "$OPTA_BIN")"; } | tee "$EV/binary.sha256"
++python3 tools/tier-lock-proof.py --fd "$fd" --lock /tmp/memra-gpu.lock --owner collector > "$EV/LOCK.json"
++# each binary's tree from its build receipt; the copy must still hash to the recorded SHA-256
++tree_of() { grep "^binary=$1-memra-server " "$BINDIR/builds.log" | sed -E 's/.* tree=([0-9a-f]+) .*/\1/'; }
++sha_of() { grep "^binary=$1-memra-server " "$BINDIR/builds.log" | sed -E 's/.* sha256=([0-9a-f]+).*/\1/'; }
++for b in B0 B1 B2; do
++    got=$(sha256sum "$BINDIR/bin/$b-memra-server" | cut -d' ' -f1)
++    [ -n "$(sha_of $b)" ] && [ "$got" = "$(sha_of $b)" ] || { echo "binary $b does not match its build receipt"; exit 1; }
++done
++{ for b in B0 B1 B2; do echo "$b tree=$(tree_of $b) $(sha256sum "$BINDIR/bin/$b-memra-server")"; done; } | tee "$EV/binary.sha256"
+ H=research/spill-c-20260919/day35_stall_cell.py
+ A=research/spill-a-20260919/stall_cell.py
+ diff -u "$A" "$H" > "$EV/harness.diff"
+-TENANT_TOKENS=400
+-CACHE_MB=64
++TENANT_TOKENS=160
++CACHE_MB=256
+ HOST_MB=8192
+-PORT=${MEMRA_GATE_PORT:-18131}
++PORT=${MEMRA_GATE_PORT:-18132}
+ {
+     echo "tree=$(git rev-parse HEAD)"
+-    echo "base_tree=$BASE_TREE base_sha256=$(sha256sum "$BASE_BIN" | cut -d' ' -f1)"
+-    echo "opta_tree=$OPTA_TREE opta_sha256=$(sha256sum "$OPTA_BIN" | cut -d' ' -f1)"
++    for b in B0 B1 B2; do echo "$b tree=$(tree_of $b) sha256=$(sha_of $b)"; done
+     echo "harness_sha256=$(sha256sum "$H" | cut -d' ' -f1)"
+     echo "a_harness_sha256=$(sha256sum "$A" | cut -d' ' -f1)"
+     echo "model=$(basename "$MODEL")"
+     echo "gpu=$(nvidia-smi --query-gpu=name,power.limit --format=csv,noheader | head -1)"
+     echo "cache_mb=$CACHE_MB host_mb=$HOST_MB port=$PORT tenant_max_tokens=$TENANT_TOKENS fire_at=24"
+-    echo "programs=p1-base,p2-opta,p3-opta,p4-base"
++    echo "programs=p1-b0,p2-b1,p3-b2,p4-b2,p5-b1,p6-b0"
+     echo "passes=2 boots_per_pass=3 n_per_arm_per_order=5 pass1=prime,off,on pass2=on,off,prime"
+     echo "status=executed-not-qualified"
+ } > "$EV/CELL.txt"
+@@ -54,7 +64,7 @@
+ . tools/port-guard.sh
+ SERVER_PID=""
+ boot() { # $1 extra-env-string  $2 log
+-    memra_port_guard day37-stall-cell "$PORT" MEMRA_GATE_PORT || return 1
++    memra_port_guard day39-stall-cell "$PORT" MEMRA_GATE_PORT || return 1
+     if curl -s --max-time 1 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; then
+         echo "port $PORT already serving, refusing to boot over it"; return 1
+     fi
+@@ -133,15 +143,17 @@
+     for kind in prime off on; do one_boot "$P/pass1" "$kind" || rc=1; done
+     for kind in on off prime; do one_boot "$P/pass2" "$kind" || rc=1; done
+ }
+-# This script's own 1 s sampler across the 24 boots (the collector samples at 250 ms beside it).
++# This script's own 1 s sampler across the 36 boots (the collector samples at 250 ms beside it).
+ nvidia-smi --query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,temperature.gpu,memory.used,utilization.gpu \
+     --format=csv -lms 1000 > "$EV/card.during.csv" 2> "$EV/card.during.err" &
+ SAMPLER=$!
+-program p1-base "$BASE_BIN"
+-program p2-opta "$OPTA_BIN"
+-program p3-opta "$OPTA_BIN"
+-program p4-base "$BASE_BIN"
++program p1-b0 "$B0_BIN"
++program p2-b1 "$B1_BIN"
++program p3-b2 "$B2_BIN"
++program p4-b2 "$B2_BIN"
++program p5-b1 "$B1_BIN"
++program p6-b0 "$B0_BIN"
+ stop_sampler
+ snap after
+-echo "stall-day37 rc=$rc" | tee "$EV/exit.txt"
++echo "stall-day39 rc=$rc" | tee "$EV/exit.txt"
+ exit $rc

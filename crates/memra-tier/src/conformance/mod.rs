@@ -143,3 +143,31 @@ pub use d2d_restore::*;
 // or mismatching item is refused Corrupt, the caller latches, nothing is published or primed on.
 mod d2d_receipt;
 pub use d2d_receipt::*;
+
+// Day-30 rule (WP-A, memra#536 Move 2 owed item 1, the D2H half): the typed f32 spans of a demote
+// batch, beside the frozen schedules, unversioned: one ticket and one landing with the KV items; a
+// refused attach hands every span back; a span error quarantines the ticket.
+mod d2h_span;
+pub use d2h_span::*;
+
+// Day-32 rule (WP-A, memra#536 Move 2 owed item 1, the H2D half): the typed f32 spans of a promote
+// batch, beside the frozen schedules, unversioned: one ticket and one landing with the KV items; a
+// destination is handed out only behind the reader wait; a span error quarantines the ticket.
+mod h2d_span;
+pub use h2d_span::*;
+
+// Day-34 rule (WP-A, memra#536 Move 2 owed item 1, `DAY34.md` design K): an H2D batch whose completion
+// checksums are supplied by the caller's hash helper, beside the frozen schedules, unversioned: one
+// landing with the supplied checksums; the demote-time receipts gate it as before; sources stay owned
+// while a view is out.
+mod h2d_deferred_checksum;
+pub use h2d_deferred_checksum::*;
+
+// Day-38 rule (WP-A, memra#536 Move 1 owed item 2's hash 1, `DAY38.md` design G): a D2H batch whose
+// receipt is the framed SHA-256 of each item's DEVICE source, taken on the device, beside the frozen
+// schedules, unversioned: one landing with the receipt observed; the checksum names the source; the
+// caller's re-hash of the landed bytes is the witness before publication.
+mod d2h_device_receipt;
+pub use d2h_device_receipt::*;
+mod span_receipt;
+pub use span_receipt::*;

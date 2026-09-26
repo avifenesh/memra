@@ -1571,11 +1571,10 @@ impl Model {
         e: &Engine,
         src: &dyn TensorSource,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let cfg = src.try_config().map_err(std::io::Error::other)?;
-        let plan = match memra_gguf::model_packs::for_config(&cfg) {
-            Some(pack) => pack.compile_plan(&cfg)?,
-            None => memra_gguf::model_plan::ModelPlan::compile(&cfg)?,
-        };
+        // Keep any source-backed preflight reads in the same consumption audit as the loader.
+        let recording = memra_gguf::checkpoint_binding::RecordingSource::new(src);
+        let src: &dyn TensorSource = &recording;
+        let (cfg, plan) = memra_gguf::model_packs::compile_for_source(src)?;
         if plan.layers.iter().any(|layer| {
             !matches!(
                 layer.attention,
@@ -1588,13 +1587,11 @@ impl Model {
         // byte is uploaded, then address every trunk tensor by its semantic id. Output-head
         // ownership comes from the binding (the pack declares whether an absent head may be the
         // embedding), never from a `has("output.weight")` probe.
-        use memra_gguf::checkpoint_binding::{self, RecordingSource};
+        use memra_gguf::checkpoint_binding;
         use memra_gguf::tensor_contract::{LayerTensor, TensorId};
         let binding = checkpoint_binding::bind_source(src, &cfg, &plan)
             .map_err(|error| std::io::Error::other(error.to_string()))?;
         eprintln!("{}", checkpoint_binding::describe(&binding));
-        let recording = RecordingSource::new(src);
-        let src: &dyn TensorSource = &recording;
         let name = |id: TensorId| binding.require_ggml(&id).map_err(std::io::Error::other);
         let embd = EmbedHost::from_source(src, &name(TensorId::TokenEmbedding)?);
         let output_norm = GpuTensor::load_from_source(e, src, &name(TensorId::OutputNorm)?)?;
@@ -1754,6 +1751,16 @@ pub enum HostBuf {
 unsafe impl Send for HostBuf {}
 unsafe impl Sync for HostBuf {}
 impl HostBuf {
+    /// The storage class of these bytes, for the MoE slot cache door's census of the loaded
+    /// banks (`research/spill-c-20260919/DAY44.md`): `mmap`, `pinned` (own or aliased slab) or
+    /// `paged`.
+    pub fn storage_kind(&self) -> &'static str {
+        match self {
+            HostBuf::Paged(_) => "paged",
+            HostBuf::Pinned { .. } | HostBuf::PinnedAlias { .. } => "pinned",
+            HostBuf::Mmap { .. } => "mmap",
+        }
+    }
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
         match self {
@@ -1914,6 +1921,29 @@ fn staged_expert_row_bytes(ty: GgmlType, in_f: usize) -> Option<usize> {
     Some((in_f as u64 / block * type_size) as usize)
 }
 
+/// The MoE slot cache door's view of a GGUF stacked expert tensor inside the artifact's own
+/// mapping (`research/spill-c-20260919/DAY44.md`): the shard's shared map, its retained inode and
+/// the tensor's absolute range, so `HostBuf::Mmap` slices exactly `tensor_data`'s bytes. Only a
+/// GGUF source can answer; anything else is refused while the option is set.
+fn door_mapped_extent(
+    src: &dyn TensorSource,
+    name: &str,
+) -> Result<DiskExtent, Box<dyn std::error::Error>> {
+    let g = src.gguf().ok_or_else(|| {
+        format!("{name}: the door's mapped expert banks need a GGUF source (option set)")
+    })?;
+    let info = g
+        .find(name)
+        .ok_or_else(|| format!("missing exps tensor {name}"))?;
+    let (start, end) = g.tensor_file_range(info);
+    Ok(DiskExtent {
+        map: g.shard_mmap(info.shard).clone(),
+        file: g.shard_file(info.shard).clone(),
+        offset: start as u64,
+        len: end - start,
+    })
+}
+
 fn find_expert_disk_strict(
     src: &dyn TensorSource,
     name: &str,
@@ -2019,6 +2049,12 @@ impl HostExps {
             let s0 = ex * full_stride + row0 * row_bytes;
             buf[ex * expert_stride..(ex + 1) * expert_stride]
                 .copy_from_slice(&raw[s0..s0 + expert_stride]);
+        }
+        if e.expert_host_mapped() {
+            return Err(format!(
+                "{name}: the door's mapped expert banks do not cover a split stacked tensor (DAY44)"
+            )
+            .into());
         }
         let pinned = std::env::var("MEMRA_MOE_PINNED").is_ok()
             || std::env::var("MEMRA_MOE_CACHE").as_deref() != Ok("0");
@@ -2323,12 +2359,19 @@ impl HostExps {
         // exactly like the proven M3 `.memra-repack` path (model.rs NVFP4 disk arm). Bit-identity:
         // `expert_bytes(e)` slices the same on-disk bytes the copy would have staged. The SLRU VRAM
         // cache stacks on top unchanged. The configured whole-map advice is applied at source open.
+        // DAY44: under the MoE slot cache door's load option a GGUF stacked bank is a view of the
+        // artifact's own mapping (the same branch as the disk tier), never the pinned copy below.
+        let extent = match find_expert_disk_strict(src, name)? {
+            Some(extent) => Some(extent),
+            None if e.expert_host_mapped() => Some(door_mapped_extent(src, name)?),
+            None => None,
+        };
         if let Some(DiskExtent {
             map,
             file,
             offset,
             len,
-        }) = find_expert_disk_strict(src, name)?
+        }) = extent
         {
             let off = usize::try_from(offset)
                 .map_err(|_| format!("{name} disk offset {offset} does not fit usize"))?;

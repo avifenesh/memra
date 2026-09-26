@@ -8,14 +8,13 @@
 
 use memra_engine::dsv4_attention_tp::ATTENTION_TP_NUMERIC_CLASS;
 use memra_engine::dsv4_gpu::{Dsv4Gpu, TP_EP_RANK_ORDER_NUMERIC_CLASS};
+use memra_engine::dsv4_source_tape::SourceTape;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
 const CONTINUATION_TOKENS: usize = 3;
-const PINNED_SOURCE_SHA256: &str =
-    "f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Receipt {
@@ -63,7 +62,7 @@ fn verify_attention_join(gpu: &Dsv4Gpu, state: &memra_engine::dsv4_gpu::DecodeSt
     let mut partial_hashes = [String::new(), String::new()];
     let mut joined_hashes = [String::new(), String::new()];
     for rank in 0..2 {
-        assert_eq!(snapshot.partials[rank].len(), plan.hidden);
+        assert_eq!(snapshot.partials[rank].len(), plan.local_hidden);
         assert_eq!(snapshot.joined[rank].len(), plan.hidden);
         let mut partial_hash = Sha256::new();
         update_f32(&mut partial_hash, &snapshot.partials[rank]);
@@ -72,26 +71,23 @@ fn verify_attention_join(gpu: &Dsv4Gpu, state: &memra_engine::dsv4_gpu::DecodeSt
         update_f32(&mut joined_hash, &snapshot.joined[rank]);
         joined_hashes[rank] = sha256_bytes(&joined_hash.finalize());
     }
-    for (column, (&rank0, &rank1)) in snapshot.partials[0]
+    // The join is the two wo_b row halves in rank order, bit for bit: no value is summed.
+    let expected: Vec<u32> = snapshot.partials[0]
         .iter()
-        .zip(&snapshot.partials[1])
-        .enumerate()
-    {
-        let expected = rank0 + rank1;
-        assert!(
-            expected.is_finite(),
-            "attention TP2 canonical sum must be finite"
-        );
-        for rank in 0..2 {
+        .chain(&snapshot.partials[1])
+        .map(|value| value.to_bits())
+        .collect();
+    for rank in 0..2 {
+        for (column, value) in snapshot.joined[rank].iter().enumerate() {
             assert_eq!(
-                snapshot.joined[rank][column].to_bits(),
-                expected.to_bits(),
-                "attention TP2 GPU join vs CPU f32 rank sum: rank={rank} column={column}"
+                value.to_bits(),
+                expected[column],
+                "attention TP2 join vs rank-order row halves: rank={rank} column={column}"
             );
         }
     }
     println!(
-        "ATTENTION_JOIN position={} layer={} columns={} partial_hashes={partial_hashes:?} joined_hashes={joined_hashes:?} canonical_f32_sum=true full_width_equivalence=false",
+        "ATTENTION_JOIN position={} layer={} columns={} partial_hashes={partial_hashes:?} joined_hashes={joined_hashes:?} row_gather=true",
         state.pos,
         gpu.topology().layers - 1,
         plan.hidden
@@ -103,6 +99,7 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
     let trunk_layers = gpu.topology().layers as u64;
     let rank_layer_before = gpu.tp_ep_rank_layer_calls();
     let ar_before = gpu.tp_ep_ar_dispatches();
+    let gathers_before = gpu.tp_ep_row_gathers();
     let ep_before = gpu.ep_calls();
     let attention_before = gpu.attention_tp_rank_calls();
     let attention_ar_before = gpu.attention_tp_ar_calls();
@@ -191,8 +188,13 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
     let ar_dispatches = gpu.tp_ep_ar_dispatches() - ar_before;
     assert_eq!(
         ar_dispatches,
-        steps * trunk_layers * (1 + u64::from(attention_mode)),
-        "expert join plus the selected attention join per layer/token"
+        steps * trunk_layers,
+        "one expert reduction per layer/token; the attention join sums nothing"
+    );
+    assert_eq!(
+        gpu.tp_ep_row_gathers() - gathers_before,
+        2 * u64::from(attention_mode) * steps * trunk_layers,
+        "attention TP2 gathers wo_a groups and wo_b rows once each per layer/token"
     );
     let attention_after = gpu.attention_tp_rank_calls();
     let attention_rank_calls =
@@ -201,11 +203,11 @@ fn run_once(gpu: &Dsv4Gpu, tokens: &[u32], source_sha256: &str) -> Receipt {
     let expected_attention = u64::from(attention_mode) * steps * trunk_layers;
     assert_eq!(attention_rank_calls, [expected_attention; 2]);
     assert_eq!(attention_ar_calls, expected_attention);
-    if attention_mode {
+    if attention_mode && gpu.dense_wo_a_grouped_for_gate() {
         assert_eq!(
-            gpu.dense_wo_a_grouped_dispatches(),
-            grouped_wo_a_before,
-            "attention TP2 uses the qualified per-group GEMV, not unqualified grouped-4"
+            gpu.dense_wo_a_grouped_dispatches() - grouped_wo_a_before,
+            2 * steps * trunk_layers,
+            "attention TP2 takes the grouped wo_a launch on both ranks at every layer"
         );
     }
     let ar_refusals = gpu
@@ -353,20 +355,14 @@ fn main() {
     );
 
     let dir = Path::new(&args[1]);
-    let source = std::fs::read_to_string(&args[2]).expect("source");
-    let source_sha256 = sha256_bytes(source.as_bytes());
-    assert_eq!(
-        source_sha256, PINNED_SOURCE_SHA256,
-        "pinned real-source tape"
-    );
+    let tape = SourceTape::read(&args[2]).expect("source tape");
+    let source_sha256 = tape.sha256.to_owned();
     let tokenizer = Tokenizer::from_hf_dir(dir).expect("tokenizer");
-    let prompt = tokenizer.encode(
-        &format!("Review this inference engine source:\n\n{source}"),
-        true,
-    );
-    assert!(
-        prompt.len() > CONTINUATION_TOKENS,
-        "source must provide enough real tokens"
+    let prompt = tape.prompt(
+        &tokenizer,
+        "Review this inference engine source:\n\n",
+        // verify_refusal_boundary reads tokens[..128].
+        128,
     );
 
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);
@@ -406,6 +402,20 @@ fn main() {
             "repeated plain TP/EP tape must be deterministic"
         );
         println!("RECEIPT {first:?}");
+        // One line to diff across attention arms: the exact join must leave every logit row,
+        // hidden state and cache plane of the replicated-attention program unchanged.
+        let mut digest = Sha256::new();
+        digest.update(first.output_sha256.as_bytes());
+        for pair in first.hidden_digests.iter().chain(&first.cache_digests) {
+            for value in pair {
+                digest.update(value.to_le_bytes());
+            }
+        }
+        println!(
+            "DIGEST output_sha256={} state_sha256={}",
+            first.output_sha256,
+            sha256_bytes(&digest.finalize())
+        );
         verify_refusal_boundary(&gpu, &prompt);
         println!(
             "PASS plain-only all-layer TP/EP ranks={} layers={} numeric_class={} no_pp_fallback=true deterministic=true internal_consistency=true refusal_boundary=true oracle_equivalence=false",
