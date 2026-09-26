@@ -87,6 +87,10 @@ def inventory(base):
     if not parents.is_file():
         raise ValueError("V12 training parent custody missing")
     files["inputs/parent-custody.json"] = parents
+    precheck = base / "provider-precheck.json"
+    if not precheck.is_file():
+        raise ValueError("research rental price precheck missing")
+    files["inputs/provider-precheck.json"] = precheck
     results = list((base / "training-prose-results").glob(
         "training-*.result.json"
     ))
@@ -128,6 +132,8 @@ def seal(base, out):
         != sha(base / "judge-preflight/manifest.json")
         or metadata["parent_custody_sha256"]
         != sha(base / "parents/parent-custody.json")
+        or metadata["provider_precheck_sha256"]
+        != sha(base / "provider-precheck.json")
     ):
         raise ValueError("research host identity or CUDA proof differs")
     for name, expected in metadata["source_files_sha256"].items():
@@ -186,6 +192,8 @@ def seal(base, out):
         sha(base / "judge-preflight/manifest.json"),
         "parent_custody_sha256":
         sha(base / "parents/parent-custody.json"),
+        "provider_precheck_sha256":
+        sha(base / "provider-precheck.json"),
         "archive_sha256": sha(archive),
         "members": members,
     }

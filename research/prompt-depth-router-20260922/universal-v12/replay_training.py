@@ -59,6 +59,7 @@ def replay(archive, manifest_path, rows_out):
             "native/run-meta.json",
             "native/pilot-result.json",
             "inputs/parent-custody.json",
+            "inputs/provider-precheck.json",
         }
         for name in manifest["members"]
     ):
@@ -124,6 +125,10 @@ def replay(archive, manifest_path, rows_out):
             manifest["parent_custody_sha256"]
         ):
             raise ValueError("sealed older training parent custody changed")
+        if sha(root / "inputs/provider-precheck.json") != (
+            manifest["provider_precheck_sha256"]
+        ):
+            raise ValueError("sealed rental precheck changed")
         parents = json.loads(
             (root / "inputs/parent-custody.json").read_text()
         )
@@ -143,6 +148,8 @@ def replay(archive, manifest_path, rows_out):
             != sha(root / "native/cuda-accept.json")
             or metadata["parent_custody_sha256"]
             != sha(root / "inputs/parent-custody.json")
+            or metadata["provider_precheck_sha256"]
+            != sha(root / "inputs/provider-precheck.json")
             or metadata["v11_training_archive_sha256"]
             != parents["v11_archive_sha256"]
             or metadata["ops_source_sha256"]
