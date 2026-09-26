@@ -66,7 +66,7 @@ fn hidden_row() -> Vec<f32> {
             if index.is_multiple_of(23) {
                 0.0
             } else {
-                ((index * 37 % 251) as i32 - 125) as f32 / 128.0
+                ((index * 53 % 251) as i32 - 125) as f32 / 128.0
             }
         })
         .collect()
@@ -256,6 +256,7 @@ fn run() -> Result<(), Fail> {
     )?;
     writeln!(receipt, "gpu_index\t{gpu_index}")?;
     writeln!(receipt, "layer\t1")?;
+    writeln!(receipt, "hidden_pattern\tseed53_mod251_div128_zero23")?;
     writeln!(receipt, "matrix_dtype\t{matrix_dtype}")?;
     writeln!(receipt, "bias_dtype\t{bias_dtype}")?;
     writeln!(receipt, "grouping\tnoaux_tc_n_group_1_topk_group_1_top8")?;
