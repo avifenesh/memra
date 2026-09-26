@@ -4425,6 +4425,45 @@ failed (the Q35 arm, #777, its summary line byte-identical to run 3's); engine c
 `option_b_purge_drains_the_pool_and_zeroes_the_staging_set` among them); identity, fault default and plain, hit OFF and
 ON, admit-mem burst, spec-ctx-edge and the pause gate with the 27B all `ALL GREEN`.
 
+**Revuto round 2 found a second real defect in L', fixed in lane A before the merge.** Review comment 4112859255 on
+#801 (head `511760f8a`): L1.2 charged each lease its size class (the next power of two to 1 MiB, then whole MiB), while
+the host LRU keeps residents at or under one budget of actual bytes. For short prefixes the residents' class charges
+approach two budgets; with the pool's idle backings (up to one budget, in other classes) and the staging set's pinned
+charges, the next demote's reserve refused where main's two-budget ledger admits it, and nothing gave the idle pool's
+charges back. Lane A placed it with a CPU test on `4f297e7bd` (DAY70): a 64 MiB budget, 109 resident planes of 600 KiB
+(one budget of length, charged 109 MiB), the pool full of 4 MiB-class idle backings and an 8 MiB staging charge; L'
+refused a 16-plane short demote at its 12th lease with `Capacity`, and main admits all 16 at 81 of its 128 MiB. It was
+worse than a lost demote: the contract route maps a lease refusal to `Alloc`, and the caller latches the tier off. Fix
+`a57f85897` (DAY70 design Q): a lease is charged its length, main's charge; the pool is charged its idle backings plus
+each live lease's tail (backing size minus length), together capped at one budget; a new lease takes an idle backing of
+its class, else a fresh class-sized backing while its tail fits the cap, else a fresh backing at its exact length as
+main does; only class-sized backings park. The three-budget ledger is main's two plus the pool's one, so a lease is
+refused only where main's ledger refuses it, and a pool reserve that does not fit never errors. Revuto's two options
+(drain and retry, or a headroom-bound cap) were rejected because both leave the residents' class inflation in the
+ledger, which already exceeds three budgets with an empty pool in the placed shape; an LRU in charged bytes was rejected
+because it changes which entries stay resident. Cost: once tails fill the cap, new leases are exact-length and never
+pool (for short-prefix residents at about 1.7x inflation, around 1.4 budgets of length); the long 27B planes the L'
+cells measured keep L''s program. The red arm (charge back to the class) fails all three new CPU cells, the placement
+refusal among them. `411177fea`'s class arithmetic in the worker cells returns to the lengths (1392 B), those fixtures
+having a pool cap of 0. No earlier reading is affected: demote counts are equal between arms in every A/B cell and order
+of L, L', T-H and P2L2, and no A/B server log in those sittings carries `TIER DISABLED` or a pinned alloc failure (the
+27B's planes are about 2 to 3 MB, far from the short-prefix shape).
+
+Main moved to `dba926cdc` (#807: a dedicated route prices a queued request by its decode rounds, and the DSv4 route's
+two-card receipt), merged in clean (`c7a0dcf42`); the server change is covered by the batteries below. CPU battery on
+`c7a0dcf42` (`integ69-cpu-battery-q/`): 14 of 15 (server lib 951, engine lib 589 with the `day70_` cells); the 15th,
+`diff-check`, flagged run 4's raw gate logs' trailing blank lines, which the receipts' `.gitattributes` now exempts as
+run 3's does, and `git diff --check origin/main HEAD` then reads rc 0.
+GPU battery run 5 on BOX43 (a Ryzen 9 9950X with one RTX PRO 6000 WS; `integ69-pro-run5/`, 572 receipts mirrored and
+checked), tree `6521d9072`, binary `8999b9c1`, one hold 23:13Z to 23:28Z then the pause gate's hold, with run 4's cells
+plus the engine `day63_` and `day70_` cells (the pool's charge program changed) and, after the pause gate under its
+hold, lane A's tier gate binaries (DAY70 section 5): serve-smoke 1 failed (the Q35 arm, #777, its summary line identical
+to run 4's); engine cells `19 passed` (`day70_a_lease_past_the_pool_cap_is_its_length_and_never_parks` and both `day63_`
+pool cells among them); worker span cells `19 passed`; identity, fault default and plain, hit OFF and ON, admit-mem
+burst, spec-ctx-edge and the pause gate `ALL GREEN`; `tier-transfer-gate conformance` 13 PASS lines ending `PASS native
+governor zero after controlled drain`; `roundtrip` six byte-exact lines to 268435456 bytes; `kv-tier-gate` with the 27B,
+all seven fault arms `FAULT-ARM PASS` (the missing-host arm's `pinned-released` check reads the plane's length again).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

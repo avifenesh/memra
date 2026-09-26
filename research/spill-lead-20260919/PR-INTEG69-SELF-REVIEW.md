@@ -57,3 +57,30 @@ Batteries on the new head:
 - GPU run 4 on the same box class, with run 3's cells plus `day69_` and every ignored `tier_transfer::tests::` cell:
   engine cells 18 of 18, worker span cells 19 of 19, every gate ALL GREEN. serve-smoke's Q35 arm is #777 again.
 - Main `df006602e` (#800, DSv4 only) merged in clean.
+
+## Round 3, after revuto round 2
+Revuto found a second real L' defect, and my round-2 check missed it too: I checked the purge fix's epoch and red arms,
+not L1.2's class charge against the LRU's unit. A lease charged its class while the host LRU budgets actual bytes, so
+short-prefix residents could hold nearly two budgets of charge. A demote was then refused where main admits it, and the
+refusal latched the tier off. Lane A placed it with a CPU test (main admits the same sequence at 81 of 128 MiB). The fix
+is `a57f85897` (DAY70 design Q).
+- A lease is charged its length, main's charge. The pool carries its idle backings and the live leases' tails, capped
+  together at one budget.
+- A lease that cannot take a class backing inside the cap gets its exact length, as main does. So a lease is refused
+  only where main's ledger refuses it.
+- Demote counts and the request's program are unchanged against main.
+- The red arm (charge back to the class) fails all three new cells, including the placement refusal.
+
+What I checked:
+- The design keeps the ledger and the LRU on one unit instead of patching the refusal. Revuto's two options would still
+  refuse the placed shape.
+- No earlier reading moves: equal demote counts between arms in every A/B cell, no `TIER DISABLED` in any A/B log.
+- The worker cells' class arithmetic returns to lengths (pool cap 0 in those fixtures).
+
+Batteries on the new head:
+- CPU battery on `c7a0dcf42`: 14 of 15 (server lib 951, engine lib 589). The 15th, diff-check, flagged run 4's raw logs'
+  trailing blank lines. The receipts' `.gitattributes` now exempts them, and diff-check reads rc 0.
+- GPU run 5: engine cells 19 of 19 (with `day70_` and both `day63_` pool cells), worker cells 19 of 19, every gate ALL
+  GREEN, `tier-transfer-gate` conformance and roundtrip PASS, all seven `kv-tier-gate` fault arms PASS. serve-smoke's
+  Q35 arm is #777 again.
+- Main `dba926cdc` (#807) merged in clean.
