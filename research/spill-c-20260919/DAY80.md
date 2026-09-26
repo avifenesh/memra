@@ -186,3 +186,58 @@ What it rests on:
 Owed before the question is complete: the 9950X half (section 3). The implementation of the default change follows the
 owner's answer: the flip, the rollback flag and its decide-by row, the door doc, one qualification sitting of the
 flipped default on the 285K class.
+
+## 5. The 9950X half (BOX38, a Ryzen 9 9950X, run by the lead as registered; `pro-single-day80-box38-9950x/`)
+
+BOX38: one RTX PRO 6000 Blackwell Workstation Edition, 123 GB, driver 610.57.04; no page-cache eviction (`MemFree` 54
+GiB at `regpool`'s start). `D80_BUILDS="p80=57086efc8" D80_RIG=box38-9950x bash .../day80-box.sh` on the tree
+`9bb17bd8d`, 14:58Z to `box done 2026-09-26T15:06:51Z`. Receipts: 173 of 173 `OK` against the box manifest
+(re-checked), `run-gen-p80` by hash. Regime: 29 to 43 C, SM median 2610 MHz, N=1210. Verbatim:
+
+- `DAY80 host demand sequence d sha256 4bdc2610c3534e42`, `DAY80 host demand sequence dr sha256 4bdc2610c3534e42`
+- `DAY80 REGTIME CHECKS rig=box38-9950x runs=30 integrity=ok`
+- `DAY80 ADMISSIBILITY rig=box38-9950x ceiling=0.005 max_iqr_gen=0.0010 max_iqr_window=0.0010 failing=[] -> admissible`
+- `DAY80 gen-only decode medians (N=10 each): ref=0.249 d=0.251 dr=0.251`
+- `DAY80 STEP dr_vs_d gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0000 -> flat`
+- `DAY80 STEP dr_vs_d steady window: pooled=-0.0010 o1=-0.0010 o2=+0.0000 noise=0.0010 -> flat`
+- `DAY80 DOOR dr_vs_ref gen-only decode: pooled=+0.0020 o1=+0.0030 o2=+0.0020 noise=0.0010 -> loses`
+- `DAY80 DOOR dr_vs_ref steady window: pooled=+0.0000 o1=+0.0000 o2=+0.0010 noise=0.0010 -> matches`
+- `DAY80 NATURAL rig=box38-9950x ref_median=0.249 d slow=0 of 10 dr slow=0 of 10 -> no_natural_slow`
+- `DAY80 REGTIME VERDICT rig=box38-9950x integrity=ok dr=flat vs_ref=loses (window: dr=flat vs_ref=matches)`
+- `DAY80 INDUCER rig=box38-9950x memfree_gib=54 F_gib=52 induce=0`, `DAY80 REGPOOL VERDICT rig=box38-9950x -> not_run`
+
+**Read as registered:** `regtime` admissible and `dr=flat` on the 9950X, the same host demand sequence; `regpool`
+`not_run` (54 GiB free), which section 3 makes a valid 9950X half. So section 1's condition holds on both classes:
+`registered_clears` on the 285K class, and `regtime` not `regresses` on either. This 9950X host showed no natural slow
+boots in either arm (`no_natural_slow`), as BOX31 showed none: the fix's effect on the natural state is read on the
+285K class under fragmentation, the mechanism (compaction isolating pinned shared memory) being the kernel's, not the
+CPU class's.
+
+## 4a. The owner's question, complete
+
+Section 4 stands as written, with the 9950X half now in. For the owner, in one place:
+
+**Question: make the registered pool the MoE slot cache door's default host pool?** Private anonymous memory, every
+page written once, pinned with `cuMemHostRegister(CU_MEMHOSTREGISTER_PORTABLE)` (today's
+`--expert-bank-pool-registered`), as the pool the door uses; today's `cuMemHostAlloc(CU_MEMHOSTALLOC_PORTABLE)` pool
+behind a rollback flag `--expert-bank-pool-allocated` with a decide-by row (deleted after two weeks unused, per the door
+rules). The door itself stays default-off (its own decision, 2026-10-04, C1(c)).
+
+| reading | host | result |
+|---|---|---|
+| `DAY78.md` section 2, `pages` | 285K, fragmented | `pool_draws`: failing compaction 8 of 8 with today's pool, 0 of 8 pageable |
+| section 2, `regpool` | 285K, fragmented | `registered_clears`: 6 of 8 with today's pool, 0 of 8 registered, all at REF's core speed |
+| section 2, `regtime` | 285K | admissible, `dr=flat` (0.315 s gen-only, 0.286 window, both pools) |
+| section 5, `regtime` | 9950X | admissible, `dr=flat` (0.251 s gen-only, 0.220 against 0.219 window), no natural slow boots |
+| section 2a, local check | RTX 5090 | `MATCH`, the same tape, the same decode time; the 5090's `regtime` inadmissible, not slower as read |
+
+Why it holds: today's pool is shared `/dev/zero` memory the driver pins; under fragmented host memory the kernel's
+compaction isolates those pages, cannot move them, and repeats, and the door's core runs 1.4 to 1.7 times slower per
+instruction while it does (C12's slow state: BOX15's 9950X in about half its boots, machine `b` in 19 of 20, the 285K
+class when fragmented). Pinned private anonymous pages are skipped by that same code before isolation. Cost: 15 GB of
+page faults once at install; no host setting, no privilege; the timing flat on both classes. Not changed by it: the door
+still `loses` to REF gen-only by 2 to 10 ms over 32 tokens depending on the host (C11), and matches it on the window on
+two of the three hosts.
+
+After a yes: the default flip and the rollback flag (one change), the door doc and flags rows, and one qualification
+sitting of the flipped default on the 285K class (`regtime` and `regpool` against the rollback arm).
