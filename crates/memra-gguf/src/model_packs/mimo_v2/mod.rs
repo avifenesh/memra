@@ -6,15 +6,16 @@ pub(crate) mod mint_headers;
 pub(crate) mod mtp;
 pub(crate) mod vision;
 
+use crate::GgmlType;
 use crate::checkpoint_binding::{CheckpointBinding, bind_census};
 use crate::config::{HfConfig, ModelConfig};
 use crate::model_plan::{ModelPlan, MoeMlpPlan, PlanCompileError};
 use crate::safetensors::StInfo;
-use crate::source::{SafetensorsSource, TensorSource, census_from_safetensors_headers};
+use crate::source::{SafetensorsSource, TensorSource, TensorView, census_from_safetensors_headers};
 use crate::tensor_contract::{
-    BoundTensorContract, CheckpointDialect, ContractOptions, ExpertTensor, LayerTensor,
-    QuantConstraint, TensorContract, TensorContractError, TensorId, TensorMatch, TensorOwner,
-    TensorRequirement, TensorTransform,
+    BoundTensorContract, CheckpointDialect, ContractOptions, ExpertTensor, FloatType, LayerTensor,
+    QuantConstraint, StorageLayout, TensorContract, TensorContractError, TensorId, TensorMatch,
+    TensorOwner, TensorRequirement, TensorTransform,
 };
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -139,6 +140,64 @@ pub fn bind_pinned_text_source(
     let binding = bind_census(Some(&SOURCE_PROFILE), &config, &plan, &census)
         .map_err(|error| error.to_string())?;
     Ok((config, plan, binding))
+}
+
+/// Read one pinned modality or separate-MTP BF16 tensor by its bound HF
+/// identity. The returned bytes are a source view; a family-specific executor
+/// still has to prove the corresponding vision, audio, or draft operation.
+pub fn read_bound_modal_bf16<'a>(
+    source: &'a dyn TensorSource,
+    binding: &CheckpointBinding,
+    id: &TensorId,
+) -> Result<TensorView<'a>, String> {
+    let modal = matches!(
+        id,
+        TensorId::Vision { .. }
+            | TensorId::Mtp { .. }
+            | TensorId::Family {
+                family: "mimo_v2_vision" | "mimo_v2_audio",
+                ..
+            }
+    );
+    if !modal
+        || binding.family() != "mimo_v2_source"
+        || binding.dialect != CheckpointDialect::HfSafetensors
+    {
+        return Err("MiMo modality read requires a source-pack modal binding".into());
+    }
+    let bound = binding
+        .tensor(id)
+        .ok_or_else(|| format!("MiMo source contract binds no {id:?}"))?;
+    if bound.shapes.len() != 1
+        || bound.storage != [StorageLayout::Float(FloatType::Bf16)]
+        || bound.shapes[0].is_empty()
+        || bound.shapes[0].contains(&0)
+    {
+        return Err(format!(
+            "{id:?}: source modal BF16 shape or storage changed"
+        ));
+    }
+    let name = binding.require_hf(id)?;
+    let view = source
+        .find_mimo_bf16_hf(&name)
+        .ok_or_else(|| format!("{name}: original MiMo BF16 bytes unavailable"))?;
+    let elements = bound.shapes[0]
+        .iter()
+        .try_fold(1usize, |total, &dim| total.checked_mul(dim as usize))
+        .ok_or_else(|| format!("{name}: BF16 extent overflows"))?;
+    let ne: Vec<u64> = bound.shapes[0].iter().rev().copied().collect();
+    if view.ggml_type != GgmlType::BF16
+        || view.ne != ne
+        || view.bytes.len()
+            != elements
+                .checked_mul(2)
+                .ok_or("BF16 byte extent overflows")?
+    {
+        return Err(format!(
+            "{name}: modal BF16 source view differs from binding"
+        ));
+    }
+    Ok(view)
 }
 
 /// GGUF-style request names for the HF source's text trunk. This is a loader

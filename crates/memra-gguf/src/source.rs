@@ -724,6 +724,12 @@ pub trait TensorSource: Sync {
     fn find_mimo_bf16_ggml(&self, _ggml_name: &str) -> Option<TensorView<'_>> {
         None
     }
+    /// Original BF16 bytes addressed by a bound physical HF name for MiMo
+    /// vision, audio, and separate MTP. The source limits this to those
+    /// namespaces; the caller must obtain the name from CheckpointBinding.
+    fn find_mimo_bf16_hf(&self, _hf_name: &str) -> Option<TensorView<'_>> {
+        None
+    }
     /// Native access for a stacked expert bank. This is deliberately distinct from
     /// `find_fp8_native`: expert and scale-grid strides are part of the checkpoint contract.
     fn find_fp8_stacked_native(&self, _ggml_name: &str) -> Option<Fp8StackedNative<'_>> {
@@ -2672,6 +2678,37 @@ impl TensorSource for SafetensorsSource {
         })
     }
 
+    fn find_mimo_bf16_hf(&self, hf_name: &str) -> Option<TensorView<'_>> {
+        if self.cfg.arch != Arch::MiMoV2
+            || ![
+                "visual.",
+                "audio_encoder.",
+                "speech_embeddings.",
+                "model.mtp.",
+            ]
+            .iter()
+            .any(|prefix| hf_name.starts_with(prefix))
+        {
+            return None;
+        }
+        let (info, bytes) = self.lookup(hf_name)?;
+        if info.dtype != "BF16" || !(1..=5).contains(&info.shape.len()) || info.shape.contains(&0) {
+            return None;
+        }
+        let elements = info
+            .shape
+            .iter()
+            .try_fold(1usize, |total, &dim| total.checked_mul(dim as usize))?;
+        if bytes.len() != elements.checked_mul(2)? {
+            return None;
+        }
+        Some(TensorView {
+            bytes: Cow::Borrowed(bytes),
+            ggml_type: GgmlType::BF16,
+            ne: info.shape.iter().rev().copied().collect(),
+        })
+    }
+
     fn find_fp8_stacked_native(&self, ggml_name: &str) -> Option<Fp8StackedNative<'_>> {
         use crate::hf_mapping::{HfTarget, resolve_ggml};
         let hf = match resolve_ggml(ggml_name, &self.cfg)? {
@@ -3329,17 +3366,20 @@ mod tests {
         .unwrap();
         let file = dir.join("model.safetensors");
         let name = "model.layers.0.self_attn.o_proj.weight";
+        let vision = "visual.patch_embed.proj.weight";
         let elements = 512 * 4096;
         let bytes_len = elements * 2;
         let header = format!(
-            r#"{{"{name}":{{"dtype":"BF16","shape":[512,4096],"data_offsets":[0,{bytes_len}]}}}}"#
+            r#"{{"{name}":{{"dtype":"BF16","shape":[512,4096],"data_offsets":[0,{bytes_len}]}},"{vision}":{{"dtype":"BF16","shape":[2,3,2,2,2],"data_offsets":[{bytes_len},{}]}}}}"#,
+            bytes_len + 96
         );
-        let mut bytes = Vec::with_capacity(8 + header.len() + bytes_len);
+        let mut bytes = Vec::with_capacity(8 + header.len() + bytes_len + 96);
         bytes.extend_from_slice(&(header.len() as u64).to_le_bytes());
         bytes.extend_from_slice(header.as_bytes());
         for _ in 0..elements {
             bytes.extend_from_slice(&0x3f80u16.to_le_bytes());
         }
+        bytes.extend_from_slice(&[0x80, 0x3f].repeat(48));
         std::fs::write(&file, bytes).unwrap();
         let config = ModelConfig::from_hf(&crate::config::HfConfig::parse(include_str!(
             "model_packs/mimo_v2/fixtures/config.json"
@@ -3351,9 +3391,17 @@ mod tests {
         assert_eq!(raw.ne, vec![4096, 512]);
         assert_eq!(raw.bytes.len(), bytes_len);
         assert!(matches!(&raw.bytes, Cow::Borrowed(_)));
+        let visual = source.find_mimo_bf16_hf(vision).unwrap();
+        assert_eq!(visual.ggml_type, GgmlType::BF16);
+        assert_eq!(visual.ne, vec![2, 2, 2, 3, 2]);
+        assert_eq!(visual.bytes.len(), 96);
+        assert!(matches!(&visual.bytes, Cow::Borrowed(_)));
+        assert!(source.find_mimo_bf16_hf(name).is_none());
         let recorded = crate::checkpoint_binding::RecordingSource::new(&source);
         assert!(recorded.find_mimo_bf16_ggml(ggml).is_some());
+        assert!(recorded.find_mimo_bf16_hf(vision).is_some());
         assert!(recorded.requested().contains(ggml));
+        assert!(recorded.requested().contains(&format!("hf:{vision}")));
         assert!(source.find_mimo_bf16_ggml("blk.0.attn_q.weight").is_none());
         let error = crate::model_packs::mimo_v2::bind_pinned_text_source(&source)
             .expect_err("one valid MiMo matrix cannot bind a partial checkpoint");
@@ -3370,6 +3418,7 @@ mod tests {
             .expect_err("changed config bytes must refuse the pinned source");
         assert!(error.contains("config changed"), "{error}");
         drop(recorded);
+        drop(visual);
         drop(raw);
         drop(source);
         std::fs::remove_dir_all(dir).unwrap();
