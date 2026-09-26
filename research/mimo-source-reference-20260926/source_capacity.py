@@ -95,20 +95,32 @@ def placement(config, categories, layers, card_bytes, sessions, kv_bytes):
     pattern = config["hybrid_layer_pattern"]
     if len(pattern) != len(layers) or set(pattern) != {0, 1}:
         raise ValueError("pinned attention pattern changed")
-    per_layer_kv = [
-        sessions
-        * kv_bytes
-        * (context * config["num_key_value_heads"] if kind == 0 else config["sliding_window"] * config["swa_num_key_value_heads"])
-        * (config["head_dim"] + config["v_head_dim"])
-        for kind in pattern
-    ]
+    per_layer_kv = []
+    for kind in pattern:
+        if kind == 0:
+            tokens = context
+            heads = config["num_key_value_heads"]
+            width = config["head_dim"] + config["v_head_dim"]
+        else:
+            tokens = config["sliding_window"]
+            heads = config["swa_num_key_value_heads"]
+            width = config["swa_head_dim"] + config["swa_v_head_dim"]
+        per_layer_kv.append(sessions * kv_bytes * tokens * heads * width)
     cuts = []
     for cut in range(1, len(layers)):
-        stage0 = categories["text_embedding"] + sum(layers[:cut]) + sum(per_layer_kv[:cut])
-        stage1 = categories["text_norm"] + categories["text_head"] + sum(layers[cut:]) + sum(per_layer_kv[cut:])
+        stage0_weight = categories["text_embedding"] + sum(layers[:cut])
+        stage1_weight = categories["text_norm"] + categories["text_head"] + sum(layers[cut:])
+        stage0_kv = sum(per_layer_kv[:cut])
+        stage1_kv = sum(per_layer_kv[cut:])
+        stage0 = stage0_weight + stage0_kv
+        stage1 = stage1_weight + stage1_kv
         cuts.append(
             {
                 "cut_before_layer": cut,
+                "stage0_weight_bytes": stage0_weight,
+                "stage1_weight_bytes": stage1_weight,
+                "stage0_kv_bytes": stage0_kv,
+                "stage1_kv_bytes": stage1_kv,
                 "stage0_base_bytes": stage0,
                 "stage1_base_bytes": stage1,
                 "minimum_headroom_bytes": min(card_bytes - stage0, card_bytes - stage1),
@@ -185,11 +197,13 @@ def main():
         "source": MODEL,
         "revision": REVISION,
         "index_sha256": INDEX_SHA256,
+        "config_sha256": CONFIG_SHA256,
         "header_sha256": header_hash.hexdigest(),
         "physical_tensor_count": len(seen),
         "file_count": len(files),
         "total_index_bytes": index["metadata"]["total_size"],
         "text_only_bytes": text_bytes,
+        "text_layer_bytes": layers,
         "excluded_modal_and_mtp_bytes": index["metadata"]["total_size"] - text_bytes,
         "categories": dict(categories),
         "card_mib_input": args.card_mib,
