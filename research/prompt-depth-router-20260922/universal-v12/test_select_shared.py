@@ -110,7 +110,7 @@ class SharedSelectionTest(unittest.TestCase):
             self.assertEqual(
                 {row["label"] for row in final},
                 {"joint-shared", "joint-noop-shared",
-                 "fixed-k20-d2-c0"},
+                 "fixed-k20-d2-c0", "fixed-k20-d3-c0"},
             )
             self.assertNotIn("chosen_by_domain", selection)
 

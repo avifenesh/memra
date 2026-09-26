@@ -26,10 +26,15 @@ jobs:
         run: |
           python3 -m unittest discover \
             -s research/prompt-depth-router-20260922/universal-v12 \
-            -p test_select_shared.py -v
+            -p 'test_*.py' -v
       - name: Parse frozen workload source
         run: |
           python3 -m py_compile \
             research/prompt-depth-router-20260922/universal-v12/workloads.py \
             research/prompt-depth-router-20260922/universal-v12/select_shared.py \
-            research/prompt-depth-router-20260922/universal-v12/eval.py
+            research/prompt-depth-router-20260922/universal-v12/eval.py \
+            research/prompt-depth-router-20260922/universal-v12/collect_prose.py \
+            research/prompt-depth-router-20260922/universal-v12/quality_tasks.py \
+            research/prompt-depth-router-20260922/universal-v12/prose_packets.py \
+            research/prompt-depth-router-20260922/universal-v12/score_prose.py \
+            research/prompt-depth-router-20260922/universal-v12/score_validation.py

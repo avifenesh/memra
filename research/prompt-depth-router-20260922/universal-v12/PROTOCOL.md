@@ -80,8 +80,9 @@ separate sealed commitment.
    margin. If none survives, record a global no-go and leave final
    prompts unopened. There is no `chosen_by_domain` primary.
 
-Only the single selected policy, its no-op, the global fixed control
-and the validation-best fixed controls enter the final arm file.
+Only the single selected policy, its no-op, the K20/D3/C0 reference,
+the global fixed control and the validation-best fixed controls enter
+the final arm file.
 Every listed arm runs on every domain. No field switch occurs in
 the native command.
 

@@ -197,6 +197,7 @@ def choose(validation, arms_path):
         {
             chosen["label"],
             by_label[chosen["label"]]["noop_label"],
+            BASELINE,
             global_fixed,
             *domain_best_fixed.values(),
         }
