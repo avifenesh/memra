@@ -8,7 +8,7 @@ use crate::{
 };
 use cudarc::driver::CudaSlice;
 use memra_gguf::config::ModelConfig;
-use memra_gguf::source::{DiskExtent, GgufSource, TensorSource};
+use memra_gguf::source::{DiskExtent, F8BlockGrid, Fp8Native, GgufSource, TensorSource};
 use memra_gguf::{GgmlType, GgufFile, dequant};
 use std::collections::HashMap;
 use std::path::Path;
@@ -498,6 +498,68 @@ pub struct Fp8BlockScales {
     pub cols: usize, // ceil(in_f/128)
 }
 
+fn validate_mimo_fp8_qkv_shard<'a>(view: &'a Fp8Native<'_>) -> Result<&'a F8BlockGrid, String> {
+    let grid = view
+        .blk
+        .as_ref()
+        .ok_or("MiMo QKV shard has no FP8 block grid")?;
+    let weight_bytes = view
+        .out_f
+        .checked_mul(view.in_f)
+        .ok_or("MiMo QKV shard dimensions overflow")?;
+    let scale_cells = grid
+        .rows
+        .checked_mul(grid.cols)
+        .ok_or("MiMo QKV shard grid dimensions overflow")?;
+    if view.out_f == 0
+        || view.in_f == 0
+        || !view.out_f.is_multiple_of(16)
+        || !view.in_f.is_multiple_of(32)
+        || view.bytes.len() != weight_bytes
+        || grid.rows != view.out_f.div_ceil(128)
+        || grid.cols != view.in_f.div_ceil(128)
+        || grid.scales.len() != scale_cells
+        || view.scale != 1.0
+        || grid
+            .scales
+            .iter()
+            .any(|scale| !scale.is_finite() || *scale <= 0.0)
+    {
+        return Err("MiMo QKV shard bytes or scale grid violate native FP8 layout".to_owned());
+    }
+    Ok(grid)
+}
+
+#[cfg(test)]
+mod mimo_fp8_qkv_shard_tests {
+    use super::*;
+    use std::borrow::Cow;
+
+    #[test]
+    fn native_shard_gate_requires_exact_checkpoint_bytes_and_grid() {
+        let mut view = Fp8Native {
+            bytes: Cow::Owned(vec![0x38; 192 * 128]),
+            scale: 1.0,
+            blk: Some(F8BlockGrid {
+                scales: vec![1.0, 2.0],
+                rows: 2,
+                cols: 1,
+            }),
+            out_f: 192,
+            in_f: 128,
+        };
+        assert!(validate_mimo_fp8_qkv_shard(&view).is_ok());
+        view.blk.as_mut().unwrap().rows = 3;
+        assert!(validate_mimo_fp8_qkv_shard(&view).is_err());
+        view.blk.as_mut().unwrap().rows = 2;
+        view.blk.as_mut().unwrap().scales[1] = f32::NAN;
+        assert!(validate_mimo_fp8_qkv_shard(&view).is_err());
+        view.blk.as_mut().unwrap().scales[1] = 2.0;
+        view.bytes.to_mut().pop();
+        assert!(validate_mimo_fp8_qkv_shard(&view).is_err());
+    }
+}
+
 /// Host-side split-plane repack of NVFP4 GGUF block bytes (A6). Input: out_f rows of in_f/64
 /// 36-byte blocks ([4B UE4M3 scales][32B packed e2m1]). Output (same length): quant plane
 /// (out_f x nsb64 x 32B) followed by scale plane (out_f x nsb64 x 4B). Pure byte permutation.
@@ -787,6 +849,44 @@ impl GpuTensor {
             residency_census_note(*qtype, bytes.len());
         }
         Ok(t)
+    }
+
+    /// Keep one MiMo checkpoint QKV shard in its original block-FP8 format.
+    /// Four such operands still need a typed Q/K/V executor and model parity
+    /// before a MiMo load path can be registered.
+    pub fn load_mimo_fp8_qkv_shard(
+        e: &Engine,
+        view: &Fp8Native<'_>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let grid = validate_mimo_fp8_qkv_shard(view).map_err(std::io::Error::other)?;
+        if !crate::fp8_ffi::st_e4m3_blk_enabled() {
+            return Err("native block-FP8 residency is disabled for MiMo QKV".into());
+        }
+        let bytes = e.htod_bytes(&view.bytes)?;
+        if e.fp8_blk_nan_count(&bytes)? != 0 {
+            return Err("MiMo QKV checkpoint contains an FP8 NaN code".into());
+        }
+        let scales = e.htod(&grid.scales)?;
+        residency_census_note(crate::QT_F8_E4M3_BLK, bytes.len());
+        Ok(GpuTensor::Quant {
+            bytes,
+            qtype: crate::QT_F8_E4M3_BLK,
+            row_bytes: view.in_f,
+            ne: vec![view.in_f as u64, view.out_f as u64],
+            scale: 1.0,
+            rp: false,
+            #[cfg(memra_cutlass)]
+            cutlass: None,
+            fp8: None,
+            blk: Some(Fp8BlockScales {
+                scales,
+                rows: grid.rows,
+                cols: grid.cols,
+            }),
+            f16: None,
+            a4: None,
+            rp4: None,
+        })
     }
 
     #[allow(clippy::manual_is_multiple_of)] // allow: divisor is runtime-derived; the modulo form keeps a zero divisor loud (a panic), where is_multiple_of would return false silently
