@@ -36,3 +36,27 @@ promote's PIN and e2e at most the tip's plus 1.0 ms, the tenant's stall at most 
 identity gates door ON.
 
 **Budget.** 0.3 agent-day.
+
+## 2. Step 1 as built (`193f2634d`), and the placing sitting prepared
+
+- The lines (log only):
+  - Each `Pending` answer of the promote's settle now carries what it still waits on, and the timeline's poll entry
+    reads `pending on X` (`sources`, `copies`, `receipt`, joined by `+`). Before, it read `pending`.
+  - The sources label comes from the helper's reply not yet landing. The copies and receipt labels come from the
+    engine's new read-only `CudaTransfers::h2d_landing_parts`: the items' and spans' copy events, and the spans'
+    destination-digest receipt event, queried without changing any state.
+  - "The tick-top poll at which each was first seen complete" is read from the same entries: the first poll that no
+    longer names a requirement.
+  - The census `day64_the_promote_waiting_labels_are_log_only` checks that the query is read only by the labeller,
+    and the label only by the timeline.
+  - Server lib `941 passed; 0 failed; 26 ignored`; clippy `-D warnings` (engine and server); fmt (`day64/`).
+- Read while writing the reader: W's target base receipts already show a late promote (submitted at tick 9859,
+  published at tick 9861, one poll `pending` at 9860). The shape exists on the current tree, so the cell should place
+  it.
+- **The sitting** `pro-single-day64/`, receipts `/root/spill-receipts/a-d64`: `build.sh <tip>`, then `driver.sh`, in
+  one collector hold:
+  - the promote mode, 20 boots at `--n 5`, `MEMRA_MAX_SESSIONS=4`, the prefix cache at 256 MB, door ON;
+  - then `day64-reading.py`, whose last line is `DAY64 PLACE -> ..`. It reads section 1's rule: a promote is late
+    when it publishes after the next tick top, and the label at that next tick top's poll names the requirement.
+    Named at least half the time, it selects the design.
+  - About 25 minutes of card time.

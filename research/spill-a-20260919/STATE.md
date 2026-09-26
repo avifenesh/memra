@@ -1,4 +1,4 @@
-# WP-A resumable state (2026-09-26, NEED TARGET CARD: L's sitting; R1's queued on BOX31; W's 5090 half waiting)
+# WP-A resumable state (2026-09-26, NEED TARGET CARD: DAY64's placing sitting and L's (running); W's 5090 half waiting)
 
 - Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ65 took `9ab479d9c` (DAY66); integ67 takes B1 after integ66.
 - Items 21 to 25 closed (DAY53 to DAY58); item 23's addendum F2b (`b4d6f95c2`) accepted.
@@ -27,10 +27,10 @@
     stopped by me at 07:36Z (after (a), before its timed cell) so B1's half runs first; it repeats whole after.
   - Scratch to remove when the cells close: `rtx5090-w/cell/bins/`, `/home/avifenesh/spill-a-cells/`, and the four
     lines added to the shared `/home/avifenesh/projects/memra/.git/info/exclude`.
-- Item 13 (DAY62): the price selected R2; R2 was built, read `REVERT (c)` and reverted (section 7). The stall is
-  the long prime's own segments, and the wait moved to the next capture's second-capture settle. R1's corrected cell
-  selected R1 (no-source hold 12.53 / 12.54 ms). R1 is built (`04554e99f`); its sitting is `pro-single-r1/`
-  (`build.sh <tip> <R1's parent>`, then `driver.sh`, last line `R1 VERDICT -> ..`).
+- Item 13 (DAY62) closed: R1 ADOPTED (section 10, code `04554e99f`, for the next integ with L). R2 was reverted
+  (section 7).
+- Item 18 (DAY64): step 1 lines built (`193f2634d`); the placing sitting is `pro-single-day64/` (`build.sh <tip>`,
+  then `driver.sh`, last line `DAY64 PLACE -> ..`).
 - B1's 5090 half read ADOPT (DAY59 section 12); B1 goes to integ67.
 - Items 14 and 19 (DAY63, design L): built (`f6dfe303a`, CPU-green, section 3). Its sitting is `pro-single-l/`
   (`build.sh <tip> <L's parent>`, then `driver.sh`, last line `L VERDICT -> ..`). Item 17 is re-read on top after L's
