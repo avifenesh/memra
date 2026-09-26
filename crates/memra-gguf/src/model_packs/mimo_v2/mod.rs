@@ -6,8 +6,8 @@ pub(crate) mod mint_headers;
 pub(crate) mod mtp;
 pub(crate) mod vision;
 
-use crate::config::ModelConfig;
-use crate::model_plan::{ModelPlan, MoeMlpPlan};
+use crate::config::{HfConfig, ModelConfig};
+use crate::model_plan::{ModelPlan, MoeMlpPlan, PlanCompileError};
 use crate::safetensors::StInfo;
 use crate::source::census_from_safetensors_headers;
 use crate::tensor_contract::{
@@ -53,6 +53,32 @@ pub static MINT_PROFILE: ModelPack = ModelPack {
     tensor_schema: mint_tensor_schema,
     tiny_plan: None,
 };
+
+/// Text-only reference fixture for the two MiMo attention programs. This does
+/// not cover the checkpoint's vision, audio, or separate MTP artifacts and
+/// does not change the source profile's unsupported serving state.
+pub fn tiny_text_plan() -> Result<ModelPlan, PlanCompileError> {
+    canonical_plan(&ModelConfig::from_hf(&HfConfig::parse(
+        r#"{"model_type":"mimo_v2","num_hidden_layers":2,
+        "hidden_size":32,"vocab_size":32,"max_position_embeddings":32,
+        "num_attention_heads":4,"num_key_value_heads":1,
+        "head_dim":12,"v_head_dim":8,"partial_rotary_factor":0.33333334,
+        "swa_num_attention_heads":4,"swa_num_key_value_heads":2,
+        "swa_head_dim":12,"swa_v_head_dim":8,
+        "hybrid_layer_pattern":[0,1],"moe_layer_freq":[0,1],
+        "intermediate_size":64,"moe_intermediate_size":16,
+        "n_routed_experts":4,"num_experts_per_tok":2,
+        "scoring_func":"sigmoid","topk_method":"noaux_tc",
+        "norm_topk_prob":true,"n_group":1,"topk_group":1,
+        "moe_router_dtype":"bfloat16","num_nextn_predict_layers":0,
+        "attention_projection_layout":"fused_qkv","attention_value_scale":0.707,
+        "add_full_attention_sink_bias":false,
+        "add_swa_attention_sink_bias":true,
+        "attention_chunk_size":4,"sliding_window":4,
+        "rope_theta":10000000.0,"swa_rope_theta":10000.0,
+        "layernorm_epsilon":0.000001,"hidden_act":"silu"}"#,
+    )))
+}
 
 /// The quality-tested Xiaomi MXFP4 checkpoint is an explicit inspection profile.
 /// It remains outside automatic serving selection until native parity passes.
@@ -293,10 +319,36 @@ pub(crate) fn mint_expert_requirements(
 mod tests {
     use super::*;
     use crate::config::{HfConfig, ModelConfig};
+    use crate::model_plan::{AttentionPlan, MlpPlan, TensorPresence};
     use crate::tensor_contract::{
         CheckpointDialect, ContractOptions, QuantLayout, StorageLayout, TensorCensusEntry,
         TensorContract, TensorContractError,
     };
+
+    #[test]
+    fn source_tiny_text_plan_covers_both_attention_programs() {
+        let plan = tiny_text_plan().unwrap();
+        assert_eq!(plan.arch, crate::config::Arch::MiMoV2);
+        assert_eq!(plan.layers.len(), 2);
+        assert!(matches!(plan.layers[0].attention, AttentionPlan::Full(_)));
+        assert!(matches!(
+            plan.layers[1].attention,
+            AttentionPlan::SlidingWindow { window: 4, .. }
+        ));
+        assert!(matches!(plan.layers[0].mlp, MlpPlan::Dense(_)));
+        assert!(matches!(plan.layers[1].mlp, MlpPlan::Moe(_)));
+        let AttentionPlan::SlidingWindow { attention, .. } = &plan.layers[1].attention else {
+            unreachable!()
+        };
+        let mimo = attention.mimo_math.unwrap();
+        assert_eq!(mimo.value_scale_before_cache.to_bits(), 0.707f32.to_bits());
+        assert_eq!(mimo.sink, TensorPresence::Required);
+        assert!(plan.vision.is_none());
+        assert!(plan.speech.is_none());
+        assert!(plan.mtp_blocks.is_empty());
+        assert!(SOURCE_PROFILE.support.is_none());
+        assert!(SOURCE_PROFILE.compile_tiny_plan().is_err());
+    }
 
     #[test]
     fn mint_profile_is_explicit_and_cannot_admit_native_load() {
