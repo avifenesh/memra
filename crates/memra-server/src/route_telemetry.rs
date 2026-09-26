@@ -81,6 +81,8 @@ pub(crate) struct RouteLoad {
     prompt_tokens_in: AtomicU64,
     cached_tokens_in: AtomicU64,
     rounds: AtomicU64,
+    /// Rounds of completed requests only, the numerator of the per-request decode estimate.
+    served_rounds: AtomicU64,
     service_ms: Mutex<Window>,
     round_ms: Mutex<Window>,
 }
@@ -91,6 +93,8 @@ pub(crate) struct ServeStats {
     pub tokens_out: usize,
     pub n_prompt: usize,
     pub n_cached: usize,
+    /// Committed decode steps or speculative rounds the request took.
+    pub rounds: usize,
 }
 
 /// The published view of a [`RouteLoad`] (the /metrics `routes` block).
@@ -135,6 +139,7 @@ impl RouteLoad {
             prompt_tokens_in: AtomicU64::new(0),
             cached_tokens_in: AtomicU64::new(0),
             rounds: AtomicU64::new(0),
+            served_rounds: AtomicU64::new(0),
             service_ms: Mutex::new(Window::new(SERVICE_WINDOW)),
             round_ms: Mutex::new(Window::new(ROUND_WINDOW)),
         })
@@ -221,10 +226,26 @@ impl RouteLoad {
         }
     }
 
-    /// Seconds one request occupies the route: the p50 of observed service wall time when there
-    /// is any, else `fallback_s` (the `MEMRA_RL_RESET_S` static, default 2). Same clamp as the
-    /// hybrid estimate, 1..=600.
+    /// Seconds one request occupies the route: the mean rounds a completed request took times
+    /// the round p50, the way the hybrid lane prices a request (mean tokens per request times
+    /// the step p50). Before any round is recorded it is the p50 of observed service wall time,
+    /// and before any request completes `fallback_s` (the `MEMRA_RL_RESET_S` static, default 2).
+    /// Same clamp as the hybrid estimate, 1..=600.
+    ///
+    /// Prime time is left out on purpose. The service p50 counted it, so one 24k-token prime
+    /// (68 s) set the estimate for the requests behind it, and a c16 burst of short requests
+    /// shed eight that would each have finished in under 9 s (research/dsv4-route-receipt-20260926/).
+    /// An estimate that misses a queued prompt's prefill admits a request that may answer late;
+    /// the other error refuses a request that would have been served, and a false refusal is
+    /// the worse one (the non-stream deadline gate's rule).
     pub(crate) fn service_estimate_s(&self, fallback_s: u64) -> u64 {
+        let completed = self.completed.load(Ordering::Acquire);
+        let served_rounds = self.served_rounds.load(Ordering::Acquire);
+        let round_p50 = self.round_ms.lock().ok().and_then(|w| w.percentile(50));
+        if let Some(round_ms) = round_p50.filter(|_| completed > 0 && served_rounds > 0) {
+            let ms = served_rounds.div_ceil(completed).saturating_mul(round_ms);
+            return ms.div_ceil(1000).clamp(1, 600);
+        }
         match self.service_ms.lock().ok().and_then(|w| w.percentile(50)) {
             Some(ms) => ms.div_ceil(1000).clamp(1, 600),
             None => fallback_s,
@@ -356,6 +377,8 @@ impl RouteRun {
             .fetch_add(stats.n_prompt as u64, Ordering::Relaxed);
         l.cached_tokens_in
             .fetch_add(stats.n_cached as u64, Ordering::Relaxed);
+        l.served_rounds
+            .fetch_add(stats.rounds as u64, Ordering::Release);
         if let Ok(mut w) = l.service_ms.lock() {
             w.push(self.t0.elapsed().as_millis() as u64);
         }
@@ -539,6 +562,7 @@ mod tests {
             tokens_out: 7,
             n_prompt: 30,
             n_cached: 10,
+            rounds: 7,
         });
         assert_eq!(r.running(), 0);
         let mut failed = r.begin();
@@ -597,6 +621,49 @@ mod tests {
             9,
             "one outlier does not move the median"
         );
+    }
+
+    /// The two-card receipt's shape (research/dsv4-route-receipt-20260926/): one completed
+    /// 24k-token prime took 68 s for 16 decode rounds at about 12 ms. The service p50 priced every
+    /// later request at 68 s; the round estimate prices one at its decode, 1 s after the floor.
+    #[test]
+    fn a_long_prime_does_not_price_the_requests_behind_it() {
+        let r = RouteLoad::new("t-prime", 4);
+        {
+            let mut w = r.service_ms.lock().unwrap();
+            w.push(68_000);
+        }
+        assert_eq!(
+            r.service_estimate_s(2),
+            68,
+            "before any round: the service p50"
+        );
+        let mut run = r.begin();
+        run.admit();
+        r.note_round(67_400); // the first round's gap spans the prime
+        for _ in 0..15 {
+            r.note_round(12);
+        }
+        run.finish(ServeStats {
+            tokens_out: 16,
+            n_prompt: 24_008,
+            n_cached: 0,
+            rounds: 16,
+        });
+        assert_eq!(r.service_estimate_s(2), 1);
+        // A long generation prices as one: 3000 rounds at 12 ms.
+        let mut long = r.begin();
+        long.admit();
+        for _ in 0..3000 {
+            r.note_round(12);
+        }
+        long.finish(ServeStats {
+            tokens_out: 3000,
+            n_prompt: 20,
+            n_cached: 0,
+            rounds: 3000,
+        });
+        assert_eq!(r.service_estimate_s(2), 19, "mean 1508 rounds x 12 ms");
     }
 
     #[test]
