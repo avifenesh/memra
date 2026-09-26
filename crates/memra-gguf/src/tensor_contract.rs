@@ -149,6 +149,14 @@ pub enum MtpTensor {
     EmbeddingNorm,
     HiddenNorm,
     FusionProjection,
+    PreAttentionNorm,
+    PreMlpNorm,
+    FusedQkv,
+    AttentionSink,
+    AttentionOutput,
+    MlpGate,
+    MlpUp,
+    MlpDown,
     /// qwen4_exp `mtp.fc_embedding` — one of the TWO separate draft-input projections
     /// (MtpFusionPlan::SeparateProjections), not the concat FusionProjection program.
     EmbeddingProjection,
