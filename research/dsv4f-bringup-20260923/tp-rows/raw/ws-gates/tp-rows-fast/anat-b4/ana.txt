@@ -1,0 +1,42 @@
+capture span 2014.8 ms over 64 steps = 31.48 ms/step
+dev0: kernels 247248 (3863/step) kernel-sum 22.44 ms/step busy-union 23.25 ms/step memcpys 802/step
+dev1: kernels 247888 (3873/step) kernel-sum 22.37 ms/step busy-union 23.18 ms/step memcpys 803/step
+--- dev0 top kernels (ms/step, count/step, share)
+    5.593    129  24.9%  moe_kq_mrow_stream_kernel
+    4.335    494  19.3%  dsv4_dense_fast_fp8_kernel
+    2.205     86   9.8%  memra_tp_ar_gather_rows_f32_kernel
+    1.710     43   7.6%  memra_tp_ar_1stage_kernel
+    1.593    496   7.1%  dsv4_dense_fast_dots_kernel
+    0.973    172   4.3%  dsv4_sink_softout_st_f32acc_kernel
+    0.842     84   3.8%  dsv4_indexer_score_f32acc_kernel
+    0.704    172   3.1%  dsv4_sink_scores_st_f32acc_kernel
+    0.562     86   2.5%  dsv4_hc_finish_f32_fixed_order_kernel
+    0.429     86   1.9%  dsv4_fp8_gather_half_kernel
+    0.276     84   1.2%  dsv4_topk_idx_numeric_kernel
+    0.270     43   1.2%  dsv4_dots_f32acc_mrow_kernel
+--- dev1 top kernels (ms/step, count/step, share)
+    5.666    129  25.3%  moe_kq_mrow_stream_kernel
+    4.341    494  19.4%  dsv4_dense_fast_fp8_kernel
+    1.672     43   7.5%  memra_tp_ar_1stage_kernel
+    1.642    496   7.3%  dsv4_dense_fast_dots_kernel
+    1.269     86   5.7%  memra_tp_ar_gather_rows_f32_kernel
+    0.969    172   4.3%  dsv4_sink_softout_st_f32acc_kernel
+    0.941     45   4.2%  dsv4_dots_f32acc_mrow_kernel
+    0.850     84   3.8%  dsv4_indexer_score_f32acc_kernel
+    0.697    172   3.1%  dsv4_sink_scores_st_f32acc_kernel
+    0.561     86   2.5%  dsv4_hc_finish_f32_fixed_order_kernel
+    0.427     86   1.9%  dsv4_fp8_gather_half_kernel
+    0.278     84   1.2%  dsv4_topk_idx_numeric_kernel
+memcpy kind: count/step bytes/step ms/step {1: (12.0, 96, 0.003), 8: (1588.625, 100182272, 1.545), 2: (5.0, 368, 0.003)}
+--- runtime API (count/step, ms/step)
+      7736   18.521  cudaLaunchKernel_v7000
+      1589    5.225  cuMemcpyDtoDAsync_v2
+         5    1.056  cuMemcpyDtoHAsync_v2
+      7736    0.626  cuKernelGetName
+        86    0.234  cuMemsetD8Async
+       444    0.036  cuCtxSetCurrent
+        13    0.032  cuStreamSynchronize
+        12    0.028  cuMemcpyHtoDAsync_v2
+         0    0.000  cuCtxSynchronize
+         0    0.000  cuProfilerStart
+         0    0.000  cuProfilerStop
