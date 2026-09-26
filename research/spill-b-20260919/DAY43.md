@@ -80,3 +80,77 @@ dominate).
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
+### 2.1 The target card (the eighth sitting, one RTX PRO 6000 Blackwell Workstation Edition, 2026-09-26 05:42 to 09:29Z)
+
+Binaries built on the box from `87d9e00d1`: `tip` sha256 `8aa9fcd6...77a5621d`, `offprev` (the tip with
+`day43-nodoor.patch`) `be6dca87...ccb0e24`; receipts at `pro-single-day43/box/` (134 files, the box manifest checked,
+binaries by hash only). Verbatim:
+
+```
+DAY43 C4 card=pro6000 boot=offprev oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY43 C4 card=pro6000 boot=rx-spec-O1-clamp oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY43 C4 card=pro6000 boot=rx-spec-O1-unset oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY43 C4 card=pro6000 boot=rx-spec-O2-clamp oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY43 C4 card=pro6000 boot=rx-spec-O2-unset oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY43 C1 card=pro6000 order=O1 rows=120 differ=['RX-30720-g256-r1-t3-cold', 'RX-30720-g256-r3-t3-cold', 'RX-30720-g32-r0-t3-cold', 'RX-6144-g256-r1-t3-cold', 'RX-6144-g256-r2-t3-cold'] -> FAIL
+DAY43 C2 card=pro6000 boot=rx-spec-O1-clamp clamp_lines=120 resumed=60 cached_mismatch=[] -> PASS
+DAY43 C3 card=pro6000 boot=rx-spec-O1-clamp turns=60 resumed=60 frac=1.00 -> PASS
+DAY43 READING card=pro6000 boot=rx-spec-O1-unset turns=60 resumed=34 flips_vs_cold=6 later_turn_ttft_ms N=60 p50=1622.5 p95=9148.8 generated=25920 wall_s=2773.8 tok_per_s=9.34 clamp_lines=0
+DAY43 READING card=pro6000 boot=rx-spec-O1-unset L=6144 G=32 turns=10 resumed=5 ttft_ms p50=882.9 p95=1644.8
+DAY43 READING card=pro6000 boot=rx-spec-O1-unset L=6144 G=256 turns=10 resumed=3 ttft_ms p50=1729.2 p95=1804.7
+DAY43 READING card=pro6000 boot=rx-spec-O1-unset L=30720 G=32 turns=10 resumed=2 ttft_ms p50=9028.8 p95=9068.5
+DAY43 READING card=pro6000 boot=rx-spec-O1-unset L=30720 G=256 turns=10 resumed=4 ttft_ms p50=9118.1 p95=9246.6
+DAY43 READING card=pro6000 boot=rx-spec-O1-unset L=122880 G=32 turns=10 resumed=10 ttft_ms p50=419.3 p95=3511.8
+DAY43 READING card=pro6000 boot=rx-spec-O1-unset L=122880 G=256 turns=10 resumed=10 ttft_ms p50=439.8 p95=6661.4
+DAY43 READING card=pro6000 boot=rx-spec-O1-clamp turns=60 resumed=60 flips_vs_cold=24 later_turn_ttft_ms N=60 p50=211.2 p95=417.0 generated=25847 wall_s=2607.9 tok_per_s=9.91 clamp_lines=120
+DAY43 READING card=pro6000 boot=rx-spec-O1-clamp L=6144 G=32 turns=10 resumed=10 ttft_ms p50=161.8 p95=162.3
+DAY43 READING card=pro6000 boot=rx-spec-O1-clamp L=6144 G=256 turns=10 resumed=10 ttft_ms p50=161.4 p95=162.5
+DAY43 READING card=pro6000 boot=rx-spec-O1-clamp L=30720 G=32 turns=10 resumed=10 ttft_ms p50=211.6 p95=215.9
+DAY43 READING card=pro6000 boot=rx-spec-O1-clamp L=30720 G=256 turns=10 resumed=10 ttft_ms p50=211.2 p95=215.7
+DAY43 READING card=pro6000 boot=rx-spec-O1-clamp L=122880 G=32 turns=10 resumed=10 ttft_ms p50=416.8 p95=417.1
+DAY43 READING card=pro6000 boot=rx-spec-O1-clamp L=122880 G=256 turns=10 resumed=10 ttft_ms p50=415.7 p95=416.4
+DAY43 C1 card=pro6000 order=O2 rows=120 differ=['RX-30720-g256-r1-t3-cold', 'RX-30720-g256-r3-t3-cold', 'RX-30720-g32-r0-t3-cold', 'RX-6144-g256-r1-t3-cold', 'RX-6144-g256-r2-t3-cold'] -> FAIL
+DAY43 C2 card=pro6000 boot=rx-spec-O2-clamp clamp_lines=120 resumed=60 cached_mismatch=[] -> PASS
+DAY43 C3 card=pro6000 boot=rx-spec-O2-clamp turns=60 resumed=60 frac=1.00 -> PASS
+DAY43 READING card=pro6000 boot=rx-spec-O2-unset turns=60 resumed=34 flips_vs_cold=6 later_turn_ttft_ms N=60 p50=1674.4 p95=9136.9 generated=25920 wall_s=2776.1 tok_per_s=9.34 clamp_lines=0
+DAY43 READING card=pro6000 boot=rx-spec-O2-unset L=6144 G=32 turns=10 resumed=5 ttft_ms p50=909.9 p95=1695.9
+DAY43 READING card=pro6000 boot=rx-spec-O2-unset L=6144 G=256 turns=10 resumed=3 ttft_ms p50=1752.3 p95=1826.0
+DAY43 READING card=pro6000 boot=rx-spec-O2-unset L=30720 G=32 turns=10 resumed=2 ttft_ms p50=9059.9 p95=9090.6
+DAY43 READING card=pro6000 boot=rx-spec-O2-unset L=30720 G=256 turns=10 resumed=4 ttft_ms p50=9128.6 p95=9246.7
+DAY43 READING card=pro6000 boot=rx-spec-O2-unset L=122880 G=32 turns=10 resumed=10 ttft_ms p50=419.5 p95=3509.4
+DAY43 READING card=pro6000 boot=rx-spec-O2-unset L=122880 G=256 turns=10 resumed=10 ttft_ms p50=439.4 p95=6655.8
+DAY43 READING card=pro6000 boot=rx-spec-O2-clamp turns=60 resumed=60 flips_vs_cold=24 later_turn_ttft_ms N=60 p50=211.6 p95=416.7 generated=25847 wall_s=2608.4 tok_per_s=9.91 clamp_lines=120
+DAY43 READING card=pro6000 boot=rx-spec-O2-clamp L=6144 G=32 turns=10 resumed=10 ttft_ms p50=161.8 p95=162.2
+DAY43 READING card=pro6000 boot=rx-spec-O2-clamp L=6144 G=256 turns=10 resumed=10 ttft_ms p50=161.5 p95=162.8
+DAY43 READING card=pro6000 boot=rx-spec-O2-clamp L=30720 G=32 turns=10 resumed=10 ttft_ms p50=215.8 p95=216.2
+DAY43 READING card=pro6000 boot=rx-spec-O2-clamp L=30720 G=256 turns=10 resumed=10 ttft_ms p50=211.3 p95=216.0
+DAY43 READING card=pro6000 boot=rx-spec-O2-clamp L=122880 G=32 turns=10 resumed=10 ttft_ms p50=416.6 p95=417.6
+DAY43 READING card=pro6000 boot=rx-spec-O2-clamp L=122880 G=256 turns=10 resumed=10 ttft_ms p50=415.7 p95=416.3
+DAY43 C5 card=pro6000 unset=rx-spec-O1-unset rows=180 differ=[] -> PASS
+DAY43 C5 card=pro6000 unset=rx-spec-O2-unset rows=180 differ=[] -> PASS
+```
+
+**Clauses, as they read:**
+
+- **C4 PASS on all 5 boots. C5 PASS in both orders** (180 of 180 `unset` rows equal `offprev`'s). **C2 PASS and C3 PASS
+  in both orders**: 120 clamp lines per boot, 60 of 60 later turns resumed, every `cached_tokens` equal to the previous
+  turn's prompt plus its completion.
+- **C1 FAIL in both orders** (`differ=['RX-30720-g256-r1-t3-cold', ...]`, 5 rows). Placed from the rows: the clause
+  assumed every turn-1 and cold-twin row has the same prompt on both arms, but a turn-3 prompt (and its cold twin's) is
+  built from turn 2's completion, and turn 2 differs where the clamp arm resumed it and the resumed turn flipped against
+  cold. By prompt hash: 113 of the 120 rows have the same prompt on both arms and every one of them has the same digest;
+  7 have different prompts, 5 of those differ. No same-prompt row differs. The line reads FAIL as registered.
+
+**Readings (N per line; the 250 ms regime in each boot's `samples.csv`).**
+
+| reading | `unset` (today) | `clamp` |
+|---|---|---|
+| later turns resumed | 34 of 60 | 60 of 60 |
+| later-turn TTFT p50 / p95 | 1,622 and 1,674 / 9,149 and 9,137 ms | 211 and 212 / 417 ms |
+| TTFT p50 at 6,144 / 30,720 / 122,880 (G=32) | 883 to 910 / 9,029 to 9,060 / 419 ms | 162 / 212 to 216 / 417 ms |
+| throughput over the boot wall | 9.34 tokens/s | 9.91 tokens/s |
+| resumed turns that flip against cold | 6 of 34 | 24 of 60 |
+
+The clamp turns every spec-route later turn into a resume at keep speed. It does not remove the near-tie residual: a
+resumed turn keeps the previous reply's decoded rows, so 24 of 60 flip against cold on the spec route as on the plain
+route (DAY41 2.1). That residual is O11's, now owed as an exact and fast resume (DAY44).

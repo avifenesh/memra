@@ -1,0 +1,5 @@
+arm=vmm-ensurefault
+kind=g2
+bin_sha256=580fe677737305bfb7bf44e5d4f21f1dd5ee1fae85aa91f70ac42aaf1034f7bd
+arm_env= MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_VMM_FAULT=mapper:all,ensure:1,ensure:2
+kind_env=CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 CLIENT_ARGS=--chars 5000 --skip-long --burst 64

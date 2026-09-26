@@ -1,0 +1,22 @@
+2026-09-24T17:16:01Z serve-smoke runs at c6f9282c26e71349c0263b88dc7beb59c4a57797 in /home/avifenesh/projects/wt-spill-b/target/smoke-wt-c6f9282c26e7 (build rc=0     Finished `release` profile [optimized] target(s) in 2m 53s)
+2026-09-24T17:16:01Z start serve-smoke env=[MEMRA_KV_ALLOCATOR=vmm ]
+2026-09-24T17:16:13Z done serve-smoke rc=0 door_on=0 door_off=0 serve-smoke: 0 failed
+2026-09-24T17:16:14Z start identity-default-on env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T17:16:30Z done identity-default-on rc=0 door_on=2 door_off=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-24T17:16:30Z start fault-default env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_HOSTGATE_CACHE_MB=64]
+2026-09-24T17:18:30Z done fault-default rc=0 door_on=14 door_off=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-24T17:18:30Z start fault-plain env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_SERVE_SPEC=0]
+2026-09-24T17:20:10Z done fault-plain rc=0 door_on=14 door_off=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-24T17:20:10Z start hit-off env=[MEMRA_KV_ALLOCATOR=vmm ]
+2026-09-24T17:20:32Z done hit-off rc=0 door_on=2 door_off=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-24T17:20:32Z start hit-on env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T17:20:58Z done hit-on rc=0 door_on=2 door_off=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-24T17:20:58Z start admit-mem-burst env=[MEMRA_KV_ALLOCATOR=vmm ]
+2026-09-24T17:28:30Z done admit-mem-burst rc=0 door_on=1 door_off=0 ADMIT-MEM BURST GATE: ALL GREEN
+2026-09-24T17:28:30Z start spec-ctx-edge env=[MEMRA_KV_ALLOCATOR=vmm ]
+2026-09-24T17:28:47Z done spec-ctx-edge rc=0 door_on=3 door_off=0 SPEC-CTX-EDGE GATE: ALL GREEN
+2026-09-24T17:28:47Z start twin27-off env=[MEMRA_KV_ALLOCATOR=vmm ]
+2026-09-24T17:31:17Z done twin27-off rc=0 door_on=2 door_off=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 i
+2026-09-24T17:31:17Z start twin27-on env=[MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T17:33:26Z done twin27-on rc=0 door_on=2 door_off=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 i
+2026-09-24T17:33:26Z gates done arm=vmm

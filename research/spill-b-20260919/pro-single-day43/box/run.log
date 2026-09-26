@@ -1,0 +1,11 @@
+2026-09-26T05:42:35Z boot rx-spec-O1-unset start arm=unset route=spec shape=RX bin=8aa9fcd6136a3b52 env=[MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-26T06:29:03Z boot rx-spec-O1-unset rc=0 re.error: bad character range v-r at position 4
+2026-09-26T06:29:08Z boot rx-spec-O1-clamp start arm=clamp route=spec shape=RX bin=8aa9fcd6136a3b52 env=[MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-26T07:12:50Z boot rx-spec-O1-clamp rc=0 re.error: bad character range v-r at position 4
+2026-09-26T07:12:55Z boot rx-spec-O2-clamp start arm=clamp route=spec shape=RX bin=8aa9fcd6136a3b52 env=[MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-26T07:56:38Z boot rx-spec-O2-clamp rc=0 re.error: bad character range v-r at position 4
+2026-09-26T07:56:43Z boot rx-spec-O2-unset start arm=unset route=spec shape=RX bin=8aa9fcd6136a3b52 env=[MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-26T08:43:13Z boot rx-spec-O2-unset rc=0 re.error: bad character range v-r at position 4
+2026-09-26T08:43:18Z boot offprev start arm=offprev route=spec shape=RX bin=be6dca878eae30ee env=[MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-26T09:29:47Z boot offprev rc=0 re.error: bad character range v-r at position 4
+2026-09-26T09:29:52Z boots done: rx-spec-O1-unset:unset:spec:RX rx-spec-O1-clamp:clamp:spec:RX rx-spec-O2-clamp:clamp:spec:RX rx-spec-O2-unset:unset:spec:RX offprev:offprev:spec:RX

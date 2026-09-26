@@ -1,0 +1,10 @@
+DAY38 P1 card=rtx5090 order=O1 rows=100 door_equal=98 door_differ=['X-6144-r0-t3', 'X-6144-r2-t3'] cold_differ=['main-O1-on:X-6144-r0-t3', 'main-O1-on:X-6144-r2-t3'] non200=[] x_resumed_on=20 park_compact_grow=8 park_compact_on=100 failed=0 affinity_rewound={'main-O1-off': 10, 'main-O1-on': 10} a_resumed={'main-O1-off': 10, 'main-O1-on': 10} pool_hits={'main-O1-off': 10, 'main-O1-on': 18} faults=0 -> FAIL
+DAY38 P1 card=rtx5090 order=O2 rows=100 door_equal=98 door_differ=['X-6144-r0-t3', 'X-6144-r2-t3'] cold_differ=['main-O2-on:X-6144-r0-t3', 'main-O2-on:X-6144-r2-t3'] non200=[] x_resumed_on=20 park_compact_grow=8 park_compact_on=100 failed=0 affinity_rewound={'main-O2-off': 10, 'main-O2-on': 10} a_resumed={'main-O2-off': 10, 'main-O2-on': 10} pool_hits={'main-O2-off': 10, 'main-O2-on': 18} faults=0 -> FAIL
+DAY38 P2 card=rtx5090 boot=fault-batch fired=1 errored_rows=['X-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'X-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0}] faults=0 -> PASS
+DAY38 P2 card=rtx5090 boot=fault-nobatch fired=1 errored_rows=['X-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'X-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0}] faults=0 -> PASS
+DAY38 P3 card=rtx5090 fed~6144 N=100 p50_ms=1.10 p95_ms=1.20 max_ms=1.20
+DAY38 P3 card=rtx5090 fed~30720 N=100 p50_ms=2.80 p95_ms=2.80 max_ms=2.90
+DAY38 P4 card=rtx5090 boot=main-O1-off idle driver_free=4031315968 pool_cached=2178466368 pool_reserved=20837302272 continuation_pool_entries=16 resumed_e2e_ms N=30 p50=2007.0 p95=10943.4
+DAY38 P4 card=rtx5090 boot=main-O1-on idle driver_free=3192455168 pool_cached=3038297664 pool_reserved=21676163072 continuation_pool_entries=16 resumed_e2e_ms N=30 p50=656.0 p95=10905.0
+DAY38 P4 card=rtx5090 boot=main-O2-off idle driver_free=4031315968 pool_cached=2178466368 pool_reserved=20837302272 continuation_pool_entries=16 resumed_e2e_ms N=30 p50=2050.5 p95=10930.3
+DAY38 P4 card=rtx5090 boot=main-O2-on idle driver_free=3192455168 pool_cached=3038297664 pool_reserved=21676163072 continuation_pool_entries=16 resumed_e2e_ms N=30 p50=667.0 p95=10922.0

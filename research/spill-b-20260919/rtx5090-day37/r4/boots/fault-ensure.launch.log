@@ -1,0 +1,42 @@
+2026-09-26T00:45:10Z waiting for /tmp/memra-5090.lock (flock -w 3600)
+2026-09-26T00:45:10Z lock acquired
+order=AB n=5 model_key=q9 ctx=65536 lock=/tmp/memra-5090.lock warm=deferred park_compact=unset serve_spec=default client=day33-client.py args=--chars 5000 --skip-long --burst 64 admit_by_memory=1 open_output_tokens=8192 timeout_ms_max=3600000 max_sessions=unset kv_host_mb=unset
+== arm on8192
+== boot door line (verbatim)
+[admit-mem] door=ON open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+DAY31 V-BOOT boot=fault-ensure arm=on8192 door_line=present -> PASS
+== shadow budget line (verbatim)
+[admit-predict] shadow armed: budget_bytes=12845565056 budget_src=derived(effective_free_bytes=16507716736 - prefix_cache_budget_bytes=2051538944 - admission_reserve_bytes=1610612736) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+== fatal lines
+[kv-vmm] grow failed (DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")); reclaim-retry: evicted 1 prefix entries and 1 parked session(s); retrying once
+[kv-vmm] ensure failed: not parked (model q9, retries 0/3, generated 396, streamed 396): reporting honestly: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+[engine-error] class=Overloaded step error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+== sequential requests: tag | status | finish | P | G | cached | path | bpt | booked_ctx | alloc_bytes | used_bytes | cost_src | message_sha256[:16]
+warmup | 200 | length | 90 | 32 | 0 | spec | 16704 | 186 | 2037888 | 2037888 | own | cbec9a51a14363b1
+i-L0-r0 | 503 | None | None | None | None | spec | 16704 | 9695 | None | None | own | -
+i-L0-r1 | 200 | stop | 1439 | 4363 | 0 | spec | 16704 | 9695 | 160876224 | 96916608 | inherited | e8e007a00f20896e
+i-L0-r2 | 200 | stop | 1442 | 4123 | 0 | spec | 16704 | 9698 | 160926336 | 92957760 | own | 8fd172978d5caa1c
+i-L0-r3 | 200 | stop | 1442 | 4761 | 0 | spec | 16704 | 9698 | 160926336 | 103614912 | inherited | 8f084f7491dd0f3f
+i-L0-r4 | 200 | stop | 1441 | 5048 | 0 | spec | 16704 | 9697 | 160909632 | 108392256 | own | 81c4de7cf0a6b75e
+ii-L0-r0 | 200 | length | 1673 | 96 | 0 | spec | 16704 | 1833 | 29549376 | 29549376 | own | 2e33a266a6139157
+ii-L0-r1 | 200 | length | 1672 | 96 | 0 | spec | 16704 | 1832 | 29532672 | 29532672 | own | 6d9fb7383d0b20e4
+ii-L0-r2 | 200 | length | 1671 | 96 | 0 | spec | 16704 | 1831 | 29515968 | 29515968 | own | 51db360e35d5efb1
+ii-L0-r3 | 200 | length | 1671 | 96 | 0 | spec | 16704 | 1831 | 29515968 | 29515968 | inherited | 483de37d0f96bac6
+ii-L0-r4 | 200 | length | 1668 | 96 | 0 | spec | 16704 | 1828 | 29465856 | 29465856 | own | 324b31f3ddaf48f5
+iii-L0-r0 | 200 | stop | 1457 | 3531 | 0 | spec | 16704 | 9713 | 161176896 | 83319552 | own | c6e6274bcb936d37
+iii-L0-r1 | 200 | stop | 1500 | 4715 | 1408 | spec | 16704 | 9756 | 161895168 | 103815360 | own | deb805f1ec388d15
+iii-L0-r2 | 200 | stop | 1519 | 4038 | 1408 | spec | 16704 | 9775 | 162212544 | 92824128 | own | e6b8bef522873724
+iii-L0-r3 | 200 | stop | 1498 | 2606 | 1408 | spec | 16704 | 9754 | 161861760 | 68553216 | own | 7f674c1d4dc0bce0
+iii-L0-r4 | 200 | stop | 1492 | 4473 | 1408 | spec | 16704 | 9748 | 161761536 | 99639360 | own | 3666e62bb6a3c6bb
+== burst
+window_ms=610504 B=64 status={429: 19, 200: 45} finish={'stop': 40, 'length': 5} retry_after={'42': 19}
+active_sessions_max=45.0 admission_booked_bytes_max=32791507608.0 samples=2442 shadow_budget_bytes=12845565056 burst_cost_lines=79 burst_cost_total_mb_median=728 arith_sessions=17
+admit_mem_id_lines=84 by_verdict={'admit': 45, 'defer': 20, 'refuse': 19} reclaim_lines=0
+[admit-mem] id=chatcmpl-b4d01b1c6ad2462dd730c5a935d4f473 model="q9" verdict=admit prompt=1331 output_bound=- charged_ctx=9587 est_bytes=2339037688 est_context=142347776 est_fixed=2196689912 device_free=14750201432 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=1166917632 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-190bce6d5d33f482b5a2a3abe5a860c8 model="q9" verdict=admit prompt=1341 output_bound=- charged_ctx=9597 est_bytes=2342790648 est_context=142496256 est_fixed=2200294392 device_free=14402702900 pending_prime=0 pending_prime_v1=479756288 pending_seed=74606592 host_free=0 demotable=1166917632 short_by=0 inflight=1 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-2d0dfb6409986f3d3856ddfc5f29b113 model="q9" verdict=admit prompt=1331 output_bound=- charged_ctx=9587 est_bytes=2339037688 est_context=142347776 est_fixed=2196689912 device_free=14055204368 pending_prime=0 pending_prime_v1=963117056 pending_seed=149213184 host_free=0 demotable=1166917632 short_by=0 inflight=2 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-3dc77172d443d49cd8073cc0a6acf8c9 model="q9" verdict=admit prompt=1329 output_bound=- charged_ctx=9585 est_bytes=2338287096 est_context=142318080 est_fixed=2195969016 device_free=13715011052 pending_prime=0 pending_prime_v1=335577088 pending_seed=216514560 host_free=0 demotable=1166917632 short_by=0 inflight=3 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-bc25f8f7567b0aecd65cc182befef992 model="q9" verdict=admit prompt=1330 output_bound=- charged_ctx=9586 est_bytes=2338662392 est_context=142332928 est_fixed=2196329464 device_free=13367512520 pending_prime=0 pending_prime_v1=814612480 pending_seed=291121152 host_free=0 demotable=1166917632 short_by=0 inflight=4 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-044e65020df111ef1b43f398764ea1b4 model="q9" verdict=admit prompt=1334 output_bound=- charged_ctx=9590 est_bytes=2340163576 est_context=142392320 est_fixed=2197771256 device_free=13020013988 pending_prime=0 pending_prime_v1=1294008320 pending_seed=365727744 host_free=0 demotable=1166917632 short_by=0 inflight=5 cap=64 waited_ms=0 retry_after_s=-
+... 78 more [admit-mem] id= lines in server.log
+== open-class G (this boot): n=9 min=2606 p50=4363 max=5048 stop=9 length=0 other=0

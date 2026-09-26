@@ -1,0 +1,5 @@
+arm=vmm-buildfault64
+kind=g2
+bin_sha256=580fe677737305bfb7bf44e5d4f21f1dd5ee1fae85aa91f70ac42aaf1034f7bd
+arm_env= MEMRA_KV_ALLOCATOR=vmm MEMRA_KV_VMM_FAULT=build:1,build:2,build:3,build:4,build:5,build:6,build:7,build:8,build:9,build:10,build:11,build:12,build:13,build:14,build:15,build:16,build:17,build:18,build:19,build:20,build:21,build:22,build:23,build:24,build:25,build:26,build:27,build:28,build:29,build:30,build:31,build:32,build:33,build:34,build:35,build:36,build:37,build:38,build:39,build:40,build:41,build:42,build:43,build:44,build:45,build:46,build:47,build:48,build:49,build:50,build:51,build:52,build:53,build:54,build:55,build:56,build:57,build:58,build:59,build:60,build:61,build:62,build:63,build:64
+kind_env=CLIENT=day33-client.py PARSER=day31-parse.py MEMRA_ADMIT_BY_MEMORY=1 MEMRA_ADMIT_OPEN_OUTPUT_TOKENS=8192 CLIENT_ARGS=--chars 5000 --skip-long --burst 64

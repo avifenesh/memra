@@ -1,0 +1,228 @@
+1790402104222 [server] build: memra-0.138.0-0c188716799b (id: source-tree, git: a803d308080d)
+1790402104222 [server] starting; models config = [("q9", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+1790402104222 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1790402104222 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1790402104423 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1790402104503 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1790402104503 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1790402104503 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1790402104503 [worker] loading model "q9" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+1790402104544 [tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1790402105845 [q8rp] split-plane decode mirrors built: 92 tensors
+1790402105962 [worker]   loaded "q9": 33 layers, eos=248046, stop=[248046]
+1790402105962 [worker] q9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1790402105962 [route-contract] model="q9" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1790402105962 [worker] q9: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1790402105963 [admission] "q9": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+1790402105963 [admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+1790402105963 [admit-predict] shadow armed: budget_bytes=16667930624 budget_src=derived(effective_free_bytes=18278543360 - prefix_cache_budget_bytes=0 - admission_reserve_bytes=1610612736) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+1790402105963 [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1790402105963 [kv-vmm] door=ON routes=spec,plain granularity=2097152 grow=helper (rtx5090-receipt) reap=owner-tick slack_rows=64 faults=none
+1790402105963 [server] worker ready; serving models: ["q9"]
+1790402105963 [server] listening on http://127.0.0.1:18526
+1790402106348 [meter] admit id=cmpl-f93e0fe3ae789aaf27a1fcd167d99781 tenant=default lane=interactive model="q9"
+1790402106349 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1510MB prefill-workspace + 0MB fixed = 1609MB
+1790402106349 [admit-predict] id=cmpl-f93e0fe3ae789aaf27a1fcd167d99781 tenant="xp-6144-0" model="q9" verdict=admit reason=maxtok-fallback prompt=6144 predicted_completion=1 kv_hat=1601309184 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402106349 [spec-k] model="q9" tenant="xp-6144-0" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402106349 [admission] fixed residual high-water: model="q9" 115MB (observed 214MB at ctx 6656 path=plain)
+1790402106349 [kv-vmm] admit id=cmpl-f93e0fe3ae789aaf27a1fcd167d99781 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402108186 [fa-pool] grow #0 dev=0 o_len 0 -> 397312 ml_len 0 -> 1552 (retired kept, zero=false)
+1790402108202 [kv-reuse] park-compact: 6145 of 6656 rows retained in 1.2ms (model q9)
+1790402108207 [meter] admit id=cmpl-4e5b22419248a09d0054cf7ff4916504 tenant=default lane=interactive model="q9"
+1790402108207 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1511MB prefill-workspace + 115MB fixed = 1725MB
+1790402108207 [admit-predict] id=cmpl-4e5b22419248a09d0054cf7ff4916504 tenant="xp-6144-0" model="q9" verdict=admit reason=global-p95 prompt=6208 predicted_completion=1 kv_hat=1718684340 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402108208 [kv-reuse] park-compact grow: 6145 -> 6656 rows (request-owned cap; model q9)
+1790402108208 [worker] kv-reuse: 6145 of 6208 prompt tokens resumed (model q9)
+1790402108208 [spec-k] model="q9" tenant="xp-6144-0" K=0 source=eligibility-fallback prompt=6208 cached=6145 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402108208 [kv-vmm] admit id=cmpl-4e5b22419248a09d0054cf7ff4916504 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402108292 [fa-pool] grow #1 dev=0 o_len 397312 -> 794624 ml_len 1552 -> 3104 (retired kept, zero=false)
+1790402108303 [kv-reuse] park-compact: 6209 of 6656 rows retained in 1.1ms (model q9)
+1790402108306 [meter] admit id=cmpl-b53537ec592149575d2cf3b9b9a6b803 tenant=default lane=interactive model="q9"
+1790402108306 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1512MB prefill-workspace + 115MB fixed = 1726MB
+1790402108306 [admit-predict] id=cmpl-b53537ec592149575d2cf3b9b9a6b803 tenant="xp-6144-0" model="q9" verdict=admit reason=global-p95 prompt=6272 predicted_completion=1 kv_hat=1720683188 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402108307 [kv-reuse] park-compact grow: 6209 -> 6656 rows (request-owned cap; model q9)
+1790402108307 [worker] kv-reuse: 6209 of 6272 prompt tokens resumed (model q9)
+1790402108307 [spec-k] model="q9" tenant="xp-6144-0" K=0 source=eligibility-fallback prompt=6272 cached=6209 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402108307 [kv-vmm] admit id=cmpl-b53537ec592149575d2cf3b9b9a6b803 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402108761 [kv-reuse] park-compact: 6304 of 6656 rows retained in 1.1ms (model q9)
+1790402108765 [meter] admit id=cmpl-b48010a2432632d541cf1006d18cd9f9 tenant=default lane=interactive model="q9"
+1790402108766 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1510MB prefill-workspace + 115MB fixed = 1724MB
+1790402108766 [admit-predict] id=cmpl-b48010a2432632d541cf1006d18cd9f9 tenant="xpc-6144-0-1" model="q9" verdict=admit reason=global-p95 prompt=6144 predicted_completion=1 kv_hat=1716685492 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402108766 [spec-k] model="q9" tenant="xpc-6144-0-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402108766 [kv-vmm] admit id=cmpl-b48010a2432632d541cf1006d18cd9f9 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402110622 [kv-reuse] park-compact: 6145 of 6656 rows retained in 1.1ms (model q9)
+1790402110624 [meter] admit id=cmpl-4b0b1029fdd42faee80f26db83090bcd tenant=default lane=interactive model="q9"
+1790402110624 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1511MB prefill-workspace + 115MB fixed = 1725MB
+1790402110624 [admit-predict] id=cmpl-4b0b1029fdd42faee80f26db83090bcd tenant="xpc-6144-0-2" model="q9" verdict=admit reason=global-p95 prompt=6208 predicted_completion=1 kv_hat=1718684340 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402110624 [spec-k] model="q9" tenant="xpc-6144-0-2" K=0 source=eligibility-fallback prompt=6208 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402110624 [kv-vmm] admit id=cmpl-4b0b1029fdd42faee80f26db83090bcd owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402112483 [kv-reuse] park-compact: 6209 of 6656 rows retained in 1.1ms (model q9)
+1790402112485 [meter] admit id=cmpl-254f7599526495003bd8fe4ff21bae07 tenant=default lane=interactive model="q9"
+1790402112485 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1512MB prefill-workspace + 115MB fixed = 1726MB
+1790402112485 [admit-predict] id=cmpl-254f7599526495003bd8fe4ff21bae07 tenant="xpc-6144-0-3" model="q9" verdict=admit reason=global-p95 prompt=6272 predicted_completion=32 kv_hat=1721143476 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402112486 [spec-k] model="q9" tenant="xpc-6144-0-3" K=0 source=eligibility-fallback prompt=6272 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402112486 [kv-vmm] admit id=cmpl-254f7599526495003bd8fe4ff21bae07 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402114733 [kv-reuse] park-compact: 6304 of 6656 rows retained in 1.1ms (model q9)
+1790402114736 [meter] admit id=cmpl-01c4e6826486774f4faa6c2d3e1977a9 tenant=default lane=interactive model="q9"
+1790402114736 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1510MB prefill-workspace + 115MB fixed = 1724MB
+1790402114736 [admit-predict] id=cmpl-01c4e6826486774f4faa6c2d3e1977a9 tenant="xp-6144-1" model="q9" verdict=admit reason=global-p95 prompt=6144 predicted_completion=1 kv_hat=1716685492 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402114736 [spec-k] model="q9" tenant="xp-6144-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402114737 [kv-vmm] admit id=cmpl-01c4e6826486774f4faa6c2d3e1977a9 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402116571 [kv-reuse] park-compact: 6145 of 6656 rows retained in 1.1ms (model q9)
+1790402116573 [meter] admit id=cmpl-f7599e510caeb979a728c7e99f272e03 tenant=default lane=interactive model="q9"
+1790402116573 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1511MB prefill-workspace + 115MB fixed = 1725MB
+1790402116573 [admit-predict] id=cmpl-f7599e510caeb979a728c7e99f272e03 tenant="xp-6144-1" model="q9" verdict=admit reason=global-p95 prompt=6208 predicted_completion=1 kv_hat=1718684340 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402116574 [kv-reuse] park-compact grow: 6145 -> 6656 rows (request-owned cap; model q9)
+1790402116574 [worker] kv-reuse: 6145 of 6208 prompt tokens resumed (model q9)
+1790402116574 [spec-k] model="q9" tenant="xp-6144-1" K=0 source=eligibility-fallback prompt=6208 cached=6145 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402116574 [kv-vmm] admit id=cmpl-f7599e510caeb979a728c7e99f272e03 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402116647 [kv-reuse] park-compact: 6209 of 6656 rows retained in 0.9ms (model q9)
+1790402116651 [meter] admit id=cmpl-340b6b46211a9b4a98223deee36e1646 tenant=default lane=interactive model="q9"
+1790402116651 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1512MB prefill-workspace + 115MB fixed = 1726MB
+1790402116651 [admit-predict] id=cmpl-340b6b46211a9b4a98223deee36e1646 tenant="xp-6144-1" model="q9" verdict=admit reason=global-p95 prompt=6272 predicted_completion=32 kv_hat=1721143476 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402116652 [kv-reuse] park-compact grow: 6209 -> 6656 rows (request-owned cap; model q9)
+1790402116652 [worker] kv-reuse: 6209 of 6272 prompt tokens resumed (model q9)
+1790402116652 [spec-k] model="q9" tenant="xp-6144-1" K=0 source=eligibility-fallback prompt=6272 cached=6209 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402116652 [kv-vmm] admit id=cmpl-340b6b46211a9b4a98223deee36e1646 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402117107 [kv-reuse] park-compact: 6304 of 6656 rows retained in 1.1ms (model q9)
+1790402117110 [meter] admit id=cmpl-033a16fcbd460c39042409d9a2e5468f tenant=default lane=interactive model="q9"
+1790402117111 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1510MB prefill-workspace + 115MB fixed = 1724MB
+1790402117111 [admit-predict] id=cmpl-033a16fcbd460c39042409d9a2e5468f tenant="xpc-6144-1-1" model="q9" verdict=admit reason=global-p95 prompt=6144 predicted_completion=1 kv_hat=1716685492 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402117111 [spec-k] model="q9" tenant="xpc-6144-1-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402117111 [kv-vmm] admit id=cmpl-033a16fcbd460c39042409d9a2e5468f owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402118942 [kv-reuse] park-compact: 6145 of 6656 rows retained in 1.1ms (model q9)
+1790402118945 [meter] admit id=cmpl-bfa3888e6024ee00812c16c78e248b0d tenant=default lane=interactive model="q9"
+1790402118945 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1511MB prefill-workspace + 115MB fixed = 1725MB
+1790402118945 [admit-predict] id=cmpl-bfa3888e6024ee00812c16c78e248b0d tenant="xpc-6144-1-2" model="q9" verdict=admit reason=global-p95 prompt=6208 predicted_completion=1 kv_hat=1718684340 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402118946 [spec-k] model="q9" tenant="xpc-6144-1-2" K=0 source=eligibility-fallback prompt=6208 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402118946 [kv-vmm] admit id=cmpl-bfa3888e6024ee00812c16c78e248b0d owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402120800 [kv-reuse] park-compact: 6209 of 6656 rows retained in 1.1ms (model q9)
+1790402120802 [meter] admit id=cmpl-ac6883aabe5ee911d8c264d0ab391534 tenant=default lane=interactive model="q9"
+1790402120802 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1512MB prefill-workspace + 115MB fixed = 1726MB
+1790402120802 [admit-predict] id=cmpl-ac6883aabe5ee911d8c264d0ab391534 tenant="xpc-6144-1-3" model="q9" verdict=admit reason=global-p95 prompt=6272 predicted_completion=32 kv_hat=1721143476 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402120803 [spec-k] model="q9" tenant="xpc-6144-1-3" K=0 source=eligibility-fallback prompt=6272 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402120803 [kv-vmm] admit id=cmpl-ac6883aabe5ee911d8c264d0ab391534 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402123085 [kv-reuse] park-compact: 6304 of 6656 rows retained in 1.1ms (model q9)
+1790402123087 [meter] admit id=cmpl-030d49f61726d3d0324ddbbac1c93520 tenant=default lane=interactive model="q9"
+1790402123087 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1510MB prefill-workspace + 115MB fixed = 1724MB
+1790402123087 [admit-predict] id=cmpl-030d49f61726d3d0324ddbbac1c93520 tenant="xp-6144-2" model="q9" verdict=admit reason=global-p95 prompt=6144 predicted_completion=1 kv_hat=1716685492 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402123087 [spec-k] model="q9" tenant="xp-6144-2" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402123087 [kv-vmm] admit id=cmpl-030d49f61726d3d0324ddbbac1c93520 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402124917 [kv-reuse] park-compact: 6145 of 6656 rows retained in 1.1ms (model q9)
+1790402124919 [meter] admit id=cmpl-3071f70357f58a4ae81b5bd721e4c7f3 tenant=default lane=interactive model="q9"
+1790402124920 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1511MB prefill-workspace + 115MB fixed = 1725MB
+1790402124920 [admit-predict] id=cmpl-3071f70357f58a4ae81b5bd721e4c7f3 tenant="xp-6144-2" model="q9" verdict=admit reason=global-p95 prompt=6208 predicted_completion=1 kv_hat=1718684340 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402124921 [kv-reuse] park-compact grow: 6145 -> 6656 rows (request-owned cap; model q9)
+1790402124921 [worker] kv-reuse: 6145 of 6208 prompt tokens resumed (model q9)
+1790402124921 [spec-k] model="q9" tenant="xp-6144-2" K=0 source=eligibility-fallback prompt=6208 cached=6145 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402124921 [kv-vmm] admit id=cmpl-3071f70357f58a4ae81b5bd721e4c7f3 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402124997 [kv-reuse] park-compact: 6209 of 6656 rows retained in 0.9ms (model q9)
+1790402125003 [meter] admit id=cmpl-3dbed089d66ffe642143cebf885944e7 tenant=default lane=interactive model="q9"
+1790402125003 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1512MB prefill-workspace + 115MB fixed = 1726MB
+1790402125003 [admit-predict] id=cmpl-3dbed089d66ffe642143cebf885944e7 tenant="xp-6144-2" model="q9" verdict=admit reason=global-p95 prompt=6272 predicted_completion=32 kv_hat=1721143476 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402125004 [kv-reuse] park-compact grow: 6209 -> 6656 rows (request-owned cap; model q9)
+1790402125004 [worker] kv-reuse: 6209 of 6272 prompt tokens resumed (model q9)
+1790402125004 [spec-k] model="q9" tenant="xp-6144-2" K=0 source=eligibility-fallback prompt=6272 cached=6209 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402125004 [kv-vmm] admit id=cmpl-3dbed089d66ffe642143cebf885944e7 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402125468 [kv-reuse] park-compact: 6304 of 6656 rows retained in 1.1ms (model q9)
+1790402125471 [meter] admit id=cmpl-c4d7d54ee7e8330e5daddff1fe63b1d0 tenant=default lane=interactive model="q9"
+1790402125471 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1510MB prefill-workspace + 115MB fixed = 1724MB
+1790402125471 [admit-predict] id=cmpl-c4d7d54ee7e8330e5daddff1fe63b1d0 tenant="xpc-6144-2-1" model="q9" verdict=admit reason=global-p95 prompt=6144 predicted_completion=1 kv_hat=1716685492 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402125472 [spec-k] model="q9" tenant="xpc-6144-2-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402125472 [kv-vmm] admit id=cmpl-c4d7d54ee7e8330e5daddff1fe63b1d0 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402127308 [kv-reuse] park-compact: 6145 of 6656 rows retained in 1.1ms (model q9)
+1790402127309 [meter] admit id=cmpl-251cb6460e567c470842de0c6220c497 tenant=default lane=interactive model="q9"
+1790402127309 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1511MB prefill-workspace + 115MB fixed = 1725MB
+1790402127309 [admit-predict] id=cmpl-251cb6460e567c470842de0c6220c497 tenant="xpc-6144-2-2" model="q9" verdict=admit reason=global-p95 prompt=6208 predicted_completion=1 kv_hat=1718684340 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402127309 [spec-k] model="q9" tenant="xpc-6144-2-2" K=0 source=eligibility-fallback prompt=6208 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402127309 [kv-vmm] admit id=cmpl-251cb6460e567c470842de0c6220c497 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402129171 [kv-reuse] park-compact: 6209 of 6656 rows retained in 1.1ms (model q9)
+1790402129173 [meter] admit id=cmpl-03ede0a654a941d3692429a8470244a3 tenant=default lane=interactive model="q9"
+1790402129173 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1512MB prefill-workspace + 115MB fixed = 1726MB
+1790402129173 [admit-predict] id=cmpl-03ede0a654a941d3692429a8470244a3 tenant="xpc-6144-2-3" model="q9" verdict=admit reason=global-p95 prompt=6272 predicted_completion=32 kv_hat=1721143476 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402129173 [spec-k] model="q9" tenant="xpc-6144-2-3" K=0 source=eligibility-fallback prompt=6272 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402129173 [kv-vmm] admit id=cmpl-03ede0a654a941d3692429a8470244a3 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402131457 [kv-reuse] park-compact: 6304 of 6656 rows retained in 1.1ms (model q9)
+1790402131458 [meter] admit id=cmpl-a37551e4ea1d2c8791e249302b6aec0a tenant=default lane=interactive model="q9"
+1790402131458 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1510MB prefill-workspace + 115MB fixed = 1724MB
+1790402131458 [admit-predict] id=cmpl-a37551e4ea1d2c8791e249302b6aec0a tenant="xp-6144-3" model="q9" verdict=admit reason=global-p95 prompt=6144 predicted_completion=1 kv_hat=1716685492 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402131459 [spec-k] model="q9" tenant="xp-6144-3" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402131459 [kv-vmm] admit id=cmpl-a37551e4ea1d2c8791e249302b6aec0a owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402133289 [kv-reuse] park-compact: 6145 of 6656 rows retained in 1.1ms (model q9)
+1790402133290 [meter] admit id=cmpl-aa5e00bfb04fd5517ccdce4656324d4e tenant=default lane=interactive model="q9"
+1790402133290 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1511MB prefill-workspace + 115MB fixed = 1725MB
+1790402133290 [admit-predict] id=cmpl-aa5e00bfb04fd5517ccdce4656324d4e tenant="xp-6144-3" model="q9" verdict=admit reason=global-p95 prompt=6208 predicted_completion=1 kv_hat=1718684340 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402133292 [kv-reuse] park-compact grow: 6145 -> 6656 rows (request-owned cap; model q9)
+1790402133292 [worker] kv-reuse: 6145 of 6208 prompt tokens resumed (model q9)
+1790402133292 [spec-k] model="q9" tenant="xp-6144-3" K=0 source=eligibility-fallback prompt=6208 cached=6145 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402133292 [kv-vmm] admit id=cmpl-aa5e00bfb04fd5517ccdce4656324d4e owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402133368 [kv-reuse] park-compact: 6209 of 6656 rows retained in 0.9ms (model q9)
+1790402133370 [meter] admit id=cmpl-aff413bb32036ee6718e6eb2ec134ff6 tenant=default lane=interactive model="q9"
+1790402133371 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1512MB prefill-workspace + 115MB fixed = 1726MB
+1790402133371 [admit-predict] id=cmpl-aff413bb32036ee6718e6eb2ec134ff6 tenant="xp-6144-3" model="q9" verdict=admit reason=global-p95 prompt=6272 predicted_completion=32 kv_hat=1721143476 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402133372 [kv-reuse] park-compact grow: 6209 -> 6656 rows (request-owned cap; model q9)
+1790402133372 [worker] kv-reuse: 6209 of 6272 prompt tokens resumed (model q9)
+1790402133372 [spec-k] model="q9" tenant="xp-6144-3" K=0 source=eligibility-fallback prompt=6272 cached=6209 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402133372 [kv-vmm] admit id=cmpl-aff413bb32036ee6718e6eb2ec134ff6 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402133831 [kv-reuse] park-compact: 6304 of 6656 rows retained in 1.1ms (model q9)
+1790402133832 [meter] admit id=cmpl-6f6012e7b320e293b75f7b135336bbb8 tenant=default lane=interactive model="q9"
+1790402133832 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1510MB prefill-workspace + 115MB fixed = 1724MB
+1790402133832 [admit-predict] id=cmpl-6f6012e7b320e293b75f7b135336bbb8 tenant="xpc-6144-3-1" model="q9" verdict=admit reason=global-p95 prompt=6144 predicted_completion=1 kv_hat=1716685492 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402133833 [spec-k] model="q9" tenant="xpc-6144-3-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402133833 [kv-vmm] admit id=cmpl-6f6012e7b320e293b75f7b135336bbb8 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402135671 [kv-reuse] park-compact: 6145 of 6656 rows retained in 1.1ms (model q9)
+1790402135672 [meter] admit id=cmpl-8b1ce9699fc80623592a8db39a1a8d0e tenant=default lane=interactive model="q9"
+1790402135672 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1511MB prefill-workspace + 115MB fixed = 1725MB
+1790402135672 [admit-predict] id=cmpl-8b1ce9699fc80623592a8db39a1a8d0e tenant="xpc-6144-3-2" model="q9" verdict=admit reason=global-p95 prompt=6208 predicted_completion=1 kv_hat=1718684340 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402135673 [spec-k] model="q9" tenant="xpc-6144-3-2" K=0 source=eligibility-fallback prompt=6208 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402135673 [kv-vmm] admit id=cmpl-8b1ce9699fc80623592a8db39a1a8d0e owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402137534 [kv-reuse] park-compact: 6209 of 6656 rows retained in 1.1ms (model q9)
+1790402137536 [meter] admit id=cmpl-f5fe76dcf87043ebd9f774068a6b040e tenant=default lane=interactive model="q9"
+1790402137536 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1512MB prefill-workspace + 115MB fixed = 1726MB
+1790402137536 [admit-predict] id=cmpl-f5fe76dcf87043ebd9f774068a6b040e tenant="xpc-6144-3-3" model="q9" verdict=admit reason=global-p95 prompt=6272 predicted_completion=32 kv_hat=1721143476 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402137536 [spec-k] model="q9" tenant="xpc-6144-3-3" K=0 source=eligibility-fallback prompt=6272 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402137536 [kv-vmm] admit id=cmpl-f5fe76dcf87043ebd9f774068a6b040e owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402139825 [kv-reuse] park-compact: 6304 of 6656 rows retained in 1.1ms (model q9)
+1790402139827 [meter] admit id=cmpl-7f5f0a5e1c75685ad8aacd6dccb42125 tenant=default lane=interactive model="q9"
+1790402139827 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1510MB prefill-workspace + 115MB fixed = 1724MB
+1790402139827 [admit-predict] id=cmpl-7f5f0a5e1c75685ad8aacd6dccb42125 tenant="xp-6144-4" model="q9" verdict=admit reason=global-p95 prompt=6144 predicted_completion=1 kv_hat=1716685492 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402139827 [spec-k] model="q9" tenant="xp-6144-4" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402139827 [kv-vmm] admit id=cmpl-7f5f0a5e1c75685ad8aacd6dccb42125 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402141668 [kv-reuse] park-compact: 6145 of 6656 rows retained in 1.1ms (model q9)
+1790402141672 [meter] admit id=cmpl-7ac03685ea7fcba18df69a369ed134d8 tenant=default lane=interactive model="q9"
+1790402141672 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1511MB prefill-workspace + 115MB fixed = 1725MB
+1790402141672 [admit-predict] id=cmpl-7ac03685ea7fcba18df69a369ed134d8 tenant="xp-6144-4" model="q9" verdict=admit reason=global-p95 prompt=6208 predicted_completion=1 kv_hat=1718684340 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402141673 [kv-reuse] park-compact grow: 6145 -> 6656 rows (request-owned cap; model q9)
+1790402141673 [worker] kv-reuse: 6145 of 6208 prompt tokens resumed (model q9)
+1790402141673 [spec-k] model="q9" tenant="xp-6144-4" K=0 source=eligibility-fallback prompt=6208 cached=6145 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402141674 [kv-vmm] admit id=cmpl-7ac03685ea7fcba18df69a369ed134d8 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402141747 [kv-reuse] park-compact: 6209 of 6656 rows retained in 1.0ms (model q9)
+1790402141750 [meter] admit id=cmpl-f7683d553ba07434ab6a958271740df5 tenant=default lane=interactive model="q9"
+1790402141750 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1512MB prefill-workspace + 115MB fixed = 1726MB
+1790402141750 [admit-predict] id=cmpl-f7683d553ba07434ab6a958271740df5 tenant="xp-6144-4" model="q9" verdict=admit reason=global-p95 prompt=6272 predicted_completion=32 kv_hat=1721143476 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402141751 [kv-reuse] park-compact grow: 6209 -> 6656 rows (request-owned cap; model q9)
+1790402141751 [worker] kv-reuse: 6209 of 6272 prompt tokens resumed (model q9)
+1790402141751 [spec-k] model="q9" tenant="xp-6144-4" K=0 source=eligibility-fallback prompt=6272 cached=6209 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402141751 [kv-vmm] admit id=cmpl-f7683d553ba07434ab6a958271740df5 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402142214 [kv-reuse] park-compact: 6304 of 6656 rows retained in 1.1ms (model q9)
+1790402142217 [meter] admit id=cmpl-9fe3ebf85b6c8b7316edc902e0ffb55f tenant=default lane=interactive model="q9"
+1790402142217 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1510MB prefill-workspace + 115MB fixed = 1724MB
+1790402142217 [admit-predict] id=cmpl-9fe3ebf85b6c8b7316edc902e0ffb55f tenant="xpc-6144-4-1" model="q9" verdict=admit reason=global-p95 prompt=6144 predicted_completion=1 kv_hat=1716685492 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402142218 [spec-k] model="q9" tenant="xpc-6144-4-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402142218 [kv-vmm] admit id=cmpl-9fe3ebf85b6c8b7316edc902e0ffb55f owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402144083 [kv-reuse] park-compact: 6145 of 6656 rows retained in 1.1ms (model q9)
+1790402144085 [meter] admit id=cmpl-b187006b92d53f76f74d244b05349836 tenant=default lane=interactive model="q9"
+1790402144085 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1511MB prefill-workspace + 115MB fixed = 1725MB
+1790402144085 [admit-predict] id=cmpl-b187006b92d53f76f74d244b05349836 tenant="xpc-6144-4-2" model="q9" verdict=admit reason=global-p95 prompt=6208 predicted_completion=1 kv_hat=1718684340 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402144086 [spec-k] model="q9" tenant="xpc-6144-4-2" K=0 source=eligibility-fallback prompt=6208 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402144086 [kv-vmm] admit id=cmpl-b187006b92d53f76f74d244b05349836 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402145955 [kv-reuse] park-compact: 6209 of 6656 rows retained in 1.1ms (model q9)
+1790402145957 [meter] admit id=cmpl-6c9d94bd2acd9687f2be3db38641d921 tenant=default lane=interactive model="q9"
+1790402145957 [admission] request cost: model="q9" ctx=6656 path=plain = 14848 B/token x ctx + 1512MB prefill-workspace + 115MB fixed = 1726MB
+1790402145957 [admit-predict] id=cmpl-6c9d94bd2acd9687f2be3db38641d921 tenant="xpc-6144-4-3" model="q9" verdict=admit reason=global-p95 prompt=6272 predicted_completion=32 kv_hat=1721143476 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=16667930624 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790402145957 [spec-k] model="q9" tenant="xpc-6144-4-3" K=0 source=eligibility-fallback prompt=6272 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790402145957 [kv-vmm] admit id=cmpl-6c9d94bd2acd9687f2be3db38641d921 owed_before=0 session_mapped=0 session_reserved=0 active=0
+1790402148258 [kv-reuse] park-compact: 6304 of 6656 rows retained in 1.1ms (model q9)
+1790402148450 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1790402148450 [server] drain complete in 0.0s; exiting
+1790402148543 [server] GPU worker shutdown complete

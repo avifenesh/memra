@@ -1,0 +1,16 @@
+DAY38D P1 card=rtx5090 order=O1 xp_turns=20 resumed_both=20 frac=1.00 xp_door_differ=[] prompt_mismatch=[] a_turn2=10 a_differ=[] on_resumed=20 park_compact_grow=20 affinity_rewound={'main-O1-off': 10, 'main-O1-on': 10} non200=[] faults=0 -> PASS
+DAY38D P1-READING card=rtx5090 boot=main-O1-off xp_resumed=20 resumed_vs_cold_flips=2 flip_tags=['Xp-30720-r2-t2', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P1-READING card=rtx5090 boot=main-O1-on xp_resumed=20 resumed_vs_cold_flips=2 flip_tags=['Xp-30720-r2-t2', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P1 card=rtx5090 order=O2 xp_turns=20 resumed_both=20 frac=1.00 xp_door_differ=[] prompt_mismatch=[] a_turn2=10 a_differ=[] on_resumed=20 park_compact_grow=20 affinity_rewound={'main-O2-off': 10, 'main-O2-on': 10} non200=[] faults=0 -> PASS
+DAY38D P1-READING card=rtx5090 boot=main-O2-off xp_resumed=20 resumed_vs_cold_flips=2 flip_tags=['Xp-30720-r2-t2', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P1-READING card=rtx5090 boot=main-O2-on xp_resumed=20 resumed_vs_cold_flips=2 flip_tags=['Xp-30720-r2-t2', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P2 card=rtx5090 boot=fault-batch fired=1 errored_rows=['Xp-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'Xp-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0, 'cached': 0}] faults=0 -> PASS
+DAY38D P2 card=rtx5090 boot=fault-nobatch fired=1 errored_rows=['Xp-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'Xp-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0, 'cached': 0}] faults=0 -> PASS
+DAY38D P2 card=rtx5090 boot=fault-nobatch-red fired=1 errored_rows=['Xp-6144-r0-t1'] ok200=39 park_compact=40 next_turn=[{'tag': 'Xp-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0, 'cached': 6144}] faults=0 -> FAIL (red arm: the expected reading is FAIL with park_compact=ok200+1 and a resumed next turn)
+DAY38D P3 card=rtx5090 fed~6144 N=100 p50_ms=1.10 p95_ms=1.20 max_ms=1.20
+DAY38D P3 card=rtx5090 fed~30720 N=100 p50_ms=2.80 p95_ms=2.80 max_ms=2.90
+DAY38D P4 card=rtx5090 boot=main-O1-off idle driver_free=3964207104 pool_cached=2085354112 continuation_pool_entries=16 resumed_e2e_ms N=30 p50=466.5 p95=698.5
+DAY38D P4 card=rtx5090 boot=main-O1-on idle driver_free=3427336192 pool_cached=2696581504 continuation_pool_entries=16 resumed_e2e_ms N=30 p50=482.5 p95=688.0
+DAY38D P4 card=rtx5090 boot=main-O2-off idle driver_free=3964207104 pool_cached=2085354112 continuation_pool_entries=16 resumed_e2e_ms N=30 p50=469.0 p95=691.3
+DAY38D P4 card=rtx5090 boot=main-O2-on idle driver_free=3427336192 pool_cached=2696581504 continuation_pool_entries=16 resumed_e2e_ms N=30 p50=480.5 p95=693.2
+DAY38D VMM-PAIR card=rtx5090 rows=30 differ=[] vmm_off idle vmm_mapped=0 vmm_on idle vmm_mapped=0 park_compact=30
