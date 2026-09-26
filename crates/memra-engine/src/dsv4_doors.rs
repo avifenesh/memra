@@ -488,7 +488,7 @@ pub const DSV4_DOORS: &[DoorRow] = &[
     DoorRow {
         name: "PDL chain",
         env: "MEMRA_DSV4_PDL",
-        merged: "#PDL_PR",
+        merged: "#782",
         declared_default: DeclaredDefault::On,
         declared_served: DoorState::On(DoorShape::AllRoutedShapes),
         declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
