@@ -1,3 +1,4 @@
+#![allow(clippy::needless_range_loop)] // rows and columns index three parallel outputs
 //! Kernel-boundary bit gate for the multi-row dense-fast FP8 GEMV (memra #710 B-row).
 //!
 //! At m = 2..8 the FP8 dense projection (B-row decode, verify rounds) runs

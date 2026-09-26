@@ -104,8 +104,11 @@ fn prime(gpu: &Dsv4Gpu, prompt: &[u32], capacity: usize) -> Session {
     }
 }
 
+/// (token, logits bit hash) per step.
+type Steps = Vec<(u32, u64)>;
+
 /// (token, logits bit hash) per step, per session.
-type Trace = Vec<Vec<(u32, u64)>>;
+type Trace = Vec<Steps>;
 
 fn solo(gpu: &Dsv4Gpu, prompts: &[Vec<u32>], capacity: usize, steps: usize) -> Trace {
     prompts
@@ -302,7 +305,7 @@ fn replay_reentry(
     prompts: &[Vec<u32>],
     capacity: usize,
     steps: usize,
-) -> (Vec<(u32, u64)>, Vec<(u32, u64)>) {
+) -> (Steps, Steps) {
     let mut a = prime(gpu, &prompts[0], capacity);
     let mut b = prime(gpu, &prompts[1], capacity);
     let greedy = Dsv4SampleCfg {

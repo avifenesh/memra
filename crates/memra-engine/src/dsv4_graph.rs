@@ -460,7 +460,7 @@ impl RowsReplay {
         owner: usize,
     ) -> Result<Self, String> {
         let rows = key.len();
-        if rows < 2 || rows > 32 || samplers.len() != rows {
+        if !(2..=32).contains(&rows) || samplers.len() != rows {
             return Err(format!("B-row replay of {rows} rows"));
         }
         let mut inputs = Vec::new();
