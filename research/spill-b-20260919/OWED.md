@@ -146,12 +146,14 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - What: `MEMRA_RESUME_GRID_REWIND` (default unset) makes a plain or spec pool exact-extension resume rewind to the
   entry's grid checkpoint and re-prime from there, so the resumed turn is cold-identical by the grid law; the cells
   price it against keeping the decoded rows (re-primed rows, TTFT, throughput, memory, fanout reach), both cards.
-- Status: target card `read` on the revised arm (DAY41 2.2, addenda B and C, `23c296b58`): R1, R3 and R4 PASS on both
-  routes; R2 PASS on `rewind` (60 of 60, both routes) and plain `keep`; R2 FAIL on the spec `keep` (34 of 60, today's
-  overshoot miss, O13). Flips: `keep` 24 of 60 (plain) and 6 of 34 (spec), `rewind` 0. Price: re-primed G+32 rows at
-  6,144 and 30,720; TTFT p50 plain x2.0 to x2.6, spec x1.01 to x1.32; at 122,880 (a nominatable prompt, the control
-  token's point) plain x7.3 and x14.9, spec x3.1 and x6.1; FX loses the fanout (2.1). The 2.1 reading of the original
-  arm is kept. The 5090 halves run from queue-e (original) and queue-g (revised). The decision is the owner's.
+- Status: `running`, revised. The owner, 2026-09-26: "resume vs rewind - i think its not or or question, but more of we
+  didnt make it right yet". The deliverable is an exact AND fast resume (DAY44, pre-registered): a grid checkpoint
+  captured inside every resumable prime call without a split, an exact-extension hit that resumes from it in one call,
+  and an off-path settle that re-primes the reply's rows with the prime program while the user reads; gated on 0 flips
+  against cold and TTFT and E2E p50 within 1.05 x keep, both routes, zero-gap and gapped clients, both cards. The
+  measurement arms' readings stay banked (DAY41 2.1 and 2.2: keep 24 of 60 flips; the grid rewind exact at TTFT x2 to
+  x15). `MEMRA_RESUME_GRID_REWIND` stays a measurement arm until DAY44 reads. Price: about 3 agent-days plus about 5 h
+  on the 5090 and 8 h on the target card.
 
 ### O12. The admission reclaim flush off the tick (lead's ruling at integ62)
 
