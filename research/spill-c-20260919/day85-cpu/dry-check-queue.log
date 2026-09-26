@@ -1,0 +1,30 @@
+queue rc=0
+2026-09-26T20:47:57Z queue v19 start at 4b378a064
+2026-09-26T20:47:57Z lock held; runs start (P-cores 0-7)
+2026-09-26T20:47:59Z runs done; lock released
+2026-09-26T20:47:59Z check reader rc=0
+2026-09-26T20:48:00Z split reader rc=0
+2026-09-26T20:48:00Z queue v19 done
+== calls: 24 lines; per binary and clocks:
+      2 run-gen-i21 --experts-via-tier --expert-bank-host-bytes=17179869184
+     10 run-gen-i21 --experts-via-tier --expert-bank-host-bytes=17179869184 --moe-dispatch-clock --expert-bank-stages
+      2 run-gen-i22 --experts-via-tier --expert-bank-host-bytes=17179869184
+     10 run-gen-i22 --experts-via-tier --expert-bank-host-bytes=17179869184 --moe-dispatch-clock --expert-bank-stages
+== order (marks):
+i21-a i22-a i22-b i21-b o1-i21s-r1 o1-i22s-r1 o1-i21s-r2 o1-i22s-r2 o1-i21s-r3 o1-i22s-r3 o1-i21s-r4 o1-i22s-r4 o1-i21s-r5 o1-i22s-r5 o2-i22s-r1 o2-i21s-r1 o2-i22s-r2 o2-i21s-r2 o2-i22s-r3 o2-i21s-r3 o2-i22s-r4 o2-i21s-r4 o2-i22s-r5 o2-i21s-r5 
+== check reading
+# DAY85 local GPU check (the development host's RTX 5090 under its lock): the door at I21 (run-gen-i21 = b555b4141) and at I22 (run-gen-i22 = 4b378a064), 32 tokens each, order i21, i22, i22, i21; raw logs in check/
+9c47a44a19263a22c2cfee8f29119923df53addfd57f042e770a717e94cbc8e8  /home/avifenesh/projects/wt-spill-c/target/c85-dry/bins/run-gen-i21
+074d24dcce8df8fdbdd40578a0acb472c6f42e5f7e5fd26c8526192777ae3bcf  /home/avifenesh/projects/wt-spill-c/target/c85-dry/bins/run-gen-i22
+i21-a rc=0 MATCH generated 32 tokens in 0.314s window: 32 decode steps in 0.287s trace=4bdc2610c3534e42 lines=22077
+i22-a rc=0 MATCH generated 32 tokens in 0.314s window: 32 decode steps in 0.287s trace=4bdc2610c3534e42 lines=22077
+i22-b rc=0 MATCH generated 32 tokens in 0.314s window: 32 decode steps in 0.287s trace=4bdc2610c3534e42 lines=22077
+i21-b rc=0 MATCH generated 32 tokens in 0.314s window: 32 decode steps in 0.287s trace=4bdc2610c3534e42 lines=22077
+i22-a: the same tape and the same host demand sequence as i21-a
+i22-b: the same tape and the same host demand sequence as i21-a
+i21-b: the same tape and the same host demand sequence as i21-a
+DAY85 GPU CHECK PASS
+== split reading
+DAY83 SPLIT CHECKS rig=rtx5090 runs=20 integrity=ok
+DAY84 CHANGE rig=rtx5090 generate (i22s minus i21s, us per token, deciding nothing): outer=+0.0 dispatch_inner=+0.0 own_trace=+0.0 bank_stage_lookup=+0.0 bank_stage_cache=+0.0 bank_stage_charge=+0.0 stage_rest=+0.0 bank_publish_output=+0.0 bank_publish_policy=+0.0 publish_rest=+0.0 pf_resident=+0.0 
+DAY84 CHANGE rig=rtx5090 window (i22s minus i21s, us per token, deciding nothing): outer=+0.0 dispatch_inner=+0.0 own_trace=+0.0 bank_stage_lookup=+0.0 bank_stage_cache=+0.0 bank_stage_charge=+0.0 stage_rest=+0.0 bank_publish_output=+0.0 bank_publish_policy=+0.0 publish_rest=+0.0 pf_resident=+0.0 ba

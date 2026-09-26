@@ -84,3 +84,27 @@ REF (`run-gen-i21` with `MEMRA_MOE_PREFETCH=1`), I15, I21, I22, I22C; 50 timed r
 integrity with I15's, I21's and I22's host demand sequences equal; admissibility; I22 against I21 (gen-only primary, the
 window beside it), I22 against I15 beside it deciding nothing, the door against REF. `regresses` on either class
 reverts I22 with its receipt. On the 285K class, then a 9950X.
+
+## 3a. I22 on the CPU, before any card
+
+I22 landed as `4b378a064` (memra-tier `bank/types.rs`, `bank/slru.rs`, `bank/residency.rs`, `bank/expert_dispatch.rs`;
+no engine source changed). As registered, with two details the source gave: the positioned path keeps `stage`'s
+refusals in their order (a record outside the domain, then the id's validation, then the entry), and `stage_at`
+refuses `Unsupported` without the cache's view or with a position list of another length, before any change.
+
+**CPU gates** (`day85-cpu/gates.log`): the tier suites (the bank suite 96 passed, with four `day85` tests: the adapter,
+which now stages by position, equals a twin bank driven through the hashed `stage` with the pre-I22 adapter's batches
+over 600 randomized grouped demands, single demands and fill admissions, for demand and for prefetch priority, the same
+outcomes, leases and bytes, reads, SLRU orders, residency and host cache after every step; `hit_at` against `hit` over
+the day-43-style trace; `validate` by position against the id's layout and the catalog's `id_at`), and `day84`'s charge
+test updated to the formula with the cache view; the engine library (574 passed); clippy (`-D warnings`, all targets)
+and fmt clean; `git diff --check` clean; `rc-scan.py --live` 0.
+
+**The CPU profile** (`day85-cpu/profile.log`, the engine library's test binaries at I21 and I22, one pinned P-core,
+order I21, I22, I22, I21, I21, I22, the host shared with other lanes' work, load average up to 10.7 by the end): P1's
+single `demand` 2337 to 2529 ns at I21, 1281 to 1367 at I22 (about 45 percent less); P9's grouped cycle 2142 to 2282 ns
+per block at I21, 830 to 958 at I22 (about 60 percent less). P10: 17 allocations per grouped cycle at I22 against 16 at
+I21 (the positions travel in their own vector; 718 bytes against 830).
+
+**The local check and the in-situ split** are queued together (queue v19, `rtx5090-queue-v19-20260926.sh`, queue
+v18's shape with I21 and I22, dry-checked under stubs in `day85-cpu/dry-check-queue.log`).

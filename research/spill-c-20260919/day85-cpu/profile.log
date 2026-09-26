@@ -1,0 +1,26 @@
+# DAY85 CPU profile: the day-61 profile's P1, P9 and P10 from the engine lib test binaries at I21 (b555b4141, 4a99494a6b3eb5a9) and I22 (4b378a064, 26e46d61ec09e92c), one pinned P-core, order i21 i22 i22 i21 i21 i22; the rig shared with other lanes' work (load 18.05 12.00 8.35)
+== i21
+DAY61 P1 proxy per_cycle_ns host_resident=127.2 demand=2528.5 with_bytes=354.0 finish=295.5 cycle=3331.7
+DAY77 P9 group calls per_block_ns cycle=2141.9 | P8 again cycle=2387.7
+DAY82 P10 allocations per grouped cycle=16.00 bytes=830.2 | host_resident_many=0.00/0.0 demand_many=15.00/806.2 with_bytes_each=0.00/0.0 finish_group=1.00/24.0
+== i22
+DAY61 P1 proxy per_cycle_ns host_resident=65.5 demand=1367.2 with_bytes=406.6 finish=279.5 cycle=2143.7
+DAY77 P9 group calls per_block_ns cycle=958.0 | P8 again cycle=1164.0
+DAY82 P10 allocations per grouped cycle=17.00 bytes=718.2 | host_resident_many=0.00/0.0 demand_many=16.00/694.2 with_bytes_each=0.00/0.0 finish_group=1.00/24.0
+== i22
+DAY61 P1 proxy per_cycle_ns host_resident=69.5 demand=1332.4 with_bytes=407.5 finish=266.8 cycle=2099.9
+DAY77 P9 group calls per_block_ns cycle=830.2 | P8 again cycle=1137.9
+DAY82 P10 allocations per grouped cycle=17.00 bytes=718.2 | host_resident_many=0.00/0.0 demand_many=16.00/694.2 with_bytes_each=0.00/0.0 finish_group=1.00/24.0
+== i21
+DAY61 P1 proxy per_cycle_ns host_resident=115.1 demand=2344.5 with_bytes=338.1 finish=262.7 cycle=3084.5
+DAY77 P9 group calls per_block_ns cycle=2282.1 | P8 again cycle=2337.3
+DAY82 P10 allocations per grouped cycle=16.00 bytes=830.2 | host_resident_many=0.00/0.0 demand_many=15.00/806.2 with_bytes_each=0.00/0.0 finish_group=1.00/24.0
+== i21
+DAY61 P1 proxy per_cycle_ns host_resident=86.1 demand=2336.7 with_bytes=348.4 finish=253.6 cycle=3049.1
+DAY77 P9 group calls per_block_ns cycle=2190.5 | P8 again cycle=2192.6
+DAY82 P10 allocations per grouped cycle=16.00 bytes=830.2 | host_resident_many=0.00/0.0 demand_many=15.00/806.2 with_bytes_each=0.00/0.0 finish_group=1.00/24.0
+== i22
+DAY61 P1 proxy per_cycle_ns host_resident=53.9 demand=1280.9 with_bytes=407.4 finish=246.5 cycle=2010.6
+DAY77 P9 group calls per_block_ns cycle=921.9 | P8 again cycle=959.2
+DAY82 P10 allocations per grouped cycle=17.00 bytes=718.2 | host_resident_many=0.00/0.0 demand_many=16.00/694.2 with_bytes_each=0.00/0.0 finish_group=1.00/24.0
+# end load 10.72 11.17 8.46
