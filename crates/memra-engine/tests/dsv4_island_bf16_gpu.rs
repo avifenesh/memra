@@ -104,12 +104,11 @@ fn bf16_island_storage_is_bit_identical_to_the_f32_widening() {
         unsafe { std::env::set_var("NVIDIA_TF32_OVERRIDE", "0") };
     }
     let e = Engine::new(0).expect("CUDA engine on device 0");
-    let entries: [(&str, Dots); 5] = [
+    let entries: [(&str, Dots); 4] = [
         ("dots_f32", k::memra_dsv4_dots_f32),
         ("dots_f32acc", k::memra_dsv4_dots_f32acc),
         ("dots_f32_mrow", k::memra_dsv4_dots_f32_mrow),
         ("dots_f32acc_mrow", k::memra_dsv4_dots_f32acc_mrow),
-        ("dots_f32_rowblk", k::memra_dsv4_dots_f32_rowblk),
     ];
     let mut cases = 0;
     for (si, &(n, kdim)) in SHAPES.iter().enumerate() {

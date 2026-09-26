@@ -407,6 +407,38 @@ unsafe extern "C" {
     // iteration-5 F-itemisation instrument (see dsv4_gpu.rs Dsv4Phase).
     /// The DSv4 chain's programmatic dependent launch switch (`cu/memra_pdl_chain.cuh`).
     pub fn memra_pdl_chain_set(on: i32);
+    /// A verify round's compressor rows `i0..i1` into their pending slots, both rings.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_cmp_rows_to_slots(
+        pend_kv: *mut f32,
+        pend_sc: *mut f32,
+        rows_kv: *const f32,
+        rows_sc: *const f32,
+        i0: i32,
+        i1: i32,
+        pos0: i32,
+        ratio: i32,
+        latent: i32,
+        slot_off: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// A compressor's verify-round rollback (snapshot restore, committed-row writes and the
+    /// overlap half shifts) in one launch.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_cmp_rollback(
+        pend_kv: *mut f32,
+        pend_sc: *mut f32,
+        kv_snap: *const f32,
+        sc_snap: *const f32,
+        rows_kv: *const f32,
+        rows_sc: *const f32,
+        n_commit: i32,
+        pos0: i32,
+        ratio: i32,
+        latent: i32,
+        overlap: i32,
+        stream: *mut c_void,
+    ) -> i32;
     /// Two same-length f32 copies in one PDL-chained launch (`n` a multiple of 4, 16-byte
     /// aligned pointers).
     pub fn memra_dsv4_copy2_f32(
@@ -562,18 +594,6 @@ unsafe extern "C" {
         s: i32,
         hc: i32,
         d: i32,
-        stream: *mut c_void,
-    ) -> i32;
-    /// iteration-5: row-blocked twin of `memra_dsv4_dots_f32`. Same arithmetic, same
-    /// reduction tree, same order -- only the block geometry differs, so it is bit-identical.
-    pub fn memra_dsv4_dots_f32_rowblk(
-        x: *const f32,
-        w: *const c_void,
-        w_is_bf16: i32,
-        y: *mut f32,
-        s: i32,
-        k: i32,
-        n: i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_dots_f32(
@@ -932,16 +952,6 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_argmax(v: *const f32, n: i64, out: *mut i32, stream: *mut c_void) -> i32;
-    /// iteration-5: `dst[0..cols) = src[idx[slot] * cols ..]`, the index read on the
-    /// DEVICE so the DSpark markov chain needs no host round trip between steps.
-    pub fn memra_dsv4_gather_row_by_idx(
-        src: *const f32,
-        idx: *const i32,
-        slot: i32,
-        dst: *mut f32,
-        cols: i32,
-        stream: *mut c_void,
-    ) -> i32;
     pub fn memra_dsv4_gemv_bf16(
         w_bf16: *const c_void,
         x_bf16: *const c_void,

@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/root/box/nsys-ana.py", line 6, in <module>
+    names = dict(q("select id, value from StringIds"))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/box/nsys-ana.py", line 5, in <lambda>
+    q = lambda s: db.execute(s).fetchall()
+                  ^^^^^^^^^^^^^
+sqlite3.OperationalError: no such table: StringIds

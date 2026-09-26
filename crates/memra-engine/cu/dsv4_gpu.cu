@@ -7450,86 +7450,6 @@ extern "C" int memra_dsv4_nvtx_pop() {
 #endif
 }
 
-// ===================================== iteration-5: gather one row by a DEVICE-RESIDENT index
-// The DSpark markov chain needs row `idx[slot]` of markov_w1, where `idx[slot]` is the argmax
-// the previous chain step just wrote on the device. The shipped path read that index back to
-// the host (4-byte D2H + a full stream drain, five times a round) purely to compute the source
-// offset of a memcpy. Doing the indirection on the device removes the drain and copies the
-// SAME bytes, so the chain stays bit-identical.
-extern "C" __global__ void dsv4_gather_row_by_idx_kernel(const float *__restrict__ src,
-                                                        const int *__restrict__ idx, int slot,
-                                                        float *__restrict__ dst, int cols) {
-    MEMRA_PDL_CHAIN_ENTRY();
-    long long r = (long long)idx[slot];
-    for (long long c = (long long)blockIdx.x * blockDim.x + threadIdx.x; c < (long long)cols;
-         c += (long long)blockDim.x * gridDim.x) {
-        dst[c] = src[r * (long long)cols + c];
-    }
-}
-
-extern "C" int memra_dsv4_gather_row_by_idx(const float *src, const int *idx, int slot,
-                                           float *dst, int cols, void *stream_v) {
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    int threads = 256;
-    int blocks = (cols + threads - 1) / threads;
-    if (blocks < 1) blocks = 1;
-    memra_chain_launch(dsv4_gather_row_by_idx_kernel,(unsigned)blocks, threads, 0, stream)(src, idx, slot, dst,
-                                                                           cols);
-    DSV4_ERR();
-    return 0;
-}
-
-// ============================== iteration-5: row-blocked twin of dsv4_dots_f32_kernel (BIT-EXACT)
-//
-// `dsv4_dots_f32_kernel` puts ONE BLOCK PER OUTPUT ROW. For the DSpark markov bias GEMV
-// (n = vocab = 129,280, k = rank = 256) that is 129,280 blocks each reading 1 KB and then paying a
-// 7-level __syncthreads halving tree -- measured 318 us, 416 GB/s, 26% of roofline, i.e. bound by
-// per-block tree LATENCY, not by bandwidth.
-//
-// This twin changes ONLY the block shape: R rows per block, blockDim = (128, R), row r owned by
-// threadIdx.y == r with its own 128-double smem slab. The per-thread strided accumulation over
-// threadIdx.x, the leaf count, and the halving tree are the SAME, so every output is
-// bit-identical to the original -- only the launch geometry moved. Out-of-range rows still walk
-// the tree with a zero leaf: `dsv4_block_sum` contains __syncthreads(), so every thread of the
-// block must reach every barrier.
-template <int R>
-__global__ void dsv4_dots_f32_rowblk_kernel(const float *__restrict__ x,
-                                            const void *__restrict__ w, int w_is_bf16,
-                                            float *__restrict__ y, int s, int k, int n) {
-    MEMRA_PDL_CHAIN_ENTRY();
-    const int j = blockIdx.x * R + (int)threadIdx.y;
-    const int t = blockIdx.y;
-    extern __shared__ double shd_rb[];
-    double *sh = shd_rb + (long)threadIdx.y * blockDim.x;
-    double acc = 0.0;
-    if (j < n && t < s) {
-        const float *xr = x + (long)t * k;
-        if (w_is_bf16) {
-            const uint16_t *wr = (const uint16_t *)w + (long)j * k;
-            for (int i = threadIdx.x; i < k; i += blockDim.x)
-                acc += (double)xr[i] * (double)__uint_as_float(((unsigned)wr[i]) << 16);
-        } else {
-            const float *wr = (const float *)w + (long)j * k;
-            for (int i = threadIdx.x; i < k; i += blockDim.x)
-                acc += (double)xr[i] * (double)wr[i];
-        }
-    }
-    double tot = dsv4_block_sum(acc, sh);
-    if (threadIdx.x == 0 && j < n && t < s) y[(long)t * n + j] = (float)tot;
-}
-
-extern "C" int memra_dsv4_dots_f32_rowblk(const float *x, const void *w, int w_is_bf16, float *y,
-                                          int s, int k, int n, void *stream_v) {
-    cudaStream_t stream = (cudaStream_t)stream_v;
-    const int R = 8, TH = 128;
-    dim3 block((unsigned)TH, (unsigned)R);
-    dim3 grid((unsigned)((n + R - 1) / R), (unsigned)s);
-    size_t sm = (size_t)R * TH * sizeof(double);
-    memra_chain_launch(dsv4_dots_f32_rowblk_kernel<R>,grid, block, sm, stream)(x, w, w_is_bf16, y, s, k, n);
-    DSV4_ERR();
-    return 0;
-}
-
 // ---------------------------------------------------------------- roofline probes
 //
 // WHY THESE EXIST (lane/b200-roofline-recalibrate, 2026-09-06). The pair's "measured
@@ -7783,6 +7703,85 @@ extern "C" int memra_dsv4_replay_destroy(void* graph, void* executable, void* ra
     }
     return first == cudaSuccess ? 0 : 10000 + (int)first;
 }
+// A compressor's verify-round rollback in one launch (memra #710 DSpark round): the pending kv and
+// score rings are reset to their round-start snapshots, then the first `n_commit` rows are written
+// back into their slots in position order, with the overlap compressor's half shift after every
+// completed block. That was 2 + 2 n_commit + 2 x blocks memcpy nodes per compressor; each thread
+// here replays the same sequence of moves for its element (for an overlap ring, the lower/upper
+// pair its shift couples), so the final bytes are the copies' own.
+__global__ void dsv4_cmp_rollback_kernel(float* __restrict__ pend_kv, float* __restrict__ pend_sc,
+    const float* __restrict__ kv_snap, const float* __restrict__ sc_snap,
+    const float* __restrict__ rows_kv, const float* __restrict__ rows_sc, int n_commit, int pos0,
+    int ratio, int latent, int overlap) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const long half = (long)ratio * latent;
+    // One element per thread, or for an overlap ring one lower/upper pair.
+    const long j = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (j >= half) return;
+    const float* snaps[2] = {kv_snap, sc_snap};
+    const float* rows[2] = {rows_kv, rows_sc};
+    float* pends[2] = {pend_kv, pend_sc};
+    for (int a = 0; a < 2; ++a) {
+        float lo = snaps[a][j];
+        float hi = overlap ? snaps[a][j + half] : 0.0f;
+        for (int i = 0; i < n_commit; ++i) {
+            const int pos = pos0 + i;
+            const int slot = pos % ratio; // the upper-half slot index for an overlap ring
+            if (j >= (long)slot * latent && j < (long)(slot + 1) * latent) {
+                const float v = rows[a][(long)i * latent + (j - (long)slot * latent)];
+                if (overlap) hi = v; else lo = v;
+            }
+            if (overlap && (pos + 1) % ratio == 0) lo = hi;
+        }
+        pends[a][j] = lo;
+        if (overlap) pends[a][j + half] = hi;
+    }
+}
+// A verify round's compressor rows `i0..i1` into their pending slots, both rings, in one launch:
+// row i lands in slot `slot_off + (pos0 + i) % ratio`. The rows between two block boundaries map
+// to distinct slots, so the moves are the per-row copies' own.
+__global__ void dsv4_cmp_rows_to_slots_kernel(float* __restrict__ pend_kv,
+    float* __restrict__ pend_sc, const float* __restrict__ rows_kv,
+    const float* __restrict__ rows_sc, int i0, int i1, int pos0, int ratio, int latent,
+    int slot_off) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const long n = (long)(i1 - i0) * latent;
+    for (long x = (long)blockIdx.x * blockDim.x + threadIdx.x; x < 2 * n;
+         x += (long)gridDim.x * blockDim.x) {
+        const int a = x >= n;
+        const long y = a ? x - n : x;
+        const int i = i0 + (int)(y / latent);
+        const long c = y - (long)(i - i0) * latent;
+        const long slot = slot_off + (pos0 + i) % ratio;
+        (a ? pend_sc : pend_kv)[slot * latent + c] = (a ? rows_sc : rows_kv)[(long)i * latent + c];
+    }
+}
+extern "C" int memra_dsv4_cmp_rows_to_slots(float* pend_kv, float* pend_sc, const float* rows_kv,
+    const float* rows_sc, int i0, int i1, int pos0, int ratio, int latent, int slot_off,
+    void* raw_stream) {
+    if (!pend_kv || !pend_sc || !rows_kv || !rows_sc || i0 < 0 || i1 <= i0 || pos0 < 0 ||
+        ratio <= 0 || latent <= 0 || slot_off < 0 || i1 - i0 > ratio) return 40074;
+    const long n2 = 2L * (i1 - i0) * latent;
+    memra_chain_launch(dsv4_cmp_rows_to_slots_kernel, (unsigned)min((n2 + 255) / 256, 1024L), 256,
+                       0, (cudaStream_t)raw_stream)(
+        pend_kv, pend_sc, rows_kv, rows_sc, i0, i1, pos0, ratio, latent, slot_off);
+    DSV4_ERR();
+    return 0;
+}
+extern "C" int memra_dsv4_cmp_rollback(float* pend_kv, float* pend_sc, const float* kv_snap,
+    const float* sc_snap, const float* rows_kv, const float* rows_sc, int n_commit, int pos0,
+    int ratio, int latent, int overlap, void* raw_stream) {
+    if (!pend_kv || !pend_sc || !kv_snap || !sc_snap || !rows_kv || !rows_sc || n_commit < 0 ||
+        pos0 < 0 || ratio <= 0 || latent <= 0) return 40074;
+    const long span = (long)ratio * latent;
+    memra_chain_launch(dsv4_cmp_rollback_kernel, (unsigned)((span + 255) / 256), 256, 0,
+                       (cudaStream_t)raw_stream)(
+        pend_kv, pend_sc, kv_snap, sc_snap, rows_kv, rows_sc, n_commit, pos0, ratio, latent,
+        overlap);
+    DSV4_ERR();
+    return 0;
+}
+
 // Two same-length f32 copies in one launch: a compressor checkpoint's kv and score snapshots
 // (memra #710). A kernel, not two memcpy nodes, so a captured step keeps its programmatic
 // dependent launch chain through it; the bytes are the copies' own.

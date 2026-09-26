@@ -1,0 +1,4 @@
+READY after=234s
+CELL warmup c=1 ok=1/1 agg=71.64 tok/s decode_p50=178.30 tok/s ttft_p50=272 ms tpot_p50=5.61 ms errs=[]
+CELL prof-greedy c=1 ok=2/2 agg=83.10 tok/s decode_p50=88.43 tok/s ttft_p50=196 ms tpot_p50=11.31 ms errs=[]
+PROF_DONE Traceback (most recent call last):   File "/root/box/nsys-ana.py", line 6, in <module>     names = dict(q("select id, value from StringIds")) 
