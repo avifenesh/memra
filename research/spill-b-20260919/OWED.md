@@ -108,8 +108,8 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   the same over-count on a burst. The fix is the door's booking measured at its best, and it feeds O3.
 - Status: `receipts banked` on the target card: DAY39 2.2 GREEN (v3: no OOM, 46 x 200 against v1's 44; v2 reproduces
   the 10 OOMs). The 5090 class: the registered half (DAY39 2.3, on the revision without addendum B) NOT-GREEN (the
-  green arm parks 3 prefill OOMs per G2 burst); addendum B's 5090 half and the admission gate on v3 run from queue-k
-  (item 2, `rtx5090-day39b`, from 2026-09-26 15:20Z). Feeds O3.
+  green arm parks 3 prefill OOMs per G2 burst); addendum B's 5090 half and the admission gate on v3 run from queue-m
+  (item 2, `rtx5090-day39b`; v2-G2 ran at 15:20Z under queue-k). Feeds O3.
 - Price: about 0.5 agent-day plus a cell on each card.
 
 ### O6. The enforcing predictive door on the fuller charge
