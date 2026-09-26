@@ -764,6 +764,8 @@ mod tests {
             logits: Vec::new(),
             capture_at: None,
             ckpt_rel,
+            grid_rel: None,
+            grid_requested: false,
             k: 1,
             sampling: resolve_spec_sampling(None),
             graph_draft: false,
@@ -778,6 +780,12 @@ mod tests {
         );
         assert!(!state(Some(1024), 2).owes_turn_checkpoint());
         assert!(!state(None, 0).owes_turn_checkpoint());
+        // WP-B day 44: a grid capture the walker has not yet reached is owed the same way.
+        let mut grid = state(None, 0);
+        grid.grid_rel = Some(1024);
+        assert!(grid.owes_turn_checkpoint());
+        grid.cursor = 1;
+        assert!(!grid.owes_turn_checkpoint());
     }
 
     #[test]
