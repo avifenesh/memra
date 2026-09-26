@@ -38,6 +38,10 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   5090 class has no reading: its r4 half stopped at the card's reset (queue-e runs the rest when the card is healthy).
 - Price: 3 to 4 agent-days (design note), plus a target-card sitting of about 8 h (the byte cells on both allocators,
   the stall cell both orders, the grow series, the accounting cell) and the matching 5090 holds.
+- 5090 class (DAY37 2.7): FAIL (no reading) on A1, the pooled control arm's admit-mem burst gate RED. Placed (DAY39
+  2.3): the r4 tree lacks DAY39's addendum B, and the registered DAY39 5090 half on the same binary reads the same red
+  (8 parked prefill OOMs, `pending_prime=0`). DAY37 addendum G's repro (r4 twice, v3 once) runs from queue-k; a rerun of
+  O1's 5090 cell on a tree with addendum B is owed once it reads.
 
 ### O2. `MEMRA_KV_PARK_COMPACT`, decide-by 2026-10-06
 
@@ -82,9 +86,9 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   session's whole life; the workspace is live only during the prime. Under `MEMRA_ADMIT_BY_MEMORY` the booked
   reading already counts `W` only for still-priming sessions (`pending_prime`, day 33), so this item is the two books'
   side.
-- Status: `pre-registered` (DAY45.md): `MEMRA_ADMIT_W_RELEASE` (default unset, decide-by 2026-10-10), one release
-  site at the tick top for every session whose prime completed, both books, the retire seam unchanged; the cell runs the
-  predictive shadow (log only) with a burst, W1 exact books, W2 one release per session, W3 identity. Price: about 0.3
+- Status: `running`. Pre-registered (DAY45.md, `3182da256`), addendum A (the release site after the command drain);
+  `MEMRA_ADMIT_W_RELEASE` coded (`21b081ee1`, decide-by 2026-10-10; memra-server 957 passed, clippy clean). The tenth
+  sitting (`pro-single-b-sitting10.sh`, 4 boots, about 1.5 h) and queue-k (the 5090) run the cells. Price: about 0.3
   agent-day plus about 40 min on the 5090 and 1.5 h on the target card.
 
 ### O5. The shared prime slab charged per request
