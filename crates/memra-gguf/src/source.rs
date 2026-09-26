@@ -1668,6 +1668,26 @@ impl SafetensorsSource {
         &self.cfg.arch
     }
 
+    /// Verify the entire pinned MiMo source header census before a diagnostic
+    /// loader uses native tensor views. This does not read weight payloads.
+    pub fn verify_pinned_mimo_source_headers(&self) -> Result<(), String> {
+        if self.cfg.arch != Arch::MiMoV2 {
+            return Err("pinned MiMo source check requires a MiMo config".into());
+        }
+        let headers = self
+            .model
+            .names()
+            .map(|name| {
+                self.model
+                    .info(name)
+                    .map(|info| (name.clone(), info.clone()))
+                    .ok_or_else(|| format!("missing MiMo source header {name}"))
+            })
+            .collect::<Result<BTreeMap<_, _>, _>>()?;
+        crate::model_packs::mimo_v2::inspect_pinned_source_headers(&self.cfg, &headers)?;
+        Ok(())
+    }
+
     fn preserves_source_dtype(&self, hf_name: &str) -> bool {
         if self.preserve_checkpoint_bf16 {
             return true;
@@ -3291,6 +3311,11 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("memra-mimo-bf16-{}-{unique}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("config.json"),
+            include_str!("model_packs/mimo_v2/fixtures/config.json"),
+        )
+        .unwrap();
         let file = dir.join("model.safetensors");
         let name = "model.layers.0.self_attn.o_proj.weight";
         let elements = 512 * 4096;
@@ -3319,6 +3344,22 @@ mod tests {
         assert!(recorded.find_mimo_bf16_ggml(ggml).is_some());
         assert!(recorded.requested().contains(ggml));
         assert!(source.find_mimo_bf16_ggml("blk.0.attn_q.weight").is_none());
+        let error = crate::model_packs::mimo_v2::bind_pinned_text_source(&source)
+            .err()
+            .expect("one valid MiMo matrix cannot bind a partial checkpoint");
+        assert!(!error.contains("config changed"), "{error}");
+        std::fs::write(
+            dir.join("config.json"),
+            format!(
+                "{}\n",
+                include_str!("model_packs/mimo_v2/fixtures/config.json")
+            ),
+        )
+        .unwrap();
+        let error = crate::model_packs::mimo_v2::bind_pinned_text_source(&source)
+            .err()
+            .expect("changed config bytes must refuse the pinned source");
+        assert!(error.contains("config changed"), "{error}");
         drop(recorded);
         drop(raw);
         drop(source);

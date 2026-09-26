@@ -9,12 +9,14 @@ use std::time::Instant;
 use cudarc::driver::CudaSlice;
 use memra_engine::Engine;
 use memra_engine::QT_F8_E4M3_BLK;
+use memra_engine::mimo_attn_load::MiMoSourceAttention;
 use memra_engine::mimo_mixed_attn_ffi::MiMoMixedAttentionWorkspace;
 use memra_engine::mimo_source_moe::{
     GroupedMiMoMoeLayer, PinnedMiMoSource, ResidentMiMoMoeLayer, source_moe_token,
 };
 use memra_engine::model::GpuTensor;
 use memra_gguf::GgmlType;
+use memra_gguf::checkpoint_binding::{CheckpointBinding, RecordingSource};
 use memra_gguf::config::{HfConfig, ModelConfig};
 use memra_gguf::dequant::{dequantize, fp16_to_f32};
 use memra_gguf::model_packs;
@@ -692,53 +694,40 @@ struct ResidentTextLayer {
     dense: Option<ResidentDense>,
 }
 
+struct ResidentTextSources<'a> {
+    model: &'a StModel,
+    source: &'a SafetensorsSource,
+    attention_source: &'a dyn TensorSource,
+    binding: &'a CheckpointBinding,
+    plan: &'a ModelPlan,
+}
+
 impl ResidentTextLayer {
     fn load(
         engine: &Engine,
-        model: &StModel,
-        source: &SafetensorsSource,
+        sources: &ResidentTextSources<'_>,
         plan: &LayerPlan,
         mirror_o_f32: bool,
     ) -> Result<Self, Fail> {
         engine.gpu.ctx.bind_to_thread()?;
         let layer = plan.index as usize;
-        let (attention, global) = checked_attention(plan)?;
         let prefix = format!("model.layers.{layer}");
         let input_norm = engine.htod(&read_vector(
-            model,
+            sources.model,
             &format!("{prefix}.input_layernorm.weight"),
             HIDDEN,
         )?)?;
-        let qkv_name = format!("{prefix}.self_attn.qkv_proj.weight");
-        let views = source
-            .find_fp8_mimo_qkv_shards(&qkv_name)
-            .ok_or_else(|| format!("{qkv_name}: missing four native views"))?;
-        if views.len() != 4 {
-            return Err(format!("{qkv_name}: wrong source shard count").into());
-        }
-        let expected_rows = 3072 + attention.kv_heads as usize / 4 * (QK + VALUE);
-        let mut qkv = Vec::with_capacity(4);
-        for (index, view) in views.iter().enumerate() {
-            if view.out_f != expected_rows || view.in_f != HIDDEN {
-                return Err(format!("{qkv_name} shard {index}: changed geometry").into());
-            }
-            qkv.push(GpuTensor::load_mimo_fp8_qkv_shard(engine, view)?);
-        }
-        let sink = if global {
-            None
-        } else {
-            Some(engine.htod(&read_vector(
-                model,
-                &format!("{prefix}.self_attn.attention_sink_bias"),
-                64,
-            )?)?)
-        };
-        let source_o_proj = bf16_matrix(
+        let MiMoSourceAttention {
+            qkv,
+            output: source_o_proj,
+            sink,
+            ..
+        } = MiMoSourceAttention::load(
             engine,
-            model,
-            &format!("{prefix}.self_attn.o_proj.weight"),
-            HIDDEN,
-            64 * VALUE,
+            sources.attention_source,
+            sources.binding,
+            sources.plan,
+            layer,
         )?;
         let o_proj = if mirror_o_f32 {
             f32_mirror_of_bf16(engine, source_o_proj)?
@@ -746,15 +735,33 @@ impl ResidentTextLayer {
             source_o_proj
         };
         let post_norm = engine.htod(&read_vector(
-            model,
+            sources.model,
             &format!("{prefix}.post_attention_layernorm.weight"),
             HIDDEN,
         )?)?;
         let dense = if layer == 0 {
             Some(ResidentDense {
-                gate: native_fp8_matrix(engine, source, "blk.0.ffn_gate.weight", 16384, HIDDEN)?,
-                up: native_fp8_matrix(engine, source, "blk.0.ffn_up.weight", 16384, HIDDEN)?,
-                down: native_fp8_matrix(engine, source, "blk.0.ffn_down.weight", HIDDEN, 16384)?,
+                gate: native_fp8_matrix(
+                    engine,
+                    sources.source,
+                    "blk.0.ffn_gate.weight",
+                    16384,
+                    HIDDEN,
+                )?,
+                up: native_fp8_matrix(
+                    engine,
+                    sources.source,
+                    "blk.0.ffn_up.weight",
+                    16384,
+                    HIDDEN,
+                )?,
+                down: native_fp8_matrix(
+                    engine,
+                    sources.source,
+                    "blk.0.ffn_down.weight",
+                    HIDDEN,
+                    16384,
+                )?,
             })
         } else {
             None
@@ -1454,6 +1461,10 @@ fn run() -> Result<(), Fail> {
         return Err("MiMo source semantic binding count changed".into());
     }
     let source = SafetensorsSource::open(dir)?;
+    let (_, bound_plan, binding) = model_packs::mimo_v2::bind_pinned_text_source(&source)?;
+    if bound_plan != plan || binding.bound.tensors.len() != 36922 {
+        return Err("MiMo source semantic binding differs from pinned diagnostic plan".into());
+    }
     for layer in &plan.layers {
         let index = layer.index as usize;
         let (attention, _) = checked_attention(layer)?;
@@ -1523,6 +1534,14 @@ fn run() -> Result<(), Fail> {
     let mut resident_head: Option<ResidentHead> = None;
     let mut resident_text_load_ms = 0.0f64;
     if resident_text {
+        let attention_source = RecordingSource::new(&source);
+        let text_sources = ResidentTextSources {
+            model: &model,
+            source: &source,
+            attention_source: &attention_source,
+            binding: &binding,
+            plan: &plan,
+        };
         let load_start = Instant::now();
         for (index, layer) in plan.layers.iter().enumerate() {
             let stage = usize::from(index >= STAGE_CUT);
@@ -1530,14 +1549,29 @@ fn run() -> Result<(), Fail> {
             let before = Instant::now();
             resident_text_layers[index] = Some(ResidentTextLayer::load(
                 engine,
-                &model,
-                &source,
+                &text_sources,
                 layer,
                 mirror_o_f32,
             )?);
             eprintln!(
                 "MiMo text layer {index} stage {stage} resident in {:.3}s",
                 before.elapsed().as_secs_f64()
+            );
+        }
+        let missing = binding.audit_consumption(&attention_source.requested(), &config, |id, _| {
+            !matches!(
+                id,
+                memra_gguf::tensor_contract::TensorId::Layer {
+                    tensor: memra_gguf::tensor_contract::LayerTensor::FusedQkv
+                        | memra_gguf::tensor_contract::LayerTensor::AttentionOutput
+                        | memra_gguf::tensor_contract::LayerTensor::AttentionSink,
+                    ..
+                }
+            )
+        });
+        if !missing.is_empty() {
+            return Err(
+                format!("MiMo attention source left bound tensors unread: {missing:?}").into(),
             );
         }
         resident_head = Some(ResidentHead::load(&engines[1], &model)?);
