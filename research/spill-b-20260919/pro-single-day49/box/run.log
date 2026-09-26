@@ -1,0 +1,9 @@
+2026-09-26T17:58:26Z boot O1-off start arm=off bin=bfb107adc18d731b env=[MEMRA_STEP_OOM_FAULT=1] args=[--warm-n 0 --burst 8 --length 6144 --max-tokens 64]
+2026-09-26T17:59:05Z boot O1-off rc=0 DAY45 BOOT rows=9 ok=9 w_booked=0 w_release=0 predict_lines=10 oom=1
+2026-09-26T17:59:10Z boot O1-on start arm=on bin=bfb107adc18d731b env=[MEMRA_STEP_OOM_FAULT=1 MEMRA_BATCH_OOM_RECOVER=1] args=[--warm-n 0 --burst 8 --length 6144 --max-tokens 64]
+2026-09-26T17:59:50Z boot O1-on rc=0 DAY45 BOOT rows=9 ok=9 w_booked=0 w_release=0 predict_lines=10 oom=1
+2026-09-26T17:59:55Z boot O2-on start arm=on bin=bfb107adc18d731b env=[MEMRA_STEP_OOM_FAULT=1 MEMRA_BATCH_OOM_RECOVER=1] args=[--warm-n 0 --burst 8 --length 6144 --max-tokens 64]
+2026-09-26T18:00:34Z boot O2-on rc=0 DAY45 BOOT rows=9 ok=9 w_booked=0 w_release=0 predict_lines=10 oom=1
+2026-09-26T18:00:40Z boot O2-off start arm=off bin=bfb107adc18d731b env=[MEMRA_STEP_OOM_FAULT=1] args=[--warm-n 0 --burst 8 --length 6144 --max-tokens 64]
+2026-09-26T18:01:19Z boot O2-off rc=0 DAY45 BOOT rows=9 ok=9 w_booked=0 w_release=0 predict_lines=10 oom=1
+2026-09-26T18:01:24Z boots done: O1-off:off O1-on:on O2-on:on O2-off:off

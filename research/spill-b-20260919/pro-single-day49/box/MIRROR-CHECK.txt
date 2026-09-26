@@ -1,0 +1,3 @@
+Mirrored by the lead 2026-09-26 20:25Z from BOX35 (a Ryzen 9 5900XT with one RTX PRO 6000 WS, 121 GB, driver 610.43.02).
+Box-side sha256 manifest (MANIFEST.sha256) re-checked here with sha256sum -c: OK. ELF binaries by hash only (BINARIES.sha256), not mirrored.
+The chain log rc= lines are NOT step exit codes: the lead chain wrote echo "$(date ...) rc=$?", which expands date first, so every rc there is 0. Read the step logs themselves.

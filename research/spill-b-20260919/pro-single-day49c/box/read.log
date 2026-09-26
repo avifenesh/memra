@@ -1,0 +1,8 @@
+DAY49C I-VMM card=pro6000 role=green gate_i=PASS gate_i_red=PASS i-ctrl=[door_on=1 reap_lines=0 retry_lines=0 paired=True] i=[door_on=1 reap_lines=1 retry_lines=1 paired=True] i-red=[door_on=1 reap_lines=1 retry_lines=1 paired=True] expect=one reap per retry, before it -> PASS
+  green HFG (i) batch-oom-recovers: retry_lines=1 retried_ok=1 completed=3/3 error_events=0 http_5xx=0 panic_lines=0 digests={r0:9544bb8cfe5453f9,r1:d6443173460ba4da,r2:9c2aecc336dfecfc} control={r0:9544bb8cfe5453f9,r1:d6443173460ba4da,r2:9c2aecc336dfecfc} control_completed=3/3 -> PASS
+  green i first reap line: [kv-vmm] reap (batch-oom) released=0 pending_graves=0
+  green HFG (i-red) batch-oom-retry-also-fails: retry_lines=1 retry_failed=1 completed=2/3 error_events=1 http_5xx=0 panic_lines=0 green_assertion_fired=true -> PASS
+  green i-red first reap line: [kv-vmm] reap (batch-oom) released=0 pending_graves=0
+DAY49C I-VMM card=pro6000 role=red gate_i=FAIL gate_i_red=PASS i-ctrl=[door_on=1 reap_lines=0 retry_lines=0 paired=True] i=[door_on=1 reap_lines=0 retry_lines=0 paired=True] i-red=[door_on=1 reap_lines=0 retry_lines=1 paired=False] expect=no reap line (the defect as it reads) -> FAIL
+  red HFG (i) batch-oom-recovers: retry_lines=0 retried_ok=0 completed=3/3 error_events=0 http_5xx=0 panic_lines=0 digests={r0:9544bb8cfe5453f9,r1:d6443173460ba4da,r2:9c2aecc336dfecfc} control={r0:9544bb8cfe5453f9,r1:d6443173460ba4da,r2:9c2aecc336dfecfc} control_completed=3/3 -> FAIL
+  red HFG (i-red) batch-oom-retry-also-fails: retry_lines=1 retry_failed=1 completed=2/3 error_events=1 http_5xx=0 panic_lines=0 green_assertion_fired=true -> PASS
