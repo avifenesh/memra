@@ -18538,14 +18538,20 @@ impl Dsv4Gpu {
     /// other composition, including a gate that pins the GU_FUSE or M1 tensor-core tails,
     /// keeps the chain.
     fn moe_fused_engages(&self, vws: &VerifyWs, t: usize, allow_gu_fuse: bool) -> bool {
-        vws.moe_tile_cnt.is_some() && self.moe_fused_eligible(vws, t, allow_gu_fuse)
+        t == 1 && vws.moe_tile_cnt.is_some() && self.moe_fused_eligible(vws, allow_gu_fuse)
     }
 
-    /// `moe_fused_engages` without the slot-sum counters: the TP/EP partition form sums its
-    /// slots after the rank-order join, not in the kernel.
-    fn moe_fused_eligible(&self, vws: &VerifyWs, t: usize, allow_gu_fuse: bool) -> bool {
-        t == 1
-            && crate::dsv4_moe_fused_on()
+    /// The TP/EP partition form sums its slots after the rank-order join, not in the kernel,
+    /// so it takes every step the stream visitors take: one row, a B-row step or a verify
+    /// round up to the multi-row visitor's bound (memra #710).
+    fn moe_tp_ep_fused_engages(&self, vws: &VerifyWs, t: usize, allow_gu_fuse: bool) -> bool {
+        (1..=crate::dsv4_grouped::MROW_STREAM_MAX_ROWS).contains(&t)
+            && self.moe_fused_eligible(vws, allow_gu_fuse)
+    }
+
+    /// The row-count-free half of the fused pair's engagement.
+    fn moe_fused_eligible(&self, vws: &VerifyWs, allow_gu_fuse: bool) -> bool {
+        crate::dsv4_moe_fused_on()
             && !self.grouped_fresh_storage_control
             && vws.moe_fault_armed
             && vws.moe_fault.is_some()
@@ -18634,11 +18640,12 @@ impl Dsv4Gpu {
         Ok(())
     }
 
-    /// The fused one-token program over this rank's expert partition (memra #710): what
-    /// `dsv4_ep::execute_matrix_local` runs as the grouped chain, in two launches. The
-    /// contribution plane is cleared first, as the chain clears it, so another rank's slots
-    /// enter the rank-order join as zeros; the slot sum stays after the join. Each own slot's
-    /// h and contribution rows are the chain's (the full-bank form's construction, #694).
+    /// The fused program over this rank's expert partition (memra #710): what
+    /// `dsv4_ep::execute_matrix_local` runs as the grouped chain, in two launches, for `t`
+    /// token rows. The contribution plane is cleared first, as the chain clears it, so another
+    /// rank's slots enter the rank-order join as zeros; the slot sums stay after the join. Each
+    /// own slot's h and contribution rows are the chain's (the full-bank form's construction,
+    /// #694: one slot is the one-token visitor's program, which is the multi-row visitor's too).
     #[allow(clippy::too_many_arguments)]
     fn moe_tp_ep_fused(
         &self,
@@ -18646,6 +18653,7 @@ impl Dsv4Gpu {
         layer: &LayerDev,
         ep: &crate::dsv4_ep::EpLayer,
         vws: &mut VerifyWs,
+        t: usize,
         hidden: usize,
         ne: usize,
         topk: usize,
@@ -18691,6 +18699,7 @@ impl Dsv4Gpu {
                     dpf!(vws.xf, &stream),
                     dpm!(vws.hbuf, &stream),
                     topk as i32,
+                    t as i32,
                     hidden as i32,
                     inter as i32,
                     limit,
@@ -18713,6 +18722,7 @@ impl Dsv4Gpu {
                     std::ptr::null_mut(),
                     std::ptr::null_mut(),
                     topk as i32,
+                    t as i32,
                     inter as i32,
                     hidden as i32,
                     fault,
@@ -18725,7 +18735,8 @@ impl Dsv4Gpu {
         static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
             eprintln!(
-                "[dsv4-moe-fused] ENGAGED on TP/EP: t=1 slots={topk} experts [{}, {}) of {ne}, two launches, the slot sum after the rank-order join",
+                "[dsv4-moe-fused] ENGAGED on TP/EP: t={t} slots={} experts [{}, {}) of {ne}, two launches, the slot sums after the rank-order join",
+                t * topk,
                 ep.local_first,
                 ep.local_first + ep.count
             );
@@ -19002,7 +19013,7 @@ impl Dsv4Gpu {
                 && self.topology.is_tp_ep()
                 && defer_tp_ep_tail
                 && ep.local_only
-                && self.moe_fused_eligible(vws, t, allow_gu_fuse);
+                && self.moe_tp_ep_fused_engages(vws, t, allow_gu_fuse);
             if !tp_ep_fused {
                 unsafe {
                     ck(
@@ -19019,7 +19030,7 @@ impl Dsv4Gpu {
                 }
             }
             if tp_ep_fused {
-                self.moe_tp_ep_fused(st, layer, ep, vws, hidden, ne, topk, inter, limit)?;
+                self.moe_tp_ep_fused(st, layer, ep, vws, t, hidden, ne, topk, inter, limit)?;
                 self.ep_calls
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 return Ok(());

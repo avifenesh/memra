@@ -1,0 +1,13 @@
+diff --git a/crates/memra-engine/cu/moe_f16_grouped.cu b/crates/memra-engine/cu/moe_f16_grouped.cu
+index 2a289a0e7..16d30d58a 100644
+--- a/crates/memra-engine/cu/moe_f16_grouped.cu
++++ b/crates/memra-engine/cu/moe_f16_grouped.cu
+@@ -1989,7 +1989,7 @@ static int moe_kq_gemm_sk_launch(const unsigned long long* table, int proj, int
+ #define KQS_CHUNK 128                // k values per ring stage
+ #define KQS_ROW 80                   // 64 code bytes + 8 scale bytes + 8 pad per row stage
+ #ifndef KQS_STAGES
+-#define KQS_STAGES 4
++#define KQS_STAGES 12
+ #endif
+ #define KQS_WARP_RING (KQS_STAGES * 8 * KQS_ROW)
+ 

@@ -2752,6 +2752,7 @@ mod tests {
                             x.device_ptr(&s).0 as *const f32,
                             fused_h.device_ptr_mut(&s).0 as *mut f32,
                             topk as i32,
+                            1,
                             hidden as i32,
                             inter as i32,
                             limit,
@@ -2784,6 +2785,7 @@ mod tests {
                             std::ptr::null_mut(),
                             std::ptr::null_mut(),
                             topk as i32,
+                            1,
                             inter as i32,
                             hidden as i32,
                             word.device_ptr(&s).0 as *mut i32,
@@ -2866,6 +2868,7 @@ mod tests {
                 y.device_ptr_mut(&s).0 as *mut f32,
                 tile_cnt.device_ptr_mut(&s).0 as *mut i32,
                 topk as i32,
+                1,
                 inter as i32,
                 hidden as i32,
                 std::ptr::null_mut(),
@@ -2873,6 +2876,121 @@ mod tests {
             )
         };
         assert_eq!(refused, 40004, "a partition with the in-kernel sum refuses");
+
+        // Several token rows in one launch (a B-row step, a verify round): the chain runs the
+        // multi-row visitor, which puts rows of one expert in one pass; the fused pair runs
+        // each slot alone. Experts repeat across rows and both ranks own some of them.
+        let rows = 3usize;
+        let slots = rows * topk;
+        let sel_rows: Vec<i32> = vec![3, 11, 0, 7, 15, 9, 3, 12, 0, 9, 4, 14, 11, 3, 8, 7, 1, 12];
+        let routing_rows: Vec<f32> = (0..slots).map(|p| (p % 5 + 1) as f32 / 16.0).collect();
+        let x_rows: Vec<f32> = (0..rows)
+            .flat_map(|r| input_row(Red::Clean, 7 + r))
+            .collect();
+        let x_dev = s.clone_htod(&x_rows).unwrap();
+        let mut fused_h_rows = s.alloc_zeros::<f32>(slots * inter).unwrap();
+        let mut fused_c_rows = s.alloc_zeros::<f32>(slots * hidden).unwrap();
+        for (rank, first) in [0usize, ne / 2].into_iter().enumerate() {
+            let count = ne / 2;
+            let table = &shard_tables[rank];
+            let mut scratch = EpScratch::new(&gpu, &gpu, rows, topk, hidden, inter, None).unwrap();
+            s.memcpy_htod(&sel_rows, &mut scratch.ids.slice_mut(..slots))
+                .unwrap();
+            s.memcpy_htod(&routing_rows, &mut scratch.weights.slice_mut(..slots))
+                .unwrap();
+            unsafe {
+                k::ck(
+                    "multi-row partition fixture FP8 input",
+                    k::memra_dsv4_act_quant_fp8(
+                        x_dev.device_ptr(&s).0 as *const f32,
+                        scratch.xq.device_ptr_mut(&s).0 as *mut std::ffi::c_void,
+                        scratch.xs.device_ptr_mut(&s).0 as *mut f32,
+                        rows as i32,
+                        hidden as i32,
+                        s.cu_stream().cast(),
+                    ),
+                )
+                .unwrap();
+            }
+            s.memset_zeros(&mut scratch.contribution).unwrap();
+            let mut work =
+                GroupedWork::new_partition(&s, ne, first, count, slots, hidden, inter).unwrap();
+            work.defer_faults(Some(fault));
+            work.prepare(
+                &gpu,
+                &view(&mut scratch),
+                &scale2,
+                &scale2_host,
+                rows,
+                topk,
+                true,
+            )
+            .unwrap();
+            work.gate_up(&gpu, table, &mut view(&mut scratch), limit)
+                .unwrap();
+            work.down(&gpu, table, &mut view(&mut scratch)).unwrap();
+            let chain_word = take_word(&mut word);
+            let chain_c = s
+                .clone_dtoh(&scratch.contribution.slice(..slots * hidden))
+                .unwrap();
+            s.memset_zeros(&mut fused_c_rows).unwrap();
+            let gu = unsafe {
+                k::memra_dsv4_moe_fused_gu_part(
+                    table.device_ptr(&s).0 as *const u64,
+                    count as i32,
+                    ne as i32,
+                    first as i32,
+                    scratch.ids.device_ptr(&s).0 as *const i32,
+                    scratch.weights.device_ptr(&s).0 as *const f32,
+                    scale2.device_ptr(&s).0 as *const f32,
+                    x_dev.device_ptr(&s).0 as *const f32,
+                    fused_h_rows.device_ptr_mut(&s).0 as *mut f32,
+                    topk as i32,
+                    rows as i32,
+                    hidden as i32,
+                    inter as i32,
+                    limit,
+                    word.device_ptr(&s).0 as *mut i32,
+                    s.cu_stream().cast(),
+                )
+            };
+            assert_eq!(gu, 0, "multi-row fused partition gate/up rc");
+            let down = unsafe {
+                k::memra_dsv4_moe_fused_down_part(
+                    table.device_ptr(&s).0 as *const u64,
+                    count as i32,
+                    ne as i32,
+                    first as i32,
+                    scratch.ids.device_ptr(&s).0 as *const i32,
+                    scale2.device_ptr(&s).0 as *const f32,
+                    fused_h_rows.device_ptr(&s).0 as *const f32,
+                    fused_c_rows.device_ptr_mut(&s).0 as *mut f32,
+                    std::ptr::null(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    topk as i32,
+                    rows as i32,
+                    inter as i32,
+                    hidden as i32,
+                    word.device_ptr(&s).0 as *mut i32,
+                    s.cu_stream().cast(),
+                )
+            };
+            assert_eq!(down, 0, "multi-row fused partition down rc");
+            let fused_word = take_word(&mut word);
+            assert_eq!((chain_word, fused_word), (0, 0), "multi-row rank={rank}");
+            let fc = s.clone_dtoh(&fused_c_rows).unwrap();
+            assert!(
+                chain_c.iter().all(|v| v.is_finite()),
+                "multi-row fixture overflowed"
+            );
+            assert_eq!(
+                bits(&chain_c),
+                bits(&fc),
+                "multi-row contribution rank={rank}"
+            );
+            println!("EXACT fused partition rows={rows} rank={rank} contribution word=0");
+        }
         drop(shard_bytes);
     }
 

@@ -564,7 +564,8 @@ unsafe extern "C" {
     ) -> i32;
     /// `memra_dsv4_moe_fused_gu` over a partition (memra #710, a TP/EP rank): `table` holds
     /// experts `[first, first + n_expert)` of `global_experts`, `sel` and `scale2` carry global
-    /// ids, and another rank's slot is skipped. Fault bit 0x1 is an id outside the bank.
+    /// ids, and another rank's slot is skipped. `rows` token rows of `topk` slots each (x is
+    /// `[rows][in_f]`). Fault bit 0x1 is an id outside the bank.
     #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_moe_fused_gu_part(
         table: *const u64,
@@ -577,6 +578,7 @@ unsafe extern "C" {
         xf: *const f32,
         h: *mut f32,
         topk: i32,
+        rows: i32,
         in_f: i32,
         out_f: i32,
         limit: f32,
@@ -600,6 +602,7 @@ unsafe extern "C" {
         y: *mut f32,
         tile_cnt: *mut i32,
         topk: i32,
+        rows: i32,
         in_f: i32,
         out_f: i32,
         fault: *mut i32,
