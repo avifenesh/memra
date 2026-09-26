@@ -16,6 +16,7 @@ CHECKLIST = [
 ]
 GOOD = "Hello, and welcome!"
 BAD = "The number is 42."
+TEMPLATE_SHA = "ccd57bd8c4c73f4f83cf8963ef3c2697c1c7b9e907ead91e0d0512cca4ae7a11"
 
 
 def sha(path):
@@ -35,7 +36,10 @@ def save(path, value):
 def preflight(config_path, template_path, credential_file, out):
     config = json.loads(config_path.read_text())
     judge_bedrock.validate_config(config)
-    if sha(template_path) != judge_bedrock.TEMPLATE_SHA:
+    if (
+        sha(template_path) != TEMPLATE_SHA
+        or TEMPLATE_SHA != judge_bedrock.TEMPLATE_SHA
+    ):
         raise ValueError("independent judge template changed")
     price = judge_bedrock.price_quote(config)
     token = judge_bedrock.credential(credential_file)
