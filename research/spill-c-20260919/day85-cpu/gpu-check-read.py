@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DAY85 section 1's local check reader: each run's exit, MATCH, gen-only and window seconds, and host demand sequence
+"""DAY85 section 3's local check reader: each run's exit, MATCH, gen-only and window seconds, and host demand sequence
 (the `[expert-host-slru] key=` lines without the slot, SHA-256, first 16 hex, as day82-read.py reads it); then each
 run's tape (the `tokens:` line) and sequence against i21-a's. usage: gpu-check-read.py <out-dir>
 """

@@ -108,3 +108,9 @@ I21 (the positions travel in their own vector; 718 bytes against 830).
 
 **The local check and the in-situ split** are queued together (queue v19, `rtx5090-queue-v19-20260926.sh`, queue
 v18's shape with I21 and I22, dry-checked under stubs in `day85-cpu/dry-check-queue.log`).
+
+**The card sitting, prepared before any cell** (`day85-cell.sh`, `day85-read.py`, `day85-box.sh`: DAY84's with I22 for
+I21's step and I21 for I20's, REF on `run-gen-i21`): the reader on a synthetic cell from DAY82's BOX39 receipts
+relabelled (`day85-cpu/make-synthetic.py`; meaningless) reads 50 runs, integrity ok (`dry-check-reader.log`); the cell
+under stubs exits 0 with 10 calls of `run-gen-i15`, 22 of `run-gen-i21` and 22 of `run-gen-i22` (`dry-check-cell.log`);
+the driver under stubs names the three builds, the cell, `--validate` and the reader, in order (`dry-check-driver.log`).
