@@ -446,3 +446,42 @@ file and file-backed mapped pages count as RSS; that bound (about 25.2 GB) would
 the six arms, plus 7,000,000,000. That cell runs after the capped regime and before bounded;
 its visits are sizing only, never scored. Everything else in bounded is unchanged, including the
 per-visit residency check (below 50% of the artifact's pages at visit end).
+
+## F. OWED 17: the cold read-once bypass, staged and mapped (registered 2026-09-26 before any code)
+
+Fact that sets the question (5090 capped smoke, worker16): the 8-slot MoE cache hits 423 of
+583,680 dispatches (0.1%); every expert block is read, copied host to device into a slot, used
+once and evicted, 454 MB per decode token. The CLAUDE.md pipeline list and the per-expert-quant
+ladder rung 5 name the candidate: serve such a block without the copy, by letting the kernel read
+the pinned host buffer through its device address, and only for cold blocks.
+
+Mechanism, one door, `MEMRA_MOE_COLD_BYPASS` (default `off`; default-OFF door with a decide-by
+date 14 days after landing), active only on the positioned-read spill path (`MEMRA_SPILL_IO`
+pread, worker or direct) and only at the call sites that enqueue their kernel inside the same
+cache scope (the batch-1 decode expert GEMMs, f32 and q8). A doorkeeper decides "cold": a block's
+first miss is not admitted to a slot and its id enters a bounded FIFO ghost list (4 x slots, at
+least 64); a miss whose id is in the ghost list admits exactly as today. The two bypass forms:
+
+- `staged`: the first-miss block is copied into one dedicated device scratch buffer (not a cache
+  slot, never published) and the kernel reads it there. This isolates the admission change.
+- `mapped`: no copy; the kernel reads the pinned buffer through `cuMemHostGetDevicePointer`. The
+  buffer stays owned until an event recorded after that kernel completes, then returns to the
+  pool. Refused loudly if the driver will not map the pinned buffers.
+
+Every other call site keeps the exact current admission program. The bytes and the kernel are the
+same in all three arms, so the token stream must be identical to the byte oracle.
+
+Correctness first: unit cells for the doorkeeper (first miss bypasses, second admits, FIFO bound)
+and for buffer ownership under `mapped` (the buffer is not reused before its event); then the B3
+correctness gates per visit (placement, token ids equal the byte oracle, zero read errors, zero
+mmap fallbacks), plus the bypass line: `[moe-bypass] mode=<m> bypassed=N ghost_admits=M` with
+N > 0 on the bypass arms and absent on the baseline.
+
+Timing (5090 half now; the PRO 6000 half needs a target card): arms `worker16` (baseline, the B3
+lock row verbatim), `bypass-staged`, `bypass-mapped` (the same env plus the door), the capped
+regime of section D (20 GiB swapless scope, cold start per visit, idle-gated round cells, GPU
+co-tenant gate), ten rounds, forward and reverse order alternating. Verdict per arm vs worker16:
+B3's rule verbatim (winner median >= 1.05 with at least 4 of 5 per order, loser <= 0.95, otherwise
+flat; regime unscored if more than 2 contaminated visits in any arm), the B1 read gate reported
+beside it as post hoc, as for B3 on the 5090. A 5090 winner sets at most a 5090 default; the door
+stays default-OFF until both rigs have a row.
