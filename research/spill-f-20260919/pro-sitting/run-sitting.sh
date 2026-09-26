@@ -66,6 +66,10 @@ RUN="python3 $F/m1-spill-runner.py run --arms-lock $F17 --binary $S/bin/run-gen 
 # 5. OWED 17 correctness: smoke and its gate, then run-spec K=1..8 with each bypass arm.
 col f17-smoke 3600 -- $RUN --regime cold --rounds 1 --smoke --out "$R/f17-smoke/visits"
 step f17-smoke-gate python3 $F/m1-b3-pool.py "$R/f17-smoke" --bypass-check --fallback-unclean --require-correct
+# OWED 26 on the target card, serving shape: no visit reads a block through mmap or times out.
+if grep -h '\[spill-pread\] reads=' "$R"/f17-smoke/visits/r*/run.log | grep -Eq 'fallbacks=[1-9]|demand_wait_timeouts=[1-9]'; then
+  echo "STOPPED: OWED 26 serving shape (fallbacks or demand-wait timeouts in the smoke)"; exit 5
+fi
 for arm in bypass-staged bypass-mapped; do
   col "f17-spec-$arm" 3600 -- python3 $F/m1-spec-cell.py --arms-lock $F17 --arm "$arm" \
     --binary "$S/bin/run-spec" --artifact "$ART"
