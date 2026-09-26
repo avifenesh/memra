@@ -51965,11 +51965,13 @@ mod tests {
             })
     }
 
-    /// WP-A day 63 (`DAY63.md` section 7, design L1.2): the pinned charge of `gpu_entry`'s six KV
-    /// leases, each charged its size class (three planes of 8 rows: K 272 bytes, V 192 bytes).
+    /// The pinned charge of `gpu_entry`'s six KV leases (three planes of 8 rows: K 272 bytes, V 192
+    /// bytes). WP-A day 70 (`DAY70.md` design Q.1): each lease is charged its length
+    /// (`lease_charge`); these fixtures' pool cap is 0, so no tail is charged to the pool (DAY63
+    /// section 7's class charge, design L1.2, is superseded).
     fn gpu_lease_charge() -> u64 {
-        use memra_engine::tier_transfer::lease_class;
-        3 * (lease_class(8 * 34) + lease_class(8 * 24)) as u64
+        use memra_engine::tier_transfer::lease_charge;
+        3 * (lease_charge(8 * 34) + lease_charge(8 * 24))
     }
 
     fn gpu_used(host: &super::HostPrefixCache) -> (u64, u64, u64) {
