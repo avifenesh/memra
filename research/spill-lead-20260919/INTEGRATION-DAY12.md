@@ -4387,6 +4387,11 @@ Each placement preceded its edit; every cell asserts the property it asserted be
   engine span cells `10 passed`; worker span cells `18 passed`; identity 12 ok; fault default and plain 255 ok each; hit
   OFF and ON 61 and 68 ok; `ADMIT-MEM BURST GATE: ALL GREEN`; `SPEC-CTX-EDGE GATE: ALL GREEN`; the pause gate with the 27B
   `ALL GREEN` (40 ok). Runs 1 and 2 read the same on every gate.
+- Main moved to `7b9815296` (#788 the DSv4 all-reduce push, #795 a DSpark drafter-without-route boot refusal, a MiMo
+  chat-template path in `memra-tokenizer`) after the last battery; merged in clean (`7ca871320`). None is reachable from
+  the spill battery's cells (the DSpark refusal fires only with `MEMRA_DSPARK_DRAFT` set, the template path only for
+  MiMo), so this merge is gated by the PR's CI on the merge head and the lead's quick censuses (check-flags, docs
+  registry, `git diff --check`, fmt, all rc=0), not a fourth battery.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
