@@ -16632,12 +16632,27 @@ impl Dsv4Gpu {
         // to zero rows at any width and keeps it.
         ck_dev.snap_live = t > 1 || self.topology.is_tp_ep();
         if ck_dev.snap_live {
-            stream
-                .memcpy_dtod(pend_kv, &mut ck_dev.kv_snap)
-                .map_err(e("ckpt snap kv"))?;
-            stream
-                .memcpy_dtod(pend_score, &mut ck_dev.sc_snap)
-                .map_err(e("ckpt snap sc"))?;
+            // One kernel for both snapshots: same bytes, and a captured step keeps its launch
+            // chain through it where two memcpy nodes would break it.
+            if pend_score.len() != pend_kv.len()
+                || ck_dev.kv_snap.len() < pend_kv.len()
+                || ck_dev.sc_snap.len() < pend_kv.len()
+            {
+                return Err("compressor snapshot shape mismatch".into());
+            }
+            unsafe {
+                ck(
+                    "ckpt snap",
+                    k::memra_dsv4_copy2_f32(
+                        dpf!(*pend_kv, &stream),
+                        dpm!(ck_dev.kv_snap, &stream),
+                        dpf!(*pend_score, &stream),
+                        dpm!(ck_dev.sc_snap, &stream),
+                        pend_kv.len() as i64,
+                        sp(&stream),
+                    ),
+                )?;
+            }
         }
         ck_dev.n_blocks0 = *blocks;
         // A one-row round projects straight into its pending slot: rollback replay is the

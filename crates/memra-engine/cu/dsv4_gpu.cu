@@ -7781,6 +7781,29 @@ extern "C" int memra_dsv4_replay_destroy(void* graph, void* executable, void* ra
     }
     return first == cudaSuccess ? 0 : 10000 + (int)first;
 }
+// Two same-length f32 copies in one launch: a compressor checkpoint's kv and score snapshots
+// (memra #710). A kernel, not two memcpy nodes, so a captured step keeps its programmatic
+// dependent launch chain through it; the bytes are the copies' own.
+__global__ void dsv4_copy2_f32_kernel(const float4* __restrict__ a, float4* __restrict__ a_out,
+    const float4* __restrict__ b, float4* __restrict__ b_out, long n4) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    for (long i = (long)blockIdx.x * blockDim.x + threadIdx.x; i < 2 * n4;
+         i += (long)gridDim.x * blockDim.x) {
+        if (i < n4) a_out[i] = a[i];
+        else b_out[i - n4] = b[i - n4];
+    }
+}
+extern "C" int memra_dsv4_copy2_f32(const float* a, float* a_out, const float* b, float* b_out,
+    long n, void* raw_stream) {
+    if (!a || !a_out || !b || !b_out || n <= 0 || n % 4 != 0) return 40074;
+    if (((uintptr_t)a | (uintptr_t)a_out | (uintptr_t)b | (uintptr_t)b_out) % 16 != 0) return 40074;
+    const long n4 = n / 4;
+    const int blocks = (int)min((2 * n4 + 255) / 256, (long)1024);
+    memra_chain_launch(dsv4_copy2_f32_kernel, blocks, 256, 0, (cudaStream_t)raw_stream)(
+        (const float4*)a, (float4*)a_out, (const float4*)b, (float4*)b_out, n4);
+    DSV4_ERR();
+    return 0;
+}
 __global__ void dsv4_replay_copy_row_kernel(const float* src, float* dst,
     const int* pos, int width, int ratio, int offset, int emitted) {
     MEMRA_PDL_CHAIN_ENTRY();
