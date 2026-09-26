@@ -98,6 +98,18 @@ fn bf16_matrix(
     })
 }
 
+fn f32_mirror_of_bf16(engine: &Engine, tensor: GpuTensor) -> Result<GpuTensor, Fail> {
+    let GpuTensor::FloatBf16 { data, ne } = tensor else {
+        return Err("MiMo f32 mirror requires a source BF16 matrix".into());
+    };
+    if ne.len() != 2 || data.len() != ne[0] as usize * ne[1] as usize * 2 {
+        return Err("MiMo f32 mirror input geometry changed".into());
+    }
+    let values = engine.bf16_to_f32(&data.slice(..), data.len() / 2)?;
+    engine.stream().synchronize()?;
+    Ok(GpuTensor::Float { data: values, ne })
+}
+
 fn normalized(
     engine: &Engine,
     model: &StModel,
@@ -247,6 +259,7 @@ impl ResidentTextLayer {
         model: &StModel,
         source: &SafetensorsSource,
         plan: &LayerPlan,
+        mirror_o_f32: bool,
     ) -> Result<Self, Fail> {
         engine.gpu.ctx.bind_to_thread()?;
         let layer = plan.index as usize;
@@ -281,13 +294,18 @@ impl ResidentTextLayer {
                 64,
             )?)?)
         };
-        let o_proj = bf16_matrix(
+        let source_o_proj = bf16_matrix(
             engine,
             model,
             &format!("{prefix}.self_attn.o_proj.weight"),
             HIDDEN,
             64 * VALUE,
         )?;
+        let o_proj = if mirror_o_f32 {
+            f32_mirror_of_bf16(engine, source_o_proj)?
+        } else {
+            source_o_proj
+        };
         let post_norm = engine.htod(&read_vector(
             model,
             &format!("{prefix}.post_attention_layernorm.weight"),
@@ -631,9 +649,9 @@ fn validate_plan(plan: &ModelPlan) -> Result<(), Fail> {
 
 fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() < 5 || args.len() > 10 {
+    if args.len() < 5 || args.len() > 11 {
         return Err(
-            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--resident-moe] [--resident-text] [--profile-phases]"
+            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--resident-moe] [--resident-text] [--mirror-o-f32] [--profile-phases]"
                 .into(),
         );
     }
@@ -641,12 +659,14 @@ fn run() -> Result<(), Fail> {
     let mut requested_turns: Option<usize> = None;
     let mut resident_moe = false;
     let mut resident_text = false;
+    let mut mirror_o_f32 = false;
     let mut profile_phases = false;
     for option in args.iter().skip(5) {
         match option.as_str() {
             "--continue-one" if !continue_one => continue_one = true,
             "--resident-moe" if !resident_moe => resident_moe = true,
             "--resident-text" if !resident_text => resident_text = true,
+            "--mirror-o-f32" if !mirror_o_f32 => mirror_o_f32 = true,
             "--profile-phases" if !profile_phases => profile_phases = true,
             _ if option.starts_with("--tokens=") && requested_turns.is_none() => {
                 requested_turns = Some(option["--tokens=".len()..].parse()?);
@@ -664,12 +684,18 @@ fn run() -> Result<(), Fail> {
     if resident_text {
         resident_moe = true;
     }
+    if mirror_o_f32 && !resident_text {
+        return Err("MiMo f32 attention output mirror requires --resident-text".into());
+    }
     let direct_bf16 = match std::env::var("MEMRA_BF16_MMV") {
         Ok(value) if value == "1" => true,
         Ok(value) if value == "0" => false,
         Err(std::env::VarError::NotPresent) => false,
         _ => return Err("MiMo diagnostic requires MEMRA_BF16_MMV to be 0, 1, or unset".into()),
     };
+    if direct_bf16 && mirror_o_f32 {
+        return Err("MiMo f32 attention output mirror conflicts with direct BF16 matvec".into());
+    }
     let dir = Path::new(&args[0]);
     let gpu0: usize = args[1].parse()?;
     let gpu1: usize = args[2].parse()?;
@@ -767,8 +793,13 @@ fn run() -> Result<(), Fail> {
             let stage = usize::from(index >= STAGE_CUT);
             let engine = &engines[stage];
             let before = Instant::now();
-            resident_text_layers[index] =
-                Some(ResidentTextLayer::load(engine, &model, &source, layer)?);
+            resident_text_layers[index] = Some(ResidentTextLayer::load(
+                engine,
+                &model,
+                &source,
+                layer,
+                mirror_o_f32,
+            )?);
             eprintln!(
                 "MiMo text layer {index} stage {stage} resident in {:.3}s",
                 before.elapsed().as_secs_f64()
@@ -795,17 +826,22 @@ fn run() -> Result<(), Fail> {
         "numeric_class\t{}",
         if direct_bf16 {
             "memra_block_fp8_q8_1_act_mxfp4_pow2_e4m3_moe_act_bf16_direct_f32acc"
+        } else if mirror_o_f32 {
+            "memra_block_fp8_q8_1_act_mxfp4_pow2_e4m3_moe_act_f32_o_mirror_candidate"
         } else {
             "memra_block_fp8_q8_1_act_and_mxfp4_pow2_e4m3_moe_act"
         }
     )?;
     writeln!(report, "direct_bf16_matvec\t{direct_bf16}")?;
+    writeln!(report, "o_proj_f32_mirror\t{mirror_o_f32}")?;
     writeln!(report, "stage_cut_before_layer\t{STAGE_CUT}")?;
     writeln!(report, "stage_transfer\thost_bounce")?;
     writeln!(
         report,
         "weight_residency\t{}",
-        if resident_text {
+        if mirror_o_f32 {
+            "source_moe_qkv_o_f32_norms_head_resident_embedding_row_streamed"
+        } else if resident_text {
             "source_moe_projections_norms_head_resident_embedding_row_streamed"
         } else if resident_moe {
             "source_mxfp4_moe_resident"
