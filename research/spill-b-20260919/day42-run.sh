@@ -57,6 +57,6 @@ for spec in "$@"; do
   env "${uenv[@]}" "${aenv[@]}" CLIENT_ARGS="$args" bash research/spill-b-20260919/run-day26-cell.sh "$name" AB "$BIN" \
     > "$R/boots/$name.launch.log" 2>&1
   log "boot $name rc=$? $(tail -1 "$R/boots/$name/client.log" 2>/dev/null | cut -c1-160)"
-  sleep 5
+  sleep "${YIELD_S:-5}" # the lane yields the card between cells when YIELD_S is set (lead, 2026-09-26)
 done
 log "boots done: $*"

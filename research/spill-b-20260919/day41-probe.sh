@@ -21,6 +21,7 @@ for L in "${lens[@]}"; do
     flock -w 7200 "$RIG_LOCK" "$PROBE" "$MODEL" primepath --prompt-a "@$SRC" --prompt-tokens "$L" --suffix "@$OUT/suffix.txt" \
       --suffix-tokens 64 --hist "$K" --rewind --steps 48 > "$cell" 2>&1
     echo "exit=$?" >> "$cell"
+    sleep "${YIELD_S:-0}" # the lane yields the card between cells when YIELD_S is set (lead, 2026-09-26)
     nvidia-smi --query-gpu=name,temperature.gpu,power.draw,clocks.sm --format=csv > "$OUT/gpu-after-L$L-K$K.csv" 2>&1
   done
 done

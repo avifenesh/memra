@@ -46,6 +46,6 @@ for spec in "$@"; do
       bash research/spill-b-20260919/run-day26-cell.sh "$name" AB "$BIN" > "$R/boots/$name.launch.log" 2>&1
   fi
   log "boot $name rc=$? $(grep -h '^DAY31 V-BOOT' "$R/boots/$name/REPORT.txt" 2>/dev/null)"
-  sleep 5
+  sleep "${YIELD_S:-5}" # the lane yields the card between cells when YIELD_S is set (lead, 2026-09-26)
 done
 log "run done: $*"
