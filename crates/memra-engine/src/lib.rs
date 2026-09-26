@@ -942,6 +942,7 @@ pub mod mimo_text_forward;
 pub mod mimo_text_weights;
 pub mod mimo_vision_attn_ffi;
 pub mod mimo_vision_load;
+pub mod mimo_vision_patch;
 pub mod mmq_ffi;
 pub mod moe_cache;
 pub mod prime_graph;
