@@ -35,7 +35,7 @@ def steps(rec, first_rounds="1-10"):
         ("mapped-gpu-cell", lambda: rounds("gpucell", "mapped-gpu-cell", "--memory-max", CAP)),
         ("f17-smoke", lambda: rounds("f17", "f17-smoke", "--memory-max", CAP, "--rounds", "1", "--smoke")),
         ("f17-smoke-gate", lambda: [sys.executable, str(HERE / "m1-b3-pool.py"), str(rec / "f17-smoke"),
-                                    "--bypass-check", "--require-correct"]),
+                                    "--bypass-check", "--fallback-unclean", "--require-correct"]),
         ("f17", lambda: rounds("f17", "f17", "--memory-max", CAP, "--rounds", "1-10")),
         ("handoff-1g", lambda: rounds("handoff", "handoff-1g", "--memory-max", CAP, "--rounds", "1-10",
                                       "--size-bytes", str(1 << 30), "--host-mb", "4096")),

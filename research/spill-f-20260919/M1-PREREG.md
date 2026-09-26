@@ -511,3 +511,10 @@ further 5090 cell):
    binary identity is claimed for it.
 3. The mapped GPU ownership cell runs under `flock -n -E 75 /tmp/memra-5090.lock` after the same
    idle wait (the queue's first form failed on its own quoting before running anything).
+
+Sections D and F, fallback amendment (2026-09-26, after the capped data and before any bounded
+or f17 visit): the capped regime showed worker-path demand reads falling back to mmap when every
+pinned buffer is busy (OWED 26), on arms the registered gate does not check. For the 5090 bounded
+regime and for the OWED 17 cell, a visit whose `[spill-pread]` totals line shows any fallback is
+unclean for timing (it still gates correctness, token ids against the oracle). It counts toward
+the contamination limit like a co-tenant visit. Capped keeps its registered verdict unchanged.

@@ -51,12 +51,15 @@ def bypass_problems(v, visit_dir):
 
 
 def read_gate(v):
+    keep_unclean = v.get("mmap_fallbacks") and "--fallback-unclean" in sys.argv[2:]
     v = copy.deepcopy(v)
     c = v["contamination"]
     fr = max(0, c["device_read_bytes"] - v["proc_io"]["read_bytes"])
     v["clean_timing"] = bool(v["telemetry_ok"] and v["thermal_ok"] and v["identity_after_ok"]
                              and v.get("regime_ok", True) and not v.get("gpu_cotenant", False)
                              and fr <= max(0.02 * c["device_read_bytes"], 1 << 20))
+    if keep_unclean:
+        v["clean_timing"] = False
     v["scored"] = bool(v["clean_timing"] and not v["correctness_problems"] and v["exit_code"] == 0
                        and not v["timed_out"])
     return v
@@ -65,6 +68,7 @@ def read_gate(v):
 def main():
     d = Path(sys.argv[1])
     f17 = "--bypass-check" in sys.argv[2:]
+    fallback_unclean = "--fallback-unclean" in sys.argv[2:]  # D and F fallback amendment
     cells = {}
     for cell in sorted(d.glob("round-[0-9][0-9]*")):
         if cell.is_dir() and (cell / "visits").is_dir():
@@ -76,6 +80,11 @@ def main():
             if v["round"] != k:
                 raise SystemExit(f"REFUSED: {p} carries round {v['round']}, cell is round {k}")
             v["_cell"] = cell.name
+            drop = (v.get("parsed") or {}).get("drop")
+            v["mmap_fallbacks"] = int(drop[4]) if drop else 0
+            if fallback_unclean and v["mmap_fallbacks"]:
+                v["clean_timing"] = False
+                v["scored"] = False
             if f17:
                 extra = bypass_problems(v, p.parent)
                 v["bypass_problems"] = extra
@@ -93,7 +102,9 @@ def main():
     reg = R.verdicts(kept, arms, "worker16")
     post = R.verdicts([read_gate(v) for v in kept], arms, "worker16")
     gpu_unclean = sum(1 for v in visits if v.get("gpu_cotenant"))
-    summary = {"rounds": sorted(cells), "cells": {k: c.name for k, c in cells.items()}, "visits": len(visits),
+    fallback_visits = sum(1 for v in visits if v.get("mmap_fallbacks"))
+    summary = {"rounds": sorted(cells), "fallback_unclean_rule": fallback_unclean,
+               "visits_with_mmap_fallbacks": fallback_visits, "cells": {k: c.name for k, c in cells.items()}, "visits": len(visits),
                "refused_arms": refused, "gpu_cotenant_unclean_visits": gpu_unclean,
                "registered": reg, "post_hoc_read_gate": post}
     (d / "pooled-summary.json").write_text(json.dumps(summary, indent=1) + "\n")
@@ -101,7 +112,8 @@ def main():
         for arm, x in s["arms"].items():
             print(f"{label} arm={arm} vs worker16: {x['verdict']} median_ratio={x['median_ratio']} pairs={x['n_pairs']}")
         print(f"{label} regime_scored={s['regime_scored']} contaminated={s['contaminated_visits']}")
-    print(f"rounds={sorted(cells)} visits={len(visits)} refused={refused} gpu_cotenant_unclean={gpu_unclean}")
+    print(f"rounds={sorted(cells)} visits={len(visits)} refused={refused} gpu_cotenant_unclean={gpu_unclean} "
+          f"visits_with_mmap_fallbacks={fallback_visits}")
     if "--require-correct" in sys.argv[2:] and (refused or not visits):
         print("REFUSED: correctness problems: " + json.dumps(
             {v["dir"] if "dir" in v else v["arm"]: v["correctness_problems"] for v in visits if v["correctness_problems"]}))

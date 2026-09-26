@@ -1,4 +1,4 @@
-# WP-F resumable state (2026-09-26, 5090 half queued; items 17 and 18 implemented)
+# WP-F resumable state (2026-09-26, 5090 capped done and unscored; queue running; items 17 and 18 implemented)
 
 - Lane `lane/spill-f-20260919`, worktree `wt-spill-f`; origin/main merged at a233f6fe5 (integ65).
 - BOX27 complete and destroyed; receipts and verdicts in `box27/` and `box27/RESULTS.md`.
@@ -30,6 +30,6 @@
   Each round waits for an idle card and a free `/tmp/memra-5090.lock` (waits recorded);
   `touch ~/spill-f-5090/PAUSE` holds it between cells for this lane's compiles. Resume a stopped
   queue with `--from <step>`. Progress: `~/spill-f-5090/receipts/QUEUE.jsonl`.
-- After each regime: `m1-b3-pool.py <dir>` (f17: `--bypass-check`), mirror the receipts into
+- After each regime: `m1-b3-pool.py <dir>` (bounded: `--fallback-unclean`; f17: `--bypass-check --fallback-unclean`), mirror the receipts into
   `rtx5090/` (then `owed17/`, `owed18/`), record verdicts in OWED and a 5090 RESULTS file.
 - Local scratch to remove at the end: `~/spill-f-5090/`, `/data/cache/spill-f-b2/`.
