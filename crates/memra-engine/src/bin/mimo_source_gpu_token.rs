@@ -166,6 +166,52 @@ struct KvState {
     tokens: usize,
 }
 
+fn record_phase(
+    report: &mut String,
+    engine: &Engine,
+    enabled: bool,
+    turn: usize,
+    layer: usize,
+    name: &str,
+    started: Instant,
+) -> Result<(), Fail> {
+    if enabled {
+        engine.stream().synchronize()?;
+        writeln!(
+            report,
+            "phase_ms\t{turn}\t{layer}\t{name}\t{:.3}",
+            started.elapsed().as_secs_f64() * 1000.0
+        )?;
+    }
+    Ok(())
+}
+
+struct AttentionPhase<'a> {
+    report: &'a mut String,
+    enabled: bool,
+    turn: usize,
+}
+
+impl AttentionPhase<'_> {
+    fn record(
+        &mut self,
+        engine: &Engine,
+        layer: usize,
+        name: &str,
+        started: Instant,
+    ) -> Result<(), Fail> {
+        record_phase(
+            &mut *self.report,
+            engine,
+            self.enabled,
+            self.turn,
+            layer,
+            name,
+            started,
+        )
+    }
+}
+
 fn append_kv(
     engine: &Engine,
     slot: &mut Option<KvState>,
@@ -225,13 +271,15 @@ fn attention_token(
     source: &SafetensorsSource,
     plan: &LayerPlan,
     hidden: &CudaSlice<f32>,
-    position: usize,
     kv_slot: &mut Option<KvState>,
+    phase: &mut AttentionPhase<'_>,
 ) -> Result<(CudaSlice<f32>, usize), Fail> {
+    let position = phase.turn;
     let layer = plan.index as usize;
     let (attention, global) = checked_attention(plan)?;
     let kv_heads = attention.kv_heads as usize;
     let prefix = format!("model.layers.{layer}");
+    let mut phase_start = Instant::now();
     let norm = normalized(
         engine,
         model,
@@ -239,6 +287,8 @@ fn attention_token(
         &format!("{prefix}.input_layernorm.weight"),
         &plan.pre_attention_norm,
     )?;
+    phase.record(engine, layer, "attention_norm", phase_start)?;
+    phase_start = Instant::now();
     let qkv_name = format!("{prefix}.self_attn.qkv_proj.weight");
     let views = source
         .find_fp8_mimo_qkv_shards(&qkv_name)
@@ -255,6 +305,8 @@ fn attention_token(
         let weight = GpuTensor::load_mimo_fp8_qkv_shard(engine, view)?;
         projections.push(engine.matmul(&weight, &norm, 1)?);
     }
+    phase.record(engine, layer, "qkv_project", phase_start)?;
+    phase_start = Instant::now();
     let mut qkv = engine.mimo_gather_qkv(
         [
             &projections[0],
@@ -287,6 +339,8 @@ fn attention_token(
         attention.rope.base,
         1.0,
     )?;
+    phase.record(engine, layer, "qkv_gather_rope", phase_start)?;
+    phase_start = Instant::now();
     let sink = if !global {
         Some(engine.htod(&read_vector(
             model,
@@ -307,6 +361,8 @@ fn attention_token(
         &plan.attention,
     )?;
     drop((qkv.query, sink));
+    phase.record(engine, layer, "kv_append_attention", phase_start)?;
+    phase_start = Instant::now();
     let output = bf16_matrix(
         engine,
         model,
@@ -314,7 +370,9 @@ fn attention_token(
         HIDDEN,
         64 * VALUE,
     )?;
-    Ok((engine.matmul(&output, &context, 1)?, cached_before))
+    let result = engine.matmul(&output, &context, 1)?;
+    phase.record(engine, layer, "o_project", phase_start)?;
+    Ok((result, cached_before))
 }
 
 fn native_fp8_matrix(
@@ -408,18 +466,20 @@ fn validate_plan(plan: &ModelPlan) -> Result<(), Fail> {
 
 fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() < 5 || args.len() > 7 {
+    if args.len() < 5 || args.len() > 8 {
         return Err(
-            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one] [--resident-moe]"
+            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one] [--resident-moe] [--profile-phases]"
                 .into(),
         );
     }
     let mut continue_one = false;
     let mut resident_moe = false;
+    let mut profile_phases = false;
     for option in args.iter().skip(5) {
         match option.as_str() {
             "--continue-one" if !continue_one => continue_one = true,
             "--resident-moe" if !resident_moe => resident_moe = true,
+            "--profile-phases" if !profile_phases => profile_phases = true,
             _ => return Err(format!("unknown or repeated MiMo token option: {option}").into()),
         }
     }
@@ -433,6 +493,7 @@ fn run() -> Result<(), Fail> {
         return Err("MiMo stage devices must differ and report paths must not exist".into());
     }
     let started = Instant::now();
+    let preflight_start = Instant::now();
     let config_bytes = std::fs::read(dir.join("config.json"))?;
     let digest = format!("{:x}", Sha256::digest(&config_bytes));
     if digest != CONFIG_SHA256 {
@@ -482,6 +543,7 @@ fn run() -> Result<(), Fail> {
         }
     }
     embedding_row(&model, token)?;
+    let preflight_ms = preflight_start.elapsed().as_secs_f64() * 1000.0;
     let engines = [Engine::new(gpu0)?, Engine::new(gpu1)?];
     let mut resident_layers: Vec<Option<ResidentMiMoMoeLayer>> =
         std::iter::repeat_with(|| None).take(LAYERS).collect();
@@ -540,6 +602,8 @@ fn run() -> Result<(), Fail> {
     writeln!(report, "resident_moe_bytes_stage0\t{}", resident_bytes[0])?;
     writeln!(report, "resident_moe_bytes_stage1\t{}", resident_bytes[1])?;
     writeln!(report, "resident_moe_load_ms\t{resident_load_ms:.3}")?;
+    writeln!(report, "source_preflight_ms\t{preflight_ms:.3}")?;
+    writeln!(report, "phase_timing\t{profile_phases}")?;
     writeln!(report, "kv_format\tf32_contiguous_component")?;
     writeln!(report, "kv_append\tdevice_copy_of_prior_plus_current")?;
     writeln!(report, "kv_sequence_length\t{turns}")?;
@@ -565,26 +629,44 @@ fn run() -> Result<(), Fail> {
         for (index, layer) in plan.layers.iter().enumerate() {
             let stage = usize::from(index >= STAGE_CUT);
             if index == STAGE_CUT {
+                let transfer_start = Instant::now();
                 let values = engines[0].dtoh(&hidden)?;
                 if values.len() != HIDDEN || values.iter().any(|value| !value.is_finite()) {
                     return Err("MiMo stage transfer carried invalid hidden values".into());
                 }
                 engines[1].gpu.ctx.bind_to_thread()?;
                 hidden = engines[1].htod(&values)?;
+                record_phase(
+                    &mut report,
+                    &engines[1],
+                    profile_phases,
+                    turn,
+                    index,
+                    "stage_transfer",
+                    transfer_start,
+                )?;
             }
             let engine = &engines[stage];
             engine.gpu.ctx.bind_to_thread()?;
             let before = Instant::now();
-            let (attention, cached_before) = attention_token(
-                engine,
-                &model,
-                &source,
-                layer,
-                &hidden,
-                turn,
-                &mut kv[index],
-            )?;
+            let (attention, cached_before) = {
+                let mut phase = AttentionPhase {
+                    report: &mut report,
+                    enabled: profile_phases,
+                    turn,
+                };
+                attention_token(
+                    engine,
+                    &model,
+                    &source,
+                    layer,
+                    &hidden,
+                    &mut kv[index],
+                    &mut phase,
+                )?
+            };
             writeln!(report, "kv_reuse\t{turn}\t{index}\t{cached_before}\t1")?;
+            let post_norm_start = Instant::now();
             let mut after_attention = engine.uninit(HIDDEN)?;
             engine.add(&hidden, &attention, &mut after_attention, HIDDEN)?;
             drop((hidden, attention));
@@ -595,6 +677,16 @@ fn run() -> Result<(), Fail> {
                 &format!("model.layers.{index}.post_attention_layernorm.weight"),
                 &layer.pre_mlp_norm,
             )?;
+            record_phase(
+                &mut report,
+                engine,
+                profile_phases,
+                turn,
+                index,
+                "post_attention_norm",
+                post_norm_start,
+            )?;
+            let mlp_start = Instant::now();
             let mlp = match &layer.mlp {
                 MlpPlan::Dense(dense) if index == 0 => {
                     dense_mlp_token(engine, &source, &post_norm, dense)?
@@ -622,6 +714,16 @@ fn run() -> Result<(), Fail> {
                 }
                 _ => return Err(format!("layer {index}: unsupported MiMo MLP plan").into()),
             };
+            record_phase(
+                &mut report,
+                engine,
+                profile_phases,
+                turn,
+                index,
+                "mlp",
+                mlp_start,
+            )?;
+            let residual_start = Instant::now();
             let mut after_mlp = engine.uninit(HIDDEN)?;
             engine.add(&after_attention, &mlp, &mut after_mlp, HIDDEN)?;
             hidden = after_mlp;
@@ -629,6 +731,15 @@ fn run() -> Result<(), Fail> {
             if observed.len() != HIDDEN || observed.iter().any(|value| !value.is_finite()) {
                 return Err(format!("turn {turn} layer {index}: non-finite hidden row").into());
             }
+            record_phase(
+                &mut report,
+                engine,
+                profile_phases,
+                turn,
+                index,
+                "residual_probe",
+                residual_start,
+            )?;
             writeln!(
                 report,
                 "layer_ms\t{turn}\t{index}\t{stage}\t{:.3}",
@@ -637,6 +748,7 @@ fn run() -> Result<(), Fail> {
             eprintln!("MiMo GPU turn {turn} layer {index} stage {stage} complete");
         }
         let last = &engines[1];
+        let head_norm_start = Instant::now();
         let final_norm = normalized(
             last,
             &model,
@@ -644,9 +756,28 @@ fn run() -> Result<(), Fail> {
             "model.norm.weight",
             &plan.output_norm,
         )?;
+        record_phase(
+            &mut report,
+            last,
+            profile_phases,
+            turn,
+            LAYERS,
+            "head_norm",
+            head_norm_start,
+        )?;
+        let head_start = Instant::now();
         let head = bf16_matrix(last, &model, "lm_head.weight", VOCAB, HIDDEN)?;
         let logits_gpu = last.matmul(&head, &final_norm, 1)?;
         let logits = last.dtoh(&logits_gpu)?;
+        record_phase(
+            &mut report,
+            last,
+            profile_phases,
+            turn,
+            LAYERS,
+            "head_project",
+            head_start,
+        )?;
         if logits.len() != VOCAB || logits.iter().any(|value| !value.is_finite()) {
             return Err("MiMo GPU output logits are non-finite or wrong width".into());
         }
