@@ -1,4 +1,4 @@
-# WP-A resumable state (2026-09-26, B1 ADOPTED; item 12 next)
+# WP-A resumable state (2026-09-26, stopped at NEED TARGET CARD: W's target sitting; W's 5090 cell running)
 
 - Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ65 took `9ab479d9c` (DAY66); integ67 takes B1 after integ66.
 - Items 21 to 25 closed (DAY53 to DAY58); item 23's addendum F2b (`b4d6f95c2`) accepted.
@@ -12,7 +12,14 @@
 - Item 11 (DAY60) is closed with its reading: CLAUSE NOT MET as stated before it ran, and y_minus_x is +86.3 (demote)
   and +76.0 (promote) in both orders. The class-isolating candidate cell is registered as text for the owner (section
   4).
-- Pre-registered and waiting in order: item 12 (DAY61, design W), item 13 (DAY62, the retire seam: lines, a price, R1
+- Item 12 (DAY61, design W): built (`34a348fd2`, CPU-green), with two sittings (DAY61 section 2).
+  - The target: `pro-single-w/build.sh 9d0143dbf 457321806`, then `driver.sh`, receipts in
+    `/root/spill-receipts/a-w`, last line `W VERDICT card=target -> ..`.
+  - The 5090: `rtx5090-w/build-local.sh` then `card-run.sh`, running in the background into `rtx5090-w/cell/`
+    (untracked; bank it without `bins/`, and remove `bins/` when the cell closes). It holds the 5090 lock under the
+    idle rule.
+  - W is adopted only if both cards pass their clauses (and (a), (d)).
+- Pre-registered and waiting in order: item 13 (DAY62, the retire seam: lines, a price, R1
   or R2), items 14 and 19 (DAY63, design L; item 17 re-read on top), item 18 (DAY64), item 20 (DAY65, design T-H).
 - The owed 5090 cells (S4's half, V's half, item 16, and B1's (a1) and (a2) as a compatibility reading) queue on the
   5090.
