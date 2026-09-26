@@ -34,3 +34,22 @@ clippy and fmt green.
 acceptance is reverted in one commit.
 
 **Budget.** 0.15 agent-day.
+
+## 2. As run (`day57/`)
+
+- The test binary before the fix: R2 (eight burners) **100 of 100 green**; R3 (sixteen burners, `r3.sh`) **99 rc=0,
+  1 rc=101**, `timed out (3000ms) waiting for: yield to T` (darklane.rs:602): reproduced by R3.
+- The fix (`a327f486c`): `wait_acknowledged(what, f)`, a 30 s hang guard that prints the latency it read; the test waits
+  for the runner's own acknowledgement (`BG_RUNNING`, `BG_YIELDED`, `resumes == 1`) and then the job's `/proc` state at
+  each step. The other darklane tests are unchanged.
+- The red arm (the stop arm's `kill_group(SIGSTOP)` replaced by a printing marker, grep-checked in its binary, `marker=1`)
+  fails 10 of 10: `no acknowledgement within the 30 s guard: yield to T`. A first red-arm run is kept as `red-unmarked/`:
+  its marker was an unused `let` the compiler removed, so its binary could not be checked, though it failed 10 of 10
+  the same way.
+- On the fixed binary: R2 **100 of 100**, R3 **100 of 100**. CPU cells: server lib `930 passed; 0 failed; 25 ignored`;
+  clippy `-D warnings`; fmt.
+- The latencies the guard prints are captured by the test harness on a pass (no `--nocapture`), so no latency reading
+  exists for these runs; a failure prints them.
+
+**Verdict, as registered:** reproduced by R3; the fix meets its acceptance (R2 and R3 0 of 100, the red arm 10 of 10).
+Item 24 closes. The bound's change (1 s and 3 s to a 30 s guard) is the lead's to overrule, as section 1 states.

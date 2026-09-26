@@ -1,0 +1,23 @@
+
+running 1 test
+test darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown ... FAILED
+
+failures:
+
+---- darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown stdout ----
+[darklane] bg runner armed: cmd="while :; do sleep 0.01; done" mode=stop poll=5ms vram_budget=0MB (+2048MB serve headroom must stay free)
+[darklane] job launched (pid 2051008, fresh)
+launch: acknowledged after 4ms
+job running: acknowledged after 0ms
+the runner yields: acknowledged after 6ms
+
+thread 'darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown' (2051005) panicked at crates/memra-server/src/darklane.rs:610:9:
+no acknowledgement within the 30 s guard: yield to T
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 954 filtered out; finished in 30.04s
+
