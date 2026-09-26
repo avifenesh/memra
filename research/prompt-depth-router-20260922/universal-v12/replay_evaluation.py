@@ -71,6 +71,18 @@ def replay(archive, manifest_path):
         arms = root / "models/policy-arms"
         inputs = root / "inputs"
         quality = root / "quality"
+        cpus = json.loads(
+            (inputs / "cpu-isolation.json").read_text()
+        )
+        if (
+            cpus["schema"] != 1
+            or cpus["scope"]
+            != "native GPU request CPUs isolated from prose judge CPUs"
+            or not cpus["native_cpus"]
+            or not cpus["judge_cpus"]
+            or set(cpus["native_cpus"]) & set(cpus["judge_cpus"])
+        ):
+            raise ValueError("archived mixed CPU isolation differs")
         config = inputs / "judge-config.json"
         validation_prose = score_prose.score(
             quality / "validation-packets",

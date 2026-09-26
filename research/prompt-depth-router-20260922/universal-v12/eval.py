@@ -66,6 +66,18 @@ def noop_reference(spec):
     return f"fixed-k{spec['k']}-d3-c0"
 
 
+def requested_domains(phase, specified):
+    domains = tuple(specified or DOMAINS)
+    if (
+        not domains
+        or any(domain not in DOMAINS for domain in domains)
+        or len(domains) != len(set(domains))
+        or (phase == "qualification" and domains != DOMAINS)
+    ):
+        raise ValueError("mixed native phase domain slice differs")
+    return domains
+
+
 def current_gpu(meta):
     result = subprocess.check_output(
         [
@@ -372,9 +384,11 @@ def run(args):
     manifest, arms, gpu_uuid = freeze(args)
     meta = json.loads(args.run_meta.read_text())
     previous_phase(args, arms)
+    domains = requested_domains(args.requested_phase, args.domains)
     args.out.mkdir(exist_ok=True)
     specs = arms["arms"]
-    for domain_index, domain in enumerate(DOMAINS):
+    for domain in domains:
+        domain_index = DOMAINS.index(domain)
         entries = manifest["groups"][args.requested_phase][domain]
         stop = len(entries) if args.stop is None else args.stop
         if not 0 <= args.start < stop <= len(entries):
@@ -425,6 +439,7 @@ def main():
     parser.add_argument("--training-manifest", type=Path)
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--stop", type=int)
+    parser.add_argument("--domains", nargs="+", choices=DOMAINS)
     args = parser.parse_args()
     for name in (
         "binary", "model", "workloads", "arms", "out",

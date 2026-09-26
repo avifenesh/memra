@@ -92,6 +92,10 @@ separate sealed commitment.
    at training and every evaluation phase, and carry it through
    validation selection and final scoring. Price and tag the rental under
    the development-provider policy before allocating it.
+   During validation and final, finish prose native cells first. Run
+   the judge on reserved CPU cores while the GPU completes code and
+   math native cells on disjoint CPU cores. Seal the CPU split with
+   the evaluation receipts.
    Before the long training battery, run D=1 and D=2 fixed controls
    on the pinned binary and replay their native depth, sampler,
    and KV receipts from the training-only archive. The same pilot

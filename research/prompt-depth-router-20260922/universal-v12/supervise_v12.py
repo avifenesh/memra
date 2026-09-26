@@ -1,6 +1,7 @@
 """Run one-policy Qwen C/K/D phases without releasing later prompts early."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import ctypes
 import hashlib
 import json
@@ -33,13 +34,21 @@ def save(path, value):
         output.write("\n")
 
 
-def stage(log, root, script, *options, attempts=1):
+def stage(log, root, script, *options, attempts=1,
+          cpus=None, low_priority=False):
     print(json.dumps({
         "stage": script, "args": list(map(str, options)),
     }), file=log, flush=True)
     command = [
         sys.executable, str(root / script), *map(str, options),
     ]
+    if cpus:
+        command = [
+            "taskset", "-c",
+            ",".join(map(str, cpus)), *command,
+        ]
+    if low_priority:
+        command = ["nice", "-n", "10", *command]
     for attempt in range(attempts):
         result = subprocess.run(
             command, cwd=root.parent, stdout=log, stderr=log,
@@ -57,6 +66,13 @@ def stage(log, root, script, *options, attempts=1):
     print(json.dumps({
         "stage": script, "status": "complete",
     }), file=log, flush=True)
+
+
+def cpu_slices():
+    available = sorted(os.sched_getaffinity(0))
+    if len(available) < 4:
+        raise ValueError("mixed native and judge CPU isolation lacks cores")
+    return available[:-2], available[-2:]
 
 
 def await_phase(base, name, expected, marker):
@@ -136,6 +152,13 @@ def pipeline(base, credential_file, judge_script, log):
     meta = json.loads((base / "run-meta.json").read_text())
     if sha(judge_script) != meta["judge_source_sha256"]:
         raise ValueError("private judge driver changed after host pin")
+    native_cpus, judge_cpus = cpu_slices()
+    save(base / "cpu-isolation.json", {
+        "schema": 1,
+        "scope": "native GPU request CPUs isolated from prose judge CPUs",
+        "native_cpus": native_cpus,
+        "judge_cpus": judge_cpus,
+    })
     stage(log, scripts, "pilot_depth.py",
           "--binary", binary, "--model", model,
           "--workloads", base / "phase-training",
@@ -216,12 +239,8 @@ def pipeline(base, credential_file, judge_script, log):
           "--workloads", validation,
           "--training-manifest", base / "phase-training/manifest.json",
           "--arms", arms / "validation-arms.json",
-          "--phase", "validation")
-    stage(log, scripts, "quality_tasks.py",
-          "--root", evaluation, "--workloads", validation,
-          "--arms", arms / "validation-arms.json",
           "--phase", "validation",
-          "--out", base / "validation-task-quality.json")
+          "--domains", "prose", cpus=native_cpus)
     stage(log, scripts, "prose_packets.py",
           "--root", evaluation, "--workloads", validation,
           "--arms", arms / "validation-arms.json",
@@ -229,12 +248,28 @@ def pipeline(base, credential_file, judge_script, log):
           "--template", template,
           "--judge-config", judge_config,
           "--out", base / "validation-packets")
-    stage(log, judge_script.parent, judge_script.name,
-          "--packets", base / "validation-packets",
-          "--config", judge_config,
-          "--credential-file", credential_file,
-          "--out", base / "validation-judge",
-          attempts=3)
+    with ThreadPoolExecutor(max_workers=1) as workers:
+        judged = workers.submit(
+            stage, log, judge_script.parent, judge_script.name,
+            "--packets", base / "validation-packets",
+            "--config", judge_config,
+            "--credential-file", credential_file,
+            "--out", base / "validation-judge",
+            attempts=3, cpus=judge_cpus, low_priority=True,
+        )
+        stage(log, scripts, "eval.py", *native,
+              "--workloads", validation,
+              "--training-manifest",
+              base / "phase-training/manifest.json",
+              "--arms", arms / "validation-arms.json",
+              "--phase", "validation",
+              "--domains", "code", "math", cpus=native_cpus)
+        stage(log, scripts, "quality_tasks.py",
+              "--root", evaluation, "--workloads", validation,
+              "--arms", arms / "validation-arms.json",
+              "--phase", "validation",
+              "--out", base / "validation-task-quality.json")
+        judged.result()
     stage(log, scripts, "score_prose.py",
           "--packets", base / "validation-packets",
           "--results", base / "validation-judge",
@@ -268,12 +303,8 @@ def pipeline(base, credential_file, judge_script, log):
               "--training-manifest", base / "phase-training/manifest.json",
               "--validation-manifest", validation / "manifest.json",
               "--arms", arms / "final-arms.json",
-              "--phase", "final")
-        stage(log, scripts, "quality_tasks.py",
-              "--root", evaluation, "--workloads", final,
-              "--arms", arms / "final-arms.json",
               "--phase", "final",
-              "--out", base / "final-task-quality.json")
+              "--domains", "prose", cpus=native_cpus)
         stage(log, scripts, "prose_packets.py",
               "--root", evaluation, "--workloads", final,
               "--arms", arms / "final-arms.json",
@@ -281,14 +312,32 @@ def pipeline(base, credential_file, judge_script, log):
               "--template", template,
               "--judge-config", judge_config,
               "--out", base / "final-packets")
-        stage(log, judge_script.parent, judge_script.name,
-              "--packets", base / "final-packets",
-              "--config", judge_config,
-              "--credential-file", credential_file,
-              "--prior-manifest",
-              base / "validation-judge/manifest.json",
-              "--out", base / "final-judge",
-              attempts=3)
+        with ThreadPoolExecutor(max_workers=1) as workers:
+            judged = workers.submit(
+                stage, log, judge_script.parent, judge_script.name,
+                "--packets", base / "final-packets",
+                "--config", judge_config,
+                "--credential-file", credential_file,
+                "--prior-manifest",
+                base / "validation-judge/manifest.json",
+                "--out", base / "final-judge",
+                attempts=3, cpus=judge_cpus, low_priority=True,
+            )
+            stage(log, scripts, "eval.py", *native,
+                  "--workloads", final,
+                  "--training-manifest",
+                  base / "phase-training/manifest.json",
+                  "--validation-manifest",
+                  validation / "manifest.json",
+                  "--arms", arms / "final-arms.json",
+                  "--phase", "final",
+                  "--domains", "code", "math", cpus=native_cpus)
+            stage(log, scripts, "quality_tasks.py",
+                  "--root", evaluation, "--workloads", final,
+                  "--arms", arms / "final-arms.json",
+                  "--phase", "final",
+                  "--out", base / "final-task-quality.json")
+            judged.result()
         stage(log, scripts, "score_prose.py",
               "--packets", base / "final-packets",
               "--results", base / "final-judge",

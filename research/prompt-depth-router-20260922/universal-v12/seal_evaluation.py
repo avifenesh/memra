@@ -54,6 +54,7 @@ def inventory(base, selected):
             add_tree(files, prefix, root)
     for name in (
         "run-meta.json", "rental.json", "cuda-accept.json",
+        "cpu-isolation.json",
         "judge-config.json", "wildbench-pairwise-template.md",
         "qualification-result.json", "validation-task-quality.json",
         "validation-prose-quality.json",
@@ -89,9 +90,16 @@ def seal(base, out):
         (arms / "shared-selected.json").read_text()
     )
     meta = json.loads((base / "run-meta.json").read_text())
+    cpus = json.loads((base / "cpu-isolation.json").read_text())
     if (
         selected_record["gpu_uuid"] != meta["gpu_uuid"]
         or meta["customer_capture"] is not False
+        or cpus["schema"] != 1
+        or cpus["scope"]
+        != "native GPU request CPUs isolated from prose judge CPUs"
+        or not cpus["native_cpus"]
+        or not cpus["judge_cpus"]
+        or set(cpus["native_cpus"]) & set(cpus["judge_cpus"])
     ):
         raise ValueError("mixed result moved physical GPU or host role")
     selected = selected_record["status"] == "selected"
