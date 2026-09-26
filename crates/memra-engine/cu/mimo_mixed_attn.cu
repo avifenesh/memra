@@ -31,6 +31,22 @@ constexpr int kPartial = kValue + 2;
 constexpr int kReduce = 128;
 constexpr int kMaxSeq = 1048576;
 
+template <bool> struct DeepKeyTile;
+template <> struct DeepKeyTile<false> {
+    uint8_t raw[kDeepTile * kQ8RowBytes];
+};
+template <> struct DeepKeyTile<true> {
+    int words[kDeepTile][(kQk / 32) * 8];
+    float scales[kDeepTile][kQk / 32];
+};
+
+template <bool> struct DeepQueryTile;
+template <> struct DeepQueryTile<false> {};
+template <> struct DeepQueryTile<true> {
+    int words[8][(kQk / 32) * 8];
+    float scales[8][kQk / 32];
+};
+
 __device__ __forceinline__ float ue4m3_scale(uint8_t code) {
     if (code == 0 || code == 0x7f) return 0.0f;
     const int exp = (code >> 3) & 15;
@@ -251,10 +267,10 @@ __global__ void mixed_grouped_tile(const float* __restrict__ q,
     }
 }
 
-// Deep-context variant: each warp scores 32 different keys in parallel.
 // Eight query heads share the staged K/V tile; two CTAs cover the 16 heads
-// that map to one MiMo global KV head. Keep f32 Q arithmetic in this rung so
-// the tile schedule can be priced separately from a future dp4a Q rewrite.
+// that map to one MiMo global KV head. kDp4a changes only the Q operand and
+// score program. V storage, softmax, and split reduction stay identical.
+template <bool kDp4a>
 __global__ void mixed_deep_tile(const float* __restrict__ q,
                                 const uint8_t* __restrict__ k,
                                 const uint8_t* __restrict__ v,
@@ -270,21 +286,71 @@ __global__ void mixed_deep_tile(const float* __restrict__ q,
     const int last = min(first + kDeepSplit, seq);
     const float scale = 1.0f / sqrtf(static_cast<float>(kQk));
 
-    alignas(16) __shared__ uint8_t key_tile[kDeepTile * kQ8RowBytes];
+    alignas(16) __shared__ DeepKeyTile<kDp4a> key_tile;
     __shared__ float value_tile[kDeepTile * kValue];
+    __shared__ DeepQueryTile<kDp4a> query_tile;
+    if constexpr (kDp4a) {
+        for (int block = 0; block < kQk / 32; ++block) {
+            const float scaled = q[head * kQk + block * 32 + lane] * scale;
+            float maximum = fabsf(scaled);
+#pragma unroll
+            for (int offset = 16; offset > 0; offset >>= 1) {
+                maximum = fmaxf(maximum,
+                                __shfl_xor_sync(0xffffffff, maximum, offset));
+            }
+            const float d = maximum > 0.0f ? maximum / 127.0f : 1.0f;
+            const int quant = max(-127, min(127, __float2int_rn(scaled / d)));
+            int word = 0;
+#pragma unroll
+            for (int i = 0; i < 4; ++i) {
+                const int peer = (lane & 7) * 4 + i;
+                const int code = __shfl_sync(0xffffffff, quant, peer);
+                word |= (code & 255) << (8 * i);
+            }
+            if (lane < 8) {
+                query_tile.words[warp][block * 8 + lane] = word;
+            }
+            if (lane == 0) query_tile.scales[warp][block] = d;
+        }
+        __syncthreads();
+    }
     float m = -CUDART_INF_F;
     float l = 0.0f;
     float acc[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     for (int t0 = first; t0 < last; t0 += kDeepTile) {
         const int count = min(kDeepTile, last - t0);
         const int thread = warp * 32 + lane;
-        for (int byte = thread; byte < count * kQ8RowBytes; byte += 256) {
-            const int token = byte / kQ8RowBytes;
-            const int within = byte % kQ8RowBytes;
-            key_tile[byte] =
-                k[(static_cast<size_t>(t0 + token) * kKvHeads + kv_head) *
-                      kQ8RowBytes +
-                  within];
+        if constexpr (kDp4a) {
+            // Repack each q8_0 block once for the eight query heads in this CTA.
+            // The score loop then reads aligned shared words and one scale.
+            for (int task = thread; task < count * (kQk / 32); task += 256) {
+                const int token = task / (kQk / 32);
+                const int block = task % (kQk / 32);
+                const uint8_t* packed =
+                    k + (static_cast<size_t>(t0 + token) * kKvHeads + kv_head) *
+                            kQ8RowBytes +
+                        block * 34;
+                key_tile.scales[token][block] = q8_scale(packed);
+#pragma unroll
+                for (int word = 0; word < 8; ++word) {
+                    const uint8_t* codes = packed + 2 + word * 4;
+                    const unsigned int lo =
+                        *reinterpret_cast<const uint16_t*>(codes);
+                    const unsigned int hi =
+                        *reinterpret_cast<const uint16_t*>(codes + 2);
+                    key_tile.words[token][block * 8 + word] =
+                        static_cast<int>(lo | (hi << 16));
+                }
+            }
+        } else {
+            for (int byte = thread; byte < count * kQ8RowBytes; byte += 256) {
+                const int token = byte / kQ8RowBytes;
+                const int within = byte % kQ8RowBytes;
+                key_tile.raw[byte] =
+                    k[(static_cast<size_t>(t0 + token) * kKvHeads + kv_head) *
+                          kQ8RowBytes +
+                      within];
+            }
         }
         for (int index = thread; index < count * kValue; index += 256) {
             const int token = index / kValue;
@@ -298,22 +364,40 @@ __global__ void mixed_deep_tile(const float* __restrict__ q,
 
         float score = -CUDART_INF_F;
         if (lane < count) {
-            const uint8_t* row = key_tile + lane * kQ8RowBytes;
             float dot = 0.0f;
+            if constexpr (kDp4a) {
 #pragma unroll
-            for (int block = 0; block < kQk / 32; ++block) {
-                const uint8_t* packed = row + block * 34;
-                const float d = q8_scale(packed);
+                for (int block = 0; block < kQk / 32; ++block) {
+                    int sum = 0;
 #pragma unroll
-                for (int dim = 0; dim < 32; ++dim) {
-                    dot = fmaf(
-                        q[head * kQk + block * 32 + dim],
-                        d * static_cast<float>(
-                                static_cast<int8_t>(packed[2 + dim])),
-                        dot);
+                    for (int word = 0; word < 8; ++word) {
+                        sum = __dp4a(
+                                     key_tile.words[lane][block * 8 + word],
+                                     query_tile.words[warp][block * 8 + word], sum);
+                    }
+                    dot = fmaf(static_cast<float>(sum),
+                               key_tile.scales[lane][block] *
+                                   query_tile.scales[warp][block],
+                               dot);
                 }
+                score = dot;
+            } else {
+                const uint8_t* row = key_tile.raw + lane * kQ8RowBytes;
+#pragma unroll
+                for (int block = 0; block < kQk / 32; ++block) {
+                    const uint8_t* packed = row + block * 34;
+                    const float d = q8_scale(packed);
+#pragma unroll
+                    for (int dim = 0; dim < 32; ++dim) {
+                        dot = fmaf(
+                            q[head * kQk + block * 32 + dim],
+                            d * static_cast<float>(
+                                    static_cast<int8_t>(packed[2 + dim])),
+                            dot);
+                    }
+                }
+                score = dot * scale;
             }
-            score = dot * scale;
         }
         float tile_max = score;
 #pragma unroll
@@ -412,8 +496,9 @@ static int dispatch(
     if (seq <= 0 || seq > kMaxSeq) return 41002;
     if (!q || !k || !v || !output || !scratch1 || !scratch2 ||
         !scratch3 || !stream_v) return 41003;
+    if (program < 0 || program > 3) return 41005;
     const int tile_size =
-        program == 2 ? kDeepSplit : program == 1 ? kGroupedTile : kTile;
+        program >= 2 ? kDeepSplit : program == 1 ? kGroupedTile : kTile;
     const int tiles = (seq + tile_size - 1) / tile_size;
     const int groups = (tiles + kReduce - 1) / kReduce;
     if (scratch1_floats < static_cast<size_t>(kHeads) * tiles * kPartial ||
@@ -440,8 +525,11 @@ static int dispatch(
         const cudaError_t recorded = cudaEventRecord(marks[0], stream);
         if (recorded != cudaSuccess) return fail(recorded);
     }
-    if (program == 2) {
-        mixed_deep_tile<<<dim3(kKvHeads, 2, tiles), dim3(32, 8), 0, stream>>>(
+    if (program == 3) {
+        mixed_deep_tile<true><<<dim3(kKvHeads, 2, tiles), dim3(32, 8), 0, stream>>>(
+            q, k, v, scratch1, seq, tiles);
+    } else if (program == 2) {
+        mixed_deep_tile<false><<<dim3(kKvHeads, 2, tiles), dim3(32, 8), 0, stream>>>(
             q, k, v, scratch1, seq, tiles);
     } else if (program == 1) {
         mixed_grouped_tile<<<dim3(kKvHeads, tiles), 1024, 0, stream>>>(
@@ -483,7 +571,8 @@ static int dispatch(
             if (launch != cudaSuccess) return fail(launch);
         }
         std::fprintf(stderr, "mimo_split_stage_ms\t%s\t%.6f\t%.6f\t%.6f\t%.6f\n",
-                     program == 2 ? "deep" : program == 1 ? "grouped" : "baseline",
+                     program == 3 ? "deep_dp4a" : program == 2 ? "deep" :
+                     program == 1 ? "grouped" : "baseline",
                      stage_ms[0], stage_ms[1],
                      stage_ms[2], stage_ms[3]);
         for (cudaEvent_t mark : marks) cudaEventDestroy(mark);
@@ -525,4 +614,16 @@ extern "C" int memra_mimo_global_q8_nvfp4_decode_deep(
                     seq, heads, kv_heads, qk_dim, v_dim,
                     scratch1_floats, scratch2_floats, scratch3_floats,
                     stream_v, 2);
+}
+
+extern "C" int memra_mimo_global_q8_nvfp4_decode_dp4a(
+    const float* q, const uint8_t* k, const uint8_t* v,
+    float* output, float* scratch1, float* scratch2, float* scratch3,
+    int seq, int heads, int kv_heads, int qk_dim, int v_dim,
+    size_t scratch1_floats, size_t scratch2_floats,
+    size_t scratch3_floats, void* stream_v) {
+    return dispatch(q, k, v, output, scratch1, scratch2, scratch3,
+                    seq, heads, kv_heads, qk_dim, v_dim,
+                    scratch1_floats, scratch2_floats, scratch3_floats,
+                    stream_v, 3);
 }
