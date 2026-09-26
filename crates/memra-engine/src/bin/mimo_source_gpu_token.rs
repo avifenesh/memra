@@ -19,6 +19,7 @@ use memra_gguf::model_plan::{
     ActivationPlan, AttentionPlan, FullAttentionPlan, LayerPlan, MlpPlan, ModelPlan, NormKind,
     ResidualTopology, RopeFactors, StatePlan, WeightTransform,
 };
+use memra_gguf::nvfp4_repack::{f32_to_fp8_e4m3, fp8_e4m3_to_f32};
 use memra_gguf::safetensors::StModel;
 use memra_gguf::source::{SafetensorsSource, TensorSource};
 use sha2::{Digest, Sha256};
@@ -218,6 +219,8 @@ struct AttentionPhase<'a> {
     enabled: bool,
     turn: usize,
     resident: Option<&'a ResidentTextLayer>,
+    fp8_probe: bool,
+    fp8_replay: bool,
 }
 
 impl AttentionPhase<'_> {
@@ -237,6 +240,116 @@ impl AttentionPhase<'_> {
             name,
             started,
         )
+    }
+}
+
+struct Fp8RowStats {
+    max_abs: f32,
+    max_error: f32,
+    rms_error: f32,
+    saturated: usize,
+    zeroed: usize,
+    cpu_code_mismatches: usize,
+}
+
+struct RestoredKv {
+    key: CudaSlice<f32>,
+    value: CudaSlice<f32>,
+}
+
+fn fp8_row_stats(original: &[f32], gpu_codes: &[u8]) -> Result<(Fp8RowStats, Vec<f32>), Fail> {
+    if original.len() != gpu_codes.len()
+        || original.is_empty()
+        || original.iter().any(|value| !value.is_finite())
+    {
+        return Err("MiMo FP8 KV row is non-finite or mismatched".into());
+    }
+    let mut max_abs = 0.0f32;
+    let mut max_error = 0.0f32;
+    let mut squared_error = 0.0f64;
+    let mut saturated = 0usize;
+    let mut zeroed = 0usize;
+    let mut cpu_code_mismatches = 0usize;
+    let mut decoded = Vec::with_capacity(original.len());
+    for (&value, &code) in original.iter().zip(gpu_codes) {
+        let restored = fp8_e4m3_to_f32(code);
+        let error = (restored - value).abs();
+        max_abs = max_abs.max(value.abs());
+        max_error = max_error.max(error);
+        squared_error += (error as f64).powi(2);
+        saturated += usize::from(value.abs() > 448.0);
+        zeroed += usize::from(value != 0.0 && restored == 0.0);
+        cpu_code_mismatches += usize::from(f32_to_fp8_e4m3(value) != code);
+        decoded.push(restored);
+    }
+    Ok((
+        Fp8RowStats {
+            max_abs,
+            max_error,
+            rms_error: (squared_error / original.len() as f64).sqrt() as f32,
+            saturated,
+            zeroed,
+            cpu_code_mismatches,
+        },
+        decoded,
+    ))
+}
+
+fn fp8_kv_probe(
+    engine: &Engine,
+    key: &CudaSlice<f32>,
+    value: &CudaSlice<f32>,
+    phase: &mut AttentionPhase<'_>,
+    layer: usize,
+) -> Result<Option<RestoredKv>, Fail> {
+    if !phase.fp8_probe {
+        return Ok(None);
+    }
+    let mut key_codes = engine.alloc_u8(key.len())?;
+    let mut value_codes = engine.alloc_u8(value.len())?;
+    engine.append_kv_quantized(
+        key,
+        value,
+        &mut key_codes,
+        &mut value_codes,
+        0,
+        key.len(),
+        value.len(),
+        key.len(),
+        value.len(),
+        true,
+    )?;
+    let key_original = engine.dtoh(key)?;
+    let value_original = engine.dtoh(value)?;
+    let key_encoded = engine.dtoh_u8(&key_codes)?;
+    let value_encoded = engine.dtoh_u8(&value_codes)?;
+    for (name, original, encoded) in [
+        ("key", &key_original, &key_encoded),
+        ("value", &value_original, &value_encoded),
+    ] {
+        let (stats, _) = fp8_row_stats(original, encoded)?;
+        writeln!(
+            phase.report,
+            "kv_fp8_probe\t{}\t{layer}\t{name}\t{}\t{:.9e}\t{:.9e}\t{:.9e}\t{}\t{}\t{}",
+            phase.turn,
+            original.len(),
+            stats.max_abs,
+            stats.max_error,
+            stats.rms_error,
+            stats.saturated,
+            stats.zeroed,
+            stats.cpu_code_mismatches
+        )?;
+    }
+    if phase.fp8_replay {
+        let (_, key_restored) = fp8_row_stats(&key_original, &key_encoded)?;
+        let (_, value_restored) = fp8_row_stats(&value_original, &value_encoded)?;
+        Ok(Some(RestoredKv {
+            key: engine.htod(&key_restored)?,
+            value: engine.htod(&value_restored)?,
+        }))
+    } else {
+        Ok(None)
     }
 }
 
@@ -494,6 +607,10 @@ fn attention_token(
     )?;
     phase.record(engine, layer, "qkv_gather_rope", phase_start)?;
     phase_start = Instant::now();
+    if let Some(restored) = fp8_kv_probe(engine, &qkv.key, &qkv.value, phase, layer)? {
+        qkv.key = restored.key;
+        qkv.value = restored.value;
+    }
     let streamed_sink = if phase.resident.is_none() && !global {
         Some(engine.htod(&read_vector(
             model,
@@ -656,9 +773,9 @@ fn device_memory(engine: &Engine) -> Result<(usize, usize), Fail> {
 
 fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() < 5 || args.len() > 11 {
+    if args.len() < 5 || args.len() > 13 {
         return Err(
-            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--resident-moe] [--resident-text] [--grouped-moe] [--mirror-o-f32] [--profile-phases] [--capacity-probe=N] [--workspace-mib=N]"
+            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--resident-moe] [--resident-text] [--grouped-moe] [--mirror-o-f32] [--profile-phases] [--capacity-probe=N] [--workspace-mib=N] [--kv-fp8-probe] [--kv-fp8-replay]"
                 .into(),
         );
     }
@@ -671,6 +788,8 @@ fn run() -> Result<(), Fail> {
     let mut grouped_moe = false;
     let mut mirror_o_f32 = false;
     let mut profile_phases = false;
+    let mut fp8_probe = false;
+    let mut fp8_replay = false;
     for option in args.iter().skip(5) {
         match option.as_str() {
             "--continue-one" if !continue_one => continue_one = true,
@@ -679,6 +798,8 @@ fn run() -> Result<(), Fail> {
             "--grouped-moe" if !grouped_moe => grouped_moe = true,
             "--mirror-o-f32" if !mirror_o_f32 => mirror_o_f32 = true,
             "--profile-phases" if !profile_phases => profile_phases = true,
+            "--kv-fp8-probe" if !fp8_probe => fp8_probe = true,
+            "--kv-fp8-replay" if !fp8_replay => fp8_replay = true,
             _ if option.starts_with("--tokens=") && requested_turns.is_none() => {
                 requested_turns = Some(option["--tokens=".len()..].parse()?);
             }
@@ -694,6 +815,9 @@ fn run() -> Result<(), Fail> {
     if continue_one && requested_turns.is_some() {
         return Err("--continue-one and --tokens cannot be combined".into());
     }
+    if fp8_replay {
+        fp8_probe = true;
+    }
     let turns = requested_turns.unwrap_or(if continue_one { 2 } else { 1 });
     if !(1..=MAX_DIAGNOSTIC_TOKENS).contains(&turns) {
         return Err("MiMo diagnostic token count is outside 1..=256".into());
@@ -703,6 +827,7 @@ fn run() -> Result<(), Fail> {
             || requested_turns.is_some()
             || continue_one
             || profile_phases
+            || fp8_probe
             || !resident_text
             || workspace_mib.is_some_and(|mib| mib > 8192)
         {
@@ -716,6 +841,9 @@ fn run() -> Result<(), Fail> {
     }
     if grouped_moe && !resident_text {
         return Err("MiMo grouped MoE diagnostic requires --resident-text".into());
+    }
+    if fp8_probe && !resident_text {
+        return Err("MiMo FP8 KV probe requires --resident-text".into());
     }
     if mirror_o_f32 && !resident_text {
         return Err("MiMo f32 attention output mirror requires --resident-text".into());
@@ -731,6 +859,9 @@ fn run() -> Result<(), Fail> {
     }
     if grouped_moe && direct_bf16 {
         return Err("MiMo grouped MoE diagnostic requires f32 output accumulation".into());
+    }
+    if fp8_replay && direct_bf16 {
+        return Err("MiMo FP8 KV replay cannot combine with direct BF16 matvec".into());
     }
     let dir = Path::new(&args[0]);
     let gpu0: usize = args[1].parse()?;
@@ -991,7 +1122,9 @@ fn run() -> Result<(), Fail> {
     writeln!(
         report,
         "numeric_class\t{}",
-        if direct_bf16 {
+        if fp8_replay {
+            "memra_mimo_source_e4m3_kv_roundtrip_f32_attention_candidate"
+        } else if direct_bf16 {
             "memra_block_fp8_q8_1_act_mxfp4_pow2_e4m3_moe_act_bf16_direct_f32acc"
         } else if grouped_moe && mirror_o_f32 {
             "memra_block_fp8_q8_1_act_mxfp4_pow2_e4m3_grouped_moe_o_f32_candidate"
@@ -1006,6 +1139,8 @@ fn run() -> Result<(), Fail> {
     writeln!(report, "direct_bf16_matvec\t{direct_bf16}")?;
     writeln!(report, "grouped_moe\t{grouped_moe}")?;
     writeln!(report, "o_proj_f32_mirror\t{mirror_o_f32}")?;
+    writeln!(report, "kv_fp8_probe\t{fp8_probe}")?;
+    writeln!(report, "kv_fp8_replay\t{fp8_replay}")?;
     writeln!(report, "stage_cut_before_layer\t{STAGE_CUT}")?;
     writeln!(report, "stage_transfer\thost_bounce")?;
     writeln!(
@@ -1031,7 +1166,15 @@ fn run() -> Result<(), Fail> {
     writeln!(report, "resident_text_load_ms\t{resident_text_load_ms:.3}")?;
     writeln!(report, "source_preflight_ms\t{preflight_ms:.3}")?;
     writeln!(report, "phase_timing\t{profile_phases}")?;
-    writeln!(report, "kv_format\tf32_contiguous_component")?;
+    writeln!(
+        report,
+        "kv_format\t{}",
+        if fp8_replay {
+            "e4m3_roundtripped_f32_contiguous_component"
+        } else {
+            "f32_contiguous_component"
+        }
+    )?;
     writeln!(report, "kv_append\tdevice_copy_of_prior_plus_current")?;
     writeln!(report, "kv_sequence_length\t{turns}")?;
     writeln!(report, "gpu0_ordinal\t{gpu0}")?;
@@ -1092,6 +1235,8 @@ fn run() -> Result<(), Fail> {
                     enabled: profile_phases,
                     turn,
                     resident: text_layer,
+                    fp8_probe,
+                    fp8_replay,
                 };
                 attention_token(
                     engine,
