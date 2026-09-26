@@ -1,4 +1,9 @@
 # WP-B checkpoint 2026-09-26 (O14 queued): the eleventh and twelfth sittings queued on BOX35 (the lead's /root/b11-chain.sh, then /root/b12-chain.sh behind it; receipts /root/spill-receipts/b-day45b, b-day47, b-day49); the ninth sitting still on BOX33
+- O1's 5090 rerun registered (DAY37 addendum H, 1.17): the whole cell on the addendum-B tree r5 (`02dbdfa40`, main
+  `2c5edcb4c`), `rtx5090-day37/build-r5.sh` then `chain-r5.sh` (runner from 16:28Z; receipts `rtx5090-day37/r5/`).
+- OWED statuses refreshed: every half that named queue-e, f, i or j now names its queue-k item (queue-k: item 1 done,
+  item 2 DAY39B running since 15:20Z). DAY38's 5090 reading is in (2.4: addendum D PROMOTE-ELIGIBLE), so O2 is read on
+  both cards.
 - Test discipline (lead, 2026-09-26): the full memra-server lib suite (and the full memra-engine lib suite when engine code moves) runs before each push; a filtered run is never the pre-push gate. The filtered run is how 09badfe57 shipped the admit_predict_shadow_wiring red.
 
 # WP-B checkpoint 2026-09-26 (O14 built): the eleventh sitting queued on BOX35 (the lead's); O14 coded and CPU-gated, the twelfth sitting ready (NEED TARGET CARD); the ninth sitting still on BOX33
