@@ -928,6 +928,7 @@ pub mod dsv4_topology;
 pub mod f16_ffi;
 pub mod fp8_ffi;
 pub mod glm5_tp_sampler;
+pub mod mimo_attn_load;
 pub mod mimo_mixed_attn_ffi;
 pub mod mimo_nvfp4_ffi;
 pub mod mimo_qkv_ffi;

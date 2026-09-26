@@ -719,6 +719,11 @@ pub trait TensorSource: Sync {
     fn find_mimo_mxfp4_expert_ggml(&self, _ggml_name: &str) -> Option<MimoMxfp4Native<'_>> {
         None
     }
+    /// Exact BF16 source bytes for MiMo linears, head, norms, and sink.
+    /// Generic `find` may re-encode large BF16 matrices to Q8_0.
+    fn find_mimo_bf16_ggml(&self, _ggml_name: &str) -> Option<TensorView<'_>> {
+        None
+    }
     /// Native access for a stacked expert bank. This is deliberately distinct from
     /// `find_fp8_native`: expert and scale-grid strides are part of the checkpoint contract.
     fn find_fp8_stacked_native(&self, _ggml_name: &str) -> Option<Fp8StackedNative<'_>> {
@@ -2620,6 +2625,32 @@ impl TensorSource for SafetensorsSource {
         })
     }
 
+    fn find_mimo_bf16_ggml(&self, ggml_name: &str) -> Option<TensorView<'_>> {
+        if self.cfg.arch != Arch::MiMoV2 {
+            return None;
+        }
+        let hf = match crate::hf_mapping::resolve_ggml(ggml_name, &self.cfg)? {
+            crate::hf_mapping::HfTarget::Plain(hf) => hf,
+            crate::hf_mapping::HfTarget::Transform { .. } => return None,
+        };
+        let (info, bytes) = self.lookup(&hf)?;
+        if info.dtype != "BF16" || !(1..=2).contains(&info.shape.len()) {
+            return None;
+        }
+        let elements = info
+            .shape
+            .iter()
+            .try_fold(1usize, |total, &dim| total.checked_mul(dim as usize))?;
+        if bytes.len() != elements.checked_mul(2)? {
+            return None;
+        }
+        Some(TensorView {
+            bytes: Cow::Borrowed(bytes),
+            ggml_type: GgmlType::BF16,
+            ne: info.shape.iter().rev().copied().collect(),
+        })
+    }
+
     fn find_fp8_stacked_native(&self, ggml_name: &str) -> Option<Fp8StackedNative<'_>> {
         use crate::hf_mapping::{HfTarget, resolve_ggml};
         let hf = match resolve_ggml(ggml_name, &self.cfg)? {
@@ -3247,6 +3278,49 @@ mod tests {
             };
             assert_eq!(observed, expected, "element {index}");
         }
+        drop(source);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn mimo_bf16_loader_view_keeps_large_checkpoint_matrix_raw() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("memra-mimo-bf16-{}-{unique}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("model.safetensors");
+        let name = "model.layers.0.self_attn.o_proj.weight";
+        let elements = 512 * 4096;
+        let bytes_len = elements * 2;
+        let header = format!(
+            r#"{{"{name}":{{"dtype":"BF16","shape":[512,4096],"data_offsets":[0,{bytes_len}]}}}}"#
+        );
+        let mut bytes = Vec::with_capacity(8 + header.len() + bytes_len);
+        bytes.extend_from_slice(&(header.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(header.as_bytes());
+        for _ in 0..elements {
+            bytes.extend_from_slice(&0x3f80u16.to_le_bytes());
+        }
+        std::fs::write(&file, bytes).unwrap();
+        let config = ModelConfig::from_hf(&crate::config::HfConfig::parse(include_str!(
+            "model_packs/mimo_v2/fixtures/config.json"
+        )));
+        let source = SafetensorsSource::open_with_config(&file, config).unwrap();
+        let ggml = "blk.0.attn_output.weight";
+        let raw = source.find_mimo_bf16_ggml(ggml).unwrap();
+        assert_eq!(raw.ggml_type, GgmlType::BF16);
+        assert_eq!(raw.ne, vec![4096, 512]);
+        assert_eq!(raw.bytes.len(), bytes_len);
+        assert!(matches!(&raw.bytes, Cow::Borrowed(_)));
+        let recorded = crate::checkpoint_binding::RecordingSource::new(&source);
+        assert!(recorded.find_mimo_bf16_ggml(ggml).is_some());
+        assert!(recorded.requested().contains(ggml));
+        assert!(source.find_mimo_bf16_ggml("blk.0.attn_q.weight").is_none());
+        drop(recorded);
+        drop(raw);
         drop(source);
         std::fs::remove_dir_all(dir).unwrap();
     }
