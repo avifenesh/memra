@@ -147,3 +147,7 @@ or vendor-default endpoint qualification. Memra #673
 retains that gate. **No MTP head weights, serving
 default, fleet binary or customer route move from this
 research.**
+The archived v8 source appends a sampled pick before a fixed or
+learned C stop and rejects positive sampled PMIN0. The mainline
+chosen-pick discard counterexample in #673 does not describe this
+research binary.

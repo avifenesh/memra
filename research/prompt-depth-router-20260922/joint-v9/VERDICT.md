@@ -114,6 +114,12 @@ reserved tests and 16 conversations bound claims to this
 sampled code workload. Full sampled distribution parity and
 vendor-default endpoint qualification remain separate under
 Memra #673. No production setting changed.
+The archived v8 source tied to this exact binary SHA appends the
+sampled pick before fixed or learned C stops on sampled graph and
+eager paths, and refuses positive sampled PMIN0. The chosen-pick
+discard counterexample in Memra #673 applies to a different
+mainline path. This source-order check does not by itself establish
+full-model sampled distribution parity.
 
 The model SHA-256 is
 `1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a`;
