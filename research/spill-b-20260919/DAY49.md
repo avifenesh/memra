@@ -106,8 +106,8 @@ The seven spill review patterns read against `6102fb63a` (the retry loop, `batch
   the VMM door, so the fix is unreachable in them: the local runner and the twelfth sitting run as registered.
 - **The new cell `i-vmm` (the door combination, the fix's own reading):** the gate's arms `i-ctrl`, `i`, `i-red` with
   `MEMRA_KV_ALLOCATOR=vmm` exported (the gate's server inherits it), on the fix binary and on `02dbdfa40`. Green (the
-  fix): arm i's terms of addendum B pass under the door, and each retry is followed by one `[kv-vmm] reap (batch-oom)`
-  line before its `retrying` line's retry. Red (`02dbdfa40`): the same terms, and no `reap (batch-oom)` line (the
+  fix): arm i's terms of addendum B pass under the door, and the server log carries one `[kv-vmm] reap (batch-oom)`
+  line per `retrying` line, printed before it (the reap runs inside the reclaim). Red (`02dbdfa40`): the same terms, and no `reap (batch-oom)` line (the
   defect as it reads). On the 5090 first; the target card in the next B sitting after the twelfth.
 
 ## 2. Results
