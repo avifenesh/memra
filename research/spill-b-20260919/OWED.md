@@ -149,7 +149,9 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   device work, or a torn-state check), or split it, keeping one numeric program per request (a retried chunk is the
   same batched step); sessions that never emitted park as today. Design, the torn-state argument and the cells are
   pre-registered before code (DAY49).
-- Status: `open`. Price: about 1 agent-day plus a cell on each card.
+- Status: `pre-registered` (DAY49.md, text only until DAY47 addendum A's reruns read): `MEMRA_BATCH_OOM_RECOVER`, a
+  torn-state check on host-side markers, one reclaim and one retry of the same batched step when untouched, today's
+  error arm when torn; a red twin with an inside-step fault door. Price: about 1 agent-day plus a cell on each card.
 
 ### O9. memra#464's guard seed
 
