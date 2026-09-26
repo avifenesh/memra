@@ -121,3 +121,19 @@ its own pre-registration.
   - If the 5090 half does not pass, W is reverted in one commit.
 - The 5090 half: its first queue attempt was stopped by me before it took the hold, to fix the harness
   (`rtx5090-w/cell/run-stopped-before-hold.log`). It was restarted at 07:19Z on the same binaries.
+
+## 4. The 5090 half, running (a recorded overlap)
+
+- The 5090 cell's earlier queue attempts: banked are the reboot at 07:28Z, the stop at 07:36Z so B1 could go first,
+  and the lock staying busy until the window ran out at 12:25Z (`rtx5090-w/cell/`). The fourth attempt took the hold
+  at 12:58:05Z.
+  - (a) ran with the fixed harness: `a1-green` passed with 1 test run.
+  - The gates ran 12:59Z to 13:12Z, and the paired cell's boots started at 13:12:35Z.
+- **An overlap, recorded before the reading.** This lane's L' checks ran on the rig between about 13:03Z and
+  13:15Z, under a 600% CPU cap: the server and engine lib tests, clippy, and the red arm's `cargo check`. I checked
+  the lock's holder before the L builds, but not again before these.
+  - The overlap covers the paired cell's first two boots (`o1/b01-base-demote` at 13:12:35Z and `o1/b02-w-demote` at
+    13:14:10Z), whose `host load at start` reads 5.89 and 4.39.
+  - No build of this lane runs until the cell reads.
+  - The reading states the overlap. If a clause is decided within the spread of those two boots, the cell repeats
+    whole without them, as its own run.
