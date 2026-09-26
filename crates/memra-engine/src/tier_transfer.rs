@@ -254,6 +254,9 @@ struct PinnedAllocation {
     governor: SharedBudget,
     /// WP-A day 63 (L1.4): where the backing goes when the lease drops.
     pool: Option<Rc<LeasePool>>,
+    /// WP-A day 69 (`DAY69.md` design P.2): the pool's epoch when this lease was allocated; the
+    /// backing parks at the drop only if no drain has run since.
+    epoch: u64,
 }
 impl std::fmt::Debug for CudaPinnedLease {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -373,11 +376,30 @@ impl Drop for PinnedAllocation {
             std::mem::forget(c);
         }
         // WP-A day 63 (`DAY63.md` design L1.4): the backing parks in the pool (charged to the pool
-        // tenant) instead of `cuMemFreeHost`, unless the pool is closed or full; then it frees.
+        // tenant) instead of `cuMemFreeHost`, unless the pool is closed or full, or (day 69, P.2) a
+        // drain ran since this lease was allocated; then it frees.
         match (backing, &self.pool) {
-            (Some(b), Some(pool)) => pool.put(b),
+            (Some(b), Some(pool)) => pool.put(b, self.epoch),
             (b, _) => drop(b),
         }
+    }
+}
+
+/// WP-A day 69 (`DAY69.md` design P.3): what the lease pool reads of a backing, its size class and
+/// its kind, so the pool's program runs in a CPU test with a stand-in backing. Production pools
+/// `PinnedBacking`.
+pub trait PoolBacking {
+    /// The allocation's size (the size class it was allocated at).
+    fn class(&self) -> usize;
+    /// The arm it was allocated under.
+    fn pool_kind(&self) -> PinnedKind;
+}
+impl PoolBacking for PinnedBacking {
+    fn class(&self) -> usize {
+        self.capacity()
+    }
+    fn pool_kind(&self) -> PinnedKind {
+        self.kind
     }
 }
 
@@ -397,18 +419,22 @@ pub fn lease_class(bytes: usize) -> usize {
 /// its class and kind takes it, so no `cuMemFreeHost` (a context-wide wait) and no fresh
 /// `cuMemHostAlloc` plus zero fill reach the serving path in the steady state. Idle bytes are
 /// charged to the pinned ledger under the pool tenant, capped at `cap`. Closed at the tier's latch
-/// and when the engine drops: every idle backing frees, every pool charge releases.
-pub struct LeasePool {
-    idle: RefCell<Vec<(PinnedBacking, ChargedLease)>>,
+/// and when the engine drops: every idle backing frees, every pool charge releases. Day 69
+/// (`DAY69.md` design P): drained at every tenant purge, and a backing leased before a drain never
+/// parks again, so no backing that held bytes before a purge is handed to a later lease.
+pub struct LeasePool<B: PoolBacking = PinnedBacking> {
+    idle: RefCell<Vec<(B, ChargedLease)>>,
     idle_bytes: Cell<u64>,
     cap: Cell<u64>,
     open: Cell<bool>,
+    /// Day 69 (P.2): advanced by every drain; a lease records it at allocation.
+    epoch: Cell<u64>,
     governor: SharedBudget,
     dimensions: usize,
     /// (taken from the pool, allocated fresh) since the engine was built (log only).
     counts: Cell<(u64, u64)>,
 }
-impl LeasePool {
+impl<B: PoolBacking> LeasePool<B> {
     fn new(governor: SharedBudget) -> Self {
         let dimensions = governor.borrow().used().device.len();
         Self {
@@ -416,22 +442,27 @@ impl LeasePool {
             idle_bytes: Cell::new(0),
             cap: Cell::new(0),
             open: Cell::new(true),
+            epoch: Cell::new(0),
             governor,
             dimensions,
             counts: Cell::new((0, 0)),
         }
+    }
+    /// Day 69 (P.2): the epoch a lease allocated now records.
+    pub fn epoch(&self) -> u64 {
+        self.epoch.get()
     }
     /// The pool tenant's digest (a domain disjoint from every tenant salt).
     pub fn tenant() -> [u8; 32] {
         digest("host-tier-lease-pool", b"pinned lease backings")
     }
     /// An idle backing of exactly this class and kind, its pool charge released.
-    fn take(&self, class: usize, kind: PinnedKind) -> Option<PinnedBacking> {
+    fn take(&self, class: usize, kind: PinnedKind) -> Option<B> {
         let (backing, charge) = {
             let mut idle = self.idle.borrow_mut();
             let i = idle
                 .iter()
-                .position(|(b, _)| b.capacity == class && b.kind == kind)?;
+                .position(|(b, _)| b.class() == class && b.pool_kind() == kind)?;
             idle.swap_remove(i)
         };
         self.idle_bytes.set(self.idle_bytes.get() - class as u64);
@@ -440,11 +471,14 @@ impl LeasePool {
         }
         Some(backing)
     }
-    /// A dropped lease's backing: parked under a pool charge when the pool is open and has room,
-    /// freed otherwise.
-    fn put(&self, backing: PinnedBacking) {
-        let class = backing.capacity as u64;
-        if !self.open.get() || self.idle_bytes.get() + class > self.cap.get() {
+    /// A dropped lease's backing: parked under a pool charge when the pool is open, has room, and
+    /// the lease was allocated in the current epoch (day 69, P.2: no drain since); freed otherwise.
+    fn put(&self, backing: B, epoch: u64) {
+        let class = backing.class() as u64;
+        if !self.open.get()
+            || epoch != self.epoch.get()
+            || self.idle_bytes.get() + class > self.cap.get()
+        {
             drop(backing);
             return;
         }
@@ -468,6 +502,14 @@ impl LeasePool {
     /// Returns (backings freed, bytes). Idempotent.
     pub fn close(&self) -> (usize, u64) {
         self.open.set(false);
+        self.drain()
+    }
+    /// WP-A day 69 (`DAY69.md` design P.1): the epoch advances first, so every lease allocated
+    /// before this call frees at its drop instead of parking; then every idle backing frees (its
+    /// drop, `cuMemFreeHost`, as before L') and its pool charge releases. The pool stays open.
+    /// Returns (backings freed, bytes).
+    pub fn drain(&self) -> (usize, u64) {
+        self.epoch.set(self.epoch.get() + 1);
         let idle = std::mem::take(&mut *self.idle.borrow_mut());
         let (n, bytes) = (idle.len(), self.idle_bytes.replace(0));
         for (backing, charge) in idle {
@@ -1587,6 +1629,7 @@ impl CudaTransfers {
                     charge: Some(charge),
                     governor: self.governor.clone(),
                     pool: Some(self.lease_pool.clone()),
+                    epoch: self.lease_pool.epoch(),
                 }),
             }),
             Err(e) => {
@@ -4486,8 +4529,9 @@ mod tests {
     /// WP-A day 37 (`DAY37.md` section 8, finding 5): the number of native cells in this module,
     /// one context each in the pool below (the census pins the count; day 42 added
     /// `span_receipt_digests_are_the_program_per_span`, day 48
-    /// `day48_a_take_back_waits_for_its_own_lease_only`).
-    const NATIVE_CELLS: usize = 17;
+    /// `day48_a_take_back_waits_for_its_own_lease_only`, day 69
+    /// `day69_a_drained_backing_is_never_the_next_lease`).
+    const NATIVE_CELLS: usize = 18;
     /// The module's native cells' contexts: `NATIVE_CELLS` non-primary contexts created in ONE step,
     /// at the first `cell_context()` call (before that cell's body runs; every other cell waits
     /// here), and held for the whole test process by this static, so no context is created or
@@ -5527,8 +5571,8 @@ mod tests {
         assert!(!slice.contains("capacity"), "the copies span the length");
         assert_eq!(
             body.matches(".capacity").count() - body.matches("fn capacity").count(),
-            3,
-            "take, put, and the view-free class read"
+            2,
+            "set_len's bound and the pool's class read (`PoolBacking::class`, day 69)"
         );
         let alloc = &body[body.find("pub fn alloc_host_kind(").unwrap()..];
         let alloc = &alloc[..alloc.find("\n    }\n").unwrap()];
@@ -5590,6 +5634,187 @@ mod tests {
         let c = t.alloc_host_kind(100, request(), kind).unwrap();
         drop(c);
         assert_eq!(gov.borrow().used().pinned, 0, "a closed pool frees");
+    }
+
+    /// WP-A day 69 (`DAY69.md` design P, cell (a)): a stand-in backing that carries a tenant's
+    /// bytes and counts its frees, so the pool's program runs without a card.
+    struct StandIn {
+        class: usize,
+        bytes: Vec<u8>,
+        freed: Rc<Cell<usize>>,
+    }
+    impl PoolBacking for StandIn {
+        fn class(&self) -> usize {
+            self.class
+        }
+        fn pool_kind(&self) -> PinnedKind {
+            PinnedKind::Cached
+        }
+    }
+    impl Drop for StandIn {
+        fn drop(&mut self) {
+            self.freed.set(self.freed.get() + 1);
+        }
+    }
+
+    /// WP-A day 69 (`DAY69.md` design P, cell (a), CPU): after a drain no idle backing is left and
+    /// every idle one is freed with its pool charge released; a backing leased before the drain and
+    /// dropped after it frees instead of parking; one leased after the drain parks and is taken. So
+    /// no backing that carried the purged tenant's bytes is ever handed to a later lease.
+    #[test]
+    fn day69_a_drain_frees_every_idle_backing_and_no_earlier_backing_parks_again() {
+        use memra_tier::tier::governor::Governor;
+        let cap = TierBudget {
+            version: 1,
+            device: vec![0],
+            peer: vec![0],
+            replicas: vec![0],
+            pinned: 1 << 20,
+            pageable: 0,
+            staging: 0,
+            loaders: 4,
+            inflight: 4,
+            nvme: 0,
+        };
+        let gov: SharedBudget = Rc::new(RefCell::new(
+            Governor::new(cap, TierBudget::zero(1), 4, 0, Arc::new(|| 0)).unwrap(),
+        ));
+        let pool: LeasePool<StandIn> = LeasePool::new(gov.clone());
+        pool.cap.set(1 << 16);
+        let freed = Rc::new(Cell::new(0));
+        let tenant = |class| StandIn {
+            class,
+            bytes: vec![0xa5; class],
+            freed: freed.clone(),
+        };
+        // Two of the purged tenant's backings park (idle), a third is still leased at the purge.
+        let before = pool.epoch();
+        pool.put(tenant(4096), before);
+        pool.put(tenant(8192), before);
+        assert_eq!(pool.idle_bytes.get(), 12288);
+        assert_eq!(gov.borrow().used().pinned, 12288, "the pool charge");
+        let live = tenant(4096);
+        // The purge's drain.
+        assert_eq!(pool.drain(), (2, 12288));
+        assert!(pool.idle.borrow().is_empty(), "no idle backing is left");
+        assert_eq!(freed.get(), 2, "both idle backings freed");
+        assert_eq!(gov.borrow().used().pinned, 0, "the pool charge released");
+        assert!(pool.take(4096, PinnedKind::Cached).is_none());
+        // The late drop: leased before the drain, dropped after it. It frees; it never parks.
+        pool.put(live, before);
+        assert_eq!(freed.get(), 3, "the earlier backing freed at its drop");
+        assert!(pool.idle.borrow().is_empty());
+        assert!(
+            pool.take(4096, PinnedKind::Cached).is_none(),
+            "nothing to hand out"
+        );
+        // A lease of the new epoch parks and is taken as before.
+        let after = pool.epoch();
+        assert_eq!(after, before + 1);
+        pool.put(
+            StandIn {
+                class: 4096,
+                bytes: vec![0x3c; 4096],
+                freed: freed.clone(),
+            },
+            after,
+        );
+        let got = pool
+            .take(4096, PinnedKind::Cached)
+            .expect("a new-epoch backing parks");
+        assert!(
+            got.bytes.iter().all(|&b| b == 0x3c),
+            "never the purged tenant's bytes"
+        );
+        assert_eq!(freed.get(), 3);
+        drop(got);
+        // close is the drain with the pool closed: the idle backing frees, a later put frees.
+        pool.put(tenant(4096), after);
+        assert_eq!(pool.idle_bytes.get(), 4096, "a current-epoch put parks");
+        assert_eq!(pool.close(), (1, 4096));
+        assert!(pool.epoch() > after);
+        pool.put(tenant(4096), pool.epoch());
+        assert_eq!(pool.idle_bytes.get(), 0, "a closed pool parks nothing");
+        assert_eq!(
+            freed.get(),
+            6,
+            "the taken one, the closed one and the late put freed too"
+        );
+        assert_eq!(gov.borrow().used().pinned, 0);
+    }
+
+    /// WP-A day 69 (`DAY69.md` design P, cell (b), CPU census): the allocation records the pool's
+    /// epoch and the drop hands it to `put`; `put` parks only in the current epoch; `drain`
+    /// advances the epoch before it frees and `close` is the drain with the pool closed.
+    #[test]
+    fn day69_the_pool_parks_only_in_its_epoch_and_the_drain_advances_it_first() {
+        let src = include_str!("tier_transfer.rs");
+        let body = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        let alloc = &body[body.find("pub fn alloc_host_kind(").unwrap()..];
+        let alloc = &alloc[..alloc.find("\n    }\n").unwrap()];
+        assert!(alloc.contains("epoch: self.lease_pool.epoch(),"));
+        let drop_alloc = &body[body.find("impl Drop for PinnedAllocation {").unwrap()..];
+        let drop_alloc = &drop_alloc[..drop_alloc.find("\n}\n").unwrap()];
+        assert!(drop_alloc.contains("pool.put(b, self.epoch)"));
+        let pool = &body[body.find("impl<B: PoolBacking> LeasePool<B> {").unwrap()..];
+        let pool = &pool[..pool.find("\n}\n").unwrap() + 3];
+        let put = &pool[pool
+            .find("    fn put(&self, backing: B, epoch: u64) {")
+            .unwrap()..];
+        let put = &put[..put.find("\n    }\n").unwrap()];
+        assert!(put.contains("|| epoch != self.epoch.get()"));
+        let drain = &pool[pool
+            .find("    pub fn drain(&self) -> (usize, u64) {")
+            .unwrap()..];
+        let drain = &drain[..drain.find("\n    }\n").unwrap()];
+        let advance = drain.find("self.epoch.set(self.epoch.get() + 1);").unwrap();
+        assert!(
+            advance < drain.find("std::mem::take(").unwrap(),
+            "the epoch first"
+        );
+        let close = &pool[pool
+            .find("    pub fn close(&self) -> (usize, u64) {")
+            .unwrap()..];
+        let close = &close[..close.find("\n    }\n").unwrap()];
+        assert!(close.contains("self.open.set(false);\n        self.drain()"));
+    }
+
+    /// WP-A day 69 (`DAY69.md` design P, cell (d), on a card): a pooled lease that carried a
+    /// tenant's bytes is never the next same-class lease once the pool drains; the next one is
+    /// fresh and reads zeros, and the ledger holds the leases alone.
+    #[test]
+    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
+    fn day69_a_drained_backing_is_never_the_next_lease() {
+        let (mut t, _stream, gov) = native_fixture();
+        t.set_lease_pool_cap(1 << 20);
+        let kind = t.pinned_default();
+        let mut a = t.alloc_host_kind(8192, request(), kind).unwrap();
+        a.write(&vec![0xa5u8; 8192]).unwrap();
+        let mut held = t.alloc_host_kind(8192, request(), kind).unwrap();
+        held.write(&vec![0xa5u8; 8192]).unwrap();
+        drop(a);
+        assert_eq!(t.lease_pool_counts(), (0, 2, 8192), "one parked");
+        assert_eq!(t.lease_pool().drain(), (1, 8192));
+        assert_eq!(gov.borrow().used().pinned, 8192, "the held lease alone");
+        drop(held);
+        assert_eq!(
+            t.lease_pool_counts().2,
+            0,
+            "the earlier lease freed at its drop"
+        );
+        assert_eq!(gov.borrow().used().pinned, 0);
+        let b = t.alloc_host_kind(8192, request(), kind).unwrap();
+        assert_eq!(
+            t.lease_pool_counts(),
+            (0, 3, 0),
+            "fresh, never a drained backing"
+        );
+        assert!(
+            b.bytes().unwrap().iter().all(|&x| x == 0),
+            "a fresh lease reads zeros"
+        );
+        drop(b);
+        assert_eq!(t.lease_pool_counts().2, 8192, "the new epoch parks again");
     }
 
     /// WP-A day 63 (design L1.4, on a card): a drop past the pool's cap frees; the engine's drop
