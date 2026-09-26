@@ -159,3 +159,27 @@ placed below with a CPU cell on the merged code, and design Q is registered befo
     so under Q they charge the length again, as they were written.
 - **P2's integ branch** `lane/spill-a-p2-20260926` is rebased onto `a57f85897` as `409be61f8`: server lib `949 passed`,
   clippy `-p memra-server --all-targets` clean.
+
+## 5. The two gate binaries for the lead's BOX43 battery (commands handed over; no build here)
+
+- Built by the lead at integ69's merge of `a57f85897`: `cargo build --release -p memra-engine --bin tier-transfer-gate
+  --bin kv-tier-gate`.
+- **Neither binary takes the rig lock, so they run directly inside `run-held.sh`'s hold (FD 9).** They must not be
+  wrapped in `tier-battery.py`: the collector opens its own handle on `/tmp/memra-gpu.lock` and `flock`s it
+  `LOCK_NB`, which refuses while FD 9 holds the lock. Day 12 ran them with the collector as the holder.
+- **`tier-transfer-gate`:**
+  - `conformance`: exit 0, the 13 `PASS` lines of day 12, last line `PASS native governor zero after controlled
+    drain`.
+  - `roundtrip`: exit 0, six `PASS native D2H-H2D roundtrip bytes=.. byte_exact=true .. governor_zero=true` lines
+    (4 KiB to 256 MiB).
+  - It takes no `--out`. Timeout 700 s each.
+- **`kv-tier-gate`, the seven fault arms on the 27B:** `--artifact <27B NVFP4/Q5K GGUF> --case active --context 8192
+  --tiers host --same-program --kv-allocator pooled --fault <arm> --out <new dir>`.
+  - It refuses any `MEMRA_*` variable but `MEMRA_NVCC`, `MEMRA_CUDA_ARCH` and `MEMRA_GPU_LOCK`.
+  - It needs a **fresh `--out` per arm and per attempt**: `fs::create_dir` refuses an existing one.
+  - Last lines, as day 12's: `FAULT-ARM PASS <arm> committed=8192 generated=128` for cancel-demote, cancel-restore,
+    host-budget-short, device-short and require-resident; `committed=8064 generated=0` for corrupt-host and
+    missing-host. Timeout 1800 s each.
+- **Why these gates matter for Q:** `missing-host`'s `pinned-released` expects the plane's length, and the binaries
+  set no pool cap. So they read a lease's length again under Q. Under L''s class charge a plane that is not a class
+  size would have read its class.
