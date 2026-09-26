@@ -75,6 +75,19 @@ written, and the reclaim is named exactly:
   torn chunk is not retried by construction, which the census and a unit test on the guard's rule cover).
 - Everything else of section 1 stands.
 
+### 1.6 Addendum B (2026-09-26, the cells as built, before any cell)
+
+- **Code:** `6102fb63a` (the step guard and the worker's one retry; census tests for both; memra-engine 580 and
+  memra-server 958 passed, clippy clean), the FLAGS row fixed to its two-column table in `02dbdfa40` (the boot audit
+  reads the table, so the cells build `02dbdfa40`).
+- **The gate:** arm `i` in `tools/health-fault-gate.sh`: `i-ctrl` (the door on, no fault), `i` (`MEMRA_STEP_OOM_FAULT=1`:
+  one `retrying` line, one `retried (ok)` line, all three streams complete with the control's digests, no 5xx, no
+  panic) and `i-red` (`=2`: the retry fails too, `retry failed`, and the green assertion fires).
+- **The serving shape** is `day45-client.py`'s burst of 8 prompts of 6,144 tokens, `max_tokens=64`, with no warm
+  requests (`--warm-n 0`, so the fault lands on the burst's decode), `MEMRA_STEP_OOM_FAULT=1`, arms `off` and `on`
+  (`MEMRA_BATCH_OOM_RECOVER=1`) in both orders, on both cards (the 27B on the target card): on `on` every request
+  ends `200`; `off` is the before reading. No clause of 1.3 changes.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
