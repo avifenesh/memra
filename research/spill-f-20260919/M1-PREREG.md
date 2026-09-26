@@ -114,6 +114,25 @@ modes per size and phase, N=10 each. Scored: read-call time and write/commit tim
 (OWED 9), valid bytes, padded bytes, device bytes, `fallbacks=0`, byte-exact status. Buffered is
 the baseline arm. Blocked on OWED 14 when run through the collector's storage guard.
 
+#### B1 amendment (2026-09-25, after the one-round B1 smoke, before any scored B1 visit)
+
+Record of how it landed: written at 17:42Z, before the scored B1 run started at 17:43:57Z, but
+its first commit was stopped by a failed shell chain (a zero-count `grep -c` exits 1), so the
+box ran the pre-amendment runner. That runner records every input of the amended gate (device
+and own read bytes per visit), so the scored B1 summary is recomputed offline with this gate by
+`m1-b1-resummarize.py`; the run's in-process scoring is kept as recorded and labelled
+superseded.
+
+- Every visit is its own collector invocation with the exact `storage-bench` argv and
+  `--storage-root`/`--storage-proof` (the collector refuses storage-bench behind a wrapper:
+  `REFUSED: opaque storage command`); the runner orchestrates around them.
+- Co-tenancy gate, restated for storage writes: per-process accounting cannot see the
+  filesystem journal or the kernel's writeback threads (the smoke's roundtrip visits carried 15
+  to 24 MB of such writes with no other tenant on the machine), and sub-MiB payloads are below
+  the filesystem's own metadata traffic. B1 gates on reads: foreign read bytes at most
+  max(2% of the visit's device read bytes, 1 MiB). Device write bytes are recorded per visit and
+  not gated. B3's gate is unchanged (its visits are read-dominated; the smoke read 0.1 to 0.4%).
+
 ### B2 KV host-tier handoff (memra-server, GPU)
 
 The artifact in resident mode, `MEMRA_KV_HOST_MB=16384`, `MEMRA_KV_HOST_HANDOFF=$P/handoff.bin`.
@@ -167,6 +186,26 @@ the idle loop drips it at a 1 ms wait). So B2 needs one instrument and one drive
   `/v1/completions` and `/metrics`, including red controls (a refused export, an import with
   skips, a probe that misses the cache, a probe whose text differs).
 
+#### B2 amendment 2 (2026-09-26, after the first B2 attempt, before any passing cycle)
+
+The first 1 GiB attempt (`box27/b2-1g-attempt1-spec-route`) never filled the host tier: all 128
+fill prompts ran on the MTP spec route, where the prompt-end seed that feeds the prefix cache
+does not publish (the grid-aligned seed is armed for plain sessions only; a spec session keeps
+its own post-prime capture, which one-token fills never reach), so `prefix_host_bytes` stayed 0
+and every cycle failed as "prompts exhausted". Every B2 boot (reference, export and import) now
+runs with `MEMRA_SERVE_SPEC=0`, the documented production posture for shared-prefix serving
+shapes (`docs/FLAGS.md`). Nothing else changes.
+
+#### B2 amendment 3 (2026-09-26, after the first 8 GiB attempt)
+
+The first 8 GiB attempt (`box27/b2-8g-attempt1-tenant-cap`) plateaued at 8,520,110,208 host
+bytes (67 entries of 127 MB) with all 128 prompts sent: the default per-tenant share cap
+(`MEMRA_KV_HOST_TENANT_PCT=50` of the 16 GiB budget) evicts a single tenant's oldest entries,
+which are the probe prompts. The export (8,520 MB, 5.2 s) and import (6.1 s) still ran and are
+kept as recorded. The cell is single-tenant by construction, so its rerun sets
+`MEMRA_KV_HOST_TENANT_PCT=100` (`--tenant-pct 100`); the 1 GiB cell, which never reached the cap,
+keeps the default. Nothing else changes.
+
 ### B3 expert-bank spill (the headline cells; `run-gen` and `run-spec`)
 
 Common env (frozen in `m1-prereg/b3-arms.lock.json`): `MEMRA_SPILL_DISK=1
@@ -211,12 +250,75 @@ they are B5 and OWED 17, not silent omissions.
    a flat or losing `MEMRA_SPILL_IO` arm goes to the door-hygiene decision in `docs/FLAGS.md`
    with these receipts.
 
+#### B3 amendment 2 (2026-09-25, after the one-round smoke, before any scored B3 visit)
+
+The smoke (`box27/b3-smoke`, one round, never scored) showed the registered common env cannot
+force the disk tier on the current engine: `[spill] invalid MEMRA_SPILL_PINNED_FRAC="0"
+(expected a finite fraction greater than 0 and at most 1); using 0.6`, then `[spill] experts
+placed: 30720 pinned (Tier 1), 0 mmap'd from disk`. The `0` came from the 2026-08-11 spill smoke,
+before the range check. Every smoke arm therefore measured pinned host RAM to the GPU (36.7 to
+37.1 tok/s, N=1 each); kept as an unscored diagnostic of the pinned tier.
+
+- Common env: `MEMRA_SPILL_PINNED_FRAC=0.000000001` (inside the accepted range; the pinnable
+  budget becomes tens of bytes, below one expert, so nothing is pinned).
+- New correctness gates per visit: `[spill] experts placed: 0 pinned ... 30720 mmap'd`, and no
+  `[spill] invalid` or `[spill-pread] invalid` line.
+- `run-gen`'s GGUF path prints no per-window spill lines (they exist on its safetensors path), so
+  the direct gates and the stage account read the pool's whole-visit totals line
+  (`[spill-pread] reads= ... overread_bytes= worker_read_ns= demand_read_ns= wait_ns=
+  h2d_submits=`, prefill included): `errors=0 short_reads=0` for every positioned arm, and for
+  `direct16` `fallbacks=0` and `overread_bytes == 4096 x reads`.
+- Prefill time from the GGUF path's `prefill N tok in Xs` line (it has no `[ttft]` line).
+
+#### B3 regime (iii) amendment (2026-09-25, registered on the box before any B3 visit)
+
+The rented container refuses the registered mlocked balloon: `RLIMIT_MEMLOCK` is 8 MiB and
+raising it fails (`ulimit: max locked memory: cannot modify limit: Operation not permitted`;
+the container has no `CAP_SYS_RESOURCE`). Its cgroup v2 limits are `memory.max` =
+127,295,029,248 bytes and `memory.swap.max` = 0. With swap forbidden for the cgroup, touched
+anonymous memory cannot be reclaimed, so it bounds the page cache exactly as locked memory would.
+
+- Mechanism: `m1-cache-regime.py balloon --touch`: anonymous mmap, one write per page, no mlock.
+  Refused unless the process's cgroup reports `memory.swap.max` = 0.
+- Size: `memory.max - anon - leave`, with `leave = 7,000,000,000` bytes for the visit process
+  and its page cache (below half the 15,600,713,728-byte expert bank, as registered).
+- Floor, restated for cgroup accounting: the balloon releases itself (exit 4) if
+  `memory.max - anon` falls under 2 GiB, which prevents a cgroup OOM. The registered 6 GiB
+  host-MemAvailable floor cannot apply here: the container's `/proc/meminfo` is host-wide.
+- Proof the bound held, per visit: `mincore` residency of the artifact at visit end below 50% of
+  the file, and device read bytes over the decode window of the same order as the logical spill
+  bytes. A visit failing either is `regime_ok = false` and unscored.
+
 ### B4 serving shape (memra-server)
 
 `worker16`, plus any B3 winner, in the regime where it won: a fixed 32-request set, 128 output
 tokens, concurrency 1 and 4, 5 AB plus 5 BA. Recorded: TTFT, E2E, TPOT and ITL p50/p95/p99,
 request and token throughput, plus the B3 stage account. Without a B3 winner, `worker16` alone
 runs as a descriptive serving row.
+
+#### B4 amendment (2026-09-25, registered on the box before any B4 visit)
+
+- Request set: 32 prompts, each the B3 prompt text followed by ` Answer variant i of 32 in your
+  own order.` (i = 1..32); SHA-256 of the joined set recorded in each run's `identity.json`.
+- Transport: `POST /v1/completions`, `stream: true`, `stream_options.include_usage`, greedy
+  (`temperature 0`), `max_tokens 128`; `c` client workers pull from the set in order.
+- Server: `memra-server` with the B3 common env and the arm env (minus the `run-gen`-only
+  prompt, chat and NGEN variables), `MEMRA_COMPAT=openai`, `MEMRA_CTX=8192`,
+  `MEMRA_MAX_SESSIONS = max(4, c)`; a fresh boot per visit after the regime is applied.
+- Per request: TTFT (first text frame), E2E, TPOT = (E2E - TTFT) / (tokens - 1), every
+  inter-token gap. Per visit: p50/p95/p99 of each, request and token throughput over the
+  request window. A visit with any request error, invalid telemetry or a failed regime is
+  unscored. Tool: `m1-b4-serving.py`.
+
+#### B4 arms (2026-09-26, registered after B3 and before any B4 visit)
+
+Under the registered gate only the bounded regime scored, and there `worker16` beat every
+challenger, so B4 has no registered winner: `worker16` runs as the registered descriptive
+serving row. The warm regime's read-gate rescoring (applied after its data) found `mmap-random`
+and `mmap-normal` 1.19x faster than `worker16`; they join as labelled post-hoc challengers, in the
+warm regime where they won, in one round-robin schedule (`m1-b4-serving.py --arms
+worker16,mmap-random,mmap-normal --regime warm`: every pair meets 5 times in each relative
+order per concurrency). Their B4 verdicts are reported as post-hoc, never as registered.
 
 ### B5 io_uring decision input
 

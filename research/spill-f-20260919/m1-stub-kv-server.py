@@ -47,8 +47,23 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply({"prefix_host_bytes": STATE["host_bytes"]})
         self.send_error(404)
 
+    def stream(self, body):
+        n = int(body.get("max_tokens", 16))
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        for i in range(n):
+            chunk = {"object": "text_completion", "choices": [{"index": 0, "text": f" t{i}", "finish_reason": None}]}
+            self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+            self.wfile.flush()
+            time.sleep(0.002)
+        usage = {"object": "text_completion", "choices": [], "usage": {"prompt_tokens": 70, "completion_tokens": n}}
+        self.wfile.write(f"data: {json.dumps(usage)}\n\ndata: [DONE]\n\n".encode())
+
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if body.get("stream"):
+            return self.stream(body)
         prompt = body["prompt"]
         restored = any(prompt.startswith(p) for p in STATE["restored"])
         text = "text-" + hashlib.sha256(prompt.encode()).hexdigest()[:12]

@@ -94,3 +94,20 @@ value, so the IQR is 0 at the printed resolution; the rule reads it as registere
 `pfnaked` does not read `pf_loses`: `MEMRA_MOE_PREFETCH=1` qualifies as this card's naked default. The promotion is
 the owner's call, and the flip is its own change (`=0` kept as the rollback seam). The RTX 5090's cells wait on its
 reset (queue v6).
+
+## 3. The RTX 5090 (queue v9, 2026-09-26 01:02Z to 01:09Z; `rtx5090-day59/`)
+
+The RTX 5090 queue v9 (`rtx5090-queue-v9-20260926.sh`) ran these after the rig's reboot wiped the queued binaries in `/tmp`: every binary was rebuilt from its named commit by `c-local-build.sh` in a build worktree under the lane's `target/` (CUDA 13.1, sm_120a; build logs in each cell's `builds/`), behind `/tmp/memra-5090.lock` with the card idle (no compute app) before each hold. A rebuilt binary's hash differs from the one named before the first attempt (the build path is part of the binary); its source tree is the named one. Here `run-gen-c60` `809132ce...`, `run-spec-c60` `b4779a91...`, `memra-server-c60` `14d6760f...`, tree
+`da649107c`. Regime over the `pftime` hold: 61 to 71 C, SM median 1627 MHz, N=608. Verbatim:
+
+- `DAY59 GATES rig=rtx5090 -> PASS` (`G1 ... slots=9986 ... -> PASS`, `G1 ... slots=512 ... -> PASS`, `G2 ... k_pass=8 -> PASS`)
+- `DAY59 G3 rig=rtx5090 requests=7 equal=7 errors=[] -> PASS`
+- `DAY59 TIME rig=rtx5090 shape=pftime gen-only decode: off=0.412 pf=0.364 (N=10 each) pf_minus_off pooled=-0.0480 o1=-0.0490 o2=-0.0480 noise=0.0020 -> pf_wins`
+- `DAY59 TIME rig=rtx5090 shape=pftime steady window: off=0.408 pf=0.397 (N=10 each) pf_minus_off pooled=-0.0115 o1=-0.0120 o2=-0.0120 noise=0.0033 -> pf_wins`
+- `DAY59 VERDICT rig=rtx5090 shape=pftime integrity=ok -> pf_wins`
+- `DAY59 TIME rig=rtx5090 shape=pfnaked gen-only decode: off=0.216 pf=0.214 (N=10 each) pf_minus_off pooled=-0.0015 o1=+0.0020 o2=-0.0050 noise=0.0075 -> pf_flat`
+- `DAY59 VERDICT rig=rtx5090 shape=pfnaked integrity=ok -> pf_flat`
+
+**Read as registered: G1, G2 and G3 PASS, `pf_wins` under pressure, `pf_flat` naked, the same as the target card.**
+`pfnaked` does not read `pf_loses`, so `MEMRA_MOE_PREFETCH=1` qualifies as this card's naked default too. Both cards
+now qualify it; the promotion is the owner's call and the flip its own change.

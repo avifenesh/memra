@@ -1,0 +1,16 @@
+{
+ "steps": 88,
+ "screen": {
+  "depth2": {
+   "verdict": "refused-io_uring-unavailable",
+   "reason": "fio: pid=10003, err=1/file:engines/io_uring.c:1049, func=io_queue_init, error=Operation not permitted"
+  },
+  "depth16": {
+   "verdict": "refused-io_uring-unavailable",
+   "reason": "fio: pid=10859, err=1/file:engines/io_uring.c:1049, func=io_queue_init, error=Operation not permitted"
+  }
+ },
+ "qualified": false,
+ "sustained_read_bytes_per_s_max": 7030030077,
+ "headroom_70pct_bytes_per_s": 4921021053.9
+}

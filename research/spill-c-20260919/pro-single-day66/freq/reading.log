@@ -1,0 +1,24 @@
+DAY66 HOST rig=pro-single cpu0 cpufreq/scaling_driver=amd-pstate-epp | cpu0 cpufreq/scaling_governor=powersave | cpu0 cpufreq/energy_performance_preference=performance | cpu0 cpufreq/scaling_min_freq=600000 | cpu0 cpufreq/scaling_max_freq=5752000 | cpufreq/boost=absent | amd_pstate/status=active | thp/enabled=always [madvise] never | thp/defrag=always defer defer+madvise [madvise] never
+DAY66 FREQ CHECKS rig=pro-single runs=40 integrity=ok
+DAY66 R2R3 o1-i15-r1: gen=0.310 slow fill_ms=1346.5 clock_mhz whole=5719 tail=5707 (samples 54) anon_huge_kb=0 ctxt vol=26119 invol=143
+DAY66 R2R3 o1-i15-r10: gen=0.248 fast fill_ms=1193.0 clock_mhz whole=5723 tail=5616 (samples 53) anon_huge_kb=0 ctxt vol=27614 invol=96
+DAY66 R2R3 o1-i15-r2: gen=0.315 slow fill_ms=1407.9 clock_mhz whole=5719 tail=5627 (samples 55) anon_huge_kb=0 ctxt vol=26217 invol=106
+DAY66 R2R3 o1-i15-r3: gen=0.250 fast fill_ms=1195.4 clock_mhz whole=5719 tail=5664 (samples 52) anon_huge_kb=0 ctxt vol=26520 invol=126
+DAY66 R2R3 o1-i15-r4: gen=0.350 slow fill_ms=1337.8 clock_mhz whole=5719 tail=5652 (samples 54) anon_huge_kb=0 ctxt vol=27209 invol=101
+DAY66 R2R3 o1-i15-r5: gen=0.387 slow fill_ms=1388.6 clock_mhz whole=5719 tail=5679 (samples 54) anon_huge_kb=0 ctxt vol=26593 invol=54
+DAY66 R2R3 o1-i15-r6: gen=0.325 slow fill_ms=1181.2 clock_mhz whole=5717 tail=5623 (samples 52) anon_huge_kb=0 ctxt vol=26221 invol=104
+DAY66 R2R3 o1-i15-r7: gen=0.312 slow fill_ms=1407.4 clock_mhz whole=5723 tail=5603 (samples 54) anon_huge_kb=0 ctxt vol=25989 invol=57
+DAY66 R2R3 o1-i15-r8: gen=0.248 fast fill_ms=1182.2 clock_mhz whole=5719 tail=5634 (samples 53) anon_huge_kb=0 ctxt vol=28282 invol=96
+DAY66 R2R3 o1-i15-r9: gen=0.311 slow fill_ms=1378.8 clock_mhz whole=5723 tail=5650 (samples 54) anon_huge_kb=0 ctxt vol=25808 invol=72
+DAY66 R2R3 o2-i15-r1: gen=0.277 slow fill_ms=1178.6 clock_mhz whole=5720 tail=5644 (samples 52) anon_huge_kb=0 ctxt vol=27720 invol=100
+DAY66 R2R3 o2-i15-r10: gen=0.312 slow fill_ms=1425.3 clock_mhz whole=5721 tail=5638 (samples 55) anon_huge_kb=0 ctxt vol=26047 invol=157
+DAY66 R2R3 o2-i15-r2: gen=0.311 slow fill_ms=1407.0 clock_mhz whole=5717 tail=5627 (samples 55) anon_huge_kb=0 ctxt vol=26325 invol=73
+DAY66 R2R3 o2-i15-r3: gen=0.249 fast fill_ms=1199.0 clock_mhz whole=5723 tail=5631 (samples 53) anon_huge_kb=0 ctxt vol=26918 invol=127
+DAY66 R2R3 o2-i15-r4: gen=0.318 slow fill_ms=1383.8 clock_mhz whole=5717 tail=5654 (samples 54) anon_huge_kb=0 ctxt vol=25936 invol=49
+DAY66 R2R3 o2-i15-r5: gen=0.310 slow fill_ms=1403.7 clock_mhz whole=5723 tail=5642 (samples 54) anon_huge_kb=0 ctxt vol=26169 invol=84
+DAY66 R2R3 o2-i15-r6: gen=0.248 fast fill_ms=1186.9 clock_mhz whole=5721 tail=5645 (samples 53) anon_huge_kb=0 ctxt vol=27350 invol=53
+DAY66 R2R3 o2-i15-r7: gen=0.316 slow fill_ms=1489.7 clock_mhz whole=5717 tail=5616 (samples 55) anon_huge_kb=0 ctxt vol=27048 invol=168
+DAY66 R2R3 o2-i15-r8: gen=0.248 fast fill_ms=1217.0 clock_mhz whole=5723 tail=5639 (samples 52) anon_huge_kb=0 ctxt vol=27861 invol=41
+DAY66 R2R3 o2-i15-r9: gen=0.313 slow fill_ms=1456.3 clock_mhz whole=5715 tail=5613 (samples 54) anon_huge_kb=0 ctxt vol=26213 invol=66
+DAY66 R1 ref_median=0.245 slow=14 fast=6 of 20 door runs
+DAY66 FREQ VERDICT rig=pro-single integrity=ok -> clock_does_not_track thp_does_not_track

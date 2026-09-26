@@ -1,0 +1,16 @@
+== run 1 calls
+STUB day63-box-build.sh D/root/wt-c-build D/root/spill-receipts/c-day66 c60=1 i15=2
+STUB day40-run-cell.sh freq 5400 script=D/root/wt-c/research/spill-c-20260919/day66-cell.sh
+STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day66/freq
+STUB day66-read.py D/root/spill-receipts/c-day66/freq --rig pro-single
+== run 1 driver lines
+cpu cap: each run pinned by the cell to its arm's 12 CPUs (DAY66 section 1); the runner unpinned
+freq rc=0 2026-09-25T09:50:10Z
+freq validate rc=0
+freq reader rc=0
+box done 2026-09-25T09:50:10Z
+== run 2 calls
+== run 2 driver lines
+cpu cap: each run pinned by the cell to its arm's 12 CPUs (DAY66 section 1); the runner unpinned
+freq already done
+box done 2026-09-25T09:50:10Z

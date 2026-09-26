@@ -164,3 +164,23 @@ own default-OFF prefetch (`MEMRA_MOE_PREFETCH=1`), is faster than the door on bo
 the door; window 0.226), and the door's install takes 9.91 s (the SHA lock, the parallel record pass, the fill). Per
 section 1, a win on the target card goes to the owner as the promotion call, with `OWED.md` C2 as the promotion
 work; the RTX 5090's `decide-b` is queued behind the card's reset (`rtx5090-fault-20260925/`).
+
+## 5. The RTX 5090's three cells (queue v9, 2026-09-25 23:05Z to 23:38Z; `rtx5090-day51/`)
+
+The RTX 5090 queue v9 (`rtx5090-queue-v9-20260926.sh`) ran these after the rig's reboot wiped the queued binaries in `/tmp`: every binary was rebuilt from its named commit by `c-local-build.sh` in a build worktree under the lane's `target/` (CUDA 13.1, sm_120a; build logs in each cell's `builds/`), behind `/tmp/memra-5090.lock` with the card idle (no compute app) before each hold. A rebuilt binary's hash differs from the one named before the first attempt (the build path is part of the binary); its source tree is the named one. Here `run-gen-final` and `run-spec-final` are built from `62e848b1f` (hashes `c05df689...` and `f4eacc4c...`);
+section 2 named the 5090's pair built from `4417bbd1b`, and the two trees' `memra-engine` sources are identical
+(`git diff 4417bbd1b 62e848b1f -- crates` touches `crates/memra-server/src/worker.rs` only). Regime over the
+`decide-b` hold (`command.gpu.csv`): 58 to 68 C, SM median 1612 MHz, N=1173. Verbatim:
+
+- `DAY51 G1 rig=rtx5090 door_exit=1 last_line='Error: "experts-via-tier artifact SHA256 mismatch"' door_lines=0 control_exit=0 control_match=True -> PASS`
+- `DAY51 G2 rig=rtx5090 -> PASS` (`spec`, `spec-pressure` and `spec-exact8` each `k_pass=8`)
+- `DAY51 G3 rig=rtx5090 runs=30 integrity=ok`
+- `DAY51 DECIDE rig=rtx5090 gen-only decode: off=0.411 on=0.375 ref=0.365 (N=10 each) on_minus_off pooled=-0.0360 o1=-0.0360 o2=-0.0240 noise=0.0260 ratio=0.912 (o1 0.912, o2 0.942) -> door_flat`
+- `DAY51 DECIDE rig=rtx5090 steady window: off=0.409 on=0.405 ref=0.401 (N=10 each) on_minus_off pooled=-0.0040 o1=-0.0020 o2=-0.0080 noise=0.0072 ratio=0.990 (o1 0.995, o2 0.981) -> door_flat`
+- `DAY51 READING rig=rtx5090 on install_s median=11.06 ref_minus_off gen=-0.0460 ref_minus_on gen=-0.0100`
+- `DAY51 VERDICT rig=rtx5090 integrity=ok -> door_flat`
+
+**Read as registered: G1 and G2 PASS, `door_flat` on the RTX 5090.** The door's medians sit below the naked legacy
+(0.375 against 0.411 gen-only) but inside this card's noise (0.026), so the rule reads `flat`. Per section 1 the
+5090's verdict is a per-card input and does not veto or carry the target card's `door_wins`. REF (the legacy with
+`MEMRA_MOE_PREFETCH=1`) is below the door here too: 0.365 gen-only, 0.401 window. The door's install takes 11.06 s.

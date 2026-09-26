@@ -1,0 +1,15 @@
+DAY64 host demand sequence sha256 4bdc2610c3534e42 lines=[22077]
+DAY64 I15 CHECKS rig=pro-single runs=50 integrity=ok
+DAY64 gen-only decode medians (N=10 each): ref=0.245 i13=0.322 i14=0.283 i15=0.307 i15s=0.314
+DAY64 STEP i14_vs_i13 gen-only decode: pooled=-0.0385 o1=-0.0060 o2=-0.0020 noise=0.0742 -> flat
+DAY64 STEP i15_vs_i14 gen-only decode: pooled=+0.0245 o1=-0.0110 o2=+0.0590 noise=0.0692 -> flat
+DAY64 steady window medians (N=10 each): ref=0.218 i13=0.279 i14=0.247 i15=0.271 i15s=0.275
+DAY64 STEP i14_vs_i13 steady window: pooled=-0.0320 o1=-0.0030 o2=-0.0010 noise=0.0590 -> flat
+DAY64 STEP i15_vs_i14 steady window: pooled=+0.0240 o1=-0.0050 o2=+0.0510 noise=0.0562 -> flat
+DAY64 DOOR i15_vs_ref gen-only decode: pooled=+0.0625 o1=+0.0620 o2=+0.0630 noise=0.0622 -> matches
+DAY64 DOOR i15_vs_ref steady window: pooled=+0.0530 o1=+0.0530 o2=+0.0530 noise=0.0532 -> matches
+DAY64 SPLIT cache per window token (N=10 runs): admits=471.0 copy_events=3.8 copy_gpu_ns=0.0677ms demand_ns=0.0235ms drain_ns=0.0000ms enqueue_ns=0.0097ms event_errors=0.0 finish_ns=0.0003ms gpu_hits=378.7 gpu_misses=92.3 miss_total_ns=0.0597ms prefetch_hits=88.6 prefetches=88.6 reserve_ns=0.0006ms retire_ns=0.0615ms sync2_ns=0.0000ms validate_ns=0.0396ms wait_ns=0.0000ms
+DAY64 SPLIT owner per window token (N=10 runs): host_hits=92.3 host_misses=0.0 inner_demand_ns=0.1977ms pread_ns=0.0000ms reads=0.0 trace_ns=0.0091ms
+DAY64 SPLIT fill per window token (N=10 runs): fill_admitted=0.0 fill_dropped=0.0 fill_errors=0.0 fill_ns=0.0018ms fill_read_errors=0.0 fill_reads=0.0 fill_refused=0.0
+DAY64 SPLIT bank per window token (N=10 runs): ack_ns=0.0263ms ack_release_ns=0.0107ms alloc_ns=0.0000ms collect_ns=0.0010ms host_use_ns=0.0022ms publish_ns=0.0293ms publish_output_ns=0.0034ms publish_policy_ns=0.0217ms retire_ns=0.0294ms retire_only_ns=0.0008ms stage_cache_ns=0.0671ms stage_charge_ns=0.0306ms stage_lookup_ns=0.0067ms stage_ns=0.1200ms stages=33.3 step_ns=0.0000ms steps=0.0 verified=0.0 verify_ns=0.0000ms
+DAY64 VERDICT rig=pro-single integrity=ok i14=flat i15=flat door=i15 vs_ref=matches (window: i14=flat i15=flat vs_ref=matches)

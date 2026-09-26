@@ -4167,6 +4167,57 @@ per enqueue, on every path; nothing decides on them) and printed on the fanout's
   on BOX31 (`integ65-pro-day66/`, 467 receipts mirrored and checked), binary `921a2098`, one hold 04:49Z to 05:01Z,
   every cell green as above and the pause gate `ALL GREEN` (40 ok).
 
+## integ66 (`lane/spill-integ66-20260926`): lane F's M1 local-NVMe program closed on the target card (mmap readahead wins when the bank fits, worker16 under pressure) and lane C days 63 to 74 (the door's I13 to I15, the slow-boot probes, the gap placed on the prefetch path)
+Lane tips merged: F `ef5640af8` and C `d36857771` on main `a233f6fe5` (#731), clean. The crate change is C's:
+- `memra-tier` bank (I13 to I15, each a registered improvement of the MoE slot cache door): the governor charges and
+  releases without temporaries; one body per `BankLease`; `BankService::finish_ticket`; the SLRU maps, the catalog and
+  the host cache index on an in-crate Fx hash with the orders the ordered maps gave pinned by randomized references; one
+  ticket per prefetched expert (`demand_many`, `finish_group`).
+- `memra-engine` (`moe_cache.rs`, `banked_residency/native.rs`): the door's grouped prefetch and lease accounting.
+  `hybrid_forward.rs` now hands an expert's three blocks to `prefetch_expert`, whose legacy arm is the old per-block
+  `prefetch_source` loop in the same gate, up, down order, so the naked path is unchanged.
+- `cpu_probe.rs` and `run_gen.rs`: `--cpu-probe`, `--cpu-probe-phases`, `--cpu-probe-counters` (log only; RDPRU
+  counters where CPUID reports them).
+- F adds research only in this merge (its engine and collector changes landed in integ63). No new `MEMRA_*` name.
+
+**Lane F, the M1 program on BOX27 (a host-local NVMe volume), verbatim.** `M1-PROOF verdict=PASS
+class=nvme-local-direct reasons=0`. B3 cold (second window, scored): `mmap-normal ... winner median_ratio=1.1913`;
+B3 bounded (scored): `worker16` beats every arm (`mmap-random` 0.093, `mmap-normal` 0.435, `pread16` 0.407,
+`direct16` 0.893); B3 warm unscored under the registered gate (its write-noise divisor), the post-hoc read-gate
+rescoring labelled as such. B1: buffered beats both O_DIRECT modes at every size; the ceiling is the ObjectStore read
+path (500 to 800 MB/s), not the drive. B0: `io_uring` refused by the container's seccomp. B2 handoff 1 GiB and 8 GiB 5
+of 5. `run-spec` `SELF-CONSISTENCY PASS` for `worker16` and `direct16`. Each amendment was registered before its passing
+run, the failed attempt kept.
+
+**Lane C days 63 to 74, verbatim.** I13, I14 and I15 read `flat` on the target card (DAY63, DAY64 and the i15b rerun,
+admissible) and the door stays behind REF (`DAY64 DOOR i15_vs_ref gen-only decode: pooled=+0.0090 -> loses`); the CPU
+side halved while the wall did not move. DAY72 placed the remaining gap: `DAY72 GAP15 VERDICT rig=pro-single
+integrity=ok admissible=yes partA=cpu_side partB=gpu_stall`, the door's GPU idle +0.39 ms per window token with the same
+kernels and copies, its prefetch path +0.27 ms on the CPU. The slow-boot question (DAY67 to DAY74): the registered
+DAY73 on a plain 9950X `-> not_reproduced` (0 slow of 10), a 9950X3D2 diagnostic `not_reproduced` (its one slow run the
+sitting's only span with compaction), DAY74 `not_induced` on the 9950X and `void` on the 285K (RDPRU is AMD only).
+
+**Lead review.** The grouped lease keeps the in-flight bound counting leases (`banked_inflight_leases`), finishes a group
+once after its last staged member is consumed and its copy lands, and refuses a reversed bank; the Fx indexes are never
+iterated for an answer without the pinned order. The legacy path is the old loop. The probes run outside the timed spans.
+
+**Ruling 61:**
+- F's M1 program is read as registered: storage proven, the per-regime winners above; the mapped pinned-host arm, a
+  handoff O_DIRECT arm and an above-RAM artifact stay owed (the artifact is the owner's pick).
+- C's I13 to I15 stay as registered (`flat` keeps a step); the door's remaining gap is the prefetch path's CPU work
+  delaying the next launch, which C's I16 (not in this merge, not card-qualified) addresses. DAY74's registration gains
+  the Intel fallback as `induce-b`.
+- Owner decisions carried: C1(c) the door's promotion (decide-by 2026-10-04) and C10 `MEMRA_MOE_PREFETCH=1` as the
+  naked default.
+
+**Checks.**
+- CPU battery on `15550883c`, 15 of 15 rc=0 (`integ66-cpu-battery/`: server 943, engine lib 576, tier 309); the tree gained only `.gitattributes` for
+  verbatim logs after it, and `git diff --check origin/main HEAD` reads clean at the head.
+- GPU battery on BOX31 (`integ66-pro/`, 467 receipts mirrored and checked), binary `79469039`, one collector hold 06:05Z
+  to 06:20Z: serve-smoke `0 failed`; the engine span cells `10 passed` and the worker cells `18 passed`; identity 12 ok;
+  fault default and plain 255 ok each; hit OFF and ON 61 and 68 ok; `ADMIT-MEM BURST GATE: ALL GREEN`;
+  `SPEC-CTX-EDGE GATE: ALL GREEN`; the pause gate with the 27B `ALL GREEN` (40 ok).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

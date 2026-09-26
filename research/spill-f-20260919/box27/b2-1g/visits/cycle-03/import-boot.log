@@ -1,0 +1,84 @@
+[server] build: memra-0.138.0-7fa9fc83a253 (id: source-tree, git: ffff2d89afb7)
+[server] starting; models config = [("gate", "/scratch/spill-f/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /scratch/spill-f/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 100.92GB (expert budget 96.32GB) -> RESIDENT
+[q8rp] split-plane decode mirrors built: 191 tensors
+[worker]   loaded "gate": 41 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 8; scheduler tick cap 8
+[prefix-host] on: budget 17180MB pinned cacheable host RAM (MEMRA_KV_HOST_MB, startup budget policy), plain byte-LRU, demote on device capacity eviction, promote on exact-prefix probe; verify=off (MEMRA_KV_HOST_VERIFY); tenant share cap 50% = 8590MB (MEMRA_KV_HOST_TENANT_PCT)
+[prefix-host] handoff import armed at boot: 17 entries / 2161.8MB from /scratch/spill-f/b2/handoff.bin (file age 7s); re-materializing one per tick
+[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 9280 B/token, spec 10208 B/token; fixed residual learns from effective-free deltas
+[admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["gate"]
+[handoff-gate] armed: SIGUSR1 exports the host tier
+[server] listening on http://127.0.0.1:18119
+[prefix-host] handoff import: 6496 tokens, 127.2MB in 16.9ms (1/17 frames; host resident 127.2MB / 17180MB)
+[prefix-host] handoff import: 6496 tokens, 127.2MB in 16.2ms (2/17 frames; host resident 254.3MB / 17180MB)
+[prefix-host] handoff import: 6496 tokens, 127.2MB in 16.0ms (3/17 frames; host resident 381.5MB / 17180MB)
+[prefix-host] handoff import: 6496 tokens, 127.2MB in 15.7ms (4/17 frames; host resident 508.7MB / 17180MB)
+[prefix-host] handoff import: 6496 tokens, 127.2MB in 15.8ms (5/17 frames; host resident 635.8MB / 17180MB)
+[prefix-host] handoff import: 6496 tokens, 127.2MB in 15.6ms (6/17 frames; host resident 763.0MB / 17180MB)
+[prefix-host] handoff import: 6496 tokens, 127.2MB in 15.6ms (7/17 frames; host resident 890.2MB / 17180MB)
+[prefix-host] handoff import: 6496 tokens, 127.2MB in 15.5ms (8/17 frames; host resident 1017.3MB / 17180MB)
+[prefix-host] handoff import: 6496 tokens, 127.2MB in 15.5ms (9/17 frames; host resident 1144.5MB / 17180MB)
+[prefix-host] handoff import: 6496 tokens, 127.2MB in 15.7ms (10/17 frames; host resident 1271.7MB / 17180MB)
+[prefix-host] handoff import: 6496 tokens, 127.2MB in 15.7ms (11/17 frames; host resident 1398.8MB / 17180MB)
+[prefix-host] handoff import: 6496 tokens, 127.2MB in 15.5ms (12/17 frames; host resident 1526.0MB / 17180MB)
+[prefix-host] handoff import: 6496 tokens, 127.2MB in 15.4ms (13/17 frames; host resident 1653.2MB / 17180MB)
+[prefix-host] handoff import: 6496 tokens, 127.2MB in 15.5ms (14/17 frames; host resident 1780.3MB / 17180MB)
+[prefix-host] handoff import: 6496 tokens, 127.2MB in 15.4ms (15/17 frames; host resident 1907.5MB / 17180MB)
+[prefix-host] handoff import: 6496 tokens, 127.2MB in 15.3ms (16/17 frames; host resident 2034.7MB / 17180MB)
+[prefix-host] handoff import: 6496 tokens, 127.2MB in 15.4ms (17/17 frames; host resident 2161.8MB / 17180MB)
+[prefix-host] handoff import DONE: 17 entries / 2161.8MB re-materialized, 0 skipped, in 1.5s from /scratch/spill-f/b2/handoff.bin
+[meter] admit id=cmpl-b7c042283ce4d5ab0a34df41720fae31 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=6642 path=plain = 9280 B/token x ctx + 1429MB prefill-workspace + 0MB fixed = 1491MB
+[prefix-cache] insert (host-promote): 6496 tokens, 126.1MB (resident 126.1MB / 1074MB, model gate)
+[prefix-host] promote: 6496 tokens, 126.1MB in 4.9ms (model gate)
+[prefix-cache] hit: 6496 of 6530 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=6530 cached=6496 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 6496 tokens, model gate)
+[admission] fixed residual high-water: model="gate" 261MB (observed 322MB at ctx 6586 path=plain)
+[moe-sk-form] dev=0 qt=6 sms=188 occ128=1 occ32=6 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=96 max_m=18
+[moe-sk-form] dev=0 qt=5 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=96 max_m=18
+[moe-sk-form] dev=0 qt=2 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=78 max_m=30
+[fa-pool] grow #0 dev=0 o_len 0 -> 421888 ml_len 0 -> 1648 (retired kept, zero=false)
+[meter] admit id=cmpl-274977c7b8af012299eab2f21d5c698e tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=6647 path=plain = 9280 B/token x ctx + 1429MB prefill-workspace + 261MB fixed = 1752MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 6535 prompt tokens; model gate)
+[prefix-cache] insert (host-promote): 6496 tokens, 126.1MB (resident 252.3MB / 1074MB, model gate)
+[prefix-host] promote: 6496 tokens, 126.1MB in 5.0ms (model gate)
+[prefix-cache] hit: 6496 of 6535 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=6535 cached=6496 lcp=2 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 6496 tokens, model gate)
+[admission] fixed residual high-water: model="gate" 261MB (observed 322MB at ctx 6591 path=plain)
+[meter] admit id=cmpl-4d42fa193a6d0be3617fd2be939ab41a tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=6638 path=plain = 9280 B/token x ctx + 1429MB prefill-workspace + 261MB fixed = 1752MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 6526 prompt tokens; model gate)
+[prefix-cache] insert (host-promote): 6496 tokens, 126.1MB (resident 378.4MB / 1074MB, model gate)
+[prefix-host] promote: 6496 tokens, 126.1MB in 4.7ms (model gate)
+[prefix-cache] hit: 6496 of 6526 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=6526 cached=6496 lcp=2 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 6496 tokens, model gate)
+[meter] admit id=cmpl-f729769f2593b0698072f72d5fd4edc9 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=6640 path=plain = 9280 B/token x ctx + 1429MB prefill-workspace + 261MB fixed = 1752MB
+[worker] plain-affinity: declined (no checkpoint retained; 2 parked, 6528 prompt tokens; model gate)
+[prefix-cache] insert (host-promote): 6496 tokens, 126.1MB (resident 504.6MB / 1074MB, model gate)
+[prefix-host] promote: 6496 tokens, 126.1MB in 4.7ms (model gate)
+[prefix-cache] hit: 6496 of 6528 prompt tokens from cache (model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=6528 cached=6496 lcp=2 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 6496 tokens, model gate)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[handoff-gate] handles dropped on drain
+[server] GPU worker shutdown complete
