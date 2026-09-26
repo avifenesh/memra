@@ -451,6 +451,12 @@ fn resolve_replay_cadence(p: &Dsv4Program) -> DoorState {
     }
 }
 
+fn resolve_pdl_chain(_p: &Dsv4Program) -> DoorState {
+    // Every DSv4 chain launch on every program, prefill chunks included: the attribute moves
+    // block dispatch only (memra_pdl_chain.cuh).
+    DoorState::On(DoorShape::AllRoutedShapes)
+}
+
 fn resolve_dense_exact_tail(_p: &Dsv4Program) -> DoorState {
     // Generic dense entry points, so the served program does reach it, but
     // `Dsv4DenseExactTailControlScope control(m != 1)` suppresses it for every
@@ -479,6 +485,18 @@ fn resolve_hc_dot_split(p: &Dsv4Program) -> DoorState {
 /// clean receipt becomes the code (owner, 2026-09-10). See the removed-doors
 /// ledger in `docs/FLAGS.md`.
 pub const DSV4_DOORS: &[DoorRow] = &[
+    DoorRow {
+        name: "PDL chain",
+        env: "MEMRA_DSV4_PDL",
+        merged: "#PDL_PR",
+        declared_default: DeclaredDefault::On,
+        declared_served: DoorState::On(DoorShape::AllRoutedShapes),
+        declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
+        resolve: resolve_pdl_chain,
+        admitted_by: AdmittingProgram::ServedProgram,
+        merged_gain_pct: (5.04, 4.92),
+        measured_on: "2x RTX PRO 6000 Blackwell Server Edition pair",
+    },
     DoorRow {
         name: "replay cadence",
         env: "MEMRA_DSV4_REPLAY_CADENCE",
@@ -971,11 +989,6 @@ mod tests {
         ("MEMRA_DSV4_HAVE_NVTX", "build-time profiling switch"),
         ("MEMRA_DSV4_INDEXER_SCORE", "program selector"),
         ("MEMRA_DSV4_NVTX", "profiling ranges"),
-        (
-            "MEMRA_DSV4_PDL",
-            "launch-scheduling door under its first A/B; the kernels' loads, stores and \
-             arithmetic are the same with it on or off",
-        ),
         ("MEMRA_DSV4_PEER_PROBE_POISON", "gate-only fault injection"),
         ("MEMRA_DSV4_PREFILL_DRAFT", "program selector"),
         ("MEMRA_DSV4_PREFILL_HEAD", "program selector"),
@@ -1101,6 +1114,7 @@ mod tests {
         // permanence disposition asserted when this list holds nobody.
         const PERMANENTLY_UNREACHABLE: &[&str] = &[];
         const ENGAGED: &[&str] = &[
+            "PDL chain",
             "dense exact-tail transport",
             "dense-fast",
             "HC dot split S16",
@@ -1250,7 +1264,7 @@ mod tests {
         // checks. Same lesson as the red arms above, one level up. Two anchors
         // now, neither of them a door name.
         assert!(!DSV4_DOORS.is_empty(), "an empty registry loops zero times");
-        assert_eq!(DSV4_DOORS.len(), 4);
+        assert_eq!(DSV4_DOORS.len(), 5);
         // 1. The machinery is alive and program-sensitive, by construction and
         //    permanently: the synthetic stand-in cannot be fixed.
         assert_ne!(

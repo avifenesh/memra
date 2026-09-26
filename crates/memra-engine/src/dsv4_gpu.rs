@@ -23084,12 +23084,13 @@ pub fn set_dsv4_sampler_order_for_gate(order: Option<Dsv4SamplerOrder>) {
     SAMPLER_ORDER_GATE.with(|current| current.set(order));
 }
 
-/// `MEMRA_DSV4_PDL`: programmatic dependent launch on the DSv4 kernel chain (door, default OFF
-/// until its A/B). `MEMRA_PDL=0`, the engine-wide PDL master seam, turns it off too.
-fn dsv4_pdl_chain_env() -> Res<bool> {
+/// `MEMRA_DSV4_PDL`: programmatic dependent launch on the DSv4 kernel chain, ON by default since
+/// its served A/B (`research/dsv4f-bringup-20260923/levers-20260926/`); `0` is the rollback seam.
+/// `MEMRA_PDL=0`, the engine-wide PDL master seam, turns it off too.
+pub(crate) fn dsv4_pdl_chain_env() -> Res<bool> {
     let on = match std::env::var("MEMRA_DSV4_PDL").as_deref() {
-        Err(std::env::VarError::NotPresent) | Ok("0") => false,
-        Ok("1") => true,
+        Err(std::env::VarError::NotPresent) | Ok("1") => true,
+        Ok("0") => false,
         Ok(other) => return Err(format!("MEMRA_DSV4_PDL must be 0 or 1, got {other:?}")),
         Err(err) => return Err(format!("MEMRA_DSV4_PDL: {err}")),
     };

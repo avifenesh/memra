@@ -1,0 +1,46 @@
+[load] programmatic dependent launch on the decode chain: true
+[load] sampled candidate order: Radix
+[load] placement: split_at=22 trunk_layers=43 dspark_tail_reserve=0.00 GiB
+[load] plain sampler: Device (the topology's default)
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] topology: TpEpAllLayers | layers=43 per-rank-resident=all
+[load] indexer score: Knee
+[load] prefill head: All
+[load] prefill DSpark prime: All
+[load] sampled DSpark proposal: Greedy
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 494.6ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> 2 rank copies done t=22s
+[load] layer 7 -> 2 rank copies done t=43s
+[load] layer 11 -> 2 rank copies done t=65s
+[load] layer 15 -> 2 rank copies done t=86s
+[load] layer 19 -> 2 rank copies done t=108s
+[load] layer 23 -> 2 rank copies done t=130s
+[load] layer 27 -> 2 rank copies done t=151s
+[load] layer 31 -> 2 rank copies done t=173s
+[load] layer 35 -> 2 rank copies done t=194s
+[load] layer 39 -> 2 rank copies done t=216s
+[load] layer 42 -> 2 rank copies done t=232s
+[load] drafter: 3 DSpark block(s) (mtp.0.e_proj absent) — GPU drafter path off (set MEMRA_DSV4_DRAFTER=dspark); trunk-only
+[TP/EP load] local expert banks resident by ID: rank0=0..128, rank1=128..256; peer dispatch disabled
+[load] expert program: matrix (grouped ModelOpt split-plane executor via dsv4_grouped; tensor-core MMA class, the loaded default since 2026-09-11), EP pair (all-layer TP/EP local banks)
+[attention-TP2] packed rank-local Q_b/wo_a/wo_b rows: heads=32 groups=4 wo_b_rows=2048 full_planes_freed=8.06 GiB numeric_class=dsv4_attention_head_split_row_gather_exact
+[dsv4-doors] program=loaded door="replay cadence" env=MEMRA_DSV4_REPLAY_CADENCE merged=#374 declared_default=On resolved=On(DecodeOnlyM1) disposition=PortAdmissionOrRedeclare
+[dsv4-doors] program=loaded door="dense exact-tail transport" env=MEMRA_DSV4_DENSE_EXACT_TAIL merged=#374 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="dense-fast" env=MEMRA_DSV4_DENSE_FAST merged=#404 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="HC dot split S16" env=MEMRA_DSV4_HC_DOT_SPLIT merged=#418 declared_default=On resolved=On(AllRoutedShapes) disposition=Engaged
+VALIDATION on
+MOE stream
+SAMPLING default
+PROTOCOL {"prefix":400,"steps":304,"capacity":1024,"replay_limit":1024,"digest_every":1,"compare":"token and logits bits per step, TP/EP cache and hidden digests on the digest cadence and around the handoff","seed":20260924,"source_sha256":"11e4bd80352f4a24504ffdee519b33bbc527b3b9bcfeb531815e5731b190cb8c"}
+HANDOFF None (the position replay handed the request to the eager step)
+REPLAY_VARIANTS rank0=[228, 304, 74, 2] rank1=[228, 304, 74, 2] (ordinary, commit, c4, c4+c128) captures=[3, 1]
+PROGRAM_SHA256 fbce1a0492d69635dd1df532f278a40629363369d8541b48c4b132cf5c5a0d0f (every step's token, logits bits hash and digests)
+PASS: 304 steps from position 400 to 704 bit-identical to eager (token and logits every step, cache and hidden digests every step), 304 of them replayed; tokens_sha256=112c2fc66fe1f76029c4ff1a8ce3446af91c1570df6594bce9311533650f02ce
+TIME rep=0 eager_ms_per_token=13.431 replay_ms_per_token=12.134 eager_tok_s=74.45 replay_tok_s=82.42 speedup=1.107
+TIME rep=1 eager_ms_per_token=13.390 replay_ms_per_token=12.143 eager_tok_s=74.68 replay_tok_s=82.35 speedup=1.103
+TIME rep=2 eager_ms_per_token=13.341 replay_ms_per_token=12.151 eager_tok_s=74.96 replay_tok_s=82.30 speedup=1.098
