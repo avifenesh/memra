@@ -159,3 +159,20 @@ Two gaps, each found by a reading, each closed before the next cell:
 Everything else is section 1's: the arms, the order, N, the `not_induced` guard (fewer than 5 of 6 induced spans of
 either program with compaction), the verdict names. Receipts under `c-day74b-<rig>/`. It runs on a 9950X machine (the
 registered class) and on the 285K class, each with at least 98 GiB `MemFree` at the start.
+
+### 4a. `induce-b`'s sitting, prepared before any cell
+
+`day74b-cell.sh` (section 1's cell with section 4's changes: `X` = `MemFree` - 2 GiB, the induced arms only when
+`X`/2 is at least 48 GiB, the artifact reread before every run into `ev/rewarm.tsv`), `day74-read.py --induce-b` (the
+wall-time state where the counters are unavailable), `day74b-box.sh` (receipts under `c-day74b-<rig>/`). The inducer
+script is unchanged; its size argument is `X`. Dry checks (`day74-cpu/`): the cell's control flow
+(`dry-check-cell-b.log`: 24 runs, 24 rewarm rows, each induced run's inducer ready, looping from the gate, stopped);
+the reader's mechanics over BOX29's `induce` receipts (`dry-check-reader-b.log`: the wall-time state reads, and the
+same receipts without `--induce-b` stay `void`; that output decides nothing, section 3 stands); the driver
+(`dry-check-driver-b.log`).
+
+Run as `D74_BUILDS="p71=6bad38150" [D74_RIG=<name>] bash /root/wt-c/research/spill-c-20260919/day74b-box.sh` on a Ryzen
+9 9950X machine and on the 285K class, each with one RTX PRO 6000 Blackwell Workstation Edition, at least 98 GiB
+`MemFree` at the start (else `not_run`; the lead's page-cache eviction of unused files, as on BOX31, is the way to get
+there), root in the container. Expected: about 25 minutes (24 runs, 12 inducer setups of up to about 30 s at 100 GiB,
+24 rereads of the artifact).
