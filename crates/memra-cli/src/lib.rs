@@ -2146,7 +2146,7 @@ mod tests {
         );
         assert!(template_from_tokenizer_config(r#"{"chat_template":"   "}"#).is_err());
         assert!(template_from_tokenizer_config(r#"{"chat_template":[]}"#).is_err());
-        assert!(template_from_tokenizer_config(r#"{"chat_template":"truncated"#).is_err());
+        assert!(template_from_tokenizer_config(r#"{"chat_template":"valid"} trailing"#).is_err());
     }
 
     #[test]
