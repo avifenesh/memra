@@ -123,3 +123,80 @@ the door-only leaves fell by about 150 us per token here (673 to about 523, 22 p
 most of the per-record cost is the first cold touch of a record's entries, wherever it happens; the next cut takes
 those three reads by position too (the bank's `hit`, `validated`, the host cache), which is `DAY85.md`'s registration.
 The card cell measures I21 as it stands.
+
+## 3. The target card, 285K class (BOX41, a Core Ultra 9 285K; run by the lead as registered; `pro-single-day84/`)
+
+BOX41: one RTX PRO 6000 Blackwell Workstation Edition, 249 GB, driver 580.173.02, a fresh box.
+`D84_BUILDS="i15=2243b1fe2 i20=8efea3a54 i21=b555b4141" bash .../day84-box.sh` on the tree `012e76a1d`, `box start
+2026-09-26T20:29:01Z` to `box done 2026-09-26T20:44:18Z`. The builds name the three trees (`build-*.log`: `tree=2243b1fe2...`,
+`tree=8efea3a54...`, `tree=b555b4141...`, each `rc=0`) and the cell's `binary.sha256` equals the box's `BINARIES.sha256`.
+Receipts: 261 `OK` against `MANIFEST.sha256` (re-checked here), ELFs and the profiler's files by hash. Regime: 40 to 49 C,
+SM median 2820 MHz (2610 to 2850), P0 and P1, N=582 busy samples of 2309; the power brake not active. Verbatim
+(`i21/reading.log`):
+
+- `DAY84 host demand sequence i15 sha256 4bdc2610c3534e42 lines=[22077]`, and the same for `i20`, `i21` and `i21c`
+- `DAY84 I21 CHECKS rig=pro-single runs=50 integrity=ok`
+- `DAY84 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0022 max_iqr_window=0.0013 failing=[] -> admissible`
+- `DAY84 gen-only decode medians (N=10 each): ref=0.312 i15=0.316 i20=0.315 i21=0.314 i21c=0.315`
+- `DAY84 STEP i21_vs_i20 gen-only decode: pooled=-0.0010 o1=-0.0010 o2=-0.0020 noise=0.0022 -> flat`
+- `DAY84 STEP i21_vs_i20 steady window: pooled=-0.0005 o1=+0.0000 o2=-0.0010 noise=0.0010 -> flat`
+- `DAY84 BESIDE i21_vs_i15 gen-only decode: pooled=-0.0020 o1=-0.0020 o2=-0.0020 noise=0.0015 -> improves (deciding
+  nothing)`
+- `DAY84 DOOR i21_vs_ref gen-only decode: pooled=+0.0020 o1=+0.0020 o2=+0.0020 noise=0.0010 -> loses`
+- `DAY84 DOOR i21_vs_ref steady window: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0002 -> matches`
+- `DAY84 I21C brackets per window token (ms, medians): dispatch_ns=0.0781 prefetch_ns=0.4415 pf_demand_ns=0.1313
+  pf_resident_ns=0.0028 pf_retire_ns=0.0251 pf_stage_ns=0.2261`
+- `DAY84 B i21_minus_ref per window token (ms, medians of two; deciding nothing): gpu_busy=+0.0040 gpu_idle=+0.1054
+  h2d_exposed=+0.0519 kernel_sum=+0.0042`
+- `DAY84 VERDICT rig=pro-single integrity=ok i21=flat door=i21 vs_ref=loses (window: i21=flat vs_ref=matches)`
+
+**Read as registered: I21 `flat` on the 285K class (-1 ms over 32 tokens gen-only, inside a 2.2 ms noise term), so it
+stays; the door `loses` to REF by 2 ms gen-only and `matches` it on the window.**
+
+**Beside it, deciding nothing.** I21 against I15 reads -2 ms in both orders (`improves` by the rule, above its 1.5 ms
+noise term), where DAY82's I20 against I15 read -1 ms. The path's own clock moved as the split said: `pf_resident` 0.0028
+ms per window token against I20C's 0.0443 on BOX39, `pf_demand` 0.1313 against 0.1499, `prefetch_ns` 0.4415 against
+0.5125; under the profiler the door's extra GPU idle is 0.105 ms per window token against 0.228 on BOX39. The door is 2
+ms behind REF gen-only here, from 3 on BOX39 and 4 on BOX34 (other hosts of this class).
+
+## 3a. The target card, 9950X (BOX31, a Ryzen 9 9950X; run by the lead as registered; `pro-single-day84-9950x/`)
+
+BOX31: one RTX PRO 6000 Blackwell Workstation Edition, 123 GB; the box had carried lane A's sittings for 19 h before
+(the lead's `MIRROR-CHECK.txt`; after the cell: load 0.28, no other process). The same command on the tree `012e76a1d`,
+`box start 2026-09-26T20:27:16Z` to `box done 2026-09-26T20:43:48Z`. The chain's own checkout of `FETCH_HEAD` in the
+build worktree failed (`fetch rc=128`, `c9-chain.out`); the builds are unaffected: `day63-box-build.sh` checked out each
+arm's sha itself, and `build-*.log` name `tree=2243b1fe2...`, `tree=8efea3a54...` and `tree=b555b4141...`, each `rc=0`,
+with the cell's `binary.sha256` equal to `BINARIES.sha256`. Receipts: 261 `OK` against `MANIFEST.sha256`. Regime: 29 to
+42 C, SM median 2857 MHz, P0 and P1, N=511 busy samples of 2623; the power brake not active. Verbatim:
+
+- `DAY84 I21 CHECKS rig=pro-single runs=50 integrity=ok` (one host demand sequence, `4bdc2610c3534e42`, in every door arm)
+- `DAY84 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0570 max_iqr_window=0.0468 failing=['i15:gen_s=0.0570',
+  'i15:window_s=0.0468', 'i20:gen_s=0.0535', 'i20:window_s=0.0448', 'i21:gen_s=0.0500', 'i21:window_s=0.0450'] ->
+  inadmissible`
+- `DAY84 VERDICT rig=pro-single integrity=ok -> void (inadmissible) [as read: i21=flat door=i21 vs_ref=matches (window:
+  i21=flat vs_ref=matches)]`
+
+**Read as registered: void, inadmissible; it decides nothing, and the 9950X half of I21's step is still owed.**
+
+**What made it inadmissible, deciding nothing: C12's slow state, back on a long-running host.** Every door arm is
+bimodal by boot and REF is not (gen-only seconds per run, order 1 then order 2, `ev/*.log`):
+
+| arm | runs | fast boots (about 0.246 s) | slow boots (0.291 to 0.307 s) |
+|---|---|---|---|
+| REF | 0.243 to 0.244 | 10 | 0 |
+| I15 | | 7 | 3 |
+| I20 | | 6 | 4 |
+| I21 | | 3 | 7 |
+| I21C | | 1 | 9 |
+
+The slow boots are about 50 ms behind over 32 tokens, the size DAY64 read on BOX15 and DAY80 placed on compaction failing
+to migrate the door's pinned pool pages. Under the profiler both door runs were slow (`gpu_idle` +2.94 ms per window
+token). The counts rise with the arm in both orders (I21C is last in order 1 and first in order 2), so position in the
+round does not explain them; ten runs per arm cannot separate the arm from the host's drift either, and this cell does
+not sample compaction. DAY82's 9950X half on BOX40 (a fresh host) had no slow boot in any arm. Two things follow, each
+registered before it runs: the admissibility clause's rerun of this cell on a fresh 9950X host (as `i15b` was; the
+lead runs it on BOX42, a fresh 9950X with one RTX PRO 6000 WS, 184 GB, driver 580.65.06, into
+`pro-single-day84-9950x-r2/`), and a cell that asks the arm question directly on a long-running 9950X host with
+compaction sampled per run and the registered pool as the control (`DAY86.md`; BOX31 is released, so it waits for such
+a host). The registered pool as the door's default stays the owner's question
+(`DAY80.md` section 4a); this reading is more evidence for it.
