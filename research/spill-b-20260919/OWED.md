@@ -170,6 +170,13 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   clippy clean). Unreachable without the VMM door, so the registered cells stand on `02dbdfa40`. Its cell `i-vmm` (the
   gate's arm i under `MEMRA_KV_ALLOCATOR=vmm`, fix green against `02dbdfa40` red) runs locally
   (queue-l); its target-card half is the thirteenth sitting (`pro-single-b-sitting13.sh`, about 45 min, ready).
+  Target card read (DAY49 2.1, 2.2): the twelfth sitting's arm i FAIL twice and its serving shape not exercised; the
+  fault spent itself on the spec route's solo step, and the one batched fire held a single session. The thirteenth's
+  i-vmm green PASS (one reap per retry, before it), red FAIL on the same placement (its i-red shows the missing reap).
+  Addendum D aims the fault: `MEMRA_STEP_OOM_FAULT=batch:<n>` (a batched chunk of two or more sessions only;
+  `8926ccfb3`, memra-server lib 959 passed, clippy clean), gate arm j on the plain route, `j-vmm`, and the serving shape
+  on both routes. The fourteenth sitting (`pro-single-b-sitting14.sh`, about 30 min) waits on BOX35; the 5090 half
+  runs from `rtx5090-day49d/run.sh`.
 
 ### O9. memra#464's guard seed
 

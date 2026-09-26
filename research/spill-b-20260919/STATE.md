@@ -1,3 +1,11 @@
+# WP-B checkpoint 2026-09-26 (NEED TARGET CARD, fourteenth sitting on BOX35): DAY49 2.1 and 2.2 read (the fault never
+reached a multi-session batched chunk; i-vmm green PASS); addendum D coded (`8926ccfb3`, `batch:<n>`, arm j); the rc
+audit done (lane scripts fixed, DAY31-D4, DAY32 and DAY37 2.8 corrected); the ninth still on BOX33
+- Running scripts left as they are (lead): queue-m and queue-l still carry the old `"$(date) ... rc=$?"` line on
+  their aggregate 'boots rc=' lines, noted in their logs; the per-boot lines are correct. Every stopped script is fixed.
+- The first commit of the twelfth and thirteenth mirrors caught an ELF (`pro-single-day49/box/bins/tip/memra-server`)
+  the lead removed after my add; the push's boundary check refused it, the blob was dropped by amend and never
+  reached the remote. Scan staged mirrors for ELF before every commit.
 # WP-B checkpoint 2026-09-26 (eleventh sitting read; NEED TARGET CARD for the thirteenth): DAY45 2.2 every clause PASS
 on the target card; DAY47 2.3 g, g-red, h, h-red PASS twice; DAY46 addendum A registered; the twelfth running on BOX35
 since 17:48Z (tree 77fe12114), the thirteenth follows; the ninth still on BOX33
