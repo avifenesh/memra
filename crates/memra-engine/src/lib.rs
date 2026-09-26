@@ -1830,7 +1830,6 @@ pub const QT_Q2_K: i32 = 13;
 /// on the SAME resident bytes+grid (fp8_ffi::try_fp8_blk_mmq) — ONE weight copy total.
 pub const QT_F8_E4M3_BLK: i32 = 14;
 
-/// Engine device context: CUDA context, stream, loaded kernel modules, cuBLASLt (via runtime::Gpu).
 /// Spill positioned-read stage counters, cumulative since model load (see
 /// `Engine::moe_pread_stage_stats`). Clocks are host wall nanoseconds summed per stage.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1872,6 +1871,7 @@ impl SpillStageStats {
     }
 }
 
+/// Engine device context: CUDA context, stream, loaded kernel modules, cuBLASLt (via runtime::Gpu).
 pub struct Engine {
     pub gpu: memra_runtime::Gpu,
     module: Arc<CudaModule>,

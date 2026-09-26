@@ -1100,6 +1100,25 @@ shapes. The dense test's red arm moves one output row's weight codes and require
 move in every token row and its neighbour in none. Output buffers start as a NaN pattern, so an
 unwritten element fails, and the dense test also requires the stride gaps to stay unwritten. `_tile_timing` prints device time against the loop. Receipts:
 `research/dsv4f-bringup-20260923/prefill-tile/`.
+### DSv4 TP/EP B-row steps and their graphs (#710)
+
+`DSV4_ROWS_GATE_TOPOLOGY=tp_ep dsv4_rows_gate <model-dir> <source-tape> 24 64` (a 2x RTX PRO 6000
+pair, under `/tmp/memra-gpu.lock`) runs the B-row identity gate on the served TP/EP program.
+Four sessions decode alone for the solo trace. Every arm then compares each step's logits
+bits against it:
+- The eager B-row step, as the sessions join and leave (widths 1 to 4) and their rows rotate.
+- A replay arm: session 0 replays alone, rides B-row steps beside session 1 while still
+  armed, then replays again.
+- A graph arm through `decode_rows_draw`, whose steps of two or more rows run a captured graph
+  per batch. It must capture and then replay.
+- A sampled arm, which draws four rows at the vendor default through the eager B-row step and
+  through the graph; the draws must match.
+
+Timing adds the graph step at B=2 and 4. `cargo test -p memra-engine --release --test
+dsv4_dense_fast_rows_gpu -- --ignored --test-threads=1` (one card) checks the multi-row
+dense-fast FP8 GEMV against the m-row kernel and each row's one-row launch at the served
+shapes, bit for bit, with a red arm. Receipts: `research/dsv4f-bringup-20260923/tp-rows/`.
+
 ### DSv4 TP/EP full-token replay past position 512 (#710)
 
 `dsv4_tp_replay_long_gate <model-dir> <source-tape> [steps]` (a 2x RTX PRO 6000 pair, under
@@ -1110,6 +1129,20 @@ and hidden digests. It also requires the replay variant counters to advance by t
 both ranks. The default 304 steps cross position 512 and the C4 and C128 emission cadences. A
 timing arm then runs the same continuation eager and replayed in alternating order. Receipts:
 `research/dsv4f-bringup-20260923/tp-replay-long/`.
+
+The replayed state hands off to the eager step once the replay no longer covers its position
+(`min(capacity, 16384)`), the way the served TP/EP route does (#710): it reads the replay counters,
+drops the graphs (`disarm_full_token_replay`) and keeps stepping, and every later step must still
+match the eager state. `DSV4_REPLAY_GATE_LIMIT=N` arms a smaller limit so a run crosses the handoff
+in a few hundred steps (`DSV4_REPLAY_GATE_CAPACITY=2048 DSV4_REPLAY_GATE_LIMIT=640`, 500 steps);
+`DSV4_REPLAY_GATE_CAPACITY=20000` with 16100 steps crosses the served 16384 limit itself. At that
+capacity the cache and hidden digests read tens of megabytes per step, so such a run sets
+`DSV4_REPLAY_GATE_DIGEST_EVERY=256`: tokens and logits bits every step, the digests every 256
+steps and on the 64 steps either side of the handoff. A run with a handoff checks that it
+happened at the limit and skips the timing arm. `DSV4_REPLAY_GATE_PROFILE=replay|eager` replaces
+the timing arm with one warm run and one run bracketed by `cuProfilerStart`/`Stop`, for
+`nsys --capture-range=cudaProfilerApi`. Receipts:
+`research/dsv4f-bringup-20260923/tpep-default/`.
 
 ### DSv4 compressor BF16 island storage (#695)
 
@@ -2133,6 +2166,37 @@ never called). The door refuses the boot, typed and loud, for a junk value, the 
   `sources-helper-gone`, `sources-never-land` and `sources-foreign-reply` cells (the hash helper's first `Sources` job
   takes the fault; one typed latch in the arm's own words, no promote publication, the helper joined, r1 to r4
   byte-equal to door OFF) and the CPU cell `day41_the_sources_faults_key_on_the_first_sources_job`.
+- The demote publication split (WP-A day 52, `research/spill-a-20260919/DAY52.md` step 1, log only): the CPU census
+  `day52_the_publication_split_is_log_only` (the drop helper names and releases every host entry field in declaration
+  order, the compiler's own drop order; the insert's replaced twin and LRU victims drop through it at their old points;
+  no decision reads a split figure).
+- The on-tick publish lines (WP-A day 54, `research/spill-a-20260919/DAY54.md` step 1, OWED item 10, log only): the CPU
+  census `day54_the_on_tick_lines_are_log_only` (every `OnTick` answer of both capture routes and of the submit core
+  records its reason first; the routes refuse the same conditions as before, one `else if` chain each; no decision reads
+  the reason; the publish lines print only under the door; the fanout's snapshot, restores and insert keep their order).
+- The admission-counter isolation (WP-A day 56, `research/spill-a-20260919/DAY56.md`, OWED item 23): the reservation
+  path takes its lane counters (`reserve_pending_admit_on`; production passes the global ones); the seven shed and
+  ceiling tests run on their own counters with no lock; `global_counter_writer_guard()` (the drain lock, then the
+  counters' lock) orders the three tests that set the global counters against the handler tests;
+  `admission_counters_guard()` (the counters' lock alone) orders the route tests against them. Census
+  `day56_the_admission_writers_are_ordered_against_the_handler_readers` (replacing day 53's; since section 3 it also
+  catches indirect writers: a test that reserves through a global entry or a handler holds a lock, a test that reserves
+  on the counters path passes its own pair). Section 3's fix passes the lane counters and the pending-admits gauge as one
+  `AdmitCounters` pair (`AdmitCounters::GLOBAL` on every production path); cell
+  `day56_an_isolated_reservation_never_moves_the_global_gauges`.
+- The starved-runner fixes (WP-A day 55, `research/spill-a-20260919/DAY55.md`, OWED item 22): the health snapshot and
+  stall verdict read the clock once (census `day55_a_snapshot_reads_the_clock_once`); the extended-stream commit test on
+  tokio's paused clock; the slow-constraint-compile test on its loop's step clock and a test-only virtual health clock
+  (`health::TestClock`) with a per-step non-blocking guard; the coalescer's window a field, with the cells
+  `a_partial_batch_waits_out_its_window` and `a_full_batch_does_not_wait_for_its_window` (the full-batch count of
+  `coalesced_rows_each_get_their_own_token_once_per_step` is printed). Each fix's red arm is recorded in DAY55.
+- The admission-counter test ordering (WP-A day 53, `research/spill-a-20260919/DAY53.md` section 6, OWED item 21): the
+  test helper `admission_counters_guard()` takes `drain_lock()` before its own lock, so the tests that write the
+  process-global admission counters (the queue-bound swaps) are ordered against the handler tests that read them
+  through a request; census `day53_the_admission_writers_are_ordered_against_the_handler_readers` (the order, no test
+  holding both separately, every counter writer under the guard) and cell
+  `day53_a_handler_request_inside_a_writer_window_sheds_429` (the mechanism: a request inside a writer's window sheds
+  429 `shed_queue` and holds no slot).
 - The hit gate's door arm (C day 27, `tools/spec-on-cache-hit-gate.sh qwen`): the door batteries run the
   hit gate twice, door OFF (`MEMRA_KV_HOST_CONTRACTS` unset) and door ON (`MEMRA_KV_HOST_CONTRACTS=1`).
   Until day 27 the ON arm booted with no `MEMRA_KV_HOST_MB`, so the server built no program identity

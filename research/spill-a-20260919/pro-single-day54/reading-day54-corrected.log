@@ -1,0 +1,16 @@
+DAY54 READING cell=short order=o1 mode=fanout stall N=50 median=71.82 | e2e median=100.4 | dedup groups {4: 50} | on-tick snapshot=0.72 ms restores=1.19 ms over 3.0 insert=2.26 ms
+DAY54 READING cell=short order=o1 mode=prime-short stall N=50 median=65.32 | e2e median=177.6 | dedup groups {} | on-tick snapshot=nan ms restores=nan ms over nan insert=nan ms
+DAY54 READING cell=short order=o2 mode=fanout stall N=50 median=71.86 | e2e median=100.4 | dedup groups {4: 50} | on-tick snapshot=0.72 ms restores=1.21 ms over 3.0 insert=2.20 ms
+DAY54 READING cell=short order=o2 mode=prime-short stall N=50 median=65.36 | e2e median=178.0 | dedup groups {} | on-tick snapshot=nan ms restores=nan ms over nan insert=nan ms
+DAY54 PRICE fanout (short) stall fanout-minus-prime o1=+6.50 o2=+6.50 ms rule >1.0 both -> DESIGN NEXT
+DAY54 READING cell=long order=o1 mode=fanout-long stall N=50 median=1258.45 | e2e median=5095.4 | dedup groups {4: 33, 3: 9, 2: 8} | on-tick snapshot=0.72 ms restores=1.14 ms over 3.0 insert=18.00 ms
+DAY54 READING cell=long order=o1 mode=prime stall N=50 median=361.63 | e2e median=1640.6 | dedup groups {} | on-tick snapshot=nan ms restores=nan ms over nan insert=nan ms
+DAY54 READING cell=long order=o2 mode=fanout-long stall N=50 median=1257.36 | e2e median=5094.2 | dedup groups {4: 27, 3: 15, 2: 8} | on-tick snapshot=0.73 ms restores=1.14 ms over 3.0 insert=18.28 ms
+DAY54 READING cell=long order=o2 mode=prime stall N=50 median=361.76 | e2e median=1640.7 | dedup groups {} | on-tick snapshot=nan ms restores=nan ms over nan insert=nan ms
+DAY54 PRICE fanout (long) stall fanout-minus-prime o1=+896.82 o2=+895.60 ms rule >1.0 both -> DESIGN NEXT
+DAY54 PRICE pause park snapshot owner N=30 median=0.73 ms (pause stall median 64.00 ms, N=30) rule >1.0 -> CLOSED AS PRICED
+DAY54 CENSUS no on-tick publish line from either capture route on this card
+DAY54 PRICE dspark-boundary (a DFlash drafter tail) -> NOT MEASURED HERE (not exercised by the 27B on one card)
+DAY54 PRICE glm5-boundary (latent tails, tensor parallel) -> NOT MEASURED HERE (not exercised by the 27B on one card)
+DAY54 PRICE latent planes (MLA models) -> NOT MEASURED HERE (not exercised by the 27B on one card)
+DAY54 VERDICTS fanout (short): DESIGN NEXT; fanout (long): DESIGN NEXT; pause park: CLOSED AS PRICED

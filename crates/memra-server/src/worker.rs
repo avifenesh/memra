@@ -2022,14 +2022,29 @@ fn decrement_atomic(counter: &std::sync::atomic::AtomicUsize) {
 /// Release the command-channel portion of an HTTP admission. This is separate from the hard
 /// queue reservation because the latter survives while a request waits in the worker queue.
 pub(crate) fn release_pending_admit() {
-    decrement_atomic(&PENDING_ADMITS);
+    release_pending_admit_on(&PENDING_ADMITS);
+}
+
+/// The same on the gauge a reservation was taken on (WP-A day 56 section 3: a pending-admission guard
+/// releases where it reserved; every production reservation is on `PENDING_ADMITS`).
+pub(crate) fn release_pending_admit_on(gauge: &std::sync::atomic::AtomicUsize) {
+    decrement_atomic(gauge);
 }
 
 /// Release a request's hard admission reservation. This is intentionally saturating because
 /// a few embedders/tests inject commands directly without going through the HTTP reservation
 /// path.
 pub(crate) fn release_admission_reservation(lane: Lane) {
-    decrement_atomic(&ADMISSION_RESERVATIONS[lane.idx()]);
+    release_admission_reservation_on(&ADMISSION_RESERVATIONS, lane);
+}
+
+/// The same over the lane counters a reservation was taken on (WP-A day 56: a pending-admission
+/// guard releases where it reserved; every production reservation is on `ADMISSION_RESERVATIONS`).
+pub(crate) fn release_admission_reservation_on(
+    counters: &[std::sync::atomic::AtomicUsize; 3],
+    lane: Lane,
+) {
+    decrement_atomic(&counters[lane.idx()]);
 }
 
 /// Release whichever hard reservation this request holds: its route ticket when a dedicated
@@ -8731,6 +8746,101 @@ impl std::fmt::Display for TenantShareRefusal {
 /// Pinned-host spill pool behind the device `PrefixCache`. Plain byte-budgeted LRU, the same
 /// order as the device tier (memra#523 item 2), so a demotion keeps its rank. Keyed exactly like the device
 /// cache: the PC-ISO `(model, cache namespace)` map key plus exact-token prefixes.
+/// WP-A day 52 (`DAY52.md` step 1, log only): one host entry's drop, timed by field group.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct HostDropSplit {
+    meta_ms: f64,
+    kv_ms: f64,
+    kv_leases: usize,
+    f32_ms: f64,
+    f32_payloads: usize,
+    rest_ms: f64,
+}
+
+/// WP-A day 52 (log only): one `host_demote_publish`'s parts: the bind, the tenant reclaim, the
+/// insert (with its drops).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct HostPublishSplit {
+    bind_ms: f64,
+    reclaim_ms: f64,
+    insert_ms: f64,
+    insert: HostInsertSplit,
+}
+
+/// WP-A day 52 (log only): one `insert`'s drops, the replaced twin's and the LRU victims'.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct HostInsertSplit {
+    twin: Option<HostDropSplit>,
+    evicted: usize,
+    evict_ms: f64,
+}
+
+/// WP-A day 52 (`DAY52.md` step 1, log only): drop a host entry exactly as the compiler would,
+/// every field in its declaration order, timing four groups: `meta` (identity to tokens), `kv`
+/// (the KV planes: pinned leases), `f32` (the conv and ssm payloads), `rest` (every later field).
+/// The census `day52_the_publication_split_is_log_only` pins this list against the struct.
+fn host_entry_drop_split(e: HostPrefixEntry) -> HostDropSplit {
+    let HostPrefixEntry {
+        _tier_identity,
+        model_generation,
+        glm,
+        layout_version,
+        pool_key,
+        toks,
+        kv,
+        conv,
+        ssm,
+        pos,
+        last_logits,
+        draft,
+        dspark_draft,
+        last_h,
+        device_bytes,
+        bytes,
+        last_use,
+        id,
+        verify_digest,
+        span_digests,
+        _tier_metadata,
+        _tier_metadata_charge,
+        _tier_charge,
+    } = e;
+    let mut split = HostDropSplit {
+        kv_leases: kv.iter().flatten().count(),
+        f32_payloads: conv.iter().flatten().count() + ssm.iter().flatten().count(),
+        ..Default::default()
+    };
+    let t = Instant::now();
+    drop(_tier_identity);
+    drop(model_generation);
+    drop(glm);
+    let _ = layout_version;
+    drop(pool_key);
+    drop(toks);
+    split.meta_ms = t.elapsed().as_secs_f64() * 1e3;
+    let t = Instant::now();
+    drop(kv);
+    split.kv_ms = t.elapsed().as_secs_f64() * 1e3;
+    let t = Instant::now();
+    drop(conv);
+    drop(ssm);
+    split.f32_ms = t.elapsed().as_secs_f64() * 1e3;
+    let t = Instant::now();
+    let _ = pos;
+    drop(last_logits);
+    drop(draft);
+    drop(dspark_draft);
+    drop(last_h);
+    let _ = (device_bytes, bytes, last_use, id);
+    drop(verify_digest);
+    drop(span_digests);
+    drop(_tier_metadata);
+    drop(_tier_metadata_charge);
+    drop(_tier_charge);
+    split.rest_ms = t.elapsed().as_secs_f64() * 1e3;
+    split
+}
+
 #[derive(Default)]
 struct HostPrefixCache {
     /// WP-A day 17: the one `Demoting` entry, if a contract-routed demote is in flight on the copy
@@ -8849,6 +8959,14 @@ struct HostPrefixCache {
     handoff_imports: u64,
     handoff_import_bytes: u64,
     handoff_skips: u64,
+    /// WP-A day 52 (`DAY52.md` step 1, log only): the last `insert`'s drops, timed, and the last
+    /// `host_demote_publish`'s parts (the demote publication split line reads them; nothing
+    /// decides on them).
+    last_insert_split: HostInsertSplit,
+    last_publish_split: HostPublishSplit,
+    /// WP-A day 54 (`DAY54.md` step 1, log only): why the last capture route answered `OnTick`
+    /// (the caller's `on-tick publish` line prints it; nothing decides on it).
+    on_tick_reason: &'static str,
 }
 
 impl HostPrefixCache {
@@ -9335,8 +9453,13 @@ impl HostPrefixCache {
             );
             return false;
         }
-        if let Some(i) = self.key_index(key, &e.toks) {
-            let _ = self.remove_at(key, i);
+        // WP-A day 52 (log only): the twin and every LRU victim drop at the same point as before,
+        // through the timed helper (every field in declaration order).
+        let mut split = HostInsertSplit::default();
+        if let Some(i) = self.key_index(key, &e.toks)
+            && let Some(twin) = self.remove_at(key, i)
+        {
+            split.twin = Some(host_entry_drop_split(twin));
         }
         e.id = self.next_id;
         self.next_id += 1;
@@ -9370,9 +9493,13 @@ impl HostPrefixCache {
                 victim_key.0,
                 ns_suffix(&victim_key.1)
             );
-            drop(dead);
+            let t = Instant::now();
+            let _ = host_entry_drop_split(dead);
+            split.evict_ms += t.elapsed().as_secs_f64() * 1e3;
+            split.evicted += 1;
             self.log_arena("LRU eviction");
         }
+        self.last_insert_split = split;
         true
     }
 
@@ -10214,6 +10341,32 @@ struct ContractPlanned {
     capacity: usize,
 }
 
+/// WP-A day 49 (`DAY49.md`, OWED items 7 and 8; log only): the demote's pre-submit segments, printed
+/// once per demote (`demote pre-submit split`). No behavior reads it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct DemotePresubmitSplit {
+    leases_ms: f64,
+    leases: usize,
+    lease_bytes: u64,
+    leases_minflt: i64,
+    register_submit_ms: f64,
+    spans_ms: f64,
+}
+
+/// WP-A day 49 (log only): the calling thread's minor page faults so far (`getrusage(RUSAGE_THREAD)`),
+/// 0 where the call fails.
+fn thread_minflt() -> i64 {
+    // SAFETY: `getrusage` writes only the `rusage` it is handed, a zeroed stack value.
+    unsafe {
+        let mut ru: libc::rusage = std::mem::zeroed();
+        if libc::getrusage(libc::RUSAGE_THREAD, &mut ru) == 0 {
+            ru.ru_minflt as i64
+        } else {
+            0
+        }
+    }
+}
+
 /// A contract-routed D2H that was submitted and not yet settled (WP-A day 17): the ticket, its
 /// producer fence, the registered planes (their retained twins take them back), the plan and the
 /// per-item sizes, the one-shot fault the submission took, and when it was submitted. Owned by
@@ -10229,6 +10382,9 @@ struct PendingContractDemote {
     /// WP-A day 30 (memra#536 Move 2 owed item 1, the D2H half): the image slots whose f32 spans
     /// ride this ticket, in attach order (`host_spans_submit`); empty for a batch without spans.
     spans: Vec<HostHashSlot>,
+    /// WP-A day 49 (log only): the pre-submit segments (`DemotePresubmitSplit`), boxed so the
+    /// `HostImage::Demoting` variant stays the size it was.
+    split: Box<DemotePresubmitSplit>,
 }
 
 /// What one settle step of a contract-routed D2H produced.
@@ -10562,9 +10718,22 @@ struct HostHashReply {
     seq: u64,
     hashed: Vec<(HostHashPayload, usize, memra_engine::cache::tiered::Digest)>,
     helper_ms: f64,
+    /// WP-A day 49 (`DAY49.md`, log only): the job's staging copies and hashes, apart.
+    split: HostHashSplit,
     /// WP-A day 35: each lease view's byte count and digest, in the order handed over (the views
     /// end with the job: the helper reads nothing after this reply is sent).
     leases: Vec<(HostLeaseSlot, usize, memra_engine::cache::tiered::Digest)>,
+}
+
+/// WP-A day 49 (`DAY49.md`, OWED items 7 and 8; log only): one hash job's staging copies (time,
+/// bytes, the helper thread's minor page faults across them) and hashes (time), accumulated per
+/// payload in the job's own order.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct HostHashSplit {
+    copy_ms: f64,
+    copy_bytes: u64,
+    copy_minflt: i64,
+    hash_ms: f64,
 }
 
 /// WP-A day 35 (`DAY35.md` design M'): which KV lease of the image a view reads and a digest names.
@@ -10891,15 +11060,23 @@ impl HostHashWorker {
                         }
                     };
                     let t = Instant::now();
+                    let mut split = HostHashSplit::default();
                     let hashed = job
                         .payloads
                         .into_iter()
                         .map(|mut p| {
                             // WP-A day 30: a landed f32 span becomes the payload's heap `Vec`.
+                            // Day 49 (log only): the copy and the hash timed apart, in order.
                             if let Some(staged) = &p.staged {
+                                let (c0, f0) = (Instant::now(), thread_minflt());
                                 p.data = Arc::new(staged.as_f32_slice().to_vec());
+                                split.copy_minflt += thread_minflt() - f0;
+                                split.copy_ms += c0.elapsed().as_secs_f64() * 1e3;
+                                split.copy_bytes += staged.len() as u64;
                             }
+                            let h0 = Instant::now();
                             let (n, d) = host_hash_payload_digest(&p.data);
+                            split.hash_ms += h0.elapsed().as_secs_f64() * 1e3;
                             (p, n, d)
                         })
                         .collect();
@@ -10914,6 +11091,7 @@ impl HostHashWorker {
                         seq: job.seq,
                         hashed,
                         helper_ms: t.elapsed().as_secs_f64() * 1e3,
+                        split,
                         leases,
                     };
                     if fault == Some(HostHashFault::NeverLands) {
@@ -11594,6 +11772,8 @@ fn host_kv_planes_submit_contract(
     //    ledger's, the driver's or the alloc-fail fault's, leaves the entry untouched and the
     //    caller latches the tier exactly as the pre-door alloc path does.
     let mut hosts = Vec::with_capacity(planned.len() * 2);
+    // WP-A day 49 (log only): the pinned destinations' time, count, bytes and minor faults.
+    let (leases_t0, leases_f0) = (Instant::now(), thread_minflt());
     for p in &planned {
         for n in [p.kb, p.vb] {
             if kv_host_fault() == "alloc-fail" {
@@ -11609,6 +11789,14 @@ fn host_kv_planes_submit_contract(
             })?);
         }
     }
+    let mut split = DemotePresubmitSplit {
+        leases_ms: leases_t0.elapsed().as_secs_f64() * 1e3,
+        leases: hosts.len(),
+        lease_bytes: planned.iter().map(|p| (p.kb + p.vb) as u64).sum(),
+        leases_minflt: thread_minflt() - leases_f0,
+        ..DemotePresubmitSplit::default()
+    };
+    let register_t0 = Instant::now();
     // 3. Device admission probe on the same ledger: `register_device` charges the device
     //    dimension per plane, so probing the sum first means the registration below cannot be
     //    refused by the ledger, and no plane leaves the entry to be dropped by a refusal.
@@ -11836,6 +12024,7 @@ fn host_kv_planes_submit_contract(
         }
     };
     let _ = engine;
+    split.register_submit_ms = register_t0.elapsed().as_secs_f64() * 1e3;
     Ok(PendingContractDemote {
         ticket,
         producer,
@@ -11845,6 +12034,7 @@ fn host_kv_planes_submit_contract(
         fault,
         submitted: Instant::now(),
         spans: Vec::new(),
+        split: Box::new(split),
     })
 }
 
@@ -11862,6 +12052,8 @@ fn host_spans_submit(
     mut pending: PendingContractDemote,
 ) -> Result<PendingContractDemote, HostContractFailure> {
     use memra_engine::tier_transfer::D2hSpan;
+    // WP-A day 49 (log only): the span attach's time, set on both success exits.
+    let spans_t0 = Instant::now();
     let Some(transfers) = &tier.transfers else {
         // Unreachable: the submission that issued `pending` required the engine.
         return Err(HostContractFailure::SourceQuarantined(
@@ -11924,7 +12116,10 @@ fn host_spans_submit(
     }
     let attached = match refused {
         Some(why) => Err((why, spans)),
-        None if spans.is_empty() => return Ok(pending),
+        None if spans.is_empty() => {
+            pending.split.spans_ms = spans_t0.elapsed().as_secs_f64() * 1e3;
+            return Ok(pending);
+        }
         None => t
             .submit_d2h_spans(&pending.ticket, spans)
             .map_err(|(e, back)| (format!("{e:?}"), back)),
@@ -11932,6 +12127,7 @@ fn host_spans_submit(
     let (why, back) = match attached {
         Ok(()) => {
             pending.spans = slots;
+            pending.split.spans_ms = spans_t0.elapsed().as_secs_f64() * 1e3;
             return Ok(pending);
         }
         Err(refusal) => refusal,
@@ -11988,6 +12184,7 @@ fn host_kv_planes_settle_contract(
         fault,
         submitted,
         spans,
+        split,
     } = pending;
     // 6. Completion: the engine's event per item, then its status and its checksum of each
     //    destination (the receipt), then each destination taken exactly once. `Block` is the host
@@ -12018,6 +12215,7 @@ fn host_kv_planes_settle_contract(
                 fault,
                 submitted,
                 spans,
+                split,
             }));
         }
         return Err(SourceQuarantined(
@@ -14349,6 +14547,25 @@ fn host_demote_prefix_ref(
                 dead.pool_key.0,
                 ns_suffix(&dead.pool_key.1)
             );
+            // WP-A day 49 (`DAY49.md`, log only): where the pre-submit went.
+            if let Some(pending) = host.demoting.as_ref()
+                && let Some(c) = pending.contract.as_ref()
+            {
+                let sp = *c.split;
+                let total = pending.owner.presubmit_ms;
+                eprintln!(
+                    "[prefix-host] demote pre-submit split: ticket seq={seq} leases {:.2} ms ({} \
+                     pinned, {:.1} MB, minflt +{}), register {:.2} ms, spans {:.2} ms, other {:.2} ms \
+                     (pre-submit {total:.2} ms)",
+                    sp.leases_ms,
+                    sp.leases,
+                    sp.lease_bytes as f64 / 1e6,
+                    sp.leases_minflt,
+                    sp.register_submit_ms,
+                    sp.spans_ms,
+                    (total - sp.leases_ms - sp.register_submit_ms - sp.spans_ms).max(0.0),
+                );
+            }
             HostDemoteOutcome::Demoting
         }
         Ok(HostImage::Whole(mut e)) => {
@@ -14392,11 +14609,16 @@ fn host_demote_publish(
     t0: Instant,
     hashed: Option<&HostHashDigests>,
 ) -> HostDemoteOutcome {
+    // WP-A day 52 (`DAY52.md` step 1, log only): the parts timed apart.
+    let mut split = HostPublishSplit::default();
+    let t = Instant::now();
     if let Err(err) = host.bind_tier_image(&mut e, hashed) {
         host.waste_pending_reclaim(&dead.pool_key, dead.toks.len(), "bind refused");
         eprintln!("[prefix-host] demote failed ({err}); nothing published");
         return HostDemoteOutcome::Failed;
     }
+    split.bind_ms = t.elapsed().as_secs_f64() * 1e3;
+    let t = Instant::now();
     // TENANT-SHARE RECLAIM (memra#384), the evictions: the image exists and is bound, so
     // the only refusal left after an eviction is `insert`'s own (booked as wasted below).
     // The plan passed before the copy and nothing since mutates the row on this
@@ -14416,9 +14638,14 @@ fn host_demote_publish(
         );
         return HostDemoteOutcome::Failed;
     }
+    split.reclaim_ms = t.elapsed().as_secs_f64() * 1e3;
     let toks = e.toks.len();
     let bytes = e.bytes;
+    let t = Instant::now();
     if host.insert(&dead.pool_key, e) {
+        split.insert_ms = t.elapsed().as_secs_f64() * 1e3;
+        split.insert = host.last_insert_split;
+        host.last_publish_split = split;
         let ms = t0.elapsed().as_secs_f64() * 1e3;
         host.log_arena("demotion");
         host.demotions += 1;
@@ -15363,9 +15590,12 @@ fn host_demote_settle_hashing(
         Some(&digests),
     );
     let mut dead = dead;
+    let mut pause_ms = 0.0;
     if outcome == HostDemoteOutcome::Demoted {
         dead.disarm();
+        let t = Instant::now();
         host_pause_published(host, pending.release.take(), pending.reinstate, &dead);
+        pause_ms = t.elapsed().as_secs_f64() * 1e3;
     }
     if outcome == HostDemoteOutcome::Demoted {
         let publish_ms = publish_t.elapsed().as_secs_f64() * 1e3;
@@ -15385,6 +15615,37 @@ fn host_demote_settle_hashing(
             pending.polls,
             owner.presubmit_ms + polls_ms + publish_ms,
             pending.t0.elapsed().as_secs_f64() * 1e3
+        );
+        // WP-A day 49 (`DAY49.md`, log only): the helper's staging copies and hashes, apart.
+        let sp = reply.split;
+        eprintln!(
+            "[prefix-host] demote helper split: ticket seq={seq} copy {:.2} ms over {:.1} MB (minflt \
+             +{}), hash {:.2} ms (helper {:.1} ms)",
+            sp.copy_ms,
+            sp.copy_bytes as f64 / 1e6,
+            sp.copy_minflt,
+            sp.hash_ms,
+            reply.helper_ms,
+        );
+        // WP-A day 52 (`DAY52.md` step 1, log only): the publication segment's parts.
+        let ps = host.last_publish_split;
+        let twin = ps.insert.twin.unwrap_or_default();
+        eprintln!(
+            "[prefix-host] demote publication split: ticket seq={seq} bind {:.2} ms, reclaim {:.2} \
+             ms, insert {:.2} ms (twin: meta {:.2} ms, kv {:.2} ms over {} leases, f32 {:.2} ms over \
+             {} payloads, rest {:.2} ms; {} evicted in {:.2} ms), pause release {:.2} ms",
+            ps.bind_ms,
+            ps.reclaim_ms,
+            ps.insert_ms,
+            twin.meta_ms,
+            twin.kv_ms,
+            twin.kv_leases,
+            twin.f32_ms,
+            twin.f32_payloads,
+            twin.rest_ms,
+            ps.insert.evicted,
+            ps.insert.evict_ms,
+            pause_ms,
         );
     }
     outcome
@@ -16899,31 +17160,51 @@ fn prefix_capture_off_tick(
     model: Option<&HybridModel>,
     why: &str,
 ) -> CaptureRoute {
+    // WP-A day 54 (log only): every `OnTick` answer records its reason first.
     if hpx.capture_off_tick_disabled || hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
+        hpx.on_tick_reason = if hpx.capture_off_tick_disabled {
+            "the capture path is latched"
+        } else {
+            "no transfer engine"
+        };
         return CaptureRoute::OnTick;
     }
     let tp_cache = cache.glm5_tp_recur.iter().any(Option::is_some)
         || cache.glm5_tp_latent_peer.iter().any(Option::is_some);
-    if cache.has_swa_ring()
-        || tp_cache
-        || model.is_none()
-        || cache.latent.iter().any(Option::is_some)
-        || cache.pos != toks.len()
-        || last_logits.is_empty()
-        || cache
-            .kv
-            .iter()
-            .flatten()
-            .any(|l| l.len != cache.pos && !(l.len == 0 && cache.pos > 0))
+    let refused = if cache.has_swa_ring() {
+        Some("an SWA ring cache")
+    } else if tp_cache {
+        Some("tensor-parallel shards")
+    } else if model.is_none() {
+        Some("no model")
+    } else if cache.latent.iter().any(Option::is_some) {
+        Some("latent planes")
+    } else if cache.pos != toks.len() {
+        Some("the cache position is off the token boundary")
+    } else if last_logits.is_empty() {
+        Some("no boundary logits")
+    } else if cache
+        .kv
+        .iter()
+        .flatten()
+        .any(|l| l.len != cache.pos && !(l.len == 0 && cache.pos > 0))
     {
+        Some("a KV layer not at the boundary")
+    } else {
+        None
+    };
+    if let Some(reason) = refused {
+        hpx.on_tick_reason = reason;
         return CaptureRoute::OnTick;
     }
     // Never two captures in flight: the pending one settles (and publishes) first.
     host_capture_settle_pending(engine, px, hpx, ContractWait::Block, "a second capture");
     if hpx.capture_off_tick_disabled {
+        hpx.on_tick_reason = "the capture path latched while settling the pending capture";
         return CaptureRoute::OnTick;
     }
     if hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
+        hpx.on_tick_reason = "no transfer engine";
         return CaptureRoute::OnTick;
     }
     let n = cache.kv.len();
@@ -17038,10 +17319,15 @@ fn host_capture_submit(
         recurrent_note,
     } = sub;
     let Some(tier) = hpx.tier.as_ref() else {
+        hpx.on_tick_reason = "no host tier";
         return CaptureRoute::OnTick;
     };
-    let Some(transfers) = tier.transfers.as_ref() else {
+    if tier.transfers.is_none() {
+        hpx.on_tick_reason = "no transfer engine";
         return CaptureRoute::OnTick;
+    }
+    let Some(transfers) = tier.transfers.as_ref() else {
+        unreachable!("checked above");
     };
     let tenant = tier
         .program(pool_key, class)
@@ -17441,7 +17727,13 @@ fn prefix_spec_capture_off_tick(
     cap: memra_engine::spec::SpecBoundaryCapture,
     why: &str,
 ) -> SpecCaptureRoute {
+    // WP-A day 54 (log only): every `OnTick` answer records its reason first.
     if hpx.capture_off_tick_disabled || hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
+        hpx.on_tick_reason = if hpx.capture_off_tick_disabled {
+            "the capture path is latched"
+        } else {
+            "no transfer engine"
+        };
         return SpecCaptureRoute::OnTick(Box::new(cap));
     }
     let pos = cap.pos;
@@ -17451,21 +17743,33 @@ fn prefix_spec_capture_off_tick(
     // item class in this route: a publisher carrying one keeps the OFF program whole, tail
     // included (revuto on integ40 #643: the route was installed ahead of the tail and would have
     // published trunk and draft and dropped the tail silently).
-    if tp_cache
-        || dspark_tail
-        || cache.latent.iter().any(Option::is_some)
-        || cap.latent_tails.iter().any(Option::is_some)
-        || cap.snap.pos != pos
-        || pos == 0
-        || pos > committed.len()
-        || cache.kv.iter().flatten().any(|l| l.len != 0 && l.len < pos)
-        || cache.kv.iter().flatten().all(|l| l.len == 0)
-    {
+    let refused = if tp_cache {
+        Some("tensor-parallel shards")
+    } else if dspark_tail {
+        Some("a DFlash drafter tail")
+    } else if cache.latent.iter().any(Option::is_some) {
+        Some("latent planes")
+    } else if cap.latent_tails.iter().any(Option::is_some) {
+        Some("latent boundary tails")
+    } else if cap.snap.pos != pos {
+        Some("the capture snapshot is off its boundary")
+    } else if pos == 0 || pos > committed.len() {
+        Some("the boundary is outside the committed tokens")
+    } else if cache.kv.iter().flatten().any(|l| l.len != 0 && l.len < pos) {
+        Some("a KV layer shorter than the boundary")
+    } else if cache.kv.iter().flatten().all(|l| l.len == 0) {
+        Some("no KV rows")
+    } else {
+        None
+    };
+    if let Some(reason) = refused {
+        hpx.on_tick_reason = reason;
         return SpecCaptureRoute::OnTick(Box::new(cap));
     }
     // Never two captures in flight: the pending one settles (and publishes) first.
     host_capture_settle_pending(engine, px, hpx, ContractWait::Block, "a second capture");
     if hpx.capture_off_tick_disabled {
+        hpx.on_tick_reason = "the capture path latched while settling the pending capture";
         return SpecCaptureRoute::OnTick(Box::new(cap));
     }
     if px.has_key(pool_key, &committed[..pos]) {
@@ -20403,6 +20707,70 @@ fn unsupported_prefix_restore(
     )
 }
 
+/// WP-A day 59 (`research/spill-a-20260919/DAY59.md` step 1, OWED item 10, log only): the owner
+/// thread's time in a snapshot's or a restore's device calls, by kind, accumulated on this thread
+/// and read (and reset) by the fanout's on-tick line. Nothing decides on it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct PrefixCopySplit {
+    alloc_ms: f64,
+    allocs: u32,
+    copy_ms: f64,
+    copies: u32,
+    clone_ms: f64,
+    clones: u32,
+    set_ms: f64,
+    sets: u32,
+}
+
+thread_local! {
+    static PREFIX_COPY_SPLIT: std::cell::Cell<PrefixCopySplit> =
+        const { std::cell::Cell::new(PrefixCopySplit { alloc_ms: 0.0, allocs: 0, copy_ms: 0.0, copies: 0, clone_ms: 0.0, clones: 0, set_ms: 0.0, sets: 0 }) };
+}
+
+/// Take the split accumulated on this thread since the last take.
+fn prefix_copy_split_take() -> PrefixCopySplit {
+    PREFIX_COPY_SPLIT.with(|c| c.replace(PrefixCopySplit::default()))
+}
+
+/// WP-A day 66 (`DAY66.md`): run `f` with this thread's split scoped to it. Whatever another caller
+/// left since the last take (a retire capture, a park snapshot, a hit restore) is discarded first,
+/// so the returned split holds `f`'s own calls only.
+fn prefix_copy_scoped<T>(f: impl FnOnce() -> T) -> (T, PrefixCopySplit) {
+    let _stale = prefix_copy_split_take();
+    let out = f();
+    (out, prefix_copy_split_take())
+}
+
+/// Time one device call of `kind` into this thread's split (log only; the call is unchanged).
+fn prefix_copy_timed<T>(kind: u8, f: impl FnOnce() -> T) -> T {
+    let t = Instant::now();
+    let out = f();
+    let ms = t.elapsed().as_secs_f64() * 1e3;
+    PREFIX_COPY_SPLIT.with(|c| {
+        let mut sp = c.get();
+        match kind {
+            0 => {
+                sp.alloc_ms += ms;
+                sp.allocs += 1;
+            }
+            1 => {
+                sp.copy_ms += ms;
+                sp.copies += 1;
+            }
+            2 => {
+                sp.clone_ms += ms;
+                sp.clones += 1;
+            }
+            _ => {
+                sp.set_ms += ms;
+                sp.sets += 1;
+            }
+        }
+        c.set(sp);
+    });
+    out
+}
+
 fn prefix_snapshot(
     engine: &Engine,
     cache: &Cache,
@@ -20489,13 +20857,13 @@ fn prefix_snapshot(
                 }
                 let kb = l.len * l.k_tok_bytes;
                 let vb = l.len * l.v_tok_bytes;
-                let mut k = engine.alloc_u8(kb.max(1))?;
-                let mut v = engine.alloc_u8(vb.max(1))?;
+                let mut k = prefix_copy_timed(0, || engine.alloc_u8(kb.max(1)))?;
+                let mut v = prefix_copy_timed(0, || engine.alloc_u8(vb.max(1)))?;
                 if kb > 0 {
-                    engine.copy_u8_into(&mut k, 0, &l.k, kb)?;
+                    prefix_copy_timed(1, || engine.copy_u8_into(&mut k, 0, &l.k, kb))?;
                 }
                 if vb > 0 {
-                    engine.copy_u8_into(&mut v, 0, &l.v, vb)?;
+                    prefix_copy_timed(1, || engine.copy_u8_into(&mut v, 0, &l.v, vb))?;
                 }
                 bytes += kb + vb;
                 kv.push(Some(PrefixPlane {
@@ -20510,8 +20878,12 @@ fn prefix_snapshot(
         }
         match &cache.recur[il] {
             Some(r) => {
-                conv.push(Some(engine.clone_dtod(&r.conv_state)?));
-                ssm.push(Some(engine.clone_dtod(&r.ssm_state)?));
+                conv.push(Some(prefix_copy_timed(2, || {
+                    engine.clone_dtod(&r.conv_state)
+                })?));
+                ssm.push(Some(prefix_copy_timed(2, || {
+                    engine.clone_dtod(&r.ssm_state)
+                })?));
                 bytes += (r.conv_state.len() + r.ssm_state.len()) * 4;
             }
             None => {
@@ -20816,17 +21188,17 @@ fn prefix_restore_at(
             let kb = restore_len * dst.k_tok_bytes;
             let vb = restore_len * dst.v_tok_bytes;
             if kb > 0 {
-                engine.copy_u8_into(&mut dst.k, 0, &src.k, kb)?;
+                prefix_copy_timed(1, || engine.copy_u8_into(&mut dst.k, 0, &src.k, kb))?;
             }
             if vb > 0 {
-                engine.copy_u8_into(&mut dst.v, 0, &src.v, vb)?;
+                prefix_copy_timed(1, || engine.copy_u8_into(&mut dst.v, 0, &src.v, vb))?;
             }
             dst.len = restore_len;
-            engine.set_i32_one(&mut dst.len_d, restore_len as i32)?;
+            prefix_copy_timed(3, || engine.set_i32_one(&mut dst.len_d, restore_len as i32))?;
         }
         if let (Some(dst), Some(c), Some(s)) = (cache.recur[il].as_mut(), &e.conv[il], &e.ssm[il]) {
-            engine.copy_into(&mut dst.conv_state, 0, c, c.len())?;
-            engine.copy_into(&mut dst.ssm_state, 0, s, s.len())?;
+            prefix_copy_timed(1, || engine.copy_into(&mut dst.conv_state, 0, c, c.len()))?;
+            prefix_copy_timed(1, || engine.copy_into(&mut dst.ssm_state, 0, s, s.len()))?;
         }
         if let (Some(dst), Some(src)) = (cache.latent[il].as_mut(), &e.latent[il]) {
             dst.restore_plane(engine, src, max_ctx)
@@ -21440,6 +21812,8 @@ fn prefix_insert_from_spec_boundary(
         ),
         SpecCaptureRoute::OnTick(cap) => *cap,
     };
+    // WP-A day 54 (`DAY54.md` step 1, log only): under the door, the on-tick publish is timed.
+    let t_snap = Instant::now();
     // LATENT ARM (lane/glm5-prefix-latent2, 2026-09-01 — the case the old refusal named
     // "unreachable today ... IF A SPEC ARM EVER LANDS FIRST"; the glm5 spec arm landed):
     // a latent-bearing cache publishes ONLY when the capture carries the boundary tails
@@ -21623,8 +21997,19 @@ fn prefix_insert_from_spec_boundary(
         id: 0, // recency identity assigned by PrefixCache::insert
         pins: 0,
     };
+    let snapshot_ms = t_snap.elapsed().as_secs_f64() * 1e3;
+    let mb = e.bytes as f64 / 1e6;
     trace_prefix_entry_state(engine, &e, e.pos, "spec-snapshot", why);
+    let t_insert = Instant::now();
     px.insert_demoting(pool_key, e, why, engine, hpx);
+    if hpx.tier.is_some() {
+        eprintln!(
+            "[prefix-cache] on-tick publish: publisher={why} (the spec route answered on-tick: \
+             {}); snapshot {snapshot_ms:.2} ms, insert {:.2} ms, {mb:.1} MB",
+            hpx.on_tick_reason,
+            t_insert.elapsed().as_secs_f64() * 1e3,
+        );
+    }
 }
 
 /// Device bytes allocated by a plain snapshot, including both TP ranks. Use live lengths,
@@ -21723,10 +22108,23 @@ fn prefix_insert_from_session(
         CaptureRoute::Submitted | CaptureRoute::Refused => return,
         CaptureRoute::OnTick => {}
     }
+    // WP-A day 54 (`DAY54.md` step 1, log only): under the door, the on-tick publish is timed.
+    let t_snap = Instant::now();
     match prefix_snapshot(engine, cache, &pool_key, &s.fed, &s.last_logits, model) {
         Ok(e) => {
+            let snapshot_ms = t_snap.elapsed().as_secs_f64() * 1e3;
+            let mb = e.bytes as f64 / 1e6;
             trace_prefix_entry_state(engine, &e, e.pos, "snapshot", why);
+            let t_insert = Instant::now();
             px.insert_demoting(&pool_key, e, why, engine, hpx);
+            if hpx.tier.is_some() {
+                eprintln!(
+                    "[prefix-cache] on-tick publish: publisher={why} (the capture route answered \
+                     on-tick: {}); snapshot {snapshot_ms:.2} ms, insert {:.2} ms, {mb:.1} MB",
+                    hpx.on_tick_reason,
+                    t_insert.elapsed().as_secs_f64() * 1e3,
+                );
+            }
         }
         Err(err) => eprintln!("[prefix-cache] snapshot failed ({err}); prefix not cached"),
     }
@@ -29156,6 +29554,8 @@ pub fn run(
                             .get_mut(&cand.pool_key)
                             .expect("park index came from this pool");
                         let park = &pool[pi];
+                        // WP-A day 54 (`DAY54.md` step 1, log only): the park's snapshot is timed.
+                        let t_snap = Instant::now();
                         match prefix_snapshot(
                             &engine,
                             &park.cache,
@@ -29165,6 +29565,12 @@ pub fn run(
                             loaded.get(&cand.pool_key.0).map(|l| &l.model),
                         ) {
                             Ok(mut entry) => {
+                                eprintln!(
+                                    "[prefix-host] pause park snapshot on the tick: {:.2} ms \
+                                     ({:.1} MB)",
+                                    t_snap.elapsed().as_secs_f64() * 1e3,
+                                    entry.bytes as f64 / 1e6,
+                                );
                                 let fed_len = pool[pi].fed.len();
                                 match host_demote_prefix_ref(
                                     &engine,
@@ -34361,14 +34767,21 @@ fn dedup_interactive_prefixes(
             }
         };
         advanced.insert(leader_i);
-        let snapshot = prefix_snapshot(
-            engine,
-            active[leader_i].cache.as_ref().unwrap(),
-            &key,
-            &prefix,
-            &leader_logits,
-            loaded.get(&key.0).map(|l| &l.model),
-        );
+        // WP-A day 54 (`DAY54.md` step 1, log only): the fanout's on-tick parts, timed.
+        let t_snap = Instant::now();
+        // WP-A day 59 (log only): the snapshot's calls by kind. Day 66: scoped, so a leftover of
+        // another caller on this thread is discarded rather than added to this line.
+        let (snapshot, snap_split) = prefix_copy_scoped(|| {
+            prefix_snapshot(
+                engine,
+                active[leader_i].cache.as_ref().unwrap(),
+                &key,
+                &prefix,
+                &leader_logits,
+                loaded.get(&key.0).map(|l| &l.model),
+            )
+        });
+        let fanout_snapshot_ms = t_snap.elapsed().as_secs_f64() * 1e3;
         {
             let s = &mut active[leader_i];
             s.last_logits = leader_logits;
@@ -34391,6 +34804,8 @@ fn dedup_interactive_prefixes(
             }
         };
 
+        let fanout_mb = entry.bytes as f64 / 1e6;
+        let t_restores = Instant::now();
         let mut participants = vec![leader_i];
         for &i in group.members.iter().skip(1) {
             if finished.contains(&i) {
@@ -34455,6 +34870,10 @@ fn dedup_interactive_prefixes(
             advanced.insert(i);
         }
 
+        let fanout_restores_ms = t_restores.elapsed().as_secs_f64() * 1e3;
+        // Only the sibling restores ran since the scoped snapshot's take.
+        let restore_split = prefix_copy_split_take();
+        let t_insert = Instant::now();
         let pin = px.insert_pinned_demoting(
             &key,
             entry,
@@ -34463,6 +34882,31 @@ fn dedup_interactive_prefixes(
             engine,
             hpx,
         );
+        if hpx.tier.is_some() {
+            eprintln!(
+                "[prefix-dedup] on-tick publish: snapshot {fanout_snapshot_ms:.2} ms \
+                 ({fanout_mb:.1} MB), {} sibling restore(s) {fanout_restores_ms:.2} ms, insert \
+                 {:.2} ms",
+                participants.len().saturating_sub(1),
+                t_insert.elapsed().as_secs_f64() * 1e3,
+            );
+            let (a, r) = (snap_split, restore_split);
+            eprintln!(
+                "[prefix-dedup] on-tick split: snapshot alloc {:.2} ms over {}, copies {:.2} ms over \
+                 {}, clones {:.2} ms over {}; restores copies {:.2} ms over {}, len sets {:.2} ms \
+                 over {}",
+                a.alloc_ms,
+                a.allocs,
+                a.copy_ms,
+                a.copies,
+                a.clone_ms,
+                a.clones,
+                r.copy_ms,
+                r.copies,
+                r.set_ms,
+                r.sets,
+            );
+        }
         for &i in &participants {
             active[i].seed_prefix = false;
             active[i].seed_at = None;
@@ -38807,7 +39251,12 @@ mod tests {
                 }
             });
 
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
+        // WP-A day 55 (`research/spill-a-20260919/DAY55.md` section 5, OWED item 22, T-c): the
+        // expiry is judged on the loop's step clock (2 ms a step, the deadline at step 50) and the
+        // heartbeat on a virtual health clock advanced with it, so a starved runner cannot fail the
+        // bounds below; the teeth are the per-step non-blocking guard on the wall clock.
+        let start = std::time::Instant::now();
+        let deadline = start + std::time::Duration::from_millis(100);
         let mut pathological = serde_json::json!({"type": "string"});
         for _ in 0..24 {
             pathological = serde_json::json!({"allOf": [pathological]});
@@ -38820,7 +39269,7 @@ mod tests {
             )
             .unwrap();
         started_rx
-            .recv_timeout(std::time::Duration::from_millis(50))
+            .recv_timeout(std::time::Duration::from_secs(10))
             .expect("test compiler did not start");
 
         let (bad_tx, mut bad_rx) = event_channel();
@@ -38870,10 +39319,12 @@ mod tests {
 
         // CPU-only worker harness: one normal decode publishes a token every scheduler tick
         // while the pathological constraint compile is held on its background thread.
+        let clock = crate::health::TestClock::start(1_000_000);
         let health = crate::health::WorkerHealth::with_stall_ms(50);
         let (normal_tx, mut normal_rx) = event_channel();
         let mut normal_steps = 0u32;
         while !pending.is_empty() {
+            clock.advance(2);
             health.beat_busy();
             normal_steps += 1;
             normal_tx
@@ -38882,9 +39333,17 @@ mod tests {
                     text: "x".into(),
                 })
                 .unwrap();
+            let t = std::time::Instant::now();
             super::resolve_constraint_compiles(&result_rx, &mut pending, &mut queue);
-            super::expire_constraint_compiles(&mut pending, std::time::Instant::now());
-            std::thread::sleep(std::time::Duration::from_millis(2));
+            assert!(
+                t.elapsed() < std::time::Duration::from_secs(1),
+                "a resolve blocked on the held compile ({:?})",
+                t.elapsed()
+            );
+            super::expire_constraint_compiles(
+                &mut pending,
+                start + std::time::Duration::from_millis(2 * u64::from(normal_steps)),
+            );
         }
 
         let error = ready_rx
@@ -46227,6 +46686,7 @@ mod tests {
         dead.toks = toks.clone();
         let image = host_entry(pool_key, toks, 4096);
         let contract = super::PendingContractDemote {
+            split: Default::default(),
             ticket: memra_engine::cache::tiered::TransferTicket {
                 issuer: 7,
                 sequence: 1,
@@ -47195,7 +47655,8 @@ mod tests {
         let route = body.find("fn prefix_spec_capture_off_tick(").unwrap();
         let route_body = &body[route..route + body[route..].find("\n}\n").unwrap()];
         for by_name in [
-            "|| dspark_tail",
+            // Day 54: the refusals are one `else if` chain (each records its on-tick reason).
+            "} else if dspark_tail {",
             "cache.latent.iter().any(Option::is_some)",
             "cap.latent_tails.iter().any(Option::is_some)",
             "cap.snap.pos != pos",
@@ -48597,6 +49058,7 @@ mod tests {
             .collect();
         replies
             .send(super::HostHashReply {
+                split: Default::default(),
                 seq: 5,
                 hashed,
                 helper_ms: 1.0,
@@ -48716,6 +49178,7 @@ mod tests {
             .collect();
         replies
             .send(super::HostHashReply {
+                split: Default::default(),
                 seq: 3,
                 hashed,
                 helper_ms: 1.0,
@@ -48753,6 +49216,7 @@ mod tests {
             .collect();
         replies
             .send(super::HostHashReply {
+                split: Default::default(),
                 seq: 4,
                 hashed,
                 helper_ms: 1.0,
@@ -48876,6 +49340,7 @@ mod tests {
             let _jobs = jobs_rx;
             let _ = release_rx.recv();
             let reply = super::HostHashReply {
+                split: Default::default(),
                 seq: 1,
                 hashed: Vec::new(),
                 helper_ms: 0.0,
@@ -48930,6 +49395,7 @@ mod tests {
                 })
                 .collect();
             let mut reply = super::HostHashReply {
+                split: Default::default(),
                 seq: 8,
                 hashed,
                 helper_ms: 1.0,
@@ -49321,6 +49787,358 @@ mod tests {
         );
         let disable = body("    fn disable(&mut self, why: &str) {");
         assert!(disable.contains("tier.staging.borrow_mut().clear();"));
+    }
+
+    /// WP-A day 49 (`DAY49.md`, OWED items 7 and 8; CPU census): the split lines are log only. The
+    /// helper's copy and hash stay one per payload in the job's order (each timed apart); the minor
+    /// fault counter is read around the helper's copy and the pre-submit's pinned allocations only;
+    /// the split structs are only written and printed; no decision reads them.
+    #[test]
+    fn day49_the_split_lines_are_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        assert_eq!(
+            production.matches("thread_minflt()").count(),
+            5,
+            "the definition, and two reads around each of the two copies"
+        );
+        let job = &production[at(production, "let mut split = HostHashSplit::default();")..];
+        let copy = at(job, "p.data = Arc::new(staged.as_f32_slice().to_vec());");
+        let hash = at(job, "let (n, d) = host_hash_payload_digest(&p.data);");
+        assert!(
+            copy < hash,
+            "the copy then the hash, per payload, as before"
+        );
+        for field in [
+            "split.copy_ms",
+            "split.copy_bytes",
+            "split.copy_minflt",
+            "split.hash_ms",
+        ] {
+            assert!(
+                !production.contains(&format!("if {field}")),
+                "{field} decides nothing"
+            );
+        }
+        assert!(!production.contains("if sp.") && !production.contains("split.leases_ms >"));
+        assert!(production.contains("[prefix-host] demote pre-submit split: ticket seq={seq}"));
+        assert!(production.contains("[prefix-host] demote helper split: ticket seq={seq}"));
+    }
+
+    /// WP-A day 59 (`DAY59.md` step 1; CPU census): the fanout's owner-time split is log only. The
+    /// snapshot and the restore issue the same device calls in the same order, each only wrapped in
+    /// `prefix_copy_timed`; the split is taken only by the fanout's line and decides nothing.
+    #[test]
+    fn day59_the_fanout_copy_split_is_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let snap = &production[at(production, "fn prefix_snapshot(")..];
+        let snap = &snap[..at(snap, "\n}\n")];
+        // Compare on the source with whitespace and braces removed (rustfmt wraps long closures
+        // in a block).
+        let squash = |x: &str| {
+            x.split_whitespace()
+                .collect::<String>()
+                .replace(['{', '}'], "")
+        };
+        let snap = &squash(snap);
+        let order = [
+            "prefix_copy_timed(0, || engine.alloc_u8(kb.max(1)))",
+            "prefix_copy_timed(0, || engine.alloc_u8(vb.max(1)))",
+            "prefix_copy_timed(1, || engine.copy_u8_into(&mut k, 0, &l.k, kb))",
+            "prefix_copy_timed(1, || engine.copy_u8_into(&mut v, 0, &l.v, vb))",
+            "prefix_copy_timed(2, || engine.clone_dtod(&r.conv_state))",
+            "prefix_copy_timed(2, || engine.clone_dtod(&r.ssm_state))",
+        ];
+        let pos: Vec<usize> = order.iter().map(|n| at(snap, &squash(n))).collect();
+        assert!(
+            pos.windows(2).all(|w| w[0] < w[1]),
+            "the snapshot's calls keep their order"
+        );
+        let restore = &production[at(production, "fn prefix_restore_at(")..];
+        let restore = &restore[..at(restore, "\n}\n")];
+        let restore = &squash(restore);
+        let order = [
+            "prefix_copy_timed(1, || engine.copy_u8_into(&mut dst.k, 0, &src.k, kb))",
+            "prefix_copy_timed(1, || engine.copy_u8_into(&mut dst.v, 0, &src.v, vb))",
+            "prefix_copy_timed(3, || engine.set_i32_one(&mut dst.len_d, restore_len as i32))",
+            "prefix_copy_timed(1, || engine.copy_into(&mut dst.conv_state, 0, c, c.len()))",
+            "prefix_copy_timed(1, || engine.copy_into(&mut dst.ssm_state, 0, s, s.len()))",
+        ];
+        let pos: Vec<usize> = order.iter().map(|n| at(restore, &squash(n))).collect();
+        assert!(
+            pos.windows(2).all(|w| w[0] < w[1]),
+            "the restore's calls keep their order"
+        );
+        assert_eq!(
+            production.matches("prefix_copy_split_take()").count(),
+            4,
+            "the fn, the scoped helper's two, and the restores' take (day 66)"
+        );
+        let fanout = &squash(
+            &production[at(
+                production,
+                "let t_snap = Instant::now();\n        // WP-A day 59",
+            )..],
+        );
+        assert!(
+            at(
+                fanout,
+                &squash("let (snapshot, snap_split) = prefix_copy_scoped(|| {")
+            ) < at(fanout, &squash("prefix_snapshot(")),
+            "the fanout's snapshot runs inside the scoped split (day 66)"
+        );
+        let scoped = &production[at(production, "fn prefix_copy_scoped<T>(")..];
+        let scoped = squash(&scoped[..at(scoped, "\n}\n")]);
+        assert!(
+            at(&scoped, "let_stale=prefix_copy_split_take();") < at(&scoped, "letout=f();"),
+            "the scoped split discards before it runs f"
+        );
+        for f in [
+            "a.alloc",
+            "a.cop",
+            "a.clon",
+            "r.cop",
+            "r.set",
+            "snap_split.",
+            "restore_split.",
+        ] {
+            assert!(
+                !production.contains(&format!("if {f}")),
+                "{f} decides nothing"
+            );
+        }
+        assert!(
+            production.contains("[prefix-dedup] on-tick split: snapshot alloc {:.2} ms over {}")
+        );
+    }
+
+    /// WP-A day 66 (`DAY66.md`): a stray timed call of any kind before a scoped call never reaches
+    /// the scoped split; a second scoped call reads only its own calls.
+    #[test]
+    fn day66_a_stray_copy_before_a_fanout_never_reaches_its_split() {
+        use super::{PrefixCopySplit, prefix_copy_scoped, prefix_copy_timed};
+        let counts = |sp: PrefixCopySplit| (sp.allocs, sp.copies, sp.clones, sp.sets);
+        std::thread::spawn(move || {
+            for kind in 0..4u8 {
+                prefix_copy_timed(kind, || ());
+            }
+            let ((), snap) = prefix_copy_scoped(|| {
+                prefix_copy_timed(0, || ());
+                prefix_copy_timed(2, || ());
+            });
+            assert_eq!(
+                counts(snap),
+                (1, 0, 1, 0),
+                "the stray calls stay out of the scoped split"
+            );
+            prefix_copy_timed(1, || ());
+            let ((), again) = prefix_copy_scoped(|| prefix_copy_timed(3, || ()));
+            assert_eq!(
+                counts(again),
+                (0, 0, 0, 1),
+                "a second scope reads only its own call"
+            );
+        })
+        .join()
+        .unwrap();
+    }
+
+    /// WP-A day 54 (`DAY54.md` step 1; CPU census): the on-tick lines are log only. Every `OnTick`
+    /// answer of both capture routes (and of the shared submit core) records its reason first; the
+    /// routes refuse the same conditions as before, one `else if` chain each; the reason is never
+    /// read by a decision; the publish lines print only under the door; the fanout keeps its order
+    /// (snapshot, sibling restores, insert).
+    #[test]
+    fn day54_the_on_tick_lines_are_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let body = |start: &str| {
+            let a = at(production, start);
+            &production[a..a + production[a..].find("\n}\n").unwrap()]
+        };
+        for (f, ret) in [
+            (
+                "fn prefix_capture_off_tick(",
+                "return CaptureRoute::OnTick;",
+            ),
+            ("fn host_capture_submit(", "return CaptureRoute::OnTick;"),
+            (
+                "fn prefix_spec_capture_off_tick(",
+                "return SpecCaptureRoute::OnTick(Box::new(cap));",
+            ),
+        ] {
+            let b = body(f);
+            let mut from = 0;
+            let mut n = 0;
+            while let Some(i) = b[from..].find(ret) {
+                let r = from + i;
+                // Between the previous `return` (or the fn's start) and this one: a reason.
+                let before = &b[..r];
+                let since = before.rfind("return ").map_or(0, |p| p + "return ".len());
+                assert!(
+                    before[since..].contains("hpx.on_tick_reason ="),
+                    "{f}: an OnTick answer without its reason"
+                );
+                n += 1;
+                from = r + ret.len();
+            }
+            assert!(n >= 2, "{f}: {n} OnTick answers");
+        }
+        let route = body("fn prefix_capture_off_tick(");
+        for cond in [
+            "cache.has_swa_ring()",
+            "} else if tp_cache {",
+            "} else if model.is_none() {",
+            "} else if cache.latent.iter().any(Option::is_some) {",
+            "} else if cache.pos != toks.len() {",
+            "} else if last_logits.is_empty() {",
+            ".any(|l| l.len != cache.pos && !(l.len == 0 && cache.pos > 0))",
+        ] {
+            assert!(
+                route.contains(cond),
+                "the capture route refuses by name: {cond}"
+            );
+        }
+        assert!(
+            !production.contains("if hpx.on_tick_reason")
+                && !production.contains("match hpx.on_tick_reason")
+        );
+        assert_eq!(
+            production
+                .matches("on-tick publish: publisher={why}")
+                .count(),
+            2
+        );
+        for line in [
+            "[prefix-cache] on-tick publish: publisher={why} (the capture route",
+            "[prefix-cache] on-tick publish: publisher={why} (the spec route",
+            "[prefix-dedup] on-tick publish: snapshot",
+        ] {
+            let i = at(production, line);
+            let guard = production[..i]
+                .rfind("if hpx.tier.is_some() {")
+                .expect("the door guard");
+            assert!(i - guard < 200, "{line} prints only under the door");
+        }
+        let fanout = body("fn dedup_interactive_prefixes(");
+        let snap = at(fanout, "let (snapshot, snap_split) = prefix_copy_scoped(");
+        let restore = at(fanout, "let restored = prefix_restore(");
+        let insert = at(fanout, "let pin = px.insert_pinned_demoting(");
+        assert!(
+            snap < restore && restore < insert,
+            "the fanout's order is unchanged"
+        );
+        assert!(production.contains("[prefix-host] pause park snapshot on the tick: {:.2} ms"));
+    }
+
+    /// WP-A day 52 (`DAY52.md` step 1; CPU census): the publication split is log only. The drop
+    /// helper destructures the host entry in its declaration order and drops every field in that
+    /// order (the compiler's own drop order); the insert's replaced twin and every LRU victim drop
+    /// through it at the point they dropped before; no decision reads a split figure.
+    #[test]
+    fn day52_the_publication_split_is_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let ident = |l: &str| {
+            l.trim()
+                .trim_end_matches(',')
+                .split(':')
+                .next()
+                .unwrap()
+                .trim()
+                .to_string()
+        };
+        // The declaration's field names, in order.
+        let decl = &production[at(production, "\nstruct HostPrefixEntry {")..];
+        let decl = &decl[..at(decl, "\n}\n")];
+        let fields: Vec<String> = decl
+            .lines()
+            .skip(1)
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with("//") && l.contains(':'))
+            .map(ident)
+            .collect();
+        assert!(fields.len() >= 20 && fields[0] == "_tier_identity");
+        // The helper's destructure, in order.
+        let helper = &production[at(production, "fn host_entry_drop_split(e: HostPrefixEntry)")..];
+        let helper = &helper[..at(helper, "\n}\n")];
+        let pat = &helper[at(helper, "let HostPrefixEntry {")..at(helper, "} = e;")];
+        let names: Vec<String> = pat
+            .lines()
+            .skip(1)
+            .map(ident)
+            .filter(|n| !n.is_empty())
+            .collect();
+        assert_eq!(
+            names, fields,
+            "the destructure names every field in declaration order"
+        );
+        // Every field released once, in declaration order.
+        let released: Vec<String> = helper
+            .lines()
+            .map(str::trim)
+            .filter_map(|l| {
+                if let Some(x) = l.strip_prefix("drop(").and_then(|x| x.strip_suffix(");")) {
+                    return Some(vec![x.to_string()]);
+                }
+                l.strip_prefix("let _ = ")
+                    .and_then(|x| x.strip_suffix(';'))
+                    .map(|x| {
+                        x.trim_matches(|c| c == '(' || c == ')')
+                            .split(',')
+                            .map(|n| n.trim().to_string())
+                            .collect()
+                    })
+            })
+            .flatten()
+            .collect();
+        assert_eq!(
+            released, fields,
+            "every field released in declaration order"
+        );
+        // The insert's drops go through the helper, at the old points.
+        let insert = &production[at(
+            production,
+            "    fn insert(&mut self, key: &PoolKey, mut e: HostPrefixEntry)",
+        )..];
+        let insert = &insert[..at(insert, "\n    }\n")];
+        assert!(insert.contains("split.twin = Some(host_entry_drop_split(twin));"));
+        assert!(insert.contains("let _ = host_entry_drop_split(dead);"));
+        assert!(!insert.contains("drop(dead)") && !insert.contains("let _ = self.remove_at("));
+        assert!(
+            at(insert, "self.remove_at(key, i)") < at(insert, "e.id = self.next_id;"),
+            "the twin drops before the new entry is indexed, as before"
+        );
+        // Log only.
+        for field in [
+            "split.",
+            "ps.",
+            "twin.",
+            "self.last_insert_split.",
+            "host.last_publish_split.",
+        ] {
+            assert!(
+                !production.contains(&format!("if {field}")),
+                "{field} decides nothing"
+            );
+        }
+        assert_eq!(
+            production.matches("last_publish_split").count(),
+            3,
+            "field, write, read"
+        );
+        assert!(
+            production.contains("[prefix-host] demote publication split: ticket seq={seq} bind")
+        );
     }
 
     /// WP-A day 47 (`DAY47.md` design V, sections 1 and 1a; CPU census): the pause sweep's two shapes

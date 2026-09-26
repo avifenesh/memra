@@ -1,0 +1,4 @@
+build 3d3e8936d rc=0
+anat graph B=2 PROFILE B=2 steps=64 ms_per_step=19.973 | capture span 1276.4 ms over 64 steps = 19.94 ms/step dev0: kernels 271616 (4244/step) kernel-sum 17.60 ms/step busy-union 17.92 ms/step memcpys 337/step dev1: kernels 272128 (4252/step) kernel-sum 18.18 ms/step busy-union 18.50 ms/step memcpys 338/step 
+anat graph B=4 PROFILE B=4 steps=64 ms_per_step=28.958 | capture span 1852.3 ms over 64 steps = 28.94 ms/step dev0: kernels 394624 (6166/step) kernel-sum 25.66 ms/step busy-union 26.26 ms/step memcpys 671/step dev1: kernels 395264 (6176/step) kernel-sum 26.19 ms/step busy-union 26.79 ms/step memcpys 672/step 
+V4B_DONE
