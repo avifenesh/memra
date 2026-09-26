@@ -9,7 +9,7 @@ use std::time::Instant;
 use cudarc::driver::CudaSlice;
 use memra_engine::Engine;
 use memra_engine::QT_F8_E4M3_BLK;
-use memra_engine::mimo_source_moe::{PinnedMiMoSource, source_moe_token};
+use memra_engine::mimo_source_moe::{PinnedMiMoSource, ResidentMiMoMoeLayer, source_moe_token};
 use memra_engine::model::GpuTensor;
 use memra_gguf::config::{HfConfig, ModelConfig};
 use memra_gguf::model_packs;
@@ -408,16 +408,21 @@ fn validate_plan(plan: &ModelPlan) -> Result<(), Fail> {
 
 fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let continue_one = match args.len() {
-        5 => false,
-        6 if args[5] == "--continue-one" => true,
-        _ => {
-            return Err(
-                "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one]"
-                    .into(),
-            );
+    if args.len() < 5 || args.len() > 7 {
+        return Err(
+            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one] [--resident-moe]"
+                .into(),
+        );
+    }
+    let mut continue_one = false;
+    let mut resident_moe = false;
+    for option in args.iter().skip(5) {
+        match option.as_str() {
+            "--continue-one" if !continue_one => continue_one = true,
+            "--resident-moe" if !resident_moe => resident_moe = true,
+            _ => return Err(format!("unknown or repeated MiMo token option: {option}").into()),
         }
-    };
+    }
     let dir = Path::new(&args[0]);
     let gpu0: usize = args[1].parse()?;
     let gpu1: usize = args[2].parse()?;
@@ -478,6 +483,31 @@ fn run() -> Result<(), Fail> {
     }
     embedding_row(&model, token)?;
     let engines = [Engine::new(gpu0)?, Engine::new(gpu1)?];
+    let mut resident_layers: Vec<Option<ResidentMiMoMoeLayer>> =
+        std::iter::repeat_with(|| None).take(LAYERS).collect();
+    let mut resident_bytes = [0usize; 2];
+    let mut resident_load_ms = 0.0f64;
+    if resident_moe {
+        let load_start = Instant::now();
+        for (index, layer) in plan.layers.iter().enumerate().skip(1) {
+            let stage = usize::from(index >= STAGE_CUT);
+            let engine = &engines[stage];
+            engine.gpu.ctx.bind_to_thread()?;
+            let MlpPlan::Moe(moe) = &layer.mlp else {
+                return Err(format!("MiMo resident layer {index} has no MoE plan").into());
+            };
+            let before = Instant::now();
+            let resident = ResidentMiMoMoeLayer::load(engine, &pinned, index, moe)?;
+            resident_bytes[stage] += resident.resident_bytes();
+            resident_layers[index] = Some(resident);
+            eprintln!(
+                "MiMo resident layer {index} stage {stage} loaded in {:.3}s; cumulative stage bytes {}",
+                before.elapsed().as_secs_f64(),
+                resident_bytes[stage]
+            );
+        }
+        resident_load_ms = load_start.elapsed().as_secs_f64() * 1000.0;
+    }
     let mut kv: Vec<Option<KvState>> = std::iter::repeat_with(|| None).take(LAYERS).collect();
     let turns = if continue_one { 2 } else { 1 };
     let mut report = if continue_one {
@@ -498,7 +528,18 @@ fn run() -> Result<(), Fail> {
     )?;
     writeln!(report, "stage_cut_before_layer\t{STAGE_CUT}")?;
     writeln!(report, "stage_transfer\thost_bounce")?;
-    writeln!(report, "weight_residency\tlayer_streamed")?;
+    writeln!(
+        report,
+        "weight_residency\t{}",
+        if resident_moe {
+            "source_mxfp4_moe_resident"
+        } else {
+            "layer_streamed"
+        }
+    )?;
+    writeln!(report, "resident_moe_bytes_stage0\t{}", resident_bytes[0])?;
+    writeln!(report, "resident_moe_bytes_stage1\t{}", resident_bytes[1])?;
+    writeln!(report, "resident_moe_load_ms\t{resident_load_ms:.3}")?;
     writeln!(report, "kv_format\tf32_contiguous_component")?;
     writeln!(report, "kv_append\tdevice_copy_of_prior_plus_current")?;
     writeln!(report, "kv_sequence_length\t{turns}")?;
@@ -559,7 +600,14 @@ fn run() -> Result<(), Fail> {
                     dense_mlp_token(engine, &source, &post_norm, dense)?
                 }
                 MlpPlan::Moe(moe) if index > 0 => {
-                    let result = source_moe_token(engine, &pinned, index, &post_norm, moe)?;
+                    let result = if resident_moe {
+                        resident_layers[index]
+                            .as_ref()
+                            .ok_or("MiMo resident MoE layer was not loaded")?
+                            .token(engine, &post_norm, moe, &pinned)?
+                    } else {
+                        source_moe_token(engine, &pinned, index, &post_norm, moe)?
+                    };
                     writeln!(
                         report,
                         "selected_experts\t{turn}\t{index}\t{:?}",

@@ -1,5 +1,6 @@
-//! One-token, source-MXFP4 MiMo MoE diagnostic. Expert weights are streamed
-//! from safetensors for each call; this is neither a resident nor a serving path.
+//! One-token, source-MXFP4 MiMo MoE diagnostics. The streamed path reads
+//! selected experts per call; the resident path holds all experts on one GPU.
+//! Neither path is a serving admission gate.
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -284,6 +285,225 @@ fn project(
         return Err(format!("{stem}: MXFP4 GEMM failed: {rc}").into());
     }
     Ok(output)
+}
+
+struct ResidentProjection {
+    weight: CudaSlice<u8>,
+    scales: CudaSlice<u8>,
+    weight_stride: usize,
+    scale_stride: usize,
+    rows: usize,
+    cols: usize,
+}
+
+impl ResidentProjection {
+    fn load(
+        engine: &Engine,
+        source: &StModel,
+        layer: usize,
+        projection: &str,
+        rows: usize,
+        cols: usize,
+    ) -> Result<Self, Fail> {
+        let weight_stride = rows * cols / 2;
+        let scale_stride = rows * cols / 32;
+        let mut weight = engine.alloc_u8_uninit(EXPERTS * weight_stride)?;
+        let mut scales = engine.alloc_u8_uninit(EXPERTS * scale_stride)?;
+        let stream = engine.stream();
+        for expert in 0..EXPERTS {
+            let stem = format!("model.layers.{layer}.mlp.experts.{expert}.{projection}");
+            let (source_weight, source_scales) = source_mxfp4(source, &stem, rows, cols)?;
+            stream.memcpy_htod(
+                source_weight,
+                &mut weight.slice_mut(expert * weight_stride..(expert + 1) * weight_stride),
+            )?;
+            stream.memcpy_htod(
+                source_scales,
+                &mut scales.slice_mut(expert * scale_stride..(expert + 1) * scale_stride),
+            )?;
+        }
+        Ok(Self {
+            weight,
+            scales,
+            weight_stride,
+            scale_stride,
+            rows,
+            cols,
+        })
+    }
+
+    fn run(
+        &self,
+        engine: &Engine,
+        expert: u32,
+        codes: &CudaSlice<u8>,
+        activation_scales: &CudaSlice<f32>,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        let expert = expert as usize;
+        if expert >= EXPERTS
+            || codes.len() != self.cols
+            || activation_scales.len() != self.cols / 128
+            || self.weight.ordinal() != engine.stream().context().ordinal()
+            || self.scales.ordinal() != engine.stream().context().ordinal()
+        {
+            return Err("MiMo resident projection shape or device changed".into());
+        }
+        let stream = engine.stream();
+        let weight_view = self
+            .weight
+            .slice(expert * self.weight_stride..(expert + 1) * self.weight_stride);
+        let scales_view = self
+            .scales
+            .slice(expert * self.scale_stride..(expert + 1) * self.scale_stride);
+        let mut output = stream.alloc_zeros::<f32>(self.rows)?;
+        let (codes_ptr, codes_guard) = codes.device_ptr(&stream);
+        let (activation_scales_ptr, activation_scales_guard) =
+            activation_scales.device_ptr(&stream);
+        let (weight_ptr, weight_guard) = weight_view.device_ptr(&stream);
+        let (weight_scales_ptr, weight_scales_guard) = scales_view.device_ptr(&stream);
+        let (output_ptr, output_guard) = output.device_ptr_mut(&stream);
+        let rc = unsafe {
+            memra_dsv4_fp4_gemm(
+                codes_ptr as *const c_void,
+                activation_scales_ptr as *const f32,
+                weight_ptr as *const c_void,
+                weight_scales_ptr as *const c_void,
+                0.0,
+                1,
+                output_ptr as *mut f32,
+                1,
+                self.rows as i32,
+                self.cols as i32,
+                stream.cu_stream() as *mut c_void,
+            )
+        };
+        drop((
+            codes_guard,
+            activation_scales_guard,
+            weight_guard,
+            weight_scales_guard,
+            output_guard,
+        ));
+        if rc != 0 {
+            return Err(format!("MiMo resident MXFP4 GEMM failed: {rc}").into());
+        }
+        Ok(output)
+    }
+}
+
+/// The pinned source's full expert bank for one MoE layer on one device.
+/// Projection slabs use the original E2M1 codes and E8M0 scales byte-for-byte.
+pub struct ResidentMiMoMoeLayer {
+    layer: usize,
+    matrix: CudaSlice<f32>,
+    bias: CudaSlice<f32>,
+    active: CudaSlice<u8>,
+    gate: ResidentProjection,
+    up: ResidentProjection,
+    down: ResidentProjection,
+}
+
+impl ResidentMiMoMoeLayer {
+    pub fn load(
+        engine: &Engine,
+        pinned: &PinnedMiMoSource<'_>,
+        layer: usize,
+        plan: &MoeMlpPlan,
+    ) -> Result<Self, Fail> {
+        validate_contract(pinned.config, pinned.plan, plan, layer)?;
+        engine.gpu.ctx.bind_to_thread()?;
+        let source = pinned.model;
+        let router = format!("model.layers.{layer}.mlp.gate");
+        let matrix = engine.htod(&source_float(
+            source,
+            &format!("{router}.weight"),
+            &[EXPERTS as u64, HIDDEN as u64],
+        )?)?;
+        let bias = engine.htod(&source_float(
+            source,
+            &format!("{router}.e_score_correction_bias"),
+            &[EXPERTS as u64],
+        )?)?;
+        let active = engine.htod_bytes(&[1u8; EXPERTS])?;
+        let gate =
+            ResidentProjection::load(engine, source, layer, "gate_proj", EXPERT_WIDTH, HIDDEN)?;
+        let up = ResidentProjection::load(engine, source, layer, "up_proj", EXPERT_WIDTH, HIDDEN)?;
+        let down =
+            ResidentProjection::load(engine, source, layer, "down_proj", HIDDEN, EXPERT_WIDTH)?;
+        Ok(Self {
+            layer,
+            matrix,
+            bias,
+            active,
+            gate,
+            up,
+            down,
+        })
+    }
+
+    pub fn token(
+        &self,
+        engine: &Engine,
+        x: &CudaSlice<f32>,
+        plan: &MoeMlpPlan,
+        pinned: &PinnedMiMoSource<'_>,
+    ) -> Result<MiMoMoeToken, Fail> {
+        validate_contract(pinned.config, pinned.plan, plan, self.layer)?;
+        let device = engine.stream().context().ordinal();
+        if x.len() != HIDDEN
+            || x.ordinal() != device
+            || self.matrix.ordinal() != device
+            || self.bias.ordinal() != device
+            || self.active.ordinal() != device
+        {
+            return Err("MiMo resident MoE input or layer belongs to another device".into());
+        }
+        engine.gpu.ctx.bind_to_thread()?;
+        let logits = engine.linear(x, &self.matrix, 1, HIDDEN, EXPERTS)?;
+        let (ids_gpu, weights_gpu) = engine.moe_router_sigmoid_topk(
+            &logits,
+            1,
+            EXPERTS,
+            TOP_K,
+            EXPERTS,
+            &self.bias,
+            &self.active,
+            1.0,
+            true,
+        )?;
+        let ids = engine.dtoh_i32(&ids_gpu)?;
+        let weights = engine.dtoh(&weights_gpu)?;
+        let selected = validate_selection(&ids, &weights)?;
+        let (input_codes, input_scales) = quantize(engine, x, HIDDEN)?;
+        let mut output = engine.zeros(HIDDEN)?;
+        for (&expert, &weight) in selected.iter().zip(&weights) {
+            let gate = self.gate.run(engine, expert, &input_codes, &input_scales)?;
+            let up = self.up.run(engine, expert, &input_codes, &input_scales)?;
+            let mut activation = engine.uninit(EXPERT_WIDTH)?;
+            engine.silu_mul(&gate, &up, &mut activation, EXPERT_WIDTH)?;
+            let (activation_codes, activation_scales) =
+                quantize(engine, &activation, EXPERT_WIDTH)?;
+            let down = self
+                .down
+                .run(engine, expert, &activation_codes, &activation_scales)?;
+            engine.axpy_into(&down, weight, &mut output.slice_mut(..), HIDDEN)?;
+        }
+        Ok(MiMoMoeToken {
+            output,
+            selected,
+            weights,
+        })
+    }
+
+    pub fn resident_bytes(&self) -> usize {
+        self.matrix.len() * size_of::<f32>()
+            + self.bias.len() * size_of::<f32>()
+            + self.active.len()
+            + [&self.gate, &self.up, &self.down]
+                .iter()
+                .map(|projection| projection.weight.len() + projection.scales.len())
+                .sum::<usize>()
+    }
 }
 
 fn validate_selection(ids: &[i32], weights: &[f32]) -> Result<Vec<u32>, Fail> {
