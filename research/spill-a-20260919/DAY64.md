@@ -132,3 +132,57 @@ identity gates door ON.
 - **Budget.** 0.4 agent-day: the lines 0.05, their sitting 0.05, D1 0.2, its sitting 0.1.
 - **Timing of the work.** This lane builds nothing while W's 5090 cell holds the card (DAY61 section 4). Step 1's
   code follows its reading.
+
+## 5. Step 1's split, read as registered: NOT D1, the fill; the fill's design pre-registered (committed before any code)
+
+- Run by the lead on one RTX PRO 6000 Blackwell Workstation card, `build.sh 50fdbcfaf` then `driver.sh`. Mirror
+  `pro-single-day64b/box/`, sha256-checked against the box manifest (0 mismatches); the server is recorded by hash.
+- Verbatim (`box/reading-day64b.log`):
+
+      DAY64 READING steady promotes=180 late=170 labels at the extra poll={'receipt': 169, 'copies': 1}
+      DAY64 PLACE -> receipt (170 late of 180)
+      DAY64B SPLIT N=180 fill=8.63 copies=3.30 digests=1.01 ms (digests share of copies + digests 0.23)
+      DAY64B SELECT -> NOT D1: the fill named with its numbers
+
+- Read:
+  - The span work after its start event takes 12.9 ms in the median: the fill 8.63 ms (the host function that
+    copies the resident heap payloads into the pinned staging buffers), the span copies 3.30 ms, and the digests
+    with the lanes' D2H 1.01 ms. D1 would save at most about 1 ms, so it is not the design.
+  - The start event sits after the promote's KV item copies on the copy stream, because the spans attach after the
+    KV batch is submitted. So the fill waits for the KV copies although it depends on nothing the GPU does: it
+    writes host memory from host memory.
+- **Design F, the fill on its own stream, chunked.**
+  - (F.1) The engine gains a fill stream (a third stream of the same context, created with the copy stream; a
+    creation failure is a construction refusal).
+  - (F.2) The span attach splits the fill into K chunks (K = min(4, spans), contiguous in the spans' order). It
+    launches each chunk as its own host function on the fill stream (the same `span_fill_on_copy_stream` work, split
+    across the engine's fill threads as design T does) and records an event after each.
+  - (F.3) The copy stream, after the KV items as today, waits on chunk k's event before chunk k's span copies. So
+    chunk k + 1's fill overlaps chunk k's copies, and the first chunk's fill overlaps the KV item copies. The digests,
+    the lanes' D2H and the receipt event stay on the copy stream after the last copy, unchanged.
+  - (F.4) Ownership is unchanged: each staging buffer is the engine's from the attach to its landing, and written
+    only by its chunk's host function. The fill stream reads only the resident planes the task owns. A chunk's
+    launch failure unwinds as the single launch's failure does today.
+  - The step-1 timing events stay, now on the copy stream's side (start, after the last copy's wait, after the
+    copies, after the seal).
+  - Expected: the receipt lands about the KV copy time plus three-quarters of the span copies earlier. That should
+    bring it before the next tick top (the late promotes miss it at +13.1 ms by one tick).
+- **Not taken now, recorded:** F2, holding the resident recurrent payloads in pinned memory. It would remove both the
+  promote's fill (8.63 ms) and the demote's staging-to-heap copy (P2's subject), but it moves 157 MB per 27B entry
+  from the pageable to the pinned ledger. That is a memory-model change beside P2's verdict, and it is registered
+  only after that verdict.
+- **F's acceptance:**
+  - (a) Correctness:
+    - the engine's H2D span cells and the worker's span cells (`option_c_span_*`);
+    - the fault gate default and plain: `span-flip-resident` must still be refused, since its flipped byte now rides
+      a chunked fill;
+    - the identity gate default and plain, door OFF and ON;
+    - the hit gate OFF and ON;
+    - the pause gate.
+  - (b) At most 9 of 180 steady promotes late (5%), against section 3's 176 and step 1's 170.
+  - (c) The promote cell's intruder e2e at most base's minus 5.0 ms per order; the PIN at most base's plus 1.0 ms.
+  - (d) The tenant's stall at most base's plus 1.0 ms; the hump at most base's plus 0.15 ms.
+  - Every per-order clause in both orders.
+- **The sitting**, after its code: the promote cell (base against F, 20 boots each), the hump, and the 11 gates. The
+  5090 half follows.
+- **Budget.** 0.4 agent-day.

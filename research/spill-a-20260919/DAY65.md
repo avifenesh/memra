@@ -116,3 +116,28 @@ same way. Design T's thread rule for the fill (item 3) is the precedent.
   shares (DAY67 section 2), returns to its own sequential payload map, DAY52's code verbatim.
 - Whether the 64-token wall was the right measure for T-H is a new registration's question, argued from this
   section's text before any rerun (section 6), not a moved bound.
+
+## 6. T-H', pre-registered (committed before any rerun): the clause that measures what DAY65 named
+
+- **The argument, from section 1's own text.** Section 1 priced the helper in two regimes. At 64 tokens: copy 23.7 ms
+  plus hash 59.1 ms, the wall 101 ms. At 5122-token entries: helper 122 to 140 ms, the wall 362 to 444 ms.
+  - It named the waiting case: "a request that meets the entry `Demoting` waits for it (DAY43: at long entries the
+    chained hit waits on the helper, not the copy)".
+  - Clause (b)'s wall bound was taken at 64 tokens on the assumption that the 64-token publication waits on the
+    helper. Section 5 shows it does not: the helper fell 58 ms there and the wall 12 ms. The 64-token publication is
+    bounded by its copy phase and its tick-top polls.
+  - The regime section 1 named, long entries, is the chain cell's. There (c) was registered and passed.
+- **T-H'** is T-H's code unchanged, re-applied on the tree at its sitting (merged with P2's reserve if P2 adopts,
+  under the same assignment rule DAY67 section 2 named). Its (b) is restated from section 1's long-entry numbers:
+  - **(b')** In the chain cell (long entries), th's helper median at most half of base's, and th's steady wall t0 to
+    publication at most base's minus 50 ms, per order.
+    - The bound is set from section 1's prices. Half of the 122 to 140 ms helper is 61 to 70 ms; 50 ms leaves room
+      for the publication's other terms.
+    - The refuted sitting's chain numbers are not used to set it, and that sitting is not reused.
+  - The 64-token demote wall becomes a reading, stated with section 5's result and its reason.
+  - (a), (c) and (d) are section 1's, verbatim: the chain e2e at most base's minus 30 ms; the stall, the hump, and the
+    promote PIN and e2e bounds as registered.
+- **The rule.** T-H' adopts if (a), (b'), (c) and (d) hold in both orders; otherwise it is reverted in one commit. It
+  is a new sitting on a fresh pair, after P2's verdict fixes the tree it is merged onto.
+- This is the lead's and the owner's to accept or refuse before any code. The argument is that (b) measured a regime
+  section 1's own text did not name as the waiting one. Nothing here moves a bound on the regime that was named.
