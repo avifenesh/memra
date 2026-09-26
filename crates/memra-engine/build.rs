@@ -517,6 +517,10 @@ fn main() {
             "cu/mimo_qkv_gather.cu",
             // Bounded f32 MiMo attention reference component with learned sink.
             "cu/mimo_sink_attn.cu",
+            // Source-inspection split attention over q8_0 K and NVFP4 V.
+            "cu/mimo_mixed_attn.cu",
+            // Source-inspection NVFP4 cache row codec.
+            "cu/mimo_kv_nvfp4.cu",
             // Small-message cross-rank all-reduce for TP decode (lane/tp-allreduce-20260906).
             // Portable CUDA C; peer stores plus a bounded flag wait, no oracle to match, so it
             // takes the default flags rather than dsv4_gpu.cu's -fmad=false.
