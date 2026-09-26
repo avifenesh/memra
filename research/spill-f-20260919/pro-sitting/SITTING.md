@@ -24,10 +24,13 @@ because without the proof the runner and driver refuse.
    `unsloth/Qwen3.6-35B-A3B-MTP-GGUF@5bc3e238d916f48a861bac2f8a1990a0e9b7e98d` and check sha256
    `df27a780...7adf`; regenerate the B2 prompts against their manifest.
 2. M1 proof of `/scratch/spill-f` (a FAIL ends the sitting; its receipts are kept).
-3. OWED 26 on the target card: the pool's GPU cells, including
-   `demand_submit_waits_for_a_buffer_instead_of_returning_ring_busy` and
-   `demand_submit_returns_none_only_when_prefetches_hold_every_buffer` (green only; the red arm is
-   the 5090 record).
+3. OWED 26 on the target card: every pool GPU cell, including the four OWED 26 cells
+   (`demand_submit_waits_for_a_buffer_instead_of_returning_ring_busy`,
+   `demand_submit_returns_none_only_when_prefetches_hold_every_buffer`,
+   `demand_wait_with_a_free_buffer_and_nothing_in_flight_returns_at_once`,
+   `demand_wait_after_every_h2d_event_completed_returns_at_once`); green only, the red arms are
+   the 5090 record. The smoke in step 4 is also OWED 26's serving-shape check on the target card:
+   its visits must show zero fallbacks and zero demand-wait timeouts.
 4. OWED 17 correctness: one smoke round (three arms, tokens equal the oracle file, bypass lines),
    gated with `m1-b3-pool.py --bypass-check --fallback-unclean --require-correct`; then `run-spec`
    K=1..8 for `bypass-staged` and `bypass-mapped`.
