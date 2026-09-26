@@ -494,7 +494,7 @@ cell as the registered control that carries the admission change without zero-co
 changes the first miss from one copy (baseline) or two (staged) to none. If `staged` loses again,
 its value is deleted from the door in the lane that measures it.
 
-Section D, resync amendment (2026-09-26 08:05Z, after the requested 07:28Z rig reboot, before any
+Section D, resync amendment (2026-09-26 about 07:53Z, after the requested 07:28Z rig reboot, before any
 further 5090 cell):
 1. The reboot remounted `/data` with mount id 250 (was 242; same device and filesystem). The
    collector correctly refused the stale proof on rounds 5 to 10, and the round driver wrongly
