@@ -56,13 +56,17 @@ def lock_free():
         return True
 
 
+PAUSE = Path("/home/avifenesh/spill-f-5090/PAUSE")
+
+
 def wait_idle(log, label):
+    """Also waits while PAUSE exists: this lane's own compiles run only between scored cells."""
     start, blockers = time.monotonic(), []
     while True:
-        a, free = apps(), lock_free()
-        if free and not a:
+        a, free, paused = apps(), lock_free(), PAUSE.exists()
+        if free and not a and not paused:
             break
-        seen = {"lock_free": free, "apps": a}
+        seen = {"lock_free": free, "apps": a, "lane_pause": paused}
         if seen not in blockers:
             blockers.append(seen)
         time.sleep(30)
