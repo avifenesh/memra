@@ -66,3 +66,14 @@ Run as `D86_BUILDS="i20=8efea3a54 i21=b555b4141 i22=4b378a064" bash
 /root/wt-c/research/spill-c-20260919/day86-box.sh` on a Ryzen 9 9950X host with one RTX PRO 6000 Blackwell
 Workstation Edition that has carried at least 12 hours of other sittings since boot (at least 48 GB MemAvailable, the
 artifact and the two worktrees staged as before; about 25 minutes: three builds and 50 runs).
+
+## 1b. The host condition, stated exactly before any cell (the lead asked)
+
+"At least 12 hours of other sittings since boot" means: measured from the host's boot (the host's uptime, not the
+container's), at least 12 hours during which other sittings ran on that host, meaning any lane's cells or batteries
+that load the model and pin host memory. That is BOX31's history in `DAY84.md` section 3a (19 hours of lane A sittings),
+the condition the slow state has needed. Host uptime alone does not count (an idle host does not fragment its memory
+the same way), and no minimum of timed GPU hours is required. The lead's plan meets it: BOX43's host has been up 130029
+s at its container's start (21:36Z), and the lanes' 9950X-class sittings run on it from then until at least
+2026-09-27T09:40Z, before `slow86`. The mirror note names the host uptime and the sittings it carried. The rule is
+unchanged: a host that reads `not_reproduced` decides nothing.
