@@ -3290,6 +3290,24 @@ fn grid_rewind_spec(
 /// prime split on the grid is bit-identical to the monolithic prime, so the rewound resume is
 /// cold-identical. Armed, every session also arms its checkpoint (`plain_checkpoint_boundary`),
 /// not only a nominatable prompt. Unset, nothing reads it.
+/// MEMRA_SPEC_BUDGET_CLAMP (default unset, WP-B day 43, OWED O13): `1` makes the Qwen MTP
+/// session route truncate a round that would commit accepted drafts past the request's budget
+/// (`memra_engine::spec::budget_clamp_slot`), so a parked spec session equals the public stream
+/// and the pool's exact probe can resume it. The public stream is unchanged. Unset reads nothing.
+fn spec_budget_clamp_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        let on = std::env::var("MEMRA_SPEC_BUDGET_CLAMP").as_deref() == Ok("1");
+        if on {
+            eprintln!(
+                "[spec] MEMRA_SPEC_BUDGET_CLAMP=1: the final round commits at the request budget \
+                 (DAY43 measurement door)"
+            );
+        }
+        on
+    })
+}
+
 fn resume_grid_rewind_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
@@ -37540,6 +37558,11 @@ fn step_session(
         // the delta is this burst's contribution, merged per-model for /metrics and summed
         // per-request for usage.spec.
         let telem_before = spec.telemetry();
+        // BUDGET CLAMP (MEMRA_SPEC_BUDGET_CLAMP, WP-B day 43): the request's remaining public
+        // budget, not the burst's cadence target; unset leaves the engine's field None.
+        if spec_budget_clamp_on() {
+            spec.budget_room = Some(request_room);
+        }
         // SSE CADENCE (lane/sse-cadence, 2026-08-05): publish at ROUND cadence, not burst
         // cadence. Every committed id in the request-owned budget gets its own Event::Token;
         // UTF-8 fragments may make an individual event's text empty, but ids are never coalesced.
@@ -37641,6 +37664,13 @@ fn step_session(
             if !burst.is_empty() {
                 trace.mark_first_decode();
             }
+        }
+        if let Some((na, n_acc, room)) = spec.budget_clamp_fired.take() {
+            eprintln!(
+                "[spec] budget clamp: round truncated at {na} of {n_acc} accepted ({room} of the \
+                 request's budget left; model {})",
+                s.model
+            );
         }
         let telem_delta = spec.telemetry().delta_since(&telem_before);
         spec_metrics.record(&s.model, telem_delta);
@@ -56569,6 +56599,35 @@ mod tests {
         // Each rewind is its pool's own restore.
         assert!(live.contains("if let Err(err) = memra_engine::pp::restore_cache_checkpoint( engine, &lm.model, None, &mut e.cache, &ckpt.snap, )"));
         assert!(live.contains("match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {"));
+    }
+
+    /// WP-B day 43 (DAY43 1.3): the budget-clamp door is read once, where the qwen spec arm hands
+    /// the session its request budget; the firing is reported with the model.
+    #[test]
+    fn spec_budget_clamp_door_is_read_at_the_qwen_spec_burst_only() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let call = format!("spec_budget_clamp_on{}", "()");
+        assert_eq!(
+            live.matches(call.as_str()).count(),
+            2,
+            "the definition and one read"
+        );
+        assert!(
+            live.contains("if spec_budget_clamp_on() { spec.budget_room = Some(request_room); }")
+        );
+        assert_eq!(
+            live.matches("budget_room").count(),
+            1,
+            "only the qwen arm sets it"
+        );
+        let set = live.find("spec.budget_room = Some(request_room);").unwrap();
+        let burst = live[set..]
+            .find("generate_spec_session_sampled_prime_split(")
+            .unwrap();
+        assert!(burst < 4000, "the budget is set right before the burst");
+        assert!(live.contains("if let Some((na, n_acc, room)) = spec.budget_clamp_fired.take() {"));
     }
 
     /// WP-B day 41 addendum B (B1, B2): the armed arm's checkpoint boundary.
