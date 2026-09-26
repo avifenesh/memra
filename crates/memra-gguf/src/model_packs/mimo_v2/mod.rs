@@ -319,7 +319,8 @@ pub(crate) fn mint_expert_requirements(
 mod tests {
     use super::*;
     use crate::config::{HfConfig, ModelConfig};
-    use crate::model_plan::{AttentionPlan, MlpPlan, TensorPresence};
+    use crate::execution_manifest::{RewriteSurface, execution_rewrites};
+    use crate::model_plan::{AttentionPlan, MlpPlan, OperationKind, TensorPresence};
     use crate::tensor_contract::{
         CheckpointDialect, ContractOptions, QuantLayout, StorageLayout, TensorCensusEntry,
         TensorContract, TensorContractError,
@@ -348,6 +349,38 @@ mod tests {
         assert!(plan.mtp_blocks.is_empty());
         assert!(SOURCE_PROFILE.support.is_none());
         assert!(SOURCE_PROFILE.compile_tiny_plan().is_err());
+    }
+
+    #[test]
+    fn mimo_attention_math_blocks_generic_tuned_rewrites() {
+        assert!(crate::op_registry::surfaces(OperationKind::MiMoAttentionMath).is_none());
+        let full_config =
+            ModelConfig::from_hf(&HfConfig::parse(include_str!("fixtures/config.json")));
+        for plan in [
+            tiny_text_plan().unwrap(),
+            SOURCE_PROFILE.compile_plan(&full_config).unwrap(),
+        ] {
+            assert!(
+                plan.trunk_operations()
+                    .contains(&OperationKind::MiMoAttentionMath)
+            );
+            let rewrites = execution_rewrites(&plan);
+            for surface in [
+                RewriteSurface::DecodeEager,
+                RewriteSurface::DecodeBatch,
+                RewriteSurface::DecodeGraph,
+                RewriteSurface::Pipeline,
+            ] {
+                let rewrite = rewrites
+                    .iter()
+                    .find(|rewrite| rewrite.surface == surface)
+                    .unwrap();
+                assert!(
+                    rewrite.blockers.contains(&OperationKind::MiMoAttentionMath),
+                    "{surface:?} lost the MiMo math blocker"
+                );
+            }
+        }
     }
 
     #[test]

@@ -1608,10 +1608,16 @@ impl LayerPlan {
         match &self.attention {
             AttentionPlan::Full(attention) => {
                 operations.push(OperationKind::FullAttention);
+                if attention.mimo_math.is_some() {
+                    operations.push(OperationKind::MiMoAttentionMath);
+                }
                 push_gate(attention.output_gate, operations);
             }
             AttentionPlan::SlidingWindow { attention, .. } => {
                 operations.push(OperationKind::SlidingWindowAttention);
+                if attention.mimo_math.is_some() {
+                    operations.push(OperationKind::MiMoAttentionMath);
+                }
                 push_gate(attention.output_gate, operations);
             }
             AttentionPlan::Mla(MlaAttentionPlan::LatentKv { sparse_index, .. }) => {
@@ -2455,6 +2461,9 @@ pub enum OperationKind {
     RmsNorm,
     FullAttention,
     SlidingWindowAttention,
+    /// MiMo fused QKV geometry, pre-cache V scale, and optional learned sink.
+    /// Generic full/sliding kernels have no license to implement this program.
+    MiMoAttentionMath,
     LatentMlaAttention,
     CompressedMlaAttention,
     KvCompressor,
