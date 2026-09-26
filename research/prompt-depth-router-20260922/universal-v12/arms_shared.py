@@ -160,19 +160,35 @@ def freeze(models, v11_rows, fresh_rows, fresh_replay,
                 "fixed-c3", 3,
                 f"confidence-fixed=0,{cutoff:.9g}",
             ))
-    for source in SOURCES:
-        router = weight(source, "ridge-100/topk-prior.tsv")
+    joint_options = [
+        (f"joint-{source}", source, "prior", "history")
+        for source in SOURCES
+    ] + [
+        (
+            "joint-fresh-last-token", "fresh-only",
+            "first32", "token",
+        ),
+        (
+            "joint-fresh-window-no-k-prior", "fresh-only",
+            "first32", "history",
+        ),
+    ]
+    for label, source, k_variant, cd_variant in joint_options:
+        router = weight(
+            source, f"ridge-100/topk-{k_variant}.tsv",
+        )
         for k in (3, 10, 20):
             for kind in ("depth", "confidence"):
-                weight(source, f"topk{k}/{kind}-history.tsv")
+                weight(
+                    source, f"topk{k}/{kind}-{cd_variant}.tsv",
+                )
         extra = (
             f"topk-model={router}",
             f"joint-model-dir={models / source}",
-            "depth-variant=history",
-            "confidence-variant=history",
+            f"depth-variant={cd_variant}",
+            f"confidence-variant={cd_variant}",
         )
-        label = f"joint-{source}"
-        noop = f"joint-noop-{source}"
+        noop = label.replace("joint-", "joint-noop-", 1)
         arms.extend((
             arm(label, "learned", 20, "joint-ckd", 4,
                 *extra, noop_label=noop, selectable=True),
@@ -198,7 +214,7 @@ def freeze(models, v11_rows, fresh_rows, fresh_replay,
         arm("k-noop-fresh-only", "noop", 20, "noop-topk", 3,
             *extra),
     ))
-    if len(arms) != 31 or len({item["label"] for item in arms}) != 31:
+    if len(arms) != 35 or len({item["label"] for item in arms}) != 35:
         raise ValueError("mixed validation arm menu differs")
     out.mkdir(exist_ok=False)
     common = {

@@ -100,10 +100,14 @@ separate sealed commitment.
    The menu contains 21 fixed controls: every K=3/10/20 and
    D=1/2/3/4 combination at C=0, plus three D3 C cutoffs
    measured separately from training offers at each K.
-   It also contains three
+   It also contains five
    selectable joint C/K/D candidates, two component diagnostics,
    and their exact model-running no-op twins. The K-only and C/D-only
    diagnostics cannot become the selected universal controller.
+   Two fresh-only joint ablations compare D/C's last generated token
+   with its 4/16-token history windows, then test K's previous-turn
+   acceptance feature. The shortest D/C variant still reads the
+   last generated token.
 3. Score every arm on the **same** mixed validation conversations.
    Choose one global fixed control among quality-eligible fixed arms
    by pooled returned tokens / complete native request seconds on
@@ -121,9 +125,10 @@ separate sealed commitment.
    margin. If none survives, record a global no-go and leave final
    prompts unopened. There is no `chosen_by_domain` primary.
 
-Only the single selected policy, its no-op, the K20/D3/C0 reference,
-the global fixed control and the validation-best fixed controls enter
-the final arm file.
+Only the single selected policy, its no-op, the full fresh controller,
+both fresh feature ablations with their no-ops, the K20/D3/C0
+reference, the global fixed control and the validation-best fixed
+controls enter the final arm file.
 Every listed arm runs on every domain. No field switch occurs in
 the native command.
 Seal the mixed native outputs, hidden-task grades, both-order prose
@@ -148,6 +153,14 @@ interval bound against each domain's validation-best fixed setting
 for code, prose and math. Failure of any domain is a no-go even if
 the pool rises. No exact-loop conversation enters a rate; caps,
 loops and actual K/D/C action counts remain visible.
+Report paired final native-rate intervals for the full fresh trio.
+The window-history arm versus last-token arm isolates the longer
+D/C token window. Full fresh versus window-history isolates K's
+previous-turn acceptance feature. Comparisons involving a
+historically trained winner are diagnostics, since data source also
+changes. Apply the same quality guards against fresh trio outputs
+distinct from the selected policy. These diagnostics do not become
+per-request routes.
 
 Code quality uses two hidden MBPP tests per task, format and syntax
 checks in a credential-free bubblewrap namespace with no network or

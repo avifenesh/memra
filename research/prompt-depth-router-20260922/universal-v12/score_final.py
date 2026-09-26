@@ -13,6 +13,9 @@ COUNT = 24
 DRAW_COUNT = 20000
 FULL_SHA = "b35374d34e2a28b31cca0399e6394fa3db3b0f27e9d593b17032a7856b2a5477"
 REFERENCE = "fixed-k20-d3-c0"
+LAST_TOKEN = "joint-fresh-last-token"
+NO_K_PRIOR = "joint-fresh-window-no-k-prior"
+FRESH_FULL = "joint-fresh-only"
 
 
 def sha(path):
@@ -351,6 +354,9 @@ def score(args):
         or set(best) != set(DOMAINS)
         or labels != set(selected["final_arm_labels"])
         or not {candidate, noop, global_fixed, REFERENCE}.issubset(labels)
+        or not {
+            LAST_TOKEN, NO_K_PRIOR, FRESH_FULL,
+        }.issubset(labels)
         or tasks["schema"] != 1
         or tasks["phase"] != "final"
         or tasks["arms_sha256"] != sha(args.arms)
@@ -378,6 +384,12 @@ def score(args):
     for domain in DOMAINS:
         noops_identical(args.root, domain, noops)
         controls = {global_fixed, best[domain]}
+        controls.update(
+            label for label in (
+                LAST_TOKEN, NO_K_PRIOR, FRESH_FULL,
+            )
+            if candidate != label
+        )
         quality = qualify_quality(
             domain, native[domain], candidate,
             controls, best[domain], tasks, prose,
@@ -388,6 +400,15 @@ def score(args):
             ),
             "global_fixed_rate": available_rate(
                 native[domain][global_fixed],
+            ),
+            "last_token_rate": available_rate(
+                native[domain][LAST_TOKEN],
+            ),
+            "window_no_k_prior_rate": available_rate(
+                native[domain][NO_K_PRIOR],
+            ),
+            "fresh_full_rate": available_rate(
+                native[domain][FRESH_FULL],
             ),
             "quality": quality,
             "vs_validation_best_fixed": paired(
@@ -416,6 +437,57 @@ def score(args):
             domain: native[domain][candidate]
             for domain in DOMAINS
         }),
+        "history_ablation": {
+            label: (
+                {"status": "selected-control"}
+                if candidate == label else {
+                    "status": "paired-diagnostic",
+                    "pooled": pooled_pair(
+                        native, candidate, label,
+                        26092644 + index,
+                    ),
+                    "domains": {
+                        domain: paired(
+                            native[domain],
+                            candidate, label,
+                            26092646 + index,
+                        )
+                        for domain in DOMAINS
+                    },
+                }
+            )
+            for index, label in enumerate(
+                (LAST_TOKEN, NO_K_PRIOR, FRESH_FULL)
+            )
+        },
+        "feature_isolation": {
+            name: {
+                "treatment": treatment,
+                "control": control,
+                "pooled": pooled_pair(
+                    native, treatment, control,
+                    26092650 + index,
+                ),
+                "domains": {
+                    domain: paired(
+                        native[domain],
+                        treatment, control,
+                        26092652 + index,
+                    )
+                    for domain in DOMAINS
+                },
+            }
+            for index, (name, treatment, control) in enumerate((
+                (
+                    "dc_window_beyond_last_token",
+                    NO_K_PRIOR, LAST_TOKEN,
+                ),
+                (
+                    "k_prior_turn_feature",
+                    FRESH_FULL, NO_K_PRIOR,
+                ),
+            ))
+        },
     }
     result["status"] = decide(result)
     return result

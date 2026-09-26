@@ -10,10 +10,19 @@ import select_shared
 
 
 FIXED = sorted(select_shared.REQUIRED_FIXED)
-LEARNED = ("joint-shared", "joint-code-only")
+LEARNED = (
+    "joint-shared", "joint-code-only",
+    select_shared.LAST_TOKEN,
+    select_shared.NO_K_PRIOR,
+    select_shared.FRESH_FULL,
+)
 NOOPS = {
     "joint-shared": "joint-noop-shared",
     "joint-code-only": "joint-noop-code-only",
+    select_shared.LAST_TOKEN: "joint-noop-fresh-last-token",
+    select_shared.NO_K_PRIOR:
+    "joint-noop-fresh-window-no-k-prior",
+    select_shared.FRESH_FULL: "joint-noop-fresh-only",
 }
 
 
@@ -27,7 +36,12 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
         {"label": label, "role": "fixed"}
         for label in FIXED
     ]
-    for label, policy in zip(LEARNED, ("a" * 64, "b" * 64)):
+    for label, policy in zip(
+        LEARNED, (
+            "a" * 64, "b" * 64, "9" * 64,
+            "8" * 64, "7" * 64,
+        ),
+    ):
         specs.extend((
             {
                 "label": label, "role": "learned",
@@ -58,6 +72,9 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
         rates["joint-code-only"] = (
             99.0 if domain == "prose" else 110.0
         )
+        rates[select_shared.LAST_TOKEN] = 100.0
+        rates[select_shared.NO_K_PRIOR] = 100.0
+        rates[select_shared.FRESH_FULL] = 100.0
         rates.update({label: 100.0 for label in NOOPS.values()})
         comparisons = {}
         for label in LEARNED:
@@ -193,6 +210,12 @@ class SharedSelectionTest(unittest.TestCase):
             self.assertEqual(
                 {row["label"] for row in final},
                 {"joint-shared", "joint-noop-shared",
+                 select_shared.LAST_TOKEN,
+                 "joint-noop-fresh-last-token",
+                 select_shared.NO_K_PRIOR,
+                 "joint-noop-fresh-window-no-k-prior",
+                 select_shared.FRESH_FULL,
+                 "joint-noop-fresh-only",
                  "fixed-k20-d2-c0", "fixed-k20-d3-c0"},
             )
             self.assertNotIn("chosen_by_domain", selection)

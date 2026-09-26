@@ -11,6 +11,8 @@ import random
 DOMAINS = ("code", "prose", "math")
 COUNT = 8
 REFERENCE = "fixed-k20-d3-c0"
+LAST_TOKEN = "joint-fresh-last-token"
+NO_K_PRIOR = "joint-fresh-window-no-k-prior"
 WORKLOAD_SHA = "bf920b82e0176c4304bcc562ccce34a28384082c888355a280620163a45e5313"
 DRAW_COUNT = 20000
 
@@ -213,6 +215,8 @@ def report(root, domain, arms, tasks, prose, gpu_uuid):
     if REFERENCE not in fixed:
         raise ValueError(f"{domain} fixed reference is ineligible")
     comparisons = {}
+    if LAST_TOKEN not in rows or NO_K_PRIOR not in rows:
+        raise ValueError("mixed validation history ablations missing")
     for label in labels:
         if by_label[label]["role"] != "learned":
             continue
@@ -221,6 +225,16 @@ def report(root, domain, arms, tasks, prose, gpu_uuid):
             "vs_own_noop": paired(
                 rows, label, noop, 26092601,
             ),
+            **({
+                "vs_last_token_diagnostic": paired(
+                    rows, label, LAST_TOKEN, 26092601,
+                ),
+            } if label != LAST_TOKEN else {}),
+            **({
+                "vs_no_k_prior_diagnostic": paired(
+                    rows, label, NO_K_PRIOR, 26092602,
+                ),
+            } if label == "joint-fresh-only" else {}),
             "vs_each_eligible_fixed": {
                 fixed_label: paired(
                     rows, label, fixed_label, 26092601,

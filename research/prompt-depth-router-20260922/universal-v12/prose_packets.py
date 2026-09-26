@@ -11,6 +11,9 @@ FULL_SHA = "b35374d34e2a28b31cca0399e6394fa3db3b0f27e9d593b17032a7856b2a5477"
 VALIDATION_SHA = "bf920b82e0176c4304bcc562ccce34a28384082c888355a280620163a45e5313"
 TEMPLATE_SHA = "ccd57bd8c4c73f4f83cf8963ef3c2697c1c7b9e907ead91e0d0512cca4ae7a11"
 REFERENCE = "fixed-k20-d3-c0"
+LAST_TOKEN = "joint-fresh-last-token"
+NO_K_PRIOR = "joint-fresh-window-no-k-prior"
+FRESH_FULL = "joint-fresh-only"
 PLACEHOLDER = re.compile(
     r"\{\$(history|user_query|candidate_A|candidate_B|checklist)\}"
 )
@@ -98,6 +101,11 @@ def freeze(args):
             selected["global_fixed"],
             selected["domain_best_fixed_diagnostic"]["prose"],
         }
+        for ablation in (
+            LAST_TOKEN, NO_K_PRIOR, FRESH_FULL,
+        ):
+            if candidate != ablation:
+                controls.add(ablation)
         if candidate not in by_label or not controls.issubset(by_label):
             raise ValueError("final prose comparison arm missing")
         pairs = [(candidate, control) for control in sorted(controls)]

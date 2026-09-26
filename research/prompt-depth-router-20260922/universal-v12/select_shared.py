@@ -12,6 +12,9 @@ DOMAINS = ("code", "prose", "math")
 VALIDATION_SHA = "bf920b82e0176c4304bcc562ccce34a28384082c888355a280620163a45e5313"
 PAIR_STATUS = "paired"
 BASELINE = "fixed-k20-d3-c0"
+LAST_TOKEN = "joint-fresh-last-token"
+NO_K_PRIOR = "joint-fresh-window-no-k-prior"
+FRESH_FULL = "joint-fresh-only"
 REQUIRED_FIXED = {
     f"fixed-k{k}-d{depth}-c0"
     for k in (3, 10, 20) for depth in (1, 2, 3, 4)
@@ -167,7 +170,9 @@ def inspect(validation, arms_path):
         if by_label[label].get("selectable") is True
         and by_label[label].get("arm") == "joint-ckd"
     }
-    if not selectable or any(
+    if not {
+        LAST_TOKEN, NO_K_PRIOR, FRESH_FULL,
+    }.issubset(selectable) or any(
         by_label[label].get("selectable") not in (False, True)
         for label in learned
     ):
@@ -314,6 +319,12 @@ def choose(validation, arms_path):
         {
             chosen["label"],
             by_label[chosen["label"]]["noop_label"],
+            LAST_TOKEN,
+            by_label[LAST_TOKEN]["noop_label"],
+            NO_K_PRIOR,
+            by_label[NO_K_PRIOR]["noop_label"],
+            FRESH_FULL,
+            by_label[FRESH_FULL]["noop_label"],
             BASELINE,
             global_fixed,
             *domain_best_fixed.values(),
