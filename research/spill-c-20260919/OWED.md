@@ -105,7 +105,13 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   (`DAY79.md`): I18 (`c7294b912`, a bank ticket's records by position instead of a set and a map of cloned ids, the
   host-hit demand's largest part), CPU gates green, the profile about 150 ns per block below I17; on BOX34 `DAY79
   VERDICT rig=pro-single integrity=ok i18=flat door=i18 vs_ref=loses (window: i18=flat vs_ref=matches)` (stays); the
-  5090's `i18` inadmissible. Open: the next cut of the prefetch path, registered before code.
+  5090's `i18` inadmissible. Day 81 (`DAY81.md`): I19 (the next-but-one expert prefetched after the current
+  expert's accumulate) withdrawn before any card, its order is I18's (the local check's host demand sequence
+  byte-for-byte I18's), reverted (`5f8824d6b`). Day 82 (`DAY82.md`): an allocation census of the grouped host-hit
+  cycle chose I20 (`8efea3a54`, the bank's stage without its two `BudgetRequest` clones: 22 to 16 allocations per
+  cycle), CPU gates green, P9 unresolved on the local CPU; the card cell `i20` adds I15 as a fifth arm (I20 against
+  I15 printed beside the registered step, deciding nothing); sitting ready (`day82-box.sh`, the 285K class, then a
+  9950X).
 
 ## C12. The door's sensitivity to its owner thread's host placement (the 9950X class)
 

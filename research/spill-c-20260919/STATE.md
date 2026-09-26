@@ -1,4 +1,4 @@
-# Session C day 80 handoff (2026-09-26): owner questions open: DAY80 section 4a (the registered pool as the door's default), C1(c), C10; no cell waits on a box
+# Session C day 82 handoff (2026-09-26): NEED TARGET CARD for DAY82's cell `i20` (the 285K class, then a 9950X); owner questions open: DAY80 section 4a (the registered pool as the door's default), C1(c), C10
 
 - Lane `lane/spill-c-20260919`, checkout `wt-spill-c`, tip pushed at every milestone (hooks on, the announced development mode on engine-source pushes); main `5228ff0cd` (#726) merged into the lane (`2e046ef8b`); no commit on main, no PR.
 - DAY64: the first card cell on BOX15 (a Ryzen 9 9950X host) recorded as it reads (`flat`, `flat`, `matches`) with its noise placed (the door's per-boot host-CPU bimodality); the admissibility clause and the rerun `i15b` registered (section 5); the rerun's first attempt on BOX16 void (nvcc segfaulted in a build, no cell ran; section 5a). The lead runs `day64b-box.sh` on BOX14 (the 285K class) after lane B's sitting, about 18:50Z.
@@ -21,4 +21,6 @@
 - DAY76 (OWED C12): `chunk` read `chunk_does_not` on BOX32; slow runs are those whose compaction fails nearly every migration. The flag `--expert-bank-pool-chunk-bytes` goes with C12 (decide-by 2026-10-10).
 - DAY78 (OWED C12): `pages` read `pool_draws` on BOX34; the pool is shared `/dev/zero` memory compaction isolates and cannot move.
 - DAY80 (OWED C12): the fix `57086efc8` read on BOX37 (285K): `registered_clears`, `dr=flat`; on BOX38 (9950X): `dr=flat`, `no_natural_slow`, `regpool` `not_run` (valid by section 3). The owner's question is complete in `DAY80.md` section 4a; after a yes, the flip and one qualification sitting on the 285K.
+- DAY81 (OWED C11): I19 withdrawn before any card (its prefetch order is I18's), reverted in `5f8824d6b`.
+- DAY82 (OWED C11): I20 (`8efea3a54`) chosen by the allocation census (22 to 16 allocations per grouped cycle); CPU gates green; the cell `i20` (REF, I15, I18, I20, I20C, 50 runs, the profiled pair) dry-checked. NEED TARGET CARD: `D82_BUILDS="i15=2243b1fe2 i18=c7294b912 i20=8efea3a54" bash /root/wt-c/research/spill-c-20260919/day82-box.sh` on the 285K class (one RTX PRO 6000 Blackwell Workstation Edition, nsys, at least 48 GB MemAvailable, about 45 minutes), then the same on a 9950X.
 - Next: read gap15, compact and the 5090 queue's cells as they land; the improvement DAY72 points to and the remedy DAY73 points to, each registered before code.
