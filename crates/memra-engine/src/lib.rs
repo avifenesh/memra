@@ -930,6 +930,7 @@ pub mod fp8_ffi;
 pub mod glm5_tp_sampler;
 pub mod mimo_attn_load;
 pub mod mimo_audio_attn_ffi;
+pub mod mimo_audio_codec_weights;
 pub mod mimo_audio_embed_ffi;
 pub mod mimo_audio_patch_load;
 pub mod mimo_compressed_kv;
