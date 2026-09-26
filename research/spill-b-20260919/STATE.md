@@ -1,3 +1,11 @@
+# WP-B checkpoint 2026-09-26 (later): the tenth sitting read (DAY45); addendum B coded; the eleventh sitting ready (DAY45B then DAY47; NEED TARGET CARD); DAY37's A1 red repro placed; O6, O8, O14 pre-registered; the ninth sitting still on BOX33
+- DAY37 2.8: addendum G's repro on the 5090: r4 RED twice (8 OOMs), v3 GREEN: the A1 red is the missing DAY39 addendum B.
+- DAY45 2.1 (target card): W1 PASS; W4 FAIL on both arms identically (the burst past the card without an admission door: 53 x 503 from the batched prime OOM); W2 and W3 failures placed on by-design exits and the drop set. Addendum B: the memory door on both arms, a second wave, `w-retire-unreleased` (`09badfe57`).
+- DAY47 (O7): h PASS on every 5090 run; g FAIL on the batched chunk (registered shape) then on the gate's literal (addendum A's shape met every term); g-red PASS; g-batch DOCUMENTED. Addendum B fixes the literal; a2 and a3 run locally.
+- O14 opened (the batched chunk's OOM ends every session) and pre-registered (DAY49, text only). O6 (DAY46) and O8 (DAY48) pre-registered, text only.
+- Target card: `pro-single-b-sitting11.sh` (DAY45 addendum B, 4 boots, then DAY47, the gate twice).
+- Local: queue-k (yielding), the DAY47 runner (a2, a3).
+
 # WP-B checkpoint 2026-09-26 (DAY45): the ninth sitting running on the target card (the lead's); DAY37 r4's A1 red placed (DAY39 2.3); O4 pre-registered and coded (DAY45); the tenth sitting ready (NEED TARGET CARD); the 5090 queue-k yields the card between cells
 - Resync at resume: `git fetch`; tip `5edac849b` then this session's commits; queue-i finished DAY39r's eight boots and its chain ran the gate; queue-j waited.
 - Card sharing (the lead's request): the runners sleep YIELD_S after each boot (DAY40 between orders, the probe between cells); queue-i and queue-j stopped by the lane (their logs say so) and replaced by queue-k (pid 2946742, YIELD_S=240) for the unrun items: DAY37 addendum G's repro, DAY39B, DAY40, DAY41, DAY42e, DAY41B, DAY43, DAY44, DAY45.

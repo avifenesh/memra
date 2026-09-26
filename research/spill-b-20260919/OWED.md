@@ -86,10 +86,11 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   session's whole life; the workspace is live only during the prime. Under `MEMRA_ADMIT_BY_MEMORY` the booked
   reading already counts `W` only for still-priming sessions (`pending_prime`, day 33), so this item is the two books'
   side.
-- Status: `running`. Pre-registered (DAY45.md, `3182da256`), addendum A (the release site after the command drain);
-  `MEMRA_ADMIT_W_RELEASE` coded (`21b081ee1`, decide-by 2026-10-10; memra-server 957 passed, clippy clean). The tenth
-  sitting (`pro-single-b-sitting10.sh`, 4 boots, about 1.5 h) and queue-k (the 5090) run the cells. Price: about 0.3
-  agent-day plus about 40 min on the 5090 and 1.5 h on the target card.
+- Status: `running`. Target card (DAY45 2.1): W1 PASS (both books exact at idle); W4 FAIL on both arms identically
+  (no admission door: the 64 x 30,720 burst was admitted past the card and the batched prime OOMed, today's program);
+  W2 FAIL (the unreleased are OOM-dropped and same-tick sessions, retired by design); W3 O1 FAIL on two drop-set rows.
+  Addendum B (the memory door on both arms, a second wave, a retire receipt `09badfe57`, W3 over both-200 rows) runs in
+  the eleventh sitting; the 5090 half in queue-k.
 
 ### O5. The shared prime slab charged per request
 
@@ -122,10 +123,9 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - Acceptance on record: (c) an OOM at prime or step under a tiny headroom parks or requeues, no 5xx to peers, peers'
   streams complete; (d) a client disconnect mid-stream retires the session within one tick, ledger row
   `client_disconnected`, peers unaffected. Each with a red twin, added to `tools/health-fault-gate.sh`.
-- Status: `running`. DAY47 2.1 (the 5090, twice): h and h-red PASS (retired 96 to 97 ms after the close); g and g-red
-  FAIL as registered (the fault landed on the batched chunk, whose error arm ends every session: O14). Addendum A
-  reshapes g to one non-streamed request (the door's documented park branch) plus a DOCUMENTED g-batch reading; the
-  reruns and the target card follow.
+- Status: `running`. The 5090: h and h-red PASS on every run (96 to 97 ms from the close to the retire); addendum A's
+  g meets every registered term but read FAIL on the gate's extra `fired` literal (addendum B fixes it; runs a2, a3);
+  g-red PASS; g-batch DOCUMENTED (O14). The target card runs in the eleventh sitting.
 
 ### O8. The `[spec-vg]` predictive gap on MoE and linear families
 
