@@ -122,7 +122,11 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - Acceptance on record: (c) an OOM at prime or step under a tiny headroom parks or requeues, no 5xx to peers, peers'
   streams complete; (d) a client disconnect mid-stream retires the session within one tick, ledger row
   `client_disconnected`, peers unaffected. Each with a red twin, added to `tools/health-fault-gate.sh`.
-- Status: `open`. Price: about 0.5 agent-day plus the gate on each card.
+- Status: `pre-registered` (DAY47.md): arms `g` (a step OOM parks, requeues, completes; red twin
+  `MEMRA_STEP_OOM_FAULT=4` walks the bounded-retry error) and `h` (a client close retires the session within 1,000 ms,
+  the peer completes; red twin without the close) in `tools/health-fault-gate.sh`. The `client_disconnected` ledger row
+  is the metering implementation's (darklanes), not the stock binary's: listed for the lead. Price: about 0.3 agent-day
+  plus about 15 min per run on the 5090 and 30 min on the target card.
 
 ### O8. The `[spec-vg]` predictive gap on MoE and linear families
 
