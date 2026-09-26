@@ -53,3 +53,40 @@ About 0.3 agent-day of gate code; about 15 min per run on the 5090, about 30 min
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
+
+### 2.1 The 5090, the registered arms (`rtx5090-day47/r1`, `r2`; the 9B; 2026-09-26 14:53 and 15:03Z)
+
+Run 1, verbatim (run 2 reads the same four verdicts; `h` there: `frames_at_close=11 ... close_to_abort_line_ms=96`):
+
+```
+HFG (g) step-oom-parks-and-completes: fault=1 parked_lines=0 completed=0/3 codes={r0:200,r1:200,r2:200} http_5xx=0 panic_lines=0 health_after=200 -> FAIL
+HFG (g-red) step-oom-past-the-retry-budget: fault=4 parked_lines=0 completed=0/3 codes={r0:200,r1:200,r2:200} faulted_error={r0:"message":"the model is temporarily at capacity; retry after the Retry-After delay";r1:"message":"the model is temporarily at capacity; retry after the Retry-After delay";r2:"message":"the model is temporarily at capacity; retry after the Retry-After delay";} http_5xx=0 panic_lines=0 green_assertion_fired=true -> FAIL
+HFG (h) client-disconnect-retires-within-1000ms: frames_at_close=15 abort_lines=1 close_to_abort_line_ms=97 peer_complete=true peer_finish=length active_sessions_after=0 health_after=200 -> PASS
+HFG (h-red) no-disconnect: frames_at_close=15 abort_lines=0 closed_request_complete=true peer_complete=true green_assertion_fired=true -> PASS
+health-fault-gate: arms=g,h pass=2 documented=0 fail=2 receipts=/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day47/r1
+```
+
+- **h PASS and h-red PASS on both runs**: the closed client's session retired 97 and 96 ms after the close, the peer
+  completed, the box idled with no active session; without the close there is no abort line and the green assertion
+  fires.
+- **g FAIL and g-red FAIL on both runs, as registered.** Placed from the logs: with three concurrent streamed requests
+  the fault fired on the BATCHED decode chunk (`MEMRA_STEP_OOM_FAULT fired: this batched decode chunk reports a
+  synthetic CUDA OOM (3 session(s))`), and the chunk's error arm (`worker.rs`, the `decode_step_batch_sampled_lean`
+  error branch) ends every session of the chunk with the typed overloaded error (`the model is temporarily at
+  capacity; retry after the Retry-After delay`, an SSE error event on a 200 stream): no park, no requeue, peers
+  included. 1.1 assumed the fault would land on one session's own step; in the served batched regime every
+  concurrent session shares the chunk. No 5xx and no panic on either arm. The registered clause reads FAIL; the
+  batched chunk's missing OOM recovery is a server gap against DAY24 (c)'s acceptance ("peers' streams complete") and
+  is opened as O14.
+
+### 1.6 Addendum A (2026-09-26, after 2.1, before any code of the revision)
+
+- **Arm g, reshaped to the door's documented branch:** one non-streamed request (nothing reaches the client before it
+  completes), so the fault fires on its own non-batching step (`MEMRA_STEP_OOM_FAULT fired: this non-batching step`):
+  green is one `step OOM parked session back to queue` line and the request ends `200` with a `finish_reason`, no
+  5xx, no panic, `/health` 200 after. **g-red:** `MEMRA_STEP_OOM_FAULT=4` walks it into the bounded-retry honest
+  error, and the green assertion must fire.
+- **Arm g-batch, a DOCUMENTED reading (not a pass):** the three-stream shape of 1.1, reporting how many sessions of
+  the chunk ended with the overloaded error, the park count and the 5xx count, so the O14 revision has its before
+  receipt in the gate.
+- The runs repeat as 1.3 (twice on each card). Arm h and its twin are unchanged.

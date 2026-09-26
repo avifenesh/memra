@@ -1,0 +1,4 @@
+AMB no prefill OOM: oom_lines=0 status={200: 44, 429: 20} -> PASS
+AMB typed refusals: served=44 r429=20 refuse_lines=20 retry_after_in_1_60=True other_non200=0 -> PASS
+AMB booked admits: admit_lines=44 est_over_booked_free=0 served=44 -> PASS
+AMB boot census: alive=1 health=200 panicked=0 argmax_sentinel=0 [worker]_FATAL=0 [worker]_respawn=0 spec_verify_refused=0 -> PASS

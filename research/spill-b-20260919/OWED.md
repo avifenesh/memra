@@ -122,11 +122,10 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - Acceptance on record: (c) an OOM at prime or step under a tiny headroom parks or requeues, no 5xx to peers, peers'
   streams complete; (d) a client disconnect mid-stream retires the session within one tick, ledger row
   `client_disconnected`, peers unaffected. Each with a red twin, added to `tools/health-fault-gate.sh`.
-- Status: `pre-registered` (DAY47.md): arms `g` (a step OOM parks, requeues, completes; red twin
-  `MEMRA_STEP_OOM_FAULT=4` walks the bounded-retry error) and `h` (a client close retires the session within 1,000 ms,
-  the peer completes; red twin without the close) in `tools/health-fault-gate.sh`. The `client_disconnected` ledger row
-  is the metering implementation's (darklanes), not the stock binary's: listed for the lead. Price: about 0.3 agent-day
-  plus about 15 min per run on the 5090 and 30 min on the target card.
+- Status: `running`. DAY47 2.1 (the 5090, twice): h and h-red PASS (retired 96 to 97 ms after the close); g and g-red
+  FAIL as registered (the fault landed on the batched chunk, whose error arm ends every session: O14). Addendum A
+  reshapes g to one non-streamed request (the door's documented park branch) plus a DOCUMENTED g-batch reading; the
+  reruns and the target card follow.
 
 ### O8. The `[spec-vg]` predictive gap on MoE and linear families
 
@@ -139,6 +138,18 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   MTP artifact (20 GB, on the local disk, to be staged on the target card) with `enforce` against `enforce-vg`, V1 the
   pool engages, V2 no OOM, V3 typed refusals, V4 identity. Price: about 0.3 agent-day plus about 1 h on the 5090 and
   1.5 h on the target card.
+
+### O14. A batched decode chunk's OOM ends every session of the chunk (DAY47 2.1)
+
+- Source: DAY47 2.1: the step-OOM door on three concurrent streamed requests fired on the batched decode chunk, and
+  the chunk's error arm ended all three with the typed overloaded error (no park, no requeue, no retry), where DAY24
+  (c)'s acceptance says peers' streams complete. The non-batching step has the park branch; the batched chunk has none.
+- What: a pre-registered recovery for a quoted CUDA OOM on a batched decode chunk: reclaim (the prefix cache and parked
+  sessions, the step-OOM ladder), then either retry the chunk when no session's cache was touched (the fault before
+  device work, or a torn-state check), or split it, keeping one numeric program per request (a retried chunk is the
+  same batched step); sessions that never emitted park as today. Design, the torn-state argument and the cells are
+  pre-registered before code (DAY49).
+- Status: `open`. Price: about 1 agent-day plus a cell on each card.
 
 ### O9. memra#464's guard seed
 
