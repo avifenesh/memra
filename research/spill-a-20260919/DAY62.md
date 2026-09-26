@@ -305,3 +305,37 @@ per-hardware rule, since the program changes on every card.
   - Every clause read in both orders.
 - **What each card decides.** The target card; the 5090 half follows under the per-hardware rule.
 - **Budget.** 0.3 agent-day: the identity threading and decision 0.15, the cells 0.05, the sitting 0.1.
+
+## 9. Design R1 as built (`04554e99f`), and its sitting prepared
+
+- (R1.1) Every capture records its source's request id at submission. `CaptureSubmit.source_request` is threaded
+  through `prefix_capture_off_tick` (from `prefix_insert_from_session`) and `prefix_spec_capture_off_tick` (from
+  `prefix_insert_from_spec_boundary`, whose three publishers, MTP `spec-boundary`, `dspark-boundary` and
+  `glm5-boundary`, each pass their session's id).
+  - The retire pass's source test is `r1_is_source`: the request id, or the plain cache's layer-vector address.
+    Either match settles.
+  - The id covers the spec-boundary routes, whose source cache is the session's spec, DFlash or GLM-5 cache rather
+    than its plain one. Read while building: step 1's address-only test would have missed those, so the id is the
+    identity that makes R1 safe.
+- (R1.2) `r1_settle_at_retire` settles only when the source retires, with the same why as step 1. The skip prints
+  `retire with a capture pending: no retiring session is its source (ticket seq=S); no settle` under the door.
+- (R1.3) No other settle site changes. R2's code is reverted (section 7).
+- Cells:
+  - `day62_r1_settles_only_when_the_source_retires_by_either_identity`: the identity and decision truth tables.
+  - The census `day62_r1_every_capture_names_its_source_and_only_the_retire_settle_changes`: both submits carry the
+    id, all four callers pass it, test then decide then settle, and the second-capture, trim, purge and shutdown
+    settles are kept.
+  - Step 1's census counts the source test as R1's decision; the retire census's distance bound grows by the skip
+    branch.
+- The red arm (`day62-r1/red-arm.patch`: the request id dropped from the identity, with a marker) fails the
+  decision cell on `the request id alone` (`day62-r1/red-arm.log`).
+- Server lib `938 passed; 0 failed; 26 ignored` (`day62-r1/server-lib.log`); clippy `-D warnings`; fmt.
+- **The sitting** `pro-single-r1/`, receipts `/root/spill-receipts/a-r1`: `build.sh <tip> <R1's parent>`, then
+  `driver.sh`:
+  - the 11 gates on r1;
+  - the paired cell, base against r1 by `retire-seam-nosource`, `retire-seam` and `prime`, 60 boots, prefix
+    cache 448 MB, `MEMRA_MAX_SESSIONS=4`;
+  - then `r1-reading.py` (`R1 VERDICT -> ..`, clauses (a) to (d) of section 8).
+  - The reader was dry-run on section 8's base receipts mapped as two identical arms: (b) FAIL (no skip lines, the
+    base's 45 no-source settles present), (c) and (d) PASS, which is right for identical arms.
+  - About 1.5 hours of card time.

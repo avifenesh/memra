@@ -1,4 +1,4 @@
-# WP-A resumable state (2026-09-26, NEED TARGET CARD: R2's sitting; B1's 5090 half queued behind lane F)
+# WP-A resumable state (2026-09-26, NEED TARGET CARD: R1's sitting; W's 5090 half running)
 
 - Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ65 took `9ab479d9c` (DAY66); integ67 takes B1 after integ66.
 - Items 21 to 25 closed (DAY53 to DAY58); item 23's addendum F2b (`b4d6f95c2`) accepted.
@@ -27,10 +27,11 @@
     stopped by me at 07:36Z (after (a), before its timed cell) so B1's half runs first; it repeats whole after.
   - Scratch to remove when the cells close: `rtx5090-w/cell/bins/`, `/home/avifenesh/spill-a-cells/`, and the four
     lines added to the shared `/home/avifenesh/projects/memra/.git/info/exclude`.
-- Item 13 (DAY62): the price read `SELECT R2` (section 3). The long prime's own retire holds the owner
-  86.7 / 86.8 ms behind its demote, and the `prime` control shows the same hold. R1's shape did not form, so R1 has a
-  corrected cell (section 4). R2 is built (section 6), and its sitting is `pro-single-r2/` (`build.sh <tip> <R2's
-  parent>`, then `driver.sh`), which runs R1's cell too.
+- Item 13 (DAY62): the price selected R2; R2 was built, read `REVERT (c)` and reverted (section 7). The stall is
+  the long prime's own segments, and the wait moved to the next capture's second-capture settle. R1's corrected cell
+  selected R1 (no-source hold 12.53 / 12.54 ms). R1 is built (`04554e99f`); its sitting is `pro-single-r1/`
+  (`build.sh <tip> <R1's parent>`, then `driver.sh`, last line `R1 VERDICT -> ..`).
+- B1's 5090 half read ADOPT (DAY59 section 12); B1 goes to integ67.
 - Pre-registered and waiting in order: item 13's design (DAY62, the retire seam: lines, a price, R1
   or R2), items 14 and 19 (DAY63, design L; item 17 re-read on top), item 18 (DAY64), item 20 (DAY65, design T-H).
 - The owed 5090 cells (S4's half, V's half, item 16, and B1's (a1) and (a2) as a compatibility reading) queue on the

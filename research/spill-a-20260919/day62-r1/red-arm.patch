@@ -1,0 +1,15 @@
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index ba848fd00..ab82c9ee6 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -11484,7 +11484,9 @@ fn r1_is_source(
+     source_request: &str,
+     source_kv: usize,
+ ) -> bool {
+-    request_id == source_request || kv.is_some_and(|k| k == source_kv)
++    eprintln!("[day62 r1 red arm] the request id is not a source identity");
++    let _ = (request_id, source_request);
++    kv.is_some_and(|k| k == source_kv)
+ }
+ 
+ /// WP-A day 62 (R1): the retire pass settles the pending capture only when its source retires.
