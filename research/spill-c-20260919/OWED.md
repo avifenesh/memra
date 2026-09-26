@@ -39,8 +39,9 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   fixed rather than reverted), the target card's ladder read (`DAY52.md` section 11). Step (c): the target card's
   deciding verdict `DAY51 VERDICT rig=pro-single integrity=ok -> door_wins` (`decide-b`; the first `decide` void on a
   trace term I10 contradicts), with REF (the legacy's own prefetch) faster than the door, reported. The RTX 5090's G1,
-  G2 and `decide-b` wait on the card's reset (`rtx5090-fault-20260925/`: `GPU requires reset` at 01:25:23Z), queued
-  (`rtx5090-queue-v5-20260925.sh`). Open until that cell reads; then the owner's promotion call (2026-10-04). The
+  G2 and `decide-b` ran after the reset and the reboot (queue v9, `DAY51.md` section 5): G1 and G2 PASS, `DAY51
+  VERDICT rig=rtx5090 integrity=ok -> door_flat`, a per-card input; earlier: waited on the card's reset, queued
+  (`rtx5090-queue-v5-20260925.sh`). Both cards have read; what remains is the owner's promotion call (2026-10-04). The
   lead accepted `door_wins` on the corrected reading (integ60 ruling). The gap to REF and its tuning are C11.
 
 ## C10. `MEMRA_MOE_PREFETCH=1`'s deciding cell (lead integ60 owed item 1, decide-by 2026-10-04)
@@ -54,8 +55,8 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   (`97bd6d889`, `55fbad45a`).
 - **Status.** Target card done (BOX12, `DAY59.md` section 2): G1, G2, G3 PASS, `DAY59 VERDICT rig=pro-single
   shape=pftime integrity=ok -> pf_wins`, `DAY59 VERDICT rig=pro-single shape=pfnaked integrity=ok -> pf_flat`: it
-  qualifies as the target card's naked default; the promotion is the owner's call. The RTX 5090's cells wait on its
-  reset (queue v6).
+  qualifies as the target card's naked default; the promotion is the owner's call. The RTX 5090 (queue v9,
+  `DAY59.md` section 3): G1 to G3 PASS, `pf_wins` under pressure, `pf_flat` naked: it qualifies there too.
 
 ## C11. The door's gap to REF, attributed and tuned (lead integ60 owed item 2)
 
@@ -89,7 +90,10 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   the door 0.28 and 0.19 ms per token behind REF, as at I13, while its CPU-side work halved, so the gap is off the
   CPU-side door work. Day 72 (`DAY72.md`): the gap re-attributed at I15 before any improvement, cell `gap15` (DAY60's
   clocked arms plus REF and the door under Nsight Systems), sitting ready (`day72-box.sh`, the 285K class); the RTX
-  5090's half queued (queue v10, behind v9, which reruns the 5090's unrun cells after the reboot). Open.
+  5090's half ran (queue v10, `DAY72.md` section 2): `admissible=no`, recorded, deciding nothing (beside it the
+  door's GPU idles 0.16 ms per window token more than REF's with the same kernels and copies); the 5090's DAY60 gap
+  (`cpu_side`), i11 (`flat`, `flat`), i13 (`flat`) read, i15 `void (inadmissible)`; queue v11 reruns i15 and gap15 on
+  the 5090 as new holds. Open: gap15 on the 285K class (BOX29, the lead).
 
 ## C12. The door's sensitivity to its owner thread's host placement (the 9950X class)
 
@@ -122,9 +126,12 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   a second through every slow door span, none in REF's (`DAY71.md` section 2). A reader defect fixed and `intr_rate`
   and `migrate_fail` registered before BOX15's half (section 3). Day 73 (`DAY73.md`): the compaction question as its own
   cell `compact` on any 9950X machine (the state per run from the gate probe, compaction per span, the process's
-  pinned and huge-page memory, buddyinfo, system calls under strace), sitting ready (`day73-box.sh`). Open: DAY71's
-  default half waits on BOX15's machine (nothing else stands in for it under its registration), then the class line;
-  DAY73 on any 9950X machine.
+  pinned and huge-page memory, buddyinfo, system calls under strace) ran on BOX31 (a 9950X, as registered): `DAY73
+  COMPACT VERDICT rig=box31 integrity=ok -> not_reproduced` (no slow run, no compaction in any span); a diagnostic on
+  BOX30 (a 9950X3D2, outside the class) read its one slow door run as the sitting's only span with compaction. Day 74
+  (`DAY74.md`): compaction induced on purpose in half the runs of REF and the door, cell `induce`, sitting ready
+  (`day74-box.sh`). Open: DAY74 on a 9950X machine then the 285K class; DAY71's default half on BOX15's machine, then
+  the class line.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 
@@ -180,7 +187,8 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
 - **Acceptance.** `DAY19.md` Task 3 "Rule", as registered; the design and cells in `DAY56.md`.
 - **Status.** Target card PASS: `DAY56 DFLASH TAIL rig=pro-single -> PASS` (attempt 4, `DAY56.md` section 3, after
   three attempts that found a cell shape error and two defects of `MEMRA_DSPARK_PARTIAL_RESTORE`, both fixed:
-  `c4e18a4e3`, `62e848b1f`). The RTX 5090's attempt 4 waits on the card's reset (queue v5). Follow-ups C5b and C5c
+  `c4e18a4e3`, `62e848b1f`). The RTX 5090 (queue v9, `DAY56.md` section 4):
+  `DAY56 DFLASH TAIL rig=rtx5090 -> PASS`. Follow-ups C5b and C5c
   (the tail's hash on the helper, the tail through the contract route as spans) edit lane A's in-flight helper and
   span code (A's DAY38 design G''' and its receipt streams); sequenced after that lands, through the lead. Open, not
   waived.

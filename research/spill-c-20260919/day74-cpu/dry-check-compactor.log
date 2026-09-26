@@ -5,3 +5,12 @@
 02:58:21.179	59	262144	2.7	1048576	0
 02:58:22.176	87	262144	3.7	1048576	0
 02:58:22.176	stopped	maps=87	triggers=0	cpu_s=3.7
+# The earlier 6 GiB run on the same host (the first form, looping from ready; /proc/vmstat before, at ready, after 10 s of loop), copied from its terminal output:
+before: pgmigrate_success 30374182 pgmigrate_fail 19878402 compact_isolated 82373033 compact_stall 77232 compact_fail 64539 compact_success 12693 thp_fault_alloc 5856 thp_fault_fallback 25
+ready after 4s: pgmigrate_success 30534672 pgmigrate_fail 19953038 compact_isolated 82775855 compact_stall 77458 compact_fail 64644 compact_success 12814 thp_fault_alloc 7368 thp_fault_fallback 49
+after: pgmigrate_success 30784733 pgmigrate_fail 20032663 compact_isolated 83360226 compact_stall 77458 compact_fail 64644 compact_success 12814 thp_fault_alloc 33480 thp_fault_fallback 49
+02:57:23.031	ready	fragmented_gib=6.0	setup_s=2.1	cpu_s=2.1
+02:57:24.051	14	262144	3.1	3145728
+02:57:33.075	198	262144	12.1	3145728
+02:57:33.993	stopped	maps=216	cpu_s=13.0
+# compact_stall did not move in the loop, thp_fault_alloc rose by 26,112 (the bursts got huge pages), and the compact_isolated movement is the host's background (it moved before the loop too; the rig runs other lanes).
