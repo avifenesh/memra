@@ -1,4 +1,8 @@
 # WP-B checkpoint 2026-09-26 (O14 queued): the eleventh and twelfth sittings queued on BOX35 (the lead's /root/b11-chain.sh, then /root/b12-chain.sh behind it; receipts /root/spill-receipts/b-day45b, b-day47, b-day49); the ninth sitting still on BOX33
+- Local runners now: queue-k (pid 2946742, DAY39B onward), chain-r5 (O1's r5), and queue-l (pid 2114207, from
+  17:07Z: DAY47 a2 a3, DAY49 g1 g2 on the 02dbdfa40 worktree, DAY49C green and red, DAY49's boots). queue-l replaced
+  three idle-waiting runners (stopped by the lane, nothing run) whose `flock -w 600` wrapper would record an empty run
+  when two of the lane's runners took the same free window. Lane F's M1 queue holds the card in back-to-back cells.
 - DAY49 addendum C: the seven review patterns read against O14's arm found the batch reclaim skipping the VMM reap
   (the other two reclaim paths reap before their trim); fix `95d35c383`, census pins all three. Cell `i-vmm` local
   (`rtx5090-day49/run-c.sh`, worktrees `target/wt-day49c-*`, removed at its end); the target half rides the next sitting.
