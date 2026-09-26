@@ -15273,6 +15273,9 @@ fn batch_oom_reclaim(
     oom_teardown_fence(engine, loaded);
     host_capture_settle_pending(engine, px, hpx, ContractWait::Block, "a batch OOM");
     host_restore_settle_pending(px, hpx, ContractWait::Block, "a batch OOM");
+    // DAY49 addendum C: the third reclaim path reaps the VMM graveyard before its trim, as the
+    // step-OOM teardown and the admin trim do (a dropped cache's planes return only when reaped).
+    vmm_reap_for("batch-oom");
     let reports = trim_model_device_pools(engine, loaded, "batch-oom");
     let trimmed = reports.len();
     format!(
@@ -57105,8 +57108,8 @@ mod tests {
         assert_eq!(super::vmm_owed_bytes(&[]), 0);
     }
 
-    /// WP-B day 37 addendum D: pending releases keep the idle block polling, and both reclaim
-    /// paths reap the graveyard before their pool trim.
+    /// WP-B day 37 addendum D: pending releases keep the idle block polling, and every reclaim
+    /// path reaps the graveyard before its pool trim (day 49 addendum C adds the batch-OOM one).
     #[test]
     fn vmm_pending_releases_keep_the_idle_wait_polling_and_the_reclaims_reap() {
         let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
@@ -57146,6 +57149,15 @@ mod tests {
         assert!(live.contains(
             "vmm_reap_for(\"admin-trim\"); report.devices = trim_model_device_pools(&engine, &loaded, \"admin-trim\");"
         ));
+        assert!(live.contains(
+            "vmm_reap_for(\"batch-oom\"); let reports = trim_model_device_pools(engine, loaded, \"batch-oom\");"
+        ));
+        // Every pool trim on a reclaim path follows its reap.
+        assert_eq!(
+            live.matches("vmm_reap_for(\"").count(),
+            3,
+            "the three reclaim paths"
+        );
     }
 
     /// WP-B day 42 addendum E: the worker queue's helpers, and the idle wait keeps polling while
