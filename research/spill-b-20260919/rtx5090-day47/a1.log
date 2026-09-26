@@ -1,0 +1,23 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-b/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 25.30s
+== health-fault-gate: arms=g,h port=8189 out=/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day47/a1 ==
+--- arm g: a step OOM parks, requeues and completes (and the red twin, and the batched reading) ---
+  [g] ready after 3291 ms (pid 1114971)
+HFG (g) step-oom-parks-and-completes: fault=1 fired_lines=0 parked_lines=1 http=200 finish_reason=length completion_tokens=48 panic_lines=0 health_after=200 -> FAIL
+  [g] exit 0
+  [g-red] ready after 3698 ms (pid 1116953)
+HFG (g-red) step-oom-past-the-retry-budget: fault=4 fired_lines=0 parked_lines=3 http=503 error={the model is temporarily at capacity; retry after the Retry-After delay} panic_lines=0 green_assertion_fired=true -> PASS
+  [g-red] exit 0
+  [g-batch] ready after 3464 ms (pid 1120231)
+HFG (g-batch) step-oom-on-a-batched-chunk: batched_fired_lines=1 parked_lines=0 completed=1/3 ended_with_error_event=2/3 http_5xx=0 (the chunk's error arm ends every session of the chunk; owed O14) -> DOCUMENTED
+  [g-batch] exit 0
+--- arm h: a client disconnect retires the session within one tick; the peer completes (and the red twin) ---
+  [h] ready after 3320 ms (pid 1121121)
+HFG (h) client-disconnect-retires-within-1000ms: frames_at_close=15 abort_lines=1 close_to_abort_line_ms=97 peer_complete=true peer_finish=length active_sessions_after=0 health_after=200 -> PASS
+  [h] exit 0
+  [h-red] ready after 3327 ms (pid 1121939)
+HFG (h-red) no-disconnect: frames_at_close=15 abort_lines=0 closed_request_complete=true peer_complete=true green_assertion_fired=true -> PASS
+  [h-red] exit 0
+health-fault-gate: arms=g,h pass=3 documented=1 fail=1 receipts=/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day47/a1

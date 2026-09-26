@@ -736,3 +736,21 @@ DAY37 A7 card=rtx5090 shape=boff oom_lines=0 r503=0 grow_failures=0 admit_lines=
   (queue-i), which is where this reading goes next. No clause changes.
 - A4-IDLE (a reading): at idle the vmm arm leaves 2.7 to 3.7 GB more driver-free memory than pooled on the mix
   (13.62 against 10.93 and 9.92 GB plain; 11.47 against 8.41 GB spec).
+
+### 2.8 Addendum G's repro (`rtx5090-day37/r4-repro/`, the 5090, 2026-09-26)
+
+Verbatim (`run.log`), with each gate's verdict lines in `<run>.gate.log`:
+
+```
+2026-09-26T14:33:19Z r4-1 rc=0 ADMIT-MEM BURST GATE: RED
+2026-09-26T15:07:29Z v3-1 rc=0 ADMIT-MEM BURST GATE: ALL GREEN
+2026-09-26T15:20:43Z r4-2 rc=0 ADMIT-MEM BURST GATE: RED
+r4-1: AMB no prefill OOM: oom_lines=8 status={429: 19, 200: 45} -> FAIL
+v3-1: AMB no prefill OOM: oom_lines=0 status={200: 44, 429: 20} -> PASS
+r4-2: AMB no prefill OOM: oom_lines=8 status={200: 45, 429: 19} -> FAIL
+```
+
+- **Placed:** the r4 binary reds twice (8 parked prefill OOMs each, as 2.7 read 7), and the addendum-B binary (`v3`,
+  DAY39's `be2177ead`) greens on the same gate. 2.7's A1 red is the door's booking without DAY39 addendum B's terms,
+  not the pooled allocator. The 5090 class's rule reading on the r4 tree stays FAIL (no reading) as it read; a rerun
+  of O1's 5090 cell (the gate set and the A1 lines) on a tree with addendum B is owed.

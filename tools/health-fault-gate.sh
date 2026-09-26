@@ -383,7 +383,8 @@ run_g() { # <label> <fault count> <red:true|false>: one non-streamed request (DA
   local label=$1 n=$2 red=$3
   if boot "$label" MEMRA_STEP_OOM_FAULT="$n"; then
     code=$(chat 48 false "$D/solo" 170)
-    fired=$(grep -c 'MEMRA_STEP_OOM_FAULT fired: this non-batching step' "$D/server.log")
+    # either injection point of a solo step (the plain dispatch's or the non-batching step's; DAY47 addendum B)
+    fired=$(grep -cE 'MEMRA_STEP_OOM_FAULT fired: this (non-batching )?step reports' "$D/server.log")
     parked=$(grep -c '\[admit-oom\] step OOM parked session back to queue' "$D/server.log")
     panics=$(grep -cE 'panicked|\[worker\] PANIC' "$D/server.log")
     sample /health "$D/health-g.csv"; health_after=$LAST_CODE

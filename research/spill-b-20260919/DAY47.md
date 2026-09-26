@@ -90,3 +90,29 @@ health-fault-gate: arms=g,h pass=2 documented=0 fail=2 receipts=/home/avifenesh/
   the chunk ended with the overloaded error, the park count and the 5xx count, so the O14 revision has its before
   receipt in the gate.
 - The runs repeat as 1.3 (twice on each card). Arm h and its twin are unchanged.
+
+### 2.2 Addendum A's first run on the 5090 (`rtx5090-day47/a1`, 2026-09-26 15:18Z)
+
+```
+HFG (g) step-oom-parks-and-completes: fault=1 fired_lines=0 parked_lines=1 http=200 finish_reason=length completion_tokens=48 panic_lines=0 health_after=200 -> FAIL
+HFG (g-red) step-oom-past-the-retry-budget: fault=4 fired_lines=0 parked_lines=3 http=503 error={the model is temporarily at capacity; retry after the Retry-After delay} panic_lines=0 green_assertion_fired=true -> PASS
+HFG (g-batch) step-oom-on-a-batched-chunk: batched_fired_lines=1 parked_lines=0 completed=1/3 ended_with_error_event=2/3 http_5xx=0 (the chunk's error arm ends every session of the chunk; owed O14) -> DOCUMENTED
+HFG (h) client-disconnect-retires-within-1000ms: frames_at_close=15 abort_lines=1 close_to_abort_line_ms=97 peer_complete=true peer_finish=length active_sessions_after=0 health_after=200 -> PASS
+HFG (h-red) no-disconnect: frames_at_close=15 abort_lines=0 closed_request_complete=true peer_complete=true green_assertion_fired=true -> PASS
+health-fault-gate: arms=g,h pass=3 documented=1 fail=1 receipts=/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day47/a1
+```
+
+- **g reads FAIL on a condition the gate added beyond addendum A.** Addendum A's green clause is one park line, `200`
+  with a `finish_reason`, no 5xx, no panic, `/health` 200 after, and the run meets every term of it (`parked_lines=1
+  http=200 finish_reason=length completion_tokens=48 panic_lines=0 health_after=200`). The gate also required one
+  `fired` line matching `this non-batching step`, and the plain route's solo step prints the other injection point's
+  text (`MEMRA_STEP_OOM_FAULT fired: this step reports a synthetic CUDA OOM (model hfg, generated 0, oom_retries
+  0/3)`), so `fired_lines=0`. The line reads FAIL as printed.
+- **g-red PASS** (three parks, then `step OOM NOT parked (... retries 3/3 ...): reporting honestly`, `503` overloaded);
+  **g-batch DOCUMENTED** (the batched chunk's fault ends 2 of 3 streams with the overloaded event, no park: O14);
+  **h and h-red PASS**.
+
+### 1.7 Addendum B (2026-09-26, after 2.2, before the next run)
+
+The gate's `fired` count matches either solo-step injection point (`this step reports` or `this non-batching step
+reports`). Two more runs (`a2`, `a3`) on the 5090 with the revised gate, then the target card. No clause changes.
