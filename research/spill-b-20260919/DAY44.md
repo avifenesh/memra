@@ -171,6 +171,24 @@ No clause, bound or reading changes. What the code settled that section 1 left o
 - **Price, corrected:** 16 serving boots plus two on the target card take about 12 h (the seventh sitting's 9 boots took
   6.4 h), not the 8 h of 1.9; the 5090 about 5 h.
 
+### 1.11 Addendum B (2026-09-26, after a local smoke, before any registered cell)
+
+A smoke on the 5090 (`rtx5090-day44-smoke/`, the 9B at 6,144 tokens, N=5, one order; not a registered cell) placed one
+defect: every spec settle failed its row check (`settle failed (settle left 6145 committed rows, expected 6144)`),
+because a zero-round spec burst still feeds the boundary token (the init feed, a T=1 decode row) and commits it. The
+spec settle is now `spec_prime_settle`: the MTP walker's trunk and draft fill only, with no boundary token, no init
+feed and no draft preparation, so every committed row is a prime-program row (`7a4abb4c9`). Addendum A's "zero-decode
+spec burst" line is replaced by this. The same smoke read, before the fix: plain RX exact resumed 20 of 20 with 0 flips
+against cold (keep: 20 of 20, 12 flips), TTFT p50 46.3 against 45.0 ms at G=32 and 104.2 against 45.2 ms at G=256; plain
+RXg exact resumed 20 of 20 from settled points with 0 flips, TTFT p50 42.4 and 43.0 ms (keep RX 45.0 and 45.2 ms); 56
+settles of 32 rows at about 38 ms each. No clause, bound or reading changes; the cells run on the fixed binary.
+
+On the fixed binary (`rtx5090-day44-smoke/r2/`, spec route under the clamp, same smoke scale): RX exact resumed 20 of
+20 with 0 flips against cold (keep, the first smoke: 20 of 20, 12 flips), every resume from a settled point, TTFT p50
+102.9 against keep's 99.2 ms at G=32 and 138.1 against 107.2 ms at G=256 (the client's own gap let the settles start,
+and a G=256 settle was still running when the next turn arrived); RXg exact resumed 20 of 20 from settled points with
+0 flips, TTFT p50 52.2 and 53.7 ms.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.

@@ -1,0 +1,6 @@
+arm=exact
+route=spec
+shape=RX
+bin_sha256=2974b13f577fcc127e48de6fd7905e2f7c6b6f65c60a277f0ad2fb96578d22a1
+env=MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0
+client_args=--shapes RX --lengths 6144

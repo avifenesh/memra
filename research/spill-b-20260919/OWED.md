@@ -146,14 +146,16 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - What: `MEMRA_RESUME_GRID_REWIND` (default unset) makes a plain or spec pool exact-extension resume rewind to the
   entry's grid checkpoint and re-prime from there, so the resumed turn is cold-identical by the grid law; the cells
   price it against keeping the decoded rows (re-primed rows, TTFT, throughput, memory, fanout reach), both cards.
-- Status: `running`, revised. The owner, 2026-09-26: "resume vs rewind - i think its not or or question, but more of we
-  didnt make it right yet". The deliverable is an exact AND fast resume (DAY44, pre-registered): a grid checkpoint
-  captured inside every resumable prime call without a split, an exact-extension hit that resumes from it in one call,
-  and an off-path settle that re-primes the reply's rows with the prime program while the user reads; gated on 0 flips
-  against cold and TTFT and E2E p50 within 1.05 x keep, both routes, zero-gap and gapped clients, both cards. The
-  measurement arms' readings stay banked (DAY41 2.1 and 2.2: keep 24 of 60 flips; the grid rewind exact at TTFT x2 to
-  x15). `MEMRA_RESUME_GRID_REWIND` stays a measurement arm until DAY44 reads. Price: about 3 agent-days plus about 5 h
-  on the 5090 and 8 h on the target card.
+- Status: `running`, revised on the owner's direction ("resume vs rewind - i think its not or or question, but more
+  of we didnt make it right yet"): the exact AND fast resume, DAY44 (`MEMRA_RESUME_EXACT`, decide-by 2026-10-10). Code:
+  the in-call grid capture (`35ece04e7`), the door, exact hits and settle queue (`9fa281cff`, `138790651`), the
+  prime-only spec settle (`7a4abb4c9`). GPU on the 5090: the capture equals a split prime's state bitwise; a resume
+  from it and a settle then resume are cold-exact. Local smoke (not registered): 0 flips against cold on both routes
+  (keep 12 of 20); gapped turns resume from settled points faster than keep (plain 42 to 43 against 45 ms, spec 52 to
+  54 against 99 to 107 ms); a next turn that arrives before or during a G=256 settle pays the re-prime (plain x2.3,
+  spec x1.29). The ninth sitting (`pro-single-b-sitting9.sh`, about 12 h) and queue-j (the 5090) run the registered
+  cells. The measurement arms' readings stay banked (DAY41 2.1 and 2.2); `MEMRA_RESUME_GRID_REWIND` stays a
+  measurement arm until DAY44 reads.
 
 ### O12. The admission reclaim flush off the tick (lead's ruling at integ62)
 
@@ -182,10 +184,11 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   budget are treated as rejected at that column, the same rollback a rejection takes), so the parked `committed`
   equals the public stream. The design, the one-numeric-program argument (the emitted tokens are the same accepted
   drafts; K=1..8 self-consistency), the census and the cells are pre-registered before code (DAY43).
-- Status: `running`. Pre-registered (DAY43.md, `952cd6bf0`); `MEMRA_SPEC_BUDGET_CLAMP` coded (`87d9e00d1`, decide-by
-  2026-10-10; memra-engine 577 and memra-server 953 passed, clippy clean); the eighth sitting (`pro-single-b-sitting8.sh`,
-  5 boots, about 3.5 h) and the 5090 (queue-h) run it. Price: about 0.5 agent-day plus about 1.5 h local and 3.5 h on
-  the target card.
+- Status: target card `read` (DAY43 2.1): C2 to C5 PASS; C1 FAIL as registered (turn-3 prompts follow turn 2's
+  completion; every same-prompt row equal on both arms). The clamp resumes 60 of 60 spec turns (today 34), later-turn
+  TTFT p50 211 against 1,622 ms, p95 417 against 9,149 ms, throughput 9.91 against 9.34 tokens/s; the resumed turns
+  carry the keep residual (24 of 60 flip), which O11's exact resume removes. The 5090 half runs from queue-i. Code
+  `87d9e00d1`, `MEMRA_SPEC_BUDGET_CLAMP` default-OFF, decide-by 2026-10-10.
 
 ## Owner-only (listed, not worked)
 

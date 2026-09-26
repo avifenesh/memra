@@ -1,0 +1,16 @@
+DAY44 E5 card=rtx5090 boot=rx-plain-rx-O1-exact oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=rtx5090 boot=rx-plain-rx-O1-keep oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=rtx5090 boot=rx-plain-rxg-O1-exact oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=rtx5090 boot=rx-spec-rx-O1-exact oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=rtx5090 boot=rx-spec-rx-O1-keep oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E1 card=rtx5090 boot=rx-plain-rx-O1-exact resumed=20 differ_vs_cold=[] exact_lines=20 -> PASS
+DAY44 E3 card=rtx5090 boot=rx-plain-rx-O1-exact turns=20 resumed=20 frac=1.00 -> PASS
+DAY44 E2 card=rtx5090 route=plain shape=rx order=O1 L=6144 G=32 N=10 ttft_ms keep p50=45.0 p95=46.4 exact p50=46.3 p95=50.2 ratio=1.028 e2e_ms keep p50=318.4 exact p50=301.3 ratio=0.946 extra_primed_rows p50=64 max=64 prime_ms keep p50=43.4 exact p50=44.4 -> PASS
+DAY44 E2 card=rtx5090 route=plain shape=rx order=O1 L=6144 G=256 N=10 ttft_ms keep p50=45.2 p95=47.9 exact p50=104.2 p95=107.6 ratio=2.308 e2e_ms keep p50=2113.1 exact p50=2173.7 ratio=1.029 extra_primed_rows p50=288 max=288 prime_ms keep p50=43.3 exact p50=102.2 -> FAIL
+DAY44 READING card=rtx5090 boot=rx-plain-rx-O1-keep resumed=20 flips_vs_cold=12 generated=8640 wall_s=131.6 tok_per_s=65.64 settles=0 settle_ms p50=nan max=nan idle driver_free=11026563072 pool_cached=1567984448
+DAY44 READING card=rtx5090 boot=rx-plain-rx-O1-exact resumed=20 flips_vs_cold=0 generated=8640 wall_s=132.5 tok_per_s=65.23 settles=0 settle_ms p50=nan max=nan idle driver_free=9449504768 pool_cached=2301987648
+DAY44 E1 card=rtx5090 boot=rx-spec-rx-O1-exact resumed=2 differ_vs_cold=[] exact_lines=2 -> PASS
+DAY44 E3 card=rtx5090 boot=rx-spec-rx-O1-exact turns=20 resumed=2 frac=0.10 -> FAIL
+DAY44 E2 card=rtx5090 route=spec shape=rx order=O1 L=6144 G=256 N=2 ttft_ms keep p50=108.7 p95=110.3 exact p50=121.1 p95=123.3 ratio=1.113 e2e_ms keep p50=1492.6 exact p50=1363.8 ratio=0.914 extra_primed_rows p50=288 max=288 prime_ms keep p50=101.4 exact p50=112.1 -> FAIL
+DAY44 READING card=rtx5090 boot=rx-spec-rx-O1-keep resumed=20 flips_vs_cold=12 generated=8640 wall_s=115.4 tok_per_s=74.89 settles=0 settle_ms p50=nan max=nan idle driver_free=9680191488 pool_cached=1744859712
+DAY44 READING card=rtx5090 boot=rx-spec-rx-O1-exact resumed=2 flips_vs_cold=0 generated=8640 wall_s=140.6 tok_per_s=61.44 settles=0 settle_ms p50=nan max=nan idle driver_free=14111473664 pool_cached=1356243412

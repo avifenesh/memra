@@ -1,3 +1,12 @@
+# WP-B checkpoint 2026-09-26 (DAY44): the eighth sitting read (DAY43: the clamp resumes 60 of 60 spec turns); O11 revised on the owner's direction and built (the exact and fast resume, DAY44); the ninth sitting ready (NEED TARGET CARD); the 5090 queue-i then queue-j
+- Resync at resume: `git fetch`; the rig rebooted at 07:28Z (queue-e to queue-h died); receipts banked (DAY37 r4 with two server logs gzipped, DAY38, DAY38D, DAY39's two interrupted boots); queue-i (pid 1164292) relaunched for the unrun cells (DAY39 registered rerun as rtx5090-day39r, DAY39B, DAY40, DAY41, DAY42e, DAY41B, DAY43); lanes A and F share the card.
+- DAY43 2.1 (target card): C2 to C5 PASS; C1 FAIL as registered (turn-3 prompts follow turn 2's completion; all same-prompt rows equal). The clamp: 60 of 60 spec turns resumed (34), later-turn TTFT p50 211 against 1,622 ms, p95 417 against 9,149 ms.
+- The 5090 halves read: DAY37 r4 FAIL (no reading) on A1 (the pooled arm's admit-mem burst: 7 parked prefill OOMs; vmm GREEN); DAY38 registered P1 FAIL (as the target card); DAY38D PROMOTE-ELIGIBLE on the 5090 class.
+- DAY44 (O11 revised): pre-registered `2720da1c5` (race cases, E1 to E6); addenda A and B; code `35ece04e7` (engine capture), `e9772790b`, `9fa281cff` (server), `138790651`, `7a4abb4c9` (the prime-only spec settle). memra-engine 578, memra-server 955 passed; clippy clean; GPU tests on the 9B pass (capture equals split; resume and settle-then-resume cold-exact).
+- Local smoke: 0 flips on both routes; gapped turns faster than keep; the zero-gap G=256 cost as 1.4 anticipated.
+- Target card: `pro-single-b-sitting9.sh` (DAY44, 16 boots plus offprev and the fault boot, about 12 h).
+- Local: queue-i (running), queue-j (DAY44, behind queue-i).
+
 # WP-B checkpoint 2026-09-26 (later): the seventh sitting read (DAY41 2.2: R1, R3, R4 PASS on both routes, R2 PASS on rewind 60 of 60; spec keep 34 of 60 is today's overshoot miss); O13 pre-registered and coded (MEMRA_SPEC_BUDGET_CLAMP); the eighth sitting ready (NEED TARGET CARD)
 - Resync at resume: `git fetch`; the lead's mirror `pro-single-day41/box-b` checked (no ELF); main merged (`9e75001b0`, 91 commits, no conflict); queue-e at DAY38 done (04:56Z), queue-f and queue-g waiting behind it.
 - DAY41 2.2 (target card): flips keep 24/60 and 6/34, rewind 0; re-primed G+32 rows at 6,144 and 30,720; TTFT plain x2.0 to x2.6, spec x1.01 to x1.32; 122,880 (nominatable, the control token's point) plain x7.3 and x14.9, spec x3.1 and x6.1.

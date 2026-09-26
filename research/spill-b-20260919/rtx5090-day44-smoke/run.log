@@ -1,0 +1,12 @@
+2026-09-26T10:59:28Z boot rx-plain-rx-O1-keep: waiting for an idle rig
+2026-09-26T11:00:28Z boot rx-plain-rx-O1-keep start arm=keep route=plain shape=RX bin=2974b13f577fcc12 env=[MEMRA_TTFT_TRACE=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144]
+2026-09-26T11:04:27Z boot rx-plain-rx-O1-keep rc=0 DAY44 BOOT rows=60 ok=60 exact_resumes=0 settles=0 declined=0 door_line=0 oom=0
+2026-09-26T11:04:32Z boot rx-plain-rx-O1-exact start arm=exact route=plain shape=RX bin=2974b13f577fcc12 env=[MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144]
+2026-09-26T11:06:59Z boot rx-plain-rx-O1-exact rc=0 DAY44 BOOT rows=60 ok=60 exact_resumes=20 settles=0 declined=0 door_line=1 oom=0
+2026-09-26T11:07:04Z boot rx-spec-rx-O1-keep start arm=keep route=spec shape=RX bin=2974b13f577fcc12 env=[MEMRA_TTFT_TRACE=1 MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144]
+2026-09-26T11:09:16Z boot rx-spec-rx-O1-keep rc=0 DAY44 BOOT rows=60 ok=60 exact_resumes=0 settles=0 declined=0 door_line=0 oom=0
+2026-09-26T11:09:21Z boot rx-spec-rx-O1-exact start arm=exact route=spec shape=RX bin=2974b13f577fcc12 env=[MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144]
+2026-09-26T11:11:57Z boot rx-spec-rx-O1-exact rc=0 DAY44 BOOT rows=60 ok=60 exact_resumes=2 settles=0 declined=0 door_line=1 oom=0
+2026-09-26T11:12:02Z boot rx-plain-rxg-O1-exact start arm=exact route=plain shape=RXg6 bin=2974b13f577fcc12 env=[MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144 --turn-gap-ms 1000]
+2026-09-26T11:14:46Z boot rx-plain-rxg-O1-exact rc=0 DAY44 BOOT rows=60 ok=60 exact_resumes=20 settles=56 declined=0 door_line=1 oom=0
+2026-09-26T11:14:51Z boots done: rx-plain-rx-O1-keep:keep:plain:RX rx-plain-rx-O1-exact:exact:plain:RX rx-spec-rx-O1-keep:keep:spec:RX rx-spec-rx-O1-exact:exact:spec:RX rx-plain-rxg-O1-exact:exact:plain:RXg6

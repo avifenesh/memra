@@ -13,7 +13,7 @@ cd "$WT" || exit 1
 if [ ! -s target/day44/SHA256SUMS ]; then
   echo "$(date -u +%FT%TZ) WP-B queue-j build target/day44 (nice 19, CPUQuota=600%)" >> "$D/cpu-concurrency.log"
   export WT; TARGET=$WT/target WRAP="systemd-run --user --scope -q -p CPUQuota=600% -p MemoryMax=20G nice -n 19" \
-    bash "$D/build-arms.sh" "$WT/target/day44" 138790651415cc55a093224e92752ee045861f39 tip offprev:day44-nodoor.patch \
+    bash "$D/build-arms.sh" "$WT/target/day44" 7a4abb4c92055f470246bfe654e42c5657df7c37 tip offprev:day44-nodoor.patch \
     > "$D/rtx5090-day44/build.out" 2>&1
   log "day 44 build rc=$?"
 fi
