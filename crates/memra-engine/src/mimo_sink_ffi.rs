@@ -104,24 +104,28 @@ impl Engine {
             return Err("MiMo attention input crossed GPU devices".into());
         }
         let mut output = self.uninit(64 * 128)?;
-        let sink_ptr = sink.map_or(std::ptr::null(), |slice| {
-            slice.device_ptr(&stream).0 as *const f32
-        });
-        let rc = unsafe {
-            memra_mimo_sink_attn_decode_f32(
-                query.device_ptr(&stream).0 as *const f32,
-                key.device_ptr(&stream).0 as *const f32,
-                value.device_ptr(&stream).0 as *const f32,
-                sink_ptr,
-                output.device_ptr_mut(&stream).0 as *mut f32,
-                seq as i32,
-                64,
-                kv_heads as i32,
-                192,
-                128,
-                window as i32,
-                stream.cu_stream() as *mut c_void,
-            )
+        let rc = {
+            // Keep the read guard alive until the asynchronous launch is queued.
+            let sink_device = sink.map(|slice| slice.device_ptr(&stream));
+            let sink_ptr = sink_device
+                .as_ref()
+                .map_or(std::ptr::null(), |(ptr, _)| *ptr as *const f32);
+            unsafe {
+                memra_mimo_sink_attn_decode_f32(
+                    query.device_ptr(&stream).0 as *const f32,
+                    key.device_ptr(&stream).0 as *const f32,
+                    value.device_ptr(&stream).0 as *const f32,
+                    sink_ptr,
+                    output.device_ptr_mut(&stream).0 as *mut f32,
+                    seq as i32,
+                    64,
+                    kv_heads as i32,
+                    192,
+                    128,
+                    window as i32,
+                    stream.cu_stream() as *mut c_void,
+                )
+            }
         };
         if rc != 0 {
             return Err(format!("MiMo attention GPU decode returned {rc}").into());
