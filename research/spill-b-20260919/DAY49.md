@@ -199,3 +199,35 @@ DAY49C I-VMM card=pro6000 role=red gate_i=FAIL gate_i_red=PASS i-ctrl=[door_on=1
   the defect itself: the batched chunk's fault, `retrying`, and no `reap (batch-oom)` line (`retry_lines=1
   reap_lines=0`).
 - Addendum D's placement applies to this cell too.
+
+### 2.3 Addendum D on the target card (the fourteenth sitting, the same card, 2026-09-26 20:58 to 20:59Z)
+
+Tree `9e39bc314`. Green built on the box from `8926ccfb3`, sha256 `707c2ac5...4d1bfe63`. Red is the same commit with
+`day49d-noreap.patch` (sha256 `5d3b7239...fb6671ad`), sha256 `4b8501b7...4c052d239`. Both built in worktrees. The 27B.
+Receipts at `pro-single-day49d/box/` (the lead's `MIRROR-CHECK.txt`: box manifest OK, no ELF). The gate lines read the
+same on all four runs (`j1`, `j2`, `vmm-green`, `vmm-red`), verbatim once:
+
+```
+HFG (j) aimed-batch-oom-recovers: fired_lines=1 other_fired=0 chunk_sessions=3 untouched=3 retry_lines=1 retried_ok=1 completed=3/3 error_events=0 http_5xx=0 panic_lines=0 digests={r0:9544bb8cfe5453f9,r1:d6443173460ba4da,r2:9c2aecc336dfecfc} control={r0:9544bb8cfe5453f9,r1:d6443173460ba4da,r2:9c2aecc336dfecfc} control_completed=3/3 -> PASS
+HFG (j-red) aimed-batch-oom-retry-also-fails: fired_lines=2 other_fired=0 chunk_sessions=3 retry_lines=1 retry_failed=1 completed=0/3 error_events=3 http_5xx=0 panic_lines=0 green_assertion_fired=true -> PASS
+```
+
+and `read-vmm.log`:
+
+```
+DAY49D J-VMM card=pro6000 role=green gate_j=PASS gate_j_red=PASS j-ctrl=[door_on=1 reap_lines=0 retry_lines=0 paired=True] j=[door_on=1 reap_lines=1 retry_lines=1 paired=True] j-red=[door_on=1 reap_lines=1 retry_lines=1 paired=True] expect=one reap per retry, before it -> PASS
+DAY49D J-VMM card=pro6000 role=red gate_j=PASS gate_j_red=PASS j-ctrl=[door_on=1 reap_lines=0 retry_lines=0 paired=True] j=[door_on=1 reap_lines=0 retry_lines=1 paired=False] j-red=[door_on=1 reap_lines=0 retry_lines=1 paired=False] expect=no reap line (the defect as it reads) -> PASS
+```
+
+- **Arm j PASS on all four runs, and its red twin reads red on all four.** The aimed fault landed on a batched chunk
+  of 3 sessions every time, and on nothing else (`other_fired=0`). The retry named the same 3 sessions untouched,
+  `retried (ok)` followed, and all three streams completed with the no-fault control's digests. With `batch:2` the
+  retry was faulted too: `retry failed`, and all 3 sessions ended with the error event (no 5xx, no panic).
+- **O14 is read on the target card:** one OOM on a multi-session batched chunk no longer ends the chunk's sessions
+  when `MEMRA_BATCH_OOM_RECOVER=1`. The chunk is run once more and its output equals the no-fault run's.
+- **j-vmm PASS on both sides.** Under the VMM door the fix prints one `reap (batch-oom)` line per retry, before it.
+  The patched red recovers the same way but prints no reap line: the defect addendum C found, as it reads.
+- **The serving boots did not run.** `day49d-run.sh: line 18: cd: /root/projects/wt-spill-b: No such file or
+  directory`, then `boots stopped rc=1`. The box chain did not export `WT`, so the runner fell back to its local
+  default. The chain now exports `WT` and `RIG_LOCK` and has a `BOOTS_ONLY=1` entry point (`09b15280f`). The boots
+  run under that name into `b-day49d-boots`. `read-serve.log` is empty and no serving clause is read here.
