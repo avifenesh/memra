@@ -407,6 +407,38 @@ unsafe extern "C" {
     // iteration-5 F-itemisation instrument (see dsv4_gpu.rs Dsv4Phase).
     /// The DSv4 chain's programmatic dependent launch switch (`cu/memra_pdl_chain.cuh`).
     pub fn memra_pdl_chain_set(on: i32);
+    /// A verify round's compressor rows `i0..i1` into their pending slots, both rings.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_cmp_rows_to_slots(
+        pend_kv: *mut f32,
+        pend_sc: *mut f32,
+        rows_kv: *const f32,
+        rows_sc: *const f32,
+        i0: i32,
+        i1: i32,
+        pos0: i32,
+        ratio: i32,
+        latent: i32,
+        slot_off: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// A compressor's verify-round rollback (snapshot restore, committed-row writes and the
+    /// overlap half shifts) in one launch.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_cmp_rollback(
+        pend_kv: *mut f32,
+        pend_sc: *mut f32,
+        kv_snap: *const f32,
+        sc_snap: *const f32,
+        rows_kv: *const f32,
+        rows_sc: *const f32,
+        n_commit: i32,
+        pos0: i32,
+        ratio: i32,
+        latent: i32,
+        overlap: i32,
+        stream: *mut c_void,
+    ) -> i32;
     /// Two same-length f32 copies in one PDL-chained launch (`n` a multiple of 4, 16-byte
     /// aligned pointers).
     pub fn memra_dsv4_copy2_f32(

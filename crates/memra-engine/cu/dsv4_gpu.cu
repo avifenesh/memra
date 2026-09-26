@@ -7783,6 +7783,85 @@ extern "C" int memra_dsv4_replay_destroy(void* graph, void* executable, void* ra
     }
     return first == cudaSuccess ? 0 : 10000 + (int)first;
 }
+// A compressor's verify-round rollback in one launch (memra #710 DSpark round): the pending kv and
+// score rings are reset to their round-start snapshots, then the first `n_commit` rows are written
+// back into their slots in position order, with the overlap compressor's half shift after every
+// completed block. That was 2 + 2 n_commit + 2 x blocks memcpy nodes per compressor; each thread
+// here replays the same sequence of moves for its element (for an overlap ring, the lower/upper
+// pair its shift couples), so the final bytes are the copies' own.
+__global__ void dsv4_cmp_rollback_kernel(float* __restrict__ pend_kv, float* __restrict__ pend_sc,
+    const float* __restrict__ kv_snap, const float* __restrict__ sc_snap,
+    const float* __restrict__ rows_kv, const float* __restrict__ rows_sc, int n_commit, int pos0,
+    int ratio, int latent, int overlap) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const long half = (long)ratio * latent;
+    // One element per thread, or for an overlap ring one lower/upper pair.
+    const long j = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (j >= half) return;
+    const float* snaps[2] = {kv_snap, sc_snap};
+    const float* rows[2] = {rows_kv, rows_sc};
+    float* pends[2] = {pend_kv, pend_sc};
+    for (int a = 0; a < 2; ++a) {
+        float lo = snaps[a][j];
+        float hi = overlap ? snaps[a][j + half] : 0.0f;
+        for (int i = 0; i < n_commit; ++i) {
+            const int pos = pos0 + i;
+            const int slot = pos % ratio; // the upper-half slot index for an overlap ring
+            if (j >= (long)slot * latent && j < (long)(slot + 1) * latent) {
+                const float v = rows[a][(long)i * latent + (j - (long)slot * latent)];
+                if (overlap) hi = v; else lo = v;
+            }
+            if (overlap && (pos + 1) % ratio == 0) lo = hi;
+        }
+        pends[a][j] = lo;
+        if (overlap) pends[a][j + half] = hi;
+    }
+}
+// A verify round's compressor rows `i0..i1` into their pending slots, both rings, in one launch:
+// row i lands in slot `slot_off + (pos0 + i) % ratio`. The rows between two block boundaries map
+// to distinct slots, so the moves are the per-row copies' own.
+__global__ void dsv4_cmp_rows_to_slots_kernel(float* __restrict__ pend_kv,
+    float* __restrict__ pend_sc, const float* __restrict__ rows_kv,
+    const float* __restrict__ rows_sc, int i0, int i1, int pos0, int ratio, int latent,
+    int slot_off) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const long n = (long)(i1 - i0) * latent;
+    for (long x = (long)blockIdx.x * blockDim.x + threadIdx.x; x < 2 * n;
+         x += (long)gridDim.x * blockDim.x) {
+        const int a = x >= n;
+        const long y = a ? x - n : x;
+        const int i = i0 + (int)(y / latent);
+        const long c = y - (long)(i - i0) * latent;
+        const long slot = slot_off + (pos0 + i) % ratio;
+        (a ? pend_sc : pend_kv)[slot * latent + c] = (a ? rows_sc : rows_kv)[(long)i * latent + c];
+    }
+}
+extern "C" int memra_dsv4_cmp_rows_to_slots(float* pend_kv, float* pend_sc, const float* rows_kv,
+    const float* rows_sc, int i0, int i1, int pos0, int ratio, int latent, int slot_off,
+    void* raw_stream) {
+    if (!pend_kv || !pend_sc || !rows_kv || !rows_sc || i0 < 0 || i1 <= i0 || pos0 < 0 ||
+        ratio <= 0 || latent <= 0 || slot_off < 0 || i1 - i0 > ratio) return 40074;
+    const long n2 = 2L * (i1 - i0) * latent;
+    memra_chain_launch(dsv4_cmp_rows_to_slots_kernel, (unsigned)min((n2 + 255) / 256, 1024L), 256,
+                       0, (cudaStream_t)raw_stream)(
+        pend_kv, pend_sc, rows_kv, rows_sc, i0, i1, pos0, ratio, latent, slot_off);
+    DSV4_ERR();
+    return 0;
+}
+extern "C" int memra_dsv4_cmp_rollback(float* pend_kv, float* pend_sc, const float* kv_snap,
+    const float* sc_snap, const float* rows_kv, const float* rows_sc, int n_commit, int pos0,
+    int ratio, int latent, int overlap, void* raw_stream) {
+    if (!pend_kv || !pend_sc || !kv_snap || !sc_snap || !rows_kv || !rows_sc || n_commit < 0 ||
+        pos0 < 0 || ratio <= 0 || latent <= 0) return 40074;
+    const long span = (long)ratio * latent;
+    memra_chain_launch(dsv4_cmp_rollback_kernel, (unsigned)((span + 255) / 256), 256, 0,
+                       (cudaStream_t)raw_stream)(
+        pend_kv, pend_sc, kv_snap, sc_snap, rows_kv, rows_sc, n_commit, pos0, ratio, latent,
+        overlap);
+    DSV4_ERR();
+    return 0;
+}
+
 // Two same-length f32 copies in one launch: a compressor checkpoint's kv and score snapshots
 // (memra #710). A kernel, not two memcpy nodes, so a captured step keeps its programmatic
 // dependent launch chain through it; the bytes are the copies' own.
