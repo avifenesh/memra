@@ -332,3 +332,10 @@ W's hold runs its timed boots, nothing of this lane builds.
   property as before.
 - The same cells run in the next target sitting of any design that moves the pinned ledger (recorded for F2 and for
   T-H' if accepted).
+- **As built:** `411177fea` on the lane, cherry-picked onto the integ69 branch as `fb639631c`
+  (`lane/spill-a-integ69-20260926`). `gpu_lease_charge()` replaces every `3 * 8 * 58` ledger expectation (16 pinned
+  totals, and three `+ span_bytes` totals). The refusal cell's hog is `3 * (1 << 30) - gpu_lease_charge() - first`.
+  - CPU: the integ69 branch's server lib `942 passed`, the lane's `948 passed`; clippy `-D warnings`; fmt.
+  - The GPU verification is the lead's battery rerun on the target card. A local 5090 run of the same 18 cells, from
+    the branch's frozen test executable, is queued behind the 5090's lock (`/home/avifenesh/spill-a-cells/i69-gpu/`,
+    banked when it reads).
