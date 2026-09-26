@@ -1385,6 +1385,19 @@ impl ModelConfig {
     /// to bypass a pack's refusal and compile a different attention or activation program.
     pub(crate) fn validate_plan_semantics(&self) -> Result<(), PlanCompileError> {
         let unsupported = |field, value| PlanCompileError::UnsupportedSemantics { field, value };
+        if let Some(mimo) = self.mimo.as_ref() {
+            // The generic sigmoid router selects across all experts. MiMo's
+            // pinned checkpoint has one group, where that is exact; wider
+            // groups require a separate group-selection program.
+            for (field, value) in [
+                ("mimo.n_group", mimo.n_group),
+                ("mimo.topk_group", mimo.topk_group),
+            ] {
+                if value != Some(1) {
+                    return Err(unsupported(field, format!("{value:?}")));
+                }
+            }
+        }
         if let Some(window) = self.window_hint {
             let represented =
                 self.gemma4
@@ -2129,6 +2142,14 @@ fn layer_uses_moe(cfg: &ModelConfig, index: u32) -> bool {
     if moe.expert_count == 0 {
         return false;
     }
+    if let Some(mimo) = cfg.mimo.as_ref() {
+        return mimo
+            .moe_layer_freq
+            .as_ref()
+            .and_then(|layers| layers.get(index as usize))
+            .copied()
+            == Some(1);
+    }
     if let Some(m3) = cfg.m3.as_ref() {
         return m3.moe_layer_freq.get(index as usize).copied().unwrap_or(1) != 0;
     }
@@ -2178,6 +2199,7 @@ fn router(cfg: &ModelConfig, index: u32) -> RouterPlan {
         let selection_bias = cfg.m3.as_ref().is_some_and(|m3| m3.use_routing_bias)
             || cfg.hy3.as_ref().is_some_and(|hy3| hy3.use_routing_bias)
             || cfg.mla.is_some()
+            || cfg.mimo.is_some()
             || cfg.step35.is_some();
         return RouterPlan::Sigmoid {
             normalize_selected,
@@ -2463,6 +2485,31 @@ mod tests {
 
     fn config(json: &str) -> ModelConfig {
         ModelConfig::from_hf(&HfConfig::parse(json))
+    }
+
+    #[test]
+    fn mimo_pinned_router_is_single_group_sigmoid_with_dense_first_layer() {
+        let cfg = config(include_str!("model_packs/mimo_v2/fixtures/config.json"));
+        assert!(!layer_uses_moe(&cfg, 0));
+        assert!(layer_uses_moe(&cfg, 1));
+        assert!(layer_uses_moe(&cfg, 47));
+        assert_eq!(
+            router(&cfg, 1),
+            RouterPlan::Sigmoid {
+                normalize_selected: true,
+                scaling_factor: 1.0,
+                selection_bias: true,
+            }
+        );
+        let mut unsupported = cfg.clone();
+        unsupported.mimo.as_mut().unwrap().n_group = Some(2);
+        assert!(matches!(
+            ModelPlan::compile(&unsupported),
+            Err(PlanCompileError::UnsupportedSemantics {
+                field: "mimo.n_group",
+                ..
+            })
+        ));
     }
 
     #[test]

@@ -1125,7 +1125,10 @@ pub struct MiMoV2Config {
     pub add_full_attention_sink_bias: Option<bool>,
     pub scoring_func: Option<String>,
     pub topk_method: Option<String>,
+    pub n_group: Option<u32>,
+    pub topk_group: Option<u32>,
     pub norm_topk_prob: Option<bool>,
+    pub routed_scaling_factor: Option<f32>,
     pub moe_router_dtype: Option<String>,
     pub moe_layer_freq: Option<Vec<u32>>,
     pub separate_mtp_layers: Option<u32>,
@@ -2363,7 +2366,10 @@ impl ModelConfig {
             add_full_attention_sink_bias: c.add_full_attention_sink_bias,
             scoring_func: c.scoring_func.clone(),
             topk_method: c.topk_method.clone(),
+            n_group: c.n_group,
+            topk_group: c.topk_group,
             norm_topk_prob: c.norm_topk_prob,
+            routed_scaling_factor: c.routed_scaling_factor,
             moe_router_dtype: c.moe_router_dtype.clone(),
             moe_layer_freq: c.moe_layer_freq.clone(),
             separate_mtp_layers: c.num_nextn_predict_layers,
@@ -2641,6 +2647,15 @@ impl ModelConfig {
         if let Some(g5) = self.glm5.as_ref() {
             return Some((g5.routed_scaling_factor, g5.norm_topk_prob));
         }
+        if let Some(mimo) = self.mimo.as_ref()
+            && mimo.scoring_func.as_deref() == Some("sigmoid")
+            && mimo.topk_method.as_deref() == Some("noaux_tc")
+        {
+            return Some((
+                mimo.routed_scaling_factor.unwrap_or(1.0),
+                mimo.norm_topk_prob.unwrap_or(false),
+            ));
+        }
         if let Some(m3) = self.m3.as_ref()
             && m3.sigmoid_routing
         {
@@ -2899,6 +2914,8 @@ pub struct HfConfig {
     pub attention_value_scale: Option<f32>,
     pub add_swa_attention_sink_bias: Option<bool>,
     pub add_full_attention_sink_bias: Option<bool>,
+    pub n_group: Option<u32>,
+    pub topk_group: Option<u32>,
     // ---- Hy3 (`hy_v3`) ----
     pub first_k_dense_replace: Option<u32>,
     pub moe_router_use_sigmoid: Option<bool>,
@@ -3064,6 +3081,8 @@ impl Default for HfConfig {
             attention_value_scale: None,
             add_swa_attention_sink_bias: None,
             add_full_attention_sink_bias: None,
+            n_group: None,
+            topk_group: None,
             first_k_dense_replace: None,
             moe_router_use_sigmoid: None,
             moe_router_enable_expert_bias: None,
@@ -3703,6 +3722,12 @@ impl HfConfig {
         if let Some(v) = o.boolean("add_full_attention_sink_bias")? {
             self.add_full_attention_sink_bias = Some(v);
         }
+        if let Some(v) = o.u32("n_group")? {
+            self.n_group = Some(v);
+        }
+        if let Some(v) = o.u32("topk_group")? {
+            self.topk_group = Some(v);
+        }
         // ---- Hy3 keys ----
         if let Some(v) = o.u32("first_k_dense_replace")? {
             self.first_k_dense_replace = Some(v);
@@ -4233,7 +4258,11 @@ pub(crate) mod hf_tests {
         let mimo = config.mimo.as_ref().unwrap();
         assert_eq!(mimo.scoring_func.as_deref(), Some("sigmoid"));
         assert_eq!(mimo.topk_method.as_deref(), Some("noaux_tc"));
+        assert_eq!(mimo.n_group, Some(1));
+        assert_eq!(mimo.topk_group, Some(1));
         assert_eq!(mimo.norm_topk_prob, Some(true));
+        assert_eq!(mimo.routed_scaling_factor, None);
+        assert_eq!(config.sigmoid_router(), Some((1.0, true)));
         assert_eq!(mimo.moe_router_dtype.as_deref(), Some("bfloat16"));
         assert_eq!(mimo.moe_layer_freq.as_ref().unwrap().len(), 48);
         assert_eq!(mimo.separate_mtp_layers, Some(3));
