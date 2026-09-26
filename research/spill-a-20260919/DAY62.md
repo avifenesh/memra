@@ -173,3 +173,47 @@ session's response is already complete; what waits is its retire tail (metrics a
 per-hardware rule, since the program changes on every card.
 
 **Budget.** 0.4 agent-day: the hold and releases 0.2, the cells and census 0.1, the sitting 0.1.
+
+## 6. Design R2 as built (`00168e79a`), and its sitting prepared
+
+- (R2.1) `r2_defer_retire(finished, source_retiring, ticket, held)`: the retire pass defers only when the one
+  retiring session is the pending capture's source, the capture has a ticket in flight, and no source is already
+  held. Otherwise it runs today's `Block` settle with step 1's why.
+  - On a deferral, the session leaves `active` into `hpx.held_source` (with the ticket sequence) and prints
+    `[prefix-cache] retire deferred: .. (ticket seq=S; X ms)`.
+  - The session stays booked: the admission book retires it once, at the retire loop's single removal, after its
+    release.
+- (R2.2) Release and the other exits:
+  - The settle's `Done` records `capture_landed_seq`. The retire pass then decides with `r2_held_release`:
+    Release (the landing observed: the session re-enters `active` and this tick's retire loop, the park included,
+    `retire released: .. (the landing observed)`), Keep (still pending), or Quarantine (the holding capture ended
+    without an observed landing: never parked or dropped, `retire QUARANTINED`).
+  - The tenant purge drops a held source of the purged tenant only after its landing (never parked), and
+    quarantines it otherwise.
+  - Shutdown (inside `host_capture_drain_at_shutdown`) drops a landed held source and leaks one that never landed,
+    plus every quarantined source.
+  - The idle block and its 2 ms cap also wait while a source is held, so a landing seen at the tick top reaches the
+    retire pass in the same iteration.
+- Read while building, stated for the sitting: while a source is held it is not in `active`, so the session-count
+  cap sees one fewer session for about the capture's remaining copy time (its bytes stay booked). A released
+  session retiring while a newer capture is pending is a non-source retire and settles `Block` (R1's territory).
+- Cells: `day62_r2_defers_only_the_lone_source_and_releases_only_after_the_landing` (the two decisions' truth
+  tables) and the census `day62_r2_no_path_releases_a_held_source_before_its_landing`. Three older censuses were
+  updated for the new shape:
+  - step 1's census now counts the source test as R2's decision;
+  - the admission book's census finds the retire loop's own removal;
+  - the idle guard's census literal gains `held_source`.
+- The red arm (`day62-r2/red-arm.patch`: a pending capture releases its source, with a marker) fails the decision
+  cell (`left: Release, right: Keep`, `day62-r2/red-arm.log`).
+- Server lib `938 passed; 0 failed; 26 ignored` (`day62-r2/server-lib.log`); clippy `-D warnings`; fmt.
+- R1's mode `retire-seam-nosource` is in `stall_cell.py` (section 4), and `day62-reading.py` takes the cell and
+  the no-source mode as arguments (defaults: section 2's).
+- **The sitting** `pro-single-r2/`, receipts `/root/spill-receipts/a-r2`: `build.sh <tip> <R2's parent>` (r2 and
+  base from one clone), then `driver.sh`, each step under one collector hold:
+  - `gates.sh`: 11 gates on r2 (the identity gate default and plain door OFF and ON, the fault and contract fault
+    gates default and plain, the pause gate, the hit gate OFF and ON);
+  - `ab.sh seam prime retire-seam 448`: base against r2, 40 boots, `MEMRA_MAX_SESSIONS=4`;
+  - `ab-r1.sh`: R1's cell on base, 30 boots;
+  - then `r2-reading.py` (`R2 VERDICT -> ..`) and `day62-reading.py <root> seam-r1 retire-seam-nosource`
+    (`DAY62 SELECT -> ..` for R1).
+  - About 2 hours of card time.

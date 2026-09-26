@@ -1,0 +1,14 @@
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index 066992be0..0b0660216 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -11536,7 +11536,8 @@ enum HeldRelease {
+     Quarantine,
+ }
+ fn r2_held_release(held: u64, landed: Option<u64>, pending: Option<u64>) -> HeldRelease {
+-    if landed == Some(held) {
++    eprintln!("[day62 r2 red arm] a pending capture releases its source");
++    if landed == Some(held) || pending == Some(held) {
+         HeldRelease::Release
+     } else if pending == Some(held) {
+         HeldRelease::Keep

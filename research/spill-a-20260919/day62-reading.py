@@ -2,7 +2,8 @@
 """WP-A day 62 (DAY62.md section 1 step 2, OWED item 13) reader: the retire seam's price and the design it selects,
 written before its cell runs.
 
-usage: day62-reading.py ROOT
+usage: day62-reading.py ROOT [CELL NOSOURCE_MODE]   (defaults: seam retire-seam-other; section 4's R1 cell reads
+       ROOT seam-r1 retire-seam-nosource with the same rule)
 Input: ROOT/seam/ab/o{1,2}/bNN-{prime,retire-seam,retire-seam-other}: five boots per mode per order. Complete: 30
 boots with receipts, `errors` empty, 30 `STALL REPLAY: PASS`.
 The holds: every `capture published off the tick` line settled by `a session retire (source retiring: yes|no)`; its
@@ -31,14 +32,16 @@ def med(xs):
 
 
 def main():
-    root = os.path.join(sys.argv[1], "seam", "ab")
+    cell = sys.argv[2] if len(sys.argv) > 2 else "seam"
+    other_mode = sys.argv[3] if len(sys.argv) > 3 else "retire-seam-other"
+    root = os.path.join(sys.argv[1], cell, "ab")
     complete, notes = True, []
     stall = {}
     holds = collections.defaultdict(list)
     kinds = collections.defaultdict(collections.Counter)
     other = collections.Counter()
     for order in ("o1", "o2"):
-        for mode in ("prime", "retire-seam", "retire-seam-other"):
+        for mode in ("prime", "retire-seam", other_mode):
             ds = sorted(glob.glob(os.path.join(root, order, f"b*-{mode}")))
             if len(ds) != 5:
                 complete = False
@@ -56,7 +59,7 @@ def main():
                     notes.append(f"{order}/{os.path.basename(d)} errors")
                 st += [r["stall_ms"] for r in j["runs"] if r.get("arm") == mode and "stall_ms" in r]
                 for m in PUB.finditer(open(os.path.join(d, "server.log"), errors="replace").read()):
-                    want = {"retire-seam": "yes", "retire-seam-other": "no"}.get(mode)
+                    want = {"retire-seam": "yes", other_mode: "no"}.get(mode)
                     if m.group(1) == want:
                         shape = "source" if want == "yes" else "no-source"
                         holds[(order, shape)].append(float(m.group(2)))
@@ -72,7 +75,7 @@ def main():
     for order in ("o1", "o2"):
         p = med(stall[(order, "prime")])
         print(f"DAY62 READING order={order} stall prime={p:.2f} retire-seam={med(stall[(order, 'retire-seam')]):.2f} "
-              f"retire-seam-other={med(stall[(order, 'retire-seam-other')]):.2f} ms | holds source N="
+              f"{other_mode}={med(stall[(order, other_mode)]):.2f} ms | holds source N="
               f"{len(holds[(order, 'source')])} median={med(holds[(order, 'source')]):.2f} no-source N="
               f"{len(holds[(order, 'no-source')])} median={med(holds[(order, 'no-source')]):.2f} ms")
     for shape in ("source", "no-source"):
