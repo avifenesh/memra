@@ -1,0 +1,66 @@
+name: Prompt universal policy
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/prompt-universal-policy.yml"
+      - "research/prompt-depth-router-20260922/universal-v12/**"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/prompt-universal-policy.yml"
+      - "research/prompt-depth-router-20260922/universal-v12/**"
+
+permissions:
+  contents: read
+
+jobs:
+  shared-selector:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify one shared policy and fail-closed prose guard
+        run: |
+          python3 -m unittest discover \
+            -s research/prompt-depth-router-20260922/universal-v12 \
+            -p 'test_*.py' -v
+      - name: Parse frozen workload source
+        run: |
+          python3 -m py_compile \
+            research/prompt-depth-router-20260922/universal-v12/workloads.py \
+            research/prompt-depth-router-20260922/universal-v12/select_shared.py \
+            research/prompt-depth-router-20260922/universal-v12/eval.py \
+            research/prompt-depth-router-20260922/universal-v12/collect_mixed.py \
+            research/prompt-depth-router-20260922/universal-v12/quality_tasks.py \
+            research/prompt-depth-router-20260922/universal-v12/prose_packets.py \
+            research/prompt-depth-router-20260922/universal-v12/score_prose.py \
+            research/prompt-depth-router-20260922/universal-v12/score_validation.py \
+            research/prompt-depth-router-20260922/universal-v12/measurement_rows_fresh.py \
+            research/prompt-depth-router-20260922/universal-v12/fit_shared.py \
+            research/prompt-depth-router-20260922/universal-v12/arms_shared.py \
+            research/prompt-depth-router-20260922/universal-v12/preflight_prefix.py \
+            research/prompt-depth-router-20260922/universal-v12/seal_training.py \
+            research/prompt-depth-router-20260922/universal-v12/replay_training.py \
+            research/prompt-depth-router-20260922/universal-v12/pilot_depth.py \
+            research/prompt-depth-router-20260922/universal-v12/seal_evaluation.py \
+            research/prompt-depth-router-20260922/universal-v12/replay_evaluation.py \
+            research/prompt-depth-router-20260922/universal-v12/supervise_v12.py \
+            research/prompt-depth-router-20260922/universal-v12/score_final.py
+      - name: Import native fit and replay source before GPU rental
+        run: |
+          python3 -m venv "$RUNNER_TEMP/v12-imports"
+          "$RUNNER_TEMP/v12-imports/bin/pip" install --no-cache-dir numpy==2.3.3
+          for name in \
+            collect_mixed pilot_depth measurement_rows_fresh \
+            fit_shared preflight_prefix arms_shared eval \
+            quality_tasks prose_packets score_prose \
+            score_validation select_shared score_final \
+            seal_training replay_training seal_evaluation \
+            replay_evaluation supervise_v12; do
+            "$RUNNER_TEMP/v12-imports/bin/python" \
+              "research/prompt-depth-router-20260922/universal-v12/$name.py" \
+              --help >/dev/null
+          done
