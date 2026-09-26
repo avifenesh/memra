@@ -1266,7 +1266,7 @@ pub fn spawn(
             health.clone(),
             load.clone(),
         );
-        std::thread::Builder::new()
+        let handle = std::thread::Builder::new()
             .name(if lanes == 1 {
                 format!("dsv4-serve-{name}")
             } else {
@@ -1274,8 +1274,36 @@ pub fn spawn(
             })
             .spawn(move || serve_lane(&m, &rx, &turn, &health, &load, lanes))
             .expect("spawn dsv4 serve thread");
+        LANES.lock().unwrap_or_else(|p| p.into_inner()).push(handle);
     }
     tx
+}
+
+/// Every serving lane ever spawned, so a graceful shutdown can wait for them.
+static LANES: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Wait for the serving lanes to exit, at most `deadline`; returns how many are still live.
+///
+/// A lane leaves its loop once every admission sender is gone (the GPU worker owns them, so
+/// call this after the worker join) and its current request ends. Returning from `main` while
+/// a lane is still inside an engine call deinitializes CUDA under it: a full-token replay
+/// capture then fails and the replay fail-stop aborts the process on an orderly SIGTERM.
+pub fn join_lanes(deadline: std::time::Duration) -> usize {
+    let lanes = std::mem::take(&mut *LANES.lock().unwrap_or_else(|p| p.into_inner()));
+    let t0 = Instant::now();
+    while lanes.iter().any(|h| !h.is_finished()) && t0.elapsed() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let mut live = 0;
+    for h in lanes {
+        if h.is_finished() {
+            let _ = h.join();
+        } else {
+            live += 1;
+        }
+    }
+    live
 }
 
 /// One serving lane. With one lane this is the serial route. With several (memra #667) the

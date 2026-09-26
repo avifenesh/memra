@@ -6248,6 +6248,10 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         std::io::Error::other("GPU worker thread panicked during graceful shutdown")
     })?;
     eprintln!("[server] GPU worker shutdown complete");
+    let live = crate::dsv4_serve::join_lanes(std::time::Duration::from_secs(drain_deadline_s()));
+    if live > 0 {
+        eprintln!("[server] {live} dsv4 serving lane(s) still in an engine call; exiting anyway");
+    }
     Ok(())
 }
 
