@@ -1651,6 +1651,7 @@ impl LayerCacheShape {
 }
 
 /// Per-stage `(device, pinned host)` session-cache bytes of a layout.
+#[allow(clippy::too_many_arguments)]
 fn plan_cache_bytes(
     layout: &[CacheSlot],
     n_stages: usize,
@@ -24777,6 +24778,30 @@ mod session_plan_tests {
         assert_eq!(dev[0], dev[1]);
         assert_eq!(host[0], host[1]);
         assert_eq!(host[0], (8192 / 4 * 512 * 4) as u64);
+    }
+
+    #[test]
+    fn a_split_c4_store_holds_half_its_blocks_plus_the_recent_ring() {
+        // Position split (memra #710): a C4 layer keeps ceil(cap_blocks / 2) compressed rows
+        // per rank plus the tagged recent ring; the window, transient and every non-C4 layer
+        // are unchanged.
+        let (cap, t) = (65536usize, 512usize);
+        let rep = LayerCacheShape::new(c4(), cap, t, false, WIN, false);
+        let spl = LayerCacheShape::new(c4(), cap, t, false, WIN, true);
+        let blocks = cap / 4;
+        assert_eq!(rep.kvc_rows - spl.kvc_rows, blocks - blocks.div_ceil(2));
+        assert_eq!(spl.recent_rows, (t / 8 + 4).next_power_of_two());
+        assert_eq!(rep.recent_rows, 0);
+        assert_eq!(
+            rep.device_bytes(HD) - spl.device_bytes(HD),
+            ((blocks / 2) * HD * 4 - spl.recent_rows * (HD * 4 + 4)) as u64
+        );
+        for g in [swa(), c128()] {
+            assert_eq!(
+                LayerCacheShape::new(g, cap, t, false, WIN, true).device_bytes(HD),
+                LayerCacheShape::new(g, cap, t, false, WIN, false).device_bytes(HD)
+            );
+        }
     }
 
     #[test]
