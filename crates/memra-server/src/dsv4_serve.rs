@@ -1207,6 +1207,7 @@ struct RouteProgress {
 impl RouteProgress {
     fn round(&mut self) {
         let now = Instant::now();
+        lane_tick();
         self.health.note_round();
         self.load
             .note_round(now.duration_since(self.last_round).as_millis() as u64);
@@ -1258,13 +1259,15 @@ pub fn spawn(
     let rx = Arc::new(std::sync::Mutex::new(rx));
     let turn = Arc::new(TurnLock::new(Dsv4HostCache::new(m.host_cache_bytes)));
     let m = Arc::new(m);
+    let board = Arc::new(LaneBoard::new(lanes));
     for lane in 0..lanes {
-        let (m, rx, turn, health, load) = (
+        let (m, rx, turn, health, load, board) = (
             m.clone(),
             rx.clone(),
             turn.clone(),
             health.clone(),
             load.clone(),
+            board.clone(),
         );
         let handle = std::thread::Builder::new()
             .name(if lanes == 1 {
@@ -1272,10 +1275,14 @@ pub fn spawn(
             } else {
                 format!("dsv4-serve-{name}-{lane}")
             })
-            .spawn(move || serve_lane(&m, &rx, &turn, &health, &load, lanes))
+            .spawn(move || {
+                LANE.with(|slot| *slot.borrow_mut() = Some((board, lane)));
+                serve_lane(&m, &rx, &turn, &health, &load, lanes)
+            })
             .expect("spawn dsv4 serve thread");
         LANES.lock().unwrap_or_else(|p| p.into_inner()).push(handle);
     }
+    spawn_lane_watch(name, board, turn);
     tx
 }
 
@@ -1321,6 +1328,7 @@ fn serve_lane(
     let _latch = ExitLatch(health.clone());
     let sink = health.clone();
     let _progress = memra_engine::progress::ProgressSinkScope::install(Box::new(move |rows| {
+        lane_tick();
         sink.note_rows(rows)
     }));
     loop {
@@ -1329,11 +1337,13 @@ fn serve_lane(
         } else {
             health.set_idle_if_free();
         }
+        lane_phase(LanePhase::Queue);
         let next = match rx.lock() {
             Ok(queue) => queue.recv(),
             Err(poisoned) => poisoned.into_inner().recv(),
         };
         let Ok(mut req) = next else { break };
+        lane_phase(LanePhase::Host);
         // Occupancy rises before the ticket falls (`RouteLoad::begin`), so an arrival
         // never reads a free route between the two.
         let mut run = load.begin();
@@ -1373,6 +1383,186 @@ fn serve_lane(
     }
 }
 
+/// Where a serving lane is (memra #722). Each lane thread publishes its wait point here; the
+/// route's watchdog prints every lane's once one busy lane has sat at a single point for
+/// [`LANE_STALL_DUMP`]. Diagnostic only: nothing reads it to decide anything.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+enum LanePhase {
+    /// Waiting for a request on the route queue.
+    Queue = 0,
+    /// Host work without the launch turn: admission, detokenize, streaming.
+    Host = 1,
+    /// Queued for the launch turn.
+    TurnWait = 2,
+    /// Holding the launch turn: engine calls.
+    Held = 3,
+    /// A pipelined step waiting for its own readbacks without the turn.
+    ReadbackWait = 4,
+    /// A deposited B-row waiting for its batch.
+    Coalesce = 5,
+    /// The memory door's defer sleep.
+    Sleep = 6,
+}
+
+impl LanePhase {
+    fn from_u8(v: u8) -> Self {
+        match v {
+            1 => Self::Host,
+            2 => Self::TurnWait,
+            3 => Self::Held,
+            4 => Self::ReadbackWait,
+            5 => Self::Coalesce,
+            6 => Self::Sleep,
+            _ => Self::Queue,
+        }
+    }
+}
+
+/// A busy lane that stays at one wait point this long gets the route's lanes dumped.
+const LANE_STALL_DUMP: std::time::Duration = std::time::Duration::from_secs(60);
+
+#[derive(Default)]
+struct LaneSlot {
+    phase: std::sync::atomic::AtomicU8,
+    /// Milliseconds since the board's epoch when `phase` last changed.
+    since_ms: std::sync::atomic::AtomicU64,
+}
+
+struct LaneBoard {
+    epoch: Instant,
+    slots: Vec<LaneSlot>,
+}
+
+impl LaneBoard {
+    fn new(lanes: usize) -> Self {
+        LaneBoard {
+            epoch: Instant::now(),
+            slots: (0..lanes).map(|_| LaneSlot::default()).collect(),
+        }
+    }
+
+    fn now_ms(&self) -> u64 {
+        self.epoch.elapsed().as_millis() as u64
+    }
+}
+
+thread_local! {
+    /// This thread's lane on its route's board, set by `serve_lane`.
+    static LANE: std::cell::RefCell<Option<(Arc<LaneBoard>, usize)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Restamp this lane's current point: the lane made progress there (a decode step, a spec round,
+/// a prefill chunk). A serial route holds the turn for a whole request, so without this a healthy
+/// long decode would read as a lane that has not moved.
+fn lane_tick() {
+    LANE.with(|lane| {
+        if let Some((board, i)) = lane.borrow().as_ref() {
+            board.slots[*i]
+                .since_ms
+                .store(board.now_ms(), std::sync::atomic::Ordering::Relaxed);
+        }
+    });
+}
+
+/// Publish this lane's wait point. A no-op on threads that are not serving lanes.
+fn lane_phase(phase: LanePhase) {
+    LANE.with(|lane| {
+        if let Some((board, i)) = lane.borrow().as_ref() {
+            let slot = &board.slots[*i];
+            if slot
+                .phase
+                .swap(phase as u8, std::sync::atomic::Ordering::Relaxed)
+                != phase as u8
+            {
+                slot.since_ms
+                    .store(board.now_ms(), std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+    });
+}
+
+/// One watchdog look at the board at `now` ms: when a lane that is not waiting on the queue has
+/// sat at one point for `stall` and was not already reported at that point, the dump line for
+/// every lane; `dumped` remembers each lane's reported `since`. A lane queued for the launch turn
+/// counts only when no lane has moved within `stall`: a route that holds the turn for a whole
+/// request (DSpark, the device sampler, a restored prefix) keeps the others waiting while the
+/// holder restamps every step.
+fn lane_watch_once(
+    board: &LaneBoard,
+    tickets: (u64, u64),
+    now: u64,
+    stall: std::time::Duration,
+    dumped: &mut [u64],
+) -> Option<String> {
+    let stall_ms = stall.as_millis() as u64;
+    let point = |slot: &LaneSlot| {
+        (
+            LanePhase::from_u8(slot.phase.load(std::sync::atomic::Ordering::Relaxed)),
+            slot.since_ms.load(std::sync::atomic::Ordering::Relaxed),
+        )
+    };
+    let fresh = board.slots.iter().any(|slot| {
+        let (phase, since) = point(slot);
+        phase != LanePhase::Queue && now.saturating_sub(since) < stall_ms
+    });
+    let stuck = board.slots.iter().enumerate().any(|(i, slot)| {
+        let (phase, since) = point(slot);
+        phase != LanePhase::Queue
+            && (phase != LanePhase::TurnWait || !fresh)
+            && now.saturating_sub(since) >= stall_ms
+            && dumped[i] != since
+    });
+    if !stuck {
+        return None;
+    }
+    let lanes: Vec<String> = board
+        .slots
+        .iter()
+        .enumerate()
+        .map(|(i, slot)| {
+            let since = slot.since_ms.load(std::sync::atomic::Ordering::Relaxed);
+            dumped[i] = since;
+            format!(
+                "lane {i} {:?} for {:.1}s",
+                LanePhase::from_u8(slot.phase.load(std::sync::atomic::Ordering::Relaxed)),
+                now.saturating_sub(since) as f64 / 1000.0
+            )
+        })
+        .collect();
+    Some(format!(
+        "a lane has not moved for {}s: {}; turn tickets next={} served={}",
+        stall.as_secs(),
+        lanes.join("; "),
+        tickets.0,
+        tickets.1
+    ))
+}
+
+/// The route's lane watchdog: every 5 s, [`lane_watch_once`] at [`LANE_STALL_DUMP`], printed.
+/// Exits when the route's lanes are gone.
+fn spawn_lane_watch(name: String, board: Arc<LaneBoard>, turn: Arc<TurnLock>) {
+    let _ = std::thread::Builder::new()
+        .name(format!("dsv4-watch-{name}"))
+        .spawn(move || {
+            let mut dumped: Vec<u64> = vec![u64::MAX; board.slots.len()];
+            while Arc::strong_count(&board) > 1 {
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                let tickets = *turn.tickets.lock().unwrap_or_else(|p| p.into_inner());
+                if let Some(line) = lane_watch_once(
+                    &board,
+                    tickets,
+                    board.now_ms(),
+                    LANE_STALL_DUMP,
+                    &mut dumped,
+                ) {
+                    eprintln!("[dsv4-lane-watch] {name}: {line}");
+                }
+            }
+        });
+}
+
 /// The route's launch turn (memra #667): a FIFO ticket lock beside the parked-prefix cache it
 /// guards. A session holds it for every engine call, so one session's work is queued whole on
 /// the stage streams before another's. A pipelined plain step gives it up while it waits for its
@@ -1397,12 +1587,14 @@ impl TurnLock {
     }
 
     fn lock(&self) {
+        lane_phase(LanePhase::TurnWait);
         let mut t = self.tickets.lock().unwrap_or_else(|p| p.into_inner());
         let mine = t.0;
         t.0 += 1;
         while t.1 != mine {
             t = self.cv.wait(t).unwrap_or_else(|p| p.into_inner());
         }
+        lane_phase(LanePhase::Held);
     }
 
     fn unlock(&self) {
@@ -1410,6 +1602,7 @@ impl TurnLock {
         t.1 += 1;
         drop(t);
         self.cv.notify_all();
+        lane_phase(LanePhase::Host);
     }
 }
 
@@ -1464,6 +1657,7 @@ impl Drop for Turn<'_> {
 /// Sleep with the turn given up, then queue for it again (the memory door's defer wait).
 fn sleep_without_turn(turn: &mut Turn, d: std::time::Duration) {
     turn.release();
+    lane_phase(LanePhase::Sleep);
     std::thread::sleep(d);
     turn.acquire();
 }
@@ -1574,6 +1768,7 @@ impl<S, A: Copy> Coalescer<S, A> {
         let ticket = g.next;
         g.next += 1;
         g.waiting.push((ticket, tok, ask, Lent(state as *mut S)));
+        lane_phase(LanePhase::Coalesce);
         let t0 = std::time::Instant::now();
         loop {
             if let Some(result) = g.done.remove(&ticket) {
@@ -1868,6 +2063,7 @@ fn rows_step(
                 let mut lead = Turn::take(lock);
                 m.gpu.decode_rows_enqueue(toks, states, &mut ws.0, full)?;
                 lead.release();
+                lane_phase(LanePhase::ReadbackWait);
                 let waited = m.gpu.decode_rows_wait(&mut ws.0);
                 lead.acquire();
                 waited?;
@@ -1960,6 +2156,7 @@ fn greedy_step(
     turn.acquire();
     m.gpu.decode_step_greedy_enqueue(tok, state)?;
     turn.release();
+    lane_phase(LanePhase::ReadbackWait);
     let waited = m.gpu.decode_step_greedy_wait(state);
     turn.acquire();
     waited?;
@@ -1980,6 +2177,7 @@ fn logits_step(
     turn.acquire();
     m.gpu.decode_step_logits_enqueue(tok, state)?;
     turn.release();
+    lane_phase(LanePhase::ReadbackWait);
     let waited = m.gpu.decode_step_greedy_wait(state);
     turn.acquire();
     waited?;
@@ -3036,6 +3234,102 @@ fn argmax(v: &[f32]) -> u32 {
         }
     }
     best as u32
+}
+
+#[cfg(test)]
+mod lane_watch_tests {
+    use super::{
+        Dsv4HostCache, LANE, LaneBoard, LanePhase, Turn, TurnLock, lane_phase, lane_tick,
+        lane_watch_once,
+    };
+    use std::sync::Arc;
+    use std::sync::atomic::Ordering;
+
+    /// A lane's board slot follows its wait points, and a phase change restamps `since`
+    /// while a repeat of the same phase keeps it (memra #722).
+    #[test]
+    fn a_lane_publishes_its_wait_points() {
+        let board = Arc::new(LaneBoard::new(2));
+        let lock = TurnLock::new(Dsv4HostCache::new(0));
+        let b = board.clone();
+        std::thread::spawn(move || {
+            LANE.with(|slot| *slot.borrow_mut() = Some((b.clone(), 1)));
+            let phase =
+                |b: &LaneBoard| LanePhase::from_u8(b.slots[1].phase.load(Ordering::Relaxed));
+            lane_phase(LanePhase::Queue);
+            assert_eq!(phase(&b), LanePhase::Queue);
+            {
+                let _turn = Turn::take(&lock);
+                assert_eq!(phase(&b), LanePhase::Held);
+            }
+            assert_eq!(phase(&b), LanePhase::Host);
+            let since = b.slots[1].since_ms.load(Ordering::Relaxed);
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            lane_phase(LanePhase::Host);
+            assert_eq!(b.slots[1].since_ms.load(Ordering::Relaxed), since);
+            lane_phase(LanePhase::ReadbackWait);
+            assert!(b.slots[1].since_ms.load(Ordering::Relaxed) > since);
+        })
+        .join()
+        .unwrap();
+        // Lane 1 sits at ReadbackWait: past the stall the dump names it once, and a lane at the
+        // queue never trips it.
+        let since = board.slots[1].since_ms.load(Ordering::Relaxed);
+        let stall = std::time::Duration::from_secs(60);
+        let mut dumped = vec![u64::MAX; 2];
+        assert_eq!(
+            lane_watch_once(&board, (7, 6), since + 59_999, stall, &mut dumped),
+            None
+        );
+        let line = lane_watch_once(&board, (7, 6), since + 60_000, stall, &mut dumped)
+            .expect("a stalled lane is reported");
+        assert!(line.contains("lane 1 ReadbackWait for 60.0s"), "{line}");
+        assert!(line.contains("lane 0 Queue"), "{line}");
+        assert!(line.ends_with("turn tickets next=7 served=6"), "{line}");
+        assert_eq!(
+            lane_watch_once(&board, (7, 6), since + 90_000, stall, &mut dumped),
+            None
+        );
+        // A lane queued for the turn behind a holder that keeps stepping is not a stall; once the
+        // holder stops moving too, it is.
+        let turn_board = LaneBoard::new(2);
+        turn_board.slots[0]
+            .phase
+            .store(LanePhase::TurnWait as u8, Ordering::Relaxed);
+        turn_board.slots[0].since_ms.store(0, Ordering::Relaxed);
+        turn_board.slots[1]
+            .phase
+            .store(LanePhase::Held as u8, Ordering::Relaxed);
+        turn_board.slots[1]
+            .since_ms
+            .store(100_000, Ordering::Relaxed);
+        let mut seen = vec![u64::MAX; 2];
+        assert_eq!(
+            lane_watch_once(&turn_board, (2, 1), 120_000, stall, &mut seen),
+            None
+        );
+        let line = lane_watch_once(&turn_board, (2, 1), 170_000, stall, &mut seen)
+            .expect("a holder that stopped moving is reported");
+        assert!(line.contains("lane 0 TurnWait for 170.0s"), "{line}");
+        assert!(line.contains("lane 1 Held for 70.0s"), "{line}");
+        // A step's tick restamps the point, so a lane that keeps stepping inside one phase (a
+        // serial route holding the turn) never reads as stalled.
+        let b2 = board.clone();
+        std::thread::spawn(move || {
+            LANE.with(|slot| *slot.borrow_mut() = Some((b2.clone(), 1)));
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            lane_tick();
+        })
+        .join()
+        .unwrap();
+        assert!(board.slots[1].since_ms.load(Ordering::Relaxed) > since);
+        // Lane 0 never published; a thread with no lane is a no-op.
+        lane_phase(LanePhase::Held);
+        assert_eq!(
+            board.slots[0].phase.load(Ordering::Relaxed),
+            LanePhase::Queue as u8
+        );
+    }
 }
 
 #[cfg(test)]
