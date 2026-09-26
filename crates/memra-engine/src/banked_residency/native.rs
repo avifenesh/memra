@@ -89,13 +89,15 @@ type FillBuffers = Arc<dyn Fn(usize) -> Option<HostBytes> + Send + Sync>;
 /// bytes on the CPU) carved into fixed buffers per host-plan class, the class's planned slots
 /// plus `POOL_HEADROOM`. DAY76 (a diagnostic door): with a chunk size, the same buffers are
 /// spread over allocations of at most that many bytes, whole buffers each. DAY78 (a diagnostic
-/// door): pageable, the same buffers come from zeroed, 4 KiB-aligned heap memory instead. Each buffer is owned by at most one `PooledBuffer` at a time (the free
+/// door): pageable, the same buffers come from zeroed, 4 KiB-aligned heap memory instead. DAY80
+/// (a diagnostic door): registered, from private anonymous mappings pinned with
+/// `cuMemHostRegister`, pages compaction skips instead of isolating. Each buffer is owned by at most one `PooledBuffer` at a time (the free
 /// lists sit under one mutex) and zeroed the first time it is handed out; dropping the
 /// `PooledBuffer` returns it. The allocation is freed when the pool and its last buffer are gone.
 struct PinnedPool {
     /// Each allocation's base and length (the length frees a pageable allocation).
     allocations: Vec<(*mut u8, usize)>,
-    pageable: bool,
+    kind: PoolKind,
     context: Arc<cudarc::driver::CudaContext>,
     classes: Vec<PoolClass>,
     state: std::sync::Mutex<PoolState>,
@@ -122,6 +124,14 @@ unsafe impl Sync for PinnedPool {}
 const POOL_HEADROOM: usize = crate::moe_cache::BANKED_INFLIGHT + 1 + 64 + 8 + 1;
 /// DAY78: the alignment of a pageable pool's allocations (one page).
 const PAGEABLE_ALIGN: usize = 4096;
+/// Where the pool's allocations come from: `cuMemHostAlloc` (the default), heap memory (DAY78), or
+/// private anonymous mappings pinned with `cuMemHostRegister` (DAY80).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PoolKind {
+    Allocated,
+    Pageable,
+    Registered,
+}
 /// Buffers per class the fill never takes, so a demand's read always finds one.
 const FILL_RESERVE: usize = crate::moe_cache::BANKED_INFLIGHT + 2;
 /// DAY76: a class of `count` buffers of `capacity` bytes spread over allocations of at most
@@ -143,7 +153,7 @@ impl PinnedPool {
         context: Arc<cudarc::driver::CudaContext>,
         classes: &[(u64, usize)],
         chunk_bytes: Option<u64>,
-        pageable: bool,
+        kind: PoolKind,
     ) -> std::result::Result<Arc<Self>, Box<dyn std::error::Error>> {
         let mut sizes = Vec::with_capacity(classes.len());
         let mut counts = Vec::with_capacity(classes.len());
@@ -160,7 +170,46 @@ impl PinnedPool {
         }
         context.bind_to_thread()?;
         let alloc = |len: usize| -> std::result::Result<*mut u8, Box<dyn std::error::Error>> {
-            if pageable {
+            if kind == PoolKind::Registered {
+                let len = len.max(1);
+                // SAFETY: an anonymous private mapping of `len` bytes, owned by this pool and
+                // unmapped (after unregistering) in `Drop`.
+                let ptr = unsafe {
+                    libc::mmap(
+                        std::ptr::null_mut(),
+                        len,
+                        libc::PROT_READ | libc::PROT_WRITE,
+                        libc::MAP_PRIVATE | libc::MAP_ANONYMOUS,
+                        -1,
+                        0,
+                    )
+                };
+                if ptr == libc::MAP_FAILED {
+                    return Err(std::io::Error::last_os_error().into());
+                }
+                let base = ptr.cast::<u8>();
+                // Every page written once, so each is a private page of this mapping.
+                for offset in (0..len).step_by(PAGEABLE_ALIGN) {
+                    // SAFETY: inside the mapping just made.
+                    unsafe { base.add(offset).write_volatile(0) };
+                }
+                // SAFETY: documented FFI; the range is this pool's live mapping.
+                let registered = unsafe {
+                    cudarc::driver::sys::cuMemHostRegister_v2(
+                        ptr,
+                        len,
+                        cudarc::driver::sys::CU_MEMHOSTREGISTER_PORTABLE,
+                    )
+                }
+                .result();
+                if let Err(err) = registered {
+                    // SAFETY: the mapping just made, never registered.
+                    unsafe { libc::munmap(ptr, len) };
+                    return Err(err.into());
+                }
+                return Ok(base);
+            }
+            if kind == PoolKind::Pageable {
                 let layout = std::alloc::Layout::from_size_align(len.max(1), PAGEABLE_ALIGN)?;
                 // SAFETY: a nonzero-size layout; the returned range is owned by this pool and freed
                 // with the same layout in `Drop`.
@@ -222,7 +271,7 @@ impl PinnedPool {
         };
         Ok(Arc::new(Self {
             allocations,
-            pageable,
+            kind,
             context,
             classes: layout,
             state: std::sync::Mutex::new(state),
@@ -270,7 +319,16 @@ impl Drop for PinnedPool {
     fn drop(&mut self) {
         let _ = self.context.bind_to_thread();
         for &(ptr, len) in &self.allocations {
-            if self.pageable {
+            if self.kind == PoolKind::Registered {
+                // SAFETY: every `PooledBuffer` holds an `Arc` of this pool, so none is alive here;
+                // the mapping was registered in `new`, so it is unregistered before it is unmapped.
+                unsafe {
+                    let _ = cudarc::driver::sys::cuMemHostUnregister(ptr.cast());
+                    libc::munmap(ptr.cast(), len);
+                }
+                continue;
+            }
+            if self.kind == PoolKind::Pageable {
                 // SAFETY: allocated in `new` with this layout; no `PooledBuffer` is alive here.
                 unsafe {
                     std::alloc::dealloc(
@@ -752,7 +810,13 @@ impl Engine {
         // and a MEMRA_MOE_SLOTS request alongside it is a conflict, never a silent loser.
         let host_bytes = budget.host_bytes;
         let pool_chunk_bytes = budget.pool_chunk_bytes;
-        let pool_pageable = budget.pool_pageable;
+        let pool_kind = if budget.pool_registered {
+            PoolKind::Registered
+        } else if budget.pool_pageable {
+            PoolKind::Pageable
+        } else {
+            PoolKind::Allocated
+        };
         // Day 43: the host tier is planned per record size under the budget, refused above
         // three quarters of the host's MemAvailable read now (never an environment variable).
         let record_sizes = entries
@@ -862,7 +926,7 @@ impl Engine {
             self.ctx().clone(),
             &plan.classes,
             pool_chunk_bytes,
-            pool_pageable,
+            pool_kind,
         )?;
         eprintln!(
             "[experts-via-tier] host pinned pool bytes={} classes={} headroom={POOL_HEADROOM} fill_reserve={FILL_RESERVE}{}",
@@ -871,7 +935,11 @@ impl Engine {
             pool_chunk_bytes
                 .map(|c| format!(" chunk_bytes={c} allocations={}", pool.allocations.len()))
                 .unwrap_or_default()
-                + if pool_pageable { " pageable" } else { "" }
+                + match pool_kind {
+                    PoolKind::Allocated => "",
+                    PoolKind::Pageable => " pageable",
+                    PoolKind::Registered => " registered",
+                }
         );
         let bank = bank.with_host_buffers(Box::new(PoolSource(pool.clone())))?;
         let fill_pool = pool.clone();
