@@ -2779,6 +2779,24 @@ mod tests {
             .unwrap(),
             "<|im_start|>user\nHi<|im_end|><|im_start|>assistant\n<think></think>"
         );
+        let reasoning_turns = [Turn {
+            role: "assistant".into(),
+            content: "Answer".into(),
+            reasoning: Some("Let me check.".into()),
+            ..Default::default()
+        }];
+        assert_eq!(
+            apply_chat_template_tools(
+                Some(MIMO_TEMPLATE_MARKERS),
+                &reasoning_turns,
+                false,
+                &[],
+                ThinkMode::Default,
+                None
+            )
+            .unwrap(),
+            "<|im_start|>assistant\n<think>Let me check.</think>Answer<|im_end|>"
+        );
         assert!(
             apply_chat_template_tools(
                 Some(MIMO_TEMPLATE_MARKERS),

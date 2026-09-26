@@ -93,13 +93,22 @@ fn run() -> Result<(), Fail> {
                 true,
                 false,
             ),
+            "assistant_reasoning_gen" => (
+                vec![
+                    ("user", "Hello"),
+                    ("assistant", "Answer"),
+                    ("user", "Again"),
+                ],
+                true,
+                false,
+            ),
             "unicode_gen" => (vec![("user", "שָׁלוֹם café 你好")], true, false),
             "user_no_gen" => (vec![("user", "Hi")], false, false),
             "no_think_gen" => (vec![("user", "Hi")], true, true),
             _ => return Err(format!("unknown MiMo template golden case {name}").into()),
         };
-        let rendered = if no_think {
-            let structured: Vec<Turn> = turns
+        let rendered = if no_think || name == "assistant_reasoning_gen" {
+            let mut structured: Vec<Turn> = turns
                 .iter()
                 .map(|(role, content)| Turn {
                     role: (*role).into(),
@@ -107,11 +116,22 @@ fn run() -> Result<(), Fail> {
                     ..Default::default()
                 })
                 .collect();
+            if name == "assistant_reasoning_gen" {
+                let assistant = structured
+                    .iter_mut()
+                    .find(|turn| turn.role == "assistant")
+                    .ok_or("assistant reasoning golden has no assistant turn")?;
+                assistant.reasoning = Some("Let me check.".into());
+            }
             tokenizer.apply_chat_template_tools(
                 &structured,
                 add_generation_prompt,
                 &[],
-                ThinkMode::NoThink,
+                if no_think {
+                    ThinkMode::NoThink
+                } else {
+                    ThinkMode::Default
+                },
                 None,
             )?
         } else {
@@ -129,8 +149,8 @@ fn run() -> Result<(), Fail> {
         println!("{name}\tpassed\t{}", actual_ids.len());
         passed += 1;
     }
-    if passed != 7 {
-        return Err(format!("MiMo template gate expected 7 cases, found {passed}").into());
+    if passed != 8 {
+        return Err(format!("MiMo template gate expected 8 cases, found {passed}").into());
     }
     println!("MiMo template and tokenizer gate passed: {passed} pinned cases");
     Ok(())
