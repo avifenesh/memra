@@ -17,6 +17,26 @@ Artifact: `Qwen3.6-35B-A3B-UD-IQ4_XS.gguf` downloaded from its pinned revision s
 (`MANIFEST-part*.sha256`); files that carried the rented volume id are sanitized and listed in
 `EXPORT-MANIFEST.json` with their original hashes (originals kept privately).
 
+## Verdicts in one place
+
+| Cell | Registered result | Notes |
+|---|---|---|
+| A proof | `M1-PROOF verdict=PASS class=nvme-local-direct reasons=0` | xfs bind, partition of a PCIe 4.0 x4 NVMe, bare-metal kernel |
+| OWED 7 GPU gate | 12/12 on the target card | `direct16` admitted |
+| B0 | envelope recorded; B5 screen `refused-io_uring-unavailable` at depth 2 and 16 | container seccomp refuses io_uring; psync threads equal libaio |
+| B1 | 360/360 scored (amended read gate) | buffered beats O_DIRECT at every size and phase; the store's read path, not the drive, is the ceiling |
+| B3 cold | window 1 unscored (host-level foreign I/O); **window 2 scored**: `mmap-normal` winner 1.191x, every other arm loser | readahead mmap beats the worker when the bank fits the page cache after one pass |
+| B3 warm | unscored (ill-posed gate); read-gate rescoring, post-hoc: both mmap arms 1.19x winners | reported only as post-hoc |
+| B3 bounded | **scored**: `worker16` beats every challenger (`mmap-random` 0.093, `mmap-normal` 0.435, `pread16` 0.407, `direct16` 0.893; `worker2` insufficient at 0.460) | the worker is the right path under memory pressure |
+| run-spec | `=== SELF-CONSISTENCY PASS ===` for `worker16` and `direct16` | K=1..8 identical to plain |
+| B2 | 1 GiB 5/5, 8 GiB 5/5 | export about 1.5 to 1.7 GB/s, import about 1.4 GB/s; engine path, not the drive |
+| B4 | `worker16` registered descriptive row; post-hoc mapped challengers 1.17x (c=1) and 1.18x (c=4) | lower TTFT, TPOT and ITL too |
+| B6 | 200 samples; pinned beats pageable at every size and direction | completes the ten-size G2 matrix on the target class |
+
+No default changes from this box alone: per CLAUDE.md a default needs both rigs. The regime-shaped
+result (mapped access wins while the bank fits in RAM, the positioned-read worker wins under memory
+pressure) is the input for the 5090 half and for any per-regime policy decision.
+
 ## A. The proof (run by the lead, mirrored 11 of 11 by hash)
 
 ```text
@@ -148,6 +168,34 @@ drive (12.8 GB) and then run from the page cache (70% of the file resident at th
 why `worker16` outruns the drive (22 tok/s x 454 MB per token). `direct16` reads every expert
 from the drive on every token (409 GB per visit) and is the drive-bound rate: about 10 tok/s,
 4.6 GB/s during decode.
+
+### Cold regime, second window (registered gate; the scored cold result)
+
+Rerun after B6 in a new window (`b3-cold-w2`), same binary, lock, arms and order: all 60 visits
+clean (no foreign I/O this time: the largest foreign share was 0.26%), all correctness gates
+passed, and the regime scores under the registered gate (the read gate agrees):
+
+| Arm | Scored | Decode tok/s median (min to max) | Device read GB per visit | Artifact resident at end | Read s (worker or blocking) | Owner wait s | Verdict vs worker16 |
+|---|---|---|---|---|---|---|---|
+| `worker16` | 10/10 | 22.35 (22.23 to 22.50) | 12.8 | 0.702 | 115.85 | 19.84 | baseline |
+| `mmap-random` | 10/10 | 7.71 (7.68 to 7.72) | 12.8 | 0.701 | n/a | n/a | loser (0.344) |
+| `mmap-normal` | 10/10 | 26.66 (26.61 to 26.85) | 16.9 | 0.931 | n/a | n/a | winner (1.191) |
+| `pread16` | 10/10 | 16.04 (15.84 to 16.13) | 14.5 | 0.797 | 40.01 | 0.00 | loser (0.717) |
+| `worker2` | 10/10 | 13.73 (13.58 to 13.86) | 12.8 | 0.702 | 42.68 | 45.22 | loser (0.613) |
+| `direct16` | 10/10 | 10.25 (10.21 to 10.32) | 409.1 | 0.147 | 534.72 | 83.55 | loser (0.459) |
+
+```text
+M1-VERDICT regime=cold arm=mmap-random vs worker16: loser median_ratio=0.3444 pairs=10
+M1-VERDICT regime=cold arm=mmap-normal vs worker16: winner median_ratio=1.1913 pairs=10
+M1-VERDICT regime=cold arm=pread16 vs worker16: loser median_ratio=0.7168 pairs=10
+M1-VERDICT regime=cold arm=worker2 vs worker16: loser median_ratio=0.6126 pairs=10
+M1-VERDICT regime=cold arm=direct16 vs worker16: loser median_ratio=0.4585 pairs=10
+```
+
+Window two's medians against window one's (all visits): `worker16` -0.6%, `mmap-random` -0.5%,
+`mmap-normal` -0.5%, `pread16` -1.9%, `worker2` -2.6%, `direct16` +6.9% (window one's median
+includes its contaminated visit, 9.02 tok/s). The ranking and every verdict direction are the
+same in both windows.
 
 ### Warm regime (the whole artifact in the page cache before each visit)
 
