@@ -14,6 +14,11 @@
   `spill_pread.rs`, CPU cells green, GPU ownership cell queued. Frozen run-gen in
   `~/spill-f-5090/bin17` (`owed17/build/`). Arms lock `m1-prereg/f17-arms.lock.json`.
 - OWED 20: candidates written in `ITEM20-CANDIDATES.md`; owner pick.
+- Resync 2026-09-26 07:34Z after the requested 07:28Z rig reboot: tip and origin matched
+  (`03c9f645d` plus one unpushed data commit), binaries and receipts under `~/spill-f-5090` intact
+  and hash-verified, the queue gone. Capped rounds 1 to 4 complete and mirrored; round 5 died
+  mid visit 5, banked as `capped/interrupted-round-05-reboot` (never scored); queue relaunched
+  with `--capped-rounds 5-10`.
 - Running: `m1-5090-queue.py --receipts ~/spill-f-5090/receipts` (detached), order capped,
   anonpeak, bounded, g2, mapped-gpu-cell, f17-smoke, f17-smoke-gate, f17, handoff-1g, handoff-8g.
   Each round waits for an idle card and a free `/tmp/memra-5090.lock` (waits recorded);

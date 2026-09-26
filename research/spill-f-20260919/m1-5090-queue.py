@@ -24,11 +24,11 @@ def now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
-def steps(rec):
+def steps(rec, first_rounds="1-10"):
     def rounds(regime, out, *extra):
         return [sys.executable, str(ROUNDS), "--regime", regime, "--out", str(rec / out), *extra]
     return [
-        ("capped", lambda: rounds("capped", "capped", "--memory-max", CAP, "--rounds", "1-10")),
+        ("capped", lambda: rounds("capped", "capped", "--memory-max", CAP, "--rounds", first_rounds)),
         ("anonpeak", lambda: rounds("anonpeak", "anonpeak", "--memory-max", CAP)),
         ("bounded", lambda: rounds("bounded", "bounded", "--memory-max", str(bounded_max(rec)), "--rounds", "1-10")),
         ("g2", lambda: rounds("g2", "g2", "--memory-max", CAP)),
@@ -72,10 +72,12 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     ap.add_argument("--receipts", required=True)
     ap.add_argument("--from", dest="start", default="capped")
+    ap.add_argument("--capped-rounds", default="1-10",
+                    help="resume: the capped step's rounds (a reboot-interrupted round is banked, then rerun)")
     a = ap.parse_args()
     rec = Path(a.receipts)
     rec.mkdir(parents=True, exist_ok=True)
-    plan = steps(rec)
+    plan = steps(rec, a.capped_rounds)
     names = [n for n, _ in plan]
     with (rec / "QUEUE.jsonl").open("a") as q:
         for name, argv in plan[names.index(a.start):]:
