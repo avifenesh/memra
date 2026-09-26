@@ -101,8 +101,11 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   expert's copy exposed) and reverted (`26aa54c12`); the 5090's `i16` inadmissible. Day 77 (`DAY77.md`): I17
   (`d4ab19f1d`, the group's residency and staging each in one owner-registry entry, the same program), CPU gates
   green, the profile 70 to 150 ns per block below I15; on BOX32 `DAY77 VERDICT rig=pro-single integrity=ok i17=flat
-  door=i17 vs_ref=loses` (stays; the door 10 ms over 32 tokens behind REF); the 5090's `i17` inadmissible. Open: the
-  next improvement of the prefetch path (`pf_demand_ns` 0.155 ms per window token), registered before code.
+  door=i17 vs_ref=loses` (stays; the door 10 ms over 32 tokens behind REF); the 5090's `i17` inadmissible. Day 79
+  (`DAY79.md`): I18 (`c7294b912`, a bank ticket's records by position instead of a set and a map of cloned ids, the
+  host-hit demand's largest part), CPU gates green, the profile about 150 ns per block below I17; on BOX34 `DAY79
+  VERDICT rig=pro-single integrity=ok i18=flat door=i18 vs_ref=loses (window: i18=flat vs_ref=matches)` (stays); the
+  5090's `i18` inadmissible. Open: the next cut of the prefetch path, registered before code.
 
 ## C12. The door's sensitivity to its owner thread's host placement (the 9950X class)
 
@@ -147,8 +150,18 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   (`DAY76.md`): does the door's one large pinned allocation draw the compaction: the diagnostic flag
   `--expert-bank-pool-chunk-bytes` (`7a162e6b7`, decide-by 2026-10-10) and cell `chunk` (REF+I, D+I, DC+I under the
   fragmentation) on BOX32: `DAY76 CHUNK VERDICT rig=box32-285k integrity=ok -> chunk_does_not`; beside it the slow
-  runs are those whose compaction fails to migrate nearly every page it isolates (`DAY76.md` section 2). Open: which of
-  the door's pages compaction isolates and cannot move, registered next; `induce-b` on a 9950X with at least 98 GiB
+  runs are those whose compaction fails to migrate nearly every page it isolates (`DAY76.md` section 2). Day 78
+  (`DAY78.md`): which of the door's pages: the diagnostic flag `--expert-bank-pool-pageable` (`a1786bc32`, decide-by
+  2026-10-10; a local GPU check reads MATCH and the door's tape), cell `pages` (REF+I, D+I, DP+I under the
+  fragmentation, `fail_heavy` per span, a per-mapping page census that uses frame numbers and `kpageflags` where the
+  container allows) on BOX34: `DAY78 PAGES VERDICT rig=box34-285k integrity=ok -> pool_draws` (fail_heavy di 8 of 8,
+  dpi 0 of 8); the census shows the pinned pool is a shared `/dev/zero` (shmem) mapping, whose pinned pages compaction
+  isolates and cannot move. Day 80 (`DAY80.md`): the fix, a pool of private anonymous memory pinned with
+  `cuMemHostRegister` (`57086efc8`, `--expert-bank-pool-registered`, decide-by 2026-10-10), cells `regtime` and
+  `regpool` ready (`day80-box.sh`, the 285K and a 9950X); on BOX37 (285K) `registered_clears` and `dr=flat`
+  (admissible); the local 5090 check MATCH with the same tape; the 5090's `regtime` inadmissible. Open: the 9950X half
+  (a 123 GB host is valid by section 1: `regtime` with the natural-slow reading, `regpool` `not_run`), then the owner's
+  question (`DAY80.md` section 4); `induce-b` on a 9950X with at least 98 GiB
   `MemFree`; DAY71's default half on BOX15's machine, then the class line.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)

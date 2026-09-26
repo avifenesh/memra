@@ -1,0 +1,21 @@
+== run 1 calls
+STUB day63-box-build.sh D/root/wt-c-build D/root/spill-receipts/c-day79 i17=1 i18=2
+STUB day40-run-cell.sh i18 7200 script=D/root/wt-c/research/spill-c-20260919/day79-cell.sh
+STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day79/i18
+STUB day79-read.py D/root/spill-receipts/c-day79/i18 --rig pro-single
+== run 1 driver lines
+cpu cap: taskset -c 0-11 (no systemd scope on this box)
+i18 rc=0 2026-09-26T12:11:12Z
+i18 validate rc=0
+i18 reader rc=0
+box done 2026-09-26T12:11:12Z
+== run 2 calls
+== run 2 driver lines
+cpu cap: taskset -c 0-11 (no systemd scope on this box)
+i18 already done
+box done 2026-09-26T12:11:37Z
+== profiles moved out of the cell
+D/root/spill-receipts/c-day79/profiles-hash-only/p-ref-r1.nsys-rep
+D/root/spill-receipts/c-day79/profiles-hash-only/p-ref-r1.sqlite
+8e54b0ca18020275e4aef1ca0eb5e197e066c065c1864817652a8a39c55402cd  p-ref-r1.nsys-rep
+cbc80bb5c0c0f8944bf73b3a429505ac5cde16644978bc9a1e74c5755f8ca556  p-ref-r1.sqlite

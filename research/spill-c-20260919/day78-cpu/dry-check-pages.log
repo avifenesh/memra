@@ -1,0 +1,5 @@
+# DAY78 page census dry check on the local host (unprivileged): a stand-in run-gen process (its own pid) holding 8 GiB (the census took 0.74 s wall including its 0.5 s gap); the access row, the pass rows, the largest mapping
+11:52:33.827	access	pid=2176801	CapEff=0x0	cap_sys_admin=no	kpageflags=unreadable (Permission denied)	page_owner=absent	tracefs=absent
+11:52:33.827	pass	0	mappings=46	mappings_with_pfns=0
+11:52:34.447	pass	1	mappings=46	mappings_with_pfns=0
+11:52:33.827	map	0	77fd79eff000-77ff7a000000	rw-p	[anon]	pages=2097409	present=2097331	swapped=0	file_or_shared=0	exclusive=2097331	rss_kb=8389324	locked_kb=0	anon_kb=8389324	thp_kb=0	vmflags=rd wr mr mw me ac sd	pfn_sha=-	flags=-
