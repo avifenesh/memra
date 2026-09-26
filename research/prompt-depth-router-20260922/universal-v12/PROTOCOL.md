@@ -95,7 +95,7 @@ separate sealed commitment.
    Before the long training battery, run D=1 and D=2 fixed controls
    on the pinned binary and replay their native depth, sampler,
    and KV receipts from the training-only archive.
-   Also require two synthetic, reversed-order Bedrock checklist
+   Also require two synthetic, reversed-order independent checklist
    judgments to pass the frozen JSON parser on the trusted research
    host before downloading the large Qwen artifact. This access pilot
    uses no final prompt or customer content and is sealed with training.
@@ -175,11 +175,9 @@ response orders judged. The independent judge model, prompt
 template, parsing rule and budget are pinned in the private
 `judge-config.json` with SHA-256
 `624cbb8478326ec7662d6e5aaa959e713cb3bf0330128dd42a7e0dc9b8a05bdd`.
-The pinned Bedrock global Sonnet 5 profile was reported active
-by the provider control plane on 2026-09-26. The higher configured
-rates guard against a price rise. The $400 cumulative cap uses
-the live AWS quote and actual token usage, with a worst-case
-allowance before each call. A disagreement between
+The private judge custody pins its model, price source and cumulative
+spend cap. The access pilot verifies the model and template before
+the native battery starts. A disagreement between
 reversed judgments counts as a tie. The prose comparison with its
 validation-best fixed arm
 must have point win fraction at least 0.5 and a nonnegative lower

@@ -77,7 +77,6 @@ def replay(archive, manifest_path, rows_out):
                 "seal_training.py",
                 "replay_training.py",
                 "pilot_depth.py",
-                "judge_preflight.py",
             ),
             "joint-v9": (
                 "collect.py", "eval.py", "measurement_rows.py",
@@ -139,6 +138,15 @@ def replay(archive, manifest_path, rows_out):
         metadata = json.loads(
             (root / "native/run-meta.json").read_text()
         )
+        judge_file = metadata["judge_source_file"]
+        access_file = metadata["judge_preflight_source_file"]
+        if (
+            Path(judge_file).name != judge_file
+            or Path(access_file).name != access_file
+            or not judge_file.endswith(".py")
+            or not access_file.endswith(".py")
+        ):
+            raise ValueError("sealed private judge path differs")
         if (
             metadata["model_sha256"] != seal_training.MODEL_SHA
             or metadata["binary_sha256"] != seal_training.BINARY_SHA
@@ -158,6 +166,10 @@ def replay(archive, manifest_path, rows_out):
             != parents["v11_archive_sha256"]
             or metadata["ops_source_sha256"]
             != sha(root / "source/private_ops/run_meta_v12.py")
+            or metadata["judge_source_sha256"]
+            != sha(root / "source/private_ops" / judge_file)
+            or metadata["judge_preflight_source_sha256"]
+            != sha(root / "source/private_ops" / access_file)
         ):
             raise ValueError("sealed research host metadata differs")
         for name, expected in metadata["source_files_sha256"].items():

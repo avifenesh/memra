@@ -117,6 +117,15 @@ def seal(base, out):
         raise ValueError("sealed prose native artifact changed")
     expected_workloads(base / "phase-training")
     metadata = json.loads((base / "run-meta.json").read_text())
+    judge_file = metadata["judge_source_file"]
+    access_file = metadata["judge_preflight_source_file"]
+    if (
+        Path(judge_file).name != judge_file
+        or Path(access_file).name != access_file
+        or not judge_file.endswith(".py")
+        or not access_file.endswith(".py")
+    ):
+        raise ValueError("private judge source path differs")
     if (
         metadata["model_sha256"] != MODEL_SHA
         or metadata["binary_sha256"] != BINARY_SHA
@@ -129,6 +138,10 @@ def seal(base, out):
         != sha(base / "cuda-accept.json")
         or metadata["ops_source_sha256"]
         != sha(base / "ops/run_meta_v12.py")
+        or metadata["judge_source_sha256"]
+        != sha(base / "ops" / judge_file)
+        or metadata["judge_preflight_source_sha256"]
+        != sha(base / "ops" / access_file)
         or metadata["judge_preflight_sha256"]
         != sha(base / "judge-preflight/manifest.json")
         or metadata["parent_custody_sha256"]

@@ -8,12 +8,18 @@ import math
 from pathlib import Path
 import random
 
-from judge_bedrock import quoted_usd
-
-
 CHOICES = {"A++", "A+", "A=B", "B+", "B++"}
 TEMPLATE_SHA = "ccd57bd8c4c73f4f83cf8963ef3c2697c1c7b9e907ead91e0d0512cca4ae7a11"
 DRAW_COUNT = 20000
+
+
+def quoted_usd(price, input_tokens, output_tokens):
+    return (
+        input_tokens
+        * price["global_standard"]["input"]["usd_per_million"]
+        + output_tokens
+        * price["global_standard"]["output"]["usd_per_million"]
+    ) / 1_000_000
 
 
 def sha(path):

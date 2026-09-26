@@ -92,7 +92,7 @@ def await_phase(base, name, expected, marker):
         os.close(fd)
 
 
-def pipeline(base, credential_file, log):
+def pipeline(base, credential_file, judge_script, log):
     if os.environ.get("MEMRA_CAPTURE_DIR"):
         raise ValueError("universal research host cannot capture customers")
     model = base / "Qwen3.8-27B-NVFP4-Q5K-mtp.gguf"
@@ -109,20 +109,33 @@ def pipeline(base, credential_file, log):
     judge_config = base / "judge-config.json"
     template = base / "wildbench-pairwise-template.md"
     if (
+        judge_script.parent != base / "ops"
+        or not judge_script.is_file()
+    ):
+        raise ValueError("private judge driver path differs")
+    if (
         sha(judge_config) != JUDGE_SHA
         or sha(template) != TEMPLATE_SHA
         or sha(base / "phase-training/manifest.json") != TRAIN_SHA
     ):
         raise ValueError("universal training judge or phase source changed")
-    from judge_bedrock import credential, price_quote, validate_config
     from quality_tasks import sandbox_preflight
-    config = json.loads(judge_config.read_text())
-    validate_config(config)
-    credential(credential_file)
-    price_quote(config)
+    judge_ready = json.loads(
+        (base / "judge-preflight/manifest.json").read_text()
+    )
+    if (
+        judge_ready["status"]
+        != "independent-judge-template-and-order-qualified"
+        or judge_ready["config_sha256"] != JUDGE_SHA
+        or judge_ready["template_sha256"] != TEMPLATE_SHA
+    ):
+        raise ValueError("independent judge access pilot differs")
     sandbox_preflight()
     stage(log, base / "ops", "run_meta_v12.py",
           "--base", base)
+    meta = json.loads((base / "run-meta.json").read_text())
+    if sha(judge_script) != meta["judge_source_sha256"]:
+        raise ValueError("private judge driver changed after host pin")
     stage(log, scripts, "pilot_depth.py",
           "--binary", binary, "--model", model,
           "--workloads", base / "phase-training",
@@ -213,7 +226,7 @@ def pipeline(base, credential_file, log):
           "--template", template,
           "--judge-config", judge_config,
           "--out", base / "validation-packets")
-    stage(log, scripts, "judge_bedrock.py",
+    stage(log, judge_script.parent, judge_script.name,
           "--packets", base / "validation-packets",
           "--config", judge_config,
           "--credential-file", credential_file,
@@ -265,7 +278,7 @@ def pipeline(base, credential_file, log):
               "--template", template,
               "--judge-config", judge_config,
               "--out", base / "final-packets")
-        stage(log, scripts, "judge_bedrock.py",
+        stage(log, judge_script.parent, judge_script.name,
               "--packets", base / "final-packets",
               "--config", judge_config,
               "--credential-file", credential_file,
@@ -328,13 +341,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", type=Path, required=True)
     parser.add_argument("--credential-file", type=Path, required=True)
+    parser.add_argument("--judge-script", type=Path, required=True)
     args = parser.parse_args()
     base = args.base.resolve()
     with (base / "supervisor.pid").open("x") as handle:
         handle.write(str(os.getpid()) + "\n")
     with (base / "supervisor.log").open("x") as log:
         try:
-            pipeline(base, args.credential_file.resolve(), log)
+            pipeline(
+                base, args.credential_file.resolve(),
+                args.judge_script.resolve(), log,
+            )
         except Exception as error:
             traceback.print_exc(file=log)
             save(base / "pipeline-failed.json", {
