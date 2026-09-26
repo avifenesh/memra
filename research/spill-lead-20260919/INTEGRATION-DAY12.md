@@ -4266,6 +4266,12 @@ on its 5090 half; R2 (item 13) is refuted and reverted on the target card, R1 se
   (`e6f969234`) and both batteries ran again on it, on BOX31: GPU (`integ67-pro-main752/`, binary `efc0d5ad`, one hold
   10:18Z to 10:33Z) every cell green as above and the pause gate `ALL GREEN` (40 ok); CPU (`integ67-cpu-main752/`, the
   box now with `rg` and `origin/main`) 15 of 15 rc=0, server 943, engine lib 578 (577 on the tree before main's merge).
+- Main moved again to `51bc5b438` (#740, the DSv4 serving lanes' graceful shutdown: `lib.rs` 11 lines, a dsv4 prefill
+  that stops once its client leaves, docs) after revuto's two approving rounds; merged in clean (`9041a1772`). CPU battery
+  on it, 15 of 15 rc=0 (`integ67-cpu-main740/`, server 943, engine lib 578), run on the lead's rig at nice 19 under a
+  600% quota. The GPU battery was not rerun for this merge: #740 changes only the DSv4 two-card serving path, which no
+  cell of the single-card 9B and 27B battery reaches, and the battery ran green on the tree just before it (the
+  `integ67-pro-main752/` run on `e6f969234`).
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
