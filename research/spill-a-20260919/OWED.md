@@ -278,7 +278,7 @@ the card is reset.
   path (DAY42 section 1 step 5). The delay did not reach S4's (d) (PIN +0.10 ms per order).
 - Acceptance: none registered (the destination digests off the landing path, still required before the publication,
   as S2 did for the demote; pre-registered with its own clauses before its code).
-- Status: open.
+- Status: **pre-registered** (DAY64 section 1: per-poll lines, the promote cell, a placing rule, a design per place).
 
 ### 19. The host tier's pinned allocations run on the owner thread (found by DAY49)
 
