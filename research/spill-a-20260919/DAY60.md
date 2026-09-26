@@ -33,3 +33,12 @@ that isolates each class") replaces it is the lead's call.
 **What each card decides.** The target card (the day-16 clause's own rig class); the 5090 has no role.
 
 **Budget.** 0.15 agent-day to prepare; about 40 minutes of a target card.
+
+## 2. The sitting prepared (`pro-single-day60/`)
+
+- `build.sh <tip> <receipts_root>`: arm X the tip in `/root/wt-a`, arm Y `1646d421b` in `/root/wt-a-day16`, each with
+  its `build-{x,y}.log` and final `rc=` line (the shape C's runner waits for).
+- `driver.sh <receipts_root> <model.gguf>`: C's `day29-box-run.sh` verbatim (the stall cell (i) and the hit gate, one
+  collector hold each, bounded lock retries), then C's `day29-stall-reading.py` over `stall/ev`. About 40 minutes of
+  card time; any host class with one RTX PRO 6000 Blackwell and the 27B artifact at
+  `/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf`.
