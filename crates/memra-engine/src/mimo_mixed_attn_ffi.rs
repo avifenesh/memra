@@ -144,6 +144,14 @@ pub struct MiMoMixedAttentionWorkspace {
 }
 
 impl MiMoMixedAttentionWorkspace {
+    pub(crate) fn native_vscale_bytes(max_seq: usize) -> Result<usize, &'static str> {
+        let (one, two, three) = extents(max_seq, 4)?;
+        one.checked_add(two)
+            .and_then(|bytes| bytes.checked_add(three))
+            .and_then(|floats| floats.checked_mul(size_of::<f32>()))
+            .ok_or("MiMo mixed attention workspace extent overflowed")
+    }
+
     pub fn new(engine: &Engine, max_seq: usize) -> Result<Self, Box<dyn std::error::Error>> {
         Self::new_for(engine, max_seq, 0)
     }
