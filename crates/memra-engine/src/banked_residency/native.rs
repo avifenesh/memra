@@ -2040,12 +2040,49 @@ mod day50_census {
         assert!(prefetch.contains("stage_on_copy_stream(e, payload, &mut self.slots[slot])"));
         assert!(!prefetch.contains("bank.host_resident(local)"));
         assert!(!prefetch.contains("bank.with_bytes_at("));
-        assert_eq!(FORWARD.matches("e.expert_bank_prefetch()").count(), 1);
+        // DAY81 (I19): the condition, and inside it the door's two-ahead order.
+        assert_eq!(FORWARD.matches("e.expert_bank_prefetch()").count(), 2);
         // Count in this file's code, not in these tests' own literals.
         let code = &SRC[..SRC.find("#[cfg(test)]").unwrap()];
         assert_eq!(
             code.matches("self.set_expert_bank_prefetch(true);").count(),
             1
+        );
+    }
+}
+
+#[cfg(test)]
+mod day81_census {
+    //! DAY81 (I19): under the door the only prefetch before a launch is expert 1's at `j == 0`;
+    //! the two-ahead prefetch follows the accumulate in both cached branches; the legacy prefetch
+    //! keeps its place before the kernels.
+    const FORWARD: &str = include_str!("../hybrid_forward.rs");
+
+    #[test]
+    fn the_door_prefetches_two_ahead_after_the_launch() {
+        let door = FORWARD
+            .find("if e.expert_bank_prefetch() {\n")
+            .expect("the door's branch");
+        let branch = &FORWARD[door..];
+        let first = "if j == 0 {\n                            Self::moe_prefetch_expert(e, il, next, m, max_block, &keep)?;";
+        assert!(branch.find(first).unwrap() < branch.find("ahead = sel.get(j + 2)").unwrap());
+        let legacy = branch.find("} else {\n                        Self::moe_prefetch_expert(e, il, next, m, max_block, &keep)?;").unwrap();
+        assert!(legacy < branch.find("let [gate_q8, up_q8, down_q8]").unwrap());
+        let issue = "if let Some(two) = ahead {\n                        Self::moe_prefetch_ahead(";
+        assert_eq!(FORWARD.matches(issue).count(), 2);
+        for (at, _) in branch.match_indices(issue) {
+            assert!(at > branch.find("Self::moe_cached_gemm").unwrap());
+            assert!(
+                branch[..at].trim_end().ends_with("&mut dst, n_embd)?;"),
+                "not right after the accumulate"
+            );
+        }
+        // One pre-launch door prefetch per layer's list (j == 0), and the legacy call unchanged.
+        assert_eq!(
+            FORWARD
+                .matches("Self::moe_prefetch_expert(e, il, next, m, max_block, &keep)?;")
+                .count(),
+            2
         );
     }
 }

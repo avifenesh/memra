@@ -14673,6 +14673,8 @@ impl HybridModel {
                     crate::moe_cache::BlockId::new(il, crate::moe_cache::PROJ_UP, ex as u16),
                     crate::moe_cache::BlockId::new(il, crate::moe_cache::PROJ_DOWN, ex as u16),
                 ];
+                // DAY81 (I19): under the door, the expert two ahead, prefetched after this expert's launch.
+                let mut ahead: Option<usize> = None;
                 if worker_disk_prefetch && worker_window > 0 {
                     for next in worker_prefetch_positions(j, sel.len(), worker_window) {
                         Self::moe_prefetch_disk_expert(
@@ -14692,7 +14694,17 @@ impl HybridModel {
                     // DAY50: under the MoE slot cache door the prefetch takes its lease through
                     // the owner; without the door `expert_bank_prefetch` is false.
                     let next = sel[j + 1] as usize;
-                    Self::moe_prefetch_expert(e, il, next, m, max_block, &keep)?;
+                    if e.expert_bank_prefetch() {
+                        // DAY81 (I19): under the door expert `j+1` was prefetched one step earlier,
+                        // after expert `j-1`'s launch; only expert 1 still goes before a launch
+                        // (expert 0's). Expert `j+2` follows this expert's accumulate.
+                        if j == 0 {
+                            Self::moe_prefetch_expert(e, il, next, m, max_block, &keep)?;
+                        }
+                        ahead = sel.get(j + 2).map(|&x| x as usize);
+                    } else {
+                        Self::moe_prefetch_expert(e, il, next, m, max_block, &keep)?;
+                    }
                 }
                 let [gate_q8, up_q8, down_q8] = [moe_q8; 3];
                 if cache_dispatch && (gate_q8 || up_q8 || down_q8) {
@@ -14737,6 +14749,17 @@ impl HybridModel {
                     let mut dst = moe_out.slice_mut(tok * n_embd..(tok + 1) * n_embd);
                     // down-proj macro folds into the accumulate weight (1.0 for non-macro archs).
                     e.axpy_into(&y, w[j] * m.down_exps.macro_scale(ex), &mut dst, n_embd)?;
+                    if let Some(two) = ahead {
+                        Self::moe_prefetch_ahead(
+                            e,
+                            il,
+                            two,
+                            sel[j + 1] as usize,
+                            m,
+                            max_block,
+                            &keep,
+                        )?;
+                    }
                 } else if cache_dispatch {
                     // SLRU residency cache: per-projection, dispatch the block (HIT => resident slot,
                     // MISS => staged slot) then run the SAME unchanged qmatvec_view from that slot.
@@ -14761,6 +14784,17 @@ impl HybridModel {
                     let mut dst = moe_out.slice_mut(tok * n_embd..(tok + 1) * n_embd);
                     // down-proj macro folds into the accumulate weight (post-matmul linear scale).
                     e.axpy_into(&y, w[j] * m.down_exps.macro_scale(ex), &mut dst, n_embd)?;
+                    if let Some(two) = ahead {
+                        Self::moe_prefetch_ahead(
+                            e,
+                            il,
+                            two,
+                            sel[j + 1] as usize,
+                            m,
+                            max_block,
+                            &keep,
+                        )?;
+                    }
                 } else if cache_frozen {
                     // A later prompt prime must not change the CPU/GPU assignment frozen after the
                     // first prime. Reuse every fixed resident projection directly and stage only a
@@ -19894,6 +19928,30 @@ impl HybridModel {
             layout.qtype,
             layout.row_bytes,
         )
+    }
+
+    /// DAY81 (I19): the door's two-ahead prefetch, issued after the current expert's accumulate;
+    /// `keep` names the current expert's blocks and the next expert's, so the reservation evicts
+    /// neither the expert just launched nor the one about to be.
+    fn moe_prefetch_ahead(
+        e: &Engine,
+        il: u16,
+        ex: usize,
+        next: usize,
+        m: &MoeWeights,
+        max_block: usize,
+        current: &[crate::moe_cache::BlockId; 3],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use crate::moe_cache::{BlockId, PROJ_DOWN, PROJ_GATE, PROJ_UP};
+        let keep = [
+            current[0],
+            current[1],
+            current[2],
+            BlockId::new(il, PROJ_GATE, next as u16),
+            BlockId::new(il, PROJ_UP, next as u16),
+            BlockId::new(il, PROJ_DOWN, next as u16),
+        ];
+        Self::moe_prefetch_expert(e, il, ex, m, max_block, &keep)
     }
 
     fn moe_prefetch_expert(
