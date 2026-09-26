@@ -2196,43 +2196,6 @@ pub fn dsv4_phase_report(tag: &str, rounds: u64, plain_us: f64) {
     });
 }
 
-/// `MEMRA_DSV4_DSPARK_CHAIN=device` keeps the DSpark markov chain resident on the device (see
-/// `dspark_forward_spec`). Default (`host`, or unset) reproduces the pre-iteration-5 transport
-/// exactly, including its ten per-round stream drains, so the shipped arm is unchanged until an
-/// A/B and the gate battery say otherwise.
-fn dsv4_dspark_chain_device() -> bool {
-    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *V.get_or_init(|| {
-        let on = std::env::var("MEMRA_DSV4_DSPARK_CHAIN").as_deref() == Ok("device");
-        if on {
-            println!(
-                "[spec] DSpark markov chain RESIDENT ON DEVICE (MEMRA_DSV4_DSPARK_CHAIN=device): \
-                 one D2H per round instead of 2 x block_size"
-            );
-        }
-        on
-    })
-}
-
-/// `MEMRA_DSV4_DSPARK_MARKOV=rowblk` runs the DSpark markov bias GEMV through the row-blocked
-/// twin of the f64 island dots. Bit-identical output (same accumulation order and reduction tree,
-/// only R rows share a block), so this is a pure geometry change; the default `base` keeps the
-/// shipped kernel. Measured defect it addresses: 5 x 318 us/round at 416 GB/s = 26% of roofline,
-/// latency-bound on one 7-level reduction tree per 1 KB of weights read.
-fn dsv4_dspark_markov_rowblk() -> bool {
-    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *V.get_or_init(|| {
-        let on = std::env::var("MEMRA_DSV4_DSPARK_MARKOV").as_deref() == Ok("rowblk");
-        if on {
-            println!(
-                "[spec] DSpark markov bias GEMV on the ROW-BLOCKED dots twin \
-                 (MEMRA_DSV4_DSPARK_MARKOV=rowblk; bit-identical, geometry only)"
-            );
-        }
-        on
-    })
-}
-
 /// Drop everything accumulated so far (used to keep the plain arm's brackets out of the
 /// drafted arm's table).
 pub fn dsv4_phase_reset() {
@@ -14267,32 +14230,13 @@ impl Dsv4Gpu {
         // Sequential Markov chaining. The public path remains greedy; sampled
         // serving may explicitly use the request's coupled position-keyed draw.
         //
-        // ITERATION-5 (F itemisation, rung 2): the chain is inherently sequential -- draft i+1's
-        // markov row is indexed by draft i -- but the DEPENDENCY never needed a HOST round trip.
-        // The shipped loop reads each argmax back (4 B D2H + `stream.synchronize()`) and each
-        // confidence back the same way, so a block_size-5 chain DRAINS the only stream TEN times
-        // per round. Those drains are pure F: T-independent, all latency, no work.
-        // `MEMRA_DSV4_DSPARK_CHAIN=device` keeps the chain resident -- the argmax lands in
-        // `am_dev[i + 1]`, the next markov row is gathered BY DEVICE INDEX, confidences
-        // accumulate into `conf_out[i]`, and ONE D2H at the end of the loop returns every id and
-        // confidence together. Same kernels, same operands, same reduction order: the arm is
-        // bit-identical BY CONSTRUCTION rather than by tolerance, because only transport moved.
-        // The coupled experiment uses the existing host categorical sampler.
-        // Keep the next Markov gather on host until a separately gated GPU sampler
-        // preserves this exact position-keyed sampling program.
-        let chain_device = sample.is_none() && dsv4_dspark_chain_device();
-        let markov_rowblk = dsv4_dspark_markov_rowblk();
+        // Each draft's markov row is indexed by the previous draft, read back per step. A
+        // device-resident chain and a row-blocked markov GEMV were measured flat and -1.9% on the
+        // TP/EP route and deleted (docs/FLAGS.md, removed doors 2026-09-26).
         let mut w1_row = stream.alloc_zeros::<f32>(rank).map_err(e("w1r"))?;
         let mut bias = stream.alloc_zeros::<f32>(vocab).map_err(e("bias"))?;
-        // Slot 0 carries the round's input token so even the FIRST gather is device-indexed and
-        // the two arms share one code path.
+        // Slot i + 1 takes draft i's device argmax.
         let mut am_dev = stream.alloc_zeros::<i32>(block + 1).map_err(e("am"))?;
-        {
-            let mut dst = am_dev.slice_mut(0..1);
-            stream
-                .memcpy_htod(&[input_token as i32][..], &mut dst)
-                .map_err(e("htod am0"))?;
-        }
         let mut out_ids = vec![input_token];
         let mut margins = Vec::with_capacity(block);
         let mut top1_logits = Vec::with_capacity(block);
@@ -14303,47 +14247,13 @@ impl Dsv4Gpu {
         for i in 0..block {
             {
                 let _p = phase!("1i1.markov_w1_gather", prof.as_ref());
-                if chain_device {
-                    unsafe {
-                        ck(
-                            "markov w1 gather dev",
-                            k::memra_dsv4_gather_row_by_idx(
-                                dpf!(ds.markov_w1, &stream),
-                                am_dev.device_ptr(&stream).0 as *const i32,
-                                i as i32,
-                                dpm!(w1_row, &stream),
-                                rank as i32,
-                                sp(&stream),
-                            ),
-                        )?;
-                    }
-                } else {
-                    let prev = out_ids[i] as usize;
-                    let src = ds.markov_w1.slice(prev * rank..(prev + 1) * rank);
-                    stream.memcpy_dtod(&src, &mut w1_row).map_err(e("w1 cp"))?;
-                }
+                let prev = out_ids[i] as usize;
+                let src = ds.markov_w1.slice(prev * rank..(prev + 1) * rank);
+                stream.memcpy_dtod(&src, &mut w1_row).map_err(e("w1 cp"))?;
             }
             {
                 let _p = phase!("1i2.markov_bias_gemv", prof.as_ref());
-                if markov_rowblk {
-                    unsafe {
-                        ck(
-                            "dots_f32 markov rowblk",
-                            k::memra_dsv4_dots_f32_rowblk(
-                                dpf!(w1_row, &stream),
-                                dp!(ds.markov_w2, &stream),
-                                0,
-                                dpm!(bias, &stream),
-                                1,
-                                rank as i32,
-                                vocab as i32,
-                                sp(&stream),
-                            ),
-                        )?;
-                    }
-                } else {
-                    Self::dots(st, &w1_row, &ds.markov_w2, 1, rank, vocab, &mut bias)?;
-                }
+                Self::dots(st, &w1_row, &ds.markov_w2, 1, rank, vocab, &mut bias)?;
             }
             let _p_aa = phase!("1i3.markov_add_argmax", prof.as_ref());
             unsafe {
@@ -14383,7 +14293,7 @@ impl Dsv4Gpu {
                 out_ids.push(token);
                 self.coupled_draft_draws
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            } else if !chain_device {
+            } else {
                 let _p_d2h = phase!("1i4.markov_argmax_D2H_SYNC", None);
                 let mut am = [0i32; 1];
                 let view = am_dev.slice(i + 1..i + 2);
@@ -14425,7 +14335,7 @@ impl Dsv4Gpu {
                     )?;
                 }
             }
-            if !chain_device {
+            {
                 let _p = phase!("1i7.conf_D2H_SYNC", None);
                 let mut c = [0f32; 1];
                 let view = conf_out.slice(i..i + 1);
@@ -14435,22 +14345,6 @@ impl Dsv4Gpu {
                 stream.synchronize().map_err(e("sync cf"))?;
                 confidence.push(c[0]);
             }
-        }
-        if chain_device {
-            // ONE drain for the whole chain: block ids + block confidences.
-            let _p = phase!("1i8.chain_D2H_SYNC_once", None);
-            let mut ids = vec![0i32; block];
-            let view = am_dev.slice(1..block + 1);
-            stream
-                .memcpy_dtoh(&view, &mut ids[..])
-                .map_err(e("dtoh chain ids"))?;
-            let mut cf = vec![0f32; block];
-            stream
-                .memcpy_dtoh(&conf_out, &mut cf[..])
-                .map_err(e("dtoh chain conf"))?;
-            stream.synchronize().map_err(e("sync chain"))?;
-            out_ids.extend(ids.iter().map(|&x| x as u32));
-            confidence.extend_from_slice(&cf);
         }
         drop(_p_mk);
         // `markov_embed`, `margins` and `top1_logits` are CAPTURE-ONLY observables, and wanting
@@ -16724,13 +16618,9 @@ impl Dsv4Gpu {
                 sc_rows,
             )?;
         }
+        let mut seg_start = 0usize;
         for i in 0..t {
             let pos = pos0 + i;
-            let slot = if cmp.overlap {
-                ratio + pos % ratio
-            } else {
-                pos % ratio
-            };
             if let Some(pos_dev) = replay_pos {
                 unsafe {
                     for (src, dst) in [
@@ -16790,15 +16680,32 @@ impl Dsv4Gpu {
                 *blocks = (pos + 1) / ratio;
                 continue;
             } else {
-                if !direct {
-                    let src = ck_dev.rows_kv.slice(i * latent..(i + 1) * latent);
-                    let mut dst = pend_kv.slice_mut(slot * latent..(slot + 1) * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("pend kv b"))?;
-                    let src = ck_dev.rows_sc.slice(i * latent..(i + 1) * latent);
-                    let mut dst = pend_score.slice_mut(slot * latent..(slot + 1) * latent);
-                    stream.memcpy_dtod(&src, &mut dst).map_err(e("pend sc b"))?;
+                // Rows up to the next block boundary go into their slots as one launch, before
+                // the emission that pools them (memra #710 DSpark round: 2 t memcpy nodes were
+                // one host launch each).
+                let boundary = (pos + 1) % ratio == 0;
+                if !direct && (boundary || i + 1 == t) {
+                    unsafe {
+                        ck(
+                            "pend rows to slots",
+                            k::memra_dsv4_cmp_rows_to_slots(
+                                dpm!(*pend_kv, &stream),
+                                dpm!(*pend_score, &stream),
+                                dpf!(ck_dev.rows_kv, &stream),
+                                dpf!(ck_dev.rows_sc, &stream),
+                                seg_start as i32,
+                                (i + 1) as i32,
+                                pos0 as i32,
+                                ratio as i32,
+                                latent as i32,
+                                if cmp.overlap { ratio as i32 } else { 0 },
+                                sp(&stream),
+                            ),
+                        )?;
+                    }
+                    seg_start = i + 1;
                 }
-                if (pos + 1) % ratio != 0 {
+                if !boundary {
                     continue;
                 }
             }
@@ -16942,37 +16849,41 @@ impl Dsv4Gpu {
         }
         let stream = st.gpu.stream();
         let (ratio, latent, overlap) = (ck_dev.ratio, ck_dev.latent, ck_dev.overlap);
-        stream
-            .memcpy_dtod(&ck_dev.kv_snap, pend_kv)
-            .map_err(e("rb kv snap"))?;
-        stream
-            .memcpy_dtod(&ck_dev.sc_snap, pend_score)
-            .map_err(e("rb sc snap"))?;
-        *blocks = ck_dev.n_blocks0;
-        for i in 0..n_commit {
-            let pos = pos0 + i;
-            let slot = if overlap {
-                ratio + pos % ratio
-            } else {
-                pos % ratio
-            };
-            {
-                let src = ck_dev.rows_kv.slice(i * latent..(i + 1) * latent);
-                let mut dst = pend_kv.slice_mut(slot * latent..(slot + 1) * latent);
-                stream.memcpy_dtod(&src, &mut dst).map_err(e("rb row kv"))?;
-                let src = ck_dev.rows_sc.slice(i * latent..(i + 1) * latent);
-                let mut dst = pend_score.slice_mut(slot * latent..(slot + 1) * latent);
-                stream.memcpy_dtod(&src, &mut dst).map_err(e("rb row sc"))?;
-            }
-            if (pos + 1) % ratio != 0 {
-                continue;
-            }
-            if overlap {
-                cmp_shift_halves(&stream, pend_kv, ratio * latent, "rbshift kv")?;
-                cmp_shift_halves(&stream, pend_score, ratio * latent, "rbshift sc")?;
-            }
-            *blocks += 1;
+        let slots = if overlap { 2 * ratio } else { ratio };
+        if ck_dev.kv_snap.len() != slots * latent
+            || ck_dev.sc_snap.len() != slots * latent
+            || pend_kv.len() < slots * latent
+            || pend_score.len() < slots * latent
+            || ck_dev.rows_kv.len() < n_commit * latent
+            || ck_dev.rows_sc.len() < n_commit * latent
+        {
+            return Err("compressor rollback buffer shape mismatch".into());
         }
+        // The snapshot restore, the committed rows' slot writes and the overlap half shifts, in
+        // position order, as one launch (the moves are the memcpy sequence's own).
+        unsafe {
+            ck(
+                "compressor rollback",
+                k::memra_dsv4_cmp_rollback(
+                    dpm!(*pend_kv, &stream),
+                    dpm!(*pend_score, &stream),
+                    dpf!(ck_dev.kv_snap, &stream),
+                    dpf!(ck_dev.sc_snap, &stream),
+                    dpf!(ck_dev.rows_kv, &stream),
+                    dpf!(ck_dev.rows_sc, &stream),
+                    n_commit as i32,
+                    pos0 as i32,
+                    ratio as i32,
+                    latent as i32,
+                    i32::from(overlap),
+                    sp(&stream),
+                ),
+            )?;
+        }
+        *blocks = ck_dev.n_blocks0
+            + (pos0..pos0 + n_commit)
+                .filter(|p| (p + 1) % ratio == 0)
+                .count();
         Ok(())
     }
 }

@@ -45,6 +45,11 @@ pair, greedy aggregate tok/s:
 | c2 | 93.74 | 104.42 |
 | c4 | 123.39 | 130.44 to 135.10 |
 
+A DSpark round's compressor rollback and its verify row placement are single launches since
+2026-09-26 (`research/dsv4f-bringup-20260923/dspark-round/`): DSpark greedy c1 89.16 to 93.17
+tok/s and sampled 75.84 to 78.65 on a second SE pair (N=3), and the chunked prefill's TTFT 18% to
+21% lower. Same bits.
+
 Concurrency: the plain TP/EP route serves four lanes whose steps share one captured B-row
 graph step (memra #710). Aggregate on the Workstation pair:
 
