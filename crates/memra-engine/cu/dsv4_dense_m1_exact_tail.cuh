@@ -486,7 +486,7 @@ extern "C" int memra_dsv4_dense_exact_tail_fp8(const void* w, const float* sc, i
         if (rc) return rc;
     }
     if (dsv4_dense_fast_enabled) {
-        dsv4_dense_fast_fp8_kernel<2><<<(n + 1LL) / 2, 256, 0, (cudaStream_t)raw_stream>>>(
+        memra_chain_launch(dsv4_dense_fast_fp8_kernel<2>,(n + 1LL) / 2, 256, 0, (cudaStream_t)raw_stream)(
             (const uint8_t*)w, sc, sc_cols, (const uint16_t*)x, y, n, k,
             xstride > 0 ? xstride : k, ystride > 0 ? ystride : n, 0, 0);
         auto rc = cudaGetLastError();
@@ -494,7 +494,7 @@ extern "C" int memra_dsv4_dense_exact_tail_fp8(const void* w, const float* sc, i
         ++dsv4_dense_fast_enqueues[0];
         return 0;
     }
-    dsv4_dense_exact_tail_fp8_kernel<1, false><<<n, 128, 0, (cudaStream_t)raw_stream>>>(
+    memra_chain_launch(dsv4_dense_exact_tail_fp8_kernel<1, false>,n, 128, 0, (cudaStream_t)raw_stream)(
         (const uint8_t*)w, sc, sc_cols, (const uint16_t*)x, y, n, k,
         xstride > 0 ? xstride : k, ystride > 0 ? ystride : n, 0, 0);
     auto rc = cudaGetLastError();
@@ -510,14 +510,14 @@ extern "C" int memra_dsv4_dense_exact_tail_dots(const float* x, const void* w,
         if (rc) return rc;
     }
     if (dsv4_dense_fast_enabled) {
-        dsv4_dense_fast_dots_kernel<1><<<n, 128, 0, (cudaStream_t)raw_stream>>>(
+        memra_chain_launch(dsv4_dense_fast_dots_kernel<1>,n, 128, 0, (cudaStream_t)raw_stream)(
             x, w, w_is_bf16, y, k, n);
         auto rc = cudaGetLastError();
         if (rc != cudaSuccess) return 10000 + (int)rc;
         ++dsv4_dense_fast_enqueues[1];
         return 0;
     }
-    dsv4_dense_exact_tail_dots_kernel<1><<<n, 128, 0, (cudaStream_t)raw_stream>>>(
+    memra_chain_launch(dsv4_dense_exact_tail_dots_kernel<1>,n, 128, 0, (cudaStream_t)raw_stream)(
         x, w, w_is_bf16, y, k, n);
     auto rc = cudaGetLastError();
     if (rc != cudaSuccess) return 10000 + (int)rc;
@@ -596,10 +596,10 @@ __global__ void dsv4_hc_dot_split_reduce_kernel(const float* __restrict__ partia
 }
 template<int S> static int dsv4_hc_dot_split_launch(const float* x, const float* w,
     float* partial, float* y, int m, cudaStream_t stream) {
-    dsv4_hc_dot_split_partial_kernel<S><<<dim3(24 * S, m), 128, 0, stream>>>(x, w, partial);
+    memra_chain_launch(dsv4_hc_dot_split_partial_kernel<S>,dim3(24 * S, m), 128, 0, stream)(x, w, partial);
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) return (int)err;
-    dsv4_hc_dot_split_reduce_kernel<S><<<m, 32, 0, stream>>>(partial, y);
+    memra_chain_launch(dsv4_hc_dot_split_reduce_kernel<S>,m, 32, 0, stream)(partial, y);
     return (int)cudaGetLastError();
 }
 // `m` token rows of x [m][k] into y [m][n]; partial holds m * 24 * slices floats.
@@ -628,9 +628,9 @@ extern "C" int memra_dsv4_hc_dot_split_partial(const float* x, const float* w,
     const auto stream = (cudaStream_t)raw_stream;
     const dim3 grid(24 * slices, m);
     switch (slices) {
-        case 8: dsv4_hc_dot_split_partial_kernel<8><<<grid, 128, 0, stream>>>(x, w, partial); break;
-        case 16: dsv4_hc_dot_split_partial_kernel<16><<<grid, 128, 0, stream>>>(x, w, partial); break;
-        case 32: dsv4_hc_dot_split_partial_kernel<32><<<grid, 128, 0, stream>>>(x, w, partial); break;
+        case 8: memra_chain_launch(dsv4_hc_dot_split_partial_kernel<8>,grid, 128, 0, stream)(x, w, partial); break;
+        case 16: memra_chain_launch(dsv4_hc_dot_split_partial_kernel<16>,grid, 128, 0, stream)(x, w, partial); break;
+        case 32: memra_chain_launch(dsv4_hc_dot_split_partial_kernel<32>,grid, 128, 0, stream)(x, w, partial); break;
         default: return 40075;
     }
     return (int)cudaGetLastError();
