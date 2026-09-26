@@ -1138,6 +1138,11 @@ pub struct Dsv4Gpu {
     /// between the two rank launches; this is a correctness lock, not a timing
     /// drain or a concurrency qualification.
     tp_ep_walk_lock: std::sync::Mutex<()>,
+    /// Per rank: a prefill-width split transaction's copy of the peer's committed half of one C4
+    /// store (memra #710). Sized at load for `max_seq`, so the memory calibration sees it and
+    /// no session grows it later; every walk holds `tp_ep_walk_lock` and runs stream-ordered on
+    /// the rank's stream, so one buffer serves every session and layer.
+    split_stage: [std::sync::Mutex<Option<CudaSlice<f32>>>; 2],
     pub model: Dsv4Model,
     pub stages: Vec<Stage>,
     pub layer_stage: Vec<usize>, // trunk layer -> stage idx
@@ -3958,6 +3963,7 @@ impl Dsv4Gpu {
             tp_ep_rank_layer_calls: std::array::from_fn(|_| std::sync::atomic::AtomicU64::new(0)),
             tp_ep_ar: std::sync::Mutex::new(None),
             tp_ep_walk_lock: std::sync::Mutex::new(()),
+            split_stage: std::array::from_fn(|_| std::sync::Mutex::new(None)),
             model,
             stages,
             layer_stage: if topology.is_tp_ep() {
@@ -4422,6 +4428,7 @@ impl Dsv4Gpu {
         if me.attention_tp.is_some() {
             me.pack_attention_tp_layers()?;
         }
+        me.alloc_split_stage()?;
         for line in crate::dsv4_doors::door_receipt_lines(&me.door_program()) {
             eprintln!("{line}");
         }
@@ -7501,13 +7508,50 @@ impl Dsv4Gpu {
 
     /// Whether a TP/EP state allocated now splits its C4 stores across the ranks (memra #710):
     /// the default for the attention-TP2 matrix device program, never with host C4.
-    fn c4_split_on(&self, host_c4: bool) -> bool {
-        let tp_ep = self.topology.is_tp_ep()
+    /// The program a position-split C4 store can run on, whatever the gate seam says.
+    fn c4_split_program(&self) -> bool {
+        self.topology.is_tp_ep()
             && self.attention_tp.is_some()
             && self.matrix_moe
-            && self.decode_path == (DecodePath::Device { host_math: false });
+            && self.decode_path == (DecodePath::Device { host_math: false })
+    }
+
+    /// Allocate each rank's split staging copy at load: the peer's committed half of the
+    /// largest C4 store `max_seq` can hold, `ceil(max_seq / ratio / 2)` rows.
+    fn alloc_split_stage(&mut self) -> Res<()> {
+        if !self.c4_split_program() {
+            return Ok(());
+        }
+        let hd = self.model.cfg().head_dim as usize;
+        let rows = self
+            .cache_layout()
+            .iter()
+            .filter(|slot| slot.geom.ratio == 4 && slot.geom.idx.is_some())
+            .map(|slot| (self.max_seq / slot.geom.ratio).div_ceil(2))
+            .max()
+            .unwrap_or(0);
+        if rows == 0 {
+            return Ok(());
+        }
+        for rank in 0..2 {
+            let stream = self.stages[rank].gpu.stream().clone();
+            let buf = stream
+                .alloc_zeros::<f32>(rows * hd)
+                .map_err(e("split stage alloc"))?;
+            *self.split_stage[rank]
+                .lock()
+                .map_err(|_| "split stage mutex poisoned")? = Some(buf);
+        }
+        eprintln!(
+            "[load] position-split staging: {rows} rows ({} MiB) per rank",
+            (rows * hd * 4) >> 20
+        );
+        Ok(())
+    }
+
+    fn c4_split_on(&self, host_c4: bool) -> bool {
         !host_c4
-            && tp_ep
+            && self.c4_split_program()
             && match DSV4_C4_SPLIT.load(Ordering::SeqCst) {
                 1 => false,
                 2 => true,
@@ -14520,9 +14564,6 @@ pub struct VerifyWs {
     /// them, zeroed here once; the kernel's last arriver resets its own counter.
     moe_tile_cnt: Option<CudaSlice<i32>>,
     c4_gather: Option<C4Gather>,
-    /// A prefill-width transaction's copy of the peer's live half of one C4 layer's store
-    /// under the position split (memra #710), grown on demand and reused layer after layer.
-    split_stage: Option<CudaSlice<f32>>,
     pub tmax: usize,
     /// Phase identity, not inferred from row count. Spec verification never sets it.
     is_prefill: bool,
@@ -15718,7 +15759,6 @@ impl Dsv4Gpu {
                     None
                 },
                 c4_gather: None,
-                split_stage: None,
                 tmax,
                 is_prefill: false,
                 h_a: f(tmax * hc * hidden)?,
@@ -18040,14 +18080,13 @@ impl Dsv4Gpu {
                     };
                     if count > 0 {
                         let need = count * hd;
-                        if vws.split_stage.as_ref().is_none_or(|b| b.len() < need) {
-                            vws.split_stage = Some(
-                                stream
-                                    .alloc_zeros::<f32>(need)
-                                    .map_err(e("split stage alloc"))?,
-                            );
-                        }
-                        let stage_buf = vws.split_stage.as_mut().expect("split stage");
+                        let mut stage_guard = self.split_stage[sp_.rank]
+                            .lock()
+                            .map_err(|_| "split stage mutex poisoned")?;
+                        let stage_buf = stage_guard
+                            .as_mut()
+                            .filter(|b| b.len() >= need)
+                            .ok_or("split stage missing or smaller than the committed half")?;
                         let peer_st = &self.stages[peer_rank];
                         let dst = stage_buf.device_ptr_mut(&stream).0;
                         unsafe {
