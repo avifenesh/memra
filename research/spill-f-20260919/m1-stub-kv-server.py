@@ -93,8 +93,18 @@ def export(*_):
     n, mb = len(STATE["prompts"]), STATE["host_bytes"] / 1e6
     log(f"[prefix-host] handoff export: {n} entries / {mb:.1f}MB to {HANDOFF} in {ms:.0f}ms "
         f"write_ms={ms * 0.7:.1f} fsync_ms={ms * 0.3:.1f} (drain-demoted 2 device entries first; "
-        f"0 skipped over the MEMRA_KV_HOST_HANDOFF_MB cap)")
+        f"0 skipped over the MEMRA_KV_HOST_HANDOFF_MB cap){io_tag()}")
     log("[handoff-gate] export ok " + json.dumps({"entries": n, "bytes": STATE["host_bytes"]}))
+
+
+def io_tag():
+    """The real server's `io=<mode>` suffix (OWED 18); M1_STUB_WRONG_IO reports the other arm."""
+    mode = ENV.get("MEMRA_KV_HOST_HANDOFF_IO")
+    if not mode:
+        return ""
+    if ENV.get("M1_STUB_WRONG_IO"):
+        mode = "buffered" if mode == "direct" else "direct"
+    return f" io={mode}"
 
 
 def main():
@@ -116,7 +126,7 @@ def main():
         STATE["prompts"] = list(data["prompts"])
         STATE["host_bytes"] = data["bytes"]
         log(f"[prefix-host] handoff import DONE: {n - skips} entries / {data['bytes'] / 1e6:.1f}MB "
-            f"re-materialized, {skips} skipped, in 0.6s from {HANDOFF}")
+            f"re-materialized, {skips} skipped, in 0.6s from {HANDOFF}{io_tag()}")
         os.unlink(HANDOFF)
     if KIND == "gate":
         signal.signal(signal.SIGUSR1, export)

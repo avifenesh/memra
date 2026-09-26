@@ -33,6 +33,16 @@ Artifact: `Qwen3.6-35B-A3B-UD-IQ4_XS.gguf` downloaded from its pinned revision s
 | B4 | `worker16` registered descriptive row; post-hoc mapped challengers 1.17x (c=1) and 1.18x (c=4) | lower TTFT, TPOT and ITL too |
 | B6 | 200 samples; pinned beats pageable at every size and direction | completes the ten-size G2 matrix on the target class |
 
+> **Correction, 2026-09-26 (found on the 5090 half, checked here on the mirrored logs): every
+> `worker2` visit in every B3 regime fell back to mmap hundreds of times** (mean fallbacks per
+> visit from the `[spill-pread]` totals line: warm 455, cold 591, cold window 2 737, bounded 1,404;
+> the smoke 517). The engine quotes the first three reasons per visit; all 123 quoted lines read
+> `[spill-pread] falling back to mmap: worker read ring is busy`: with two buffers, a demand read
+> that finds none free takes the mmap path instead of waiting. The registered fallback gate covered only the direct arm, so these visits passed.
+> The `worker2` rows below therefore measure a mixed worker-plus-mmap program, not the depth-2
+> worker. `worker16`, `pread16` and `direct16` had zero fallbacks on this box. The rows stay as
+> recorded; the mechanism and the fix candidate are OWED 26.
+
 No default changes from this box alone: per CLAUDE.md a default needs both rigs. The regime-shaped
 result (mapped access wins while the bank fits in RAM, the positioned-read worker wins under memory
 pressure) is the input for the 5090 half and for any per-regime policy decision.

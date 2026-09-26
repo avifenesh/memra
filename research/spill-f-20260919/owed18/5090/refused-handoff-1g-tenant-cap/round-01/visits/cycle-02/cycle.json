@@ -1,0 +1,73 @@
+{
+ "cycle": 2,
+ "size_bytes": 1073741824,
+ "io": "direct",
+ "problems": [
+  "a probe missed the restored prefix (cached_tokens 0)"
+ ],
+ "prompts_sent": 17,
+ "host_bytes_before_export": 1144492416,
+ "export_window": {
+  "telemetry_ok": true,
+  "problems": [],
+  "device": {
+   "read_bytes": 126976,
+   "write_bytes": 1774190592
+  }
+ },
+ "export": {
+  "entries": 16,
+  "mb": 2034.7,
+  "ms": 1344,
+  "write_ms": 962.2,
+  "fsync_ms": 1.1,
+  "drain_demoted": 8,
+  "skipped_over_cap": 0
+ },
+ "export_boot_exit": 0,
+ "file_bytes": 2034671550,
+ "file_sha256": "b579185c38cac72f0820d3ca5d0a7998d0a2a900aba155d7265933321311182a",
+ "cold_ok": true,
+ "import_window_opened_after_done": false,
+ "import_window": {
+  "telemetry_ok": true,
+  "problems": [],
+  "device": {
+   "read_bytes": 1901948928,
+   "write_bytes": 1331200
+  }
+ },
+ "import": {
+  "armed": [
+   16,
+   2034.7
+  ],
+  "done": {
+   "entries": 16,
+   "mb": 2034.7,
+   "skipped": 0,
+   "seconds": 1.9
+  },
+  "aborted": false
+ },
+ "probes": [
+  {
+   "cached_tokens": 0,
+   "identical": true
+  },
+  {
+   "cached_tokens": 6496,
+   "identical": true
+  },
+  {
+   "cached_tokens": 6496,
+   "identical": true
+  },
+  {
+   "cached_tokens": 6496,
+   "identical": true
+  }
+ ],
+ "import_boot_exit": 0,
+ "passed": false
+}

@@ -1,0 +1,2709 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: use of deprecated method `cudarc::driver::CudaStream::memcpy_dtov`: Use clone_dtoh
+    --> crates/memra-engine/src/spill_pread.rs:1707:27
+     |
+1707 |         let back = stream.memcpy_dtov(&dev).unwrap();
+     |                           ^^^^^^^^^^^
+     |
+     = note: `#[warn(deprecated)]` on by default
+
+warning: `memra-engine` (lib test) generated 1 warning
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-f/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 1m 02s
+     Running unittests src/lib.rs (target/release/deps/memra_engine-88d7a4f71e6f66fa)
+
+running 624 tests
+test b200_posture_default_tests::unset_follows_the_build_arch ... ok
+test decode_batch::tests::b1_eager_program_requires_explicit_opt_in ... ok
+test cpu_experts::tests::accepts_supported_native_qtypes_without_translation ... ok
+test alias_door_tests::agreeing_pair_resolves_to_the_general_name ... ok
+test alias_door_tests::default_off_and_either_name_arms ... ok
+test b200_posture_default_tests::other_spellings_fall_back_to_the_arch_default ... ok
+test b200_posture_default_tests::explicit_values_win_on_every_arch ... ok
+test dflash::dflash2_tests::an_unfilled_selector_slot_is_refused_by_name_not_clamped ... ok
+test cpu_experts::tests::validates_thread_count ... ok
+test dflash::dflash2_tests::max_tokens_caps_the_committed_prefix_not_only_the_visible_slice ... ok
+test alias_door_tests::disagreeing_pair_refuses_and_names_both ... ok
+test cpu_experts::tests::rejects_missing_symbols_and_wrong_abi ... ok
+test decode_batch::tests::pp_wave_credit_requires_exact_ack_before_slot_reuse ... ok
+test decode_batch::tests::pp_wave_protocol_rejects_order_and_propagates_worker_error ... ok
+test decode_batch::tests::pp_wave_protocol_reports_forward_and_ack_channel_closure ... ok
+test decode_batch::tests::pp_wave_credit_rejects_wrong_ack_and_slot_generation ... ok
+test dflash::dflash2_tests::rejection_accept_walk_is_the_leviathan_rule ... ok
+test dflash::dflash2_tests::sampled_walk_chains_the_drawn_candidate ... ok
+test dflash::dflash2_tests::sampled_walk_records_the_distribution_it_samples ... ok
+test dflash::dflash2_tests::sampled_walk_tiny_temp_matches_greedy ... ok
+test dflash::dflash2_tests::selector_walk_hidden_gate_participates ... ok
+test dflash::dflash2_tests::selector_walk_unary_term_participates ... ok
+test dflash::dflash2_tests::dflash2_harvest_is_census_keyed ... ok
+test dflash::dflash2_tests::selector_walk_is_a_chain_not_per_slot_argmax ... ok
+test dflash::dflash2_tests::tail_import_refuses_every_geometry_disagreement_and_accepts_the_exported_shape ... ok
+test dflash::dflash2_tests::the_walk_assert_survives_the_guard - should panic ... ok
+test dflash::dflash_kv_ring_tests::compaction_keeps_exactly_the_trailing_window ... ok
+test dflash::dflash_kv_ring_tests::a_pinned_capture_extends_what_is_kept ... ok
+test dflash::dflash2_tests::composition_teeth_inverted_accept_fails ... ok
+test dflash::dflash_kv_ring_tests::door_off_geometry_never_compacts ... ok
+test dflash::dflash_kv_ring_tests::keep_from_never_drops_below_base ... ok
+test dflash::dflash_kv_ring_tests::resident_bytes_are_constant_under_the_ring_and_linear_without_it ... ok
+test dflash::dflash2_tests::composition_teeth_residual_without_q_fails ... ok
+test dflash::dflash_precision_tests::default_and_supported_precision_programs_are_explicit ... ok
+test dflash::dflash_precision_tests::q5_and_typos_refuse_instead_of_silently_selecting_q8 ... ok
+test dflash::dflash_kv_ring_tests::fits_until_the_physical_buffer_is_full ... ok
+test dflash::dflash_tap_oracle_tests::standalone_prime_consumes_each_chunk_before_the_next_and_keeps_the_256_row_partition ... ok
+test dflash::dflash_tensor_contract_tests::attention_and_selector_geometry_refuse_before_cuda ... ok
+test dflash::draft_source_seam_tests::empty_and_out_of_trunk_taps_refuse_by_name ... ok
+test dflash::draft_source_seam_tests::taps_resolve_and_the_shift_is_the_callers ... ok
+test dflash::dspark_boundary_capture_tests::degenerate_boundaries_fall_back_instead_of_failing ... ok
+test dflash::dspark_boundary_capture_tests::dspark_resume_split_captures_only_a_grid_boundary_strictly_inside_the_suffix ... ok
+test cpu_experts::tests::dropped_ticket_joins_outstanding_worker ... ok
+test dflash::dspark_boundary_capture_tests::no_boundary_keeps_the_monolithic_prime ... ok
+test dflash::dspark_boundary_capture_tests::off_grid_boundary_is_refused_not_honoured ... ok
+test dflash::dspark_boundary_capture_tests::on_grid_boundary_inside_the_prompt_splits ... ok
+test dflash::dspark_harvest_tests::dflash_strategy_keeps_mask_fill_harvest ... ok
+test dflash::dspark_harvest_tests::dspark_strategy_requires_shifted_harvest ... ok
+test dflash::dspark_harvest_tests::dspark_trained_rows_through_mask_fill_harvest_accept_nothing ... ok
+test dflash::dspark_harvest_tests::env_seam_parses_and_refuses ... ok
+test dflash::dflash_tap_oracle_tests::tap_hash_preserves_bits_across_arbitrary_capture_partitions ... ok
+test dflash::dspark_harvest_tests::every_candidate_verifies_the_position_its_row_was_trained_for ... ok
+test dflash::dspark_harvest_tests::ratified_default_harvest_is_strategy_keyed ... ok
+test dflash::dspark_harvest_tests::ratified_default_vt_is_confidence_slot_tau_half ... ok
+test dflash::dspark_harvest_tests::strategy_census_reads_the_checkpoint_not_the_env ... ok
+test dflash::dspark_prefix_capture_tests::a_prompt_below_the_prime_floor_never_enters_the_dspark_route ... ok
+test dflash::dspark_prefix_capture_tests::prompt_end_capture_is_full_prompt_and_one_shot ... ok
+test dflash::dspark_prefix_capture_tests::session_prompt_preflight_matches_dflash2_and_windowed_caps ... ok
+test dflash::dspark_vt_tests::confidence_vt_floor_and_cap ... ok
+test dflash::dspark_vt_tests::confidence_vt_is_cumprod_survival_not_per_slot_threshold ... ok
+test dflash::dspark_vt_tests::raw_score_matches_the_parity_gate_dot ... ok
+test dflash::dspark_vt_tests::slot_arm_truncates_at_first_low_confidence_slot ... ok
+test dsv4_attention_split::tests::cuda_attention_split_device_2d_pack_matches_host ... ignored, requires one locked CUDA GPU; attention FP8 2D pack adapter
+test dsv4_attention_split::tests::cuda_attention_split_existing_fp8_gemv_component_gate ... ignored, requires one locked CUDA GPU; existing FP8 GEMV attention component
+test dflash::dspark_vt_tests::vt_policy_env_seam_parses_and_refuses ... ok
+test dflash::emit_budget_tests::accepted_run_never_exceeds_max_new ... ok
+test dsv4_attention_split::tests::existing_gemv_half_plans_are_exact_qb_woa_components ... ok
+test dsv4_attention_split::tests::malformed_shapes_and_non_aligned_partitions_fail_closed ... ok
+test dflash::dflash_tensor_contract_tests::named_tensor_contract_refuses_wrong_dtype_rank_and_shape_before_cuda ... ok
+test dsv4_attention_split::tests::wob_partial_sum_is_named_and_rank_ordered_without_tolerance ... ok
+test dsv4_attention_tp::tests::model_geometry_has_whole_head_and_group_partitions ... ok
+test dsv4_attention_tp::tests::refuses_partial_groups_unaligned_scales_and_overflow ... ok
+test dsv4_c4::tests::cuda_active_c4_gather_preserves_rows_and_reemissions ... ignored, requires an exclusively locked non-serving CUDA device
+test dsv4_c4::tests::cuda_direct_host_copy_preserves_bits_and_live_prefix ... ignored, requires an exclusively locked non-serving CUDA device
+test dsv4_c4::tests::cuda_recent_c4_preserves_hits_misses_wrap_and_rollback ... ignored, requires an exclusively locked non-serving CUDA device
+test dsv4_c4::tests::recent_capacity_is_bounded_and_optional ... ok
+test dsv4_c4::tests::rows_are_checked_before_async_dma ... ok
+test dsv4_doors::tests::a_decode_only_door_claimed_for_every_shape_is_caught ... ok
+test dflash::dflash2_tests::the_fullcover_restore_ordering_seam_is_live_in_comment_stripped_source ... ok
+test dsv4_doors::tests::a_door_that_claims_an_engagement_it_does_not_get_is_caught ... ok
+test dsv4_doors::tests::declared_door_state_matches_resolved_door_state ... ok
+test dsv4_doors::tests::doors_with_no_evidence_in_either_direction_are_named ... ok
+test dsv4_doors::tests::each_inert_door_carries_its_own_disposition ... ok
+test dsv4_doors::tests::every_declared_door_has_a_flags_row ... ok
+test dsv4_doors::tests::a_door_added_to_the_engine_is_caught_without_touching_the_gate ... ok
+test dsv4_doors::tests::one_default_on_door_is_inert_on_the_served_path ... ok
+test dsv4_doors::tests::permanence_is_keyed_to_the_program_fact_not_to_the_door ... ok
+test dsv4_doors::tests::the_doors_merged_below_the_dev_pair_instrument_floor_are_named ... ok
+test dsv4_doors::tests::the_reference_arm_resolves_every_remaining_door_the_same_way ... ok
+test dsv4_doors::tests::the_reference_expert_program_is_reachable_only_through_the_gate_arm ... ok
+test dsv4_doors::tests::the_served_and_bench_programs_resolve_doors_differently ... ok
+test dsv4_doors::tests::the_synthetic_stand_in_is_inert_on_served_and_live_on_the_bench ... ok
+test dsv4_ep::tests::cuda_ep_partition_matches_original_full_bank ... ignored, requires an exclusively locked non-serving CUDA device
+test dsv4_ep::tests::cuda_tp_ep_local_only_clears_reused_contribution_and_rank_sums ... ignored, requires one locked CUDA GPU; TP/EP local contribution reuse regression
+test dsv4_ep::tests::route_stats_call_classification_keeps_unknown_counts_out_of_slot_totals ... ok
+test dsv4_doors::tests::every_dsv4_door_name_in_the_engine_is_declared_or_exempt ... ok
+test dsv4_gpu::capacity_planner_tests::pp_cut_accounts_for_a_tail_resident_drafter ... ok
+test dsv4_gpu::capacity_planner_tests::verify_transient_base_tracks_session_not_model_capacity ... ok
+test decode_batch::tests::gdn_plans_stay_in_one_decode_numeric_class_across_widths ... ok
+test dsv4_gpu::coupled_proposal_tests::identical_proposals_share_the_target_draw_key_not_the_input_position ... ok
+test dsv4_gpu::coupled_proposal_tests::proposal_policy_is_explicit_and_default_greedy ... ok
+test dsv4_gpu::dense_arm_default_tests::dspark_fused_moe_is_strict_default_off_and_device_only ... ok
+test dsv4_gpu::dense_arm_default_tests::grouped_prefill_requires_literal_opt_in ... ok
+test dsv4_gpu::dense_arm_default_tests::indexer_score_defaults_to_the_knee_and_forces_literally ... ok
+test dsv4_gpu::dense_arm_default_tests::ratified_default_dense_arm_is_fp8_on_device ... ok
+test dsv4_gpu::dense_wo_a_grouped_fp8_component_tests::cuda_gemv_fp8_grouped_dense_fast_matches_every_slice_program ... ignored, requires an exclusively locked CUDA device; grouped dense-fast wo_a identity matrix
+test dsv4_gpu::dense_wo_a_grouped_fp8_component_tests::cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue ... ignored, requires an exclusively locked CUDA device; grouped wo_a FP8 component identity
+test dsv4_gpu::ar_phase_policy_tests::unarmed_process_refuses_an_exported_instrument ... ok
+test dsv4_gpu::index_topk_radix_tests::radix_gate_is_narrow_to_k512_and_the_4096_control_boundary ... ok
+test dsv4_gpu::index_topk_radix_tests::radix_gate_state_and_counter_are_reversible ... ok
+test dsv4_gpu::capacity_planner_tests::wide_ring_commits_are_unique_and_equal_sequential_writes ... ok
+test dsv4_gpu::matrix_gate_transition_tests::matrix_ep_gate_setters_roll_back_invalid_requests ... ok
+test dsv4_gpu::peer_probe_tests::peer_probe_ladder_contains_live_hc_payloads ... ok
+test dsv4_gpu::penalty_cross_pin_tests::penalize_matches_the_sampling_crate_reference ... ok
+test dsv4_gpu::peer_probe_tests::peer_probe_pattern_is_keyed_and_mismatches_are_counted ... ok
+test dsv4_gpu::prefill_work_policy_tests::output_policy_is_explicit_and_defaults_to_legacy_work ... ok
+test dsv4_gpu::prefill_work_policy_tests::tail_prime_has_the_same_final_ring_as_every_suffix_row ... ok
+test dsv4_gpu::round_commit_tests::a_round_the_stream_takes_whole_commits_whole ... ok
+test dsv4_gpu::round_commit_tests::a_stream_that_stops_mid_round_commits_only_what_it_took ... ok
+test dsv4_gpu::round_commit_tests::the_commit_count_is_clamped_at_both_ends ... ok
+test dsv4_gpu::sampled_path_tests::draws_are_position_keyed_and_deterministic ... ok
+test dsv4_gpu::sampled_path_tests::filters_collapse_to_argmax_and_ties_break_low_index ... ok
+test dsv4_gpu::sampled_path_tests::radix_preserves_signed_zero_ties_and_sampled_draws ... ok
+test dsv4_gpu::sampled_path_tests::sampler_gate_override_is_thread_local_and_reversible ... ok
+test dsv4_gpu::sampled_path_tests::sampler_order_defaults_to_radix_and_names_are_strict ... ok
+test dsv4_gpu::sampled_path_tests::t0_and_bad_topp_refuse_by_name ... ok
+test dsv4_gpu::session_plan_tests::a_layer_shape_is_the_allocators_arithmetic ... ok
+test dsv4_gpu::session_plan_tests::effective_free_and_occupied_split_the_pools_mapped_unused_bytes ... ok
+test dsv4_gpu::session_plan_tests::gather_bytes_match_the_workspace_ensure ... ok
+test dsv4_gpu::session_plan_tests::the_plan_charges_each_stage_its_own_layers_and_the_tp_replica ... ok
+test dsv4_gpu::session_plan_tests::the_plan_scales_with_capacity_and_the_transient_rows_do_not ... ok
+test dsv4_gpu::verify_topk_tests::cuda_numeric_topk_matches_host_ties_and_preserves_guards ... ignored, requires an exclusively locked non-serving CUDA device
+test dsv4_gpu::verify_topk_tests::decode_path_defaults_to_device_and_both_other_arms_stay_selectable ... ok
+test dsv4_gpu::verify_topk_tests::defaults_that_cannot_boot_are_caught ... ok
+test dsv4_gpu::verify_topk_tests::verify_topk_is_literal_and_defaults_to_device ... ok
+test dsv4_gpu::vt_policy_tests::default_vt_is_off_and_byte_inert ... ok
+test dsv4_gpu::vt_policy_tests::off_arm_t_cap_expression_is_identity ... ok
+test dsv4_gpu::vt_policy_tests::slot_defaults_tau_half_floor_zero ... ok
+test dsv4_gpu::vt_policy_tests::slot_truncation_is_leading_prefix_with_floor ... ok
+test dsv4_gpu::vt_policy_tests::unknown_and_out_of_range_refuse_by_name ... ok
+test dsv4_graph::tests::cuda_capture_runs_once_and_restores_scope_after_failure ... ignored, requires an exclusively locked non-serving CUDA device
+test dsv4_gpu::sampled_path_tests::draw_frequencies_track_the_filtered_target ... ok
+test dsv4_graph::tests::replay_rust_partial_submission_and_capture_cleanup ... ignored, requires the exclusively locked development pair; runtime lifetime gate, not a model gate
+test dsv4_grouped::gu_dispatch_selection_tests::combined_kind_is_distinct_from_each_single_feature ... ok
+test dsv4_grouped::gu_dispatch_selection_tests::existing_doors_compose_only_on_plain_single_path ... ok
+test dsv4_grouped::half2_chain_identity_tests::cuda_half2_chain_identity ... ignored, requires CUDA; run under the rig lock; full ModelOpt GU/down half2 identity only
+test dsv4_grouped::tests::cuda_deferred_moe_faults_match_the_synchronous_checks ... ignored, requires one CUDA GPU; deferred MoE fault identity only
+test dsv4_grouped::tests::cuda_deferred_partition_faults_match_the_synchronous_checks ... ignored, requires one CUDA GPU; deferred partition MoE fault identity only
+test dsv4_grouped::tests::cuda_fused_one_token_moe_is_the_grouped_chain_bit_for_bit ... ignored, requires one CUDA GPU; fused one-token MoE identity only
+test dsv4_grouped::tests::cuda_gu_m1_matches_gu_reference ... ignored, requires one CUDA GPU; GU-M1 component identity only
+test dsv4_grouped::tests::cuda_m1_stream_matches_sktail_bit_for_bit ... ignored, requires one CUDA GPU; M1 streaming visitor identity only
+test dsv4_grouped::tests::cuda_matrix_chain_full_bank_equals_two_partitions ... ignored, requires one CUDA GPU; correctness only, run with matrix visitor enabled
+test dsv4_grouped::tests::cuda_matrix_mirrors_reuse_storage_and_clear_live_status ... ignored, requires CUDA; run under the rig lock, correctness only
+test dsv4_grouped::tests::cuda_mrow_stream_matches_sktail_bit_for_bit ... ignored, requires one CUDA GPU; multi-row streaming visitor identity only
+test dsv4_grouped::tests::cuda_partition_routes_match_host_and_reject_global_ids ... ignored, requires CUDA; run under the rig lock, correctness only
+test dsv4_grouped::tests::expert_partition_bounds_do_not_wrap ... ok
+test dsv4_grouped::tests::matrix_mirror_byte_accounting_is_bounded ... ok
+test dsv4_grouped::tests::matrix_program_and_state_are_explicit ... ok
+test dsv4_grouped::tests::modelopt_table_addresses_expert_major_banks_by_projection ... ok
+test dsv4_grouped::tests::route_policy_is_explicit ... ok
+test dsv4_sampler::penalty_tests::incomplete_upload_keeps_departed_ids_pending ... ok
+test dsv4_sampler::penalty_tests::sparse_counts_are_complete_after_an_unpenalized_device_clear ... ok
+test dsv4_sampler::penalty_tests::sparse_counts_clear_departed_ids_and_respect_the_window ... ok
+test dsv4_sk_params_tests::dsv4_resolves_the_32_form_while_the_shared_default_stays_hybrid ... ok
+test dsv4_source_tape::tests::full_reads_refuse_the_rebuild - should panic ... ok
+test dsv4_source_tape::tests::refuses_an_unknown_tape_and_cuts_on_a_char_boundary ... ok
+test dsv4_topology::tests::pp_and_tp_ep_are_distinct_programs ... ok
+test dsv4_topology::tests::tp_ep_admission_refuses_unsupported_shapes ... ok
+test eagle::draft_rope_width_tests::explicit_rotary_dim_wins_over_the_fraction ... ok
+test eagle::draft_rope_width_tests::malformed_factor_takes_full_width_not_a_wider_than_head_rotation ... ok
+test eagle::draft_rope_width_tests::nested_only_partial_rotary_spelling_is_still_partial_rope ... ok
+test eagle::draft_rope_width_tests::no_rope_declaration_is_full_rope ... ok
+test eagle::draft_rope_width_tests::real_eagle3_qwen35_9b_config_derives_partial_rope_64_of_256 ... ok
+test eagle::tensor_contract_tests::auxiliary_and_vocabulary_maps_are_closed_before_cuda ... ok
+test eagle::tensor_contract_tests::every_eagle_weight_is_shape_and_dtype_checked_before_cuda ... ok
+test env_audit::tests::a_retired_door_refuses_with_its_ledger ... ok
+test env_audit::tests::every_legal_name_passes ... ok
+test env_audit::tests::registry_is_populated_sorted_and_disjoint ... ok
+test dflash::dflash_tap_oracle_tests::production_carry_preserves_whole_buffer_batches_across_chunks_and_boundary ... ok
+test env_audit::tests::unknown_names_refuse_inside_owned_families_and_warn_outside ... ok
+test ep_map::tests::env_resolution_names_the_armed_flag_and_refuses_disagreement ... ok
+test ep_map::tests::layer_cover_is_exact_both_ways ... ok
+test ep_map::tests::parse_refusals_name_the_law ... ok
+test ep_map::tests::parse_render_roundtrip_and_even_split ... ok
+test ep_map::tests::parses_the_committed_example_map_bytes ... ok
+test ep_map::tests::parses_the_shared_tools_emission_shape ... ok
+test exact_scope_tests::error_path_restores_verify_exact ... ok
+test fp8_ffi::b200_dry_policy_tests::qualified_arches_keep_the_existing_default_on_policy ... ok
+test fp8_ffi::b200_dry_policy_tests::rust_cfg_tracks_the_baked_cuda_arch ... ok
+test fp8_ffi::b200_dry_policy_tests::sm100_dry_build_requires_literal_one ... ok
+test fused_gate_bounds_tests::q_gate_split_refuses_a_separate_gate_wq_instead_of_reading_past_it ... ignored, requires a CUDA GPU
+test fused_rope_width_tests::full_width_is_accepted ... ok
+test fused_rope_width_tests::gemma4_official_artifact_widths_pass ... ok
+test fused_rope_width_tests::partial_rotary_is_refused_with_the_geometry_named ... ok
+test glm5_decode_graph::tests::every_run_length_makes_an_even_number_of_swaps ... ok
+test glm5_decode_graph::tests::runs_split_on_the_uncapturable_layers ... ok
+test glm5_decode_graph_default_tests::unset_and_one_arm_only_zero_disarms ... ok
+test glm5_tp::tests::armed_check_counts_parse_errors_as_armed ... ok
+test glm5_tp::tests::every_refused_door_composition_bites_by_name ... ok
+test glm5_tp::tests::parse_is_literal_and_fail_closed ... ok
+test glm5_tp::tests::preflight_geometry_laws_are_dimension_derived ... ok
+test glm5_tp_sampler::tests::glm5_tp_device_sampler_gpu_oracles ... ignored, requires an exclusively owned CUDA box; never run on the local rig
+test glm5_tp_sampler::tests::glm5_tp_sample_args_and_refusals ... ok
+test glm5_vrows_t1_dev_default_tests::arch_keyed_default_with_override_and_bisect_knob ... ok
+test glm_spec::conf_keep_tests::conf_keep_matches_the_spec_rs_break_semantics ... ok
+test glm_spec::prime::tests::anchor_and_first_token_keep_their_tape_position_off_and_on ... ok
+test glm_spec::prime::tests::draft_phase_ranges_keep_the_original_tail_and_offsets ... ok
+test hc_pre_default_tests::arch_keyed_defaults_with_explicit_override ... ok
+test hybrid::auto_parallel_policy_tests::automatic_tp_attention_is_strict_and_defaults_off ... ok
+test hybrid::auto_parallel_policy_tests::automatic_tp_attention_rank_count_is_explicit_and_bounded ... ok
+test hybrid::auto_parallel_policy_tests::automatic_w4a16_bf16_residency_defaults_on_with_explicit_rollback ... ok
+test hybrid::draft_head_tests::a_different_blocks_nextn_head_is_never_borrowed ... ok
+test hybrid::draft_head_tests::draft_without_a_nextn_head_falls_back_to_file_level_output ... ok
+test hybrid::draft_head_tests::each_nextn_block_selects_its_own_head ... ok
+test hybrid::draft_head_tests::frspec_trim_prefers_the_nextn_blocks_own_head_name ... ok
+test hybrid::draft_head_tests::legacy_shared_head_is_probed_but_loses_to_shared_head_head ... ok
+test hybrid::draft_head_tests::step37_drafter_prefers_the_blocks_own_nextn_head_over_file_level_output ... ok
+test hybrid::frspec_ranks_tests::gather_rows_is_the_rank_ordered_row_copy ... ok
+test hybrid::frspec_ranks_tests::strict_parse_skips_blank_lines_and_refuses_anything_else ... ok
+test hybrid::frspec_ranks_tests::validate_refuses_empty_oob_duplicate_and_wider_than_vocab ... ok
+test hybrid::mla_indexer_geom_tests::live_select_k_cap_matches_index_width ... ok
+test hybrid::mla_indexer_geom_tests::unclamped_cap_is_what_the_audit_rejects ... ok
+test hybrid::pipeline_cut_tests::manual_pipeline_cuts_cannot_bypass_model_plan_boundaries ... ok
+test hybrid::residency_tests::distributed_trunk_layers_do_not_poison_local_mtp_residency_estimates ... ok
+test dflash::dflash2_tests::sampled_round_composition_matches_the_target ... ok
+test hybrid::residency_tests::pp_residency_combines_stages_that_share_one_device ... ok
+test hybrid::residency_tests::pp_residency_counts_only_each_devices_expert_slice ... ok
+test hybrid::residency_tests::resident_fp8_scale_slab_must_match_every_expert ... ok
+test hybrid::residency_tests::resident_fp8_scale_stride_must_match_its_grid ... ok
+test hybrid::step_expert_selection_tests::automatic_tp2_attention_can_overlap_ep4_expert_ownership ... ok
+test hybrid::step_expert_selection_tests::conflicting_ep_and_tp_assignments_fail_closed ... ok
+test hybrid::step_expert_selection_tests::explicit_ep_remains_expert_parallel ... ok
+test hybrid::step_expert_selection_tests::rank_local_attention_uses_bounded_swa_rings_only_with_native_p2p ... ok
+test hybrid::step_expert_selection_tests::runtime_registry_owns_one_immutable_load_snapshot ... ok
+test hybrid::step_expert_selection_tests::tp2_keeps_projection_sharded_experts ... ok
+test hybrid::step_expert_selection_tests::tp4_and_tp8_use_expert_ownership_without_a_second_flag ... ok
+test hybrid_forward::glm5_prime::tests::both_ranks_acknowledge_before_peer_service ... ok
+test hybrid_forward::page_prefetch_tests::grouped_worker_prefetch_primes_first_then_each_known_next_once ... ok
+test hybrid_forward::page_prefetch_tests::page_prefetch_window_keeps_existing_opt_in_default ... ok
+test hybrid_forward::glm5_prime::tests::numeric_environment_snapshot_is_immutable ... ok
+test hybrid_forward::page_prefetch_tests::rolling_page_prefetch_advises_each_future_expert_once ... ok
+test hybrid_forward::page_prefetch_tests::rolling_worker_prefetch_primes_current_and_each_future_expert_once ... ok
+test hybrid_forward::prime_chunk_schedule_tests::active_matrix_prefix_scopes_reused_prime_slabs ... ok
+test hybrid_forward::prime_chunk_schedule_tests::auto_prime_ranges_align_to_the_gdn_grid ... ok
+test hybrid_forward::prime_chunk_schedule_tests::capped_monolithic_ranges_are_identical_below_the_wall_and_legal_above ... ok
+test hybrid_forward::prime_chunk_schedule_tests::dynamic_schedule_matches_registered_shapes ... ok
+test hybrid_forward::prime_chunk_schedule_tests::fixed_schedule_retains_measured_geometry ... ok
+test hybrid_forward::prime_chunk_schedule_tests::monolithic_prime_chunk_caps_at_the_cuda_launch_wall ... ok
+test hybrid_forward::prime_chunk_schedule_tests::ppn_prime_cache_partition_moves_and_restores_every_layer ... ok
+test hybrid_forward::prime_chunk_schedule_tests::ppn_prime_wave_credit_requires_the_exact_oldest_wave_and_slot ... ok
+test hybrid_forward::prime_chunk_schedule_tests::ppn_prime_wave_signal_reports_order_error_injected_error_and_closure ... ok
+test hybrid_forward::prime_chunk_schedule_tests::prime_workspace_shape_is_chunk_bounded_and_prompt_scaled_when_monolithic ... ok
+test hybrid_forward::prime_chunk_schedule_tests::step_grouped_path_is_eager_single_token_only ... ok
+test hybrid_forward::prime_chunk_schedule_tests::step_grouped_prefill_door_is_strict_and_capacity_bounded ... ok
+test hybrid_forward::prime_chunk_schedule_tests::step_tp_prefill_batch_refuses_before_scheduler_fallback ... ok
+test hybrid_forward::prime_chunk_schedule_tests::step_tp_prefill_door_is_strict_and_default_off ... ok
+test hybrid_forward::prime_chunk_schedule_tests::step_tp_prefill_requires_a_qualified_even_rank_shape ... ok
+test hybrid_forward::w4a16_dispatch_tests::hy3_w4a16_never_admits_q8_activations ... ok
+test hyper::tests::a_mixed_trunk_is_refused_in_both_orders ... ok
+test hyper::tests::serial_trunk_has_no_topology ... ok
+test hyper::tests::uniform_trunk_yields_the_plans_constants ... ok
+test hyper::tests::zero_iterations_are_refused ... ok
+test kda::kda_conv3_default_tests::arch_keyed_default_with_explicit_override ... ok
+test mla::tests::naive_equals_absorbed_decode_t1 ... ok
+test hybrid_forward::prime_chunk_schedule_tests::dynamic_schedule_covers_exactly_and_shrinks_after_fill ... ok
+test env_audit::tests::retired_names_are_not_read_at_runtime ... ok
+test mla::tests::naive_equals_absorbed_prefill_causal ... ok
+test mla::tests::nope_scale_is_qk_head_dim ... ok
+test mla::tests::rope_norm_equals_permuted_neox ... ok
+test mla_ffi::dsa_select_default_tests::default_on_only_zero_disarms_and_the_floors_still_gate ... ok
+test mmq_ffi::b200_dry_policy_tests::nvfp4_default_and_explicit_routes_do_not_reach_sm100_stubs ... ok
+test mmq_ffi::grouped_fp8_tests::csr_segments_are_not_limited_to_one_kernel_tile ... ok
+test mmq_ffi::grouped_fp8_tests::csr_validation_rejects_bad_routes_and_parts ... ok
+test mmq_ffi::grouped_fp8_tests::device_csr_capacity_admits_smaller_dynamic_schedules ... ok
+test mmq_ffi::grouped_fp8_tests::explicit_pair_rows_remain_indexed_by_pair_id ... ok
+test mmq_ffi::grouped_fp8_tests::grouped_workspace_capacity_accepts_only_bounded_active_shapes ... ok
+test mmq_ffi::grouped_fp8_tests::token_routes_build_stable_expert_major_csr ... ok
+test mmq_ffi::grouped_fp8_tests::workspace_shape_validation_is_pure_and_checked ... ok
+test model::tests::direct_split_equals_chained ... ok
+test model::tests::legacy_mmap_source_requires_retained_file_extent ... ok
+test model::tests::mixed_expert_loader_keeps_each_encoding_and_extent ... ok
+test model::tests::mixed_expert_loader_keeps_mmap_backing_zero_copy ... ok
+test model::tests::mixed_expert_loader_omits_masked_expert_bytes ... ok
+test model::tests::repack_cache_refuses_symlinked_directory_and_file ... ok
+test model::tests::stacked_fp8_experts_reject_non_finite_codes ... ok
+test model::tests::stacked_fp8_experts_retain_owned_mmap_and_scale_geometry ... ok
+test model::tests::tiered_expert_source_does_not_double_apply_layout_offset ... ok
+test model::tests::uniform_expert_loader_coalesces_contiguous_mmap ... ok
+test model_memory::native_tests::glm_indexed_mla_kda_state_materialization ... ignored, requires a native CUDA pair under the coordinator's exact two-card leases
+test model_memory::native_tests::glm_peer_admission_materialization_trim_and_refill ... ignored, native CUDA pair required; run under the provided two-card exclusive locks
+test model_memory::native_tests::glm_same_ordinal_owners_are_not_lost ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test model_memory_fixture::tests::fixture_census_rejects_a_missing_indexer_tensor_and_identity_is_repeatable ... ok
+test model_memory_fixture::tests::fixture_has_two_tp2_kda_and_two_independent_kpool_layers ... ok
+test model_memory_plan::tests::growing_allocations_reserve_the_replacement_while_old_bytes_are_live ... ok
+test model_memory_plan::tests::kda_reserves_convolution_and_both_recurrent_planes ... ok
+test model_memory_plan::tests::malformed_geometry_and_overflow_fail_closed ... ok
+test model_memory_plan::tests::mla_peer_score_workspace_scales_with_prompt_depth_and_call_rows ... ok
+test model_memory_plan::tests::mla_ring_and_flat_layouts_include_lazy_keys_and_length_scalar ... ok
+test model_memory_plan::tests::partial_layers_and_same_device_ranks_sum_without_charging_live_bytes ... ok
+test model_memory_plan::tests::peer_workspace_is_not_capped_by_small_primary_session_cost ... ok
+test model_memory_plan::tests::shared_owners_collapse_but_same_ordinal_engines_survive ... ok
+test moe_cache::banked_native::day44_census::the_mapped_branch_is_taken_only_under_the_door_option ... ok
+test moe_cache::banked_native::day45_fill::both_fill_admissions_share_one_function ... ok
+test moe_cache::banked_native::day45_fill::the_fill_reads_each_range_and_digests_it ... ok
+test dflash::dflash2_tests::penalized_composition_teeth_unpenalized_bonus_fails ... ok
+test dsv4_attention_split::tests::real_dsv4_wob_column_halves_repack_rows_and_f32_scales ... ok
+test dflash::dflash2_tests::penalized_composition_teeth_frozen_window_fails ... ok
+test moe_cache::banked_native::day46_census::the_miss_path_drains_nothing_on_success ... ok
+test moe_cache::banked_native::day48_census::the_memo_holds_only_pairs_the_proxy_accepted ... ok
+test moe_cache::banked_native::day48_trace_census::the_trace_is_buffered_with_its_format_unchanged ... ok
+test moe_cache::banked_native::day49_record_pass::parallel_digests_equal_the_serial_pass ... ok
+test moe_cache::banked_native::day48_trace_census::the_direct_trace_line_is_day_48s_format_byte_for_byte ... ok
+test dsv4_attention_split::tests::logical_rank_swap_and_scale_corruption_are_rejected_by_identity_teeth ... ok
+test moe_cache::banked_native::day50_census::prefetch_goes_through_the_owner_and_consumption_waits ... ok
+test moe_cache::banked_native::day60_census::the_dispatch_clock_only_times_and_counts ... ok
+test moe_cache::banked_native::day61_profile::host_hit_lease_profile ... ignored, DAY61 profile: log only, run by hand under the CPU cap
+test moe_cache::banked_native::day61_census::leases_retire_where_a_lease_is_taken ... ok
+test dflash::dflash2_tests::penalized_composition_teeth_unpenalized_residual_fails ... ok
+test moe_cache::banked_native::day58_memo::the_dense_memo_matches_a_map_oracle ... ok
+test mla::tests::naive_equals_absorbed_glm52_full_dims ... ok
+test moe_cache::slru_intrusive_tests::slru_list_basic_invariants ... ok
+test moe_cache::vram_fraction_tests::cold_bypass_parse_refuses_unknown_values ... ok
+test moe_cache::vram_fraction_tests::cold_ghost_first_miss_bypasses_second_admits ... ok
+test moe_cache::vram_fraction_tests::cold_ghost_remembers_only_the_last_cap_first_misses ... ok
+test moe_cache::vram_fraction_tests::hard_vram_fraction_defaults_and_rejects_unsafe_values ... ok
+test moe_cache::vram_fraction_tests::lfu_decay_is_opt_in_and_bounded ... ok
+test moe_cache::vram_fraction_tests::lfu_mtp_weight_defaults_and_is_bounded ... ok
+test moe_cache::vram_fraction_tests::size_class_plan_does_not_overflow_on_pathological_sizes ... ok
+test moe_cache::vram_fraction_tests::size_class_plan_preserves_classes_and_never_exceeds_budget ... ok
+test moe_cache::vram_fraction_tests::size_class_plan_returns_full_inventory_when_it_fits ... ok
+test moe_sel_dump::tests::unset_env_records_nothing_and_costs_one_oncelock_read ... ok
+test moe_sel_dump::tests::v1_record_is_2_plus_6_per_slot_little_endian ... ok
+test moe_vrows_ilp_default_tests::arch_keyed_default_with_explicit_override ... ok
+test moe_vrows_ilp_default_tests::nvfp4_row_ilp_arch_keyed_default ... ok
+test moe_vrows_ilp_default_tests::q8_row_ilp_arch_keyed_default ... ok
+test moesd::tests::host_capture_counts_distinct_experts_and_assignments ... ok
+test o2_band::tests::a_flip_between_two_candidates_the_band_covers_is_a_tie ... ok
+test o2_band::tests::a_flip_on_a_decided_row_is_never_a_tie ... ok
+test o2_band::tests::accepts_reduction_noise_on_a_decided_row ... ok
+test o2_band::tests::accepts_reduction_noise_on_a_near_tie ... ok
+test o2_band::tests::accepts_the_row_the_relative_logit_band_rejected ... ok
+test o2_band::tests::an_agreeing_row_is_not_a_flip ... ok
+test o2_band::tests::is_insensitive_to_a_challenger_that_stays_far_below_the_winner ... ok
+test o2_band::tests::is_symmetric_and_zero_on_identity ... ok
+test o2_band::tests::rejects_a_divergence_just_past_the_band ... ok
+test o2_band::tests::rejects_a_real_divergence ... ok
+test o2_band::tests::survives_logits_that_would_overflow_f32_exp ... ok
+test parallel::tests::auto_placement_binds_the_actual_step_rope_extent ... ok
+test parallel::tests::automatic_placement_refuses_when_no_program_preserves_reserve ... ok
+test parallel::tests::automatic_placement_routes_dense_and_non_w4a16_plans_to_pipeline ... ok
+test parallel::tests::automatic_placement_uses_capacity_not_family_recipes ... ok
+test parallel::tests::dense_transformer_contract_and_tp_geometry_are_plan_derived ... ok
+test parallel::tests::expert_parallel_requires_a_multi_rank_tp_group ... ok
+test parallel::tests::full_model_step_tp8_preflight_binds_one_runtime_group ... ok
+test parallel::tests::grouped_step_layout_refuses_gaps_overlap_and_invalid_stage_tp ... ok
+test parallel::tests::grouped_step_layouts_cover_every_card_count_through_eight ... ok
+test parallel::tests::grouped_three_card_plan_is_pp1_then_tp2_ep2 ... ok
+test parallel::tests::hardware_target_classification_is_exact ... ok
+test moe_cache::slru_intrusive_tests::hit_promotion_is_o1_not_on ... ok
+test parallel::tests::hy3_contract_is_extracted_from_exact_full_sigmoid_moe_geometry ... ok
+test parallel::tests::product_envelope_accepts_eight_and_refuses_more ... ok
+test parallel::tests::hy3_sibling_geometry_is_derived_without_a_family_loader ... ok
+test parallel::tests::stage_fence_must_use_model_plan_partition_boundaries ... ok
+test parallel::tests::step_contract_is_extracted_from_model_specific_geometry ... ok
+test parallel::tests::step_does_not_inherit_the_5090_hardware_contract ... ok
+test parallel::tests::step_fp8_checkpoint_census_refuses_conversion_and_wrong_scale_class ... ok
+test parallel::tests::step_pp3_maps_fifteen_trunk_layers_per_card ... ok
+test parallel::tests::step_pp_marker_uses_the_runtime_stage_fence ... ok
+test parallel::tests::step_sibling_geometry_is_derived_without_a_family_loader ... ok
+test parallel::tests::step_tp2_tp4_tp8_and_hybrid_plans_are_geometry_valid ... ok
+test parallel::tests::step_tp3_refuses_the_real_per_layer_head_geometry ... ok
+test parallel::tests::step_tp_preflight_is_partial_for_tp2_and_fails_closed_on_invalid_specs ... ok
+test parallel::tests::step_without_mtp_keeps_the_same_structural_parallel_contract ... ok
+test parallel::tests::structural_tp4_defers_quant_block_legality_to_the_artifact_backend ... ok
+test parallel::tests::step_fp8_checkpoint_census_covers_every_routed_projection ... ok
+test pinned_host::tests::pinned_arena_disjoint_leases_and_zero_length ... ok
+test pinned_host::tests::pinned_arena_exact_fit_and_coalesced_reuse ... ok
+test pinned_host::tests::pinned_arena_fragmentation_and_failed_batch_are_atomic ... ok
+test pinned_host::tests::pinned_arena_full_write_replaces_every_poisoned_byte ... ok
+test pinned_host::tests::pinned_arena_mock_host_promotion_overwrites_recycled_image ... ok
+test pinned_host::tests::pinned_arena_concurrent_leases_never_overlap ... ok
+test pinned_host::tests::pinned_arena_unwritten_lease_refuses_all_slice_access ... ok
+test pinned_host::tests::pinned_arena_zero_length_write_is_explicit ... ok
+test pp::host_bounce_tests::boundary_growth_charges_first_allocation_and_only_missing_high_water_afterward ... ok
+test pp::host_bounce_tests::drop_is_refused_while_the_token_graph_door_bakes_rank_pointers ... ok
+test pp::host_bounce_tests::dual_pp_refuses_single_slot_and_non_pp2_shapes ... ok
+test pp::host_bounce_tests::corrupted_peer_readback_fails_closed_unless_host_bounce_is_selected ... ok
+test pp::host_bounce_tests::dual_pp_refuses_unvalidated_host_bounce_transport ... ok
+test pp::host_bounce_tests::dual_pp_split_is_honest_at_one_and_ceil_first_afterward ... ok
+test pp::host_bounce_tests::dual_pp_timing_error_is_counted_without_recording_a_sample ... ok
+test dsv4_gpu::sampled_path_tests::malformed_sampler_order_refuses_before_artifact_or_cuda ... ok
+test dsv4_attention_split::tests::real_dsv4_rank_row_shapes_are_exact_and_scale_planes_are_f32 ... ok
+test pp::host_bounce_tests::flip_auto_routes_only_the_regated_regime_and_degrades_serially_elsewhere ... ok
+test pp::host_bounce_tests::flip_default_is_dual_auto_with_explicit_off_and_forced_seams ... ok
+test moe_cache::banked_native::day45_fill::workers_stop_and_join_with_an_undrained_channel ... ok
+test pp::host_bounce_tests::flip_overlap_follows_mode_and_one_flag_restores_preflip_serial ... ok
+test pp::host_bounce_tests::healthy_arms_are_untouched ... ok
+test pp::host_bounce_tests::host_bounce_capacity_rejects_invalid_or_overflowing_geometry ... ok
+test pp::host_bounce_tests::late_runtime_reprobe_advances_once_instead_of_bursting_catchup ... ok
+test pp::host_bounce_tests::mismatch_on_the_grow_path_leaves_the_fresh_target_without_a_mirror ... ok
+test pp::host_bounce_tests::mismatch_snapshot_predating_lazy_tp_drops_the_mirror_instead_of_refusing ... ok
+test pp::host_bounce_tests::pp_device_aliases_cannot_bypass_the_distinct_stage_gate ... ok
+test pp::host_bounce_tests::pp_walk_owner_refuses_reentry_and_releases_at_scope_end ... ok
+test pp::host_bounce_tests::pp_wave_flag_is_strict_and_does_not_inherit_the_pp2_default ... ok
+test pp::host_bounce_tests::pp_wave_liveness_snapshot_counts_ticks_cells_and_real_overlap ... ok
+test pp::host_bounce_tests::pp_wave_ranges_are_balanced_contiguous_and_priority_preserving ... ok
+test pp::host_bounce_tests::pp_wave_route_treats_overlap_off_and_single_work_item_as_serial_rollback ... ok
+test pp::host_bounce_tests::pp_wavefront_refuses_every_unqualified_transport_shape ... ok
+test pp::host_bounce_tests::pp_wavefront_requires_width_invariant_bf16_for_w4a16 ... ok
+test pp::host_bounce_tests::probe_off_refusal_matrix_is_fail_closed_only_for_sharded_native_peer ... ok
+test pp::host_bounce_tests::refuses_a_grow_target_that_is_not_fresh ... ok
+test pp::host_bounce_tests::refuses_a_recorded_distributed_length_the_source_cannot_supply ... ok
+test pp::host_bounce_tests::refuses_a_recorded_distributed_length_with_no_target_mirror ... ok
+test pp::host_bounce_tests::runtime_probe_failure_latches_native_before_publishing_validated_bounce ... ok
+test pp::host_bounce_tests::runtime_reprobe_deferral_metric_counts_intervals_and_publishes_bound_state ... ok
+test pp::host_bounce_tests::runtime_reprobe_keeps_cheap_deadlines_live_while_expensive_work_waits_for_idle ... ok
+test pp::host_bounce_tests::runtime_reprobe_moves_any_measured_over_budget_rung_to_idle_only ... ok
+test pp::host_bounce_tests::step37_geometry_sizes_each_slot_from_the_prime_cap ... ok
+test pp::host_bounce_tests::transport_selection_keeps_peer_default_and_bounces_only_cross_device ... ok
+test prime_walker::tests::error_does_not_advance_or_finalize_the_partial_state ... ok
+test prime_walker::tests::finished_walker_does_no_more_work ... ok
+test prime_walker::tests::yielded_and_drained_execute_identical_frozen_tapes ... ok
+test progress::tests::a_progress_sink_scope_routes_this_threads_stamps_and_restores_on_drop ... ok
+test progress::tests::prime_cancel_point_fires_only_under_an_installed_scope_and_never_at_the_end ... ok
+test progress::tests::snapshot_is_none_until_the_first_advance_then_counts ... ok
+test qwen4exp_gpu::sel_group_tests::auto_backs_off_rows_then_refuses_rather_than_tiling_raggedly ... ok
+test qwen4exp_gpu::sel_group_tests::auto_resolves_the_measured_serving_shapes ... ok
+test qwen4exp_gpu::sel_group_tests::explicit_pins_are_verbatim_and_still_tile_checked ... ok
+test qwen4exp_gpu::sel_group_tests::malformed_specs_apply_nothing_and_refuse ... ok
+test qwen4exp_gpu::sel_group_tests::off_and_odd_in_f_take_the_shipped_kernel ... ok
+test qwen4exp_gpu::sel_group_tests::seam_round_trips_through_the_boolean_harness ... ok
+test qwen4exp_gpu::tp2_placement_tests::an_explicit_even_map_matches_the_builtin_even_split ... ok
+test qwen4exp_gpu::tp2_placement_tests::even_split_is_the_contiguous_suffix_control_arm ... ok
+test qwen4exp_gpu::tp2_placement_tests::is_even_rejects_a_balanced_permutation ... ok
+test qwen4exp_gpu::tp2_placement_tests::local_slots_are_a_bijection_at_the_serving_geometry ... ok
+test qwen4exp_gpu::tp2_placement_tests::measured_map_resolves_ascending_gather_and_local_slots ... ok
+test qwen4exp_gpu::tp2_placement_tests::refuses_a_document_with_no_layers_array ... ok
+test qwen4exp_gpu::tp2_placement_tests::refuses_a_foreign_format ... ok
+test qwen4exp_gpu::tp2_placement_tests::refuses_a_layer_the_map_does_not_cover ... ok
+test qwen4exp_gpu::tp2_placement_tests::refuses_a_layer_whose_expert_count_disagrees_with_the_map ... ok
+test qwen4exp_gpu::tp2_placement_tests::refuses_a_rank_count_that_is_not_two ... ok
+test qwen4exp_gpu::tp2_placement_tests::refuses_a_rank_id_outside_the_two_cards ... ok
+test qwen4exp_gpu::tp2_placement_tests::refuses_an_assignment_of_the_wrong_length ... ok
+test qwen4exp_gpu::tp2_placement_tests::refuses_an_empty_layers_array ... ok
+test qwen4exp_gpu::tp2_placement_tests::refuses_an_entry_rank_outside_the_two_cards ... ok
+test qwen4exp_gpu::tp2_placement_tests::refuses_an_expert_count_that_is_not_the_plans ... ok
+test qwen4exp_gpu::tp2_placement_tests::refuses_an_odd_routed_bank_on_both_paths ... ok
+test qwen4exp_gpu::tp2_placement_tests::refuses_an_unbalanced_layer_and_names_the_rebalance_knob ... ok
+test qwen4exp_gpu::tp2_placement_tests::refuses_an_unreadable_map_path ... ok
+test pp::host_bounce_tests::pp_wave_diagonals_cover_the_grid_without_stage_or_wave_aliasing ... ok
+test qwen_prime_graph::tests::tap_replay_follows_relocated_destination_and_stride ... ignored, requires CUDA; run on an isolated GPU under /tmp/memra-gpu.lock
+test sigmoid_topk_dispatch_tests::dexp_selects_its_twin ... ok
+test sigrouter_contract::tests::active_count_error_quotes_both_counts ... ok
+test sigrouter_contract::tests::pinned_host_expf_matches ... ok
+test spec::capture_headroom_tests::bootstrap_estimate_scales_with_heads_and_never_underflows ... ok
+test spec::capture_headroom_tests::capture_oom_predicate_matches_the_quoted_driver_text ... ok
+test spec::capture_headroom_tests::capture_reserve_check_refuses_short_devices_and_counts_pool_cache ... ok
+test spec::ctx_edge_659_census::both_gemma_burst_loops_guard_before_their_round ... ok
+test spec::ctx_edge_659_census::the_verify_funnel_refuses_a_window_past_the_cache_before_dispatch ... ok
+test spec::ctx_edge_659_census::the_qwen_round_loop_opens_with_the_room_guard ... ok
+test spec::day23_restored_draft_census::the_ready_constructor_copies_nothing_and_both_constructors_share_the_tail ... ok
+test progress::tests::the_sequential_prime_walks_ask_the_cancellation_point ... ok
+test spec::draft_graph_fallback_tests::flip_is_loud_once_and_memoized_after ... ok
+test spec::draft_graph_fallback_tests::reset_on_resume_clears_flags_and_logs_once ... ok
+test spec::draft_graph_fallback_tests::shape_change_clears_are_silent ... ok
+test spec::draft_source_kind_tests::a_loaded_drafter_wins_over_a_co_loaded_embedded_head ... ok
+test spec::draft_source_kind_tests::nothing_loaded_refuses_before_drafting_and_names_the_plan ... ok
+test spec::draft_source_kind_tests::the_embedded_head_is_the_source_only_under_a_plan_that_claims_it ... ok
+test spec::dspark_sparse_tests::topk_keeps_full_softmax_mass_and_stable_ties ... ok
+test spec::mtp_capture_admission_tests::nonresident_head_refuses_draft_and_verify_capture ... ok
+test spec::mtp_capture_admission_tests::resident_sigmoid_head_still_requires_host_routing ... ok
+test spec::mtp_capture_admission_tests::resident_softmax_and_dense_heads_keep_capture_available ... ok
+test progress::tests::the_prime_walks_actually_call_the_odometer ... ok
+test spec::mtp_chain_tests::embedded_step_heads_cycle_in_declared_order ... ok
+test spec::mtp_chain_tests::standalone_draft_remains_single_head ... ok
+test spec::prime::tests::carried_sub_floor_suffix_keeps_the_plain_eager_program ... ok
+test spec::prime::tests::carried_tokenwise_override_is_eager_on_every_segment ... ok
+test spec::prime::tests::stable_captures_preserve_segment_local_ranges_and_tiny_tail_program ... ok
+test spec::prime::tests::tokenwise_override_retains_the_legacy_segment_program ... ok
+test progress::tests::the_dsv4_prime_walks_actually_call_the_odometer ... ok
+test spec::prime_trows_width_tests::width_defaults_to_eight_and_refuses_invalid_operator_values ... ok
+test spec::sampled_graph_key_tests::baked_constants_stay_keyed ... ok
+test spec::sampled_graph_key_tests::debug_print_survives_the_sampled_arm ... ok
+test spec::sampled_graph_key_tests::equal_keys_agree_on_the_regime ... ok
+test spec::sampled_graph_key_tests::every_filter_field_is_keyed ... ok
+test spec::sampled_graph_key_tests::filtered_regimes_are_capturable_penalties_never ... ok
+test spec::sampled_graph_key_tests::seed_alone_still_rekeys_the_draft_graph ... ok
+test spec::sampled_graph_key_tests::vendor_filters_change_the_key ... ok
+test spec::spec_replay_env_tests::replay_requires_literal_one ... ok
+test spec::telem_tests::delta_isolates_burst_contribution ... ok
+test spec::telem_tests::delta_saturates_never_wraps ... ok
+test spec::telem_tests::merge_accumulates_fieldwise ... ok
+test spec::telem_tests::synthetic_accept_masks_produce_tau_and_position_histogram ... ok
+test spec::tp_verified_prefix_tests::snapshot_shape_accepts_matching_tp_presence ... ok
+test spec::tp_verified_prefix_tests::snapshot_shape_rejects_changed_tp_presence ... ok
+test spec::tp_verified_prefix_tests::step37_dcw_rebase_at_5151_boundary ... ok
+test spec::tp_verified_prefix_tests::step37_dcw_rebase_rollback_preserves_view_and_base ... ok
+test spec::vg_debt_tests::vg_debt_projects_remaining_growth_and_respects_the_freeze_valves ... ok
+test spec_phase::tests::level_resolution_honors_both_names_general_wins ... ok
+test spill::tests::pinned_frac_accepts_only_finite_values_in_range ... ok
+test spill_pread::tests::buffer_state_rejects_early_reuse ... ok
+test spill_pread::tests::direct_worker_overread_preserves_exact_bytes ... ignored, requires a CUDA GPU
+test spill::tests::spill_ctx_keeps_parsed_gguf_inode_after_path_replacement ... ok
+test spill_pread::tests::exact_and_unaligned_positioned_reads_match_file_bytes ... ok
+test spill_pread::tests::direct_window_is_aligned_contains_payload_and_fits_buffer ... ok
+test spill_pread::tests::mapped_serve_reads_in_place_and_owns_the_buffer_until_its_event ... ignored, requires a CUDA GPU
+test spill_pread::tests::mode_and_depth_defaults_are_conservative ... ok
+test spill_pread::tests::short_positioned_read_is_an_error ... ok
+test spill_pread::tests::stage_stats_deltas_and_fields ... ok
+test dflash::dflash2_tests::penalized_round_composition_matches_the_penalized_chain ... ok
+test spill_pread::tests::worker_positioned_reads_preserve_exact_bytes_and_reuse_after_short_read ... ignored, requires a CUDA GPU
+test target_dispatch_tests::legacy_quant_gemm_arch_policy_honors_the_escape_hatch ... ok
+test tier_transfer::tests::alloc_host_delegates_with_the_default_kind_and_no_other_pinned_allocation_remains ... ok
+test tier_transfer::tests::copy_stream_issue_and_owner_wait_rules_are_as_stated ... ok
+test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test tier_transfer::tests::d2d_capture_rules_are_as_stated ... ok
+test tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test tier_transfer::tests::d2d_receipt_digest_price_against_the_copy ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test tier_transfer::tests::d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test tier_transfer::tests::d2d_restore_rules_are_as_stated ... ok
+test tier_transfer::tests::d2h_device_receipt_lands_with_the_source_digest ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test tier_transfer::tests::d2h_device_receipt_rules_are_as_stated ... ok
+test tier_transfer::tests::d2h_source_flip_is_witnessed_by_the_landed_bytes ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test tier_transfer::tests::d2h_span_rules_are_as_stated ... ok
+test tier_transfer::tests::day39_fill_shares_cover_every_byte_once ... ok
+test spill_pread::tests::invalid_spill_io_refuses_to_start ... ok
+test tier_transfer::tests::day46_span_digest_grids_leave_room_for_the_owner ... ok
+test tier_transfer::tests::day48_a_take_back_waits_for_its_own_lease_only ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test spill_pread::tests::invalid_spill_pread_depth_refuses_to_start ... ok
+test tier_transfer::tests::h2d_deferred_checksum_lands_with_the_supplied_digests ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test tier_transfer::tests::day48_release_paths_drain_the_owner_stream_only ... ok
+test tier_transfer::tests::h2d_fill_host_function_does_not_hold_the_owner_thread ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test tier_transfer::tests::h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test tier_transfer::tests::h2d_deferred_checksum_rules_are_as_stated ... ok
+test tier_transfer::tests::integ38_synchronize_waits_on_the_receipt_event_after_the_items ... ok
+test tier_transfer::tests::h2d_span_rules_are_as_stated ... ok
+test tier_transfer::tests::native_cells_own_their_context ... ok
+test tier_transfer::tests::pinned_kind_arm_is_honoured_by_the_driver ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test tier_transfer::tests::pinned_kind_default_is_todays_write_combined_flag_bits ... ok
+test tier_transfer::tests::pinned_kind_per_device_default_resolves_by_card_class ... ok
+test tier_transfer::tests::span_receipt_digests_are_the_program_per_span ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test tier_transfer::tests::one_side_stream_beside_the_owner ... ok
+test tp::bank_v2_layout_tests::the_v2_bank_row_is_the_documented_slot_major_permutation ... ok
+test tp::default_on_door_tests::the_default_on_door_parses_every_state_and_names_its_source ... ok
+test tp::tests::activation_shards_keep_token_rows_separate ... ok
+test tp::tests::automatic_ep_device_router_flag_is_strict ... ok
+test tp::tests::automatic_ep_pair_down_flag_is_strict_and_defaults_off ... ok
+test tp::tests::automatic_ep_q8_activation_flag_is_strict ... ok
+test tp::tests::automatic_ep_q8_scope_is_explicit_and_strict ... ok
+test tp::tests::automatic_parallel_policy_needs_only_one_device_set_not_layer_recipes ... ok
+test tier_transfer::tests::span_receipt_rules_are_as_stated ... ok
+test tp::tests::bf16_column_shard_preserves_contiguous_output_rows ... ok
+test tp::tests::bf16_matrix_rejects_wrong_byte_count ... ok
+test tp::tests::bf16_row_block_preserves_global_column_order ... ok
+test tp::tests::bf16_row_shard_preserves_each_input_column_window ... ok
+test tp::tests::cache_rows_split_by_token_then_rank ... ok
+test tp::tests::bulk_p2p_door_is_strict_and_default_off ... ok
+test tp::tests::door_composition_refuses_first_armed_flag_by_name ... ok
+test tp::tests::ep_device_arithmetic_door_is_strict_and_default_off ... ok
+test tp::tests::expert_bank_rejects_non_positive_scale ... ok
+test tp::tests::expert_bank_selects_expert_major_code_and_scale_planes ... ok
+test tp::tests::expert_owner_routes_preserve_global_pair_order_with_local_expert_ids ... ok
+test tp::tests::expert_owner_routes_validate_geometry_and_selected_experts ... ok
+test tp::tests::f32_mirror_door_is_strict_and_default_off ... ok
+test tp::tests::moe_residual_host_preserves_official_add_order ... ok
+test tp::tests::native_p2p_door_is_strict_and_default_off ... ok
+test tp::tests::replicated_device_row_refresh_requires_exact_root_source ... ok
+test tp::tests::replicated_device_rows_require_exact_rank_local_shapes ... ok
+test tp::tests::replicated_row_join_is_strictly_tp2_native_and_nonempty ... ok
+test tp::tests::column_shard_preserves_contiguous_weight_and_scale_rows ... ok
+test tp::tests::rows_tab_layout_is_the_same_bytes_the_memo_would_have_cached ... ok
+test tp::tests::step_bf16_canonical_rows_are_topology_invariant_through_tp8 ... ok
+test tp::tests::step_ep_layer_specs_are_literal_and_fail_closed ... ok
+test tp::tests::step_expert_activation_clamps_each_arm_by_the_official_contract ... ok
+test tp::tests::step_grouped_owner_routes_validate_dynamic_top8_shapes ... ok
+test tp::tests::step_tp_layer_specs_share_the_fail_closed_layer_contract ... ok
+test tp::tests::tensor_parallel_column_bank_keeps_each_expert_scale_plane_separate ... ok
+test tp::tests::tensor_parallel_row_bank_keeps_each_expert_scale_plane_separate ... ok
+test tp::tests::tensor_parallel_row_bank_preserves_global_k_block_order ... ok
+test tp::tests::the_retired_rows_tab_key_cannot_see_the_v_and_len_pointers_it_hands_back ... ok
+test tp::tests::w4a16_device_ep_accepts_a_capacity_backed_active_prefix ... ok
+test tp::tests::weighted_route_combine_requires_a_canonical_pair_permutation ... ok
+test tp_ar::ar_phase_record_tests::a_record_that_cannot_close_is_rejected_rather_than_reported ... ok
+test tp_ar::ar_phase_record_tests::phases_close_and_calibrate_from_the_record_itself ... ok
+test tp_ar::ar_phase_record_tests::the_record_is_the_kernel_struct ... ok
+test tp::tests::row_shard_preserves_each_weight_and_scale_column_window ... ok
+test tp_expert_split::tests::column_split_halves_reassemble_every_row ... ok
+test tp_expert_split::tests::column_split_refuses_a_half_that_lands_mid_block ... ok
+test tp_expert_split::tests::split_refuses_layouts_a_prefix_cannot_reach ... ok
+test tp_expert_split::tests::row_split_halves_reassemble_the_bank ... ok
+test tp_expert_split::tests::whole_expert_ownership_pays_the_busier_rank ... ok
+test tp_transport::tests::alias_resolution_honors_both_names_and_refuses_a_disagreeing_pair ... ok
+test tp_transport::tests::census_line_names_every_counter ... ok
+test tp_transport::tests::default_is_the_v1_arm ... ok
+test tp_transport::tests::transport_parse_is_literal_and_fail_closed ... ok
+test vision::tests::a_foreign_context_overlay_is_refused_not_dereferenced ... ignored, needs a CUDA device; run on the rig under flock /tmp/memra-5090.lock
+test verify_ws_flag_tests::off_wins_across_general_and_alias ... ok
+test vision::tests::an_unrecognized_overlay_publish_value_refuses_rather_than_defaulting ... ok
+test vision::tests::overlay_publish_arm_matrix_is_pinned ... ok
+test vision_pre::tests::data_uri_roundtrip ... ok
+test vision_pre::tests::decode_bomb_refuses_pre_decode ... ok
+test tier_transfer::tests::day39_threaded_fill_is_bitwise_the_planes ... ok
+test vision_pre::tests::gif_plan_reads_metadata_without_materializing_frames ... ok
+test vision_pre::tests::patchify_shape_and_order ... ok
+test vision_pre::tests::smart_resize_multiples_and_budget ... ok
+test vision_step::tests::downsampler_geometry ... ok
+test vision_step::tests::im2col_values ... ok
+test vision_step::tests::patchify_normalization ... ok
+test mla::tests::naive_equals_absorbed_nope_rope_zero ... ok
+test vision_pre::tests::data_uri_per_image_raw_cap ... ok
+test vision_step::tests::tiling_plan_cells ... ok
+test spill_pread::tests::unaligned_direct_read_without_window_is_refused ... ok
+test spill::tests::invalid_pinned_frac_is_counted_and_uses_safe_default ... ok
+test moe_cache::banked_native::day45_fill::the_installer_wait_admits_every_fill_then_returns_and_a_stall_is_bounded ... ok
+test moe_cache::slru_intrusive_tests::same_eviction_decisions_randomized_soak ... ok
+test vision_step::tests::prep_matches_plan ... ok
+test moe_cache::banked_native::day61_profile::the_door_catalog_allowance_is_the_formula ... ok
+test vision_pre::tests::gif_decode_bomb_is_refused_before_full_expansion ... ok
+test moe_cache::banked_native::day61_profile::the_trace_slot_is_the_fresh_slot ... ok
+test dsv4_graph::tests::replay_completion_policy_fail_stop_subprocess ... ok
+test spill_pread::tests::direct_window_reads_match_buffered_reads ... ok
+
+test result: ok. 576 passed; 0 failed; 48 ignored; 0 measured; 0 filtered out; finished in 8.65s
+
+     Running unittests src/bin/accprobe_bench.rs (target/release/deps/accprobe_bench-8958e1c26c1aba63)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/argmax_gate.rs (target/release/deps/argmax_gate-a42fe756bfe3df4d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/argmax_margin_probe.rs (target/release/deps/argmax_margin_probe-7cd0bfeba2f46758)
+
+running 2 tests
+test tests::unsupported_sharded_prefill_is_rejected ... ok
+test tests::table_round_trips_f32_margins ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/b200_matvec_bench.rs (target/release/deps/b200_matvec_bench-11f86880d983387c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/bw_roofline.rs (target/release/deps/bw_roofline-a0e5c0ac7ee479f8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/concat_prime_probe.rs (target/release/deps/concat_prime_probe-cd2db441ee71d013)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/cpu_native_check.rs (target/release/deps/cpu_native_check-89d00b34effde825)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/cutlass_gemv_bench.rs (target/release/deps/cutlass_gemv_bench-0311c86fd7243ca6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/cutlass_smoke.rs (target/release/deps/cutlass_smoke-1097e2e334d08e92)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/decode_batch_bench.rs (target/release/deps/decode_batch_bench-94ffffdb0d5b5244)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/decode_batch_gate.rs (target/release/deps/decode_batch_gate-36e7508a6c342cda)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/decode_bench.rs (target/release/deps/decode_bench-d6e27a02eec6d7fe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/decode_dc_gate.rs (target/release/deps/decode_dc_gate-8716e96760afbea2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/decode_kernel_census.rs (target/release/deps/decode_kernel_census-4298d756e4002bff)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/decode_window_profile.rs (target/release/deps/decode_window_profile-fbd463aecc427b7f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/depth_profile.rs (target/release/deps/depth_profile-1ecf612d28fd966b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dflash2_parity.rs (target/release/deps/dflash2_parity-3cb9dff1bad2bd43)
+
+running 11 tests
+test parity_geometry::tests::a_config_only_scalar_is_caught_even_though_no_byte_moves ... ok
+test parity_geometry::tests::a_dropped_optional_field_is_reported_not_silently_satisfied ... ok
+test parity_geometry::tests::a_matching_manifest_passes_every_field ... ok
+test parity_geometry::tests::a_missing_required_key_names_itself ... ok
+test parity_geometry::tests::a_malformed_or_duplicated_key_is_an_error_not_a_shrug ... ok
+test parity_geometry::tests::a_refactorised_geometry_with_the_same_product_is_caught ... ok
+test parity_geometry::tests::a_missing_manifest_is_a_refusal_that_names_the_remedy ... ok
+test parity_geometry::tests::a_tap_set_permutation_is_caught_though_the_count_agrees ... ok
+test parity_geometry::tests::an_empty_manifest_is_not_agreement ... ok
+test parity_geometry::tests::exact_div_refuses_a_remainder_instead_of_truncating ... ok
+test parity_geometry::tests::expect_len_replaces_the_derive_and_a_wrong_length_fails ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dflash_parity.rs (target/release/deps/dflash_parity-1509f9425eaa86bf)
+
+running 11 tests
+test parity_geometry::tests::a_config_only_scalar_is_caught_even_though_no_byte_moves ... ok
+test parity_geometry::tests::a_dropped_optional_field_is_reported_not_silently_satisfied ... ok
+test parity_geometry::tests::a_missing_manifest_is_a_refusal_that_names_the_remedy ... ok
+test parity_geometry::tests::a_matching_manifest_passes_every_field ... ok
+test parity_geometry::tests::a_missing_required_key_names_itself ... ok
+test parity_geometry::tests::a_malformed_or_duplicated_key_is_an_error_not_a_shrug ... ok
+test parity_geometry::tests::a_refactorised_geometry_with_the_same_product_is_caught ... ok
+test parity_geometry::tests::a_tap_set_permutation_is_caught_though_the_count_agrees ... ok
+test parity_geometry::tests::an_empty_manifest_is_not_agreement ... ok
+test parity_geometry::tests::exact_div_refuses_a_remainder_instead_of_truncating ... ok
+test parity_geometry::tests::expect_len_replaces_the_derive_and_a_wrong_length_fails ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsa_decode_gate.rs (target/release/deps/dsa_decode_gate-373f9db5647944b9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsa_select_gate.rs (target/release/deps/dsa_select_gate-883e2b4e1d286256)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dspark_export_shared.rs (target/release/deps/dspark_export_shared-c9f50c6abb7b016a)
+
+running 2 tests
+test tests::rank_parser_rejects_duplicates_and_out_of_range ... ok
+test tests::bf16_conversion_rounds_to_nearest_even ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dspark_extract.rs (target/release/deps/dspark_extract-01047cc9dc81bb6e)
+
+running 2 tests
+test tests::anchor_always_has_a_predecessor_hidden ... ok
+test tests::anchors_are_deterministic_unique_and_response_bounded ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dspark_generate.rs (target/release/deps/dspark_generate-c96f1cc0acfd580d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dspark_q38_gate.rs (target/release/deps/dspark_q38_gate-7c40e105bdc9b434)
+
+running 3 tests
+test tests::empty_prompt_directory_cannot_false_green ... ok
+test tests::every_builtin_prompt_clears_the_dflash_prime_floor ... ok
+test tests::short_tokenized_prompt_is_a_named_error_not_an_engine_panic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dspark_q38_parity.rs (target/release/deps/dspark_q38_parity-db3960ef3f97a3a7)
+
+running 11 tests
+test parity_geometry::tests::a_dropped_optional_field_is_reported_not_silently_satisfied ... ok
+test parity_geometry::tests::a_malformed_or_duplicated_key_is_an_error_not_a_shrug ... ok
+test parity_geometry::tests::a_missing_required_key_names_itself ... ok
+test parity_geometry::tests::a_missing_manifest_is_a_refusal_that_names_the_remedy ... ok
+test parity_geometry::tests::a_tap_set_permutation_is_caught_though_the_count_agrees ... ok
+test parity_geometry::tests::an_empty_manifest_is_not_agreement ... ok
+test parity_geometry::tests::exact_div_refuses_a_remainder_instead_of_truncating ... ok
+test parity_geometry::tests::expect_len_replaces_the_derive_and_a_wrong_length_fails ... ok
+test parity_geometry::tests::a_refactorised_geometry_with_the_same_product_is_caught ... ok
+test parity_geometry::tests::a_matching_manifest_passes_every_field ... ok
+test parity_geometry::tests::a_config_only_scalar_is_caught_even_though_no_byte_moves ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dspark_sample_gate.rs (target/release/deps/dspark_sample_gate-67b4a6c153d7de82)
+
+running 1 test
+test tests::default_penalty_window_matches_the_served_cross_path_bound ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_ar_phase_gate.rs (target/release/deps/dsv4_ar_phase_gate-475baae112bc8815)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_decode_bench.rs (target/release/deps/dsv4_decode_bench-e0fd5a4a571b5f3b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_decode_probe.rs (target/release/deps/dsv4_decode_probe-eaf5e30593c6db95)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_dense_arm_ab.rs (target/release/deps/dsv4_dense_arm_ab-6706646169994b8d)
+
+running 4 tests
+test arm_ab_verdict_tests::flips_zero_on_a_live_cutlass_arm_is_vacuous ... ok
+test arm_ab_verdict_tests::median_picks_the_middle_rep ... ok
+test arm_ab_verdict_tests::verdict_reproduces_the_banked_fixed_row ... ok
+test arm_ab_verdict_tests::verdict_reproduces_the_banked_red_row ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_dense_family_bench.rs (target/release/deps/dsv4_dense_family_bench-d987afc29086250e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_drafted_corpus.rs (target/release/deps/dsv4_drafted_corpus-fdef3fefb2b58310)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_gpu_decode_gate.rs (target/release/deps/dsv4_gpu_decode_gate-f2fb357d56b03f77)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_gpu_dspark_gate.rs (target/release/deps/dsv4_gpu_dspark_gate-348bc6f71f43800b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_gpu_gate.rs (target/release/deps/dsv4_gpu_gate-b73cb2a41fd6ee69)
+
+running 2 tests
+test tests::compressor_kv_flip_policy_is_variant_and_arm_keyed_only ... ok
+test tests::analog_and_gridded_policies_pin_the_banked_classes ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_gpu_greedy.rs (target/release/deps/dsv4_gpu_greedy-e3a029583add6ee0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_gpu_sampled_gate.rs (target/release/deps/dsv4_gpu_sampled_gate-5b0b98b7654e6163)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_gpu_tf_gate.rs (target/release/deps/dsv4_gpu_tf_gate-43a86a2cd47eb65e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_hc_grid_gate.rs (target/release/deps/dsv4_hc_grid_gate-8deb2033f4769286)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_native_gemm_gate.rs (target/release/deps/dsv4_native_gemm_gate-d78540592892218d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_c4_direct_gate.rs (target/release/deps/dsv4_c4_direct_gate-140447b29172c942)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_c4_host_gate.rs (target/release/deps/dsv4_c4_host_gate-70a9085482051bdd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_capacity_gate.rs (target/release/deps/dsv4_capacity_gate-121483df3d6a92b1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_chunk_sweep_gate.rs (target/release/deps/dsv4_chunk_sweep_gate-fd84137d5f804328)
+
+running 2 tests
+test tests::comparison_is_balanced_in_both_orders_with_six_rows_per_arm ... ok
+test tests::prompt_count_is_bounded_without_padding ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_compose_cadence_dense_gate.rs (target/release/deps/dsv4_compose_cadence_dense_gate-e832f16470f2b0fe)
+
+running 5 tests
+test tests::block_order_reverses_without_changing_arm_identity ... ok
+test tests::complete_sampled_span_has_exact_cadence_counts ... ok
+test tests::dense_census_counts_function_records_not_labels_or_edges ... ok
+test tests::refusal_boundaries_advance_only_the_selected_forward ... ok
+test tests::arm_a_explicitly_rolls_back_both_default_on_programs ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_coupled_proposal_gate.rs (target/release/deps/dsv4_coupled_proposal_gate-56761f90998fde90)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_decode_profile.rs (target/release/deps/dsv4_decode_profile-722170e01d60b7e3)
+
+running 2 tests
+test tests::receipt_delta_includes_each_composed_kernel_family ... ok
+test tests::explicit_arms_preserve_default_and_select_composition ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_decode_rate_gate.rs (target/release/deps/dsv4_decode_rate_gate-bad5ea0a1dd0eeb8)
+
+running 1 test
+test tests::loop_exclusion_needs_a_sustained_repeated_block ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_dense_census.rs (target/release/deps/dsv4_dense_census-d37e4bffadb8fef5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_dense_exact_tail_gate.rs (target/release/deps/dsv4_dense_exact_tail_gate-80aab557b5419f43)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_dense_fast_gate.rs (target/release/deps/dsv4_dense_fast_gate-7092df7f37b40dc7)
+
+running 5 tests
+test tests::both_arms_keep_cadence_and_refusal_boundaries ... ok
+test tests::capture_refuses_an_unregistered_stream - should panic ... ok
+test tests::both_orders_have_ten_rows_each ... ok
+test tests::paired_tail_captures_distinct_stream_owners_under_one_ambient_device ... ok
+test tests::arm_a_forces_dense_fast_off ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_dense_tile_gate.rs (target/release/deps/dsv4_dense_tile_gate-5a1ff5821ca46c8f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_ep_pair_gate.rs (target/release/deps/dsv4_ep_pair_gate-1aac6596b5096466)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_graph_probe_gate.rs (target/release/deps/dsv4_graph_probe_gate-4bfe15126c468791)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_grouped_prefill_gate.rs (target/release/deps/dsv4_grouped_prefill_gate-9e6643173826b2f3)
+
+running 2 tests
+test tests::omitted_shared_is_rejected - should panic ... ok
+test tests::uncomputed_shared_is_rejected - should panic ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_hc_dot_split_gate.rs (target/release/deps/dsv4_hc_dot_split_gate-d69e34c0f47eeb18)
+
+running 8 tests
+test evidence::tests::greedy_ties_choose_the_lowest_id ... ok
+test evidence::tests::greedy_loop_is_reported_as_an_instrument_property ... ok
+test tests::census_counts_nodes_only ... ok
+test tests::abba_reverse_keeps_ten_rows_per_arm ... ok
+test tests::cadence_covers_all_forward_variants ... ok
+test tests::hc_policy_child ... ok
+test tests::short_period_repetition_is_excluded ... ok
+test tests::hc_unset_zero_and_explicit_slices_use_process_policy ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+
+     Running unittests src/bin/dsv4_host_cache_gate.rs (target/release/deps/dsv4_host_cache_gate-8aa207b7fdca8862)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_http_prompt_pack.rs (target/release/deps/dsv4_http_prompt_pack-6f14a3d92d3dbe03)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_launch_boundary_gate.rs (target/release/deps/dsv4_launch_boundary_gate-1b45cbdc518b83b4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_long_decode_gate.rs (target/release/deps/dsv4_long_decode_gate-6be3e8826b1832f7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_matrix_distribution_gate.rs (target/release/deps/dsv4_matrix_distribution_gate-df8912fef236c526)
+
+running 4 tests
+test tests::identical_and_shifted_logits_have_the_same_distribution ... ok
+test tests::extreme_finite_logits_remain_finite ... ok
+test tests::invalid_rows_and_targets_are_refused ... ok
+test tests::known_binary_distributions_match_analytic_metrics ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_matrix_program_gate.rs (target/release/deps/dsv4_matrix_program_gate-472273f0a9807c37)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_moe_program_class_gate.rs (target/release/deps/dsv4_moe_program_class_gate-a9ecc4962e8b1df6)
+
+running 9 tests
+test tests::asymmetric_kl_is_reported_in_both_directions ... ok
+test tests::bit_equality_is_stricter_than_distribution_equality ... ok
+test tests::identical_and_shifted_rows_carry_zero_divergence_both_directions ... ok
+test tests::invalid_rows_and_targets_are_refused ... ok
+test tests::the_non_vacuity_red_arm_passes_on_this_comparison ... ok
+test tests::argmax_takes_the_first_maximum_on_a_tie ... ok
+test tests::totals_report_max_alongside_mean_in_both_directions ... ok
+test tests::the_panel_tape_round_trips_name_domain_template_and_prefix ... ok
+test tests::the_refusal_battery_names_the_coarsest_field_and_admits_a_seed_change ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_park_boundary_gate.rs (target/release/deps/dsv4_park_boundary_gate-5c652c1303552189)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_pipeline_gate.rs (target/release/deps/dsv4_pipeline_gate-32dd73d65f5ba666)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_plain_perf_gate.rs (target/release/deps/dsv4_plain_perf_gate-12d934545241df14)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_prefill_work_gate.rs (target/release/deps/dsv4_prefill_work_gate-447258d772196d52)
+
+running 1 test
+test tests::engagement_distinguishes_full_program_from_last_only ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_program_accuracy.rs (target/release/deps/dsv4_program_accuracy-016bfba3dfd632b6)
+
+running 3 tests
+test tests::argmax_takes_the_lowest_id_on_a_tie ... ok
+test tests::empty_logits_are_refused - should panic ... ok
+test tests::nonfinite_logits_are_refused - should panic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_q_layout_gate.rs (target/release/deps/dsv4_q_layout_gate-204efef1a0d7146c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_rows_gate.rs (target/release/deps/dsv4_rows_gate-1bb97b777e503143)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_sampler_sort_gate.rs (target/release/deps/dsv4_sampler_sort_gate-236e99489e2caeda)
+
+running 1 test
+test tests::signed_zero_ties_infinities_and_all_tail_sizes_preserve_order ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/bin/dsv4_tp_ep_gate.rs (target/release/deps/dsv4_tp_ep_gate-a64412b62496344b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_tp_ep_sampled_perf_gate.rs (target/release/deps/dsv4_tp_ep_sampled_perf_gate-afa9ca09455f9043)
+
+running 8 tests
+test full_token_replay::profile_census_tests::the_forward_census_is_the_unfused_base_with_no_door_terms_left ... ok
+test sampler_boundary_tests::constructed_draws_cover_both_sides_and_equality ... ok
+test full_token_replay::profile_census_tests::expert_census_requires_active_policy_and_ignores_non_nodes ... ok
+test timing_contract_tests::sampled_wall_preserves_early_eos_count ... ok
+test sampler_boundary_tests::boundary_cases_have_distinct_gpu_inputs_and_valid_multi_token_nuclei ... ok
+test timing_contract_tests::sampled_wall_includes_injected_finish_drain_delay ... ok
+test timing_contract_tests::sampled_wall_includes_injected_sampler_delay ... ok
+test default_policy_tests::environment_defaults_and_explicit_gate_rollback ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
+
+     Running unittests src/bin/dsv4_tp_ep_verify_gate.rs (target/release/deps/dsv4_tp_ep_verify_gate-b9e832f96b112774)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_tp_replay_long_gate.rs (target/release/deps/dsv4_tp_replay_long_gate-d5040a3d7f8c0b53)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_wide_prefill_gate.rs (target/release/deps/dsv4_wide_prefill_gate-9ab5fc8d413164ce)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dtype_gpu_check5.rs (target/release/deps/dtype_gpu_check5-f7acac081da85d25)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/ep_step_fp8_gate.rs (target/release/deps/ep_step_fp8_gate-cb619ea1540a53c6)
+
+running 6 tests
+test benchmark_tests::grouped_route_fixture_is_top8_unique_and_expert_spanning ... ok
+test benchmark_tests::grouped_route_weights_are_shifted_normalized_top8_permutations ... ok
+test benchmark_tests::dynamic_grouped_fixture_changes_owner_load_without_duplicate_routes ... ok
+test benchmark_tests::host_combine_uses_canonical_slot_weights ... ok
+test benchmark_tests::nearest_rank_percentiles_use_observed_samples ... ok
+test benchmark_tests::output_checksum_is_bit_sensitive_and_repeat_stable ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/f8f4_check.rs (target/release/deps/f8f4_check-fcd0b849d1480848)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fa_hd128_check.rs (target/release/deps/fa_hd128_check-ceb9bb5ae8ec2c77)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fa_sanitize.rs (target/release/deps/fa_sanitize-567fe1a43046da83)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fa_v2_bench.rs (target/release/deps/fa_v2_bench-66650dbf74a24cf2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fp8_mmq_bench.rs (target/release/deps/fp8_mmq_bench-e9edacb03877f376)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fp8_mmq_check.rs (target/release/deps/fp8_mmq_check-a764cd31852a7853)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fp8_mmq_stream.rs (target/release/deps/fp8_mmq_stream-eb13706c98944d81)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/frspec_owngen.rs (target/release/deps/frspec_owngen-de7073affb4718f6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/frspec_rank.rs (target/release/deps/frspec_rank-8ac19d5dddab1156)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fused2_pin.rs (target/release/deps/fused2_pin-c84da55f09f721ae)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/fused_actq_bench.rs (target/release/deps/fused_actq_bench-3d3cd91b9901175a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gdn_bench.rs (target/release/deps/gdn_bench-7680e39793e6ac6b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gemma_gate.rs (target/release/deps/gemma_gate-b087712c925f892c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gemma_spec_session_gate.rs (target/release/deps/gemma_spec_session_gate-b85348b45f82e58e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gemma_sample_gate.rs (target/release/deps/gemma_sample_gate-7cff75b0f548c5d6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gemma_vision_e2e.rs (target/release/deps/gemma_vision_e2e-1aa95897ff8fc30f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gemma_vision_oracle.rs (target/release/deps/gemma_vision_oracle-732bdf793760494d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gemv_e4m3_bench.rs (target/release/deps/gemv_e4m3_bench-4589374d65a30fc2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gguf_census.rs (target/release/deps/gguf_census-82f5bbe234dbab4c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/glm5_card3_probe.rs (target/release/deps/glm5_card3_probe-5cefc5fa859411ae)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/glm5_decode_graph_gate.rs (target/release/deps/glm5_decode_graph_gate-b78a29f340a553a8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/glm5_hyper_batch_gate.rs (target/release/deps/glm5_hyper_batch_gate-2382b63b741bad2b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/glm5_hyper_ppn_gate.rs (target/release/deps/glm5_hyper_ppn_gate-4ac11c590b458073)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/glm5_prime_v2_gate.rs (target/release/deps/glm5_prime_v2_gate-4f40dcf165fd7900)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/glm5_spec_ppn_gate.rs (target/release/deps/glm5_spec_ppn_gate-6eab181456afd66e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/glm5_tp_gate.rs (target/release/deps/glm5_tp_gate-6182b0c5d09a1415)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/glm5_tp2_box_probe.rs (target/release/deps/glm5_tp2_box_probe-f394c34451812334)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/glm5_w8_gate.rs (target/release/deps/glm5_w8_gate-d532d26b41f00cc7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/graph_decode_gate.rs (target/release/deps/graph_decode_gate-8d2c342e39297dbd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/graph_session_gate.rs (target/release/deps/graph_session_gate-95fc16cbf2eb13a9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/graph_warmup_stress.rs (target/release/deps/graph_warmup_stress-1971b676497d80da)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/gu_wall_bench.rs (target/release/deps/gu_wall_bench-34957b005ad986ca)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/h2d_probe.rs (target/release/deps/h2d_probe-377e9856bfd3b790)
+
+running 3 tests
+test tests::full_byte_comparator ... ok
+test tests::options_fail_closed ... ok
+test tests::copies_bounds_and_default ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/hash_micro.rs (target/release/deps/hash_micro-87dbbb7311f85922)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/hc_fused_gate.rs (target/release/deps/hc_fused_gate-fabb599d07c71b2e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/hy3_ep_kernel_probe.rs (target/release/deps/hy3_ep_kernel_probe-1aa0a875af77cbe4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/hy3-layer0-oracle.rs (target/release/deps/hy3_layer0_oracle-eb730d6e4372938c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/iso_gap_probe.rs (target/release/deps/iso_gap_probe-38287f2c8a27bb89)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/k27div_probe.rs (target/release/deps/k27div_probe-2ea26ad3c388df1e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/kernel_check.rs (target/release/deps/kernel_check-1e2c15928a356526)
+
+running 6 tests
+test tests::b200_runs_static_nvfp4_checks_without_the_sm120_fatbin_cell ... ok
+test tests::derives_cell_names_only_from_verdict_lines ... ok
+test tests::explicit_fp8_mmq_subcell_skips_without_aborting_default_coverage ... ok
+test tests::parses_repeatable_required_cells_and_model ... ok
+test tests::skipped_and_absent_required_cells_are_missing ... ok
+test tests::parses_manifest_comments_and_rejects_multiple_names_per_line ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/kv_tier_gate.rs (target/release/deps/kv_tier_gate-11fe7273a670ede1)
+
+running 23 tests
+test cli::tests::allocator_defaults_and_refusals ... ok
+test cli::tests::collector_refusal_is_unwrapped_but_failures_are_not_refusals ... ok
+test cli::tests::exact_contract_and_all_cases ... ok
+test capture_contract::tests::synthetic_trunk_plus_nextn_only_declared_unexecuted_plane_is_absent ... ok
+test cli::tests::fault_arms_parse_only_on_the_active_pooled_roundtrip ... ok
+test cli::tests::fault_arms_refuse_the_vmm_door_and_the_reclaim_diagnostic ... ok
+test cli::tests::fault_door_is_a_usage_error_off_the_active_case_and_fails_closed ... ok
+test cli::tests::missing_duplicate_and_unknown_refuse ... ok
+test cli::tests::reclaim_cycles_accepts_a_count_of_at_least_two_under_the_diagnostic ... ok
+test capture_contract::tests::format_geometry_presence_and_topology_remain_fail_closed ... ok
+test cli::tests::reclaim_cycles_refusals_are_explicit_and_fail_closed ... ok
+test cli::tests::residual_diagnostic_is_explicit_and_scoped ... ok
+test cli::tests::unsupported_ladder_and_routes_refuse ... ok
+test fault_contract::tests::a_backend_without_the_seam_is_a_failed_cell_not_a_refusal ... ok
+test fault_contract::tests::every_arm_can_pass_and_the_two_holing_arms_never_continue ... ok
+test fault_contract::tests::a_missing_required_check_or_a_differing_restore_never_passes ... ok
+test fault_contract::tests::extra_checks_must_also_hold_and_the_tsv_is_flat ... ok
+test fault_contract::tests::names_round_trip_and_unknown_is_none ... ok
+test fault_contract::tests::red_arm_fault_not_injected_is_a_failure_not_a_pass ... ok
+test reclaim_contract::tests::exact_and_bounded_remain_distinct ... ok
+test reclaim_contract::tests::growing_shrinking_and_drifting_series_are_not_one_time_metadata ... ok
+test reclaim_contract::tests::series_classes_follow_the_lead_ruling_and_never_promote ... ok
+test reclaim_contract::tests::series_verdict_lifts_tightening_e_only_under_lead_ruling_six ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/launch_econ.rs (target/release/deps/launch_econ-ad85b14cc67492eb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/logit_sample_probe.rs (target/release/deps/logit_sample_probe-f9183e7bfcfdab3c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/lt_ndep.rs (target/release/deps/lt_ndep-42ecd6c2d71738fe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/m3ref.rs (target/release/deps/m3ref-1672cc0e0553ce05)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/mla_decode_arm_gate.rs (target/release/deps/mla_decode_arm_gate-d3f508bbecb49761)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/mla_coalesce_bench.rs (target/release/deps/mla_coalesce_bench-092255d128ce5923)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/mmvq_bisect.rs (target/release/deps/mmvq_bisect-33b83ae65c4ff187)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/mmvq_pair_m3.rs (target/release/deps/mmvq_pair_m3-14a9e571626229ce)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/modelplan_reference_gate.rs (target/release/deps/modelplan_reference_gate-ba9d54c9ab11389c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/moe_devq8_check.rs (target/release/deps/moe_devq8_check-6a428a6a468ed7a5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/moe_sk_repro.rs (target/release/deps/moe_sk_repro-2d4328618e1f4e01)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/moe_tp2_repro.rs (target/release/deps/moe_tp2_repro-7a2a401c43f2ad36)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/moe_rows_ceiling_bench.rs (target/release/deps/moe_rows_ceiling_bench-7f5299dc0c3817f9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/moe_union_probe.rs (target/release/deps/moe_union_probe-98d77fcfe8610846)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/normq_check.rs (target/release/deps/normq_check-4b0eff312a77abb2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/nvfp4_bank_oracle.rs (target/release/deps/nvfp4_bank_oracle-4adc3ad3f76a9ae6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/nvfp4_mmq_check.rs (target/release/deps/nvfp4_mmq_check-b2278fa0d80fbc70)
+
+running 1 test
+test tests::synthetic_fixture_covers_codes_scales_and_exact_activation_blocks ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/plainbatch_margin_probe.rs (target/release/deps/plainbatch_margin_probe-85485545edc9af47)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pp_transport_smoke.rs (target/release/deps/pp_transport_smoke-0d08530279284759)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pp2_gate.rs (target/release/deps/pp2_gate-5f8d540ee9af4cd5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/ppn_bench.rs (target/release/deps/ppn_bench-7b20fd1112e6eb25)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/ppn_gate.rs (target/release/deps/ppn_gate-0bfdea36eb7d4f2c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/prime_batch_gate.rs (target/release/deps/prime_batch_gate-6a0d488f51430798)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/prime_gate.rs (target/release/deps/prime_gate-3b7b069ad936e028)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/prime_graph_gate.rs (target/release/deps/prime_graph_gate-6db188406ea8614d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/prime_graph_smoke.rs (target/release/deps/prime_graph_smoke-678ab0f51fce14bc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/q5issue_bench.rs (target/release/deps/q5issue_bench-51e9ad9aec28edc4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/q8_fuse_gate.rs (target/release/deps/q8_fuse_gate-7236bbde7d105097)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/quant_kv_f32_check.rs (target/release/deps/quant_kv_f32_check-27ef03a0cc6068a0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/qwen_a4_clip_diag.rs (target/release/deps/qwen_a4_clip_diag-d66e042728e7a079)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/qwen_a4_continuation_gate.rs (target/release/deps/qwen_a4_continuation_gate-beb847bd26b57a75)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/qwen_a4_dispatch_gate.rs (target/release/deps/qwen_a4_dispatch_gate-2d266eb40b10d323)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/qwen_a4_oracle.rs (target/release/deps/qwen_a4_oracle-8ecbf6f5cb8d49a1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/qwen_a4_refit_stats.rs (target/release/deps/qwen_a4_refit_stats-9e7bcc0f10025cde)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/qwen_a4_sink_diag.rs (target/release/deps/qwen_a4_sink_diag-a398efec8521d91f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/qwen_a4_tail_gate.rs (target/release/deps/qwen_a4_tail_gate-e3d39a199b7be360)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/qwen_a4_width_walk.rs (target/release/deps/qwen_a4_width_walk-525a8b36bb675397)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/qwen_fa2_layer_probe.rs (target/release/deps/qwen_fa2_layer_probe-ac572da78291960e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/qwen_fa2_margin_gate.rs (target/release/deps/qwen_fa2_margin_gate-4c1de85761ace922)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/qwen_nll_kl.rs (target/release/deps/qwen_nll_kl-0e2930b8a765c8a5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/qwen4exp_gpu_gate.rs (target/release/deps/qwen4exp_gpu_gate-9c8c39de5c15dc2c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/qwen4exp_real_gate.rs (target/release/deps/qwen4exp_real_gate-8be844db90365e36)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/replay_acceptance.rs (target/release/deps/replay_acceptance-99ad48cc03c0f302)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/router_batch_bench.rs (target/release/deps/router_batch_bench-298aaff353610606)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/rp_q4_probe.rs (target/release/deps/rp_q4_probe-d59afcab0cbf7e14)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/run_dense.rs (target/release/deps/run_dense-f9d0cb438b720162)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/run_eagle.rs (target/release/deps/run_eagle-bdc8fda85da8dac6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/run_gen.rs (target/release/deps/run_gen-ec87307f03f36c3b)
+
+running 1 test
+test tests::maps_cpu_expert_stats_without_positional_drift ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/run_hybrid.rs (target/release/deps/run_hybrid-1de319ae43faad3c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/run_safetensors.rs (target/release/deps/run_safetensors-5902a3185ca09d9d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/run_spec.rs (target/release/deps/run_spec-37bbc7351c0ee8b1)
+
+running 3 tests
+test tests::primary_device_defaults_to_zero_without_pp_placement ... ok
+test tests::primary_device_rejects_an_invalid_head_entry ... ok
+test tests::primary_device_follows_the_pp_head_stage ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/run_lockstep.rs (target/release/deps/run_lockstep-abd76b1f122f9ba9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/sample_check.rs (target/release/deps/sample_check-9882a78b0ab12f19)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/sel_shape_probe.rs (target/release/deps/sel_shape_probe-0abd005ebbe26f7d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/session_bench.rs (target/release/deps/session_bench-7f6f8f90f313039e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/session_gate.rs (target/release/deps/session_gate-c56fba383d4b524d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/spec_econ.rs (target/release/deps/spec_econ-ce0b76f6256fd8cf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/spec_serve_gate.rs (target/release/deps/spec_serve_gate-9ea283f8c9ee715d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/spec_st_probe.rs (target/release/deps/spec_st_probe-5f35ba74a368f47c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/st_vs_gguf.rs (target/release/deps/st_vs_gguf-01347973d81aa0e6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/step_prefill_rollback_gate.rs (target/release/deps/step_prefill_rollback_gate-0281f14deb145e83)
+
+running 2 tests
+test tests::split_requires_two_prefill_sized_chunks ... ok
+test tests::token_fixture_accepts_plain_numeric_fields ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/step_vision_oracle.rs (target/release/deps/step_vision_oracle-fe122aae3a1985b7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/storage_bench.rs (target/release/deps/storage_bench-8aa5f3dfaea1b774)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/synth_f8f4.rs (target/release/deps/synth_f8f4-a8d2881f848400d1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/t2probe.rs (target/release/deps/t2probe-2debec62f3e335c2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/target_efficiency.rs (target/release/deps/target_efficiency-c465fad91a31b870)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/tier_transfer_gate.rs (target/release/deps/tier_transfer_gate-e7062199ef24a4d1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/tp_ar_bench.rs (target/release/deps/tp_ar_bench-1502411871683300)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/tp2_replicated_row_join_gate.rs (target/release/deps/tp2_replicated_row_join_gate-9134b38b6efcaa21)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/tp_graph_probe.rs (target/release/deps/tp_graph_probe-f52dd992efb33e93)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/tp_step_attention_gate.rs (target/release/deps/tp_step_attention_gate-0117d56fd86bdc4b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/tp_step_bf16_gate.rs (target/release/deps/tp_step_bf16_gate-a015e7e794dc0468)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/tp_step_bf16_row_gate.rs (target/release/deps/tp_step_bf16_row_gate-b0732e7e62a1452f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/tp_step_fp8_gate.rs (target/release/deps/tp_step_fp8_gate-4e6697b3e6cbe912)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/tp_step_nvfp4_gate.rs (target/release/deps/tp_step_nvfp4_gate-6fdfc9597dc357be)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/tp_step_resident_device_gate.rs (target/release/deps/tp_step_resident_device_gate-d5cd43872fe62b6e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/verify_mscale.rs (target/release/deps/verify_mscale-9a9f1366d3c100ac)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/verify_probe.rs (target/release/deps/verify_probe-c6523bb098793a61)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/verify_shape_bisect.rs (target/release/deps/verify_shape_bisect-68945d9be1f4227b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/vision_gate.rs (target/release/deps/vision_gate-3c45f8d80d2d1bde)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/w4a4_gate.rs (target/release/deps/w4a4_gate-8b8644d6bf881367)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/checkpoint_contract_refusal_gpu.rs (target/release/deps/checkpoint_contract_refusal_gpu-28423bb56949793d)
+
+running 1 test
+test gpu_loader_refuses_a_tampered_census_before_upload_and_loads_the_clean_one ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/dsv4_dense_fast_rows_gpu.rs (target/release/deps/dsv4_dense_fast_rows_gpu-d4df003c2007c081)
+
+running 2 tests
+test multi_row_dense_fast_dots_are_the_m_row_dots_and_the_one_row_launch_bit_for_bit ... ignored, needs a CUDA device; run under the rig's GPU lock
+test multi_row_dense_fast_is_the_m_row_gemv_and_the_one_row_launch_bit_for_bit ... ignored, needs a CUDA device; run under the rig's GPU lock
+
+test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/dsv4_gemm_tile_gpu.rs (target/release/deps/dsv4_gemm_tile_gpu-51ea5ddb3e9c0808)
+
+running 4 tests
+test prefill_dense_tile_is_the_gemv_loop_bit_for_bit ... ignored, needs a CUDA device; run under the rig's GPU lock
+test prefill_dense_tile_timing ... ignored, needs a CUDA device; timing only
+test prefill_dots_tile_is_the_mrow_loop_bit_for_bit ... ignored, needs a CUDA device; run under the rig's GPU lock
+test prefill_dots_tile_timing ... ignored, needs a CUDA device; run under the rig's GPU lock
+
+test result: ok. 0 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/dsv4_hc_finish_gpu.rs (target/release/deps/dsv4_hc_finish_gpu-17075c8bc10d7d90)
+
+running 2 tests
+test dsv4_hc_finish_is_bit_identical_to_the_unfused_chain ... ignored, needs a CUDA device; run under flock /tmp/memra-5090.lock
+test dsv4_hc_finish_timing ... ignored, needs a CUDA device; run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/dsv4_island_bf16_gpu.rs (target/release/deps/dsv4_island_bf16_gpu-5ab6ee15ca30edc8)
+
+running 1 test
+test bf16_island_storage_is_bit_identical_to_the_f32_widening ... ignored, needs a CUDA device; run under the rig's GPU lock
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/dsv4_latency_kernels_gpu.rs (target/release/deps/dsv4_latency_kernels_gpu-1111b985db1e4ef8)
+
+running 7 tests
+test grouped_routes_match_cpu_oracle ... ignored
+test grouped_routes_red_arm ... ignored
+test latency_kernel_timing ... ignored
+test rmsnorm_f32acc_matches_exact_oracle ... ignored
+test rmsnorm_f32acc_red_arm ... ignored
+test route_m_matches_golden_and_structure ... ignored
+test route_m_red_arm ... ignored
+
+test result: ok. 0 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/dsv4_sink_attn_st_gpu.rs (target/release/deps/dsv4_sink_attn_st_gpu-9ff962a5c31d9495)
+
+running 5 tests
+test sink_attn_st_matches_three_kernel_batched ... ignored
+test sink_attn_st_matches_three_kernel_replay ... ignored
+test sink_attn_st_matches_three_kernel_single_query ... ignored
+test sink_attn_st_red_arm ... ignored
+test sink_attn_st_timing ... ignored
+
+test result: ok. 0 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/dsv4_small_diet_gpu.rs (target/release/deps/dsv4_small_diet_gpu-ad9fd2f1e0b6c020)
+
+running 4 tests
+test dsv4_small_hc_diet_is_bit_identical_to_the_unfused_chain ... ignored, needs a CUDA device; run under flock /tmp/memra-5090.lock
+test dsv4_small_hc_diet_multirow_is_bit_identical_to_the_unfused_chain_and_to_each_row_alone ... ignored, needs a CUDA device; run under flock /tmp/memra-5090.lock
+test dsv4_small_norm_pack_diet_is_bit_identical_to_the_unfused_pair ... ignored, needs a CUDA device; run under flock /tmp/memra-5090.lock
+test dsv4_small_norm_pack_diet_multirow_is_bit_identical_to_the_unfused_pair_and_to_each_row_alone ... ignored, needs a CUDA device; run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/e4m3_batch_r2_gpu.rs (target/release/deps/e4m3_batch_r2_gpu-5161902397f6e70f)
+
+running 1 test
+test gpu_e4m3_batch_r2_matches_one_row_per_warp_bitwise ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/f32_gemv_rows_gpu.rs (target/release/deps/f32_gemv_rows_gpu-d8e65f436f85d787)
+
+running 1 test
+test gemv_f32_rows_matches_cublas_deterministic_and_m_identical ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+
+     Running tests/gdn_packed_gpu.rs (target/release/deps/gdn_packed_gpu-f897845605562500)
+
+running 3 tests
+test gpu_gdn_packed_graph_rebind_matches_per_row_bitwise ... ignored, needs a CUDA device, run under flock on the lane box
+test gpu_gdn_packed_matches_per_row_bitwise ... ignored, needs a CUDA device, run under flock on the lane box
+test gpu_gdn_packed_ornith_matches_per_row_bitwise ... ignored, needs a CUDA device, run under flock on the lane box
+
+test result: ok. 0 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/gemma4_chunked_prime_gpu.rs (target/release/deps/gemma4_chunked_prime_gpu-c7af4711b9593d64)
+
+running 5 tests
+test a_monolithic_gemma_prime_matches_the_reference_executor ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test a_multi_call_gemma_prime_matches_the_single_call_prime ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test an_internally_chunked_gemma_prime_matches_the_monolithic_prime ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test truth_arm_divergence_with_the_window_live_versus_inactive ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test the_mini_plan_is_gemma_residual_with_a_sliding_and_a_global_layer ... ok
+
+test result: ok. 1 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_admission_cost.rs (target/release/deps/glm5_admission_cost-28df026da22eb955)
+
+running 3 tests
+test the_admission_workspace_charge_is_chunk_bounded ... ok
+test latent_plan_layers_charge_the_cache_they_allocate ... ok
+test the_mini_plan_carries_the_latent_layer_the_formula_charges ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_bf16_tc_trunk_prefill_gpu.rs (target/release/deps/glm5_bf16_tc_trunk_prefill_gpu-f7fb9da0c6fde3df)
+
+running 6 tests
+test bf16_resident_mixer_matches_reference_band_with_door_engaged ... ignored
+test decode_widths_are_byte_identical_to_the_expansion_program ... ignored
+test door_forced_into_decode_fails_byte_identity ... ignored
+test raw_f32_bits_fed_as_bf16_go_red ... ignored
+test single_projection_door_gemm_stays_in_class ... ignored
+test transposed_weight_bytes_go_red ... ignored
+
+test result: ok. 0 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_chunked_prime_gpu.rs (target/release/deps/glm5_chunked_prime_gpu-82649f4e8da0ba07)
+
+running 6 tests
+test a_chunked_mhc_prime_matches_the_reference_executor ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test a_chunked_mhc_prime_stays_inside_the_near_tie_band_of_the_monolithic_prime ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test a_chunked_prime_then_decode_matches_the_reference_executor ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test the_parity_comparison_has_teeth ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test the_gate_prompt_really_is_split_into_several_prime_calls ... ok
+test the_mini_plan_carries_both_a_kda_and_a_dsa_indexer_layer ... ok
+
+test result: ok. 2 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_decode_graph_capture_gpu.rs (target/release/deps/glm5_decode_graph_capture_gpu-1f596c0134bb8b90)
+
+running 8 tests
+test graph_door_decode_matches_eager_bitwise ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test graph_door_mla_halves_match_eager_bitwise ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test graph_door_mla_mid_match_eager_bitwise ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test mla_rows_live_matches_rows_exact_bitwise ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test spec_dev_io_verify_rows_match_bitwise ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test verify_graph_live_arm_matches_rows_exact_bitwise ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test verify_graph_replays_match_eager_bitwise ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test verify_snapshot_reuse_matches_fresh_clones_bitwise ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_dedup_sched_gpu.rs (target/release/deps/glm5_dedup_sched_gpu-4130bbdb88544bc8)
+
+running 6 tests
+test gpu_dedup_schedule_counters_move_on_and_are_flat_on_every_refusal ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_expert_major_gate_up_is_bit_identical_to_the_shipped_schedule ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_order_plane_device_build_matches_the_host_stable_sort ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_order_plane_shuffles_are_inert_and_non_permutations_bite ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_token_major_down_is_bit_identical_and_keeps_its_slot_order ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test avoided_slab_reads_equal_visits_minus_distinct_on_planted_overlaps ... ok
+
+test result: ok. 1 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_dflash_session_gpu.rs (target/release/deps/glm5_dflash_session_gpu-2ba1405b7cc2c190)
+
+running 23 tests
+test gpu_cold_drafter_restore_bytes_match_plain_decode_and_republishes_a_floor_tail ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_device_penalties_are_bit_identical_to_the_host_sampler ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_dflash_confidence_gate_truncates_drafts_never_the_tape ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_dflash_device_resident_drafter_prime_kv_matches_eager_ingest ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_dflash_eos_finishes_the_session ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_dflash_forced_rejection_partial_accepts_stay_byte_identical ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_dflash_k_past_the_block_refuses_loudly ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_dflash_rank_trimmed_head_moves_acceptance_never_the_tape ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_dflash_rollback_disabled_bites ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_dflash_sampled_twin_is_deterministic_and_burst_split_invariant ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_dflash_served_bursts_greedy_tape_matches_plain_decode_k1_to_7 ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_dflash_streamed_burst_slices_concat_to_the_unhooked_burst ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_dflash_tap_shift_red_arm_moves_drafts_never_the_tape ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_draft_source_selection_matrix ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_full_cover_restore_bytes_match_plain_decode_and_cold_acceptance ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_glm5_prime_plain_segment_preserves_suffix_and_queued_after ... ignored, requires the lane-owned B200 and /tmp/memra-gpu.lock
+test gpu_glm5_prime_walker_four_turns_with_restored_suffix_and_peer ... ignored, requires the lane-owned B200 and /tmp/memra-gpu.lock
+test gpu_penalized_greedy_session_refuses_demotion ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_penalized_greedy_spec_tape_matches_the_plain_penalized_sampler ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_penalized_sampled_twin_is_deterministic_split_invariant_and_engaged ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_restored_continuation_is_bit_identical_to_the_split_prime_cold_twin ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_restored_session_bytes_match_plain_decode_and_cold_acceptance ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test helper_emit_dflash_receipts ... ignored, receipt-gate child body; spawned by gpu_draft_source_selection_matrix
+
+test result: ok. 0 passed; 0 failed; 23 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_ep_diet_doors_gpu.rs (target/release/deps/glm5_ep_diet_doors_gpu-68589cf203ba5aa4)
+
+running 3 tests
+test gpu_diet_compact_scatter_matches_the_host_fma_chain_bitwise ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_grouped_prime_split_matches_plain_rows_bitwise_and_combine_in_band ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_htod_f32_into_at_lands_at_offset_and_fails_closed ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_kpool_indexer_bench.rs (target/release/deps/glm5_kpool_indexer_bench-54cddf541acc60bc)
+
+running 1 test
+test bench_kpool_indexer_stages ... ignored, bench: needs a CUDA device, and its numbers are INVALID on the throttling dev rig — run on a serving-class box with --release
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_kpool_indexer_gpu.rs (target/release/deps/glm5_kpool_indexer_gpu-4ec6889d6bd4c351)
+
+running 19 tests
+test gpu_a_missing_indexer_tensor_refuses_the_load_by_name ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_deferred_boundary_capture_publishes_the_eager_snapshot_bytes ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_kpool_attention_matches_the_reference_and_differs_from_dense ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_kpool_mutations_change_the_selection_and_the_output ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_kpool_prime_then_decode_matches_the_reference ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_kpool_radix_selection_is_byte_identical_to_the_reference_kernel ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_kpool_resident_pool_keys_match_a_full_rebuild ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_kpool_scoring_is_byte_identical_to_the_reference_kernel ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_kpool_selection_matches_the_reference ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_kpool_tail_ring_mutations_change_the_pool_keys ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_kpool_tail_ring_serves_a_whole_monolithic_prime ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_kpool_tail_ring_wraps_and_matches_the_flat_plane ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_kpool_ties_break_on_the_lowest_pool_index ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_latent_plane_red_mutations_are_refused_or_detected ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_latent_plane_snapshot_restores_byte_identically_and_continues_the_ring ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test the_plan_declares_the_kpool_indexer_and_its_state_plane ... ok
+test the_fixture_reaches_the_sparse_regime ... ok
+test the_rival_programs_disagree_with_the_oracle ... ok
+test the_rival_harness_reproduces_the_oracle ... ok
+
+test result: ok. 4 passed; 0 failed; 15 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_matvec_doors_gpu.rs (target/release/deps/glm5_matvec_doors_gpu-7026468b6feefda9)
+
+running 8 tests
+test gpu_moe_ilp_matches_shipped_pair_bitwise ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_moe_ilp_v2_matches_shipped_pair_bitwise ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_moe_pack_matches_unpacked_pair_bitwise ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_red_fused_tcols_matches_standing_tree_bitwise ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_tcols16_matches_per_row_t1_program_bitwise ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_topk_shards_match_standing_kernel_exactly ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_topk_warp_matches_standing_kernel_exactly ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_x1_tcols_matches_x4_bitwise ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_moe_epilogue_gpu.rs (target/release/deps/glm5_moe_epilogue_gpu-cdfde5bc963228b5)
+
+running 13 tests
+test fused_epilogue_matches_the_reference ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test fused_epilogue_on_resident_slabs_matches_the_reference ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test slab_and_slru_fused_arms_agree ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test the_two_arms_agree ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test unfused_control_matches_the_reference ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test unfused_control_on_resident_slabs_matches_the_reference ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test wrong_epilogue_programs_fail_the_gate ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test wrong_epilogue_programs_fail_the_slab_gate ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test wrong_macro_plane_fails_the_gate ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test the_macro_plane_is_live ... ok
+test the_plan_declares_the_epilogue_under_gate ... ok
+test the_clamp_actually_binds ... ok
+test the_epilogue_program_actually_binds ... ok
+
+test result: ok. 4 passed; 0 failed; 9 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/glm5_moe_grouped_prefill_gpu.rs (target/release/deps/glm5_moe_grouped_prefill_gpu-c89aabb2f7d5bda3)
+
+running 11 tests
+test flattened_macro_plane_fails_the_gate ... ignored, needs a CUDA device; run under flock /tmp/memra-5090.lock
+test grouped_prefill_matches_the_reference ... ignored, needs a CUDA device; run under flock /tmp/memra-5090.lock
+test grouped_prefill_matches_the_reference_at_the_chunk_cap ... ignored, needs a CUDA device; run under flock /tmp/memra-5090.lock
+test routing_is_identical_between_arms ... ignored, needs a CUDA device; run under flock /tmp/memra-5090.lock
+test sequential_control_matches_the_reference ... ignored, needs a CUDA device; run under flock /tmp/memra-5090.lock
+test slru_placement_fails_closed ... ignored, needs a CUDA device; run under flock /tmp/memra-5090.lock
+test the_macro_plane_is_live ... ok
+test the_two_arms_agree_and_the_knee_is_bitwise ... ignored, needs a CUDA device; run under flock /tmp/memra-5090.lock
+test wrong_programs_fail_the_gate ... ignored, needs a CUDA device; run under flock /tmp/memra-5090.lock
+test the_plan_declares_the_program_under_gate ... ok
+test the_wrong_programs_actually_bind_at_grouped_widths ... ok
+
+test result: ok. 3 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/glm5_moe_loc_doors_gpu.rs (target/release/deps/glm5_moe_loc_doors_gpu-f99e908ba62159e8)
+
+running 4 tests
+test gpu_dev_tables_drive_the_pair_to_identical_bytes ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_dev_tables_match_the_host_table_build_bitwise ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_htod_diet_shexp_ones_and_len_mirror_are_bit_identical ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test dedup_stat_counts_visits_and_distinct_on_planted_overlaps ... ok
+
+test result: ok. 1 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_moe_residency_gpu.rs (target/release/deps/glm5_moe_residency_gpu-a0273003d340b903)
+
+running 3 tests
+test the_residency_gate_actually_binds ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test the_residency_path_is_bit_identical_to_stage_every_token ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test the_fixture_is_the_nvfp4_macro_carrying_shape ... ok
+
+test result: ok. 1 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/glm5_mtp_head_gpu.rs (target/release/deps/glm5_mtp_head_gpu-e67e7a2659118993)
+
+running 6 tests
+test gpu_mtp_draft_logits_match_the_reference ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_mtp_eh_proj_transpose_mutation_fails_the_gate ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_mtp_h_seed_off_by_one_row_fails_the_gate ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_mtp_head_load_is_flag_gated_default_off ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_mtp_position_discipline_refuses_gaps ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test the_plan_declares_the_mtp_block_and_the_reference_executes_it ... ok
+
+test result: ok. 1 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/glm5_prime_capacity.rs (target/release/deps/glm5_prime_capacity-f18db9b7cb861e0a)
+
+running 5 tests
+test the_mhc_prime_transient_is_sub_quadratic_in_context ... ok
+test the_mhc_prime_schedule_covers_the_prompt_exactly ... ok
+test the_mhc_prime_carries_a_bounded_number_of_rows_at_every_context ... ok
+test report_the_per_call_prime_transient_ladder ... ok
+test the_prime_at_the_native_context_leaves_a_working_expert_residency ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_routed_router_gpu.rs (target/release/deps/glm5_routed_router_gpu-2309a398371bbb97)
+
+running 8 tests
+test routed_prefill_matches_the_reference ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test routed_prime_then_decode_matches_the_reference ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test the_engine_router_is_the_vendor_program ... ok
+test the_plan_and_the_engine_agree_on_the_glm5_router ... ok
+test the_selected_weights_carry_no_bias ... ok
+test wrong_router_programs_fail_the_gate ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test the_selection_bias_actually_changes_the_picks ... ok
+test the_router_program_actually_binds ... ok
+
+test result: ok. 5 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/glm5_spec_session_gpu.rs (target/release/deps/glm5_spec_session_gpu-9f7bc261f851ae6c)
+
+running 10 tests
+test gpu_confidence_gate_truncates_drafts_never_the_tape ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_demote_handoff_continues_byte_identical ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_eos_finishes_the_session_and_later_bursts_are_empty ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_receipt_log_lines_red_and_green ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_sampled_twin_is_deterministic_and_burst_split_invariant ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_served_burst_with_rollback_disabled_bites ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_served_bursts_forced_rejection_partial_accepts_stay_byte_identical ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_served_bursts_greedy_tape_matches_plain_decode_k1_to_7 ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_verify_ws_bursts_byte_identical_with_alloc_receipt ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test helper_emit_glm5_receipts ... ignored, receipt-gate child body; spawned by gpu_receipt_log_lines_red_and_green
+
+test result: ok. 0 passed; 0 failed; 10 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_tp_indexer_split.rs (target/release/deps/glm5_tp_indexer_split-741cc5bce9aa5c51)
+
+running 7 tests
+test gpu_pool_split_matches_replicated_selection_and_cpu ... ignored, needs the lane's two peer-access CUDA devices
+test gpu_pool_split_merge_matches_replicated_selection_and_cpu ... ignored, needs one CUDA device; candidate transport is covered by the pair test
+test gpu_range_scores_are_bit_identical_including_causal_boundary ... ignored, needs the lane's CUDA device
+test merge_ties_across_ranks_uses_global_index ... ok
+test merge_k_larger_than_candidates_and_empty_ranks ... ok
+test local_topk_union_contains_global_topk ... ok
+test decode_ignores_prime_split_door ... ok
+
+test result: ok. 4 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running tests/glm5_tparallel_verify_gpu.rs (target/release/deps/glm5_tparallel_verify_gpu-fd9f8b05fb0ab1d4)
+
+running 9 tests
+test gpu_accept_j_then_continue_is_byte_identical_for_every_j ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_batched_walk_sees_corrupted_conv_ring ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_disabled_rollback_breaks_the_tape ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_frspec_trim_equivalence_partial_and_skipped_remap_red ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_pool_keys_finalized_past_j_mutation_bites ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_spec_vs_plain_greedy_tape_byte_identity_k1_to_7 ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_stale_kda_state_mutation_bites ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_verify_batch_flag_ab_bitwise ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_verify_rows_match_plain_decode_rows_bitwise ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 9 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_verify_batch_gpu.rs (target/release/deps/glm5_verify_batch_gpu-0cf6f7f49f5728c4)
+
+running 4 tests
+test gpu_kda_conv_prefill_arm_matches_decode_chain_and_reroll ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_kda_scan_t_walk_matches_chained_t1_bitwise ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_moe_vrows_pairs_match_sequential_chain_bitwise ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+test gpu_tcols_matches_per_row_t1_program_bitwise ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_vision_gpu.rs (target/release/deps/glm5_vision_gpu-53232cf6f7d568ce)
+
+running 2 tests
+test engine_tower_matches_banked_upstream_fixture ... ignored, needs a CUDA device + the 1.26 GB visual shard — run under flock /tmp/memra-5090.lock with NVIDIA_TF32_OVERRIDE=0
+test visual_tensor_probe_is_false_on_a_textonly_artifact ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_vrows_dev_tables_gpu.rs (target/release/deps/glm5_vrows_dev_tables_gpu-553a12905a0199ca)
+
+running 1 test
+test dev_built_vrows_tables_match_the_host_arithmetic ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/glm5_vrows_t1_serving_shape_gpu.rs (target/release/deps/glm5_vrows_t1_serving_shape_gpu-1c39886cd2e8dc45)
+
+running 1 test
+test vrows_t1_device_tables_match_host_tables_at_serving_scale ... ignored, needs a CUDA device with ~4.1 GB free — run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/hc_decode_ws_gpu.rs (target/release/deps/hc_decode_ws_gpu-b730b9c1d86ea086)
+
+running 2 tests
+test decode_24_steps_are_byte_identical_ws_on_vs_off_and_alloc_calls_drop ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test ws_composes_with_the_fused_prechain_bitwise ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/hc_fused_pre_gpu.rs (target/release/deps/hc_fused_pre_gpu-16303ac290d46077)
+
+running 4 tests
+test decode_24_steps_are_byte_identical_on_vs_off_and_the_door_engages ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test fused_prechain_is_bit_identical_to_the_unfused_chain ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test scale_mutations_are_caught_on_exactly_their_own_output ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test stationarity_exit_is_bit_invisible_and_its_count_is_reported ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/hc_mixes_gemv_gpu.rs (target/release/deps/hc_mixes_gemv_gpu-8ee58901f91ac8bf)
+
+running 2 tests
+test hc_mixes_gemv_refuses_a_shape_it_cannot_schedule ... ok
+test hc_mixes_gemv_matches_cublas_within_tolerance_and_is_deterministic ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running tests/hc_pre_norm_fuse_gpu.rs (target/release/deps/hc_pre_norm_fuse_gpu-793c88aee5b077be)
+
+running 2 tests
+test fused_epilogue_is_bitwise_the_two_launch_pair ... ok
+test perturbing_the_norm_weight_moves_the_fused_output ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests/hc_pre_v4_gpu.rs (target/release/deps/hc_pre_v4_gpu-b05916d9d4c4e8a1)
+
+running 2 tests
+test hc_pre_v4_refuses_shapes_it_cannot_schedule ... ok
+test hc_pre_v4_is_bit_identical_to_v3 ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/hyper_connections_gpu.rs (target/release/deps/hyper_connections_gpu-afd6a8bf6392d8db)
+
+running 7 tests
+test a_missing_hc_tensor_is_refused_by_name ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test hyper_forward_last_matches_the_reference_last_row ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test hyper_prefill_logits_match_the_reference ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test hyper_prime_then_decode_matches_a_full_recompute ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test hyper_two_chunk_prime_then_decode_matches_a_full_recompute ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test zeroing_an_hc_scale_breaks_the_comparison ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test the_mini_plan_declares_glm5_next_hyper_connections ... ok
+
+test result: ok. 1 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/kda_conv3_gpu.rs (target/release/deps/kda_conv3_gpu-d85ead9571f00ea0)
+
+running 1 test
+test conv3_matches_three_launches_bitwise ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/kda_fixture_gpu.rs (target/release/deps/kda_fixture_gpu-0067da3853c11d50)
+
+running 3 tests
+test kda_two_chunk_prime_matches_single_shot ... ok
+test kda_decode_after_prefill_matches_full_recompute ... ok
+test kda_prefill_matches_reference_across_chunk_boundaries ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+
+     Running tests/kda_fused6_e4m3_gpu.rs (target/release/deps/kda_fused6_e4m3_gpu-be7714bf6d545edd)
+
+running 1 test
+test e4m3_fused_six_is_bit_identical_to_six_separate_launches ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/kda_fused_proj_bf16_gpu.rs (target/release/deps/kda_fused_proj_bf16_gpu-677cdca7a801f5dd)
+
+running 5 tests
+test bf16_door_is_bit_identical_on_bf16_rows_and_banded_on_f32_rows_at_t_1_to_15 ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test dropped_range_mutations_are_caught_on_exactly_their_own_slice ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test the_door_never_engages_with_the_flag_off ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test transposed_slice_mutations_are_caught_on_exactly_their_own_slice ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test whole_mixer_matches_across_the_door_and_does_not_worsen_vs_reference ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/kda_fused_proj_gpu.rs (target/release/deps/kda_fused_proj_gpu-0da31453e3f3129f)
+
+running 5 tests
+test a_dropped_projection_fails_the_gate_on_exactly_that_slice_for_all_six ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test a_transposed_slice_fails_the_gate_on_exactly_that_slice_for_all_six ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test flag_off_and_unqualified_shapes_never_engage ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test fused_door_is_bit_identical_on_q8_rows_and_banded_on_f32_rows_at_t_1_to_15 ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test whole_mixer_fused_matches_unfused_and_reference ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/kda_onorm_zq8_gpu.rs (target/release/deps/kda_onorm_zq8_gpu-6db7815c2f290362)
+
+running 1 test
+test kda_onorm_zq8_matches_norm_then_quantize_bitwise ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests/kda_quant_operand_gpu.rs (target/release/deps/kda_quant_operand_gpu-2c87dbfeb1ce3f7d)
+
+running 4 tests
+test a_mis_strided_quantized_operand_fails_the_gate ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test a_quantized_3d_operand_is_refused_by_name_not_mis_strided ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test kda_q8_0_operands_match_the_float_twin_within_the_quantization_floor ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test kda_quant_arm_is_actually_quantized ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/kda_small_folds_gpu.rs (target/release/deps/kda_small_folds_gpu-383704147f53aeec)
+
+running 2 tests
+test gpu_kda_gate_beta_matches_gate_then_sigmoid_bitwise ... ignored
+test gpu_l2_norm_pair_matches_two_launches_bitwise ... ignored
+
+test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/mla_absorb_bf16_gpu.rs (target/release/deps/mla_absorb_bf16_gpu-a3e1143ad79ee059)
+
+running 1 test
+test bf16_absorb_planes_match_the_f32_wp_kernels_bitwise ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+     Running tests/mla_decode_split_gpu.rs (target/release/deps/mla_decode_split_gpu-4c3097195d27a78b)
+
+running 3 tests
+test decode_24_steps_are_byte_identical_split_on_vs_off_and_the_door_engages ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test mutations_move_the_split_output ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test split_twins_are_bit_identical_to_the_unsplit_kernels_at_every_split ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/mla_fixture_forward.rs (target/release/deps/mla_fixture_forward-627f2c5599296294)
+
+running 3 tests
+test cpu_block_forward_absorbed_equals_naive_chunked ... ok
+test cpu_block_forward_absorbed_equals_naive_prefill ... ok
+test cpu_block_forward_absorbed_equals_naive_decode ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/mla_fixture_load_gpu.rs (target/release/deps/mla_fixture_load_gpu-fffd85f294aa2618)
+
+running 1 test
+test gpu_load_glm_dsa_micro_fixture ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/mla_gpu_forward.rs (target/release/deps/mla_gpu_forward-4858e659cf0af09e)
+
+running 5 tests
+test gpu_glm_dsa_micro_block_forward_runs ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test gpu_mla_cached_prime_decode_matches_stateless_forward ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test gpu_mla_decode_stepwise_parity_vs_cpu_oracle ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test gpu_mla_prefill_parity_vs_cpu_oracle ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test gpu_mla_rope_interleaved_matches_cpu ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 5 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/mla_kpool_live_gpu.rs (target/release/deps/mla_kpool_live_gpu-7b0486379af52f62)
+
+running 2 tests
+test kpool_live_count_twins_match_scalar_launches_bitwise ... ok
+test kpool_live_twins_match_scalar_launches_at_t_rows ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests/mla_kpool_select_v2_gpu.rs (target/release/deps/mla_kpool_select_v2_gpu-29f2eb7e68f9c26d)
+
+running 1 test
+test gpu_kpool_select_v2_matches_shipped_bitwise ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/mla_live_len_gpu.rs (target/release/deps/mla_live_len_gpu-99840f785fa4ad44)
+
+running 1 test
+test mla_live_len_twins_match_scalar_launches_bitwise ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests/mla_seg_ws_gpu.rs (target/release/deps/mla_seg_ws_gpu-7b3d45a4b6c5447a)
+
+running 1 test
+test pooled_handoff_is_bit_identical_to_owned ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/mla_tc_prefill_gpu.rs (target/release/deps/mla_tc_prefill_gpu-bba9507f5a166134)
+
+running 6 tests
+test gpu_mla_tc_decode_stays_byte_identical ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test gpu_mla_tc_matches_cpu_oracle_and_f32_kernels_small ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test gpu_mla_tc_mixer_matches_reference_mini512 ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test gpu_mla_tc_mixer_matches_reference_t4096 ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock; reference execute at t=4096 is minutes of CPU
+test gpu_mla_tc_on_vs_off_at_t4096 ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test gpu_mla_tc_red_mutations_fail_the_comparator ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/moe_rows_lanemajor_gpu.rs (target/release/deps/moe_rows_lanemajor_gpu-05649ac7e36432b6)
+
+running 2 tests
+test lane_major_refuses_interleaved_experts ... ok
+test lane_major_rows_are_bitwise_the_served_pair ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests/norm_zq8_ilp_gpu.rs (target/release/deps/norm_zq8_ilp_gpu-ca005c5e160777c9)
+
+running 1 test
+test zq8_ilp_twin_is_bit_identical ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/prime_kv_t3_gpu.rs (target/release/deps/prime_kv_t3_gpu-6a6b2635783e89e3)
+
+running 1 test
+test three_plane_staging_preserves_quantized_attention_bytes ... ignored, requires isolated CUDA device and MEMRA_PRIME_KV_T3=1
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/q80_batch_r2_gpu.rs (target/release/deps/q80_batch_r2_gpu-14bbf8348365091c)
+
+running 1 test
+test gpu_q80_batch_r2_matches_one_row_per_warp_bitwise ... ignored, needs a CUDA device, run under flock /tmp/memra-5090.lock
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/q8_narrow_f32in_gpu.rs (target/release/deps/q8_narrow_f32in_gpu-0651dd501e5b4a36)
+
+running 1 test
+test q8_narrow_f32in_matches_quantize_then_mmvq_bitwise ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/router_fused_gpu.rs (target/release/deps/router_fused_gpu-186c9df2278435f4)
+
+running 2 tests
+test perturbing_the_bias_moves_the_selection ... ok
+test fused_router_is_bitwise_the_two_launch_pair ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests/spec_batched_gather_gpu.rs (target/release/deps/spec_batched_gather_gpu-b79a195ddff3e62c)
+
+running 2 tests
+test launched_words_land_exact_bits ... ok
+test batched_drafter_gather_matches_per_draft_bitwise ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests/step_rope_load_gpu.rs (target/release/deps/step_rope_load_gpu-6e22222289a61bc7)
+
+running 2 tests
+test hf_and_tensor_factors_match_missing_factors_fail_and_identity_fixture_diverges ... ignored, requires one exclusively locked RTX PRO 6000 Blackwell GPU
+test fixture_censuses_bind_actual_step_contract_before_upload ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/swiglu_preclamp_gpu.rs (target/release/deps/swiglu_preclamp_gpu-0a82318717ebb9da)
+
+running 10 tests
+test dense_prefill_matches_the_reference ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test dense_prime_then_decode_matches_the_reference ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test plain_form_fails_the_gate ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test post_form_fails_the_gate ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test shared_expert_decode_matches_the_reference ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test shared_expert_matches_the_reference ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test the_preclamped_kernel_matches_its_oracle ... ignored, needs a CUDA device — run under flock /tmp/memra-5090.lock
+test the_mini_plans_declare_preclamped_swiglu_on_dense_routed_and_shared ... ok
+test the_routed_branch_selects_the_preclamped_kernel ... ok
+test the_limit_actually_binds ... ok
+
+test result: ok. 3 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/swiglu_zq8_gpu.rs (target/release/deps/swiglu_zq8_gpu-5560b859f4249223)
+
+running 1 test
+test gpu_swiglu_q8_1_matches_swiglu_then_quantize_bitwise ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/tp_ar_gpu.rs (target/release/deps/tp_ar_gpu-22d28878a7a251ad)
+
+running 5 tests
+test all_reduce_matches_the_host_sum_bitwise ... ok
+test one_shot_all_reduce_matches_the_host_sum_bitwise ... ok
+test all_reduce_without_the_peer_push_diverges ... ok
+test broadcast_and_all_gather_move_bytes_exactly ... ok
+test one_shot_into_matches_the_in_place_form_bitwise ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+

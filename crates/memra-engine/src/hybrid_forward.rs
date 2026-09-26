@@ -18831,8 +18831,12 @@ impl HybridModel {
                     (PROJ_DOWN, &m.down_exps),
                 ] {
                     let id = BlockId::new(il, proj, ex as u16);
-                    let DispatchSlot::Resident(_) =
-                        c.dispatch_source(id, exps.expert_source(ex_usize), eng)?;
+                    if !matches!(
+                        c.dispatch_source(id, exps.expert_source(ex_usize), eng)?,
+                        DispatchSlot::Resident(_)
+                    ) {
+                        return Err("dispatch_source returned a bypass slot".into());
+                    }
                 }
             }
             // PASS 2 — take the fixed slot addresses, with nothing left to admit.
@@ -19747,7 +19751,7 @@ impl HybridModel {
         aq: &CudaSlice<i8>,
         ad: &CudaSlice<f32>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        use crate::moe_cache::{BlockId, DispatchSlot, PROJ_GATE, PROJ_UP};
+        use crate::moe_cache::{BlockId, PROJ_GATE, PROJ_UP};
         let exps = match proj {
             PROJ_GATE => &m.gate_exps,
             PROJ_UP => &m.up_exps,
@@ -19757,20 +19761,25 @@ impl HybridModel {
         let id = BlockId::new(il, proj, ex as u16);
         let source = exps.expert_source(ex);
         e.with_moe_cache(max_block, |c, eng| {
-            let slot = c.dispatch_source(id, source, eng)?;
-            let DispatchSlot::Resident(sl) = slot;
-            let buf = c.slot(sl);
-            eng.qmatvec_expert_q8(
-                buf,
-                0..layout.len,
-                aq,
-                ad,
-                1,
-                exps.in_f,
-                exps.out_f,
-                layout.qtype,
-                layout.row_bytes,
-            )
+            // OWED 17: the kernel is enqueued inside this scope, so a cold first miss may be
+            // served without admission (`MEMRA_MOE_COLD_BYPASS`); `consumed` follows the launch.
+            let slot = c.dispatch_source_once(id, source, eng)?;
+            let out = {
+                let (buf, range) = c.payload(slot, layout.len);
+                eng.qmatvec_expert_q8(
+                    buf,
+                    range,
+                    aq,
+                    ad,
+                    1,
+                    exps.in_f,
+                    exps.out_f,
+                    layout.qtype,
+                    layout.row_bytes,
+                )
+            };
+            c.consumed(slot, eng)?;
+            out
         })
     }
 
@@ -19783,7 +19792,7 @@ impl HybridModel {
         max_block: usize,
         x: &cudarc::driver::CudaView<f32>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        use crate::moe_cache::{BlockId, DispatchSlot, PROJ_GATE, PROJ_UP};
+        use crate::moe_cache::{BlockId, PROJ_GATE, PROJ_UP};
         let exps = match proj {
             PROJ_GATE => &m.gate_exps,
             PROJ_UP => &m.up_exps,
@@ -19794,22 +19803,25 @@ impl HybridModel {
         let source = exps.expert_source(ex);
         // dispatch under the lock (lookup/admit/memcpy-issue), then resolve the slot and GEMM.
         e.with_moe_cache(max_block, |c, eng| {
-            let slot = c.dispatch_source(id, source, eng)?;
-            // resolve the device buffer for this slot; the GEMM is enqueued on the compute stream
-            // (the same stream the memcpy was issued on, so ordering holds without extra sync).
-            let DispatchSlot::Resident(sl) = slot;
-            let buf = c.slot(sl);
-            m.qmatvec_view(
-                eng,
-                buf,
-                0..layout.len,
-                x,
-                1,
-                exps.in_f,
-                exps.out_f,
-                layout.qtype,
-                layout.row_bytes,
-            )
+            // OWED 17: see moe_cached_gemm_q8; the GEMM is enqueued on the compute stream (the
+            // same stream as any copy), then `consumed` fences a mapped buffer after it.
+            let slot = c.dispatch_source_once(id, source, eng)?;
+            let out = {
+                let (buf, range) = c.payload(slot, layout.len);
+                m.qmatvec_view(
+                    eng,
+                    buf,
+                    range,
+                    x,
+                    1,
+                    exps.in_f,
+                    exps.out_f,
+                    layout.qtype,
+                    layout.row_bytes,
+                )
+            };
+            c.consumed(slot, eng)?;
+            out
         })
     }
 
