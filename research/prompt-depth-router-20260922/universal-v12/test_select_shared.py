@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 import select_shared
 
@@ -44,6 +45,7 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
         "schema": 1, "phase": "validation",
         "source_manifest_sha256": "c" * 64,
         "model_manifest_sha256": "d" * 64,
+        "qualification_arms_sha256": "1" * 64,
         "arms": specs,
     })
     domains = {}
@@ -100,6 +102,28 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
 
 
 class SharedSelectionTest(unittest.TestCase):
+    def test_final_arms_keep_qualifier_lineage(self):
+        with tempfile.TemporaryDirectory() as folder:
+            score, arms = fixture(Path(folder))
+            with mock.patch(
+                "sys.argv",
+                ["select_shared.py", "--validation", str(score),
+                 "--arms", str(arms)],
+            ):
+                select_shared.main()
+            final = json.loads(
+                arms.with_name("final-arms.json").read_text()
+            )
+            self.assertEqual(
+                final["qualification_arms_sha256"], "1" * 64,
+            )
+            self.assertEqual(
+                final["selected_from_validation"],
+                select_shared.sha(
+                    arms.with_name("shared-selected.json")
+                ),
+            )
+
     def test_prose_regression_excludes_faster_pooled_candidate(self):
         with tempfile.TemporaryDirectory() as folder:
             score, arms = fixture(Path(folder))

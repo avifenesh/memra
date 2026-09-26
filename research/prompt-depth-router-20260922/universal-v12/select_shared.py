@@ -76,6 +76,7 @@ def inspect(validation, arms_path):
         or not SHA.fullmatch(score["judge_config_sha256"])
         or not SHA.fullmatch(arms["source_manifest_sha256"])
         or not SHA.fullmatch(arms["model_manifest_sha256"])
+        or not SHA.fullmatch(arms["qualification_arms_sha256"])
         or score["model_manifest_sha256"]
         != arms["model_manifest_sha256"]
     ):
@@ -266,6 +267,8 @@ def main():
             "model_manifest_sha256":
             selection["model_manifest_sha256"],
             "selected_from_validation": sha(result_path),
+            "qualification_arms_sha256":
+            arms["qualification_arms_sha256"],
             "domains": list(DOMAINS),
             "arms": final,
         })

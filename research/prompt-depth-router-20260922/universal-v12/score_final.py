@@ -319,6 +319,8 @@ def score(args):
         arms["schema"] != 1
         or arms["phase"] != "final"
         or arms["source_manifest_sha256"] != FULL_SHA
+        or arms["model_manifest_sha256"]
+        != selected["model_manifest_sha256"]
         or arms["selected_from_validation"] != sha(selected_path)
         or selected["status"] != "selected"
         or selected["scope"]

@@ -106,6 +106,11 @@ the global fixed control and the validation-best fixed controls enter
 the final arm file.
 Every listed arm runs on every domain. No field switch occurs in
 the native command.
+Seal the mixed native outputs, hidden-task grades, both-order prose
+judge receipts, model weights, selection and opened phase packages in
+a private archive. Recompute the rate and quality summaries from the
+archived bytes before declaring pipeline completion. Raw prompts,
+generated answers and judge analysis remain private.
 
 ## Final result and prose protection
 
