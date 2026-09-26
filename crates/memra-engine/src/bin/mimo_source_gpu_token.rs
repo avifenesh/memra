@@ -703,8 +703,8 @@ fn run() -> Result<(), Fail> {
     if direct_bf16 && mirror_o_f32 {
         return Err("MiMo f32 attention output mirror conflicts with direct BF16 matvec".into());
     }
-    if grouped_moe && (direct_bf16 || mirror_o_f32) {
-        return Err("MiMo grouped MoE diagnostic requires default BF16 output arithmetic".into());
+    if grouped_moe && direct_bf16 {
+        return Err("MiMo grouped MoE diagnostic requires f32 output accumulation".into());
     }
     let dir = Path::new(&args[0]);
     let gpu0: usize = args[1].parse()?;
@@ -844,6 +844,8 @@ fn run() -> Result<(), Fail> {
         "numeric_class\t{}",
         if direct_bf16 {
             "memra_block_fp8_q8_1_act_mxfp4_pow2_e4m3_moe_act_bf16_direct_f32acc"
+        } else if grouped_moe && mirror_o_f32 {
+            "memra_block_fp8_q8_1_act_mxfp4_pow2_e4m3_grouped_moe_o_f32_candidate"
         } else if grouped_moe {
             "memra_block_fp8_q8_1_act_mxfp4_pow2_e4m3_grouped_moe_candidate"
         } else if mirror_o_f32 {
@@ -860,7 +862,9 @@ fn run() -> Result<(), Fail> {
     writeln!(
         report,
         "weight_residency\t{}",
-        if grouped_moe {
+        if grouped_moe && mirror_o_f32 {
+            "source_grouped_moe_qkv_o_f32_norms_head_resident_embedding_row_streamed"
+        } else if grouped_moe {
             "source_grouped_moe_qkv_o_bf16_norms_head_resident_embedding_row_streamed"
         } else if mirror_o_f32 {
             "source_moe_qkv_o_f32_norms_head_resident_embedding_row_streamed"
