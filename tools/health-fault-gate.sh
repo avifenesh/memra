@@ -37,6 +37,12 @@
 #      walks it into the bounded-retry honest error, and the green assertion must fire there.
 #      g-batch (DOCUMENTED): three concurrent streams share the batched decode chunk the fault lands
 #      on; the chunk's error arm ends every one of them (DAY47 2.1, owed O14).
+#   j  (WP-B DAY49 addendum D) arm i with the fault AIMED: MEMRA_SERVE_SPEC=0 (the plain
+#      route) and MEMRA_STEP_OOM_FAULT=batch:1, which fires only at a batched decode chunk of
+#      at least two sessions. One fire naming >= 2 sessions, one retry naming the same count
+#      untouched, retried (ok), all three streams complete with the no-fault control's digests
+#      (j-ctrl). Red twin j-red: batch:2 faults the retry too; the chunk's sessions end with the
+#      error event and the green assertion must fire there.
 #   i  (WP-B DAY49, O14) with MEMRA_BATCH_OOM_RECOVER=1 the batched chunk's step OOM
 #      (MEMRA_STEP_OOM_FAULT=1, before any state write) takes one reclaim rung and the same
 #      batched step runs again: all three streams complete with the digests of a no-fault
@@ -47,7 +53,7 @@
 #      same shape with no close, and the green assertion must fire there.
 #
 # Usage: tools/health-fault-gate.sh [model.gguf]
-#   HFG_PORT (8189; 8186 is serve-gemma4-batch-gate.sh's, revuto on #621; census of tools/ before choosing a default), HFG_ARMS (a,b,c,d,e,f,g,h,i; a and b share one boot), HFG_OUT (receipt dir).
+#   HFG_PORT (8189; 8186 is serve-gemma4-batch-gate.sh's, revuto on #621; census of tools/ before choosing a default), HFG_ARMS (a,b,c,d,e,f,g,h,i,j; a and b share one boot), HFG_OUT (receipt dir).
 #   Run under the rig lock (`flock /tmp/memra-5090.lock`, or the collector on a PRO box); the
 #   gate boots seven servers in sequence and never takes the lock itself, like serve-smoke.
 #   Exit 0 when no arm FAILED (DOCUMENTED arms do not fail the gate); 1 on any FAIL; 2 on setup.
@@ -59,7 +65,7 @@ MODEL="${1:-/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF
 PORT="${HFG_PORT:-8189}"
 ADDR=127.0.0.1:$PORT
 BASE=http://$ADDR
-ARMS="${HFG_ARMS:-a,b,c,d,e,f,g,h,i}"
+ARMS="${HFG_ARMS:-a,b,c,d,e,f,g,h,i,j}"
 OUT="${HFG_OUT:-/tmp/health-fault-gate-$(date -u +%Y%m%dT%H%M%SZ)}"
 mkdir -p "$OUT"
 VERDICTS="$OUT/VERDICTS.txt"
@@ -537,6 +543,61 @@ if in_arms i; then
     verdict "HFG (i-red) batch-oom-retry-also-fails: retry_lines=$I_RETRY retry_failed=$I_RETRY_FAIL completed=$I_OK/3 error_events=$I_ERR http_5xx=$I_5XX panic_lines=$I_PANIC green_assertion_fired=$([ "$green" = false ] && echo true || echo false) -> $v"
   else
     verdict "HFG (i-red) batch-oom-retry-also-fails: boot failed -> FAIL"
+  fi
+fi
+
+# ---------------------------------------------------------------- j: the aimed batched-chunk OOM recovers (O14, DAY49 D)
+run_j() { # <label> <fault value or 0>: three concurrent streams on the plain route, the recovery door on
+  local label=$1 f=$2
+  local envs=(MEMRA_BATCH_OOM_RECOVER=1 MEMRA_SERVE_SPEC=0)
+  [ "$f" != 0 ] && envs+=(MEMRA_STEP_OOM_FAULT="$f")
+  if boot "$label" "${envs[@]}"; then
+    SPIDS=""
+    sstream "$D/r0" "$P1" 48; sstream "$D/r1" "$P2" 48; sstream "$D/r2" "$P3" 48
+    # shellcheck disable=SC2086
+    wait $SPIDS
+    J_OK=0; J_ERR=0; J_5XX=0; J_DIG=""
+    for r in r0 r1 r2; do
+      sok "$D/$r" && J_OK=$((J_OK+1))
+      [ -n "$(serror "$D/$r")" ] && J_ERR=$((J_ERR+1))
+      case "$(scode "$D/$r")" in 5*) J_5XX=$((J_5XX+1));; esac
+      J_DIG="$J_DIG$r:$(sdigest "$D/$r"),"
+    done
+    J_FIRED=$(grep -c 'MEMRA_STEP_OOM_FAULT fired: this batched decode chunk' "$D/server.log")
+    J_OTHER=$(grep 'MEMRA_STEP_OOM_FAULT fired:' "$D/server.log" | grep -vc 'this batched decode chunk')
+    J_SESS=$(grep -o 'this batched decode chunk reports a synthetic CUDA OOM ([0-9]* session' "$D/server.log" | head -1 | grep -o '([0-9]*' | tr -d '(')
+    J_UNTOUCHED=$(grep -o 'batch OOM: [0-9]* sessions untouched' "$D/server.log" | head -1 | grep -o '[0-9][0-9]*')
+    J_RETRY=$(grep -c 'batch OOM: .* retrying the same batched step once' "$D/server.log")
+    J_RETRY_OK=$(grep -c 'batch OOM: retried (ok)' "$D/server.log")
+    J_RETRY_FAIL=$(grep -c 'batch OOM: retry failed' "$D/server.log")
+    J_PANIC=$(grep -cE 'panicked|\[worker\] PANIC' "$D/server.log")
+    J_SESS=${J_SESS:-0}; J_UNTOUCHED=${J_UNTOUCHED:-0}
+    stop "$label"
+    return 0
+  fi
+  stop "$label"; return 1
+}
+if in_arms j; then
+  echo "--- arm j: the aimed batched chunk's OOM recovers (MEMRA_SERVE_SPEC=0, batch:1; control, green, red twin) ---"
+  if run_j j-ctrl 0; then jctrl_dig=$J_DIG; jctrl_ok=$J_OK; else jctrl_dig=none; jctrl_ok=0; fi
+  if run_j j batch:1; then
+    v=FAIL
+    [ "$jctrl_ok" = 3 ] && [ "$J_OK" = 3 ] && [ "$J_ERR" = 0 ] && [ "$J_5XX" = 0 ] && [ "$J_FIRED" = 1 ] && [ "$J_OTHER" = 0 ] \
+      && [ "$J_SESS" -ge 2 ] && [ "$J_UNTOUCHED" = "$J_SESS" ] && [ "$J_RETRY" = 1 ] && [ "$J_RETRY_OK" = 1 ] \
+      && [ "$J_PANIC" = 0 ] && [ "$J_DIG" = "$jctrl_dig" ] && v=PASS
+    verdict "HFG (j) aimed-batch-oom-recovers: fired_lines=$J_FIRED other_fired=$J_OTHER chunk_sessions=$J_SESS untouched=$J_UNTOUCHED retry_lines=$J_RETRY retried_ok=$J_RETRY_OK completed=$J_OK/3 error_events=$J_ERR http_5xx=$J_5XX panic_lines=$J_PANIC digests={${J_DIG%,}} control={${jctrl_dig%,}} control_completed=$jctrl_ok/3 -> $v"
+  else
+    verdict "HFG (j) aimed-batch-oom-recovers: boot failed -> FAIL"
+  fi
+  if run_j j-red batch:2; then
+    green=false
+    [ "$J_OK" = 3 ] && [ "$J_ERR" = 0 ] && [ "$J_RETRY_OK" = 1 ] && green=true
+    v=FAIL
+    [ "$green" = false ] && [ "$J_FIRED" = 2 ] && [ "$J_OTHER" = 0 ] && [ "$J_SESS" -ge 2 ] && [ "$J_RETRY" = 1 ] \
+      && [ "$J_RETRY_FAIL" = 1 ] && [ "$J_ERR" = "$J_SESS" ] && [ "$J_5XX" = 0 ] && [ "$J_PANIC" = 0 ] && v=PASS
+    verdict "HFG (j-red) aimed-batch-oom-retry-also-fails: fired_lines=$J_FIRED other_fired=$J_OTHER chunk_sessions=$J_SESS retry_lines=$J_RETRY retry_failed=$J_RETRY_FAIL completed=$J_OK/3 error_events=$J_ERR http_5xx=$J_5XX panic_lines=$J_PANIC green_assertion_fired=$([ "$green" = false ] && echo true || echo false) -> $v"
+  else
+    verdict "HFG (j-red) aimed-batch-oom-retry-also-fails: boot failed -> FAIL"
   fi
 fi
 

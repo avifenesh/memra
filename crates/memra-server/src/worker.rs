@@ -8174,30 +8174,57 @@ const STEP_OOM_FAULT_MSG: &str =
 /// answers 200); a value above `MEMRA_STEP_OOM_RETRIES` walks the same session into the
 /// bounded-retry honest error. Malformed values are OFF with a loud warning. NEVER set on
 /// a serving box.
-fn step_oom_fault_remaining() -> &'static std::sync::atomic::AtomicU32 {
-    static R: std::sync::OnceLock<std::sync::atomic::AtomicU32> = std::sync::OnceLock::new();
+/// Where the door may fire (WP-B day 49 addendum D). `Any`: the next step at any of the three
+/// injection points (a plain `<n>`, today's door). `BatchMulti`: only the plain dispatch's
+/// batched decode chunk, and only a chunk carrying at least two sessions (`batch:<n>`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StepOomFaultSite {
+    Any,
+    BatchMulti,
+}
+
+/// Parse the door's value: `<n>` or `batch:<n>`. `None` is malformed (the door stays OFF).
+fn parse_step_oom_fault(raw: &str) -> Option<(StepOomFaultSite, u32)> {
+    match raw.strip_prefix("batch:") {
+        Some(n) => n
+            .parse::<u32>()
+            .ok()
+            .map(|n| (StepOomFaultSite::BatchMulti, n)),
+        None => raw.parse::<u32>().ok().map(|n| (StepOomFaultSite::Any, n)),
+    }
+}
+
+fn step_oom_fault_state() -> &'static (StepOomFaultSite, std::sync::atomic::AtomicU32) {
+    static R: std::sync::OnceLock<(StepOomFaultSite, std::sync::atomic::AtomicU32)> =
+        std::sync::OnceLock::new();
     R.get_or_init(|| {
-        let n = match std::env::var("MEMRA_STEP_OOM_FAULT") {
-            Ok(raw) => match raw.parse::<u32>() {
-                Ok(n) => n,
-                Err(_) => {
+        let (site, n) = match std::env::var("MEMRA_STEP_OOM_FAULT") {
+            Ok(raw) => match parse_step_oom_fault(&raw) {
+                Some(v) => v,
+                None => {
                     eprintln!(
                         "[admit-oom] WARNING: MEMRA_STEP_OOM_FAULT={raw:?} is not an \
                          injection count; the door stays OFF"
                     );
-                    0
+                    (StepOomFaultSite::Any, 0)
                 }
             },
-            Err(_) => 0,
+            Err(_) => (StepOomFaultSite::Any, 0),
         };
         if n > 0 {
+            let (value, at) = match site {
+                StepOomFaultSite::Any => (n.to_string(), "session step(s)"),
+                StepOomFaultSite::BatchMulti => (
+                    format!("batch:{n}"),
+                    "batched decode chunk(s) of at least two sessions",
+                ),
+            };
             eprintln!(
-                "[admit-oom] WARN: MEMRA_STEP_OOM_FAULT={n} armed: the next {n} session \
-                 step(s) will report a SYNTHETIC CUDA OOM (diagnostic door, never a \
-                 serving configuration)"
+                "[admit-oom] WARN: MEMRA_STEP_OOM_FAULT={value} armed: the next {n} {at} will \
+                 report a SYNTHETIC CUDA OOM (diagnostic door, never a serving configuration)"
             );
         }
-        std::sync::atomic::AtomicU32::new(n)
+        (site, std::sync::atomic::AtomicU32::new(n))
     })
 }
 
@@ -8215,8 +8242,24 @@ fn step_oom_fault_consume(remaining: &std::sync::atomic::AtomicU32) -> bool {
     false
 }
 
+/// Whether an injection point may spend the budget: `batch_sessions` is `Some(k)` at the
+/// batched decode chunk (k sessions) and `None` at the spec and non-batching steps.
+fn step_oom_fault_site_admits(site: StepOomFaultSite, batch_sessions: Option<usize>) -> bool {
+    match site {
+        StepOomFaultSite::Any => true,
+        StepOomFaultSite::BatchMulti => batch_sessions.is_some_and(|k| k >= 2),
+    }
+}
+
 fn step_oom_fault_fire() -> bool {
-    step_oom_fault_consume(step_oom_fault_remaining())
+    let (site, remaining) = step_oom_fault_state();
+    step_oom_fault_site_admits(*site, None) && step_oom_fault_consume(remaining)
+}
+
+/// The batched decode chunk's injection point: `sessions` is the chunk's session count.
+fn step_oom_fault_fire_batch(sessions: usize) -> bool {
+    let (site, remaining) = step_oom_fault_state();
+    step_oom_fault_site_admits(*site, Some(sessions)) && step_oom_fault_consume(remaining)
 }
 
 /// Run one allocation retry only when the first failure released reclaimable state. The caller
@@ -30346,7 +30389,7 @@ pub fn run(
                             // MEMRA_STEP_OOM_FAULT's plain-dispatch injection point (WP-B day 38
                             // addendum A): the forged quoted OOM stands in for this chunk's step, before
                             // any device work; the chunk's error arm below is production logic.
-                            if step_oom_fault_fire() {
+                            if step_oom_fault_fire_batch(idxs.len()) {
                                 eprintln!(
                                     "[admit-oom] MEMRA_STEP_OOM_FAULT fired: this batched decode chunk \
                              reports a synthetic CUDA OOM ({} session(s))",
@@ -57949,6 +57992,28 @@ mod tests {
         assert!(!super::step_oom_fault_consume(&off));
     }
 
+    /// DAY49 addendum D: `batch:<n>` aims the door at a batched chunk of at least two sessions;
+    /// a plain `<n>` fires anywhere, as before; anything else is malformed (OFF).
+    #[test]
+    fn step_oom_fault_site_value_parses_and_aims() {
+        use super::StepOomFaultSite::{Any, BatchMulti};
+        assert_eq!(super::parse_step_oom_fault("1"), Some((Any, 1)));
+        assert_eq!(super::parse_step_oom_fault("0"), Some((Any, 0)));
+        assert_eq!(
+            super::parse_step_oom_fault("batch:2"),
+            Some((BatchMulti, 2))
+        );
+        for bad in ["", "batch:", "batch:x", "spec:1", "-1", "batch:-1", " 1"] {
+            assert_eq!(super::parse_step_oom_fault(bad), None, "{bad:?}");
+        }
+        assert!(super::step_oom_fault_site_admits(Any, None));
+        assert!(super::step_oom_fault_site_admits(Any, Some(1)));
+        assert!(!super::step_oom_fault_site_admits(BatchMulti, None));
+        assert!(!super::step_oom_fault_site_admits(BatchMulti, Some(1)));
+        assert!(super::step_oom_fault_site_admits(BatchMulti, Some(2)));
+        assert!(super::step_oom_fault_site_admits(BatchMulti, Some(8)));
+    }
+
     /// The door's SCOPE contract (battery-20260831 tenancy-gates T2): injection only in
     /// the step path, exactly one injection point, sitting in front of the production
     /// step dispatch so the forged error flows into the SAME `match step_result` the real
@@ -57976,8 +58041,16 @@ mod tests {
         let call = format!("step_oom_fault_fire{}", "()");
         assert_eq!(
             live.matches(call.as_str()).count(),
-            4,
-            "expected the fault door's definition and its three registered call sites"
+            3,
+            "expected the fault door's definition and its spec and non-batching call sites"
+        );
+        // DAY49 addendum D: the batched chunk's site passes its session count (the `batch:` site).
+        let batch_call = format!("step_oom_fault_fire_batch{}", "(idxs.len())");
+        assert_eq!(live.matches(batch_call.as_str()).count(), 1);
+        assert_eq!(
+            live.matches("fn step_oom_fault_fire_batch(sessions: usize) -> bool")
+                .count(),
+            1
         );
         // Addendum D: the non-batching site fires only on a session past its prime.
         let gated = format!("if active[i].prefill_done && {call}");
@@ -57985,13 +58058,13 @@ mod tests {
             .match_indices(format!("if {call}").as_str())
             .map(|(at, _)| at)
             .collect();
-        assert_eq!(
-            sites.len(),
-            2,
-            "the spec and batched sites fire on any step they reach"
-        );
+        assert_eq!(sites.len(), 1, "the spec site fires on any step it reaches");
         assert_eq!(live.matches(gated.as_str()).count(), 1);
         sites.extend(live.match_indices(gated.as_str()).map(|(at, _)| at));
+        sites.extend(
+            live.match_indices(format!("if {batch_call}").as_str())
+                .map(|(at, _)| at),
+        );
         assert_eq!(sites.len(), 3);
         for &at in &sites {
             let body = window(live, at, 4000);
