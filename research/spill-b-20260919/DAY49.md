@@ -50,6 +50,31 @@ Unset: today's error arm. `1`, on a batched decode chunk's error whose text is a
 Code: about 1 agent-day (the markers snapshot and check, the retry, the inside-step fault door, census and unit
 tests). Cells: the gate on each card plus one serving boot pair.
 
+### 1.5 Addendum A (2026-09-26, while reading the batched step before any code)
+
+1.2's torn-state check on host-side markers is unsound: the batched step's linear-attention conv ring is updated IN
+PLACE by `ssm_conv1d_fused_decode_b` (the pointer table carries each session's `conv_state`), so a step that ran one
+layer's conv and then failed changes no marker. The check is replaced by an engine-side guard that knows where state is
+written, and the reclaim is named exactly:
+
+- **The step guard (`memra_engine::step_guard`, a thread-local state per call):** the worker arms it before the batched
+  call (`Armed`); the batched entry marks `Entered` on arrival; the generic unsplit body marks `Generic` just before its
+  pre-layer setup (the pointer table, the embed gather); `decode_batch_layers` marks `Touched` immediately before every
+  state-writing statement (the KV append and its `len` advance, the conv ring update, the GDN scan and its ping-pong
+  swap). The epilogue runs after the layers, so it is already `Touched`. A census test pins that every state-writing
+  call in `decode_batch_layers` is preceded by the mark.
+- **Recoverable iff the guard reads `Armed` (the failure came before the engine call: the fault door's injection point)
+  or `Generic` (the generic body failed before any state write).** `Entered` (a non-generic batched program: hyper, PP,
+  step35, gemma, the B=1 fast path) and `Touched` are not recoverable: today's error arm.
+- **The reclaim, once:** the parked sessions of the three pools are dropped, the device prefix cache is evicted to half
+  its bytes, the teardown fence runs and the model pools are trimmed back to the driver (the step-OOM ladder's first
+  rung, with its own receipt line `[admit-oom] batch OOM: ...`). Then the same batched call runs once more; a second
+  failure is today's error arm.
+- **The red twin** of 1.3 needs no new fault door: `MEMRA_STEP_OOM_FAULT=2` fires on the first attempt and again on the
+  retry, so the recovery is attempted and the chunk ends as today; the `after-layer-<k>` door of 1.3 is dropped (a
+  torn chunk is not retried by construction, which the census and a unit test on the guard's rule cover).
+- Everything else of section 1 stands.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
