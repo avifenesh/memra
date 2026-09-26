@@ -1,0 +1,86 @@
+# WP-C day 85 (2026-09-26): OWED C11, I22, the lease path's remaining per-record hashed reads by position, before any code
+
+Lead: "Register DAY85 meanwhile" (DAY84's cell `i21` is running on both classes). Also: "my chain logs before today's
+c8/c9 print rc= after a $(date) expansion, so their rc is date's 0, never the step's. Your pro-single-day13/driver.sh
+has the same pattern. Check whether any DAY record quoted a lead-chain or driver rc line as evidence, and fix the
+pattern in live scripts." Tree at start: `012e76a1d`.
+
+## 0. The rc check
+
+In bash, `$?` read after a command substitution in the same statement is the substitution's status: `false; echo
+"$(date) rc=$?"` prints `rc=0` (checked here; `PIPESTATUS` survives a substitution and is not affected).
+
+- **Lane scripts.** `rc-scan.py` (new, this directory) reads every `.sh` under the lane's records for a `$?` after a
+  `$(` in one statement (`day85-cpu/rc-scan.log`). One hit in all 134 top-level scripts, 47 CPU-gate scripts and every
+  mirrored receipt directory: `pro-single-day13/driver.sh:9`, `echo "$(date -u +%FT%TZ) $name rc=$?"`. It is a receipt
+  (the script that ran on the day-13 box), so it stays as it ran. No live script has the pattern (`--live`: 0). A second,
+  wider pass (`day85-cpu/rc-scan-wide.py`, `rc-scan-wide.log`) read every `rc=$?` with the statement before it (an
+  `echo`, `cat`, `tee` or pipeline without `pipefail` in front of the read, or a closing `fi`); of its five flags, one
+  is the day-13 line and four are correct reads on inspection (a `{ ...; }` group whose last command is the step, an
+  `if` whose branches end in the step).
+- **Where it mattered.** `pro-single-day13/driver.log` holds two runs: attempt 1 by `driver.sh` (twelve `rc=0` lines,
+  meaningless) and the second run by `driver2.sh`, which reads the status first (`local rc=$?`); its twelve lines agree
+  with the cells' `.exit` files (six gates red, as `DAY13.md` reads them by their gate lines). `DAY13.md` never quoted
+  a driver `rc=` line; a note under it now says so.
+- **Records against lead-chain lines.** No DAY record cites a lead chain log's `rc=` line. The `rc=` values quoted
+  across DAY17 to DAY84 come from this lane's own build logs, `--validate` runs and cell drivers, whose reads the scan
+  covers (for example `c-dayNN-driver.out`'s `i15b rc=0 <date>` reads `$?` before the date).
+
+## 1. What I21's in-situ split leaves (`DAY84.md` section 2a)
+
+At I21, per generated token on the local host: `stage_cache` 102.6 us, `dispatch_inner` 94.0, `publish_policy` 88.3,
+`retire_outer` 55.7, `outer` 46.6. The first three grew under I21 by 13.1, 26.1 and 53.6 because they are now the
+first touch of a record's entries, and each is a hashed read keyed by the record's `BankId`:
+- `stage_cache`: the bank's host cache (`CacheIndex`, an Fx-hashed map from `BankId` to its lease) read per unique id;
+- `dispatch_inner`: the dispatch adapter's `validated` (its id tree, then the catalog's hashed index for the layout);
+- `publish_policy`: the SLRU `hit` (the `table`, hashed) and, for a prefetch, `resident`;
+plus the catalog's hashed index in `stage`'s lookup loop (`stage_lookup`, 8.8).
+
+## 2. Pre-registration: I22
+
+**The change.** The catalog position I21 resolves once per record travels with the lease to the bank, and these reads
+use it; every map stays, authoritative, for every other caller.
+- `Catalog::entry_at(position)` and `Catalog::id_at(position)` (the catalog's own vector; `MaskedId` and `NotFound` as
+  `entry` gives them).
+- `CacheIndex` keeps, when the SLRU is installed, a lease per catalog position beside its map, kept equal at each of
+  its changes (the fill admission, a missing record's publication, the eviction paths and `release`, each resolving
+  the position through the catalog's hashed index: miss and eviction paths only); `get_at(position)`. The SLRU
+  metadata charge counts it (8 bytes per catalog id, beside I21's 4 per id and 4 per slot).
+- `SlruPolicy::hit_at(position)`: `hit` for the record at that position, reading `resident_at`.
+- `BankService::stage_at(batch, positions)`, crate-private (only the dispatch adapter, whose positions are the
+  catalog's own, can call it): `stage`'s program with the catalog entry and the host cache read by position; the
+  pending ticket keeps the positions, and its publication reads `hit_at` / `resident_at` for them. `stage(batch)`
+  keeps its hashed reads unchanged for every other caller. A debug build asserts `id_at(position) == id` for every
+  record of a positioned batch.
+- `SlruExpertDispatch::validated` reads the position (I21's dense table), the layout through `entry_at` and the id
+  through `id_at` (the same `BankId`: the adapter's map was built from the catalog's ids), with the errors it gave
+  (`NotFound` for an unknown local id, then the layout's); `demand` and `demand_many` stage through `stage_at`.
+
+Not in I22 (named, each its own registration after its reading): the batch's `BankId` clones (one heap string each),
+the proxy's registry entry, identity checks and pending insert (`outer`), the retire side (`retire_outer`,
+`bank_ack`).
+
+**The same program.** No decision reads anything new; the host demand sequence and the tokens must equal I21's.
+
+**If DAY84's cell `i21` reads `regresses` on either class,** I21 is reverted with its receipt and this registration is
+rewritten on I20 before any code (I22 needs I21's positions).
+
+## 3. CPU gates before any card (`day85-cpu/`)
+
+- the positioned bank against the hashed one: twin banks driven by one randomized trace of grouped and single demands
+  (host hits, misses, evictions, fill admissions, cancels) through `stage_at` and `stage`, with the same tickets,
+  leases (ids and charges), SLRU orders and host cache after every operation; the cache view against its map after
+  every operation; `hit_at` against `hit` on the day-43 trace; `validated` by position against the map for every
+  local id;
+- the day-61 profile at I21 and I22 in one window (P1 and P9, both orders) and P10's census;
+- the tier suites, the engine library, clippy (`-D warnings`, all targets) and fmt; `rc-scan.py --live`;
+- the local RTX 5090 check (I21 and I22, both orders, `MATCH`, the same tape and host demand sequence), then the
+  in-situ split of I22 beside I21 (queue v18's shape, arms `i21s` and `i22s`), deciding nothing.
+
+## 4. Pre-registration: the card cell `i22`
+
+DAY84's cell with I22 for I21's step: binaries `i15=2243b1fe2`, `i21=b555b4141` and `i22` (named in section 3a); arms
+REF (`run-gen-i21` with `MEMRA_MOE_PREFETCH=1`), I15, I21, I22, I22C; 50 timed runs in both orders and the profiled pair;
+integrity with I15's, I21's and I22's host demand sequences equal; admissibility; I22 against I21 (gen-only primary, the
+window beside it), I22 against I15 beside it deciding nothing, the door against REF. `regresses` on either class
+reverts I22 with its receipt. On the 285K class, then a 9950X.

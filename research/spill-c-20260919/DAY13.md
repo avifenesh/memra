@@ -186,3 +186,10 @@ admissibility gate is this day's table plus per-segment `Completion` checksums e
 outside B.
 
 Effort: approximately 2.5 agent-hours (budget 8).
+
+**Note (2026-09-26, `DAY85.md` section 0).** `pro-single-day13/driver.sh` logged each cell as
+`echo "$(date -u +%FT%TZ) $name rc=$?"`, and the `$?` after a command substitution in the same statement is the
+substitution's status (`date`'s, 0), not the cell's. So the first twelve `rc=` lines of `pro-single-day13/driver.log`
+(attempt 1, every one `rc=0`) say nothing about the cells. `driver2.sh` (the second run, the one this day reads) keeps
+the cell's status first (`local rc=$?`), and its twelve lines agree with the cells' own `.exit` files. This record never
+quoted a driver `rc=` line; attempt 1 is read above by its gate lines (finding 1).

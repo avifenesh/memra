@@ -1,0 +1,16 @@
+pro-single-day13/driver.sh:9 subst-before-on-line
+   prev: bash $R/run-cell.sh "$name" "$@"
+   line: run() { local name=$1; shift; echo "$(date -u +%FT%TZ) $name start" >> $R/driver.log; bash $R/run-cell.sh "$na
+rtx5090-queue-v16-20260926.sh:18 prev-is-cat
+   prev: cat "$O/binary.sha256"; /usr/bin/python3 "$L/day82-cpu/gpu-check-read.py" "$O"; } > "$L/day82-cpu/gpu-check.lo
+   line: log "read rc=$?"
+rtx5090-queue-v17-20260926.sh:68 after-fi
+   prev: fi
+   line: local rc=$?
+rtx5090-queue-v18-20260926.sh:67 after-fi
+   prev: fi
+   line: local rc=$?
+rtx5090-queue-v18-20260926.sh:80 prev-is-cat
+   prev: cat "$R/check/binary.sha256"; /usr/bin/python3 "$L/day84-cpu/gpu-check-read.py" "$R/check"; } > "$R/check/read
+   line: log "check reader rc=$?"
+5 flagged
