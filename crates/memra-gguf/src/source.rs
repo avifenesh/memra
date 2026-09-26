@@ -1858,6 +1858,13 @@ impl SafetensorsSource {
             .or_else(|| self.lookup(&format!("{stem}.weight_scale_inv")))
     }
 
+    fn mimo_fused_qkv_shards(&self, hf_name: &str) -> Option<usize> {
+        (self.cfg.mimo.is_some()
+            && hf_name.starts_with("model.layers.")
+            && hf_name.ends_with(".self_attn.qkv_proj.weight"))
+        .then_some(self.cfg.n_head_kv as usize)
+    }
+
     /// Dequantize an HF tensor to f32 (used by the value-transform producers). Handles BOTH plain
     /// F32/F16/BF16 tensors AND modelopt (compressed-tensors) NVFP4 weights: a `<name>.weight` stored
     /// `U8` with a sibling `<name>.weight_scale` is dequantized through the NVFP4 path (per-16 UE4M3
@@ -1898,7 +1905,13 @@ impl SafetensorsSource {
             let out_f = info.shape[0] as usize;
             let in_f = info.shape[1] as usize;
             if let Some((sinfo, sbytes)) = self.f8_scale_sibling(stem)
-                && let Some(scales) = f8_scales(sinfo, sbytes, out_f, in_f)
+                && let Some(scales) = f8_scales_with_shards(
+                    sinfo,
+                    sbytes,
+                    out_f,
+                    in_f,
+                    self.mimo_fused_qkv_shards(hf_name),
+                )
             {
                 return Some((f8_deq_f32(bytes, out_f, in_f, &scales), info.ne()));
             }
@@ -2073,7 +2086,16 @@ impl SafetensorsSource {
 enum F8Scales {
     PerTensor(f32),
     PerRow(Vec<f32>),
-    Block128 { scales: Vec<f32>, cols: usize },
+    Block128 {
+        scales: Vec<f32>,
+        cols: usize,
+    },
+    ShardedBlock128 {
+        scales: Vec<f32>,
+        cols: usize,
+        weight_rows_per_shard: usize,
+        scale_rows_per_shard: usize,
+    },
 }
 
 impl F8Scales {
@@ -2084,6 +2106,16 @@ impl F8Scales {
             F8Scales::PerTensor(s) => *s,
             F8Scales::PerRow(v) => v[o],
             F8Scales::Block128 { scales, cols } => scales[(o >> 7) * cols + (e >> 7)],
+            F8Scales::ShardedBlock128 {
+                scales,
+                cols,
+                weight_rows_per_shard,
+                scale_rows_per_shard,
+            } => {
+                let shard = o / weight_rows_per_shard;
+                let row_in_shard = o % weight_rows_per_shard;
+                scales[(shard * scale_rows_per_shard + (row_in_shard >> 7)) * cols + (e >> 7)]
+            }
         }
     }
 }
@@ -2131,6 +2163,16 @@ fn f8_scales(
     out_f: usize,
     in_f: usize,
 ) -> Option<F8Scales> {
+    f8_scales_with_shards(sinfo, sbytes, out_f, in_f, None)
+}
+
+fn f8_scales_with_shards(
+    sinfo: &crate::safetensors::StInfo,
+    sbytes: &[u8],
+    out_f: usize,
+    in_f: usize,
+    checkpoint_shards: Option<usize>,
+) -> Option<F8Scales> {
     let n = sinfo.shape.iter().product::<u64>() as usize;
     let vals: Vec<f32> = match sinfo.dtype.as_str() {
         "F32" if sbytes.len() >= n * 4 => sbytes[..n * 4]
@@ -2145,6 +2187,29 @@ fn f8_scales(
     };
     if !vals.iter().all(|s| s.is_finite() && *s > 0.0) {
         return None;
+    }
+    if let Some(shards) = checkpoint_shards {
+        if shards == 0
+            || out_f == 0
+            || in_f == 0
+            || !out_f.is_multiple_of(shards)
+            || sinfo.shape.len() != 2
+        {
+            return None;
+        }
+        let weight_rows_per_shard = out_f / shards;
+        let scale_rows_per_shard = weight_rows_per_shard.div_ceil(128);
+        let cols = in_f.div_ceil(128);
+        let scale_rows = shards.checked_mul(scale_rows_per_shard)?;
+        if sinfo.shape != [scale_rows as u64, cols as u64] {
+            return None;
+        }
+        return Some(F8Scales::ShardedBlock128 {
+            scales: vals,
+            cols,
+            weight_rows_per_shard,
+            scale_rows_per_shard,
+        });
     }
     if n == 1 {
         return Some(F8Scales::PerTensor(vals[0]));
@@ -2251,7 +2316,13 @@ impl TensorSource for SafetensorsSource {
         let stem = hf.strip_suffix(".weight").unwrap_or(&hf);
         let (sinfo, sbytes) = self.f8_scale_sibling(stem)?;
         let (out_hf, in_hf) = (info.shape[0] as usize, info.shape[1] as usize);
-        let (scale, blk) = match f8_scales(sinfo, sbytes, out_hf, in_hf)? {
+        let (scale, blk) = match f8_scales_with_shards(
+            sinfo,
+            sbytes,
+            out_hf,
+            in_hf,
+            self.mimo_fused_qkv_shards(&hf),
+        )? {
             F8Scales::PerTensor(s) => (s, None),
             // ARM A scale-fold (MEMRA_FP8_FOLD=1, lane fp8-gemm-arm 2026-08-03): collapse the
             // 128x128 grid to ONE per-tensor scale at load — dequant each block by its own scale,
@@ -2292,6 +2363,9 @@ impl TensorSource for SafetensorsSource {
             // Per-row: no e4m3 kernel consumes a per-channel scale vector; the Q8_0
             // re-encode arm in `find` (which folds it host-side) stays that class's path.
             F8Scales::PerRow(_) => return None,
+            // The native kernel indexes one continuous scale grid. A MiMo fused QKV
+            // checkpoint resets the grid at each source shard, so refuse that operand.
+            F8Scales::ShardedBlock128 { .. } => return None,
         };
         match kind {
             None => {
@@ -2576,6 +2650,12 @@ impl TensorSource for SafetensorsSource {
                     if self.lookup(&legacy).is_some() {
                         hf = legacy;
                     }
+                }
+                // MiMo's QKV scale grid restarts at each checkpoint shard.
+                // The current native and Q8 conversion paths index one continuous
+                // grid, so neither may admit this tensor before its kernel exists.
+                if self.mimo_fused_qkv_shards(&hf).is_some() {
+                    return None;
                 }
                 // NVFP4 (modelopt OR Reza) -> repack to memra internal GGUF block_nvfp4 bytes (NO kernel
                 // change). `nvfp4_quant` returns the packed bytes directly (in Reza the packed tensor
@@ -4430,6 +4510,115 @@ mod f8_block128 {
         assert!(f8_scales(&info("F32", vec![1]), &f32b(&[0.0]), out_f, in_f).is_none());
         // transposed count that coincidentally matches nothing
         assert!(f8_scales(&info("F32", vec![5]), &f32b(&[1.0; 5]), out_f, in_f).is_none());
+    }
+
+    #[test]
+    fn mimo_fused_qkv_fp8_scales_reset_at_checkpoint_shard_boundaries() {
+        use crate::safetensors::StInfo;
+
+        let info = |shape| StInfo {
+            dtype: "F32".to_owned(),
+            shape,
+            data_offsets: [0, 0],
+        };
+        let bytes = |values: &[f32]| {
+            values
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect::<Vec<_>>()
+        };
+        // Two 192-row source shards each need two scale rows. One continuous
+        // 384-row grid would have only three, and would assign shard one's
+        // first 64 rows the final scale from shard zero.
+        let scales = f8_scales_with_shards(
+            &info(vec![4, 1]),
+            &bytes(&[1.0, 2.0, 3.0, 4.0]),
+            384,
+            128,
+            Some(2),
+        )
+        .unwrap();
+        let codes = vec![0x38; 384 * 128]; // e4m3 value 1.0
+        let dequantized = f8_deq_f32(&codes, 384, 128, &scales);
+        for (row, expected) in [
+            (0, 1.0),
+            (127, 1.0),
+            (128, 2.0),
+            (191, 2.0),
+            (192, 3.0),
+            (319, 3.0),
+            (320, 4.0),
+            (383, 4.0),
+        ] {
+            assert_eq!(dequantized[row * 128], expected);
+            assert_eq!(dequantized[row * 128 + 127], expected);
+        }
+        assert!(
+            f8_scales_with_shards(
+                &info(vec![3, 1]),
+                &bytes(&[1.0, 2.0, 3.0]),
+                384,
+                128,
+                Some(2),
+            )
+            .is_none()
+        );
+        assert!(
+            f8_scales_with_shards(
+                &info(vec![4, 1]),
+                &bytes(&[1.0, 2.0, 3.0, 4.0]),
+                384,
+                128,
+                Some(3),
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn mimo_pinned_global_and_sliding_scale_grids_keep_four_source_shards() {
+        use crate::safetensors::StInfo;
+
+        for (weight_rows, scale_rows, rows_per_shard, grid_rows_per_shard) in [
+            (13_568usize, 108usize, 3_392usize, 27usize),
+            (14_848, 116, 3_712, 29),
+        ] {
+            let values: Vec<f32> = (0..scale_rows * 32)
+                .map(|index| 1.0 + index as f32)
+                .collect();
+            let bytes: Vec<u8> = values
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect();
+            let info = StInfo {
+                dtype: "F32".to_owned(),
+                shape: vec![scale_rows as u64, 32],
+                data_offsets: [0, 0],
+            };
+            let scales = f8_scales_with_shards(&info, &bytes, weight_rows, 4_096, Some(4)).unwrap();
+            assert_eq!(
+                scales.at(rows_per_shard - 1, 4_095),
+                values[(grid_rows_per_shard - 1) * 32 + 31]
+            );
+            assert_eq!(
+                scales.at(rows_per_shard, 4_095),
+                values[grid_rows_per_shard * 32 + 31]
+            );
+            assert_eq!(
+                scales.at(weight_rows - 1, 4_095),
+                values[(scale_rows - 1) * 32 + 31]
+            );
+            if weight_rows == 13_568 {
+                let wrong_info = StInfo {
+                    shape: vec![weight_rows.div_ceil(128) as u64, 32],
+                    ..info
+                };
+                assert!(
+                    f8_scales_with_shards(&wrong_info, &bytes, weight_rows, 4_096, Some(4))
+                        .is_none()
+                );
+            }
+        }
     }
 
     /// f8_deq_f32 with block-128 scales is BIT-EXACT against the naive per-element reference
