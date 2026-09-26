@@ -104,15 +104,27 @@ fn normalized(
     name: &str,
     norm: &memra_gguf::model_plan::NormPlan,
 ) -> Result<CudaSlice<f32>, Fail> {
+    let weight = engine.htod(&read_vector(model, name, HIDDEN)?)?;
+    normalized_with_weight(engine, input, &weight, name, norm)
+}
+
+fn normalized_with_weight(
+    engine: &Engine,
+    input: &CudaSlice<f32>,
+    weight: &CudaSlice<f32>,
+    name: &str,
+    norm: &memra_gguf::model_plan::NormPlan,
+) -> Result<CudaSlice<f32>, Fail> {
     if norm.kind != NormKind::Rms
         || norm.weight_transform != WeightTransform::Identity
         || input.len() != HIDDEN
+        || weight.len() != HIDDEN
+        || weight.ordinal() != engine.stream().context().ordinal()
     {
         return Err(format!("{name}: unsupported MiMo norm").into());
     }
-    let weight = engine.htod(&read_vector(model, name, HIDDEN)?)?;
     let mut output = engine.uninit(HIDDEN)?;
-    engine.rms_norm(input, &weight, &mut output, HIDDEN, 1, norm.epsilon)?;
+    engine.rms_norm(input, weight, &mut output, HIDDEN, 1, norm.epsilon)?;
     Ok(output)
 }
 
@@ -190,6 +202,7 @@ struct AttentionPhase<'a> {
     report: &'a mut String,
     enabled: bool,
     turn: usize,
+    resident: Option<&'a ResidentTextLayer>,
 }
 
 impl AttentionPhase<'_> {
@@ -209,6 +222,108 @@ impl AttentionPhase<'_> {
             name,
             started,
         )
+    }
+}
+
+struct ResidentDense {
+    gate: GpuTensor,
+    up: GpuTensor,
+    down: GpuTensor,
+}
+
+struct ResidentTextLayer {
+    input_norm: CudaSlice<f32>,
+    qkv: Vec<GpuTensor>,
+    sink: Option<CudaSlice<f32>>,
+    o_proj: GpuTensor,
+    post_norm: CudaSlice<f32>,
+    dense: Option<ResidentDense>,
+}
+
+impl ResidentTextLayer {
+    fn load(
+        engine: &Engine,
+        model: &StModel,
+        source: &SafetensorsSource,
+        plan: &LayerPlan,
+    ) -> Result<Self, Fail> {
+        engine.gpu.ctx.bind_to_thread()?;
+        let layer = plan.index as usize;
+        let (attention, global) = checked_attention(plan)?;
+        let prefix = format!("model.layers.{layer}");
+        let input_norm = engine.htod(&read_vector(
+            model,
+            &format!("{prefix}.input_layernorm.weight"),
+            HIDDEN,
+        )?)?;
+        let qkv_name = format!("{prefix}.self_attn.qkv_proj.weight");
+        let views = source
+            .find_fp8_mimo_qkv_shards(&qkv_name)
+            .ok_or_else(|| format!("{qkv_name}: missing four native views"))?;
+        if views.len() != 4 {
+            return Err(format!("{qkv_name}: wrong source shard count").into());
+        }
+        let expected_rows = 3072 + attention.kv_heads as usize / 4 * (QK + VALUE);
+        let mut qkv = Vec::with_capacity(4);
+        for (index, view) in views.iter().enumerate() {
+            if view.out_f != expected_rows || view.in_f != HIDDEN {
+                return Err(format!("{qkv_name} shard {index}: changed geometry").into());
+            }
+            qkv.push(GpuTensor::load_mimo_fp8_qkv_shard(engine, view)?);
+        }
+        let sink = if global {
+            None
+        } else {
+            Some(engine.htod(&read_vector(
+                model,
+                &format!("{prefix}.self_attn.attention_sink_bias"),
+                64,
+            )?)?)
+        };
+        let o_proj = bf16_matrix(
+            engine,
+            model,
+            &format!("{prefix}.self_attn.o_proj.weight"),
+            HIDDEN,
+            64 * VALUE,
+        )?;
+        let post_norm = engine.htod(&read_vector(
+            model,
+            &format!("{prefix}.post_attention_layernorm.weight"),
+            HIDDEN,
+        )?)?;
+        let dense = if layer == 0 {
+            Some(ResidentDense {
+                gate: native_fp8_matrix(engine, source, "blk.0.ffn_gate.weight", 16384, HIDDEN)?,
+                up: native_fp8_matrix(engine, source, "blk.0.ffn_up.weight", 16384, HIDDEN)?,
+                down: native_fp8_matrix(engine, source, "blk.0.ffn_down.weight", HIDDEN, 16384)?,
+            })
+        } else {
+            None
+        };
+        Ok(Self {
+            input_norm,
+            qkv,
+            sink,
+            o_proj,
+            post_norm,
+            dense,
+        })
+    }
+}
+
+struct ResidentHead {
+    norm: CudaSlice<f32>,
+    weight: GpuTensor,
+}
+
+impl ResidentHead {
+    fn load(engine: &Engine, model: &StModel) -> Result<Self, Fail> {
+        engine.gpu.ctx.bind_to_thread()?;
+        Ok(Self {
+            norm: engine.htod(&read_vector(model, "model.norm.weight", HIDDEN)?)?,
+            weight: bf16_matrix(engine, model, "lm_head.weight", VOCAB, HIDDEN)?,
+        })
     }
 }
 
@@ -280,30 +395,47 @@ fn attention_token(
     let kv_heads = attention.kv_heads as usize;
     let prefix = format!("model.layers.{layer}");
     let mut phase_start = Instant::now();
-    let norm = normalized(
-        engine,
-        model,
-        hidden,
-        &format!("{prefix}.input_layernorm.weight"),
-        &plan.pre_attention_norm,
-    )?;
+    let norm_name = format!("{prefix}.input_layernorm.weight");
+    let norm = if let Some(resident) = phase.resident {
+        normalized_with_weight(
+            engine,
+            hidden,
+            &resident.input_norm,
+            &norm_name,
+            &plan.pre_attention_norm,
+        )?
+    } else {
+        normalized(engine, model, hidden, &norm_name, &plan.pre_attention_norm)?
+    };
     phase.record(engine, layer, "attention_norm", phase_start)?;
     phase_start = Instant::now();
     let qkv_name = format!("{prefix}.self_attn.qkv_proj.weight");
-    let views = source
-        .find_fp8_mimo_qkv_shards(&qkv_name)
-        .ok_or_else(|| format!("{qkv_name}: missing four native views"))?;
-    if views.len() != 4 {
-        return Err(format!("{qkv_name}: wrong source shard count").into());
-    }
     let expected_rows = 3072 + kv_heads / 4 * (QK + VALUE);
     let mut projections = Vec::with_capacity(4);
-    for (index, view) in views.iter().enumerate() {
-        if view.out_f != expected_rows || view.in_f != HIDDEN {
-            return Err(format!("{qkv_name} shard {index}: changed geometry").into());
+    if let Some(resident) = phase.resident {
+        if resident.qkv.len() != 4 {
+            return Err(format!("{qkv_name}: resident shard count changed").into());
         }
-        let weight = GpuTensor::load_mimo_fp8_qkv_shard(engine, view)?;
-        projections.push(engine.matmul(&weight, &norm, 1)?);
+        for (index, weight) in resident.qkv.iter().enumerate() {
+            if weight.out_features() != expected_rows || weight.in_features() != HIDDEN {
+                return Err(format!("{qkv_name} resident shard {index}: changed geometry").into());
+            }
+            projections.push(engine.matmul(weight, &norm, 1)?);
+        }
+    } else {
+        let views = source
+            .find_fp8_mimo_qkv_shards(&qkv_name)
+            .ok_or_else(|| format!("{qkv_name}: missing four native views"))?;
+        if views.len() != 4 {
+            return Err(format!("{qkv_name}: wrong source shard count").into());
+        }
+        for (index, view) in views.iter().enumerate() {
+            if view.out_f != expected_rows || view.in_f != HIDDEN {
+                return Err(format!("{qkv_name} shard {index}: changed geometry").into());
+            }
+            let weight = GpuTensor::load_mimo_fp8_qkv_shard(engine, view)?;
+            projections.push(engine.matmul(&weight, &norm, 1)?);
+        }
     }
     phase.record(engine, layer, "qkv_project", phase_start)?;
     phase_start = Instant::now();
@@ -341,7 +473,7 @@ fn attention_token(
     )?;
     phase.record(engine, layer, "qkv_gather_rope", phase_start)?;
     phase_start = Instant::now();
-    let sink = if !global {
+    let streamed_sink = if phase.resident.is_none() && !global {
         Some(engine.htod(&read_vector(
             model,
             &format!("{prefix}.self_attn.attention_sink_bias"),
@@ -350,27 +482,43 @@ fn attention_token(
     } else {
         None
     };
+    let sink = if let Some(resident) = phase.resident {
+        resident.sink.as_ref()
+    } else {
+        streamed_sink.as_ref()
+    };
     let cached_before = append_kv(engine, kv_slot, position, qkv.key, qkv.value, kv_heads)?;
     let cache = kv_slot.as_ref().ok_or("MiMo KV append lost its state")?;
     let context = engine.mimo_sink_decode(
         &qkv.query,
         &cache.key,
         &cache.value,
-        sink.as_ref(),
+        sink,
         position + 1,
         &plan.attention,
     )?;
-    drop((qkv.query, sink));
+    drop((qkv.query, streamed_sink));
     phase.record(engine, layer, "kv_append_attention", phase_start)?;
     phase_start = Instant::now();
-    let output = bf16_matrix(
-        engine,
-        model,
-        &format!("{prefix}.self_attn.o_proj.weight"),
-        HIDDEN,
-        64 * VALUE,
-    )?;
-    let result = engine.matmul(&output, &context, 1)?;
+    let streamed_output = if phase.resident.is_none() {
+        Some(bf16_matrix(
+            engine,
+            model,
+            &format!("{prefix}.self_attn.o_proj.weight"),
+            HIDDEN,
+            64 * VALUE,
+        )?)
+    } else {
+        None
+    };
+    let output = if let Some(resident) = phase.resident {
+        &resident.o_proj
+    } else {
+        streamed_output
+            .as_ref()
+            .ok_or("MiMo streamed attention output weight is missing")?
+    };
+    let result = engine.matmul(output, &context, 1)?;
     phase.record(engine, layer, "o_project", phase_start)?;
     Ok((result, cached_before))
 }
@@ -426,6 +574,22 @@ fn dense_mlp_token(
     engine.matmul(&down, &activated, 1)
 }
 
+fn dense_mlp_token_resident(
+    engine: &Engine,
+    input: &CudaSlice<f32>,
+    plan: &memra_gguf::model_plan::DenseMlpPlan,
+    weights: &ResidentDense,
+) -> Result<CudaSlice<f32>, Fail> {
+    if plan.intermediate_size != 16384 || plan.activation != ActivationPlan::Silu {
+        return Err("MiMo resident dense layer 0 MLP contract changed".into());
+    }
+    let gate_out = engine.matmul(&weights.gate, input, 1)?;
+    let up_out = engine.matmul(&weights.up, input, 1)?;
+    let mut activated = engine.uninit(16384)?;
+    engine.silu_mul(&gate_out, &up_out, &mut activated, 16384)?;
+    engine.matmul(&weights.down, &activated, 1)
+}
+
 fn validate_plan(plan: &ModelPlan) -> Result<(), Fail> {
     if plan.layers.len() != LAYERS
         || plan.hidden_size as usize != HIDDEN
@@ -466,22 +630,27 @@ fn validate_plan(plan: &ModelPlan) -> Result<(), Fail> {
 
 fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() < 5 || args.len() > 8 {
+    if args.len() < 5 || args.len() > 9 {
         return Err(
-            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one] [--resident-moe] [--profile-phases]"
+            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one] [--resident-moe] [--resident-text] [--profile-phases]"
                 .into(),
         );
     }
     let mut continue_one = false;
     let mut resident_moe = false;
+    let mut resident_text = false;
     let mut profile_phases = false;
     for option in args.iter().skip(5) {
         match option.as_str() {
             "--continue-one" if !continue_one => continue_one = true,
             "--resident-moe" if !resident_moe => resident_moe = true,
+            "--resident-text" if !resident_text => resident_text = true,
             "--profile-phases" if !profile_phases => profile_phases = true,
             _ => return Err(format!("unknown or repeated MiMo token option: {option}").into()),
         }
+    }
+    if resident_text {
+        resident_moe = true;
     }
     let dir = Path::new(&args[0]);
     let gpu0: usize = args[1].parse()?;
@@ -570,6 +739,26 @@ fn run() -> Result<(), Fail> {
         }
         resident_load_ms = load_start.elapsed().as_secs_f64() * 1000.0;
     }
+    let mut resident_text_layers: Vec<Option<ResidentTextLayer>> =
+        std::iter::repeat_with(|| None).take(LAYERS).collect();
+    let mut resident_head: Option<ResidentHead> = None;
+    let mut resident_text_load_ms = 0.0f64;
+    if resident_text {
+        let load_start = Instant::now();
+        for (index, layer) in plan.layers.iter().enumerate() {
+            let stage = usize::from(index >= STAGE_CUT);
+            let engine = &engines[stage];
+            let before = Instant::now();
+            resident_text_layers[index] =
+                Some(ResidentTextLayer::load(engine, &model, &source, layer)?);
+            eprintln!(
+                "MiMo text layer {index} stage {stage} resident in {:.3}s",
+                before.elapsed().as_secs_f64()
+            );
+        }
+        resident_head = Some(ResidentHead::load(&engines[1], &model)?);
+        resident_text_load_ms = load_start.elapsed().as_secs_f64() * 1000.0;
+    }
     let mut kv: Vec<Option<KvState>> = std::iter::repeat_with(|| None).take(LAYERS).collect();
     let turns = if continue_one { 2 } else { 1 };
     let mut report = if continue_one {
@@ -593,7 +782,9 @@ fn run() -> Result<(), Fail> {
     writeln!(
         report,
         "weight_residency\t{}",
-        if resident_moe {
+        if resident_text {
+            "source_moe_projections_norms_head_resident_embedding_row_streamed"
+        } else if resident_moe {
             "source_mxfp4_moe_resident"
         } else {
             "layer_streamed"
@@ -602,6 +793,7 @@ fn run() -> Result<(), Fail> {
     writeln!(report, "resident_moe_bytes_stage0\t{}", resident_bytes[0])?;
     writeln!(report, "resident_moe_bytes_stage1\t{}", resident_bytes[1])?;
     writeln!(report, "resident_moe_load_ms\t{resident_load_ms:.3}")?;
+    writeln!(report, "resident_text_load_ms\t{resident_text_load_ms:.3}")?;
     writeln!(report, "source_preflight_ms\t{preflight_ms:.3}")?;
     writeln!(report, "phase_timing\t{profile_phases}")?;
     writeln!(report, "kv_format\tf32_contiguous_component")?;
@@ -649,11 +841,21 @@ fn run() -> Result<(), Fail> {
             let engine = &engines[stage];
             engine.gpu.ctx.bind_to_thread()?;
             let before = Instant::now();
+            let text_layer = if resident_text {
+                Some(
+                    resident_text_layers[index]
+                        .as_ref()
+                        .ok_or("MiMo text layer was not resident")?,
+                )
+            } else {
+                None
+            };
             let (attention, cached_before) = {
                 let mut phase = AttentionPhase {
                     report: &mut report,
                     enabled: profile_phases,
                     turn,
+                    resident: text_layer,
                 };
                 attention_token(
                     engine,
@@ -670,13 +872,24 @@ fn run() -> Result<(), Fail> {
             let mut after_attention = engine.uninit(HIDDEN)?;
             engine.add(&hidden, &attention, &mut after_attention, HIDDEN)?;
             drop((hidden, attention));
-            let post_norm = normalized(
-                engine,
-                &model,
-                &after_attention,
-                &format!("model.layers.{index}.post_attention_layernorm.weight"),
-                &layer.pre_mlp_norm,
-            )?;
+            let post_norm_name = format!("model.layers.{index}.post_attention_layernorm.weight");
+            let post_norm = if let Some(weights) = text_layer {
+                normalized_with_weight(
+                    engine,
+                    &after_attention,
+                    &weights.post_norm,
+                    &post_norm_name,
+                    &layer.pre_mlp_norm,
+                )?
+            } else {
+                normalized(
+                    engine,
+                    &model,
+                    &after_attention,
+                    &post_norm_name,
+                    &layer.pre_mlp_norm,
+                )?
+            };
             record_phase(
                 &mut report,
                 engine,
@@ -689,7 +902,19 @@ fn run() -> Result<(), Fail> {
             let mlp_start = Instant::now();
             let mlp = match &layer.mlp {
                 MlpPlan::Dense(dense) if index == 0 => {
-                    dense_mlp_token(engine, &source, &post_norm, dense)?
+                    if let Some(weights) = text_layer {
+                        dense_mlp_token_resident(
+                            engine,
+                            &post_norm,
+                            dense,
+                            weights
+                                .dense
+                                .as_ref()
+                                .ok_or("MiMo resident dense layer missing")?,
+                        )?
+                    } else {
+                        dense_mlp_token(engine, &source, &post_norm, dense)?
+                    }
                 }
                 MlpPlan::Moe(moe) if index > 0 => {
                     let result = if resident_moe {
@@ -748,14 +973,29 @@ fn run() -> Result<(), Fail> {
             eprintln!("MiMo GPU turn {turn} layer {index} stage {stage} complete");
         }
         let last = &engines[1];
+        let head_weights = if resident_text {
+            Some(resident_head.as_ref().ok_or("MiMo head was not resident")?)
+        } else {
+            None
+        };
         let head_norm_start = Instant::now();
-        let final_norm = normalized(
-            last,
-            &model,
-            &hidden,
-            "model.norm.weight",
-            &plan.output_norm,
-        )?;
+        let final_norm = if let Some(weights) = head_weights {
+            normalized_with_weight(
+                last,
+                &hidden,
+                &weights.norm,
+                "model.norm.weight",
+                &plan.output_norm,
+            )?
+        } else {
+            normalized(
+                last,
+                &model,
+                &hidden,
+                "model.norm.weight",
+                &plan.output_norm,
+            )?
+        };
         record_phase(
             &mut report,
             last,
@@ -766,8 +1006,19 @@ fn run() -> Result<(), Fail> {
             head_norm_start,
         )?;
         let head_start = Instant::now();
-        let head = bf16_matrix(last, &model, "lm_head.weight", VOCAB, HIDDEN)?;
-        let logits_gpu = last.matmul(&head, &final_norm, 1)?;
+        let streamed_head = if head_weights.is_none() {
+            Some(bf16_matrix(last, &model, "lm_head.weight", VOCAB, HIDDEN)?)
+        } else {
+            None
+        };
+        let head = if let Some(weights) = head_weights {
+            &weights.weight
+        } else {
+            streamed_head
+                .as_ref()
+                .ok_or("MiMo streamed head is missing")?
+        };
+        let logits_gpu = last.matmul(head, &final_norm, 1)?;
         let logits = last.dtoh(&logits_gpu)?;
         record_phase(
             &mut report,
