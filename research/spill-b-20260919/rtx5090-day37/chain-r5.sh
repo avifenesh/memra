@@ -3,7 +3,8 @@
 # the gate set per arm (gates-r5-*, one collector hold each, its serve-smoke worktree built before the hold), r4's boot
 # list one boot per call, the stream pairs one pair per call, then the reader. The lock stays free for YIELD_S after
 # A2, after each gate arm, after each boot and after each stream pair (the lead's card sharing). Every GPU step waits
-# for an idle rig and holds /tmp/memra-5090.lock alone. Never a signal to anything.
+# for an idle rig and holds /tmp/memra-5090.lock alone. Patience (env): ATTEMPTS (run-grow.sh, 120 s apart), GATE_ATTEMPTS
+# (each gate arm's collector, 120 s apart), BOOT_TRIES (a boot the idle wait did not run). Never a signal to anything.
 set -uo pipefail
 WT=$HOME/projects/wt-spill-b
 D=$WT/research/spill-b-20260919
@@ -32,7 +33,7 @@ for arm in pooled vmm; do
   ( cd "$SMOKE_DIR" && systemd-run --user --scope -q -p CPUQuota=600% -p MemoryMax=20G nice -n 19 \
       cargo build --release -p memra-server ) >> "$R/smoke-wt-$arm.log" 2>&1
   log "gates r5 $arm: serve-smoke tree prebuilt rc=$?"
-  for attempt in $(seq 0 90); do
+  for attempt in $(seq 0 "${GATE_ATTEMPTS:-90}"); do
     rm -rf "$out/collector-$attempt"; mkdir -p "$out"
     python3 tools/tier-battery.py --rig rtx5090 --timeout 7200 --out "$out/collector-$attempt" --external-lock --execute \
       bash "$D/rtx5090-day37/gates.sh" @COLLECTOR_LOCK_FD@ "$arm" "$out" > "$out/collector-$attempt.log" 2>&1
@@ -50,14 +51,14 @@ done_boot() { command grep -q "boot $1 rc=" "$R/run.log" 2>/dev/null; }
 # to six times. An executed boot is never rerun.
 run_boots() { # <spec>...
   local try spec left
-  for try in 1 2 3 4 5 6; do
+  for try in $(seq 1 "${BOOT_TRIES:-6}"); do
     left=(); for spec in "$@"; do done_boot "${spec%%:*}" || left+=("$spec"); done
     [ ${#left[@]} = 0 ] && return 0
     [ $try = 1 ] || log "boots ${left[*]}: asked again (try $try) after an idle-wait timeout"
     bash "$B" "$R" "${left[@]}"
     [ $? = 3 ] || return 0
   done
-  log "boots ${left[*]}: not run after six idle waits"
+  log "boots ${left[*]}: not run after ${BOOT_TRIES:-6} idle waits"
 }
 for spec in mix-spec-O1-pooled:pooled:mixspec mix-spec-O1-vmm:vmm:mixspec mix-plain-O1-pooled:pooled:mixplain \
   mix-plain-O1-vmm:vmm:mixplain mix-spec-O2-vmm:vmm:mixspec mix-spec-O2-pooled:pooled:mixspec mix-plain-O2-vmm:vmm:mixplain \

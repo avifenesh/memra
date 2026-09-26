@@ -1,0 +1,3 @@
+2026-09-26T16:35:13Z build-r5 rc=0
+2026-09-26T16:35:14Z chain-r5 start HEAD=4c51b84d8cc66cf7a61fdbff28b9624383f025dc server=ceae54c52a532a18 gate=66debf8f73c005bd main=279267e5386613a0 source=02dbdfa408a5d0215248c0ec2849cd599ca64083 YIELD_S=240
+2026-09-26T17:49:43Z chain-r5 (pid 1725361) and its run-grow (pid 1761187) stopped by the lane in A2's lock-retry sleep: 38 collector attempts, every one 'Resource temporarily unavailable' (another lane's cells hold the card back to back), so A2 did not run; the attempts moved to grow-32768-r5-lockwait/; chain-r5 relaunched with longer patience (ATTEMPTS, GATE_ATTEMPTS, BOOT_TRIES)
