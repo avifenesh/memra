@@ -1841,50 +1841,13 @@ mod day50_census {
         assert!(prefetch.contains("bank.host_resident(local)"));
         assert!(prefetch.contains("bank.demand_many(&locals[..taken])"));
         assert!(prefetch.contains("stage_on_copy_stream(e, payload, &mut self.slots[slot])"));
-        // DAY75 (I16): the condition, and inside it the door's choice to defer.
-        assert_eq!(FORWARD.matches("e.expert_bank_prefetch()").count(), 2);
+        assert_eq!(FORWARD.matches("e.expert_bank_prefetch()").count(), 1);
         // Count in this file's code, not in these tests' own literals.
         let code = &SRC[..SRC.find("#[cfg(test)]").unwrap()];
         assert_eq!(
             code.matches("self.set_expert_bank_prefetch(true);").count(),
             1
         );
-    }
-}
-
-#[cfg(test)]
-mod day75_census {
-    //! DAY75 (I16): under the door the next expert's prefetch is issued after the current expert's
-    //! accumulate, in both cached branches; the legacy prefetch keeps its place before the kernels.
-    const FORWARD: &str = include_str!("../hybrid_forward.rs");
-
-    #[test]
-    fn the_door_defers_its_prefetch_past_the_current_experts_launch() {
-        let set = FORWARD
-            .find("deferred_prefetch = Some(next);")
-            .expect("the door defers");
-        let branch = &FORWARD[FORWARD[..set]
-            .rfind("if e.expert_bank_prefetch() {")
-            .unwrap()..];
-        let legacy = branch
-            .find("} else {\n                        Self::moe_prefetch_expert(")
-            .unwrap();
-        assert!(legacy < branch.find("let [gate_q8, up_q8, down_q8]").unwrap());
-        let issue = "if let Some(next) = deferred_prefetch.take() {\n                        Self::moe_prefetch_expert(e, il, next, m, max_block, &keep)?;";
-        assert_eq!(FORWARD.matches(issue).count(), 2);
-        let rest = &FORWARD[set..];
-        let first_launch = rest.find("Self::moe_cached_gemm").unwrap();
-        for (at, _) in rest.match_indices(issue) {
-            assert!(
-                at > first_launch,
-                "a deferred prefetch before the expert's kernels"
-            );
-            let before = &rest[..at];
-            assert!(
-                before.trim_end().ends_with("&mut dst, n_embd)?;"),
-                "not right after the accumulate"
-            );
-        }
     }
 }
 

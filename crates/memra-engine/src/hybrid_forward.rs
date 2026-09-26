@@ -14668,7 +14668,6 @@ impl HybridModel {
                 for next in page_prefetch_positions(j, sel.len(), page_window) {
                     Self::moe_prefetch_host_expert(sel[next] as usize, m);
                 }
-                let mut deferred_prefetch: Option<usize> = None;
                 let keep = [
                     crate::moe_cache::BlockId::new(il, crate::moe_cache::PROJ_GATE, ex as u16),
                     crate::moe_cache::BlockId::new(il, crate::moe_cache::PROJ_UP, ex as u16),
@@ -14693,14 +14692,7 @@ impl HybridModel {
                     // DAY50: under the MoE slot cache door the prefetch takes its lease through
                     // the owner; without the door `expert_bank_prefetch` is false.
                     let next = sel[j + 1] as usize;
-                    if e.expert_bank_prefetch() {
-                        // DAY75 (I16): under the door the next expert's prefetch is issued after
-                        // this expert's kernels are launched, so its CPU time no longer sits
-                        // before them; the legacy prefetch keeps its order.
-                        deferred_prefetch = Some(next);
-                    } else {
-                        Self::moe_prefetch_expert(e, il, next, m, max_block, &keep)?;
-                    }
+                    Self::moe_prefetch_expert(e, il, next, m, max_block, &keep)?;
                 }
                 let [gate_q8, up_q8, down_q8] = [moe_q8; 3];
                 if cache_dispatch && (gate_q8 || up_q8 || down_q8) {
@@ -14745,9 +14737,6 @@ impl HybridModel {
                     let mut dst = moe_out.slice_mut(tok * n_embd..(tok + 1) * n_embd);
                     // down-proj macro folds into the accumulate weight (1.0 for non-macro archs).
                     e.axpy_into(&y, w[j] * m.down_exps.macro_scale(ex), &mut dst, n_embd)?;
-                    if let Some(next) = deferred_prefetch.take() {
-                        Self::moe_prefetch_expert(e, il, next, m, max_block, &keep)?;
-                    }
                 } else if cache_dispatch {
                     // SLRU residency cache: per-projection, dispatch the block (HIT => resident slot,
                     // MISS => staged slot) then run the SAME unchanged qmatvec_view from that slot.
@@ -14772,9 +14761,6 @@ impl HybridModel {
                     let mut dst = moe_out.slice_mut(tok * n_embd..(tok + 1) * n_embd);
                     // down-proj macro folds into the accumulate weight (post-matmul linear scale).
                     e.axpy_into(&y, w[j] * m.down_exps.macro_scale(ex), &mut dst, n_embd)?;
-                    if let Some(next) = deferred_prefetch.take() {
-                        Self::moe_prefetch_expert(e, il, next, m, max_block, &keep)?;
-                    }
                 } else if cache_frozen {
                     // A later prompt prime must not change the CPU/GPU assignment frozen after the
                     // first prime. Reuse every fixed resident projection directly and stage only a
