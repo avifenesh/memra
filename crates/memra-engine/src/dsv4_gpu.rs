@@ -4437,6 +4437,10 @@ impl Dsv4Gpu {
             me.pack_attention_tp_layers()?;
         }
         me.alloc_split_stage()?;
+        eprintln!(
+            "[load] TP/EP vocab-parallel decode head: {}",
+            me.vocab_parallel_head()
+        );
         for line in crate::dsv4_doors::door_receipt_lines(&me.door_program()) {
             eprintln!("{line}");
         }
