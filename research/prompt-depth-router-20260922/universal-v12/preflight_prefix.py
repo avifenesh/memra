@@ -118,11 +118,13 @@ def experiment(rows, length):
 
 
 def build(v9_new, v9_old, v9_k_manifest, v9_table, v11_rows,
-          prose_rows):
+          prose_rows, prose_replay):
     code_new, _, noncode, _, _ = previous.read_inputs(
         v9_new, v9_old, v9_k_manifest, v9_table, v11_rows,
     )
-    fresh, _, _ = fit_shared.read_prose(prose_rows)
+    fresh, _, _ = fit_shared.read_prose(
+        prose_rows, prose_replay,
+    )
     rows = {
         "code": code_new["k"],
         "prose": fresh["k"],
@@ -152,6 +154,8 @@ def build(v9_new, v9_old, v9_k_manifest, v9_table, v11_rows,
         previous.sha(v11_rows / "manifest.json"),
         "v12_prose_training_manifest_sha256":
         previous.sha(prose_rows / "manifest.json"),
+        "v12_prose_training_replay_sha256":
+        previous.sha(prose_replay),
         "experiments": results,
     }
 
@@ -160,13 +164,13 @@ def main():
     parser = argparse.ArgumentParser()
     for name in (
         "v9-new", "v9-old", "v9-k-manifest", "v9-table",
-        "v11-rows", "prose-rows", "out",
+        "v11-rows", "prose-rows", "prose-replay", "out",
     ):
         parser.add_argument("--" + name, type=Path, required=True)
     args = parser.parse_args()
     result = build(
         args.v9_new, args.v9_old, args.v9_k_manifest, args.v9_table,
-        args.v11_rows, args.prose_rows,
+        args.v11_rows, args.prose_rows, args.prose_replay,
     )
     previous.save(args.out, result)
     print(json.dumps({

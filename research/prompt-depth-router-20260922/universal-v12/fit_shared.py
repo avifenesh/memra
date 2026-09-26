@@ -23,15 +23,27 @@ SOURCES = ("mixed-fresh", "augmented-fresh", "prose-balanced")
 KINDS = ("k", "d", "c")
 
 
-def read_prose(path):
+def read_prose(path, replay_path):
     manifest_path = path / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
+    replay = json.loads(replay_path.read_text())
     if (
         manifest["schema"] != 1
         or manifest["use"] != "training-only"
         or manifest["training_workloads_sha256"] != TRAIN_SHA
         or manifest["source_full_manifest_sha256"] != FULL_SHA
         or manifest["expected_training_sessions"] != 112
+        or replay["schema"] != 1
+        or replay["status"]
+        != "fresh-prose-training-native-K-D-C-replay-match"
+        or replay["training_workloads_sha256"] != TRAIN_SHA
+        or replay["source_full_manifest_sha256"] != FULL_SHA
+        or replay["training_rows_manifest_sha256"]
+        != previous.sha(manifest_path)
+        or replay["row_counts"] != {
+            kind: manifest["rows"][kind]["count"]
+            for kind in KINDS
+        }
     ):
         raise ValueError("fresh prose rows lack randomized training lineage")
     result = {}
@@ -87,13 +99,15 @@ def pooled_reference(rows):
 
 
 def build(v9_new, v9_old, v9_k_manifest, v9_table, v11_rows,
-          prose_rows, out):
+          prose_rows, prose_replay, out):
     code_new, code_old, noncode, classes, references = (
         previous.read_inputs(
             v9_new, v9_old, v9_k_manifest, v9_table, v11_rows,
         )
     )
-    fresh, prose_classes, prose_reference = read_prose(prose_rows)
+    fresh, prose_classes, prose_reference = read_prose(
+        prose_rows, prose_replay,
+    )
     merge_classes(classes, prose_classes)
     references["v12-prose"] = prose_reference
     out.mkdir(parents=True, exist_ok=False)
@@ -108,6 +122,8 @@ def build(v9_new, v9_old, v9_k_manifest, v9_table, v11_rows,
         previous.sha(v11_rows / "manifest.json"),
         "v12_prose_training_manifest_sha256":
         previous.sha(prose_rows / "manifest.json"),
+        "v12_prose_training_replay_sha256":
+        previous.sha(prose_replay),
         "v12_workload_training_projection_sha256": TRAIN_SHA,
         "source_reference_tok_s": references,
         "models": [],
@@ -183,13 +199,14 @@ def main():
     parser = argparse.ArgumentParser()
     for name in (
         "v9-new", "v9-old", "v9-k-manifest", "v9-table",
-        "v11-rows", "prose-rows", "out",
+        "v11-rows", "prose-rows", "prose-replay", "out",
     ):
         parser.add_argument("--" + name, type=Path, required=True)
     args = parser.parse_args()
     result = build(
         args.v9_new, args.v9_old, args.v9_k_manifest, args.v9_table,
-        args.v11_rows, args.prose_rows, args.out,
+        args.v11_rows, args.prose_rows, args.prose_replay,
+        args.out,
     )
     print(json.dumps({
         group["source"]: group["training_rows"]

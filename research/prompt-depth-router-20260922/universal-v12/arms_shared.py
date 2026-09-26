@@ -107,7 +107,8 @@ def arm(label, role, k, mode, cap, *extra, noop_label=None,
     return entry
 
 
-def freeze(models, v11_rows, prose_rows, preflight_path, out):
+def freeze(models, v11_rows, prose_rows, prose_replay,
+           preflight_path, out):
     models = models.resolve()
     manifest, files = model_inventory(models)
     preflight = json.loads(preflight_path.read_text())
@@ -116,6 +117,8 @@ def freeze(models, v11_rows, prose_rows, preflight_path, out):
         != manifest["v11_training_manifest_sha256"]
         or sha(prose_rows / "manifest.json")
         != manifest["v12_prose_training_manifest_sha256"]
+        or sha(prose_replay)
+        != manifest["v12_prose_training_replay_sha256"]
         or preflight["schema"] != 1
         or preflight["status"] != "training-prefix-visible"
         or preflight["no_field_route"] is not True
@@ -127,6 +130,8 @@ def freeze(models, v11_rows, prose_rows, preflight_path, out):
         != manifest["v11_training_manifest_sha256"]
         or preflight["v12_prose_training_manifest_sha256"]
         != manifest["v12_prose_training_manifest_sha256"]
+        or preflight["v12_prose_training_replay_sha256"]
+        != manifest["v12_prose_training_replay_sha256"]
     ):
         raise ValueError("mixed candidate training or prefix preflight differs")
     cutoffs = quantiles(v11_rows, prose_rows)
@@ -200,6 +205,8 @@ def freeze(models, v11_rows, prose_rows, preflight_path, out):
         "v11_training_rows_sha256": sha(v11_rows / "manifest.json"),
         "v12_prose_training_rows_sha256":
         sha(prose_rows / "manifest.json"),
+        "v12_prose_training_replay_sha256":
+        sha(prose_replay),
         "training_prefix_preflight_sha256": sha(preflight_path),
         "fixed_c_quantiles": cutoffs,
         "domains": ["code", "prose", "math"],
@@ -220,13 +227,16 @@ def freeze(models, v11_rows, prose_rows, preflight_path, out):
 
 def main():
     parser = argparse.ArgumentParser()
-    for name in ("models", "v11-rows", "prose-rows", "preflight", "out"):
+    for name in (
+        "models", "v11-rows", "prose-rows", "prose-replay",
+        "preflight", "out",
+    ):
         parser.add_argument("--" + name, type=Path, required=True)
     args = parser.parse_args()
     print(json.dumps(
         freeze(
             args.models, args.v11_rows, args.prose_rows,
-            args.preflight, args.out,
+            args.prose_replay, args.preflight, args.out,
         ),
         sort_keys=True,
     ))

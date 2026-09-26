@@ -27,7 +27,7 @@ def sha(path):
     return value.hexdigest()
 
 
-def replay(archive, manifest_path):
+def replay(archive, manifest_path, rows_out):
     manifest = json.loads(manifest_path.read_text())
     if (
         manifest["schema"] != 1
@@ -111,8 +111,12 @@ def replay(archive, manifest_path):
                 or sha(root / "source" / name) != expected
             ):
                 raise ValueError("sealed native source changed after run metadata")
-        data, classes, excluded = measurement_rows_prose.extract(
+        rows_manifest = measurement_rows_prose.build(
             root / "native/training-prose-results", workloads,
+            rows_out,
+        )
+        classes = json.loads(
+            (rows_out / "token-classes.json").read_text()
         )
     return {
         "schema": 1,
@@ -123,14 +127,17 @@ def replay(archive, manifest_path):
         "members": members,
         "sessions": 112,
         "row_counts": {
-            kind: len(rows) for kind, rows in data.items()
+            kind: item["count"]
+            for kind, item in rows_manifest["rows"].items()
         },
         "token_byte_classes": len(classes),
-        "excluded_looped": {
-            key: value for key, value in excluded.items()
-            if key != "reference_tok_s"
-        },
-        "reference_tok_s": excluded["reference_tok_s"],
+        "excluded_looped": rows_manifest["excluded_looped"],
+        "reference_tok_s": rows_manifest["reference_tok_s"][
+            "v12-prose"
+        ],
+        "training_rows_manifest_sha256": sha(
+            rows_out / "manifest.json"
+        ),
     }
 
 
@@ -138,9 +145,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--rows-out", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
-    result = replay(args.archive.resolve(), args.manifest.resolve())
+    result = replay(
+        args.archive.resolve(), args.manifest.resolve(),
+        args.rows_out.resolve(),
+    )
     with args.out.open("x") as output:
         json.dump(result, output, indent=2, sort_keys=True)
         output.write("\n")
