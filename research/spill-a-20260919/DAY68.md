@@ -60,3 +60,30 @@ GPU. Both registrations said "the 5090 half follows"; this file fixes how, befor
   the day-35 5090 environment DAY45 names.
 - It queues after the two halves, in its own hold, with DAY45's bounded wait. DAY45's regime check and placing rule
   read it.
+
+## 4. S4's and V's owed 5090 halves (OWED items 4 and 6), registered before they run
+
+- DAY48 and DAY47 left both halves to wait for the card's reset. They run the same way as section 1.
+- **S4:** its target sitting's tip `a0f9968e3` (s2 arm), g4 `b4816eda8`, and gpp `358749c9f` (the hump control), with
+  `pro-single-s2/`'s own scripts from that tip. The target's `run-all-4.sh` ran exactly these.
+- **V:** tree `ccfd26af0`, base `bbd2535b6` (S4's program), with `pro-single-v/`'s scripts from that tree.
+  - `ccfd26af0` is V's target tip `a324503df` plus the revised pause gate of DAY47 section 3a, and its crates are
+    byte-identical to `a324503df`'s (`git diff --stat a324503df ccfd26af0 -- crates tools` names only
+    `tools/kv-host-pause-demote-gate.sh`).
+  - So the gates cell reads the day-36 set and the revised pause gate in one pass. That matches the target's accepted
+    (a) and (b): the day-36 set from `a324503df`, and the pause gate from its section 3b re-run.
+- **Derivation:** `rtx5090-derive.py`, with the same exact replacements as section 1. It adds one replacement: the unit
+  cells' `cargo test` runs under the rig's CPU cap (the box ran the prebuilt test binaries through cargo under its hold;
+  the build step builds them here the same way). The derived R1 and L' scripts are unchanged by the added halves.
+- **The holds follow the target drivers' own split** (`rtx5090-half-sv.sh`). The hit gate takes its own flock, so:
+  - hold A runs the cells before it (S4: `ab-demote`, `ab-promote`, `hump-cell`, `gates`; V: `ab-pause`, `gates`);
+  - the hold is released for `hitgate.sh`, which takes the rig's lock itself (its own 15 x 120 s retry);
+  - hold B runs the cells after it (both: `unit-cell`; S4: `trace-cell`, Nsight Systems being on this host).
+  - Each hold uses section 1's bounded wait and idle rule.
+- **What they read.** Each target cell script's own reader runs inside it: `day42-reading.py` demote and promote,
+  `day38-hump-reading.py`, `day42-trace-reading.py`, `day47-reading.py`. Each gate's `.exit` and the unit cells' line
+  complete the reading. The bounds are unchanged: S4's (a) to (e) (DAY48 section 1 over DAY42's), and V's (a) to (d)
+  (DAY47 section 1).
+- **What a result decides:** as section 2.
+- **Order and card time:** after item 16, S4 (about 1.5 h) then V (about 1 h). All builds finish before the chain
+  starts, so none of this lane's builds runs inside any of its holds.

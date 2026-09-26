@@ -18,31 +18,42 @@ CAP = "systemd-run --user --scope -q -p CPUQuota=1200% -p MemoryMax=20G cargo"
 HALVES = {
     "r1": ("15d7ed351", "pro-single-r1", "a-r1", "lane-a-r1", ["build", "gates", "ab"]),
     "l2": ("21984b527", "pro-single-l2", "a-l2", "lane-a-l2", ["build", "gates", "gates-red", "unit-cells", "ab"]),
+    # DAY68 section 4: S4's half on its target tip; V's on ccfd26af0 (V's tip a324503df plus the revised pause gate
+    # of DAY47 section 3a; the crates identical).
+    "s4": ("a0f9968e3", "pro-single-s2", "a-s2", "lane-a-s2-tip",
+           ["build", "ab-demote", "ab-promote", "hump", "gates", "hitgate", "unit-cells", "trace"]),
+    "v": ("ccfd26af0", "pro-single-v", "a-v", "lane-a-v-tip", ["build", "ab-pause", "gates", "hitgate", "unit-cells"]),
 }
+LATER = ("s4", "v")
 
 
-def reps(name, receipts, branch):
+def reps(name, receipts, branch, later=False):
     """(old, new, required) for one script."""
     common = [
         (f"R=/root/spill-receipts/{receipts}\n", "R=${A_OUT:?}\n", True),
         ("export PATH=/root/.cargo/bin:/usr/local/cuda/bin:$PATH\n", "export PATH=/usr/local/cuda/bin:$PATH\n", True),
         ("/tmp/memra-gpu.lock", "/tmp/memra-5090.lock", name != "build"),
-        (MODEL_DEFAULT, "${MEMRA_DAY38_MODEL:?}", name not in ("build",)),
+        (MODEL_DEFAULT, "${MEMRA_DAY38_MODEL:?}", name not in ("build", "unit-cells")),
     ]
     if name == "build":
         return common + [
             ("[ -d /root/wt-a/.git ] || git clone -q --filter=blob:none https://github.com/avifenesh/memra.git "
-             "/root/wt-a >> \"$L\" 2>&1\n", "", True),
+             "/root/wt-a >> \"$L\" 2>&1\n", "", not later),
             ("cd /root/wt-a || exit 1\n", "cd \"${A_TREE:?}\" || exit 1\n", True),
             ("git fetch -q origin lane/spill-a-20260919 >> \"$L\" 2>&1\n", "", True),
             (f"git checkout -q -B {branch} \"$1\"", "git checkout -q --detach \"$1\"", True),
             ("nice -n 5 cargo", CAP, True),
             ("cp target/release/memra-server", "cp \"${CARGO_TARGET_DIR:?}/release/memra-server\"", True),
+            ("cmp -s target/release/memra-server", "cmp -s \"${CARGO_TARGET_DIR:?}/release/memra-server\"", False),
         ]
-    return common + [
+    tail = [
         ("cd /root/wt-a || exit 1\n", "cd \"${A_TREE:?}\" || exit 1\n", False),
         ("cd /root/wt-a\n", "cd \"${A_TREE:?}\" || exit 1\n", False),
     ]
+    if later and name == "unit-cells":
+        # The box ran the prebuilt test binaries through cargo under the hold; here cargo runs under the rig's cap.
+        tail.append(("cargo test -p", CAP + " test -p", True))
+    return common + tail
 
 
 def main():
@@ -51,7 +62,7 @@ def main():
         for name in names:
             text = subprocess.run(["git", "show", f"{tip}:{REL}/{src}/{name}.sh"], capture_output=True, text=True,
                                   check=True, cwd=HERE).stdout
-            for old, new, required in reps(name, receipts, branch):
+            for old, new, required in reps(name, receipts, branch, half in LATER):
                 n = text.count(old)
                 if required and n == 0:
                     sys.exit(f"REFUSED: {half}/{name}.sh: replacement did not match: {old!r}")
@@ -59,7 +70,7 @@ def main():
             if "cd \"${A_TREE:?}\"" not in text:
                 sys.exit(f"REFUSED: {half}/{name}.sh: no tree cd replaced")
             code = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
-            for banned in ("/root/", "memra-gpu.lock", "nice -n 5"):
+            for banned in ("/root/", "memra-gpu.lock", "nice -n 5", "target/release"):
                 if banned in code:
                     sys.exit(f"REFUSED: {half}/{name}.sh still carries {banned!r}")
             lines = text.split("\n", 1)
