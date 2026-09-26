@@ -4151,6 +4151,21 @@ per enqueue, on every path; nothing decides on them) and printed on the fanout's
   clean (`86f6b4478`) and both batteries ran again on it: CPU 15 of 15 rc=0 (`integ65-cpu-battery-main730/`, server
   942, engine lib 573); GPU on BOX31 (`integ65-pro-main730/`, 467 receipts mirrored and checked), binary `8ba7f6b1`,
   one hold 02:42Z to 02:57Z, every cell green as above and the pause gate `ALL GREEN` (40 ok).
+- **Second revuto finding (review at `3214d1e13`): the DAY59 fanout split collected strays.** The fanout took
+  `PREFIX_COPY_SPLIT` after its own snapshot, and the other owner-thread snapshot and restore callers feed the same
+  accumulator, so their time could land in the next fanout's line. A's DAY66 (pre-registered `79e019d9a`, code
+  `4af38426e`): the fanout's snapshot runs in `prefix_copy_scoped`, which discards the leftover first; the CPU cell
+  `day66_a_stray_copy_before_a_fanout_never_reaches_its_split` passes, and the red arm (the discard skipped, marker
+  checked in the binary) fails it (`the stray calls stay out of the scoped split`). A's reading of the risk to DAY59's
+  selection: every timed call increments its kind's count, the 27B's layout fixes the clean counts (the snapshot's 32
+  allocations, 32 copies, 96 clones; the three sibling restores' 384 copies and 48 length sets), and all 100 split lines
+  in BOX31's receipts carry exactly those counts, so no line took a stray and `DAY59 SELECT -> DESIGN B1 (batched
+  copies)` stands. A's DAY60 (item 11) is also in this merge as records: `DAY29 CELL(i) CLAUSE: NOT MET`, as its
+  pre-registration expected; the class-isolating replacement cell is registered as text for the owner. B1's own code
+  (`e522a9417`) is not in integ65: it waits for its target-card verdict.
+- Both batteries on `c298fd936` (A's `9ab479d9c` merged): CPU 15 of 15 (`integ65-cpu-battery-day66/`, server 943); GPU
+  on BOX31 (`integ65-pro-day66/`, 467 receipts mirrored and checked), binary `921a2098`, one hold 04:49Z to 05:01Z,
+  every cell green as above and the pause gate `ALL GREEN` (40 ok).
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.

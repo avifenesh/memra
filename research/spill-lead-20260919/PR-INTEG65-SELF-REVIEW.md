@@ -39,3 +39,9 @@ deterministic cell that fails on the old path. I read the F2b diff: production p
 reserve sites and the guard releases both gauges where taken. The merge also brings A's log-only fanout copy timers
 (two clock reads per device enqueue in snapshot and restore, on every path, printed only on the fanout line). CPU
 battery 15 of 15 (server 941) and the GPU battery rerun all green on the merged tree.
+
+## Second addendum after revuto
+Revuto's second review cleared F2b and found the DAY59 fanout split could collect strays. A's DAY66 scopes the fanout's
+snapshot collection (discard first) with a CPU cell and a failing red arm; I checked A's count argument against the
+mirrored receipts' line shapes, so the B1 selection stands. B1's code is not merged here. Both batteries green again on
+the merged tree (server 943).
