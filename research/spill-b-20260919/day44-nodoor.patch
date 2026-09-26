@@ -577,7 +577,7 @@ index f405d3dac..7ad27f34e 100644
          // A one-off restored suffix or boundary tail cannot amortize capture.
          // It executes the identical eager chunk rather than padding/reusing a graph.
 diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
-index 04967d828..774bc7851 100644
+index d4c4de2a5..774bc7851 100644
 --- a/crates/memra-engine/src/spec.rs
 +++ b/crates/memra-engine/src/spec.rs
 @@ -1606,10 +1606,6 @@ pub struct SpecSession {
@@ -607,10 +607,36 @@ index 04967d828..774bc7851 100644
              // Stable-boundary capture from the split feed above (None on the legacy shape):
              // a restored session previously parked WITHOUT a checkpoint, so the next turn's
              // affinity probe declined ("no turn checkpoint retained") and the conversation
-@@ -10127,38 +10121,6 @@ impl HybridModel {
+@@ -10127,64 +10121,6 @@ impl HybridModel {
          Ok(Some(ckpt.pos))
      }
  
+-    /// EXACT RESUME SETTLE (WP-B day 44): prime `tokens` onto the session with the MTP walker's
+-    /// trunk and draft fill only (no boundary token, no init feed, no draft preparation), and
+-    /// commit them. Every committed row is then a prime-program row, so a later prime from the
+-    /// session's end is cold-exact by the grid law when the session ends on the grid.
+-    pub fn spec_prime_settle(
+-        &self,
+-        e: &Engine,
+-        sess: &mut SpecSession,
+-        tokens: &[u32],
+-    ) -> Result<(), Box<dyn std::error::Error>> {
+-        if tokens.len() < crate::hybrid_forward::PRIME_MIN_T {
+-            return Err("settle prime below PRIME_MIN_T".into());
+-        }
+-        if sess.pending_tok.is_some() {
+-            return Err("settle on a session with a carried pending token".into());
+-        }
+-        let mut state = Some(self.mtp_prime_start(e, sess, tokens, 1, None, None)?);
+-        if let Some(s) = state.as_mut() {
+-            s.set_prime_only();
+-        }
+-        let mut walker = self.mtp_prime_walker(e, sess, &mut state, None);
+-        crate::prime_walker::advance_prime(&mut walker, false, |_, _| {})?;
+-        crate::prime_walker::finish_prime(walker)?;
+-        Ok(())
+-    }
+-
 -    /// `spec_rewind_to_checkpoint` that keeps the turn checkpoint on the session afterwards
 -    /// (WP-B day 44, the exact resume): the restore only copies FROM the snapshot, so the same
 -    /// checkpoint stays valid for a later rewind until the next prime walk captures a newer one.
@@ -646,7 +672,7 @@ index 04967d828..774bc7851 100644
      /// Grow a parked speculative session to `target_cap` and rewind it to its retained turn
      /// checkpoint without re-priming the checkpoint prefix.
      ///
-@@ -11688,7 +11650,6 @@ impl HybridModel {
+@@ -11714,7 +11650,6 @@ impl HybridModel {
                      prime_ready: _,
                      budget_room: s_budget_room,
                      budget_clamp_fired,
@@ -655,10 +681,10 @@ index 04967d828..774bc7851 100644
                  budget_room = s_budget_room.take();
                  *budget_clamp_fired = None;
 diff --git a/crates/memra-engine/src/spec/prime.rs b/crates/memra-engine/src/spec/prime.rs
-index 35091c2c9..488eacb69 100644
+index dace140b5..488eacb69 100644
 --- a/crates/memra-engine/src/spec/prime.rs
 +++ b/crates/memra-engine/src/spec/prime.rs
-@@ -45,11 +45,6 @@ pub struct MtpPrimeState {
+@@ -45,15 +45,6 @@ pub struct MtpPrimeState {
      logits: Vec<f32>,
      capture_at: Option<usize>,
      ckpt_rel: Option<usize>,
@@ -667,10 +693,23 @@ index 35091c2c9..488eacb69 100644
 -    /// keeps the legacy prompt-end checkpoint from overwriting it.
 -    grid_rel: Option<usize>,
 -    grid_requested: bool,
+-    /// EXACT RESUME SETTLE (WP-B day 44): trunk and draft fill only; no boundary token, no init
+-    /// feed (a T=1 decode row), no draft preparation. `finish` commits the prompt rows to the
+-    /// session directly, so every committed row is a prime-program row.
+-    prime_only: bool,
      k: usize,
      sampling: SpecSampling,
      graph_draft: bool,
-@@ -63,7 +58,6 @@ impl MtpPrimeState {
+@@ -63,16 +54,10 @@ pub struct MtpPrimeState {
+ }
+ 
+ impl MtpPrimeState {
+-    /// WP-B day 44: the settle's walk (trunk and fill only).
+-    pub(crate) fn set_prime_only(&mut self) {
+-        self.prime_only = true;
+-    }
+-
+     /// WP-B day 39 addendum B: the walker has not yet run the chunk that ends on its turn
      /// checkpoint row, so that checkpoint's `Cache::snapshot` is still owed.
      pub fn owes_turn_checkpoint(&self) -> bool {
          self.ckpt_rel
@@ -678,7 +717,7 @@ index 35091c2c9..488eacb69 100644
              .is_some_and(|r| self.chunks.get(self.cursor).is_some_and(|c| c.start < r))
      }
  }
-@@ -297,12 +291,6 @@ impl HybridModel {
+@@ -306,12 +291,6 @@ impl HybridModel {
              .take()
              .and_then(|b| b.checked_sub(base))
              .filter(|&b| b > 0 && b < tp);
@@ -691,16 +730,17 @@ index 35091c2c9..488eacb69 100644
          let first = prime_split.into_iter().chain(ckpt_rel).min();
          if first == prime_split && first.is_some_and(|b| b < crate::hybrid_forward::PRIME_MIN_T) {
              return Err("MTP prime split below PRIME_MIN_T".into());
-@@ -344,8 +332,6 @@ impl HybridModel {
+@@ -353,9 +332,6 @@ impl HybridModel {
              logits: Vec::new(),
              capture_at: sess.capture_at.take(),
              ckpt_rel,
 -            grid_rel,
 -            grid_requested,
+-            prime_only: false,
              k,
              sampling: resolve_spec_sampling(sampling),
              graph_draft,
-@@ -377,17 +363,6 @@ impl MtpPrimeWalker<'_> {
+@@ -387,17 +363,6 @@ impl MtpPrimeWalker<'_> {
          let s = self.state.as_mut().ok_or("MTP prime already finalized")?;
          let n = self.model.cfg.n_embd as usize;
          let h_all = s.hiddens.as_mut().ok_or("MTP hidden stack missing")?;
@@ -718,7 +758,7 @@ index 35091c2c9..488eacb69 100644
          if chunk.batched {
              let (logits, seed, h) = self.model.prime_chunk(
                  self.e,
-@@ -406,28 +381,6 @@ impl MtpPrimeWalker<'_> {
+@@ -416,28 +381,6 @@ impl MtpPrimeWalker<'_> {
                  .copy_into(h_all, chunk.start * n, &h, (chunk.end - chunk.start) * n)?;
              drop(seed);
              s.logits = logits;
@@ -747,7 +787,7 @@ index 35091c2c9..488eacb69 100644
          } else {
              for i in chunk.start..chunk.end {
                  let (logits, h) = if chunk.target_step {
-@@ -495,7 +448,7 @@ impl MtpPrimeWalker<'_> {
+@@ -505,7 +448,7 @@ impl MtpPrimeWalker<'_> {
                  latent_tails: Vec::new(),
              });
          }
@@ -756,16 +796,52 @@ index 35091c2c9..488eacb69 100644
              let anchor = self.e.uninit(n).and_then(|mut a| {
                  self.e
                      .copy_view_into(&mut a, 0, &h.slice((tp - 1) * n..tp * n), n)?;
-@@ -764,8 +717,6 @@ mod tests {
+@@ -520,10 +463,6 @@ impl MtpPrimeWalker<'_> {
+                 _ => None,
+             };
+         }
+-        if s.prime_only {
+-            // WP-B day 44: the settle's walk ends here: no boundary token, no init feed.
+-            return Ok(());
+-        }
+         let sp = s.sampling;
+         let pen_on = sp.temp > 0.0
+             && sp.penalty_last_n > 0
+@@ -740,23 +679,6 @@ impl PrimeWalker for MtpPrimeWalker<'_> {
+             return Err("MTP prime incomplete".into());
+         }
+         let mut s = self.state.take().ok_or("MTP prime already finalized")?;
+-        if s.prime_only {
+-            // WP-B day 44 (the exact resume's settle): commit the primed rows directly. The
+-            // session holds exactly `committed` under the prime program; `last_h` is the hidden
+-            // of the last row (the next prime's fill anchor), `next_pred` the prime logits' argmax.
+-            let n = self.model.cfg.n_embd as usize;
+-            let tp = s.prompt.len();
+-            let h = s.hiddens.as_ref().ok_or("MTP hidden stack missing")?;
+-            let mut last_h = self.e.uninit(n)?;
+-            self.e
+-                .copy_view_into(&mut last_h, 0, &h.slice((tp - 1) * n..tp * n), n)?;
+-            self.sess.committed.extend_from_slice(&s.prompt);
+-            self.sess.last_h = Some(last_h);
+-            self.sess.next_pred = Some(argmax(&s.logits) as u32);
+-            self.sess.pending_tok = None;
+-            debug_assert_eq!(self.sess.cache.pos, self.sess.committed.len());
+-            return Ok(());
+-        }
+         let mut ready = s.prepared.take().ok_or("MTP setup incomplete")?;
+         ready.hiddens = s.hiddens.take();
+         ready.wall = s.wall;
+@@ -795,9 +717,6 @@ mod tests {
              logits: Vec::new(),
              capture_at: None,
              ckpt_rel,
 -            grid_rel: None,
 -            grid_requested: false,
+-            prime_only: false,
              k: 1,
              sampling: resolve_spec_sampling(None),
              graph_draft: false,
-@@ -780,12 +731,6 @@ mod tests {
+@@ -812,12 +731,6 @@ mod tests {
          );
          assert!(!state(Some(1024), 2).owes_turn_checkpoint());
          assert!(!state(None, 0).owes_turn_checkpoint());
@@ -1062,7 +1138,7 @@ index 352d479e3..000000000
 -    );
 -}
 diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
-index 09de61318..06cf7d56c 100644
+index 59521703d..06cf7d56c 100644
 --- a/crates/memra-server/src/worker.rs
 +++ b/crates/memra-server/src/worker.rs
 @@ -2278,17 +2278,6 @@ struct ReuseEntry {
@@ -1287,7 +1363,7 @@ index 09de61318..06cf7d56c 100644
                  cache_snapshot_bytes(cache)
              }
              _ => 0,
-@@ -15240,221 +15060,6 @@ fn reclaim_offtick_pass(
+@@ -15240,213 +15060,6 @@ fn reclaim_offtick_pass(
  /// set reaches the host whether or not the arrival that queued it is still waiting. A queued entry
  /// that is no longer evictable (leased, hit or evicted meanwhile) is skipped; a refused submission
  /// dropped its entry (its bytes free now) and the next is tried. Returns the entries removed.
@@ -1449,7 +1525,8 @@ index 09de61318..06cf7d56c 100644
 -}
 -
 -/// The spec settle: rewind to the turn checkpoint, prime the public stream's rows up to `S` with
--/// no decode (the MTP walker then a zero-round burst, the session tail committing them).
+-/// the MTP walker's trunk and draft fill only (`spec_prime_settle`: no boundary token, no init
+-/// feed), so every committed row is a prime-program row.
 -fn exact_settle_spec(
 -    engine: &Engine,
 -    lm: &LoadedModel,
@@ -1476,16 +1553,7 @@ index 09de61318..06cf7d56c 100644
 -        return Err("fault injection (MEMRA_RESUME_EXACT_FAULT=settle-fail)".into());
 -    }
 -    lm.model
--        .generate_spec_session_sampled_prime_split(
--            engine,
--            &mut e.sess,
--            &tokens,
--            0,
--            spec_k_pin().filter(|&k| k > 0).unwrap_or(3),
--            None,
--            None,
--            None,
--        )
+-        .spec_prime_settle(engine, &mut e.sess, &tokens)
 -        .map_err(|err| format!("prime failed: {err}"))?;
 -    if e.sess.committed.len() != to {
 -        return Err(format!(
@@ -1509,7 +1577,7 @@ index 09de61318..06cf7d56c 100644
  fn reclaim_queue_drain(
      engine: &Engine,
      px: &mut PrefixCache,
-@@ -24340,9 +23945,6 @@ struct Session {
+@@ -24332,9 +23945,6 @@ struct Session {
      /// The captured plain checkpoint, taken when prefill crosses `ckpt_at`. Moved into the parked
      /// `ReuseEntry` at retire. `None` until the boundary is crossed (or if capture failed silently).
      ckpt_snap: Option<PlainCheckpoint>,
@@ -1519,7 +1587,7 @@ index 09de61318..06cf7d56c 100644
      /// The LCP sample recorded for a cold prefix-cache miss at admission. Same-window
      /// fanout siblings rewrite this provisional miss into a hit after the leader primes.
      prefix_miss_lcp: Option<usize>,
-@@ -26288,9 +25890,6 @@ pub fn run(
+@@ -26280,9 +25890,6 @@ pub fn run(
      let mut vmm_pending = false;
      // WP-B day 42 addendum E (MEMRA_ADMIT_RECLAIM_OFFTICK): the worker's off-tick demote queue.
      let mut reclaim_queue = ReclaimQueue::default();
@@ -1529,7 +1597,7 @@ index 09de61318..06cf7d56c 100644
      // Served-path receipts (lane/dspark-sampled-wave-20260825): admission-time route
      // classification, published to /metrics for the deploy gate's sampled probe.
      let mut n_served_dspark = 0u64;
-@@ -26525,7 +26124,6 @@ pub fn run(
+@@ -26517,7 +26124,6 @@ pub fn run(
                  && hpx.restoring.is_none()
                  && !vmm_pending
                  && reclaim_queue.ids.is_empty()
@@ -1537,7 +1605,7 @@ index 09de61318..06cf7d56c 100644
              {
                  // Do not let an already-arrived request sit behind an idle-only probe. Once the
                  // channel is observed empty, one pending expensive rung may run before the worker
-@@ -26608,24 +26206,6 @@ pub fn run(
+@@ -26600,24 +26206,6 @@ pub fn run(
                  if !reclaim_queue.ids.is_empty() {
                      wait = wait.min(Duration::from_millis(2));
                  }
@@ -1562,7 +1630,7 @@ index 09de61318..06cf7d56c 100644
                  match rx.recv_timeout(wait) {
                      Ok(cmd) => handle_cmd(
                          cmd,
-@@ -26642,10 +26222,6 @@ pub fn run(
+@@ -26634,10 +26222,6 @@ pub fn run(
                  }
              }
          }
@@ -1573,7 +1641,7 @@ index 09de61318..06cf7d56c 100644
          // BUSY PHASE: work is in flight, so the beat MUST advance every iteration. The
          // stamp is a bare atomic store (no mutex, no syscall) — unlike the metrics publish
          // below it is NOT throttled, because a heartbeat sampled every 32nd tick would give
-@@ -26717,8 +26293,6 @@ pub fn run(
+@@ -26709,8 +26293,6 @@ pub fn run(
          // bytes straight back into host RAM. Worker-thread execution, same reason as
          // trim: the pools live in this scope and the sweep must not race a demote.
          for (tenant, tx) in pending_purges.drain(..) {
@@ -1582,7 +1650,7 @@ index 09de61318..06cf7d56c 100644
              release_promoted_pin_for_tenant(&mut hpx, &mut px, &tenant);
              // WP-A day 21: the `Restoring` request settles first and the purged tenant's is dropped
              // (cache freed, pin released) before either index purges.
-@@ -29768,8 +29342,6 @@ pub fn run(
+@@ -29760,8 +29342,6 @@ pub fn run(
                              // plain-affinity checkpoint capture needs the same per-session
                              // boundary stop the concat prime cannot honor — prime alone.
                              && s.ckpt_at.is_none()
@@ -1591,7 +1659,7 @@ index 09de61318..06cf7d56c 100644
                              // the grid-aligned seed boundary (memra#602) is the same class
                              // when it stops inside the prompt; a seed at the prompt end is not
                              // a stop and keeps the concat prime.
-@@ -30382,7 +29954,6 @@ pub fn run(
+@@ -30374,7 +29954,6 @@ pub fn run(
                          || s.capture.is_some()
                          || s.snapshot_at.is_some()
                          || s.ckpt_at.is_some()
@@ -1599,7 +1667,7 @@ index 09de61318..06cf7d56c 100644
                          || seed_boundary_inside_prompt(
                              s.seed_at,
                              s.fed.len() + s.prefill_queue.len(),
-@@ -30827,22 +30398,10 @@ pub fn run(
+@@ -30819,22 +30398,10 @@ pub fn run(
                                  );
                              }
                          }
@@ -1622,7 +1690,7 @@ index 09de61318..06cf7d56c 100644
                                  public_len,
                                  sess,
                                  committed_text,
-@@ -30991,16 +30550,6 @@ pub fn run(
+@@ -30983,16 +30550,6 @@ pub fn run(
                                      );
                                  }
                              }
@@ -1639,7 +1707,7 @@ index 09de61318..06cf7d56c 100644
                              reuse.entry(pool_key).or_default().push(ReuseEntry {
                                  fed: s.fed,
                                  cache,
-@@ -31010,8 +30559,6 @@ pub fn run(
+@@ -31002,8 +30559,6 @@ pub fn run(
                                  affinity,
                                  fingerprint,
                                  parked_at: Instant::now(),
@@ -1648,7 +1716,7 @@ index 09de61318..06cf7d56c 100644
                              });
                          }
                      }
-@@ -33053,9 +32600,6 @@ fn admit(
+@@ -33045,9 +32600,6 @@ fn admit(
      // prompt (and whose cache has room) resumes — only the suffix gets primed. The sampler's
      // penalty history is replayed on host (cheap) so sampling matches a cold run exactly.
      let mut reused: Option<ReuseEntry> = None;
@@ -1658,7 +1726,7 @@ index 09de61318..06cf7d56c 100644
      // DEFAULT-ON (2026-07-05): the identity gate now exists at the engine level — session-gate
      // (bins) pins 3-turn continuation-prime output == fresh-greedy oracle on both models, and the
      // continuation path the reuse pool takes (prime_cache with cache.pos>0 / decode_step) is
-@@ -33145,13 +32689,6 @@ fn admit(
+@@ -33137,13 +32689,6 @@ fn admit(
      // GRID REWIND (MEMRA_RESUME_GRID_REWIND, WP-B day 41): the exact-extension hit resumes from the
      // entry's grid checkpoint, not from its decoded rows; no usable checkpoint drops the entry and
      // the request primes cold. Unset, nothing here runs.
@@ -1672,7 +1740,7 @@ index 09de61318..06cf7d56c 100644
      if resume_grid_rewind_on()
          && let Some(e) = reused.take()
      {
-@@ -33673,8 +33210,6 @@ fn admit(
+@@ -33665,8 +33210,6 @@ fn admit(
                      affinity: None,
                      fingerprint: Vec::new(),
                      parked_at: Instant::now(),
@@ -1681,7 +1749,7 @@ index 09de61318..06cf7d56c 100644
                  })
              } else {
                  let e = &px.entries[&pool_key][i];
-@@ -33705,8 +33240,6 @@ fn admit(
+@@ -33697,8 +33240,6 @@ fn admit(
                                      affinity: None,
                                      fingerprint: Vec::new(),
                                      parked_at: Instant::now(),
@@ -1690,7 +1758,7 @@ index 09de61318..06cf7d56c 100644
                                  }
                              }),
                              Err(err) => Err(format!("restore failed: {err}")),
-@@ -33879,8 +33412,6 @@ fn admit(
+@@ -33871,8 +33412,6 @@ fn admit(
                                          affinity: None,
                                          fingerprint: Vec::new(),
                                          parked_at: Instant::now(),
@@ -1699,7 +1767,7 @@ index 09de61318..06cf7d56c 100644
                                      })
                                  }
                                  Err(err) => Err(format!("partial restore failed: {err}")),
-@@ -34251,8 +33782,6 @@ fn admit(
+@@ -34243,8 +33782,6 @@ fn admit(
                              affinity: None,
                              fingerprint: Vec::new(),
                              parked_at: Instant::now(),
@@ -1708,7 +1776,7 @@ index 09de61318..06cf7d56c 100644
                          });
                      }
                      Err((None, why)) => {
-@@ -34720,7 +34249,7 @@ fn admit(
+@@ -34712,7 +34249,7 @@ fn admit(
                  // DAY41 addendum B3: armed, the exact key is the public stream (the final
                  // burst's overshoot rows are not required); the hit always rewinds below it.
                  let exact_key = |e: &SpecReuseEntry| -> usize {
@@ -1717,7 +1785,7 @@ index 09de61318..06cf7d56c 100644
                          e.public_len.min(e.sess.committed.len())
                      } else {
                          e.sess.committed.len()
-@@ -34843,20 +34372,6 @@ fn admit(
+@@ -34835,20 +34372,6 @@ fn admit(
                  // GRID REWIND (MEMRA_RESUME_GRID_REWIND, WP-B day 41): an exact or text hit
                  // resumes from the session's turn checkpoint and primes the token suffix; no
                  // usable checkpoint primes cold. Unset, both arms are today's.
@@ -1738,7 +1806,7 @@ index 09de61318..06cf7d56c 100644
                  Some(SpecResumeProbe::Exact(index)) if resume_grid_rewind_on() => {
                      let sess = spec_reuse
                          .get_mut(&pool_key)
-@@ -35981,23 +35496,7 @@ fn admit(
+@@ -35973,23 +35496,7 @@ fn admit(
      //     prefix cannot be captured by a prime-stop; that turn simply re-primes next time).
      // The boundary is derived from the prompt's own turn markers (`plain_checkpoint_boundary`),
      // never a hardcoded offset; the exact diff at resume still decides on bytes.
@@ -1763,7 +1831,7 @@ index 09de61318..06cf7d56c 100644
          && spec.is_none()
          && vision_state.is_none()
          && !eager_only_model(lm)
-@@ -36125,8 +35624,7 @@ fn admit(
+@@ -36117,8 +35624,7 @@ fn admit(
          n_cached,
          snapshot_at,
          ckpt_at,
@@ -1773,7 +1841,7 @@ index 09de61318..06cf7d56c 100644
          prefix_miss_lcp,
          seed_prefix,
          seed_at,
-@@ -36479,8 +35977,6 @@ fn prefix_fanout_eligible(s: &Session, eager_only: &std::collections::HashSet<St
+@@ -36471,8 +35977,6 @@ fn prefix_fanout_eligible(s: &Session, eager_only: &std::collections::HashSet<St
          // a checkpoint-capturing session needs its own boundary-stopped prime — fanout
          // primes the shared prefix monolithically and cannot honor the per-session stop.
          && s.ckpt_at.is_none()
@@ -1782,7 +1850,7 @@ index 09de61318..06cf7d56c 100644
          && s.cache.as_ref().is_some_and(|c| c.pos == 0 && !c.has_swa_ring())
          && !eager_only.contains(&s.model)
          && s.prefill_queue.len() >= PREFIX_CACHE_MIN_TOKENS
-@@ -36927,15 +36423,6 @@ fn prefill_tick(
+@@ -36919,15 +36423,6 @@ fn prefill_tick(
                  let tx = s.tx.clone();
                  Box::new(move || tx.is_closed())
              });
@@ -1798,7 +1866,7 @@ index 09de61318..06cf7d56c 100644
              let (l, _h, x) = lm.model.prime_cache_overlaid(
                  engine,
                  &chunk,
-@@ -36943,29 +36430,6 @@ fn prefill_tick(
+@@ -36935,29 +36430,6 @@ fn prefill_tick(
                  s.prefill_queue.len(),
                  ov_window.as_ref(),
              )?;
@@ -1828,7 +1896,7 @@ index 09de61318..06cf7d56c 100644
              (l, x)
          };
          s.last_logits = l;
-@@ -38006,23 +37470,7 @@ fn step_session(
+@@ -37998,23 +37470,7 @@ fn step_session(
          // undercounts the conversation's segments. Empty-suffix continuation bursts remain
          // zero-prime, and MEMRA_AFFINITY=0 preserves the monolithic control arm.
          let cold = spec.committed.is_empty();
@@ -1853,7 +1921,7 @@ index 09de61318..06cf7d56c 100644
              && affinity_enabled()
              && (cold
                  && (s.affinity.is_some()
-@@ -56938,7 +56386,7 @@ mod tests {
+@@ -56930,7 +56386,7 @@ mod tests {
          let worker = squash(include_str!("worker.rs"));
          let live = &worker[..worker.find("mod tests").expect("the test module exists")];
          assert!(live.contains(
@@ -1862,7 +1930,7 @@ index 09de61318..06cf7d56c 100644
          ));
          assert!(live.contains("if vmm_pending { wait = wait.min(Duration::from_millis(2)); }"));
          assert!(live.contains("let (reaped, pending) = vmm_reap_tick(&mut active, &mut reuse, &mut spec_reuse); vmm_pending = pending > 0;"));
-@@ -56952,7 +56400,7 @@ mod tests {
+@@ -56944,7 +56400,7 @@ mod tests {
          assert!(
              at < live
                  .find(
@@ -1871,7 +1939,7 @@ index 09de61318..06cf7d56c 100644
                  )
                  .unwrap()
          );
-@@ -56985,9 +56433,7 @@ mod tests {
+@@ -56977,9 +56433,7 @@ mod tests {
          let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
          let worker = squash(include_str!("worker.rs"));
          let live = &worker[..worker.find("mod tests").expect("the test module exists")];
@@ -1882,7 +1950,7 @@ index 09de61318..06cf7d56c 100644
          assert!(live.contains(
              "if !reclaim_queue.ids.is_empty() { wait = wait.min(Duration::from_millis(2)); }"
          ));
-@@ -57130,7 +56576,7 @@ mod tests {
+@@ -57122,7 +56576,7 @@ mod tests {
          assert!(live.contains("if cold && resume_grid_rewind_on() {"));
          assert!(live.contains("grid_rewind_checkpoint_boundary(&suffix, 0, markers, &|t| {"));
          // B3: unset, the exact key is the whole committed stream (today's probe).
@@ -1891,7 +1959,7 @@ index 09de61318..06cf7d56c 100644
          assert!(live.contains("&& prompt.starts_with(&e.sess.committed[..exact_key(e)])"));
          assert!(live.contains("let public_len = spec_public_len(toks, s.n_prompt, &s.generated);"));
          assert!(live.contains("|| plain_ckpt_nominatable(&prompt, &|t| lm.tok.token_is_control(t)) || resume_grid_rewind_on())"));
-@@ -57155,90 +56601,6 @@ mod tests {
+@@ -57147,90 +56601,6 @@ mod tests {
          assert!(live.contains("match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {"));
      }
  
@@ -1982,7 +2050,7 @@ index 09de61318..06cf7d56c 100644
      /// WP-B day 43 (DAY43 1.3): the budget-clamp door is read once, where the qwen spec arm hands
      /// the session its request budget; the firing is reported with the model.
      #[test]
-@@ -57431,7 +56793,7 @@ mod tests {
+@@ -57423,7 +56793,7 @@ mod tests {
          let live = &worker[..worker.find("mod tests").expect("the test module exists")];
          // Plain: armed and untaken owes one; a taken checkpoint owes none.
          assert!(live.contains(
