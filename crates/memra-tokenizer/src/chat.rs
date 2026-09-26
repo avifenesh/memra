@@ -192,6 +192,17 @@ pub fn apply_chat_template_str(
     messages: &[(&str, &str)],
     add_generation_prompt: bool,
 ) -> String {
+    if template.is_some_and(template_is_mimo_v26) {
+        let turns: Vec<Turn> = messages
+            .iter()
+            .map(|(role, content)| Turn {
+                role: (*role).to_string(),
+                content: (*content).to_string(),
+                ..Default::default()
+            })
+            .collect();
+        return apply_mimo_v26_template(&turns, add_generation_prompt, ThinkMode::Default);
+    }
     // Tencent Hy3 (`hy_v3`): a completely different special-token dialect (no ChatML).
     // Detected by its `hy_User` token literal; rendered by the dedicated arm below.
     // Legacy path = the template's own default ("no_think") — byte-identical to history.
@@ -312,6 +323,40 @@ pub fn apply_chat_template_str(
     }
 
     out
+}
+
+fn template_is_mimo_v26(template: &str) -> bool {
+    template.contains("macro render_assistant_message(message)")
+        && template.contains("<|mimo_audio_start|>")
+        && template.contains("enable_thinking is false")
+        && template.contains("'<think></think>'")
+}
+
+fn apply_mimo_v26_template(
+    turns: &[Turn],
+    add_generation_prompt: bool,
+    think: ThinkMode,
+) -> String {
+    let mut output = String::new();
+    for turn in turns {
+        output.push_str("<|im_start|>");
+        output.push_str(&turn.role);
+        output.push('\n');
+        if turn.role == "assistant" {
+            output.push_str("<think>");
+            output.push_str(turn.reasoning.as_deref().unwrap_or(""));
+            output.push_str("</think>");
+        }
+        output.push_str(&turn.content);
+        output.push_str("<|im_end|>");
+    }
+    if add_generation_prompt {
+        output.push_str("<|im_start|>assistant\n");
+        if think == ThinkMode::NoThink {
+            output.push_str("<think></think>");
+        }
+    }
+    output
 }
 
 /// The fixed tool-calling instruction block of the qwen3.5/3.6-class templates. Byte-for-byte
@@ -475,6 +520,15 @@ pub fn apply_chat_template_tools_ex(
     let tools_branch = is_dsv4 || template.is_some_and(template_has_tools_branch);
     if has_tool_features && !tools_branch {
         return Err("model chat template has no tools branch".into());
+    }
+    if template.is_some_and(template_is_mimo_v26) {
+        if has_tool_features || !tools_struct.is_empty() {
+            return Err("MiMo tool template rendering is not qualified".into());
+        }
+        if reasoning_effort.is_some() {
+            return Err("MiMo template has no reasoning_effort parameter".into());
+        }
+        return Ok(apply_mimo_v26_template(turns, add_generation_prompt, think));
     }
     // deepseek-v4 (`encoding_dsv4`): its own dialect all the way through, tools included.
     // Detected by its two structural markers; MUST precede the qwen/step marker checks
@@ -2687,6 +2741,56 @@ fn apply_dsv4_template(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const MIMO_TEMPLATE_MARKERS: &str = "macro render_assistant_message(message) <|mimo_audio_start|> \
+         enable_thinking is false '<think></think>' add_generation_prompt";
+
+    #[test]
+    fn mimo_v26_text_template_uses_source_turn_boundaries() {
+        assert!(template_is_mimo_v26(MIMO_TEMPLATE_MARKERS));
+        assert_eq!(
+            apply_chat_template_str(Some(MIMO_TEMPLATE_MARKERS), &[("user", "Hi")], true),
+            "<|im_start|>user\nHi<|im_end|><|im_start|>assistant\n"
+        );
+        assert_eq!(
+            apply_chat_template_str(
+                Some(MIMO_TEMPLATE_MARKERS),
+                &[("user", "  pad  "), ("assistant", "Hello!")],
+                true
+            ),
+            "<|im_start|>user\n  pad  <|im_end|>\
+             <|im_start|>assistant\n<think></think>Hello!<|im_end|>\
+             <|im_start|>assistant\n"
+        );
+        let turns = [Turn {
+            role: "user".into(),
+            content: "Hi".into(),
+            ..Default::default()
+        }];
+        assert_eq!(
+            apply_chat_template_tools(
+                Some(MIMO_TEMPLATE_MARKERS),
+                &turns,
+                true,
+                &[],
+                ThinkMode::NoThink,
+                None
+            )
+            .unwrap(),
+            "<|im_start|>user\nHi<|im_end|><|im_start|>assistant\n<think></think>"
+        );
+        assert!(
+            apply_chat_template_tools(
+                Some(MIMO_TEMPLATE_MARKERS),
+                &turns,
+                true,
+                &["{}".into()],
+                ThinkMode::Default,
+                None
+            )
+            .is_err()
+        );
+    }
 
     /// ds4f rung-3 regression (the first real serve 400): the REAL dsv4 artifacts
     /// ship NO chat_template string — dispatch and the tools branch must key on the

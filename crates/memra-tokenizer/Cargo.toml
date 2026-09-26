@@ -15,6 +15,7 @@ memra-gguf = { workspace = true }
 aho-corasick = "=1.1.4"
 regex-syntax = "=0.8.11"
 unicode-normalization-alignments = "=0.1.12"
+sha2 = "0.10"
 
 [[bin]]
 name = "tok-check"
@@ -31,3 +32,7 @@ path = "src/bin/tok_freq.rs"
 [[bin]]
 name = "tok-parity"
 path = "src/bin/tok_parity.rs"
+
+[[bin]]
+name = "tok-mimo-template-gate"
+path = "src/bin/tok_mimo_template_gate.rs"
