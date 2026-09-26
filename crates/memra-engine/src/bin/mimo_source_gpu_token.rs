@@ -29,6 +29,7 @@ const HIDDEN: usize = 4096;
 const VOCAB: usize = 152576;
 const LAYERS: usize = 48;
 const STAGE_CUT: usize = 24;
+const MAX_DIAGNOSTIC_TOKENS: usize = 256;
 const QK: usize = 192;
 const VALUE: usize = 128;
 const GLOBAL_LAYERS: [usize; 9] = [0, 5, 11, 17, 23, 29, 35, 41, 47];
@@ -338,7 +339,7 @@ fn append_kv(
     let key_width = kv_heads * QK;
     let value_width = kv_heads * VALUE;
     let device = engine.stream().context().ordinal();
-    if position > 1
+    if position >= MAX_DIAGNOSTIC_TOKENS
         || key.len() != key_width
         || value.len() != value_width
         || key.ordinal() != device
@@ -630,13 +631,14 @@ fn validate_plan(plan: &ModelPlan) -> Result<(), Fail> {
 
 fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() < 5 || args.len() > 9 {
+    if args.len() < 5 || args.len() > 10 {
         return Err(
-            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one] [--resident-moe] [--resident-text] [--profile-phases]"
+            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--resident-moe] [--resident-text] [--profile-phases]"
                 .into(),
         );
     }
     let mut continue_one = false;
+    let mut requested_turns: Option<usize> = None;
     let mut resident_moe = false;
     let mut resident_text = false;
     let mut profile_phases = false;
@@ -646,8 +648,18 @@ fn run() -> Result<(), Fail> {
             "--resident-moe" if !resident_moe => resident_moe = true,
             "--resident-text" if !resident_text => resident_text = true,
             "--profile-phases" if !profile_phases => profile_phases = true,
+            _ if option.starts_with("--tokens=") && requested_turns.is_none() => {
+                requested_turns = Some(option["--tokens=".len()..].parse()?);
+            }
             _ => return Err(format!("unknown or repeated MiMo token option: {option}").into()),
         }
+    }
+    if continue_one && requested_turns.is_some() {
+        return Err("--continue-one and --tokens cannot be combined".into());
+    }
+    let turns = requested_turns.unwrap_or(if continue_one { 2 } else { 1 });
+    if !(1..=MAX_DIAGNOSTIC_TOKENS).contains(&turns) {
+        return Err("MiMo diagnostic token count is outside 1..=256".into());
     }
     if resident_text {
         resident_moe = true;
@@ -760,8 +772,7 @@ fn run() -> Result<(), Fail> {
         resident_text_load_ms = load_start.elapsed().as_secs_f64() * 1000.0;
     }
     let mut kv: Vec<Option<KvState>> = std::iter::repeat_with(|| None).take(LAYERS).collect();
-    let turns = if continue_one { 2 } else { 1 };
-    let mut report = if continue_one {
+    let mut report = if turns > 1 {
         String::from("format\tmemra-mimo-source-gpu-token-v2\n")
     } else {
         String::from("format\tmemra-mimo-source-gpu-token-v1\n")
@@ -802,11 +813,12 @@ fn run() -> Result<(), Fail> {
     writeln!(report, "gpu0_ordinal\t{gpu0}")?;
     writeln!(report, "gpu1_ordinal\t{gpu1}")?;
     writeln!(report, "token_id\t{token}")?;
-    writeln!(report, "generated_continuation\t{continue_one}")?;
+    writeln!(report, "generated_continuation\t{}", turns > 1)?;
     let mut current_token = token;
     let mut last_logits: Option<Vec<f32>> = None;
     let mut last_argmax: Option<usize> = None;
     for turn in 0..turns {
+        let turn_start = Instant::now();
         if turn > 0
             && kv
                 .iter()
@@ -1039,6 +1051,11 @@ fn run() -> Result<(), Fail> {
             }
         }
         writeln!(report, "argmax_turn\t{turn}\t{argmax}")?;
+        writeln!(
+            report,
+            "turn_wall_ms\t{turn}\t{:.3}",
+            turn_start.elapsed().as_secs_f64() * 1000.0
+        )?;
         current_token = argmax;
         last_argmax = Some(argmax);
         last_logits = Some(logits);
