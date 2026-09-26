@@ -1,0 +1,240 @@
+[m1-spec-cell] arm=bypass-mapped env={"MEMRA_CHAT": "1", "MEMRA_MOE_CACHE": "1", "MEMRA_MOE_COLD_BYPASS": "mapped", "MEMRA_MOE_RESIDENT": "0", "MEMRA_MOE_SLOTS": "8", "MEMRA_NGEN": "128", "MEMRA_PROMPT_FILE": "/root/wt-f/research/spill-f-20260919/m1-prereg/b3-prompt.txt", "MEMRA_SPILL_DISK": "1", "MEMRA_SPILL_IO": "worker", "MEMRA_SPILL_PINNED_FRAC": "0.000000001", "MEMRA_SPILL_PREAD_DEPTH": "16", "MEMRA_SPILL_STATS": "1"}
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[spill] disk tier ON: free_vram=96277 MiB  free_pinnable_ram=0 MiB (MemAvailable*resolved_frac)
+[spill] experts placed: 0 pinned (Tier 1), 31488 mmap'd from disk (Tier 2, 14878 MiB)
+[q8rp] split-plane decode mirrors built: 191 tensors
+[tensor-contract] 123 bound tensor(s) were not read by the loader (pack qwen35_moe reports, does not refuse): Layer { index: 0, tensor: MoeExpertGateBank } <- ["blk.0.ffn_gate_exps.weight"]; Layer { index: 0, tensor: MoeExpertUpBank } <- ["blk.0.ffn_up_exps.weight"]; Layer { index: 0, tensor: MoeExpertDownBank } <- ["blk.0.ffn_down_exps.weight"]; Layer { index: 1, tensor: MoeExpertGateBank } <- ["blk.1.ffn_gate_exps.weight"]; Layer { index: 1, tensor: MoeExpertUpBank } <- ["blk.1.ffn_up_exps.weight"]; Layer { index: 1, tensor: MoeExpertDownBank } <- ["blk.1.ffn_down_exps.weight"]; Layer { index: 2, tensor: MoeExpertGateBank } <- ["blk.2.ffn_gate_exps.weight"]; Layer { index: 2, tensor: MoeExpertUpBank } <- ["blk.2.ffn_up_exps.weight"]; Layer { index: 2, tensor: MoeExpertDownBank } <- ["blk.2.ffn_down_exps.weight"]; Layer { index: 3, tensor: MoeExpertGateBank } <- ["blk.3.ffn_gate_exps.weight"]; Layer { index: 3, tensor: MoeExpertUpBank } <- ["blk.3.ffn_up_exps.weight"]; Layer { index: 3, tensor: MoeExpertDownBank } <- ["blk.3.ffn_down_exps.weight"] (+111 more)
+loaded qwen35moe (41 layers, nextn=1)
+text prompt (314 chars, chat-templated) -> 80 tokens
+prompt tokens: [248045, 846, 198, 814, 20139, 11, 2923, 539, 2923, 11, 1204, 264, 6235, 20105, 6338, 3401, 264, 4055, 220, 19, 28497, 33, 1301, 25, 279, 3357, 3108, 11, 279, 7960, 14053, 6000, 18054, 11, 279, 73842, 2081, 1301, 11, 1412, 25423, 11, 321, 279, 8059, 1142, 310, 3357, 4779, 13, 4844, 9150, 421, 1752, 440, 264, 49282, 220, 16, 20112, 33, 1301, 11, 321, 1528, 864, 17102, 39390, 37972, 303, 1754, 1105, 13, 248046, 198, 248045, 74455, 198, 248068, 198]
+[spill-pread] enabled: depth=16 buffer_bytes=860160 payload_capacity=860160 total_pinned_bytes=13762560 (bounded worker prefetch, caller-thread compute-stream H2D, mmap error fallback)
+[moe-bypass] enabled: mode=mapped ghost_cap=64 (first miss served without admission on the batch-1 decode expert GEMMs; a repeat miss admits)
+[glm5-vrows-t1-deny] dev=0 il=0 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=1 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=2 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[glm5-vrows-t1-deny] dev=0 il=3 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=4 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=5 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=6 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[glm5-vrows-t1-deny] dev=0 il=7 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+[fa-pool] grow #1 dev=0 o_len 4096 -> 24576 ml_len 16 -> 96 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 24576 -> 49152 ml_len 96 -> 192 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+
+[generate]   127 tok in 5.730s = 22.17 tok/s (gen-only; this run's prime 2.430s)
+  tokens: [8160, 579, 264, 7047, 1817, 25, 271, 16, 13, 220, 2972, 1847, 7355, 279, 2570, 57491, 64700, 198, 256, 471, 2972, 25562, 64700, 21451, 83526, 15675, 318, 1178, 35, 8, 5488, 198, 256, 471, 2972, 45930, 5261, 220, 16, 64700, 79091, 2923, 13909, 28253, 1204, 449, 35160, 3401, 264, 4055, 220, 19, 28497, 33, 1301, 198, 257, 471, 15628, 3108, 198, 257, 471, 16753, 36783, 22028, 318, 3860, 43, 8, 18054, 198, 257, 471, 73842, 2081, 1301, 198, 257, 471, 4451, 25423, 198, 257, 471, 22476, 1142, 310, 3357, 4779, 198, 256, 471, 2972, 45930, 5261, 220, 17, 64700, 23024, 421, 1752, 440, 264, 49282, 220, 16, 20112, 33, 1301, 198, 256, 471, 2972, 45930, 5261, 220, 18, 64700, 3130, 864, 17102, 39390, 37972, 303, 1754, 1105, 198]
+[spec] draft graph unavailable: non-resident MoE MTP head; eager draft chain engaged
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[fa-pool] grow #4 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+
+[generate_spec K=1] 128 tok in 5.125s = 24.78 tok/s (1.12x vs generate; this run's prime 2.412s)
+  acceptance: 62/65 = 95.4%   self-consistency: PASS (identical to plain target)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+
+[generate_spec K=2] 128 tok in 5.270s = 24.10 tok/s (1.09x vs generate; this run's prime 2.419s)
+  acceptance: 81/92 = 88.0%   self-consistency: PASS (identical to plain target)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[fa-pool] grow #5 dev=0 o_len 196608 -> 393216 ml_len 768 -> 1536 (retired kept, zero=false)
+
+[generate_spec K=3] 128 tok in 5.970s = 21.27 tok/s (0.96x vs generate; this run's prime 2.404s)
+  acceptance: 87/120 = 72.5%   self-consistency: PASS (identical to plain target)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+
+[generate_spec K=4] 128 tok in 6.074s = 20.91 tok/s (0.94x vs generate; this run's prime 2.433s)
+  acceptance: 94/132 = 71.2%   self-consistency: PASS (identical to plain target)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+
+[generate_spec K=5] 128 tok in 6.968s = 18.23 tok/s (0.82x vs generate; this run's prime 2.420s)
+  acceptance: 95/160 = 59.4%   self-consistency: PASS (identical to plain target)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+[fa-pool] grow #6 dev=0 o_len 393216 -> 786432 ml_len 1536 -> 3072 (retired kept, zero=false)
+
+[generate_spec K=6] 128 tok in 7.826s = 16.23 tok/s (0.73x vs generate; this run's prime 2.418s)
+  acceptance: 99/186 = 53.2%   self-consistency: PASS (identical to plain target)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+
+[generate_spec K=7] 128 tok in 8.845s = 14.36 tok/s (0.65x vs generate; this run's prime 2.408s)
+  acceptance: 99/217 = 45.6%   self-consistency: PASS (identical to plain target)
+[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+
+[generate_spec K=8] 128 tok in 9.611s = 13.21 tok/s (0.60x vs generate; this run's prime 2.418s)
+  acceptance: 100/240 = 41.7%   self-consistency: PASS (identical to plain target)
+
+=== SELF-CONSISTENCY PASS ===
+[moe-bypass] mode=mapped bypassed=1723448 ghost_admits=579256 ghost_live=55
+[spill-pread] reads=2302704 bytes=1138965192704 errors=0 short_reads=0 fallbacks=0 buffer_waits=1055508 ring_full=790083 overread_bytes=0 worker_read_ns=226581481365 demand_read_ns=0 wait_ns=56565482003 h2d_submits=579256 mapped_serves=1723448 demand_waits=1 demand_wait_ns=6252 prefetch_cancels=0 demand_wait_timeouts=0
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "python3",
+    "research/spill-f-20260919/m1-spec-cell.py",
+    "--arms-lock",
+    "research/spill-f-20260919/m1-prereg/f17-arms.lock.json",
+    "--arm",
+    "bypass-mapped",
+    "--binary",
+    "/scratch/spill-f/bin/run-spec",
+    "--artifact",
+    "/scratch/spill-f/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 457731199881938,
+  "ended_monotonic_ns": 457817754788452,
+  "started_utc": "2026-09-26T13:23:32.522957+00:00",
+  "ended_utc": "2026-09-26T13:24:59.077865+00:00",
+  "elapsed_seconds": 86.554906514,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": {
+    "class": "nvme-local-direct",
+    "nvme_proven": true,
+    "nvme_name_hint": false,
+    "label": "M1 proof: physical local NVMe (nvme-local-direct); not measured spill speed",
+    "allow_unproven_storage": false,
+    "root": "/scratch/spill-f",
+    "commands": [
+      {
+        "command": [
+          "findmnt",
+          "-J",
+          "-T",
+          "/scratch/spill-f"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-findmnt.log",
+          "bytes": 260,
+          "sha256": "1d848ebef5f7235c8cfb9dc178199991ddbc41f8fe100d2a99bfdd4f05d0ba62"
+        }
+      },
+      {
+        "command": [
+          "lsblk",
+          "-J",
+          "-o",
+          "NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-lsblk.log",
+          "bytes": 4174,
+          "sha256": "2289aa6d5b1944536abc239309cb48358e3c170a8752677e2ccea800442bef64"
+        }
+      },
+      {
+        "command": [
+          "findmnt",
+          "-n",
+          "-o",
+          "SOURCE",
+          "-T",
+          "/scratch/spill-f"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-source.log",
+          "bytes": 42,
+          "sha256": "b566f23a261bad08fd6ed3091e85e11cf52dd69c2609352af3d31e7cf4740aa7"
+        }
+      },
+      {
+        "command": [
+          "lsblk",
+          "-s",
+          "-r",
+          "-n",
+          "-o",
+          "KNAME",
+          "/dev/nvme0n1p3"
+        ],
+        "exit_code": 32,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-ancestry.log",
+          "bytes": 42,
+          "sha256": "b67470269669175458deed3ea5edc911c509b799a5fa2fcefff20fe54d29b718"
+        }
+      }
+    ],
+    "qualification": false,
+    "m1_proof": {
+      "receipt": {
+        "path": "STORAGE-PROOF.json",
+        "bytes": 3720,
+        "sha256": "f20e215b15aca20706a956da4fc890a7b3e9b240b7ce1262fc370f1fcb221415"
+      },
+      "tool_sha256": "d59851b624339e16d2290b21b94567a593645266eb0e5dd83d4490decbb78864",
+      "identity": {
+        "device": 66307,
+        "filesystem_id": 66307,
+        "mount_id": 577
+      },
+      "proof_utc": "2026-09-26T13:20:17.778000+00:00"
+    }
+  },
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 10892,
+    "sha256": "e33792428de6d1a88c0a0619b666448940afb076a9f1e886b3d31d54a75c8838"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 37835,
+      "sha256": "09ba57e646449932e66a33a8c976aa9f1bb52fec740ecc13c1d96b29850290b2"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}

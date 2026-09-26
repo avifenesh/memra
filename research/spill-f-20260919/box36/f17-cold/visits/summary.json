@@ -1,0 +1,58 @@
+{
+ "regime_scored": true,
+ "contaminated_visits": {
+  "worker16": 0,
+  "bypass-staged": 0,
+  "bypass-mapped": 0
+ },
+ "arms": {
+  "bypass-staged": {
+   "verdict": "flat",
+   "n_pairs": 10,
+   "median_ratio": 1.0017673731075383,
+   "ratios_forward": [
+    1.0154117129018052,
+    0.9912434325744308,
+    1.0,
+    0.9894366197183099,
+    1.0066430469441985
+   ],
+   "ratios_reverse": [
+    1.007936507936508,
+    1.0,
+    1.0071047957371226,
+    1.0008857395925599,
+    1.0026490066225167
+   ]
+  },
+  "bypass-mapped": {
+   "verdict": "loser",
+   "n_pairs": 10,
+   "median_ratio": 0.8725199069985191,
+   "ratios_forward": [
+    0.8718626155878467,
+    0.8677758318739055,
+    0.8731771984091915,
+    0.8705985915492959,
+    0.8861824623560675
+   ],
+   "ratios_reverse": [
+    0.8743386243386243,
+    0.873512560599383,
+    0.8769982238010657,
+    0.871124889282551,
+    0.867991169977925
+   ]
+  }
+ },
+ "mmap_fallback_visits": {
+  "worker16": 0,
+  "bypass-staged": 0,
+  "bypass-mapped": 0
+ },
+ "refused_arms": [],
+ "regime": "cold",
+ "visits": 30,
+ "qualified": false,
+ "identity_sha256": "dbb49e7fc561e71ca437b179f024faf25c8512e65270eb190e9c2ce88abebbf0"
+}

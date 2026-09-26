@@ -1,0 +1,91 @@
+{
+ "cycle": 4,
+ "size_bytes": 1073741824,
+ "io": "buffered",
+ "problems": [],
+ "prompts_sent": 17,
+ "host_bytes_before_export": 1144492416,
+ "export_window": {
+  "telemetry_ok": true,
+  "problems": [],
+  "device": {
+   "read_bytes": 0,
+   "write_bytes": 2161913856
+  }
+ },
+ "export_gpu": {
+  "samples": 7,
+  "sm_clock_mhz_median": 2865.0,
+  "sm_clock_mhz_min": 2760.0,
+  "sm_clock_max_mhz": 3090.0,
+  "power_w_median": 170.16,
+  "power_w_max": 532.1,
+  "temperature_c_max": 64.0,
+  "reason_share": {}
+ },
+ "export": {
+  "entries": 17,
+  "mb": 2161.8,
+  "ms": 1457,
+  "write_ms": 946.3,
+  "fsync_ms": 324.1,
+  "drain_demoted": 8,
+  "skipped_over_cap": 0
+ },
+ "export_boot_exit": 0,
+ "file_bytes": 2161838470,
+ "file_sha256": "477bb00f2fd6cc82c121214b17280ce73182310a7d32cb32468eef5264042047",
+ "cold_ok": true,
+ "import_window_opened_after_done": false,
+ "import_window": {
+  "telemetry_ok": true,
+  "problems": [],
+  "device": {
+   "read_bytes": 2064846848,
+   "write_bytes": 0
+  }
+ },
+ "import_gpu": {
+  "samples": 6,
+  "sm_clock_mhz_median": 2610.0,
+  "sm_clock_mhz_min": 2610.0,
+  "sm_clock_max_mhz": 3090.0,
+  "power_w_median": 81.18,
+  "power_w_max": 85.55,
+  "temperature_c_max": 49.0,
+  "reason_share": {}
+ },
+ "import": {
+  "armed": [
+   17,
+   2161.8
+  ],
+  "done": {
+   "entries": 17,
+   "mb": 2161.8,
+   "skipped": 0,
+   "seconds": 1.6
+  },
+  "aborted": false
+ },
+ "probes": [
+  {
+   "cached_tokens": 6496,
+   "identical": true
+  },
+  {
+   "cached_tokens": 6496,
+   "identical": true
+  },
+  {
+   "cached_tokens": 6496,
+   "identical": true
+  },
+  {
+   "cached_tokens": 6496,
+   "identical": true
+  }
+ ],
+ "import_boot_exit": 0,
+ "passed": true
+}
