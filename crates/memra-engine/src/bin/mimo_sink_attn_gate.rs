@@ -4,6 +4,7 @@
 use memra_engine::Engine;
 use memra_gguf::config::{HfConfig, ModelConfig};
 use memra_gguf::model_plan::{AttentionPlan, ModelPlan};
+use sha2::{Digest, Sha256};
 
 type Fail = Box<dyn std::error::Error>;
 
@@ -119,14 +120,17 @@ fn check(
 
 fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() != 1 {
-        return Err("usage: mimo_sink_attn_gate <gpu_index>".into());
+    if args.len() != 2 {
+        return Err("usage: mimo_sink_attn_gate <source_config.json> <gpu_index>".into());
     }
-    let gpu_index: usize = args[0].parse()?;
-    let config = ModelConfig::from_hf(&HfConfig::parse(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../memra-gguf/src/model_packs/mimo_v2/fixtures/config.json"
-    ))));
+    let config_bytes = std::fs::read(&args[0])?;
+    let config_digest = format!("{:x}", Sha256::digest(&config_bytes));
+    if config_digest != "61bea4a0f7a0dd8969f8cae528761e26b697dd12ff63e98804c3f0945492e621" {
+        return Err("MiMo gate requires the pinned source config".into());
+    }
+    let gpu_index: usize = args[1].parse()?;
+    let config_text = String::from_utf8(config_bytes)?;
+    let config = ModelConfig::from_hf(&HfConfig::try_parse(&config_text)?);
     let plan = ModelPlan::compile(&config)?;
     let full = &plan.layers[0].attention;
     let AttentionPlan::Full(_) = full else {

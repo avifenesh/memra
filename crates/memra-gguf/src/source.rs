@@ -3177,14 +3177,14 @@ mod tests {
         let (data, shape) = source.dequant_f32_hf(name).unwrap();
         assert_eq!(shape, vec![64, 1]);
         assert_eq!(data.len(), 64);
-        for index in 0usize..64 {
+        for (index, &observed) in data.iter().enumerate() {
             let expected = match index {
                 0..=31 if index.is_multiple_of(2) => 0.5,
                 0..=31 => 1.0,
                 _ if index.is_multiple_of(2) => 3.0,
                 _ => 4.0,
             };
-            assert_eq!(data[index], expected, "element {index}");
+            assert_eq!(observed, expected, "element {index}");
         }
         drop(source);
         std::fs::remove_dir_all(dir).unwrap();
