@@ -30668,6 +30668,19 @@ pub fn run(
             // re-admits (nothing completed; its replay re-books) and a client abort's
             // length is a disconnect point, not a completion length (the D2 offline
             // history was built from completed rows only; aborts stay load-only).
+            // WP-B day 45 addendum B: a session that retires with its workspace still booked says why.
+            if s.booked_w_bytes > 0 {
+                eprintln!(
+                    "[admit-book] w-retire-unreleased id={} bytes={} reason={}",
+                    s.request_id,
+                    s.booked_w_bytes,
+                    if s.prefill_done {
+                        "same-tick"
+                    } else {
+                        "prime-incomplete"
+                    }
+                );
+            }
             admission_book.retire(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);
             // WP-B day 37 (DAY37 A4): what an on-demand session backed against what it used.
             if crate::kv_vmm::armed() {
@@ -57231,6 +57244,8 @@ mod tests {
         assert_eq!(live.matches("release_primed_workspace(&mut").count(), 1);
         assert!(live.contains("if s.booked_w_bytes == 0 || !s.prefill_done { continue; }"));
         assert!(live.contains("s.booked_w_bytes = 0;"));
+        // Addendum B: the retire receipt reads the per-session field, which only the door sets.
+        assert!(live.contains("if s.booked_w_bytes > 0 { eprintln!( \"[admit-book] w-retire-unreleased id={} bytes={} reason={}\","));
         // Never more than a book carries.
         assert_eq!(super::release_split(2_000, 5_000, 0), (2_000, 0));
         assert_eq!(super::release_split(2_000, 1_000, 3_000), (1_000, 2_000));
