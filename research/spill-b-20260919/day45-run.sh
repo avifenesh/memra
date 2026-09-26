@@ -24,8 +24,10 @@ if [ -n "$BOOT_CTX" ]; then export MEMRA_CTX=$BOOT_CTX; else unset MEMRA_CTX; fi
 export LOCK=$RIG_LOCK RIGDIR="$R/boots" N=5 CLIENT=day45-client.py PARSER=day45-parse.py MEMRA_TIMEOUT_MS_MAX=3600000
 for spec in "$@"; do
   IFS=: read -r name arm <<< "$spec"
-  uenv=(-u MEMRA_ADMIT_W_RELEASE -u MEMRA_ADMIT_PREDICT_SHADOW -u MEMRA_TTFT_TRACE)
+  uenv=(-u MEMRA_ADMIT_W_RELEASE -u MEMRA_ADMIT_PREDICT_SHADOW -u MEMRA_TTFT_TRACE -u MEMRA_ADMIT_BY_MEMORY)
   aenv=(MEMRA_ADMIT_PREDICT_SHADOW=1)
+  # DAY45 addendum B: the memory door shapes the burst on both arms (DOOR_MEMORY=1)
+  [ "${DOOR_MEMORY:-0}" = 1 ] && aenv+=(MEMRA_ADMIT_BY_MEMORY=1)
   B=$BIN
   case $arm in
     off) ;;

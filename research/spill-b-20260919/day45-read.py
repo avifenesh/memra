@@ -49,6 +49,7 @@ CRASH = re.compile(r"panicked|\[worker\] PANIC|\[worker\] FATAL|\[worker\] respa
 PRED = re.compile(r"\[admit-predict\] id=(\S+) tenant=\"([^\"]*)\" .*?verdict=(\S+) .*?booked_bytes=(\d+) booked_real=(\d+)")
 BOOKED = re.compile(r"\[admit-book\] w-booked id=(\S+) model=\S+ bytes=(\d+)")
 RELEASE = re.compile(r"\[admit-book\] w-release id=(\S+) model=\S+ bytes=(\d+)")
+UNRELEASED = re.compile(r"\[admit-book\] w-retire-unreleased id=(\S+) bytes=(\d+) reason=(\S+)")
 
 names = sorted(os.path.basename(p)[:-len(".arm.txt")] for p in os.listdir(os.path.join(root, "boots"))
                if p.endswith(".arm.txt")) if os.path.isdir(os.path.join(root, "boots")) else []
@@ -75,23 +76,38 @@ for n in names:
     rejects = sum(1 for p in burst if p[2] == "reject-kv")
     say(f"DAY45 READING card={card} boot={n} predict_lines={len(burst)} peak_booked_shadow={peak_shadow} "
         f"peak_booked_real={peak_real} shadow_reject_kv={rejects}")
+    for wave in ("d45-burst", "d45-wave2"):
+        wl = [p for p in preds if wave in p[1]]
+        if wl:
+            say(f"DAY45 READING card={card} boot={n} wave={wave[4:]} predict_lines={len(wl)} "
+                f"shadow_reject_kv={sum(1 for p in wl if p[2] == 'reject-kv')} "
+                f"booked_shadow_at_first={wl[0][3]} booked_shadow_at_last={wl[-1][3]}")
     if n.endswith("-on"):
         booked = dict(BOOKED.findall(t))
         rel = RELEASE.findall(t)
-        rel_ids = [i for i, _ in rel]
-        twice = sorted({i for i in rel_ids if rel_ids.count(i) > 1})
-        wrong = [i for i, b in rel if booked.get(i) != b]
-        missing = sorted(set(booked) - set(rel_ids))
+        # addendum B: a session that retires with W still booked prints its own line
+        unrel = UNRELEASED.findall(t)
+        ends = [(i, b) for i, b in rel] + [(i, b) for i, b, _ in unrel]
+        end_ids = [i for i, _ in ends]
+        twice = sorted({i for i in end_ids if end_ids.count(i) > 1})
+        wrong = [i for i, b in ends if booked.get(i) != b]
+        missing = sorted(set(booked) - set(end_ids))
+        reasons = {}
+        for _, _, why in unrel:
+            reasons[why] = reasons.get(why, 0) + 1
         ok2 = bool(booked) and not twice and not wrong and not missing
-        say(f"DAY45 W2 card={card} boot={n} w_booked={len(booked)} w_release={len(rel)} twice={twice[:4]} "
-            f"bytes_mismatch={wrong[:4]} never_released={missing[:4]} -> {'PASS' if ok2 else 'FAIL'}")
+        say(f"DAY45 W2 card={card} boot={n} w_booked={len(booked)} w_release={len(rel)} w_retire_unreleased={len(unrel)} "
+            f"reasons={reasons} twice={twice[:4]} bytes_mismatch={wrong[:4]} neither={missing[:4]} -> {'PASS' if ok2 else 'FAIL'}")
 for order in ("O1", "O2"):
     a, b = f"{order}-off", f"{order}-on"
     if have(a) and have(b):
         ra, rb = rows(a), rows(b)
-        tags = sorted(set(ra) & set(rb))
+        common = sorted(set(ra) & set(rb))
+        # addendum B: the digest comparison covers the requests that are 200 on both arms
+        tags = [t for t in common if ra[t]["status"] == 200 and rb[t]["status"] == 200]
+        mismatch = [t for t in common if ra[t]["status"] != rb[t]["status"]]
         differ = [t for t in tags if ra[t]["content_sha256"] != rb[t]["content_sha256"]]
-        say(f"DAY45 W3 card={card} order={order} rows={len(tags)} differ={differ[:6]} -> "
-            f"{'PASS' if tags and not differ else 'FAIL'}")
+        say(f"DAY45 W3 card={card} order={order} rows_200_both={len(tags)} status_mismatch={len(mismatch)} "
+            f"differ={differ[:6]} -> {'PASS' if tags and not differ else 'FAIL'}")
 with open(os.path.join(root, "SUMMARY.txt"), "w") as fh:
     fh.write("\n".join(out) + "\n")

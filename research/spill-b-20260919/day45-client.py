@@ -21,6 +21,7 @@ ap.add_argument("--burst", type=int, default=32)
 ap.add_argument("--length", type=int, default=6144)
 ap.add_argument("--max-tokens", type=int, default=64)
 ap.add_argument("--idle-s", type=float, default=5.0)
+ap.add_argument("--wave2-delay-s", type=float, default=0.0, help="addendum B: a second wave of burst/2 this long after the first wave's last submit")
 ap.add_argument("--timeout-s", type=int, default=3600)
 ap.add_argument("--serving-md", default=os.path.join(os.path.dirname(__file__), "..", "..", "docs", "SERVING.md"))
 a = ap.parse_args()
@@ -37,7 +38,7 @@ def post_json(path, body):
 
 
 text = open(a.serving_md, encoding="utf-8").read()
-need = max(a.length + 997 * (a.burst + 8), 60_000 + a.warm_tokens)
+need = max(a.length + 997 * (a.burst + a.burst // 2 + 8), 60_000 + a.warm_tokens)
 stream = []
 while len(stream) < need and len(stream) < 64 * 400000:
     stream += post_json("/v1/tokenize", {"model": a.model, "prompt": text, "add_special_tokens": False})["tokens"]
@@ -83,8 +84,20 @@ for i in range(a.burst):
     threads.append(th)
 for th in threads:
     th.start()
-for th in threads:
-    th.join()
+waves = [threads]
+if a.wave2_delay_s > 0:
+    # DAY45 addendum B: the second wave arrives after some of the first wave's primes completed.
+    time.sleep(a.wave2_delay_s)
+    wave2 = []
+    for i in range(a.burst // 2):
+        off = (a.burst + 4 + i) * 997
+        wave2.append(threading.Thread(target=complete, args=(f"wave2-{i}", "wave2", stream[off:off + a.length], a.max_tokens)))
+    for th in wave2:
+        th.start()
+    waves.append(wave2)
+for w in waves:
+    for th in w:
+        th.join()
 time.sleep(a.idle_s)
 off = 60_000
 complete("probe", "probe", stream[off:off + a.warm_tokens], 16)
