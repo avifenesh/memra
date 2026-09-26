@@ -41,7 +41,7 @@ class ProseOrderTest(unittest.TestCase):
             write(judged / "profile.json", {
                 "model_id": "pinned-test-judge",
                 "status": "ACTIVE",
-                "foundation_model_arns": [
+                "model_revision_ids": [
                     "synthetic-model-identity",
                 ],
             })

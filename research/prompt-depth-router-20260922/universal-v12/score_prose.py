@@ -103,7 +103,7 @@ def score(packets_dir, results_dir, config_path,
         != sha(results_dir / "profile.json")
         or profile["model_id"] != config["model_id"]
         or profile["status"] != "ACTIVE"
-        or not profile["foundation_model_arns"]
+        or not profile["model_revision_ids"]
         or price["model_id"] != config["model_id"]
         or price["region"] != config["region"]
         or config["spend_basis"] != "live_global_standard_quote"
