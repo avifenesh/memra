@@ -7,6 +7,7 @@ use crate::tensor_contract::{
     TensorRequirement, TensorTransform,
 };
 
+#[allow(clippy::result_large_err)] // the tensor contract error keeps the diagnostic tensor identity
 pub(crate) fn mint_mtp_requirements(
     config: &ModelConfig,
 ) -> Result<Vec<TensorRequirement>, TensorContractError> {

@@ -16,7 +16,7 @@ pub mod glm5_next;
 pub mod glm_dsa;
 pub mod hy3;
 pub mod llama_dense;
-pub(crate) mod mimo_v2;
+pub mod mimo_v2;
 pub mod minimax_m3;
 /// Speech packs use their own config normalization until the CLI accepts audio artifacts.
 pub mod nemotron_rnnt;

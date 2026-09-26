@@ -2210,7 +2210,12 @@ fn f8_scales_with_shards(
         return None;
     }
     if let Some(shards) = checkpoint_shards {
-        if shards == 0 || out_f == 0 || in_f == 0 || out_f % shards != 0 || sinfo.shape.len() != 2 {
+        if shards == 0
+            || out_f == 0
+            || in_f == 0
+            || !out_f.is_multiple_of(shards)
+            || sinfo.shape.len() != 2
+        {
             return None;
         }
         let weight_rows_per_shard = out_f / shards;

@@ -1335,6 +1335,7 @@ fn add_mtp_glue(
     }
 }
 
+#[allow(clippy::result_large_err)] // the contract error names the exact rejected tensor
 fn add_full_attention(
     builder: &mut ContractBuilder,
     plan: &ModelPlan,
@@ -1360,9 +1361,9 @@ fn add_full_attention(
             .unwrap();
         let rows = query_width + key_width + value_width;
         if shards == 0
-            || attention.query_heads % shards != 0
-            || attention.kv_heads % shards != 0
-            || rows % shards != 0
+            || !attention.query_heads.is_multiple_of(shards)
+            || !attention.kv_heads.is_multiple_of(shards)
+            || !rows.is_multiple_of(shards)
         {
             return Err(TensorContractError::UnsupportedPlanOperation {
                 operation: "MiMo fused QKV checkpoint shards do not divide attention geometry",
