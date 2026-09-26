@@ -392,3 +392,38 @@ verbatim). Tool: `m1-g2-5090.py`.
 
 No default follows from either half alone; with BOX27 these are the two rigs CLAUDE.md requires
 for a per-device decision.
+
+## E. OWED 18: the KV handoff O_DIRECT arm (registered 2026-09-26 before any code)
+
+Baseline (B2 on BOX27): export is serialize plus sha256 plus a 4 MiB `BufWriter` into the page
+cache, then `fsync`, about 1.5 to 1.7 GB/s end to end; import is a 4 MiB `BufReader`, validated
+frame by frame, about 1.4 GB/s. Both are far below the drive, so the question is whether the page
+cache copy and the fsync writeback are part of the engine-side cost.
+
+Mechanism: `MEMRA_KV_HOST_HANDOFF_IO=direct` (default `buffered`, a default-OFF door with a
+decide-by date 14 days after landing). Export writes the `.tmp` file with `O_DIRECT` through one
+4096-aligned 4 MiB buffer: full buffers go straight to the device, the last block is padded with
+zeros, the file is truncated to its logical length, then `fdatasync`, then the same rename.
+Import reads with `O_DIRECT` through the same aligned buffer shape. The wire format does not
+change: a direct-written file equals a buffered-written file byte for byte, and either reader
+reads either file. A filesystem that refuses `O_DIRECT` fails the export or import loudly
+(`O_DIRECT open refused`); there is no silent buffered fallback inside the direct arm.
+
+Correctness first, before any timing:
+1. Unit: the same header and frames through both writers give byte-identical files (sha256), for
+   lengths that end on, before and after a 4096 boundary, including an empty entry list; each
+   reader reads both files to identical entries; truncation and corrupt-frame behavior under the
+   direct reader equal the buffered reader's (the existing `host_handoff_tests` cells run for
+   both modes).
+2. Cell, forced ON and OFF: the B2 cycle (`m1-handoff-driver.py`, same prompts manifest, spec
+   off, 1 GiB) with each arm; every probe's text identical to cold, import entries equal export
+   entries, zero skips.
+
+Timing (5090 half now; the PRO 6000 half needs a target card): one collector cell per cycle
+pair, idle-gated like section D, 1 GiB, five forward pairs (buffered then direct) and five
+reverse pairs, alternating. Metrics per cycle: export ms, its write and fsync parts, import s.
+Verdict per metric on the within-pair ratio direct / buffered: winner at median <= 0.95 with at
+least 4 of 5 pairs below 1 in each order, loser at median >= 1.05 with the same agreement,
+otherwise flat. The 8 GiB cell runs the same way if the process fits the rig's 20 GiB cgroup; if
+it does not, that is recorded as refused by the rig rule. A 5090 result sets at most a 5090
+default; the door stays default-OFF until both rigs have a row.
