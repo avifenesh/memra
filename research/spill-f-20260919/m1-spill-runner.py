@@ -41,6 +41,7 @@ def load(name, path):
 
 B = load("battery", ROOT / "tools/tier-battery.py")
 CACHE = load("regime", HERE / "m1-cache-regime.py")
+GPU = load("gpusampler", HERE / "m1-gpu-sampler.py")  # telemetry amendment: recording only
 SAMPLER = HERE / "m1-host-sampler.py"
 SAMPLE = load("sampler", SAMPLER)
 
@@ -210,6 +211,12 @@ def run_visit(args, lock, arm, round_index, position, visit_dir, identity, leave
     env = arm_env(lock, arm)
     env.update(env_extra or {})
     raw = visit_dir / "run.log"
+    gpu = None
+    if not args.stub_no_lock:
+        try:
+            gpu = GPU.GpuSampler(visit_dir / "gpu.csv").start()
+        except OSError as err:
+            rec["gpu_telemetry"] = {"error": str(err)}
     started = time.monotonic_ns()
     with raw.open("xb") as log:
         child = subprocess.Popen([str(args.binary), str(args.artifact)], stdout=log,
@@ -253,6 +260,8 @@ def run_visit(args, lock, arm, round_index, position, visit_dir, identity, leave
                "utime_s": usage.ru_utime, "stime_s": usage.ru_stime, "maxrss_kB": usage.ru_maxrss,
                "source": "wait4 rusage (ru_inblock, ru_oublock x 512)"}
     rec["wall_ns"] = time.monotonic_ns() - started
+    if gpu is not None:
+        rec["gpu_telemetry"] = gpu.stop()
     sampler.send_signal(signal.SIGTERM)
     sampler.wait(timeout=10)
     rec.update(exit_code=code, timed_out=timed_out, proc_io=proc_io, raw_log_sha256=sha(raw))
@@ -399,10 +408,16 @@ def run(args):
             resident, pages = v["residency_end"]
             v["bound_held"] = bool(pages and resident / pages < args.bound_residency_max)
             v["regime_ok"] = bool(v.get("regime_ok", True) and v["bound_held"])
+        # OWED 26 G1: the fallback count is part of every positioned-read arm's gate. A direct arm
+        # with fallbacks is refused in correctness(); any other positioned-read arm is unclean.
+        drop = v["parsed"]["drop"]
+        v["mmap_fallbacks"] = int(drop[4]) if drop else None
+        v["fallback_unclean"] = bool(expected_depth(arm) is not None and not arm["name"].startswith("direct")
+                                     and v["mmap_fallbacks"])
         v["clean_timing"] = bool(v["telemetry_ok"] and v["thermal_ok"] and v["identity_after_ok"]
                                  and v.get("regime_ok", True) and c is not None
                                  and c["foreign_share"] <= args.contamination_limit
-                                 and not v.get("gpu_cotenant", False))
+                                 and not v.get("gpu_cotenant", False) and not v["fallback_unclean"])
         v["scored"] = bool(v["clean_timing"] and not v["correctness_problems"]
                            and v["exit_code"] == 0 and not v["timed_out"])
         v["tok_s"] = float(v["parsed"]["generated"][2]) if v["parsed"]["generated"] else None
@@ -413,10 +428,13 @@ def run(args):
     if args.smoke:
         summary = {"smoke": True, "scored": False, "arms": {}, "regime_scored": False,
                    "note": "one-round smoke: line shapes and visit time only, never a verdict"}
+    summary["mmap_fallback_visits"] = {n: sum(1 for v in visits if v["arm"] == n and v.get("mmap_fallbacks"))
+                                       for n in names}
     summary.update(refused_arms=sorted(refused), regime=args.regime, visits=len(visits), qualified=False,
                    identity_sha256=sha(args.out / "identity.json"))
     (args.out / "summary.json").write_text(json.dumps(summary, indent=1) + "\n")
-    print("M1-SUMMARY " + json.dumps({k: summary[k] for k in ("regime", "visits", "regime_scored", "refused_arms")}))
+    print("M1-SUMMARY " + json.dumps({k: summary[k] for k in ("regime", "visits", "regime_scored", "refused_arms",
+                                                               "mmap_fallback_visits")}))
     for arm, s in summary["arms"].items():
         print(f"M1-VERDICT regime={args.regime} arm={arm} vs {lock['baseline']}: {s['verdict']} "
               f"median_ratio={s['median_ratio']} pairs={s['n_pairs']}")

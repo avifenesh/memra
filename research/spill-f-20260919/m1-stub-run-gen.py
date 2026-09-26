@@ -57,7 +57,9 @@ def main():
             over += 1
         print(f"spill stages DECODE-WINDOW: worker_read_ms=1.000 demand_read_ms=0.000 wait_ms=0.500 "
               f"h2d_submits={reads} overread_bytes={over}")
-        print(f"[spill-pread] reads={reads} bytes={reads * 473088} errors=0 short_reads=0 fallbacks=0 "
+        # OWED 26 G1 seam: M1_STUB_FALLBACKS=<arm> reports ring-busy mmap fallbacks for that arm.
+        fb = 7 if env.get("M1_STUB_FALLBACKS") == arm else 0
+        print(f"[spill-pread] reads={reads} bytes={reads * 473088} errors=0 short_reads=0 fallbacks={fb} "
               f"buffer_waits=3 ring_full=0 overread_bytes={over} worker_read_ns=1 demand_read_ns=0 "
               f"wait_ns=1 h2d_submits={reads}", file=sys.stderr)
     return 0

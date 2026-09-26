@@ -24,6 +24,9 @@ ROOT = HERE.parents[1]
 spec = importlib.util.spec_from_file_location("run_g2", ROOT / "research/spill-d-20260919/run-g2.py")
 G = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(G)
+gspec = importlib.util.spec_from_file_location("gpusampler", HERE / "m1-gpu-sampler.py")
+GPU = importlib.util.module_from_spec(gspec)
+gspec.loader.exec_module(GPU)  # telemetry amendment: recording only
 SIZES = [4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864, 268435456, 1073741824]
 
 
@@ -63,16 +66,19 @@ def main():
         (a.out / (name + ".compute.log")).write_text(inventory)
         G.B.require(not inventory.strip(), "competing GPU process; campaign aborted")
         raw = a.out / (name + ".log")
+        gpu = GPU.GpuSampler(a.out / (name + ".gpu.csv")).start()
         command = [str(a.probe.resolve()), "--bytes", str(size), "--copies", str(copies),
                    "--order", order, "--direction", "both", "--repeats", "1"]
         with raw.open("xb") as log:
             result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, pass_fds=(a.lock_fd,), check=False)
+        telemetry = gpu.stop()
         G.B.require(result.returncode == 0, "probe failed; raw log " + raw.name)
         samples = check(raw.read_text(), size, copies, order, scored)
         with (a.out / "samples.jsonl").open("a") as stream:
             for s in samples:
                 stream.write(json.dumps({"phase": "scored" if scored else "calibration", "visit": name,
-                                         "raw_log": raw.name, "raw_sha256": G.B.digest(raw), **s}) + "\n")
+                                         "raw_log": raw.name, "raw_sha256": G.B.digest(raw),
+                                         "gpu_telemetry": telemetry, **s}) + "\n")
             stream.flush(); os.fsync(stream.fileno())
         print(json.dumps({"visit": name, "copies": copies, "minimum_wall_ns": min(s["wall_ns"] for s in samples),
                           "scored": scored}), flush=True)
