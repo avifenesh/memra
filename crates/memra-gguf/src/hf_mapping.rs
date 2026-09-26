@@ -34,6 +34,18 @@ pub fn ggml_to_hf(ggml: &str, arch: &Arch) -> Option<String> {
     let rest = ggml.strip_prefix("blk.")?;
     let (il, suffix) = rest.split_once('.')?;
 
+    if *arch == Arch::MiMoV2 {
+        let mimo_suffix = match suffix {
+            "attn_qkv.weight" => Some("self_attn.qkv_proj.weight"),
+            "attn_sink.bias" => Some("self_attn.attention_sink_bias"),
+            "exp_probs_b.bias" => Some("mlp.gate.e_score_correction_bias"),
+            _ => None,
+        };
+        if let Some(suffix) = mimo_suffix {
+            return Some(format!("model.layers.{il}.{suffix}"));
+        }
+    }
+
     // MiniMax-M3 MoE-side names live under `block_sparse_moe.` (Mixtral-style), with DeepSeek-V3
     // routing extras (e_score_correction_bias) and `shared_experts.{p}_proj` (plural, no gate_inp).
     // Dense FFN layers (moe_layer_freq==0) keep the standard `mlp.{p}_proj` names below.
@@ -1151,6 +1163,75 @@ fn resolve_hybrid_ssm(ggml: &str, _cfg: &ModelConfig) -> Option<HfTarget> {
 mod tests {
     use super::*;
     use crate::config::Arch;
+
+    #[test]
+    fn mimo_loader_requests_resolve_to_pinned_contract_tensors() {
+        use crate::config::{HfConfig, ModelConfig};
+        use crate::model_packs;
+        use crate::model_plan::ModelPlan;
+        use crate::tensor_contract::{
+            CheckpointDialect, ContractOptions, ExpertTensor, LayerTensor, TensorId,
+        };
+
+        let cfg = ModelConfig::from_hf(&HfConfig::parse(include_str!(
+            "model_packs/mimo_v2/fixtures/config.json"
+        )));
+        let plan = ModelPlan::compile(&cfg).unwrap();
+        let contract = model_packs::by_alias("mimo_v2_source")
+            .unwrap()
+            .compile_tensor_contract(
+                &cfg,
+                &plan,
+                CheckpointDialect::HfSafetensors,
+                ContractOptions::default(),
+            )
+            .unwrap();
+        for (ggml, id) in [
+            (
+                "blk.0.attn_qkv.weight",
+                TensorId::Layer {
+                    index: 0,
+                    tensor: LayerTensor::FusedQkv,
+                },
+            ),
+            (
+                "blk.1.attn_sink.bias",
+                TensorId::Layer {
+                    index: 1,
+                    tensor: LayerTensor::AttentionSink,
+                },
+            ),
+            (
+                "blk.1.exp_probs_b.bias",
+                TensorId::Layer {
+                    index: 1,
+                    tensor: LayerTensor::MoeRouterBias,
+                },
+            ),
+            (
+                "blk.47.ffn_down_exps.255.weight",
+                TensorId::Expert {
+                    layer: 47,
+                    expert: 255,
+                    tensor: ExpertTensor::Down,
+                },
+            ),
+        ] {
+            let expected = contract
+                .requirements
+                .iter()
+                .find(|requirement| requirement.id == id)
+                .unwrap();
+            let HfTarget::Plain(actual) = resolve_ggml(ggml, &cfg).unwrap() else {
+                panic!("{ggml}: loader request gained a value transform");
+            };
+            assert!(
+                expected.names.contains(&actual),
+                "{ggml} resolved to {actual}, outside {:?}",
+                expected.names
+            );
+        }
+    }
 
     /// The glm5_next KDA name map may not drift from the tensor contract: for every KDA tensor
     /// the contract declares, the ggml spelling must resolve to exactly the HF spelling the
