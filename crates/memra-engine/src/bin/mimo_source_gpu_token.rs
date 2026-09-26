@@ -21,7 +21,7 @@ use memra_gguf::model_plan::{
     ActivationPlan, AttentionPlan, FullAttentionPlan, LayerPlan, MlpPlan, ModelPlan, NormKind,
     ResidualTopology, RopeFactors, StatePlan, WeightTransform,
 };
-use memra_gguf::nvfp4_repack::{f32_to_fp8_e4m3, fp8_e4m3_to_f32};
+use memra_gguf::nvfp4_repack::{f32_to_fp8_e4m3, f32_to_nvfp4, f32_to_q8_0, fp8_e4m3_to_f32};
 use memra_gguf::safetensors::StModel;
 use memra_gguf::source::{SafetensorsSource, TensorSource};
 use sha2::{Digest, Sha256};
@@ -228,6 +228,7 @@ struct AttentionPhase<'a> {
     q8q8_probe: bool,
     q8q8_replay: bool,
     global_only_kv: bool,
+    cpu_pair: Option<CpuKvPair>,
 }
 
 impl AttentionPhase<'_> {
@@ -543,6 +544,125 @@ fn q8q8_kv_probe(
     }
 }
 
+#[derive(Clone, Copy)]
+enum CpuKvFormat {
+    Nvfp4,
+    Q8,
+    Int16,
+}
+
+impl CpuKvFormat {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Nvfp4 => "nvfp4_e2m1_scale16",
+            Self::Q8 => "q8_0_scale32",
+            Self::Int16 => "int16_scale_per_row_f32",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CpuKvPair {
+    key: CpuKvFormat,
+    value: CpuKvFormat,
+    label: &'static str,
+}
+
+fn cpu_kv_pair(name: &str) -> Option<CpuKvPair> {
+    use CpuKvFormat::{Int16, Nvfp4, Q8};
+    let (key, value, label) = match name {
+        "nvfp4-nvfp4" => (Nvfp4, Nvfp4, "nvfp4-nvfp4"),
+        "q8-nvfp4" => (Q8, Nvfp4, "q8-nvfp4"),
+        "nvfp4-int16" => (Nvfp4, Int16, "nvfp4-int16"),
+        "int16-nvfp4" => (Int16, Nvfp4, "int16-nvfp4"),
+        "q8-int16" => (Q8, Int16, "q8-int16"),
+        "int16-int16" => (Int16, Int16, "int16-int16"),
+        _ => return None,
+    };
+    Some(CpuKvPair { key, value, label })
+}
+
+fn cpu_kv_roundtrip(values: &[f32], format: CpuKvFormat) -> Result<(Vec<f32>, usize), Fail> {
+    if values.is_empty() || values.iter().any(|value| !value.is_finite()) {
+        return Err("MiMo CPU format candidate row is empty or non-finite".into());
+    }
+    let result = match format {
+        CpuKvFormat::Nvfp4 if values.len().is_multiple_of(64) => {
+            let bytes = f32_to_nvfp4(values);
+            (
+                dequantize(GgmlType::NVFP4, &bytes, values.len()),
+                bytes.len(),
+            )
+        }
+        CpuKvFormat::Q8 if values.len().is_multiple_of(32) => {
+            let bytes = f32_to_q8_0(values);
+            (
+                dequantize(GgmlType::Q8_0, &bytes, values.len()),
+                bytes.len(),
+            )
+        }
+        CpuKvFormat::Int16 => {
+            let max_abs = values
+                .iter()
+                .fold(0.0f32, |max, value| max.max(value.abs()));
+            let scale = if max_abs > 0.0 {
+                max_abs / 32767.0
+            } else {
+                1.0
+            };
+            let restored = values
+                .iter()
+                .map(|value| {
+                    let code = (value / scale).round_ties_even().clamp(-32767.0, 32767.0) as i16;
+                    code as f32 * scale
+                })
+                .collect();
+            (restored, values.len() * 2 + 4)
+        }
+        _ => return Err("MiMo CPU format candidate row alignment changed".into()),
+    };
+    Ok(result)
+}
+
+fn cpu_kv_pair_probe(
+    engine: &Engine,
+    key: &CudaSlice<f32>,
+    value: &CudaSlice<f32>,
+    phase: &mut AttentionPhase<'_>,
+    layer: usize,
+) -> Result<Option<RestoredKv>, Fail> {
+    let Some(pair) = phase.cpu_pair else {
+        return Ok(None);
+    };
+    let key_original = engine.dtoh(key)?;
+    let value_original = engine.dtoh(value)?;
+    let (key_restored, key_bytes) = cpu_kv_roundtrip(&key_original, pair.key)?;
+    let (value_restored, value_bytes) = cpu_kv_roundtrip(&value_original, pair.value)?;
+    for (name, format, original, restored, bytes) in [
+        ("key", pair.key, &key_original, &key_restored, key_bytes),
+        (
+            "value",
+            pair.value,
+            &value_original,
+            &value_restored,
+            value_bytes,
+        ),
+    ] {
+        let (max_abs, max_error, rms_error, zeroed) = q8q5_row_stats(original, restored)?;
+        writeln!(
+            phase.report,
+            "kv_cpu_pair\t{}\t{layer}\t{name}\t{}\t{}\t{max_abs:.9e}\t{max_error:.9e}\t{rms_error:.9e}\t{zeroed}\t{bytes}",
+            phase.turn,
+            format.label(),
+            original.len()
+        )?;
+    }
+    Ok(Some(RestoredKv {
+        key: engine.htod(&key_restored)?,
+        value: engine.htod(&value_restored)?,
+    }))
+}
+
 struct ResidentDense {
     gate: GpuTensor,
     up: GpuTensor,
@@ -810,6 +930,10 @@ fn attention_token(
             qkv.key = restored.key;
             qkv.value = restored.value;
         }
+        if let Some(restored) = cpu_kv_pair_probe(engine, &qkv.key, &qkv.value, phase, layer)? {
+            qkv.key = restored.key;
+            qkv.value = restored.value;
+        }
     }
     let streamed_sink = if phase.resident.is_none() && !global {
         Some(engine.htod(&read_vector(
@@ -973,9 +1097,9 @@ fn device_memory(engine: &Engine) -> Result<(usize, usize), Fail> {
 
 fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() < 5 || args.len() > 18 {
+    if args.len() < 5 || args.len() > 19 {
         return Err(
-            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--resident-moe] [--resident-text] [--grouped-moe] [--mirror-o-f32] [--profile-phases] [--capacity-probe=N] [--workspace-mib=N] [--kv-global-only] [--kv-fp8-probe | --kv-fp8-replay | --kv-q8q5-probe | --kv-q8q5-replay | --kv-q8q8-probe | --kv-q8q8-replay]"
+            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--resident-moe] [--resident-text] [--grouped-moe] [--mirror-o-f32] [--profile-phases] [--capacity-probe=N] [--workspace-mib=N] [--kv-global-only] [--kv-fp8-probe | --kv-fp8-replay | --kv-q8q5-probe | --kv-q8q5-replay | --kv-q8q8-probe | --kv-q8q8-replay | --kv-cpu-pair=K-V]"
                 .into(),
         );
     }
@@ -995,6 +1119,7 @@ fn run() -> Result<(), Fail> {
     let mut q8q8_probe = false;
     let mut q8q8_replay = false;
     let mut global_only_kv = false;
+    let mut cpu_pair: Option<CpuKvPair> = None;
     for option in args.iter().skip(5) {
         match option.as_str() {
             "--continue-one" if !continue_one => continue_one = true,
@@ -1010,6 +1135,12 @@ fn run() -> Result<(), Fail> {
             "--kv-q8q8-probe" if !q8q8_probe => q8q8_probe = true,
             "--kv-q8q8-replay" if !q8q8_replay => q8q8_replay = true,
             "--kv-global-only" if !global_only_kv => global_only_kv = true,
+            _ if option.starts_with("--kv-cpu-pair=") && cpu_pair.is_none() => {
+                cpu_pair = Some(
+                    cpu_kv_pair(&option["--kv-cpu-pair=".len()..])
+                        .ok_or("unsupported MiMo CPU KV pair")?,
+                );
+            }
             _ if option.starts_with("--tokens=") && requested_turns.is_none() => {
                 requested_turns = Some(option["--tokens=".len()..].parse()?);
             }
@@ -1034,10 +1165,16 @@ fn run() -> Result<(), Fail> {
     if q8q8_replay {
         q8q8_probe = true;
     }
+    if cpu_pair.is_some() {
+        global_only_kv = true;
+    }
     if u8::from(fp8_probe) + u8::from(q8q5_probe) + u8::from(q8q8_probe) > 1 {
         return Err("MiMo KV probe must select one storage format".into());
     }
-    if global_only_kv && !(fp8_probe || q8q5_probe || q8q8_probe) {
+    if cpu_pair.is_some() && (fp8_probe || q8q5_probe || q8q8_probe) {
+        return Err("MiMo CPU KV pair conflicts with a GPU KV format probe".into());
+    }
+    if global_only_kv && !(fp8_probe || q8q5_probe || q8q8_probe || cpu_pair.is_some()) {
         return Err("--kv-global-only requires one KV storage probe".into());
     }
     let turns = requested_turns.unwrap_or(if continue_one { 2 } else { 1 });
@@ -1052,6 +1189,7 @@ fn run() -> Result<(), Fail> {
             || fp8_probe
             || q8q5_probe
             || q8q8_probe
+            || cpu_pair.is_some()
             || global_only_kv
             || !resident_text
             || workspace_mib.is_some_and(|mib| mib > 8192)
@@ -1067,7 +1205,7 @@ fn run() -> Result<(), Fail> {
     if grouped_moe && !resident_text {
         return Err("MiMo grouped MoE diagnostic requires --resident-text".into());
     }
-    if (fp8_probe || q8q5_probe || q8q8_probe) && !resident_text {
+    if (fp8_probe || q8q5_probe || q8q8_probe || cpu_pair.is_some()) && !resident_text {
         return Err("MiMo KV storage probe requires --resident-text".into());
     }
     if mirror_o_f32 && !resident_text {
@@ -1085,7 +1223,7 @@ fn run() -> Result<(), Fail> {
     if grouped_moe && direct_bf16 {
         return Err("MiMo grouped MoE diagnostic requires f32 output accumulation".into());
     }
-    if (fp8_replay || q8q5_replay || q8q8_replay) && direct_bf16 {
+    if (fp8_replay || q8q5_replay || q8q8_replay || cpu_pair.is_some()) && direct_bf16 {
         return Err("MiMo KV replay cannot combine with direct BF16 matvec".into());
     }
     let dir = Path::new(&args[0]);
@@ -1337,6 +1475,14 @@ fn run() -> Result<(), Fail> {
     } else {
         String::from("format\tmemra-mimo-source-gpu-token-v1\n")
     };
+    let cpu_pair_numeric = cpu_pair.map(|pair| {
+        format!(
+            "memra_mimo_source_global_{}_cpu_roundtrip_candidate",
+            pair.label
+        )
+    });
+    let cpu_pair_format =
+        cpu_pair.map(|pair| format!("global_{}_sliding_f32_cpu_component", pair.label));
     writeln!(report, "model\tXiaomiMiMo/MiMo-V2.6-Flash-RL@{REVISION}")?;
     writeln!(report, "payload_verification\texternal_hf_verify_required")?;
     writeln!(report, "config_sha256\t{CONFIG_SHA256}")?;
@@ -1347,7 +1493,9 @@ fn run() -> Result<(), Fail> {
     writeln!(
         report,
         "numeric_class\t{}",
-        if q8q8_replay && global_only_kv {
+        if let Some(name) = cpu_pair_numeric.as_deref() {
+            name
+        } else if q8q8_replay && global_only_kv {
             "memra_mimo_source_global_q8_0_k_q8_0_v_sliding_f32_candidate"
         } else if q8q5_replay && global_only_kv {
             "memra_mimo_source_global_q8_0_k_q5_1_v_sliding_f32_candidate"
@@ -1381,6 +1529,11 @@ fn run() -> Result<(), Fail> {
     writeln!(report, "kv_q8q8_probe\t{q8q8_probe}")?;
     writeln!(report, "kv_q8q8_replay\t{q8q8_replay}")?;
     writeln!(report, "kv_global_only\t{global_only_kv}")?;
+    writeln!(
+        report,
+        "kv_cpu_pair\t{}",
+        cpu_pair.map_or("none", |pair| pair.label)
+    )?;
     writeln!(report, "stage_cut_before_layer\t{STAGE_CUT}")?;
     writeln!(report, "stage_transfer\thost_bounce")?;
     writeln!(
@@ -1409,7 +1562,9 @@ fn run() -> Result<(), Fail> {
     writeln!(
         report,
         "kv_format\t{}",
-        if q8q8_replay && global_only_kv {
+        if let Some(name) = cpu_pair_format.as_deref() {
+            name
+        } else if q8q8_replay && global_only_kv {
             "global_q8_0_k_q8_0_v_sliding_f32_component"
         } else if q8q5_replay && global_only_kv {
             "global_q8_0_k_q5_1_v_sliding_f32_component"
@@ -1492,6 +1647,7 @@ fn run() -> Result<(), Fail> {
                     q8q8_probe,
                     q8q8_replay,
                     global_only_kv,
+                    cpu_pair,
                 };
                 attention_token(
                     engine,
