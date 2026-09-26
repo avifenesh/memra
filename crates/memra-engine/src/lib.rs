@@ -937,6 +937,7 @@ pub mod mimo_nvfp4_ffi;
 pub mod mimo_qkv_ffi;
 pub mod mimo_sink_ffi;
 pub mod mimo_vision_attn_ffi;
+pub mod mimo_vision_load;
 pub mod mmq_ffi;
 pub mod moe_cache;
 pub mod prime_graph;
