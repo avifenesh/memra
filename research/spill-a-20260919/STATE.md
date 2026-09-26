@@ -4,8 +4,8 @@
 - Items 21 to 25 closed (DAY53 to DAY58); item 23's addendum F2b (`b4d6f95c2`) accepted.
 - Item 10 (the fanout publisher, DAY59): the owner-time split is built (`8b5e5e213`, log only). The attribution cell
   selects design B1 or B2 by a pre-registered rule.
-  - The 5090 cell (`rtx5090-day59/card-run.sh`) is queued behind lanes B and C on `/tmp/memra-5090.lock` (60 x 120 s),
-    running in the background; the first attempt is banked as `cell-cancelled/`.
+  - The 5090 re-run took the lock but read a foreign compute app on the card for all 15 idle checks and stopped
+    NOT RUN (DAY59 section 5, `rtx5090-day59/cell-not-run/`); the first attempt is banked as `cell-cancelled/`.
   - **The cell reads owner-thread time, so it wants a quiet host.** The 5090 rig's CPUs are shared with B and C; a
     target-card twin is prepared (`pro-single-day59/`: `build.sh <tip>`, then `driver.sh`), and if both run, the target
     card's selection decides (DAY59 section 4).
