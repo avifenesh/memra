@@ -104,12 +104,15 @@ int main(int argc,char** argv){try{
         std::sort(files.begin(),files.end());if(reverse)std::reverse(files.begin(),files.end());insist(files.size()==24,"24 actual rank/shape cases");
         for(auto& path:files){auto c=read_case(path);run_case(c,timing,true);}
     }else{
-        const int shapes[][3]={{0,512,4096},{0,1024,4096},{0,2048,4096},{0,4096,2048},{0,4096,4096},{0,8192,1024},{0,16384,1024},
+        // {0,2048,8192} is the TP half of wo_b, the longest served FP8 row (memra #710).
+        const int shapes[][3]={{0,512,4096},{0,1024,4096},{0,2048,4096},{0,2048,8192},{0,4096,2048},{0,4096,4096},{0,8192,1024},{0,16384,1024},
             {1,4,16384},{1,24,16384},{1,256,4096},{1,512,4096},{1,1024,4096},{2,129280,4096}};
-        for(int rank=0;rank<2;++rank)for(int i=0;i<13;++i){auto sh=shapes[reverse?12-i:i];auto c=synthetic(rank,sh[0],sh[1],sh[2]);run_case(c,timing,false);}
+        constexpr int ns=sizeof(shapes)/sizeof(shapes[0]);
+        for(int rank=0;rank<2;++rank)for(int i=0;i<ns;++i){auto sh=shapes[reverse?ns-1-i:i];auto c=synthetic(rank,sh[0],sh[1],sh[2]);run_case(c,timing,false);}
     }
-    // Tail and K boundaries cover partial two-row tiles and unroll remainders.
+    // Tail and K boundaries cover partial two-row tiles and unroll remainders. Past 4096 (dots)
+    // and 8192 (FP8) a row outgrows the pre-wait chunks and streams the rest (memra #710).
     for(int rank=0;rank<2;++rank){ck(cudaSetDevice(rank));tree_case();
-        for(int kind=0;kind<3;++kind)for(int k:{8,1016,1024,1032,2048,4096}){auto c=synthetic(rank,kind,3,k);run_case(c,false,false);}}
+        for(int kind=0;kind<3;++kind)for(int k:{8,1016,1024,1032,2048,4096,4104,8192,8200,9224}){auto c=synthetic(rank,kind,3,k);run_case(c,false,false);}}
     puts("PASS dense_fast_components");return 0;
 }catch(const std::exception& e){fprintf(stderr,"FAIL %s\n",e.what());return 1;}}
