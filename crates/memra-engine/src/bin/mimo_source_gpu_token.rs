@@ -1228,7 +1228,7 @@ fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() < 5 || args.len() > 21 {
         return Err(
-            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--prompt-ids-file=PATH] [--resident-moe] [--resident-text] [--grouped-moe] [--mirror-o-f32] [--profile-phases] [--capacity-probe=N] [--capacity-mixed-kv] [--workspace-mib=N] [--kv-global-only] [--kv-fp8-probe | --kv-fp8-replay | --kv-q8q5-probe | --kv-q8q5-replay | --kv-q8q8-probe | --kv-q8q8-replay | --kv-cpu-pair=K-V | --kv-mixed-gpu] [--mixed-grouped-attn | --mixed-deep-attn | --mixed-dp4a-attn]"
+            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--prompt-ids-file=PATH] [--resident-moe] [--resident-text] [--grouped-moe] [--mirror-o-f32] [--profile-phases] [--capacity-probe=N] [--capacity-mixed-kv] [--workspace-mib=N] [--kv-global-only] [--kv-fp8-probe | --kv-fp8-replay | --kv-q8q5-probe | --kv-q8q5-replay | --kv-q8q8-probe | --kv-q8q8-replay | --kv-cpu-pair=K-V | --kv-mixed-gpu] [--mixed-grouped-attn | --mixed-deep-attn | --mixed-dp4a-attn | --mixed-native-vscale]"
                 .into(),
         );
     }
@@ -1255,6 +1255,7 @@ fn run() -> Result<(), Fail> {
     let mut mixed_grouped_attn = false;
     let mut mixed_deep_attn = false;
     let mut mixed_dp4a_attn = false;
+    let mut mixed_native_vscale = false;
     for option in args.iter().skip(5) {
         match option.as_str() {
             "--continue-one" if !continue_one => continue_one = true,
@@ -1274,6 +1275,7 @@ fn run() -> Result<(), Fail> {
             "--mixed-grouped-attn" if !mixed_grouped_attn => mixed_grouped_attn = true,
             "--mixed-deep-attn" if !mixed_deep_attn => mixed_deep_attn = true,
             "--mixed-dp4a-attn" if !mixed_dp4a_attn => mixed_dp4a_attn = true,
+            "--mixed-native-vscale" if !mixed_native_vscale => mixed_native_vscale = true,
             "--capacity-mixed-kv" if !capacity_mixed_kv => capacity_mixed_kv = true,
             _ if option.starts_with("--kv-cpu-pair=") && cpu_pair.is_none() => {
                 cpu_pair = Some(
@@ -1354,7 +1356,15 @@ fn run() -> Result<(), Fail> {
     if mixed_dp4a_attn && !(mixed_gpu || capacity_mixed_kv) {
         return Err("--mixed-dp4a-attn requires mixed GPU KV or mixed capacity".into());
     }
-    if u8::from(mixed_grouped_attn) + u8::from(mixed_deep_attn) + u8::from(mixed_dp4a_attn) > 1 {
+    if mixed_native_vscale && !(mixed_gpu || capacity_mixed_kv) {
+        return Err("--mixed-native-vscale requires mixed GPU KV or mixed capacity".into());
+    }
+    if u8::from(mixed_grouped_attn)
+        + u8::from(mixed_deep_attn)
+        + u8::from(mixed_dp4a_attn)
+        + u8::from(mixed_native_vscale)
+        > 1
+    {
         return Err("MiMo mixed attention must select one schedule".into());
     }
     if resident_text {
@@ -1536,7 +1546,7 @@ fn run() -> Result<(), Fail> {
     if let Some(sessions) = capacity_sessions {
         let workspace_bytes = workspace_mib.unwrap_or(0) * 1024 * 1024;
         let attention_scratch_bytes = if capacity_mixed_kv {
-            let tiles: usize = if mixed_deep_attn || mixed_dp4a_attn {
+            let tiles: usize = if mixed_deep_attn || mixed_dp4a_attn || mixed_native_vscale {
                 2048
             } else if mixed_grouped_attn {
                 16384
@@ -1666,6 +1676,7 @@ fn run() -> Result<(), Fail> {
         writeln!(report, "mixed_grouped_attention\t{mixed_grouped_attn}")?;
         writeln!(report, "mixed_deep_attention\t{mixed_deep_attn}")?;
         writeln!(report, "mixed_dp4a_attention\t{mixed_dp4a_attn}")?;
+        writeln!(report, "mixed_native_vscale\t{mixed_native_vscale}")?;
         writeln!(report, "resident_moe_load_ms\t{resident_load_ms:.3}")?;
         writeln!(report, "resident_text_load_ms\t{resident_text_load_ms:.3}")?;
         for stage in 0..2 {
@@ -1713,7 +1724,12 @@ fn run() -> Result<(), Fail> {
     let mut packed_kv: Vec<Option<PackedKvState>> =
         std::iter::repeat_with(|| None).take(LAYERS).collect();
     let mut mixed_workspaces = if mixed_gpu {
-        Some(if mixed_dp4a_attn {
+        Some(if mixed_native_vscale {
+            [
+                MiMoMixedAttentionWorkspace::new_dp4a_native_vscale(&engines[0], turns)?,
+                MiMoMixedAttentionWorkspace::new_dp4a_native_vscale(&engines[1], turns)?,
+            ]
+        } else if mixed_dp4a_attn {
             [
                 MiMoMixedAttentionWorkspace::new_dp4a(&engines[0], turns)?,
                 MiMoMixedAttentionWorkspace::new_dp4a(&engines[1], turns)?,
@@ -1760,7 +1776,9 @@ fn run() -> Result<(), Fail> {
     writeln!(
         report,
         "numeric_class\t{}",
-        if mixed_gpu && mixed_dp4a_attn {
+        if mixed_gpu && mixed_native_vscale {
+            "memra_mimo_source_global_q8_0_k_nvfp4_v_q8_query_dp4a_native_vscale_candidate"
+        } else if mixed_gpu && mixed_dp4a_attn {
             "memra_mimo_source_global_q8_0_k_nvfp4_v_q8_query_dp4a_deep_candidate"
         } else if mixed_gpu && mixed_deep_attn {
             "memra_mimo_source_global_q8_0_k_nvfp4_v_native_deep_split_candidate"
@@ -1807,6 +1825,7 @@ fn run() -> Result<(), Fail> {
     writeln!(report, "mixed_grouped_attention\t{mixed_grouped_attn}")?;
     writeln!(report, "mixed_deep_attention\t{mixed_deep_attn}")?;
     writeln!(report, "mixed_dp4a_attention\t{mixed_dp4a_attn}")?;
+    writeln!(report, "mixed_native_vscale\t{mixed_native_vscale}")?;
     writeln!(report, "kv_global_only\t{global_only_kv}")?;
     writeln!(
         report,
@@ -1841,7 +1860,9 @@ fn run() -> Result<(), Fail> {
     writeln!(
         report,
         "kv_format\t{}",
-        if mixed_gpu && mixed_dp4a_attn {
+        if mixed_gpu && mixed_native_vscale {
+            "global_q8_0_k_nvfp4_v_native_dp4a_fp8_scale_split_sliding_f32"
+        } else if mixed_gpu && mixed_dp4a_attn {
             "global_q8_0_k_nvfp4_v_native_dp4a_split_sliding_f32"
         } else if mixed_gpu && mixed_deep_attn {
             "global_q8_0_k_nvfp4_v_native_deep_split_sliding_f32"

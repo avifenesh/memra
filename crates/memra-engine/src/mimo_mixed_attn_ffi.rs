@@ -93,6 +93,24 @@ unsafe extern "C" {
         scratch3_floats: usize,
         stream: *mut c_void,
     ) -> i32;
+    fn memra_mimo_global_q8_nvfp4_decode_dp4a_native_vscale(
+        q: *const f32,
+        k: *const u8,
+        v: *const u8,
+        output: *mut f32,
+        scratch1: *mut f32,
+        scratch2: *mut f32,
+        scratch3: *mut f32,
+        seq: i32,
+        heads: i32,
+        kv_heads: i32,
+        qk_dim: i32,
+        v_dim: i32,
+        scratch1_floats: usize,
+        scratch2_floats: usize,
+        scratch3_floats: usize,
+        stream: *mut c_void,
+    ) -> i32;
 }
 
 fn extents(seq: usize, program: u8) -> Result<(usize, usize, usize), &'static str> {
@@ -102,7 +120,7 @@ fn extents(seq: usize, program: u8) -> Result<(usize, usize, usize), &'static st
     let tile_size = match program {
         0 => BASE_TILE,
         1 => GROUPED_TILE,
-        2 | 3 => DEEP_SPLIT,
+        2..=4 => DEEP_SPLIT,
         _ => return Err("MiMo mixed attention program is unavailable"),
     };
     let tiles = seq.div_ceil(tile_size);
@@ -143,6 +161,13 @@ impl MiMoMixedAttentionWorkspace {
 
     pub fn new_dp4a(engine: &Engine, max_seq: usize) -> Result<Self, Box<dyn std::error::Error>> {
         Self::new_for(engine, max_seq, 3)
+    }
+
+    pub fn new_dp4a_native_vscale(
+        engine: &Engine,
+        max_seq: usize,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        Self::new_for(engine, max_seq, 4)
     }
 
     fn new_for(
@@ -206,6 +231,7 @@ impl Engine {
             1 => memra_mimo_global_q8_nvfp4_decode_grouped,
             2 => memra_mimo_global_q8_nvfp4_decode_deep,
             3 => memra_mimo_global_q8_nvfp4_decode_dp4a,
+            4 => memra_mimo_global_q8_nvfp4_decode_dp4a_native_vscale,
             _ => return Err("MiMo mixed attention program is unavailable".into()),
         };
         let rc = unsafe {
