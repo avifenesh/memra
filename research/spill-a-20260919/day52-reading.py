@@ -179,6 +179,10 @@ def read_cell(root, cell):
 
 def main():
     root = sys.argv[1]
+    # WP-A day 67 (`DAY67.md` section 1): a sitting without DAY52's diagnostic `p` arm reads the chain cell as base
+    # against p2; the placing rule then prints `not placed` with its deltas absent.
+    if not glob.glob(os.path.join(root, "chain", "ab", "o*", "b*-p")):
+        ARMS_OF["chain"] = ("base", "p2")
     failed, unread = False, False
     pools = {}
     for cell in ("demote", "free", "promote", "chain"):
