@@ -34,15 +34,20 @@ row, median of N=3 rows (N=2 for DSpark), 2026-09-24/25, same text on every requ
 | DSpark (`MEMRA_DSV4_DRAFTER=dspark`), TP/EP | 82.73 | 72.79 / 63.57 | 207 ms |
 | DSpark, PP-2 | 70.60 | 61.72 / 53.90 | 267 ms |
 
-Known costs of TP/EP:
-- **Concurrency.** It serves one request at a time. Plain PP-2 pipelines two across its cards,
-  so at c2 PP-2 aggregates 120.9 tok/s against TP/EP's 76.9 on the Workstation pair. A TP/EP
-  B-row step is next.
+Concurrency: the plain TP/EP route serves four lanes whose steps share one captured B-row
+graph step (memra #710). Aggregate on the Workstation pair:
+
+| | c2 | c4 |
+|---|---|---|
+| TP/EP, four lanes | 102.0 tok/s, TTFT 0.24 s | 132.8, TTFT 0.42 s |
+| PP-2, two pipelined lanes | 120.9, TTFT 0.30 s | 120.6, TTFT 4.5 s |
+
+Known cost of TP/EP:
 - **Context.** A session holds about 370k tokens with DSpark and 790k plain, against PP-2's 1M.
   The head-split KV lane follows.
 
-Receipts: `research/dsv4f-bringup-20260923/tpep-default/RESULTS.md`, `dspark-ep/RESULTS.md`,
-`ceiling/CEILING.md`.
+Receipts: `research/dsv4f-bringup-20260923/tpep-default/RESULTS.md`, `tp-rows/RESULTS.md`,
+`dspark-ep/RESULTS.md`, `ceiling/CEILING.md`.
 
 ### Before the flip: PP-2, 2026-09-23
 

@@ -866,6 +866,7 @@ The source rebase does not relabel the pinned binary receipts as a new build.
 | `cu/dsv4_replay_control.cuh` | `dsv4_replay_control_kernel` | Integer live token/position/uniform storage, ring slot, compressor cadence/offsets, indexer bounds. Same-device C4/C128 IF handles set on every execution. Standalone `tools/dsv4-full-token-control-gate.cu` only; no runtime FFI or model dispatch. Default OFF; decide-by 2026-09-22. `research/dsv4f-full-token-replay-20260908/DESIGN.md`. |
 | `tools/dsv4-full-token-control-gate.cu` | `snapshot`, `emit4`, `emit128`, `producer`, `finish`, `rollback` | Integer payload/control fixtures around the existing `memra_tp_ar_1stage` transport and its live-fault entry. Not model compressor, attention, head or sampling kernels. No runtime dispatch. Same diagnostic lifetime as the control kernel. |
 | `cu/dsv4_gpu.cu` | `dsv4_replay_input_kernel`, `dsv4_replay_tick_kernel` | Stable 24-byte request controls and per-rank segment counters. Gate-only full-token replay, default OFF, decide-by 2026-09-22; FFI in `dsv4_ffi.rs`. |
+| `cu/dsv4_gpu.cu` | `dsv4_replay_rows_input_kernel` | B-row graph inputs (memra #710): row r reads its token and position from the batch's 24-byte words at `input[3r]` and writes its token, position and window slot into the B-row workspace. Captured at the head of every TP/EP B-row forward graph; FFI `memra_dsv4_replay_rows_input`. |
 | `cu/dsv4_gpu.cu` | `dsv4_replay_copy_row_kernel`, `dsv4_replay_copy_if_kernel` | Live append/emission addresses and uniformly predicated pending shifts. Byte copies only; existing active compressor arithmetic/reduction order retained. Same diagnostic door. |
 | `cu/dsv4_gpu.cu` | Existing compressor pool, f32 RMSNorm, RoPE-at, Hadamard and activation-quant kernels | Optional uniform whole-block emission predicate at entry, before barriers. Null preserves eager behavior. `memra_dsv4_replay_compressor_emit` composes the exact active program; no CUDA conditional body. Real-kernel byte/sanitizer gate: `tools/dsv4-replay-live-kernel-gate.cu`. |
 | `cu/dsv4_gpu.cu` | Existing redirect, numeric top-k, f32 indexer-score and sink score/soft/out kernels | Optional live position/count/slot inputs; same loop bounds and reduction order as eager. No padded reduction replacement. Same default-OFF full-token door and component gate. |
@@ -926,7 +927,12 @@ with identity, alongside the standalone cadence #508 and dense #507 receipts.
 
 `cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_dense_fast_fp8_kernel<2>`
 and `dsv4_dense_fast_dots_kernel<1>`, selected in the existing raw exact-tail
-launchers by `MEMRA_DSV4_DENSE_FAST`. FP8 uses 256 threads for two independent
+launchers by `MEMRA_DSV4_DENSE_FAST`. Since memra #710 the FP8 kernel takes a third template argument, `M` token rows
+(`dsv4_dense_fast_fp8_kernel<2, false, M>`, M = 2..8): `memra_dsv4_gemv_fp8_m` routes B-row
+decode and verify widths there instead of `dsv4_gemv_fp8_m_kernel<M>`. The rows share each
+weight load, and each keeps its own accumulator in the same leaf order and its own reduction
+through the same tree, with two barriers per row instead of seven. Every bit equals the m-row
+kernel's and each row's one-row launch (`tests/dsv4_dense_fast_rows_gpu.rs`). FP8 uses 256 threads for two independent
 rows sharing the identical E4M3 table; each row keeps 128 leaves. Dots retain
 128 threads, existing 16-byte operand loads and four-iteration loop unrolling.
 Leaf t consumes K positions 8*t+1024*j+[0..7] in ascending j/element order.
