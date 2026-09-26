@@ -108,3 +108,38 @@ No, in production, for three reasons:
 - **CPU battery:** fmt, clippy `--all-targets -D warnings`, the memra-engine and memra-server lib tests, and
   `tools/check-flags.sh`.
 - **Budget:** 0.2 agent-day.
+
+## 5. Design P as built (`4f297e7bd` on `lane/spill-a-integ69-20260926`, `59376ebeb` on this lane)
+
+- (P.1, P.2) Built as registered:
+  - `LeasePool::drain` advances the epoch, then frees every idle backing and releases its charge;
+  - `close` is `open = false` plus the drain;
+  - every `PinnedAllocation` records `lease_pool.epoch()` at allocation, and its drop calls `pool.put(b, self.epoch)`;
+  - `put` parks only on `open && epoch == current && room`.
+- (P.3) `LeasePool<B: PoolBacking = PinnedBacking>`, with `PoolBacking { class, pool_kind }`. `PinnedBacking`'s `class`
+  is its `capacity()`. DAY63's census now counts `.capacity` reads at 2 (set_len's bound and the pool's class read),
+  down from 3 (take, put, and the class read), because take and put read `class()`.
+- (P.4) `HostPrefixCache::purge_tenant` ends with `self.purge_scrub()`. It drains the pool and runs
+  `HostStaging::scrub`, which is `fill(0)` over every idle buffer, keeping the buffers and charges. It logs
+  `[prefix-host] purge scrub: ..`.
+- **Cells:**
+  - (a) The CPU test is green (`day69_a_drain_frees_every_idle_backing_and_no_earlier_backing_parks_again`).
+    - Red arm `day69/red-arm-epoch.patch` (`put` ignores the epoch, with a marker) fails it on the late drop,
+      verbatim: `assertion 'left == right' failed: the earlier backing freed at its drop / left: 2 / right: 3`. The
+      backing leased before the drain parked. The census (b) fails with it: `assertion failed:
+      put.contains("|| epoch != self.epoch.get()")` (`day69/red-arm-epoch.log`).
+  - (b) The engine census is green (`day69_the_pool_parks_only_in_its_epoch_and_the_drain_advances_it_first`).
+  - (c) The worker census is green (`day69_the_purge_ends_with_the_pool_drain_and_the_staging_zero`). Red arm
+    `day69/red-arm-purge.patch` (the scrub call removed) fails it on `the purge scrubs` (`day69/red-arm-purge.log`).
+  - (d) The GPU cells, engine `day69_a_drained_backing_is_never_the_next_lease` and worker
+    `option_b_purge_drains_the_pool_and_zeroes_the_staging_set`, are built. `NATIVE_CELLS` is 18. They are for the
+    target card's battery; the local 5090 is held by this lane's DAY68 chain and is not touched.
+- **CPU battery on `4f297e7bd`:**
+  - `cargo fmt --all -- --check`;
+  - `cargo clippy --workspace --all-targets -- -D warnings` clean;
+  - engine lib `578 passed; 0 failed; 51 ignored`, server lib `943 passed; 0 failed; 27 ignored` (`day69/engine-lib.log`,
+    `day69/server-lib.log`);
+  - `tools/check-flags.sh` "no uncovered runtime names";
+  - `git diff --check`.
+  - On this lane's tip (`59376ebeb`, carrying F): engine `579 passed`, server `949 passed`, and workspace clippy clean.
+- No new flag and no steady-path change beyond the epoch compare.
