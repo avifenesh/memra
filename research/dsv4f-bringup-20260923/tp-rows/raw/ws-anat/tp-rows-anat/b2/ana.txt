@@ -1,0 +1,39 @@
+capture span 1506.6 ms over 64 steps = 23.54 ms/step
+dev0: kernels 197936 (3093/step) kernel-sum 16.96 ms/step busy-union 17.38 ms/step memcpys 403/step
+dev1: kernels 198448 (3101/step) kernel-sum 16.81 ms/step busy-union 17.23 ms/step memcpys 404/step
+--- dev0 top kernels (ms/step, count/step, share)
+    4.091    494  24.1%  dsv4_gemv_fp8_m_kernel
+    3.515    129  20.7%  moe_kq_mrow_stream_kernel
+    2.401     86  14.2%  memra_tp_ar_gather_rows_f32_kernel
+    1.034     43   6.1%  memra_tp_ar_1stage_kernel
+    0.905    248   5.3%  dsv4_dense_fast_dots_kernel
+    0.561     86   3.3%  dsv4_hc_finish_f32_fixed_order_kernel
+    0.483     86   2.8%  dsv4_sink_softout_st_f32acc_kernel
+    0.427     42   2.5%  dsv4_indexer_score_f32acc_kernel
+    0.425     86   2.5%  dsv4_fp8_gather_half_kernel
+    0.352     86   2.1%  dsv4_sink_scores_st_f32acc_kernel
+--- dev1 top kernels (ms/step, count/step, share)
+    4.079    494  24.3%  dsv4_gemv_fp8_m_kernel
+    3.575    129  21.3%  moe_kq_mrow_stream_kernel
+    1.492     86   8.9%  memra_tp_ar_gather_rows_f32_kernel
+    1.003     43   6.0%  memra_tp_ar_1stage_kernel
+    0.950    248   5.7%  dsv4_dense_fast_dots_kernel
+    0.851     45   5.1%  dsv4_dots_f32acc_mrow_kernel
+    0.562     86   3.3%  dsv4_hc_finish_f32_fixed_order_kernel
+    0.482     86   2.9%  dsv4_sink_softout_st_f32acc_kernel
+    0.423     86   2.5%  dsv4_fp8_gather_half_kernel
+    0.419     42   2.5%  dsv4_indexer_score_f32acc_kernel
+    0.348     86   2.1%  dsv4_sink_scores_st_f32acc_kernel
+memcpy kind: count/step bytes/step ms/step {1: (8.0, 48, 0.002), 8: (794.625, 50091776, 0.774), 2: (5.0, 360, 0.003)}
+--- runtime API (count/step, ms/step)
+      6194   14.791  cudaLaunchKernel_v7000
+       795    2.530  cuMemcpyDtoDAsync_v2
+         5    0.894  cuMemcpyDtoHAsync_v2
+      6194    0.492  cuKernelGetName
+        86    0.223  cuMemsetD8Async
+       440    0.034  cuCtxSetCurrent
+         8    0.019  cuMemcpyHtoDAsync_v2
+         9    0.019  cuStreamSynchronize
+         0    0.000  cuCtxSynchronize
+         0    0.000  cuProfilerStart
+         0    0.000  cuProfilerStop

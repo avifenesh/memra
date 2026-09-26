@@ -54,6 +54,15 @@ unsafe extern "C" {
         counter: *mut u64,
         stream: *mut c_void,
     ) -> i32;
+    pub fn memra_dsv4_replay_rows_input(
+        input: *const u64,
+        token: *mut i32,
+        pos: *mut i32,
+        slot: *mut i32,
+        rows: i32,
+        window: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_replay_tick(counter: *mut u64, stream: *mut c_void) -> i32;
     pub fn memra_dsv4_replay_capture_begin(graph: *mut *mut c_void, stream: *mut c_void) -> i32;
     pub fn memra_dsv4_replay_capture_end(

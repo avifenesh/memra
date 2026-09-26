@@ -36,7 +36,10 @@ same text on every request of every arm:
 
 ## What it costs, and what fixes it
 
-- **Plain concurrency.** TP/EP serves one lane. PP-2 pipelines two requests across its cards
+- **Plain concurrency (narrowed, memra #710 B-row).** TP/EP now serves four lanes, whose plain
+  steps share a captured B-row graph step (`research/dsv4f-bringup-20260923/tp-rows/`). On the
+  Workstation pair: c4 aggregate 132.8 against PP-2's 120.6 with TTFT 0.42 s against 4.5 s, and
+  c2 102.0 against 120.9. The rest of this item is the state at the flip. TP/EP served one lane. PP-2 pipelines two requests across its cards
   (#667). Plain c2 aggregate is 76.9 tok/s against 120.9 on the Workstation pair (-36%), and
   TTFT under load rises tenfold. The DSpark route is serial on both placements, so it does not
   pay this. The owner took the flip with this cost on the record ("Flip now, B-row next"). A

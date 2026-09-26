@@ -4329,6 +4329,14 @@ extern "C" int memra_dsv4_dense_cutlass_counts(uint64_t* splitk, uint64_t* decli
             k, xstride, ystride, 0, 0);                                               \
         break;
 
+#define DSV4_DENSE_FAST_FP8_M_CASE(MM)                                                \
+    case MM:                                                                         \
+        dsv4_dense_fast_fp8_kernel<2, false, MM><<<(unsigned)((n + 1LL) / 2), 256, 0,  \
+                                                   stream>>>(                        \
+            (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y, n, \
+            k, xstride, ystride, 0, 0);                                               \
+        break;
+
 extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, int sc_cols,
                                      const void* x_bf16, float* y, int m, int n, int k,
                                      int xstride, int ystride, void* stream_v) {
@@ -4339,6 +4347,26 @@ extern "C" int memra_dsv4_gemv_fp8_m(const void* w_codes, const float* sc_f32, i
     if (xstride <= 0) xstride = k;
     if (ystride <= 0) ystride = n;
     if (xstride % 8 != 0) return 40011;
+    // Rows 2..8 (B-row decode, verify rounds; never inside a wider launch's row recursion)
+    // on the dense-fast transport: per row the same leaf order and reduction tree as
+    // dsv4_gemv_fp8_m_kernel<M> below, with two barriers per row instead of seven
+    // (memra #710). The engagement counter stays the one-token count.
+    if (m >= 2 && m <= 8 && dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
+        dsv4_dense_fast_enabled &&
+        dsv4_dense_exact_tail_fp8_admits(w_codes, sc_f32, sc_cols, x_bf16, y, 1, n, k)) {
+        dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, n, k);
+        switch (m) {
+            DSV4_DENSE_FAST_FP8_M_CASE(2)
+            DSV4_DENSE_FAST_FP8_M_CASE(3)
+            DSV4_DENSE_FAST_FP8_M_CASE(4)
+            DSV4_DENSE_FAST_FP8_M_CASE(5)
+            DSV4_DENSE_FAST_FP8_M_CASE(6)
+            DSV4_DENSE_FAST_FP8_M_CASE(7)
+            DSV4_DENSE_FAST_FP8_M_CASE(8)
+        }
+        DSV4_ERR();
+        return 0;
+    }
     Dsv4DenseExactTailControlScope control(m != 1);
     if (dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
         dsv4_dense_exact_tail_fp8_admits(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k))
@@ -4651,11 +4679,35 @@ __global__ void dsv4_dots_f32acc_mrow_kernel(const float* __restrict__ x,
             <<<(unsigned)n, threads, 0, stream>>>(x, w, w_is_bf16, y, k, n);           \
         break;
 
+#define DSV4_DENSE_FAST_DOTS_M_CASE(MM)                                                \
+    case MM:                                                                           \
+        dsv4_dense_fast_dots_kernel<MM><<<(unsigned)n, 128, 0, stream>>>(x, w, w_is_bf16, \
+                                                                         y, k, n);      \
+        break;
+
 extern "C" int memra_dsv4_dots_f32acc_mrow(const float* x, const void* w, int w_is_bf16,
                                            float* y, int s, int k, int n, void* stream_v) {
     cudaStream_t stream = (cudaStream_t)stream_v;
     if (k % 8 != 0) return 40012;
     if (s < 1) return 40020;
+    // Rows 2..8 on the dense-fast transport, as memra_dsv4_gemv_fp8_m does (memra #710):
+    // per row the same leaf order and tree as dsv4_dots_f32acc_mrow_kernel<M> below.
+    if (s >= 2 && s <= 8 && dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
+        dsv4_dense_fast_enabled &&
+        dsv4_dense_exact_tail_dots_admits(x, w, w_is_bf16, y, 1, n, k)) {
+        dsv4_dense_census_note(DSV4_DENSE_ENTRY_DOTS_F32ACC, s, n, k);
+        switch (s) {
+            DSV4_DENSE_FAST_DOTS_M_CASE(2)
+            DSV4_DENSE_FAST_DOTS_M_CASE(3)
+            DSV4_DENSE_FAST_DOTS_M_CASE(4)
+            DSV4_DENSE_FAST_DOTS_M_CASE(5)
+            DSV4_DENSE_FAST_DOTS_M_CASE(6)
+            DSV4_DENSE_FAST_DOTS_M_CASE(7)
+            DSV4_DENSE_FAST_DOTS_M_CASE(8)
+        }
+        DSV4_ERR();
+        return 0;
+    }
     Dsv4DenseExactTailControlScope control(s != 1);
     if (dsv4_dense_exact_tail_enabled && !dsv4_dense_exact_tail_suppressed &&
         dsv4_dense_exact_tail_dots_admits(x, w, w_is_bf16, y, s, n, k))
@@ -7398,6 +7450,25 @@ extern "C" int memra_dsv4_replay_input(const uint64_t* input, int* token, int* p
     if (!input || !token || !pos || !slot || !count || window <= 0) return 40074;
     dsv4_replay_input_kernel<<<1, 1, 0, (cudaStream_t)stream>>>(input,token,pos,slot,window,
         (unsigned long long*)count);
+    DSV4_ERR();
+    return 0;
+}
+// B-row replay inputs (memra #710 B-row graphs): row r reads its words at input[3r] (token
+// in the low half, position in the high half) and writes its token, position and window slot.
+__global__ void dsv4_replay_rows_input_kernel(const uint64_t* input, int* token, int* pos,
+    int* slot, int rows, int window) {
+    int r = threadIdx.x;
+    if (r >= rows) return;
+    uint64_t word = input[3 * r];
+    token[r] = (int)(word & 0xffffffffULL);
+    pos[r] = (int)(word >> 32);
+    slot[r] = pos[r] % window;
+}
+extern "C" int memra_dsv4_replay_rows_input(const uint64_t* input, int* token, int* pos,
+    int* slot, int rows, int window, void* stream) {
+    if (!input || !token || !pos || !slot || rows <= 0 || rows > 32 || window <= 0) return 40074;
+    dsv4_replay_rows_input_kernel<<<1, 32, 0, (cudaStream_t)stream>>>(input, token, pos, slot,
+        rows, window);
     DSV4_ERR();
     return 0;
 }
