@@ -103,8 +103,9 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   green, the profile 70 to 150 ns per block below I15; on BOX32 `DAY77 VERDICT rig=pro-single integrity=ok i17=flat
   door=i17 vs_ref=loses` (stays; the door 10 ms over 32 tokens behind REF); the 5090's `i17` inadmissible. Day 79
   (`DAY79.md`): I18 (`c7294b912`, a bank ticket's records by position instead of a set and a map of cloned ids, the
-  host-hit demand's largest part), CPU gates green, the profile about 150 ns per block below I17; card cell `i18`
-  ready (`day79-box.sh`, the 285K class); the 5090's half in queue v14. Open.
+  host-hit demand's largest part), CPU gates green, the profile about 150 ns per block below I17; on BOX34 `DAY79
+  VERDICT rig=pro-single integrity=ok i18=flat door=i18 vs_ref=loses (window: i18=flat vs_ref=matches)` (stays); the
+  5090's `i18` inadmissible. Open: the next cut of the prefetch path, registered before code.
 
 ## C12. The door's sensitivity to its owner thread's host placement (the 9950X class)
 
@@ -153,7 +154,12 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   (`DAY78.md`): which of the door's pages: the diagnostic flag `--expert-bank-pool-pageable` (`a1786bc32`, decide-by
   2026-10-10; a local GPU check reads MATCH and the door's tape), cell `pages` (REF+I, D+I, DP+I under the
   fragmentation, `fail_heavy` per span, a per-mapping page census that uses frame numbers and `kpageflags` where the
-  container allows), ready (`day78-box.sh`, the 285K class). Open: `pages` on the 285K; `induce-b` on a 9950X with at least 98 GiB
+  container allows) on BOX34: `DAY78 PAGES VERDICT rig=box34-285k integrity=ok -> pool_draws` (fail_heavy di 8 of 8,
+  dpi 0 of 8); the census shows the pinned pool is a shared `/dev/zero` (shmem) mapping, whose pinned pages compaction
+  isolates and cannot move. Day 80 (`DAY80.md`): the fix, a pool of private anonymous memory pinned with
+  `cuMemHostRegister` (`57086efc8`, `--expert-bank-pool-registered`, decide-by 2026-10-10), cells `regtime` and
+  `regpool` ready (`day80-box.sh`, the 285K and a 9950X); the 5090's `regtime` in queue v15. Open: both cells on the
+  285K and a 9950X, then the default change to the owner; `induce-b` on a 9950X with at least 98 GiB
   `MemFree`; DAY71's default half on BOX15's machine, then the class line.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
