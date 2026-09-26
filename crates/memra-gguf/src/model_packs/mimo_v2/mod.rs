@@ -2,6 +2,7 @@
 //! registered; automatic serving selection remains closed.
 
 pub mod audio;
+pub mod dflash;
 pub(crate) mod mint_headers;
 pub(crate) mod mtp;
 pub mod vision;
