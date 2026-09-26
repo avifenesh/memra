@@ -13,7 +13,7 @@ use memra_gguf::model_plan::{ActivationPlan, MlpPlan, ModelPlan, MoeMlpPlan, Rou
 use memra_gguf::safetensors::StModel;
 
 use crate::Engine;
-use crate::dsv4_ffi::{memra_dsv4_act_quant_fp8, memra_dsv4_fp4_gemm};
+use crate::dsv4_ffi::{memra_dsv4_act_quant_fp8, memra_dsv4_fp4_gemm, memra_dsv4_fp4_gemm_sel};
 
 type Fail = Box<dyn Error>;
 const HIDDEN: usize = 4096;
@@ -216,9 +216,25 @@ fn quantize(
     input: &CudaSlice<f32>,
     width: usize,
 ) -> Result<(CudaSlice<u8>, CudaSlice<f32>), Fail> {
+    quantize_rows(engine, input, width, 1)
+}
+
+fn quantize_rows(
+    engine: &Engine,
+    input: &CudaSlice<f32>,
+    width: usize,
+    rows: usize,
+) -> Result<(CudaSlice<u8>, CudaSlice<f32>), Fail> {
+    if rows == 0
+        || !width.is_multiple_of(128)
+        || input.len() != rows * width
+        || input.ordinal() != engine.stream().context().ordinal()
+    {
+        return Err("MiMo FP8 activation row geometry changed".into());
+    }
     let stream = engine.stream();
-    let mut codes = stream.alloc_zeros::<u8>(width)?;
-    let mut scales = stream.alloc_zeros::<f32>(width / 128)?;
+    let mut codes = stream.alloc_zeros::<u8>(rows * width)?;
+    let mut scales = stream.alloc_zeros::<f32>(rows * width / 128)?;
     let (input_ptr, _input_guard) = input.device_ptr(&stream);
     let (codes_ptr, _codes_guard) = codes.device_ptr_mut(&stream);
     let (scales_ptr, _scales_guard) = scales.device_ptr_mut(&stream);
@@ -227,7 +243,7 @@ fn quantize(
             input_ptr as *const f32,
             codes_ptr as *mut c_void,
             scales_ptr as *mut f32,
-            1,
+            rows as i32,
             width as i32,
             stream.cu_stream() as *mut c_void,
         )
@@ -391,6 +407,135 @@ impl ResidentProjection {
     }
 }
 
+/// The original source codes and E8M0 scales in [expert][gate,down,up]
+/// order. All three projections have equal byte and scale strides.
+struct InterleavedExperts {
+    weight: CudaSlice<u8>,
+    scales: CudaSlice<u8>,
+    scale2_dummy: CudaSlice<f32>,
+    weight_stride: usize,
+    scale_stride: usize,
+}
+
+impl InterleavedExperts {
+    fn load(engine: &Engine, source: &StModel, layer: usize) -> Result<Self, Fail> {
+        let weight_stride = EXPERT_WIDTH * HIDDEN / 2;
+        let scale_stride = EXPERT_WIDTH * HIDDEN / 32;
+        let mut weight = engine.alloc_u8_uninit(EXPERTS * 3 * weight_stride)?;
+        let mut scales = engine.alloc_u8_uninit(EXPERTS * 3 * scale_stride)?;
+        let stream = engine.stream();
+        for expert in 0..EXPERTS {
+            for (projection, name, rows, cols) in [
+                (0, "gate_proj", EXPERT_WIDTH, HIDDEN),
+                (1, "down_proj", HIDDEN, EXPERT_WIDTH),
+                (2, "up_proj", EXPERT_WIDTH, HIDDEN),
+            ] {
+                let stem = format!("model.layers.{layer}.mlp.experts.{expert}.{name}");
+                let (source_weight, source_scales) = source_mxfp4(source, &stem, rows, cols)?;
+                if source_weight.len() != weight_stride || source_scales.len() != scale_stride {
+                    return Err(format!("{stem}: interleaved stride changed").into());
+                }
+                let index = expert * 3 + projection;
+                stream.memcpy_htod(
+                    source_weight,
+                    &mut weight.slice_mut(index * weight_stride..(index + 1) * weight_stride),
+                )?;
+                stream.memcpy_htod(
+                    source_scales,
+                    &mut scales.slice_mut(index * scale_stride..(index + 1) * scale_stride),
+                )?;
+            }
+        }
+        let scale2_dummy = engine.htod(&[0.0f32; EXPERTS * 3])?;
+        Ok(Self {
+            weight,
+            scales,
+            scale2_dummy,
+            weight_stride,
+            scale_stride,
+        })
+    }
+
+    fn project(
+        &self,
+        engine: &Engine,
+        codes: &CudaSlice<u8>,
+        activation_scales: &CudaSlice<f32>,
+        selected: &CudaSlice<i32>,
+        shape: (i32, usize, usize, bool),
+    ) -> Result<CudaSlice<f32>, Fail> {
+        let (projection, rows, cols, per_slot) = shape;
+        let expected = if per_slot { TOP_K } else { 1 };
+        let ordinal = engine.stream().context().ordinal();
+        if !(0..=2).contains(&projection)
+            || rows * cols / 2 != self.weight_stride
+            || rows * cols / 32 != self.scale_stride
+            || codes.len() != expected * cols
+            || activation_scales.len() != expected * cols / 128
+            || selected.len() != TOP_K
+            || [
+                codes.ordinal(),
+                activation_scales.ordinal(),
+                selected.ordinal(),
+                self.weight.ordinal(),
+                self.scales.ordinal(),
+                self.scale2_dummy.ordinal(),
+            ]
+            .into_iter()
+            .any(|device| device != ordinal)
+        {
+            return Err("MiMo grouped expert projection shape or GPU changed".into());
+        }
+        let stream = engine.stream();
+        let mut output = stream.alloc_zeros::<f32>(TOP_K * rows)?;
+        let (codes_ptr, codes_guard) = codes.device_ptr(&stream);
+        let (activation_scales_ptr, activation_scales_guard) =
+            activation_scales.device_ptr(&stream);
+        let (weight_ptr, weight_guard) = self.weight.device_ptr(&stream);
+        let (weight_scales_ptr, weight_scales_guard) = self.scales.device_ptr(&stream);
+        let (scale2_ptr, scale2_guard) = self.scale2_dummy.device_ptr(&stream);
+        let (selected_ptr, selected_guard) = selected.device_ptr(&stream);
+        let (output_ptr, output_guard) = output.device_ptr_mut(&stream);
+        let rc = unsafe {
+            memra_dsv4_fp4_gemm_sel(
+                codes_ptr as *const c_void,
+                activation_scales_ptr as *const f32,
+                weight_ptr as *const c_void,
+                weight_scales_ptr as *const c_void,
+                scale2_ptr as *const f32,
+                selected_ptr as *const i32,
+                projection,
+                i32::from(per_slot),
+                1,
+                output_ptr as *mut f32,
+                TOP_K as i32,
+                rows as i32,
+                cols as i32,
+                self.weight_stride as i64,
+                self.scale_stride as i64,
+                stream.cu_stream() as *mut c_void,
+            )
+        };
+        drop((
+            codes_guard,
+            activation_scales_guard,
+            weight_guard,
+            weight_scales_guard,
+            scale2_guard,
+            selected_guard,
+            output_guard,
+        ));
+        if rc != 0 {
+            return Err(format!("MiMo selected MXFP4 GEMM failed: {rc}").into());
+        }
+        Ok(output)
+    }
+
+    fn resident_bytes(&self) -> usize {
+        self.weight.len() + self.scales.len() + self.scale2_dummy.len() * size_of::<f32>()
+    }
+}
+
 /// The pinned source's full expert bank for one MoE layer on one device.
 /// Projection slabs use the original E2M1 codes and E8M0 scales byte-for-byte.
 pub struct ResidentMiMoMoeLayer {
@@ -503,6 +648,129 @@ impl ResidentMiMoMoeLayer {
                 .iter()
                 .map(|projection| projection.weight.len() + projection.scales.len())
                 .sum::<usize>()
+    }
+}
+
+/// Source MXFP4 experts laid out for Memra's existing selected-expert GPU
+/// projection. Router and accumulation order match the streamed control.
+pub struct GroupedMiMoMoeLayer {
+    layer: usize,
+    matrix: CudaSlice<f32>,
+    bias: CudaSlice<f32>,
+    active: CudaSlice<u8>,
+    experts: InterleavedExperts,
+}
+
+impl GroupedMiMoMoeLayer {
+    pub fn load(
+        engine: &Engine,
+        pinned: &PinnedMiMoSource<'_>,
+        layer: usize,
+        plan: &MoeMlpPlan,
+    ) -> Result<Self, Fail> {
+        validate_contract(pinned.config, pinned.plan, plan, layer)?;
+        engine.gpu.ctx.bind_to_thread()?;
+        let source = pinned.model;
+        let router = format!("model.layers.{layer}.mlp.gate");
+        let matrix = engine.htod(&source_float(
+            source,
+            &format!("{router}.weight"),
+            &[EXPERTS as u64, HIDDEN as u64],
+        )?)?;
+        let bias = engine.htod(&source_float(
+            source,
+            &format!("{router}.e_score_correction_bias"),
+            &[EXPERTS as u64],
+        )?)?;
+        let active = engine.htod_bytes(&[1u8; EXPERTS])?;
+        let experts = InterleavedExperts::load(engine, source, layer)?;
+        Ok(Self {
+            layer,
+            matrix,
+            bias,
+            active,
+            experts,
+        })
+    }
+
+    pub fn token(
+        &self,
+        engine: &Engine,
+        x: &CudaSlice<f32>,
+        plan: &MoeMlpPlan,
+        pinned: &PinnedMiMoSource<'_>,
+    ) -> Result<MiMoMoeToken, Fail> {
+        validate_contract(pinned.config, pinned.plan, plan, self.layer)?;
+        let ordinal = engine.stream().context().ordinal();
+        if x.len() != HIDDEN
+            || [
+                x.ordinal(),
+                self.matrix.ordinal(),
+                self.bias.ordinal(),
+                self.active.ordinal(),
+            ]
+            .into_iter()
+            .any(|device| device != ordinal)
+        {
+            return Err("MiMo grouped MoE input or layer belongs to another GPU".into());
+        }
+        engine.gpu.ctx.bind_to_thread()?;
+        let logits = engine.linear(x, &self.matrix, 1, HIDDEN, EXPERTS)?;
+        let (ids_gpu, weights_gpu) = engine.moe_router_sigmoid_topk(
+            &logits,
+            1,
+            EXPERTS,
+            TOP_K,
+            EXPERTS,
+            &self.bias,
+            &self.active,
+            1.0,
+            true,
+        )?;
+        let ids = engine.dtoh_i32(&ids_gpu)?;
+        let weights = engine.dtoh(&weights_gpu)?;
+        let selected = validate_selection(&ids, &weights)?;
+
+        let (codes, scales) = quantize(engine, x, HIDDEN)?;
+        let gate = self.experts.project(
+            engine,
+            &codes,
+            &scales,
+            &ids_gpu,
+            (0, EXPERT_WIDTH, HIDDEN, false),
+        )?;
+        let up = self.experts.project(
+            engine,
+            &codes,
+            &scales,
+            &ids_gpu,
+            (2, EXPERT_WIDTH, HIDDEN, false),
+        )?;
+        let mut activated = engine.uninit(TOP_K * EXPERT_WIDTH)?;
+        engine.silu_mul(&gate, &up, &mut activated, TOP_K * EXPERT_WIDTH)?;
+        let (activation_codes, activation_scales) =
+            quantize_rows(engine, &activated, EXPERT_WIDTH, TOP_K)?;
+        let down = self.experts.project(
+            engine,
+            &activation_codes,
+            &activation_scales,
+            &ids_gpu,
+            (1, HIDDEN, EXPERT_WIDTH, true),
+        )?;
+        let mut output = engine.uninit(HIDDEN)?;
+        engine.axpy_rows_seq_into(&down, &weights_gpu, &mut output, HIDDEN, TOP_K)?;
+        Ok(MiMoMoeToken {
+            output,
+            selected,
+            weights,
+        })
+    }
+
+    pub fn resident_bytes(&self) -> usize {
+        self.matrix.len() * size_of::<f32>()
+            + self.bias.len() * size_of::<f32>()
+            + self.active.len()
+            + self.experts.resident_bytes()
     }
 }
 
