@@ -427,3 +427,12 @@ least 4 of 5 pairs below 1 in each order, loser at median >= 1.05 with the same 
 otherwise flat. The 8 GiB cell runs the same way if the process fits the rig's 20 GiB cgroup; if
 it does not, that is recorded as refused by the rig rule. A 5090 result sets at most a 5090
 default; the door stays default-OFF until both rigs have a row.
+
+Section E, 5090 sizing (registered 2026-09-26 before any handoff cell): the gate boots use
+`--host-mb 4096` for the 1 GiB cell and `--host-mb 12288` for the 8 GiB cell (BOX27 used 16384;
+the rig's 20 GiB cgroup cannot hold a 16 GiB pinned tier plus the process). The 8 GiB cell also
+uses `--tenant-pct 100` (B2 amendment 3). Scratch is `/data/cache/spill-f-b2` on the proven
+filesystem; the prompt set is regenerated and checked against `b2-prompts.manifest.json`.
+Driver: `m1-5090-rounds.py --regime handoff`, round k = one pair, `buffered,direct` for odd k,
+`direct,buffered` for even k, ten rounds. No compile or other CPU campaign of this lane runs
+while a scored cell runs.

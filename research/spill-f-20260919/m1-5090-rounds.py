@@ -3,6 +3,8 @@
 
   rounds --regime capped|bounded --memory-max BYTES --out DIR [--rounds 1..10] [--smoke]
   rounds --regime g2 --memory-max BYTES --out DIR      (the G2 5090 half: one idle-gated cell)
+  rounds --regime handoff --memory-max BYTES --out DIR --size-bytes N --host-mb M [--rounds 1-10]
+      (OWED 18, section E: round k is one cycle pair, buffered,direct for odd k, reversed for even)
 
 For each round: wait until `/tmp/memra-5090.lock` is free (non-blocking probe) and no compute
 application is on the card, recording every wait with the blocking processes; then run the
@@ -29,6 +31,9 @@ BIN = "/home/avifenesh/spill-f-5090/bin/run-gen"
 PROOF = "/home/avifenesh/.local/share/memra-lane-f-private/rtx5090/m1-proof.json"
 PUBLIC_PROOF = HERE / "rtx5090/proof/PROOF.json"
 PROBE = "/home/avifenesh/spill-f-5090/bin/h2d-probe"
+BIN18 = "/home/avifenesh/spill-f-5090/bin18"
+B2_PROMPTS = "/home/avifenesh/spill-f-5090/b2-prompts.jsonl"
+B2_SCRATCH = "/data/cache/spill-f-b2"
 
 
 def now():
@@ -70,11 +75,13 @@ def wait_idle(log, label):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    ap.add_argument("--regime", choices=["capped", "bounded", "g2"], required=True)
+    ap.add_argument("--regime", choices=["capped", "bounded", "g2", "handoff"], required=True)
     ap.add_argument("--memory-max", type=int, required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--rounds", default="1-10")
     ap.add_argument("--smoke", action="store_true")
+    ap.add_argument("--size-bytes", type=int)
+    ap.add_argument("--host-mb", type=int)
     a = ap.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -89,7 +96,15 @@ def main():
                         "-p", f"MemoryMax={a.memory_max}", "-p", "MemorySwapMax=0",
                         sys.executable, str(ROOT / "tools/tier-battery.py"), "--rig", "rtx5090", "--timeout", "10800",
                         "--external-lock", "--out", str(target), "--execute", sys.executable]
-                if a.regime == "g2":
+                if a.regime == "handoff":
+                    order = "buffered,direct" if k % 2 else "direct,buffered"
+                    argv[-4:-4] = ["--storage-root", B2_SCRATCH, "--storage-proof", str(PUBLIC_PROOF)]
+                    argv += [str(HERE / "m1-handoff-driver.py"), "run", "--gate", BIN18 + "/kv-handoff-gate",
+                             "--server", BIN18 + "/memra-server", "--artifact", ART, "--prompts", B2_PROMPTS,
+                             "--proof", PROOF, "--scratch", B2_SCRATCH, "--out", str(target / "visits"),
+                             "--size-bytes", str(a.size_bytes), "--host-mb", str(a.host_mb), "--rig", "rtx5090",
+                             "--lock-fd", "@COLLECTOR_LOCK_FD@", "--io-schedule", order]
+                elif a.regime == "g2":
                     argv += [str(HERE / "m1-g2-5090.py"), "--probe", PROBE, "--out", str(target / "visits"),
                              "--lock-fd", "@COLLECTOR_LOCK_FD@"]
                 else:
