@@ -67,7 +67,7 @@ unsafe impl Send for AlignedBuf {}
 
 impl AlignedBuf {
     fn new(cap: usize) -> AlignedBuf {
-        assert!(cap > 0 && cap % DIRECT_ALIGN == 0);
+        assert!(cap > 0 && cap.is_multiple_of(DIRECT_ALIGN));
         let layout = std::alloc::Layout::from_size_align(cap, DIRECT_ALIGN).expect("layout");
         // SAFETY: the layout has non-zero size.
         let raw = unsafe { std::alloc::alloc_zeroed(layout) };
@@ -126,7 +126,7 @@ impl DirectWriter {
     }
 
     fn write_block(&mut self, len: usize) -> io::Result<()> {
-        debug_assert!(len % DIRECT_ALIGN == 0);
+        debug_assert!(len.is_multiple_of(DIRECT_ALIGN));
         self.file
             .write_all_at(&self.buf.as_slice()[..len], self.offset)?;
         self.offset += len as u64;
@@ -193,7 +193,7 @@ impl DirectReader {
                 Ok(n) => {
                     got += n;
                     // A short read that leaves an unaligned position can only be EOF.
-                    if got % DIRECT_ALIGN != 0 {
+                    if !got.is_multiple_of(DIRECT_ALIGN) {
                         self.eof = true;
                         break;
                     }
