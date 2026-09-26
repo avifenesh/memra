@@ -339,3 +339,36 @@ per-hardware rule, since the program changes on every card.
   - The reader was dry-run on section 8's base receipts mapped as two identical arms: (b) FAIL (no skip lines, the
     base's 45 no-source settles present), (c) and (d) PASS, which is right for identical arms.
   - About 1.5 hours of card time.
+
+## 10. R1's sitting, read as registered: ADOPT
+
+- Run by the lead on one RTX PRO 6000 Blackwell Workstation card (a 16-core host), `build.sh 15d7ed351 40821db01`
+  then `driver.sh`, to 12:05Z. Mirror `pro-single-r1/box/`, sha256-checked against the box manifest (0 mismatches);
+  the servers are recorded by hash, and `markers.txt` shows the skip wording in r1 only. Start temperatures 46 C to
+  69 C.
+- Verbatim (`box/reading-r1.log`, the no-source mode's lines and the verdict):
+
+      R1 READING order=o1 mode=retire-seam-nosource | no-source settles base N=45 median=12.61 r1 N=0 skips r1=45 | second-capture base N=0 nan r1 N=0 nan | source-retire base N=0 nan r1 N=0 nan | stall base=282.08 r1=282.15 | e2e base=1941.9 r1=1931.7 short base=101.8 r1=101.8 | mid-gap base=151.4 r1=137.0 ms
+      R1 READING order=o2 mode=retire-seam-nosource | no-source settles base N=45 median=12.54 r1 N=0 skips r1=45 | second-capture base N=0 nan r1 N=0 nan | source-retire base N=0 nan r1 N=0 nan | stall base=282.52 r1=282.41 | e2e base=1943.6 r1=1932.6 short base=101.9 r1=101.9 | mid-gap base=151.5 r1=137.1 ms
+      R1 (b) PASS [True, True]
+      R1 (c) PASS [True, True, True, True, True, True]
+      R1 (d) PASS [True, True, True, True]
+      R1 VERDICT -> ADOPT (R1 is the naked program)
+
+  (a) held: all 11 gates 0. The `retire-seam` and `prime` controls read unchanged. Their source-retire settles are
+  86.8 to 87.0 ms in both arms (R1 does not touch the source's own retire), and their stall and e2e are within 0.6 ms.
+- Read:
+  - In the no-source shape, all 45 settles per order are skipped (skips 45 against base's 45). The long request's
+    e2e falls by 10.2 / 11.0 ms and the tenant's mid-gap excess by 14.4 ms, about the skipped 12.5 ms hold plus its
+    tick.
+  - Where the wait goes, clause (d): nowhere. No second-capture or source-retire settle appears on r1 in that mode,
+    unlike R2 (section 7).
+  - The stall is again the long prime's segment in every mode.
+- **Adopted** as registered: R1 is the naked program, with no door. It goes to the next integ together with L if L
+  adopts (L's base `55684e4bd` contains R1).
+- **Item 13 closes**:
+  - the no-source retire seam is removed (R1);
+  - the source's own retire hold (86.8 ms) stays as priced. It is not on the tenant's largest gap, and R2's attempt
+    moved it into the next capture rather than removing it;
+  - the one-capture rule's second-capture settle is recorded as the seam that remains, for any later design.
+- The 5090 half follows under the per-hardware rule, queued with the owed 5090 cells.

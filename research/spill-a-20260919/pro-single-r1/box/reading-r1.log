@@ -1,0 +1,11 @@
+R1 (a) gates {'contract-fault-plain': '0', 'contract-fault': '0', 'failure-off': '0', 'failure-on': '0', 'hitgate-off': '0', 'hitgate-on': '0', 'identity-default-off': '0', 'identity-default-on': '0', 'identity-plain-off': '0', 'identity-plain-on': '0', 'pause-demote': '0'}
+R1 READING order=o1 mode=retire-seam-nosource | no-source settles base N=45 median=12.61 r1 N=0 skips r1=45 | second-capture base N=0 nan r1 N=0 nan | source-retire base N=0 nan r1 N=0 nan | stall base=282.08 r1=282.15 | e2e base=1941.9 r1=1931.7 short base=101.8 r1=101.8 | mid-gap base=151.4 r1=137.0 ms
+R1 READING order=o1 mode=retire-seam | no-source settles base N=0 median=nan r1 N=0 skips r1=0 | second-capture base N=0 nan r1 N=0 nan | source-retire base N=45 86.83 r1 N=45 86.93 | stall base=282.27 r1=282.18 | e2e base=1786.5 r1=1786.1 short base=nan r1=nan | mid-gap base=354.8 r1=355.2 ms
+R1 READING order=o1 mode=prime | no-source settles base N=0 median=nan r1 N=0 skips r1=0 | second-capture base N=0 nan r1 N=0 nan | source-retire base N=45 86.94 r1 N=45 86.90 | stall base=282.24 r1=282.36 | e2e base=1456.3 r1=1456.9 short base=nan r1=nan | mid-gap base=161.9 r1=162.1 ms
+R1 READING order=o2 mode=retire-seam-nosource | no-source settles base N=45 median=12.54 r1 N=0 skips r1=45 | second-capture base N=0 nan r1 N=0 nan | source-retire base N=0 nan r1 N=0 nan | stall base=282.52 r1=282.41 | e2e base=1943.6 r1=1932.6 short base=101.9 r1=101.9 | mid-gap base=151.5 r1=137.1 ms
+R1 READING order=o2 mode=retire-seam | no-source settles base N=0 median=nan r1 N=0 skips r1=0 | second-capture base N=0 nan r1 N=0 nan | source-retire base N=45 86.94 r1 N=45 87.03 | stall base=282.31 r1=282.43 | e2e base=1786.7 r1=1787.2 short base=nan r1=nan | mid-gap base=355.2 r1=355.6 ms
+R1 READING order=o2 mode=prime | no-source settles base N=0 median=nan r1 N=0 skips r1=0 | second-capture base N=0 nan r1 N=0 nan | source-retire base N=45 86.88 r1 N=45 86.88 | stall base=282.55 r1=282.50 | e2e base=1457.4 r1=1457.3 short base=nan r1=nan | mid-gap base=162.0 r1=162.0 ms
+R1 (b) PASS [True, True]
+R1 (c) PASS [True, True, True, True, True, True]
+R1 (d) PASS [True, True, True, True]
+R1 VERDICT -> ADOPT (R1 is the naked program)
