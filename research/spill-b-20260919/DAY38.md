@@ -290,3 +290,52 @@ DAY38D VMM-PAIR card=pro6000 rows=30 differ=[] vmm_off idle vmm_mapped=0 vmm_on 
 
 **The rule of 1.6 on the target class: PROMOTE-ELIGIBLE** (P1' and P2' pass; P3 and P4 go with it). The 5090 half
 waits for the card's reset.
+
+### 2.4 The local RTX 5090 Laptop GPU (`rtx5090-day38/` registered, `rtx5090-day38d/` addendum D; the 9B)
+
+The registered cell ran 2026-09-26 (queue-e, after the card's reset), then addendum D's. Verbatim, registered:
+
+```
+DAY38 P1 card=rtx5090 order=O1 rows=100 door_equal=98 door_differ=['X-6144-r0-t3', 'X-6144-r2-t3'] cold_differ=['main-O1-on:X-6144-r0-t3', 'main-O1-on:X-6144-r2-t3'] non200=[] x_resumed_on=20 park_compact_grow=8 park_compact_on=100 failed=0 affinity_rewound={'main-O1-off': 10, 'main-O1-on': 10} a_resumed={'main-O1-off': 10, 'main-O1-on': 10} pool_hits={'main-O1-off': 10, 'main-O1-on': 18} faults=0 -> FAIL
+DAY38 P1 card=rtx5090 order=O2 rows=100 door_equal=98 door_differ=['X-6144-r0-t3', 'X-6144-r2-t3'] cold_differ=['main-O2-on:X-6144-r0-t3', 'main-O2-on:X-6144-r2-t3'] non200=[] x_resumed_on=20 park_compact_grow=8 park_compact_on=100 failed=0 affinity_rewound={'main-O2-off': 10, 'main-O2-on': 10} a_resumed={'main-O2-off': 10, 'main-O2-on': 10} pool_hits={'main-O2-off': 10, 'main-O2-on': 18} faults=0 -> FAIL
+DAY38 P2 card=rtx5090 boot=fault-batch fired=1 errored_rows=['X-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'X-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0}] faults=0 -> PASS
+DAY38 P2 card=rtx5090 boot=fault-nobatch fired=1 errored_rows=['X-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'X-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0}] faults=0 -> PASS
+DAY38 P3 card=rtx5090 fed~6144 N=100 p50_ms=1.10 p95_ms=1.20 max_ms=1.20
+DAY38 P3 card=rtx5090 fed~30720 N=100 p50_ms=2.80 p95_ms=2.80 max_ms=2.90
+DAY38 P4 card=rtx5090 boot=main-O1-off idle driver_free=4031315968 pool_cached=2178466368 pool_reserved=20837302272 continuation_pool_entries=16 resumed_e2e_ms N=30 p50=2007.0 p95=10943.4
+DAY38 P4 card=rtx5090 boot=main-O1-on idle driver_free=3192455168 pool_cached=3038297664 pool_reserved=21676163072 continuation_pool_entries=16 resumed_e2e_ms N=30 p50=656.0 p95=10905.0
+DAY38 P4 card=rtx5090 boot=main-O2-off idle driver_free=4031315968 pool_cached=2178466368 pool_reserved=20837302272 continuation_pool_entries=16 resumed_e2e_ms N=30 p50=2050.5 p95=10930.3
+DAY38 P4 card=rtx5090 boot=main-O2-on idle driver_free=3192455168 pool_cached=3038297664 pool_reserved=21676163072 continuation_pool_entries=16 resumed_e2e_ms N=30 p50=667.0 p95=10922.0
+```
+
+Addendum D:
+
+```
+DAY38D P1 card=rtx5090 order=O1 xp_turns=20 resumed_both=20 frac=1.00 xp_door_differ=[] prompt_mismatch=[] a_turn2=10 a_differ=[] on_resumed=20 park_compact_grow=20 affinity_rewound={'main-O1-off': 10, 'main-O1-on': 10} non200=[] faults=0 -> PASS
+DAY38D P1-READING card=rtx5090 boot=main-O1-off xp_resumed=20 resumed_vs_cold_flips=2 flip_tags=['Xp-30720-r2-t2', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P1-READING card=rtx5090 boot=main-O1-on xp_resumed=20 resumed_vs_cold_flips=2 flip_tags=['Xp-30720-r2-t2', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P1 card=rtx5090 order=O2 xp_turns=20 resumed_both=20 frac=1.00 xp_door_differ=[] prompt_mismatch=[] a_turn2=10 a_differ=[] on_resumed=20 park_compact_grow=20 affinity_rewound={'main-O2-off': 10, 'main-O2-on': 10} non200=[] faults=0 -> PASS
+DAY38D P1-READING card=rtx5090 boot=main-O2-off xp_resumed=20 resumed_vs_cold_flips=2 flip_tags=['Xp-30720-r2-t2', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P1-READING card=rtx5090 boot=main-O2-on xp_resumed=20 resumed_vs_cold_flips=2 flip_tags=['Xp-30720-r2-t2', 'Xp-6144-r2-t3'] (near-tie contract, no bound)
+DAY38D P2 card=rtx5090 boot=fault-batch fired=1 errored_rows=['Xp-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'Xp-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0, 'cached': 0}] faults=0 -> PASS
+DAY38D P2 card=rtx5090 boot=fault-nobatch fired=1 errored_rows=['Xp-6144-r0-t1'] ok200=39 park_compact=39 next_turn=[{'tag': 'Xp-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0, 'cached': 0}] faults=0 -> PASS
+DAY38D P2 card=rtx5090 boot=fault-nobatch-red fired=1 errored_rows=['Xp-6144-r0-t1'] ok200=39 park_compact=40 next_turn=[{'tag': 'Xp-6144-r0-t2', 'equal_cold': True, 'pool_resumed': 0, 'cached': 6144}] faults=0 -> FAIL (red arm: the expected reading is FAIL with park_compact=ok200+1 and a resumed next turn)
+DAY38D P3 card=rtx5090 fed~6144 N=100 p50_ms=1.10 p95_ms=1.20 max_ms=1.20
+DAY38D P3 card=rtx5090 fed~30720 N=100 p50_ms=2.80 p95_ms=2.80 max_ms=2.90
+DAY38D P4 card=rtx5090 boot=main-O1-off idle driver_free=3964207104 pool_cached=2085354112 continuation_pool_entries=16 resumed_e2e_ms N=30 p50=466.5 p95=698.5
+DAY38D P4 card=rtx5090 boot=main-O1-on idle driver_free=3427336192 pool_cached=2696581504 continuation_pool_entries=16 resumed_e2e_ms N=30 p50=482.5 p95=688.0
+DAY38D P4 card=rtx5090 boot=main-O2-off idle driver_free=3964207104 pool_cached=2085354112 continuation_pool_entries=16 resumed_e2e_ms N=30 p50=469.0 p95=691.3
+DAY38D P4 card=rtx5090 boot=main-O2-on idle driver_free=3427336192 pool_cached=2696581504 continuation_pool_entries=16 resumed_e2e_ms N=30 p50=480.5 p95=693.2
+DAY38D VMM-PAIR card=rtx5090 rows=30 differ=[] vmm_off idle vmm_mapped=0 vmm_on idle vmm_mapped=0 park_compact=30
+```
+
+- **Registered: P1 FAIL in both orders** for the reason 2.1 placed on the target card: the `on` arm resumed shape X
+  (`pool_hits` 18 against 10) where `off` primed cold, and two resumed turns (`X-6144-r0-t3`, `X-6144-r2-t3`) differ
+  from their cold twins (the near-tie residual, 2.2). P2 PASS in both modes. The rule of 1.6 reads FAIL (no reading) on
+  the registered cell, as on the target card.
+- **Addendum D: P1 PASS in both orders** (20 of 20 shape-Xp turns resumed on both arms, no door difference, no prompt
+  mismatch), **P2 PASS** (batching and non-batching), and the red arm reads red (`park_compact=40` with a resumed next
+  turn). **The rule reads PROMOTE-ELIGIBLE for the 5090 class under addendum D**, as for the target class (2.3).
+- Readings: the park-time copy 1.1 and 2.8 ms p50 at 6,144 and 30,720 (N=100 each); resumed E2E p50 466 to 469 ms
+  `off` against 481 to 483 ms `on` (N=30); at idle `on` holds 0.54 GB less driver-free memory (3.43 against 3.96 GB).
+  Resumed against cold: 2 flips of 20 on both arms (the near-tie residual, O11). VMM-PAIR: no digest differs.

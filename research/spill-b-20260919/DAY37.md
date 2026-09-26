@@ -661,3 +661,61 @@ branch, 139 us) and A3 (ii) PASS. The rule reads **PROMOTE-ELIGIBLE** for the RT
 class. A4's retention readings go with it (2.5). The 5090 class has no reading: its r4 half stopped when the card
 went to `GPU requires reset` (Xid 119, then 154, from 01:25Z; `rtx5090-day37/r4/run.log`), with the stream pairs
 from `stream-O1-2` on and the seven boots of addendum F still to run.
+
+### 2.7 The local RTX 5090 Laptop GPU, r4 (`rtx5090-day37/r4/`, the 9B at `MEMRA_CTX=65536`)
+
+The gate set ran on 2026-09-24 (`gates-r4-pooled`, `gates-r4-vmm`, tree `826ff8d78`), A2 as `grow-32768-r4`, and the
+boots on 2026-09-25 to 26 (queue-e after the card's reset; the seven boots addendum F named ran after the stream pairs,
+on the same binaries). The two `burst-boff` server logs are committed gzipped (107 and 112 MB; their raw sha256 in
+`r4/gzipped-logs.sha256`). The corrected reader's lines, verbatim (`r4/read.log`, A4-IDLE lines omitted):
+
+```
+DAY37 A2 card=rtx5090 receipt=grow-32768-r4/receipt/GROW.txt GROW-G1 PASS (grows=28 unequal=0 planes=34 planes_crossed=34 min_crossings_per_plane=12 rule>=5 drift=0 tokens_equal=true logits_equal=true prefix_state_equal=true final_state_equal=true) committed=32768 generated=128
+DAY37 A1-GATE card=rtx5090 cell=admit-mem-burst pooled=[rc=1 no-verdict] vmm=[rc=0 ALL GREEN] ok_lines=0/0 door_on/off pooled=0/1 vmm=1/0 -> FAIL
+DAY37 A1-GATE card=rtx5090 cell=fault-default pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=160/160 door_on/off pooled=0/14 vmm=14/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=fault-plain pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=160/160 door_on/off pooled=0/14 vmm=14/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=hit-off pooled=[rc=0 ALL GREEN (qwen)] vmm=[rc=0 ALL GREEN (qwen)] ok_lines=61/61 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=hit-on pooled=[rc=0 ALL GREEN (qwen)] vmm=[rc=0 ALL GREEN (qwen)] ok_lines=68/68 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=identity-default-on pooled=[rc=0 ALL GREEN (teeth=0)] vmm=[rc=0 ALL GREEN (teeth=0)] ok_lines=12/12 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=serve-smoke pooled=[rc=0 serve-smoke: 0 failed] vmm=[rc=0 serve-smoke: 0 failed] ok_lines=31/31 door_on/off pooled=0/1 vmm=1/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=spec-ctx-edge pooled=[rc=0 ALL GREEN] vmm=[rc=0 ALL GREEN] ok_lines=0/0 door_on/off pooled=0/3 vmm=3/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=twin27-off pooled=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] vmm=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] ok_lines=0/0 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-GATE card=rtx5090 cell=twin27-on pooled=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] vmm=[rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns] ok_lines=0/0 door_on/off pooled=0/2 vmm=2/0 -> PASS
+DAY37 A1-MIX card=rtx5090 kind=spec order=O1 compared=44 equal=44 differ=0 excluded=1 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-MIX card=rtx5090 kind=spec order=O2 compared=44 equal=44 differ=0 excluded=1 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-MIX card=rtx5090 kind=plain order=O1 compared=44 equal=44 differ=0 excluded=1 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-MIX card=rtx5090 kind=plain order=O2 compared=44 equal=44 differ=0 excluded=1 differ_tags=[] faults_pooled=0 faults_vmm=0 door_on_vmm=1 -> PASS
+DAY37 A1-STREAM card=rtx5090 pairs=10 differing_rows=0 -> PASS
+DAY37 A3-ii card=rtx5090 order=both ttft_p50 pooled=956.17(N=10) vmm=965.90(N=10) ratio=1.0102 rule<=1.05 ok; itl_p99 pooled=28.00(N=10) vmm=27.98(N=10) ratio=0.9993 rule<=1.05 ok; tpot_p50 pooled=24.46(N=10) vmm=24.41(N=10) ratio=0.9980 rule<=1.02 ok; out_tok_per_s pooled=280.48(N=10) vmm=279.49(N=10) ratio=0.9965 rule>=0.98 ok -> PASS
+DAY37 A3-ii card=rtx5090 order=O1 ttft_p50 pooled=955.60(N=5) vmm=964.30(N=5) ratio=1.0091 rule<=1.05 ok; itl_p99 pooled=27.62(N=5) vmm=27.95(N=5) ratio=1.0119 rule<=1.05 ok; tpot_p50 pooled=24.40(N=5) vmm=24.06(N=5) ratio=0.9861 rule<=1.02 ok; out_tok_per_s pooled=281.76(N=5) vmm=280.78(N=5) ratio=0.9965 rule>=0.98 ok
+DAY37 A3-ii card=rtx5090 order=O2 ttft_p50 pooled=960.86(N=5) vmm=967.50(N=5) ratio=1.0069 rule<=1.05 ok; itl_p99 pooled=28.56(N=5) vmm=28.00(N=5) ratio=0.9804 rule<=1.05 ok; tpot_p50 pooled=24.50(N=5) vmm=24.54(N=5) ratio=1.0016 rule<=1.02 ok; out_tok_per_s pooled=280.19(N=5) vmm=279.01(N=5) ratio=0.9958 rule>=0.98 ok
+DAY37 A3-i card=rtx5090 placement=helper tick_ensure_walls N=65014 p50_us=2.0 p99_us=6.0 max_us=686 owner_grows_waited N=0 p99_us=nan rule N>=20 p99<=500 -> PASS
+DAY37 A4 card=rtx5090 retires=438 within_bound=36 worst_over_bound_bytes=121175040 boots_without_granularity=[] rule mapped-used<=planes*granule+slack -> FAIL
+DAY37 A5-MAPPER card=rtx5090 against=mix-spec-O1-pooled compared=44 equal=44 differ=0 owner_grows_waited=1070 faults=0 -> PASS
+DAY37 A5-ENSURE card=rtx5090 reclaim_retry_lines=1 outcomes=['not parked'] errored_rows=['burst-b11', 'burst-b12', 'burst-b14', 'burst-b15', 'burst-b16', 'burst-b21'] dependent_rows=['iii-L0-r0'] peers_compared=44 equal=44 differ=0 differ_tags=[] faults=0 -> PASS
+DAY37 A5-BUILD1 card=rtx5090 retry_lines=11 cache_alloc_failed_lines=0 non200_rows=19 faults=0 -> PASS
+DAY37 A5-BUILD64 card=rtx5090 retry_lines=9 cache_alloc_failed_lines=52 non200_rows=52 faults=0 -> PASS
+DAY37 A6 card=rtx5090 lane_boot=mix-spec-O1-pooled compared=44 equal=44 differ=0 lane_kv_vmm_lines=1 main_kv_vmm_lines=0 -> PASS
+DAY37 A7 card=rtx5090 shape=g2 oom_lines=0 r503=0 grow_failures=0 admit_lines=61 est_over_booked_free=0 status={200: 61, 429: 19} faults=0 -> PASS
+DAY37 A7 card=rtx5090 shape=l64 oom_lines=0 r503=0 grow_failures=0 admit_lines=35 est_over_booked_free=0 status={200: 35, 429: 45} faults=0 -> PASS
+DAY37 A7 card=rtx5090 shape=boff oom_lines=0 r503=0 grow_failures=0 admit_lines=0 est_over_booked_free=0 status={200: 80} faults=0 -> PASS
+```
+
+- **A1-GATE `admit-mem-burst` FAIL on the pooled arm** (the control, today's allocator): `AMB no prefill OOM:
+  oom_lines=7 status={200: 45, 429: 19} -> FAIL`, then `ADMIT-MEM BURST GATE: RED`. The seven lines read `[admit-mem]
+  prefill OOM parked session back to queue (model amb, retry 1/3): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of
+  memory")`, during a run of `lcp-split` prefix-cache inserts at the cache's 2,052 MB budget, and were followed by a
+  step-OOM reclaim; every parked session was retried and served (45 x 200, 19 typed 429s, no crash). The vmm arm of
+  the same gate reads ALL GREEN. No co-tenant (`compute-apps` empty before and after). The r3 pooled run of the same
+  gate read ALL GREEN; r3 to r4 (`d5923ccae` to `c6f9282c2`) also changed `admit_memory.rs` (9 lines) and the
+  worker, so whether the pooled program moved or the run placed differently is not placed here (repro needed).
+- Every other correctness clause PASS: A1-GATE's other nine cells, A1-MIX both kinds both orders, A1-STREAM, A2, A5
+  (MAPPER, ENSURE, BUILD1, BUILD64), A6, A7 on all three shapes. A3 (i) and (ii) PASS (TTFT p50 ratio 1.010, ITL p99
+  0.999, TPOT p50 0.998, throughput 0.997, N=10). A4 reads FAIL on its stated bound (36 of 438 retires within it; the
+  helper placement's lookahead granule counts as excess, 1.14); it is outside the rule.
+- **The rule of 1.7 reads FAIL (no reading) for the 5090 class**, on A1: a correctness clause failed, on the pooled
+  arm. The cause is the door-armed admission booking on the pooled allocator (the prefix cache's LCP-split inserts
+  during the burst), not the vmm arm; the same gate on O5's corrected prime booking runs in the DAY39 5090 halves
+  (queue-i), which is where this reading goes next. No clause changes.
+- A4-IDLE (a reading): at idle the vmm arm leaves 2.7 to 3.7 GB more driver-free memory than pooled on the mix
+  (13.62 against 10.93 and 9.92 GB plain; 11.47 against 8.41 GB spec).
