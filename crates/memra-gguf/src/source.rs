@@ -453,6 +453,7 @@ fn is_quant_auxiliary(name: &str, headers: &BTreeMap<String, StInfo>) -> bool {
 fn safetensors_storage(
     info: &StInfo,
     auxiliaries: &[String],
+    headers: &BTreeMap<String, StInfo>,
 ) -> Result<(Vec<u64>, StorageLayout), String> {
     let float = match info.dtype.as_str() {
         "F32" => Some(FloatType::F32),
@@ -482,7 +483,27 @@ fn safetensors_storage(
             *last = last
                 .checked_mul(2)
                 .ok_or("packed U8 logical shape overflows")?;
-            ("NVFP4", vec![16])
+            let scale = auxiliaries
+                .iter()
+                .find(|name| name.ends_with(".weight_scale"))
+                .and_then(|name| headers.get(name))
+                .filter(|scale| scale.dtype == "U8");
+            if let Some(scale) = scale {
+                if auxiliaries.len() != 1 || !last.is_multiple_of(32) {
+                    return Err("MXFP4 U8 scale needs a single aligned weight_scale".to_owned());
+                }
+                let mut expected_scale_shape = shape.clone();
+                *expected_scale_shape.last_mut().unwrap() /= 32;
+                if scale.shape != expected_scale_shape {
+                    return Err(format!(
+                        "MXFP4 U8 scale shape {:?} does not match logical weight shape {:?}",
+                        scale.shape, shape
+                    ));
+                }
+                ("MXFP4", vec![32])
+            } else {
+                ("NVFP4", vec![16])
+            }
         }
         "I8" => {
             let last = shape
@@ -543,7 +564,7 @@ pub fn census_from_safetensors_headers(
             })
             .unwrap_or_default();
         auxiliary_names.extend(auxiliaries.iter().cloned());
-        let (shape, mut storage) = safetensors_storage(info, &auxiliaries)?;
+        let (shape, mut storage) = safetensors_storage(info, &auxiliaries, headers)?;
         if let StorageLayout::Quantized(layout) = &mut storage {
             layout.auxiliaries = auxiliaries
                 .iter()
@@ -2957,6 +2978,71 @@ mod tests {
             "model.layers.1.self_attn.q_proj.weight_packed"
         );
         assert_eq!(packed.entry.physical_bytes, 14);
+    }
+
+    #[test]
+    fn mimo_source_mxfp4_and_mint_nvfp4_have_distinct_census_layouts() {
+        let weight_name = "model.layers.1.mlp.experts.0.gate_proj.weight".to_string();
+        let scale_name = "model.layers.1.mlp.experts.0.gate_proj.weight_scale".to_string();
+        let weight = StInfo {
+            dtype: "U8".to_owned(),
+            shape: vec![2, 32],
+            data_offsets: [0, 64],
+        };
+        let mut headers = BTreeMap::from([
+            (weight_name.clone(), weight),
+            (
+                scale_name.clone(),
+                StInfo {
+                    dtype: "U8".to_owned(),
+                    shape: vec![2, 2],
+                    data_offsets: [64, 68],
+                },
+            ),
+        ]);
+        let source = census_from_safetensors_headers(&headers).unwrap();
+        assert_eq!(source.tensors.len(), 1);
+        assert_eq!(source.tensors[0].entry.shape, vec![2, 64]);
+        let StorageLayout::Quantized(layout) = &source.tensors[0].entry.storage else {
+            panic!("MiMo source expert must be quantized")
+        };
+        assert_eq!(layout.format, "MXFP4");
+        assert_eq!(layout.block_shape, vec![32]);
+        assert_eq!(layout.auxiliaries, vec![scale_name.clone()]);
+
+        headers.get_mut(&scale_name).unwrap().shape = vec![2, 1];
+        assert!(census_from_safetensors_headers(&headers).is_err());
+
+        let scale = headers.get_mut(&scale_name).unwrap();
+        scale.dtype = "F8_E4M3".to_owned();
+        scale.shape = vec![2, 4];
+        scale.data_offsets = [64, 72];
+        let macro_name = "model.layers.1.mlp.experts.0.gate_proj.weight_scale_2".to_string();
+        headers.insert(
+            macro_name.clone(),
+            StInfo {
+                dtype: "F32".to_owned(),
+                shape: vec![1],
+                data_offsets: [72, 76],
+            },
+        );
+        let input_name = "model.layers.1.mlp.experts.0.gate_proj.input_scale".to_string();
+        headers.insert(
+            input_name.clone(),
+            StInfo {
+                dtype: "F32".to_owned(),
+                shape: vec![1],
+                data_offsets: [76, 80],
+            },
+        );
+        let mint = census_from_safetensors_headers(&headers).unwrap();
+        assert_eq!(mint.tensors.len(), 1);
+        let StorageLayout::Quantized(layout) = &mint.tensors[0].entry.storage else {
+            panic!("MiMo mint expert must be quantized")
+        };
+        assert_eq!(layout.format, "NVFP4");
+        assert_eq!(layout.block_shape, vec![16]);
+        assert_eq!(layout.auxiliaries, vec![scale_name, macro_name, input_name]);
     }
 
     #[test]
