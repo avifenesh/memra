@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Derived for the local RTX 5090 by rtx5090-derive.py (DAY68 section 1) from pro-single-l2/unit-cells.sh at 21984b527: exact replacements only.
+# L's native cells (DAY63 section 2 (a)) under the collector's hold:
+# `tier-battery.py --rig pro-single --external-lock --execute bash unit-cells.sh @COLLECTOR_LOCK_FD@`.
+# The test executables were built by build.sh outside the hold. Green arm: the l engine executable must pass both
+# native cells (the pooled backing's length and ledger, the cap and the engine's close). Red arm: the red executable (a
+# pooled backing keeps its capacity as its length, its marker printed) must fail the length cell. Then the CPU censuses.
+set -uo pipefail
+fd=$1
+R=${A_OUT:?}
+MODEL=${MEMRA_DAY38_MODEL:?}
+export PATH=/usr/local/cuda/bin:$PATH
+cd "${A_TREE:?}" || exit 1
+U=$R/unit; mkdir -p "$U"
+python3 tools/tier-lock-proof.py --fd "$fd" --lock /tmp/memra-5090.lock --owner collector > "$U/LOCK.json"
+nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$U/compute-apps.before.csv" 2>&1
+cell() { # name exe filter
+  local name=$1 exe=$2 filter=$3
+  CUDA_VISIBLE_DEVICES=0 "$exe" --include-ignored --exact --nocapture --test-threads=1 "$filter" > "$U/$name.log" 2>&1
+  local rc=$?; grep -q '^running 1 test$' "$U/$name.log" || { echo "RAN NO TEST: the filter matched nothing" >> "$U/$name.log"; rc=97; }
+  echo "$rc" > "$U/$name.exit"; echo "$(date -u +%FT%TZ) $name rc=$rc $(grep -h '^test result' "$U/$name.log")" | tee -a "$U/run.log"
+}
+cell a1-green "$R/bins/l/memra-engine-tests" tier_transfer::tests::day63_a_dropped_lease_backs_the_next_same_class_lease
+cell a2-green "$R/bins/l/memra-engine-tests" tier_transfer::tests::day63_a_drop_past_the_cap_frees_and_the_engine_closes_the_pool
+cell a1-red "$R/bins/red/memra-engine-tests" tier_transfer::tests::day63_a_dropped_lease_backs_the_next_same_class_lease
+cp "$U/a1-red.exit" "$U/a2-red.exit"; cp "$U/a1-red.log" "$U/a2-red.log"
+{ "$R/bins/l/memra-engine-tests" day63_ native_cells_own; "$R/bins/l/memra-server-tests" day63_; } > "$U/censuses.log" 2>&1; echo "$?" > "$U/censuses.exit"
+echo "$(date -u +%FT%TZ) censuses rc=$(cat "$U/censuses.exit") $(grep -h '^test result' "$U/censuses.log")" | tee -a "$U/run.log"
+nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$U/compute-apps.after.csv" 2>&1
+g1=$(cat "$U/a1-green.exit"); g2=$(cat "$U/a2-green.exit"); r1=$(cat "$U/a1-red.exit"); r2=$(cat "$U/a2-red.exit")
+m1=$(grep -c 'day63 red arm' "$U/a1-red.log"); m2=$(grep -c 'day63 red arm' "$U/a2-red.log")
+echo "UNIT a1-green=$g1 a2-green=$g2 a1-red=$r1 (marker $m1) a2-red=$r2 (marker $m2) censuses=$(cat "$U/censuses.exit")" | tee -a "$U/run.log"
+[ "$g1" = 0 ] && [ "$g2" = 0 ] && [ "$r1" != 0 ] && [ "$r2" != 0 ] && [ "$m1" -gt 0 ] && [ "$m2" -gt 0 ] && [ "$(cat "$U/censuses.exit")" = 0 ]
