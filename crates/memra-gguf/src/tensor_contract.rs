@@ -2265,6 +2265,11 @@ fn add_moe_mlp(
 
     match builder.dialect {
         CheckpointDialect::Gguf => add_gguf_expert_banks(builder, plan, index, moe, owner),
+        CheckpointDialect::HfSafetensors if plan.arch == Arch::MiMoV2 => builder
+            .requirements
+            .extend(crate::model_packs::mimo_v2::mint_expert_requirements(
+                plan, index, moe,
+            )),
         CheckpointDialect::HfSafetensors => add_hf_expert_groups(builder, plan, index, moe, owner),
     }
 
