@@ -91,3 +91,7 @@ Ultra 9 285K host with one RTX PRO 6000 Blackwell Workstation Edition, at least 
 the page-cache eviction of unused files), root in the container; `--privileged` or `CAP_SYS_ADMIN` would let the census
 join frame numbers to `kpageflags` (the cell reads either way). Receipts under `/root/spill-receipts/c-day78-<rig>/`.
 Expected: the build about 5 minutes, the cell about 35 (30 runs, each with a fragmentation setup of about 38 s).
+
+**A local GPU check of the flag** (`day78-cpu/gpu-check.log`, the development host's RTX 5090 under its lock, one run
+each): the door and the door with `--expert-bank-pool-pageable` both exit 0 with `MATCH` and the same tape; the pool
+line reads ` pageable` for the second; its decode is slower (0.585 s gen-only against 0.393), as pageable copies are.
