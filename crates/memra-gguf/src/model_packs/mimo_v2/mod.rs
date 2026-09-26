@@ -6,10 +6,11 @@ pub(crate) mod mint_headers;
 pub(crate) mod mtp;
 pub(crate) mod vision;
 
+use crate::checkpoint_binding::{CheckpointBinding, bind_census};
 use crate::config::{HfConfig, ModelConfig};
 use crate::model_plan::{ModelPlan, MoeMlpPlan, PlanCompileError};
 use crate::safetensors::StInfo;
-use crate::source::census_from_safetensors_headers;
+use crate::source::{SafetensorsSource, TensorSource, census_from_safetensors_headers};
 use crate::tensor_contract::{
     BoundTensorContract, CheckpointDialect, ContractOptions, ExpertTensor, LayerTensor,
     QuantConstraint, TensorContract, TensorContractError, TensorId, TensorMatch, TensorOwner,
@@ -27,6 +28,8 @@ const PINNED_MINT_HEADER_DIGEST: &str =
     "00403ccacf38567327ec41b4cb0cbd9eade5b830094191dce7e90b24b8efe45a";
 const PINNED_SOURCE_HEADER_DIGEST: &str =
     "5ebbdd27e45716b805fc2bdf115c8345b4bfc03c6012b860f76b6b222c758aee";
+const PINNED_SOURCE_CONFIG_SHA256: &str =
+    "61bea4a0f7a0dd8969f8cae528761e26b697dd12ff63e98804c3f0945492e621";
 
 /// Explicit inspection profile. It never participates in automatic family selection.
 pub static MINT_PROFILE: ModelPack = ModelPack {
@@ -106,6 +109,37 @@ pub static SOURCE_PROFILE: ModelPack = ModelPack {
     tensor_schema: source_tensor_schema,
     tiny_plan: None,
 };
+
+/// Explicit source binding for MiMo text diagnostics. A caller may use the
+/// resulting semantic binding to acquire native text weights; this does not
+/// register the profile for automatic HybridModel or customer serving.
+pub fn bind_pinned_text_source(
+    source: &SafetensorsSource,
+) -> Result<(ModelConfig, ModelPlan, CheckpointBinding), String> {
+    let dir = source
+        .st_dir()
+        .ok_or("MiMo source has no safetensors directory")?;
+    let config_bytes = std::fs::read(dir.join("config.json"))
+        .map_err(|error| format!("MiMo source config.json: {error}"))?;
+    let config_sha = format!("{:x}", Sha256::digest(&config_bytes));
+    if config_sha != PINNED_SOURCE_CONFIG_SHA256 {
+        return Err(format!(
+            "MiMo source config changed: got {config_sha}, expected {PINNED_SOURCE_CONFIG_SHA256}"
+        ));
+    }
+    source.verify_pinned_mimo_source_headers()?;
+    let config = source.try_config()?;
+    config
+        .validate_plan_semantics()
+        .map_err(|error| format!("{error:?}"))?;
+    let plan = SOURCE_PROFILE
+        .compile_plan(&config)
+        .map_err(|error| format!("{error:?}"))?;
+    let census = source.tensor_census()?;
+    let binding = bind_census(Some(&SOURCE_PROFILE), &config, &plan, &census)
+        .map_err(|error| error.to_string())?;
+    Ok((config, plan, binding))
+}
 
 /// GGUF-style request names for the HF source's text trunk. This is a loader
 /// address map, not an accepted GGUF tensor contract. Modalities and separate
