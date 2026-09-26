@@ -1,4 +1,4 @@
-# WP-A resumable state (2026-09-26, NEED TARGET CARD: W's target sitting (queued) and DAY62's price sitting)
+# WP-A resumable state (2026-09-26, integrable: the grid fix; B1's 5090 half running; DAY62 on the target)
 
 - Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ65 took `9ab479d9c` (DAY66); integ67 takes B1 after integ66.
 - Items 21 to 25 closed (DAY53 to DAY58); item 23's addendum F2b (`b4d6f95c2`) accepted.
@@ -7,6 +7,9 @@
   The 5090 re-run was NOT RUN, because a foreign app held the card (section 5).
   - **B1 ADOPTED** (DAY59 section 10, code `e522a9417`, for integ67 after integ66): own time 0.25 ms against
     1.36 / 1.34, stall gain 1.03 / 1.15 ms, every gate green.
+  - integ67's asks (DAY59 section 11): the gridDim.y refusal `231fba087` (with its red arm); B1's 5090 half
+    `rtx5090-b1/` is building, then runs in one hold (receipts `rtx5090-b1/cell/`, untracked; executables in
+    `/home/avifenesh/spill-a-cells/b1-bins`, removed when it closes). W's 5090 half repeats whole after it.
 - DAY66 (revuto on #731): the fanout's split is scoped to its snapshot (`prefix_copy_scoped`), with its census, cell
   and red arm (`day66/`), server lib 935 passed. No card.
 - Item 11 (DAY60) is closed with its reading: CLAUSE NOT MET as stated before it ran, and y_minus_x is +86.3 (demote)
@@ -20,10 +23,10 @@
     idle rule.
   - The target read `FAIL (a, c)`: (a) was a harness defect, now fixed; (c) is real, promote at 1.25 / 1.33 of base
     (DAY61 section 3). W is not the target's program. If the 5090 half passes, W becomes a per-card write-combined arm
-    under a new pre-registration; otherwise it is reverted. The 5090 cell was restarted at 07:19Z with the fixed
-    harness.
-  - Scratch to remove when the W cell closes: `rtx5090-w/cell/bins/` and the two lines added to the shared
-    `/home/avifenesh/projects/memra/.git/info/exclude`.
+    under a new pre-registration; otherwise it is reverted. Its 5090 run died in the 07:28Z reboot, then was
+    stopped by me at 07:36Z (after (a), before its timed cell) so B1's half runs first; it repeats whole after.
+  - Scratch to remove when the cells close: `rtx5090-w/cell/bins/`, `/home/avifenesh/spill-a-cells/`, and the four
+    lines added to the shared `/home/avifenesh/projects/memra/.git/info/exclude`.
 - Item 13 (DAY62): step 1 lines built (`17a1c8076`); price sitting `pro-single-day62/` ready (`build.sh <tip>`,
   then `driver.sh`, last line `DAY62 SELECT -> ..`), then the selected design(s).
 - Pre-registered and waiting in order: item 13's design (DAY62, the retire seam: lines, a price, R1

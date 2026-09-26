@@ -279,3 +279,28 @@ with the three 5090 cells already queued.
   - The 5090's (a1) and (a2) stay owed as a compatibility reading, not a gate.
 - Item 10's remaining publishers (DFlash, GLM-5, latent) stay owed to their artifacts and rigs (DAY54). The fanout's
   insert (2.2 ms, the evicted entry's demote pre-submit) is item 19's.
+
+## 11. integ67's two asks: the grid limit (fixed) and B1's 5090 half (running)
+
+- **The grid limit** (review of `e522a9417`). The batched launch uses `gridDim.y = n + 1`, and CUDA caps it at 65535.
+  A batch of more than 65534 items would have failed at launch, after the table upload.
+  - `Engine::copy_batch_items_rows(n)` now refuses it before any device work, naming the count (`batched copy of N
+    items refused: N+1 grid rows exceed CUDA's gridDim.y limit of 65535`).
+  - The CPU test `copy_batch_items_refuses_more_rows_than_the_grid_holds` covers 0, 128 (the 27B's snapshot), 65534
+    (the largest legal batch) and the refusal at 65535. Engine lib `576 passed`; clippy; fmt. Commit `231fba087`.
+  - Red arm (`b1/grid-red-arm.patch`, the check skipped, with a marker): the test fails on `called
+    Result::unwrap_err() on an Ok value: 65536` (`b1/grid-red-arm.log`).
+  - Today's shapes are far below the limit (the 27B's restore is 129 items), so the program and its bytes are
+    unchanged.
+- **B1's 5090 half.** B1 changes the naked snapshot and restore program on every card, so by the per-hardware rule it
+  needs a 5090 reading before main. `rtx5090-b1/` runs it on the target sitting's own trees:
+  - b1 at `7edc329d9`, base at `9ab479d9c`, red at b1 plus `pro-single-b1/red-arm.patch`, built in one scratch
+    worktree with its own target dir (both removed after), the executables outside `/tmp`.
+  - One bounded hold of `/tmp/memra-5090.lock` with the idle rule: (a1) and (a2) green and red with
+    `MEMRA_B1_MODEL` set to the 27B, the censuses, the identity gate default and plain door OFF and ON, and the hit
+    gate OFF and ON, all through `--external-lock 9`.
+  - Then the 40-boot paired cell in the target sitting's environment, and `b1-reading.py`.
+  - A 5090 regression makes B1 a per-card default question, not a revert on the target.
+  - It runs ahead of W's 5090 half. W's run had taken the hold at 07:33Z and passed (a) and four identity gates when
+    I stopped it at 07:36Z, before its timed cell, so B1 could go first. It is banked as
+    `rtx5090-w/cell/stopped-0736Z/` and repeats whole after B1.
