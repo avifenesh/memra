@@ -22,12 +22,12 @@ COUNTS = {"qualification": 1, "validation": 8, "final": 24}
 REFERENCE = "fixed-k20-d3-c0"
 LABEL = re.compile(r"[a-z0-9][a-z0-9-]*")
 FIXED = {
-    "fixed-k3-d3-c0": (3, 3),
-    "fixed-k10-d3-c0": (10, 3),
-    "fixed-k20-d1-c0": (20, 1),
-    "fixed-k20-d2-c0": (20, 2),
-    "fixed-k20-d3-c0": (20, 3),
-    "fixed-k20-d4-c0": (20, 4),
+    f"fixed-k{k}-d{depth}-c0": (k, depth)
+    for k in (3, 10, 20) for depth in (1, 2, 3, 4)
+}
+FIXED_C = {
+    f"fixed-k{k}-d3-cq{q}"
+    for k in (3, 10, 20) for q in (25, 50, 75)
 }
 EXTRA_KEYS = {
     "topk-model", "depth-model", "confidence-model",
@@ -151,9 +151,9 @@ def freeze(args):
                 )
                 or (
                     spec["arm"] == "fixed-c3" and (
-                        spec["k"] != 20 or spec["cap"] != 3
+                        spec["cap"] != 3
                         or not re.fullmatch(
-                            r"fixed-k20-d3-cq(?:25|50|75)",
+                            rf"fixed-k{spec['k']}-d3-cq(?:25|50|75)",
                             spec["label"],
                         )
                         or set(options) != {"confidence-fixed"}
@@ -185,7 +185,7 @@ def freeze(args):
             ):
                 raise ValueError("mixed learned policy weights changed")
     if args.phase != "final":
-        if not set(FIXED).issubset(by_label):
+        if not (set(FIXED) | FIXED_C).issubset(by_label):
             raise ValueError("mixed fixed depth and K controls are missing")
     learned = [
         spec for spec in specs if spec["role"] == "learned"

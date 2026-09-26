@@ -88,8 +88,10 @@ separate sealed commitment.
    Before the long training battery, run D=1 and D=2 fixed controls
    on the pinned binary and replay their native depth, sampler,
    and KV receipts from the training-only archive.
-   The menu contains nine fixed controls including K=3, D=1/2/3/4
-   and three C cutoffs measured from training offers, plus three
+   The menu contains 21 fixed controls: every K=3/10/20 and
+   D=1/2/3/4 combination at C=0, plus three D3 C cutoffs
+   measured separately from training offers at each K.
+   It also contains three
    selectable joint C/K/D candidates, two component diagnostics,
    and their exact model-running no-op twins. The K-only and C/D-only
    diagnostics cannot become the selected universal controller.

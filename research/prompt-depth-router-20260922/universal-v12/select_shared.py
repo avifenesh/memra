@@ -13,8 +13,11 @@ VALIDATION_SHA = "bf920b82e0176c4304bcc562ccce34a28384082c888355a280620163a45e53
 PAIR_STATUS = "paired"
 BASELINE = "fixed-k20-d3-c0"
 REQUIRED_FIXED = {
-    BASELINE, "fixed-k3-d3-c0", "fixed-k10-d3-c0",
-    "fixed-k20-d1-c0", "fixed-k20-d2-c0", "fixed-k20-d4-c0",
+    f"fixed-k{k}-d{depth}-c0"
+    for k in (3, 10, 20) for depth in (1, 2, 3, 4)
+} | {
+    f"fixed-k{k}-d3-cq{q}"
+    for k in (3, 10, 20) for q in (25, 50, 75)
 }
 SHA = re.compile(r"[a-f0-9]{64}")
 

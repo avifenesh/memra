@@ -63,7 +63,7 @@ def model_inventory(models):
 
 
 def quantiles(v11_rows, prose_rows):
-    values = []
+    values = {k: [] for k in (3, 10, 20)}
     for root in (v11_rows, prose_rows):
         manifest = json.loads((root / "manifest.json").read_text())
         if manifest["schema"] != 1 or manifest["use"] != "training-only":
@@ -75,17 +75,23 @@ def quantiles(v11_rows, prose_rows):
             for line in stream:
                 item = json.loads(line)
                 if (
-                    item["draft_k"] == 20
+                    item["draft_k"] in values
                     and item["offer_position"] == 1
                     and item["source"].startswith(("v11-", "v12-"))
                 ):
-                    values.append(item["chosen_probability"])
-    values.sort()
-    if len(values) < 150:
-        raise ValueError("K20 C fixed quantiles lack randomized offers")
+                    values[item["draft_k"]].append(
+                        item["chosen_probability"]
+                    )
+    for k in values:
+        values[k].sort()
+        if len(values[k]) < 150:
+            raise ValueError(f"K{k} C fixed quantiles lack offers")
     return {
-        str(q): values[int((q / 100) * (len(values) - 1))]
-        for q in QUANTILES
+        str(k): {
+            str(q): values[k][int((q / 100) * (len(values[k]) - 1))]
+            for q in QUANTILES
+        }
+        for k in values
     }
 
 
@@ -143,19 +149,20 @@ def freeze(models, v11_rows, prose_rows, prose_replay,
             raise ValueError(f"mixed candidate weight missing: {name}") from error
 
     arms = [
-        arm(f"fixed-k{k}-d3-c0", "fixed", k, "fixed:3", 3)
-        for k in (3, 10, 20)
-    ]
-    for depth in (1, 2, 4):
-        arms.append(arm(
-            f"fixed-k20-d{depth}-c0", "fixed", 20,
+        arm(
+            f"fixed-k{k}-d{depth}-c0", "fixed", k,
             f"fixed:{depth}", depth,
-        ))
-    for q, cutoff in cutoffs.items():
-        arms.append(arm(
-            f"fixed-k20-d3-cq{q}", "fixed", 20, "fixed-c3", 3,
-            f"confidence-fixed=0,{cutoff:.9g}",
-        ))
+        )
+        for k in (3, 10, 20)
+        for depth in (1, 2, 3, 4)
+    ]
+    for k in (3, 10, 20):
+        for q, cutoff in cutoffs[str(k)].items():
+            arms.append(arm(
+                f"fixed-k{k}-d3-cq{q}", "fixed", k,
+                "fixed-c3", 3,
+                f"confidence-fixed=0,{cutoff:.9g}",
+            ))
     for source in SOURCES:
         router = weight(source, "ridge-100/topk-prior.tsv")
         for k in (3, 10, 20):
@@ -194,7 +201,7 @@ def freeze(models, v11_rows, prose_rows, prose_replay,
         arm("k-noop-prose-balanced", "noop", 20, "noop-topk", 3,
             *extra),
     ))
-    if len(arms) != 19 or len({item["label"] for item in arms}) != 19:
+    if len(arms) != 31 or len({item["label"] for item in arms}) != 31:
         raise ValueError("mixed validation arm menu differs")
     out.mkdir(exist_ok=False)
     common = {
