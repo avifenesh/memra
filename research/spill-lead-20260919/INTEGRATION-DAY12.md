@@ -4067,6 +4067,68 @@ Lane tip merged: A `90fe89abf` on main `968c0fa68` (#728), clean. The crate chan
   - `ADMIT-MEM BURST GATE: ALL GREEN`; `SPEC-CTX-EDGE GATE: ALL GREEN`;
   - the pause gate with the 27B: `KV-HOST-PAUSE-DEMOTE GATE: ALL GREEN` (40 ok).
 
+## integ65 (`lane/spill-integ65-20260926`): A days 56 to 58 (item 23 the isolated shed tests; item 24 the stop-mode wiring test; item 25 a real ordering defect in the route book, fixed)
+Lane tip merged: A `aa325f056` (which already carries main `968c0fa68`) on main `4b24740f4` (#729), clean. The change:
+- `route_telemetry.rs` (item 25, the one production behavior change): `RouteRun::finish`, `cancel` and `refuse` counted
+  the run's end before `Drop` took it out of `running`, and the snapshot loaded `running` before the end counters, so
+  `/metrics` and the route's X-RateLimit reading could briefly count an ended run as still running. Each end now leaves
+  `running` first (once, through `leave_running`, AcqRel) and counts the end with `Release`; the snapshot reads the end
+  counters with `Acquire` before `running`.
+- `lib.rs` and `worker.rs` (item 23): the admission reservation path takes its lane counters as a parameter; every
+  production caller passes `worker::ADMISSION_RESERVATIONS`, and the guard releases where it reserved. The seven shed
+  and ceiling tests run on their own counters without a lock; only the three that set the global counters still order
+  behind the handler tests.
+- `darklane.rs` tests (item 24): the stop-mode cycle waits for the runner's own acknowledgement, then the job's `/proc`
+  state, under a 30 s hang guard, and prints each latency.
+- `docs/TESTING.md`. No new `MEMRA_*` name.
+
+**A days 56 to 58, verbatim.**
+1. **Item 23 (DAY56):** over 400 full suites in arm A's shape the median `finished in` is 6.62 s against the 6.70 s bound
+   (F1 was 7.94 s; the suite grew from 921 to 930 tests since A', so not like for like); item 21's test and its two
+   siblings 400 of 400, no handler 429; arm B's shape 100 of 100.
+2. **Item 24 (DAY57):** reproduced 1 of 100 only beside sixteen burners (`timed out (3000ms) waiting for: yield to
+   T`), 0 of 100 at eight. On the fix R2 and R3 read 100 of 100, and the red arm (no SIGSTOP sent) fails 10 of 10 at the
+   guard. `Verdict, as registered: reproduced by R3; the fix meets its acceptance`.
+3. **Item 25 (DAY58):** a stress cell over 100,000 fresh books on the tree before the fix: `34011 snapshots counted an
+   ended run as running` and 27753 on a second run; the item's own test failed 1 of 100 beside sixteen burners. On the
+   fix 0 of 100,000 twice; each old order restored as a red arm still shows it (63926 writer side, 16340 reader side);
+   the item's test 100 of 100 beside sixteen burners; server lib 932 passed.
+
+**Lead review.**
+- `leave_running` is idempotent (`out`), so a run that ends and then drops leaves `running` exactly once, and `Drop`
+  still counts `failed` for an admitted run that never ended. `running` goes up in `begin` (AcqRel) before any end can
+  run, and `decrement` is a checked `fetch_update`, so no path underflows.
+- The ordering claim: an end's `Release` on its counter follows its own AcqRel exit from `running`; a snapshot that
+  `Acquire`s that counter and then loads `running` sees the exit. The census pins both orders and the red arms show
+  each half is needed.
+- The admission refactor moves no production value: the counters argument is the same global array on every production
+  path, and a route-bound guard never releases a lane slot.
+- One numeric program per request: no token path changes.
+
+**Ruling 60:**
+- Days 56 to 58 are read as registered. Items 23, 24 and 25 close.
+- Item 24's 30 s hang guard is accepted: the test asserts the stop wiring, the acknowledgement plus the `/proc` state
+  is a stronger claim than the old 1 s and 3 s bounds, and the latency is still printed.
+- Item 25 is a defect fix in the metrics surface; it moves no default.
+- Owed by A: the fanout publisher design (DAY54's price), items 11 to 14 (19 with 14, 17 re-read on top), 18 and 20,
+  and the 5090 halves of S4, V and item 16.
+
+**Checks.**
+- CPU battery on `b23829f6d`, 15 of 15 rc=0 (`integ65-cpu-battery/`): portable suites 388 passed, 0 skipped; server
+  939, engine lib 573, tier 301, pytest 87; clippy `-D warnings` twice; fmt, check-flags, publish census, docs
+  registry, conflict markers, workflow keys, perf board and `git diff --check`.
+- GPU battery on BOX31 (an RTX PRO 6000 Workstation box with a Ryzen 9 9950X, rented for this battery and lane C's
+  DAY73 cell) with the same 9B model (sha256 `52c9cceb...`, linked at the rig's path), under the pair lock
+  (`integ65-pro/`, 467 receipts mirrored and checked). Binary `106ceea3`, hashed after serve-smoke's build. One
+  collector hold, 01:13Z to 01:28Z. Verbatim:
+  - serve-smoke `serve-smoke: 0 failed`;
+  - the engine span cells `10 passed` and the worker cells `18 passed`, both serial;
+  - identity default ON `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` (12 ok);
+  - fault default and plain `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN`, 255 ok each;
+  - hit OFF and ON `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)`, 61 and 68 ok;
+  - `ADMIT-MEM BURST GATE: ALL GREEN`; `SPEC-CTX-EDGE GATE: ALL GREEN`;
+  - the pause gate with the 27B: `KV-HOST-PAUSE-DEMOTE GATE: ALL GREEN` (40 ok).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
