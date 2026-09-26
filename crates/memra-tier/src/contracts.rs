@@ -73,16 +73,49 @@ pub type BudgetError = Error;
 
 /// Frame domain and payload lengths before SHA-256; never hash ambiguous concatenations.
 pub fn digest(domain: &str, bytes: &[u8]) -> Digest {
+    let mut h = framed(domain, bytes.len());
+    h.update(bytes);
+    h.finalize().into()
+}
+/// The frame `digest` writes ahead of the payload: the version tag, the domain and the payload's
+/// length. One implementation, so a chunked feed can never frame differently.
+fn framed(domain: &str, len: usize) -> Sha256 {
     let mut h = Sha256::new();
     h.update(b"memra-tier\0v1\0");
     h.update((domain.len() as u64).to_le_bytes());
     h.update(domain.as_bytes());
-    h.update((bytes.len() as u64).to_le_bytes());
-    h.update(bytes);
-    h.finalize().into()
+    h.update((len as u64).to_le_bytes());
+    h
 }
 pub fn checksum(valid_bytes: &[u8]) -> Digest {
     digest("valid-bytes", valid_bytes)
+}
+/// WP-A day 61 (`research/spill-a-20260919/DAY61.md` design W): `checksum` fed in chunks. `new`
+/// takes the payload's whole length (it is framed first); the chunks must add up to it, in order,
+/// or `finish` refuses. The digest equals `checksum` over the concatenated chunks.
+pub struct ChecksumStream {
+    h: Sha256,
+    want: usize,
+    fed: usize,
+}
+impl ChecksumStream {
+    pub fn new(len: usize) -> Self {
+        Self {
+            h: framed("valid-bytes", len),
+            want: len,
+            fed: 0,
+        }
+    }
+    pub fn update(&mut self, chunk: &[u8]) {
+        self.fed += chunk.len();
+        self.h.update(chunk);
+    }
+    pub fn finish(self) -> Result<Digest> {
+        if self.fed != self.want {
+            return Err(Error::Corrupt);
+        }
+        Ok(self.h.finalize().into())
+    }
 }
 fn version(v: u32) -> Result<()> {
     if v == WIRE_VERSION {

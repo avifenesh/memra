@@ -310,6 +310,63 @@ impl CudaPinnedLease {
         })
     }
 }
+/// WP-A day 61 (`research/spill-a-20260919/DAY61.md` design W): `checksum` over bytes that may be
+/// write-combined pinned memory. Uncached CPU reads of write-combined memory run at the direct rate
+/// (the RTX 5090 class's leases, DAY38's survey: 9.8 ms against 0.34 ms streamed for 1.15 MB), so
+/// the bytes are streamed (SSE4.1 `movntdqa`) into a 64 KiB cached bounce buffer and hashed from it.
+/// The digest is `checksum`'s, byte for byte: the same frame and the same bytes in order, fed through
+/// `ChecksumStream`. The unaligned head (under 16 bytes) and the tail (under 16 bytes) are read
+/// plainly. A CPU without SSE4.1 (checked at run time) hashes with `checksum` directly.
+pub fn checksum_streamed(bytes: &[u8]) -> Digest {
+    #[cfg(target_arch = "x86_64")]
+    if std::arch::is_x86_feature_detected!("sse4.1") {
+        // SAFETY: SSE4.1 is present (checked above); the fn reads only `bytes`.
+        return unsafe { checksum_streamed_sse41(bytes) };
+    }
+    checksum(bytes)
+}
+
+/// The 64 KiB cached bounce buffer of `checksum_streamed`, one per thread (the hash helper's).
+const STREAM_BOUNCE: usize = 64 * 1024;
+thread_local! {
+    static STREAM_BOUNCE_BUF: RefCell<Vec<u8>> = RefCell::new(vec![0u8; STREAM_BOUNCE]);
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "sse4.1")]
+unsafe fn checksum_streamed_sse41(bytes: &[u8]) -> Digest {
+    use std::arch::x86_64::{__m128i, _mm_storeu_si128, _mm_stream_load_si128};
+    let mut h = ChecksumStream::new(bytes.len());
+    let head = (bytes.as_ptr() as usize).wrapping_neg() % 16;
+    let head = head.min(bytes.len());
+    h.update(&bytes[..head]);
+    let body = &bytes[head..];
+    let vec_len = body.len() - body.len() % 16;
+    STREAM_BOUNCE_BUF.with(|buf| {
+        let mut buf = buf.borrow_mut();
+        let mut at = 0usize;
+        while at < vec_len {
+            let n = (vec_len - at).min(STREAM_BOUNCE);
+            let src = unsafe { body.as_ptr().add(at) };
+            let dst = buf.as_mut_ptr();
+            let mut i = 0usize;
+            while i < n {
+                // SAFETY: `src + i` is 16-byte aligned (the head was peeled) and `i + 16 <= n`
+                // bytes of `body` remain; `dst + i` lies inside the 64 KiB buffer.
+                unsafe {
+                    let v = _mm_stream_load_si128(src.add(i) as *const __m128i);
+                    _mm_storeu_si128(dst.add(i) as *mut __m128i, v);
+                }
+                i += 16;
+            }
+            h.update(&buf[..n]);
+            at += n;
+        }
+    });
+    h.update(&body[vec_len..]);
+    h.finish().expect("the chunks cover the framed length")
+}
+
 /// WP-A day 35 (`DAY35.md` design M'): a read-only view of a taken pinned lease's bytes
 /// (`CudaPinnedLease::read_view`), for the bind's re-hash on the caller's hash helper.
 pub struct PinnedLeaseView {
@@ -326,10 +383,11 @@ impl PinnedLeaseView {
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
-    /// The same `checksum` program the bind runs, over the same bytes.
+    /// The same `checksum` program the bind runs, over the same bytes, read streamed (design W:
+    /// the lease may be write-combined).
     pub fn digest(&self) -> Digest {
         // SAFETY: `ptr` spans `len` settled bytes the constructor's caller keeps alive and unwritten.
-        checksum(unsafe { std::slice::from_raw_parts(self.ptr, self.len) })
+        checksum_streamed(unsafe { std::slice::from_raw_parts(self.ptr, self.len) })
     }
 }
 impl std::fmt::Debug for PinnedLeaseView {
@@ -467,11 +525,12 @@ impl H2dSourceView {
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
-    /// The same `checksum` program `progress` runs, over the same bytes.
+    /// The same `checksum` program `progress` runs, over the same bytes, read streamed (design W:
+    /// the source may be write-combined).
     pub fn digest(&self) -> Digest {
         // SAFETY: `ptr` spans `len` initialized bytes of a pinned host allocation the engine keeps
         // alive and unwritten while this view is out (the type's contract).
-        checksum(unsafe { std::slice::from_raw_parts(self.ptr, self.len) })
+        checksum_streamed(unsafe { std::slice::from_raw_parts(self.ptr, self.len) })
     }
 }
 impl std::fmt::Debug for H2dSourceView {
@@ -4221,7 +4280,7 @@ mod tests {
     /// one context each in the pool below (the census pins the count; day 42 added
     /// `span_receipt_digests_are_the_program_per_span`, day 48
     /// `day48_a_take_back_waits_for_its_own_lease_only`).
-    const NATIVE_CELLS: usize = 15;
+    const NATIVE_CELLS: usize = 16;
     /// The module's native cells' contexts: `NATIVE_CELLS` non-primary contexts created in ONE step,
     /// at the first `cell_context()` call (before that cell's body runs; every other cell waits
     /// here), and held for the whole test process by this static, so no context is created or
@@ -5184,6 +5243,106 @@ mod tests {
     /// WP-A day 37 (`DAY37.md` section 8): every native cell of this module owns a context of the
     /// pool (`cell_context()`), the pool is the module's only context constructor, and its size is
     /// the native cell count.
+    /// WP-A day 61 (`DAY61.md` design W, clause (a), host memory): `checksum_streamed` is
+    /// `checksum` on the survey's identity sizes (0 to 1 MiB + 3) plus the bounce buffer's chunk
+    /// boundaries, at source offsets 0 to 3; `ChecksumStream` refuses a short or long feed.
+    #[test]
+    fn day61_the_streamed_checksum_is_the_checksum() {
+        let mut sizes = vec![
+            0usize, 1, 15, 16, 17, 22, 23, 24, 63, 64, 65, 86, 87, 88, 150, 4096, 61440, 61445,
+        ];
+        sizes.extend([
+            65535,
+            65536,
+            65537,
+            2 * 65536 + 15,
+            2 * 65536 + 16,
+            2 * 65536 + 17,
+        ]);
+        sizes.extend([1 << 20, (1 << 20) + 3]);
+        let mut checked = 0;
+        for &len in &sizes {
+            let buf: Vec<u8> = (0..len + 3).map(|i| (i * 131 + len) as u8).collect();
+            for off in 0..4usize.min(buf.len() + 1) {
+                if off + len > buf.len() {
+                    continue;
+                }
+                let b = &buf[off..off + len];
+                assert_eq!(checksum_streamed(b), checksum(b), "len {len} off {off}");
+                checked += 1;
+            }
+        }
+        assert!(checked >= 4 * sizes.len() - 4);
+        let mut short = ChecksumStream::new(3);
+        short.update(&[1, 2]);
+        assert!(short.finish().is_err(), "a short feed is refused");
+        let mut long = ChecksumStream::new(1);
+        long.update(&[1, 2]);
+        assert!(long.finish().is_err(), "a long feed is refused");
+    }
+
+    /// WP-A day 61 (design W, clause (a), pinned memory, on a card): the same identity on pinned
+    /// allocations of both arms (write-combined and cached), through the lease view the helper
+    /// hashes, at offsets 0 to 3.
+    #[test]
+    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
+    fn day61_the_streamed_checksum_is_the_checksum_on_pinned_memory() {
+        let ctx = cell_context();
+        for kind in [PinnedKind::WriteCombined, PinnedKind::Cached] {
+            for &len in &[0usize, 1, 17, 4096 + 3, 65536 + 5, (1 << 20) + 3] {
+                // SAFETY: every byte is written below before any read.
+                let mut p = unsafe { PinnedBacking::alloc(&ctx, len + 4, kind) }.unwrap();
+                let w = p.as_mut_ptr().unwrap();
+                let pattern: Vec<u8> = (0..len + 4).map(|i| (i * 7 + 3) as u8).collect();
+                // SAFETY: `w` spans `len + 4` bytes of this allocation.
+                unsafe { std::ptr::copy_nonoverlapping(pattern.as_ptr(), w, len + 4) };
+                let r = p.as_ptr().unwrap();
+                for off in 0..4usize {
+                    // SAFETY: `r + off` spans `len` bytes of the allocation, which lives here.
+                    let b = unsafe { std::slice::from_raw_parts(r.add(off), len) };
+                    let view = PinnedLeaseView {
+                        ptr: b.as_ptr(),
+                        len,
+                    };
+                    assert_eq!(
+                        view.digest(),
+                        checksum(&pattern[off..off + len]),
+                        "{} len {len} off {off}",
+                        kind.name()
+                    );
+                }
+            }
+        }
+    }
+
+    /// WP-A day 61 (design W; CPU census): the two pinned views hash through `checksum_streamed`,
+    /// its fallback is `checksum`, and no other production site calls it (the heap payloads keep
+    /// `checksum`).
+    #[test]
+    fn day61_the_pinned_views_hash_streamed_and_nothing_else_does() {
+        let src = include_str!("tier_transfer.rs");
+        let body = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        assert_eq!(
+            body.matches(
+                "checksum_streamed(unsafe { std::slice::from_raw_parts(self.ptr, self.len) })"
+            )
+            .count(),
+            2,
+            "PinnedLeaseView::digest and H2dSourceView::digest"
+        );
+        assert_eq!(
+            body.matches("checksum_streamed(").count(),
+            3,
+            "the fn and the two views"
+        );
+        let f = &body[body.find("pub fn checksum_streamed(").unwrap()..];
+        let f = &f[..f.find("\n}\n").unwrap()];
+        assert!(
+            f.contains("is_x86_feature_detected!(\"sse4.1\")")
+                && f.trim_end().ends_with("checksum(bytes)")
+        );
+    }
+
     #[test]
     fn native_cells_own_their_context() {
         let src = include_str!("tier_transfer.rs");
