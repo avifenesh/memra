@@ -176,3 +176,36 @@ Run as `D74_BUILDS="p71=6bad38150" [D74_RIG=<name>] bash /root/wt-c/research/spi
 `MemFree` at the start (else `not_run`; the lead's page-cache eviction of unused files, as on BOX31, is the way to get
 there), root in the container. Expected: about 25 minutes (24 runs, 12 inducer setups of up to about 30 s at 100 GiB,
 24 rereads of the artifact).
+
+## 5. `induce-b` on the 285K class (BOX29, run by the lead as registered; `pro-single-day74b-box29-285k/`)
+
+After a page-cache eviction of unused files (the lead's action, as on BOX31; `MemFree` 121 GiB at the cell's start),
+on the tree `7b3fbdfa6`, 09:45Z to `box done 2026-09-26T09:59:26Z`, after DAY75's cell on the same card. Receipts: 130
+of 130 `OK` (re-checked), `run-gen-p71` by hash. Regime: 36 to 44 C, N=3098. Verbatim:
+
+- `DAY74 INDUCER rig=box29-285k memfree_gib=121 F_gib=119 induce=1`
+- `DAY74 STATE rig=box29-285k reading=ns_per_step`
+- `DAY74 INDUCE CHECKS rig=box29-285k runs=24 integrity=ok`
+- `DAY74 R2 rig=box29-285k ref: window_ns_per_step median=1.112 (N=6) compacted=0 of 6 compact_isolated median=0/s migrate_fail median=0/s | R3 gen median=0.255 window median=0.227`
+- `DAY74 R2 rig=box29-285k refi: window_ns_per_step median=1.112 (N=6) compacted=0 of 6 ... | R3 gen median=0.258 window median=0.230`
+- `DAY74 R2 rig=box29-285k i15: window_ns_per_step median=1.112 (N=6) compacted=0 of 6 ... | R3 gen median=0.264 window median=0.232`
+- `DAY74 R2 rig=box29-285k i15i: window_ns_per_step median=1.378 (N=6) compacted=3 of 6 compact_isolated median=393748/s migrate_fail median=277407/s | R3 gen median=0.295 window median=0.261`
+- `DAY74 INDUCE VERDICT rig=box29-285k integrity=ok -> not_induced (compaction in 0 of 6 REF+I and 3 of 6 door+I spans)`
+
+**Read as registered: `not_induced`** (REF+I 0 of 6 spans with compaction, fewer than the 5 the fields need). No field
+decides.
+
+**What the lines show beside the verdict, deciding nothing, and it is the first time the 285K class shows the state.**
+Three of the six door+I runs (`o1-i15i-r3`, `o2-i15i-r2`, `o2-i15i-r3`) read 1.648 to 1.676 ns per chain step at the
+gate and 1.627 to 1.656 at the window, against 1.112 to 1.129 in every other run of every arm, about 1.48 times slower:
+the same size as the 9950X's slow state. They are exactly the three runs with compaction in their span, where it
+isolates 787,495 to 1,041,492 pages a second and fails to migrate 554,815 to 813,998 of them; the other 21 runs have
+none. And the state is already there at the gate probe, which prints before the cell signals the inducer's huge-page
+loop: in these runs compaction began during the door's load under the fragmented memory, not from the inducer's
+requests (every burst it made came back whole, as on BOX31). REF under the same fragmentation never compacted.
+
+With DAY73's observations (machine `b`: every slow door run had compaction in its span; BOX30: the one slow run was the
+one span with compaction; BOX31: neither), the receipts now say, across three hosts and both CPU classes: the slow
+state is compaction running against the door's process while it decodes, and compaction starts under fragmented or
+scarce free memory during the door's load, never during REF's. Not a registered reading; the next registration tests
+the part of the door's memory that draws it (`DAY76.md`).

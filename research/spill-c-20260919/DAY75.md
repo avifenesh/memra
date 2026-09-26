@@ -69,3 +69,38 @@ Run as `D75_BUILDS="i15=2243b1fe2 i16=eeacfaf50" bash /root/wt-c/research/spill-
 Ultra 9 285K host with one RTX PRO 6000 Blackwell Workstation Edition (box needs as `DAY72.md` section 1a). Receipts in
 `/root/spill-receipts/c-day75/`, profiles by hash. Expected: two builds about 10 minutes, the cell about 25. The RTX
 5090's half runs from queue v12 (`rtx5090-queue-v12-20260926.sh`).
+
+## 3. The target card (BOX29, the 285K class, run by the lead as registered; `pro-single-day75/`)
+
+The lead ran `D75_BUILDS="i15=2243b1fe2 i16=eeacfaf50" bash .../day75-box.sh` on BOX29 (a Core Ultra 9 285K, 188 GB,
+one RTX PRO 6000 Blackwell Workstation Edition) on the tree `7b3fbdfa6`, after lane B's sitting on the same card,
+09:32Z to `box done 2026-09-26T09:45:46Z`. Receipts: 219 of 219 `OK` against the box manifest (re-checked), the ELFs by
+hash; the eight profiler files by hash only (`profiles.sha256`), kept out of the repository; the window rows in
+`i16/ev/`. Regime: 34 to 47 C, SM median 2610 MHz, N=2022. Verbatim (`i16/reading.log`):
+
+- `DAY75 host demand sequence i15 sha256 4bdc2610c3534e42 lines=[22077]`, `... i16 sha256 0e220d04f52d13e9 lines=[22077]`, `... i16c sha256 0e220d04f52d13e9 lines=[22077]`
+- `DAY75 I16 CHECKS rig=pro-single runs=40 integrity=ok`
+- `DAY75 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0010 max_iqr_window=0.0010 failing=[] -> admissible`
+- `DAY75 gen-only decode medians (N=10 each): ref=0.255 i15=0.264 i16=0.282 i16c=0.283`
+- `DAY75 STEP i16_vs_i15 gen-only decode: pooled=+0.0180 o1=+0.0180 o2=+0.0190 noise=0.0010 -> regresses`
+- `DAY75 STEP i16_vs_i15 steady window: pooled=+0.0090 o1=+0.0090 o2=+0.0090 noise=0.0010 -> regresses`
+- `DAY75 DOOR i15_vs_ref gen-only decode: pooled=+0.0090 o1=+0.0090 o2=+0.0090 noise=0.0002 -> loses`
+- `DAY75 B i16_minus_ref per window token (ms, medians of two; deciding nothing): gpu_busy=-0.0058 gpu_idle=+0.3808 h2d_exposed=+0.2636 kernel_sum=-0.0057`
+- `DAY75 VERDICT rig=pro-single integrity=ok i16=regresses door=i15 vs_ref=loses (window: i16=regresses vs_ref=loses)`
+
+**Read as registered: I16 `regresses` (18 ms gen-only over 32 tokens, 9 ms window), so it is reverted with this
+receipt** (section 2), and the door stays I15, which `loses` to REF as before. The risk section 1 named is what
+happened: with the copy enqueued after the current expert's kernels, the next expert's copy is exposed (the door's
+exposed copy time 0.26 ms per window token above REF's, against 0.03 for I15 in `DAY72.md` section 3), and the GPU
+still idles as long as before. The host demand sequence changed with the order, as registered, and held within each
+arm. Beside it: I16C's brackets read the same prefetch-path costs as I15's (`pf_demand_ns` 0.155 ms per window token).
+
+## 3a. The RTX 5090 (queue v12, 2026-09-26 06:02Z to 06:20Z; `rtx5090-day75/i16/`)
+
+`run-gen-i16` rebuilt locally from `eeacfaf50` (`8a05d290...`), no compute app at any run boundary. Regime: 64 to 75 C,
+SM median 1590 MHz, N=2373. Verbatim: `DAY75 ADMISSIBILITY rig=rtx5090 ceiling=0.005 max_iqr_gen=0.0090
+max_iqr_window=0.0045 failing=['i15:gen_s=0.0090'] -> inadmissible`, `DAY75 VERDICT rig=rtx5090 integrity=ok -> void
+(inadmissible) [as read: i16=regresses door=i15 vs_ref=matches (window: i16=flat vs_ref=loses)]`. Inadmissible, so it
+decides nothing on this card; recorded as it reads (I16 19 ms slower gen-only here too, its copies exposed 0.36 ms
+per window token more than REF's under the profiler). The revert follows the target card's `regresses`, which the rule
+makes sufficient on either card.
