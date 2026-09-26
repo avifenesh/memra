@@ -69,3 +69,29 @@ both orders and the profiled pair (REF, I21); integrity with I15's, I20's and I2
 admissibility; I21 against I20 (`improves`, `regresses`, `flat`, gen-only primary, the window beside it), I21 against
 I15 beside it deciding nothing, the door against REF. `regresses` on either class reverts I21 with its receipt. On the
 285K class, then a 9950X.
+
+## 2a. I21 on the CPU, before any card
+
+I21 landed as `b555b4141` (memra-tier `bank/slru.rs`, `bank/types.rs`, `bank/residency.rs`, `bank/expert_dispatch.rs`;
+memra-engine `banked_residency/native.rs`). One thing the source gave that section 1 did not name: with its reads by
+position, the traced adapter no longer reads its own copy of the id map, so that copy (a second `BTreeMap` of every
+record's `BankId`) is gone; the dispatch adapter's map stays for `validated`.
+
+**CPU gates** (`day84-cpu/gates.log`): the tier suites (the bank suite 92 passed, with the five `day84` tests: the view
+against the table after every one of the day-43 trace's 250,000 operations and the day-4 fixture's 2,013 rows, the
+refusals of an indexed policy, the catalog's positions and the metadata charge, the dispatch adapter's reads through two
+fills and 400 demands with misses and evictions), the engine library (574 passed), clippy (`-D warnings`, all targets)
+and fmt clean, `git diff --check` clean.
+
+**The CPU profile** (`day84-cpu/profile.log`, the engine library's test binaries at I20 and I21, one pinned P-core,
+order I20, I21, I21, I20, I20, I21, the host shared with other lanes' work, load average 4.6 to 5.9): P1's
+`host_resident` 574 to 607 ns per call at I20, 47 to 51 at I21; P9's grouped cycle 2325 to 2422 ns per block at I20,
+1782 to 1907 at I21 (about 23 percent less); P1's single `demand` 2001 to 2081 at I20 and 1961 to 2055 at I21, not
+resolved. P10: 16 allocations per grouped cycle at both. So the residency check lost nearly all its cost, and the
+demand did not lose the pre-demand read's: that read had also brought the record's SLRU `table` entry into the cache
+for the bank's own `hit` in `publish` (the same entry, still hashed), which now pays for it. The in-situ split below
+reads where the demand's part went; the bank's own hashed reads are the next registration's (section 1, "Not in I21").
+
+**The local check and the in-situ split** are queued together (queue v18, `rtx5090-queue-v18-20260926.sh`, dry-checked
+under stubs in `day84-cpu/dry-check-queue.log`): the check's four runs, then 20 runs of `i20s` and `i21s`, one lock hold,
+pinned to the P-cores; `day83-read.py` gained a `--change a,b` line for it (additive, deciding nothing).

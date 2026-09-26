@@ -181,6 +181,17 @@ def main():
             print(f"DAY83 I15_TO_I20 rig={rig} generate (i20s minus i15s, us per token, deciding nothing): "
                   + " ".join(f"{k[:-3]}={'-' if m[k] is None or o[k] is None else f'{(m[k] - o[k]) / TOKENS / 1000:+.1f}'}"
                              for k in LEAVES))
+    # Day 84 (DAY84.md section 1, the in-situ split of I21 beside I20; deciding nothing): `--change a,b` prints each
+    # leaf's generate and window change from arm a to arm b.
+    if "--change" in sys.argv and not fails:
+        a, b = sys.argv[sys.argv.index("--change") + 1].split(",")
+        for phase in ("generate", "window"):
+            if (a, phase) in table and (b, phase) in table:
+                x, y = table[(a, phase)][0], table[(b, phase)][0]
+                keys = LEAVES + ["pf_demand_ns", "pf_retire_ns", "pf_stage_ns"]
+                print(f"DAY84 CHANGE rig={rig} {phase} ({b} minus {a}, us per token, deciding nothing): "
+                      + " ".join(f"{k[:-3]}={'-' if x[k] is None or y[k] is None else f'{(y[k] - x[k]) / TOKENS / 1000:+.1f}'}"
+                                 for k in keys))
     sys.exit(1 if fails else 0)
 
 
