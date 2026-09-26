@@ -82,6 +82,9 @@ def score(packets_dir, results_dir, config_path,
     price = json.loads(
         (results_dir / "pricing.json").read_text()
     )
+    profile = json.loads(
+        (results_dir / "profile.json").read_text()
+    )
     config = json.loads(config_path.read_text())
     packet_path = packets_dir / "packets.jsonl"
     result_path = results_dir / "results.jsonl"
@@ -96,6 +99,11 @@ def score(packets_dir, results_dir, config_path,
         or results_manifest["model_id"] != config["model_id"]
         or results_manifest["pricing_sha256"]
         != sha(results_dir / "pricing.json")
+        or results_manifest["profile_sha256"]
+        != sha(results_dir / "profile.json")
+        or profile["model_id"] != config["model_id"]
+        or profile["status"] != "ACTIVE"
+        or not profile["foundation_model_arns"]
         or price["model_id"] != config["model_id"]
         or price["region"] != config["region"]
         or config["spend_basis"] != "live_global_standard_quote"
@@ -175,6 +183,8 @@ def score(packets_dir, results_dir, config_path,
             prior["status"] != "complete"
             or prior["config_sha256"] != sha(config_path)
             or prior["model_id"] != config["model_id"]
+            or prior["profile_sha256"]
+            != results_manifest["profile_sha256"]
             or results_manifest["prior_judge_manifest_sha256"]
             != sha(prior_manifest_path)
         ):
@@ -252,6 +262,9 @@ def score(packets_dir, results_dir, config_path,
         "template_sha256": TEMPLATE_SHA,
         "judge_config_sha256": sha(config_path),
         "judge_model_id": config["model_id"],
+        "judge_profile_sha256": sha(
+            results_dir / "profile.json"
+        ),
         "judge_usage": usage,
         "cumulative_judge_usage": total_usage,
         "prior_judge_manifest_sha256": prior_sha,

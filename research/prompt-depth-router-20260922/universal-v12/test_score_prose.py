@@ -38,6 +38,13 @@ class ProseOrderTest(unittest.TestCase):
                     for kind in ("input", "output")
                 },
             })
+            write(judged / "profile.json", {
+                "model_id": "pinned-test-judge",
+                "status": "ACTIVE",
+                "foundation_model_arns": [
+                    "synthetic-model-identity",
+                ],
+            })
             source = []
             answers = []
             for turn in range(1, 9):
@@ -85,6 +92,9 @@ class ProseOrderTest(unittest.TestCase):
                 "pricing_sha256": score_prose.sha(
                     judged / "pricing.json"
                 ),
+                "profile_sha256": score_prose.sha(
+                    judged / "profile.json"
+                ),
                 "prior_judge_manifest_sha256": None,
                 "cumulative_usage": {
                     "input_tokens": 1600,
@@ -110,6 +120,9 @@ class ProseOrderTest(unittest.TestCase):
                 "model_id": "pinned-test-judge",
                 "pricing_sha256": score_prose.sha(
                     judged / "pricing.json"
+                ),
+                "profile_sha256": score_prose.sha(
+                    judged / "profile.json"
                 ),
                 "prior_judge_manifest_sha256": None,
                 "cumulative_usage": {
