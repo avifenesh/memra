@@ -59,6 +59,51 @@ pub use memra_gguf;
 pub use memra_runtime;
 
 pub mod cpu_probe;
+
+/// DAY82 (`research/spill-c-20260919/DAY82.md`): a counting wrapper around the system allocator in
+/// the library's test build only (never in a binary): allocations and bytes, read by the day-61
+/// profile's P10. It changes no allocation, only counts them.
+#[cfg(test)]
+pub(crate) mod alloc_census {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static COUNT: AtomicU64 = AtomicU64::new(0);
+    static BYTES: AtomicU64 = AtomicU64::new(0);
+    struct Counting;
+    // SAFETY: every call forwards to `System` with the caller's arguments; the counters are atomics.
+    unsafe impl GlobalAlloc for Counting {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            COUNT.fetch_add(1, Ordering::Relaxed);
+            BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
+            // SAFETY: the caller's contract for `alloc`.
+            unsafe { System.alloc(layout) }
+        }
+        unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+            COUNT.fetch_add(1, Ordering::Relaxed);
+            BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
+            // SAFETY: the caller's contract for `alloc_zeroed`.
+            unsafe { System.alloc_zeroed(layout) }
+        }
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+            COUNT.fetch_add(1, Ordering::Relaxed);
+            BYTES.fetch_add(new_size as u64, Ordering::Relaxed);
+            // SAFETY: the caller's contract for `realloc`.
+            unsafe { System.realloc(ptr, layout, new_size) }
+        }
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            // SAFETY: the caller's contract for `dealloc`.
+            unsafe { System.dealloc(ptr, layout) }
+        }
+    }
+    #[global_allocator]
+    static GLOBAL: Counting = Counting;
+
+    /// Allocations and bytes so far, process-wide.
+    pub(crate) fn snapshot() -> (u64, u64) {
+        (COUNT.load(Ordering::Relaxed), BYTES.load(Ordering::Relaxed))
+    }
+}
 pub mod env_audit;
 pub mod forward;
 pub mod hybrid;

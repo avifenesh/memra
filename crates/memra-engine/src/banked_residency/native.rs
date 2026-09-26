@@ -2514,6 +2514,59 @@ mod day61_profile {
             per_block(p9[0]),
             per_block(p8b[0])
         );
+        // DAY82 P10: heap allocations of the grouped cycle, per call, counted by the test build's
+        // allocator (`alloc_census`); the groups are built before the counted spans.
+        let groups: Vec<[(ExpertDispatchId, usize); 3]> = seq
+            .chunks_exact(3)
+            .take(20_000)
+            .map(|e| {
+                [
+                    (e[0], LEN as usize),
+                    (e[1], LEN as usize),
+                    (e[2], LEN as usize),
+                ]
+            })
+            .collect();
+        let mut calls = [(0u64, 0u64); 4];
+        for g in &groups {
+            let ids = [g[0].0, g[1].0, g[2].0];
+            let a = crate::alloc_census::snapshot();
+            let resident = proxy.host_resident_many(&ids).unwrap();
+            let b = crate::alloc_census::snapshot();
+            let token = proxy.demand_many(g).unwrap();
+            let c = crate::alloc_census::snapshot();
+            proxy
+                .with_bytes_each(&token, |_, bytes| {
+                    std::hint::black_box(bytes[0]);
+                    Ok::<(), ()>(())
+                })
+                .unwrap()
+                .unwrap();
+            let d = crate::alloc_census::snapshot();
+            proxy.finish_group(&token).unwrap();
+            let f = crate::alloc_census::snapshot();
+            std::hint::black_box(resident);
+            for (slot, (x, y)) in calls.iter_mut().zip([(a, b), (b, c), (c, d), (d, f)]) {
+                slot.0 += y.0 - x.0;
+                slot.1 += y.1 - x.1;
+            }
+        }
+        let n = groups.len() as f64;
+        let total = calls.iter().fold((0, 0), |t, c| (t.0 + c.0, t.1 + c.1));
+        println!(
+            "DAY82 P10 allocations per grouped cycle={:.2} bytes={:.1} | host_resident_many={:.2}/{:.1} \
+             demand_many={:.2}/{:.1} with_bytes_each={:.2}/{:.1} finish_group={:.2}/{:.1}",
+            total.0 as f64 / n,
+            total.1 as f64 / n,
+            calls[0].0 as f64 / n,
+            calls[0].1 as f64 / n,
+            calls[1].0 as f64 / n,
+            calls[1].1 as f64 / n,
+            calls[2].0 as f64 / n,
+            calls[2].1 as f64 / n,
+            calls[3].0 as f64 / n,
+            calls[3].1 as f64 / n
+        );
         owner.close().unwrap();
         drop(owner);
 

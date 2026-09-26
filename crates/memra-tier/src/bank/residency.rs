@@ -886,7 +886,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
     }
 }
 impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
-    fn stage_unclocked(&mut self, batch: BankBatch) -> Result<TransferTicket> {
+    fn stage_unclocked(&mut self, mut batch: BankBatch) -> Result<TransferTicket> {
         if batch.ids.is_empty() {
             return Err(Error::EmptyBatch);
         }
@@ -973,16 +973,35 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             .checked_add(metadata)
             .and_then(|n| n.checked_add(slot))
             .ok_or(Error::Overflow)?;
-        let mut queue_request = batch.request.clone();
-        queue_request.bytes.pageable = queue_request.bytes.pageable.max(required) - output_bytes;
-        queue_request.bytes.staging = queue_request.bytes.staging.max(slot);
-        queue_request.bytes.inflight = queue_request.bytes.inflight.max(1);
+        // Day 82 (I20): the queue's request is the batch's own, its three queue dimensions set for
+        // the reservation and restored after it, where a clone of it (and of its three budget
+        // vectors) was reserved before; the reserved values are the same.
+        let kept = (
+            batch.request.bytes.pageable,
+            batch.request.bytes.staging,
+            batch.request.bytes.inflight,
+        );
+        batch.request.bytes.pageable = kept.0.max(required) - output_bytes;
+        batch.request.bytes.staging = kept.1.max(slot);
+        batch.request.bytes.inflight = kept.2.max(1);
         let charging = clock_start(&self.clock);
-        let queue = self.budget.borrow_mut().reserve(&queue_request)?;
+        let queue = self.budget.borrow_mut().reserve(&batch.request);
+        (
+            batch.request.bytes.pageable,
+            batch.request.bytes.staging,
+            batch.request.bytes.inflight,
+        ) = kept;
+        let queue = queue?;
         let mut charges = Vec::new();
         for (id, _) in &missing {
-            let mut request = batch.request.clone();
-            request.bytes = TierBudget::zero(request.bytes.device.len());
+            // Day 82 (I20): the missing record's request built from the batch's fields, not a
+            // clone whose budget is then replaced.
+            let mut request = BudgetRequest {
+                bytes: TierBudget::zero(batch.request.bytes.device.len()),
+                priority: batch.request.priority,
+                deadline: batch.request.deadline,
+                tenant: batch.request.tenant,
+            };
             request.bytes.pageable = self.catalog.entry(id)?.resident_charge_bytes()?;
             let result = self.budget.borrow_mut().reserve(&request);
             match result {
@@ -1075,8 +1094,9 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                 error: None,
                 plan,
                 queue: Some(queue),
-                request: batch.request.clone(),
                 demand: batch.request.priority != Priority::OptionalPrefetch,
+                // Day 82 (I20): the batch's request moved into the ticket, not cloned.
+                request: batch.request,
                 cancelled: false,
                 published: false,
                 host_use_done: false,
