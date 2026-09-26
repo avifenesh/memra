@@ -155,3 +155,6 @@ decides; the 5090 half follows.
   timing clauses all passed with wide margins, the tightest being (c)'s e2e at +0.34 against +1.0, so no verdict
   turns on it. It is stated beside the reading.
 - The stopped diagnostic's mirror is banked as `pro-single-p2l/box-diag-stopped/` (T-H in both arms), not read.
+- **Accepted by the lead** (2026-09-26): (a)'s unit step is void and repeats whole on `a2419d3e1`. P2 is ADOPT if that
+  step is all green and REVERT otherwise, with (b) to (g) read as they read. It is queued on BOX31 after F's sitting,
+  as the first half of `/root/units-chain.sh` (receipts `a-p2l2/unit-rerun`).

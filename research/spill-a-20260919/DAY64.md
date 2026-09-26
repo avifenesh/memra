@@ -230,3 +230,6 @@ identity gates door ON.
 - **F's verdict is ADOPT only if `F VERDICT -> ADOPT` and that step reads `door-rc=0`.**
 - Measurement condition: the orphaned GPU sampler (DAY67 section 4) ran through F's first minutes (to 18:13Z). F's
   build ran outside the hold then, so no timed cell is affected.
+- **Accepted by the lead** (2026-09-26): F adopts only on `F VERDICT -> ADOPT` AND the worker step's `door-rc=0`. The step
+  is queued on BOX31 as the second half of `/root/units-chain.sh` (`unit-worker.sh build 01ce7ed10`, receipts
+  `a-f/unit-worker`).
