@@ -71,3 +71,11 @@ synthetic cell from DAY79's BOX34 receipts relabelled (`make-synthetic.py`; the 
 `dry-check-reader.log`, 50 runs, integrity ok, the beside line printed. The cell under stubs (`dry-check-cell.sh`): rc
 0, 10 calls of `run-gen-i15`, 22 of `run-gen-i18` (REF's 10 and 2 profiled, I18's 10) and 22 of `run-gen-i20`. The
 driver under stubs (`dry-check-driver.sh`): the three builds named, the cell, `--validate`, the reader, in order.
+
+**The local RTX 5090 check, queued** (`day82-cpu/gpu-check.sh`, its reader `gpu-check-read.py`, queue v16): the card
+has been held by another lane's timing queue since before the check was ready, so the check waits (queue v16, up to
+48 h, behind `/tmp/memra-5090.lock` and an idle card) and writes `day82-cpu/gpu-check.log` when it runs. Its reader,
+dry-checked on DAY79's local receipts, flags a run without the door's demand lines. Recorded before any result: if the
+target-card sitting runs before the check lands, the cell's own integrity (MATCH in every run, one host demand sequence
+across I15, I18 and I20) reads the same two properties on the target card, and the local check is read when it lands,
+deciding nothing further for the cell.
