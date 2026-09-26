@@ -158,8 +158,10 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   dpi 0 of 8); the census shows the pinned pool is a shared `/dev/zero` (shmem) mapping, whose pinned pages compaction
   isolates and cannot move. Day 80 (`DAY80.md`): the fix, a pool of private anonymous memory pinned with
   `cuMemHostRegister` (`57086efc8`, `--expert-bank-pool-registered`, decide-by 2026-10-10), cells `regtime` and
-  `regpool` ready (`day80-box.sh`, the 285K and a 9950X); the 5090's `regtime` in queue v15. Open: both cells on the
-  285K and a 9950X, then the default change to the owner; `induce-b` on a 9950X with at least 98 GiB
+  `regpool` ready (`day80-box.sh`, the 285K and a 9950X); on BOX37 (285K) `registered_clears` and `dr=flat`
+  (admissible); the local 5090 check MATCH with the same tape; the 5090's `regtime` inadmissible. Open: the 9950X half
+  (a 123 GB host is valid by section 1: `regtime` with the natural-slow reading, `regpool` `not_run`), then the owner's
+  question (`DAY80.md` section 4); `induce-b` on a 9950X with at least 98 GiB
   `MemFree`; DAY71's default half on BOX15's machine, then the class line.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)

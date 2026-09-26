@@ -31,7 +31,10 @@ and APERF, read with `RDPRU`, around each phase chain; `counters=unavailable` on
 (14 days after landing); they go with the probe when OWED C12 closes. Day 76 adds `run-gen
 --expert-bank-pool-chunk-bytes=<N>` (a diagnostic door, with the door only: the pinned host pool made of allocations
 of at most N bytes; without it the one allocation), `DAY76.md`, decide-by 2026-10-10; it goes when C12 closes, or
-becomes the default by its own registration if it clears the compaction state and qualifies.
+becomes the default by its own registration if it clears the compaction state and qualifies. Days 78 and 80 add
+`--expert-bank-pool-pageable` and `--expert-bank-pool-registered` (diagnostic doors, decide-by 2026-10-10): the
+registered pool cleared the compaction state on the 285K class with the door's timing unchanged (`DAY80.md` section 2),
+and `DAY80.md` section 4 is the owner's question to make it the door's default pool, today's pool the rollback.
 
 Day 40 (`DAY40.md` section 2): `--expert-bank-stages` (no value, requires the door) installs
 the door's log-only stage clock, an explanatory diagnostic: `Instant` brackets around every

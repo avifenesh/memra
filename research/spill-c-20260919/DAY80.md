@@ -157,8 +157,8 @@ it, `registered_clears_natural`: the section 1 condition holds on the 9950X, and
 complete. `registered_does_not_natural`: the registered pool does not clear the 9950X's natural state, recorded, and the
 question goes with that reading.
 
-Run as `D80_BUILDS="p80=<the lane tip's p80, 57086efc8 or later with the same engine>" D80_RIG=<name> bash
-/root/wt-c/research/spill-c-20260919/day80-box.sh` on a Ryzen 9 9950X host with one RTX PRO 6000 Blackwell Workstation
+Run as `D80_BUILDS="p80=57086efc8" D80_RIG=<name> bash /root/wt-c/research/spill-c-20260919/day80-box.sh` with
+`/root/wt-c` at the lane tip (the new reading is in the reader only; the binary and the cells are the 285K half's) on a Ryzen 9 9950X host with one RTX PRO 6000 Blackwell Workstation
 Edition, 123 GB is enough, root in the container, no page-cache eviction needed. About 15 minutes (the build, `regtime`,
 `regpool` reading `not_run` at once).
 
