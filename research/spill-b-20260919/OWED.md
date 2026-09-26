@@ -146,16 +146,12 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - What: `MEMRA_RESUME_GRID_REWIND` (default unset) makes a plain or spec pool exact-extension resume rewind to the
   entry's grid checkpoint and re-prime from there, so the resumed turn is cold-identical by the grid law; the cells
   price it against keeping the decoded rows (re-primed rows, TTFT, throughput, memory, fanout reach), both cards.
-- Status: `running`. Target card (DAY41 2.1): the engine check reads `rewind: EXACT`, `hist: NEAR-TIE-CLASS` at 6,144
-  and 30,720 tokens, K 32 and 256; R1 plain PASS, R3 PASS, R4 PASS; R2 FAIL (plain `rewind` 40 of 60: a resumed turn armed
-  no checkpoint when the boundary equals the resumed depth; spec both arms: the parked `committed` carries the final
-  burst's overshoot); R1 spec FAIL on the line half (10 affinity rewinds, none differs). Flips against cold: `keep` 24 of
-  60 (plain), 6 of 34 (spec); `rewind` 0. Price at 6,144 (checkpoint at the prompt end): plain TTFT p50 x2.0 (G=32) and
-  x2.6 (G=256), spec x1.04 and x1.29; at 30,720 and 122,880 the workload's literal `<|im_start|>` text put the
-  checkpoint at an interior control token. Addendum B (B1 the unnominatable prompt's guard boundary, B2 a resumed
-  session's own checkpoint, B3 the spec probe on the public stream) is pre-registered (DAY41 1.8); code, then 9 boots
-  per card. The 5090 half of the original arm runs from queue-e. Price: about 0.4 agent-day plus about 6 h on the
-  target card and 3 h on the 5090.
+- Status: target card `read` on the revised arm (DAY41 2.2, addenda B and C, `23c296b58`): R1, R3 and R4 PASS on both
+  routes; R2 PASS on `rewind` (60 of 60, both routes) and plain `keep`; R2 FAIL on the spec `keep` (34 of 60, today's
+  overshoot miss, O13). Flips: `keep` 24 of 60 (plain) and 6 of 34 (spec), `rewind` 0. Price: re-primed G+32 rows at
+  6,144 and 30,720; TTFT p50 plain x2.0 to x2.6, spec x1.01 to x1.32; at 122,880 (a nominatable prompt, the control
+  token's point) plain x7.3 and x14.9, spec x3.1 and x6.1; FX loses the fanout (2.1). The 2.1 reading of the original
+  arm is kept. The 5090 halves run from queue-e (original) and queue-g (revised). The decision is the owner's.
 
 ### O12. The admission reclaim flush off the tick (lead's ruling at integ62)
 

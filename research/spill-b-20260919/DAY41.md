@@ -317,3 +317,101 @@ depth P is the grid floor of the last control token, so the token itself lies pa
 rule, stated exactly: with `markers`, the checkpoint is the grid floor of the last control token when that floor lies
 strictly past the resumed depth (and clears the fed-start floor, else none); when the floor lies at or below the
 resumed depth, the guard window. Without `markers`, the guard window. Everything else of addendum B stands.
+
+### 2.2 Addenda B and C on the target card (the seventh sitting, one RTX PRO 6000 Blackwell Workstation Edition, 2026-09-25 22:49Z to 2026-09-26 05:11Z)
+
+Binaries built on the box from `23c296b58`: `tip` sha256 `2de663e8...d6f25be7`, `offprev` (the tip with
+`day41b-nodoor.patch`) `b3fa30a5...f5e4df5a`; receipts at `pro-single-day41/box-b/` (226 files, the box manifest
+checked, binaries by hash only). The box's `day41-read.py` is the fixed one, so `read.log` is complete. Verbatim:
+
+```
+DAY41 R4 card=pro6000 boot=offprev oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY41 R4 card=pro6000 boot=rx-plain-O1-keep oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY41 R4 card=pro6000 boot=rx-plain-O1-rewind oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY41 R4 card=pro6000 boot=rx-plain-O2-keep oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY41 R4 card=pro6000 boot=rx-plain-O2-rewind oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY41 R4 card=pro6000 boot=rx-spec-O1-keep oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY41 R4 card=pro6000 boot=rx-spec-O1-rewind oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY41 R4 card=pro6000 boot=rx-spec-O2-keep oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY41 R4 card=pro6000 boot=rx-spec-O2-rewind oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY41 R2 card=pro6000 boot=rx-plain-O1-keep turns=60 resumed=60 frac=1.00 -> PASS
+DAY41 FLIPS card=pro6000 boot=rx-plain-O1-keep resumed=60 flips_vs_cold=24 tags=['RX-6144-g32-r0-t2', 'RX-6144-g32-r0-t3', 'RX-6144-g32-r1-t2', 'RX-6144-g32-r2-t2', 'RX-6144-g32-r2-t3', 'RX-6144-g256-r0-t3'] (reading; keep carries the near-tie residual)
+DAY41 R2 card=pro6000 boot=rx-plain-O1-rewind turns=60 resumed=60 frac=1.00 -> PASS
+DAY41 FLIPS card=pro6000 boot=rx-plain-O1-rewind resumed=60 flips_vs_cold=0 tags=[] (reading; keep carries the near-tie residual)
+DAY41 R1 card=pro6000 boot=rx-plain-O1-rewind resumed=60 differ_vs_cold=[] grid_rewind_lines=60 r_equals_f_minus_p=True -> PASS
+DAY41 PRICE card=pro6000 route=plain order=O1 L=6144 G=32 N=10 reprimed_rows p50=64 max=64 ttft_ms keep p50=68.8 p95=69.2 rewind p50=138.2 p95=139.0 ratio_p50=2.009 e2e_ms keep p50=452.8 rewind p50=522.8
+DAY41 PRICE card=pro6000 route=plain order=O1 L=6144 G=256 N=10 reprimed_rows p50=288 max=288 ttft_ms keep p50=69.5 p95=69.8 rewind p50=182.1 p95=183.1 ratio_p50=2.621 e2e_ms keep p50=3153.0 rewind p50=3268.0
+DAY41 PRICE card=pro6000 route=plain order=O1 L=30720 G=32 N=10 reprimed_rows p50=64 max=64 ttft_ms keep p50=96.0 p95=96.1 rewind p50=190.6 p95=190.9 ratio_p50=1.985 e2e_ms keep p50=529.3 rewind p50=624.1
+DAY41 PRICE card=pro6000 route=plain order=O1 L=30720 G=256 N=10 reprimed_rows p50=288 max=672 ttft_ms keep p50=96.5 p95=96.6 rewind p50=234.3 p95=301.2 ratio_p50=2.429 e2e_ms keep p50=3567.6 rewind p50=3706.4
+DAY41 PRICE card=pro6000 route=plain order=O1 L=122880 G=32 N=10 reprimed_rows p50=1888 max=7680 ttft_ms keep p50=194.0 p95=194.7 rewind p50=1410.5 p95=4511.1 ratio_p50=7.269 e2e_ms keep p50=841.8 rewind p50=2056.8
+DAY41 PRICE card=pro6000 route=plain order=O1 L=122880 G=256 N=10 reprimed_rows p50=4592 max=12896 ttft_ms keep p50=194.6 p95=194.9 rewind p50=2908.6 p95=7415.8 ratio_p50=14.943 e2e_ms keep p50=5383.5 rewind p50=8091.5
+DAY41 THROUGHPUT card=pro6000 boot=rx-plain-O1-keep generated=25847 wall_s=2895.1 tok_per_s=8.93 idle driver_free=6960709632 pool_cached=6680322880
+DAY41 THROUGHPUT card=pro6000 boot=rx-plain-O1-rewind generated=25920 wall_s=2961.0 tok_per_s=8.75 idle driver_free=6155403264 pool_cached=6858056512
+DAY41 R2 card=pro6000 boot=rx-plain-O2-keep turns=60 resumed=60 frac=1.00 -> PASS
+DAY41 FLIPS card=pro6000 boot=rx-plain-O2-keep resumed=60 flips_vs_cold=24 tags=['RX-6144-g32-r0-t2', 'RX-6144-g32-r0-t3', 'RX-6144-g32-r1-t2', 'RX-6144-g32-r2-t2', 'RX-6144-g32-r2-t3', 'RX-6144-g256-r0-t3'] (reading; keep carries the near-tie residual)
+DAY41 R2 card=pro6000 boot=rx-plain-O2-rewind turns=60 resumed=60 frac=1.00 -> PASS
+DAY41 FLIPS card=pro6000 boot=rx-plain-O2-rewind resumed=60 flips_vs_cold=0 tags=[] (reading; keep carries the near-tie residual)
+DAY41 R1 card=pro6000 boot=rx-plain-O2-rewind resumed=60 differ_vs_cold=[] grid_rewind_lines=60 r_equals_f_minus_p=True -> PASS
+DAY41 PRICE card=pro6000 route=plain order=O2 L=6144 G=32 N=10 reprimed_rows p50=64 max=64 ttft_ms keep p50=69.3 p95=69.4 rewind p50=138.2 p95=138.3 ratio_p50=1.994 e2e_ms keep p50=454.0 rewind p50=522.9
+DAY41 PRICE card=pro6000 route=plain order=O2 L=6144 G=256 N=10 reprimed_rows p50=288 max=288 ttft_ms keep p50=69.9 p95=71.3 rewind p50=182.1 p95=183.3 ratio_p50=2.605 e2e_ms keep p50=3156.3 rewind p50=3268.2
+DAY41 PRICE card=pro6000 route=plain order=O2 L=30720 G=32 N=10 reprimed_rows p50=64 max=64 ttft_ms keep p50=96.1 p95=96.2 rewind p50=190.4 p95=190.8 ratio_p50=1.982 e2e_ms keep p50=529.6 rewind p50=623.9
+DAY41 PRICE card=pro6000 route=plain order=O2 L=30720 G=256 N=10 reprimed_rows p50=288 max=672 ttft_ms keep p50=96.4 p95=96.7 rewind p50=234.4 p95=302.7 ratio_p50=2.431 e2e_ms keep p50=3568.6 rewind p50=3706.9
+DAY41 PRICE card=pro6000 route=plain order=O2 L=122880 G=32 N=10 reprimed_rows p50=1888 max=7680 ttft_ms keep p50=194.4 p95=194.9 rewind p50=1409.7 p95=4509.0 ratio_p50=7.252 e2e_ms keep p50=842.5 rewind p50=2056.5
+DAY41 PRICE card=pro6000 route=plain order=O2 L=122880 G=256 N=10 reprimed_rows p50=4592 max=12896 ttft_ms keep p50=194.7 p95=194.9 rewind p50=2907.6 p95=7417.0 ratio_p50=14.935 e2e_ms keep p50=5384.3 rewind p50=8090.9
+DAY41 THROUGHPUT card=pro6000 boot=rx-plain-O2-keep generated=25847 wall_s=2898.4 tok_per_s=8.92 idle driver_free=6960709632 pool_cached=6680322880
+DAY41 THROUGHPUT card=pro6000 boot=rx-plain-O2-rewind generated=25920 wall_s=2959.3 tok_per_s=8.76 idle driver_free=6155403264 pool_cached=6858056512
+DAY41 R2 card=pro6000 boot=rx-spec-O1-keep turns=60 resumed=34 frac=0.57 -> FAIL
+DAY41 FLIPS card=pro6000 boot=rx-spec-O1-keep resumed=34 flips_vs_cold=6 tags=['RX-6144-g32-r2-t2', 'RX-6144-g256-r3-t2', 'RX-6144-g256-r4-t2', 'RX-30720-g256-r0-t3', 'RX-30720-g256-r2-t2', 'RX-30720-g256-r4-t2'] (reading; keep carries the near-tie residual)
+DAY41 R2 card=pro6000 boot=rx-spec-O1-rewind turns=60 resumed=60 frac=1.00 -> PASS
+DAY41 FLIPS card=pro6000 boot=rx-spec-O1-rewind resumed=60 flips_vs_cold=0 tags=[] (reading; keep carries the near-tie residual)
+DAY41 R1 card=pro6000 boot=rx-spec-O1-rewind resumed=60 differ_vs_cold=[] grid_rewind_lines=60 r_equals_f_minus_p=True -> PASS
+DAY41 PRICE card=pro6000 route=spec order=O1 L=6144 G=32 N=5 reprimed_rows p50=64 max=64 ttft_ms keep p50=161.8 p95=162.0 rewind p50=164.3 p95=164.7 ratio_p50=1.015 e2e_ms keep p50=422.7 rewind p50=423.6
+DAY41 PRICE card=pro6000 route=spec order=O1 L=6144 G=256 N=3 reprimed_rows p50=288 max=288 ttft_ms keep p50=157.6 p95=158.5 rewind p50=208.5 p95=208.5 ratio_p50=1.323 e2e_ms keep p50=1762.1 rewind p50=1854.8
+DAY41 PRICE card=pro6000 route=spec order=O1 L=30720 G=32 N=2 reprimed_rows p50=64 max=64 ttft_ms keep p50=211.3 p95=211.4 rewind p50=218.7 p95=218.9 ratio_p50=1.035 e2e_ms keep p50=464.2 rewind p50=461.5
+DAY41 PRICE card=pro6000 route=spec order=O1 L=30720 G=256 N=4 reprimed_rows p50=288 max=672 ttft_ms keep p50=214.8 p95=215.5 rewind p50=262.7 p95=367.1 ratio_p50=1.223 e2e_ms keep p50=2041.0 rewind p50=2270.3
+DAY41 PRICE card=pro6000 route=spec order=O1 L=122880 G=32 N=10 reprimed_rows p50=0 max=7680 ttft_ms keep p50=419.5 p95=3516.3 rewind p50=1301.6 p95=4011.8 ratio_p50=3.103 e2e_ms keep p50=807.2 rewind p50=1707.1
+DAY41 PRICE card=pro6000 route=spec order=O1 L=122880 G=256 N=10 reprimed_rows p50=144 max=10912 ttft_ms keep p50=439.9 p95=6664.2 rewind p50=2680.8 p95=6672.5 ratio_p50=6.094 e2e_ms keep p50=3534.0 rewind p50=5768.4
+DAY41 THROUGHPUT card=pro6000 boot=rx-spec-O1-keep generated=25920 wall_s=2781.9 tok_per_s=9.32 idle driver_free=3770941440 pool_cached=2593943980
+DAY41 THROUGHPUT card=pro6000 boot=rx-spec-O1-rewind generated=25920 wall_s=2662.0 tok_per_s=9.74 idle driver_free=3435397120 pool_cached=2929488300
+DAY41 R2 card=pro6000 boot=rx-spec-O2-keep turns=60 resumed=34 frac=0.57 -> FAIL
+DAY41 FLIPS card=pro6000 boot=rx-spec-O2-keep resumed=34 flips_vs_cold=6 tags=['RX-6144-g32-r2-t2', 'RX-6144-g256-r3-t2', 'RX-6144-g256-r4-t2', 'RX-30720-g256-r0-t3', 'RX-30720-g256-r2-t2', 'RX-30720-g256-r4-t2'] (reading; keep carries the near-tie residual)
+DAY41 R2 card=pro6000 boot=rx-spec-O2-rewind turns=60 resumed=60 frac=1.00 -> PASS
+DAY41 FLIPS card=pro6000 boot=rx-spec-O2-rewind resumed=60 flips_vs_cold=0 tags=[] (reading; keep carries the near-tie residual)
+DAY41 R1 card=pro6000 boot=rx-spec-O2-rewind resumed=60 differ_vs_cold=[] grid_rewind_lines=60 r_equals_f_minus_p=True -> PASS
+DAY41 PRICE card=pro6000 route=spec order=O2 L=6144 G=32 N=5 reprimed_rows p50=64 max=64 ttft_ms keep p50=161.9 p95=162.1 rewind p50=164.2 p95=164.6 ratio_p50=1.014 e2e_ms keep p50=423.0 rewind p50=423.3
+DAY41 PRICE card=pro6000 route=spec order=O2 L=6144 G=256 N=3 reprimed_rows p50=288 max=288 ttft_ms keep p50=161.1 p95=161.8 rewind p50=204.5 p95=205.2 ratio_p50=1.269 e2e_ms keep p50=1765.1 rewind p50=1849.6
+DAY41 PRICE card=pro6000 route=spec order=O2 L=30720 G=32 N=2 reprimed_rows p50=64 max=64 ttft_ms keep p50=213.7 p95=215.7 rewind p50=213.6 p95=213.8 ratio_p50=0.999 e2e_ms keep p50=466.4 rewind p50=456.4
+DAY41 PRICE card=pro6000 route=spec order=O2 L=30720 G=256 N=4 reprimed_rows p50=288 max=672 ttft_ms keep p50=215.7 p95=215.9 rewind p50=262.7 p95=364.1 ratio_p50=1.218 e2e_ms keep p50=2041.3 rewind p50=2270.3
+DAY41 PRICE card=pro6000 route=spec order=O2 L=122880 G=32 N=10 reprimed_rows p50=0 max=7680 ttft_ms keep p50=419.2 p95=3515.7 rewind p50=1302.7 p95=4015.7 ratio_p50=3.107 e2e_ms keep p50=806.7 rewind p50=1707.9
+DAY41 PRICE card=pro6000 route=spec order=O2 L=122880 G=256 N=10 reprimed_rows p50=144 max=10912 ttft_ms keep p50=439.7 p95=6668.5 rewind p50=2679.2 p95=6669.4 ratio_p50=6.093 e2e_ms keep p50=3533.4 rewind p50=5766.0
+DAY41 THROUGHPUT card=pro6000 boot=rx-spec-O2-keep generated=25920 wall_s=2780.3 tok_per_s=9.32 idle driver_free=3770941440 pool_cached=2593943980
+DAY41 THROUGHPUT card=pro6000 boot=rx-spec-O2-rewind generated=25920 wall_s=2662.6 tok_per_s=9.74 idle driver_free=3435397120 pool_cached=2929488300
+DAY41 R3 card=pro6000 keep=rx-plain-O1-keep rows=60 differ=[] -> PASS
+DAY41 R3 card=pro6000 keep=rx-plain-O2-keep rows=60 differ=[] -> PASS
+```
+
+**Clauses, as they read:**
+
+- **R4 PASS on all 9 boots. R3 PASS in both orders** (60 of 60 `keep` rows equal `offprev`'s).
+- **R1 PASS on both routes in both orders**: 60 resumes each, none differs from its cold twin, 60 `grid-rewind:` lines
+  each, every R equal to the committed rows minus P. The spec route's ten affinity rewinds of 2.1 are now the arm's
+  own exact hits (B3).
+- **R2 PASS on `rewind`, both routes, both orders (60 of 60)**, and on the plain `keep` (60 of 60). **R2 FAIL on the
+  spec `keep` in both orders (34 of 60)**: today's program, unchanged by the door (the overshoot miss of 2.1, O13).
+
+**Readings (N per line; the 250 ms regime in each boot's `samples.csv`).**
+
+- Flips against cold: `keep` 24 of 60 (plain) and 6 of 34 (spec), as in 2.1; `rewind` 0 of 60 on both routes.
+- Re-primed rows per resume on `rewind`: 64 at G=32 and 288 at G=256 (G+32) at 6,144 and 30,720 on both routes (B1
+  moved the 30,720 checkpoint to the prompt end). At 122,880 the prompts are nominatable, so turn 2 rewinds to the grid
+  floor of the last control token (`rewound to 119200 ... re-priming 3712 rows`) and turn 3 to turn 2's own checkpoint
+  (`re-priming 64 rows`, B2): plain p50 1,888 and 4,592, max 7,680 and 12,896.
+- TTFT p50 ratio, `rewind` over `keep`: plain x2.0 (G=32) and x2.6 and x2.4 (G=256) at 6,144 and 30,720, x7.3 and
+  x14.9 at 122,880; spec x1.01 to x1.04 (G=32) and x1.22 to x1.32 (G=256) at 6,144 and 30,720, x3.1 and x6.1 at
+  122,880. In absolute terms at 30,720 plain: 96 against 190 ms (G=32), E2E 530 against 624 ms.
+- Throughput over the boot wall: plain 8.93 against 8.75 tokens/s (2.1: 7.19); spec 9.32 against 9.74 (the rewind arm
+  resumes 60 turns where `keep` resumes 34).
+- FX: not rerun (addendum B); 2.1's reading stands (the armed checkpoint costs the in-batch fanout).
+
+Nothing moves a default: `MEMRA_RESUME_GRID_REWIND` stays unset (decide-by 2026-10-09); the contract (keep the decoded
+rows, or rewind) is the owner's, on these receipts. The 5090 half runs from `rtx5090-queue-g.sh`.
