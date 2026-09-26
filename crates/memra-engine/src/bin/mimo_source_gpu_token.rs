@@ -225,6 +225,8 @@ struct AttentionPhase<'a> {
     fp8_replay: bool,
     q8q5_probe: bool,
     q8q5_replay: bool,
+    q8q8_probe: bool,
+    q8q8_replay: bool,
 }
 
 impl AttentionPhase<'_> {
@@ -459,6 +461,78 @@ fn q8q5_kv_probe(
         )?;
     }
     if phase.q8q5_replay {
+        Ok(Some(RestoredKv {
+            key: engine.htod(&key_restored)?,
+            value: engine.htod(&value_restored)?,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+fn q8q8_kv_probe(
+    engine: &Engine,
+    key: &CudaSlice<f32>,
+    value: &CudaSlice<f32>,
+    phase: &mut AttentionPhase<'_>,
+    layer: usize,
+) -> Result<Option<RestoredKv>, Fail> {
+    if !phase.q8q8_probe {
+        return Ok(None);
+    }
+    if !key.len().is_multiple_of(32) || !value.len().is_multiple_of(32) {
+        return Err("MiMo q8_0/q8_0 KV widths must be 32-aligned".into());
+    }
+    let key_bytes = key.len() / 32 * 34;
+    let value_bytes = value.len() / 32 * 34;
+    let dummy_value_bytes = value.len() / 32 * 24;
+    let mut key_codes = engine.alloc_u8(key_bytes)?;
+    let mut value_q5_dummy = engine.alloc_u8(dummy_value_bytes)?;
+    engine.append_kv_quantized(
+        key,
+        value,
+        &mut key_codes,
+        &mut value_q5_dummy,
+        0,
+        key.len(),
+        value.len(),
+        key_bytes,
+        dummy_value_bytes,
+        false,
+    )?;
+    let mut value_codes = engine.alloc_u8(value_bytes)?;
+    let mut second_q5_dummy = engine.alloc_u8(dummy_value_bytes)?;
+    engine.append_kv_quantized(
+        value,
+        value,
+        &mut value_codes,
+        &mut second_q5_dummy,
+        0,
+        value.len(),
+        value.len(),
+        value_bytes,
+        dummy_value_bytes,
+        false,
+    )?;
+    let key_original = engine.dtoh(key)?;
+    let value_original = engine.dtoh(value)?;
+    let key_encoded = engine.dtoh_u8(&key_codes)?;
+    let value_encoded = engine.dtoh_u8(&value_codes)?;
+    let key_restored = dequantize(GgmlType::Q8_0, &key_encoded, key.len());
+    let value_restored = dequantize(GgmlType::Q8_0, &value_encoded, value.len());
+    for (name, original, restored) in [
+        ("key", &key_original, &key_restored),
+        ("value", &value_original, &value_restored),
+    ] {
+        let (max_abs, max_error, rms_error, zeroed) = q8q5_row_stats(original, restored)?;
+        writeln!(
+            phase.report,
+            "kv_q8q8_probe\t{}\t{layer}\t{name}\t{}\t{max_abs:.9e}\t{max_error:.9e}\t{rms_error:.9e}\t{zeroed}",
+            phase.turn,
+            original.len()
+        )?;
+    }
+    if phase.q8q8_replay {
         Ok(Some(RestoredKv {
             key: engine.htod(&key_restored)?,
             value: engine.htod(&value_restored)?,
@@ -730,6 +804,10 @@ fn attention_token(
         qkv.key = restored.key;
         qkv.value = restored.value;
     }
+    if let Some(restored) = q8q8_kv_probe(engine, &qkv.key, &qkv.value, phase, layer)? {
+        qkv.key = restored.key;
+        qkv.value = restored.value;
+    }
     let streamed_sink = if phase.resident.is_none() && !global {
         Some(engine.htod(&read_vector(
             model,
@@ -892,9 +970,9 @@ fn device_memory(engine: &Engine) -> Result<(usize, usize), Fail> {
 
 fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() < 5 || args.len() > 15 {
+    if args.len() < 5 || args.len() > 17 {
         return Err(
-            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--resident-moe] [--resident-text] [--grouped-moe] [--mirror-o-f32] [--profile-phases] [--capacity-probe=N] [--workspace-mib=N] [--kv-fp8-probe | --kv-fp8-replay | --kv-q8q5-probe | --kv-q8q5-replay]"
+            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--resident-moe] [--resident-text] [--grouped-moe] [--mirror-o-f32] [--profile-phases] [--capacity-probe=N] [--workspace-mib=N] [--kv-fp8-probe | --kv-fp8-replay | --kv-q8q5-probe | --kv-q8q5-replay | --kv-q8q8-probe | --kv-q8q8-replay]"
                 .into(),
         );
     }
@@ -911,6 +989,8 @@ fn run() -> Result<(), Fail> {
     let mut fp8_replay = false;
     let mut q8q5_probe = false;
     let mut q8q5_replay = false;
+    let mut q8q8_probe = false;
+    let mut q8q8_replay = false;
     for option in args.iter().skip(5) {
         match option.as_str() {
             "--continue-one" if !continue_one => continue_one = true,
@@ -923,6 +1003,8 @@ fn run() -> Result<(), Fail> {
             "--kv-fp8-replay" if !fp8_replay => fp8_replay = true,
             "--kv-q8q5-probe" if !q8q5_probe => q8q5_probe = true,
             "--kv-q8q5-replay" if !q8q5_replay => q8q5_replay = true,
+            "--kv-q8q8-probe" if !q8q8_probe => q8q8_probe = true,
+            "--kv-q8q8-replay" if !q8q8_replay => q8q8_replay = true,
             _ if option.starts_with("--tokens=") && requested_turns.is_none() => {
                 requested_turns = Some(option["--tokens=".len()..].parse()?);
             }
@@ -944,7 +1026,10 @@ fn run() -> Result<(), Fail> {
     if q8q5_replay {
         q8q5_probe = true;
     }
-    if fp8_probe && q8q5_probe {
+    if q8q8_replay {
+        q8q8_probe = true;
+    }
+    if u8::from(fp8_probe) + u8::from(q8q5_probe) + u8::from(q8q8_probe) > 1 {
         return Err("MiMo KV probe must select one storage format".into());
     }
     let turns = requested_turns.unwrap_or(if continue_one { 2 } else { 1 });
@@ -958,6 +1043,7 @@ fn run() -> Result<(), Fail> {
             || profile_phases
             || fp8_probe
             || q8q5_probe
+            || q8q8_probe
             || !resident_text
             || workspace_mib.is_some_and(|mib| mib > 8192)
         {
@@ -972,7 +1058,7 @@ fn run() -> Result<(), Fail> {
     if grouped_moe && !resident_text {
         return Err("MiMo grouped MoE diagnostic requires --resident-text".into());
     }
-    if (fp8_probe || q8q5_probe) && !resident_text {
+    if (fp8_probe || q8q5_probe || q8q8_probe) && !resident_text {
         return Err("MiMo KV storage probe requires --resident-text".into());
     }
     if mirror_o_f32 && !resident_text {
@@ -990,7 +1076,7 @@ fn run() -> Result<(), Fail> {
     if grouped_moe && direct_bf16 {
         return Err("MiMo grouped MoE diagnostic requires f32 output accumulation".into());
     }
-    if (fp8_replay || q8q5_replay) && direct_bf16 {
+    if (fp8_replay || q8q5_replay || q8q8_replay) && direct_bf16 {
         return Err("MiMo KV replay cannot combine with direct BF16 matvec".into());
     }
     let dir = Path::new(&args[0]);
@@ -1252,7 +1338,9 @@ fn run() -> Result<(), Fail> {
     writeln!(
         report,
         "numeric_class\t{}",
-        if q8q5_replay {
+        if q8q8_replay {
+            "memra_mimo_source_q8_0_k_q8_0_v_roundtrip_f32_attention_candidate"
+        } else if q8q5_replay {
             "memra_mimo_source_q8_0_k_q5_1_v_roundtrip_f32_attention_candidate"
         } else if fp8_replay {
             "memra_mimo_source_e4m3_kv_roundtrip_f32_attention_candidate"
@@ -1275,6 +1363,8 @@ fn run() -> Result<(), Fail> {
     writeln!(report, "kv_fp8_replay\t{fp8_replay}")?;
     writeln!(report, "kv_q8q5_probe\t{q8q5_probe}")?;
     writeln!(report, "kv_q8q5_replay\t{q8q5_replay}")?;
+    writeln!(report, "kv_q8q8_probe\t{q8q8_probe}")?;
+    writeln!(report, "kv_q8q8_replay\t{q8q8_replay}")?;
     writeln!(report, "stage_cut_before_layer\t{STAGE_CUT}")?;
     writeln!(report, "stage_transfer\thost_bounce")?;
     writeln!(
@@ -1303,7 +1393,9 @@ fn run() -> Result<(), Fail> {
     writeln!(
         report,
         "kv_format\t{}",
-        if q8q5_replay {
+        if q8q8_replay {
+            "q8_0_k_q8_0_v_roundtripped_f32_contiguous_component"
+        } else if q8q5_replay {
             "q8_0_k_q5_1_v_roundtripped_f32_contiguous_component"
         } else if fp8_replay {
             "e4m3_roundtripped_f32_contiguous_component"
@@ -1375,6 +1467,8 @@ fn run() -> Result<(), Fail> {
                     fp8_replay,
                     q8q5_probe,
                     q8q5_replay,
+                    q8q8_probe,
+                    q8q8_replay,
                 };
                 attention_token(
                     engine,
