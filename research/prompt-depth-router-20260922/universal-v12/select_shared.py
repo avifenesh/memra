@@ -9,6 +9,7 @@ import re
 
 
 DOMAINS = ("code", "prose", "math")
+VALIDATION_SHA = "bf920b82e0176c4304bcc562ccce34a28384082c888355a280620163a45e5313"
 PAIR_STATUS = "paired"
 BASELINE = "fixed-k20-d3-c0"
 REQUIRED_FIXED = {
@@ -65,6 +66,7 @@ def inspect(validation, arms_path):
         score["schema"] != 1
         or score["phase"] != "validation"
         or score["arms_sha256"] != sha(arms_path)
+        or score["source_manifest_sha256"] != VALIDATION_SHA
         or arms["schema"] != 1
         or arms["phase"] != "validation"
         or set(score["domains"]) != set(DOMAINS)

@@ -24,8 +24,8 @@ class ProseOrderTest(unittest.TestCase):
             write(config, {
                 "model_id": "pinned-test-judge",
                 "template_sha256": score_prose.TEMPLATE_SHA,
-                "input_usd_per_million": 1,
-                "output_usd_per_million": 1,
+                "input_usd_per_million_budget": 1,
+                "output_usd_per_million_budget": 1,
                 "total_usd_cap": 1,
             })
             source = []

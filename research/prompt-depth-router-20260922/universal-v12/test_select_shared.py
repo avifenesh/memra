@@ -90,6 +90,7 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
     write(score, {
         "schema": 1, "phase": "validation",
         "arms_sha256": select_shared.sha(arms),
+        "source_manifest_sha256": select_shared.VALIDATION_SHA,
         "model_manifest_sha256": "d" * 64,
         "quality_sha256": "e" * 64,
         "judge_config_sha256": "f" * 64,

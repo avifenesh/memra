@@ -89,7 +89,8 @@ def score(packets_dir, results_dir, config_path):
             and math.isfinite(config[key])
             and config[key] > 0
             for key in (
-                "input_usd_per_million", "output_usd_per_million",
+                "input_usd_per_million_budget",
+                "output_usd_per_million_budget",
                 "total_usd_cap",
             )
         )
@@ -132,8 +133,10 @@ def score(packets_dir, results_dir, config_path):
             packet["response_a"] == packet["candidate"],
         )
     projected_usd = (
-        usage["input_tokens"] * config["input_usd_per_million"]
-        + usage["output_tokens"] * config["output_usd_per_million"]
+        usage["input_tokens"]
+        * config["input_usd_per_million_budget"]
+        + usage["output_tokens"]
+        * config["output_usd_per_million_budget"]
     ) / 1_000_000
     if not math.isfinite(projected_usd) or (
         projected_usd > config["total_usd_cap"]
@@ -188,7 +191,7 @@ def score(packets_dir, results_dir, config_path):
         "judge_config_sha256": sha(config_path),
         "judge_model_id": config["model_id"],
         "judge_usage": usage,
-        "projected_judge_usd": projected_usd,
+        "budgeted_usd_ceiling": projected_usd,
         "comparisons": comparisons,
     }
 
