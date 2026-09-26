@@ -1143,6 +1143,8 @@ pub struct Dsv4Gpu {
     /// no session grows it later; every walk holds `tp_ep_walk_lock` and runs stream-ordered on
     /// the rank's stream, so one buffer serves every session and layer.
     split_stage: [std::sync::Mutex<Option<CudaSlice<f32>>>; 2],
+    /// `MEMRA_DSV4_VOCAB_HEAD`: TP/EP decode heads split the vocabulary across the ranks.
+    vocab_head: bool,
     pub model: Dsv4Model,
     pub stages: Vec<Stage>,
     pub layer_stage: Vec<usize>, // trunk layer -> stage idx
@@ -3570,6 +3572,7 @@ impl Dsv4Gpu {
     ) -> Res<Self> {
         assert_eq!(devices.len(), 2, "lane 4 placement is a 2-card layer split");
         let pdl_chain = dsv4_pdl_chain_env()?;
+        let vocab_head = dsv4_vocab_head_env()?;
         // Before any stream capture: a replay graph records the launch attribute it saw.
         unsafe { k::memra_pdl_chain_set(i32::from(pdl_chain)) };
         eprintln!("[load] programmatic dependent launch on the decode chain: {pdl_chain}");
@@ -3968,6 +3971,7 @@ impl Dsv4Gpu {
             tp_ep_ar: std::sync::Mutex::new(None),
             tp_ep_walk_lock: std::sync::Mutex::new(()),
             split_stage: std::array::from_fn(|_| std::sync::Mutex::new(None)),
+            vocab_head,
             model,
             stages,
             layer_stage: if topology.is_tp_ep() {
@@ -11883,7 +11887,11 @@ impl Dsv4Gpu {
                         1,
                         1,
                     )?;
-                    self.head_logits_batch_dev(&mut work.verify.ws[1], 1, false)?;
+                    if self.vocab_parallel_head() {
+                        self.head_logits_tp_ep(&mut work.verify, 1, true)?;
+                    } else {
+                        self.head_logits_batch_dev(&mut work.verify.ws[1], 1, false)?;
+                    }
                     let pair = work.replay.as_mut().expect("replay");
                     let stream = self.stages[1].gpu.stream();
                     if pair.greedy {
@@ -11937,6 +11945,7 @@ impl Dsv4Gpu {
                 // Drain BOTH before reading/returning a token or releasing any plane.
                 pair.drain_both()?;
                 drop(drain_phase);
+                self.vocab_head_refusal_check()?;
                 let _readback = full_token_profile_phase("FULL_TOKEN_TOKEN_READBACK\0");
                 state.pos = pos0 + 1; // the forward is committed even if sampling refuses its logits
                 let token = if pair.greedy {
@@ -11978,8 +11987,14 @@ impl Dsv4Gpu {
             )?;
             drop(commit_phase);
             let head_phase = full_token_profile_phase("FULL_TOKEN_EAGER_HEAD_SUBMIT\0");
+            if self.vocab_parallel_head() {
+                self.head_logits_tp_ep(&mut work.verify, 1, false)?;
+                // Stream-ordered after the gather on both ranks.
+                self.vocab_head_refusal_check()?;
+            } else {
+                self.head_logits_batch_dev(&mut work.verify.ws[1], 1, false)?;
+            }
             let head_ws = &mut work.verify.ws[1];
-            self.head_logits_batch_dev(head_ws, 1, false)?;
             drop(head_phase);
             let stream = self.stages[1].gpu.stream();
             if let Some((dst, base)) = taps.as_mut() {
@@ -14837,6 +14852,8 @@ pub struct VerifyState {
     tp_ep_attention_outputs: Option<[CudaSlice<f32>; 2]>,
     /// Attention TP2: both ranks' wo_a group outputs gathered, [tmax][groups * o_lora].
     tp_ep_attention_og: Option<[CudaSlice<f32>; 2]>,
+    /// Vocab-parallel head: each rank's `[tmax][vocab / 2]` logits half (`head_logits_tp_ep`).
+    tp_ep_head_half: Option<[CudaSlice<f32>; 2]>,
     pub tmax: usize,
     /// Decode-cache capacity this verify layout was planned against. The transient
     /// rows live immediately after each layer's capacity-sized compressed store, so
@@ -16037,6 +16054,11 @@ impl Dsv4Gpu {
         let tp_ep_attention_outputs = attention_planes(hidden)?;
         let tp_ep_attention_og =
             attention_planes(self.attention_tp.map_or(0, |plan| plan.full_output_width))?;
+        let tp_ep_head_half = if self.vocab_parallel_head() {
+            attention_planes(vocab / 2)?
+        } else {
+            None
+        };
         for st in &self.stages {
             st.gpu.stream().synchronize().map_err(e("vws sync"))?;
         }
@@ -16062,6 +16084,7 @@ impl Dsv4Gpu {
             tp_ep_ar_outputs,
             tp_ep_attention_outputs,
             tp_ep_attention_og,
+            tp_ep_head_half,
             tmax,
             capacity,
             open: None,
@@ -19286,18 +19309,37 @@ impl Dsv4Gpu {
     /// dots on the batched island kernel so the 1.06 GiB head slab is read ONCE per round
     /// instead of once per verified position.
     fn head_logits_batch_dev(&self, vws: &mut VerifyWs, t: usize, host_math: bool) -> Res<()> {
+        let last = self.stages.len() - 1;
+        let st = &self.stages[last];
+        let stream = st.gpu.stream();
+        let vocab = vws.logits.len() / vws.tmax;
+        let out = vws.logits.device_ptr_mut(&stream).0 as *mut f32;
+        self.head_rows_dev(st, vws, t, host_math, 0, vocab, out)
+    }
+
+    /// The head over vocab rows `row0..row0 + rows` of `st`'s head copy: the HC head collapse
+    /// and trunk norm of `vws`'s final residual, then `[t][rows]` logits at `out`. A row's
+    /// value does not depend on which rows are computed with it.
+    #[allow(clippy::too_many_arguments)]
+    fn head_rows_dev(
+        &self,
+        st: &Stage,
+        vws: &mut VerifyWs,
+        t: usize,
+        host_math: bool,
+        row0: usize,
+        rows: usize,
+        out: *mut f32,
+    ) -> Res<()> {
         let d = self.model.cfg();
         let mc = &self.model.mc;
         let hc = d.hc_mult as usize;
         let hidden = mc.n_embd as usize;
         let eps = mc.rms_eps;
-        let last = self.stages.len() - 1;
-        let st = &self.stages[last];
         let stream = st.gpu.stream();
         let w = hc * hidden;
         let fn_w = st.hc_head_fn.as_ref().expect("hc_head_fn");
         let norm = st.trunk_norm.as_ref().expect("trunk norm");
-        let vocab = vws.logits.len() / vws.tmax;
         self.dots_m_dev(
             st,
             vws.h_a.device_ptr(&stream).0 as *const f32,
@@ -19391,7 +19433,9 @@ impl Dsv4Gpu {
                 ),
             )?;
         }
-        let head_ptr = st.head.as_ref().expect("head").device_ptr(&stream).0 as *const c_void;
+        // The head is BF16 [vocab][hidden]: row `row0` starts `row0 * hidden * 2` bytes in.
+        let head_ptr = (st.head.as_ref().expect("head").device_ptr(&stream).0 as usize
+            + row0 * hidden * 2) as *const c_void;
         self.dots_m_dev(
             st,
             vws.collapsed.device_ptr(&stream).0 as *const f32,
@@ -19399,10 +19443,84 @@ impl Dsv4Gpu {
             1,
             t,
             hidden,
-            vocab,
-            vws.logits.device_ptr_mut(&stream).0 as *mut f32,
+            rows,
+            out,
         )?;
         Ok(())
+    }
+
+    /// TP/EP vocab-parallel head (memra #710, ceiling lever 3). Rank r computes the logits of
+    /// vocab rows `[r * V/2, (r + 1) * V/2)` from its own copy of the replicated final residual
+    /// and of the head, and one row gather lays both halves out in vocab order on both ranks,
+    /// so rank 1's argmax and sampler read the full `[t][V]` rows they read before. Every
+    /// logit is the same dots row over the same inputs as the one-rank head.
+    fn head_logits_tp_ep(&self, verify: &mut VerifyState, t: usize, capture: bool) -> Res<()> {
+        let VerifyState {
+            ws,
+            tp_ep_head_half,
+            ..
+        } = verify;
+        let halves = tp_ep_head_half
+            .as_mut()
+            .ok_or("TP/EP vocab-parallel head buffers missing")?;
+        let vocab = ws[1].logits.len() / ws[1].tmax;
+        let half = vocab / 2;
+        for (rank, half_buf) in halves.iter_mut().enumerate() {
+            let st = &self.stages[rank];
+            st.gpu
+                .ctx
+                .bind_to_thread()
+                .map_err(e("vocab-parallel head bind"))?;
+            let stream = st.gpu.stream();
+            let out = half_buf.device_ptr_mut(&stream).0 as *mut f32;
+            self.head_rows_dev(st, &mut ws[rank], t, false, rank * half, half, out)?;
+        }
+        let (w0, w1) = ws.split_at_mut(1);
+        let mut ar = self
+            .tp_ep_ar
+            .lock()
+            .map_err(|_| "vocab-parallel head AR mutex poisoned")?;
+        ar.as_mut()
+            .ok_or("vocab-parallel head AR state missing")?
+            .gather_rows_into(
+                &self.stages[0].gpu,
+                &self.stages[1].gpu,
+                &halves[0],
+                &halves[1],
+                &mut w0[0].logits,
+                &mut w1[0].logits,
+                t,
+                half,
+                capture,
+                None,
+            )?;
+        self.stages[1]
+            .gpu
+            .ctx
+            .bind_to_thread()
+            .map_err(e("vocab-parallel head rank-1 bind"))?;
+        Ok(())
+    }
+
+    /// After a vocab-parallel head has drained: its row gather reports a bounded-wait refusal
+    /// through the same sticky words as the trunk joins, and a refused gather left the logits
+    /// incomplete, so no token may leave. The planes are already committed; the request fails.
+    fn vocab_head_refusal_check(&self) -> Res<()> {
+        if !self.vocab_parallel_head() {
+            return Ok(());
+        }
+        let words = self.tp_ep_ar_refusal_words()?;
+        if words != [0, 0] {
+            return Err(format!(
+                "TP/EP vocab-parallel head gather refused: {words:?}"
+            ));
+        }
+        Ok(())
+    }
+
+    /// Whether this load's TP/EP decode heads split the vocabulary across the ranks.
+    fn vocab_parallel_head(&self) -> bool {
+        self.vocab_head && self.topology.is_tp_ep() && self.attention_tp.is_some()
     }
 }
 
@@ -21140,6 +21258,7 @@ impl Dsv4Gpu {
         for (state, &p0) in states.iter_mut().zip(&pos0) {
             state.pos = p0 + 1;
         }
+        self.vocab_head_refusal_check()?;
         let stream = self.stages[1].gpu.stream();
         self.stages[1]
             .gpu
@@ -21317,7 +21436,11 @@ impl Dsv4Gpu {
             .ctx
             .bind_to_thread()
             .map_err(e("bind B-row head capture"))?;
-        self.head_logits_batch_dev(&mut rows.ws[1], b, false)?;
+        if self.vocab_parallel_head() {
+            self.head_logits_tp_ep(rows, b, true)?;
+        } else {
+            self.head_logits_batch_dev(&mut rows.ws[1], b, false)?;
+        }
         let stream = self.stages[1].gpu.stream();
         let input = rows.rows_replay.as_ref().expect("allocated").input_ptr(1);
         let vocab = rows.ws[1].logits.len() / rows.ws[1].tmax;
@@ -21528,7 +21651,11 @@ impl Dsv4Gpu {
             .ctx
             .bind_to_thread()
             .map_err(e("bind TP/EP B-row head"))?;
-        self.head_logits_batch_dev(&mut rows.ws[1], b, false)?;
+        if self.vocab_parallel_head() {
+            self.head_logits_tp_ep(rows, b, false)?;
+        } else {
+            self.head_logits_batch_dev(&mut rows.ws[1], b, false)?;
+        }
         let stream = self.stages[1].gpu.stream();
         let vws = &mut rows.ws[1];
         let vocab = vws.logits.len() / vws.tmax;
@@ -21561,6 +21688,7 @@ impl Dsv4Gpu {
             .memcpy_dtoh(&view, &mut am[..])
             .map_err(e("dtoh TP/EP argmax rows"))?;
         stream.synchronize().map_err(e("sync TP/EP argmax rows"))?;
+        self.vocab_head_refusal_check()?;
         Ok((logits, am.into_iter().map(|x| x as u32).collect()))
     }
 
@@ -23082,6 +23210,19 @@ thread_local! {
 /// restores the immutable process configuration. Not a serving-policy interface.
 pub fn set_dsv4_sampler_order_for_gate(order: Option<Dsv4SamplerOrder>) {
     SAMPLER_ORDER_GATE.with(|current| current.set(order));
+}
+
+/// `MEMRA_DSV4_VOCAB_HEAD`: the TP/EP vocab-parallel decode head (door, default OFF until its
+/// A/B).
+fn dsv4_vocab_head_env() -> Res<bool> {
+    match std::env::var("MEMRA_DSV4_VOCAB_HEAD").as_deref() {
+        Err(std::env::VarError::NotPresent) | Ok("0") => Ok(false),
+        Ok("1") => Ok(true),
+        Ok(other) => Err(format!(
+            "MEMRA_DSV4_VOCAB_HEAD must be 0 or 1, got {other:?}"
+        )),
+        Err(err) => Err(format!("MEMRA_DSV4_VOCAB_HEAD: {err}")),
+    }
 }
 
 /// `MEMRA_DSV4_PDL`: programmatic dependent launch on the DSv4 kernel chain, ON by default since
