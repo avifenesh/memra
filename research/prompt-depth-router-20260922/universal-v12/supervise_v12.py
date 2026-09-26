@@ -33,18 +33,27 @@ def save(path, value):
         output.write("\n")
 
 
-def stage(log, root, script, *options):
+def stage(log, root, script, *options, attempts=1):
     print(json.dumps({
         "stage": script, "args": list(map(str, options)),
     }), file=log, flush=True)
     command = [
         sys.executable, str(root / script), *map(str, options),
     ]
-    result = subprocess.run(
-        command, cwd=root.parent, stdout=log, stderr=log,
-    )
-    if result.returncode:
-        raise RuntimeError(f"{script} failed with {result.returncode}")
+    for attempt in range(attempts):
+        result = subprocess.run(
+            command, cwd=root.parent, stdout=log, stderr=log,
+        )
+        if result.returncode == 0:
+            break
+        if attempt + 1 == attempts:
+            raise RuntimeError(
+                f"{script} failed with {result.returncode}"
+            )
+        print(json.dumps({
+            "stage": script, "status": "resuming",
+            "attempt": attempt + 2,
+        }), file=log, flush=True)
     print(json.dumps({
         "stage": script, "status": "complete",
     }), file=log, flush=True)
@@ -208,7 +217,8 @@ def pipeline(base, credential_file, log):
           "--packets", base / "validation-packets",
           "--config", judge_config,
           "--credential-file", credential_file,
-          "--out", base / "validation-judge")
+          "--out", base / "validation-judge",
+          attempts=3)
     stage(log, scripts, "score_prose.py",
           "--packets", base / "validation-packets",
           "--results", base / "validation-judge",
@@ -261,7 +271,8 @@ def pipeline(base, credential_file, log):
               "--credential-file", credential_file,
               "--prior-manifest",
               base / "validation-judge/manifest.json",
-              "--out", base / "final-judge")
+              "--out", base / "final-judge",
+              attempts=3)
         stage(log, scripts, "score_prose.py",
               "--packets", base / "final-packets",
               "--results", base / "final-judge",

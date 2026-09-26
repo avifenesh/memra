@@ -6,7 +6,9 @@ import json
 import math
 import os
 from pathlib import Path
+import time
 import urllib.parse
+import urllib.error
 import urllib.request
 
 
@@ -206,11 +208,26 @@ def call(prompt, config, token):
         },
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=120) as response:
-        return {
-            "request_id": response.headers.get("x-amzn-requestid"),
-            "body": json.load(response),
-        }
+    for attempt in range(5):
+        try:
+            with urllib.request.urlopen(
+                request, timeout=120,
+            ) as response:
+                return {
+                    "request_id":
+                    response.headers.get("x-amzn-requestid"),
+                    "body": json.load(response),
+                }
+        except urllib.error.HTTPError as error:
+            if error.code not in (429, 503) or attempt == 4:
+                raise
+            after = error.headers.get("Retry-After", "")
+            seconds = (
+                int(after) if after.isdigit()
+                else 2 ** attempt
+            )
+            time.sleep(min(30, max(1, seconds)))
+    raise AssertionError("unreachable Bedrock retry state")
 
 
 def run(packets_dir, config_path, credential_file, out,
