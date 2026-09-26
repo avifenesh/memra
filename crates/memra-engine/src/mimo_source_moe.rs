@@ -681,7 +681,20 @@ impl GroupedMiMoMoeLayer {
         plan: &MoeMlpPlan,
         source: &MiMoRoutedSource<'_>,
     ) -> Result<Self, Fail> {
-        validate_contract(pinned.config, pinned.plan, plan, layer)?;
+        Self::load_bound(engine, pinned.config, pinned.plan, layer, plan, source)
+    }
+
+    /// A model whose full source binding was checked by its owning loader
+    /// passes the same compiled plan without a second StModel header mapping.
+    pub fn load_bound(
+        engine: &Engine,
+        config: &ModelConfig,
+        compiled: &ModelPlan,
+        layer: usize,
+        plan: &MoeMlpPlan,
+        source: &MiMoRoutedSource<'_>,
+    ) -> Result<Self, Fail> {
+        validate_contract(config, compiled, plan, layer)?;
         engine.gpu.ctx.bind_to_thread()?;
         let matrix = engine.htod(&float_tensor(
             "BF16",
@@ -713,7 +726,25 @@ impl GroupedMiMoMoeLayer {
         plan: &MoeMlpPlan,
         pinned: &PinnedMiMoSource<'_>,
     ) -> Result<MiMoMoeToken, Fail> {
-        validate_contract(pinned.config, pinned.plan, plan, self.layer)?;
+        self.token_bound(engine, x, plan, pinned.config, pinned.plan)
+    }
+
+    /// Text model runtime entry once the source was pinned at load. This
+    /// applies the same per-layer contract as the diagnostic `token` method
+    /// and executes its identical resident GPU path.
+    pub fn token_bound(
+        &self,
+        engine: &Engine,
+        x: &CudaSlice<f32>,
+        plan: &MoeMlpPlan,
+        config: &ModelConfig,
+        compiled: &ModelPlan,
+    ) -> Result<MiMoMoeToken, Fail> {
+        validate_contract(config, compiled, plan, self.layer)?;
+        self.token_validated(engine, x)
+    }
+
+    fn token_validated(&self, engine: &Engine, x: &CudaSlice<f32>) -> Result<MiMoMoeToken, Fail> {
         let ordinal = engine.stream().context().ordinal();
         if x.len() != HIDDEN
             || [
