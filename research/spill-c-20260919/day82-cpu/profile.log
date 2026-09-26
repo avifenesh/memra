@@ -1,0 +1,16 @@
+# DAY82 CPU profile: P9 (and P10 where the binary has it) from the engine lib test binaries at I18 (c7294b912) and I20 (8efea3a54), one pinned core, order i18 i20 i20 i18 i18 i20; the rig shared with other lanes' agents
+== i18
+DAY77 P9 group calls per_block_ns cycle=2547.7 | P8 again cycle=2678.8
+== i20
+DAY77 P9 group calls per_block_ns cycle=2598.4 | P8 again cycle=2679.7
+DAY82 P10 allocations per grouped cycle=16.00 bytes=830.2 | host_resident_many=0.00/0.0 demand_many=15.00/806.2 with_bytes_each=0.00/0.0 finish_group=1.00/24.0
+== i20
+DAY77 P9 group calls per_block_ns cycle=2502.7 | P8 again cycle=2564.3
+DAY82 P10 allocations per grouped cycle=16.00 bytes=830.2 | host_resident_many=0.00/0.0 demand_many=15.00/806.2 with_bytes_each=0.00/0.0 finish_group=1.00/24.0
+== i18
+DAY77 P9 group calls per_block_ns cycle=2440.7 | P8 again cycle=2606.7
+== i18
+DAY77 P9 group calls per_block_ns cycle=2508.8 | P8 again cycle=2606.7
+== i20
+DAY77 P9 group calls per_block_ns cycle=2494.1 | P8 again cycle=2604.2
+DAY82 P10 allocations per grouped cycle=16.00 bytes=830.2 | host_resident_many=0.00/0.0 demand_many=15.00/806.2 with_bytes_each=0.00/0.0 finish_group=1.00/24.0
