@@ -133,6 +133,24 @@ impl<'a> ConfigObject<'a> {
             })
             .transpose()
     }
+    pub(super) fn i32_array(&self, key: &str) -> Result<Option<Vec<i32>>> {
+        self.array(key, false)?
+            .map(|values| {
+                values
+                    .iter()
+                    .enumerate()
+                    .map(|(i, value)| {
+                        value
+                            .as_i64()
+                            .and_then(|number| i32::try_from(number).ok())
+                            .ok_or_else(|| {
+                                self.invalid(&format!("{key}[{i}]"), "a signed 32-bit integer")
+                            })
+                    })
+                    .collect()
+            })
+            .transpose()
+    }
     pub(super) fn moe_layer_freq(&self, glm_dsa: bool) -> Result<Option<Vec<u32>>> {
         if let Some(value @ Value::Number(_)) = self.value("moe_layer_freq")? {
             // GLM-DSA declares an interval, while MiniMax declares a layer mask.

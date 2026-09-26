@@ -22,7 +22,7 @@ pub enum Arch {
     // 96 swa), head-wise attn gate (separate `attn_gate` tensor), dual rope base,
     // half-rotary on full layers, 288-expert sigmoid-router MoE + shared expert,
     // per-layer swiglu clamp arrays, 3 NextN/MTP blocks (shipped in a separate GGUF)
-    MiMoV2, // Xiaomi MiMo-V2.6: 48-layer full/SWA text trunk; MTP ships separately
+    MiMoV2,     // Xiaomi MiMo-V2.6: 48-layer full/SWA text trunk; MTP ships separately
     DeepSeekV4, // DeepSeek-V4-Flash: MLA-lineage attention + per-layer KV compressor +
     // DSA lightning indexer (21 of 43 layers), sqrtsoftplus-scored 256-expert MoE with
     // 3 leading HASH-routed layers (tid2eid, still full expert banks — NOT dense FFN),
@@ -1154,6 +1154,50 @@ impl MlaConfig {
 }
 
 #[derive(Debug, Clone)]
+pub struct MiMoVisionConfig {
+    pub depth: u32,
+    pub fullatt_block_indexes: Vec<u32>,
+    pub hidden_act: String,
+    pub hidden_size: u32,
+    pub in_chans: u32,
+    pub intermediate_size: u32,
+    pub num_heads: u32,
+    pub num_key_value_heads: u32,
+    pub num_query_groups: u32,
+    pub out_hidden_size: u32,
+    pub patch_size: u32,
+    pub spatial_merge_size: u32,
+    pub spatial_patch_size: u32,
+    pub temporal_patch_size: u32,
+    pub tokens_per_second: u32,
+    pub use_sink: bool,
+    pub visual_token_window_size: u32,
+    pub vit_window_attn_types: Vec<i32>,
+    pub window_size: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct MiMoAudioConfig {
+    pub add_post_norm: bool,
+    pub audio_channels: u32,
+    pub audio_segment_size: u32,
+    pub group_size: u32,
+    pub input_full_attention: bool,
+    pub input_local_attn_heads: u32,
+    pub input_local_dim: u32,
+    pub input_local_head_dim: u32,
+    pub input_local_hidden_dropout: f32,
+    pub input_local_intermediate_size: u32,
+    pub input_local_layers: u32,
+    pub out_hidden_size: u32,
+    pub partial_rotary_factor: f32,
+    pub projection_layers: u32,
+    pub rope_theta: f32,
+    pub speech_vocab_size: u32,
+    pub speech_zeroemb_idx: u32,
+}
+
+#[derive(Debug, Clone)]
 pub struct MiMoV2Config {
     pub hybrid_layer_pattern: Option<Vec<u32>>,
     pub swa_num_attention_heads: Option<u32>,
@@ -1174,6 +1218,14 @@ pub struct MiMoV2Config {
     pub moe_router_dtype: Option<String>,
     pub moe_layer_freq: Option<Vec<u32>>,
     pub separate_mtp_layers: Option<u32>,
+    pub vision_config: Option<MiMoVisionConfig>,
+    pub audio_config: Option<MiMoAudioConfig>,
+    pub vision_model_type: Option<String>,
+    pub vision_start_token_id: Option<u32>,
+    pub vision_end_token_id: Option<u32>,
+    pub audio_token_id: Option<u32>,
+    pub audio_start_token_id: Option<u32>,
+    pub audio_end_token_id: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -2422,6 +2474,14 @@ impl ModelConfig {
             moe_router_dtype: c.moe_router_dtype.clone(),
             moe_layer_freq: c.moe_layer_freq.clone(),
             separate_mtp_layers: c.num_nextn_predict_layers,
+            vision_config: c.mimo_vision.clone(),
+            audio_config: c.mimo_audio.clone(),
+            vision_model_type: c.vision_model_type.clone(),
+            vision_start_token_id: c.vision_start_token_id,
+            vision_end_token_id: c.vision_end_token_id,
+            audio_token_id: c.audio_token_id,
+            audio_start_token_id: c.audio_start_token_id,
+            audio_end_token_id: c.audio_end_token_id,
         });
 
         ModelConfig {
@@ -2965,6 +3025,14 @@ pub struct HfConfig {
     pub add_full_attention_sink_bias: Option<bool>,
     pub n_group: Option<u32>,
     pub topk_group: Option<u32>,
+    pub mimo_vision: Option<MiMoVisionConfig>,
+    pub mimo_audio: Option<MiMoAudioConfig>,
+    pub vision_model_type: Option<String>,
+    pub vision_start_token_id: Option<u32>,
+    pub vision_end_token_id: Option<u32>,
+    pub audio_token_id: Option<u32>,
+    pub audio_start_token_id: Option<u32>,
+    pub audio_end_token_id: Option<u32>,
     // ---- Hy3 (`hy_v3`) ----
     pub first_k_dense_replace: Option<u32>,
     pub moe_router_use_sigmoid: Option<bool>,
@@ -3132,6 +3200,14 @@ impl Default for HfConfig {
             add_full_attention_sink_bias: None,
             n_group: None,
             topk_group: None,
+            mimo_vision: None,
+            mimo_audio: None,
+            vision_model_type: None,
+            vision_start_token_id: None,
+            vision_end_token_id: None,
+            audio_token_id: None,
+            audio_start_token_id: None,
+            audio_end_token_id: None,
             first_k_dense_replace: None,
             moe_router_use_sigmoid: None,
             moe_router_enable_expert_bias: None,
@@ -3311,6 +3387,9 @@ impl HfConfig {
         let glm_dsa = effective_type
             .as_deref()
             .is_some_and(|kind| Arch::from_hf_model_type(kind) == Arch::GlmDsa);
+        let mimo_v2 = effective_type
+            .as_deref()
+            .is_some_and(|kind| Arch::from_hf_model_type(kind) == Arch::MiMoV2);
         let mut cfg = HfConfig::default();
         cfg.apply(&top, glm_dsa)?;
         if let Some(q) = top.object("quantization_config")? {
@@ -3331,7 +3410,48 @@ impl HfConfig {
         }
         if let Some(vision) = top.object("vision_config")? {
             let vision_type = vision.string("model_type")?;
-            if vision_type.as_deref() == Some("qwen4_exp") {
+            if mimo_v2 {
+                let req_u = |key: &str| {
+                    required(vision.u32(key)?, "mimo_v2", &format!("vision_config.{key}"))
+                };
+                cfg.mimo_vision = Some(MiMoVisionConfig {
+                    depth: req_u("depth")?,
+                    fullatt_block_indexes: required(
+                        vision.u32_array("fullatt_block_indexes")?,
+                        "mimo_v2",
+                        "vision_config.fullatt_block_indexes",
+                    )?,
+                    hidden_act: required(
+                        vision.string("hidden_act")?,
+                        "mimo_v2",
+                        "vision_config.hidden_act",
+                    )?,
+                    hidden_size: req_u("hidden_size")?,
+                    in_chans: req_u("in_chans")?,
+                    intermediate_size: req_u("intermediate_size")?,
+                    num_heads: req_u("num_heads")?,
+                    num_key_value_heads: req_u("num_key_value_heads")?,
+                    num_query_groups: req_u("num_query_groups")?,
+                    out_hidden_size: req_u("out_hidden_size")?,
+                    patch_size: req_u("patch_size")?,
+                    spatial_merge_size: req_u("spatial_merge_size")?,
+                    spatial_patch_size: req_u("spatial_patch_size")?,
+                    temporal_patch_size: req_u("temporal_patch_size")?,
+                    tokens_per_second: req_u("tokens_per_second")?,
+                    use_sink: required(
+                        vision.boolean("use_sink")?,
+                        "mimo_v2",
+                        "vision_config.use_sink",
+                    )?,
+                    visual_token_window_size: req_u("visual_token_window_size")?,
+                    vit_window_attn_types: required(
+                        vision.i32_array("vit_window_attn_types")?,
+                        "mimo_v2",
+                        "vision_config.vit_window_attn_types",
+                    )?,
+                    window_size: req_u("window_size")?,
+                });
+            } else if vision_type.as_deref() == Some("qwen4_exp") {
                 let req = |key: &str| -> Result<u32, String> {
                     vision.u32(key)?.ok_or_else(|| {
                         format!("qwen4_exp vision_config missing required field {key}")
@@ -3426,6 +3546,10 @@ impl HfConfig {
                 // Preserve the existing native Step route without fabricating a canonical
                 // Gemma tower. Unified Gemma's encoder-free program remains unrepresented.
                 cfg.vision = None;
+            } else if mimo_v2 {
+                // MiMo's typed tower was parsed above. A generic tower would invent
+                // unrelated defaults for its model_type-less vision_config.
+                cfg.vision = None;
             } else {
                 let rope_theta = match vision.object("rope_parameters")? {
                     Some(rope) => rope.f32("rope_theta")?.unwrap_or(100.0),
@@ -3454,6 +3578,48 @@ impl HfConfig {
                     clipped_linears: vision.boolean("use_clipped_linears")?.unwrap_or(false),
                 });
             }
+        }
+        if mimo_v2 && let Some(audio) = top.object("audio_config")? {
+            let req_u =
+                |key: &str| required(audio.u32(key)?, "mimo_v2", &format!("audio_config.{key}"));
+            let req_f =
+                |key: &str| required(audio.f32(key)?, "mimo_v2", &format!("audio_config.{key}"));
+            let req_b = |key: &str| {
+                required(
+                    audio.boolean(key)?,
+                    "mimo_v2",
+                    &format!("audio_config.{key}"),
+                )
+            };
+            let decimal_string = |key: &str| -> Result<u32, String> {
+                let value = required(
+                    audio.string(key)?,
+                    "mimo_v2",
+                    &format!("audio_config.{key}"),
+                )?;
+                value
+                    .parse::<u32>()
+                    .map_err(|_| format!("mimo_v2 audio_config.{key} must be a decimal u32 string"))
+            };
+            cfg.mimo_audio = Some(MiMoAudioConfig {
+                add_post_norm: req_b("add_post_norm")?,
+                audio_channels: req_u("audio_channels")?,
+                audio_segment_size: req_u("audio_segment_size")?,
+                group_size: req_u("group_size")?,
+                input_full_attention: req_b("input_full_attention")?,
+                input_local_attn_heads: req_u("input_local_attn_heads")?,
+                input_local_dim: req_u("input_local_dim")?,
+                input_local_head_dim: req_u("input_local_head_dim")?,
+                input_local_hidden_dropout: req_f("input_local_hidden_dropout")?,
+                input_local_intermediate_size: req_u("input_local_intermediate_size")?,
+                input_local_layers: req_u("input_local_layers")?,
+                out_hidden_size: req_u("out_hidden_size")?,
+                partial_rotary_factor: req_f("partial_rotary_factor")?,
+                projection_layers: req_u("projection_layers")?,
+                rope_theta: req_f("rope_theta")?,
+                speech_vocab_size: decimal_string("speech_vocab_size")?,
+                speech_zeroemb_idx: decimal_string("speech_zeroemb_idx")?,
+            });
         }
         // Keep the existing top/text overlay order and architecture fallback.
         if let Some(text) = text {
@@ -3776,6 +3942,24 @@ impl HfConfig {
         }
         if let Some(v) = o.u32("topk_group")? {
             self.topk_group = Some(v);
+        }
+        if let Some(v) = o.string("vision_model_type")? {
+            self.vision_model_type = Some(v);
+        }
+        if let Some(v) = o.u32("vision_start_token_id")? {
+            self.vision_start_token_id = Some(v);
+        }
+        if let Some(v) = o.u32("vision_end_token_id")? {
+            self.vision_end_token_id = Some(v);
+        }
+        if let Some(v) = o.u32("audio_token_id")? {
+            self.audio_token_id = Some(v);
+        }
+        if let Some(v) = o.u32("audio_start_token_id")? {
+            self.audio_start_token_id = Some(v);
+        }
+        if let Some(v) = o.u32("audio_end_token_id")? {
+            self.audio_end_token_id = Some(v);
         }
         // ---- Hy3 keys ----
         if let Some(v) = o.u32("first_k_dense_replace")? {
@@ -4336,6 +4520,64 @@ pub(crate) mod hf_tests {
         assert_eq!(mimo.moe_router_dtype.as_deref(), Some("bfloat16"));
         assert_eq!(mimo.moe_layer_freq.as_ref().unwrap().len(), 48);
         assert_eq!(mimo.separate_mtp_layers, Some(3));
+    }
+
+    #[test]
+    fn mimo_v2_source_modal_geometry_is_typed_without_generic_vision_defaults() {
+        let source = HfConfig::parse(include_str!("model_packs/mimo_v2/fixtures/config.json"));
+        assert!(source.vision.is_none());
+        let config = ModelConfig::from_hf(&source);
+        assert!(config.vision.is_none());
+        let vision = config
+            .mimo
+            .as_ref()
+            .unwrap()
+            .vision_config
+            .as_ref()
+            .unwrap();
+        assert_eq!(vision.depth, 28);
+        assert_eq!(vision.fullatt_block_indexes, vec![0, 9, 18, 27]);
+        assert_eq!(vision.hidden_size, 1280);
+        assert_eq!(vision.intermediate_size, 4608);
+        assert_eq!(vision.num_heads, 32);
+        assert_eq!(vision.num_key_value_heads, 8);
+        assert_eq!(vision.num_query_groups, 4);
+        assert_eq!(vision.out_hidden_size, 4096);
+        assert_eq!(vision.temporal_patch_size, 2);
+        assert_eq!(vision.vit_window_attn_types.len(), 28);
+        assert_eq!(vision.vit_window_attn_types[0], -1);
+        assert_eq!(vision.vit_window_attn_types[5], 1);
+        let mimo = config.mimo.as_ref().unwrap();
+        assert_eq!(mimo.vision_model_type.as_deref(), Some("mimovl"));
+        assert_eq!(mimo.vision_start_token_id, Some(151652));
+        assert_eq!(mimo.vision_end_token_id, Some(151653));
+        assert_eq!(mimo.audio_token_id, Some(151669));
+        assert_eq!(mimo.audio_start_token_id, Some(151673));
+        assert_eq!(mimo.audio_end_token_id, Some(151674));
+        let audio = config.mimo.as_ref().unwrap().audio_config.as_ref().unwrap();
+        assert_eq!(audio.audio_channels, 20);
+        assert_eq!(audio.input_local_layers, 6);
+        assert_eq!(audio.input_local_dim, 1024);
+        assert_eq!(audio.input_local_attn_heads, 16);
+        assert_eq!(audio.input_local_head_dim, 64);
+        assert_eq!(audio.out_hidden_size, 4096);
+        assert_eq!(audio.speech_vocab_size, 1280);
+        assert_eq!(audio.speech_zeroemb_idx, 1024);
+        let plan = crate::model_plan::ModelPlan::compile(&config).unwrap();
+        assert!(plan.vision.is_none());
+    }
+
+    #[test]
+    fn mimo_v2_rejects_invalid_signed_vision_pattern_and_audio_id() {
+        let fixture = include_str!("model_packs/mimo_v2/fixtures/config.json");
+        let mut malformed: serde_json::Value = serde_json::from_str(fixture).unwrap();
+        malformed["vision_config"]["vit_window_attn_types"][0] =
+            serde_json::Value::String("full".into());
+        assert!(HfConfig::try_parse(&malformed.to_string()).is_err());
+        malformed["vision_config"]["vit_window_attn_types"][0] = serde_json::Value::from(-1);
+        malformed["audio_config"]["speech_vocab_size"] =
+            serde_json::Value::String("not-a-number".into());
+        assert!(HfConfig::try_parse(&malformed.to_string()).is_err());
     }
 
     #[test]
