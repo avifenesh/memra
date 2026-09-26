@@ -1,0 +1,59 @@
+# DAY86 reader dry check on make-synthetic.py's cell (DAY84's BOX31 runs relabelled, invented vmstat; meaningless)
+DAY86 SLOW CHECKS rig=synthetic runs=50 arms=ref,i20,i21,i22,i22r integrity=ok
+DAY86 RUN o1-ref-r1 gen_s=0.243 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o1-i20-r1 gen_s=0.247 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o1-i21-r1 gen_s=0.300 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o1-i22-r1 gen_s=0.296 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o1-i22r-r1 gen_s=0.297 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o1-ref-r2 gen_s=0.244 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o1-i20-r2 gen_s=0.247 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o1-i21-r2 gen_s=0.248 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o1-i22-r2 gen_s=0.296 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o1-i22r-r2 gen_s=0.299 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o1-ref-r3 gen_s=0.243 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o1-i20-r3 gen_s=0.248 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o1-i21-r3 gen_s=0.301 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o1-i22-r3 gen_s=0.294 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o1-i22r-r3 gen_s=0.298 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o1-ref-r4 gen_s=0.244 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o1-i20-r4 gen_s=0.247 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o1-i21-r4 gen_s=0.246 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o1-i22-r4 gen_s=0.296 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o1-i22r-r4 gen_s=0.296 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o1-ref-r5 gen_s=0.244 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o1-i20-r5 gen_s=0.307 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o1-i21-r5 gen_s=0.246 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o1-i22-r5 gen_s=0.246 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o1-i22r-r5 gen_s=0.246 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o2-ref-r1 gen_s=0.244 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o2-i20-r1 gen_s=0.304 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o2-i21-r1 gen_s=0.305 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o2-i22-r1 gen_s=0.296 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o2-i22r-r1 gen_s=0.294 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o2-ref-r2 gen_s=0.244 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o2-i20-r2 gen_s=0.248 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o2-i21-r2 gen_s=0.247 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o2-i22-r2 gen_s=0.295 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o2-i22r-r2 gen_s=0.298 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o2-ref-r3 gen_s=0.244 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o2-i20-r3 gen_s=0.304 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o2-i21-r3 gen_s=0.297 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o2-i22-r3 gen_s=0.291 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o2-i22r-r3 gen_s=0.294 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o2-ref-r4 gen_s=0.244 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o2-i20-r4 gen_s=0.248 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o2-i21-r4 gen_s=0.247 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o2-i22-r4 gen_s=0.246 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o2-i22r-r4 gen_s=0.296 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 RUN o2-ref-r5 gen_s=0.244 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o2-i20-r5 gen_s=0.247 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o2-i21-r5 gen_s=0.247 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o2-i22-r5 gen_s=0.246 slow=no compact_isolated=1 compact_migrate_scanned=1 compact_fail=1 compact_stall=1 pgmigrate_fail=12 pgmigrate_success=1 thp_fault_alloc=1 thp_fault_fallback=1
+DAY86 RUN o2-i22r-r5 gen_s=0.299 slow=yes compact_isolated=10000 compact_migrate_scanned=10000 compact_fail=10000 compact_stall=10000 pgmigrate_fail=70000 pgmigrate_success=10000 thp_fault_alloc=10000 thp_fault_fallback=10000
+DAY86 SLOW rig=synthetic ref_median=0.244 mark=0.274 ref=0/10 (o1 0, o2 0) i20=3/10 (o1 1, o2 2) i21=4/10 (o1 2, o2 2) i22=7/10 (o1 4, o2 3) i22r=9/10 (o1 4, o2 5)
+DAY86 TEST i21_vs_i20 slow 4/10 against 3/10 one-sided p=0.5000 -> i21_not_shown
+DAY86 TEST i22_vs_i21 slow 7/10 against 4/10 one-sided p=0.1849 -> i22_not_shown
+DAY86 CONTROL i22r slow 9/10 -> registered_does_not
+DAY86 BESIDE compaction (deciding nothing): pgmigrate_fail fast boots max=12 median=12; slow boots min=70000 median=70000; slow boots above the fast maximum 23/23
+DAY86 BESIDE position in the round (deciding nothing): pos0=5/5 pos1=4/10 pos2=4/10 pos3=6/10 pos4=4/5
+DAY86 VERDICT rig=synthetic integrity=ok -> i21_not_shown i22_not_shown registered_does_not

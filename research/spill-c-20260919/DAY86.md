@@ -51,3 +51,18 @@ REF's median by more than 0.030 s). Per arm: slow boots of 10, in each order.
 regression of the default program), and I22 is re-registered on I20; `i22_more_slow` reverts I22 the same way. Either
 `not_shown` keeps the change. The control's verdict adds to the owner's question in `DAY80.md` section 4a and changes
 no default.
+
+## 1a. The sitting, prepared before any cell
+
+`day86-cell.sh`, `day86-read.py` and `day86-box.sh` were written after section 1. The reader on a synthetic cell from
+DAY84's BOX31 receipts relabelled, with invented vmstat sections (`day86-cpu/make-synthetic.py`; meaningless): 50 runs,
+integrity ok, every line printed, the Fisher tests checked against known values (9 of 10 against 1 of 10: p 0.0005; 7
+against 3: 0.089) (`dry-check-reader.log`). The cell under stubs, with and without `run-gen-i22`: 50 and 30 runs in the
+registered order, the registered flags per arm, every snapshot with its vmstat and buddyinfo sections
+(`dry-check-cell.log`). The driver under stubs: the builds, the cell, `--validate`, the reader; a rerun skips the cell
+(`dry-check-driver.log`).
+
+Run as `D86_BUILDS="i20=8efea3a54 i21=b555b4141 i22=4b378a064" bash
+/root/wt-c/research/spill-c-20260919/day86-box.sh` on a Ryzen 9 9950X host with one RTX PRO 6000 Blackwell
+Workstation Edition that has carried at least 12 hours of other sittings since boot (at least 48 GB MemAvailable, the
+artifact and the two worktrees staged as before; about 25 minutes: three builds and 50 runs).
