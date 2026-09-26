@@ -17421,7 +17421,11 @@ default_reasoning_effort = "always"
         );
     }
 
-    #[tokio::test]
+    /// WP-A day 55 (`research/spill-a-20260919/DAY55.md`, OWED item 22, T-b): on tokio's paused
+    /// clock. Every timer on the bridge's path is `tokio::time`, so the 10 ms commit, the 60 ms bound,
+    /// the 80 ms deadline and the 150 ms wait are virtual and exact; on the wall clock a runner that
+    /// starves this task for 60 ms read the commit as late (2 of 100 beside eight burners).
+    #[tokio::test(start_paused = true)]
     async fn an_extended_stream_commits_prefill_then_injects_the_original_deadline() {
         let (tx, rx) = worker::event_channel();
         tx.send(Event::PromptUsage {
@@ -17915,11 +17919,31 @@ default_reasoning_effort = "always"
     /// local-ci window 2026-08-30 — `deadline_shed_is_interactive_only...` shed on a free
     /// slot because a sibling had the interactive counter at max_queue_depth for that
     /// instant). Every test that WRITES these counters serializes here.
-    fn admission_counters_guard() -> std::sync::MutexGuard<'static, ()> {
+    ///
+    /// WP-A day 53 (`research/spill-a-20260919/DAY53.md` section 6, OWED item 21): the guard takes
+    /// `drain_lock()` FIRST, then its own lock. The writers used to hold only this lock while the
+    /// handler tests that READ the counters through a real request hold only `drain_lock()`, so a
+    /// handler request could land inside a writer's window (the backlog swapped to the queue bound)
+    /// and shed 429 `shed_queue`: `responses_carry_rate_limit_headers_and_slot_frees` 7 of 200 full
+    /// suites, three siblings in the same window. A test takes this guard OR `drain_lock()`, never
+    /// both (the census `day53_the_admission_writers_are_ordered_against_the_handler_readers`).
+    fn admission_counters_guard() -> AdmissionCountersGuard {
         static COUNTERS: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        COUNTERS
+        let drain = drain_lock();
+        let counters = COUNTERS
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        AdmissionCountersGuard {
+            _counters: counters,
+            _drain: drain,
+        }
+    }
+
+    /// Both locks of `admission_counters_guard()`; fields drop in declaration order, so the
+    /// counters' lock is released before the drain lock (the reverse of acquisition).
+    struct AdmissionCountersGuard {
+        _counters: std::sync::MutexGuard<'static, ()>,
+        _drain: std::sync::MutexGuard<'static, ()>,
     }
 
     /// Put an admission counter back on DROP — including the drop that unwinds a failed
@@ -22712,6 +22736,155 @@ temperature = 0.6
         fn drop(&mut self) {
             DRAINING.store(false, std::sync::atomic::Ordering::SeqCst);
         }
+    }
+
+    /// WP-A day 53 (`research/spill-a-20260919/DAY53.md` section 6 (a), OWED item 21; CPU census):
+    /// the admission-counter writers are ordered against the handler readers. The counters' guard
+    /// takes `drain_lock()` before its own lock; no test takes both separately (the locks are not
+    /// reentrant); every test that writes `ADMISSION_RESERVATIONS` or `PENDING_ADMITS` takes the
+    /// counters' guard.
+    #[test]
+    fn day53_the_admission_writers_are_ordered_against_the_handler_readers() {
+        let src = include_str!("lib.rs");
+        let tests = &src[src.find("\nmod tests {").expect("the tests module")..];
+        let guard = &tests[tests
+            .find("    fn admission_counters_guard() -> AdmissionCountersGuard {")
+            .expect("the counters' guard")..];
+        let guard = &guard[..guard.find("\n    }\n").unwrap()];
+        let drain = guard
+            .find("let drain = drain_lock();")
+            .expect("the drain lock first");
+        let own = guard
+            .find("let counters = COUNTERS")
+            .expect("then its own lock");
+        assert!(
+            drain < own,
+            "the drain lock is taken before the counters' lock"
+        );
+        // Every test fn, by its body (up to the next fn at the same indentation).
+        let mut starts: Vec<usize> = Vec::new();
+        for pat in ["\n    fn ", "\n    async fn "] {
+            let mut at = 0;
+            while let Some(i) = tests[at..].find(pat) {
+                starts.push(at + i);
+                at += i + pat.len();
+            }
+        }
+        starts.sort_unstable();
+        let mut writers = 0;
+        for (k, &a) in starts.iter().enumerate() {
+            let b = starts.get(k + 1).copied().unwrap_or(tests.len());
+            let body = &tests[a..b];
+            let name = body
+                .trim_start()
+                .trim_start_matches("async ")
+                .trim_start_matches("fn ")
+                .split('(')
+                .next()
+                .unwrap_or("")
+                .to_string();
+            if name == "admission_counters_guard"
+                || name == "drain_lock"
+                || name == "day53_the_admission_writers_are_ordered_against_the_handler_readers"
+            {
+                continue;
+            }
+            assert!(
+                !(body.contains("drain_lock()") && body.contains("admission_counters_guard()")),
+                "{name} takes both locks: the counters' guard already holds the drain lock"
+            );
+            let touches =
+                body.contains("ADMISSION_RESERVATIONS") || body.contains("PENDING_ADMITS");
+            let writes = [
+                ".swap(",
+                ".store(",
+                "fetch_add(",
+                "fetch_update(",
+                "fetch_sub(",
+            ]
+            .iter()
+            .any(|w| body.contains(w));
+            if touches && writes {
+                writers += 1;
+                assert!(
+                    body.contains("admission_counters_guard()"),
+                    "{name} writes a process-global admission counter without the counters' guard"
+                );
+            }
+        }
+        assert!(
+            writers >= 7,
+            "the census found {writers} writers; the survey read seven or more"
+        );
+    }
+
+    /// WP-A day 53 (`research/spill-a-20260919/DAY53.md` section 4, cell D; OWED item 21): a handler
+    /// request made inside an admission-counter writer's window sheds 429 `shed_queue`. The writers
+    /// (`the_queue_bound_sheds_..` and its siblings) hold `admission_counters_guard()` and set the
+    /// process-global interactive backlog to the queue bound; a handler test that holds only
+    /// `drain_lock()` is not ordered against them, which is item 21's placed mechanism. After the
+    /// restore the same request answers 200 and holds its slot.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // allow: both locks are held across the awaits on purpose: the cell is the writer's window
+    async fn day53_a_handler_request_inside_a_writer_window_sheds_429() {
+        // Since F1 the counters' guard includes the drain lock (a test takes one or the other).
+        let _counters = admission_counters_guard();
+        let st = fake_worker_state();
+        let lane = lanes::Lane::Interactive;
+        let counter = &worker::ADMISSION_RESERVATIONS[lane.idx()];
+        let stream_req = || {
+            Json(
+                serde_json::from_value(serde_json::json!({
+                    "model": "m", "prompt": "t", "stream": true
+                }))
+                .unwrap(),
+            )
+        };
+        {
+            let prev = counter.swap(
+                max_queue_depth(lane_cap(lane)),
+                std::sync::atomic::Ordering::AcqRel,
+            );
+            let _restore = CounterRestore(counter, prev);
+            let resp = completions(
+                State(st.clone()),
+                axum::http::HeaderMap::new(),
+                None,
+                stream_req(),
+            )
+            .await;
+            assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+            let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(v["error"]["code"], "shed_queue", "{v}");
+            assert_eq!(
+                st.inflight[0].load(std::sync::atomic::Ordering::SeqCst),
+                0,
+                "a shed request holds no slot"
+            );
+        }
+        let resp = completions(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            stream_req(),
+        )
+        .await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "after the restore the request is admitted"
+        );
+        assert_eq!(
+            st.inflight[0].load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "stream in flight holds the slot"
+        );
+        let _ = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

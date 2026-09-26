@@ -1830,6 +1830,47 @@ pub const QT_Q2_K: i32 = 13;
 /// on the SAME resident bytes+grid (fp8_ffi::try_fp8_blk_mmq) — ONE weight copy total.
 pub const QT_F8_E4M3_BLK: i32 = 14;
 
+/// Spill positioned-read stage counters, cumulative since model load (see
+/// `Engine::moe_pread_stage_stats`). Clocks are host wall nanoseconds summed per stage.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SpillStageStats {
+    /// Positioned-read time on worker threads; concurrent reads overlap.
+    pub worker_read_ns: u64,
+    /// Blocking positioned-read time on the CUDA owner (`MEMRA_SPILL_IO=pread`).
+    pub demand_read_ns: u64,
+    /// Owner time blocked on a worker completion or an H2D event freeing a buffer.
+    pub wait_ns: u64,
+    /// Payload copies submitted to the device from pinned read buffers.
+    pub h2d_submits: u64,
+    /// Direct-window bytes read beyond the payload.
+    pub overread_bytes: u64,
+}
+
+impl SpillStageStats {
+    /// Counter growth from `before` to `self` (saturating: counters never move backwards).
+    pub fn since(&self, before: &Self) -> Self {
+        Self {
+            worker_read_ns: self.worker_read_ns.saturating_sub(before.worker_read_ns),
+            demand_read_ns: self.demand_read_ns.saturating_sub(before.demand_read_ns),
+            wait_ns: self.wait_ns.saturating_sub(before.wait_ns),
+            h2d_submits: self.h2d_submits.saturating_sub(before.h2d_submits),
+            overread_bytes: self.overread_bytes.saturating_sub(before.overread_bytes),
+        }
+    }
+
+    /// One `key=value` line body shared by run-gen and the server snapshot.
+    pub fn fields(&self) -> String {
+        format!(
+            "worker_read_ms={:.3} demand_read_ms={:.3} wait_ms={:.3} h2d_submits={} overread_bytes={}",
+            self.worker_read_ns as f64 / 1e6,
+            self.demand_read_ns as f64 / 1e6,
+            self.wait_ns as f64 / 1e6,
+            self.h2d_submits,
+            self.overread_bytes
+        )
+    }
+}
+
 /// Engine device context: CUDA context, stream, loaded kernel modules, cuBLASLt (via runtime::Gpu).
 pub struct Engine {
     pub gpu: memra_runtime::Gpu,
@@ -6749,6 +6790,22 @@ impl Engine {
                     stats.buffer_waits,
                     stats.ring_full,
                 )
+            })
+    }
+
+    /// Positioned-read stage counters (lane/spill-f-20260919 OWED 8): host wall time and
+    /// over-read bytes of the spill path, `None` when no positioned-read backend was requested.
+    pub fn moe_pread_stage_stats(&self) -> Option<SpillStageStats> {
+        let guard = self.moe_cache.lock().unwrap();
+        guard
+            .as_ref()
+            .and_then(|cache| cache.pread_stats())
+            .map(|stats| SpillStageStats {
+                worker_read_ns: stats.worker_read_ns,
+                demand_read_ns: stats.demand_read_ns,
+                wait_ns: stats.wait_ns,
+                h2d_submits: stats.h2d_submits,
+                overread_bytes: stats.overread_bytes,
             })
     }
 

@@ -1,0 +1,18 @@
+
+running 1 test
+test dsv4_serve::c4_host_budget_tests::a_partial_batch_waits_out_its_window ... FAILED
+
+failures:
+
+---- dsv4_serve::c4_host_budget_tests::a_partial_batch_waits_out_its_window stdout ----
+
+thread 'dsv4_serve::c4_host_budget_tests::a_partial_batch_waits_out_its_window' (234574) panicked at crates/memra-server/src/dsv4_serve.rs:3245:9:
+a partial batch ran after 273.811µs, inside its 20ms window
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    dsv4_serve::c4_host_budget_tests::a_partial_batch_waits_out_its_window
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 952 filtered out; finished in 0.00s
+
