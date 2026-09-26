@@ -227,3 +227,35 @@ W's hold runs its timed boots, nothing of this lane builds.
 - **L'** = L's code re-applied unchanged, plus the gate change. It reruns whole: section 1's (a) to (d), with the
   unit cells, the 11 gates, the chain and demote cells, and the gate's red arm as a twelfth run. The sitting is
   `pro-single-l2/`, receipts `/root/spill-receipts/a-l2`, with `l-reading.py` plus the red arm's exit and FAIL lines.
+
+## 5. The revert, the gate change and L', as built
+
+- **The revert** (`bb3f4c1d1`) removes L's code, keeps its receipts (`day63/`) and keeps T-H on top. The one conflict
+  was the test block where L's two server cells sat beside T-H's; it was resolved by removing only L's cells. Server
+  lib `941 passed`, engine lib `576 passed`.
+- **The gate change** (`217ace3fd`): `one_staging_fill` and `one_staging_fill_promote` count fill events (the boot
+  line or the fresh line) and require exactly one, of the refusal's N. Read offline before any card, on the banked
+  logs:
+
+      L's gate logs (the boot fill):       staging fill event(s) [96], refusal N 96 -> rc 0 (both cells)
+      P2's gate logs (the first-demote fill): staging fill event(s) [96], refusal N 96 -> rc 0 (both cells)
+      L's span-refusal log plus a second fill (a fresh line of 96 appended): staging fill event(s) [96, 96] -> rc 1
+
+  The appended line stands for the regression the check was written against, before its card red arm runs.
+- **L'** (`348d2e8f3`): L's code re-applied unchanged (the revert of the revert, no conflict). Server lib `943
+  passed`, engine lib `578 passed`, clippy `-D warnings`, fmt.
+- **The gate change's red arm** (`pro-single-l2/gate-red-arm.patch`): the D2H span refusal drops each staging buffer
+  (instead of `tier.staging_put(destination)`) and the H2D span refusal drops each source (instead of `staged.bufs.push`),
+  each with a printed marker. It compiles on L' (`cargo check`).
+- **The sitting** `pro-single-l2/`, receipts `/root/spill-receipts/a-l2`: `build.sh <tip> 217ace3fd` (l, redgate, red
+  and base from one clone; base is the gate change's tree, L reverted), then `driver.sh`, each step under one
+  collector hold:
+  - `unit-cells.sh`: L's two native cells green, the length cell red;
+  - `gates.sh`: the 11 gates on l, the fault gate with its changed checks;
+  - `gates-red.sh`: the fault gate on redgate, which must fail both staging-fill checks;
+  - `ab.sh chain` and `ab.sh demote`, 20 boots each;
+  - then `l2-reading.py`: L's reader, the red arm's line `L2 GATE RED ARM .. -> caught (as required)`, and the last
+    line `L2 VERDICT -> ..`.
+  - About 1.75 hours of card time.
+- T-H's sitting (DAY65 section 2) has L in its base and waits for L's verdict. Its `build.sh <tip> 1cba80185` stays
+  valid on the tip, since L' is L's code.
