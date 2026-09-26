@@ -4861,7 +4861,10 @@ fn host_tier_governor(
             .ok_or("host tier governor: capacity overflow")
     };
     let mut capacity = TierBudget::zero(dimensions);
-    capacity.pinned = twice(host_budget)?;
+    // WP-A day 63 (`DAY63.md` design L1.5): one more host budget on the pinned dimension, the lease
+    // pool's idle backings (capped at one budget), so a lease's charge taken while its pooled
+    // backing's charge is still held never refuses.
+    capacity.pinned = thrice(host_budget)?;
     capacity.pageable = twice(host_budget)?;
     capacity.device[device] = thrice(device_budget)?;
     // Option B: the transfer engine charges one in-flight op per K or V plane of the batch
@@ -5035,7 +5038,13 @@ fn host_tier_context(
         "[prefix-host] contracts door: D2H demotes and H2D promotes ride the transfer engine's \
          copy stream and publish at the tick top (memra#536 Move 1)"
     );
-    Ok(HostTierContext {
+    // WP-A day 63 (`DAY63.md` design L1.5): the lease pool's cap is one host budget.
+    transfers.set_lease_pool_cap(hpx.budget as u64);
+    let lease_pool = Some(transfers.lease_pool());
+    // WP-A day 63 (L2.1): the span staging set's lengths, one image's worth over the loaded
+    // models (the max count per length, one demote in flight per worker).
+    let staging_lengths = host_staging_lengths(loaded.values().map(|lm| &lm.model.plan));
+    let ctx = HostTierContext {
         governor,
         programs,
         device: u32::try_from(device)
@@ -5045,7 +5054,85 @@ fn host_tier_context(
         fault: std::cell::Cell::new(HostContractFault::from_door(kv_host_fault())),
         hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()))?,
         staging: std::cell::RefCell::new(HostStaging::default()),
-    })
+        lease_pool,
+    };
+    // WP-A day 63 (L2.2, L2.3): the staging set allocated at boot, charged as today; a refusal
+    // leaves the set partial (the first demote allocates the rest) and never fails the boot.
+    let t0 = Instant::now();
+    let (mut n, mut bytes) = (0usize, 0u64);
+    let mut taken = Vec::new();
+    let mut refused = None;
+    'lengths: for &(len, count) in &staging_lengths {
+        for _ in 0..count {
+            match ctx.staging_take(len) {
+                Ok((buf, _)) => {
+                    n += 1;
+                    bytes += len as u64;
+                    taken.push(buf);
+                }
+                Err(e) => {
+                    refused = Some(e);
+                    break 'lengths;
+                }
+            }
+        }
+    }
+    for buf in taken {
+        ctx.staging_put(buf);
+    }
+    match refused {
+        None => eprintln!(
+            "[prefix-host] contracts door: span staging set allocated at boot: {n} buffers, {:.1} \
+             MB in {:.1} ms",
+            bytes as f64 / 1e6,
+            t0.elapsed().as_secs_f64() * 1e3
+        ),
+        Some(e) => eprintln!(
+            "[prefix-host] contracts door: span staging set at boot stopped after {n} buffers \
+             ({:.1} MB): {e}; the first demote allocates the rest",
+            bytes as f64 / 1e6
+        ),
+    }
+    Ok(ctx)
+}
+
+/// WP-A day 63 (`DAY63.md` design L2.1): the span staging lengths of one image over the loaded
+/// models' plans: each recurrent layer's conv plane (`conv_width x (conv_kernel - 1)` f32) and ssm
+/// plane (`state_width` f32), trunk and MTP blocks, as (bytes, count) with each length's count the
+/// maximum over the models (one demote is in flight per worker). Sorted by length.
+fn host_staging_lengths<'a>(
+    plans: impl Iterator<Item = &'a memra_gguf::model_plan::ModelPlan>,
+) -> Vec<(usize, usize)> {
+    use memra_gguf::model_plan::StatePlan;
+    let mut need: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
+    for plan in plans {
+        let mut here: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
+        for layer in plan
+            .layers
+            .iter()
+            .chain(plan.mtp_blocks.iter().map(|b| &b.layer))
+        {
+            if let StatePlan::Recurrent {
+                conv_width,
+                conv_kernel,
+                state_width,
+            } = layer.state
+            {
+                let conv = conv_width as usize * (conv_kernel as usize).saturating_sub(1) * 4;
+                let ssm = state_width as usize * 4;
+                for len in [conv, ssm] {
+                    if len > 0 {
+                        *here.entry(len).or_default() += 1;
+                    }
+                }
+            }
+        }
+        for (len, c) in here {
+            let e = need.entry(len).or_default();
+            *e = (*e).max(c);
+        }
+    }
+    need.into_iter().collect()
 }
 
 fn kv_host_budget_bytes() -> usize {
@@ -9283,6 +9370,15 @@ impl HostPrefixCache {
                 .close("the tier latched off", HOST_HASH_LATCH_JOIN);
             // WP-A day 30: a latched tier demotes nothing more; its span staging set frees.
             tier.staging.borrow_mut().clear();
+            // WP-A day 63 (L1.6): and its lease pool: idle backings free, pool charges release.
+            if let Some(pool) = &tier.lease_pool {
+                let (n, bytes) = pool.close();
+                eprintln!(
+                    "[prefix-host] lease pool closed (the tier latched off): {n} idle backings, \
+                     {:.1} MB freed",
+                    bytes as f64 / 1e6
+                );
+            }
         }
     }
 
@@ -9624,6 +9720,8 @@ struct HostTierContext {
     /// buffer is charged to the governor's pinned ledger when it is allocated (`HostStaging`);
     /// the set and its charges free at the tier's latch.
     staging: std::cell::RefCell<HostStaging>,
+    /// WP-A day 63 (`DAY63.md` design L1.6): the transfer engine's lease pool, closed at the latch.
+    lease_pool: Option<std::rc::Rc<memra_engine::tier_transfer::LeasePool>>,
 }
 /// WP-A day 31 (DAY30 owed items: the governor charge of the staging, the staging back on every
 /// post-take refusal): the context's span staging set and its pinned charges. A buffer is
@@ -10347,6 +10445,8 @@ struct ContractPlanned {
 struct DemotePresubmitSplit {
     leases_ms: f64,
     leases: usize,
+    /// WP-A day 63 (`DAY63.md` L1.7, log only): the leases the pool served.
+    pooled: u64,
     lease_bytes: u64,
     leases_minflt: i64,
     register_submit_ms: f64,
@@ -11302,6 +11402,33 @@ struct PendingContractPromote {
     /// WP-A day 34 (`DAY34.md` design K): `Some` when the KV items' completion checksums are on the
     /// hash helper (the off-tick route); the settle takes the reply before its completion step.
     helper_sums: Option<PendingSources>,
+    /// WP-A day 64 (`DAY64.md` step 1, log only): what the last `Pending` answer waited on
+    /// (`sources`, `copies`, `receipt`, joined by `+`); printed on the promote's timeline.
+    waiting: String,
+}
+
+/// WP-A day 64 (step 1, log only): the requirements a pending promote still waits on: the helper's
+/// source checksums, the batch's copies, the spans' destination-digest receipt.
+fn host_promote_waiting(
+    t: &memra_engine::tier_transfer::CudaTransfers,
+    ticket: &memra_engine::cache::tiered::TransferTicket,
+    sources_pending: bool,
+) -> String {
+    let (copies, receipt) = t.h2d_landing_parts(ticket).unwrap_or((false, false));
+    let mut w = Vec::new();
+    if sources_pending {
+        w.push("sources");
+    }
+    if !copies {
+        w.push("copies");
+    } else if !receipt {
+        w.push("receipt");
+    }
+    if w.is_empty() {
+        "none".into()
+    } else {
+        w.join("+")
+    }
 }
 
 /// WP-A day 34: the hash helper's source-checksum job of one promote: how many views went, when,
@@ -11464,6 +11591,52 @@ struct PendingCapture {
     /// WP-A day 24: the `trace_prefix_entry_state` role the OFF publisher prints (`snapshot` for
     /// the seed and lcp-split publishes, `spec-snapshot` for the spec-boundary publish).
     trace_role: &'static str,
+    /// WP-A day 62 (`DAY62.md` step 1, log only): the source cache's identity (its layer vector's
+    /// heap address, stable while the cache moves between owners) and the copy-stream work the
+    /// worker had in flight when the capture was submitted, by kind. Printed on the publish line;
+    /// nothing decides on either.
+    source_kv: usize,
+    queued_ahead: String,
+    /// WP-A day 62 (design R1.1): the source session's request id.
+    source_request: String,
+}
+
+/// WP-A day 62 (`DAY62.md` design R1.1): whether a retiring session is the pending capture's
+/// source. Either identity is enough: the request id recorded at submission, or the cache's
+/// layer-vector address (a session with no cache matches by id only). Conservative by
+/// construction: a miss would let a source's cache drop or park under the copy.
+fn r1_is_source(
+    request_id: &str,
+    kv: Option<usize>,
+    source_request: &str,
+    source_kv: usize,
+) -> bool {
+    request_id == source_request || kv.is_some_and(|k| k == source_kv)
+}
+
+/// WP-A day 62 (R1): the retire pass settles the pending capture only when its source retires.
+fn r1_settle_at_retire(source_retiring: bool) -> bool {
+    source_retiring
+}
+
+/// WP-A day 62 (step 1, log only): the copy-stream tickets in flight on this worker, by kind.
+fn host_copy_stream_in_flight(hpx: &HostPrefixCache) -> String {
+    let kinds: Vec<&str> = [
+        (hpx.demoting.is_some(), "demote"),
+        (hpx.promoting.is_some(), "promote"),
+        (
+            hpx.restoring.as_ref().is_some_and(|r| r.contract.is_some()),
+            "restore",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(on, k)| on.then_some(k))
+    .collect();
+    if kinds.is_empty() {
+        "none".into()
+    } else {
+        kinds.join(", ")
+    }
 }
 
 /// What one settle step of a capture batch produced.
@@ -11774,6 +11947,7 @@ fn host_kv_planes_submit_contract(
     let mut hosts = Vec::with_capacity(planned.len() * 2);
     // WP-A day 49 (log only): the pinned destinations' time, count, bytes and minor faults.
     let (leases_t0, leases_f0) = (Instant::now(), thread_minflt());
+    let pooled0 = t.lease_pool_counts().0;
     for p in &planned {
         for n in [p.kb, p.vb] {
             if kv_host_fault() == "alloc-fail" {
@@ -11792,6 +11966,7 @@ fn host_kv_planes_submit_contract(
     let mut split = DemotePresubmitSplit {
         leases_ms: leases_t0.elapsed().as_secs_f64() * 1e3,
         leases: hosts.len(),
+        pooled: t.lease_pool_counts().0 - pooled0,
         lease_bytes: planned.iter().map(|p| (p.kb + p.vb) as u64).sum(),
         leases_minflt: thread_minflt() - leases_f0,
         ..DemotePresubmitSplit::default()
@@ -13272,6 +13447,7 @@ fn host_kv_planes_submit_promote(
         submitted: Instant::now(),
         spans: Vec::new(),
         helper_sums: None,
+        waiting: String::new(),
     })
 }
 
@@ -13300,6 +13476,7 @@ fn host_kv_planes_settle_promote(
         submitted,
         spans,
         mut helper_sums,
+        waiting: _,
     } = pending;
     let Some(transfers) = &tier.transfers else {
         return Err(Latched(
@@ -13343,6 +13520,7 @@ fn host_kv_planes_settle_promote(
                 p.landed = Some((r.bytes, r.helper_ms));
             }
             Ok(None) if wait == ContractWait::Poll && p.handed.elapsed() < HOST_HASH_DEADLINE => {
+                let waiting = host_promote_waiting(&t, &ticket, true);
                 return Ok(PromoteSettle::Pending(PendingContractPromote {
                     ticket,
                     producer,
@@ -13355,6 +13533,7 @@ fn host_kv_planes_settle_promote(
                     submitted,
                     spans,
                     helper_sums,
+                    waiting,
                 }));
             }
             Ok(None) => {
@@ -13397,6 +13576,7 @@ fn host_kv_planes_settle_promote(
         }
     };
     if wait == ContractWait::Poll && !completion.producer_done {
+        let waiting = host_promote_waiting(&t, &ticket, false);
         return Ok(PromoteSettle::Pending(PendingContractPromote {
             ticket,
             producer,
@@ -13409,6 +13589,7 @@ fn host_kv_planes_settle_promote(
             submitted,
             spans,
             helper_sums,
+            waiting,
         }));
     }
     // 6b. Rule 3 (WP-A day 19, `memra_tier::conformance::h2d_reader_fence`, the at-settle install):
@@ -13448,6 +13629,9 @@ fn host_kv_planes_settle_promote(
         bufs: Vec::with_capacity(spans.len()),
     };
     let mut recur: Vec<(HostHashSlot, CudaSlice<f32>)> = Vec::with_capacity(spans.len());
+    // WP-A day 64 (`DAY64.md` section 4 step 1, log only): the span work's phases, read before the
+    // take while the batch still holds its timing events (complete by now; never a wait).
+    let span_timing = t.h2d_span_timing(&ticket);
     if !spans.is_empty() {
         let back = match t.take_h2d_spans(&ticket) {
             Ok(back) => back,
@@ -13741,8 +13925,11 @@ fn host_kv_planes_settle_promote(
         String::new()
     } else {
         format!(
-            "; {} f32 spans landed under the ticket and taken back before the retire",
-            recur.len()
+            "; {} f32 spans landed under the ticket and taken back before the retire{}",
+            recur.len(),
+            span_timing.map_or_else(String::new, |(fill, copies, digests)| format!(
+                " (span receipt: fill {fill:.2} ms, copies {copies:.2} ms, digests {digests:.2} ms)"
+            ))
         )
     };
     // WP-A day 34: where the KV items' checksums ran, after the span term.
@@ -14555,9 +14742,11 @@ fn host_demote_prefix_ref(
                 let total = pending.owner.presubmit_ms;
                 eprintln!(
                     "[prefix-host] demote pre-submit split: ticket seq={seq} leases {:.2} ms ({} \
-                     pinned, {:.1} MB, minflt +{}), register {:.2} ms, spans {:.2} ms, other {:.2} ms \
-                     (pre-submit {total:.2} ms)",
+                     pinned, pooled {} of {}, {:.1} MB, minflt +{}), register {:.2} ms, spans {:.2} ms, \
+                     other {:.2} ms (pre-submit {total:.2} ms)",
                     sp.leases_ms,
+                    sp.leases,
+                    sp.pooled,
                     sp.leases,
                     sp.lease_bytes as f64 / 1e6,
                     sp.leases_minflt,
@@ -16959,9 +17148,10 @@ fn host_promote_settle_with(
     };
     // WP-A day 33 (log only): this settle step on the promote's timeline.
     let outcome = match &settled {
-        Ok(PromoteSettle::Pending(_)) => "pending",
-        Ok(PromoteSettle::Done(..)) => "complete",
-        Err(_) => "failed",
+        // WP-A day 64 (step 1, log only): and what it still waits on.
+        Ok(PromoteSettle::Pending(c)) => format!("pending on {}", c.waiting),
+        Ok(PromoteSettle::Done(..)) => "complete".to_string(),
+        Err(_) => "failed".to_string(),
     };
     let step = host_promote_mark(host, pending.t0, Instant::now());
     pending.timeline.push(format!(
@@ -17159,6 +17349,7 @@ fn prefix_capture_off_tick(
     last_logits: &[f32],
     model: Option<&HybridModel>,
     why: &str,
+    source_request: &str,
 ) -> CaptureRoute {
     // WP-A day 54 (log only): every `OnTick` answer records its reason first.
     if hpx.capture_off_tick_disabled || hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
@@ -17247,6 +17438,7 @@ fn prefix_capture_off_tick(
         CaptureSubmit {
             pool_key,
             why,
+            source_request,
             pos: cache.pos,
             toks,
             cache,
@@ -17274,6 +17466,9 @@ fn prefix_capture_off_tick(
 struct CaptureSubmit<'a> {
     pool_key: &'a PoolKey,
     why: &'a str,
+    /// WP-A day 62 (design R1.1): the source session's request id (every capture's source is an
+    /// active session), the retire pass's first source identity.
+    source_request: &'a str,
     pos: usize,
     toks: &'a [u32],
     cache: &'a Cache,
@@ -17305,6 +17500,7 @@ fn host_capture_submit(
     let CaptureSubmit {
         pool_key,
         why,
+        source_request,
         pos,
         toks,
         cache,
@@ -17671,6 +17867,7 @@ fn host_capture_submit(
         toks.len(),
         bytes as f64 / 1e6,
     );
+    let queued_ahead = host_copy_stream_in_flight(hpx);
     hpx.capturing = Some(PendingCapture {
         pool_key: pool_key.clone(),
         why: why.to_string(),
@@ -17690,6 +17887,9 @@ fn host_capture_submit(
         settle_after_ms: 0.0,
         settle_held_ms: 0.0,
         trace_role,
+        source_kv: cache.kv.as_ptr() as usize,
+        queued_ahead,
+        source_request: source_request.to_string(),
     });
     CaptureRoute::Submitted
 }
@@ -17726,6 +17926,7 @@ fn prefix_spec_capture_off_tick(
     dspark_tail: bool,
     cap: memra_engine::spec::SpecBoundaryCapture,
     why: &str,
+    source_request: &str,
 ) -> SpecCaptureRoute {
     // WP-A day 54 (log only): every `OnTick` answer records its reason first.
     if hpx.capture_off_tick_disabled || hpx.tier.as_ref().is_none_or(|t| t.transfers.is_none()) {
@@ -17814,6 +18015,7 @@ fn prefix_spec_capture_off_tick(
         CaptureSubmit {
             pool_key,
             why,
+            source_request,
             pos,
             toks: &committed[..pos],
             cache,
@@ -18221,6 +18423,7 @@ fn host_capture_publish(
         settle_after_ms,
         settle_held_ms,
         trace_role,
+        queued_ahead,
         ..
     } = pending;
     let Some(e) = shell else {
@@ -18234,7 +18437,7 @@ fn host_capture_publish(
         "[prefix-cache] capture published off the tick ({why}): {} tokens complete after {polls} \
          poll(s), {copy_ms:.1}ms from submission to completion, {:.1}ms to publication ({settled_by}; \
          the settle held the owner thread {settle_held_ms:.2}ms, entered {settle_after_ms:.1}ms after \
-         submission)",
+         submission; copy stream in flight at submission: {queued_ahead})",
         e.toks.len(),
         t0.elapsed().as_secs_f64() * 1e3,
     );
@@ -21943,6 +22146,7 @@ fn prefix_insert_from_spec_boundary(
     dspark_draft: Option<memra_engine::dflash::DflashKvTail>,
     cap: memra_engine::spec::SpecBoundaryCapture,
     why: &str,
+    source_request: &str,
 ) {
     if memra_engine::pp::pp_host_bounce_active() {
         return;
@@ -21969,6 +22173,7 @@ fn prefix_insert_from_spec_boundary(
         dspark_draft.is_some(),
         cap,
         why,
+        source_request,
     ) {
         SpecCaptureRoute::Routed(CaptureRoute::Submitted | CaptureRoute::Refused) => return,
         SpecCaptureRoute::Routed(CaptureRoute::OnTick) => unreachable!(
@@ -22268,6 +22473,7 @@ fn prefix_insert_from_session(
         &s.last_logits,
         model,
         why,
+        &s.request_id,
     ) {
         CaptureRoute::Submitted | CaptureRoute::Refused => return,
         CaptureRoute::OnTick => {}
@@ -23464,6 +23670,7 @@ fn publish_dspark_prefix_capture_inner(
         dspark_tail,
         cap,
         "dspark-boundary",
+        &s.request_id,
     );
 }
 
@@ -23528,6 +23735,7 @@ fn drain_glm5_prefix_capture(
         tail,
         cap,
         "glm5-boundary",
+        &s.request_id,
     );
 }
 
@@ -27701,6 +27909,7 @@ pub fn run(
                             None, // MTP publisher: its draft state rides `draft`, not the dspark tail
                             cap,
                             "spec-boundary",
+                            &s.request_id,
                         );
                     }
                 }
@@ -29234,13 +29443,41 @@ pub fn run(
         // to rewrite; either would run under the in-flight read. Settle the `Capturing` entry
         // BLOCKING before any session leaves `active`. One capture per worker.
         if !finished.is_empty() && hpx.capturing.is_some() {
-            host_capture_settle_pending(
-                &engine,
-                &mut px,
-                &mut hpx,
-                ContractWait::Block,
-                "a session retire",
-            );
+            // WP-A day 62 (`DAY62.md` design R1): the capture copies only its source's planes, so
+            // it settles here only when a retiring session is its source, by either identity
+            // (its request id, or its cache's layer-vector address); any other retire goes on.
+            let (source_kv, source_request, ticket) = hpx
+                .capturing
+                .as_ref()
+                .map(|c| {
+                    (
+                        c.source_kv,
+                        c.source_request.clone(),
+                        c.contract.as_ref().map(|k| k.ticket.sequence),
+                    )
+                })
+                .unwrap_or_default();
+            let source_retiring = finished.iter().any(|&i| {
+                r1_is_source(
+                    &active[i].request_id,
+                    active[i].cache.as_ref().map(|c| c.kv.as_ptr() as usize),
+                    &source_request,
+                    source_kv,
+                )
+            });
+            if r1_settle_at_retire(source_retiring) {
+                let why = format!(
+                    "a session retire (source retiring: {})",
+                    if source_retiring { "yes" } else { "no" }
+                );
+                host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, &why);
+            } else if hpx.tier.is_some() {
+                eprintln!(
+                    "[prefix-cache] retire with a capture pending: no retiring session is its \
+                     source (ticket seq={}); no settle",
+                    ticket.map_or_else(|| "none".to_string(), |t| t.to_string())
+                );
+            }
         }
         for &i in finished.iter().rev() {
             let mut s = active.remove(i);
@@ -46833,6 +47070,7 @@ mod tests {
             fault: std::cell::Cell::new(None),
             hasher: super::HostHashWorker::spawn(None).unwrap(),
             staging: std::cell::RefCell::new(super::HostStaging::default()),
+            lease_pool: None,
         }
     }
 
@@ -47113,6 +47351,9 @@ mod tests {
             settle_after_ms: 0.0,
             settle_held_ms: 0.0,
             trace_role: "snapshot",
+            source_kv: 0,
+            queued_ahead: "none".into(),
+            source_request: "seed-request".into(),
         });
     }
 
@@ -47755,12 +47996,18 @@ mod tests {
         let settle = body[..remove]
             .rfind("host_capture_settle_pending(")
             .expect("a pending capture settles before any session leaves active");
+        // (Design R1, day 62 section 8: the no-source branch's line sits between them.)
         assert!(
-            remove - settle < 400,
+            remove - settle < 900,
             "the settle sits right before the retire loop"
         );
         assert!(body[settle..settle + 200].contains("ContractWait::Block"));
-        assert!(body[settle..settle + 200].contains("\"a session retire\""));
+        assert!(
+            body[..settle]
+                .rfind("\"a session retire (source retiring: {})\"")
+                .is_some_and(|w| settle - w < 400),
+            "the retire's why names whether the source retires (day 62)"
+        );
         let route = body.find("fn prefix_capture_off_tick(").unwrap();
         let submit = route
             + body[route..]
@@ -48433,6 +48680,7 @@ mod tests {
             submitted: std::time::Instant::now(),
             spans: Vec::new(),
             helper_sums: None,
+            waiting: String::new(),
         };
         host.promoting = Some(super::PendingPromote {
             pool_key: pool_key.clone(),
@@ -50107,6 +50355,245 @@ mod tests {
         );
     }
 
+    /// WP-A day 62 (`DAY62.md` step 1; CPU census): the retire seam's lines. `source_kv` and
+    /// `queued_ahead` are written at submission and read only by the retire pass and the publish
+    /// line; since design R1 (section 8) the source test decides whether the retire settles, and
+    /// a settle still precedes any session's removal.
+    #[test]
+    fn day62_the_retire_seam_lines_are_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        // Design R1 (day 62 section 8) makes the source test a decision: computed, handed to
+        // `r1_settle_at_retire` (its parameter and body), then printed on the settle's why.
+        assert_eq!(
+            production.matches("source_retiring").count(),
+            5,
+            "R1's decision and the why"
+        );
+        assert!(production.contains("if source_retiring { \"yes\" } else { \"no\" }"));
+        assert_eq!(
+            production.matches(".source_kv").count(),
+            1,
+            "read once, by the retire's why"
+        );
+        assert_eq!(
+            production.matches("queued_ahead").count(),
+            5,
+            "the field, the submission's read, the struct literal, the destructure, the print"
+        );
+        let retire = &production[production
+            .find("let (source_kv, source_request, ticket) = hpx")
+            .unwrap()..];
+        let settle = retire.find(
+            "host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, &why);",
+        );
+        let remove = retire.find("let mut s = active.remove(i);");
+        assert!(
+            settle.unwrap() < remove.unwrap(),
+            "the Block settle still precedes the removal"
+        );
+    }
+
+    /// WP-A day 62 design R1 (`DAY62.md` section 8): the source test and the settle decision.
+    #[test]
+    fn day62_r1_settles_only_when_the_source_retires_by_either_identity() {
+        use super::{r1_is_source, r1_settle_at_retire};
+        assert!(
+            r1_is_source("req-7", Some(0x10), "req-7", 0x20),
+            "the request id alone"
+        );
+        assert!(
+            r1_is_source("req-8", Some(0x20), "req-7", 0x20),
+            "the cache address alone"
+        );
+        assert!(
+            r1_is_source("req-7", None, "req-7", 0x20),
+            "no cache, the id"
+        );
+        assert!(!r1_is_source("req-8", Some(0x10), "req-7", 0x20), "neither");
+        assert!(
+            !r1_is_source("req-8", None, "req-7", 0x20),
+            "neither, no cache"
+        );
+        assert!(r1_settle_at_retire(true) && !r1_settle_at_retire(false));
+    }
+
+    /// WP-A day 62 design R1 (CPU census): every capture records its source's request id (the
+    /// seed route from its session, the spec-boundary route from each of its three publishers);
+    /// the retire pass computes the source test from both identities and settles only then; no
+    /// other capture settle site changes.
+    #[test]
+    fn day62_r1_every_capture_names_its_source_and_only_the_retire_settle_changes() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert_eq!(
+            production
+                .matches("source_request: source_request.to_string(),")
+                .count(),
+            1
+        );
+        assert_eq!(
+            production
+                .matches("            source_request,\n            pos")
+                .count(),
+            2,
+            "both routes' submits"
+        );
+        for publisher in [
+            "\"dspark-boundary\",\n        &s.request_id,",
+            "\"glm5-boundary\",\n        &s.request_id,",
+            "\"spec-boundary\",\n                            &s.request_id,",
+            "        why,\n        &s.request_id,\n    ) {",
+        ] {
+            assert!(
+                production.contains(publisher),
+                "{publisher} names its source"
+            );
+        }
+        let retire = &production[production
+            .find("let (source_kv, source_request, ticket) = hpx")
+            .unwrap()..];
+        let test = retire.find("r1_is_source(").unwrap();
+        let decide = retire
+            .find("if r1_settle_at_retire(source_retiring) {")
+            .unwrap();
+        let settle = retire.find("host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, &why);").unwrap();
+        assert!(test < decide && decide < settle);
+        for site in [
+            "\"a second capture\"",
+            "\"a trim\"",
+            "\"a tenant purge\"",
+            "\"shutdown\"",
+        ] {
+            assert!(production.contains(site), "{site} keeps its settle");
+        }
+        assert_eq!(production.matches("\"a second capture\"").count(), 2);
+    }
+
+    /// WP-A day 63 (`DAY63.md` design L2.1): the staging lengths of one image, the max count per
+    /// length over the loaded models, trunk and MTP blocks.
+    #[test]
+    fn day63_the_staging_set_at_boot_is_one_image_over_the_models() {
+        use memra_gguf::config::{HfConfig, ModelConfig};
+        let plan = |layers: u32, heads: u32| {
+            memra_gguf::model_plan::ModelPlan::compile(&ModelConfig::from_hf(&HfConfig::parse(
+                &format!(
+                    r#"{{"model_type":"qwen3_5","num_hidden_layers":{layers},"hidden_size":64,
+                "num_attention_heads":2,"num_key_value_heads":1,"head_dim":32,
+                "intermediate_size":128,"vocab_size":16,"max_position_embeddings":128,
+                "full_attention_interval":2,"linear_conv_kernel_dim":3,
+                "linear_key_head_dim":32,"linear_value_head_dim":32,
+                "linear_num_key_heads":1,"linear_num_value_heads":{heads}}}"#
+                ),
+            )))
+            .unwrap()
+        };
+        let a = plan(4, 2);
+        let recurrent = |p: &memra_gguf::model_plan::ModelPlan| {
+            p.layers
+                .iter()
+                .chain(p.mtp_blocks.iter().map(|b| &b.layer))
+                .filter(|l| matches!(l.state, memra_gguf::model_plan::StatePlan::Recurrent { .. }))
+                .count()
+        };
+        let one = super::host_staging_lengths([&a].into_iter());
+        assert_eq!(
+            one.iter().map(|&(_, c)| c).sum::<usize>(),
+            2 * recurrent(&a),
+            "two planes per layer"
+        );
+        assert!(one.iter().all(|&(len, _)| len > 0 && len % 4 == 0));
+        let b = plan(8, 2);
+        let two = super::host_staging_lengths([&a, &b].into_iter());
+        assert_eq!(
+            two,
+            super::host_staging_lengths([&b].into_iter()),
+            "the max count, never the sum"
+        );
+        let c = plan(4, 4);
+        let mixed = super::host_staging_lengths([&a, &c].into_iter());
+        let total: usize = mixed.iter().map(|&(_, n)| n).sum();
+        assert!(total <= 2 * recurrent(&a) + 2 * recurrent(&c));
+        assert!(
+            mixed.windows(2).all(|w| w[0].0 < w[1].0),
+            "sorted by length"
+        );
+    }
+
+    /// WP-A day 63 (design L1.5, L1.6, L2; CPU census): the pinned capacity is three host budgets;
+    /// the lease pool's cap is set to one budget at the context's build and it closes at the latch;
+    /// the staging set is allocated at boot through `staging_take` and put back.
+    #[test]
+    fn day63_the_pool_and_the_boot_staging_are_wired_as_stated() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert!(production.contains("capacity.pinned = thrice(host_budget)?;"));
+        let build = &production[production.find("fn host_tier_context(").unwrap()..];
+        let build = &build[..build.find("\n}\n").unwrap()];
+        let cap = build
+            .find("transfers.set_lease_pool_cap(hpx.budget as u64);")
+            .unwrap();
+        let take = build.find("match ctx.staging_take(len) {").unwrap();
+        let put = build.find("ctx.staging_put(buf);").unwrap();
+        assert!(cap < take && take < put);
+        let disable = &production[production
+            .find("    fn disable(&mut self, why: &str) {")
+            .unwrap()..];
+        let disable = &disable[..disable.find("\n    }\n").unwrap()];
+        assert!(disable.contains("let (n, bytes) = pool.close();"));
+    }
+
+    /// WP-A day 64 (`DAY64.md` step 1; CPU census): the promote's waiting labels are log only. The
+    /// engine's parts query is read only by `host_promote_waiting`; `waiting` is written only at the
+    /// two `Pending` answers and read only by the timeline's outcome; no decision reads either.
+    #[test]
+    fn day64_the_promote_waiting_labels_are_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert_eq!(production.matches("h2d_landing_parts(").count(), 1);
+        assert_eq!(
+            production
+                .matches("host_promote_waiting(&t, &ticket, ")
+                .count(),
+            2
+        );
+        assert_eq!(
+            production.matches("c.waiting").count(),
+            1,
+            "the timeline's outcome only"
+        );
+        assert!(!production.contains("if waiting") && !production.contains("waiting =="));
+        assert!(
+            production.contains(
+                "Ok(PromoteSettle::Pending(c)) => format!(\"pending on {}\", c.waiting),"
+            )
+        );
+    }
+
+    /// WP-A day 64 (`DAY64.md` section 4 step 1; CPU census): the span receipt's phase timing is
+    /// log only: read once before the take, printed on the H2D receipt line, never compared.
+    #[test]
+    fn day64_the_span_receipt_timing_is_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert_eq!(production.matches("h2d_span_timing(").count(), 1);
+        assert_eq!(
+            production.matches("span_timing").count(),
+            3,
+            "the engine call, the binding, the print"
+        );
+        let settle = &production[production
+            .find("let span_timing = t.h2d_span_timing(&ticket);")
+            .unwrap()..];
+        assert!(
+            settle.find("let span_timing").unwrap()
+                < settle.find("t.take_h2d_spans(&ticket)").unwrap()
+        );
+        assert!(
+            !production.contains("if span_timing") && !production.contains("span_timing.is_some()")
+        );
+    }
+
     /// WP-A day 66 (`DAY66.md`): a stray timed call of any kind before a scoped call never reaches
     /// the scoped split; a second scoped call reads only its own calls.
     #[test]
@@ -51375,6 +51862,7 @@ mod tests {
             fault: std::cell::Cell::new(None),
             hasher: super::HostHashWorker::spawn(None).unwrap(),
             staging: std::cell::RefCell::new(super::HostStaging::default()),
+            lease_pool: None,
         }
     }
 

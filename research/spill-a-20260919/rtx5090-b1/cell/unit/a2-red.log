@@ -1,0 +1,18 @@
+
+running 1 test
+test worker::tests::b1_snapshot_and_restore_are_the_copy_program ... [b1 red arm] the kernel skips each item's last byte
+
+thread 'worker::tests::b1_snapshot_and_restore_are_the_copy_program' (994598) panicked at crates/memra-server/src/worker.rs:50221:29:
+assertion `left == right` failed: tiny pos 1 K 1
+  left: [231, 224, 183, 54, 142, 193, 208, 109, 15, 217, 212, 121, 149, 38, 204, 191, 10, 220, 181, 22, 254, 7, 123, 203, 0, 158, 127, 85, 135, 166, 29, 147, 110, 0]
+ right: [231, 224, 183, 54, 142, 193, 208, 109, 15, 217, 212, 121, 149, 38, 204, 191, 10, 220, 181, 22, 254, 7, 123, 203, 0, 158, 127, 85, 135, 166, 29, 147, 110, 104]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    worker::tests::b1_snapshot_and_restore_are_the_copy_program
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 960 filtered out; finished in 0.29s
+

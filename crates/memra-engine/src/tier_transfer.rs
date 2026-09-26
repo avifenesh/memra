@@ -28,7 +28,7 @@ pub const D2D_DELAY_FAULT_NS: u64 = 200_000_000;
 /// copy phase.
 pub const D2H_DELAY_FAULT_NS: u64 = 3_000_000_000;
 use std::{
-    cell::{Ref, RefCell},
+    cell::{Cell, Ref, RefCell},
     collections::HashMap,
     rc::Rc,
     sync::Arc,
@@ -104,6 +104,9 @@ impl PinnedKind {
 pub struct PinnedBacking {
     ptr: *mut u8,
     len: usize,
+    /// WP-A day 63 (`DAY63.md` design L1.1): the allocation's size (a pooled lease's size class).
+    /// Nothing reads past `len`: every slice, view and copy spans `len`.
+    capacity: usize,
     kind: PinnedKind,
     event: CudaEvent,
 }
@@ -130,6 +133,7 @@ impl PinnedBacking {
         Ok(Self {
             ptr,
             len: bytes,
+            capacity: bytes,
             kind,
             event,
         })
@@ -139,6 +143,16 @@ impl PinnedBacking {
     }
     pub fn is_empty(&self) -> bool {
         self.len == 0
+    }
+    /// WP-A day 63 (L1.1): the allocation's size; a lease exposes only `len` of it.
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+    /// WP-A day 63 (L1.3): a pooled backing handed to a new lease of `len` bytes (at most its
+    /// capacity; every byte up to the capacity was initialized by the backing's first lease).
+    fn set_len(&mut self, len: usize) {
+        assert!(len <= self.capacity, "a lease never exceeds its backing");
+        self.len = len;
     }
     pub fn kind(&self) -> PinnedKind {
         self.kind
@@ -238,6 +252,8 @@ struct PinnedAllocation {
     charge: Option<ChargedLease>,
     pin: Option<LeasePin>,
     governor: SharedBudget,
+    /// WP-A day 63 (L1.4): where the backing goes when the lease drops.
+    pool: Option<Rc<LeasePool>>,
 }
 impl std::fmt::Debug for CudaPinnedLease {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -349,13 +365,118 @@ impl Drop for PinnedAllocation {
             std::mem::forget(self.charge.take());
             return;
         }
-        drop(self.backing.take());
+        let backing = self.backing.take();
         drop(self.pin.take());
         if let Some(c) = self.charge.take()
             && self.governor.borrow_mut().release(&c).is_err()
         {
             std::mem::forget(c);
         }
+        // WP-A day 63 (`DAY63.md` design L1.4): the backing parks in the pool (charged to the pool
+        // tenant) instead of `cuMemFreeHost`, unless the pool is closed or full; then it frees.
+        match (backing, &self.pool) {
+            (Some(b), Some(pool)) => pool.put(b),
+            (b, _) => drop(b),
+        }
+    }
+}
+
+/// WP-A day 63 (`DAY63.md` design L1): the size class of a pooled lease backing. At or below 1 MiB
+/// the next power of two, above it the next 1 MiB multiple.
+pub fn lease_class(bytes: usize) -> usize {
+    const MIB: usize = 1 << 20;
+    if bytes <= MIB {
+        bytes.max(1).next_power_of_two()
+    } else {
+        bytes.div_ceil(MIB) * MIB
+    }
+}
+
+/// WP-A day 63 (`DAY63.md` design L1): the transfer engine's pool of pinned lease backings. A
+/// dropped lease's backing parks here (its tracking event synchronized) and the next allocation of
+/// its class and kind takes it, so no `cuMemFreeHost` (a context-wide wait) and no fresh
+/// `cuMemHostAlloc` plus zero fill reach the serving path in the steady state. Idle bytes are
+/// charged to the pinned ledger under the pool tenant, capped at `cap`. Closed at the tier's latch
+/// and when the engine drops: every idle backing frees, every pool charge releases.
+pub struct LeasePool {
+    idle: RefCell<Vec<(PinnedBacking, ChargedLease)>>,
+    idle_bytes: Cell<u64>,
+    cap: Cell<u64>,
+    open: Cell<bool>,
+    governor: SharedBudget,
+    dimensions: usize,
+    /// (taken from the pool, allocated fresh) since the engine was built (log only).
+    counts: Cell<(u64, u64)>,
+}
+impl LeasePool {
+    fn new(governor: SharedBudget) -> Self {
+        let dimensions = governor.borrow().used().device.len();
+        Self {
+            idle: RefCell::new(Vec::new()),
+            idle_bytes: Cell::new(0),
+            cap: Cell::new(0),
+            open: Cell::new(true),
+            governor,
+            dimensions,
+            counts: Cell::new((0, 0)),
+        }
+    }
+    /// The pool tenant's digest (a domain disjoint from every tenant salt).
+    pub fn tenant() -> [u8; 32] {
+        digest("host-tier-lease-pool", b"pinned lease backings")
+    }
+    /// An idle backing of exactly this class and kind, its pool charge released.
+    fn take(&self, class: usize, kind: PinnedKind) -> Option<PinnedBacking> {
+        let (backing, charge) = {
+            let mut idle = self.idle.borrow_mut();
+            let i = idle
+                .iter()
+                .position(|(b, _)| b.capacity == class && b.kind == kind)?;
+            idle.swap_remove(i)
+        };
+        self.idle_bytes.set(self.idle_bytes.get() - class as u64);
+        if self.governor.borrow_mut().release(&charge).is_err() {
+            std::mem::forget(charge);
+        }
+        Some(backing)
+    }
+    /// A dropped lease's backing: parked under a pool charge when the pool is open and has room,
+    /// freed otherwise.
+    fn put(&self, backing: PinnedBacking) {
+        let class = backing.capacity as u64;
+        if !self.open.get() || self.idle_bytes.get() + class > self.cap.get() {
+            drop(backing);
+            return;
+        }
+        let mut request = BudgetRequest {
+            bytes: TierBudget::zero(self.dimensions),
+            priority: Priority::Backup,
+            deadline: Deadline(u64::MAX),
+            tenant: Self::tenant(),
+        };
+        request.bytes.pinned = class;
+        let charge = self.governor.borrow_mut().reserve(&request);
+        match charge {
+            Ok(charge) => {
+                self.idle_bytes.set(self.idle_bytes.get() + class);
+                self.idle.borrow_mut().push((backing, charge));
+            }
+            Err(_) => drop(backing),
+        }
+    }
+    /// Close: every idle backing frees and every pool charge releases; later drops free.
+    /// Returns (backings freed, bytes). Idempotent.
+    pub fn close(&self) -> (usize, u64) {
+        self.open.set(false);
+        let idle = std::mem::take(&mut *self.idle.borrow_mut());
+        let (n, bytes) = (idle.len(), self.idle_bytes.replace(0));
+        for (backing, charge) in idle {
+            drop(backing);
+            if self.governor.borrow_mut().release(&charge).is_err() {
+                std::mem::forget(charge);
+            }
+        }
+        (n, bytes)
     }
 }
 struct Item {
@@ -601,6 +722,10 @@ struct H2dSpanBatch {
     /// WP-A day 40 (design S): the spans' destination digests, 32 bytes per span, sealed by
     /// `receipt.event` after them; the batch lands only with it.
     receipt: Option<ReceiptScratch>,
+    /// WP-A day 64 (`DAY64.md` section 4 step 1, log only): four timing events on the copy stream
+    /// (the span work's start, after the fill, after the last span copy, after the digests and the
+    /// lanes' D2H), read by `h2d_span_timing` once complete and never waited on.
+    timing: Vec<CudaEvent>,
 }
 /// WP-A day 42 (`DAY42.md` design S2): the by-value argument of `span_receipt_digests`
 /// (`cu/tier_receipt.cu` `SpanItems`): up to `SPAN_ITEMS` spans per launch, their device
@@ -860,6 +985,8 @@ pub struct CudaTransfers {
     /// thread would hold it behind any long copy-stream or receipt-stream work. Freed only when the
     /// engine drops (the latch or shutdown).
     twin_pool: RefCell<Vec<PinnedBacking>>,
+    /// WP-A day 63 (`DAY63.md` design L1): the lease backing pool (closed at the latch and at drop).
+    lease_pool: Rc<LeasePool>,
     /// WP-A day 39 (`DAY39.md` design T): the host threads a filled promote's staging fill runs
     /// on at most (`fill_threads_for_host` of the host's available parallelism, read once here);
     /// each fill takes `fill_threads_for_bytes` of it.
@@ -907,6 +1034,13 @@ pub struct CudaTransfers {
     #[cfg(test)]
     span_enqueue_fault: bool,
 }
+/// WP-A day 63 (L1.6): the lease pool closes with the engine (idle backings free, pool charges
+/// release); leases still held elsewhere free at their own drop.
+impl Drop for CudaTransfers {
+    fn drop(&mut self) {
+        self.lease_pool.close();
+    }
+}
 impl CudaTransfers {
     /// Construct on the designated CUDA owner thread with its existing stream.
     pub fn new(owner: Arc<CudaStream>, governor: SharedBudget) -> Result<Self> {
@@ -927,6 +1061,7 @@ impl CudaTransfers {
             stream: owner,
             copy: None,
             twin_pool: RefCell::new(Vec::new()),
+            lease_pool: Rc::new(LeasePool::new(governor.clone())),
             fill_threads: fill_threads_for_host(
                 std::thread::available_parallelism().map_or(1, |n| n.get()),
             ),
@@ -1372,6 +1507,21 @@ impl CudaTransfers {
     pub fn pinned_default(&self) -> PinnedKind {
         self.pinned_default
     }
+    /// WP-A day 63 (L1.5): the lease pool's idle cap in bytes (0, the default, pools nothing).
+    pub fn set_lease_pool_cap(&self, bytes: u64) {
+        self.lease_pool.cap.set(bytes);
+    }
+    /// WP-A day 63 (L1.6): the lease pool's handle, so the tier's latch can close it without
+    /// borrowing the engine.
+    pub fn lease_pool(&self) -> Rc<LeasePool> {
+        self.lease_pool.clone()
+    }
+    /// WP-A day 63 (L1.7, log only): (taken from the pool, allocated fresh) since the engine was
+    /// built, and the pool's idle bytes.
+    pub fn lease_pool_counts(&self) -> (u64, u64, u64) {
+        let (taken, fresh) = self.lease_pool.counts.get();
+        (taken, fresh, self.lease_pool.idle_bytes.get())
+    }
     /// Admission policy belongs to the caller; only the physical dimension is set here.
     /// The allocation carries the device's default flag bits (`pinned_default`: cached on a card
     /// class with a receipt, write-combined elsewhere).
@@ -1390,17 +1540,36 @@ impl CudaTransfers {
         if bytes == 0 || bytes > isize::MAX as usize {
             return Err(Error::InvalidLayout);
         }
+        // WP-A day 63 (`DAY63.md` design L1.2, L1.3): the lease is charged its size class (the
+        // pinned memory it holds), then takes an idle backing of that class and kind, or a fresh
+        // one zero-filled over the whole class. A pooled backing is not refilled: every byte of it
+        // was initialized by its first lease, and nothing reads past the new lease's length.
+        let class = lease_class(bytes);
         request.bytes = TierBudget::zero(self.used().device.len());
-        request.bytes.pinned = bytes as u64;
+        request.bytes.pinned = class as u64;
         let charge = self.governor.borrow_mut().reserve(&request)?;
+        let pooled = self.lease_pool.take(class, kind);
+        let (taken, fresh) = self.lease_pool.counts.get();
+        self.lease_pool.counts.set(if pooled.is_some() {
+            (taken + 1, fresh)
+        } else {
+            (taken, fresh + 1)
+        });
         // Initialize through a raw pointer: constructing an uninitialized slice
         // would itself be invalid, even if immediately followed by fill().
         let allocation = (|| {
-            let mut backing =
-                cuda(unsafe { PinnedBacking::alloc(self.stream.context(), bytes, kind) })?;
-            unsafe {
-                cuda(backing.as_mut_ptr())?.write_bytes(0, bytes);
-            }
+            let mut backing = match pooled {
+                Some(b) => b,
+                None => {
+                    let mut b =
+                        cuda(unsafe { PinnedBacking::alloc(self.stream.context(), class, kind) })?;
+                    unsafe {
+                        cuda(b.as_mut_ptr())?.write_bytes(0, class);
+                    }
+                    b
+                }
+            };
+            backing.set_len(bytes);
             Ok(backing)
         })();
         match allocation {
@@ -1410,6 +1579,7 @@ impl CudaTransfers {
                     pin: Some(charge.pin()?),
                     charge: Some(charge),
                     governor: self.governor.clone(),
+                    pool: Some(self.lease_pool.clone()),
                 }),
             }),
             Err(e) => {
@@ -2848,6 +3018,13 @@ impl CudaTransfers {
             Ok(admitted) => admitted,
             Err(error) => return Err((error, spans, fills)),
         };
+        // WP-A day 64 (`DAY64.md` section 4 step 1, log only): a timing event at each phase
+        // boundary of the span work (the start, after the fill, after the copies, after the seal).
+        let timed = |copy: &Arc<CudaStream>| {
+            copy.record_event(Some(sys::CUevent_flags::CU_EVENT_DEFAULT))
+                .ok()
+        };
+        let mut timing: Vec<CudaEvent> = timed(&copy).into_iter().collect();
         // Day 33 (design F): the fill, ONE host function on the copy stream ahead of every copy;
         // day 39 (design T): split inside it across the engine's fill threads.
         if let Some(fills) = fills {
@@ -2883,6 +3060,7 @@ impl CudaTransfers {
                 return Err((cuda::<()>(Err(e)).unwrap_err(), spans, Some(fills)));
             }
         }
+        timing.extend(timed(&copy));
         #[cfg(test)]
         let mut fault = std::mem::take(&mut self.span_enqueue_fault);
         let mut failed = false;
@@ -2919,6 +3097,7 @@ impl CudaTransfers {
             failed |= event.is_none();
             slots.push((span, event));
         }
+        timing.extend(timed(&copy));
         // WP-A day 40 (design S): after every copy, each span's DESTINATION digest over its device
         // plane (design S2: ONE launch per 64 spans), then one D2H of the lanes into the twin and
         // the span receipt's event: the batch lands only with it.
@@ -2942,12 +3121,14 @@ impl CudaTransfers {
             })();
             failed |= sealed.is_err();
         }
+        timing.extend(timed(&copy));
         let e = self.entries.get_mut(ticket).unwrap();
         e.h2d_spans = Some(H2dSpanBatch {
             slots,
             landed: false,
             fenced: false,
             receipt: scratch,
+            timing,
         });
         if failed {
             e.unknown = true;
@@ -3060,6 +3241,49 @@ impl CudaTransfers {
     /// (`install_consumer_wait`; rule 3 of `h2d_span_batch`: landing is not a fence),
     /// `Quarantined` after a span error, `AlreadyReleased` on a second take, `Unsupported` for a
     /// batch that carries no H2D spans. The batch cannot retire until its spans are taken.
+    /// WP-A day 64 (`DAY64.md` step 1, log only): which parts of an H2D batch's landing have been
+    /// observed, read from their events without changing any state: (the items' and spans' copies,
+    /// the spans' destination-digest receipt; `true` where there is none). No decision reads it.
+    pub fn h2d_landing_parts(&self, ticket: &TransferTicket) -> Result<(bool, bool)> {
+        self.check_thread()?;
+        let e = self.entries.get(ticket).ok_or(Error::UnknownTicket)?;
+        let done = |ev: Option<&CudaEvent>| ev.ok_or(Error::Quarantined).and_then(event_done);
+        let mut copies = true;
+        for item in e.items.iter().flatten() {
+            copies &= done(item.event.as_ref())?;
+        }
+        let mut receipt = true;
+        if let Some(b) = &e.h2d_spans
+            && !b.landed
+        {
+            for (_, event) in &b.slots {
+                copies &= done(event.as_ref())?;
+            }
+            if let Some(r) = &b.receipt {
+                receipt = done(r.event.as_ref())?;
+            }
+        }
+        Ok((copies, receipt))
+    }
+    /// WP-A day 64 (`DAY64.md` section 4 step 1, log only): the span work's (fill, copies, digests
+    /// and the lanes' D2H) elapsed milliseconds from its four timing events; `None` unless every
+    /// event is complete (never a wait) or when the batch carries no timing.
+    pub fn h2d_span_timing(&self, ticket: &TransferTicket) -> Option<(f32, f32, f32)> {
+        let b = self.entries.get(ticket)?.h2d_spans.as_ref()?;
+        let [t0, fill, copies, sealed] = b.timing.as_slice() else {
+            return None;
+        };
+        for e in [t0, fill, copies, sealed] {
+            if !event_done(e).ok()? {
+                return None;
+            }
+        }
+        Some((
+            t0.elapsed_ms(fill).ok()?,
+            fill.elapsed_ms(copies).ok()?,
+            copies.elapsed_ms(sealed).ok()?,
+        ))
+    }
     pub fn take_h2d_spans(&mut self, ticket: &TransferTicket) -> Result<Vec<LandedH2dSpan>> {
         self.progress(ticket)?;
         let e = self.entries.get_mut(ticket).unwrap();
@@ -4221,7 +4445,7 @@ mod tests {
     /// one context each in the pool below (the census pins the count; day 42 added
     /// `span_receipt_digests_are_the_program_per_span`, day 48
     /// `day48_a_take_back_waits_for_its_own_lease_only`).
-    const NATIVE_CELLS: usize = 15;
+    const NATIVE_CELLS: usize = 17;
     /// The module's native cells' contexts: `NATIVE_CELLS` non-primary contexts created in ONE step,
     /// at the first `cell_context()` call (before that cell's body runs; every other cell waits
     /// here), and held for the whole test process by this static, so no context is created or
@@ -5184,6 +5408,139 @@ mod tests {
     /// WP-A day 37 (`DAY37.md` section 8): every native cell of this module owns a context of the
     /// pool (`cell_context()`), the pool is the module's only context constructor, and its size is
     /// the native cell count.
+    /// WP-A day 63 (`DAY63.md` design L1.1): the size class table.
+    #[test]
+    fn day63_the_lease_class_table() {
+        const MIB: usize = 1 << 20;
+        for (bytes, class) in [
+            (1, 1),
+            (3, 4),
+            (4096, 4096),
+            (4096 + 3, 8192),
+            (MIB, MIB),
+            (MIB + 1, 2 * MIB),
+            (5 * MIB + 3, 6 * MIB),
+            (4_718_592, 5 * MIB),
+        ] {
+            assert_eq!(lease_class(bytes), class, "{bytes}");
+        }
+    }
+
+    /// WP-A day 63 (design L1; CPU census): nothing reads past a lease's length (every slice and
+    /// view of a backing spans `len`; `capacity` appears only in its field, its accessor, the
+    /// pool's class match and cap arithmetic, and `set_len`'s bound); the lease is charged its
+    /// class; the pool closes when the engine drops; `cuMemFreeHost` is reached only through the
+    /// backing's drop and the allocation's own failure path.
+    #[test]
+    fn day63_nothing_reads_past_a_lease_length_and_frees_stay_in_one_place() {
+        let src = include_str!("tier_transfer.rs");
+        let body = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        let backing = &body[body.find("impl PinnedBacking {").unwrap()
+            ..body.find("impl HostSlice<u8> for PinnedBacking {").unwrap()];
+        assert!(!backing.contains("from_raw_parts(self.ptr, self.capacity)"));
+        assert!(!backing.contains("from_raw_parts_mut(self.ptr, self.capacity)"));
+        assert_eq!(
+            backing.matches("self.capacity").count(),
+            2,
+            "the accessor and set_len's bound"
+        );
+        let slice = &body[body.find("impl HostSlice<u8> for PinnedBacking {").unwrap()..];
+        let slice = &slice[..slice.find("\n}\n").unwrap()];
+        assert!(!slice.contains("capacity"), "the copies span the length");
+        assert_eq!(
+            body.matches(".capacity").count() - body.matches("fn capacity").count(),
+            3,
+            "take, put, and the view-free class read"
+        );
+        let alloc = &body[body.find("pub fn alloc_host_kind(").unwrap()..];
+        let alloc = &alloc[..alloc.find("\n    }\n").unwrap()];
+        assert!(alloc.contains("request.bytes.pinned = class as u64;"));
+        assert!(alloc.contains("backing.set_len(bytes);"));
+        let drop_engine = &body[body.find("impl Drop for CudaTransfers {").unwrap()..];
+        assert!(drop_engine[..200].contains("self.lease_pool.close();"));
+        assert_eq!(
+            body.matches("result::free_host(").count(),
+            2,
+            "the backing's drop and its failed alloc"
+        );
+    }
+
+    /// WP-A day 63 (design L1, clause (a), on a card): a dropped lease's backing is the next
+    /// same-class lease's (the same host pointer) with the new length; its bytes and every copy of
+    /// it span that length; the pinned ledger holds the pool's idle bytes after the drop and
+    /// returns to zero after the pool closes.
+    #[test]
+    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
+    fn day63_a_dropped_lease_backs_the_next_same_class_lease() {
+        let (mut t, stream, gov) = native_fixture();
+        t.set_lease_pool_cap(1 << 20);
+        let kind = t.pinned_default();
+        let mut a = t.alloc_host_kind(4096 + 3, request(), kind).unwrap();
+        a.write(&vec![0xa5u8; 4096 + 3]).unwrap();
+        assert_eq!(
+            gov.borrow().used().pinned,
+            8192,
+            "the lease is charged its class"
+        );
+        let ptr = a.bytes().unwrap().as_ptr();
+        drop(a);
+        assert_eq!(
+            gov.borrow().used().pinned,
+            8192,
+            "the pool holds the idle class"
+        );
+        assert_eq!(t.lease_pool_counts(), (0, 1, 8192));
+        let mut b = t.alloc_host_kind(5000, request(), kind).unwrap();
+        assert_eq!(t.lease_pool_counts(), (1, 1, 0), "the pool served it");
+        assert_eq!(b.bytes().unwrap().as_ptr(), ptr, "the same backing");
+        assert_eq!(b.valid_bytes(), 5000);
+        assert_eq!(b.bytes().unwrap().len(), 5000);
+        // SAFETY: `b` is not written while the view is out.
+        assert_eq!(unsafe { b.read_view() }.unwrap().len(), 5000);
+        let pattern: Vec<u8> = (0..5000).map(|i| (i * 13 % 251) as u8).collect();
+        b.write(&pattern).unwrap();
+        let backing = b.allocation.backing.as_ref().unwrap();
+        let dev = stream.clone_htod(backing).unwrap();
+        assert_eq!(dev.len(), 5000, "the H2D spans the length");
+        let back = stream.clone_dtoh(&dev).unwrap();
+        assert_eq!(back, pattern);
+        assert_eq!(gov.borrow().used().pinned, 8192);
+        drop(b);
+        let (n, bytes) = t.lease_pool().close();
+        assert_eq!((n, bytes), (1, 8192));
+        assert_eq!(gov.borrow().used().pinned, 0, "the ledger returns to zero");
+        let c = t.alloc_host_kind(100, request(), kind).unwrap();
+        drop(c);
+        assert_eq!(gov.borrow().used().pinned, 0, "a closed pool frees");
+    }
+
+    /// WP-A day 63 (design L1.4, on a card): a drop past the pool's cap frees; the engine's drop
+    /// closes the pool.
+    #[test]
+    #[ignore = "native CUDA required; run under the provided one-card exclusive lock"]
+    fn day63_a_drop_past_the_cap_frees_and_the_engine_closes_the_pool() {
+        let (mut t, _stream, gov) = native_fixture();
+        t.set_lease_pool_cap(12288);
+        let kind = t.pinned_default();
+        let a = t.alloc_host_kind(8192, request(), kind).unwrap();
+        let b = t.alloc_host_kind(8192, request(), kind).unwrap();
+        assert_eq!(gov.borrow().used().pinned, 16384);
+        drop(a);
+        drop(b);
+        assert_eq!(
+            gov.borrow().used().pinned,
+            8192,
+            "one parked, one past the cap freed"
+        );
+        assert_eq!(t.lease_pool_counts().2, 8192);
+        drop(t);
+        assert_eq!(
+            gov.borrow().used().pinned,
+            0,
+            "the engine's drop closed the pool"
+        );
+    }
+
     #[test]
     fn native_cells_own_their_context() {
         let src = include_str!("tier_transfer.rs");

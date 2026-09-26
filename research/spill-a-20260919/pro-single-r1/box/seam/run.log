@@ -1,0 +1,62 @@
+2026-09-26T10:58:54Z model sha256: 1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a Qwen3.8-27B-NVFP4-Q5K-mtp.gguf cell=seam modes=retire-seam-nosource,retire-seam,prime prefix_mb=448
+2026-09-26T10:59:59Z seam o1 base retire-seam-nosource rc=0 STALL rule cell=r1-seam-base-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50
+2026-09-26T11:01:05Z seam o1 r1 retire-seam-nosource rc=0 STALL rule cell=r1-seam-r1-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50=1
+2026-09-26T11:02:13Z seam o1 base retire-seam rc=0 STALL rule cell=r1-seam-base-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.
+2026-09-26T11:03:22Z seam o1 r1 retire-seam rc=0 STALL rule cell=r1-seam-r1-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 
+2026-09-26T11:04:28Z seam o1 base prime rc=0 STALL rule cell=r1-seam-base-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=1
+2026-09-26T11:05:34Z seam o1 r1 prime rc=0 STALL rule cell=r1-seam-r1-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.
+2026-09-26T11:06:41Z seam o1 base retire-seam-nosource rc=0 STALL rule cell=r1-seam-base-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50
+2026-09-26T11:07:47Z seam o1 r1 retire-seam-nosource rc=0 STALL rule cell=r1-seam-r1-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50=1
+2026-09-26T11:08:56Z seam o1 base retire-seam rc=0 STALL rule cell=r1-seam-base-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.
+2026-09-26T11:10:04Z seam o1 r1 retire-seam rc=0 STALL rule cell=r1-seam-r1-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 
+2026-09-26T11:11:10Z seam o1 base prime rc=0 STALL rule cell=r1-seam-base-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=1
+2026-09-26T11:12:17Z seam o1 r1 prime rc=0 STALL rule cell=r1-seam-r1-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.
+2026-09-26T11:13:23Z seam o1 base retire-seam-nosource rc=0 STALL rule cell=r1-seam-base-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50
+2026-09-26T11:14:30Z seam o1 r1 retire-seam-nosource rc=0 STALL rule cell=r1-seam-r1-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50=1
+2026-09-26T11:15:38Z seam o1 base retire-seam rc=0 STALL rule cell=r1-seam-base-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.
+2026-09-26T11:16:46Z seam o1 r1 retire-seam rc=0 STALL rule cell=r1-seam-r1-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 
+2026-09-26T11:17:53Z seam o1 base prime rc=0 STALL rule cell=r1-seam-base-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=1
+2026-09-26T11:18:59Z seam o1 r1 prime rc=0 STALL rule cell=r1-seam-r1-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.
+2026-09-26T11:20:06Z seam o1 base retire-seam-nosource rc=0 STALL rule cell=r1-seam-base-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50
+2026-09-26T11:21:12Z seam o1 r1 retire-seam-nosource rc=0 STALL rule cell=r1-seam-r1-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50=1
+2026-09-26T11:22:20Z seam o1 base retire-seam rc=0 STALL rule cell=r1-seam-base-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.
+2026-09-26T11:23:28Z seam o1 r1 retire-seam rc=0 STALL rule cell=r1-seam-r1-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 
+2026-09-26T11:24:35Z seam o1 base prime rc=0 STALL rule cell=r1-seam-base-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=1
+2026-09-26T11:25:41Z seam o1 r1 prime rc=0 STALL rule cell=r1-seam-r1-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.
+2026-09-26T11:26:48Z seam o1 base retire-seam-nosource rc=0 STALL rule cell=r1-seam-base-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50
+2026-09-26T11:27:54Z seam o1 r1 retire-seam-nosource rc=0 STALL rule cell=r1-seam-r1-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50=1
+2026-09-26T11:29:03Z seam o1 base retire-seam rc=0 STALL rule cell=r1-seam-base-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.
+2026-09-26T11:30:11Z seam o1 r1 retire-seam rc=0 STALL rule cell=r1-seam-r1-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 
+2026-09-26T11:31:17Z seam o1 base prime rc=0 STALL rule cell=r1-seam-base-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=1
+2026-09-26T11:32:24Z seam o1 r1 prime rc=0 STALL rule cell=r1-seam-r1-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.
+2026-09-26T11:33:30Z seam o2 r1 prime rc=0 STALL rule cell=r1-seam-r1-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.
+2026-09-26T11:34:36Z seam o2 base prime rc=0 STALL rule cell=r1-seam-base-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=1
+2026-09-26T11:35:45Z seam o2 r1 retire-seam rc=0 STALL rule cell=r1-seam-r1-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.6 idle_p95=12.8 
+2026-09-26T11:36:53Z seam o2 base retire-seam rc=0 STALL rule cell=r1-seam-base-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.
+2026-09-26T11:37:59Z seam o2 r1 retire-seam-nosource rc=0 STALL rule cell=r1-seam-r1-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50=1
+2026-09-26T11:39:06Z seam o2 base retire-seam-nosource rc=0 STALL rule cell=r1-seam-base-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50
+2026-09-26T11:40:12Z seam o2 r1 prime rc=0 STALL rule cell=r1-seam-r1-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.6 idle_p95=12.8 idle_p99=12.
+2026-09-26T11:41:19Z seam o2 base prime rc=0 STALL rule cell=r1-seam-base-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=1
+2026-09-26T11:42:27Z seam o2 r1 retire-seam rc=0 STALL rule cell=r1-seam-r1-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 
+2026-09-26T11:43:35Z seam o2 base retire-seam rc=0 STALL rule cell=r1-seam-base-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.
+2026-09-26T11:44:42Z seam o2 r1 retire-seam-nosource rc=0 STALL rule cell=r1-seam-r1-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50=1
+2026-09-26T11:45:48Z seam o2 base retire-seam-nosource rc=0 STALL rule cell=r1-seam-base-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50
+2026-09-26T11:46:55Z seam o2 r1 prime rc=0 STALL rule cell=r1-seam-r1-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.
+2026-09-26T11:48:01Z seam o2 base prime rc=0 STALL rule cell=r1-seam-base-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=1
+2026-09-26T11:49:09Z seam o2 r1 retire-seam rc=0 STALL rule cell=r1-seam-r1-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 
+2026-09-26T11:50:18Z seam o2 base retire-seam rc=0 STALL rule cell=r1-seam-base-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.
+2026-09-26T11:51:24Z seam o2 r1 retire-seam-nosource rc=0 STALL rule cell=r1-seam-r1-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50=1
+2026-09-26T11:52:31Z seam o2 base retire-seam-nosource rc=0 STALL rule cell=r1-seam-base-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50
+2026-09-26T11:53:37Z seam o2 r1 prime rc=0 STALL rule cell=r1-seam-r1-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.
+2026-09-26T11:54:43Z seam o2 base prime rc=0 STALL rule cell=r1-seam-base-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=1
+2026-09-26T11:55:52Z seam o2 r1 retire-seam rc=0 STALL rule cell=r1-seam-r1-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 
+2026-09-26T11:57:00Z seam o2 base retire-seam rc=0 STALL rule cell=r1-seam-base-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.
+2026-09-26T11:58:06Z seam o2 r1 retire-seam-nosource rc=0 STALL rule cell=r1-seam-r1-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50=1
+2026-09-26T11:59:13Z seam o2 base retire-seam-nosource rc=0 STALL rule cell=r1-seam-base-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50
+2026-09-26T12:00:19Z seam o2 r1 prime rc=0 STALL rule cell=r1-seam-r1-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.
+2026-09-26T12:01:26Z seam o2 base prime rc=0 STALL rule cell=r1-seam-base-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=1
+2026-09-26T12:02:34Z seam o2 r1 retire-seam rc=0 STALL rule cell=r1-seam-r1-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 
+2026-09-26T12:03:42Z seam o2 base retire-seam rc=0 STALL rule cell=r1-seam-base-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.
+2026-09-26T12:04:49Z seam o2 r1 retire-seam-nosource rc=0 STALL rule cell=r1-seam-r1-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50=1
+2026-09-26T12:05:55Z seam o2 base retire-seam-nosource rc=0 STALL rule cell=r1-seam-base-retire-seam-nosource arm=retire-seam-nosource n_per_order=5 pooled=10 idle_runs=10 idle_p50
+2026-09-26T12:05:56Z seam done

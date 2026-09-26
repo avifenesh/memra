@@ -1,0 +1,22 @@
+binary: eb9c41328a30db35 marker count: 2
+
+running 1 test
+test tier_transfer::tests::day61_the_streamed_checksum_is_the_checksum ... FAILED
+
+failures:
+
+---- tier_transfer::tests::day61_the_streamed_checksum_is_the_checksum stdout ----
+
+thread 'tier_transfer::tests::day61_the_streamed_checksum_is_the_checksum' (1602070) panicked at crates/memra-engine/src/tier_transfer.rs:5276:17:
+assertion `left == right` failed: len 63 off 0
+  left: [192, 1, 73, 191, 16, 143, 139, 68, 209, 224, 156, 193, 98, 244, 158, 108, 125, 93, 79, 74, 209, 218, 219, 171, 56, 243, 157, 55, 172, 132, 197, 207]
+ right: [88, 147, 49, 99, 23, 199, 165, 107, 88, 78, 249, 57, 40, 125, 151, 119, 226, 201, 30, 89, 86, 61, 202, 207, 112, 225, 208, 40, 154, 142, 76, 118]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tier_transfer::tests::day61_the_streamed_checksum_is_the_checksum
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 623 filtered out; finished in 0.00s
+
+rc=

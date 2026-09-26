@@ -1,0 +1,21 @@
+  run  1 order 1 idle     tokens=160 p50=21.2 max=25.8 stall=4.6 demote=[] promote=[] intruder=None
+  run  2 order 1 fanout   tokens=160 p50=20.5 max=134.1 stall=113.6 demote=[] promote=[] intruder=166.65636800007633
+  run  3 order 1 idle     tokens=160 p50=20.5 max=21.8 stall=1.2 demote=[] promote=[] intruder=None
+  run  4 order 1 fanout   tokens=160 p50=20.7 max=185.8 stall=165.0 demote=[213.2] promote=[] intruder=215.89271700031532
+  run  5 order 1 idle     tokens=160 p50=20.7 max=22.8 stall=2.1 demote=[] promote=[] intruder=None
+  run  6 order 1 fanout   tokens=160 p50=21.5 max=149.9 stall=128.4 demote=[170.1] promote=[] intruder=184.0902260000803
+  run  7 order 1 idle     tokens=160 p50=22.1 max=27.7 stall=5.6 demote=[] promote=[] intruder=None
+  run  8 order 1 fanout   tokens=160 p50=23.1 max=156.5 stall=133.4 demote=[183.7] promote=[] intruder=192.6719150005738
+  run  9 order 1 idle     tokens=160 p50=23.7 max=27.3 stall=3.6 demote=[] promote=[] intruder=None
+  run 10 order 1 fanout   tokens=160 p50=23.6 max=164.5 stall=140.9 demote=[194.3] promote=[] intruder=203.5306469997522
+  run 11 order 2 fanout   tokens=160 p50=24.7 max=174.5 stall=149.8 demote=[200.2] promote=[] intruder=215.68616800050222
+  run 12 order 2 idle     tokens=160 p50=24.1 max=26.7 stall=2.5 demote=[] promote=[] intruder=None
+  run 13 order 2 fanout   tokens=160 p50=24.6 max=173.5 stall=148.9 demote=[198.4] promote=[] intruder=213.33275199958734
+  run 14 order 2 idle     tokens=160 p50=23.9 max=26.8 stall=2.9 demote=[] promote=[] intruder=None
+  run 15 order 2 fanout   tokens=160 p50=23.8 max=166.0 stall=142.2 demote=[197.7] promote=[] intruder=201.4717259999088
+  run 16 order 2 idle     tokens=160 p50=23.9 max=26.0 stall=2.1 demote=[] promote=[] intruder=None
+  run 17 order 2 fanout   tokens=160 p50=23.7 max=161.5 stall=137.7 demote=[193.5] promote=[] intruder=200.04865400005656
+  run 18 order 2 idle     tokens=160 p50=23.6 max=25.9 stall=2.3 demote=[] promote=[] intruder=None
+  run 19 order 2 fanout   tokens=160 p50=23.6 max=162.4 stall=138.8 demote=[192.3] promote=[] intruder=200.75192100011918
+  run 20 order 2 idle     tokens=160 p50=23.8 max=26.5 stall=2.7 demote=[] promote=[] intruder=None
+STALL rule cell=b1-5090-base-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.9 idle_p95=25.5 idle_p99=26.1 idle_max=27.7 arm_runs=10 arm_p50=23.2 arm_p95=26.1 arm_p99=35.8 arm_max=185.8 stall_median=139.8 stall_min=113.6 stall_max=165.0 server_demote_ms=[213.2, 170.1, 183.7, 194.3, 200.2, 198.4, 197.7, 193.5, 192.3] server_promote_ms=[] intruder_prompt_tokens=[97, 98, 97, 96, 95, 98, 97, 96, 95, 99] tenant_text_identical=True errors=0
