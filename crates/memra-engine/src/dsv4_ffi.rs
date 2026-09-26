@@ -596,18 +596,6 @@ unsafe extern "C" {
         d: i32,
         stream: *mut c_void,
     ) -> i32;
-    /// iteration-5: row-blocked twin of `memra_dsv4_dots_f32`. Same arithmetic, same
-    /// reduction tree, same order -- only the block geometry differs, so it is bit-identical.
-    pub fn memra_dsv4_dots_f32_rowblk(
-        x: *const f32,
-        w: *const c_void,
-        w_is_bf16: i32,
-        y: *mut f32,
-        s: i32,
-        k: i32,
-        n: i32,
-        stream: *mut c_void,
-    ) -> i32;
     pub fn memra_dsv4_dots_f32(
         x: *const f32,
         w: *const c_void,
@@ -964,16 +952,6 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_argmax(v: *const f32, n: i64, out: *mut i32, stream: *mut c_void) -> i32;
-    /// iteration-5: `dst[0..cols) = src[idx[slot] * cols ..]`, the index read on the
-    /// DEVICE so the DSpark markov chain needs no host round trip between steps.
-    pub fn memra_dsv4_gather_row_by_idx(
-        src: *const f32,
-        idx: *const i32,
-        slot: i32,
-        dst: *mut f32,
-        cols: i32,
-        stream: *mut c_void,
-    ) -> i32;
     pub fn memra_dsv4_gemv_bf16(
         w_bf16: *const c_void,
         x_bf16: *const c_void,

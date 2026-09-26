@@ -1,0 +1,98 @@
+## 2.verify_batch: 148 instances, wall 28.984 ms, kernel-sum per device dev0 26.303 ms, dev1 26.993 ms
+   dev0   7.283 ms   127.3/inst  void moe_kq_mrow_stream_kernel<
+   dev1   7.209 ms   127.3/inst  void moe_kq_mrow_stream_kernel<
+   dev0   5.855 ms   492.3/inst  void dsv4_dense_fast_fp8_kernel<
+   dev1   5.849 ms   492.3/inst  void dsv4_dense_fast_fp8_kernel<
+   dev0   2.196 ms    43.0/inst  memra_tp_ar_1stage_kernel
+   dev1   2.165 ms   169.0/inst  void dsv4_dense_fast_dots_kernel<
+   dev1   2.157 ms    43.0/inst  memra_tp_ar_1stage_kernel
+   dev0   1.380 ms   167.0/inst  void dsv4_dense_fast_dots_kernel<
+   dev0   1.093 ms    86.0/inst  memra_tp_ar_gather_rows_f32_kernel
+   dev0   1.036 ms   123.4/inst  dsv4_indexer_score_f32acc_kernel
+   dev1   1.030 ms   123.4/inst  dsv4_indexer_score_f32acc_kernel
+   dev1   0.936 ms   929.5/inst  memcpy kind 8
+   dev0   0.885 ms   929.5/inst  memcpy kind 8
+   dev1   0.835 ms    86.0/inst  memra_tp_ar_gather_rows_f32_kernel
+   dev0   0.685 ms    86.0/inst  void dsv4_hc_finish_f32_fixed_order_kernel<
+   dev1   0.685 ms    86.0/inst  void dsv4_hc_finish_f32_fixed_order_kernel<
+   dev0   0.584 ms    43.0/inst  dsv4_sink_softout_st_f32acc_kernel
+   dev1   0.582 ms    43.0/inst  dsv4_sink_softout_st_f32acc_kernel
+   dev0   0.514 ms    86.0/inst  dsv4_fp8_gather_half_kernel
+   dev1   0.511 ms    86.0/inst  dsv4_fp8_gather_half_kernel
+   dev1   0.486 ms    64.4/inst  dsv4_compressor_pool_kernel
+   dev0   0.478 ms    64.4/inst  dsv4_compressor_pool_kernel
+   dev1   0.423 ms   123.4/inst  dsv4_topk_idx_numeric_kernel
+   dev0   0.414 ms   123.4/inst  dsv4_topk_idx_numeric_kernel
+## 1.drafter_forward: 148 instances, wall 9.277 ms, kernel-sum per device dev0 1.220 ms, dev1 6.806 ms
+   dev1   2.183 ms    19.0/inst  dsv4_dots_f32_kernel
+   dev1   1.001 ms    76.7/inst  dsv4_fp4_gemm_kernel
+   dev0   0.961 ms    73.3/inst  dsv4_fp4_gemm_kernel
+   dev1   0.902 ms     3.0/inst  dsv4_sink_attn_kernel
+   dev1   0.715 ms     2.0/inst  void dsv4_dense_fast_dots_kernel<
+   dev1   0.645 ms    45.0/inst  void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_b
+   dev1   0.520 ms     3.0/inst  memra_tp_ar_1stage_kernel
+   dev1   0.152 ms    13.0/inst  dsv4_rmsnorm_kernel
+   dev1   0.106 ms     7.0/inst  dsv4_rowsq_scale_kernel
+   dev1   0.080 ms     5.0/inst  dsv4_argmax_kernel
+   dev1   0.073 ms    39.0/inst  void cublasLt::splitKreduce_kernel<
+   dev0   0.065 ms     3.0/inst  memra_tp_ar_1stage_kernel
+   dev1   0.060 ms    51.2/inst  dsv4_gather_rows_u8_kernel
+   dev0   0.055 ms    48.9/inst  dsv4_gather_rows_u8_kernel
+   dev1   0.054 ms   106.7/inst  memcpy kind 1
+   dev1   0.053 ms    28.6/inst  dsv4_act_quant_fp8_kernel
+   dev0   0.044 ms    24.4/inst  dsv4_act_quant_fp8_kernel
+   dev1   0.042 ms    42.0/inst  dsv4_cvt_bf16_kernel
+   dev1   0.036 ms    28.6/inst  dsv4_swiglu_kernel
+   dev0   0.034 ms    73.3/inst  memcpy kind 1
+   dev1   0.031 ms    25.6/inst  dsv4_scatter_add_kernel
+   dev0   0.031 ms    24.4/inst  dsv4_swiglu_kernel
+   dev0   0.029 ms    24.4/inst  dsv4_scatter_add_kernel
+   dev1   0.026 ms    24.0/inst  dsv4_take_cols_kernel
+## 1d.drafter_blocks: 148 instances, wall 5.945 ms, kernel-sum per device dev0 1.219 ms, dev1 4.207 ms
+   dev1   1.001 ms    76.7/inst  dsv4_fp4_gemm_kernel
+   dev0   0.961 ms    73.3/inst  dsv4_fp4_gemm_kernel
+   dev1   0.902 ms     3.0/inst  dsv4_sink_attn_kernel
+   dev1   0.645 ms    45.0/inst  void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_b
+   dev1   0.520 ms     3.0/inst  memra_tp_ar_1stage_kernel
+   dev1   0.449 ms     9.0/inst  dsv4_dots_f32_kernel
+   dev1   0.134 ms    12.0/inst  dsv4_rmsnorm_kernel
+   dev1   0.091 ms     6.0/inst  dsv4_rowsq_scale_kernel
+   dev1   0.073 ms    39.0/inst  void cublasLt::splitKreduce_kernel<
+   dev0   0.065 ms     3.0/inst  memra_tp_ar_1stage_kernel
+   dev1   0.060 ms    51.2/inst  dsv4_gather_rows_u8_kernel
+   dev0   0.055 ms    48.9/inst  dsv4_gather_rows_u8_kernel
+   dev1   0.053 ms    28.6/inst  dsv4_act_quant_fp8_kernel
+   dev1   0.050 ms   103.7/inst  memcpy kind 1
+   dev0   0.044 ms    24.4/inst  dsv4_act_quant_fp8_kernel
+   dev1   0.042 ms    42.0/inst  dsv4_cvt_bf16_kernel
+   dev1   0.036 ms    28.6/inst  dsv4_swiglu_kernel
+   dev0   0.034 ms    73.3/inst  memcpy kind 1
+   dev1   0.031 ms    25.6/inst  dsv4_scatter_add_kernel
+   dev0   0.031 ms    24.4/inst  dsv4_swiglu_kernel
+   dev0   0.029 ms    24.4/inst  dsv4_scatter_add_kernel
+   dev1   0.026 ms    24.0/inst  dsv4_take_cols_kernel
+   dev1   0.026 ms    24.0/inst  dsv4_place_cols_kernel
+   dev1   0.013 ms     9.0/inst  dsv4_rope_kernel
+## 3.commit_rollback: 148 instances, wall 2.694 ms, kernel-sum per device dev0 0.476 ms, dev1 0.491 ms
+   dev1   0.426 ms   357.8/inst  memcpy kind 8
+   dev0   0.411 ms   357.8/inst  memcpy kind 8
+   dev1   0.065 ms    43.0/inst  dsv4_scatter_rows_kernel
+   dev0   0.064 ms    43.0/inst  dsv4_scatter_rows_kernel
+   dev1   0.000 ms     1.0/inst  memcpy kind 1
+   dev0   0.000 ms     1.0/inst  memcpy kind 1
+## 1i.markov_chain: 148 instances, wall 2.730 ms, kernel-sum per device dev1 1.844 ms
+   dev1   1.733 ms    10.0/inst  dsv4_dots_f32_kernel
+   dev1   0.080 ms     5.0/inst  dsv4_argmax_kernel
+   dev1   0.017 ms    15.0/inst  memcpy kind 8
+   dev1   0.008 ms     5.0/inst  dsv4_add_inplace_kernel
+   dev1   0.005 ms    10.0/inst  memcpy kind 2
+## 4.ring_writes: 148 instances, wall 0.503 ms, kernel-sum per device dev1 0.329 ms
+   dev1   0.129 ms     3.4/inst  void cutlass::Kernel2<cutlass_80_wmma_tensorop_s161616gemm_b
+   dev1   0.079 ms    13.8/inst  dsv4_rmsnorm_kernel
+   dev1   0.052 ms    10.3/inst  std::enable_if<!T7, void>::type internal::gemvx::kernel<int,
+   dev1   0.015 ms    10.3/inst  dsv4_rope_kernel
+   dev1   0.015 ms    13.8/inst  memcpy kind 8
+   dev1   0.014 ms    10.3/inst  dsv4_act_quant_kernel
+   dev1   0.014 ms    13.8/inst  dsv4_cvt_bf16_kernel
+   dev1   0.006 ms     3.4/inst  void cublasLt::splitKreduce_kernel<
+   dev1   0.006 ms    10.3/inst  memcpy kind 1

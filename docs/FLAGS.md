@@ -1623,6 +1623,25 @@ boundary. A gate that arms the M1 tensor-core or half2 down tail keeps precedenc
 `set_dsv4_moe_m1_stream_for_gate(false)` runs the sktail reference arm in one loaded model for
 the component test and the DSpark gate's historical arm.
 
+## Removed doors, 2026-09-26 (the two DSpark drafter chain doors: flat and negative on TP/EP)
+
+`MEMRA_DSV4_DSPARK_CHAIN=device` kept the Markov chain on the device (one D2H per round instead of
+ten). `MEMRA_DSV4_DSPARK_MARKOV=rowblk` ran the Markov bias GEMV through a row-blocked twin of the
+f64 island dots. Both were bit-identical by construction, default OFF, covered by the `MEMRA_DSV4_*`
+prefix row, and never measured on the served TP/EP program. Measured on 2x RTX PRO 6000 Server
+Edition, DSpark route, PDL and the vocab head on, one binary, order E G H H G E E G H, N=3 per arm
+(`research/dsv4f-bringup-20260923/dspark-round/raw/se2-doors-s2f/`):
+
+| arm | greedy c1 agg | sampled c1 agg |
+|---|---|---|
+| E, both off | 92.26 (92.11..92.43) | 77.54 |
+| G, `MARKOV=rowblk` | 90.48 (90.39..91.03), -1.93% | 76.74, -1.03% |
+| H, `CHAIN=device` | 92.22 (90.96..92.75), -0.04% | 77.60, +0.08% |
+
+Both together ran -1.16% in the window before. Deleted with their reads, their branches in
+`dspark_forward_spec`, the kernels reachable only through them (`dsv4_gather_row_by_idx_kernel`,
+`dsv4_dots_f32_rowblk_kernel`), their FFI and their test entry. Git history is the archive.
+
 ## Removed doors, 2026-09-23 (the tiled sink scorer: superseded by the two-launch sink attention)
 
 memra #683, lane `research/dsv4f-bringup-20260923/sink-attn/RESULTS.md`. The tiled scorer landed
