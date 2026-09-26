@@ -95,3 +95,10 @@ reads where the demand's part went; the bank's own hashed reads are the next reg
 **The local check and the in-situ split** are queued together (queue v18, `rtx5090-queue-v18-20260926.sh`, dry-checked
 under stubs in `day84-cpu/dry-check-queue.log`): the check's four runs, then 20 runs of `i20s` and `i21s`, one lock hold,
 pinned to the P-cores; `day83-read.py` gained a `--change a,b` line for it (additive, deciding nothing).
+
+**The card sitting, prepared before any cell** (`day84-cell.sh`, `day84-read.py`, `day84-box.sh`: DAY82's with I21 for
+I20's step and I20 for I18's, REF on `run-gen-i20`): the reader on a synthetic cell from DAY82's BOX39 receipts
+relabelled (`day84-cpu/make-synthetic.py`; meaningless) reads 50 runs, integrity ok, every line printed
+(`dry-check-reader.log`); the cell under stubs exits 0 with 10 calls of `run-gen-i15`, 22 of `run-gen-i20` (REF's 10 and
+2 profiled, I20's 10) and 22 of `run-gen-i21` (`dry-check-cell.log`); the driver under stubs names the three builds, the
+cell, `--validate` and the reader, in order (`dry-check-driver.log`).
