@@ -11,9 +11,9 @@ use crate::model_plan::{ModelPlan, MoeMlpPlan, PlanCompileError};
 use crate::safetensors::StInfo;
 use crate::source::census_from_safetensors_headers;
 use crate::tensor_contract::{
-    BoundTensorContract, CheckpointDialect, ContractOptions, ExpertTensor, QuantConstraint,
-    TensorContract, TensorContractError, TensorId, TensorMatch, TensorOwner, TensorRequirement,
-    TensorTransform,
+    BoundTensorContract, CheckpointDialect, ContractOptions, ExpertTensor, LayerTensor,
+    QuantConstraint, TensorContract, TensorContractError, TensorId, TensorMatch, TensorOwner,
+    TensorRequirement, TensorTransform,
 };
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -106,6 +106,46 @@ pub static SOURCE_PROFILE: ModelPack = ModelPack {
     tensor_schema: source_tensor_schema,
     tiny_plan: None,
 };
+
+/// GGUF-style request names for the HF source's text trunk. This is a loader
+/// address map, not an accepted GGUF tensor contract. Modalities and separate
+/// MTP remain unavailable to this text loader and return None.
+pub fn source_ggml_name(id: &TensorId) -> Option<String> {
+    match id {
+        TensorId::TokenEmbedding => Some("token_embd.weight".into()),
+        TensorId::OutputNorm => Some("output_norm.weight".into()),
+        TensorId::OutputProjection => Some("output.weight".into()),
+        TensorId::Layer { index, tensor } => {
+            let suffix = match tensor {
+                LayerTensor::PreAttentionNorm => "attn_norm.weight",
+                LayerTensor::FusedQkv => "attn_qkv.weight",
+                LayerTensor::AttentionOutput => "attn_output.weight",
+                LayerTensor::AttentionSink => "attn_sink.bias",
+                LayerTensor::PreMlpNorm => "ffn_norm.weight",
+                LayerTensor::MlpGate => "ffn_gate.weight",
+                LayerTensor::MlpUp => "ffn_up.weight",
+                LayerTensor::MlpDown => "ffn_down.weight",
+                LayerTensor::MoeRouter => "ffn_gate_inp.weight",
+                LayerTensor::MoeRouterBias => "exp_probs_b.bias",
+                _ => return None,
+            };
+            Some(format!("blk.{index}.{suffix}"))
+        }
+        TensorId::Expert {
+            layer,
+            expert,
+            tensor,
+        } => {
+            let projection = match tensor {
+                ExpertTensor::Gate => "gate",
+                ExpertTensor::Up => "up",
+                ExpertTensor::Down => "down",
+            };
+            Some(format!("blk.{layer}.ffn_{projection}_exps.{expert}.weight"))
+        }
+        _ => None,
+    }
+}
 
 #[allow(clippy::result_large_err)] // the contract error names the exact rejected tensor
 fn mint_tensor_schema(
@@ -320,6 +360,7 @@ mod tests {
     use super::*;
     use crate::config::{HfConfig, ModelConfig};
     use crate::execution_manifest::{RewriteSurface, execution_rewrites};
+    use crate::hf_mapping::{HfTarget, resolve_ggml};
     use crate::model_plan::{AttentionPlan, MlpPlan, OperationKind, TensorPresence};
     use crate::tensor_contract::{
         CheckpointDialect, ContractOptions, QuantLayout, StorageLayout, TensorCensusEntry,
@@ -381,6 +422,56 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn source_text_loader_addresses_match_pinned_hf_contract() {
+        let config = ModelConfig::from_hf(&HfConfig::parse(include_str!("fixtures/config.json")));
+        let plan = SOURCE_PROFILE.compile_plan(&config).unwrap();
+        let contract = SOURCE_PROFILE
+            .compile_tensor_contract(
+                &config,
+                &plan,
+                CheckpointDialect::HfSafetensors,
+                ContractOptions::default(),
+            )
+            .unwrap();
+        let mut checked = 0usize;
+        for requirement in &contract.requirements {
+            if !matches!(
+                requirement.id,
+                TensorId::TokenEmbedding
+                    | TensorId::OutputNorm
+                    | TensorId::OutputProjection
+                    | TensorId::Layer { .. }
+                    | TensorId::Expert { .. }
+            ) {
+                continue;
+            }
+            let ggml = source_ggml_name(&requirement.id)
+                .unwrap_or_else(|| panic!("{:?} has no source loader address", requirement.id));
+            let Some(HfTarget::Plain(hf)) = resolve_ggml(&ggml, &config) else {
+                panic!("{ggml} has no plain HF source address");
+            };
+            assert!(
+                requirement.names.contains(&hf),
+                "{:?}: {ggml} resolved to {hf}, outside {:?}",
+                requirement.id,
+                requirement.names
+            );
+            checked += 1;
+        }
+        assert!(checked > 36_000, "source text census unexpectedly small");
+        assert!(
+            SOURCE_PROFILE
+                .compile_tensor_contract(
+                    &config,
+                    &plan,
+                    CheckpointDialect::Gguf,
+                    ContractOptions::default()
+                )
+                .is_err()
+        );
     }
 
     #[test]

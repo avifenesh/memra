@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex};
 use memmap2::Mmap;
 
 use crate::GgufFile;
-use crate::config::ModelConfig;
+use crate::config::{Arch, ModelConfig};
 use crate::hf_mapping::{HfTarget, resolve_ggml};
 use crate::model_packs::{ModelPack, OutputHeadContract, TensorConsumption, for_config};
 use crate::model_plan::ModelPlan;
@@ -244,6 +244,21 @@ pub fn bind_census(
                 .map(|(id, tensor)| (id.clone(), tensor.checkpoint_names.clone()))
                 .collect(),
         ),
+        CheckpointDialect::HfSafetensors
+            if cfg.arch == Arch::MiMoV2
+                && pack.is_some_and(|pack| pack.family == "mimo_v2_source") =>
+        {
+            Some(
+                bound
+                    .tensors
+                    .keys()
+                    .filter_map(|id| {
+                        crate::model_packs::mimo_v2::source_ggml_name(id)
+                            .map(|name| (id.clone(), vec![name]))
+                    })
+                    .collect(),
+            )
+        }
         CheckpointDialect::HfSafetensors => {
             compile_contract(pack, cfg, plan, CheckpointDialect::Gguf, options)
                 .ok()
