@@ -122,8 +122,15 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   Day 84 (`DAY84.md`): I21 (`b555b4141`, residency by catalog position: the SLRU's position view, the adapter's dense
   position table), CPU gates green, the day-61 profile's residency check 574-607 to 47-51 ns per call; the local check
   `PASS`; in situ the two leaves -243 us per token, 93 of it moved to the next hashed reads of the same records, net
-  -150 (22 percent of the door-only leaves). The card cell `i21` is ready (`day84-box.sh`, the 285K class, then a
-  9950X); the next cut (those three reads by position) is `DAY85.md`'s.
+  -150 (22 percent of the door-only leaves). The card cell `i21`: on BOX41 (285K) `i21=flat door=i21 vs_ref=loses
+  (window: i21=flat vs_ref=matches)`; on BOX31 (a 9950X with 19 h of prior sittings) void, inadmissible, C12's slow
+  state in every door arm (DAY86 asks whether the cuts raise its rate); the rerun on BOX42 (a fresh 9950X) `i21=improves
+  door=i21 vs_ref=loses (window: i21=flat vs_ref=matches)`: I21 stays, the first cut since I15 a class resolves on its
+  own step; the door 2 ms behind REF gen-only on both classes, matching the window. Day 85 (`DAY85.md`): the rc check
+  (one historical receipt line, no live script); I22 (`4b378a064`, the bank's host cache, SLRU hit, catalog entry and
+  the adapter's `validated` by position), CPU gates green, the day-61 profile's grouped cycle about 60 percent less per
+  block; the card cell `i22` ready (`day85-box.sh`, the 285K class, then a 9950X); the local check and split queued
+  (v19). Day 86 (`DAY86.md`): the cell `slow86` ready for a long-running 9950X.
 
 ## C12. The door's sensitivity to its owner thread's host placement (the 9950X class)
 
