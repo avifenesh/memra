@@ -21,3 +21,13 @@
   `m1-handoff-pairs.py`.
 - Scratch to remove at the end: `~/spill-f-5090/` (the red-arm worktree and its build are already removed), `/data/cache/spill-f-b2/`, `/data/cache/spill-f-5090-proof/`,
   `target/handoff-io-tests/` if present.
+- Engine or server pushes from this lane now run, before the push: `cargo fmt --all -- --check`;
+  `cargo clippy -p memra-engine -p memra-server -p memra-tier --offline --all-targets -- -D warnings`;
+  `DOCS_RS=1 cargo clippy -p memra-engine -p memra-server -p memra-tier -p memra-kv -p memra-gguf
+  --offline --target x86_64-unknown-linux-gnu --all-targets -- -D warnings`;
+  `cargo test -p memra-tier -p memra-kv --offline --no-fail-fast`; the touched crates' suites;
+  `bash tools/check-flags.sh`. An edit to `moe_cache.rs` re-pins
+  `research/spill-c-20260919/fixtures/slru-synthetic.json` after checking no SLRU statement changed.
+- After integ68 lands: merge origin/main (its clippy fix is cherry-picked here as 93214be84, same
+  bytes), re-pin the SLRU fixture to the merged `moe_cache.rs`, rerun the list above.
+
