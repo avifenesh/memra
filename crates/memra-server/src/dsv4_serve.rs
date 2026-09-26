@@ -1475,9 +1475,51 @@ fn lane_phase(phase: LanePhase) {
     });
 }
 
-/// The route's lane watchdog: every 5 s, if a lane not waiting on the queue has sat at one
-/// point for [`LANE_STALL_DUMP`], print every lane's point and the turn's tickets, once per
-/// stuck point. Exits when the route's lanes are gone.
+/// One watchdog look at the board at `now` ms: when a lane that is not waiting on the queue has
+/// sat at one point for `stall` and was not already reported at that point, the dump line for
+/// every lane; `dumped` remembers each lane's reported `since`.
+fn lane_watch_once(
+    board: &LaneBoard,
+    tickets: (u64, u64),
+    now: u64,
+    stall: std::time::Duration,
+    dumped: &mut [u64],
+) -> Option<String> {
+    let stuck = board.slots.iter().enumerate().any(|(i, slot)| {
+        let since = slot.since_ms.load(std::sync::atomic::Ordering::Relaxed);
+        LanePhase::from_u8(slot.phase.load(std::sync::atomic::Ordering::Relaxed))
+            != LanePhase::Queue
+            && now.saturating_sub(since) >= stall.as_millis() as u64
+            && dumped[i] != since
+    });
+    if !stuck {
+        return None;
+    }
+    let lanes: Vec<String> = board
+        .slots
+        .iter()
+        .enumerate()
+        .map(|(i, slot)| {
+            let since = slot.since_ms.load(std::sync::atomic::Ordering::Relaxed);
+            dumped[i] = since;
+            format!(
+                "lane {i} {:?} for {:.1}s",
+                LanePhase::from_u8(slot.phase.load(std::sync::atomic::Ordering::Relaxed)),
+                now.saturating_sub(since) as f64 / 1000.0
+            )
+        })
+        .collect();
+    Some(format!(
+        "a lane has not moved for {}s: {}; turn tickets next={} served={}",
+        stall.as_secs(),
+        lanes.join("; "),
+        tickets.0,
+        tickets.1
+    ))
+}
+
+/// The route's lane watchdog: every 5 s, [`lane_watch_once`] at [`LANE_STALL_DUMP`], printed.
+/// Exits when the route's lanes are gone.
 fn spawn_lane_watch(name: String, board: Arc<LaneBoard>, turn: Arc<TurnLock>) {
     let _ = std::thread::Builder::new()
         .name(format!("dsv4-watch-{name}"))
@@ -1485,36 +1527,16 @@ fn spawn_lane_watch(name: String, board: Arc<LaneBoard>, turn: Arc<TurnLock>) {
             let mut dumped: Vec<u64> = vec![u64::MAX; board.slots.len()];
             while Arc::strong_count(&board) > 1 {
                 std::thread::sleep(std::time::Duration::from_secs(5));
-                let now = board.now_ms();
-                let stuck = board.slots.iter().enumerate().any(|(i, slot)| {
-                    let since = slot.since_ms.load(std::sync::atomic::Ordering::Relaxed);
-                    LanePhase::from_u8(slot.phase.load(std::sync::atomic::Ordering::Relaxed)) != LanePhase::Queue
-                        && now.saturating_sub(since) >= LANE_STALL_DUMP.as_millis() as u64
-                        && dumped[i] != since
-                });
-                if !stuck {
-                    continue;
+                let tickets = *turn.tickets.lock().unwrap_or_else(|p| p.into_inner());
+                if let Some(line) = lane_watch_once(
+                    &board,
+                    tickets,
+                    board.now_ms(),
+                    LANE_STALL_DUMP,
+                    &mut dumped,
+                ) {
+                    eprintln!("[dsv4-lane-watch] {name}: {line}");
                 }
-                let (next, served) = *turn.tickets.lock().unwrap_or_else(|p| p.into_inner());
-                let lanes: Vec<String> = board
-                    .slots
-                    .iter()
-                    .enumerate()
-                    .map(|(i, slot)| {
-                        let since = slot.since_ms.load(std::sync::atomic::Ordering::Relaxed);
-                        dumped[i] = since;
-                        format!(
-                            "lane {i} {:?} for {:.1}s",
-                            LanePhase::from_u8(slot.phase.load(std::sync::atomic::Ordering::Relaxed)),
-                            now.saturating_sub(since) as f64 / 1000.0
-                        )
-                    })
-                    .collect();
-                eprintln!(
-                    "[dsv4-lane-watch] {name}: a lane has not moved for {}s: {}; turn tickets next={next} served={served}",
-                    LANE_STALL_DUMP.as_secs(),
-                    lanes.join("; ")
-                );
             }
         });
 }
@@ -3187,7 +3209,9 @@ fn argmax(v: &[f32]) -> u32 {
 
 #[cfg(test)]
 mod lane_watch_tests {
-    use super::{Dsv4HostCache, LANE, LaneBoard, LanePhase, Turn, TurnLock, lane_phase};
+    use super::{
+        Dsv4HostCache, LANE, LaneBoard, LanePhase, Turn, TurnLock, lane_phase, lane_watch_once,
+    };
     use std::sync::Arc;
     use std::sync::atomic::Ordering;
 
@@ -3218,6 +3242,24 @@ mod lane_watch_tests {
         })
         .join()
         .unwrap();
+        // Lane 1 sits at ReadbackWait: past the stall the dump names it once, and a lane at the
+        // queue never trips it.
+        let since = board.slots[1].since_ms.load(Ordering::Relaxed);
+        let stall = std::time::Duration::from_secs(60);
+        let mut dumped = vec![u64::MAX; 2];
+        assert_eq!(
+            lane_watch_once(&board, (7, 6), since + 59_999, stall, &mut dumped),
+            None
+        );
+        let line = lane_watch_once(&board, (7, 6), since + 60_000, stall, &mut dumped)
+            .expect("a stalled lane is reported");
+        assert!(line.contains("lane 1 ReadbackWait for 60.0s"), "{line}");
+        assert!(line.contains("lane 0 Queue"), "{line}");
+        assert!(line.ends_with("turn tickets next=7 served=6"), "{line}");
+        assert_eq!(
+            lane_watch_once(&board, (7, 6), since + 90_000, stall, &mut dumped),
+            None
+        );
         // Lane 0 never published; a thread with no lane is a no-op.
         lane_phase(LanePhase::Held);
         assert_eq!(
