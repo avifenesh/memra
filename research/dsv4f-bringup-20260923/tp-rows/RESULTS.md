@@ -70,7 +70,10 @@ Regressions:
     the Server Edition pair and `cc6082dd/373e6557` on the Workstation pair: the control arm
     `raw/ws-gates/tp-rows-ctl/` is the pre-kernel binary on the WS pod. That makes it a pod
     difference in draft confidence bits, not a program change.
-- The PP-2 rows gate passes too.
+- The PP-2 rows gate passes too, at the final head: the hoisted compressor projections also
+  run in PP B-row attention. `raw/ws-gates/rows-pp-7150cb5f1/` has every row identical and the
+  pipelined groups identical.
+- The DSpark gate on PP-2 at the final head passes with the pod's digests.
 
 Served: every request's text sha is equal across every arm of every cell below.
 
