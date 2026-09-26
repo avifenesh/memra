@@ -415,6 +415,7 @@ pub const fn surfaces(operation: OperationKind) -> Surfaces {
         | OperationKind::VisionDownsample
         | OperationKind::VisionProjection
         | OperationKind::VisionTokenInjection
+        | OperationKind::MiMoAttentionMath
         | OperationKind::CompressedMlaAttention
         | OperationKind::KvCompressor
         | OperationKind::MicroBlockSparseIndex
@@ -459,6 +460,7 @@ pub const ALL_OPERATIONS: &[OperationKind] = &[
     OperationKind::RmsNorm,
     OperationKind::FullAttention,
     OperationKind::SlidingWindowAttention,
+    OperationKind::MiMoAttentionMath,
     OperationKind::LatentMlaAttention,
     OperationKind::CompressedMlaAttention,
     OperationKind::KvCompressor,
@@ -552,7 +554,7 @@ mod tests {
         // follow. Bump it in the same commit as the variant.
         assert_eq!(
             ALL_OPERATIONS.len(),
-            67,
+            68,
             "OperationKind variant count moved; update ALL_OPERATIONS"
         );
     }
