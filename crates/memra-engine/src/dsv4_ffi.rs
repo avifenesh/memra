@@ -562,6 +562,49 @@ unsafe extern "C" {
         fault: *mut i32,
         stream: *mut c_void,
     ) -> i32;
+    /// `memra_dsv4_moe_fused_gu` over a partition (memra #710, a TP/EP rank): `table` holds
+    /// experts `[first, first + n_expert)` of `global_experts`, `sel` and `scale2` carry global
+    /// ids, and another rank's slot is skipped. Fault bit 0x1 is an id outside the bank.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_moe_fused_gu_part(
+        table: *const u64,
+        n_expert: i32,
+        global_experts: i32,
+        first: i32,
+        sel: *const i32,
+        selw: *const f32,
+        scale2: *const f32,
+        xf: *const f32,
+        h: *mut f32,
+        topk: i32,
+        in_f: i32,
+        out_f: i32,
+        limit: f32,
+        fault: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_moe_fused_down` over a partition: `order`, `y` and `tile_cnt` null, so only
+    /// this rank's slots' contribution rows are written and the slot sum is the caller's, after
+    /// the rank-order join. A partition with the sum refuses 40004.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_moe_fused_down_part(
+        table: *const u64,
+        n_expert: i32,
+        global_experts: i32,
+        first: i32,
+        sel: *const i32,
+        scale2: *const f32,
+        h: *const f32,
+        contrib: *mut f32,
+        order: *const i32,
+        y: *mut f32,
+        tile_cnt: *mut i32,
+        topk: i32,
+        in_f: i32,
+        out_f: i32,
+        fault: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_moe_fused_dispatches() -> u64;
     pub fn memra_dsv4_scale_rows(
         y: *mut f32,

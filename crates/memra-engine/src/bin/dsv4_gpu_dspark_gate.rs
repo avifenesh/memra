@@ -651,9 +651,9 @@ fn main() {
         fused_taken
     );
     // The pair only replaces the visitor, so a stream-OFF (reference) arm takes neither. Under
-    // TP/EP every layer runs the expert-id EP path (`execute_matrix_local`), which the fused
-    // pair never reaches, so a TP/EP plain arm takes none either.
-    let fused_expected = fused_on && stream_on && !tp_ep;
+    // TP/EP a one-token step takes the pair's partition form over the rank's experts (memra
+    // #710), so a TP/EP plain arm claims fused dispatches too.
+    let fused_expected = fused_on && stream_on;
     if fused_expected == (fused_taken == 0) {
         fails.push(format!(
             "FUSED MOE ENGAGEMENT: fused {} stream {} but the plain arm took {fused_taken} \

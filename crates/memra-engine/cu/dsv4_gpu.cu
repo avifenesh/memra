@@ -8097,6 +8097,7 @@ constexpr int DSV4_MOE_FUSED_WARPS = 4, DSV4_MOE_FUSED_KC = 256, DSV4_MOE_FUSED_
 template<int WP, int KC, int STAGES>
 static __global__ void __launch_bounds__(2 * WP * 32)
 dsv4_moe_fused_gu_kernel(const unsigned long long* __restrict__ table, int n_expert,
+                         int global_experts, int first_expert,
                          const int* __restrict__ sel, const float* __restrict__ selw,
                          const float* __restrict__ scale2, const float* __restrict__ xf,
                          float* __restrict__ H, int in_f, int out_f, float limit, long row_bytes,
@@ -8109,8 +8110,15 @@ dsv4_moe_fused_gu_kernel(const unsigned long long* __restrict__ table, int n_exp
     __shared__ float s_up[WP][4][2];
     uint32_t* As = reinterpret_cast<uint32_t*>(fz_smem);
     const int p = blockIdx.y, lane = threadIdx.x, warp = threadIdx.y;
+    // `table` holds experts [first_expert, first_expert + n_expert) of a bank of `global_experts`; the
+    // selection and the macro scales carry global ids (memra #710: a TP/EP rank's partition,
+    // the grouped partition route's contract). The full bank is first_expert = 0, n_expert = global.
     const int e = sel[p];
-    const bool valid = e >= 0 && e < n_expert;
+    const bool in_range = e >= 0 && e < global_experts;
+    const int le = e - first_expert;
+    const bool valid = in_range && le >= 0 && le < n_expert;
+    // Another rank's expert: the partition route omits the slot, so no h row is read for it.
+    if (in_range && !valid) return;
     const bool up = warp >= WP;
     const int proj = up ? 2 : 0;
     const int n0 = (blockIdx.x * WP + (up ? warp - WP : warp)) * 8;
@@ -8119,8 +8127,8 @@ dsv4_moe_fused_gu_kernel(const unsigned long long* __restrict__ table, int n_exp
     const uint8_t* wq0 = nullptr;
     const uint8_t* ws0 = nullptr;
     if (valid) {
-        wq0 = (const uint8_t*)table[(size_t)(2 * proj) * n_expert + e] + (size_t)n0 * row_bytes;
-        ws0 = (const uint8_t*)table[(size_t)(2 * proj + 1) * n_expert + e] + (size_t)n0 * sc_row;
+        wq0 = (const uint8_t*)table[(size_t)(2 * proj) * n_expert + le] + (size_t)n0 * row_bytes;
+        ws0 = (const uint8_t*)table[(size_t)(2 * proj + 1) * n_expert + le] + (size_t)n0 * sc_row;
     }
     // Weight prologue first, so the first stages stream while the x mirror runs.
 #pragma unroll
@@ -8175,6 +8183,7 @@ dsv4_moe_fused_gu_kernel(const unsigned long long* __restrict__ table, int n_exp
 template<int WARPS, int KC, int STAGES>
 static __global__ void __launch_bounds__(WARPS * 32)
 dsv4_moe_fused_down_kernel(const unsigned long long* __restrict__ table, int n_expert,
+                           int global_experts, int first_expert,
                            const int* __restrict__ sel, const float* __restrict__ scale2,
                            const float* __restrict__ H, float* __restrict__ C,
                            const int* __restrict__ order, float* __restrict__ Y,
@@ -8189,15 +8198,21 @@ dsv4_moe_fused_down_kernel(const unsigned long long* __restrict__ table, int n_e
     uint32_t* As = reinterpret_cast<uint32_t*>(fz_smem);
     const int p = blockIdx.y, lane = threadIdx.x, warp = threadIdx.y;
     const int e = sel[p];
-    const bool valid = e >= 0 && e < n_expert;
+    const bool in_range = e >= 0 && e < global_experts;
+    const int le = e - first_expert;
+    const bool valid = in_range && le >= 0 && le < n_expert;
+    // Another rank's expert: its contribution row stays the caller's cleared plane. Only a
+    // launch without the slot sum (Y null, the partition form) takes this exit, so every CTA
+    // of a summing launch still reaches the tile counter.
+    if (in_range && !valid && !Y) return;
     const int n0 = (blockIdx.x * WARPS + warp) * 8;
     unsigned char* ring = fz_smem + (size_t)in_f * 2 + (size_t)warp * R::BYTES;
     const int nch = in_f / KC, sc_row = in_f / 16;
     const uint8_t* wq0 = nullptr;
     const uint8_t* ws0 = nullptr;
     if (valid) {
-        wq0 = (const uint8_t*)table[(size_t)2 * n_expert + e] + (size_t)n0 * row_bytes;
-        ws0 = (const uint8_t*)table[(size_t)3 * n_expert + e] + (size_t)n0 * sc_row;
+        wq0 = (const uint8_t*)table[(size_t)2 * n_expert + le] + (size_t)n0 * row_bytes;
+        ws0 = (const uint8_t*)table[(size_t)3 * n_expert + le] + (size_t)n0 * sc_row;
     }
 #pragma unroll
     for (int c = 0; c < STAGES - 1; c++)
@@ -8228,6 +8243,8 @@ dsv4_moe_fused_down_kernel(const unsigned long long* __restrict__ table, int n_e
         }
         __threadfence();
     }
+    // The partition form leaves the slot sum to the caller, after the rank-order join.
+    if (!Y) return;
     __syncthreads();
     if (tid == 0) s_last = atomicAdd(&tile_cnt[blockIdx.x], 1) == (int)gridDim.y - 1;
     __syncthreads();
@@ -8251,45 +8268,76 @@ static bool dsv4_moe_fused_shape_ok(int n_expert, int topk, int in_f, int out_f,
 }
 
 // One token: x is [in_f] f32 (the MoE input row), h is [topk][out_f]. out_f = moe_inter.
-extern "C" int memra_dsv4_moe_fused_gu(const unsigned long long* table, int n_expert,
-                                       const int* sel, const float* selw, const float* scale2,
-                                       const float* xf, float* h, int topk, int in_f, int out_f,
-                                       float limit, int* fault, void* stream_v) {
+// `table` holds experts [first, first + n_expert) of `global_experts`; sel and scale2 carry
+// global ids. The full bank is first = 0 and n_expert = global_experts.
+extern "C" int memra_dsv4_moe_fused_gu_part(const unsigned long long* table, int n_expert,
+                                            int global_experts, int first, const int* sel,
+                                            const float* selw, const float* scale2,
+                                            const float* xf, float* h, int topk, int in_f,
+                                            int out_f, float limit, int* fault, void* stream_v) {
     constexpr int WP = DSV4_MOE_FUSED_WARPS, KC = DSV4_MOE_FUSED_KC, ST = DSV4_MOE_FUSED_STAGES;
-    if (!table || !sel || !selw || !scale2 || !xf || !h ||
+    if (!table || !sel || !selw || !scale2 || !xf || !h || first < 0 ||
+        global_experts < n_expert || first > global_experts - n_expert ||
         !dsv4_moe_fused_shape_ok(n_expert, topk, in_f, out_f, 8 * WP))
         return 40004;
     const size_t smem = (size_t)in_f * 2 + (size_t)2 * WP * Dsv4M1Ring<KC, ST>::BYTES;
     if (smem > 48 * 1024) return 40004;
     memra_chain_launch(dsv4_moe_fused_gu_kernel<WP, KC, ST>,
         dim3((unsigned)(out_f / (8 * WP)), (unsigned)topk), dim3(32, 2 * WP), smem,
-           (cudaStream_t)stream_v)(table, n_expert, sel, selw, scale2, xf, h, in_f, out_f,
-                                     limit, (long)(in_f / 2), fault);
+           (cudaStream_t)stream_v)(table, n_expert, global_experts, first, sel, selw, scale2,
+                                     xf, h, in_f, out_f, limit, (long)(in_f / 2), fault);
     DSV4_ERR();
     g_dsv4_moe_fused_dispatches.fetch_add(1, std::memory_order_relaxed);
     return 0;
 }
 
+extern "C" int memra_dsv4_moe_fused_gu(const unsigned long long* table, int n_expert,
+                                       const int* sel, const float* selw, const float* scale2,
+                                       const float* xf, float* h, int topk, int in_f, int out_f,
+                                       float limit, int* fault, void* stream_v) {
+    return memra_dsv4_moe_fused_gu_part(table, n_expert, n_expert, 0, sel, selw, scale2, xf, h,
+                                        topk, in_f, out_f, limit, fault, stream_v);
+}
+
 // One token: h is [topk][in_f] (in_f = moe_inter), contribution [topk][out_f], y [out_f];
-// tile_cnt holds out_f / 32 zeroed counters.
-extern "C" int memra_dsv4_moe_fused_down(const unsigned long long* table, int n_expert,
-                                         const int* sel, const float* scale2, const float* h,
-                                         float* contrib, const int* order, float* y,
-                                         int* tile_cnt, int topk, int in_f, int out_f, int* fault,
-                                         void* stream_v) {
+// tile_cnt holds out_f / 32 zeroed counters. The partition form (a TP/EP rank's experts) takes
+// order, y and tile_cnt null: it writes its own slots' contribution rows and leaves the slot sum
+// to the caller, after the rank-order join; the other slots' rows stay as the caller cleared them.
+extern "C" int memra_dsv4_moe_fused_down_part(const unsigned long long* table, int n_expert,
+                                              int global_experts, int first, const int* sel,
+                                              const float* scale2, const float* h,
+                                              float* contrib, const int* order, float* y,
+                                              int* tile_cnt, int topk, int in_f, int out_f,
+                                              int* fault, void* stream_v) {
     constexpr int W = DSV4_MOE_FUSED_WARPS, KC = DSV4_MOE_FUSED_KC, ST = DSV4_MOE_FUSED_STAGES;
-    if (!table || !sel || !scale2 || !h || !contrib || !order || !y || !tile_cnt ||
+    const bool sums = order || y || tile_cnt;
+    const bool partition = first != 0 || global_experts != n_expert;
+    if (!table || !sel || !scale2 || !h || !contrib || first < 0 ||
+        global_experts < n_expert || first > global_experts - n_expert ||
+        (sums && (!order || !y || !tile_cnt)) || (partition && sums) ||
         !dsv4_moe_fused_shape_ok(n_expert, topk, in_f, out_f, 8 * W))
         return 40004;
     const size_t smem = (size_t)in_f * 2 + (size_t)W * Dsv4M1Ring<KC, ST>::BYTES;
     if (smem > 48 * 1024) return 40004;
     memra_chain_launch(dsv4_moe_fused_down_kernel<W, KC, ST>,
         dim3((unsigned)(out_f / (8 * W)), (unsigned)topk), dim3(32, W), smem,
-           (cudaStream_t)stream_v)(table, n_expert, sel, scale2, h, contrib, order, y,
-                                     tile_cnt, topk, in_f, out_f, (long)(in_f / 2), fault);
+           (cudaStream_t)stream_v)(table, n_expert, global_experts, first, sel, scale2, h,
+                                     contrib, order, y, tile_cnt, topk, in_f, out_f,
+                                     (long)(in_f / 2), fault);
     DSV4_ERR();
     g_dsv4_moe_fused_dispatches.fetch_add(1, std::memory_order_relaxed);
     return 0;
+}
+
+extern "C" int memra_dsv4_moe_fused_down(const unsigned long long* table, int n_expert,
+                                         const int* sel, const float* scale2, const float* h,
+                                         float* contrib, const int* order, float* y,
+                                         int* tile_cnt, int topk, int in_f, int out_f, int* fault,
+                                         void* stream_v) {
+    if (!order || !y || !tile_cnt) return 40004;
+    return memra_dsv4_moe_fused_down_part(table, n_expert, n_expert, 0, sel, scale2, h, contrib,
+                                          order, y, tile_cnt, topk, in_f, out_f, fault,
+                                          stream_v);
 }
 
 extern "C" unsigned long long memra_dsv4_moe_fused_dispatches() {
