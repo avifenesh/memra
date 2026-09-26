@@ -344,14 +344,15 @@ the card is reset.
 - Acceptance: none registered (the writers isolated without serializing them, for example `reserve_pending_admit`'s
   test entry taking its lane counters as a parameter so a writer never touches the process-global ones; the same 400-run
   shape green for the target and its siblings, the suite's time back to A''s).
-- Status: **pre-registered** (DAY56 section 1: design F2, the lane counters a parameter of the reservation path;
-  the census, the 400 and 100 suites).
+- Status: **closed** (DAY56 section 2: F2 `10b9329cc`; the suite's median `finished in` 6.62 s against 6.70 s, N=400;
+  item 21's target and siblings 400 of 400 green, no handler 429; arm B 100 of 100).
 
 ### 24. `darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown` times out under starvation (found by DAY55)
 
 - Source: DAY55 section 7, arm B's shape (100 full suites, `--test-threads 48`, `CPUQuota=400%`): 1 of 100, `timed out
   (3000ms) waiting for: yield to T` (darklane.rs:602).
 - Acceptance: none registered (reproduce and place it as DAY55 did: a defect, or a wall-clock bound).
+  DAY56 section 2: 1 of 400 in arm A's shape too (run 179).
 - Status: open.
 
 ### 25. `tests::a_fake_route_memory_door_refuses_defers_and_recovers_through_the_handler` reads a running row after the cancel (found by DAY55)
@@ -360,6 +361,9 @@ the card is reset.
   running, inflight)` read `(0, 1, 0)` against `(0, 0, 0)`. Either the test reads a route book mid-update or the book
   publishes `cancelled` before it takes the row out of `running` (a snapshot a reader could see in production).
 - Acceptance: none registered (reproduce, then place: the book's order of updates or the test's read).
+  DAY56 section 2: 1 of 400 in arm A's shape too (run 156). Cause read from the code (DAY58 registers it):
+  `RouteRun::cancel` counts `cancelled` before its `Drop` takes the row out of `running`, and the snapshot loads
+  `running` before `cancelled`, so a reader can see both.
 - Status: open.
 
 ## 2. Closed, delivered, or held by another owner
