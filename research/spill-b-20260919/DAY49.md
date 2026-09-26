@@ -88,6 +88,28 @@ written, and the reclaim is named exactly:
   (`MEMRA_BATCH_OOM_RECOVER=1`) in both orders, on both cards (the 27B on the target card): on `on` every request
   ends `200`; `off` is the before reading. No clause of 1.3 changes.
 
+### 1.7 Addendum C (2026-09-26, the review-pattern reading of the built arm, before any fix code)
+
+The seven spill review patterns read against `6102fb63a` (the retry loop, `batch_oom_reclaim`, the guard):
+
+- **Found: the reclaim skips the VMM reap.** The two reclaim paths that drop the parked pools (the step-OOM teardown
+  and the admin trim) call `vmm_reap_for` before `trim_model_device_pools` (DAY37 addendum D: under
+  `--kv-allocator vmm` a dropped cache's on-demand planes sit in the graveyard until reaped), and a census test pins
+  both. `batch_oom_reclaim` drops the same pools and trims without the reap, so under the VMM door the retry would run
+  against a driver that has not got the dropped planes back. The fix: `vmm_reap_for("batch-oom")` before the trim, and
+  the census pins the third site.
+- **Read and clean:** no move-then-match (the error is borrowed in the guard); nothing parks, so the idle wait is not
+  touched; the gate derives its counts from the fault count; the retry-failure exit holds nothing the reclaim took (the
+  guard is taken after every attempt); the drop, fence, settle and trim order is the step-OOM rung's; no booking and no
+  reply are involved.
+- **The registered cells stand on `02dbdfa40`.** `vmm_reap_for` returns at `!kv_vmm::armed()`, and no DAY49 cell sets
+  the VMM door, so the fix is unreachable in them: the local runner and the twelfth sitting run as registered.
+- **The new cell `i-vmm` (the door combination, the fix's own reading):** the gate's arms `i-ctrl`, `i`, `i-red` with
+  `MEMRA_KV_ALLOCATOR=vmm` exported (the gate's server inherits it), on the fix binary and on `02dbdfa40`. Green (the
+  fix): arm i's terms of addendum B pass under the door, and each retry is followed by one `[kv-vmm] reap (batch-oom)`
+  line before its `retrying` line's retry. Red (`02dbdfa40`): the same terms, and no `reap (batch-oom)` line (the
+  defect as it reads). On the 5090 first; the target card in the next B sitting after the twelfth.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
