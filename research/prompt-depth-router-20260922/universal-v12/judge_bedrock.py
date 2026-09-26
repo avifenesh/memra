@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import urllib.parse
@@ -16,6 +17,10 @@ FIELDS = {
     "choice",
 }
 TEMPLATE_SHA = "ccd57bd8c4c73f4f83cf8963ef3c2697c1c7b9e907ead91e0d0512cca4ae7a11"
+PRICING_URL = (
+    "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/"
+    "AmazonBedrockFoundationModels/current/us-east-1/index.json"
+)
 
 
 def sha(path):
@@ -73,6 +78,51 @@ def validate_config(config):
         or config["output_usd_per_million_budget"] <= 0
     ):
         raise ValueError("independent prose judge configuration differs")
+
+
+def price_quote(config):
+    with urllib.request.urlopen(PRICING_URL, timeout=20) as response:
+        index = json.load(response)
+    prices = {}
+    for kind in ("input", "output"):
+        matching = []
+        suffix = f"_{kind}_tokens_global_standard-Units"
+        for sku, product in index["products"].items():
+            attributes = product.get("attributes", {})
+            if (
+                attributes.get("servicename")
+                != "Claude Sonnet 5 (Amazon Bedrock Edition)"
+                or attributes.get("regionCode") != config["region"]
+                or not attributes.get("usagetype", "").endswith(suffix)
+            ):
+                continue
+            for term in index["terms"]["OnDemand"][sku].values():
+                for dimension in term["priceDimensions"].values():
+                    if dimension["unit"] == "1M tokens":
+                        matching.append((
+                            sku, float(dimension["pricePerUnit"]["USD"]),
+                        ))
+        if (
+            len(matching) != 1
+            or not math.isfinite(matching[0][1])
+            or matching[0][1] <= 0
+            or matching[0][1] > config[
+                f"{kind}_usd_per_million_budget"
+            ]
+        ):
+            raise ValueError("live Bedrock judge price exceeds budget rate")
+        prices[kind] = {
+            "sku": matching[0][0],
+            "usd_per_million": matching[0][1],
+        }
+    return {
+        "schema": 1,
+        "source": PRICING_URL,
+        "publication_date": index["publicationDate"],
+        "model_id": config["model_id"],
+        "region": config["region"],
+        "global_standard": prices,
+    }
 
 
 def parse_response(raw, config, packet, index):
@@ -160,7 +210,8 @@ def call(prompt, config, token):
         }
 
 
-def run(packets_dir, config_path, credential_file, out):
+def run(packets_dir, config_path, credential_file, out,
+        prior_manifest_path=None):
     config = json.loads(config_path.read_text())
     validate_config(config)
     manifest = json.loads((packets_dir / "manifest.json").read_text())
@@ -174,7 +225,34 @@ def run(packets_dir, config_path, credential_file, out):
     packets = jsonl(packet_path)
     if len(packets) != manifest["packet_count"]:
         raise ValueError("independent judge packet count differs")
+    live_price = price_quote(config)
+    prior_usage = {"input_tokens": 0, "output_tokens": 0}
+    prior_sha = None
+    if manifest["phase"] == "final":
+        if prior_manifest_path is None:
+            raise ValueError("final judge lacks validation budget receipt")
+        prior = json.loads(prior_manifest_path.read_text())
+        if (
+            prior["status"] != "complete"
+            or prior["config_sha256"] != sha(config_path)
+            or prior["model_id"] != config["model_id"]
+            or prior["region"] != config["region"]
+        ):
+            raise ValueError("final judge budget lineage differs")
+        prior_usage = prior["usage"]
+        prior_sha = sha(prior_manifest_path)
+    elif manifest["phase"] != "validation" or (
+        prior_manifest_path is not None
+    ):
+        raise ValueError("validation judge budget phase differs")
     out.mkdir(exist_ok=True)
+    pricing_path = out / "pricing.json"
+    if pricing_path.exists():
+        pinned_price = json.loads(pricing_path.read_text())
+        if pinned_price["global_standard"] != live_price["global_standard"]:
+            raise ValueError("Bedrock judge price changed during this phase")
+    else:
+        save(pricing_path, live_price)
     results_path = out / "results.jsonl"
     completed = jsonl(results_path)
     if len(completed) > len(packets):
@@ -205,6 +283,8 @@ def run(packets_dir, config_path, credential_file, out):
             or prior["packets_sha256"] != sha(packet_path)
             or prior["config_sha256"] != sha(config_path)
             or prior["results_sha256"] != sha(results_path)
+            or prior["prior_judge_manifest_sha256"] != prior_sha
+            or prior["pricing_sha256"] != sha(pricing_path)
             or len(completed) != len(packets)
         ):
             raise ValueError("completed Bedrock judgment changed")
@@ -223,8 +303,10 @@ def run(packets_dir, config_path, credential_file, out):
         if byte_count > config["max_prompt_bytes"]:
             raise ValueError("independent judge prompt exceeds byte limit")
         if budgeted_usd(
-            config, input_tokens + byte_count,
-            output_tokens + config["max_output_tokens"],
+            config,
+            prior_usage["input_tokens"] + input_tokens + byte_count,
+            prior_usage["output_tokens"] + output_tokens
+            + config["max_output_tokens"],
         ) > config["total_usd_cap"]:
             raise ValueError("Bedrock judgment budget ceiling reached")
         response_path = responses / f"{index:05d}.json"
@@ -246,7 +328,9 @@ def run(packets_dir, config_path, credential_file, out):
             "judged": index + 1,
             "total": len(packets),
             "budgeted_usd_ceiling": budgeted_usd(
-                config, input_tokens, output_tokens,
+                config,
+                prior_usage["input_tokens"] + input_tokens,
+                prior_usage["output_tokens"] + output_tokens,
             ),
         }), flush=True)
     save(out / "manifest.json", {
@@ -257,13 +341,17 @@ def run(packets_dir, config_path, credential_file, out):
         "results_sha256": sha(results_path),
         "model_id": config["model_id"],
         "region": config["region"],
+        "pricing_sha256": sha(pricing_path),
+        "prior_judge_manifest_sha256": prior_sha,
         "requests": len(packets),
         "usage": {
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
         },
         "budgeted_usd_ceiling": budgeted_usd(
-            config, input_tokens, output_tokens,
+            config,
+            prior_usage["input_tokens"] + input_tokens,
+            prior_usage["output_tokens"] + output_tokens,
         ),
     })
 
@@ -272,10 +360,12 @@ def main():
     parser = argparse.ArgumentParser()
     for name in ("packets", "config", "credential-file", "out"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument("--prior-manifest", type=Path)
     args = parser.parse_args()
     run(
         args.packets.resolve(), args.config.resolve(),
         args.credential_file.resolve(), args.out.resolve(),
+        args.prior_manifest.resolve() if args.prior_manifest else None,
     )
 
 

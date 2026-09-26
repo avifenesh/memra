@@ -63,7 +63,8 @@ def bootstrap(items, seed):
             draws[int(0.975 * DRAW_COUNT)]]
 
 
-def score(packets_dir, results_dir, config_path):
+def score(packets_dir, results_dir, config_path,
+          prior_manifest_path=None):
     packets_manifest = json.loads(
         (packets_dir / "manifest.json").read_text()
     )
@@ -82,6 +83,8 @@ def score(packets_dir, results_dir, config_path):
         or results_manifest["config_sha256"] != sha(config_path)
         or sha(result_path) != results_manifest["results_sha256"]
         or results_manifest["model_id"] != config["model_id"]
+        or results_manifest["pricing_sha256"]
+        != sha(results_dir / "pricing.json")
         or config["template_sha256"] != TEMPLATE_SHA
         or not config["model_id"]
         or not all(
@@ -133,13 +136,44 @@ def score(packets_dir, results_dir, config_path):
             packet["response_a"] == packet["candidate"],
         )
     projected_usd = (
-        usage["input_tokens"]
-        * config["input_usd_per_million_budget"]
+        usage["input_tokens"] * config["input_usd_per_million_budget"]
         + usage["output_tokens"]
         * config["output_usd_per_million_budget"]
     ) / 1_000_000
-    if not math.isfinite(projected_usd) or (
-        projected_usd > config["total_usd_cap"]
+    prior_sha = None
+    total_usage = dict(usage)
+    if packets_manifest["phase"] == "final":
+        if prior_manifest_path is None:
+            raise ValueError("final prose score lacks prior judge usage")
+        prior = json.loads(prior_manifest_path.read_text())
+        if (
+            prior["status"] != "complete"
+            or prior["config_sha256"] != sha(config_path)
+            or prior["model_id"] != config["model_id"]
+            or results_manifest["prior_judge_manifest_sha256"]
+            != sha(prior_manifest_path)
+        ):
+            raise ValueError("final prose judge budget lineage differs")
+        prior_sha = sha(prior_manifest_path)
+        for key in total_usage:
+            total_usage[key] += prior["usage"][key]
+    elif (
+        packets_manifest["phase"] != "validation"
+        or prior_manifest_path is not None
+        or results_manifest["prior_judge_manifest_sha256"] is not None
+    ):
+        raise ValueError("prose judge validation budget phase differs")
+    cumulative_usd = (
+        total_usage["input_tokens"]
+        * config["input_usd_per_million_budget"]
+        + total_usage["output_tokens"]
+        * config["output_usd_per_million_budget"]
+    ) / 1_000_000
+    if not math.isfinite(cumulative_usd) or (
+        cumulative_usd > config["total_usd_cap"]
+        or abs(
+            cumulative_usd - results_manifest["budgeted_usd_ceiling"]
+        ) > 1e-8
     ):
         raise ValueError("prose judge cost cap exceeded")
     rows = defaultdict(list)
@@ -191,7 +225,9 @@ def score(packets_dir, results_dir, config_path):
         "judge_config_sha256": sha(config_path),
         "judge_model_id": config["model_id"],
         "judge_usage": usage,
+        "prior_judge_manifest_sha256": prior_sha,
         "budgeted_usd_ceiling": projected_usd,
+        "cumulative_budgeted_usd_ceiling": cumulative_usd,
         "comparisons": comparisons,
     }
 
@@ -200,10 +236,12 @@ def main():
     parser = argparse.ArgumentParser()
     for name in ("packets", "results", "config", "out"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument("--prior-manifest", type=Path)
     args = parser.parse_args()
     result = score(
         args.packets.resolve(), args.results.resolve(),
         args.config.resolve(),
+        args.prior_manifest.resolve() if args.prior_manifest else None,
     )
     with args.out.open("x") as output:
         json.dump(result, output, indent=2, sort_keys=True)

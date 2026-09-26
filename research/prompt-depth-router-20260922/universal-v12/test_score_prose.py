@@ -20,9 +20,15 @@ class ProseOrderTest(unittest.TestCase):
             judged = root / "judged"
             packets.mkdir()
             judged.mkdir()
+            (judged / "pricing.json").write_text("{}\n")
             config = root / "config.json"
             write(config, {
                 "model_id": "pinned-test-judge",
+                "pricing_sha256": score_prose.sha(
+                    judged / "pricing.json"
+                ),
+                "prior_judge_manifest_sha256": None,
+                "budgeted_usd_ceiling": 0.00192,
                 "template_sha256": score_prose.TEMPLATE_SHA,
                 "input_usd_per_million_budget": 1,
                 "output_usd_per_million_budget": 1,
@@ -72,6 +78,11 @@ class ProseOrderTest(unittest.TestCase):
                 "config_sha256": score_prose.sha(config),
                 "results_sha256": score_prose.sha(result_path),
                 "model_id": "pinned-test-judge",
+                "pricing_sha256": score_prose.sha(
+                    judged / "pricing.json"
+                ),
+                "prior_judge_manifest_sha256": None,
+                "budgeted_usd_ceiling": 0.00192,
             })
             result = score_prose.score(packets, judged, config)
             comparison = result["comparisons"]["learned::vs::fixed"]
