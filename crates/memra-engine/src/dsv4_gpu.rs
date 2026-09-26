@@ -11949,9 +11949,11 @@ impl Dsv4Gpu {
                 // Drain BOTH before reading/returning a token or releasing any plane.
                 pair.drain_both()?;
                 drop(drain_phase);
-                self.vocab_head_refusal_check()?;
                 let _readback = full_token_profile_phase("FULL_TOKEN_TOKEN_READBACK\0");
                 state.pos = pos0 + 1; // the forward is committed even if sampling refuses its logits
+                // Likewise a refused head gather: the planes are committed, so the position is
+                // too, and no token leaves (the request fails; its state is never parked).
+                self.vocab_head_refusal_check()?;
                 let token = if pair.greedy {
                     let stream = self.stages[1].gpu.stream();
                     let mut out = [0i32; 1];
@@ -11993,8 +11995,12 @@ impl Dsv4Gpu {
             let head_phase = full_token_profile_phase("FULL_TOKEN_EAGER_HEAD_SUBMIT\0");
             if self.vocab_parallel_head() {
                 self.head_logits_tp_ep(&mut work.verify, 1, false)?;
-                // Stream-ordered after the gather on both ranks.
-                self.vocab_head_refusal_check()?;
+                // Stream-ordered after the gather on both ranks. The planes are committed, so a
+                // refusal advances the position with them before the request fails.
+                if let Err(refused) = self.vocab_head_refusal_check() {
+                    state.pos = pos0 + 1;
+                    return Err(refused);
+                }
             } else {
                 self.head_logits_batch_dev(&mut work.verify.ws[1], 1, false)?;
             }
@@ -19508,7 +19514,9 @@ impl Dsv4Gpu {
 
     /// After a vocab-parallel head has drained: its row gather reports a bounded-wait refusal
     /// through the same sticky words as the trunk joins, and a refused gather left the logits
-    /// incomplete, so no token may leave. The planes are already committed; the request fails.
+    /// incomplete, so no token may leave. The planes are already committed, and every caller has
+    /// advanced (or advances) the state's position with them; the request fails, and a failed
+    /// request's state is dropped, never parked.
     fn vocab_head_refusal_check(&self) -> Res<()> {
         if !self.vocab_parallel_head() {
             return Ok(());
