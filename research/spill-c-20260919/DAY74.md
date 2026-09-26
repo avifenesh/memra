@@ -92,3 +92,70 @@ Run as `D74_BUILDS="p71=6bad38150" [D74_RIG=<name>] bash /root/wt-c/research/spi
 `not_run`), root in the container; the 285K class after it. Receipts land in `/root/spill-receipts/c-day74-<rig>/`.
 Expected: the build about 5 minutes when not shared, the cell about 12 minutes (24 runs, each induced run adding its
 setup of up to about 20 s).
+
+## 2. BOX31 (a Ryzen 9 9950X, run by the lead as registered; `pro-single-day74-box31/`)
+
+**Attempt 1 (03:56Z; `attempt1-notrun-memfree26/`):** `DAY74 INDUCER rig=box31 memfree_gib=26 F_gib=-44 induce=0`,
+`DAY74 INDUCE VERDICT rig=box31 -> not_run`: the page cache held 77 GB (staged artifacts and build trees) and the
+container refuses `drop_caches`. Recorded as it reads.
+
+**Between the attempts (the lead's action, outside the cell):** the clean page cache of every file the cell does not
+use was evicted with unprivileged `posix_fadvise(POSIX_FADV_DONTNEED)`, the 35B artifact kept cached: `MemFree` 26 to
+57 GiB (`Cached` 77 to 46 GB). No host setting was changed.
+
+**Attempt 2 (04:13Z to `box done 2026-09-26T04:31:00Z`):** 128 receipts in the two directories `OK` against their
+manifests (re-checked), `run-gen-p71` by hash. Regime: 27 to 40 C, SM median 2610 MHz, N=1105. Verbatim:
+
+- `DAY74 INDUCER rig=box31 memfree_gib=56 F_gib=16 induce=1`
+- `DAY74 INDUCE CHECKS rig=box31 runs=24 integrity=ok`
+- `DAY74 R2 rig=box31 ref: window_cycles median=6.010 (N=6) compacted=0 of 6 ... | R3 gen median=0.243 window median=0.217`
+- `DAY74 R2 rig=box31 refi: window_cycles median=6.009 (N=6) compacted=0 of 6 ... | R3 gen median=0.252 window median=0.221`
+- `DAY74 R2 rig=box31 i15: window_cycles median=6.011 (N=6) compacted=0 of 6 ... | R3 gen median=0.247 window median=0.218`
+- `DAY74 R2 rig=box31 i15i: window_cycles median=6.010 (N=6) compacted=0 of 6 ... | R3 gen median=0.257 window median=0.224`
+- `DAY74 INDUCE VERDICT rig=box31 integrity=ok -> not_induced (compaction in 0 of 6 REF+I and 0 of 6 door+I spans)`
+
+**Read as registered: `not_induced`.** The inducer ran in all 12 induced runs (each `ready`, `loop` at the gate,
+`stopped`), and every 256 MiB huge-page burst it asked for came back whole (`AnonHugePages` 262144 kB in all 24
+per-second rows): with 16 GiB fragmented and about 48 GiB of free memory left untouched, the kernel had free
+high-order blocks and never compacted. No span moved `compact_isolated`, and no run's core left 6.0 cycles per step.
+Beside it, deciding nothing: the induced arms ran slower in wall time with the core unchanged (REF 0.243 to 0.252 s
+gen-only, the door 0.247 to 0.257), the inducer's own load on the host (one core, memory traffic); one REF run
+(`o2-ref-r2`) read 0.303 gen-only with a normal window and core.
+
+## 3. BOX29 (the 285K class, run by the lead as registered; `pro-single-day74-box29-285k/`)
+
+After DAY72's cell on the same card, 05:28Z to `box done 2026-09-26T05:35:57Z`; 128 receipts `OK`. Regime: 35 to 45 C,
+SM median 2610 MHz, N=2080. Verbatim:
+
+- `DAY74 INDUCER rig=box29-285k memfree_gib=105 F_gib=64 induce=1`
+- `DAY74 INDUCE CHECKS rig=box29-285k runs=24 integrity=FAIL failed=the counters check did not pass (the cycle readings need it)`
+- `DAY74 INDUCE VERDICT rig=box29-285k integrity=FAIL -> void`
+
+**Read as registered: `void`.** The counters check reads `[cpu-probe] counters-check cpu=1 counters=unavailable`: the
+probe's counters come from AMD's `RDPRU`, which an Intel CPU does not have, and section 1 reads the state only in
+APERF cycles, with no fallback. That is a gap in the registration, not a fault of the host. What the 285K half needs
+is registered in section 4 below, before any rerun. Beside it, deciding nothing: the inducer ran at 64 GiB and every
+burst again came back as whole huge pages; no compaction counter moved anywhere in the cell; the phase probe's wall
+time per chain step reads 1.112 to 1.118 ns in every run of every arm, and the induced arms ran slower in wall time
+(REF 0.255 to 0.258 s gen-only, the door 0.264 to 0.270).
+
+## 4. Registered after sections 2 and 3, before any rerun: the cell `induce-b`
+
+Two gaps, each found by a reading, each closed before the next cell:
+- **The inducer did not induce** on either host with free high-order blocks. `induce-b` fragments all but a small
+  reserve of free memory: at the cell's start it maps `X` = `MemFree` - 2 GiB of anonymous memory with
+  `MADV_NOHUGEPAGE`, touches every page, and returns every other 4 KiB page; free memory is then about 2 GiB of
+  intact blocks plus `X`/2 in order-0 holes, so a huge-page request must compact once the 2 GiB are taken. The door's
+  pool and allocations are 4 KiB-page allocations and fit in the holes. The induced arms run only when `X`/2 is at
+  least 48 GiB (`MemFree` at least 98 GiB), else `not_run`. The fragmentation is set up once per induced run, as
+  before, and the huge-page loop and the `compact_memory` trigger start at the gate, as section 1a has them.
+- **The state reading needs `RDPRU`.** On a CPU where the counters check reads `counters=unavailable`, `induce-b`
+  reads the state as the phase probe's wall nanoseconds per chain step at `gate` and at `window` (`compute_ns`), with
+  the same strict rule (`door_slows`: every door+I run's `window` value above every door run's; `ref_slows` likewise),
+  and the counters are not an integrity condition there. Where the check passes, cycles per step as section 1.
+- **The page cache the fill reads may be reclaimed** once free memory is this tight (a huge-page fault may reclaim before
+  it compacts). So before every run, of every arm, the cell reads the artifact once through the page cache (`cat` to
+  `/dev/null`, timed into `ev/rewarm.tsv`), and the door's `physical_reads=0` stays an integrity condition.
+Everything else is section 1's: the arms, the order, N, the `not_induced` guard (fewer than 5 of 6 induced spans of
+either program with compaction), the verdict names. Receipts under `c-day74b-<rig>/`. It runs on a 9950X machine (the
+registered class) and on the 285K class, each with at least 98 GiB `MemFree` at the start.

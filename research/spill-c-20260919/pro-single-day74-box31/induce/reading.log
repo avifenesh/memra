@@ -1,0 +1,31 @@
+DAY74 INDUCER rig=box31 memfree_gib=56 F_gib=16 induce=1
+DAY74 INDUCE CHECKS rig=box31 runs=24 integrity=ok
+DAY74 R1 o1-ref-r1: gen=0.243 window=0.216 gate_cycles=6.009 window_cycles=6.008 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o1-refi-r1: gen=0.252 window=0.222 gate_cycles=6.013 window_cycles=6.009 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o1-i15-r1: gen=0.247 window=0.218 gate_cycles=6.010 window_cycles=6.013 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o1-i15i-r1: gen=0.257 window=0.225 gate_cycles=6.014 window_cycles=6.016 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o1-ref-r2: gen=0.243 window=0.216 gate_cycles=6.010 window_cycles=6.011 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o1-refi-r2: gen=0.251 window=0.221 gate_cycles=6.013 window_cycles=6.009 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o1-i15-r2: gen=0.247 window=0.218 gate_cycles=6.011 window_cycles=6.008 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o1-i15i-r2: gen=0.257 window=0.224 gate_cycles=6.014 window_cycles=6.008 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o1-ref-r3: gen=0.243 window=0.217 gate_cycles=6.011 window_cycles=6.010 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o1-refi-r3: gen=0.252 window=0.221 gate_cycles=6.011 window_cycles=6.012 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o1-i15-r3: gen=0.248 window=0.218 gate_cycles=6.011 window_cycles=6.017 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o1-i15i-r3: gen=0.257 window=0.224 gate_cycles=6.011 window_cycles=6.007 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o2-i15i-r1: gen=0.257 window=0.223 gate_cycles=6.021 window_cycles=6.011 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o2-i15-r1: gen=0.248 window=0.218 gate_cycles=6.012 window_cycles=6.025 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o2-refi-r1: gen=0.249 window=0.220 gate_cycles=6.009 window_cycles=6.009 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o2-ref-r1: gen=0.244 window=0.217 gate_cycles=6.010 window_cycles=6.013 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o2-i15i-r2: gen=0.257 window=0.222 gate_cycles=6.009 window_cycles=6.019 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o2-i15-r2: gen=0.248 window=0.219 gate_cycles=6.014 window_cycles=6.010 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o2-refi-r2: gen=0.253 window=0.222 gate_cycles=6.013 window_cycles=6.010 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o2-ref-r2: gen=0.303 window=0.217 gate_cycles=6.013 window_cycles=6.012 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o2-i15i-r3: gen=0.258 window=0.225 gate_cycles=6.023 window_cycles=6.007 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o2-i15-r3: gen=0.247 window=0.219 gate_cycles=6.018 window_cycles=6.009 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o2-refi-r3: gen=0.251 window=0.221 gate_cycles=6.010 window_cycles=6.016 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R1 o2-ref-r3: gen=0.244 window=0.217 gate_cycles=6.054 window_cycles=6.010 compacted=no compact_isolated=0/s migrate_fail=0/s
+DAY74 R2 rig=box31 ref: window_cycles median=6.010 (N=6) compacted=0 of 6 compact_isolated median=0/s migrate_fail median=0/s | R3 gen median=0.243 window median=0.217
+DAY74 R2 rig=box31 refi: window_cycles median=6.009 (N=6) compacted=0 of 6 compact_isolated median=0/s migrate_fail median=0/s | R3 gen median=0.252 window median=0.221
+DAY74 R2 rig=box31 i15: window_cycles median=6.011 (N=6) compacted=0 of 6 compact_isolated median=0/s migrate_fail median=0/s | R3 gen median=0.247 window median=0.218
+DAY74 R2 rig=box31 i15i: window_cycles median=6.010 (N=6) compacted=0 of 6 compact_isolated median=0/s migrate_fail median=0/s | R3 gen median=0.257 window median=0.224
+DAY74 INDUCE VERDICT rig=box31 integrity=ok -> not_induced (compaction in 0 of 6 REF+I and 0 of 6 door+I spans)
