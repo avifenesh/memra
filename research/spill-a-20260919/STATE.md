@@ -18,7 +18,12 @@
   - The 5090: `rtx5090-w/build-local.sh` then `card-run.sh`, running in the background into `rtx5090-w/cell/`
     (untracked; bank it without `bins/`, and remove `bins/` when the cell closes). It holds the 5090 lock under the
     idle rule.
-  - W is adopted only if both cards pass their clauses (and (a), (d)).
+  - The target read `FAIL (a, c)`: (a) was a harness defect, now fixed; (c) is real, promote at 1.25 / 1.33 of base
+    (DAY61 section 3). W is not the target's program. If the 5090 half passes, W becomes a per-card write-combined arm
+    under a new pre-registration; otherwise it is reverted. The 5090 cell was restarted at 07:19Z with the fixed
+    harness.
+  - Scratch to remove when the W cell closes: `rtx5090-w/cell/bins/` and the two lines added to the shared
+    `/home/avifenesh/projects/memra/.git/info/exclude`.
 - Item 13 (DAY62): step 1 lines built (`17a1c8076`); price sitting `pro-single-day62/` ready (`build.sh <tip>`,
   then `driver.sh`, last line `DAY62 SELECT -> ..`), then the selected design(s).
 - Pre-registered and waiting in order: item 13's design (DAY62, the retire seam: lines, a price, R1

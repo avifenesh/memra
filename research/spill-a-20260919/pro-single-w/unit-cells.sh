@@ -15,8 +15,9 @@ python3 tools/tier-lock-proof.py --fd "$fd" --lock /tmp/memra-gpu.lock --owner c
 nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv > "$U/compute-apps.before.csv" 2>&1
 cell() { # name exe filter
   local name=$1 exe=$2 filter=$3
-  CUDA_VISIBLE_DEVICES=0 "$exe" --ignored --exact --nocapture --test-threads=1 "$filter" > "$U/$name.log" 2>&1
-  local rc=$?; echo "$rc" > "$U/$name.exit"; echo "$(date -u +%FT%TZ) $name rc=$rc $(grep -h '^test result' "$U/$name.log")" | tee -a "$U/run.log"
+  CUDA_VISIBLE_DEVICES=0 "$exe" --include-ignored --exact --nocapture --test-threads=1 "$filter" > "$U/$name.log" 2>&1
+  local rc=$?; grep -q '^running 1 test$' "$U/$name.log" || { echo "RAN NO TEST: the filter matched nothing" >> "$U/$name.log"; rc=97; }
+  echo "$rc" > "$U/$name.exit"; echo "$(date -u +%FT%TZ) $name rc=$rc $(grep -h '^test result' "$U/$name.log")" | tee -a "$U/run.log"
 }
 cell a1-green "$R/bins/w/memra-engine-tests" tier_transfer::tests::day61_the_streamed_checksum_is_the_checksum
 cell a2-green "$R/bins/w/memra-engine-tests" tier_transfer::tests::day61_the_streamed_checksum_is_the_checksum_on_pinned_memory

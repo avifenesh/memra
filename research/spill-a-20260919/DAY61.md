@@ -77,3 +77,47 @@ its own pre-registration.
     `W VERDICT card=5090 -> ..` (clauses (a), (b), (d)). Each boot also records the compute apps at its start.
   - The reader was dry-run on P2's demote and promote receipts mapped as two arms (`INCOMPLETE` there, from the
     mapping's boot counts). It read the target's re-hash share at about 0.74 ms and its `Sources` job at 1.2 ms.
+
+## 3. The target sitting, read as registered: FAIL (a, c)
+
+- Run by the lead on one RTX PRO 6000 Blackwell Workstation card (a 16-core host), `build.sh 9d0143dbf 457321806`
+  then `driver.sh`, 06:29Z to 07:17Z. Mirror `pro-single-w/box/`, sha256-checked against the box manifest; the
+  executables are recorded by hash only (`binaries.sha256`). 40 boots with start temperatures of 43 C to 66 C, and
+  250 ms telemetry in `ab-tier-cell/`.
+- Verbatim (`box/reading-w.log`):
+
+      W (a) UNIT a1-green=0 a2-green=0 a1-red=0 (marker 0) a2-red=101 (marker 1) censuses=0
+      W (a) gates {'contract-fault-plain': '0', 'contract-fault': '0', 'identity-default-off': '0', 'identity-default-on': '0', 'identity-plain-off': '0', 'identity-plain-on': '0'}
+      W READING card=target order=o1 mode=demote N_helper=40 helper base=0.73 w=0.77 ms (ratio 1.06) | stall base=63.77 w=63.82 | e2e base=174.7 w=174.8 ms
+      W READING card=target order=o1 mode=promote N_helper=45 helper base=1.20 w=1.50 ms (ratio 1.25) | stall base=62.59 w=62.59 | e2e base=113.8 w=113.9 ms
+      W READING card=target order=o2 mode=demote N_helper=40 helper base=0.70 w=0.77 ms (ratio 1.09) | stall base=63.81 w=63.83 | e2e base=174.8 w=174.8 ms
+      W READING card=target order=o2 mode=promote N_helper=45 helper base=1.20 w=1.60 ms (ratio 1.33) | stall base=62.63 w=62.59 | e2e base=113.9 w=113.9 ms
+      W (c) FAIL [True, False, True, False]
+      W (d) PASS [True, True, True, True]
+      W VERDICT card=target -> FAIL (a, c)
+
+- **(a) failed on a harness defect, not on W.** The a1 cell (the host identity cell) is a plain `#[test]`, not
+  `#[ignore]`. The sitting ran every cell with `--ignored --exact`, which runs ignored tests only, so a1's filter
+  matched nothing in both arms (`running 0 tests .. 624 filtered out`): green read 0, and red read 0 with no marker.
+  - The CPU run did not catch it because it ran `cargo test` without `--ignored`, which runs a1 by default.
+  - B1's sitting used the same flag correctly, because both of its cells are `#[ignore]`.
+  - Fixed in both W sittings: `--include-ignored --exact`, and a cell that runs no test now reads `RAN NO TEST` with
+    rc 97. Checked on the 5090 cell's own executables: w reads `running 1 test .. 1 passed` and red reads `running 1
+    test`, with the marker, and `FAILED`.
+  - a2 (pinned memory, both arms), the census and all six gates read as registered: green, red failed with the
+    marker, gates 0.
+- **(c) is a real reading: FAIL.** On the target card's cached leases, the promote's `Sources` job takes 1.20 ms on
+  base and 1.50 / 1.60 ms on w, a ratio of 1.25 / 1.33 against the 1.10 bound, in both orders. The demote's re-hash
+  share passes (1.06 / 1.09). The reading's resolution is 0.1 ms: the job time prints with one decimal.
+  - Read: on cached memory the extra pass through the bounce buffer costs about 0.3 ms per promote, and there is no
+    uncached read for it to save.
+  - (d) passes: the tenant's stall and the intruders' e2e are unchanged.
+- **Per the registration** (section 1: "A 5090-only win with a target regression past (c) makes it a per-card choice
+  keyed on the measured read rate, which is its own pre-registration"): W is not the target card's program, and (c)
+  is not relaxed.
+  - If the 5090 half passes (a), (b) and (d), W becomes a per-card choice under a new pre-registration: the streamed
+    read only where the lease's `PinnedKind` is write-combined, which is the 5090 class under `PinnedKind::for_device`.
+    That registration includes re-running a1 on the target with the fixed harness.
+  - If the 5090 half does not pass, W is reverted in one commit.
+- The 5090 half: its first queue attempt was stopped by me before it took the hold, to fix the harness
+  (`rtx5090-w/cell/run-stopped-before-hold.log`). It was restarted at 07:19Z on the same binaries.

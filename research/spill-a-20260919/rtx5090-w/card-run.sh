@@ -35,8 +35,9 @@ done
 log "hold taken"
 U=$ROOT/unit
 cell() { # name exe filter
-  CUDA_VISIBLE_DEVICES=0 "$2" --ignored --exact --nocapture --test-threads=1 "$3" > "$U/$1.log" 2>&1
-  local rc=$?; echo "$rc" > "$U/$1.exit"; log "$1 rc=$rc $(grep -h '^test result' "$U/$1.log")"
+  CUDA_VISIBLE_DEVICES=0 "$2" --include-ignored --exact --nocapture --test-threads=1 "$3" > "$U/$1.log" 2>&1
+  local rc=$?; grep -q '^running 1 test$' "$U/$1.log" || { echo "RAN NO TEST: the filter matched nothing" >> "$U/$1.log"; rc=97; }
+  echo "$rc" > "$U/$1.exit"; log "$1 rc=$rc $(grep -h '^test result' "$U/$1.log")"
 }
 T=tier_transfer::tests::day61_the_streamed_checksum_is_the_checksum
 cell a1-green "$ROOT/bins/w/memra-engine-tests" $T
