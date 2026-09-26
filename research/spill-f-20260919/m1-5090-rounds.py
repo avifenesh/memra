@@ -182,7 +182,11 @@ def main():
                 print(f"M1-5090 regime={a.regime} round={k} attempt={attempt} rc={rc} lost_lock_race={lost}", flush=True)
                 if not lost:
                     break
-                time.sleep(10)
+                # A lost race means a peer took the card: yield as after a cell before retrying.
+                log.write(json.dumps({"utc": now(), "event": "yield", "after_lost_race_round": k,
+                                      "seconds": YIELD_S}) + "\n")
+                log.flush()
+                time.sleep(YIELD_S)
             log.write(json.dumps({"utc": now(), "event": "yield", "after_round": k, "seconds": YIELD_S,
                                   "why": "release the shared card between registered cells"}) + "\n")
             log.flush()
