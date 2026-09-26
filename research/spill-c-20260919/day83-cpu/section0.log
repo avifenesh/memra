@@ -1,0 +1,12 @@
+# DAY83 section 0: the card cells' dispatch clocks (card-clocks.py), then DAY64b's I15 stage split on BOX14 (day83-read.py)
+Traceback (most recent call last):
+  File [35m"/home/avifenesh/projects/wt-spill-c/research/spill-c-20260919/day83-cpu/card-clocks.py"[0m, line [35m3[0m, in [35m<module>[0m
+    CLOCK=[1;31mre[0m.compile(r"\[moe-cache\] dispatch-clock phase=(\w+) (.*)")
+          [1;31m^^[0m
+[1;35mNameError[0m: [35mname 're' is not defined. Did you forget to import 're'?[0m
+DAY83 SPLIT i15s generate N=10 tickets=2443.0 prefetched_blocks=6007.0 dispatch_misses=440.0 (us per generated token, medians)
+DAY83 SPLIT i15s generate leaves: outer=- dispatch_inner=55.0 own_trace=13.3 bank_stage_lookup=8.3 bank_stage_cache=106.4 bank_stage_charge=26.6 stage_rest=20.9 bank_publish_output=5.6 bank_publish_policy=27.4 publish_rest=4.7 pf_resident=- bank_host_use=3.2 bank_retire_only=0.9 bank_ack=29.7 bank_collect=1.4 retire_outer=-
+DAY83 SPLIT i15s generate beside: pf_demand=- pf_resident=- pf_retire=- pf_stage=- own_inner_demand=254.8 bank_stage=162.2 bank_publish=37.6 bank_retire=33.8 eng_demand=46.1
+DAY83 SPLIT i15s window N=10 tickets=1065.0 prefetched_blocks=2835.0 dispatch_misses=120.0 (us per generated token, medians)
+DAY83 SPLIT i15s window leaves: outer=- dispatch_inner=29.3 own_trace=5.7 bank_stage_lookup=3.8 bank_stage_cache=48.1 bank_stage_charge=12.4 stage_rest=9.5 bank_publish_output=2.7 bank_publish_policy=10.8 publish_rest=2.1 pf_resident=- bank_host_use=1.4 bank_retire_only=0.4 bank_ack=14.7 bank_collect=0.6 retire_outer=-
+DAY83 SPLIT i15s window beside: pf_demand=- pf_resident=- pf_retire=- pf_stage=- own_inner_demand=118.8 bank_stage=73.7 bank_publish=15.5 bank_retire=16.5 eng_demand=13.5
