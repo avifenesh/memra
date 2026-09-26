@@ -298,6 +298,10 @@ struct PinnedBuffer {
     error: Option<WorkerReadError>,
     /// Payload start inside the buffer: 0 for exact reads, the window head for a direct over-read.
     head: usize,
+    /// OWED 26: order in which the buffer entered `H2d`, so a demand wait takes the oldest event.
+    h2d_seq: u64,
+    /// OWED 17: a mapped serve whose consumer event is not set yet; no drain may release it.
+    awaiting_consumer: bool,
     /// OWED 18 sibling, OWED 17 (`MEMRA_MOE_COLD_BYPASS=mapped`): the allocation's device alias
     /// (`cuMemHostGetDevicePointer`), wrapped once at pool setup. Never freed through cudarc:
     /// `Drop` leaks the wrapper before the pinned allocation goes.
@@ -505,7 +509,18 @@ pub(crate) struct PreadStats {
     pub h2d_submits: u64,
     /// OWED 17: payloads a kernel read in place through the buffer's device alias (no copy).
     pub mapped_serves: u64,
+    /// OWED 26 (M1-PREREG G2): demand submits that found no free buffer and waited for one,
+    /// the wall time spent waiting, prefetch tickets the cache cancelled to free a buffer, and
+    /// demand waits that hit the liveness bound (then, and only then, the mmap error path runs).
+    pub demand_waits: u64,
+    pub demand_wait_ns: u64,
+    pub prefetch_cancels: u64,
+    pub demand_wait_timeouts: u64,
 }
+
+/// OWED 26: the liveness bound on one demand read's wait for a pinned buffer. A watchdog, never
+/// expected to fire: every wait below is on a concrete in-flight completion.
+const DEMAND_WAIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
 
 fn elapsed_ns(started: std::time::Instant) -> u64 {
     u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
@@ -522,6 +537,7 @@ pub(crate) struct PreadPool {
     mode: SpillIoMode,
     workers: Option<WorkerPool>,
     next_ticket: u64,
+    next_h2d_seq: u64,
     tickets: HashSet<ReadTicket>,
     direct_files: HashMap<(u64, u64), Arc<File>>,
     random_advised_files: HashSet<(u64, u64)>,
@@ -552,6 +568,8 @@ impl PreadPool {
                     ticket: None,
                     error: None,
                     head: 0,
+                    h2d_seq: 0,
+                    awaiting_consumer: false,
                     mapped: None,
                 }),
                 Err(err) if buffers.is_empty() => return Err(err.into()),
@@ -599,6 +617,7 @@ impl PreadPool {
             mode,
             workers,
             next_ticket: 1,
+            next_h2d_seq: 1,
             tickets: HashSet::new(),
             direct_files: HashMap::new(),
             random_advised_files: HashSet::new(),
@@ -824,13 +843,153 @@ impl PreadPool {
 
     /// Submit a demand extent without blocking the CUDA owner. `None` means every pinned buffer is
     /// busy and the mmap fallback must handle the miss.
+    /// Submit a demand extent. OWED 26 (M1-PREREG G2): when no pinned buffer is free the call
+    /// WAITS for one (the oldest H2D event, else the next worker completion, else one drain of the
+    /// compute stream for buffers whose H2D completion is unknown) instead of returning, so the
+    /// caller never switches to mmap because the ring is busy. `Ok(None)` now means only that every
+    /// busy buffer holds a completed or failed prefetch the caller owns: cancel one and call again.
+    /// A wait past `DEMAND_WAIT_LIMIT` is an error, counted in `demand_wait_timeouts`.
     pub(crate) fn submit_worker(
         &mut self,
         file: Arc<File>,
         offset: u64,
         len: usize,
     ) -> Result<Option<ReadTicket>, Box<dyn std::error::Error>> {
-        self.submit_worker_with_admission(file, offset, len, WorkerAdmission::Demand)
+        let mut started: Option<std::time::Instant> = None;
+        let mut first = true;
+        loop {
+            let submitted = self.submit_worker_with_admission(
+                file.clone(),
+                offset,
+                len,
+                WorkerAdmission::Demand,
+                first,
+            )?;
+            first = false;
+            if let Some(ticket) = submitted {
+                if let Some(t0) = started {
+                    self.stats.demand_wait_ns =
+                        self.stats.demand_wait_ns.saturating_add(elapsed_ns(t0));
+                }
+                return Ok(Some(ticket));
+            }
+            let t0 = *started.get_or_insert_with(|| {
+                self.stats.demand_waits += 1;
+                std::time::Instant::now()
+            });
+            if t0.elapsed() >= DEMAND_WAIT_LIMIT {
+                self.stats.demand_wait_timeouts += 1;
+                self.stats.demand_wait_ns =
+                    self.stats.demand_wait_ns.saturating_add(elapsed_ns(t0));
+                return Err(io::Error::other(format!(
+                    "demand wait exceeded {} s for a pinned buffer",
+                    DEMAND_WAIT_LIMIT.as_secs()
+                ))
+                .into());
+            }
+            if !self.wait_for_any_buffer(t0 + DEMAND_WAIT_LIMIT)? {
+                self.stats.demand_wait_ns =
+                    self.stats.demand_wait_ns.saturating_add(elapsed_ns(t0));
+                return Ok(None);
+            }
+        }
+    }
+
+    /// OWED 26: make progress toward a free buffer. `Ok(false)` when every busy buffer is a
+    /// completed or failed read owned by a ticket (only its owner can release it).
+    fn wait_for_any_buffer(
+        &mut self,
+        deadline: std::time::Instant,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        self.reap_completed();
+        let free = self
+            .buffers
+            .iter()
+            .any(|buffer| buffer.phase == BufferPhase::Free);
+        if !free {
+            // The oldest H2D with a recorded event: the copy (or kernel) the stream reaches first.
+            let oldest = self
+                .buffers
+                .iter()
+                .enumerate()
+                .filter(|(_, buffer)| buffer.phase == BufferPhase::H2d && buffer.ready.is_some())
+                .min_by_key(|(_, buffer)| buffer.h2d_seq)
+                .map(|(index, _)| index);
+            if let Some(index) = oldest {
+                self.stats.buffer_waits += 1;
+                let started = std::time::Instant::now();
+                let synced = self.buffers[index]
+                    .ready
+                    .as_ref()
+                    .expect("filtered on a recorded event")
+                    .synchronize();
+                self.stats.wait_ns = self.stats.wait_ns.saturating_add(elapsed_ns(started));
+                synced?;
+                assert!(self.buffers[index].phase.finish_h2d(true));
+                self.buffers[index].ready = None;
+                return Ok(true);
+            }
+        }
+        let in_flight = self
+            .buffers
+            .iter()
+            .any(|buffer| matches!(buffer.phase, BufferPhase::Reading | BufferPhase::Canceled));
+        if in_flight || free {
+            // A free buffer with a refused submit means the request queue is full: a completion
+            // drains it. Otherwise a read in flight frees its buffer (or makes it Ready) on completion.
+            let now = std::time::Instant::now();
+            let wait = deadline.saturating_duration_since(now);
+            let started = std::time::Instant::now();
+            let completion = self
+                .workers
+                .as_ref()
+                .ok_or_else(|| io::Error::other("spill worker pool is unavailable"))?
+                .completions
+                .recv_timeout(wait);
+            self.stats.wait_ns = self.stats.wait_ns.saturating_add(elapsed_ns(started));
+            match completion {
+                Ok(completion) => self.finish_worker_completion(completion),
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(
+                        io::Error::other("spill worker completion channel disconnected").into(),
+                    );
+                }
+            }
+            return Ok(true);
+        }
+        if self
+            .buffers
+            .iter()
+            .any(|buffer| matches!(buffer.phase, BufferPhase::Ready | BufferPhase::Failed))
+        {
+            return Ok(false);
+        }
+        // Only H2D buffers whose completion was never proven remain: one drain of the retained
+        // compute stream proves all of them (the path `drain` takes at teardown). A mapped serve
+        // still waiting for its consumer is not a completion to prove and stays owned.
+        let unknown = self.buffers.iter().any(|buffer| {
+            buffer.phase == BufferPhase::H2d && buffer.ready.is_none() && !buffer.awaiting_consumer
+        });
+        if !unknown {
+            return Err(io::Error::other(
+                "demand read: every pinned buffer awaits a consumer that has not been enqueued",
+            )
+            .into());
+        }
+        self.stream.synchronize()?;
+        for buffer in &mut self.buffers {
+            if buffer.phase == BufferPhase::H2d && !buffer.awaiting_consumer {
+                assert!(buffer.phase.finish_h2d(true));
+                buffer.ready = None;
+            }
+        }
+        Ok(true)
+    }
+
+    /// OWED 26: the cache cancelled a prefetch ticket to free a buffer for a demand read.
+    pub(crate) fn note_prefetch_cancel(&mut self) {
+        self.stats.prefetch_cancels += 1;
     }
 
     /// Submit a known-future extent while reserving one pinned buffer for a demand miss.
@@ -840,7 +999,7 @@ impl PreadPool {
         offset: u64,
         len: usize,
     ) -> Result<Option<ReadTicket>, Box<dyn std::error::Error>> {
-        self.submit_worker_with_admission(file, offset, len, WorkerAdmission::Speculative)
+        self.submit_worker_with_admission(file, offset, len, WorkerAdmission::Speculative, true)
     }
 
     fn submit_worker_with_admission(
@@ -849,6 +1008,7 @@ impl PreadPool {
         offset: u64,
         len: usize,
         admission: WorkerAdmission,
+        count_ring_full: bool,
     ) -> Result<Option<ReadTicket>, Box<dyn std::error::Error>> {
         if !self.mode.is_worker() {
             return Err(io::Error::other("worker read submitted to blocking pread backend").into());
@@ -897,7 +1057,9 @@ impl PreadPool {
             .filter(|buffer| buffer.phase == BufferPhase::Free)
             .count();
         if free_count <= admission.free_buffer_floor() {
-            self.stats.ring_full += 1;
+            if count_ring_full {
+                self.stats.ring_full += 1;
+            }
             return Ok(None);
         }
         let Some(index) = self
@@ -941,7 +1103,9 @@ impl PreadPool {
                 Ok(Some(ticket))
             }
             Err(mpsc::TrySendError::Full(request)) => {
-                self.stats.ring_full += 1;
+                if count_ring_full {
+                    self.stats.ring_full += 1;
+                }
                 buffer.data = Some(request.data);
                 buffer.ticket = None;
                 buffer.phase.abort_read();
@@ -1059,6 +1223,8 @@ impl PreadPool {
 
     pub(crate) fn mark_h2d(&mut self, index: usize, ready: Arc<CudaEvent>) {
         self.stats.h2d_submits += 1;
+        self.buffers[index].h2d_seq = self.next_h2d_seq;
+        self.next_h2d_seq += 1;
         self.buffers[index].phase.begin_h2d();
         self.buffers[index].ticket = None;
         self.buffers[index].ready = Some(ready);
@@ -1068,6 +1234,8 @@ impl PreadPool {
     /// completion point. Only a later whole-stream synchronization may release it.
     pub(crate) fn mark_unknown_h2d(&mut self, index: usize) {
         self.stats.h2d_submits += 1;
+        self.buffers[index].h2d_seq = self.next_h2d_seq;
+        self.next_h2d_seq += 1;
         self.buffers[index].phase.begin_h2d();
         self.buffers[index].ticket = None;
         self.buffers[index].ready = None;
@@ -1119,6 +1287,9 @@ impl PreadPool {
     /// after that kernel; nothing can refill it before then.
     pub(crate) fn mark_mapped(&mut self, index: usize) {
         self.stats.mapped_serves += 1;
+        self.buffers[index].h2d_seq = self.next_h2d_seq;
+        self.next_h2d_seq += 1;
+        self.buffers[index].awaiting_consumer = true;
         self.buffers[index].phase.begin_h2d();
         self.buffers[index].ticket = None;
         self.buffers[index].ready = None;
@@ -1136,6 +1307,7 @@ impl PreadPool {
             buffer.ready.is_none(),
             "mapped buffer already has its consumer event"
         );
+        buffer.awaiting_consumer = false;
         buffer.ready = Some(ready);
     }
 
@@ -1169,6 +1341,7 @@ impl PreadPool {
                     buffer.ready = None;
                     buffer.ticket = None;
                     buffer.error = None;
+                    buffer.awaiting_consumer = false;
                     if buffer.phase == BufferPhase::H2d {
                         assert!(buffer.phase.finish_h2d(true));
                     } else if matches!(
@@ -1212,7 +1385,8 @@ impl Drop for PreadPool {
             eprintln!(
                 "[spill-pread] reads={} bytes={} errors={} short_reads={} fallbacks={} \
                  buffer_waits={} ring_full={} overread_bytes={} worker_read_ns={} \
-                 demand_read_ns={} wait_ns={} h2d_submits={} mapped_serves={}",
+                 demand_read_ns={} wait_ns={} h2d_submits={} mapped_serves={} \
+                 demand_waits={} demand_wait_ns={} prefetch_cancels={} demand_wait_timeouts={}",
                 self.stats.reads,
                 self.stats.bytes,
                 self.stats.read_errors,
@@ -1226,6 +1400,10 @@ impl Drop for PreadPool {
                 self.stats.wait_ns,
                 self.stats.h2d_submits,
                 self.stats.mapped_serves,
+                self.stats.demand_waits,
+                self.stats.demand_wait_ns,
+                self.stats.prefetch_cancels,
+                self.stats.demand_wait_timeouts,
             );
         }
     }
@@ -1674,6 +1852,98 @@ mod tests {
         let reused_buffer = pool.wait_worker(reused).unwrap();
         assert_eq!(pool.bytes(reused_buffer, 8).unwrap(), &bytes[..8]);
         pool.abort_read(reused_buffer);
+        std::fs::remove_file(path).ok();
+    }
+
+    /// Keep the compute stream busy for a while (device-to-device copies), so events recorded
+    /// after it complete later than the host's next call.
+    fn busy_stream(
+        engine: &crate::Engine,
+    ) -> (cudarc::driver::CudaSlice<u8>, cudarc::driver::CudaSlice<u8>) {
+        let stream = engine.stream().clone();
+        let src = stream.alloc_zeros::<u8>(512 << 20).unwrap();
+        let mut dst = stream.alloc_zeros::<u8>(512 << 20).unwrap();
+        for _ in 0..24 {
+            stream.memcpy_dtod(&src, &mut dst).unwrap();
+        }
+        (src, dst)
+    }
+
+    /// OWED 26 red-arm cell (M1-PREREG G2): every pinned buffer holds a completed read in `H2d`
+    /// behind a busy compute stream. A demand submit must wait for the oldest event and return a
+    /// ticket; the pre-fix code returned `None` here and the cache then read through mmap.
+    #[test]
+    #[ignore = "requires a CUDA GPU"]
+    fn demand_submit_waits_for_a_buffer_instead_of_returning_ring_busy() {
+        let engine = crate::Engine::new(0).unwrap();
+        let bytes: Vec<u8> = (0..4096u32)
+            .map(|i| (i.wrapping_mul(13) ^ (i >> 2)) as u8)
+            .collect();
+        let (path, file) = temp_file("demand-wait", &bytes);
+        let file = std::sync::Arc::new(file);
+        let mut pool = super::PreadPool::try_new(&engine, 1024, SpillIoMode::Worker).unwrap();
+        let depth = pool.buffers.len();
+        assert!(depth >= 2, "needs depth >= 2");
+        let mut held = Vec::new();
+        for _ in 0..depth {
+            let ticket = pool.submit_worker(file.clone(), 0, 64).unwrap().unwrap();
+            held.push(pool.wait_worker(ticket).unwrap());
+        }
+        let _work = busy_stream(&engine);
+        for &index in &held {
+            let event = std::sync::Arc::new(engine.ctx().new_event(None).unwrap());
+            event.record(&engine.stream()).unwrap();
+            pool.mark_h2d(index, event);
+        }
+        let ticket = pool.submit_worker(file.clone(), 128, 64).unwrap();
+        assert!(
+            ticket.is_some(),
+            "demand submit returned None with every buffer in H2d: the ring-busy mmap fallback"
+        );
+        let index = pool.wait_worker(ticket.unwrap()).unwrap();
+        assert_eq!(pool.bytes(index, 64).unwrap(), &bytes[128..192]);
+        pool.abort_read(index);
+        assert_eq!(pool.stats().demand_waits, 1);
+        assert_eq!(pool.stats().demand_wait_timeouts, 0);
+        engine.stream().synchronize().unwrap();
+        std::fs::remove_file(path).ok();
+    }
+
+    /// OWED 26 cell: when every buffer holds a completed read owned by a ticket, a demand submit
+    /// returns `None` promptly (the caller cancels a prefetch), and succeeds after one cancel.
+    #[test]
+    #[ignore = "requires a CUDA GPU"]
+    fn demand_submit_returns_none_only_when_prefetches_hold_every_buffer() {
+        let engine = crate::Engine::new(0).unwrap();
+        let bytes: Vec<u8> = (0..4096u32).map(|i| (i ^ 0x5a) as u8).collect();
+        let (path, file) = temp_file("demand-held", &bytes);
+        let file = std::sync::Arc::new(file);
+        let mut pool = super::PreadPool::try_new(&engine, 1024, SpillIoMode::Worker).unwrap();
+        let depth = pool.buffers.len();
+        let mut tickets: Vec<_> = (1..depth)
+            .map(|_| {
+                pool.submit_worker_speculative(file.clone(), 0, 32)
+                    .unwrap()
+                    .unwrap()
+            })
+            .collect();
+        tickets.push(pool.submit_worker(file.clone(), 64, 32).unwrap().unwrap());
+        let started = std::time::Instant::now();
+        assert!(pool.submit_worker(file.clone(), 256, 32).unwrap().is_none());
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "held-by-prefetch must not wait out the bound"
+        );
+        assert_eq!(pool.stats().demand_waits, 1);
+        assert!(pool.cancel_worker(tickets.remove(0)));
+        let ticket = pool.submit_worker(file.clone(), 256, 32).unwrap().unwrap();
+        let index = pool.wait_worker(ticket).unwrap();
+        assert_eq!(pool.bytes(index, 32).unwrap(), &bytes[256..288]);
+        pool.abort_read(index);
+        for ticket in tickets {
+            let index = pool.wait_worker(ticket).unwrap();
+            pool.abort_read(index);
+        }
         std::fs::remove_file(path).ok();
     }
 

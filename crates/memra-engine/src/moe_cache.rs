@@ -1775,14 +1775,15 @@ impl MoeSlotCache {
         }
 
         let pending = self.worker_reads.remove(&id);
-        let pool = self.pread.as_mut().unwrap();
-        let read = if pool.is_worker() {
+        let is_worker = self.pread.as_ref().unwrap().is_worker();
+        let read = if is_worker {
             let ticket = match pending {
-                Some(read) => Ok(Some(read.ticket)),
-                None => pool.submit_worker(file.clone(), offset, len),
+                Some(read) => Ok(read.ticket),
+                None => self.submit_demand_read(id, file, offset, len),
             };
+            let pool = self.pread.as_mut().unwrap();
             match ticket {
-                Ok(Some(ticket)) => match pool.wait_worker(ticket) {
+                Ok(ticket) => match pool.wait_worker(ticket) {
                     Ok(index) => Ok(index),
                     Err(err) => {
                         // Read errors normally release in wait_worker. A worker/channel failure may
@@ -1791,12 +1792,14 @@ impl MoeSlotCache {
                         Err(err)
                     }
                 },
-                Ok(None) => Err(std::io::Error::other("worker read ring is busy").into()),
                 Err(err) => Err(err),
             }
         } else {
             debug_assert!(pending.is_none());
-            pool.read(file.as_ref(), offset, len)
+            self.pread
+                .as_mut()
+                .unwrap()
+                .read(file.as_ref(), offset, len)
         };
         let index = match read {
             Ok(index) => index,
@@ -1863,6 +1866,49 @@ impl MoeSlotCache {
         self.staged_bytes += len as u64;
         self.publish(id, slot);
         Ok(DispatchSlot::Resident(slot))
+    }
+
+    /// OWED 26 (M1-PREREG G2): a demand read in worker mode. The pool waits for a buffer itself;
+    /// it returns `None` only when every busy buffer is a completed or failed prefetch this cache
+    /// owns, so cancel one prefetch ticket (never the requested block's) and submit again. The
+    /// ring being busy is never a reason to read through mmap; only an error is.
+    fn submit_demand_read(
+        &mut self,
+        id: BlockId,
+        file: &Arc<std::fs::File>,
+        offset: u64,
+        len: usize,
+    ) -> Result<ReadTicket, Box<dyn std::error::Error>> {
+        loop {
+            if let Some(ticket) =
+                self.pread
+                    .as_mut()
+                    .unwrap()
+                    .submit_worker(file.clone(), offset, len)?
+            {
+                return Ok(ticket);
+            }
+            // Deterministic victim: the lowest (layer, projection, expert) prefetch.
+            let victim = self
+                .worker_reads
+                .keys()
+                .filter(|key| **key != id)
+                .min_by_key(|key| (key.layer, key.proj, key.ex))
+                .copied();
+            let Some(victim) = victim else {
+                return Err(std::io::Error::other(
+                    "every pinned buffer holds a completed read but no prefetch ticket owns one",
+                )
+                .into());
+            };
+            let read = self
+                .worker_reads
+                .remove(&victim)
+                .expect("victim came from the map");
+            let pool = self.pread.as_mut().unwrap();
+            pool.cancel_worker(read.ticket);
+            pool.note_prefetch_cancel();
+        }
     }
 
     /// OWED 17: serve a first-miss block from pinned buffer `index` without admitting it.
