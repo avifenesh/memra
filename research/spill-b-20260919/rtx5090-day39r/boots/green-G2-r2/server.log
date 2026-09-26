@@ -1925,3 +1925,7 @@
 1790424256155 [admit-oom] VRAM defer: 45 active, effective free 2229MB (driver + 1338MB pool-cached) < cost 744MB + reserve 1611MB — queueing (FIFO) [pool res 23891MB used 22553MB; parked spec sessions 0; plain reuse 0; queue 0]
 1790424256155 [admit-mem] id=chatcmpl-13f798abb18685c840a84deb41620435 model="q9" verdict=refuse prompt=1334 output_bound=- charged_ctx=9590 est_bytes=2354920312 est_context=142392320 est_fixed=2212527992 device_free=2229054556 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=0 short_by=125865756 inflight=45 cap=64 waited_ms=8008 retry_after_s=29
 1790424321886 [fa-pool] grow #4 dev=0 o_len 2129920 -> 4259840 ml_len 8320 -> 16640 (retired kept, zero=false)
+1790424542163 [fa-pool] grow #5 dev=0 o_len 4259840 -> 8519680 ml_len 16640 -> 33280 (retired kept, zero=false)
+1790424734453 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1790424734453 [server] drain complete in 0.0s; exiting
+1790424734521 [server] GPU worker shutdown complete

@@ -246,3 +246,70 @@ within the booked reading; `v2` reproduces section 1's failure (10 parked prefil
 booking) reads 44 x 200 and 20 x 429. At the burst's peak the revised term books 7.09 GB where day 33's booked
 29.6 GB. The revision admits two more requests of the 64-request burst than day 35's booking, with no OOM. The
 admission gate on `v3` and the 5090 half wait for the 5090's reset.
+
+### 2.3 The registered 5090 half (`rtx5090-day39r/`, the 9B at `MEMRA_CTX=65536`, 2026-09-26)
+
+The registered order ran as a whole under a new name after the rig's reboot cut the first attempt after two boots
+(`rtx5090-day39/`, banked). Green is the registered revision (`c6f9282c2`, the shared slab booked once, without
+addendum B; sha256 `580fe677...`, byte-identical to DAY37 r4's lane binary), red day 33's term. Verbatim:
+
+```
+DAY33 V-BOOT boot=red-G2 arm=on8192 door_line=present -> PASS role=red shape=G2
+DAY33 V-BOOT boot=red-L64 arm=on32768 door_line=present -> PASS role=red shape=L64
+DAY33 V-BOOT boot=green-G2-r1 arm=on8192 door_line=present -> PASS role=green shape=G2
+DAY33 V-BOOT boot=green-L64-r1 arm=on32768 door_line=present -> PASS role=green shape=L64
+DAY33 V-BOOT boot=red-off arm=off door_line=present -> PASS role=red shape=off
+DAY33 V-BOOT boot=green-off arm=off door_line=present -> PASS role=green shape=off
+DAY33 V-BOOT boot=green-G2-r2 arm=on8192 door_line=present -> PASS role=green shape=G2
+DAY33 V-BOOT boot=green-L64-r2 arm=on32768 door_line=present -> PASS role=green shape=L64
+DAY33 R-OOM card=rtx5090 boot=red-G2 role=red shape=G2 v=8192 oom_lines=0 burst={429: 32, 200: 32} first_oom=none -> NOT-RED
+DAY33 G-NOOM card=rtx5090 boot=red-G2 role=red shape=G2 oom_lines=0 burst_503=0 crash_lines=0 burst_200=32 other_non200=0 r429=32 refuse_lines=32 retry_after_in_1_60=True -> PASS
+DAY33 G-BOOK card=rtx5090 boot=red-G2 role=red shape=G2 admit_lines=48 admit_lines_in_burst=32 est_over_booked_free=0 -> PASS
+DAY33 R-OOM card=rtx5090 boot=red-L64 role=red shape=L64 v=32768 oom_lines=0 burst={429: 45, 200: 19} first_oom=none -> NOT-RED
+DAY33 G-NOOM card=rtx5090 boot=red-L64 role=red shape=L64 oom_lines=0 burst_503=0 crash_lines=0 burst_200=19 other_non200=0 r429=45 refuse_lines=45 retry_after_in_1_60=True -> PASS
+DAY33 G-BOOK card=rtx5090 boot=red-L64 role=red shape=L64 admit_lines=35 admit_lines_in_burst=19 est_over_booked_free=0 -> PASS
+DAY33 R-OOM card=rtx5090 boot=green-G2-r1 role=green shape=G2 v=8192 oom_lines=3 burst={429: 19, 200: 45} first_oom=server.log:1821 1790419301314 [admit-mem] prefill OOM parked session back to queue (model q9, retry 1/3): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") -> RED
+DAY33 G-NOOM card=rtx5090 boot=green-G2-r1 role=green shape=G2 oom_lines=3 burst_503=0 crash_lines=0 burst_200=45 other_non200=0 r429=19 refuse_lines=19 retry_after_in_1_60=True -> FAIL
+DAY33 G-BOOK card=rtx5090 boot=green-G2-r1 role=green shape=G2 admit_lines=64 admit_lines_in_burst=48 est_over_booked_free=0 -> PASS
+DAY33 R-OOM card=rtx5090 boot=green-L64-r1 role=green shape=L64 v=32768 oom_lines=0 burst={429: 45, 200: 19} first_oom=none -> NOT-RED
+DAY33 G-NOOM card=rtx5090 boot=green-L64-r1 role=green shape=L64 oom_lines=0 burst_503=0 crash_lines=0 burst_200=19 other_non200=0 r429=45 refuse_lines=45 retry_after_in_1_60=True -> PASS
+DAY33 G-BOOK card=rtx5090 boot=green-L64-r1 role=green shape=L64 admit_lines=35 admit_lines_in_burst=19 est_over_booked_free=0 -> PASS
+DAY33 R-OOM card=rtx5090 boot=green-G2-r2 role=green shape=G2 v=8192 oom_lines=3 burst={429: 19, 200: 45} first_oom=server.log:1827 1790424248122 [admit-mem] prefill OOM parked session back to queue (model q9, retry 1/3): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") -> RED
+DAY33 G-NOOM card=rtx5090 boot=green-G2-r2 role=green shape=G2 oom_lines=3 burst_503=0 crash_lines=0 burst_200=45 other_non200=0 r429=19 refuse_lines=19 retry_after_in_1_60=True -> FAIL
+DAY33 G-BOOK card=rtx5090 boot=green-G2-r2 role=green shape=G2 admit_lines=64 admit_lines_in_burst=48 est_over_booked_free=0 -> PASS
+DAY33 R-OOM card=rtx5090 boot=green-L64-r2 role=green shape=L64 v=32768 oom_lines=0 burst={429: 45, 200: 19} first_oom=none -> NOT-RED
+DAY33 G-NOOM card=rtx5090 boot=green-L64-r2 role=green shape=L64 oom_lines=0 burst_503=0 crash_lines=0 burst_200=19 other_non200=0 r429=45 refuse_lines=45 retry_after_in_1_60=True -> PASS
+DAY33 G-BOOK card=rtx5090 boot=green-L64-r2 role=green shape=L64 admit_lines=35 admit_lines_in_burst=19 est_over_booked_free=0 -> PASS
+DAY33 V-ID-FIX card=rtx5090 shape=G2 green=green-G2-r1 red=red-G2 eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID-FIX card=rtx5090 shape=L64 green=green-L64-r1 red=red-L64 eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID-FIX card=rtx5090 shape=G2 green=green-G2-r2 red=red-G2 eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID-FIX card=rtx5090 shape=L64 green=green-L64-r2 red=red-L64 eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID card=rtx5090 shape=G2 on=green-G2-r1 off=green-off eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID card=rtx5090 shape=L64 on=green-L64-r1 off=green-off eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID card=rtx5090 shape=G2 on=green-G2-r2 off=green-off eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID card=rtx5090 shape=L64 on=green-L64-r2 off=green-off eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-OFF card=rtx5090 green=green-off red=red-off rows=16 equal=16 differ=0 admit_mem_lines=0 -> PASS
+DAY33 VERDICT card=rtx5090 boots=8 v_boot_all=True green_noom_book_all=False v_id_fix_all=True v_id_all=True v_off_all=True -> NOT-GREEN
+DAY39 READING card=rtx5090 boot=red-G2 burst_status={200: 32, 429: 32} admit_mem_lines_in_burst=110 peak_pending_prime=8279130112(other=None verdict=defer) peak_pending_prime_v1=none
+DAY39 READING card=rtx5090 boot=red-L64 burst_status={200: 19, 429: 45} admit_mem_lines_in_burst=116 peak_pending_prime=5389778944(other=None verdict=defer) peak_pending_prime_v1=none
+DAY39 READING card=rtx5090 boot=green-G2-r1 burst_status={200: 45, 429: 19} admit_mem_lines_in_burst=86 peak_pending_prime=0(other=0 verdict=admit) peak_pending_prime_v1=21712306176(other=0 verdict=defer)
+DAY39 READING card=rtx5090 boot=green-L64-r1 burst_status={200: 19, 429: 45} admit_mem_lines_in_burst=109 peak_pending_prime=0(other=0 verdict=admit) peak_pending_prime_v1=8748072960(other=0 verdict=defer)
+DAY39 READING card=rtx5090 boot=green-G2-r2 burst_status={200: 45, 429: 19} admit_mem_lines_in_burst=86 peak_pending_prime=0(other=0 verdict=admit) peak_pending_prime_v1=21716271104(other=0 verdict=defer)
+DAY39 READING card=rtx5090 boot=green-L64-r2 burst_status={200: 19, 429: 45} admit_mem_lines_in_burst=109 peak_pending_prime=0(other=0 verdict=admit) peak_pending_prime_v1=8754200576(other=0 verdict=defer)
+DAY39 READING card=rtx5090 boot=red-off burst_status={} admit_mem_lines_in_burst=0 peak_pending_prime=none peak_pending_prime_v1=none
+DAY39 READING card=rtx5090 boot=green-off burst_status={} admit_mem_lines_in_burst=0 peak_pending_prime=none peak_pending_prime_v1=none
+AMB no prefill OOM: oom_lines=8 status={429: 19, 200: 45} -> FAIL
+AMB typed refusals: served=45 r429=19 refuse_lines=19 retry_after_in_1_60=True other_non200=0 -> PASS
+AMB booked admits: admit_lines=53 est_over_booked_free=0 served=45 -> PASS
+AMB boot census: alive=1 health=200 panicked=0 argmax_sentinel=0 [worker]_FATAL=0 [worker]_respawn=0 spec_verify_refused=0 -> PASS
+ADMIT-MEM BURST GATE: RED
+```
+
+- **The card reads NOT-GREEN** (`green_noom_book_all=False`): green's G2 bursts park 3 prefill OOMs on each run, and the
+  admission gate on green reads RED (`AMB no prefill OOM: oom_lines=8`). Every green admission line reads
+  `peak_pending_prime=0` while day 33's sum reaches 21.7 GB. This is 2.1's target-card failure of the same term
+  (`v2`), on the 5090 class: the revision without addendum B under-books the primes the burst still owes. V-ID-FIX,
+  V-ID and V-OFF PASS; red has no OOM (it over-books: 32 x 200 against green's 45 at G2).
+- It places DAY37 2.7's A1 red too: that gate ran the same binary (`580fe677...`) and read the same (7 parked prefill
+  OOMs, `pending_prime=0`). Addendum B's term (`v3`) is the fix; its 5090 half (DAY39B, the gate on `v3`) and DAY37
+  addendum G's repro run from queue-k.
