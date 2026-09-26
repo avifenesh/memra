@@ -63,8 +63,8 @@ def inventory(base):
         "diagnostic/pilot-results": base / "pilot-results",
         "diagnostic/judge-preflight":
         base / "judge-preflight",
-        "native/training-prose-results":
-        base / "training-prose-results",
+        "native/training-mixed-results":
+        base / "training-mixed-results",
     }
     files = {}
     for prefix, root in groups.items():
@@ -91,14 +91,14 @@ def inventory(base):
     if not precheck.is_file():
         raise ValueError("research rental price precheck missing")
     files["inputs/provider-precheck.json"] = precheck
-    results = list((base / "training-prose-results").glob(
+    results = list((base / "training-mixed-results").glob(
         "training-*.result.json"
     ))
     pilot_results = list((base / "pilot-results").glob(
         "pilot-*.result.json"
     ))
-    if len(results) != 112:
-        raise ValueError("randomized prose training session count differs")
+    if len(results) != 336:
+        raise ValueError("randomized mixed training session count differs")
     if len(pilot_results) != 6:
         raise ValueError("fixed D1/D2 native pilot session count differs")
     for path in results:
@@ -182,7 +182,7 @@ def seal(base, out):
                         tar.addfile(info, source)
     manifest = {
         "schema": 1,
-        "scope": "fresh mixed-prose training-only native data",
+        "scope": "fresh code-prose-math training-only native data",
         "model_sha256": MODEL_SHA,
         "binary_sha256": BINARY_SHA,
         "training_workloads_sha256": TRAIN_SHA,
@@ -202,7 +202,7 @@ def seal(base, out):
     )
     return {
         "archive_sha256": manifest["archive_sha256"],
-        "members": len(members), "sessions": 112,
+        "members": len(members), "sessions": 336,
     }
 
 

@@ -55,22 +55,23 @@ separate sealed commitment.
 
 1. Use only qualification/training prompt files and replayed V9,
    V10 and V11 measurements to build candidate controller weights.
-   Collect new randomized K/D/C observations on prose if training
-   source coverage is insufficient. Older selected-policy outcomes
+   Collect new randomized K/D/C observations on all three domains
+   on the same GPU. Older selected-policy outcomes
    remain observational; C labels come only from actual offers.
    Source-specific complete-request rates price K utility, while
    same-GPU randomized rounds price D/C actions.
-   Seal and replay the fresh prose native bytes and the training-only
+   Seal and replay the fresh mixed native bytes and the training-only
    phase package before converting them into K/D/C rows. The replay
-   verifies all 112 prose training sessions and rejects any validation
+   verifies all 336 code, prose and math training sessions and rejects any validation
    or final prompt file in the training archive.
-   The fresh prose collector runs K=3/10/20 fixed-D3 and randomized-D
+   The fresh collector runs K=3/10/20 fixed-D3 and randomized-D
    sessions plus one randomized-K session on each of 16 training
-   conversations. The fit pools those labels with the pinned code and
-   V11 non-code rows. Candidate weights use the same bounded prompt
-   prefix, generated-token history, and prior-turn features at runtime.
-   A prose-balanced candidate explicitly triples the weight of fresh
-   prose rows during fitting; validation remains disjoint and unweighted.
+   conversations per domain, interleaving domains in time. The fit
+   compares fresh-only, mixed-history and augmented-history candidates
+   using pinned V9/V10/V11 rows as the historical options. Candidate
+   weights use the same bounded prompt prefix, generated-token
+   history, and prior-turn features at runtime. Validation remains
+   disjoint and unweighted.
    Before freezing arms, a training-conversation-heldout preflight
    must show that the same first-16/32 token buckets used by the K
    controller distinguish code, open prose and math above a 0.6

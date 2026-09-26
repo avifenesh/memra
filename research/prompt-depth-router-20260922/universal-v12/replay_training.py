@@ -11,7 +11,7 @@ import tempfile
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE / "joint-v11"))
 import training_replay as prior_replay
-import measurement_rows_prose
+import measurement_rows_fresh
 import pilot_depth
 import seal_training
 
@@ -33,7 +33,7 @@ def replay(archive, manifest_path, rows_out):
     if (
         manifest["schema"] != 1
         or manifest["scope"]
-        != "fresh mixed-prose training-only native data"
+        != "fresh code-prose-math training-only native data"
         or manifest["model_sha256"] != seal_training.MODEL_SHA
         or manifest["binary_sha256"] != seal_training.BINARY_SHA
         or manifest["training_workloads_sha256"] != TRAIN_SHA
@@ -49,7 +49,7 @@ def replay(archive, manifest_path, rows_out):
         "source/private_ops/",
         "diagnostic/pilot-results/",
         "diagnostic/judge-preflight/",
-        "native/training-prose-results/",
+        "native/training-mixed-results/",
     )
     if any(
         not name.startswith(allowed)
@@ -65,14 +65,14 @@ def replay(archive, manifest_path, rows_out):
     ):
         raise ValueError("sealed prose training archive has unrelated files")
     with tempfile.TemporaryDirectory(
-        prefix="mtp-v12-prose-replay-",
+        prefix="mtp-v12-mixed-replay-",
     ) as folder:
         root = Path(folder)
         members = prior_replay.extract(archive, manifest, root)
         for group, names in {
             "universal-v12": (
-                "collect_prose.py",
-                "measurement_rows_prose.py",
+                "collect_mixed.py",
+                "measurement_rows_fresh.py",
                 "seal_training.py",
                 "replay_training.py",
                 "pilot_depth.py",
@@ -164,8 +164,8 @@ def replay(archive, manifest_path, rows_out):
                 or sha(root / "source" / name) != expected
             ):
                 raise ValueError("sealed native source changed after run metadata")
-        rows_manifest = measurement_rows_prose.build(
-            root / "native/training-prose-results", workloads,
+        rows_manifest = measurement_rows_fresh.build(
+            root / "native/training-mixed-results", workloads,
             rows_out,
         )
         classes = json.loads(
@@ -173,21 +173,19 @@ def replay(archive, manifest_path, rows_out):
         )
     return {
         "schema": 1,
-        "status": "fresh-prose-training-native-K-D-C-replay-match",
+        "status": "fresh-mixed-training-native-K-D-C-replay-match",
         "archive_sha256": manifest["archive_sha256"],
         "training_workloads_sha256": TRAIN_SHA,
         "source_full_manifest_sha256": FULL_SHA,
         "members": members,
-        "sessions": 112,
+        "sessions": 336,
         "row_counts": {
             kind: item["count"]
             for kind, item in rows_manifest["rows"].items()
         },
         "token_byte_classes": len(classes),
         "excluded_looped": rows_manifest["excluded_looped"],
-        "reference_tok_s": rows_manifest["reference_tok_s"][
-            "v12-prose"
-        ],
+        "reference_tok_s": rows_manifest["reference_tok_s"],
         "training_rows_manifest_sha256": sha(
             rows_out / "manifest.json"
         ),

@@ -94,7 +94,7 @@ def pipeline(base, credential_file, log):
     parents = base / "parents"
     code = base / "code-training"
     v11_rows = base / "v11-rows"
-    prose_rows = base / "prose-rows"
+    fresh_rows = base / "fresh-rows"
     models = base / "policy-models"
     arms = base / "policy-arms"
     judge_config = base / "judge-config.json"
@@ -132,36 +132,38 @@ def pipeline(base, credential_file, log):
           "--v11-manifest", parents / "v11/manifest.json",
           "--v11-replay", parents / "v11/training-replay.json",
           "--out", v11_rows)
-    stage(log, scripts, "collect_prose.py",
+    stage(log, scripts, "collect_mixed.py",
           "--binary", binary, "--model", model,
           "--run-meta", base / "run-meta.json",
           "--workloads", base / "phase-training",
-          "--out", base / "training-prose-results")
+          "--out", base / "training-mixed-results")
     stage(log, scripts, "seal_training.py",
           "--base", base, "--out", base / "training-sealed")
     stage(log, scripts, "replay_training.py",
           "--archive", base / "training-sealed/native-data.tar.gz",
           "--manifest", base / "training-sealed/manifest.json",
-          "--rows-out", prose_rows,
-          "--out", base / "prose-replay.json")
+          "--rows-out", fresh_rows,
+          "--out", base / "fresh-replay.json")
     training = (
         "--v9-new", code / "new",
         "--v9-old", code / "old",
         "--v9-k-manifest", code / "k-models/manifest.json",
         "--v9-table", code / "table.tsv",
         "--v11-rows", v11_rows,
-        "--prose-rows", prose_rows,
-        "--prose-replay", base / "prose-replay.json",
+        "--fresh-rows", fresh_rows,
+        "--fresh-replay", base / "fresh-replay.json",
     )
-    stage(log, scripts, "preflight_prefix.py", *training,
+    stage(log, scripts, "preflight_prefix.py",
+          "--fresh-rows", fresh_rows,
+          "--fresh-replay", base / "fresh-replay.json",
           "--out", base / "prefix-preflight.json")
     stage(log, scripts, "fit_shared.py", *training,
           "--out", models)
     stage(log, scripts, "arms_shared.py",
           "--models", models,
           "--v11-rows", v11_rows,
-          "--prose-rows", prose_rows,
-          "--prose-replay", base / "prose-replay.json",
+          "--fresh-rows", fresh_rows,
+          "--fresh-replay", base / "fresh-replay.json",
           "--preflight", base / "prefix-preflight.json",
           "--out", arms)
     native = (

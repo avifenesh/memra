@@ -29,8 +29,8 @@ def constants(name):
 class PhaseContractTest(unittest.TestCase):
     def test_training_validation_final_pins_agree(self):
         for name in (
-            "eval.py", "collect_prose.py",
-            "measurement_rows_prose.py", "fit_shared.py",
+            "eval.py", "collect_mixed.py",
+            "measurement_rows_fresh.py", "fit_shared.py",
             "arms_shared.py", "seal_training.py",
             "replay_training.py", "pilot_depth.py",
             "supervise_v12.py",
@@ -47,8 +47,8 @@ class PhaseContractTest(unittest.TestCase):
                     constants(name)["VALIDATION_SHA"], VALIDATION,
                 )
         for name in (
-            "eval.py", "collect_prose.py",
-            "measurement_rows_prose.py", "fit_shared.py",
+            "eval.py", "collect_mixed.py",
+            "measurement_rows_fresh.py", "fit_shared.py",
             "arms_shared.py", "quality_tasks.py",
             "prose_packets.py", "score_final.py",
             "seal_training.py", "replay_training.py",

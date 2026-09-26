@@ -65,7 +65,7 @@ def inventory(base, selected):
         if not path.is_file():
             raise ValueError(f"evaluation receipt missing: {name}")
         files[f"inputs/{name}"] = path
-    for name in ("validation-ready.json", "prose-replay.json"):
+    for name in ("validation-ready.json", "fresh-replay.json"):
         path = base / name
         if not path.is_file():
             raise ValueError(f"evaluation lineage receipt missing: {name}")

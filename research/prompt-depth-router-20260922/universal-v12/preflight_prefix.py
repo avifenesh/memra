@@ -35,7 +35,10 @@ def vector(row, length):
 def conversations(rows, domain):
     by_session = {}
     for row in rows:
-        if row["draft_k"] != 20:
+        if (
+            row["draft_k"] != 20
+            or row["assignment"] != "fixed-arm"
+        ):
             continue
         name = row["conversation"]
         turns = by_session.setdefault(name, {})
@@ -117,21 +120,16 @@ def experiment(rows, length):
     }
 
 
-def build(v9_new, v9_old, v9_k_manifest, v9_table, v11_rows,
-          prose_rows, prose_replay):
-    code_new, _, noncode, _, _ = previous.read_inputs(
-        v9_new, v9_old, v9_k_manifest, v9_table, v11_rows,
-    )
-    fresh, _, _ = fit_shared.read_prose(
-        prose_rows, prose_replay,
+def build(fresh_rows, fresh_replay):
+    fresh, _, _ = fit_shared.read_fresh(
+        fresh_rows, fresh_replay,
     )
     rows = {
-        "code": code_new["k"],
-        "prose": fresh["k"],
-        "math": [
-            row for row in noncode["k"]
-            if row["source"] == "v11-gsm8k"
-        ],
+        domain: [
+            row for row in fresh["k"]
+            if row["domain"] == domain
+        ]
+        for domain in DOMAINS
     }
     results = {
         str(length): experiment(rows, length)
@@ -148,30 +146,20 @@ def build(v9_new, v9_old, v9_k_manifest, v9_table, v11_rows,
         "status": "training-prefix-visible" if visible
         else "training-prefix-not-visible",
         "no_field_route": True,
-        "v9_code_training_manifest_sha256":
-        previous.sha(v9_new / "manifest.json"),
-        "v11_training_manifest_sha256":
-        previous.sha(v11_rows / "manifest.json"),
-        "v12_prose_training_manifest_sha256":
-        previous.sha(prose_rows / "manifest.json"),
-        "v12_prose_training_replay_sha256":
-        previous.sha(prose_replay),
+        "v12_fresh_training_manifest_sha256":
+        previous.sha(fresh_rows / "manifest.json"),
+        "v12_fresh_training_replay_sha256":
+        previous.sha(fresh_replay),
         "experiments": results,
     }
 
 
 def main():
     parser = argparse.ArgumentParser()
-    for name in (
-        "v9-new", "v9-old", "v9-k-manifest", "v9-table",
-        "v11-rows", "prose-rows", "prose-replay", "out",
-    ):
+    for name in ("fresh-rows", "fresh-replay", "out"):
         parser.add_argument("--" + name, type=Path, required=True)
     args = parser.parse_args()
-    result = build(
-        args.v9_new, args.v9_old, args.v9_k_manifest, args.v9_table,
-        args.v11_rows, args.prose_rows, args.prose_replay,
-    )
+    result = build(args.fresh_rows, args.fresh_replay)
     previous.save(args.out, result)
     print(json.dumps({
         "status": result["status"],

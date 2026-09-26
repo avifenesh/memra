@@ -1,4 +1,4 @@
-"""Fit task-blind K/C/D candidates from code, math, IF and fresh prose."""
+"""Fit task-blind K/C/D candidates from fresh and historical measurements."""
 
 import argparse
 from collections import Counter
@@ -19,11 +19,12 @@ import fit_mixed as previous
 
 TRAIN_SHA = "2bca403c1edff44a1d707abd60710767f9dbbe2a63721757032b0fbe223c5e00"
 FULL_SHA = "b35374d34e2a28b31cca0399e6394fa3db3b0f27e9d593b17032a7856b2a5477"
-SOURCES = ("mixed-fresh", "augmented-fresh", "prose-balanced")
+SOURCES = ("fresh-only", "mixed-history", "augmented-history")
 KINDS = ("k", "d", "c")
+DOMAINS = ("code", "prose", "math")
 
 
-def read_prose(path, replay_path):
+def read_fresh(path, replay_path):
     manifest_path = path / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
     replay = json.loads(replay_path.read_text())
@@ -32,10 +33,10 @@ def read_prose(path, replay_path):
         or manifest["use"] != "training-only"
         or manifest["training_workloads_sha256"] != TRAIN_SHA
         or manifest["source_full_manifest_sha256"] != FULL_SHA
-        or manifest["expected_training_sessions"] != 112
+        or manifest["expected_training_sessions"] != 336
         or replay["schema"] != 1
         or replay["status"]
-        != "fresh-prose-training-native-K-D-C-replay-match"
+        != "fresh-mixed-training-native-K-D-C-replay-match"
         or replay["training_workloads_sha256"] != TRAIN_SHA
         or replay["source_full_manifest_sha256"] != FULL_SHA
         or replay["training_rows_manifest_sha256"]
@@ -45,34 +46,45 @@ def read_prose(path, replay_path):
             for kind in KINDS
         }
     ):
-        raise ValueError("fresh prose rows lack randomized training lineage")
+        raise ValueError("fresh mixed rows lack randomized training lineage")
     result = {}
     for kind in KINDS:
         file = path / f"{kind}.jsonl.gz"
         if previous.sha(file) != manifest["rows"][kind]["sha256"]:
-            raise ValueError(f"fresh prose {kind} row hash changed")
+            raise ValueError(f"fresh mixed {kind} row hash changed")
         with gzip.open(file, "rt") as source:
             rows = [json.loads(line) for line in source]
         if (
             len(rows) != manifest["rows"][kind]["count"]
             or any(
-                row["source"] != "v12-prose"
-                or row["domain"] != "prose"
+                row["domain"] not in DOMAINS
+                or row["source"] != f"v12-{row['domain']}"
                 for row in rows
             )
+            or {
+                domain: sum(
+                    row["domain"] == domain for row in rows
+                )
+                for domain in DOMAINS
+            } != manifest["rows"][kind]["by_domain"]
         ):
-            raise ValueError(f"fresh prose {kind} row source differs")
+            raise ValueError(f"fresh mixed {kind} row source differs")
         result[kind] = rows
     classes_path = path / "token-classes.json"
     if previous.sha(classes_path) != manifest["token_classes_sha256"]:
-        raise ValueError("fresh prose token classes changed")
+        raise ValueError("fresh mixed token classes changed")
     classes = {
         int(token): kind
         for token, kind in json.loads(classes_path.read_text()).items()
     }
-    reference = manifest["reference_tok_s"]["v12-prose"]
-    if not math.isfinite(reference) or reference <= 0:
-        raise ValueError("fresh prose K price differs")
+    reference = manifest["reference_tok_s"]
+    if set(reference) != {
+        f"v12-{domain}" for domain in DOMAINS
+    } or any(
+        not math.isfinite(value) or value <= 0
+        for value in reference.values()
+    ):
+        raise ValueError("fresh mixed K prices differ")
     return result, classes, reference
 
 
@@ -99,17 +111,17 @@ def pooled_reference(rows):
 
 
 def build(v9_new, v9_old, v9_k_manifest, v9_table, v11_rows,
-          prose_rows, prose_replay, out):
+          fresh_rows, fresh_replay, out):
     code_new, code_old, noncode, classes, references = (
         previous.read_inputs(
             v9_new, v9_old, v9_k_manifest, v9_table, v11_rows,
         )
     )
-    fresh, prose_classes, prose_reference = read_prose(
-        prose_rows, prose_replay,
+    fresh, fresh_classes, fresh_references = read_fresh(
+        fresh_rows, fresh_replay,
     )
-    merge_classes(classes, prose_classes)
-    references["v12-prose"] = prose_reference
+    merge_classes(classes, fresh_classes)
+    references.update(fresh_references)
     out.mkdir(parents=True, exist_ok=False)
     result = {
         "schema": 1,
@@ -120,10 +132,10 @@ def build(v9_new, v9_old, v9_k_manifest, v9_table, v11_rows,
         previous.V9_NEW_MANIFEST_SHA,
         "v11_training_manifest_sha256":
         previous.sha(v11_rows / "manifest.json"),
-        "v12_prose_training_manifest_sha256":
-        previous.sha(prose_rows / "manifest.json"),
-        "v12_prose_training_replay_sha256":
-        previous.sha(prose_replay),
+        "v12_fresh_training_manifest_sha256":
+        previous.sha(fresh_rows / "manifest.json"),
+        "v12_fresh_training_replay_sha256":
+        previous.sha(fresh_replay),
         "v12_workload_training_projection_sha256": TRAIN_SHA,
         "source_reference_tok_s": references,
         "models": [],
@@ -133,9 +145,15 @@ def build(v9_new, v9_old, v9_k_manifest, v9_table, v11_rows,
         output.mkdir()
         chosen = {
             kind: (
-                noncode[kind] + code_new[kind]
-                + (code_old[kind] if source != "mixed-fresh" else [])
-                + fresh[kind] * (3 if source == "prose-balanced" else 1)
+                fresh[kind]
+                + (
+                    noncode[kind] + code_new[kind]
+                    if source != "fresh-only" else []
+                )
+                + (
+                    code_old[kind]
+                    if source == "augmented-history" else []
+                )
             )
             for kind in KINDS
         }
@@ -182,7 +200,12 @@ def build(v9_new, v9_old, v9_k_manifest, v9_table, v11_rows,
         )
         result["models"].append({
             "source": source,
-            "prose_weight": 3 if source == "prose-balanced" else 1,
+            "historical_measurements": (
+                "none" if source == "fresh-only"
+                else "code-new-v10-v11"
+                if source == "mixed-history"
+                else "code-new-and-old-v10-v11"
+            ),
             "reference_tok_s": rate,
             "training_rows": {
                 kind: len(chosen[kind]) for kind in KINDS
@@ -199,13 +222,13 @@ def main():
     parser = argparse.ArgumentParser()
     for name in (
         "v9-new", "v9-old", "v9-k-manifest", "v9-table",
-        "v11-rows", "prose-rows", "prose-replay", "out",
+        "v11-rows", "fresh-rows", "fresh-replay", "out",
     ):
         parser.add_argument("--" + name, type=Path, required=True)
     args = parser.parse_args()
     result = build(
         args.v9_new, args.v9_old, args.v9_k_manifest, args.v9_table,
-        args.v11_rows, args.prose_rows, args.prose_replay,
+        args.v11_rows, args.fresh_rows, args.fresh_replay,
         args.out,
     )
     print(json.dumps({
