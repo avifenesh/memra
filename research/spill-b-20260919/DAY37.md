@@ -422,6 +422,36 @@ defaults (open 8192, burst 64, ctx 65536), door unset for the allocator (pooled)
   a rerun of O1's 5090 cell on a tree with addendum B is then owed. If `r4` greens on both runs, the cause is not
   placed and says so. No clause of 1.6 or 1.7 changes.
 
+### 1.17 Addendum H (2026-09-26, after 2.8, before any r5 build or cell)
+
+2.8 placed 2.7's A1 red on the missing DAY39 addendum B and left a rerun of O1's 5090 cell owed. This addendum names
+it. No clause, bound, rule or reader of 1.6, 1.7 and addendum F changes.
+
+- **The whole cell, not the gate set alone.** 2.8 named the gate set and the A1 lines. A class reading assembled from
+  two trees would read two programs, so every clause of 1.6 runs again on the one r5 tree, in 1.8's order: A2, the
+  gate set of both arms, the addendum-B boots, the stream pairs, then the reader. The r4 reading of 2.7 stays as it
+  read.
+- **The r5 source.** The lane's crates at `02dbdfa40` (DAY39 addendum B `be2177ead` and the r4 door `c6f9282c2` are both
+  ancestors; every door the lane added since r4 is default off and no boot sets it). `memra-server` and `kv-tier-gate`
+  build together in the lane checkout, as `build-r4.sh` built r4, into `target/day37/r5/` with `source.commit`
+  `02dbdfa40`. The `main` arm is the lane's merge base with main, `2c5edcb4c` (it carries no `[kv-vmm]` door), built in
+  its own worktree into `target/day37/r5main/main/`. `rtx5090-day37/build-r5.sh`; sums in `r5-binaries.sha256`.
+- **The receipts** under `rtx5090-day37/r5/`: A2 as `grow-32768-r5`, the gate sets `gates-r5-pooled` and
+  `gates-r5-vmm`, the boots of r4's list (`mix-*` both kinds both orders, `fault-mapper`, `off-main`, `burst-g2-*`,
+  `burst-l64-*`, `burst-boff-*`, `fault-ensure`, `fault-build1`, `fault-build64`), the stream pairs `stream-O1-k` and
+  `stream-O2-k` (k = 1..5), and `read.log` from `day37-read.py rtx5090 <r5> gates-r5`. The 5090's placement is the
+  class default in code (helper grows, addendum A); the reader takes it from the boot line (addendum F item 1).
+- **Card sharing (the lead's request).** Each boot takes the lock alone after the idle wait, and the chain leaves the lock
+  free for `YIELD_S=240` s after every boot, after A2 and after each gate arm. A stream pair (its two boots in the
+  registered order) is one unit: the yield falls between pairs, not inside one. Each gate arm is one collector hold
+  (the registered order, kept whole). Its serve-smoke worktree at `02dbdfa40` is built before the hold (nice 19,
+  600%), so the in-hold build and the smoke's own build find it current.
+  A boot the idle wait did not run (`boots.sh` exit 3) is asked again, up to six times; an executed boot never runs
+  again.
+- **Reading.** The rule of 1.7 for the 5090 class reads on r5 alone. If `admit-mem-burst` reds again on r5's pooled
+  arm, the cause is not placed by 2.8 and the reading is FAIL (no reading) with the new receipts quoted; a repro is
+  then registered before any change. Failures per 1.9.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
