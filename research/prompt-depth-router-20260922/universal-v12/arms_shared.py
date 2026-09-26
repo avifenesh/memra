@@ -107,16 +107,28 @@ def arm(label, role, k, mode, cap, *extra, noop_label=None,
     return entry
 
 
-def freeze(models, v11_rows, prose_rows, out):
+def freeze(models, v11_rows, prose_rows, preflight_path, out):
     models = models.resolve()
     manifest, files = model_inventory(models)
+    preflight = json.loads(preflight_path.read_text())
     if (
         sha(v11_rows / "manifest.json")
         != manifest["v11_training_manifest_sha256"]
         or sha(prose_rows / "manifest.json")
         != manifest["v12_prose_training_manifest_sha256"]
+        or preflight["schema"] != 1
+        or preflight["status"] != "training-prefix-visible"
+        or preflight["no_field_route"] is not True
+        or preflight["scope"]
+        != "training-only conversation-heldout prefix visibility"
+        or preflight["v9_code_training_manifest_sha256"]
+        != manifest["code_training_manifest_sha256"]
+        or preflight["v11_training_manifest_sha256"]
+        != manifest["v11_training_manifest_sha256"]
+        or preflight["v12_prose_training_manifest_sha256"]
+        != manifest["v12_prose_training_manifest_sha256"]
     ):
-        raise ValueError("mixed candidate training rows changed")
+        raise ValueError("mixed candidate training or prefix preflight differs")
     cutoffs = quantiles(v11_rows, prose_rows)
 
     def weight(source, name):
@@ -188,6 +200,7 @@ def freeze(models, v11_rows, prose_rows, out):
         "v11_training_rows_sha256": sha(v11_rows / "manifest.json"),
         "v12_prose_training_rows_sha256":
         sha(prose_rows / "manifest.json"),
+        "training_prefix_preflight_sha256": sha(preflight_path),
         "fixed_c_quantiles": cutoffs,
         "domains": ["code", "prose", "math"],
         "arms": arms,
@@ -207,11 +220,14 @@ def freeze(models, v11_rows, prose_rows, out):
 
 def main():
     parser = argparse.ArgumentParser()
-    for name in ("models", "v11-rows", "prose-rows", "out"):
+    for name in ("models", "v11-rows", "prose-rows", "preflight", "out"):
         parser.add_argument("--" + name, type=Path, required=True)
     args = parser.parse_args()
     print(json.dumps(
-        freeze(args.models, args.v11_rows, args.prose_rows, args.out),
+        freeze(
+            args.models, args.v11_rows, args.prose_rows,
+            args.preflight, args.out,
+        ),
         sort_keys=True,
     ))
 

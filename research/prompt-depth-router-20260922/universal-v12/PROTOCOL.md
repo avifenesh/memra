@@ -60,6 +60,10 @@ separate sealed commitment.
    remain observational; C labels come only from actual offers.
    Source-specific complete-request rates price K utility, while
    same-GPU randomized rounds price D/C actions.
+   Seal and replay the fresh prose native bytes and the training-only
+   phase package before converting them into K/D/C rows. The replay
+   verifies all 112 prose training sessions and rejects any validation
+   or final prompt file in the training archive.
    The fresh prose collector runs K=3/10/20 fixed-D3 and randomized-D
    sessions plus one randomized-K session on each of 16 training
    conversations. The fit pools those labels with the pinned code and
@@ -67,6 +71,11 @@ separate sealed commitment.
    prefix, generated-token history, and prior-turn features at runtime.
    A prose-balanced candidate explicitly triples the weight of fresh
    prose rows during fitting; validation remains disjoint and unweighted.
+   Before freezing arms, a training-conversation-heldout preflight
+   must show that the same first-16/32 token buckets used by the K
+   controller distinguish code, open prose and math above a 0.6
+   balanced-accuracy floor, with every stratum recall at least 0.5.
+   This classifier is a diagnostic only and never routes requests.
 2. Before validation, freeze one candidate inventory and a bounded
    fixed C/K/D menu that includes D=1/2 as controls, plus exact
    model-running no-op twins. Hold the target sampler at top-k 20,
