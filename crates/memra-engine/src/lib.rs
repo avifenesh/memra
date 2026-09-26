@@ -934,6 +934,7 @@ pub mod mimo_audio_embed_ffi;
 pub mod mimo_audio_patch_load;
 pub mod mimo_mixed_attn_ffi;
 pub mod mimo_moe_load;
+pub mod mimo_mtp_weights;
 pub mod mimo_nvfp4_ffi;
 pub mod mimo_qkv_ffi;
 pub mod mimo_sink_ffi;
