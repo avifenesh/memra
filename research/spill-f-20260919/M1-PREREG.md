@@ -616,3 +616,11 @@ buffer free and nothing in flight, and a second with every H2D event already com
 return within 1 s. On the e5d899500 build both take the full 30 s (red, run in the scratch worktree
 at e5d899500 with only the cells added); on the corrected build they return at once. The serving-
 shape check then reruns in full.
+
+Section D, bounded OOM record (2026-09-26 14:53Z) and fix, before any bounded visit: the first
+bounded cell died 3.6 s in, quoted from the kernel: `Memory cgroup out of memory: Killed process
+643352 (python3) total-vm:17828376kB, anon-rss:7636208kB` (systemd: `The kernel OOM killer killed
+some processes in this unit`). The runner's `sha()` read the whole 18.2 GB artifact into memory to
+check its hash, which fits the 20 GiB capped scope but not the 7,864,223,232-byte bounded one.
+Fix: `sha()` streams in 1 MiB blocks (the collector's own digest shape; same values). No visit
+changes; the refused cell is kept as `refused-bounded-oom-runner-hash`.

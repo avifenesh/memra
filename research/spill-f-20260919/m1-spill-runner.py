@@ -79,7 +79,12 @@ def parse_log(text):
 
 
 def sha(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    # Streamed (1 MiB blocks): hashing the 18.2 GB artifact must fit the bounded regime's cgroup.
+    h = hashlib.sha256()
+    with Path(path).open("rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
 
 
 def proof_view(path):
