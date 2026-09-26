@@ -15240,6 +15240,45 @@ fn reclaim_offtick_pass(
 /// set reaches the host whether or not the arrival that queued it is still waiting. A queued entry
 /// that is no longer evictable (leased, hit or evicted meanwhile) is skipped; a refused submission
 /// dropped its entry (its bytes free now) and the next is tried. Returns the entries removed.
+/// MEMRA_ADMIT_W_RELEASE (default unset, WP-B day 45, OWED O4): `1` releases each session's prefill
+/// workspace from both admission books when its prime completes. Unset reads nothing.
+fn admit_w_release_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("MEMRA_ADMIT_W_RELEASE").as_deref() == Ok("1"))
+}
+
+/// The prime-completion release (DAY45 1.1): every active session with `prefill_done` and its
+/// workspace still booked releases it from both books and from its own charges, once.
+fn release_primed_workspace(
+    active: &mut [Session],
+    book: &mut crate::admit_predict::AdmissionBook,
+) {
+    for s in active.iter_mut() {
+        if s.booked_w_bytes == 0 || !s.prefill_done {
+            continue;
+        }
+        let w = s.booked_w_bytes;
+        let (real, shadow) = release_split(w, s.booked_kv_bytes, s.shadow_kv_hat);
+        book.release(&s.model, real, shadow);
+        s.booked_kv_bytes -= real;
+        s.shadow_kv_hat -= shadow;
+        s.booked_w_bytes = 0;
+        eprintln!(
+            "[admit-book] w-release id={} model={} bytes={w} booked_real={} booked_shadow={}",
+            s.request_id,
+            s.model,
+            book.booked_total(),
+            book.shadow_booked_total()
+        );
+    }
+}
+
+/// The part of `w` each book releases: never more than the session carries in it (the shadow
+/// book is only booked while the predictive door is armed).
+fn release_split(w: u64, booked_real: u64, booked_shadow: u64) -> (u64, u64) {
+    (w.min(booked_real), w.min(booked_shadow))
+}
+
 /// One queued settle (WP-B day 44, DAY44 1.2 (c)): an entry id in a pool, never a reference.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct SettleJob {
@@ -24304,6 +24343,9 @@ struct Session {
     /// D2 gap G5: this session's SHADOW kv_hat (P-tenant-p95 book). 0 whenever
     /// `MEMRA_ADMIT_PREDICT_SHADOW` is off.
     shadow_kv_hat: u64,
+    /// WP-B day 45 (O4, `MEMRA_ADMIT_W_RELEASE`): the prefill-workspace term both books carry for
+    /// this session, still booked; 0 once released at prime completion (or never booked).
+    booked_w_bytes: u64,
     /// The predicted TOTAL completion tokens behind `shadow_kv_hat`; with
     /// `generated.len()` this gives the per-session remainder the would-reject
     /// Retry-After hint scans (D2 gap G6).
@@ -26665,6 +26707,12 @@ pub fn run(
                 }
             }
         }
+        // WP-B day 45 (O4, `MEMRA_ADMIT_W_RELEASE`): the prime-completion seam, one site, after
+        // the command drain and before admission. A session whose prime completed releases its
+        // prefill workspace from both books, once.
+        if admit_w_release_on() {
+            release_primed_workspace(&mut active, &mut admission_book);
+        }
         resolve_constraint_compiles(&constraint_result_rx, &mut pending_constraints, &mut queue);
         expire_constraint_compiles(&mut pending_constraints, Instant::now());
 
@@ -28661,6 +28709,22 @@ pub fn run(
                             m1 + m2,
                             r1 + r2,
                             active.len()
+                        );
+                    }
+                    // WP-B day 45 (O4): the workspace term both books carry for this session.
+                    if admit_w_release_on() {
+                        let w_bytes = crate::admit_predict::RequestCharge::from_physical_cost(
+                            cost as u64,
+                            context_cap_bytes as u64,
+                            activation_bytes as u64,
+                            draft_state_bytes as u64,
+                            0,
+                        )
+                        .prefill_workspace_bytes;
+                        s.booked_w_bytes = w_bytes;
+                        eprintln!(
+                            "[admit-book] w-booked id={} model={} bytes={w_bytes}",
+                            s.request_id, s.model
                         );
                     }
                     admission_book.admit(&s.model, s.booked_kv_bytes, s.shadow_kv_hat);
@@ -36106,6 +36170,7 @@ fn admit(
         // Booked by the worker loop at active.push (the admission charge is computed
         // there); zero until then so a test-constructed Session books nothing.
         booked_kv_bytes: 0,
+        booked_w_bytes: 0,
         vmm_floor_rows: n_prompt,
         errored: false,
         shadow_kv_hat: 0,
@@ -57145,6 +57210,30 @@ mod tests {
         // Each rewind is its pool's own restore.
         assert!(live.contains("if let Err(err) = memra_engine::pp::restore_cache_checkpoint( engine, &lm.model, None, &mut e.cache, &ckpt.snap, )"));
         assert!(live.contains("match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {"));
+    }
+
+    /// WP-B day 45 (DAY45 1.3): the W-release door is read at the admit seam and the one release
+    /// site; the release is exact and happens once.
+    #[test]
+    fn w_release_door_reaches_the_admit_seam_and_one_site() {
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let call = format!("admit_w_release_on{}", "()");
+        assert_eq!(
+            live.matches(call.as_str()).count(),
+            3,
+            "definition, admit seam, release site"
+        );
+        assert!(live.contains(
+            "if admit_w_release_on() { release_primed_workspace(&mut active, &mut admission_book); }"
+        ));
+        assert_eq!(live.matches("release_primed_workspace(&mut").count(), 1);
+        assert!(live.contains("if s.booked_w_bytes == 0 || !s.prefill_done { continue; }"));
+        assert!(live.contains("s.booked_w_bytes = 0;"));
+        // Never more than a book carries.
+        assert_eq!(super::release_split(2_000, 5_000, 0), (2_000, 0));
+        assert_eq!(super::release_split(2_000, 1_000, 3_000), (1_000, 2_000));
     }
 
     /// WP-B day 44 (DAY44 1.5): the exact-resume door is read at the two arming sites (plain

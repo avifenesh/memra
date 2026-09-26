@@ -67,6 +67,12 @@ from each session's admission to its release.
 
 Code: about 0.3 agent-day. Cells: about 40 min on the 5090, about 1.5 h on the target card.
 
+### 1.7 Addendum A (2026-09-26, while coding, before any cell)
+
+The release site is after the tick's command drain and before admission, not at the loop head: a lane-A census window
+pins the loop head's first statements, and the drain-then-admit point is the same seam for the admission that
+follows (an admission reads the books after the release either way). No clause, bound or reading changes.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.

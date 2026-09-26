@@ -285,6 +285,15 @@ impl AdmissionBook {
         }
     }
 
+    /// WP-B day 45 (O4, `MEMRA_ADMIT_W_RELEASE`): a session's prefill workspace leaves both
+    /// books when its prime completes; the session keeps being in flight.
+    pub(crate) fn release(&mut self, model: &str, booked_bytes: u64, shadow_bytes: u64) {
+        if let Some(row) = self.models.get_mut(model) {
+            row.booked_bytes = row.booked_bytes.saturating_sub(booked_bytes);
+            row.shadow_booked_bytes = row.shadow_booked_bytes.saturating_sub(shadow_bytes);
+        }
+    }
+
     pub(crate) fn inflight(&self, model: &str) -> u64 {
         self.models.get(model).map_or(0, |row| row.inflight)
     }
@@ -865,6 +874,28 @@ mod tests {
         ] {
             assert!(s.contains(field), "line must carry `{field}`: {s}");
         }
+    }
+
+    /// WP-B day 45 (O4): a release takes the workspace out of both books and keeps the session in
+    /// flight; a release then the reduced retire equals a retire of the full charge.
+    #[test]
+    fn book_release_then_retire_is_exact() {
+        let mut b = AdmissionBook::default();
+        b.admit("m", 5_000, 3_000);
+        b.admit("m", 7_000, 4_000);
+        b.release("m", 2_000, 2_000);
+        assert_eq!(b.booked_total(), 10_000);
+        assert_eq!(b.shadow_booked_total(), 5_000);
+        assert_eq!(b.inflight("m"), 2, "a release does not retire");
+        b.retire("m", 3_000, 1_000);
+        b.retire("m", 7_000, 4_000);
+        assert_eq!(b.booked_total(), 0);
+        assert_eq!(b.shadow_booked_total(), 0);
+        assert_eq!(b.inflight("m"), 0);
+        // Saturating, and a release on an unknown model is a no-op.
+        b.release("m", 1, 1);
+        b.release("other", 1, 1);
+        assert_eq!(b.booked_total(), 0);
     }
 
     #[test]
