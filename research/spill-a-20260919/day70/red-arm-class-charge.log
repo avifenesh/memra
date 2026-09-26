@@ -1,0 +1,41 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-a-i69/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.49s
+     Running unittests src/lib.rs (/home/avifenesh/projects/wt-spill-a/target/debug/deps/memra_engine-47ae06a2f9cbea34)
+
+running 4 tests
+test tier_transfer::tests::day70_a_lease_past_the_pool_cap_is_its_length_and_never_parks ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test tier_transfer::tests::day70_the_lease_is_its_length_and_the_pool_its_tail ... FAILED
+test tier_transfer::tests::day70_the_pool_carries_the_tail_within_its_cap ... FAILED
+test tier_transfer::tests::day70_short_prefix_residents_and_a_full_pool_admit_every_lease_main_admits ... FAILED
+
+failures:
+
+---- tier_transfer::tests::day70_the_lease_is_its_length_and_the_pool_its_tail stdout ----
+
+thread 'tier_transfer::tests::day70_the_lease_is_its_length_and_the_pool_its_tail' (1000719) panicked at crates/memra-engine/src/tier_transfer.rs:6009:9:
+assertion failed: span("pub fn lease_charge(", "\n}\n").contains("    bytes as u64")
+
+---- tier_transfer::tests::day70_the_pool_carries_the_tail_within_its_cap stdout ----
+
+thread 'tier_transfer::tests::day70_the_pool_carries_the_tail_within_its_cap' (1000720) panicked at crates/memra-engine/src/tier_transfer.rs:5952:9:
+assertion `left == right` failed: 3000 + a 1096 tail
+  left: (1096, 5192)
+ right: (1096, 4096)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- tier_transfer::tests::day70_short_prefix_residents_and_a_full_pool_admit_every_lease_main_admits stdout ----
+
+thread 'tier_transfer::tests::day70_short_prefix_residents_and_a_full_pool_admit_every_lease_main_admits' (1000718) panicked at crates/memra-engine/src/tier_transfer.rs:5906:9:
+every demote lease admitted
+
+
+failures:
+    tier_transfer::tests::day70_short_prefix_residents_and_a_full_pool_admit_every_lease_main_admits
+    tier_transfer::tests::day70_the_lease_is_its_length_and_the_pool_its_tail
+    tier_transfer::tests::day70_the_pool_carries_the_tail_within_its_cap
+
+test result: FAILED. 0 passed; 3 failed; 1 ignored; 0 measured; 629 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-engine --lib`

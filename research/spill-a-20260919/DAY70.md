@@ -116,3 +116,46 @@ placed below with a CPU cell on the merged code, and design Q is registered befo
 - **CPU battery:** fmt, clippy `--workspace --all-targets -D warnings`, the memra-engine and memra-server libs, and
   `tools/check-flags.sh`.
 - **Budget:** 0.3 agent-day.
+
+## 4. Design Q as built (`a57f85897` on `lane/spill-a-integ69-20260926`, over `4f297e7bd`; on this lane the same commit cherry-picked)
+
+- **Built as registered.**
+  - (Q.1) `lease_charge(bytes) = bytes`, which `alloc_host_kind` charges before it asks the pool.
+  - (Q.2) `LeasePool::lease(class, len, kind)` returns `Pooled(backing, tail)`, `FreshClass(tail)` or `FreshLength`:
+    - `reserve_slack` charges a tail under the pool tenant only while `held() = idle + tails` plus the tail fits the
+      cap;
+    - `release_slack` gives it back in the allocation's drop, before `put`;
+    - `put` parks only a class-sized backing (`lease_class(c) == c`) while `held() + c` fits the cap.
+  - (Q.4) A refused pool reserve returns `Err(())`, and the lease is allocated at its length.
+  - DAY63's census now reads `request.bytes.pinned = lease_charge(bytes)`. The worker cells' `gpu_lease_charge` is back
+    to the six leases' lengths (1392 B), because their pool cap is 0.
+- **Cells:**
+  - (a) Green: `day70_short_prefix_residents_and_a_full_pool_admit_every_lease_main_admits`. All 16 demote leases are
+    admitted, the requests hold exactly main's charges, and the pool stays at or under its cap. It is section 1's
+    placement sequence, now through the real `LeasePool::lease`.
+  - (b) `day70_the_pool_carries_the_tail_within_its_cap` and (c) `day70_the_lease_is_its_length_and_the_pool_its_tail`
+    are green.
+  - **Red arm** `day70/red-arm-class-charge.patch` (`lease_charge` returns the class again, with a marker) fails all
+    three (`day70/red-arm-class-charge.log`):
+    - (a) on `every demote lease admitted`: the placement's refusal again;
+    - (b) on `3000 + a 1096 tail` (`left: (1096, 5192) right: (1096, 4096)`);
+    - (c) on `lease_charge .. bytes as u64`.
+  - (d) The GPU cell `day70_a_lease_past_the_pool_cap_is_its_length_and_never_parks` is built (`NATIVE_CELLS` 19).
+- **CPU battery on `a57f85897`:**
+  - fmt;
+  - workspace clippy `--all-targets -D warnings` clean (`day70/clippy.log`);
+  - engine lib `581 passed; 0 failed; 52 ignored` (`day70/engine-lib.log`);
+  - server lib `943 passed; 0 failed; 27 ignored` (`day70/server-lib.log`);
+  - `tools/check-flags.sh`; `git diff --check`.
+  - On this lane's tip: engine `581 passed`, server `949 passed`, workspace clippy clean.
+- **The GPU cells for the target card's battery (BOX43)**, each `--ignored --exact --test-threads=1`:
+  - engine `tier_transfer::tests::day70_a_lease_past_the_pool_cap_is_its_length_and_never_parks` (new);
+  - engine `day63_a_dropped_lease_backs_the_next_same_class_lease`, `day63_a_drop_past_the_cap_frees_and_the_engine_closes_the_pool`
+    and `day69_a_drained_backing_is_never_the_next_lease`. Their pinned totals are unchanged by Q: the length plus the
+    tail is the class.
+  - the server's `option_b_` and `option_c_` cells, 19 with DAY69's purge cell, with the length arithmetic restored.
+  - Also worth the battery: the engine gate binaries `tier_transfer_gate` and `kv_tier_gate` (fault). They assert a
+    lease's pinned charge equals its length (`used().pinned == bytes.len()`, `pinned-released`). They set no pool cap,
+    so under Q they charge the length again, as they were written.
+- **P2's integ branch** `lane/spill-a-p2-20260926` is rebased onto `a57f85897` as `409be61f8`: server lib `949 passed`,
+  clippy `-p memra-server --all-targets` clean.

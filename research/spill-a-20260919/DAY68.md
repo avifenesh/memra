@@ -102,3 +102,19 @@ GPU. Both registrations said "the 5090 half follows"; this file fixes how, befor
   overlapped the gates cell's first 20 minutes. The gates read exit codes only, with no timing clause.
 - No build of this lane runs from 21:02:51Z while the chain's timed cells run. The 5 s host-load log
   (`host-load-5s.log`) records the whole hold.
+
+## 7. A second recorded overlap: DAY70's builds inside R1's timed cell
+
+- DAY70's fix was built and tested under the rig's CPU cap, lowered to 800% for this, inside R1's `ab-r1-cell`. That
+  cell started at 21:11:45Z; the lead asked for the fix before integ69 merges, with the queue kept running.
+- The windows:
+  - about 22:17Z to 22:20:11Z (the placement cell);
+  - 22:25:13Z to 22:27:48Z;
+  - 22:28:55Z to 22:44:17Z.
+  - The 5 s host-load log reads 4.5 to 5.2 before 22:25Z and 5.8 to 10.3 from 22:25Z to 22:43Z.
+- The boots they overlapped:
+  - o1's last three (`r1 retire-seam` 22:19:54Z, `base prime` 22:22:19Z, `r1 prime` 22:24:45Z), under the lighter
+    first window;
+  - o2's first eight (22:27:14Z to 22:44Z), both arms interleaved.
+- Per the lead's W ruling (DAY61 section 4): if any R1 clause's verdict lands in those boots, the cell repeats once in
+  a hold without builds. The reading names the verdict per order, so o2 is the order to check.

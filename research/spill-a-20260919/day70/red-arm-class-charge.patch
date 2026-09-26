@@ -1,0 +1,14 @@
+diff --git a/crates/memra-engine/src/tier_transfer.rs b/crates/memra-engine/src/tier_transfer.rs
+index 0b56a2887..ae197abd8 100644
+--- a/crates/memra-engine/src/tier_transfer.rs
++++ b/crates/memra-engine/src/tier_transfer.rs
+@@ -418,7 +418,8 @@ impl PoolBacking for PinnedBacking {
+ /// WP-A day 70 (`DAY70.md` design Q.1): a lease's request charge: its length (main's charge and
+ /// the host LRU's unit). What its backing holds beyond the length is the pool's (`PoolSlack`).
+ pub fn lease_charge(bytes: usize) -> u64 {
+-    bytes as u64
++    // day70 red arm: the lease charged its class again (L1.2).
++    lease_class(bytes) as u64
+ }
+ 
+ /// WP-A day 70 (`DAY70.md` design Q.2): a live lease's tail (its backing's capacity minus its
