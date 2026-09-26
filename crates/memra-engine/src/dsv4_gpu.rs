@@ -22711,6 +22711,16 @@ impl Dsv4Gpu {
                     format!("l{il}.cmp_store"),
                     if let Some(host) = &cache.c4_host {
                         host.read(cache.n_blocks)?
+                    } else if cache.split.is_some() {
+                        // The position-split store's logical rows, from both ranks (#710).
+                        let rank1 = state
+                            .tp_ep_caches
+                            .as_ref()
+                            .and_then(|r| r.get(il))
+                            .ok_or("split cache classes rank-1 layer missing")?;
+                        let mut all = vec![0f32; (win + cache.n_blocks) * hd];
+                        self.split_kvc_to_host(cache, rank1, cache.n_blocks, &mut all)?;
+                        all.split_off(win * hd)
                     } else {
                         read(cache.kvc.slice(win * hd..(win + cache.n_blocks) * cmp.d))?
                     },
