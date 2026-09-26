@@ -2946,9 +2946,10 @@ fn reserve_pending_admit_on(
 ///
 ///   * the queue bound is `max_queue_depth(route capacity)` per lane, over the route's own
 ///     reserved-not-dequeued count, so a flood on one route cannot shed another's traffic;
-///   * the wait estimate is the route's service p50 (the `MEMRA_RL_RESET_S` fallback until it
-///     has one) times the waves ahead: `(waiting / capacity + 1)`, with `waiting` over every
-///     lane because the route is one FIFO;
+///   * the wait estimate is one request's decode on the route (`RouteLoad::service_estimate_s`:
+///     mean rounds per completed request times the round p50; the service p50 before any
+///     round, the `MEMRA_RL_RESET_S` fallback before any completion) times the waves ahead:
+///     `(waiting / capacity + 1)`, with `waiting` over every lane because the route is one FIFO;
 ///   * a request waits only when `running + waiting >= capacity`, so a lone request on an idle
 ///     route is admitted however large the estimate;
 ///   * the deadline and wait-ceiling sheds stay interactive-only, as on the hybrid lane: the
@@ -19043,6 +19044,7 @@ default_reasoning_effort = "always"
                             tokens_out: 1,
                             n_prompt: 1,
                             n_cached: 0,
+                            rounds: 1,
                         })),
                     );
                     let _ = req.tx.send(Event::Done {
@@ -21849,6 +21851,7 @@ temperature = 0.6
                         tokens_out: steps,
                         n_prompt: 1,
                         n_cached: 0,
+                        rounds: steps,
                     });
                 }
                 let _ = req.tx.send(Event::Done {

@@ -1202,11 +1202,14 @@ struct RouteProgress {
     health: Arc<RouteHealth>,
     load: Arc<RouteLoad>,
     last_round: Instant,
+    /// This request's rounds, reported with its stats (the route's decode estimate).
+    rounds: usize,
 }
 
 impl RouteProgress {
     fn round(&mut self) {
         let now = Instant::now();
+        self.rounds += 1;
         lane_tick();
         self.health.note_round();
         self.load
@@ -1360,6 +1363,7 @@ fn serve_lane(
             health: health.clone(),
             load: load.clone(),
             last_round: Instant::now(),
+            rounds: 0,
         };
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut turn = Turn::take(turn_lock);
@@ -3206,6 +3210,7 @@ fn serve_one(
         tokens_out: emit.ids.len(),
         n_prompt: prompt.len(),
         n_cached,
+        rounds: emit.progress.as_ref().map_or(0, |p| p.rounds),
     };
     emit.finish(
         prompt.len(),

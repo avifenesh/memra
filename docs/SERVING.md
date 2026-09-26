@@ -1605,8 +1605,12 @@ paused (`docs/models/deepseek-v4-flash.md`).
 - **Admission and telemetry (#501, `route_telemetry.rs`).** A model a dedicated route serves is
   admitted against the route's own book, not the hybrid lane's 64 sessions. The queue bound is
   `max_queue_depth(route capacity)` per lane over the route's reserved-not-dequeued count; the
-  wait estimate is the route's service p50 (the `MEMRA_RL_RESET_S` fallback until it has one)
-  times the waves ahead; `X-RateLimit-Limit` reads the route's capacity (1 for DSv4). The
+  wait estimate is one request's decode on the route (mean rounds per completed request times
+  the round p50; the service p50 before any round, the `MEMRA_RL_RESET_S` fallback before any
+  completion) times the waves ahead. Prime time is left out: one 24k-token prime once priced
+  every short request behind it at 68 s and shed eight that finished in under 9 s
+  (`research/dsv4-route-receipt-20260926/`). `X-RateLimit-Limit` reads the route's capacity,
+  its lane count (4 on the TP/EP default). The
   reservation is a ticket that rides the request and releases at the route's dequeue. `/metrics`
   folds route-served requests into the process totals and adds a `routes` array (`capacity`,
   `waiting`, `inflight`, `running`, `admitted`, `completed`, `failed`, `cancelled`, `refused`,
