@@ -30,3 +30,30 @@ Author's review of the full diff `main..lane/spill-integ69-20260926`, posted as 
 ## Push regime
 Engine and server source changed, so the branch goes up with `MEMRA_RELEASE_QUALIFICATION_MODE=development`. No tag.
 Revuto: if capped or unavailable, this comment is the review.
+
+## Round 2, after revuto round 1
+Revuto found a real defect that this review missed. I noted that a reused backing is not re-zeroed but did not check it
+against `purge_tenant`'s promise. Since L', a purge's dropped host leases parked in the pool with the revoked tenant's KV
+bytes in them. Lane A's fix `4f297e7bd` (DAY69 design P):
+- `LeasePool::drain()` frees every idle backing, releases its charge and advances an epoch. A backing parks only if its
+  lease was allocated in the current epoch, so a purged tenant's lease dropped after the purge frees instead of parking.
+- `purge_tenant` ends with the drain and zeroes the span staging set's idle buffers in place. That second retention
+  predates L' (day 30) and A found it while placing this one.
+- The steady path gains one integer compare per drop. A purge costs the pool's warmth: the next demotes run the pre-L'
+  program until post-purge leases refill it.
+
+What I checked on the fix:
+- The epoch covers the case a plain drain misses: a lease allocated before the purge and dropped after it.
+- The red arms fail where they should: the CPU test with `put` ignoring the epoch (`left: 2, right: 3`), the worker
+  census with the scrub call removed.
+- Other purge paths: the device purge, the restore purge and the promoted-pin release hold no host lease.
+- Cross-tenant reuse without a purge is not readable: no read reaches past `len`, and a D2H that does not cover the whole
+  lease, or whose lease is shared, is refused.
+- Two latent hazards are A's owed items, not defects here: a caller could read a fresh pooled lease before its copy
+  lands (no production caller does), and the GLM-5 TP startup arena returns released regions unscrubbed.
+
+Batteries on the new head:
+- CPU battery 15 of 15 on `061833794` (server lib 950, engine lib 586).
+- GPU run 4 on the same box class, with run 3's cells plus `day69_` and every ignored `tier_transfer::tests::` cell:
+  engine cells 18 of 18, worker span cells 19 of 19, every gate ALL GREEN. serve-smoke's Q35 arm is #777 again.
+- Main `df006602e` (#800, DSv4 only) merged in clean.

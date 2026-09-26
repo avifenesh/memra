@@ -4393,6 +4393,38 @@ Each placement preceded its edit; every cell asserts the property it asserted be
   MiMo), so this merge is gated by the PR's CI on the merge head and the lead's quick censuses (check-flags, docs
   registry, `git diff --check`, fmt, all rc=0), not a fourth battery.
 
+**Revuto round 1 found a real defect in L', fixed in lane A before the merge.** Review comment 4112582951 on #801:
+since L', a tenant purge's dropped host leases parked in the lease pool with the revoked tenant's q8/q5 KV bytes still in
+them (`put` does not scrub, `take` does not refill), up to one host budget, until a same-class reuse, the latch or the
+engine drop. Before L' the drop freed the pages at once, so the purge's promise held. Lane A placed it (DAY69) and found a
+second retention of the same kind, older than L' (day 30): the span staging set's idle buffers keep the last demote's or
+promote's recurrent state, and the purge never touched them. The device purge drops device planes only; the restore
+purge and the promoted-pin release touch device state and pins only. Fix `4f297e7bd` (DAY69 design P):
+`LeasePool::drain()` frees every idle backing and releases its pool charge (the pool stays open) and advances an epoch;
+a backing parks only if its lease was allocated in the current epoch, so a purged tenant's lease that a holder drops
+after the purge frees instead of parking. `purge_tenant` ends with the drain and zeroes the staging set's idle buffers in
+place (buffers and charges kept, so the gate's staging-fill counts do not move). The steady path gains one integer
+compare per drop. Cost: a purge frees other tenants' idle backings too, and until post-purge leases refill the pool the
+next demotes run the pre-L' program (DAY63: 26.27 ms of lease time per long demote against 0.04 ms). Red arms: the CPU
+test fails with `put` ignoring the epoch (`left: 2, right: 3` on the late drop); the worker census fails with the scrub
+call removed (`the purge scrubs`). Lane A also answered the second question: no read reaches past `len`, and inside `len`
+the engine refuses any D2H that does not cover the whole lease or whose lease is shared, so a reused backing is not
+readable by another tenant without a purge. Two latent hazards are owed items, not defects here: the API would let a
+caller read a fresh pooled lease before its copy lands (no production caller does), and the GLM-5 TP startup arena
+returns released regions unscrubbed.
+
+Main moved again to `df006602e` (#800, the DSv4 DSpark round: drafter doors deleted, single-launch rollback and verify
+placement, DSv4 docs), merged in clean (`af40fe0c8`); none of it is reachable from the spill cells. The fix merged on
+top (`061833794`). CPU battery 15 of 15 on `061833794` (`integ69-cpu-battery-purge/`: server lib 950, engine lib 586).
+GPU battery run 4 on BOX41 (a Core Ultra 9 285K with one RTX PRO 6000 WS, the machine runs 1 to 3 used;
+`integ69-pro-run4/`, 468 receipts mirrored and checked), tree `900be48e9`, binary `4136ace6`, one hold 21:32Z to
+21:48Z, with run 3's cells plus the engine cells the fix adds or touches (`day69_` and every ignored
+`tier_transfer::tests::` cell, beside the d2d_, d2h_span and h2d_ filters; nothing removed or relaxed): serve-smoke 1
+failed (the Q35 arm, #777, its summary line byte-identical to run 3's); engine cells `18 passed` (the new
+`day69_a_drained_backing_is_never_the_next_lease` among them); worker span cells `19 passed` (the new
+`option_b_purge_drains_the_pool_and_zeroes_the_staging_set` among them); identity, fault default and plain, hit OFF and
+ON, admit-mem burst, spec-ctx-edge and the pause gate with the 27B all `ALL GREEN`.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
