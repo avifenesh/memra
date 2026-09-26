@@ -1,0 +1,181 @@
+{
+  "confidence_fraction": [
+    4,
+    5
+  ],
+  "features": [
+    "prompt_kind",
+    "bytes_seen",
+    "fenced",
+    "trailing_ticks",
+    "digits",
+    "letters",
+    "math_symbols",
+    "code_symbols",
+    "spaces",
+    "newlines",
+    "underscores",
+    "line_indent",
+    "trailing_colon",
+    "code_intro_words",
+    "code_keywords",
+    "trailing_backtick"
+  ],
+  "max_depth": 4,
+  "min_leaf": 64,
+  "nodes": [
+    {
+      "counts": [
+        2102,
+        1458,
+        540
+      ],
+      "feature": 2,
+      "left": 1,
+      "right": 12,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        2102,
+        13,
+        540
+      ],
+      "feature": 4,
+      "left": 2,
+      "right": 5,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        1705,
+        13,
+        0
+      ],
+      "feature": 1,
+      "left": 3,
+      "right": 4,
+      "threshold": 12
+    },
+    {
+      "counts": [
+        54,
+        13,
+        0
+      ],
+      "feature": -1,
+      "left": 0,
+      "right": 0,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        1651,
+        0,
+        0
+      ],
+      "feature": -1,
+      "left": 0,
+      "right": 0,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        397,
+        0,
+        540
+      ],
+      "feature": 8,
+      "left": 6,
+      "right": 9,
+      "threshold": 31
+    },
+    {
+      "counts": [
+        91,
+        0,
+        45
+      ],
+      "feature": 1,
+      "left": 7,
+      "right": 8,
+      "threshold": 84
+    },
+    {
+      "counts": [
+        37,
+        0,
+        35
+      ],
+      "feature": -1,
+      "left": 0,
+      "right": 0,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        54,
+        0,
+        10
+      ],
+      "feature": -1,
+      "left": 0,
+      "right": 0,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        306,
+        0,
+        495
+      ],
+      "feature": 1,
+      "left": 10,
+      "right": 11,
+      "threshold": 299
+    },
+    {
+      "counts": [
+        165,
+        0,
+        177
+      ],
+      "feature": -1,
+      "left": 0,
+      "right": 0,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        141,
+        0,
+        318
+      ],
+      "feature": -1,
+      "left": 0,
+      "right": 0,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        0,
+        1445,
+        0
+      ],
+      "feature": -1,
+      "left": 0,
+      "right": 0,
+      "threshold": 0
+    }
+  ],
+  "training_class_counts": [
+    2102,
+    1458,
+    540
+  ],
+  "training_groups": [
+    "gemma/cal-a",
+    "gemma/cal-b",
+    "gemma/cal-c"
+  ]
+}

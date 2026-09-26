@@ -1,0 +1,88 @@
+{
+  "schema": 1,
+  "scope": "independent exploration seeds frozen before v4 native output; no heldout policy selected",
+  "selection": [
+    {
+      "sampling_seed": 20773003,
+      "source_group": "heldout",
+      "source_index": 3,
+      "topic": "mapping counts",
+      "workload_file": "heldout-3.txt",
+      "workload_sha256": "32819ec79142332246fedccc4dfcc587734eab75213db42b7295e11ed04b25e3"
+    },
+    {
+      "sampling_seed": 20773004,
+      "source_group": "heldout",
+      "source_index": 4,
+      "topic": "whitespace text",
+      "workload_file": "heldout-4.txt",
+      "workload_sha256": "e99fb1a16b9c114f40b5e19b2ea451efbba61513f4e2c8f52c705fd346faec47"
+    },
+    {
+      "sampling_seed": 20773005,
+      "source_group": "heldout",
+      "source_index": 5,
+      "topic": "integer arithmetic",
+      "workload_file": "heldout-5.txt",
+      "workload_sha256": "d5b9303647e4af5a52ac88670022a9f9bc510b559e6438d3dda4a7a02d1a3aa0"
+    }
+  ],
+  "training": [
+    {
+      "explore_seed": 14110450934862596634,
+      "sampling_seed": 20772000,
+      "source_group": "calibration",
+      "source_index": 0,
+      "topic": "set operations",
+      "workload_file": "calibration-0.txt",
+      "workload_sha256": "575f34040466677ac814051b877f10d1c2a240da7c079a45ce90836fc7622d3b"
+    },
+    {
+      "explore_seed": 18027190118146529132,
+      "sampling_seed": 20772001,
+      "source_group": "calibration",
+      "source_index": 1,
+      "topic": "index operations",
+      "workload_file": "calibration-1.txt",
+      "workload_sha256": "79b777bbc09f23f9bf3f3acf7e278a223aa2c0d4c25b742ce158d905140dd274"
+    },
+    {
+      "explore_seed": 2620165054211348671,
+      "sampling_seed": 20772002,
+      "source_group": "calibration",
+      "source_index": 2,
+      "topic": "pair comparisons",
+      "workload_file": "calibration-2.txt",
+      "workload_sha256": "69e9262524c7c9048b9112ba4b68f544d198e8259a3ad5316ead7cab3962144e"
+    },
+    {
+      "explore_seed": 5258581161601418377,
+      "sampling_seed": 20773000,
+      "source_group": "heldout",
+      "source_index": 0,
+      "topic": "bit flags",
+      "workload_file": "heldout-0.txt",
+      "workload_sha256": "0c8147cc20406a1825b23944c96b68dea26b844ec40b9d51590bf23dd5543283"
+    },
+    {
+      "explore_seed": 6655847956306023378,
+      "sampling_seed": 20773001,
+      "source_group": "heldout",
+      "source_index": 1,
+      "topic": "closed intervals",
+      "workload_file": "heldout-1.txt",
+      "workload_sha256": "8c292c1dd51b54d07d8fddf505314163da1db9fac630031003c782754b91056b"
+    },
+    {
+      "explore_seed": 12299273833802314018,
+      "sampling_seed": 20773002,
+      "source_group": "heldout",
+      "source_index": 2,
+      "topic": "sequence slices",
+      "workload_file": "heldout-2.txt",
+      "workload_sha256": "4614c16f6aca0e6cc46b95dfe82bbd89777407aa8b495d9d067b9926183ecedf"
+    }
+  ],
+  "v3_workloads_sha256": "00a1b6d97fbae3ecf69b46de7097cf6dd0639ca7aed60ed84585d17a2a8bfdef",
+  "v4_fresh_heldout_sha256": "95b05345163e3b3d3c33f222d5715fda6129c6d5fa7d4b2eb484bc61ac1190a1"
+}

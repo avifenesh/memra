@@ -1,0 +1,347 @@
+{
+  "status": "offline-adaptive-replay",
+  "scope": "independent native requests; offline full-information calibration is excluded from evaluation; replayed state persists across held-out requests; no live cutoff switching, CPU policy cost or continuous-KV claim",
+  "policy": {
+    "arms": [
+      "off",
+      "c015",
+      "c030",
+      "c030zero"
+    ],
+    "calibration_scenarios": [
+      0,
+      1
+    ],
+    "evaluation_scenarios": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "probe_every": 6,
+    "acceptance_low": 0.65,
+    "acceptance_high": 0.82,
+    "keep_gain": 0.02,
+    "reward": "chosen-arm output tokens / native request seconds, divided by calibration C=0 rate for this prompt length",
+    "policy_cpu_time_included": false
+  },
+  "initial_calibrated_arm": "c015",
+  "calibration_reference_rates": {
+    "256": 174.40920351020003,
+    "1024": 151.45066922550538,
+    "4096": 118.87300356320192,
+    "16384": 55.00685322214638
+  },
+  "calibration_scores": {
+    "off": 0.980863923046889,
+    "c015": 1.022971368849048,
+    "c030": 0.9749603183790713,
+    "c030zero": 0.9224785494990849
+  },
+  "evaluation": {
+    "selected": {
+      "requests": 16,
+      "tokens": 9446,
+      "native_request_seconds": 85.701410992,
+      "native_tokens_per_second": 110.21988892203605,
+      "format_covered": 16
+    },
+    "off": {
+      "requests": 16,
+      "tokens": 5998,
+      "native_request_seconds": 59.274505573,
+      "native_tokens_per_second": 101.19021562504835,
+      "format_covered": 16
+    },
+    "calibrated_fixed": {
+      "requests": 16,
+      "tokens": 9499,
+      "native_request_seconds": 86.03931514,
+      "native_tokens_per_second": 110.40301732462163,
+      "format_covered": 16
+    },
+    "selected_vs_off_percent": 8.923464824352557,
+    "selected_vs_calibrated_fixed_percent": -0.16587264281656688
+  },
+  "by_scenario": {
+    "2": {
+      "rates": {
+        "selected": 100.19859320839724,
+        "off": 98.02550251844113,
+        "calibrated": 100.19859320839724
+      },
+      "selected_vs_off_percent": 2.216862585884005,
+      "selected_vs_calibrated_percent": 0.0
+    },
+    "3": {
+      "rates": {
+        "selected": 109.34255857444349,
+        "off": 109.37529288037105,
+        "calibrated": 109.48532979286503
+      },
+      "selected_vs_off_percent": -0.02992842813538399,
+      "selected_vs_calibrated_percent": -0.13040214491900626
+    },
+    "4": {
+      "rates": {
+        "selected": 117.92704088776694,
+        "off": 88.9014999988781,
+        "calibrated": 118.27027001975694
+      },
+      "selected_vs_off_percent": 32.64910140914961,
+      "selected_vs_calibrated_percent": -0.2902074476812011
+    },
+    "5": {
+      "rates": {
+        "selected": 99.103651936754,
+        "off": 105.43316534409234,
+        "calibrated": 99.103651936754
+      },
+      "selected_vs_off_percent": -6.003341914929051,
+      "selected_vs_calibrated_percent": 0.0
+    }
+  },
+  "matched_loop_exclusions": [],
+  "trace": [
+    {
+      "scenario": 2,
+      "turn": 2,
+      "length_target": 1024,
+      "chosen": "c015",
+      "incumbent_before": "c015",
+      "incumbent_after": "c015",
+      "probe": false,
+      "accepted_fraction": 0.8609865470852018,
+      "reward": 1.0713524105497132,
+      "comparator": 1.022971368849048,
+      "adopted": false,
+      "loop": false,
+      "matched_exclusion": false
+    },
+    {
+      "scenario": 2,
+      "turn": 4,
+      "length_target": 4096,
+      "chosen": "c015",
+      "incumbent_before": "c015",
+      "incumbent_after": "c015",
+      "probe": false,
+      "accepted_fraction": 0.8065326633165829,
+      "reward": 1.0569869156712393,
+      "comparator": 1.0235054349106623,
+      "adopted": false,
+      "loop": false,
+      "matched_exclusion": false
+    },
+    {
+      "scenario": 2,
+      "turn": 6,
+      "length_target": 16384,
+      "chosen": "c015",
+      "incumbent_before": "c015",
+      "incumbent_after": "c015",
+      "probe": false,
+      "accepted_fraction": 0.810126582278481,
+      "reward": 0.9306646134760835,
+      "comparator": 1.0212308079708186,
+      "adopted": false,
+      "loop": false,
+      "matched_exclusion": false
+    },
+    {
+      "scenario": 2,
+      "turn": 8,
+      "length_target": 256,
+      "chosen": "c015",
+      "incumbent_before": "c015",
+      "incumbent_after": "c015",
+      "probe": false,
+      "accepted_fraction": 0.8419117647058824,
+      "reward": 1.0939665917814108,
+      "comparator": 1.020235264892601,
+      "adopted": false,
+      "loop": false,
+      "matched_exclusion": false
+    },
+    {
+      "scenario": 3,
+      "turn": 2,
+      "length_target": 256,
+      "chosen": "c015",
+      "incumbent_before": "c015",
+      "incumbent_after": "c015",
+      "probe": false,
+      "accepted_fraction": 0.8052884615384616,
+      "reward": 1.0867026644607267,
+      "comparator": 1.0000438171198092,
+      "adopted": false,
+      "loop": false,
+      "matched_exclusion": false
+    },
+    {
+      "scenario": 3,
+      "turn": 4,
+      "length_target": 16384,
+      "chosen": "c030",
+      "incumbent_before": "c015",
+      "incumbent_after": "c015",
+      "probe": true,
+      "accepted_fraction": 0.7892976588628763,
+      "reward": 0.87542316146098,
+      "comparator": 1.0057192425405592,
+      "adopted": false,
+      "loop": false,
+      "matched_exclusion": false
+    },
+    {
+      "scenario": 3,
+      "turn": 6,
+      "length_target": 4096,
+      "chosen": "c015",
+      "incumbent_before": "c015",
+      "incumbent_after": "c015",
+      "probe": false,
+      "accepted_fraction": 0.8289156626506025,
+      "reward": 1.088882427028485,
+      "comparator": 1.0057192425405592,
+      "adopted": false,
+      "loop": false,
+      "matched_exclusion": false
+    },
+    {
+      "scenario": 3,
+      "turn": 8,
+      "length_target": 1024,
+      "chosen": "c015",
+      "incumbent_before": "c015",
+      "incumbent_after": "c015",
+      "probe": false,
+      "accepted_fraction": 0.7541371158392435,
+      "reward": 1.0953947237048705,
+      "comparator": 1.0395237997689073,
+      "adopted": false,
+      "loop": false,
+      "matched_exclusion": false
+    },
+    {
+      "scenario": 4,
+      "turn": 2,
+      "length_target": 4096,
+      "chosen": "c015",
+      "incumbent_before": "c015",
+      "incumbent_after": "c015",
+      "probe": false,
+      "accepted_fraction": 0.7613636363636364,
+      "reward": 0.8644465293882161,
+      "comparator": 1.047169733766394,
+      "adopted": false,
+      "loop": false,
+      "matched_exclusion": false
+    },
+    {
+      "scenario": 4,
+      "turn": 4,
+      "length_target": 16384,
+      "chosen": "c015",
+      "incumbent_before": "c015",
+      "incumbent_after": "c015",
+      "probe": false,
+      "accepted_fraction": 0.5966564633859195,
+      "reward": 2.087471115573039,
+      "comparator": 1.036049609507593,
+      "adopted": false,
+      "loop": false,
+      "matched_exclusion": false
+    },
+    {
+      "scenario": 4,
+      "turn": 6,
+      "length_target": 256,
+      "chosen": "c015",
+      "incumbent_before": "c015",
+      "incumbent_after": "c015",
+      "probe": false,
+      "accepted_fraction": 0.8193832599118943,
+      "reward": 1.0550916659877376,
+      "comparator": 1.1630644476355088,
+      "adopted": false,
+      "loop": false,
+      "matched_exclusion": false
+    },
+    {
+      "scenario": 4,
+      "turn": 8,
+      "length_target": 1024,
+      "chosen": "c030",
+      "incumbent_before": "c015",
+      "incumbent_after": "c015",
+      "probe": true,
+      "accepted_fraction": 0.7947598253275109,
+      "reward": 1.002926090614277,
+      "comparator": 1.162827541425071,
+      "adopted": false,
+      "loop": false,
+      "matched_exclusion": false
+    },
+    {
+      "scenario": 5,
+      "turn": 2,
+      "length_target": 1024,
+      "chosen": "c015",
+      "incumbent_before": "c015",
+      "incumbent_after": "c015",
+      "probe": false,
+      "accepted_fraction": 0.8047945205479452,
+      "reward": 1.0706210452857918,
+      "comparator": 1.162827541425071,
+      "adopted": false,
+      "loop": false,
+      "matched_exclusion": false
+    },
+    {
+      "scenario": 5,
+      "turn": 4,
+      "length_target": 256,
+      "chosen": "c015",
+      "incumbent_before": "c015",
+      "incumbent_after": "c015",
+      "probe": false,
+      "accepted_fraction": 0.8007662835249042,
+      "reward": 1.0423190099073272,
+      "comparator": 1.1803220954012847,
+      "adopted": false,
+      "loop": false,
+      "matched_exclusion": false
+    },
+    {
+      "scenario": 5,
+      "turn": 6,
+      "length_target": 16384,
+      "chosen": "c015",
+      "incumbent_before": "c015",
+      "incumbent_after": "c015",
+      "probe": false,
+      "accepted_fraction": 0.7869674185463659,
+      "reward": 1.0571590486258287,
+      "comparator": 1.1738661476670242,
+      "adopted": false,
+      "loop": false,
+      "matched_exclusion": false
+    },
+    {
+      "scenario": 5,
+      "turn": 8,
+      "length_target": 4096,
+      "chosen": "c015",
+      "incumbent_before": "c015",
+      "incumbent_after": "c015",
+      "probe": false,
+      "accepted_fraction": 0.8680555555555556,
+      "reward": 0.978038746067519,
+      "comparator": 1.170173195687662,
+      "adopted": false,
+      "loop": false,
+      "matched_exclusion": false
+    }
+  ]
+}

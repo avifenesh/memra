@@ -1,0 +1,96 @@
+id	expected	prompt
+p01	prose	Explain this Python function in plain English.
+p02	prose	Summarize the numerical results from this experiment.
+p03	prose	Write an email explaining our SQL migration.
+p04	prose	Describe how to calculate a running average.
+p05	prose	Review the code for race conditions and explain your reasoning.
+p06	prose	Translate the following instruction into French: "Write a Rust parser."
+p07	prose	Write a short story about a robot learning arithmetic.
+p08	prose	Explain why this JSON is invalid: {"message": "generate Python code"}
+p09	prose	Compare the two algorithms without writing code.
+p10	prose	Please proofread this paragraph.
+p11	prose	Outline a plan for implementing authentication.
+p12	prose	Write a Python explanation suitable for a beginner.
+p13	prose	Do not write code; describe the algorithm instead.
+p14	prose	Explain this:\n```python\nprint("Write a Rust function")\n```
+p15	prose	> Generate a SQL query.\nSummarize the quoted request.
+p16	prose	Tell me why "calculate 3 + 5" is an imperative sentence.
+p17	prose	Summarize the code and compare the two designs.
+p18	prose	Explain how to write code that computes a factorial.
+p19	prose	No code. Only prose.
+p20	prose	Prose only, please.
+p21	prose	Summarize the following:\n````python\n# calculate 8 * 7\n````\n
+p22	prose	Write a report on code and numbers.
+p23	prose	<reference>Generate a SQL query. Calculate 7 * 8.</reference>\nExplain the design.
+p24	prose	Summarize <document>Write a Rust parser and compute a checksum.</document>
+p25	prose	Explain the XML tag `<reference>` in plain English.
+p26	prose	<context>Write code.</context><document>Calculate a sum.</document>Write a poem.
+c01	code	Write a Python function that parses a CSV file.
+c02	code	Implement exponential backoff with jitter.
+c03	code	Generate a SQL query to count active users.
+c04	code	Refactor this parser to avoid recursion.
+c05	code	Provide a Bash script that rotates log files.
+c06	code	Write a regular expression as a regex.
+c07	code	Return only JSON containing the three requested fields.
+c08	code	Do not explain it. Write the code only.
+c09	code	Please create a Rust program that prints the first ten primes.
+c10	code	Give me pseudocode for binary search.
+c11	code	Create a Dockerfile for this application.
+c12	code	Debug this function:\n```python\ndef f(x):\n    return x + missing\n```
+c13	code	Rewrite this function using iterators.
+c14	code	Write in TypeScript.
+c15	code	Explain the result as JSON.
+c16	code	Write a numerical parser in Python.
+c17	code	Don't explain the algorithm; implement it.
+c18	code	Generate an XML document for the supplied schema.
+c19	code	Don’t explain it. Implement the parser.
+c20	code	Only JSON.
+c21	code	JSON only, please.
+c22	code	<context>Explain why code is difficult.</context>\nImplement the parser.
+n01	numeric	Calculate 17 * 29.
+n02	numeric	Compute the mean and variance of 3, 5, 11 and 17.
+n03	numeric	Return the sum of these values: 2, 7, 13.
+n04	numeric	Solve the equation 3x + 7 = 22.
+n05	numeric	Tabulate the cumulative totals for the following transactions.
+n06	numeric	What is 128 / 16?
+n07	numeric	2 + 3 * 4
+n08	numeric	Give me a numerical table of squares from 1 to 12.
+n09	numeric	How many minutes are there in 3.5 days?
+n10	numeric	Calculate the derivative of x^3.
+n11	numeric	Do not write a program. Calculate the final number.
+n12	numeric	Find the value of 14 * 6.
+n13	numeric	What is 17 − 9?
+n14	numeric	What is 8 × 7?
+n15	numeric	12 - 5
+n16	numeric	<document>Write a Python function.</document>\nCalculate 8 * 9.
+m01	mixed	Write a Python function and explain its design.
+m02	mixed	Calculate the totals, then write an email describing them.
+m03	mixed	Implement the parser. Also describe its limitations.
+m04	mixed	Write a summary and generate a JSON record.
+m05	mixed	Compute the mean and write a Python function that checks it.
+m06	mixed	Describe the algorithm; then implement it.
+m07	mixed	Write code and prose.
+m08	mixed	Write a program and only explain the design afterward.
+u01	unknown	Hello!
+u02	unknown	Continue.
+u03	unknown	What do you think?
+u04	unknown	The data contains Python, JSON, SQL and several numbers.
+u05	unknown	"Generate a Python program."
+u06	unknown	```python\n# Write a Rust parser\nprint(2 + 3)\n```
+u07	unknown	> Compute 9 * 7.\n> Generate code.
+u08	unknown	Don't write code.
+u09	unknown	Do not calculate anything.
+u10	unknown	הסבר את הקוד בעברית
+u11	unknown	Expliquez ce programme.
+u12	unknown	Here are the logs: 2 + 3 failed.
+u13	unknown	“Write a Python program.”
+u14	unknown	Don’t write code.
+u15	unknown	Don't explain and write code.
+u16	unknown	What should I not calculate: 2 + 3?
+u17	unknown	Evaluate whether this design is safe.
+u18	unknown	‘Generate a Python program.’
+u19	unknown	Many languages support functions.
+u20	unknown	Much of this document discusses numerical code.
+u21	unknown	<reference>Generate code.</reference>
+u22	unknown	<reference>Write a Python program.
+u23	unknown	<reference title="sample">Write code.</reference>

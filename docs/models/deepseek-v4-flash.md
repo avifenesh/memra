@@ -43,8 +43,10 @@ graph step (memra #710). Aggregate on the Workstation pair:
 | PP-2, two pipelined lanes | 120.9, TTFT 0.30 s | 120.6, TTFT 4.5 s |
 
 Known cost of TP/EP:
-- **Context.** A session holds about 370k tokens with DSpark and 790k plain, against PP-2's 1M.
-  The head-split KV lane follows.
+- **Context.** The C4 compressed stores are split by position across the two ranks (#710,
+  `research/dsv4f-bringup-20260923/kv-split/`): 8.5 KB per token per rank at 1M against 13.8 KB
+  replicated. A served session reaches 1M plain and 500k with DSpark, up from 800k and 300k. The
+  cost is 0.4% to 2.0% decode and about 1% TTFT on the SE pair.
 
 Receipts: `research/dsv4f-bringup-20260923/tpep-default/RESULTS.md`, `tp-rows/RESULTS.md`,
 `dspark-ep/RESULTS.md`, `ceiling/CEILING.md`.

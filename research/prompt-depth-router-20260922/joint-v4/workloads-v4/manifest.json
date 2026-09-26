@@ -1,0 +1,470 @@
+{
+  "schema": 1,
+  "scope": "fresh Qwen code qualification and heldout split; no model output read",
+  "generator_sha256": "757370bb536a10e737596c72ab2381bddf6ae5ccbaa6291a525c8663fa96e8ed",
+  "requested_format": "one fenced Python function per turn",
+  "padding_chars_after_first": [
+    4096,
+    256,
+    1024,
+    4096,
+    256,
+    1024,
+    4096,
+    256
+  ],
+  "groups": {
+    "qualification": [
+      {
+        "file": "qualification-0.txt",
+        "sha256": "3caf4912057158e63fc7a68272221ed908b43d3c63d64cb87fdb5926cbc6fc46",
+        "seed": 20774000,
+        "topic": "score transforms",
+        "turns": [
+          {
+            "turn": 1,
+            "function": "increase_score",
+            "signature": "score: int, delta: int -> int",
+            "padding_chars": 4096,
+            "user_sha256": "03133bedfb3c23c78369130a52a2677d46f996f03448d926d21e52a2f1244da2"
+          },
+          {
+            "turn": 2,
+            "function": "double_score",
+            "signature": "score: int -> int",
+            "padding_chars": 256,
+            "user_sha256": "e41b8f7b1de96f928c719338ed6f887a2cff3cd686a11afb1ae384fc67176827"
+          },
+          {
+            "turn": 3,
+            "function": "score_is_even",
+            "signature": "score: int -> bool",
+            "padding_chars": 1024,
+            "user_sha256": "9b2d8891dd6f46ccedeb3b45069ddae09c9c91636a5ccface2a516618ef631bd"
+          },
+          {
+            "turn": 4,
+            "function": "clip_score",
+            "signature": "score: int, low: int, high: int -> int",
+            "padding_chars": 4096,
+            "user_sha256": "e82e702e6a3885cf4e7e3aac1d529f47dabae6c03931c02202e6f78ac24d1524"
+          },
+          {
+            "turn": 5,
+            "function": "score_gap",
+            "signature": "left: int, right: int -> int",
+            "padding_chars": 256,
+            "user_sha256": "27e5486e4adb00a764d10b93983827b4feef746aacfaa205aa218be37aaee055"
+          },
+          {
+            "turn": 6,
+            "function": "larger_score",
+            "signature": "left: int, right: int -> int",
+            "padding_chars": 1024,
+            "user_sha256": "76c6308bae2839bd74c30483710f87a58f0206932da806a5b305721d862b202d"
+          },
+          {
+            "turn": 7,
+            "function": "nonnegative_score",
+            "signature": "score: int -> int",
+            "padding_chars": 4096,
+            "user_sha256": "ba29904141dbbbe73fd7b8b5242f3e4dd6ca77cce45444b30b3be957790f0c5b"
+          },
+          {
+            "turn": 8,
+            "function": "score_bucket",
+            "signature": "score: int, width: int -> int",
+            "padding_chars": 256,
+            "user_sha256": "bc7e82b2a890e599b12c3be62ed54b89d5e7019b2cb40a5df23928cf250279c0"
+          }
+        ]
+      }
+    ],
+    "heldout": [
+      {
+        "file": "heldout-0.txt",
+        "sha256": "3f3ac5e1e0af00752e3a7a506d9f0e0c55f9eb42ace7be722d8318cc6d0c443a",
+        "seed": 20775000,
+        "topic": "graph adjacency",
+        "turns": [
+          {
+            "turn": 1,
+            "function": "graph_neighbors",
+            "signature": "adjacency: dict[int, set[int]], node: int -> set[int]",
+            "padding_chars": 4096,
+            "user_sha256": "2562d27eda1c93a29e84213aa8cec0b828b197e2048e99b1fa8a10ab00198533"
+          },
+          {
+            "turn": 2,
+            "function": "graph_degree",
+            "signature": "adjacency: dict[int, set[int]], node: int -> int",
+            "padding_chars": 256,
+            "user_sha256": "93a03715844bfee38a8b981f1d4b66ebb9cd776a1a811199a42736a8fb2bff7e"
+          },
+          {
+            "turn": 3,
+            "function": "graph_has_edge",
+            "signature": "adjacency: dict[int, set[int]], left: int, right: int -> bool",
+            "padding_chars": 1024,
+            "user_sha256": "e3d61455733ceea54f2b23b32cc2d52937c6fee7e22a537a4c3cd4740176e1f2"
+          },
+          {
+            "turn": 4,
+            "function": "graph_add_edge",
+            "signature": "adjacency: dict[int, set[int]], left: int, right: int -> dict[int, set[int]]",
+            "padding_chars": 4096,
+            "user_sha256": "b5c5c8e3402fdb2ecd5f97640a4dce676897b6e7c0490282a9807b702ec937b1"
+          },
+          {
+            "turn": 5,
+            "function": "graph_remove_edge",
+            "signature": "adjacency: dict[int, set[int]], left: int, right: int -> dict[int, set[int]]",
+            "padding_chars": 256,
+            "user_sha256": "f45802edbef7c5ed22a7b1cdfd82a2d77f974efa0f3d926113f770d5ca0e190a"
+          },
+          {
+            "turn": 6,
+            "function": "graph_shared_neighbors",
+            "signature": "adjacency: dict[int, set[int]], left: int, right: int -> set[int]",
+            "padding_chars": 1024,
+            "user_sha256": "5c92c24e8222464a92ed1b69d4b37ff13246c5c536a6e5d3a9a4c5f34a047367"
+          },
+          {
+            "turn": 7,
+            "function": "graph_isolated_nodes",
+            "signature": "adjacency: dict[int, set[int]] -> set[int]",
+            "padding_chars": 4096,
+            "user_sha256": "28edd90780d34dd49b3d3bac9f7e5099f58e181cdd326cd0c7b170f1a57fa841"
+          },
+          {
+            "turn": 8,
+            "function": "graph_edges_once",
+            "signature": "adjacency: dict[int, set[int]] -> set[tuple[int, int]]",
+            "padding_chars": 256,
+            "user_sha256": "a016623585fb35ce75bbb4fbbbcdf428171f32884bd9e064b38676c53ef6b74a"
+          }
+        ]
+      },
+      {
+        "file": "heldout-1.txt",
+        "sha256": "0defc2eba67ea8698087e985f6c815c60d74956c4b0305976dfb9345c376b188",
+        "seed": 20775001,
+        "topic": "grid coordinates",
+        "turns": [
+          {
+            "turn": 1,
+            "function": "grid_translate",
+            "signature": "row: int, col: int, dr: int, dc: int -> tuple[int, int]",
+            "padding_chars": 16384,
+            "user_sha256": "db26600416820c07f291a51da2d5bc29f4802e852a37ad0528821528c7a7567e"
+          },
+          {
+            "turn": 2,
+            "function": "grid_manhattan",
+            "signature": "a: tuple[int, int], b: tuple[int, int] -> int",
+            "padding_chars": 256,
+            "user_sha256": "5c195f8a3d77436be360f9d92f22533e9c181ceddcdf0e6d0fd02f8a38071a0b"
+          },
+          {
+            "turn": 3,
+            "function": "grid_contains",
+            "signature": "row: int, col: int, height: int, width: int -> bool",
+            "padding_chars": 1024,
+            "user_sha256": "0af390762d23737a85f61669999e4d529c2e788ede7ae57d0792fe1713f81e20"
+          },
+          {
+            "turn": 4,
+            "function": "grid_neighbors4",
+            "signature": "row: int, col: int, height: int, width: int -> list[tuple[int, int]]",
+            "padding_chars": 4096,
+            "user_sha256": "8117a043aa1ffee6eb9e0aff32b3fe3c591b4c188e70c68f9abd659bb4f95eb3"
+          },
+          {
+            "turn": 5,
+            "function": "grid_flat_index",
+            "signature": "row: int, col: int, width: int -> int",
+            "padding_chars": 256,
+            "user_sha256": "e55e8824e4b09ba7189b525f07948269b58991e9e24f5d4887d85187f96a158b"
+          },
+          {
+            "turn": 6,
+            "function": "grid_unflat_index",
+            "signature": "index: int, width: int -> tuple[int, int]",
+            "padding_chars": 1024,
+            "user_sha256": "073db4223e9a3a12d19d6feb3f46056ae0fd8c5d980d433987e1af94f6c23a84"
+          },
+          {
+            "turn": 7,
+            "function": "grid_rotate_clockwise",
+            "signature": "row: int, col: int, height: int, width: int -> tuple[int, int]",
+            "padding_chars": 4096,
+            "user_sha256": "1826b55f73cfddc80c4d7418b26f0970b1ce03485724bc88674bb3bdeb9af586"
+          },
+          {
+            "turn": 8,
+            "function": "grid_clamp",
+            "signature": "row: int, col: int, height: int, width: int -> tuple[int, int]",
+            "padding_chars": 256,
+            "user_sha256": "e0beb9ccc8a7626d7ed654257778f90b6d26e3a6a4b5fc55ce3943aec939fb69"
+          }
+        ]
+      },
+      {
+        "file": "heldout-2.txt",
+        "sha256": "f311174d45be51ebb0bdef7d8b6ae24387bc12dfedf36fb4e2a0954f7504e05c",
+        "seed": 20775002,
+        "topic": "byte sequences",
+        "turns": [
+          {
+            "turn": 1,
+            "function": "bytes_xor",
+            "signature": "left: bytes, right: bytes -> bytes",
+            "padding_chars": 4096,
+            "user_sha256": "ffab723e47e4746e87b5439dc4b97dd93875d5f00abffcc96fb01caf2535dce9"
+          },
+          {
+            "turn": 2,
+            "function": "bytes_prefix",
+            "signature": "data: bytes, count: int -> bytes",
+            "padding_chars": 256,
+            "user_sha256": "f7ec08ab0b90986281168587ca0486cc5d033f2f3aff38b4f6771e5b42c497f8"
+          },
+          {
+            "turn": 3,
+            "function": "bytes_suffix",
+            "signature": "data: bytes, count: int -> bytes",
+            "padding_chars": 1024,
+            "user_sha256": "53ca76057b9884a517e5c0b9b95a92db4c2292872e2979541c7b300f41d4abfb"
+          },
+          {
+            "turn": 4,
+            "function": "bytes_chunks",
+            "signature": "data: bytes, size: int -> list[bytes]",
+            "padding_chars": 4096,
+            "user_sha256": "968c9e8be43777002fd37ce74cad4567a918a4f44ecc0708111f00abe4c22986"
+          },
+          {
+            "turn": 5,
+            "function": "bytes_first_nonzero",
+            "signature": "data: bytes -> int | None",
+            "padding_chars": 256,
+            "user_sha256": "7933d8e01bfc01878a666a6a380cf454f37233e29be48321d5ccc884b7c94737"
+          },
+          {
+            "turn": 6,
+            "function": "bytes_checksum",
+            "signature": "data: bytes -> int",
+            "padding_chars": 1024,
+            "user_sha256": "1b107fd4331fcdfd778591f3a38826afbcfc1c885e53575561de6d4211702e79"
+          },
+          {
+            "turn": 7,
+            "function": "bytes_reverse",
+            "signature": "data: bytes -> bytes",
+            "padding_chars": 4096,
+            "user_sha256": "d2d1eef7fd5117b5581bbed9987e073079ce6d9b01c8f0b238481f82f07b7383"
+          },
+          {
+            "turn": 8,
+            "function": "bytes_count",
+            "signature": "data: bytes, value: int -> int",
+            "padding_chars": 256,
+            "user_sha256": "2df521cca38393f8f86e49b16d9b688980e44df9e59836c73eff485e4c8d7413"
+          }
+        ]
+      },
+      {
+        "file": "heldout-3.txt",
+        "sha256": "66d9a255178c48f694c98524befea335105dad10151f308eabadd72e083fe793",
+        "seed": 20775003,
+        "topic": "integer record tables",
+        "turns": [
+          {
+            "turn": 1,
+            "function": "rows_pick_fields",
+            "signature": "record: dict[str, int], keys: list[str] -> dict[str, int]",
+            "padding_chars": 16384,
+            "user_sha256": "1975bdf4cd35f3c5d9adfbaca9877ad9e12135eee63164bd72086e51ec022d62"
+          },
+          {
+            "turn": 2,
+            "function": "rows_where_equal",
+            "signature": "rows: list[dict[str, int]], key: str, value: int -> list[dict[str, int]]",
+            "padding_chars": 256,
+            "user_sha256": "67742b9b9a8e537a968408bdbdb594c960d6007de9127e381fa6598c14b45e0c"
+          },
+          {
+            "turn": 3,
+            "function": "rows_sort_key",
+            "signature": "rows: list[dict[str, int]], key: str -> list[dict[str, int]]",
+            "padding_chars": 1024,
+            "user_sha256": "4da5847735006958de847c36543bfbb47c7dbc0136c7384b5f9ab5a6dbd9b6b4"
+          },
+          {
+            "turn": 4,
+            "function": "rows_unique_key",
+            "signature": "rows: list[dict[str, int]], key: str -> list[dict[str, int]]",
+            "padding_chars": 4096,
+            "user_sha256": "4d63d92ff789cae462b253e7f09baf99af7584bc7f99c9355b1026d4e5f0eb27"
+          },
+          {
+            "turn": 5,
+            "function": "rows_sum_key",
+            "signature": "rows: list[dict[str, int]], key: str -> int",
+            "padding_chars": 256,
+            "user_sha256": "e46edbfea89ca85977a56b7f175fa0b51f4a3a89488c543c4c25aa0f6b4fa97d"
+          },
+          {
+            "turn": 6,
+            "function": "rows_index_key",
+            "signature": "rows: list[dict[str, int]], key: str -> dict[int, dict[str, int]]",
+            "padding_chars": 1024,
+            "user_sha256": "d8aa0450409186c7c5d6eeda5d530adfc9ff1bb695a0f240c552b260bd0286a5"
+          },
+          {
+            "turn": 7,
+            "function": "rows_rename_field",
+            "signature": "record: dict[str, int], old: str, new: str -> dict[str, int]",
+            "padding_chars": 4096,
+            "user_sha256": "3ec2308aae1ef1b8ad17b18abb26757e13087ff5310b6fa7f98e8c517aa61dd8"
+          },
+          {
+            "turn": 8,
+            "function": "rows_merge",
+            "signature": "left: dict[str, int], right: dict[str, int] -> dict[str, int]",
+            "padding_chars": 256,
+            "user_sha256": "7ed0d5c9f41de64e12392cc7168a244118904fa6160b1d0ab53e183cef731485"
+          }
+        ]
+      },
+      {
+        "file": "heldout-4.txt",
+        "sha256": "6c65c35fb8d1fd92e147839815e8e65b90adc095de0caaee90e94e233d0afc7e",
+        "seed": 20775004,
+        "topic": "prefix totals",
+        "turns": [
+          {
+            "turn": 1,
+            "function": "totals_running",
+            "signature": "values: list[int] -> list[int]",
+            "padding_chars": 4096,
+            "user_sha256": "cefd924e85447bc2c067a1e21fa3c48c34e8fa6d857870385a9e0e9f8bd6eda0"
+          },
+          {
+            "turn": 2,
+            "function": "totals_between",
+            "signature": "values: list[int], start: int, end: int -> int",
+            "padding_chars": 256,
+            "user_sha256": "7996678d4590967b410c13b39de4f0333c86fa60e8400c37bdc63ceb5cce4416"
+          },
+          {
+            "turn": 3,
+            "function": "totals_before",
+            "signature": "values: list[int], index: int -> int",
+            "padding_chars": 1024,
+            "user_sha256": "18227897b6d7f299ea7e11f5acbe382b042476759a7aadf7e3bbba786301b3c9"
+          },
+          {
+            "turn": 4,
+            "function": "totals_first_at_least",
+            "signature": "values: list[int], threshold: int -> int | None",
+            "padding_chars": 4096,
+            "user_sha256": "e3c1236b12cd75765847bac7f9e3b94155d0fd1828e92b8ff42638969587e45b"
+          },
+          {
+            "turn": 5,
+            "function": "totals_differences",
+            "signature": "values: list[int] -> list[int]",
+            "padding_chars": 256,
+            "user_sha256": "6e9aa15d6ccafef29706075a29c4ca53b1a60ff4f788c809edfb8f035548aac6"
+          },
+          {
+            "turn": 6,
+            "function": "totals_running_max",
+            "signature": "values: list[int] -> list[int]",
+            "padding_chars": 1024,
+            "user_sha256": "ee21468ca3b31380a52d61b5490c2f20f5e472a4c96b35b27a9b3b5377616c10"
+          },
+          {
+            "turn": 7,
+            "function": "totals_balance_indices",
+            "signature": "values: list[int] -> list[int]",
+            "padding_chars": 4096,
+            "user_sha256": "a581f2d08631bc1b7266a9b51116ad3673e2082a8709021f6c3024d78108e585"
+          },
+          {
+            "turn": 8,
+            "function": "totals_scale",
+            "signature": "values: list[int], factor: int -> list[int]",
+            "padding_chars": 256,
+            "user_sha256": "e0c7e89ca83539f02cdbcca937043c985fcb8678d13a3c14d3a5b6c0f99cbe37"
+          }
+        ]
+      },
+      {
+        "file": "heldout-5.txt",
+        "sha256": "3c8922b1405d1dac14eec56a77b5d25e6dfe99b0832613d5d6d8a466a47f1509",
+        "seed": 20775005,
+        "topic": "whitespace words",
+        "turns": [
+          {
+            "turn": 1,
+            "function": "words_lower",
+            "signature": "text: str -> list[str]",
+            "padding_chars": 16384,
+            "user_sha256": "8e88f739375ed96ae23bb329c2ad7767be9d2f8cdb7aa9f4b6efcea4527f13bf"
+          },
+          {
+            "turn": 2,
+            "function": "words_count",
+            "signature": "text: str -> int",
+            "padding_chars": 256,
+            "user_sha256": "89348cd34454d271d9bb5ac6239ac0c93194c60c95c88868754d40ba2669e014"
+          },
+          {
+            "turn": 3,
+            "function": "words_unique",
+            "signature": "text: str -> list[str]",
+            "padding_chars": 1024,
+            "user_sha256": "d378cf17a1d9bfbc118281dd5f7293fbff50e566c52ff7c70b87ee7ce02e2370"
+          },
+          {
+            "turn": 4,
+            "function": "words_longest",
+            "signature": "text: str -> str",
+            "padding_chars": 4096,
+            "user_sha256": "173a45c76418bee0b37b35d77f8fcb131048c960176f437c404d2d5116328553"
+          },
+          {
+            "turn": 5,
+            "function": "words_initials",
+            "signature": "text: str -> str",
+            "padding_chars": 256,
+            "user_sha256": "123847287073a1f863cc0e67a3c06893457352577b3a43d2e3a071093dad9579"
+          },
+          {
+            "turn": 6,
+            "function": "words_starts_with",
+            "signature": "text: str, word: str -> bool",
+            "padding_chars": 1024,
+            "user_sha256": "fecff3575d6af86d6009e992bd05636b6aa66b332bf9fd87b0d445cee4e1b5f9"
+          },
+          {
+            "turn": 7,
+            "function": "words_strip_outer_punct",
+            "signature": "text: str -> str",
+            "padding_chars": 4096,
+            "user_sha256": "397085b72734e8a813df7adf37e434e584213a51c02437cc7d85b493cf8f2e84"
+          },
+          {
+            "turn": 8,
+            "function": "words_join",
+            "signature": "words: list[str] -> str",
+            "padding_chars": 256,
+            "user_sha256": "663cf6411a427b6a29e3db40bf1ad7a276fae90c44444888e18c4129a5feb6c1"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -98,8 +98,10 @@ The earlier split-K replay (`raw/tp-anatomy-se/`, 17.62 ms per step) spent 5.8 m
 4. **The collectives.** About 1.85 ms per card of row gathers and the expert all-reduce: 43 layers
    times three one-shot collectives. Fewer or fused joins per layer would cut it.
 5. **Small chains.** About 2.9 ms per card, a latency floor per layer.
-6. **Context under TP/EP.** Not a speed lever. The head-split KV lane brings the session capacity
-   back toward PP-2's 1M.
+6. **Context under TP/EP.** Not a speed lever. Closed for plain by the position-split C4 store
+   (`../kv-split/`): 1M plain, 500k DSpark, at 0.4% to 2.0% decode. The decode cost is the
+   remote row reads; an owner-push of the rows both ranks know are selected would trade them for
+   posted writes plus one join per C4 layer.
 7. **Prefill.** About 360 tok/s at 8k prompts on the exact CUDA-core tiles (#713). The owner ruled
    PP-2 is not the target, so prefill work follows the TP program.
 
