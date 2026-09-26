@@ -960,7 +960,7 @@ impl Engine {
         request.bytes = TierBudget::zero(1);
         let dispatch = SlruExpertDispatch::new(
             bank,
-            ids.clone(),
+            ids,
             request,
             Epochs {
                 state: 0,
@@ -973,8 +973,7 @@ impl Engine {
             start_fill(fill_file, fill_jobs, fill_counts.clone(), fill_buffers);
         let mut traced = TracedDispatch {
             inner: dispatch,
-            ids,
-            occupants: BTreeMap::new(),
+            occupants: Vec::new(),
             clock: stage_clock.then(|| OwnerClock {
                 pread_ns: pread_ns.clone().unwrap_or_default(),
                 reads: reads.clone(),
@@ -1222,8 +1221,9 @@ fn bank_projection(
 // most host_slots entries. No numeric data or machine identity is logged.
 struct TracedDispatch {
     inner: SlruExpertDispatch<Heat, FileReader>,
-    ids: BTreeMap<ExpertDispatchId, BankId>,
-    occupants: BTreeMap<usize, ExpertDispatchId>,
+    /// DAY84 (I21): the trace's lease-path reads go through `inner` by catalog position, so the id map this held
+    /// (a copy of `inner`'s) is gone. The trace's host slot map, slot to the last record traced there (a vector by slot).
+    occupants: Vec<Option<ExpertDispatchId>>,
     /// `--expert-bank-stages` only (DAY40): the owner side of the door's stage clock.
     clock: Option<OwnerClock>,
     /// DAY45: finished host fills, admitted at the start of each demand.
@@ -1261,19 +1261,16 @@ impl TracedDispatch {
         let hit = before.is_some();
         let slot = match before {
             Some(slot) => slot,
-            None => {
-                let id = self.ids.get(&local).ok_or(Error::NotFound)?;
-                self.inner
-                    .bank()
-                    .slru_policy()
-                    .ok_or(Error::Incomplete)?
-                    .resident(id)
-                    .ok_or(Error::Incomplete)?
-            }
+            // DAY84 (I21): the published slot by catalog position, as in `demand`.
+            None => self.inner.resident_slot(local)?.ok_or(Error::Incomplete)?,
         };
-        let victim = self
-            .occupants
-            .insert(slot, local)
+        // DAY84 (I21): the slot map as a vector indexed by host slot (growing on demand), the same
+        // replace-and-compare the map's `insert` gave.
+        if slot >= self.occupants.len() {
+            self.occupants.resize(slot + 1, None);
+        }
+        let victim = self.occupants[slot]
+            .replace(local)
             .filter(|old| *old != local);
         let trace_started = self.clock.as_ref().map(|_| Instant::now());
         push_trace_line(&mut self.trace, local, bytes, slot, hit, victim);
@@ -1440,13 +1437,8 @@ impl ExpertDispatchBank for TracedDispatch {
     }
     fn demand(&mut self, local: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand> {
         self.drain_fill(32);
-        let id = self.ids.get(&local).ok_or(Error::NotFound)?;
-        let before = self
-            .inner
-            .bank()
-            .slru_policy()
-            .ok_or(Error::Incomplete)?
-            .resident(id);
+        // DAY84 (I21): the pre-demand slot by catalog position, the answer the id's lookup gave.
+        let before = self.inner.resident_slot(local)?;
         let hit = before.is_some();
         let demand_started = self.clock.as_ref().map(|_| Instant::now());
         let demand = self.inner.demand(local, bytes);
@@ -1477,13 +1469,8 @@ impl ExpertDispatchBank for TracedDispatch {
         self.drain_fill(32);
         let mut before = [None; MAX_GROUP];
         for (slot, &(local, _)) in before.iter_mut().zip(blocks) {
-            let id = self.ids.get(&local).ok_or(Error::NotFound)?;
-            *slot = self
-                .inner
-                .bank()
-                .slru_policy()
-                .ok_or(Error::Incomplete)?
-                .resident(id);
+            // DAY84 (I21): by catalog position, as in `demand`.
+            *slot = self.inner.resident_slot(local)?;
         }
         let demand_started = self.clock.as_ref().map(|_| Instant::now());
         let demands = self.inner.demand_many(blocks);
@@ -2274,8 +2261,7 @@ mod day61_profile {
         Stack {
             traced: TracedDispatch {
                 inner: dispatch,
-                ids: ids.clone(),
-                occupants: BTreeMap::new(),
+                occupants: Vec::new(),
                 clock: None,
                 fill: None,
                 trace: String::with_capacity(TRACE_CHUNK + 256),

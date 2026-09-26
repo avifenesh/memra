@@ -356,6 +356,10 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         {
             return Err(Error::Capacity);
         }
+        // Day 84 (I21, `research/spill-c-20260919/DAY84.md`): the policy's position view over this catalog, so
+        // the lease path reads residency by position; `slru_metadata_bytes` charges it.
+        let mut policy = policy;
+        policy.index_positions(self.catalog.len())?;
         self.slru = Some((policy, metadata.pin()?));
         Ok(self)
     }
@@ -363,7 +367,12 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         let max_id = self.catalog.ids().try_fold(0u64, |max_id, id| {
             id.encode().map(|b| max_id.max(b.len() as u64))
         })?;
-        // Two full-key maps + occupant key + queues, conservative node allowance.
+        // Two full-key maps + occupant key + queues, conservative node allowance; day 84 (I21): plus the position
+        // view, one `u32` per catalog id and one per slot.
+        let view = (self.catalog.len() as u64)
+            .checked_add(slots as u64)
+            .and_then(|n| n.checked_mul(4))
+            .ok_or(Error::Overflow)?;
         (slots as u64)
             .checked_mul(
                 max_id
@@ -372,10 +381,16 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                     .ok_or(Error::Overflow)?,
             )
             .and_then(|n| n.checked_add(4096))
+            .and_then(|n| n.checked_add(view))
             .ok_or(Error::Overflow)
     }
     pub fn slru_policy(&self) -> Option<&SlruPolicy> {
         self.slru.as_ref().map(|(p, _)| p)
+    }
+    /// Day 84 (I21, `research/spill-c-20260919/DAY84.md`): `Catalog::position` of this bank's catalog, read once per
+    /// record by an adapter that then asks `SlruPolicy::resident_at`.
+    pub fn catalog_position(&self, id: &BankId) -> Result<usize> {
+        self.catalog.position(id)
     }
     /// Execute at most one bounded host read. CPU work must be pumped off a
     /// serving scheduler thread. Returning true means producer terminal, NOT GPU ready.
@@ -568,6 +583,8 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         if policy.resident(id).is_some() || policy.pending(id) {
             return Ok(FillOutcome::Dropped);
         }
+        // Day 84 (I21): the record's catalog position, read before anything is reserved.
+        let position = self.catalog.position(id)?;
         let Some(_slot) = policy.reserve_free(id, layout.storage_bytes()?)? else {
             return Ok(if policy.free_slots() == 0 {
                 FillOutcome::Full
@@ -593,7 +610,8 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             bytes.into_backing(),
         ) {
             Ok(lease) => {
-                policy.publish(id)?;
+                // Day 84 (I21): the publication names the record's catalog position.
+                policy.publish_at(id, position)?;
                 self.owned.insert(lease.charge().id(), lease.clone());
                 self.cache.insert(id.clone(), lease);
                 Ok(FillOutcome::Admitted)
@@ -1177,11 +1195,14 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                     continue;
                 }
                 let lease = p.records.lease_at(pos);
+                // Day 84 (I21): the record's catalog position, read before anything is reserved.
+                let position = self.catalog.position(id)?;
                 if let Some(decision) = policy.reserve(id, lease.layout().storage_bytes()?, &[])? {
                     if let Some(old) = decision.evicted {
                         self.cache.remove_evicted(&old);
                     }
-                    policy.publish(id)?;
+                    // Day 84 (I21): the publication names the record's catalog position.
+                    policy.publish_at(id, position)?;
                     self.cache.insert(id.clone(), lease.clone());
                 } else {
                     // Published to this ticket with no host slot: owned, never cached.
