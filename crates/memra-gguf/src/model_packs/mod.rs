@@ -195,7 +195,7 @@ pub const PACKS: &[&ModelPack] = &[
 
 /// Explicit artifact-storage profiles used by `model inspect`. They never participate in
 /// automatic family selection because several profiles can intentionally share one ModelPlan.
-pub const ONBOARDING_PROFILES: &[&ModelPack] = &[&hy3::NVFP4_PACK];
+pub const ONBOARDING_PROFILES: &[&ModelPack] = &[&hy3::NVFP4_PACK, &mimo_v2::MINT_PROFILE];
 
 pub fn by_alias(alias: &str) -> Option<&'static ModelPack> {
     PACKS

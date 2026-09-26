@@ -1,5 +1,5 @@
-//! MiMo V2.6 tensor schema slices. The model pack remains unregistered until
-//! checkpoint and executable modality contracts are complete.
+//! MiMo V2.6 tensor schema slices. Only the explicit inspection profile is
+//! registered; automatic serving selection remains closed.
 
 pub(crate) mod audio;
 pub(crate) mod mint_headers;
@@ -12,13 +12,97 @@ use crate::safetensors::StInfo;
 use crate::source::census_from_safetensors_headers;
 use crate::tensor_contract::{
     BoundTensorContract, CheckpointDialect, ContractOptions, ExpertTensor, QuantConstraint,
-    TensorContract, TensorId, TensorMatch, TensorOwner, TensorRequirement, TensorTransform,
+    TensorContract, TensorContractError, TensorId, TensorMatch, TensorOwner, TensorRequirement,
+    TensorTransform,
 };
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::{
+    ConfigLayout, Gate, ModelPack, OutputHeadContract, TemplateContract, TensorConsumption,
+    TokenizerSource, canonical_plan,
+};
+
 const PINNED_MINT_HEADER_DIGEST: &str =
     "00403ccacf38567327ec41b4cb0cbd9eade5b830094191dce7e90b24b8efe45a";
+
+/// Explicit inspection profile. It never participates in automatic family selection.
+pub static MINT_PROFILE: ModelPack = ModelPack {
+    family: "mimo_v2_mint",
+    output_head: OutputHeadContract::SeparateHead,
+    tensor_consumption: TensorConsumption::Refuse,
+    aliases: &["mimo_v2_mint", "mimo-v2.6-nvfp4"],
+    config_layout: ConfigLayout::Flat,
+    tokenizer_sources: &[TokenizerSource::TokenizerJson],
+    template: TemplateContract::ArtifactRequired,
+    support: None,
+    gates: &[
+        Gate::Config,
+        Gate::TokenizerTemplate,
+        Gate::TensorCensus,
+        Gate::TinyParity,
+        Gate::CheckpointParity,
+        Gate::RewriteParity,
+        Gate::Serve,
+    ],
+    checkpoint_parity: None,
+    matches_config: |config| config.arch == crate::config::Arch::MiMoV2 && config.mimo.is_some(),
+    plan_builder: canonical_plan,
+    tensor_schema: mint_tensor_schema,
+    tiny_plan: None,
+};
+
+#[allow(clippy::result_large_err)] // the contract error names the exact rejected tensor
+fn mint_tensor_schema(
+    config: &ModelConfig,
+    plan: &ModelPlan,
+    dialect: CheckpointDialect,
+    options: ContractOptions,
+) -> Result<TensorContract, TensorContractError> {
+    if config.arch != crate::config::Arch::MiMoV2
+        || plan.arch != crate::config::Arch::MiMoV2
+        || dialect != CheckpointDialect::HfSafetensors
+    {
+        return Err(TensorContractError::UnsupportedPlanOperation {
+            operation: "MiMo mint inspection requires a safetensors MiMo plan",
+        });
+    }
+    let mimo = config
+        .mimo
+        .as_ref()
+        .ok_or(TensorContractError::UnsupportedPlanOperation {
+            operation: "MiMo config has no family geometry",
+        })?;
+    let audio =
+        mimo.audio_config
+            .as_ref()
+            .ok_or(TensorContractError::UnsupportedPlanOperation {
+                operation: "MiMo config has no audio geometry",
+            })?;
+    let vision =
+        mimo.vision_config
+            .as_ref()
+            .ok_or(TensorContractError::UnsupportedPlanOperation {
+                operation: "MiMo config has no vision geometry",
+            })?;
+    let mut contract = TensorContract::for_plan(plan, dialect, options)?;
+    contract
+        .requirements
+        .extend(mtp::mint_mtp_requirements(config)?);
+    contract
+        .requirements
+        .extend(audio::pinned_audio_requirements(audio, config.n_embd)?);
+    contract
+        .requirements
+        .extend(vision::pinned_vision_requirements(vision, config.n_embd)?);
+    let mut ids = BTreeSet::new();
+    for row in &contract.requirements {
+        if !ids.insert(&row.id) {
+            return Err(TensorContractError::DuplicateTensorId { id: row.id.clone() });
+        }
+    }
+    Ok(contract)
+}
 
 fn header_digest(headers: &BTreeMap<String, StInfo>) -> String {
     let mut digest = Sha256::new();
@@ -47,45 +131,13 @@ pub fn inspect_pinned_mint_headers(
     headers: &BTreeMap<String, StInfo>,
 ) -> Result<BoundTensorContract, String> {
     let plan = ModelPlan::compile(config).map_err(|error| format!("{error:?}"))?;
-    if plan.arch != crate::config::Arch::MiMoV2 {
-        return Err("pinned MiMo mint inspection requires MiMo V2 config".to_owned());
-    }
-    let mimo = config
-        .mimo
-        .as_ref()
-        .ok_or_else(|| "MiMo config has no family geometry".to_owned())?;
-    let audio = mimo
-        .audio_config
-        .as_ref()
-        .ok_or_else(|| "MiMo config has no audio geometry".to_owned())?;
-    let vision = mimo
-        .vision_config
-        .as_ref()
-        .ok_or_else(|| "MiMo config has no vision geometry".to_owned())?;
-
-    let mut contract = TensorContract::for_plan(
+    let contract = mint_tensor_schema(
+        config,
         &plan,
         CheckpointDialect::HfSafetensors,
         ContractOptions::default(),
     )
     .map_err(|error| format!("{error:?}"))?;
-    contract
-        .requirements
-        .extend(mtp::mint_mtp_requirements(config).map_err(|error| format!("{error:?}"))?);
-    contract.requirements.extend(
-        audio::pinned_audio_requirements(audio, config.n_embd)
-            .map_err(|error| format!("{error:?}"))?,
-    );
-    contract.requirements.extend(
-        vision::pinned_vision_requirements(vision, config.n_embd)
-            .map_err(|error| format!("{error:?}"))?,
-    );
-    let mut ids = BTreeSet::new();
-    for row in &contract.requirements {
-        if !ids.insert(&row.id) {
-            return Err(format!("MiMo mint tensor ID appears twice: {:?}", row.id));
-        }
-    }
     mint_headers::verify_mint_expert_headers(&plan, headers)?;
     let census = census_from_safetensors_headers(headers)?;
     let entries = census
@@ -167,6 +219,37 @@ mod tests {
         CheckpointDialect, ContractOptions, QuantLayout, StorageLayout, TensorCensusEntry,
         TensorContract, TensorContractError,
     };
+
+    #[test]
+    fn mint_profile_is_explicit_and_cannot_admit_native_load() {
+        let config = ModelConfig::from_hf(&HfConfig::parse(include_str!("fixtures/config.json")));
+        let profile = crate::model_packs::by_alias("mimo_v2_mint").unwrap();
+        assert_eq!(profile.family, "mimo_v2_mint");
+        assert!(profile.support.is_none());
+        assert!(profile.matches_config(&config));
+        assert!(crate::model_packs::for_config(&config).is_none());
+        assert!(crate::model_packs::compile_for_load(&config).is_err());
+        let plan = profile.compile_plan(&config).unwrap();
+        let contract = profile
+            .compile_tensor_contract(
+                &config,
+                &plan,
+                CheckpointDialect::HfSafetensors,
+                ContractOptions::default(),
+            )
+            .unwrap();
+        assert!(contract.requirements.len() > 36_922);
+        assert!(
+            profile
+                .compile_tensor_contract(
+                    &config,
+                    &plan,
+                    CheckpointDialect::Gguf,
+                    ContractOptions::default(),
+                )
+                .is_err()
+        );
+    }
 
     #[test]
     fn pinned_mint_owns_every_routed_expert_projection_separately() {
