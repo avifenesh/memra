@@ -25,8 +25,8 @@ type Fail = Box<dyn std::error::Error>;
 const ROWS: usize = 2;
 const ABS_FLOOR: f64 = 1e-5;
 const L1_FACTOR: f64 = 1e-5;
-// XiaomiMiMo/MiMo-V2.6-Flash-RL at 5711b268169967567844e1e560e8a3966da959b1.
-const SOURCE_REVISION: &str = "5711b268169967567844e1e560e8a3966da959b1";
+// This is a declared source revision. Header checks cannot verify payload bytes.
+const SOURCE_REVISION: &str = "3b38d063180c3e4aed9691fdc735f3d10b266ee4";
 const CONFIG_SHA256: &str = "61bea4a0f7a0dd8969f8cae528761e26b697dd12ff63e98804c3f0945492e621";
 
 fn input(rows: usize, k: usize) -> Vec<f32> {
@@ -36,7 +36,7 @@ fn input(rows: usize, k: usize) -> Vec<f32> {
             let col = index % k;
             let value = ((col * 37 + row * 71) % 251) as i32 - 125;
             let denominator = if row == 0 { 64.0 } else { 256.0 };
-            if col % 19 == 0 {
+            if col.is_multiple_of(19) {
                 0.0
             } else {
                 value as f32 / denominator
@@ -46,7 +46,11 @@ fn input(rows: usize, k: usize) -> Vec<f32> {
 }
 
 fn validate_activation(codes: &[u8], scales: &[f32], rows: usize, k: usize) -> Result<(), Fail> {
-    if k == 0 || k % 128 != 0 || codes.len() != rows * k || scales.len() != rows * (k / 128) {
+    if k == 0
+        || !k.is_multiple_of(128)
+        || codes.len() != rows * k
+        || scales.len() != rows * (k / 128)
+    {
         return Err("activation code or per-128 scale grid shape changed".into());
     }
     for (index, &scale) in scales.iter().enumerate() {
@@ -153,7 +157,12 @@ fn run() -> Result<(), Fail> {
     let native_stream = stream.cu_stream() as *mut c_void;
     let mut text = String::from("format\tmemra-mimo-mxfp4-gemm-v1\n");
     writeln!(text, "source\tXiaomiMiMo/MiMo-V2.6-Flash-RL")?;
-    writeln!(text, "expected_source_revision\t{SOURCE_REVISION}")?;
+    writeln!(text, "declared_source_revision\t{SOURCE_REVISION}")?;
+    writeln!(text, "payload_verification\texternal_hf_verify_required")?;
+    writeln!(
+        text,
+        "numeric_class\tmemra_pow2_e4m3_activation_mxfp4_weight"
+    )?;
     writeln!(text, "config_sha256\t{CONFIG_SHA256}")?;
     writeln!(text, "gpu_index\t{gpu_index}")?;
     writeln!(text, "input_rows\t{ROWS}")?;
