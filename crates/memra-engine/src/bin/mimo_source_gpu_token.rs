@@ -9,6 +9,7 @@ use std::time::Instant;
 use cudarc::driver::CudaSlice;
 use memra_engine::Engine;
 use memra_engine::QT_F8_E4M3_BLK;
+use memra_engine::mimo_mixed_attn_ffi::MiMoMixedAttentionWorkspace;
 use memra_engine::mimo_source_moe::{
     GroupedMiMoMoeLayer, PinnedMiMoSource, ResidentMiMoMoeLayer, source_moe_token,
 };
@@ -196,6 +197,18 @@ struct KvState {
     tokens: usize,
 }
 
+struct PackedKvState {
+    key: CudaSlice<u8>,
+    value: CudaSlice<u8>,
+    tokens: usize,
+}
+
+struct AttentionCache<'a> {
+    plain: &'a mut Option<KvState>,
+    packed: &'a mut Option<PackedKvState>,
+    mixed_workspace: Option<&'a mut MiMoMixedAttentionWorkspace>,
+}
+
 fn record_phase(
     report: &mut String,
     engine: &Engine,
@@ -229,6 +242,7 @@ struct AttentionPhase<'a> {
     q8q8_replay: bool,
     global_only_kv: bool,
     cpu_pair: Option<CpuKvPair>,
+    mixed_gpu: bool,
 }
 
 impl AttentionPhase<'_> {
@@ -824,13 +838,78 @@ fn append_kv(
     Ok(position)
 }
 
+fn append_packed_kv(
+    engine: &Engine,
+    slot: &mut Option<PackedKvState>,
+    position: usize,
+    key: CudaSlice<u8>,
+    value: CudaSlice<u8>,
+) -> Result<usize, Fail> {
+    const KEY_BYTES: usize = 4 * (QK / 32) * 34;
+    const VALUE_BYTES: usize = 4 * (VALUE / 64) * 36;
+    let device = engine.stream().context().ordinal();
+    if position >= MAX_DIAGNOSTIC_TOKENS
+        || key.len() != KEY_BYTES
+        || value.len() != VALUE_BYTES
+        || key.ordinal() != device
+        || value.ordinal() != device
+    {
+        return Err("MiMo mixed KV append geometry changed".into());
+    }
+    if position == 0 {
+        if slot.is_some() {
+            return Err("MiMo mixed KV slot already holds a prior token".into());
+        }
+        let mut keys = engine.alloc_u8_uninit(MAX_DIAGNOSTIC_TOKENS * KEY_BYTES)?;
+        let mut values = engine.alloc_u8_uninit(MAX_DIAGNOSTIC_TOKENS * VALUE_BYTES)?;
+        engine
+            .stream()
+            .memcpy_dtod(&key, &mut keys.slice_mut(..KEY_BYTES))?;
+        engine
+            .stream()
+            .memcpy_dtod(&value, &mut values.slice_mut(..VALUE_BYTES))?;
+        *slot = Some(PackedKvState {
+            key: keys,
+            value: values,
+            tokens: 1,
+        });
+        return Ok(0);
+    }
+    let mut prior = slot
+        .take()
+        .ok_or("MiMo mixed continuation has no cached KV")?;
+    if prior.tokens != position
+        || prior.key.len() != MAX_DIAGNOSTIC_TOKENS * KEY_BYTES
+        || prior.value.len() != MAX_DIAGNOSTIC_TOKENS * VALUE_BYTES
+        || prior.key.ordinal() != device
+        || prior.value.ordinal() != device
+    {
+        return Err("MiMo mixed KV position or shape differs".into());
+    }
+    engine.stream().memcpy_dtod(
+        &key,
+        &mut prior
+            .key
+            .slice_mut(position * KEY_BYTES..(position + 1) * KEY_BYTES),
+    )?;
+    engine.stream().memcpy_dtod(
+        &value,
+        &mut prior
+            .value
+            .slice_mut(position * VALUE_BYTES..(position + 1) * VALUE_BYTES),
+    )?;
+    prior.tokens = position + 1;
+    *slot = Some(prior);
+    Ok(position)
+}
+
 fn attention_token(
     engine: &Engine,
     model: &StModel,
     source: &SafetensorsSource,
     plan: &LayerPlan,
     hidden: &CudaSlice<f32>,
-    kv_slot: &mut Option<KvState>,
+    mut cache: AttentionCache<'_>,
     phase: &mut AttentionPhase<'_>,
 ) -> Result<(CudaSlice<f32>, usize), Fail> {
     let position = phase.turn;
@@ -949,16 +1028,66 @@ fn attention_token(
     } else {
         streamed_sink.as_ref()
     };
-    let cached_before = append_kv(engine, kv_slot, position, qkv.key, qkv.value, kv_heads)?;
-    let cache = kv_slot.as_ref().ok_or("MiMo KV append lost its state")?;
-    let context = engine.mimo_sink_decode(
-        &qkv.query,
-        &cache.key,
-        &cache.value,
-        sink,
-        position + 1,
-        &plan.attention,
-    )?;
+    let (context, cached_before) = if phase.mixed_gpu && global {
+        const KEY_BYTES: usize = 4 * (QK / 32) * 34;
+        const DUMMY_VALUE_BYTES: usize = 4 * (VALUE / 32) * 24;
+        let encode_start = Instant::now();
+        let mut key_codes = engine.alloc_u8_uninit(KEY_BYTES)?;
+        let mut dummy_value = engine.alloc_u8_uninit(DUMMY_VALUE_BYTES)?;
+        engine.append_kv_quantized(
+            &qkv.key,
+            &qkv.value,
+            &mut key_codes,
+            &mut dummy_value,
+            0,
+            qkv.key.len(),
+            qkv.value.len(),
+            KEY_BYTES,
+            DUMMY_VALUE_BYTES,
+            false,
+        )?;
+        let value_codes = engine.mimo_nvfp4_encode_rows(&qkv.value, VALUE)?;
+        phase.record(engine, layer, "mixed_kv_encode", encode_start)?;
+        let append_start = Instant::now();
+        let cached_before =
+            append_packed_kv(engine, cache.packed, position, key_codes, value_codes)?;
+        phase.record(engine, layer, "mixed_kv_append", append_start)?;
+        let packed = cache
+            .packed
+            .as_ref()
+            .ok_or("MiMo packed KV append lost its state")?;
+        let workspace = cache
+            .mixed_workspace
+            .take()
+            .ok_or("MiMo mixed attention has no workspace")?;
+        let attention_start = Instant::now();
+        let context = engine.mimo_global_q8_nvfp4_decode(
+            &qkv.query,
+            &packed.key,
+            &packed.value,
+            position + 1,
+            workspace,
+        )?;
+        phase.record(engine, layer, "mixed_split_attention", attention_start)?;
+        (context, cached_before)
+    } else {
+        let cached_before = append_kv(engine, cache.plain, position, qkv.key, qkv.value, kv_heads)?;
+        let plain = cache
+            .plain
+            .as_ref()
+            .ok_or("MiMo KV append lost its state")?;
+        (
+            engine.mimo_sink_decode(
+                &qkv.query,
+                &plain.key,
+                &plain.value,
+                sink,
+                position + 1,
+                &plan.attention,
+            )?,
+            cached_before,
+        )
+    };
     drop((qkv.query, streamed_sink));
     phase.record(engine, layer, "kv_append_attention", phase_start)?;
     phase_start = Instant::now();
@@ -1097,15 +1226,17 @@ fn device_memory(engine: &Engine) -> Result<(usize, usize), Fail> {
 
 fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() < 5 || args.len() > 19 {
+    if args.len() < 5 || args.len() > 21 {
         return Err(
-            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--resident-moe] [--resident-text] [--grouped-moe] [--mirror-o-f32] [--profile-phases] [--capacity-probe=N] [--workspace-mib=N] [--kv-global-only] [--kv-fp8-probe | --kv-fp8-replay | --kv-q8q5-probe | --kv-q8q5-replay | --kv-q8q8-probe | --kv-q8q8-replay | --kv-cpu-pair=K-V]"
+            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--prompt-ids-file=PATH] [--resident-moe] [--resident-text] [--grouped-moe] [--mirror-o-f32] [--profile-phases] [--capacity-probe=N] [--capacity-mixed-kv] [--workspace-mib=N] [--kv-global-only] [--kv-fp8-probe | --kv-fp8-replay | --kv-q8q5-probe | --kv-q8q5-replay | --kv-q8q8-probe | --kv-q8q8-replay | --kv-cpu-pair=K-V | --kv-mixed-gpu] [--mixed-grouped-attn | --mixed-deep-attn]"
                 .into(),
         );
     }
     let mut continue_one = false;
     let mut requested_turns: Option<usize> = None;
+    let mut prompt_ids_path: Option<&str> = None;
     let mut capacity_sessions: Option<usize> = None;
+    let mut capacity_mixed_kv = false;
     let mut workspace_mib: Option<usize> = None;
     let mut resident_moe = false;
     let mut resident_text = false;
@@ -1120,6 +1251,9 @@ fn run() -> Result<(), Fail> {
     let mut q8q8_replay = false;
     let mut global_only_kv = false;
     let mut cpu_pair: Option<CpuKvPair> = None;
+    let mut mixed_gpu = false;
+    let mut mixed_grouped_attn = false;
+    let mut mixed_deep_attn = false;
     for option in args.iter().skip(5) {
         match option.as_str() {
             "--continue-one" if !continue_one => continue_one = true,
@@ -1135,6 +1269,10 @@ fn run() -> Result<(), Fail> {
             "--kv-q8q8-probe" if !q8q8_probe => q8q8_probe = true,
             "--kv-q8q8-replay" if !q8q8_replay => q8q8_replay = true,
             "--kv-global-only" if !global_only_kv => global_only_kv = true,
+            "--kv-mixed-gpu" if !mixed_gpu => mixed_gpu = true,
+            "--mixed-grouped-attn" if !mixed_grouped_attn => mixed_grouped_attn = true,
+            "--mixed-deep-attn" if !mixed_deep_attn => mixed_deep_attn = true,
+            "--capacity-mixed-kv" if !capacity_mixed_kv => capacity_mixed_kv = true,
             _ if option.starts_with("--kv-cpu-pair=") && cpu_pair.is_none() => {
                 cpu_pair = Some(
                     cpu_kv_pair(&option["--kv-cpu-pair=".len()..])
@@ -1143,6 +1281,9 @@ fn run() -> Result<(), Fail> {
             }
             _ if option.starts_with("--tokens=") && requested_turns.is_none() => {
                 requested_turns = Some(option["--tokens=".len()..].parse()?);
+            }
+            _ if option.starts_with("--prompt-ids-file=") && prompt_ids_path.is_none() => {
+                prompt_ids_path = Some(&option["--prompt-ids-file=".len()..]);
             }
             _ if option.starts_with("--capacity-probe=") && capacity_sessions.is_none() => {
                 capacity_sessions = Some(option["--capacity-probe=".len()..].parse()?);
@@ -1153,8 +1294,8 @@ fn run() -> Result<(), Fail> {
             _ => return Err(format!("unknown or repeated MiMo token option: {option}").into()),
         }
     }
-    if continue_one && requested_turns.is_some() {
-        return Err("--continue-one and --tokens cannot be combined".into());
+    if continue_one && (requested_turns.is_some() || prompt_ids_path.is_some()) {
+        return Err("--continue-one cannot combine with --tokens or prompt IDs".into());
     }
     if fp8_replay {
         fp8_probe = true;
@@ -1165,16 +1306,17 @@ fn run() -> Result<(), Fail> {
     if q8q8_replay {
         q8q8_probe = true;
     }
-    if cpu_pair.is_some() {
+    if cpu_pair.is_some() || mixed_gpu {
         global_only_kv = true;
     }
-    if u8::from(fp8_probe) + u8::from(q8q5_probe) + u8::from(q8q8_probe) > 1 {
+    if u8::from(fp8_probe) + u8::from(q8q5_probe) + u8::from(q8q8_probe) + u8::from(mixed_gpu) > 1 {
         return Err("MiMo KV probe must select one storage format".into());
     }
-    if cpu_pair.is_some() && (fp8_probe || q8q5_probe || q8q8_probe) {
+    if cpu_pair.is_some() && (fp8_probe || q8q5_probe || q8q8_probe || mixed_gpu) {
         return Err("MiMo CPU KV pair conflicts with a GPU KV format probe".into());
     }
-    if global_only_kv && !(fp8_probe || q8q5_probe || q8q8_probe || cpu_pair.is_some()) {
+    if global_only_kv && !(fp8_probe || q8q5_probe || q8q8_probe || cpu_pair.is_some() || mixed_gpu)
+    {
         return Err("--kv-global-only requires one KV storage probe".into());
     }
     let turns = requested_turns.unwrap_or(if continue_one { 2 } else { 1 });
@@ -1190,14 +1332,25 @@ fn run() -> Result<(), Fail> {
             || q8q5_probe
             || q8q8_probe
             || cpu_pair.is_some()
+            || mixed_gpu
             || global_only_kv
+            || prompt_ids_path.is_some()
             || !resident_text
             || workspace_mib.is_some_and(|mib| mib > 8192)
         {
             return Err("MiMo capacity probe requires 1-2 sessions, resident text, and no token/profile option".into());
         }
-    } else if workspace_mib.is_some() {
-        return Err("--workspace-mib requires --capacity-probe".into());
+    } else if workspace_mib.is_some() || capacity_mixed_kv {
+        return Err("--workspace-mib and --capacity-mixed-kv require --capacity-probe".into());
+    }
+    if mixed_grouped_attn && !(mixed_gpu || capacity_mixed_kv) {
+        return Err("--mixed-grouped-attn requires mixed GPU KV or mixed capacity".into());
+    }
+    if mixed_deep_attn && !(mixed_gpu || capacity_mixed_kv) {
+        return Err("--mixed-deep-attn requires mixed GPU KV or mixed capacity".into());
+    }
+    if mixed_grouped_attn && mixed_deep_attn {
+        return Err("MiMo mixed attention must select one schedule".into());
     }
     if resident_text {
         resident_moe = true;
@@ -1205,7 +1358,8 @@ fn run() -> Result<(), Fail> {
     if grouped_moe && !resident_text {
         return Err("MiMo grouped MoE diagnostic requires --resident-text".into());
     }
-    if (fp8_probe || q8q5_probe || q8q8_probe || cpu_pair.is_some()) && !resident_text {
+    if (fp8_probe || q8q5_probe || q8q8_probe || cpu_pair.is_some() || mixed_gpu) && !resident_text
+    {
         return Err("MiMo KV storage probe requires --resident-text".into());
     }
     if mirror_o_f32 && !resident_text {
@@ -1223,13 +1377,41 @@ fn run() -> Result<(), Fail> {
     if grouped_moe && direct_bf16 {
         return Err("MiMo grouped MoE diagnostic requires f32 output accumulation".into());
     }
-    if (fp8_replay || q8q5_replay || q8q8_replay || cpu_pair.is_some()) && direct_bf16 {
+    if (fp8_replay || q8q5_replay || q8q8_replay || cpu_pair.is_some() || mixed_gpu) && direct_bf16
+    {
         return Err("MiMo KV replay cannot combine with direct BF16 matvec".into());
     }
     let dir = Path::new(&args[0]);
     let gpu0: usize = args[1].parse()?;
     let gpu1: usize = args[2].parse()?;
     let token: usize = args[3].parse()?;
+    let (prompt_tokens, prompt_sha256) = if let Some(path) = prompt_ids_path {
+        let bytes = std::fs::read(path)?;
+        let digest = format!("{:x}", Sha256::digest(&bytes));
+        let text = std::str::from_utf8(&bytes)?;
+        let ids: Vec<usize> = text
+            .lines()
+            .map(|line| {
+                if line.is_empty() || line.trim() != line {
+                    Err("MiMo prompt ID file has an empty or padded line".into())
+                } else {
+                    line.parse::<usize>().map_err(Into::into)
+                }
+            })
+            .collect::<Result<_, Fail>>()?;
+        if ids.is_empty()
+            || ids.len() > turns
+            || ids[0] != token
+            || ids.iter().any(|&id| id >= VOCAB)
+        {
+            return Err(
+                "MiMo prompt IDs must be nonempty, fit turns/vocab, and start at token_id".into(),
+            );
+        }
+        (ids, digest)
+    } else {
+        (Vec::new(), String::from("none"))
+    };
     let report_path = Path::new(&args[4]);
     let staged_path = report_path.with_extension("tsv.writing");
     if gpu0 == gpu1 || report_path.exists() || staged_path.exists() {
@@ -1348,11 +1530,24 @@ fn run() -> Result<(), Fail> {
     }
     if let Some(sessions) = capacity_sessions {
         let workspace_bytes = workspace_mib.unwrap_or(0) * 1024 * 1024;
+        let attention_scratch_bytes = if capacity_mixed_kv {
+            let tiles: usize = if mixed_deep_attn {
+                2048
+            } else if mixed_grouped_attn {
+                16384
+            } else {
+                4096
+            };
+            64 * (tiles + tiles.div_ceil(128) + 1) * (VALUE + 2) * 4
+        } else {
+            0
+        };
         let before = [device_memory(&engines[0])?, device_memory(&engines[1])?];
         let mut held = [Vec::<CudaSlice<u8>>::new(), Vec::<CudaSlice<u8>>::new()];
         let mut kv_bytes = [0usize; 2];
         let mut plane_count = [0usize; 2];
         let mut workspace_allocated = [false; 2];
+        let mut attention_scratch_allocated = [false; 2];
         let mut failure: Option<String> = None;
         'layers: for (index, layer) in plan.layers.iter().enumerate() {
             let stage = usize::from(index >= STAGE_CUT);
@@ -1363,7 +1558,12 @@ fn run() -> Result<(), Fail> {
             let kv_heads = attention.kv_heads as usize;
             for session in 0..sessions {
                 for (plane, width) in [("key", kv_heads * QK), ("value", kv_heads * VALUE)] {
-                    let bytes = stored_tokens * width;
+                    let bytes = match (capacity_mixed_kv, global, plane) {
+                        (true, true, "key") => stored_tokens * kv_heads * (QK / 32) * 34,
+                        (true, true, "value") => stored_tokens * kv_heads * (VALUE / 64) * 36,
+                        (true, false, _) => stored_tokens * width * 4,
+                        _ => stored_tokens * width,
+                    };
                     match engine.alloc_u8(bytes) {
                         Ok(buffer) => {
                             held[stage].push(buffer);
@@ -1376,6 +1576,24 @@ fn run() -> Result<(), Fail> {
                             ));
                             break 'layers;
                         }
+                    }
+                }
+            }
+        }
+        if failure.is_none() && attention_scratch_bytes > 0 {
+            for stage in 0..2 {
+                let engine = &engines[stage];
+                engine.gpu.ctx.bind_to_thread()?;
+                match engine.alloc_u8(attention_scratch_bytes) {
+                    Ok(buffer) => {
+                        held[stage].push(buffer);
+                        attention_scratch_allocated[stage] = true;
+                    }
+                    Err(error) => {
+                        failure = Some(format!(
+                            "stage {stage} split attention scratch allocation of {attention_scratch_bytes} bytes: {error}"
+                        ));
+                        break;
                     }
                 }
             }
@@ -1419,7 +1637,12 @@ fn run() -> Result<(), Fail> {
         )?;
         writeln!(
             report,
-            "scope\traw_one_byte_kv_planes_no_scales_no_attention"
+            "scope\t{}",
+            if capacity_mixed_kv {
+                "global_q8_0_k_nvfp4_v_sliding_f32_physical_allocation"
+            } else {
+                "raw_one_byte_kv_planes_no_scales_no_attention"
+            }
         )?;
         writeln!(report, "sessions\t{sessions}")?;
         writeln!(report, "context_tokens_per_session\t1048576")?;
@@ -1431,6 +1654,12 @@ fn run() -> Result<(), Fail> {
             report,
             "workspace_reserve_bytes_per_card\t{workspace_bytes}"
         )?;
+        writeln!(
+            report,
+            "split_attention_scratch_bytes_per_card\t{attention_scratch_bytes}"
+        )?;
+        writeln!(report, "mixed_grouped_attention\t{mixed_grouped_attn}")?;
+        writeln!(report, "mixed_deep_attention\t{mixed_deep_attn}")?;
         writeln!(report, "resident_moe_load_ms\t{resident_load_ms:.3}")?;
         writeln!(report, "resident_text_load_ms\t{resident_text_load_ms:.3}")?;
         for stage in 0..2 {
@@ -1447,6 +1676,11 @@ fn run() -> Result<(), Fail> {
                 report,
                 "workspace_allocated\t{stage}\t{}",
                 workspace_allocated[stage]
+            )?;
+            writeln!(
+                report,
+                "split_attention_scratch_allocated\t{stage}\t{}",
+                attention_scratch_allocated[stage]
             )?;
             if let Some((free, _)) = after[stage] {
                 writeln!(report, "memory_free_after_bytes\t{stage}\t{free}")?;
@@ -1470,6 +1704,28 @@ fn run() -> Result<(), Fail> {
         };
     }
     let mut kv: Vec<Option<KvState>> = std::iter::repeat_with(|| None).take(LAYERS).collect();
+    let mut packed_kv: Vec<Option<PackedKvState>> =
+        std::iter::repeat_with(|| None).take(LAYERS).collect();
+    let mut mixed_workspaces = if mixed_gpu {
+        Some(if mixed_deep_attn {
+            [
+                MiMoMixedAttentionWorkspace::new_deep(&engines[0], turns)?,
+                MiMoMixedAttentionWorkspace::new_deep(&engines[1], turns)?,
+            ]
+        } else if mixed_grouped_attn {
+            [
+                MiMoMixedAttentionWorkspace::new_grouped(&engines[0], turns)?,
+                MiMoMixedAttentionWorkspace::new_grouped(&engines[1], turns)?,
+            ]
+        } else {
+            [
+                MiMoMixedAttentionWorkspace::new(&engines[0], turns)?,
+                MiMoMixedAttentionWorkspace::new(&engines[1], turns)?,
+            ]
+        })
+    } else {
+        None
+    };
     let mut report = if turns > 1 {
         String::from("format\tmemra-mimo-source-gpu-token-v2\n")
     } else {
@@ -1493,7 +1749,13 @@ fn run() -> Result<(), Fail> {
     writeln!(
         report,
         "numeric_class\t{}",
-        if let Some(name) = cpu_pair_numeric.as_deref() {
+        if mixed_gpu && mixed_deep_attn {
+            "memra_mimo_source_global_q8_0_k_nvfp4_v_native_deep_split_candidate"
+        } else if mixed_gpu && mixed_grouped_attn {
+            "memra_mimo_source_global_q8_0_k_nvfp4_v_native_grouped_split_candidate"
+        } else if mixed_gpu {
+            "memra_mimo_source_global_q8_0_k_nvfp4_v_native_split_candidate"
+        } else if let Some(name) = cpu_pair_numeric.as_deref() {
             name
         } else if q8q8_replay && global_only_kv {
             "memra_mimo_source_global_q8_0_k_q8_0_v_sliding_f32_candidate"
@@ -1528,6 +1790,9 @@ fn run() -> Result<(), Fail> {
     writeln!(report, "kv_q8q5_replay\t{q8q5_replay}")?;
     writeln!(report, "kv_q8q8_probe\t{q8q8_probe}")?;
     writeln!(report, "kv_q8q8_replay\t{q8q8_replay}")?;
+    writeln!(report, "kv_mixed_gpu\t{mixed_gpu}")?;
+    writeln!(report, "mixed_grouped_attention\t{mixed_grouped_attn}")?;
+    writeln!(report, "mixed_deep_attention\t{mixed_deep_attn}")?;
     writeln!(report, "kv_global_only\t{global_only_kv}")?;
     writeln!(
         report,
@@ -1562,7 +1827,13 @@ fn run() -> Result<(), Fail> {
     writeln!(
         report,
         "kv_format\t{}",
-        if let Some(name) = cpu_pair_format.as_deref() {
+        if mixed_gpu && mixed_deep_attn {
+            "global_q8_0_k_nvfp4_v_native_deep_split_sliding_f32"
+        } else if mixed_gpu && mixed_grouped_attn {
+            "global_q8_0_k_nvfp4_v_native_grouped_split_sliding_f32"
+        } else if mixed_gpu {
+            "global_q8_0_k_nvfp4_v_native_split_sliding_f32"
+        } else if let Some(name) = cpu_pair_format.as_deref() {
             name
         } else if q8q8_replay && global_only_kv {
             "global_q8_0_k_q8_0_v_sliding_f32_component"
@@ -1580,21 +1851,51 @@ fn run() -> Result<(), Fail> {
             "f32_contiguous_component"
         }
     )?;
-    writeln!(report, "kv_append\tdevice_copy_of_prior_plus_current")?;
+    writeln!(
+        report,
+        "kv_append\t{}",
+        if mixed_gpu {
+            "global_packed_preallocated_append_sliding_f32_copy"
+        } else {
+            "device_copy_of_prior_plus_current"
+        }
+    )?;
     writeln!(report, "kv_sequence_length\t{turns}")?;
+    writeln!(report, "prompt_token_count\t{}", prompt_tokens.len())?;
+    writeln!(report, "prompt_ids_sha256\t{prompt_sha256}")?;
+    writeln!(
+        report,
+        "completion_start_turn\t{}",
+        prompt_tokens.len().saturating_sub(1)
+    )?;
     writeln!(report, "gpu0_ordinal\t{gpu0}")?;
     writeln!(report, "gpu1_ordinal\t{gpu1}")?;
     writeln!(report, "token_id\t{token}")?;
-    writeln!(report, "generated_continuation\t{}", turns > 1)?;
+    writeln!(
+        report,
+        "generated_continuation\t{}",
+        turns > prompt_tokens.len().max(1)
+    )?;
     let mut current_token = token;
     let mut last_logits: Option<Vec<f32>> = None;
     let mut last_argmax: Option<usize> = None;
     for turn in 0..turns {
         let turn_start = Instant::now();
+        if let Some(&forced) = prompt_tokens.get(turn) {
+            current_token = forced;
+        }
         if turn > 0
-            && kv
-                .iter()
-                .any(|slot| slot.as_ref().is_none_or(|cached| cached.tokens != turn))
+            && (0..LAYERS).any(|index| {
+                if mixed_gpu && GLOBAL_LAYERS.contains(&index) {
+                    packed_kv[index]
+                        .as_ref()
+                        .is_none_or(|cached| cached.tokens != turn)
+                } else {
+                    kv[index]
+                        .as_ref()
+                        .is_none_or(|cached| cached.tokens != turn)
+                }
+            })
         {
             return Err("MiMo continuation did not retain every layer's native KV".into());
         }
@@ -1648,6 +1949,7 @@ fn run() -> Result<(), Fail> {
                     q8q8_replay,
                     global_only_kv,
                     cpu_pair,
+                    mixed_gpu,
                 };
                 attention_token(
                     engine,
@@ -1655,7 +1957,13 @@ fn run() -> Result<(), Fail> {
                     &source,
                     layer,
                     &hidden,
-                    &mut kv[index],
+                    AttentionCache {
+                        plain: &mut kv[index],
+                        packed: &mut packed_kv[index],
+                        mixed_workspace: mixed_workspaces
+                            .as_mut()
+                            .map(|workspaces| &mut workspaces[stage]),
+                    },
                     &mut phase,
                 )?
             };
