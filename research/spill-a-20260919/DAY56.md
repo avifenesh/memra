@@ -128,3 +128,24 @@ green. On a miss, F2b is reverted in one commit and the shed tests go back under
   `reserve_own` on its own pair, and asserts that while the guard lives and after it drops the globals read exactly what
   they did. On the tree before F2b this cell fails at the first read (the gauge one higher); F2b must make it pass. Its
   run on the old tree is the red arm the rule asks for; the 200-run group repeats on the fix as registered.
+
+### 3b. F2b as built (`b4d6f95c2`), as run
+
+- `AdmitCounters { lanes, pending }` (`AdmitCounters::GLOBAL` names `worker::ADMISSION_RESERVATIONS` and
+  `worker::PENDING_ADMITS`) through `reserve_pending_admit_on` and `reserve_route_admit`, kept by
+  `PendingAdmissionGuard::counters`; the guard's drop releases through `worker::release_pending_admit_on` and
+  `worker::release_admission_reservation_on`; every production entry passes `GLOBAL`. The test helper is
+  `own_admit_counters()` (renamed from `own_lane_counters()`, now a pair).
+- The census, extended: only test fns are judged (helpers through the tests that call them), and calls are matched
+  outside string literals (a census that quotes a call is not a caller). Its new rule found one handler test without a
+  lock, `stop_token_ids_handlers_return_named_400s`, which now takes `drain_lock()`. Teeth, each checked: a shed test on
+  `AdmitCounters::GLOBAL` fails it (`.. reserves on the counters path without its own pair`); the handler test without
+  its lock fails it (`.. reserves through a global entry without a lock`).
+- **The red arm:** the stochastic group read 0 of 200 on the old tree (3a); the deterministic cell on the old tree fails
+  as required: `a live isolated reservation moved a global gauge .. left: (1, [0, 0, 0]) right: (0, [0, 0, 0])`
+  (`addendum/red-cell/`).
+- **The fix:** the cell passes; the group with the cell added, in R3's shape, **200 of 200 green** (`addendum/fix/`).
+  Server lib `934 passed; 0 failed; 25 ignored`; clippy `-D warnings`; fmt; `git diff --check`.
+
+**Verdict:** F2b meets the addendum's acceptance, with its red arm read by the deterministic cell (the stochastic
+harness could not show a microsecond window; recorded in 3a). Item 23 closes again, with the pending gauge isolated.

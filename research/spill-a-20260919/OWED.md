@@ -345,8 +345,9 @@ the card is reset.
 - Acceptance: none registered (the writers isolated without serializing them, for example `reserve_pending_admit`'s
   test entry taking its lane counters as a parameter so a writer never touches the process-global ones; the same 400-run
   shape green for the target and its siblings, the suite's time back to A''s).
-- Status: **closed** (DAY56 section 2: F2 `10b9329cc`; the suite's median `finished in` 6.62 s against 6.70 s, N=400;
-  item 21's target and siblings 400 of 400 green, no handler 429; arm B 100 of 100).
+- Status: **closed** (DAY56 section 2: F2 `10b9329cc`, the median 6.62 s against 6.70; section 3, from integ65's review:
+  the pending-admits gauge the path still wrote, now one `AdmitCounters` pair, F2b `b4d6f95c2`; its deterministic red
+  arm `(1, [0, 0, 0])` against `(0, [0, 0, 0])`, 200 of 200 green in R3's shape on the fix).
 
 ### 24. `darklane::tests::stop_mode_full_cycle_launch_yield_resume_shutdown` times out under starvation (found by DAY55)
 
