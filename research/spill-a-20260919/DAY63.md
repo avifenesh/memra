@@ -170,3 +170,60 @@ W's hold runs its timed boots, nothing of this lane builds.
     (`INCOMPLETE` there only because P2's chain cell had its third arm).
   - About 1.5 hours of card time.
 - Item 17 (P2 re-read on top of L) is pre-registered anew once L's verdict is read, with L as its base.
+
+## 4. L's sitting, read as registered: REFUTED (a); the failure placed; L' registered
+
+- Run by the lead on one RTX PRO 6000 Blackwell Workstation card (a 16-core host), `build.sh cbe433acc 55684e4bd`
+  then `driver.sh`, to 13:03Z. Mirror `pro-single-l/box/`, sha256-checked against the box manifest (0 mismatches);
+  the executables are recorded by hash. Start temperatures 48 C to 67 C.
+- Verbatim (`box/reading-l.log`):
+
+      L (a) UNIT a1-green=0 a2-green=0 a1-red=101 (marker 1) a2-red=101 (marker 1) censuses=0
+      L (a) gates {'contract-fault-plain': '1', 'contract-fault': '1', 'failure-off': '0', 'failure-on': '0', 'hitgate-off': '0', 'hitgate-on': '0', 'identity-default-off': '0', 'identity-default-on': '0', 'identity-plain-off': '0', 'identity-plain-on': '0', 'pause-demote': '0'}
+      L READING cell=chain order=o1 twin kv base=9.72 l=0.05 ms (N=95) | long leases base=26.06 l=0.04 ms (N=95, pooled median 32) | stall base=94.72 l=68.05 | e2e base=199.5 l=172.6 | chain base=427.8 l=396.2 ms
+      L READING cell=demote order=o1 first spans base=28.61 l=0.17 ms (N=5) | boot staging l=28.5 ms | stall base=63.89 l=64.15 | e2e base=174.9 l=175.3 ms
+      L READING cell=chain order=o2 twin kv base=9.62 l=0.05 ms (N=95) | long leases base=25.99 l=0.04 ms (N=95, pooled median 32) | stall base=94.80 l=68.09 | e2e base=199.5 l=172.7 | chain base=431.9 l=396.4 ms
+      L READING cell=demote order=o2 first spans base=28.85 l=0.17 ms (N=5) | boot staging l=28.7 ms | stall base=64.02 l=64.14 | e2e base=175.2 l=175.4 ms
+      L (b) PASS [True, True]
+      L (c) PASS [True, True]
+      L (d) PASS [True, True, True, True]
+      L VERDICT -> REFUTED ((a) failed): revert in one commit, red receipts banked
+
+  Both fault-gate arms fail the same two checks (`KV-HOST-CONTRACT-FAULT GATE: 2 FAILURE(S)`):
+  `FAIL: span-refusal: the staging set filled once and every later demote reused it` and `FAIL: promote-span-refusal:
+  the staging set filled once and every later demote and promote reused it`.
+- Read:
+  - The timing clauses pass by wide margins. In the chain cell the replaced twin's `kv` drop falls from 9.72 to 0.05
+    ms, the long `leases` from 26.06 to 0.04 ms (32 of 32 pooled), the tenant's stall from 94.7 to 68.1 ms and the
+    chained request from 427.8 to 396.2 ms. The demote cell's first `spans` falls from 28.6 to 0.17 ms.
+  - (a) fails, and the rule is the rule: **REFUTED**, reverted in one commit, the receipts kept.
+- **The failure, placed from the gate's code** (`tools/kv-host-contract-fault-gate.sh`, `one_staging_fill` and
+  `one_staging_fill_promote`):
+  - Both checks require exactly one `tier span staging: N fresh pinned buffer(s)` line in the boot, with N equal to
+    the refusal's `N f32 spans handed back`. The line is printed when a demote (or promote) allocates fresh staging
+    buffers.
+  - The receipts: on L the gate's logs carry `span staging set allocated at boot: 96 buffers, 156.9 MB` and no fresh
+    line at all (`staging fill line(s) [], refusal N 96`). L2 moved the fill to boot, so the first demote allocates
+    nothing, and it prints nothing.
+  - What the check was written for (day 31, the span refusal's put-back): a refused span attach must return every
+    staging buffer to the set, so the set is filled once and no later demote or promote allocates again. On L that
+    property holds: one fill (at boot, 96 buffers, equal to the refusal's 96), and no fresh line after it.
+  - The check encodes where the first fill happened (the first demote), not the property. **The gate is wrong for
+    L2, not L2 for the gate.**
+- **The gate change, registered before any rerun** (its own commit):
+  - `one_staging_fill` and `one_staging_fill_promote` count fill events: the boot line `span staging set allocated
+    at boot: N buffers`, or the fresh line `tier span staging: N fresh pinned buffer(s)`.
+  - They require exactly one fill event, with N equal to the refusal's N. That reads the day-31 program (one fresh
+    line, no boot line) and L2's (one boot line, no fresh line) the same way. A second fill event of either kind, a
+    boot fill of the wrong size, or a fresh fill after a boot fill fails.
+- **Its red arm, registered with it:**
+  - A scratch server patch (`pro-single-l2/gate-red-arm.patch`, with a printed marker). The D2H span refusal drops
+    each staging buffer instead of `tier.staging_put(destination)`, and the H2D span refusal drops each source
+    instead of pushing it to `staged`.
+  - On an L' binary the set is then short after the refusal, the next demote or promote allocates fresh, and the
+    boot has a boot fill plus a fresh line.
+  - The changed gate must FAIL both cells on that binary (rc 1, the same two FAIL lines) and pass on the L' binary.
+    A gate change that passes the red arm is refuted with it.
+- **L'** = L's code re-applied unchanged, plus the gate change. It reruns whole: section 1's (a) to (d), with the
+  unit cells, the 11 gates, the chain and demote cells, and the gate's red arm as a twelfth run. The sitting is
+  `pro-single-l2/`, receipts `/root/spill-receipts/a-l2`, with `l-reading.py` plus the red arm's exit and FAIL lines.

@@ -1,0 +1,10 @@
+L (a) UNIT a1-green=0 a2-green=0 a1-red=101 (marker 1) a2-red=101 (marker 1) censuses=0
+L (a) gates {'contract-fault-plain': '1', 'contract-fault': '1', 'failure-off': '0', 'failure-on': '0', 'hitgate-off': '0', 'hitgate-on': '0', 'identity-default-off': '0', 'identity-default-on': '0', 'identity-plain-off': '0', 'identity-plain-on': '0', 'pause-demote': '0'}
+L READING cell=chain order=o1 twin kv base=9.72 l=0.05 ms (N=95) | long leases base=26.06 l=0.04 ms (N=95, pooled median 32) | stall base=94.72 l=68.05 | e2e base=199.5 l=172.6 | chain base=427.8 l=396.2 ms
+L READING cell=demote order=o1 first spans base=28.61 l=0.17 ms (N=5) | boot staging l=28.5 ms | stall base=63.89 l=64.15 | e2e base=174.9 l=175.3 ms
+L READING cell=chain order=o2 twin kv base=9.62 l=0.05 ms (N=95) | long leases base=25.99 l=0.04 ms (N=95, pooled median 32) | stall base=94.80 l=68.09 | e2e base=199.5 l=172.7 | chain base=431.9 l=396.4 ms
+L READING cell=demote order=o2 first spans base=28.85 l=0.17 ms (N=5) | boot staging l=28.7 ms | stall base=64.02 l=64.14 | e2e base=175.2 l=175.4 ms
+L (b) PASS [True, True]
+L (c) PASS [True, True]
+L (d) PASS [True, True, True, True]
+L VERDICT -> REFUTED ((a) failed): revert in one commit, red receipts banked
