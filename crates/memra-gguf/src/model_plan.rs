@@ -249,6 +249,8 @@ pub struct MiMoAttentionMath {
     pub sink: TensorPresence,
     /// Applied to projected V before storing or reading the KV cache.
     pub value_scale_before_cache: f32,
+    /// The source stores checkpoint shards as [Q, K, V] per shard.
+    pub fused_qkv_checkpoint_shards: Option<u32>,
 }
 
 // Plan identity uses Debug. Omit the new field for other families so their
@@ -1476,10 +1478,7 @@ impl ModelConfig {
                 || frequency.first() != Some(&0)
                 || frequency.iter().skip(1).any(|&layer| layer != 1)
             {
-                return Err(unsupported(
-                    "mimo.moe_layer_freq",
-                    format!("{frequency:?}"),
-                ));
+                return Err(unsupported("mimo.moe_layer_freq", format!("{frequency:?}")));
             }
         }
         if let Some(window) = self.window_hint {
@@ -2152,6 +2151,9 @@ fn attention_geometry(
                 TensorPresence::Absent
             },
             value_scale_before_cache: mimo.attention_value_scale.unwrap_or(1.0),
+            fused_qkv_checkpoint_shards: (mimo.attention_projection_layout.as_deref()
+                == Some("fused_qkv"))
+            .then_some(cfg.n_head_kv),
         }),
     })
 }
@@ -2632,6 +2634,7 @@ mod tests {
             Some(MiMoAttentionMath {
                 sink: TensorPresence::Absent,
                 value_scale_before_cache: 0.707,
+                fused_qkv_checkpoint_shards: Some(4),
             })
         );
         let AttentionPlan::SlidingWindow {
@@ -2648,6 +2651,7 @@ mod tests {
             Some(MiMoAttentionMath {
                 sink: TensorPresence::Required,
                 value_scale_before_cache: 0.707,
+                fused_qkv_checkpoint_shards: Some(4),
             })
         );
     }
