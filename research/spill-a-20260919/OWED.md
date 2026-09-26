@@ -163,6 +163,9 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   priced** (0.73 ms); no route refusal on the 27B; the DFlash, GLM-5 and latent publishers not measured here, owed to
   their artifacts and rigs. The fanout design is **pre-registered** (DAY59 section 1: an attribution of the snapshot's
   and restores' owner time on the 5090, then design B1 (batched copies) or B2 (one pool reservation) by a stated rule).
+  **The fanout closed, B1 ADOPTED** (DAY59 section 10, `e522a9417`): the attribution selected B1 (calls 0.83 of
+  1.34 ms); on the target card its own owner time is 0.25 ms against 1.36 / 1.34, and the tenant's stall falls
+  1.03 / 1.15 ms against a 1.0 bound, every gate green. The DFlash, GLM-5 and latent publishers stay owed.
 
 ### 11. Move 1 item 4: the decision cell (i), both classes, same window
 
@@ -171,8 +174,9 @@ cells pending), `5090 done` (the 5090 half read), `target owed` (its target-card
   `653c997f4` against the day-16 tree `1646d421b` (integ40): `DAY29 CELL(i) CLAUSE: NOT MET (demote=False
   promote=False admissible=True); executed-not-qualified`; ruling 47 carries item 4 as owed.
 - Acceptance: day 16's clause, verbatim, unchanged.
-- Status: **pre-registered** (DAY60 section 1: C's day-29 cell verbatim with arm X the current tip; the clause read
-  as written; a target card).
+- Status: **closed with its reading** (DAY60 section 3): `CLAUSE: NOT MET` as stated before it ran (the
+  intruder primes on the tick); y_minus_x +86.3 ms (demote) and +76.0 ms (promote) in both orders. A class-isolating
+  candidate cell is registered for the owner (DAY60 section 4).
   cell is owed on the current tree; the clause is read as written).
 
 ### 12. Every CPU hash over the 5090's write-combined leases reads at the direct rate (found by DAY38's survey)
