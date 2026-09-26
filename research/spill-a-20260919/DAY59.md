@@ -304,3 +304,30 @@ with the three 5090 cells already queued.
   - It runs ahead of W's 5090 half. W's run had taken the hold at 07:33Z and passed (a) and four identity gates when
     I stopped it at 07:36Z, before its timed cell, so B1 could go first. It is banked as
     `rtx5090-w/cell/stopped-0736Z/` and repeats whole after B1.
+
+## 12. B1's 5090 half, read by the same reader: ADOPT on the 5090 too
+
+- The local RTX 5090 Laptop GPU; the target sitting's trees (b1 `7edc329d9`, base `9ab479d9c`, red b1 plus the red-arm
+  patch); one hold of `/tmp/memra-5090.lock` taken at 08:53:54Z, after lane F's queue released the card (it waited
+  30 attempts); receipts `rtx5090-b1/cell/`, the executables recorded by hash (`binaries.sha256`) and kept outside the
+  repo.
+  - No compute app at any boot's start (40 of 40).
+  - The host load at the boots' starts read 1.48 to 7.97 (lanes B, C and F active on the rig; none of this lane's
+    builds ran inside the hold, whose timed boots began at 08:55Z). Recorded as the condition, not removed.
+- Verbatim (`rtx5090-b1/cell/reading-b1.log`):
+
+      B1 (a) UNIT a1-green=0 a2-green=0 a1-red=101 (marker 1) a2-red=101 (marker 1) censuses=0
+      B1 (a) gates {'identity-default-off': '0', 'identity-default-on': '0', 'identity-plain-off': '0', 'identity-plain-on': '0', 'hitgate-off': '0', 'hitgate-on': '0'}
+      B1 READING order=o1 N_own=45 own base=1.93 b1=0.49 ms | fanout-minus-prime base=+7.20 b1=+5.74 (gain +1.46) ms | members wall base=190.4 b1=189.0 ms
+      B1 READING order=o2 N_own=45 own base=1.92 b1=0.49 ms | fanout-minus-prime base=+9.18 b1=+3.57 (gain +5.61) ms | members wall base=187.9 b1=186.2 ms
+      B1 (b) PASS per order [True, True]
+      B1 (c) PASS per order [True, True]
+      B1 (d) PASS per order [True, True]
+      B1 VERDICT -> ADOPT (B1 is the naked program)
+
+- Read:
+  - On the 5090 the fanout's own time falls from 1.93 to 0.49 ms, 25% of base.
+  - The tenant's stall gain is 1.46 / 5.61 ms. The o2 base reads +9.18 against o1's +7.20; the 5090's idle p50 is
+    22 ms under the shared rig's load, so its per-order spread is wider than the target card's.
+  - Both cards adopt: B1 is the naked program on the RTX PRO 6000 and on the 5090, so there is no per-card question.
+    integ67 takes it.

@@ -1,0 +1,381 @@
+[server] build: memra-0.138.0-2c4b9bfb17b7 (id: source-tree, git: 7edc329d94a6)
+[server] starting; models config = [("gate", "/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[worker]   loaded "gate": 65 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-host] contracts door: model gate program identity artifact_sha256=1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a plan_debug_sha256=8fc1154223424f168e69fdf10f4befec7a9af75544e385bb773759954ff427e5 numeric=server-prefix-entry-v5-kv-q8_0-34B-q5_1-24B template=gguf-jinja device=0 (4459ms to hash /data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf)
+[prefix-host] contracts door: model gate draft program identity source=embedded numeric=server-prefix-entry-v5-kv-q8_0-34B-q5_1-24B+mtp-draft-kv-q8_0-34B-q5_1-24B (0ms)
+[prefix-host] contracts door: D2H demotes and H2D promotes ride the transfer engine's copy stream and publish at the tick top (memra#536 Move 1)
+[prefix-host] contracts door ON (MEMRA_KV_HOST_CONTRACTS=1): 1 model program identities, tenant salt per pool namespace, server governor ledger pinned/pageable 17180MB device 6442MB in-flight 390; host tier armed; KV plane D2H through the transfer engine on the pageable tier (Option B); KV plane H2D through the same engine on promote (Option C)
+[prefix-host] on: budget 8590MB pinned cacheable host RAM (MEMRA_KV_HOST_MB, startup budget policy), plain byte-LRU, demote on device capacity eviction, promote on exact-prefix probe; verify=off (MEMRA_KV_HOST_VERIFY); tenant share cap 50% = 4295MB (MEMRA_KV_HOST_TENANT_PCT)
+[prefix-cache] on: budget 2147MB (2147483648 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="gate" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[spec-boundary] site=cold-prime sampled=279 argmax=279 deviates=0 temp=0.7 sctr=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 399360 ml_len 0 -> 1560 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 399360 -> 798720 ml_len 1560 -> 3120 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 44MB (max of parked delta 44MB and capture-time pool peak 12MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 798720 -> 1597440 ml_len 3120 -> 6240 (retired kept, zero=false)
+[spec-boundary] site=burst-tail-commit sampled=3050 argmax=3050 deviates=0 temp=0.7 sctr=85
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2483027968,"still_owned_bytes":17283255616,"pool_reserved_bytes":17414750208,"pool_cached_bytes":131494592,"driver_free_bytes":7335575552,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 2368MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=mtp transient floor 2196MB (static was 1536MB; measured 2196MB; probe kv charge 127MB, draft-state 44MB, drafted 63 accepted 42; [dev0 peak-mapped 18976MB rest-mapped 16608MB charged 171MB -> 2196MB]; 3.9s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18099
+[meter] admit id=cmpl-f03aba224823ea390cf88f133690ba31 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=218 path=spec = 31552 B/token x ctx + 51MB prefill-workspace + 0MB fixed = 58MB
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 313MB at ctx 162 path=spec)
+[spec-acc] ctx=106 burst=18/42 cum=18/42=0.429
+[prefix-cache] capture submitted off the tick (spec-boundary): 64 tokens, 34 planes (158.9MB) on the contracts door's copy stream; recurrent state and boundary logits taken by the spec engine at the prime stop; draft plane 64 rows (118.8KB) in the batch
+[spec-acc] ctx=139 burst=11/15 cum=29/57=0.509
+[prefix-cache] contracts door D2D capture receipt: ticket issuer=2 seq=1 epochs=0/1/1 items=34 bytes=2019328 source_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa destination_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa require=ok
+[prefix-cache] capture published off the tick (spec-boundary): 64 tokens complete after 1 poll(s), 160.0ms from submission to completion, 160.0ms to publication (settled synchronously by a session retire; the settle held the owner thread 0.11ms, entered 159.9ms after submission)
+[prefix-cache] insert (spec-boundary): 64 tokens, 158.9MB (resident 158.9MB / 2147MB, model gate)
+[meter] admit id=cmpl-1d77c8a214fc376afe10ab95d28a338c tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=218 path=spec = 31552 B/token x ctx + 51MB prefill-workspace + 308MB fixed = 366MB
+[prefix-cache] restore submitted off the tick: 64 tokens, 34 planes (158.9MB), ticket seq=2 on the contracts door's copy stream; recurrent state copied on the owner stream; request parked; draft plane 64 rows (118.8KB) in the batch; recurrent copy 0.20ms host
+[prefix-cache] contracts door D2D restore receipt: ticket issuer=2 seq=2 epochs=0/1/1 items=34 bytes=2019328 source_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa destination_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa require=ok
+[prefix-cache] restore landed off the tick: 64 tokens (158.9MB) complete after 1 poll(s), 2.2ms from submission to completion, 2.3ms to re-admission (tick-top poll); draft plane ready; recurrent copy 0.39ms owner stream
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 106 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=42 burst=18/42 cum=18/42=0.429
+[spec-acc] ctx=75 burst=11/15 cum=29/57=0.509
+[meter] admit id=cmpl-df4e0e22ce6ac364564694c574746196 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=231 path=spec = 31552 B/token x ctx + 57MB prefill-workspace + 308MB fixed = 373MB
+[prefix-cache] restore submitted off the tick: 64 tokens, 34 planes (158.9MB), ticket seq=3 on the contracts door's copy stream; recurrent state copied on the owner stream; request parked; draft plane 64 rows (118.8KB) in the batch; recurrent copy 0.21ms host
+[prefix-cache] contracts door D2D restore receipt: ticket issuer=2 seq=3 epochs=0/1/1 items=34 bytes=2019328 source_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa destination_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa require=ok
+[prefix-cache] restore landed off the tick: 64 tokens (158.9MB) complete after 1 poll(s), 2.1ms from submission to completion, 2.2ms to re-admission (tick-top poll); draft plane ready; recurrent copy 0.39ms owner stream
+[prefix-cache] hit: 64 of 119 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 119 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-short prompt=119 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=55 burst=19/42 cum=19/42=0.452
+[prefix-cache] capture submitted off the tick (spec-boundary): 96 tokens, 34 planes (159.9MB) on the contracts door's copy stream; recurrent state and boundary logits taken by the spec engine at the prime stop; draft plane 96 rows (178.2KB) in the batch
+[spec-acc] ctx=89 burst=10/18 cum=29/60=0.483
+[prefix-cache] contracts door D2D capture receipt: ticket issuer=2 seq=4 epochs=0/1/1 items=34 bytes=3028992 source_digests_sha256=e144cca790594d37b3fb04b3ee33075385678d8ebfb68af608e9d17991316ec9 destination_digests_sha256=e144cca790594d37b3fb04b3ee33075385678d8ebfb68af608e9d17991316ec9 require=ok
+[prefix-cache] capture published off the tick (spec-boundary): 96 tokens complete after 1 poll(s), 192.9ms from submission to completion, 192.9ms to publication (settled synchronously by a session retire; the settle held the owner thread 0.10ms, entered 192.8ms after submission)
+[prefix-cache] insert (spec-boundary): 96 tokens, 159.9MB (resident 318.9MB / 2147MB, model gate)
+[meter] admit id=cmpl-0844aeb5f65d292f03d8c72100c3e214 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=218 path=spec = 31552 B/token x ctx + 51MB prefill-workspace + 308MB fixed = 366MB
+[spec-k] model="gate" tenant="samp-7" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_ctr_f32
+[spec-boundary] site=burst-tail-commit sampled=28905 argmax=28905 deviates=0 temp=0.8 sctr=61
+[spec-acc] ctx=106 burst=19/45 cum=19/45=0.422
+[prefix-cache] capture submitted off the tick (spec-boundary): 64 tokens, 34 planes (158.9MB) on the contracts door's copy stream; recurrent state and boundary logits taken by the spec engine at the prime stop; draft plane 64 rows (118.8KB) in the batch
+[spec-boundary] site=burst-tail-commit sampled=198 argmax=198 deviates=0 temp=0.8 sctr=86
+[spec-acc] ctx=141 burst=7/18 cum=26/63=0.413
+[prefix-cache] contracts door D2D capture receipt: ticket issuer=2 seq=5 epochs=0/1/1 items=34 bytes=2019328 source_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa destination_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa require=ok
+[prefix-cache] capture published off the tick (spec-boundary): 64 tokens complete after 1 poll(s), 238.9ms from submission to completion, 238.9ms to publication (settled synchronously by a session retire; the settle held the owner thread 0.11ms, entered 238.8ms after submission)
+[prefix-cache] insert (spec-boundary): 64 tokens, 158.9MB (resident 477.8MB / 2147MB, model gate, ns "samp-7")
+[meter] admit id=cmpl-56411846cc28e3c5002385f63be4d7c3 tenant=default lane=interactive model="gate"
+[prefix-cache] restore submitted off the tick: 64 tokens, 34 planes (158.9MB), ticket seq=6 on the contracts door's copy stream; recurrent state copied on the owner stream; request parked; draft plane 64 rows (118.8KB) in the batch; recurrent copy 0.24ms host
+[prefix-cache] contracts door D2D restore receipt: ticket issuer=2 seq=6 epochs=0/1/1 items=34 bytes=2019328 source_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa destination_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa require=ok
+[prefix-cache] restore landed off the tick: 64 tokens (158.9MB) complete after 1 poll(s), 2.2ms from submission to completion, 2.2ms to re-admission (tick-top poll); draft plane ready; recurrent copy 0.40ms owner stream
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 106 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-7" K=3 source=cold-short prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec-boundary] site=burst-tail-commit sampled=28905 argmax=28905 deviates=0 temp=0.8 sctr=61
+[spec-acc] ctx=42 burst=19/45 cum=19/45=0.422
+[spec-boundary] site=burst-tail-commit sampled=198 argmax=198 deviates=0 temp=0.8 sctr=86
+[spec-acc] ctx=77 burst=7/18 cum=26/63=0.413
+[meter] admit id=cmpl-6ecd0f13305678d197252951ecffebca tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="samp-1234" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec-boundary] site=burst-tail-commit sampled=58524 argmax=58524 deviates=0 temp=0.8 sctr=57
+[spec-acc] ctx=106 burst=19/42 cum=19/42=0.452
+[prefix-cache] capture submitted off the tick (spec-boundary): 64 tokens, 34 planes (158.9MB) on the contracts door's copy stream; recurrent state and boundary logits taken by the spec engine at the prime stop; draft plane 64 rows (118.8KB) in the batch
+[spec-boundary] site=burst-tail-commit sampled=220 argmax=15 deviates=1 temp=0.8 sctr=82
+[spec-acc] ctx=140 burst=8/18 cum=27/60=0.450
+[prefix-cache] contracts door D2D capture receipt: ticket issuer=2 seq=7 epochs=0/1/1 items=34 bytes=2019328 source_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa destination_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa require=ok
+[prefix-cache] capture published off the tick (spec-boundary): 64 tokens complete after 1 poll(s), 242.0ms from submission to completion, 242.0ms to publication (settled synchronously by a session retire; the settle held the owner thread 0.10ms, entered 241.9ms after submission)
+[prefix-cache] insert (spec-boundary): 64 tokens, 158.9MB (resident 636.7MB / 2147MB, model gate, ns "samp-1234")
+[meter] admit id=cmpl-9bbfa85bed486e60342377e9e9eb1308 tenant=default lane=interactive model="gate"
+[prefix-cache] restore submitted off the tick: 64 tokens, 34 planes (158.9MB), ticket seq=8 on the contracts door's copy stream; recurrent state copied on the owner stream; request parked; draft plane 64 rows (118.8KB) in the batch; recurrent copy 0.22ms host
+[prefix-cache] contracts door D2D restore receipt: ticket issuer=2 seq=8 epochs=0/1/1 items=34 bytes=2019328 source_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa destination_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa require=ok
+[prefix-cache] restore landed off the tick: 64 tokens (158.9MB) complete after 1 poll(s), 2.1ms from submission to completion, 2.2ms to re-admission (tick-top poll); draft plane ready; recurrent copy 0.40ms owner stream
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 106 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-1234" K=3 source=cold-short prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec-boundary] site=burst-tail-commit sampled=58524 argmax=58524 deviates=0 temp=0.8 sctr=57
+[spec-acc] ctx=42 burst=19/42 cum=19/42=0.452
+[spec-boundary] site=burst-tail-commit sampled=220 argmax=15 deviates=1 temp=0.8 sctr=82
+[spec-acc] ctx=76 burst=8/18 cum=27/60=0.450
+[meter] admit id=cmpl-d31e02dd0cdec6f80f9d429f85b4e563 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="samp-99991" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec-boundary] site=burst-tail-commit sampled=12095 argmax=12095 deviates=0 temp=0.8 sctr=49
+[spec-acc] ctx=106 burst=19/36 cum=19/36=0.528
+[prefix-cache] capture submitted off the tick (spec-boundary): 64 tokens, 34 planes (158.9MB) on the contracts door's copy stream; recurrent state and boundary logits taken by the spec engine at the prime stop; draft plane 64 rows (118.8KB) in the batch
+[spec-boundary] site=burst-tail-commit sampled=64700 argmax=64700 deviates=0 temp=0.8 sctr=78
+[spec-acc] ctx=138 burst=10/21 cum=29/57=0.509
+[prefix-cache] contracts door D2D capture receipt: ticket issuer=2 seq=9 epochs=0/1/1 items=34 bytes=2019328 source_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa destination_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa require=ok
+[prefix-cache] capture published off the tick (spec-boundary): 64 tokens complete after 1 poll(s), 271.2ms from submission to completion, 271.2ms to publication (settled synchronously by a session retire; the settle held the owner thread 0.10ms, entered 271.1ms after submission)
+[prefix-cache] insert (spec-boundary): 64 tokens, 158.9MB (resident 795.7MB / 2147MB, model gate, ns "samp-99991")
+[meter] admit id=cmpl-bdb988b87e92fe8b8abfe4a83b9e0c07 tenant=default lane=interactive model="gate"
+[prefix-cache] restore submitted off the tick: 64 tokens, 34 planes (158.9MB), ticket seq=10 on the contracts door's copy stream; recurrent state copied on the owner stream; request parked; draft plane 64 rows (118.8KB) in the batch; recurrent copy 0.21ms host
+[prefix-cache] contracts door D2D restore receipt: ticket issuer=2 seq=10 epochs=0/1/1 items=34 bytes=2019328 source_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa destination_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa require=ok
+[prefix-cache] restore landed off the tick: 64 tokens (158.9MB) complete after 1 poll(s), 2.1ms from submission to completion, 2.3ms to re-admission (tick-top poll); draft plane ready; recurrent copy 0.40ms owner stream
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 106 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-99991" K=3 source=cold-short prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2724MB (driver 2547MB + pool-cached 176MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-commit sampled=12095 argmax=12095 deviates=0 temp=0.8 sctr=49
+[spec-acc] ctx=42 burst=19/36 cum=19/36=0.528
+[spec-boundary] site=burst-tail-commit sampled=64700 argmax=64700 deviates=0 temp=0.8 sctr=78
+[spec-acc] ctx=74 burst=10/21 cum=29/57=0.509
+[meter] admit id=cmpl-e9bf876f6eb693e42f82f022367518a3 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="samp-x" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2123MB (driver 2099MB + pool-cached 23MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-commit sampled=28905 argmax=28905 deviates=0 temp=0.8 sctr=61
+[spec-acc] ctx=106 burst=19/45 cum=19/45=0.422
+[prefix-cache] capture submitted off the tick (spec-boundary): 64 tokens, 34 planes (158.9MB) on the contracts door's copy stream; recurrent state and boundary logits taken by the spec engine at the prime stop; draft plane 64 rows (118.8KB) in the batch
+[spec-boundary] site=burst-tail-commit sampled=198 argmax=198 deviates=0 temp=0.8 sctr=86
+[spec-acc] ctx=141 burst=7/18 cum=26/63=0.413
+[prefix-cache] contracts door D2D capture receipt: ticket issuer=2 seq=11 epochs=0/1/1 items=34 bytes=2019328 source_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa destination_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa require=ok
+[prefix-cache] capture published off the tick (spec-boundary): 64 tokens complete after 1 poll(s), 240.6ms from submission to completion, 240.6ms to publication (settled synchronously by a session retire; the settle held the owner thread 0.11ms, entered 240.5ms after submission)
+[prefix-cache] insert (spec-boundary): 64 tokens, 158.9MB (resident 954.6MB / 2147MB, model gate, ns "samp-x")
+[meter] admit id=cmpl-f2781303ea6e68b34e3a7be03127aa76 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=231 path=spec = 31552 B/token x ctx + 57MB prefill-workspace + 308MB fixed = 373MB
+[admit-oom] reclaim spared the prompt's prefix entry (64 tokens, model gate)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=795674624 pool_cached_gain_bytes=795572224 trim_released_bytes=771751936 driver_free_bytes 1564213248 -> 2335965184 pool_reserved_bytes 23186112512 -> 22414360576 pool_used_bytes 22523533356 -> 21727961132 pool_retained_bytes=23820288 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 5 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2227MB -> 3022MB
+[prefix-cache] restore submitted off the tick: 64 tokens, 34 planes (158.9MB), ticket seq=12 on the contracts door's copy stream; recurrent state copied on the owner stream; request parked; draft plane 64 rows (118.8KB) in the batch; recurrent copy 0.20ms host
+[prefix-cache] contracts door D2D restore receipt: ticket issuer=2 seq=12 epochs=0/1/1 items=34 bytes=2019328 source_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa destination_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa require=ok
+[admit-oom] reclaim spared the prompt's prefix entry (64 tokens, model gate)
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2709MB -> 3182MB
+[prefix-cache] restore landed off the tick: 64 tokens (158.9MB) complete after 1 poll(s), 2.4ms from submission to completion, 2.8ms to re-admission (tick-top poll); draft plane ready; recurrent copy 0.39ms owner stream
+[prefix-cache] hit: 64 of 119 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 119 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-x" K=3 source=cold-short prompt=119 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2732MB (driver 2227MB + pool-cached 504MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-commit sampled=617 argmax=617 deviates=0 temp=0.8 sctr=69
+[spec-acc] ctx=55 burst=14/51 cum=14/51=0.275
+[prefix-cache] capture submitted off the tick (spec-boundary): 96 tokens, 34 planes (159.9MB) on the contracts door's copy stream; recurrent state and boundary logits taken by the spec engine at the prime stop; draft plane 96 rows (178.2KB) in the batch
+[spec-boundary] site=burst-tail-commit sampled=16863 argmax=16863 deviates=0 temp=0.8 sctr=102
+[spec-acc] ctx=87 burst=7/24 cum=21/75=0.280
+[prefix-cache] contracts door D2D capture receipt: ticket issuer=2 seq=13 epochs=0/1/1 items=34 bytes=3028992 source_digests_sha256=e144cca790594d37b3fb04b3ee33075385678d8ebfb68af608e9d17991316ec9 destination_digests_sha256=e144cca790594d37b3fb04b3ee33075385678d8ebfb68af608e9d17991316ec9 require=ok
+[prefix-cache] capture published off the tick (spec-boundary): 96 tokens complete after 1 poll(s), 306.7ms from submission to completion, 306.7ms to publication (settled synchronously by a session retire; the settle held the owner thread 0.12ms, entered 306.6ms after submission)
+[prefix-cache] insert (spec-boundary): 96 tokens, 159.9MB (resident 318.9MB / 2147MB, model gate, ns "samp-x")
+[meter] admit id=cmpl-9510dd8c4140571bd6d42036a778f56d tenant=default lane=interactive model="gate"
+[prefix-cache] restore submitted off the tick: 96 tokens, 34 planes (159.9MB), ticket seq=14 on the contracts door's copy stream; recurrent state copied on the owner stream; request parked; draft plane 96 rows (178.2KB) in the batch; recurrent copy 0.21ms host
+[prefix-cache] contracts door D2D restore receipt: ticket issuer=2 seq=14 epochs=0/1/1 items=34 bytes=3028992 source_digests_sha256=e144cca790594d37b3fb04b3ee33075385678d8ebfb68af608e9d17991316ec9 destination_digests_sha256=e144cca790594d37b3fb04b3ee33075385678d8ebfb68af608e9d17991316ec9 require=ok
+[admit-oom] reclaim spared the prompt's prefix entry (96 tokens, model gate)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=158932992 pool_cached_gain_bytes=158912512 trim_released_bytes=134217728 driver_free_bytes 2168193024 -> 2302410752 pool_reserved_bytes 22582132736 -> 22447915008 pool_used_bytes 22200573820 -> 22041661308 pool_retained_bytes=24694784 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2550MB -> 3183MB
+[prefix-cache] restore landed off the tick: 96 tokens (159.9MB) complete after 1 poll(s), 2.2ms from submission to completion, 3.1ms to re-admission (tick-top poll); draft plane ready; recurrent copy 0.39ms owner stream
+[prefix-cache] hit: 96 of 119 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 96 of 119 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-x" K=3 source=cold-short prompt=119 cached=96 lcp=96 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2883MB (driver 2195MB + pool-cached 687MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-commit sampled=617 argmax=617 deviates=0 temp=0.8 sctr=69
+[spec-acc] ctx=23 burst=14/51 cum=14/51=0.275
+[spec-boundary] site=burst-tail-commit sampled=16863 argmax=16863 deviates=0 temp=0.8 sctr=102
+[spec-acc] ctx=55 burst=7/24 cum=21/75=0.280
+[meter] admit id=cmpl-c16f488aebb3a5737dd1965726a70203 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=218 path=spec = 31552 B/token x ctx + 51MB prefill-workspace + 308MB fixed = 366MB
+[spec-k] model="gate" tenant="samp-pen" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec-boundary] site=burst-tail-commit sampled=18211 argmax=67010 deviates=1 temp=0.8 sctr=57
+[spec-acc] ctx=106 burst=18/42 cum=18/42=0.429
+[prefix-cache] capture submitted off the tick (spec-boundary): 64 tokens, 34 planes (158.9MB) on the contracts door's copy stream; recurrent state and boundary logits taken by the spec engine at the prime stop; draft plane 64 rows (118.8KB) in the batch
+[spec-boundary] site=burst-tail-commit sampled=288 argmax=288 deviates=0 temp=0.8 sctr=86
+[spec-acc] ctx=139 burst=7/21 cum=25/63=0.397
+[prefix-cache] contracts door D2D capture receipt: ticket issuer=2 seq=15 epochs=0/1/1 items=34 bytes=2019328 source_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa destination_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa require=ok
+[prefix-cache] capture published off the tick (spec-boundary): 64 tokens complete after 1 poll(s), 277.3ms from submission to completion, 277.3ms to publication (settled synchronously by a session retire; the settle held the owner thread 0.12ms, entered 277.2ms after submission)
+[prefix-cache] insert (spec-boundary): 64 tokens, 158.9MB (resident 318.9MB / 2147MB, model gate, ns "samp-pen")
+[meter] admit id=cmpl-930ed4a3f00d072f90a274d2a7ed9dce tenant=default lane=interactive model="gate"
+[prefix-cache] restore submitted off the tick: 64 tokens, 34 planes (158.9MB), ticket seq=16 on the contracts door's copy stream; recurrent state copied on the owner stream; request parked; draft plane 64 rows (118.8KB) in the batch; recurrent copy 0.22ms host
+[prefix-cache] contracts door D2D restore receipt: ticket issuer=2 seq=16 epochs=0/1/1 items=34 bytes=2019328 source_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa destination_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa require=ok
+[admit-oom] reclaim spared the prompt's prefix entry (64 tokens, model gate)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=159942656 pool_cached_gain_bytes=159922176 trim_released_bytes=134217728 driver_free_bytes 2202009600 -> 2336227328 pool_reserved_bytes 22548578304 -> 22414360576 pool_used_bytes 22198660852 -> 22038738676 pool_retained_bytes=25704448 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2552MB -> 3191MB
+[prefix-cache] restore landed off the tick: 64 tokens (158.9MB) complete after 1 poll(s), 2.1ms from submission to completion, 3.1ms to re-admission (tick-top poll); draft plane ready; recurrent copy 0.40ms owner stream
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 106 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="samp-pen" K=3 source=cold-short prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=271 argmax=271 deviates=0 temp=0.8 sctr=0
+[spec-boundary] site=burst-tail-commit sampled=18211 argmax=67010 deviates=1 temp=0.8 sctr=57
+[spec-acc] ctx=42 burst=18/42 cum=18/42=0.429
+[spec-boundary] site=burst-tail-commit sampled=288 argmax=288 deviates=0 temp=0.8 sctr=86
+[spec-acc] ctx=75 burst=7/21 cum=25/63=0.397
+[meter] admit id=cmpl-f8f4da013700b28ff638ebf06e061db3 tenant=default lane=interactive model="gate"
+[spec-k] model="gate" tenant="samp-noplane" K=0 source=eligibility-fallback prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] capture submitted off the tick (seed): 64 tokens, 32 planes (158.8MB) on the contracts door's copy stream; recurrent state cloned at the boundary on the owner stream
+[prefix-cache] contracts door D2D capture receipt: ticket issuer=2 seq=17 epochs=0/1/1 items=32 bytes=1900544 source_digests_sha256=e407b831e74a78be251faf130bbb527e6e819c9f9e7cc12b9a3d9f9f84794311 destination_digests_sha256=e407b831e74a78be251faf130bbb527e6e819c9f9e7cc12b9a3d9f9f84794311 require=ok
+[prefix-cache] capture published off the tick (seed): 64 tokens complete after 2 poll(s), 124.3ms from submission to completion, 124.3ms to publication (tick-top poll; the settle held the owner thread 0.12ms, entered 124.2ms after submission)
+[prefix-cache] insert (seed): 64 tokens, 158.8MB (resident 317.7MB / 2147MB, model gate, ns "samp-noplane")
+[meter] admit id=cmpl-1b153bc93a9c622f647912e61a05d6a5 tenant=default lane=interactive model="gate"
+[admit-oom] reclaim spared the prompt's prefix entry (64 tokens, model gate)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=158932992 pool_cached_gain_bytes=158912512 trim_released_bytes=134217728 driver_free_bytes 2336227328 -> 2470445056 pool_reserved_bytes 22414360576 -> 22280142848 pool_used_bytes 22190786672 -> 22031874160 pool_retained_bytes=24694784 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2560MB -> 2719MB
+[prefix-cache] restore submitted off the tick: 64 tokens, 32 planes (158.8MB), ticket seq=18 on the contracts door's copy stream; recurrent state copied on the owner stream; request parked; recurrent copy 0.23ms host
+[prefix-cache] contracts door D2D restore receipt: ticket issuer=2 seq=18 epochs=0/1/1 items=32 bytes=1900544 source_digests_sha256=e407b831e74a78be251faf130bbb527e6e819c9f9e7cc12b9a3d9f9f84794311 destination_digests_sha256=e407b831e74a78be251faf130bbb527e6e819c9f9e7cc12b9a3d9f9f84794311 require=ok
+[admit-oom] reclaim spared the prompt's prefix entry (64 tokens, model gate)
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2406MB -> 2884MB
+[worker] plain-affinity: declined (no checkpoint retained; 1 parked, 106 prompt tokens; model gate)
+[prefix-cache] restore landed off the tick: 64 tokens (158.8MB) complete after 1 poll(s), 2.1ms from submission to completion, 2.5ms to re-admission (tick-top poll); recurrent copy 0.38ms owner stream
+[prefix-cache] hit: 64 of 106 prompt tokens from cache (model gate)
+[prefix-cache] spec-eligible request takes the hit on the PLAIN path (reason: entry carries no draft plane (plain-published)) (model gate)
+[spec-k] model="gate" tenant="samp-noplane" K=0 source=eligibility-fallback prompt=106 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] source lease released after restore fence (entry 64 tokens, model gate)
+[meter] admit id=cmpl-c1b816e1e5f92832cd54c96fac52a472 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=240 path=spec = 31552 B/token x ctx + 61MB prefill-workspace + 308MB fixed = 377MB
+[spec-k] model="gate" tenant="samp-fullcover" K=3 source=cold-short prompt=128 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 314MB at ctx 184 path=spec)
+[spec-boundary] site=cold-prime sampled=5226 argmax=5226 deviates=0 temp=0.8 sctr=0
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2146MB (driver 2100MB + pool-cached 46MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-commit sampled=318 argmax=310 deviates=1 temp=0.8 sctr=41
+[spec-acc] ctx=128 burst=21/30 cum=21/30=0.700
+[prefix-cache] capture submitted off the tick (spec-boundary): 128 tokens, 34 planes (161.0MB) on the contracts door's copy stream; recurrent state and boundary logits taken by the spec engine at the prime stop; draft plane 128 rows (237.6KB) in the batch
+[spec-boundary] site=burst-tail-commit sampled=18137 argmax=18137 deviates=0 temp=0.8 sctr=58
+[spec-acc] ctx=160 burst=11/12 cum=32/42=0.762
+[prefix-cache] contracts door D2D capture receipt: ticket issuer=2 seq=19 epochs=0/1/1 items=34 bytes=4038656 source_digests_sha256=cedc1d54cd124e79d4c09c2260964d9dd80d1b1c5e8225738228ba0f7277117e destination_digests_sha256=cedc1d54cd124e79d4c09c2260964d9dd80d1b1c5e8225738228ba0f7277117e require=ok
+[prefix-cache] capture published off the tick (spec-boundary): 128 tokens complete after 1 poll(s), 173.3ms from submission to completion, 173.3ms to publication (settled synchronously by a session retire; the settle held the owner thread 0.12ms, entered 173.2ms after submission)
+[prefix-cache] insert (spec-boundary): 128 tokens, 161.0MB (resident 319.7MB / 2147MB, model gate, ns "samp-fullcover")
+[meter] admit id=cmpl-ee62b5c70cfb6d955a77231834c7d04e tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=240 path=spec = 31552 B/token x ctx + 61MB prefill-workspace + 308MB fixed = 377MB
+[admit-oom] reclaim spared the prompt's prefix entry (128 tokens, model gate)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=158793728 pool_cached_gain_bytes=158793728 trim_released_bytes=134217728 driver_free_bytes 1564475392 -> 1698693120 pool_reserved_bytes 23186112512 -> 23051894784 pool_used_bytes 22501089092 -> 22342295364 pool_retained_bytes=24576000 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2249MB -> 2887MB
+[prefix-cache] restore submitted off the tick: 128 tokens, 34 planes (160.9MB), ticket seq=20 on the contracts door's copy stream; recurrent state copied on the owner stream; request parked; draft plane 128 rows (237.6KB) in the batch; recurrent copy 0.22ms host
+[prefix-cache] contracts door D2D restore receipt: ticket issuer=2 seq=20 epochs=0/1/1 items=34 bytes=4038656 source_digests_sha256=cedc1d54cd124e79d4c09c2260964d9dd80d1b1c5e8225738228ba0f7277117e destination_digests_sha256=cedc1d54cd124e79d4c09c2260964d9dd80d1b1c5e8225738228ba0f7277117e require=ok
+[admit-oom] reclaim spared the prompt's prefix entry (128 tokens, model gate)
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2573MB -> 3052MB
+[admit-trim] dev0 driver_free_bytes=1698693120 floor_bytes=2147483648 reclaimed_bytes=436207616 still_owned_bytes=21698957220 pool_reserved_bytes=22615687168 driver_free_after=2134900736 before prime
+[prefix-cache] restore landed off the tick: 128 tokens (160.9MB) complete after 1 poll(s), 2.3ms from submission to completion, 4.2ms to re-admission (tick-top poll); draft plane ready; recurrent copy 0.39ms owner stream
+[prefix-cache] hit: 128 of 128 prompt tokens from cache (model gate)
+[spec-boundary] site=restore-full-cover sampled=5226 argmax=5226 deviates=0 temp=0.8 sctr=0
+[prefix-cache] spec restore: 128 of 128 prompt tokens + draft plane from cache [continuation] (model gate)
+[spec-k] model="gate" tenant="samp-fullcover" K=3 source=cold-short prompt=128 cached=128 lcp=128 active=1 wave=1 placement=single-or-non-pp2
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2907MB (driver 2036MB + pool-cached 871MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-commit sampled=318 argmax=310 deviates=1 temp=0.8 sctr=41
+[spec-acc] ctx=0 burst=21/30 cum=21/30=0.700
+[spec-boundary] site=burst-tail-commit sampled=18137 argmax=18137 deviates=0 temp=0.8 sctr=58
+[spec-acc] ctx=32 burst=11/12 cum=32/42=0.762
+[meter] admit id=cmpl-ebbec0ba80b19565a4220683c40c9be9 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=171 path=spec = 31552 B/token x ctx + 51MB prefill-workspace + 308MB fixed = 364MB
+[admit-trim] dev0 driver_free_bytes=2134900736 floor_bytes=2147483648 reclaimed_bytes=0 still_owned_bytes=21700984776 pool_reserved_bytes=22615687168 driver_free_after=2134900736 before prime
+[spec-k] model="gate" tenant="bnd-g" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2309MB (driver 2036MB + pool-cached 273MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[meter] admit id=cmpl-1afb9c55603c452d2a06d1eb1077f35a tenant=default lane=interactive model="gate"
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=160952320 pool_cached_gain_bytes=160931840 trim_released_bytes=134217728 driver_free_bytes 2134900736 -> 2269118464 pool_reserved_bytes 22615687168 -> 22481469440 pool_used_bytes 22326563020 -> 22165631180 pool_retained_bytes=26714112 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2424MB -> 3064MB
+[spec-k] model="gate" tenant="bnd-7" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=114874 argmax=271 deviates=1 temp=4 sctr=0
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2321MB (driver 2164MB + pool-cached 157MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-nopending sampled=141702 argmax=271 deviates=1 temp=4 sctr=1
+[meter] admit id=cmpl-9f173ac67ea19863152ec8da5767817b tenant=default lane=interactive model="gate"
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2436MB -> 2908MB
+[spec-k] model="gate" tenant="bnd-1234" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=83115 argmax=271 deviates=1 temp=4 sctr=0
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2172MB (driver 2068MB + pool-cached 104MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-nopending sampled=37521 argmax=271 deviates=1 temp=4 sctr=1
+[meter] admit id=cmpl-9675b532eb4d1082458ef61323a6781d tenant=default lane=interactive model="gate"
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2281MB -> 2753MB
+[admit-trim] dev0 driver_free_bytes=2067791872 floor_bytes=2147483648 reclaimed_bytes=67108864 still_owned_bytes=21997156048 pool_reserved_bytes=22615687168 driver_free_after=2134900736 before prime
+[spec-k] model="gate" tenant="bnd-99991" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-boundary] site=cold-prime sampled=124632 argmax=271 deviates=1 temp=4 sctr=0
+[spec] WARN: sampled draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2025MB (driver 2004MB + pool-cached 21MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-boundary] site=burst-tail-nopending sampled=174266 argmax=271 deviates=1 temp=4 sctr=1
+[meter] admit id=cmpl-9181dff3c229b861982fc3bc96f61e5d tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=218 path=spec = 31552 B/token x ctx + 51MB prefill-workspace + 308MB fixed = 366MB
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 2 spec + 0 dspark parked sessions (global LRU); effective free 2126MB -> 3071MB
+[admit-trim] dev0 driver_free_bytes=1933574144 floor_bytes=2147483648 reclaimed_bytes=201326592 still_owned_bytes=21679802964 pool_reserved_bytes=22615687168 driver_free_after=2134900736 before prime
+[spec-k] model="gate" tenant="grow" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2328MB (driver 2036MB + pool-cached 292MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-acc] ctx=106 burst=18/42 cum=18/42=0.429
+[prefix-cache] capture submitted off the tick (spec-boundary): 64 tokens, 34 planes (158.9MB) on the contracts door's copy stream; recurrent state and boundary logits taken by the spec engine at the prime stop; draft plane 64 rows (118.8KB) in the batch
+[spec-acc] ctx=139 burst=11/15 cum=29/57=0.509
+[prefix-cache] contracts door D2D capture receipt: ticket issuer=2 seq=21 epochs=0/1/1 items=34 bytes=2019328 source_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa destination_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa require=ok
+[prefix-cache] capture published off the tick (spec-boundary): 64 tokens complete after 1 poll(s), 159.0ms from submission to completion, 159.0ms to publication (settled synchronously by a session retire; the settle held the owner thread 0.13ms, entered 158.9ms after submission)
+[prefix-cache] insert (spec-boundary): 64 tokens, 158.9MB (resident 158.9MB / 2147MB, model gate, ns "grow")
+[meter] admit id=cmpl-76324c7c5aff7f3f6986d9d29c57604d tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=231 path=spec = 31552 B/token x ctx + 57MB prefill-workspace + 308MB fixed = 373MB
+[admit-oom] reclaim spared the prompt's prefix entry (64 tokens, model gate)
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 0 plain + 1 spec + 0 dspark parked sessions (global LRU); effective free 2442MB -> 2914MB
+[prefix-cache] restore submitted off the tick: 64 tokens, 34 planes (158.9MB), ticket seq=22 on the contracts door's copy stream; recurrent state copied on the owner stream; request parked; draft plane 64 rows (118.8KB) in the batch; recurrent copy 0.22ms host
+[prefix-cache] contracts door D2D restore receipt: ticket issuer=2 seq=22 epochs=0/1/1 items=34 bytes=2019328 source_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa destination_digests_sha256=e59af98e344d9e05bdddfa54663d4e629a90a0013fda37712340c77d58d4d2aa require=ok
+[admit-oom] reclaim spared the prompt's prefix entry (64 tokens, model gate)
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2600MB -> 2913MB
+[admit-trim] dev0 driver_free_bytes=1765801984 floor_bytes=2147483648 reclaimed_bytes=369098752 still_owned_bytes=21837463904 pool_reserved_bytes=22615687168 driver_free_after=2134900736 before prime
+[prefix-cache] restore landed off the tick: 64 tokens (158.9MB) complete after 1 poll(s), 2.2ms from submission to completion, 3.9ms to re-admission (tick-top poll); draft plane ready; recurrent copy 0.40ms owner stream
+[prefix-cache] hit: 64 of 119 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 64 of 119 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="grow" K=3 source=cold-short prompt=119 cached=64 lcp=64 active=1 wave=1 placement=single-or-non-pp2
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2477MB (driver 2036MB + pool-cached 441MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-acc] ctx=55 burst=19/42 cum=19/42=0.452
+[prefix-cache] capture submitted off the tick (spec-boundary): 96 tokens, 34 planes (159.9MB) on the contracts door's copy stream; recurrent state and boundary logits taken by the spec engine at the prime stop; draft plane 96 rows (178.2KB) in the batch
+[spec-acc] ctx=89 burst=10/18 cum=29/60=0.483
+[prefix-cache] contracts door D2D capture receipt: ticket issuer=2 seq=23 epochs=0/1/1 items=34 bytes=3028992 source_digests_sha256=e144cca790594d37b3fb04b3ee33075385678d8ebfb68af608e9d17991316ec9 destination_digests_sha256=e144cca790594d37b3fb04b3ee33075385678d8ebfb68af608e9d17991316ec9 require=ok
+[prefix-cache] capture published off the tick (spec-boundary): 96 tokens complete after 1 poll(s), 191.9ms from submission to completion, 191.9ms to publication (settled synchronously by a session retire; the settle held the owner thread 0.13ms, entered 191.7ms after submission)
+[prefix-cache] insert (spec-boundary): 96 tokens, 159.9MB (resident 318.9MB / 2147MB, model gate, ns "grow")
+[meter] admit id=cmpl-100d617bad6d2eebc7fd7607110c6bda tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=247 path=spec = 31552 B/token x ctx + 65MB prefill-workspace + 308MB fixed = 381MB
+[admit-oom] reclaim spared the prompt's prefix entry (96 tokens, model gate)
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=158932992 pool_cached_gain_bytes=158912512 trim_released_bytes=134217728 driver_free_bytes 1933574144 -> 2067791872 pool_reserved_bytes 22817013760 -> 22682796032 pool_used_bytes 22154340748 -> 21995428236 pool_retained_bytes=24694784 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 1 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2596MB -> 2755MB
+[prefix-cache] restore submitted off the tick: 96 tokens, 34 planes (159.9MB), ticket seq=24 on the contracts door's copy stream; recurrent state copied on the owner stream; request parked; draft plane 96 rows (178.2KB) in the batch; recurrent copy 0.23ms host
+[prefix-cache] contracts door D2D restore receipt: ticket issuer=2 seq=24 epochs=0/1/1 items=34 bytes=3028992 source_digests_sha256=e144cca790594d37b3fb04b3ee33075385678d8ebfb68af608e9d17991316ec9 destination_digests_sha256=e144cca790594d37b3fb04b3ee33075385678d8ebfb68af608e9d17991316ec9 require=ok
+[admit-oom] reclaim spared the prompt's prefix entry (96 tokens, model gate)
+[admit-oom] reclaim-on-defer: evicted 0 prefix entries + 1 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2441MB -> 2755MB
+[admit-trim] dev0 driver_free_bytes=2067791872 floor_bytes=2147483648 reclaimed_bytes=67108864 still_owned_bytes=21995704464 pool_reserved_bytes=22615687168 driver_free_after=2134900736 before prime
+[prefix-cache] restore landed off the tick: 96 tokens (159.9MB) complete after 1 poll(s), 2.1ms from submission to completion, 2.5ms to re-admission (tick-top poll); draft plane ready; recurrent copy 0.40ms owner stream
+[prefix-cache] hit: 96 of 135 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 96 of 135 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="grow" K=3 source=cold-short prompt=135 cached=96 lcp=96 active=1 wave=1 placement=single-or-non-pp2
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2476MB (driver 2036MB + pool-cached 440MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-acc] ctx=39 burst=14/54 cum=14/54=0.259
+[spec-acc] ctx=72 burst=9/18 cum=23/72=0.319
+[meter] admit id=cmpl-fd696644ab41e6dba4d4c4a644267bed tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +46MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=231 path=spec = 31552 B/token x ctx + 57MB prefill-workspace + 308MB fixed = 373MB
+[prefix-cache] restore submitted off the tick: 96 tokens, 34 planes (159.9MB), ticket seq=25 on the contracts door's copy stream; recurrent state copied on the owner stream; request parked; draft plane 96 rows (178.2KB) in the batch; recurrent copy 0.23ms host
+[prefix-cache] contracts door D2D restore receipt: ticket issuer=2 seq=25 epochs=0/1/1 items=34 bytes=3028992 source_digests_sha256=e144cca790594d37b3fb04b3ee33075385678d8ebfb68af608e9d17991316ec9 destination_digests_sha256=e144cca790594d37b3fb04b3ee33075385678d8ebfb68af608e9d17991316ec9 require=ok
+[admit-trim] dev0 driver_free_bytes=1933574144 floor_bytes=2147483648 reclaimed_bytes=201326592 still_owned_bytes=21996138768 pool_reserved_bytes=22615687168 driver_free_after=2134900736 before prime
+[prefix-cache] restore landed off the tick: 96 tokens (159.9MB) complete after 1 poll(s), 2.3ms from submission to completion, 3.1ms to re-admission (tick-top poll); draft plane ready; recurrent copy 0.40ms owner stream
+[prefix-cache] hit: 96 of 119 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 96 of 119 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="grow" K=3 source=cold-short prompt=119 cached=96 lcp=96 active=1 wave=1 placement=single-or-non-pp2
+[spec] WARN: draft-graph capture failed (insufficient VRAM headroom for capture: effective free 2476MB (driver 2036MB + pool-cached 440MB) < required 3160MB (2x appetite 44MB + floor 3072MB); capture skipped pre-attempt); eager fallback until session resume
+[spec-acc] ctx=23 burst=19/42 cum=19/42=0.452
+[spec-acc] ctx=57 burst=10/18 cum=29/60=0.483
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[prefix-host] hash helper joined (shutdown)
+[server] GPU worker shutdown complete
