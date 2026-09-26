@@ -1,0 +1,16 @@
+DAY45 W4 card=pro6000 boot=O1-off oom_lines=55 crash_lines=0 r503=53 -> FAIL
+DAY45 W1 card=pro6000 boot=O1-off probe_booked=0 probe_booked_real=0 metrics_booked=0 -> PASS
+DAY45 READING card=pro6000 boot=O1-off predict_lines=68 peak_booked_shadow=231005913608 peak_booked_real=231194498056 shadow_reject_kv=47
+DAY45 W4 card=pro6000 boot=O1-on oom_lines=55 crash_lines=0 r503=53 -> FAIL
+DAY45 W1 card=pro6000 boot=O1-on probe_booked=0 probe_booked_real=0 metrics_booked=0 -> PASS
+DAY45 READING card=pro6000 boot=O1-on predict_lines=68 peak_booked_shadow=231005913608 peak_booked_real=231194498056 shadow_reject_kv=47
+DAY45 W2 card=pro6000 boot=O1-on w_booked=69 w_release=11 twice=[] bytes_mismatch=[] never_released=['cmpl-1a4bf5d0a3310c03a06b4e3159eb623d', 'cmpl-23dd300f87f0282c34f953f2ada46c52', 'cmpl-27b175e645c90837e0676855049a8927', 'cmpl-2d451e437d86201e87379c00550246d3'] -> FAIL
+DAY45 W4 card=pro6000 boot=O2-off oom_lines=55 crash_lines=0 r503=53 -> FAIL
+DAY45 W1 card=pro6000 boot=O2-off probe_booked=0 probe_booked_real=0 metrics_booked=0 -> PASS
+DAY45 READING card=pro6000 boot=O2-off predict_lines=68 peak_booked_shadow=231005913608 peak_booked_real=231194498056 shadow_reject_kv=47
+DAY45 W4 card=pro6000 boot=O2-on oom_lines=55 crash_lines=0 r503=53 -> FAIL
+DAY45 W1 card=pro6000 boot=O2-on probe_booked=0 probe_booked_real=0 metrics_booked=0 -> PASS
+DAY45 READING card=pro6000 boot=O2-on predict_lines=68 peak_booked_shadow=231005913368 peak_booked_real=231194497816 shadow_reject_kv=47
+DAY45 W2 card=pro6000 boot=O2-on w_booked=69 w_release=11 twice=[] bytes_mismatch=[] never_released=['cmpl-01b57d15a858c30c3edfc465a7a8698d', 'cmpl-024f302e88e494c79bd90fd8b4a0f146', 'cmpl-07d03b7ca147010b84e26eed69f4be0c', 'cmpl-0a92c980009220e0eec841d6c8a719ea'] -> FAIL
+DAY45 W3 card=pro6000 order=O1 rows=69 differ=['burst-5', 'burst-7'] -> FAIL
+DAY45 W3 card=pro6000 order=O2 rows=69 differ=[] -> PASS
