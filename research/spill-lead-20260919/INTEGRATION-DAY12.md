@@ -4328,6 +4328,66 @@ is F's running sitting. C's I16 revert and I17 stand as read. The Q35 arm's fail
   and ON 61 and 68 ok; `ADMIT-MEM BURST GATE: ALL GREEN`; `SPEC-CTX-EDGE GATE: ALL GREEN`; the pause gate with the 27B
   `ALL GREEN` (40 ok).
 
+## integ69 (`lane/spill-integ69-20260926`): lane A's design L' (the pinned lease pool and the staging set at boot) and R1 (a retire settles a pending capture only when its source retires), with the staging-fill gate change; lane C's I18 and two diagnostic pool flags
+Lane tips merged: A's integ branch `lane/spill-a-integ69-20260926` at `dba7c0a0c` (A's line with design T-H and the
+re-applied P2 taken out, since both verdicts are pending; built by A from P2's A/B base with T-H reverted) and C
+`9bb17bd8d`, on main `ff53e3e50` (#779), clean; `moe_cache.rs` untouched, so the day-4 fixture pin holds. The change:
+- `tier_transfer.rs`, `worker.rs` (A, L'): pinned lease backings are kept in a size-class pool (next power of two to
+  1 MiB, then whole MiB) under their own governor tenant, capped at one host budget, closed at the tier latch and at
+  engine drop; each lease charges its class; the span staging set is allocated at boot. The steady path no longer calls
+  `cuMemFreeHost` or allocates fresh pinned memory. A reused backing is not re-zeroed; every copy spans exactly the
+  lease length and a census pins that nothing reads past it.
+- `worker.rs` (A, R1): the retire pass settles a pending capture only when a retiring session is its source (by request
+  id or the plain cache's address); other retires go on without waiting.
+- `tools/kv-host-contract-fault-gate.sh`: the staging-fill checks count fill events (the boot line or a fresh line)
+  and still require exactly one of the refusal's N, with a red arm (refusals that drop their buffers) caught 2 of 2.
+- A's log-only DAY62 and DAY64 lines; C's I18 (a bank ticket keeps its records by position) and the diagnostic flags
+  `--expert-bank-pool-pageable` and `--expert-bank-pool-registered` (DAY78 and DAY80; nothing changes unless passed).
+
+**Lanes, verbatim.** A: `L2 VERDICT -> ADOPT (L' is the naked program; the gate change stands)`, chain o2 twin kv
+9.87 -> 0.05 ms, long leases 26.27 -> 0.04, tenant stall 95.05 -> 68.36, chained request 282.4 -> 246.1 ms; demote first
+spans 28.50 -> 0.17 ms (the boot pays 28.6 to 28.9 ms instead); `R1 VERDICT -> ADOPT (R1 is the naked program)`, the
+no-source settle (12.6 ms) skipped 45 of 45 per order, the no-source shape's e2e -10 ms; `DAY64 PLACE -> receipt (176
+late of 180)` (log only). The first L read `REFUTED ((a) failed)` on the two staging-fill checks, placed as a stale gate
+(the one fill moved to boot, the property held), the gate change registered with its red arm before the rerun. W and R2
+read FAIL and are reverted (net nothing in the crates). C: `DAY79 VERDICT ... i18=flat` (kept);
+`DAY78 PAGES VERDICT ... -> pool_draws (fail_heavy: di 8 of 8, dpi 0 of 8, refi 0 of 8)`; `DAY80 REGPOOL VERDICT
+rig=box37-285k ... -> registered_clears (fail_heavy: di 6 of 8, dri 0 of 8, refi 0 of 8; slow: dri 0 of 8)`, regtime
+flat on the 285K and the 9950X (no natural slow boots there).
+
+**Lead review.** L': the pool takes only an exact class and kind, charges idle backings to its own tenant and refuses
+past its cap (freeing), closes on the tier latch and the engine's drop, and the class table and the length census are
+CPU cells; the change in each lease's charge (its class, not its length) is stated in DAY63 section 2. R1: the source
+identity carries the request id from all four publishers, so a spec-boundary capture (whose source is the session's
+spec, DFlash or GLM-5 cache) is matched, and its red arm (the id dropped) fails the decision cell. The gate change
+keeps the property the check was written for and its red arm shows it still catches the defect.
+
+**Ruling 64:** L' and R1 are the naked program on the target card (items 13, 14 and 19 close); their 5090 halves are
+owed by A. The staging-fill gate change stands. C's I18 stays; the registered pool is the owner's decision (DAY80
+section 4a), with C1(c) and C10.
+
+**Found by the battery, fixed in two test-only steps.** The worker's GPU span cells (`option_b_*`, `option_c_*`,
+native, serial) had not run in any of L's sittings.
+- Run 1 (`integ69-pro-run1-held/`, tree `64101769b`): `worker-span-cells ... FAILED. 5 passed; 13 failed`. Twelve
+  asserted the pinned total as requested bytes, `(1392, 0, 0)`, and read `(2304, 0, 0)`: under L1.2 each lease charges
+  its class, 272 bytes to 512 and 192 to 256, three planes of 768 = 2304. The staging-refusal cell's co-tenant was sized
+  for a two-budget pinned capacity that L1.5 made three. Lane A's `fb639631c` (the charge helper `gpu_lease_charge()`,
+  the co-tenant as `3 x 1 GiB - gpu_lease_charge() - first`).
+- Run 2 (`integ69-pro-run2/`, tree `2af058a86`): `17 passed; 1 failed`: the refusal cell's later ledger check still
+  expected the two-budget co-tenant (`left: (3221223168, 0, 0) right: (2147481344, 0, 0)`). Lane A's `6c60d798f`; the
+  18 cells read `18 passed; 0 failed` on the local RTX 5090 from the branch's frozen binary.
+- Run 3 (`integ69-pro-run3/`, tree `53a79d747`): `worker-span-cells rc=0 test result: ok. 18 passed; 0 failed`.
+Each placement preceded its edit; every cell asserts the property it asserted before.
+
+**Checks.**
+- CPU battery 15 of 15 on the first merged tree (`integ69-cpu-battery/`: server 955, engine lib 584, tier 315), on the
+  first fix (`integ69-cpu-battery-fix/`), and on the final head (`integ69-cpu-battery-final/`).
+- GPU battery run 3 on BOX39 (a Core Ultra 9 285K with one RTX PRO 6000 WS; `integ69-pro-run3/`, 467 receipts mirrored
+  and checked), binary `93d22fc2`, one hold 18:43Z to 18:56Z: serve-smoke 1 failed (the Q35 arm, #777, main's own);
+  engine span cells `10 passed`; worker span cells `18 passed`; identity 12 ok; fault default and plain 255 ok each; hit
+  OFF and ON 61 and 68 ok; `ADMIT-MEM BURST GATE: ALL GREEN`; `SPEC-CTX-EDGE GATE: ALL GREEN`; the pause gate with the 27B
+  `ALL GREEN` (40 ok). Runs 1 and 2 read the same on every gate.
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.
