@@ -140,6 +140,9 @@ def pipeline(base, credential_file, judge_script, log):
           "--binary", binary, "--model", model,
           "--workloads", base / "phase-training",
           "--run-meta", base / "run-meta.json",
+          "--v9-archive", parents / "v9/native-data.tar.gz",
+          "--v9-manifest", parents / "v9/manifest.json",
+          "--model-out", base / "pilot-models",
           "--out", base / "pilot-results",
           "--receipt", base / "pilot-result.json")
     stage(log, v11, "prepare_code_training.py",

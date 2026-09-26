@@ -94,7 +94,10 @@ separate sealed commitment.
    the development-provider policy before allocating it.
    Before the long training battery, run D=1 and D=2 fixed controls
    on the pinned binary and replay their native depth, sampler,
-   and KV receipts from the training-only archive.
+   and KV receipts from the training-only archive. The same pilot
+   loads pinned historical C/D weights and checks model-running
+   no-op byte identity against fixed D3/C0 at K=3/10/20 before
+   collecting the 336 fresh training sessions.
    Also require two synthetic, reversed-order independent checklist
    judgments to pass the frozen JSON parser on the trusted research
    host before downloading the large Qwen artifact. This access pilot

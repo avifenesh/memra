@@ -62,6 +62,7 @@ def inventory(base):
         "source/joint-v4": base / "joint-v4",
         "source/private_ops": base / "ops",
         "diagnostic/pilot-results": base / "pilot-results",
+        "diagnostic/pilot-models": base / "pilot-models",
         "diagnostic/judge-preflight":
         base / "judge-preflight",
         "native/training-mixed-results":
@@ -100,8 +101,8 @@ def inventory(base):
     ))
     if len(results) != 336:
         raise ValueError("randomized mixed training session count differs")
-    if len(pilot_results) != 6:
-        raise ValueError("fixed D1/D2 native pilot session count differs")
+    if len(pilot_results) != 12:
+        raise ValueError("fixed-depth and same-K C/D pilot count differs")
     for path in results:
         row = json.loads(path.read_text())
         if row["name"] != path.name.removesuffix(".result.json"):
@@ -166,19 +167,22 @@ def seal(base, out):
         (base / "parents/parent-custody.json").read_text()
     )
     if (
-        pilot["status"] != "fixed-D1-D2-full-head-and-KV-engaged"
+        pilot["status"]
+        != "fixed-D1-D2-and-same-K-CD-noops-qualified"
         or pilot["model_sha256"] != MODEL_SHA
         or pilot["binary_sha256"] != BINARY_SHA
         or pilot["training_workloads_sha256"] != TRAIN_SHA
         or pilot["run_meta_sha256"] != sha(base / "run-meta.json")
         or pilot["gpu_uuid"] != metadata["gpu_uuid"]
+        or pilot["pilot_model_archive_sha256"]
+        != parents["v9_archive_sha256"]
         or metadata["v11_training_archive_sha256"]
         != parents["v11_archive_sha256"]
     ):
         raise ValueError("fixed D1/D2 pilot does not match research host")
     files = inventory(base)
     if out.exists():
-        raise ValueError("sealed prose training destination exists")
+        raise ValueError("sealed mixed training destination exists")
     out.mkdir()
     members = {
         name: {"bytes": path.stat().st_size, "sha256": sha(path)}

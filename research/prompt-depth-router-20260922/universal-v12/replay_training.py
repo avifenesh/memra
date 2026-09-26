@@ -49,6 +49,7 @@ def replay(archive, manifest_path, rows_out):
         "source/joint-v4/",
         "source/private_ops/",
         "diagnostic/pilot-results/",
+        "diagnostic/pilot-models/",
         "diagnostic/judge-preflight/",
         "native/training-mixed-results/",
     )
@@ -93,7 +94,7 @@ def replay(archive, manifest_path, rows_out):
                 if sha(root / "source" / group / name) != (
                     sha(BASE / group / name)
                 ):
-                    raise ValueError("sealed prose training source differs")
+                    raise ValueError("sealed mixed training source differs")
         workloads = root / "inputs/phase-training"
         seal_training.expected_workloads(workloads)
         if sha(root / "native/pilot-result.json") != (
@@ -104,6 +105,7 @@ def replay(archive, manifest_path, rows_out):
             root / "diagnostic/pilot-results",
             root / "native/pilot-result.json",
             workloads, root / "native/run-meta.json",
+            root / "diagnostic/pilot-models",
         )
         judge = root / "diagnostic/judge-preflight"
         if sha(judge / "manifest.json") != (
