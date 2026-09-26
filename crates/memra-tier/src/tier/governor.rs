@@ -88,6 +88,11 @@ impl Governor {
         Ok(self.next)
     }
     fn prune_fairness(&mut self) {
+        // Day 63 (I13 change 1): the idle tenants are a subset of `last_served`, so when it holds no more than
+        // `queue_limit` none can be past the limit and the pass below would remove nothing.
+        if self.last_served.len() <= self.queue_limit {
+            return;
+        }
         let active: HashSet<_> = self
             .queue
             .iter()
@@ -173,9 +178,10 @@ impl Governor {
         if !r.bytes.fits(&self.used, cap)? {
             return Err(Error::Capacity);
         }
-        let next = self.used.checked_add(&r.bytes)?;
+        // Day 63 (I13 change 1): the add checked before the lease is issued, then applied in place.
+        self.used.check_combine(&r.bytes, true)?;
         let lease = self.issuer.issue(r.bytes.clone())?;
-        self.used = next;
+        self.used.combine_in_place(&r.bytes, true)?;
         self.charged_tenants.insert(lease.id(), r.tenant);
         *self.charged_count.entry(r.tenant).or_insert(0) += 1;
         Ok(lease)
@@ -202,7 +208,7 @@ impl BudgetGovernor for Governor {
     fn release(&mut self, l: &ChargedLease) -> Result<()> {
         // Capability validation precedes accounting, including foreign/double release.
         self.issuer.release(l)?;
-        self.used = self.used.checked_sub(l.bytes())?;
+        self.used.combine_in_place(l.bytes(), false)?;
         if let Some(tenant) = self.charged_tenants.remove(&l.id())
             && let Some(count) = self.charged_count.get_mut(&tenant)
         {

@@ -7,8 +7,8 @@
 //! shape) and the maps are `HashMap`s. Decisions and `orders()` equal the VecDeque version this
 //! replaced, which the tier's tests keep as the oracle (`tests/bank/slru_oracle.rs`) and drive
 //! against this one on the recorded synthetic trace and a randomized one.
+use super::fx::FxMap;
 use crate::contracts::*;
-use std::collections::HashMap;
 
 const NIL: usize = usize::MAX;
 const SEG_NONE: u8 = 0;
@@ -119,8 +119,8 @@ pub struct SlruPolicy {
     slot_class: Vec<usize>,
     links: Vec<Link>,
     occupants: Vec<Option<BankId>>,
-    reserved: HashMap<BankId, usize>,
-    table: HashMap<BankId, usize>,
+    reserved: FxMap<BankId, usize>,
+    table: FxMap<BankId, usize>,
 }
 impl SlruPolicy {
     /// Ascending, unique (capacity, count) classes. Caller uses the native size
@@ -136,8 +136,8 @@ impl SlruPolicy {
             slot_class: Vec::new(),
             links: Vec::new(),
             occupants: Vec::new(),
-            reserved: HashMap::new(),
-            table: HashMap::new(),
+            reserved: FxMap::default(),
+            table: FxMap::default(),
         };
         for &(capacity, count) in classes {
             let start = out.slot_class.len();

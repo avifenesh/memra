@@ -22,7 +22,13 @@ shared slot tail pad, gate helpers off the crate root), `6defcd604` (day-eleven 
 decide-by: 2026-10-04 (covers the door, both budget flags and the stage clock; CLI doors
 carry their decide-by here, not in `docs/FLAGS.md`). Since day 60 it also covers `run-gen
 --moe-dispatch-clock` (log only, both the legacy slot cache and the door: the dispatch and prefetch
-entry points bracketed, `DAY60.md`).
+entry points bracketed, `DAY60.md`), and since day 67 `run-gen --cpu-probe` (log only: a compute chain and L1, L2 and
+DRAM dependent-load chases on the main thread after every timed phase, `DAY67.md`) and since day 68 `run-gen
+--cpu-probe-phases` (log only: a 2^20-step compute chain at the start and at each stage-line point, `DAY68.md`).
+Day 71 adds `run-gen --cpu-probe-counters` (log only, with `--cpu-probe-phases`: the thread's TSC and its CPU's MPERF
+and APERF, read with `RDPRU`, around each phase chain; `counters=unavailable` on a CPU without it) and `run-gen
+--cpu-probe-counters-check` (one counted chain, then exit before any engine work), `DAY71.md`, decide-by 2026-10-09
+(14 days after landing); they go with the probe when OWED C12 closes.
 
 Day 40 (`DAY40.md` section 2): `--expert-bank-stages` (no value, requires the door) installs
 the door's log-only stage clock, an explanatory diagnostic: `Instant` brackets around every
@@ -92,6 +98,8 @@ cell reads; the cells are listed in each day file and the deciding cell in `DAY5
 | 60 | `run-gen --moe-dispatch-clock` (log only, both programs): the dispatch and prefetch entry points bracketed, for the gap to REF | `moe_cache.rs`, `lib.rs`, `run_gen.rs` | `fec3c582f` |
 | 61 | I11, the host-hit lease's repeated work removed: the catalog's memoized ticket allowance, one catalog and one host-cache read in `stage`, one SLRU lookup in `publish`, one id lookup in `demand`, the reused host slot (5370 to 3620 ns per host-hit prefetch cycle on the local CPU; a sixth change, one owner call, read flat and was reverted) | `types.rs`, `residency.rs`, `expert_dispatch.rs`, `native.rs` | `6116cddc2` to `59a5875d4`, `a068ee37d` |
 | 61 | I12: finished leases retire where a lease is taken, not on every admission | `moe_cache.rs` | `117302725` |
+| 63 | I13: the governor reserves and releases without temporaries, one body per `BankLease`, the retire side in one pending lookup, the SLRU's maps on a deterministic Fx hasher (3569 to 2940 ns per host-hit prefetch cycle on the local CPU); target card `i13=improves`, the door still `loses` to REF (0.264 against 0.255 s gen-only, 0.232 against 0.226 window), `DAY63.md` section 4 | `contracts.rs`, `governor.rs`, `residency.rs`, `expert_dispatch.rs`, `slru.rs` | `9bbab60ed` to `c9379c051` |
+| 64 | I14: the catalog and the host cache found through an Fx-hashed index (orders, answers and refusals kept); I15: one ticket per prefetched expert (the door's three blocks reserved in order, leased by one owner call, staged in order, finished once); 2995 to 1997 ns per host-hit prefetched block on the local CPU; the first card cell (a 9950X host) read `flat`, `flat`, `matches` with noise set by the door's per-boot host-CPU bimodality (`DAY64.md` section 4), the rerun on the 285K class with an admissibility clause pending | `types.rs`, `residency.rs`, `fx.rs`, `expert_dispatch.rs`, `owner_proxy.rs`, `native.rs`, `moe_cache.rs`, `hybrid_forward.rs` | `8e7faf4ec`, `83f03d9b7`, `2243b1fe2` |
 
 Every rung's RTX 5090 verdict is in its DAY file (I6's default-budget regression fixed on the tuned tree, `DAY43
 RESIDFIX ... no_regression=PASS`; I8 and I5 pass as I8f and I5f, `DAY58 SMALLFIX ... i8f=PASS i5f=PASS`), and the

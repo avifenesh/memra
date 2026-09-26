@@ -1,0 +1,90 @@
+== row0-ad73d242c 05:37:23 1.20 1.51 1.55
+test moe_cache::banked_native::day61_profile::host_hit_lease_profile ... DAY61 PROFILE records=30720 cycles=200000 repeats=5 record_bytes=64
+DAY61 P1 proxy per_cycle_ns host_resident=565.3 demand=2443.5 with_bytes=190.1 finish=457.2 cycle=3675.9
+DAY61 P2 proxy unbracketed per_cycle_ns cycle=3585.7 brackets=90.2
+DAY61 P3 bank per_cycle_ns demand=2285.0 finish=447.9 cycle=2748.6 | stage clock per cycle (all repeats): stages=1.00 stage=1228.1 alloc=0.0 publish=352.1 retire=347.9 collect=13.1
+DAY63 P3 split per cycle (all repeats): stage_lookup=142.1 stage_cache=657.5 stage_charge=272.8 publish_output=69.2 publish_policy=222.1 host_use=31.6 retire_only=31.4 ack=284.9 ack_release=150.3
+DAY63 P7 lease clone and drop per cycle ns=70.4 (cycle 2844.0)
+DAY61 P4 per_op_ns encode_two=1101.6 bankid_clone_vec=87.3 ids_map_get=57.4 catalog_record=181.0 btreeset_one=88.2 request_clone_validate=19.2 governor_reserve_release=318.4
+DAY61 P4b per_op_ns slru_resident=95.4 siphash_bankid=39.5 traced_host_resident=178.8
+== row1-9bbab60ed 05:37:40 1.36 1.53 1.55
+test moe_cache::banked_native::day61_profile::host_hit_lease_profile ... DAY61 PROFILE records=30720 cycles=200000 repeats=5 record_bytes=64
+DAY61 P1 proxy per_cycle_ns host_resident=562.6 demand=2399.0 with_bytes=201.6 finish=393.4 cycle=3576.4
+DAY61 P2 proxy unbracketed per_cycle_ns cycle=3449.8 brackets=126.6
+DAY61 P3 bank per_cycle_ns demand=2256.2 finish=385.7 cycle=2657.0 | stage clock per cycle (all repeats): stages=1.00 stage=1175.9 alloc=0.0 publish=350.3 retire=287.3 collect=13.0
+DAY63 P3 split per cycle (all repeats): stage_lookup=127.5 stage_cache=656.2 stage_charge=238.9 publish_output=66.7 publish_policy=223.4 host_use=31.5 retire_only=31.4 ack=224.4 ack_release=91.9
+DAY63 P7 lease clone and drop per cycle ns=67.8 (cycle 2679.3)
+DAY61 P4 per_op_ns encode_two=1088.5 bankid_clone_vec=91.0 ids_map_get=57.6 catalog_record=169.3 btreeset_one=89.1 request_clone_validate=19.2 governor_reserve_release=229.4
+DAY61 P4b per_op_ns slru_resident=96.4 siphash_bankid=39.6 traced_host_resident=181.3
+== row2 05:37:55 1.43 1.54 1.55
+test moe_cache::banked_native::day61_profile::host_hit_lease_profile ... DAY61 PROFILE records=30720 cycles=200000 repeats=5 record_bytes=64
+DAY61 P1 proxy per_cycle_ns host_resident=534.7 demand=2097.9 with_bytes=253.8 finish=273.0 cycle=3179.3
+DAY61 P2 proxy unbracketed per_cycle_ns cycle=3085.7 brackets=93.6
+DAY61 P3 bank per_cycle_ns demand=2001.2 finish=364.3 cycle=2380.7 | stage clock per cycle (all repeats): stages=1.00 stage=1016.3 alloc=0.0 publish=310.4 retire=280.9 collect=12.2
+DAY63 P3 split per cycle (all repeats): stage_lookup=134.7 stage_cache=487.7 stage_charge=238.3 publish_output=21.1 publish_policy=228.3 host_use=31.6 retire_only=32.0 ack=217.2 ack_release=92.7
+DAY63 P7 lease clone and drop per cycle ns=11.0 (cycle 2383.7)
+DAY61 P4 per_op_ns encode_two=1081.6 bankid_clone_vec=86.5 ids_map_get=56.4 catalog_record=175.1 btreeset_one=87.6 request_clone_validate=19.1 governor_reserve_release=230.9
+DAY61 P4b per_op_ns slru_resident=91.8 siphash_bankid=39.9 traced_host_resident=196.4
+== row3 05:38:09 1.33 1.51 1.54
+test moe_cache::banked_native::day61_profile::host_hit_lease_profile ... DAY61 PROFILE records=30720 cycles=200000 repeats=5 record_bytes=64
+DAY61 P1 proxy per_cycle_ns host_resident=531.0 demand=2090.4 with_bytes=246.3 finish=212.1 cycle=3099.5
+DAY61 P2 proxy unbracketed per_cycle_ns cycle=3002.8 brackets=96.7
+DAY61 P3 bank per_cycle_ns demand=2026.5 finish=310.8 cycle=2352.0 | stage clock per cycle (all repeats): stages=1.00 stage=1047.1 alloc=0.0 publish=308.9 retire=228.7 collect=12.1
+DAY63 P3 split per cycle (all repeats): stage_lookup=150.8 stage_cache=498.3 stage_charge=239.1 publish_output=21.1 publish_policy=227.8 host_use=31.2 retire_only=11.0 ack=186.4 ack_release=91.0
+DAY63 P7 lease clone and drop per cycle ns=10.8 (cycle 2358.0)
+DAY61 P4 per_op_ns encode_two=1112.7 bankid_clone_vec=89.1 ids_map_get=56.3 catalog_record=175.7 btreeset_one=87.7 request_clone_validate=19.5 governor_reserve_release=230.0
+DAY61 P4b per_op_ns slru_resident=93.0 siphash_bankid=39.9 traced_host_resident=182.7
+== row4 05:38:23 1.43 1.53 1.55
+test moe_cache::banked_native::day61_profile::host_hit_lease_profile ... DAY61 PROFILE records=30720 cycles=200000 repeats=5 record_bytes=64
+DAY61 P1 proxy per_cycle_ns host_resident=513.4 demand=2026.0 with_bytes=255.3 finish=211.2 cycle=3025.6
+DAY61 P2 proxy unbracketed per_cycle_ns cycle=2934.7 brackets=90.9
+DAY61 P3 bank per_cycle_ns demand=1956.0 finish=301.5 cycle=2272.2 | stage clock per cycle (all repeats): stages=1.00 stage=998.7 alloc=0.0 publish=286.9 retire=220.8 collect=12.1
+DAY63 P3 split per cycle (all repeats): stage_lookup=117.6 stage_cache=478.4 stage_charge=238.9 publish_output=21.3 publish_policy=206.0 host_use=30.9 retire_only=11.0 ack=178.9 ack_release=92.4
+DAY63 P7 lease clone and drop per cycle ns=10.9 (cycle 2236.2)
+DAY61 P4 per_op_ns encode_two=1078.0 bankid_clone_vec=86.6 ids_map_get=56.8 catalog_record=177.2 btreeset_one=89.3 request_clone_validate=19.8 governor_reserve_release=225.1
+DAY61 P4b per_op_ns slru_resident=66.1 siphash_bankid=39.7 traced_host_resident=181.0
+== row4 05:38:37 1.41 1.52 1.54
+test moe_cache::banked_native::day61_profile::host_hit_lease_profile ... DAY61 PROFILE records=30720 cycles=200000 repeats=5 record_bytes=64
+DAY61 P1 proxy per_cycle_ns host_resident=507.8 demand=2029.8 with_bytes=253.3 finish=209.9 cycle=3020.4
+DAY61 P2 proxy unbracketed per_cycle_ns cycle=2945.2 brackets=75.3
+DAY61 P3 bank per_cycle_ns demand=1974.1 finish=301.8 cycle=2290.9 | stage clock per cycle (all repeats): stages=1.00 stage=1007.7 alloc=0.0 publish=289.6 retire=221.4 collect=12.0
+DAY63 P3 split per cycle (all repeats): stage_lookup=119.4 stage_cache=479.8 stage_charge=240.9 publish_output=21.2 publish_policy=208.4 host_use=31.5 retire_only=11.1 ack=178.8 ack_release=92.5
+DAY63 P7 lease clone and drop per cycle ns=10.9 (cycle 2254.3)
+DAY61 P4 per_op_ns encode_two=1099.8 bankid_clone_vec=90.3 ids_map_get=56.8 catalog_record=219.3 btreeset_one=87.1 request_clone_validate=20.0 governor_reserve_release=230.0
+DAY61 P4b per_op_ns slru_resident=69.8 siphash_bankid=39.6 traced_host_resident=169.0
+== row3 05:38:50 1.39 1.51 1.54
+test moe_cache::banked_native::day61_profile::host_hit_lease_profile ... DAY61 PROFILE records=30720 cycles=200000 repeats=5 record_bytes=64
+DAY61 P1 proxy per_cycle_ns host_resident=529.1 demand=2076.0 with_bytes=249.6 finish=214.5 cycle=3088.8
+DAY61 P2 proxy unbracketed per_cycle_ns cycle=3063.4 brackets=25.4
+DAY61 P3 bank per_cycle_ns demand=2015.0 finish=301.5 cycle=2331.2 | stage clock per cycle (all repeats): stages=1.00 stage=1020.4 alloc=0.0 publish=311.5 retire=219.9 collect=12.0
+DAY63 P3 split per cycle (all repeats): stage_lookup=124.4 stage_cache=493.6 stage_charge=238.9 publish_output=21.2 publish_policy=229.7 host_use=31.8 retire_only=11.4 ack=176.7 ack_release=90.5
+DAY63 P7 lease clone and drop per cycle ns=10.9 (cycle 2310.3)
+DAY61 P4 per_op_ns encode_two=1098.0 bankid_clone_vec=90.2 ids_map_get=56.8 catalog_record=182.2 btreeset_one=87.6 request_clone_validate=19.3 governor_reserve_release=230.1
+DAY61 P4b per_op_ns slru_resident=96.7 siphash_bankid=39.8 traced_host_resident=186.6
+== row2 05:39:04 1.30 1.48 1.53
+test moe_cache::banked_native::day61_profile::host_hit_lease_profile ... DAY61 PROFILE records=30720 cycles=200000 repeats=5 record_bytes=64
+DAY61 P1 proxy per_cycle_ns host_resident=529.0 demand=2099.4 with_bytes=251.7 finish=270.8 cycle=3171.1
+DAY61 P2 proxy unbracketed per_cycle_ns cycle=3075.8 brackets=95.3
+DAY61 P3 bank per_cycle_ns demand=2003.2 finish=365.0 cycle=2383.2 | stage clock per cycle (all repeats): stages=1.00 stage=1003.4 alloc=0.0 publish=313.5 retire=281.3 collect=12.2
+DAY63 P3 split per cycle (all repeats): stage_lookup=128.5 stage_cache=485.0 stage_charge=239.1 publish_output=21.2 publish_policy=231.4 host_use=31.6 retire_only=32.0 ack=217.7 ack_release=93.3
+DAY63 P7 lease clone and drop per cycle ns=11.0 (cycle 2341.8)
+DAY61 P4 per_op_ns encode_two=1107.3 bankid_clone_vec=86.4 ids_map_get=56.7 catalog_record=227.0 btreeset_one=87.0 request_clone_validate=19.4 governor_reserve_release=230.7
+DAY61 P4b per_op_ns slru_resident=90.6 siphash_bankid=39.9 traced_host_resident=178.3
+== row1-9bbab60ed 05:39:18 1.33 1.48 1.53
+test moe_cache::banked_native::day61_profile::host_hit_lease_profile ... DAY61 PROFILE records=30720 cycles=200000 repeats=5 record_bytes=64
+DAY61 P1 proxy per_cycle_ns host_resident=558.7 demand=2363.3 with_bytes=201.4 finish=394.2 cycle=3537.3
+DAY61 P2 proxy unbracketed per_cycle_ns cycle=3414.9 brackets=122.5
+DAY61 P3 bank per_cycle_ns demand=2267.0 finish=386.5 cycle=2668.6 | stage clock per cycle (all repeats): stages=1.00 stage=1194.1 alloc=0.0 publish=351.3 retire=287.8 collect=13.1
+DAY63 P3 split per cycle (all repeats): stage_lookup=139.1 stage_cache=660.9 stage_charge=238.1 publish_output=68.1 publish_policy=222.8 host_use=31.5 retire_only=31.5 ack=224.8 ack_release=92.1
+DAY63 P7 lease clone and drop per cycle ns=68.8 (cycle 2692.8)
+DAY61 P4 per_op_ns encode_two=1121.4 bankid_clone_vec=86.4 ids_map_get=57.6 catalog_record=192.9 btreeset_one=89.5 request_clone_validate=19.3 governor_reserve_release=236.6
+DAY61 P4b per_op_ns slru_resident=101.5 siphash_bankid=39.8 traced_host_resident=191.4
+== row0-ad73d242c 05:39:34 1.23 1.45 1.52
+test moe_cache::banked_native::day61_profile::host_hit_lease_profile ... DAY61 PROFILE records=30720 cycles=200000 repeats=5 record_bytes=64
+DAY61 P1 proxy per_cycle_ns host_resident=569.5 demand=2426.8 with_bytes=189.5 finish=458.6 cycle=3664.3
+DAY61 P2 proxy unbracketed per_cycle_ns cycle=3552.7 brackets=111.6
+DAY61 P3 bank per_cycle_ns demand=2315.2 finish=449.6 cycle=2780.1 | stage clock per cycle (all repeats): stages=1.00 stage=1228.2 alloc=0.0 publish=354.9 retire=350.2 collect=13.1
+DAY63 P3 split per cycle (all repeats): stage_lookup=149.5 stage_cache=660.8 stage_charge=265.7 publish_output=69.5 publish_policy=225.1 host_use=31.6 retire_only=31.4 ack=287.1 ack_release=152.7
+DAY63 P7 lease clone and drop per cycle ns=69.4 (cycle 2826.6)
+DAY61 P4 per_op_ns encode_two=1105.7 bankid_clone_vec=87.0 ids_map_get=56.8 catalog_record=182.5 btreeset_one=87.8 request_clone_validate=19.3 governor_reserve_release=310.3
+DAY61 P4b per_op_ns slru_resident=93.1 siphash_bankid=39.6 traced_host_resident=181.7

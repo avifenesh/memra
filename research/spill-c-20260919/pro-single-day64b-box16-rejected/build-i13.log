@@ -1,0 +1,11 @@
+label=i13 sha=c9379c051 start=2026-09-25T08:32:09Z
+head=c9379c051d9fbafa0152f24a6846da513bcd2cb9
+Cuda compilation tools, release 13.1, V13.1.115
+Build cuda_13.1.r13.1/compiler.37061995_0
+cargo 1.97.1 (c980f4866 2026-06-30)
+  Segmentation fault
+
+  thread 'main' (4159) panicked at crates/memra-engine/build.rs:661:13:
+  nvcc static-lib build failed for cu/dsv4_gpu.cu
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+rc=101

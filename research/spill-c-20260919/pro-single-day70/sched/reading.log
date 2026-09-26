@@ -1,0 +1,27 @@
+DAY70 PINS rig=pro-single home_l3=0-7,16-23 one=0,1,2,3,4,5,6,7,16,17,18,19 sampler_cpu=31
+DAY70 SCHED CHECKS rig=pro-single runs=40 integrity=ok
+DAY70 R2R3R4 o1-i15-r1: gen=0.309 slow gate_ns=1.470 span_ms=1000 owner_cpu=1 sibling=[17] rqwait=0.000 owncpu_other=0.000 sibling_busy=0.0 | top: python3[4391/4391] cpu=19,3 ticks=4, nvidia-smi[4169/4169] cpu=6 ticks=1, python3[4365/4365] cpu=31 ticks=1
+DAY70 R2R3R4 o1-i15-r10: gen=0.248 fast gate_ns=1.052 span_ms=1000 owner_cpu=4 sibling=[20] rqwait=0.000 owncpu_other=0.029 sibling_busy=0.0 | top: python3[11231/11231] cpu=1 ticks=5
+DAY70 R2R3R4 o1-i15-r2: gen=0.248 fast gate_ns=1.053 span_ms=750 owner_cpu=17 sibling=[1] rqwait=0.000 owncpu_other=0.000 sibling_busy=0.0 | top: python3[5151/5151] cpu=4 ticks=5, nvidia-smi[4169/4169] cpu=4 ticks=1
+DAY70 R2R3R4 o1-i15-r3: gen=0.311 slow gate_ns=1.519 span_ms=1000 owner_cpu=1 sibling=[17] rqwait=0.000 owncpu_other=0.000 sibling_busy=0.0 | top: python3[5911/5911] cpu=3 ticks=5, nvidia-smi[4169/4169] cpu=1 ticks=1, python3[4365/4365] cpu=31 ticks=1
+DAY70 R2R3R4 o1-i15-r4: gen=0.248 fast gate_ns=1.050 span_ms=1000 owner_cpu=1 sibling=[17] rqwait=0.000 owncpu_other=0.000 sibling_busy=0.0 | top: python3[6671/6671] cpu=4 ticks=5, python3[4365/4365] cpu=31 ticks=1
+DAY70 R2R3R4 o1-i15-r5: gen=0.314 slow gate_ns=1.458 span_ms=1000 owner_cpu=4 sibling=[20] rqwait=0.000 owncpu_other=0.009 sibling_busy=0.0 | top: run-gen-p68[7429/8158] cpu=4 ticks=100, run-gen-p68[7429/8159] cpu=3 ticks=100, run-gen-p68[7429/8156] cpu=2 ticks=99
+DAY70 R2R3R4 o1-i15-r6: gen=0.248 fast gate_ns=1.053 span_ms=1000 owner_cpu=4 sibling=[20] rqwait=0.000 owncpu_other=0.000 sibling_busy=0.0 | top: python3[8191/8191] cpu=1 ticks=5
+DAY70 R2R3R4 o1-i15-r7: gen=0.312 slow gate_ns=1.564 span_ms=1001 owner_cpu=4 sibling=[20] rqwait=0.000 owncpu_other=0.000 sibling_busy=0.0 | top: run-gen-p68[8949/9679] cpu=5 ticks=100, run-gen-p68[8949/9680] cpu=7 ticks=100, run-gen-p68[8949/9676] cpu=2 ticks=99
+DAY70 R2R3R4 o1-i15-r8: gen=0.248 fast gate_ns=1.054 span_ms=750 owner_cpu=1 sibling=[17] rqwait=0.000 owncpu_other=0.000 sibling_busy=0.0 | top: run-gen-p68[9709/10437] cpu=1 ticks=100, run-gen-p68[9709/10438] cpu=0 ticks=100, run-gen-p68[9709/10439] cpu=18 ticks=100
+DAY70 R2R3R4 o1-i15-r9: gen=0.314 slow gate_ns=1.412 span_ms=1000 owner_cpu=1 sibling=[17] rqwait=0.000 owncpu_other=0.000 sibling_busy=0.0 | top: python3[10471/10471] cpu=3 ticks=5, python3[4365/4365] cpu=31 ticks=1
+DAY70 R2R3R4 o2-i15-r1: gen=0.309 slow gate_ns=1.056 span_ms=1000 owner_cpu=1 sibling=[17] rqwait=0.000 owncpu_other=0.000 sibling_busy=0.0 | top: python3[11975/11975] cpu=5 ticks=5, nvidia-smi[4169/4169] cpu=7 ticks=1
+DAY70 R2R3R4 o2-i15-r10: gen=0.315 slow gate_ns=1.535 span_ms=1000 owner_cpu=17 sibling=[1] rqwait=0.000 owncpu_other=0.000 sibling_busy=0.0 | top: python3[18815/18815] cpu=3 ticks=5, nvidia-smi[4169/4169] cpu=21 ticks=1, python3[4365/4365] cpu=31 ticks=1
+DAY70 R2R3R4 o2-i15-r2: gen=0.248 fast gate_ns=1.055 span_ms=1001 owner_cpu=4 sibling=[20] rqwait=0.000 owncpu_other=0.000 sibling_busy=0.0 | top: python3[12735/12735] cpu=1 ticks=4, python3[4165/4165] cpu=18 ticks=1
+DAY70 R2R3R4 o2-i15-r3: gen=0.314 slow gate_ns=1.465 span_ms=1001 owner_cpu=17 sibling=[1] rqwait=0.000 owncpu_other=0.000 sibling_busy=0.0 | top: python3[13495/13495] cpu=3 ticks=5, nvidia-smi[4169/4169] cpu=23 ticks=1, python3[4365/4365] cpu=31 ticks=1
+DAY70 R2R3R4 o2-i15-r4: gen=0.248 fast gate_ns=1.052 span_ms=1000 owner_cpu=1 sibling=[17] rqwait=0.000 owncpu_other=0.024 sibling_busy=0.0 | top: python3[14255/14255] cpu=4 ticks=5, python3[4165/4165] cpu=17 ticks=1, python3[4365/4365] cpu=31 ticks=1
+DAY70 R2R3R4 o2-i15-r5: gen=0.313 slow gate_ns=1.462 span_ms=1000 owner_cpu=17 sibling=[1] rqwait=0.000 owncpu_other=0.000 sibling_busy=0.0 | top: python3[15015/15015] cpu=21 ticks=5, nvidia-smi[4169/4169] cpu=3 ticks=2
+DAY70 R2R3R4 o2-i15-r6: gen=0.249 fast gate_ns=1.052 span_ms=1001 owner_cpu=1 sibling=[17] rqwait=0.000 owncpu_other=0.000 sibling_busy=0.0 | top: python3[15775/15775] cpu=4 ticks=5
+DAY70 R2R3R4 o2-i15-r7: gen=0.313 slow gate_ns=1.552 span_ms=1001 owner_cpu=4 sibling=[20] rqwait=0.000 owncpu_other=0.000 sibling_busy=0.0 | top: run-gen-p68[16533/17260] cpu=19 ticks=100, run-gen-p68[16533/17261] cpu=5 ticks=100, run-gen-p68[16533/17262] cpu=7 ticks=100
+DAY70 R2R3R4 o2-i15-r8: gen=0.312 slow gate_ns=1.502 span_ms=1000 owner_cpu=1 sibling=[17] rqwait=0.000 owncpu_other=0.000 sibling_busy=0.0 | top: run-gen-p68[17293/18020] cpu=5 ticks=100, run-gen-p68[17293/18021] cpu=4 ticks=100, run-gen-p68[17293/18022] cpu=2 ticks=100
+DAY70 R2R3R4 o2-i15-r9: gen=0.248 fast gate_ns=1.057 span_ms=750 owner_cpu=1 sibling=[17] rqwait=0.000 owncpu_other=0.012 sibling_busy=0.0 | top: run-gen-p68[18053/18785] cpu=0 ticks=100, run-gen-p68[18053/18780] cpu=2 ticks=99, run-gen-p68[18053/18781] cpu=19 ticks=99
+DAY70 R1 ref_median=0.245 slow=11 fast=9 of 20 door runs
+DAY70 COUNT rqwait_tracks: 0 of 11 slow runs beyond the fast runs' extreme (deciding nothing)
+DAY70 COUNT owncpu_tracks: 0 of 11 slow runs beyond the fast runs' extreme (deciding nothing)
+DAY70 COUNT sibling_tracks: 0 of 11 slow runs beyond the fast runs' extreme (deciding nothing)
+DAY70 SCHED VERDICT rig=pro-single integrity=ok -> none_tracks

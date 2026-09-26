@@ -245,3 +245,20 @@ per host-hit prefetch) predicts at `DAY60.md` R3's counts: 88.6 issued prefetche
 0.234 against 0.226 (+0.25 ms per token); before I11 the gaps read +0.69 and +0.44 (`DAY60.md` section 2). Recorded
 plainly for the owner's 2026-10-04 reading. The RTX 5090's cell waits on its reset (queue v6). The next improvement is
 registered from `DAY60.md`'s attribution and this reading, before its code (`DAY63.md`).
+
+## 4. The RTX 5090 (queue v9, 2026-09-26 01:16Z to 01:24Z; `rtx5090-day61/i11/`)
+
+Queue v9 ran it after the rig's reboot, with binaries rebuilt from their named commits (`c-local-build.sh`, CUDA 13.1; hashes differ from the pre-reboot builds, trees the same), behind `/tmp/memra-5090.lock` with the card idle before the hold. `run-gen-c60` `809132ce...`, `run-gen-i11` `cc83bd63...` (tree `a068ee37d`), `run-gen-i12` `285adc69...` (tree
+`117302725`). Regime: 56 to 62 C, SM median 1590 MHz, N=1932. Verbatim:
+
+- `DAY61 I11 CHECKS rig=rtx5090 runs=40 integrity=ok`
+- `DAY61 gen-only decode medians (N=10 each): ref=0.363 on=0.369 i11=0.369 i12=0.369`
+- `DAY61 STEP i11_vs_on gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0072 -> flat`
+- `DAY61 STEP i12_vs_i11 gen-only decode: pooled=+0.0000 o1=+0.0010 o2=+0.0000 noise=0.0072 -> flat`
+- `DAY61 DOOR i12_vs_ref gen-only decode: pooled=+0.0060 o1=+0.0070 o2=+0.0060 noise=0.0010 -> loses`
+- `DAY61 DOOR i12_vs_ref steady window: pooled=+0.0025 o1=+0.0030 o2=+0.0050 noise=0.0050 -> matches`
+- `DAY61 VERDICT rig=rtx5090 integrity=ok i11=flat i12=flat door=i12 vs_ref=loses (window: i11=flat i12=flat vs_ref=matches)`
+
+**Read as registered: I11 `flat`, I12 `flat` on the RTX 5090; both stay (no step `regresses`).** The door (I12) loses to
+REF gen-only by 6 ms over 32 tokens and matches it on the window. I11 improved on the target card and is flat here,
+where the door's CPU work overlaps the GPU more (`DAY60.md` section 3).

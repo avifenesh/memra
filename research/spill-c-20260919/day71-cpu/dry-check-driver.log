@@ -1,0 +1,36 @@
+== pro-single run 1 calls
+STUB day63-box-build.sh D/root/wt-c-build D/root/spill-receipts/c-day71-pro-single p71=1
+STUB day40-run-cell.sh core 5400 script=D/root/wt-c/research/spill-c-20260919/day71-cell.sh
+STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day71-pro-single/core
+STUB day71-read.py D/root/spill-receipts/c-day71-pro-single/core --rig pro-single
+== pro-single run 1 driver lines
+box start 2026-09-25T12:53:04Z tree cdf78bb21e86ab71ace2629df75b62c1c8c0e2ed rig pro-single
+cpu cap: each run pinned by the cell to its arm's 12 CPUs (DAY71 section 1); the runner unpinned
+core rc=0 2026-09-25T12:53:04Z
+core validate rc=0
+core reader rc=0
+box done 2026-09-25T12:53:04Z
+== pro-single run 2 calls
+== pro-single run 2 driver lines
+box start 2026-09-25T12:53:04Z tree cdf78bb21e86ab71ace2629df75b62c1c8c0e2ed rig pro-single
+cpu cap: each run pinned by the cell to its arm's 12 CPUs (DAY71 section 1); the runner unpinned
+core already done
+box done 2026-09-25T12:53:04Z
+== pro-single-b run 1 calls
+STUB day63-box-build.sh D/root/wt-c-build D/root/spill-receipts/c-day71-pro-single-b p71=1
+STUB day40-run-cell.sh core 5400 script=D/root/wt-c/research/spill-c-20260919/day71-cell.sh
+STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day71-pro-single-b/core
+STUB day71-read.py D/root/spill-receipts/c-day71-pro-single-b/core --rig pro-single-b
+== pro-single-b run 1 driver lines
+box start 2026-09-25T12:53:04Z tree cdf78bb21e86ab71ace2629df75b62c1c8c0e2ed rig pro-single-b
+cpu cap: each run pinned by the cell to its arm's 12 CPUs (DAY71 section 1); the runner unpinned
+core rc=0 2026-09-25T12:53:04Z
+core validate rc=0
+core reader rc=0
+box done 2026-09-25T12:53:04Z
+== pro-single-b run 2 calls
+== pro-single-b run 2 driver lines
+box start 2026-09-25T12:53:04Z tree cdf78bb21e86ab71ace2629df75b62c1c8c0e2ed rig pro-single-b
+cpu cap: each run pinned by the cell to its arm's 12 CPUs (DAY71 section 1); the runner unpinned
+core already done
+box done 2026-09-25T12:53:04Z
