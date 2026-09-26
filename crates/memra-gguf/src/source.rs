@@ -3345,8 +3345,7 @@ mod tests {
         assert!(recorded.requested().contains(ggml));
         assert!(source.find_mimo_bf16_ggml("blk.0.attn_q.weight").is_none());
         let error = crate::model_packs::mimo_v2::bind_pinned_text_source(&source)
-            .err()
-            .expect("one valid MiMo matrix cannot bind a partial checkpoint");
+            .expect_err("one valid MiMo matrix cannot bind a partial checkpoint");
         assert!(!error.contains("config changed"), "{error}");
         std::fs::write(
             dir.join("config.json"),
@@ -3357,8 +3356,7 @@ mod tests {
         )
         .unwrap();
         let error = crate::model_packs::mimo_v2::bind_pinned_text_source(&source)
-            .err()
-            .expect("changed config bytes must refuse the pinned source");
+            .expect_err("changed config bytes must refuse the pinned source");
         assert!(error.contains("config changed"), "{error}");
         drop(recorded);
         drop(raw);
