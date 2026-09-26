@@ -191,3 +191,14 @@ C/K/D choices for every possible prompt.
 Report the actual K/D/C action counts. If K never varies, the
 result cannot be called adaptive K, even if a learned C/D controller
 improves the global rate.
+
+At `origin/main` `e3a8402cb9f2d37ef91e7107b6f251cf3ca7d9ef`
+on 2026-09-26, `docs/MODELS.md` names DFlash2 as Qwen3.8's
+qualified served route. This study
+compares settings within one pinned MTP artifact. A learned MTP
+gain over fixed MTP does not establish a serving gain against
+DFlash2. Any serving proposal must compare the qualified served
+route on the relevant sampled workload and hardware with its
+own exact artifact and endpoint receipts; artifact-specific rates
+cannot be compared as if the artifacts were identical. Recheck the
+serving registry at the time of any deployment decision.
