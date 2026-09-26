@@ -11464,6 +11464,32 @@ struct PendingCapture {
     /// WP-A day 24: the `trace_prefix_entry_state` role the OFF publisher prints (`snapshot` for
     /// the seed and lcp-split publishes, `spec-snapshot` for the spec-boundary publish).
     trace_role: &'static str,
+    /// WP-A day 62 (`DAY62.md` step 1, log only): the source cache's identity (its layer vector's
+    /// heap address, stable while the cache moves between owners) and the copy-stream work the
+    /// worker had in flight when the capture was submitted, by kind. Printed on the publish line;
+    /// nothing decides on either.
+    source_kv: usize,
+    queued_ahead: String,
+}
+
+/// WP-A day 62 (step 1, log only): the copy-stream tickets in flight on this worker, by kind.
+fn host_copy_stream_in_flight(hpx: &HostPrefixCache) -> String {
+    let kinds: Vec<&str> = [
+        (hpx.demoting.is_some(), "demote"),
+        (hpx.promoting.is_some(), "promote"),
+        (
+            hpx.restoring.as_ref().is_some_and(|r| r.contract.is_some()),
+            "restore",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(on, k)| on.then_some(k))
+    .collect();
+    if kinds.is_empty() {
+        "none".into()
+    } else {
+        kinds.join(", ")
+    }
 }
 
 /// What one settle step of a capture batch produced.
@@ -17671,6 +17697,7 @@ fn host_capture_submit(
         toks.len(),
         bytes as f64 / 1e6,
     );
+    let queued_ahead = host_copy_stream_in_flight(hpx);
     hpx.capturing = Some(PendingCapture {
         pool_key: pool_key.clone(),
         why: why.to_string(),
@@ -17690,6 +17717,8 @@ fn host_capture_submit(
         settle_after_ms: 0.0,
         settle_held_ms: 0.0,
         trace_role,
+        source_kv: cache.kv.as_ptr() as usize,
+        queued_ahead,
     });
     CaptureRoute::Submitted
 }
@@ -18221,6 +18250,7 @@ fn host_capture_publish(
         settle_after_ms,
         settle_held_ms,
         trace_role,
+        queued_ahead,
         ..
     } = pending;
     let Some(e) = shell else {
@@ -18234,7 +18264,7 @@ fn host_capture_publish(
         "[prefix-cache] capture published off the tick ({why}): {} tokens complete after {polls} \
          poll(s), {copy_ms:.1}ms from submission to completion, {:.1}ms to publication ({settled_by}; \
          the settle held the owner thread {settle_held_ms:.2}ms, entered {settle_after_ms:.1}ms after \
-         submission)",
+         submission; copy stream in flight at submission: {queued_ahead})",
         e.toks.len(),
         t0.elapsed().as_secs_f64() * 1e3,
     );
@@ -29232,13 +29262,20 @@ pub fn run(
         // to rewrite; either would run under the in-flight read. Settle the `Capturing` entry
         // BLOCKING before any session leaves `active`. One capture per worker.
         if !finished.is_empty() && hpx.capturing.is_some() {
-            host_capture_settle_pending(
-                &engine,
-                &mut px,
-                &mut hpx,
-                ContractWait::Block,
-                "a session retire",
+            // WP-A day 62 (`DAY62.md` step 1, log only): whether a retiring session is the
+            // capture's source. The settle runs either way (the program is unchanged).
+            let source_kv = hpx.capturing.as_ref().map_or(0, |c| c.source_kv);
+            let source_retiring = finished.iter().any(|&i| {
+                active[i]
+                    .cache
+                    .as_ref()
+                    .is_some_and(|c| c.kv.as_ptr() as usize == source_kv)
+            });
+            let why = format!(
+                "a session retire (source retiring: {})",
+                if source_retiring { "yes" } else { "no" }
             );
+            host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, &why);
         }
         for &i in finished.iter().rev() {
             let mut s = active.remove(i);
@@ -47111,6 +47148,8 @@ mod tests {
             settle_after_ms: 0.0,
             settle_held_ms: 0.0,
             trace_role: "snapshot",
+            source_kv: 0,
+            queued_ahead: "none".into(),
         });
     }
 
@@ -47758,7 +47797,12 @@ mod tests {
             "the settle sits right before the retire loop"
         );
         assert!(body[settle..settle + 200].contains("ContractWait::Block"));
-        assert!(body[settle..settle + 200].contains("\"a session retire\""));
+        assert!(
+            body[..settle]
+                .rfind("\"a session retire (source retiring: {})\"")
+                .is_some_and(|w| settle - w < 400),
+            "the retire's why names whether the source retires (day 62)"
+        );
         let route = body.find("fn prefix_capture_off_tick(").unwrap();
         let submit = route
             + body[route..]
@@ -50102,6 +50146,43 @@ mod tests {
         }
         assert!(
             production.contains("[prefix-dedup] on-tick split: snapshot alloc {:.2} ms over {}")
+        );
+    }
+
+    /// WP-A day 62 (`DAY62.md` step 1; CPU census): the retire seam's lines are log only. The retire
+    /// still settles a pending capture with `Block` before any session leaves `active`, whether or
+    /// not the source retires; `source_kv` and `queued_ahead` are written at submission and read
+    /// only by the retire's why and the publish line.
+    #[test]
+    fn day62_the_retire_seam_lines_are_log_only() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        assert_eq!(
+            production.matches("source_retiring").count(),
+            2,
+            "computed, then printed"
+        );
+        assert!(production.contains("if source_retiring { \"yes\" } else { \"no\" }"));
+        assert_eq!(
+            production.matches(".source_kv").count(),
+            1,
+            "read once, by the retire's why"
+        );
+        assert_eq!(
+            production.matches("queued_ahead").count(),
+            5,
+            "the field, the submission's read, the struct literal, the destructure, the print"
+        );
+        let retire = &production[production
+            .find("let source_kv = hpx.capturing.as_ref()")
+            .unwrap()..];
+        let settle = retire.find(
+            "host_capture_settle_pending(&engine, &mut px, &mut hpx, ContractWait::Block, &why);",
+        );
+        let remove = retire.find("let mut s = active.remove(i);");
+        assert!(
+            settle.unwrap() < remove.unwrap(),
+            "the Block settle still precedes the removal"
         );
     }
 

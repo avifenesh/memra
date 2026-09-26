@@ -37,6 +37,14 @@ from receipt.json by `--replay`; no threshold, no verdict: the cell measures a s
     length (`fanout-long`); `prime-short` is one fresh 72-word prompt, the single-prime control of `fanout`
     (`prime` is `fanout-long`'s). The intruder's `wall_ms` is the slowest of the four; each wall and
     `cached_tokens` is recorded. The earlier arms are byte-for-byte unchanged.)
+    (`retire-seam` and `retire-seam-other`, WP-A day 62, `DAY62.md` section 2, OWED item 13: one untimed long seed in
+    setup; each timed intruder posts a fresh long prompt of the prime arm's length (max_tokens 1: its insert demotes
+    the resident long entry onto the copy stream) and, the moment it returns, `retire-seam` posts one fresh 72-word
+    prompt (max_tokens 1: its seed capture queues behind the demote and the request retires with it pending, the
+    SOURCE shape), while `retire-seam-other` posts two at once, a 72-word source at max_tokens 32 (its capture
+    pending while it decodes) and a second fresh 72-word prompt at max_tokens 1 that retires meanwhile (the
+    NO-SOURCE shape). `wall_ms` is the whole chain; each part's wall is recorded. The earlier arms are byte-for-byte
+    unchanged.)
     stall_cell.py --replay DIR/receipt.json
 
 Client-side only: stdlib, no engine binary, no GPU access of its own.
@@ -253,6 +261,8 @@ def one_run(port, mode, arm, run_id, log_path, log_off, promote_toggle):
             prompt = L_A
         elif mode == "pause":
             prompt = None
+        elif mode in ("retire-seam", "retire-seam-other"):
+            prompt = fresh_prompt(PRIME_TARGET_TOKENS - 4, 7000 + run_id)
         else:
             prompt = P_A if promote_toggle[0] % 2 == 0 else P_B
             promote_toggle[0] += 1
@@ -279,6 +289,31 @@ def one_run(port, mode, arm, run_id, log_path, log_off, promote_toggle):
                 fan = [{"wall_ms": w, "cached_tokens": ((r.get("usage", {}).get("prompt_tokens_details") or {})
                                                         .get("cached_tokens", r.get("usage", {}).get("cached_tokens")))}
                        for r, w in outs]
+            elif mode in ("retire-seam", "retire-seam-other"):
+                # WP-A day 62: the long demoter, then at once the short capture source(s).
+                resp_l, wall_l = post(port, {"model": "gate", "prompt": prompt, "max_tokens": 1, "temperature": 0})
+                shorts = [(fresh_prompt(72, 8000 + run_id), 1)] if mode == "retire-seam" else \
+                    [(fresh_prompt(72, 8000 + run_id), 32), (fresh_prompt(72, 9000 + run_id), 1)]
+                outs = [None] * len(shorts)
+
+                def one_short(k):
+                    try:
+                        outs[k] = post(port, {"model": "gate", "prompt": shorts[k][0], "max_tokens": shorts[k][1],
+                                              "temperature": 0})
+                    except Exception as e:  # recorded below, never swallowed
+                        outs[k] = e
+                ths = [threading.Thread(target=one_short, args=(k,)) for k in range(len(shorts))]
+                for t in ths:
+                    t.start()
+                for t in ths:
+                    t.join(timeout=900)
+                bad = [o for o in outs if not isinstance(o, tuple)]
+                if bad:
+                    raise RuntimeError(f"retire-seam short failed: {bad[0]!r}")
+                resp = resp_l
+                wall = wall_l + max(w for _, w in outs)
+                seam = {"long_wall_ms": wall_l, "short_walls_ms": [w for _, w in outs],
+                        "short_max_tokens": [m for _, m in shorts]}
             elif mode == "pause":
                 resp, wall = post_chat(port, {"model": "gate", "messages": pause_messages(run_id),
                                               "tools": PAUSE_TOOLS, "max_tokens": 256, "temperature": 0})
@@ -291,6 +326,8 @@ def one_run(port, mode, arm, run_id, log_path, log_off, promote_toggle):
                                                                                          usage.get("cached_tokens"))}
             if mode in ("fanout", "fanout-long"):
                 intruder["fanout"] = fan
+            if mode in ("retire-seam", "retire-seam-other"):
+                intruder["seam"] = seam
             if mode == "pause":
                 ch = (resp.get("choices") or [{}])[0]
                 intruder["finish_reason"] = ch.get("finish_reason")
@@ -417,7 +454,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int)
     ap.add_argument("--mode", choices=["prime", "demote", "promote", "capture", "restore", "demote-long", "promote-long",
-                                       "pause", "fanout", "fanout-long", "prime-short"])
+                                       "pause", "fanout", "fanout-long", "prime-short", "retire-seam",
+                                       "retire-seam-other"])
     ap.add_argument("--server-log")
     ap.add_argument("--out")
     ap.add_argument("--n", type=int, default=5)
@@ -453,8 +491,9 @@ def main():
             tail, log_off = log_tail(a.server_log, log_off)
             setup.append({"seed": "AB"[i], "wall_ms": wall, "usage": resp.get("usage"),
                           "server_demote_ms": server_ms(tail, "demote")})
-    if a.mode == "demote-long":
-        # WP-A day 43: one untimed long seed, so the first timed run's insert demotes it.
+    if a.mode in ("demote-long", "retire-seam", "retire-seam-other"):
+        # WP-A day 43: one untimed long seed, so the first timed run's insert demotes it (day 62's seam
+        # modes share the setup).
         resp, wall = post(a.port, {"model": "gate", "prompt": fresh_prompt(PRIME_TARGET_TOKENS - 4, 2999),
                                    "max_tokens": 1, "temperature": 0})
         tail, log_off = log_tail(a.server_log, log_off)
