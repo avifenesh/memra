@@ -178,6 +178,7 @@ mod tests {
     use super::*;
     use memra_gguf::config::{HfConfig, ModelConfig};
     use memra_gguf::model_packs::mimo_v2::vision::pinned_attention_plan;
+    use memra_reference::mimo_vision::preprojected_attention;
 
     fn plan(layer: u32) -> MiMoVisionAttentionPlan {
         let config = ModelConfig::from_hf(&HfConfig::parse(include_str!(concat!(
@@ -268,5 +269,69 @@ mod tests {
         let full = plan(0);
         assert!(validate_request(&full, &[1], QUERY_WIDTH, KV_WIDTH, KV_WIDTH, None).is_ok());
         assert!(validate_request(&full, &[1], QUERY_WIDTH, KV_WIDTH, KV_WIDTH, Some(32)).is_err());
+    }
+
+    #[test]
+    #[ignore = "requires a dedicated MiMo GPU component lane"]
+    fn gpu_visual_attention_matches_source_math_reference() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let gpu: usize = std::env::var("MEMRA_MIMO_COMPONENT_GPU")
+            .unwrap_or_else(|_| "0".into())
+            .parse()?;
+        let engine = Engine::new(gpu)?;
+        for (layer, lengths) in [(0, vec![16, 7]), (1, vec![66]), (5, vec![33, 12])] {
+            let plan = plan(layer);
+            let patches: usize = lengths.iter().sum();
+            let query = (0..patches * QUERY_WIDTH)
+                .map(|index| ((index * 7 + 3) % 101) as f32 * 0.0125 - 0.625)
+                .collect::<Vec<_>>();
+            let key = (0..patches * KV_WIDTH)
+                .map(|index| ((index * 11 + 5) % 97) as f32 * 0.01 - 0.48)
+                .collect::<Vec<_>>();
+            let value = (0..patches * KV_WIDTH)
+                .map(|index| ((index * 13 + 7) % 89) as f32 * 0.015 - 0.66)
+                .collect::<Vec<_>>();
+            let sink = plan.sink_first_key.then(|| {
+                (0..QUERY_HEADS)
+                    .map(|head| head as f32 * 0.02 - 0.31)
+                    .collect::<Vec<_>>()
+            });
+            let reference =
+                preprojected_attention(&plan, &query, &key, &value, &lengths, sink.as_deref())?;
+            let query_dev = engine.htod(&query)?;
+            let key_dev = engine.htod(&key)?;
+            let value_dev = engine.htod(&value)?;
+            let sink_dev = sink.as_ref().map(|bias| engine.htod(bias)).transpose()?;
+            let output = engine.mimo_vision_preprojected_attention(
+                &plan,
+                &query_dev,
+                &key_dev,
+                &value_dev,
+                &lengths,
+                sink_dev.as_ref(),
+            )?;
+            let actual = engine.dtoh(&output)?;
+            assert_eq!(actual.len(), reference.len());
+            let max_abs = actual
+                .iter()
+                .zip(&reference)
+                .map(|(got, want)| (got - want).abs())
+                .fold(0.0f32, f32::max);
+            let rms = (actual
+                .iter()
+                .zip(&reference)
+                .map(|(got, want)| (got - want).powi(2))
+                .sum::<f32>()
+                / actual.len() as f32)
+                .sqrt();
+            println!(
+                "mimo_vision_gpu_parity gpu={gpu} layer={layer} patches={patches} max_abs={max_abs:.9} rms={rms:.9}"
+            );
+            assert!(
+                max_abs <= 1e-4,
+                "MiMo visual attention exceeded f32 parity bound"
+            );
+        }
+        Ok(())
     }
 }

@@ -2585,3 +2585,9 @@ See [Release qualification](RELEASE-QUALIFICATION.md).
 `tools/qualify-model-device-memory.py` requires and verifies the `MEMRA_GPU_LEASE_FILE`
 context above for its requested physical-card set before native tests. Generic release
 capture has the additional GPU0 restriction described in [Release qualification](RELEASE-QUALIFICATION.md).
+
+## MiMo modal component GPU parity tests
+
+| Flag | Contract |
+| --- | --- |
+| `MEMRA_MIMO_COMPONENT_GPU` | Test-only device ordinal for the ignored MiMo visual-attention and BF16 speech-sum parity tests. Unset selects GPU 0; a nonnegative decimal value selects that GPU or fails at engine creation if absent. Dedicated two-card qualification runs GPU 0 and GPU 1 in separate processes. This variable is not read by serving dispatch or customer requests. |
