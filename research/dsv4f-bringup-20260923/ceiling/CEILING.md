@@ -94,8 +94,9 @@ gate bit-identical:
 - programmatic dependent launch: +4.99%;
 - vocab-parallel head: +2.44% (lever 3 below);
 - one kernel for the compressor snapshots: +0.94%;
-- push joins: +7.75% (lever 4 below, the both-idle barrier half, larger than the instrument's
-  ceiling predicted because the ranks no longer march in lockstep).
+- push joins: +7.75% (lever 4 below). That is more than the 2026-09-10 AR instrument's ceiling
+  for removing both barriers (1.9% of that program's token); what the extra comes from is not
+  measured yet.
 
 ## The gap, by lever, largest first
 
