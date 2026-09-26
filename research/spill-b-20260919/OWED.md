@@ -109,7 +109,11 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   the fuller charge"). Dropped from STATE at day 33 with no closing record; restored here.
 - Acceptance to pre-register: `MEMRA_ADMIT_PREDICT_ENFORCE=1` against a budget arm on both cards, the day-24 sequence
   and a burst, before and after the day-24 charge, every refusal a typed 429 with its `Retry-After`, no OOM.
-- Status: `open`. Price: about 0.3 agent-day plus a cell on each card.
+- Status: `pre-registered` (DAY46.md, text only until DAY37 addendum G's repro and the ninth and tenth sittings read):
+  arms `shadow`, `enforce`, `enforce-wrel` (with DAY45's W release) at the boot-derived budget, both orders, both cards,
+  DAY24's sequence then a burst; P1 typed refusals, P2 no OOM, P3 within the budget, P4 identity, P5 the release reaches
+  the door. No new engine or server code. Price: about 0.2 agent-day plus about 1 h on the 5090 and 2 h on the target
+  card.
 
 ### O7. DAY24's step-OOM and client-disconnect fault arms
 
