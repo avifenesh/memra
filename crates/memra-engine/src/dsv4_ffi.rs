@@ -28,6 +28,46 @@ unsafe extern "C" {
         eps: f32,
         hadamard_scale: f32,
         stream: *mut c_void,
+        split_recent: *mut f32,
+        split_tags: *mut i32,
+        split_recent_rows: i32,
+        split_rank: i32,
+    ) -> i32;
+    /// TP/EP position-split C4 store (memra #710): gather each query's selected rows from the
+    /// local store, the local recent ring, or the peer's store.
+    pub fn memra_dsv4_c4_split_gather(
+        local: *const f32,
+        peer: *const f32,
+        recent: *const f32,
+        tags: *const i32,
+        recent_rows: i32,
+        rank: i32,
+        indices: *const i32,
+        out: *mut f32,
+        out_indices: *mut i32,
+        nq: i32,
+        slots: i32,
+        stride: i32,
+        cap_blocks: i32,
+        logical_transient: i32,
+        transient_rows: i32,
+        local_transient: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// The emitted block's split store: the owner's row, or the other rank's recent slot.
+    pub fn memra_dsv4_c4_split_store(
+        row: *const f32,
+        store: *mut f32,
+        recent: *mut f32,
+        tags: *mut i32,
+        recent_rows: i32,
+        rank: i32,
+        pos: *const i32,
+        ratio: i32,
+        block: i32,
+        d: i32,
+        row0: i32,
+        stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_sample_device_replay(
         logits: *const f32,
