@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 
@@ -61,6 +62,18 @@ def save(path, value):
         output.write("\n")
 
 
+def current_gpu(meta):
+    result = subprocess.check_output(
+        [
+            "nvidia-smi", "--query-gpu=uuid",
+            "--format=csv,noheader,nounits",
+        ], text=True,
+    ).strip().splitlines()
+    if len(result) != 1 or result[0] != meta["gpu_uuid"]:
+        raise ValueError("mixed native phase moved to another physical GPU")
+    return result[0]
+
+
 def freeze(args):
     expected = {
         "qualification": TRAIN_SHA,
@@ -77,6 +90,21 @@ def freeze(args):
         raise ValueError("mixed native model, binary or workload pin differs")
     manifest = json.loads((args.workloads / "manifest.json").read_text())
     arms = json.loads(args.arms.read_text())
+    meta = json.loads(args.run_meta.read_text())
+    if (
+        meta["schema"] != 1
+        or meta["model_sha256"] != v9_eval.MODEL_SHA256
+        or meta["binary_sha256"] != v9_eval.BINARY_SHA256
+        or meta["training_workloads_sha256"] != TRAIN_SHA
+        or meta["source_full_manifest_sha256"] != FULL_SHA
+        or meta["customer_capture"] is not False
+        or meta["cuda_allocated"] is not True
+        or meta["target_top_k"] != 20
+        or meta["temperature"] != 1.0
+        or meta["top_p"] != 0.95
+    ):
+        raise ValueError("mixed native host, sampler or CUDA proof differs")
+    gpu_uuid = current_gpu(meta)
     specs = arms["arms"]
     by_label = {item["label"]: item for item in specs}
     if (
@@ -188,7 +216,7 @@ def freeze(args):
                 or sha(args.workloads / entry["file"]) != entry["sha256"]
             ):
                 raise ValueError(f"mixed {domain} prompt differs")
-    return manifest, arms
+    return manifest, arms, gpu_uuid
 
 
 def previous_phase(args, arms):
@@ -216,6 +244,8 @@ def previous_phase(args, arms):
         != arms["model_manifest_sha256"]
         or receipt["qualification_arms_sha256"]
         != arms["qualification_arms_sha256"]
+        or receipt["gpu_uuid"]
+        != json.loads(args.run_meta.read_text())["gpu_uuid"]
     ):
         raise ValueError("mixed validation lacks exact native qualifier")
     if args.phase == "validation" and (
@@ -314,6 +344,8 @@ def qualifier(args, arms):
         "model_manifest_sha256": arms["model_manifest_sha256"],
         "qualification_arms_sha256": sha(args.arms),
         "qualification_arms_digest": digest(arms["arms"]),
+        "gpu_uuid":
+        json.loads(args.run_meta.read_text())["gpu_uuid"],
         "domains": list(DOMAINS),
         "byte_identical_noops": [
             item["label"] for item in noops
@@ -323,7 +355,7 @@ def qualifier(args, arms):
 
 
 def run(args):
-    manifest, arms = freeze(args)
+    manifest, arms, gpu_uuid = freeze(args)
     previous_phase(args, arms)
     args.out.mkdir(exist_ok=True)
     specs = arms["arms"]
@@ -341,6 +373,7 @@ def run(args):
             args.phase = f"{args.requested_phase}-{domain}"
             for spec in order:
                 row = v9_eval.run_one(args, entry, index, spec)
+                row["gpu_uuid"] = gpu_uuid
                 target = args.out / f"{row['name']}.result.json"
                 if target.exists():
                     if json.loads(target.read_text()) != row:
@@ -363,7 +396,10 @@ def run(args):
 
 def main():
     parser = argparse.ArgumentParser()
-    for name in ("binary", "model", "workloads", "arms", "out"):
+    for name in (
+        "binary", "model", "workloads", "arms", "out",
+        "run-meta",
+    ):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--models", type=Path, required=True)
     parser.add_argument(
@@ -376,7 +412,8 @@ def main():
     args = parser.parse_args()
     for name in (
         "binary", "model", "workloads", "arms", "out",
-        "models", "validation_manifest", "training_manifest",
+        "models", "run_meta", "validation_manifest",
+        "training_manifest",
     ):
         value = getattr(args, name)
         if value is not None:

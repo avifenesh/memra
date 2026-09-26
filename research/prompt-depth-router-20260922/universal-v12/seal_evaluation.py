@@ -88,6 +88,12 @@ def seal(base, out):
     selected_record = json.loads(
         (arms / "shared-selected.json").read_text()
     )
+    meta = json.loads((base / "run-meta.json").read_text())
+    if (
+        selected_record["gpu_uuid"] != meta["gpu_uuid"]
+        or meta["customer_capture"] is not False
+    ):
+        raise ValueError("mixed result moved physical GPU or host role")
     selected = selected_record["status"] == "selected"
     if selected_record["status"] not in ("selected", "global-no-go"):
         raise ValueError("mixed evaluation selection status differs")
@@ -157,6 +163,7 @@ def seal(base, out):
         "validation_workloads_sha256": VALIDATION_SHA,
         "source_full_manifest_sha256": FULL_SHA,
         "selection_status": selected_record["status"],
+        "gpu_uuid": meta["gpu_uuid"],
         "selection_sha256": sha(arms / "shared-selected.json"),
         "validation_score_sha256":
         sha(arms / "validation-score.json"),

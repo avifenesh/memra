@@ -141,7 +141,7 @@ def pooled_pair(rows, candidate, control, seed):
     }
 
 
-def native_rows(root, domain, labels):
+def native_rows(root, domain, labels, gpu_uuid):
     rows = {}
     for label in labels:
         values = [
@@ -155,6 +155,7 @@ def native_rows(root, domain, labels):
             or row["cached_later_turns"] != 7
             or row["seconds"] <= 0
             or row["tokens"] <= 0
+            or row["gpu_uuid"] != gpu_uuid
             for index, row in enumerate(values)
         ):
             raise ValueError("final native continuation differs")
@@ -326,6 +327,7 @@ def score(args):
     selected = json.loads(selected_path.read_text())
     tasks = json.loads(args.tasks.read_text())
     prose = json.loads(args.prose.read_text())
+    meta = json.loads(args.run_meta.read_text())
     labels = {item["label"] for item in arms["arms"]}
     candidate = selected["selected_policy"]["label"]
     noop = next(
@@ -344,6 +346,8 @@ def score(args):
         or selected["status"] != "selected"
         or selected["scope"]
         != "one immutable C/K/D controller, no domain route"
+        or selected["gpu_uuid"] != meta["gpu_uuid"]
+        or meta["customer_capture"] is not False
         or set(best) != set(DOMAINS)
         or labels != set(selected["final_arm_labels"])
         or not {candidate, noop, global_fixed, REFERENCE}.issubset(labels)
@@ -365,7 +369,9 @@ def score(args):
         if item["role"] == "noop"
     ]
     native = {
-        domain: native_rows(args.root, domain, labels)
+        domain: native_rows(
+            args.root, domain, labels, meta["gpu_uuid"],
+        )
         for domain in DOMAINS
     }
     domains = {}
@@ -393,6 +399,7 @@ def score(args):
         "schema": 1, "phase": "final",
         "scope": "one Qwen C/K/D policy across code, prose and math",
         "selection_sha256": sha(selected_path),
+        "gpu_uuid": meta["gpu_uuid"],
         "arms_sha256": sha(args.arms),
         "tasks_quality_sha256": sha(args.tasks),
         "prose_quality_sha256": sha(args.prose),
@@ -416,9 +423,17 @@ def score(args):
 
 def main():
     parser = argparse.ArgumentParser()
-    for name in ("root", "workloads", "arms", "tasks", "prose", "out"):
+    for name in (
+        "root", "workloads", "arms", "tasks", "prose",
+        "run-meta", "out",
+    ):
         parser.add_argument("--" + name, type=Path, required=True)
     args = parser.parse_args()
+    for name in (
+        "root", "workloads", "arms", "tasks", "prose",
+        "run_meta", "out",
+    ):
+        setattr(args, name, getattr(args, name).resolve())
     result = score(args)
     with args.out.open("x") as output:
         json.dump(result, output, indent=2, sort_keys=True)

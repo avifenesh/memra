@@ -76,6 +76,7 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
                 },
             }
         domains[domain] = {
+            "gpu_uuid": "GPU-checked-test-card",
             "arms": {
                 label: {
                     "tokens": rate, "seconds": 1.0,
@@ -103,6 +104,7 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
         "source_manifest_sha256": select_shared.VALIDATION_SHA,
         "model_manifest_sha256": "d" * 64,
         "quality_sha256": "e" * 64,
+        "gpu_uuid": "GPU-checked-test-card",
         "judge_config_sha256": "f" * 64,
         "domains": domains,
     })

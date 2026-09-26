@@ -93,7 +93,7 @@ def identity(root, domain, noops):
                     )
 
 
-def report(root, domain, arms, tasks, prose):
+def report(root, domain, arms, tasks, prose, gpu_uuid):
     by_label = {item["label"]: item for item in arms["arms"]}
     labels = list(by_label)
     noops = [
@@ -122,6 +122,7 @@ def report(root, domain, arms, tasks, prose):
             or row["cached_later_turns"] != 7
             or row["seconds"] <= 0
             or row["tokens"] <= 0
+            or row["gpu_uuid"] != gpu_uuid
             for index, row in enumerate(native)
         ):
             raise ValueError(f"{domain} native continuation differs")
@@ -228,6 +229,7 @@ def report(root, domain, arms, tasks, prose):
             },
         }
     return {
+        "gpu_uuid": gpu_uuid,
         "arms": scores, "eligible_fixed": fixed,
         "byte_identical_noops": noops,
         "comparisons": comparisons,
@@ -243,6 +245,7 @@ def score(args):
     arms = json.loads(args.arms.read_text())
     tasks = json.loads(args.tasks.read_text())
     prose = json.loads(args.prose.read_text())
+    meta = json.loads(args.run_meta.read_text())
     if (
         arms["schema"] != 1
         or arms["phase"] != "validation"
@@ -256,6 +259,8 @@ def score(args):
         or prose["workloads_sha256"] != WORKLOAD_SHA
         or prose["packets_manifest_sha256"] == ""
         or not prose["judge_config_sha256"]
+        or meta["gpu_uuid"] == ""
+        or meta["customer_capture"] is not False
     ):
         raise ValueError("mixed validation quality receipt differs")
     quality = hashlib.sha256(
@@ -266,12 +271,14 @@ def score(args):
         "scope": "one mixed Qwen C/K/D arm menu, complete native request tok/s",
         "arms_sha256": sha(args.arms),
         "model_manifest_sha256": arms["model_manifest_sha256"],
+        "gpu_uuid": meta["gpu_uuid"],
         "source_manifest_sha256": WORKLOAD_SHA,
         "quality_sha256": quality,
         "judge_config_sha256": prose["judge_config_sha256"],
         "domains": {
             domain: report(
                 args.root, domain, arms, tasks, prose,
+                meta["gpu_uuid"],
             )
             for domain in DOMAINS
         },
@@ -280,10 +287,16 @@ def score(args):
 
 def main():
     parser = argparse.ArgumentParser()
-    for name in ("root", "workloads", "arms", "tasks", "prose", "out"):
+    for name in (
+        "root", "workloads", "arms", "tasks", "prose",
+        "run-meta", "out",
+    ):
         parser.add_argument("--" + name, type=Path, required=True)
     args = parser.parse_args()
-    for name in ("root", "workloads", "arms", "tasks", "prose", "out"):
+    for name in (
+        "root", "workloads", "arms", "tasks", "prose",
+        "run_meta", "out",
+    ):
         setattr(args, name, getattr(args, name).resolve())
     result = score(args)
     with args.out.open("x") as output:

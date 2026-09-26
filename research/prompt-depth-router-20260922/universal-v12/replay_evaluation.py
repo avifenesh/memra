@@ -88,6 +88,7 @@ def replay(archive, manifest_path):
             arms=arms / "validation-arms.json",
             tasks=inputs / "validation-task-quality.json",
             prose=inputs / "validation-prose-quality.json",
+            run_meta=inputs / "run-meta.json",
         ))
         equal(
             validation, arms / "validation-score.json",
@@ -104,6 +105,7 @@ def replay(archive, manifest_path):
             or sha(arms / "validation-score.json")
             != manifest["validation_score_sha256"]
             or chosen["status"] != manifest["selection_status"]
+            or chosen["gpu_uuid"] != manifest["gpu_uuid"]
         ):
             raise ValueError("archived shared selection lineage differs")
         if selected:
@@ -132,6 +134,7 @@ def replay(archive, manifest_path):
                 arms=arms / "final-arms.json",
                 tasks=inputs / "final-task-quality.json",
                 prose=inputs / "final-prose-quality.json",
+                run_meta=inputs / "run-meta.json",
             ))
             equal(final, inputs / "final-score.json", "final native")
             if sha(inputs / "final-score.json") != (

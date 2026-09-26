@@ -128,6 +128,7 @@ def pipeline(base, credential_file, log):
           "--out", v11_rows)
     stage(log, scripts, "collect_prose.py",
           "--binary", binary, "--model", model,
+          "--run-meta", base / "run-meta.json",
           "--workloads", base / "phase-training",
           "--out", base / "training-prose-results")
     stage(log, scripts, "seal_training.py",
@@ -160,6 +161,7 @@ def pipeline(base, credential_file, log):
     native = (
         "--binary", binary, "--model", model,
         "--models", models, "--out", evaluation,
+        "--run-meta", base / "run-meta.json",
     )
     stage(log, scripts, "eval.py", *native,
           "--workloads", base / "phase-training",
@@ -209,6 +211,7 @@ def pipeline(base, credential_file, log):
           "--arms", arms / "validation-arms.json",
           "--tasks", base / "validation-task-quality.json",
           "--prose", base / "validation-prose-quality.json",
+          "--run-meta", base / "run-meta.json",
           "--out", arms / "validation-score.json")
     stage(log, scripts, "select_shared.py",
           "--validation", arms / "validation-score.json",
@@ -263,6 +266,7 @@ def pipeline(base, credential_file, log):
               "--arms", arms / "final-arms.json",
               "--tasks", base / "final-task-quality.json",
               "--prose", base / "final-prose-quality.json",
+              "--run-meta", base / "run-meta.json",
               "--out", base / "final-score.json")
         verdict = json.loads(
             (base / "final-score.json").read_text()

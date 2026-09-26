@@ -81,7 +81,9 @@ separate sealed commitment.
    model-running no-op twins. Hold the target sampler at top-k 20,
    temperature 1 and top-p 0.95 on one nonproduction GPU. Keep
    `max_new=4096`, `ctx=65536`, full embedded MTP engagement and
-   eight-turn native KV receipts. Price and tag the rental under
+   eight-turn native KV receipts. Verify the same physical GPU UUID
+   at training and every evaluation phase, and carry it through
+   validation selection and final scoring. Price and tag the rental under
    the development-provider policy before allocating it.
    The menu contains nine fixed controls including K=3, D=1/2/3/4
    and three C cutoffs measured from training offers, plus three

@@ -112,6 +112,7 @@ def inspect(validation, arms_path):
         or not SHA.fullmatch(arms["qualification_arms_sha256"])
         or score["model_manifest_sha256"]
         != arms["model_manifest_sha256"]
+        or not score["gpu_uuid"].startswith("GPU-")
     ):
         raise ValueError("mixed validation source, quality or arms differ")
     fixed = {
@@ -149,7 +150,8 @@ def inspect(validation, arms_path):
     for domain in DOMAINS:
         report = score["domains"][domain]
         if (
-            set(report["arms"]) != set(labels)
+            report["gpu_uuid"] != score["gpu_uuid"]
+            or set(report["arms"]) != set(labels)
             or not set(report["eligible_fixed"]).issubset(fixed)
             or BASELINE not in report["eligible_fixed"]
             or not set(by_label[label]["noop_label"] for label in learned)
@@ -296,6 +298,7 @@ def choose(validation, arms_path):
         "source_manifest_sha256": arms["source_manifest_sha256"],
         "model_manifest_sha256": arms["model_manifest_sha256"],
         "quality_sha256": score["quality_sha256"],
+        "gpu_uuid": score["gpu_uuid"],
         "judge_config_sha256": score["judge_config_sha256"],
         "global_fixed": global_fixed,
         "domain_best_fixed_diagnostic": domain_best_fixed,

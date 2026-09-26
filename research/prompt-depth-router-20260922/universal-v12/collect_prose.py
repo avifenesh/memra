@@ -4,6 +4,7 @@ import argparse
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 import sys
 
 
@@ -37,6 +38,17 @@ def freeze(args):
     ):
         raise ValueError("open-prose randomized training pin differs")
     manifest = json.loads((args.workloads / "manifest.json").read_text())
+    meta = json.loads(args.run_meta.read_text())
+    if (
+        meta["schema"] != 1
+        or meta["model_sha256"] != v9_collect.MODEL_SHA256
+        or meta["binary_sha256"] != v9_collect.BINARY_SHA256
+        or meta["training_workloads_sha256"] != TRAIN_SHA
+        or meta["source_full_manifest_sha256"] != FULL_SHA
+        or meta["customer_capture"] is not False
+        or meta["cuda_allocated"] is not True
+    ):
+        raise ValueError("fresh prose training host metadata differs")
     if (
         manifest["schema"] != 1
         or manifest["source_full_manifest_sha256"] != FULL_SHA
@@ -58,12 +70,25 @@ def freeze(args):
     return entries
 
 
+def same_gpu(meta):
+    uuids = subprocess.check_output(
+        [
+            "nvidia-smi", "--query-gpu=uuid",
+            "--format=csv,noheader,nounits",
+        ], text=True,
+    ).strip().splitlines()
+    if len(uuids) != 1 or uuids[0] != meta["gpu_uuid"]:
+        raise ValueError("fresh prose training moved physical GPU")
+
+
 def collect(args):
     entries = freeze(args)
+    meta = json.loads(args.run_meta.read_text())
     if not 0 <= args.start < args.stop <= len(entries):
         raise ValueError("open-prose training range differs")
     args.out.mkdir(exist_ok=True)
     for index in range(args.start, args.stop):
+        same_gpu(meta)
         entry = entries[index]
         shift = index % len(ARMS)
         order = list(ARMS[shift:] + ARMS[:shift])
@@ -90,12 +115,14 @@ def collect(args):
 
 def main():
     parser = argparse.ArgumentParser()
-    for name in ("binary", "model", "workloads", "out"):
+    for name in ("binary", "model", "workloads", "out", "run-meta"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--stop", type=int, default=16)
     args = parser.parse_args()
-    for name in ("binary", "model", "workloads", "out"):
+    for name in (
+        "binary", "model", "workloads", "out", "run_meta",
+    ):
         setattr(args, name, getattr(args, name).resolve())
     collect(args)
 
