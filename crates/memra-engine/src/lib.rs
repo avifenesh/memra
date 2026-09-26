@@ -927,6 +927,7 @@ pub mod dsv4_topology;
 pub mod f16_ffi;
 pub mod fp8_ffi;
 pub mod glm5_tp_sampler;
+pub mod mimo_qkv_ffi;
 pub mod mmq_ffi;
 pub mod moe_cache;
 pub mod prime_graph;

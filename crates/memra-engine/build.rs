@@ -513,6 +513,8 @@ fn main() {
             // arithmetic from the oracle contract.
             "cu/dsv4_gpu.cu",
             "cu/dsv4_sampler.cu",
+            // Pinned MiMo source QKV shard outputs gathered on-device.
+            "cu/mimo_qkv_gather.cu",
             // Small-message cross-rank all-reduce for TP decode (lane/tp-allreduce-20260906).
             // Portable CUDA C; peer stores plus a bounded flag wait, no oracle to match, so it
             // takes the default flags rather than dsv4_gpu.cu's -fmad=false.
