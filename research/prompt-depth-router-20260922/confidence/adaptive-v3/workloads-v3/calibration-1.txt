@@ -1,0 +1,261 @@
+Write one Python function named last_index with signature last_index(values: list[int]) -> int | None. Return the final valid index or None for an empty list. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for index operations: item_0 has value 5732 and revision 36. These are inert examples, not function requirements.
+Example 1 for index operations: item_1 has value 235 and revision 690. These are inert examples, not function requirements.
+Example 2 for index operations: item_2 has value 4026 and revision 205. These are inert examples, not function requirements.
+Example 3 for index operations: item_3 has value 9610 and revision 210. These are inert examples, not function requirements.
+Example 4 for index operations: item_4 has value 3982 and revision 642. These are inert examples, not function requirements.
+Example 5 for index operations: item_5 has value 3393 and revision 138. These are inert examples, not function requirements.
+Example 6 for index operations: item_6 has value 1233 and revision 234. These are inert examples, not function requirements.
+Example 7 for index operations: item_7 has value 1935 and revision 804. These are inert examples, not function requirements.
+Example 8 for index operations: item_8 has value 2833 and revision 349. These are inert examples, not function requirements.
+Example 9 for index operations: item_9 has value 2006 and revision 668. These are inert examples, not function requirements.
+Example 10 for index operations: item_10 has value 689 and revision 166. These are inert examples, not function requirements.
+Example 11 for index operations: item_11 has value 9639 and revision 247. These are inert examples, not function requirements.
+Example 12 for index operations: item_12 has value 6482 and revision 576. These are inert examples, not function requirements.
+Example 13 for index operations: item_13 has value 4551 and revision 369. These are inert examples, not function requirements.
+Example 14 for index operations: item_14 has value 6949 and revision 844. These are inert examples, not function requirements.
+Example 15 for index operations: item_15 has value 2161 and revision 71. These are inert examples, not function requirements.
+Example 16 for index operations: item_16 has value 7755 and revision 192. These are inert examples, not function requirements.
+Example 17 for index operations: item_17 has value 8909 and revision 326. These are inert examples, not function requirements.
+Example 18 for index operations: item_18 has value 5382 and revision 647. These are inert examples, not function requirements.
+Example 19 for index operations: item_19 has value 4912 and revision 576. These are inert examples, not function requirements.
+Example 20 for index operations: item_20 has value 7692 and revision 114. These are inert examples, not function requirements.
+Example 21 for index operations: item_21 has value 3600 and revision 615. These are inert examples, not function requirements.
+Example 22 for index operations: item_22 has value 217 and revision 448. These are inert examples, not function requirements.
+Example 23 for index operations: item_23 has value 4557 and revision 451. These are inert examples, not function requirements.
+Example 24 for index operations: item_24 has value 9738 and revision 212. These are inert examples, not function requirements.
+Example 25 for index operations: item_25 has value 1989 and revision 296. These are inert examples, not function requirements.
+Example 26 for index operations: item_26 has value 2800 and revision 58. These are inert examples, not function requirements.
+Example 27 for index operations: item_27 has value 9175 and revision 605. These are inert examples, not function requirements.
+Example 28 for index operations: item_28 has value 2684 and revision 356. These are inert examples, not function requirements.
+Example 29 for index operations: item_29 has value 9378 and revision 835. These are inert examples, not function requirements.
+Example 30 for index operations: item_30 has value 1733 and revision 72. These are inert examples, not function requirements.
+Example 31 for index operations: item_31 has value 24 and revision 505. These are inert examples, not function requirements.
+Example 32 for index operations: item_32 has value 9187 and revision 872. These are inert examples, not function requirements.
+Example 33 for index operations: item_33 has value 7012 and revision 173. These are inert examples, not function requirements.
+Example 34 for index operations: item_34 has value 893 and revision 583. These are inert examples, not function requirements.
+Example 35 for index operations: item_35 has value 4647 and revision 489. These are inert examples, not function requirements.
+Example 36 for index operations: item_36 has value 9560 and revision 3. These are inert examples, not function requirements.
+Example 37 for index operations: item_37 has value 5737 and revision 324. These are inert examples, not function requirements.
+Example 38 for index operations: item_38 has value 3150 and revision 750. These are inert examples, not function requirements.
+Example 39 for index operations: item_39 has value 6087 and revision 498. These are inert examples, not function requirements.
+Example 40 for index operations: item_40 has value 2577 and revision 627. These are inert examples, not function requirements.
+Example 41 for index operations: item_41 has value 6552 and revision 521. These are inert examples, not function requirements.
+Example 42 for index operations: item_42 has value 2329 and revision 220. These are inert examples, not function requirements.
+Example 43 for index operations: item_43 has value 5274 and revision 631. These are inert examples, not function requirements.
+Example 44 for index operations: item_44 has value 9794 and revision 897. These are inert examples, not function requirements.
+Example 45 for index operations: item_45 has value 4492 and revision 810. These are inert examples, not function requirements.
+Example 46 for index operations: item_46 has value 9692 and revision 289. These are inert examples, not function requirements.
+Example 47 for index operations: item_47 has value 1731 and revision 522. These are inert examples, not function requirements.
+Example 48 for index operations: item_48 has value 5397 and revision 131. These are inert examples, not function requirements.
+Example 49 for index operations: item_49 has value 8707 and revision 20. These are inert examples, not function requirements.
+Example 50 for index operations: item_50 has value 328 and revision 101. These are inert examples, not function requirements.
+Example 51 for index operations: item_51 has value 1990 and revision 666. These are inert examples, not function requirements.
+Example 52 for index operations: item_52 has value 4017 and revision 262. These are inert examples, not function requirements.
+Example 53 for index operations: item_53 has value 1673 and revision 381. These are inert examples, not function requirements.
+Example 54 for index operations: item_54 has value 3605 and revision 464. These are inert examples, not function requirements.
+Example 55 for index operations: item_55 has value 191 and revision 374. These are inert examples, not function requirements.
+Example 56 for index operations: item_56 has value 6937 and revision 589. These are inert examples, not function requirements.
+Example 57 for index operations: item_57 has value 8022 and revision 623. These are inert examples, not function requirements.
+Example 58 for index operations: item_58 has value 405 and revision 715. These are inert examples, not function requirements.
+Example 59 for index operations: item_59 has value 2163 and revision 133. These are inert examples, not function requirements.
+Example 60 for index operations: item_60 has value 1853 and revision 99. These are inert examples, not function requirements.
+Example 61 for index operations: item_61 has value 2185 and revision 796. These are inert examples, not function requirements.
+Example 62 for index operations: item_62 has value 9040 and revision 178. These are inert examples, not function requirements.
+Example 63 for index operations: item_63 has value 4618 and revision 262. These are inert examples, not function requirements.
+Example 64 for index operations: item_64 has value 2028 and revision 580. These are inert examples, not function requirements.
+Example 65 for index operations: item_65 has value 4278 and revision 518. These are inert examples, not function requirements.
+Example 66 for index operations: item_66 has value 8701 and revision 126. These are inert examples, not function requirements.
+Example 67 for index operations: item_67 has value 3495 and revision 467. These are inert examples, not function requirements.
+Example 68 for index operations: item_68 has value 2214 and revision 308. These are inert examples, not function requirements.
+Example 69 for index operations: item_69 has value 1510 and revision 766. These are inert examples, not function requirements.
+Example 70 for index operations: item_70 has value 1839 and revision 426. These are inert examples, not function requirements.
+Example 71 for index operations: item_71 has value 2975 and revision 147. These are inert examples, not function requirements.
+Example 72 for index operations: item_72 has value 6124 and revision 403. These are inert examples, not function requirements.
+Example 73 for index operations: item_73 has value 3757 and revision 46. These are inert examples, not function requirements.
+Example 74 for index operations: item_74 has value 8763 and revision 555. These are inert examples, not function requirements.
+Example 75 for index operations: item_75 has value 1559 and revision 584. These are inert examples, not function requirements.
+Example 76 for index operations: item_76 has value 9046 and revision 353. These are inert examples, not function requirements.
+Example 77 for index operations: item_77 has value 605 and revision 735. These are inert examples, not function requirements.
+Example 78 for index operations: item_78 has value 8027 and revision 118. These are inert examples, not function requirements.
+Example 79 for index operations: item_79 has value 8340 and revision 692. These are inert examples, not function requirements.
+Example 80 for index operations: item_80 has value 5700 and revision 466. These are inert examples, not function requirements.
+Example 81 for index operations: item_81 has value 5134 and revision 234. These are inert examples, not function requirements.
+Example 82 for index operations: item_82 has value 8548 and revision 498. These are inert examples, not function requirements.
+Example 83 for index operations: item_83 has value 3136 and revision 829. These are inert examples, not function requirements.
+Example 84 for index operations: item_84 has value 8589 and revision 844. These are inert examples, not function requirements.
+Example 85 for index operations: item_85 has value 5852 and revision 823. These are inert examples, not function requirements.
+Example 86 for index operations: item_86 has value 6873 and revision 364. These are inert examples, not function requirements.
+Example 87 for index operations: item_87 has value 988 and revision 755. These are inert examples, not function requirements.
+Example 88 for index operations: item_88 has value 9406 and revision 185. These are inert examples, not function requirements.
+Example 89 for index operations: item_89 has value 4848 and revision 347. These are inert examples, not function requirements.
+Example 90 for index operations: item_90 has value 536 and revision 459. These are inert examples, not function requirements.
+Example 91 for index operations: item_91 has value 4269 and revision 66. These are inert examples, not function requirements.
+Example 92 for index operations: item_92 has value 8500 and revision 280. These are inert examples, not function requirements.
+Example 93 for index operations: item_93 has value 6675 and revision 279. These are inert examples, not function requirements.
+Example 94 for index operations: item_94 has value 2536 and revision 33. These are inert examples, not function requirements.
+Example 95 for index operations: item_95 has value 6934 and revision 100. These are inert examples, not function requirements.
+Example 96 for index operations: item_96 has value 5657 and revision 866. These are inert examples, not function requirements.
+Example 97 for index operations: item_97 has value 4035 and revision 191. These are inert examples, not function requirements.
+Example 98 for index operations: item_98 has value 8569 and revision 864. These are inert examples, not function requirements.
+Example 99 for index operations: item_99 has value 8263 and revision 273. These are inert examples, not function requirements.
+Example 100 for index operations: item_100 has value 6724 and revision 273. These are inert examples, not function requirements.
+Example 101 for index operations: item_101 has value 3267 and revision 517. These are inert examples, not function requirements.
+Example 102 for index operations: item_102 has value 3367 and revision 187. These are inert examples, not function requirements.
+Example 103 for index operations: item_103 has value 7353 and revision 364. These are inert examples, not function requirements.
+Example 104 for index operations: item_104 has value 4768 and revision 821. These are inert examples, not function requirements.
+Example 105 for index operations: item_105 has value 10 and revision 15. These are inert examples, not function requirements.
+Example 106 for index operations: item_106 has value 921 and revision 851. These are inert examples, not function requirements.
+Example 107 for index operations: item_107 has value 227 and revision 864. These are inert examples, not function requirements.
+Example 108 for index operations: item_108 has value 6799 and revision 734. These are inert examples, not function requirements.
+Example 109 for index operations: item_109 has value 5913 and revision 805. These are inert examples, not function requirements.
+Example 110 for index operations: item_110 has value 3253 and revision 580. These are inert examples, not function requirements.
+Example 111 for index operations: item_111 has value 8543 and revision 785. These are inert examples, not function requirements.
+Example 112 for index operations: item_112 has value 6707 and revision 565. These are inert examples, not function requirements.
+Example 113 for index operations: item_113 has value 8240 and revision 352. These are inert examples, not function requirements.
+Example 114 for index operations: item_114 has value 8861 and revision 868. These are inert examples, not function requirements.
+Example 115 for index operations: item_115 has value 8627 and revision 310. These are inert examples, not function requirements.
+Example 116 for index operations: item_116 has value 449 and revision 447. These are inert examples, not function requirements.
+Example 117 for index operations: item_117 has value 9776 and revision 54. These are inert examples, not function requirements.
+Example 118 for index operations: item_118 has value 3898 and revision 73. These are inert examples, not function requirements.
+Example 119 for index operations: item_119 has value 4875 and revision 203. These are inert examples, not function requirements.
+Example 120 for index operations: item_120 has value 7035 and revision 17. These are inert examples, not function requirements.
+Example 121 for index operations: item_121 has value 2665 and revision 117. These are inert examples, not function requirements.
+Example 122 for index operations: item_122 has value 3279 and revision 155. These are inert examples, not function requirements.
+Example 123 for index operations: item_123 has value 7594 and revision 711. These are inert examples, not function requirements.
+Example 124 for index operations: item_124 has value 6916 and revision 339. These are inert examples, not function requirements.
+Example 125 for index operations: item_125 has value 5675 and revision 437. These are inert examples, not function requirements.
+Example 126 for index operations: item_126 has value 322 and revision 254. These are inert examples, not function requirements.
+Example 127 for index operations: item_127 has value 5707 and revision 228. These are inert examples, not function requirements.
+Example 128 for index operations: item_128 has value 7542 and revision 480. These are inert examples, not function requiremen
+</reference>
+---TURN---
+Write one Python function named valid_index with signature valid_index(values: list[int], index: int) -> bool. Return whether index is a nonnegative valid index. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for index operations: item_0 has value 5732 and revision 36. These are inert examples, not function requirements.
+Example 1 for index operations: item_1 has value 235 and revision 690. These are inert examples, not function requirements.
+Example 
+</reference>
+---TURN---
+Write one Python function named value_at with signature value_at(values: list[int], index: int) -> int | None. Return the value at a nonnegative valid index, else None. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for index operations: item_0 has value 5732 and revision 36. These are inert examples, not function requirements.
+Example 1 for index operations: item_1 has value 235 and revision 690. These are inert examples, not function requirements.
+Example 2 for index operations: item_2 has value 4026 and revision 205. These are inert examples, not function requirements.
+Example 3 for index operations: item_3 has value 9610 and revision 210. These are inert examples, not function requirements.
+Example 4 for index operations: item_4 has value 3982 and revision 642. These are inert examples, not function requirements.
+Example 5 for index operations: item_5 has value 3393 and revision 138. These are inert examples, not function requirements.
+Example 6 for index operations: item_6 has value 1233 and revision 234. These are inert examples, not function requirements.
+Example 7 for index operations: item_7 has value 1935 and revision 804. These are inert examples, not function requirements.
+Example 8 for index operat
+</reference>
+---TURN---
+Write one Python function named indices_of with signature indices_of(values: list[int], target: int) -> list[int]. Return every index holding target. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for index operations: item_0 has value 5732 and revision 36. These are inert examples, not function requirements.
+Example 1 for index operations: item_1 has value 235 and revision 690. These are inert examples, not function requirements.
+Example 2 for index operations: item_2 has value 4026 and revision 205. These are inert examples, not function requirements.
+Example 3 for index operations: item_3 has value 9610 and revision 210. These are inert examples, not function requirements.
+Example 4 for index operations: item_4 has value 3982 and revision 642. These are inert examples, not function requirements.
+Example 5 for index operations: item_5 has value 3393 and revision 138. These are inert examples, not function requirements.
+Example 6 for index operations: item_6 has value 1233 and revision 234. These are inert examples, not function requirements.
+Example 7 for index operations: item_7 has value 1935 and revision 804. These are inert examples, not function requirements.
+Example 8 for index operations: item_8 has value 2833 and revision 349. These are inert examples, not function requirements.
+Example 9 for index operations: item_9 has value 2006 and revision 668. These are inert examples, not function requirements.
+Example 10 for index operations: item_10 has value 689 and revision 166. These are inert examples, not function requirements.
+Example 11 for index operations: item_11 has value 9639 and revision 247. These are inert examples, not function requirements.
+Example 12 for index operations: item_12 has value 6482 and revision 576. These are inert examples, not function requirements.
+Example 13 for index operations: item_13 has value 4551 and revision 369. These are inert examples, not function requirements.
+Example 14 for index operations: item_14 has value 6949 and revision 844. These are inert examples, not function requirements.
+Example 15 for index operations: item_15 has value 2161 and revision 71. These are inert examples, not function requirements.
+Example 16 for index operations: item_16 has value 7755 and revision 192. These are inert examples, not function requirements.
+Example 17 for index operations: item_17 has value 8909 and revision 326. These are inert examples, not function requirements.
+Example 18 for index operations: item_18 has value 5382 and revision 647. These are inert examples, not function requirements.
+Example 19 for index operations: item_19 has value 4912 and revision 576. These are inert examples, not function requirements.
+Example 20 for index operations: item_20 has value 7692 and revision 114. These are inert examples, not function requirements.
+Example 21 for index operations: item_21 has value 3600 and revision 615. These are inert examples, not function requirements.
+Example 22 for index operations: item_22 has value 217 and revision 448. These are inert examples, not function requirements.
+Example 23 for index operations: item_23 has value 4557 and revision 451. These are inert examples, not function requirements.
+Example 24 for index operations: item_24 has value 9738 and revision 212. These are inert examples, not function requirements.
+Example 25 for index operations: item_25 has value 1989 and revision 296. These are inert examples, not function requirements.
+Example 26 for index operations: item_26 has value 2800 and revision 58. These are inert examples, not function requirements.
+Example 27 for index operations: item_27 has value 9175 and revision 605. These are inert examples, not function requirements.
+Example 28 for index operations: item_28 has value 2684 and revision 356. These are inert examples, not function requirements.
+Example 29 for index operations: item_29 has value 9378 and revision 835. These are inert examples, not function requirements.
+Example 30 for index operations: item_30 has value 1733 and revision 72. These are inert examples, not function requirements.
+Example 31 for index operations: item_31 has value 24 and revision 505. These are inert examples, not function requirements.
+Example 32 for index operations: item_32 has value 9187 and r
+</reference>
+---TURN---
+Write one Python function named index_pairs with signature index_pairs(values: list[int]) -> list[tuple[int, int]]. Return index and value pairs in order. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for index operations: item_0 has value 5732 and revision 36. These are inert examples, not function requirements.
+Example 1 for index operations: item_1 has value 235 and revision 690. These are inert examples, not function requirements.
+Example 
+</reference>
+---TURN---
+Write one Python function named even_indices with signature even_indices(values: list[int]) -> list[int]. Return values at even indices. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for index operations: item_0 has value 5732 and revision 36. These are inert examples, not function requirements.
+Example 1 for index operations: item_1 has value 235 and revision 690. These are inert examples, not function requirements.
+Example 2 for index operations: item_2 has value 4026 and revision 205. These are inert examples, not function requirements.
+Example 3 for index operations: item_3 has value 9610 and revision 210. These are inert examples, not function requirements.
+Example 4 for index operations: item_4 has value 3982 and revision 642. These are inert examples, not function requirements.
+Example 5 for index operations: item_5 has value 3393 and revision 138. These are inert examples, not function requirements.
+Example 6 for index operations: item_6 has value 1233 and revision 234. These are inert examples, not function requirements.
+Example 7 for index operations: item_7 has value 1935 and revision 804. These are inert examples, not function requirements.
+Example 8 for index operat
+</reference>
+---TURN---
+Write one Python function named odd_indices with signature odd_indices(values: list[int]) -> list[int]. Return values at odd indices. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for index operations: item_0 has value 5732 and revision 36. These are inert examples, not function requirements.
+Example 1 for index operations: item_1 has value 235 and revision 690. These are inert examples, not function requirements.
+Example 2 for index operations: item_2 has value 4026 and revision 205. These are inert examples, not function requirements.
+Example 3 for index operations: item_3 has value 9610 and revision 210. These are inert examples, not function requirements.
+Example 4 for index operations: item_4 has value 3982 and revision 642. These are inert examples, not function requirements.
+Example 5 for index operations: item_5 has value 3393 and revision 138. These are inert examples, not function requirements.
+Example 6 for index operations: item_6 has value 1233 and revision 234. These are inert examples, not function requirements.
+Example 7 for index operations: item_7 has value 1935 and revision 804. These are inert examples, not function requirements.
+Example 8 for index operations: item_8 has value 2833 and revision 349. These are inert examples, not function requirements.
+Example 9 for index operations: item_9 has value 2006 and revision 668. These are inert examples, not function requirements.
+Example 10 for index operations: item_10 has value 689 and revision 166. These are inert examples, not function requirements.
+Example 11 for index operations: item_11 has value 9639 and revision 247. These are inert examples, not function requirements.
+Example 12 for index operations: item_12 has value 6482 and revision 576. These are inert examples, not function requirements.
+Example 13 for index operations: item_13 has value 4551 and revision 369. These are inert examples, not function requirements.
+Example 14 for index operations: item_14 has value 6949 and revision 844. These are inert examples, not function requirements.
+Example 15 for index operations: item_15 has value 2161 and revision 71. These are inert examples, not function requirements.
+Example 16 for index operations: item_16 has value 7755 and revision 192. These are inert examples, not function requirements.
+Example 17 for index operations: item_17 has value 8909 and revision 326. These are inert examples, not function requirements.
+Example 18 for index operations: item_18 has value 5382 and revision 647. These are inert examples, not function requirements.
+Example 19 for index operations: item_19 has value 4912 and revision 576. These are inert examples, not function requirements.
+Example 20 for index operations: item_20 has value 7692 and revision 114. These are inert examples, not function requirements.
+Example 21 for index operations: item_21 has value 3600 and revision 615. These are inert examples, not function requirements.
+Example 22 for index operations: item_22 has value 217 and revision 448. These are inert examples, not function requirements.
+Example 23 for index operations: item_23 has value 4557 and revision 451. These are inert examples, not function requirements.
+Example 24 for index operations: item_24 has value 9738 and revision 212. These are inert examples, not function requirements.
+Example 25 for index operations: item_25 has value 1989 and revision 296. These are inert examples, not function requirements.
+Example 26 for index operations: item_26 has value 2800 and revision 58. These are inert examples, not function requirements.
+Example 27 for index operations: item_27 has value 9175 and revision 605. These are inert examples, not function requirements.
+Example 28 for index operations: item_28 has value 2684 and revision 356. These are inert examples, not function requirements.
+Example 29 for index operations: item_29 has value 9378 and revision 835. These are inert examples, not function requirements.
+Example 30 for index operations: item_30 has value 1733 and revision 72. These are inert examples, not function requirements.
+Example 31 for index operations: item_31 has value 24 and revision 505. These are inert examples, not function requirements.
+Example 32 for index operations: item_32 has value 9187 and r
+</reference>
+---TURN---
+Write one Python function named reverse_indices with signature reverse_indices(values: list[int]) -> list[int]. Return valid indices in descending order. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for index operations: item_0 has value 5732 and revision 36. These are inert examples, not function requirements.
+Example 1 for index operations: item_1 has value 235 and revision 690. These are inert examples, not function requirements.
+Example 
+</reference>

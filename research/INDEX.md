@@ -7,6 +7,16 @@ Check here BEFORE re-running an experiment; add your lane's row at close. Full r
 live in each dir (jsonl/logs are out of default rg via the repo .ignore — `rg -u` to
 include). `rg '<topic>' research/INDEX.md` = the fast path to any lane's verdict.
 
+prompt-depth-router-20260922/joint-v10-rerun | Verdict: no code-trained controller transfer win over the best fixed control on either tested non-code workload. | prompt-depth-router-20260922/joint-v10-rerun/VERDICT.md
+
+prompt-depth-router-20260922/joint-v10 | Verdict: no non-code transfer result was established. | prompt-depth-router-20260922/joint-v10/VERDICT.md
+
+prompt-depth-router-20260922/joint-v9 | Verdict: no learned-policy throughput win over the best fixed control on the tested workload. | prompt-depth-router-20260922/joint-v9/VERDICT.md
+
+prompt-depth-router-20260922/joint-v8 | Verdict: no learned-policy throughput win on the tested code workload. | prompt-depth-router-20260922/joint-v8/VERDICT.md
+
+prompt-depth-router-20260922 | This versioned experiment measured a genuinely live, data-derived confidence cutoff. It did not improve the pinned Qwen code workload. | prompt-depth-router-20260922/confidence/adaptive-v3/VERDICT.md
+
 mtp-continuing-session-20260921 | The cost learner did not beat the calibrated fixed-depth control on either artifact. | mtp-continuing-session-20260921/RESULTS.md
 
 mtp-calibrated-depth-20260920 | The completed cold-prefill follow-up favors calibrated fixed depth over the unchanged cost learner on both tested artifacts. | mtp-calibrated-depth-20260920/RESULTS.md

@@ -1,0 +1,228 @@
+{
+  "confidence_fraction": [
+    4,
+    5
+  ],
+  "features": [
+    "prompt_kind",
+    "bytes_seen",
+    "fenced",
+    "trailing_ticks",
+    "digits",
+    "letters",
+    "math_symbols",
+    "code_symbols",
+    "spaces",
+    "newlines",
+    "underscores",
+    "line_indent",
+    "trailing_colon",
+    "code_intro_words",
+    "code_keywords",
+    "trailing_backtick"
+  ],
+  "max_depth": 4,
+  "min_leaf": 64,
+  "nodes": [
+    {
+      "counts": [
+        6119,
+        1475,
+        1057
+      ],
+      "feature": 2,
+      "left": 1,
+      "right": 16,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        6119,
+        14,
+        1057
+      ],
+      "feature": 4,
+      "left": 2,
+      "right": 9,
+      "threshold": 10
+    },
+    {
+      "counts": [
+        5367,
+        14,
+        74
+      ],
+      "feature": 4,
+      "left": 3,
+      "right": 6,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        4740,
+        14,
+        9
+      ],
+      "feature": 1,
+      "left": 4,
+      "right": 5,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        117,
+        13,
+        0
+      ],
+      "feature": -1,
+      "left": 0,
+      "right": 0,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        4623,
+        1,
+        9
+      ],
+      "feature": -1,
+      "left": 0,
+      "right": 0,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        627,
+        0,
+        65
+      ],
+      "feature": 1,
+      "left": 7,
+      "right": 8,
+      "threshold": 83
+    },
+    {
+      "counts": [
+        48,
+        0,
+        30
+      ],
+      "feature": -1,
+      "left": 0,
+      "right": 0,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        579,
+        0,
+        35
+      ],
+      "feature": -1,
+      "left": 0,
+      "right": 0,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        752,
+        0,
+        983
+      ],
+      "feature": 4,
+      "left": 10,
+      "right": 13,
+      "threshold": 30
+    },
+    {
+      "counts": [
+        312,
+        0,
+        139
+      ],
+      "feature": 9,
+      "left": 11,
+      "right": 12,
+      "threshold": 2
+    },
+    {
+      "counts": [
+        175,
+        0,
+        35
+      ],
+      "feature": -1,
+      "left": 0,
+      "right": 0,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        137,
+        0,
+        104
+      ],
+      "feature": -1,
+      "left": 0,
+      "right": 0,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        440,
+        0,
+        844
+      ],
+      "feature": 4,
+      "left": 14,
+      "right": 15,
+      "threshold": 51
+    },
+    {
+      "counts": [
+        396,
+        0,
+        562
+      ],
+      "feature": -1,
+      "left": 0,
+      "right": 0,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        44,
+        0,
+        282
+      ],
+      "feature": -1,
+      "left": 0,
+      "right": 0,
+      "threshold": 0
+    },
+    {
+      "counts": [
+        0,
+        1461,
+        0
+      ],
+      "feature": -1,
+      "left": 0,
+      "right": 0,
+      "threshold": 0
+    }
+  ],
+  "training_class_counts": [
+    6119,
+    1475,
+    1057
+  ],
+  "training_groups": [
+    "gemma/cal-a",
+    "gemma/cal-b",
+    "gemma/cal-c",
+    "qwen/cal-a",
+    "qwen/cal-b",
+    "qwen/cal-c"
+  ]
+}
