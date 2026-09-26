@@ -44,3 +44,29 @@ section 2a); arms REF (`run-gen-i17`, `MEMRA_MOE_PREFETCH=1`), I17, I18, I18C (I
 runs in both orders, then the profiled pair (REF, I18, I18, REF). Integrity as DAY77's, with I18's host demand sequence
 equal to I17's; the admissibility clause; I18 against I17 (`improves`, `regresses`, `flat`, gen-only primary), the door
 (I18, or I17 if I18 `regresses`) against REF; `regresses` on either card reverts I18 with its receipt.
+
+## 2a. I18 on the CPU, the binary, and the sitting, before any cell
+
+I18 landed as `c7294b912` (`residency.rs`: `TicketRecords`; `stage` builds it with the missing records sorted by id,
+`publish` places leases by id and outputs by position, the SLRU pass and `can_release` read it, the path without an
+SLRU inserts in `BankId` order). CPU gates (`day79-cpu/gates.log`): the tier suites green, the engine library 574
+passed, clippy and fmt clean. One deviation from section 1, stated: the new test (`tests/bank/day79.rs`) checks the
+map's contract (every output position gets the record whose id sits there, with the group all missing, partly cached,
+all cached, and reversed) rather than a copy of the old code kept in the test; a batch with duplicated ids stays covered
+by the existing rows test, which passes.
+
+**The CPU profile** (`day79-cpu/profile.log`, the engine library's test binaries at I17 `c380dca2d` and at I18
+`c7294b912`, one pinned core, order I17, I18, I18, I17, I17, I18; the rig shared with other lanes' agents): the
+grouped cycle P9 (the door's path) reads 2394.7 to 2424.0 ns per block at I17 and 2234.6 to 2277.8 at I18, about 150 ns
+less; in the single-record split `stage` drops from 856 to 889 to 741 to 788, `publish` rises from 298 to 308 to 331 to
+354. About 0.45 us per prefetched expert, 0.04 ms per window token at the card's 88.6 prefetches: near the target
+card's resolution again. The cell decides.
+
+Binaries: `i17=d4ab19f1d` (REF's arm and the door before I18), `i18=c7294b912`. `day79-cell.sh`, `day79-read.py`
+(DAY77's reader one step on: I18's host demand sequence equal to I17's) and `day79-box.sh`; dry checks
+(`day79-cpu/`): the reader on DAY77's BOX32 receipts relabelled one step (`dry-check-reader.log`, meaningless), the
+cell's control flow (22 runs per binary), the driver.
+
+Run as `D79_BUILDS="i17=d4ab19f1d i18=c7294b912" bash /root/wt-c/research/spill-c-20260919/day79-box.sh` on a Core
+Ultra 9 285K host with one RTX PRO 6000 Blackwell Workstation Edition (nsys). Expected: two builds about 10 minutes,
+the cell about 25. The RTX 5090's half: queue v14 (`rtx5090-queue-v14-20260926.sh`).

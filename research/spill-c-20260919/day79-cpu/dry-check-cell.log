@@ -1,0 +1,30 @@
+cell rc=0
+== nsys.txt
+nsys=/tmp/c79cell.itxYvR/bin/nsys
+NVIDIA Nsight Systems version stub
+== calls: 53 lines; per binary:      22 run-gen-i17      22 run-gen-i18 
+nsys profile --trace=cuda --sample=none --cpuctxsw=none --force-overwrite=true -o D/R/i18/ev/p-ref-r1 env MEMRA_MOE_RESIDENT=0 MEMRA_NGEN=32 MEMRA_MOE_SLOTS=9986 MEMRA_MO
+nsys export --type sqlite --force-overwrite=true -o D/R/i18/ev/p-ref-r1.sqlite D/R/i18/ev/p-ref-r1.nsys-rep
+nsys profile --trace=cuda --sample=none --cpuctxsw=none --force-overwrite=true -o D/R/i18/ev/p-on-r1 env MEMRA_MOE_RESIDENT=0 MEMRA_NGEN=32 MEMRA_MOE_SLOTS=9986 D/bins/ru
+nsys export --type sqlite --force-overwrite=true -o D/R/i18/ev/p-on-r1.sqlite D/R/i18/ev/p-on-r1.nsys-rep
+nsys profile --trace=cuda --sample=none --cpuctxsw=none --force-overwrite=true -o D/R/i18/ev/p-on-r2 env MEMRA_MOE_RESIDENT=0 MEMRA_NGEN=32 MEMRA_MOE_SLOTS=9986 D/bins/ru
+nsys export --type sqlite --force-overwrite=true -o D/R/i18/ev/p-on-r2.sqlite D/R/i18/ev/p-on-r2.nsys-rep
+nsys profile --trace=cuda --sample=none --cpuctxsw=none --force-overwrite=true -o D/R/i18/ev/p-ref-r2 env MEMRA_MOE_RESIDENT=0 MEMRA_NGEN=32 MEMRA_MOE_SLOTS=9986 MEMRA_MO
+nsys export --type sqlite --force-overwrite=true -o D/R/i18/ev/p-ref-r2.sqlite D/R/i18/ev/p-ref-r2.nsys-rep
+== run exits
+o1-i17-r1=0 o1-i17-r2=0 o1-i17-r3=0 o1-i17-r4=0 o1-i17-r5=0 o1-i18c-r1=0 o1-i18c-r2=0 o1-i18c-r3=0 o1-i18c-r4=0 o1-i18c-r5=0 o1-i18-r1=0 o1-i18-r2=0 o1-i18-r3=0 o1-i18-r4=0 o1-i18-r5=0 o1-ref-r1=0 o1-ref-r2=0 o1-ref-r3=0 o1-ref-r4=0 o1-ref-r5=0 o2-i17-r1=0 o2-i17-r2=0 o2-i17-r3=0 o2-i17-r4=0 o2-i17-r5=0 o2-i18c-r1=0 o2-i18c-r2=0 o2-i18c-r3=0 o2-i18c-r4=0 o2-i18c-r5=0 o2-i18-r1=0 o2-i18-r2=0 o2-i18-r3=0 o2-i18-r4=0 o2-i18-r5=0 o2-ref-r1=0 o2-ref-r2=0 o2-ref-r3=0 o2-ref-r4=0 o2-ref-r5=0 p-on-r1=0 p-on-r2=0 p-ref-r1=0 p-ref-r2=0
+== profile files
+D/R/i18/ev/p-on-r1.export.log
+D/R/i18/ev/p-on-r1.nsys-rep
+D/R/i18/ev/p-on-r1.sqlite
+D/R/i18/ev/p-on-r2.export.log
+D/R/i18/ev/p-on-r2.nsys-rep
+D/R/i18/ev/p-on-r2.sqlite
+D/R/i18/ev/p-ref-r1.export.log
+D/R/i18/ev/p-ref-r1.nsys-rep
+D/R/i18/ev/p-ref-r1.sqlite
+D/R/i18/ev/p-ref-r2.export.log
+D/R/i18/ev/p-ref-r2.nsys-rep
+D/R/i18/ev/p-ref-r2.sqlite
+== cell tail
+i18 cell done:      44 0 

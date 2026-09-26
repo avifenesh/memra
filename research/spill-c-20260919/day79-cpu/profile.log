@@ -1,0 +1,31 @@
+# DAY79 CPU profile: the day-61 profile (P3 split, P8, P9) from the engine lib test binaries at I17 (c380dca2d) and I18 (c7294b912), one pinned core, order i17 i18 i18 i17 i17 i18; the rig shared with other lanes' agents
+== i17
+DAY64 P8 grouped per_block_ns cycle=2545.0
+DAY77 P9 group calls per_block_ns cycle=2424.0 | P8 again cycle=2502.2
+DAY61 P3 bank per_cycle_ns demand=1827.9 finish=331.8 cycle=2176.6 | stage clock per cycle (all repeats): stages=1.00 stage=856.0 alloc=0.0 publish=298.3 retire=242.8 collect=13.2
+DAY63 P3 split per cycle (all repeats): stage_lookup=50.2 stage_cache=396.0 stage_charge=240.8 publish_output=22.9 publish_policy=207.5 host_use=36.2 retire_only=12.2 ack=194.5 ack_release=99.8
+== i18
+DAY64 P8 grouped per_block_ns cycle=2328.8
+DAY77 P9 group calls per_block_ns cycle=2277.8 | P8 again cycle=2279.0
+DAY61 P3 bank per_cycle_ns demand=1730.0 finish=309.7 cycle=2055.7 | stage clock per cycle (all repeats): stages=1.00 stage=741.3 alloc=0.0 publish=331.0 retire=223.0 collect=13.1
+DAY63 P3 split per cycle (all repeats): stage_lookup=50.7 stage_cache=293.0 stage_charge=233.2 publish_output=19.2 publish_policy=245.7 host_use=34.9 retire_only=12.0 ack=176.1 ack_release=97.6
+== i18
+DAY64 P8 grouped per_block_ns cycle=2305.4
+DAY77 P9 group calls per_block_ns cycle=2234.6 | P8 again cycle=2595.4
+DAY61 P3 bank per_cycle_ns demand=1848.5 finish=332.4 cycle=2198.2 | stage clock per cycle (all repeats): stages=1.00 stage=788.2 alloc=0.0 publish=354.3 retire=239.4 collect=14.0
+DAY63 P3 split per cycle (all repeats): stage_lookup=53.1 stage_cache=310.7 stage_charge=249.3 publish_output=20.5 publish_policy=262.8 host_use=37.3 retire_only=12.9 ack=189.2 ack_release=105.9
+== i17
+DAY64 P8 grouped per_block_ns cycle=2595.4
+DAY77 P9 group calls per_block_ns cycle=2407.5 | P8 again cycle=2540.8
+DAY61 P3 bank per_cycle_ns demand=1874.9 finish=346.0 cycle=2237.9 | stage clock per cycle (all repeats): stages=1.00 stage=888.5 alloc=0.0 publish=307.9 retire=253.3 collect=13.9
+DAY63 P3 split per cycle (all repeats): stage_lookup=54.9 stage_cache=405.4 stage_charge=248.2 publish_output=25.0 publish_policy=213.0 host_use=36.8 retire_only=12.7 ack=203.8 ack_release=104.0
+== i17
+DAY64 P8 grouped per_block_ns cycle=2523.3
+DAY77 P9 group calls per_block_ns cycle=2394.7 | P8 again cycle=2542.8
+DAY61 P3 bank per_cycle_ns demand=1798.4 finish=332.9 cycle=2147.6 | stage clock per cycle (all repeats): stages=1.00 stage=871.0 alloc=0.0 publish=297.9 retire=245.7 collect=13.2
+DAY63 P3 split per cycle (all repeats): stage_lookup=54.6 stage_cache=407.2 stage_charge=239.5 publish_output=22.8 publish_policy=207.1 host_use=36.2 retire_only=12.2 ack=197.3 ack_release=100.9
+== i18
+DAY64 P8 grouped per_block_ns cycle=2319.8
+DAY77 P9 group calls per_block_ns cycle=2257.0 | P8 again cycle=2331.5
+DAY61 P3 bank per_cycle_ns demand=1736.2 finish=321.1 cycle=2073.8 | stage clock per cycle (all repeats): stages=1.00 stage=751.8 alloc=0.0 publish=336.7 retire=228.1 collect=13.4
+DAY63 P3 split per cycle (all repeats): stage_lookup=54.4 stage_cache=293.5 stage_charge=236.3 publish_output=19.6 publish_policy=249.3 host_use=35.7 retire_only=12.3 ack=180.0 ack_release=100.7
