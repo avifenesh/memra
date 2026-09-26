@@ -351,3 +351,42 @@ Selection for the first route: one RTX PRO 6000 (target class), whole machine (`
 so no co-tenant shares the drive), 600 W cap, a local volume of at least 500 GB, 94 GB or more
 RAM, 16 or more cores, driver supporting CUDA 13.1 or newer, a real NVMe drive model in the
 advertisement. Three offers met this on 2026-09-25; the private file ranks them.
+
+## D. The 5090 half (OWED 19 and 23; registered 2026-09-26 before any 5090 cell)
+
+Rig: the local laptop RTX 5090 (24 GB, enforced cap reported `[N/A]`, maximum 175 W), shared
+with lanes B and C and occasionally another project's process. Storage: `/data` (LVM over a
+PCIe 4.0 x4 NVMe), proven `nvme-local-direct` in `M1-PROOF-CONTROLS.md`; a fresh proof receipt of
+`/data` is taken first and bound as in section B. Artifact: the same pinned GGUF under `/data`,
+re-hashed before the first cell. Binaries: a local release build from the lane tip whose engine
+source equals BOX27's build (`git diff --quiet ffff2d89a HEAD -- crates Cargo.toml Cargo.lock`),
+`MEMRA_CUDA_ARCH=120a`, so both rigs measure one program. Lock `/tmp/memra-5090.lock`.
+
+Rig rule, which changes the regimes: every process tree here runs under `systemd-run --user
+--scope -p CPUQuota=1200% -p MemoryMax=20G`, and page cache is charged to that cgroup. So:
+
+- **capped** (replaces cold here): cold start of each visit (DONTNEED plus `mincore` 0) inside a
+  20 GiB cgroup with `MemorySwapMax=0`. The 18.2 GB artifact plus the process cannot all be
+  cached, so this is neither the box's cold nor its bounded regime; it is the rig's ceiling.
+- **bounded**: the same, with the cgroup's `MemoryMax` set to the measured peak visit RSS plus
+  7,000,000,000 bytes (below half the bank), so the page cache cannot hold the bank. No balloon:
+  the cgroup limit is the bound, verified per visit by `mincore` (below 50% at visit end).
+- **warm** is not runnable under the rig rule (the file plus the process exceed 20 GiB); recorded
+  as refused by the rig rule, liftable only by the owner.
+
+Arms, order, correctness and verdict rule: exactly B3's (lock file, amendment 2 env). To share the
+card, each round of six visits is its own collector cell holding the lock only for that round;
+before each round the driver waits until the lock is free and no compute application is on the
+card, and records every wait (start, end, blocking processes by name and memory). Rounds keep
+their registered forward/reverse order, and verdicts pool the ten rounds of a regime. The
+co-tenancy gate is unchanged; `/data` also carries this desktop's `~/.cache`, so contaminated
+visits are expected and are excluded by the registered rule, not argued away.
+
+G2 5090 half: all ten registered sizes (4 KiB to 1 GiB), pinned vs pageable, both directions, D's
+protocol (calibrate each size to at least 500 ms per visit, then 5 AB plus 5 BA), the
+`h2d-probe` built as above. The laptop has no settable 600 W envelope, so D's 600/600 W check is
+replaced by: the power fields must be identical on every sample of the campaign (recorded
+verbatim). Tool: `m1-g2-5090.py`.
+
+No default follows from either half alone; with BOX27 these are the two rigs CLAUDE.md requires
+for a per-device decision.
