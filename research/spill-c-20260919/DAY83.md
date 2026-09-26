@@ -93,3 +93,45 @@ minus its in-flight-bound `wait_ns` and the bank's `retire` and `collect`, one s
 other leaf changes; `outer` already pairs `pf_demand` with the dispatch path's `demand_ns`, the owner clock's scope.
 The queue's control flow under the same stubs: 30 runs in the registered order, 10 per arm with the registered flags,
 the lock held across them, the reader run into the cell.
+
+## 2. The cell `split20` (queue v17, 2026-09-26 19:22Z to 19:31Z; `rtx5090-day83/split20/`)
+
+Queue v17 took the card at 19:22:41Z after the idle wait, on the tree `d6f56b65a`: `run-gen-i15` `de00c256...`
+(`2243b1fe2`) and `run-gen-i20` `3f58bca9...` (`8efea3a54`), the 30 runs pinned to P-cores 0-7 inside the CPU cap,
+one lock hold. The host was shared with other lanes' CPU work (load average 4.6 to 8.9 at the run boundaries); the card
+ran 64 to 71 C. Verbatim (`split20/reading.log`; the full per-arm lines are there):
+
+- `DAY83 SPLIT CHECKS rig=rtx5090 runs=30 integrity=ok`
+- `DAY83 SPLIT i20s generate leaves: outer=171.0 dispatch_inner=66.3 own_trace=16.7 bank_stage_lookup=8.4
+  bank_stage_cache=85.1 bank_stage_charge=41.8 stage_rest=13.1 bank_publish_output=2.2 bank_publish_policy=35.0
+  publish_rest=5.0 pf_resident=125.0 bank_host_use=3.3 bank_retire_only=0.9 bank_ack=26.8 bank_collect=1.3
+  retire_outer=54.7`
+- `DAY83 LARGEST rig=rtx5090 i20 generate: outer=171.0 us per token (26% of the door-only leaves' 656.7); second
+  pf_resident=125.0 -> named`
+- `DAY83 CLOCK COST rig=rtx5090 generate pf_demand i20s=390.4 i20c=386.0 us per token (the stage clock's own brackets,
+  deciding nothing)`
+- `DAY83 I15_TO_I20 rig=rtx5090 generate (i20s minus i15s, us per token, deciding nothing): outer=-2.0
+  dispatch_inner=+1.0 own_trace=-0.2 bank_stage_lookup=+0.1 bank_stage_cache=-28.0 bank_stage_charge=+1.1
+  stage_rest=-8.7 bank_publish_output=-3.7 bank_publish_policy=+0.1 publish_rest=-0.0 pf_resident=-9.1
+  bank_host_use=-0.1 bank_retire_only=-0.0 bank_ack=-4.4 bank_collect=+0.1 retire_outer=-1.0`
+
+**Read as registered: integrity ok; the largest leaf is `outer`, 171.0 us per generated token (26 percent of the
+door-only leaves), named alone; the second is `pf_resident`, 125.0.** I21's target is `outer`.
+
+**Beside it, deciding nothing.** The stage clock's own brackets cost 4.4 us per token (1 percent of `pf_demand`). In
+situ, I17 to I20 cut `stage_cache` by 28 us per token (I18's records by position, the step it changed) and the door-only
+leaves by about 55 in all, 8 percent of I15's; that is the size the card's clocks and walls saw. The local host's
+door-only work (657 us per token) is larger than BOX39's (453), as its load and laptop clocks lead one to expect; the
+shares, not the absolute times, name the target.
+
+**What `outer` and `pf_resident` have in common, from the source.** `pf_resident` is the proxy's
+`host_resident_many`: per record, the adapter's `ids` map (a hashed map from the record's local id to its `BankId`)
+and the SLRU policy's `table` (a hashed map from `BankId`, a key of about 130 bytes holding two digests and a heap
+string, to the host slot), over 30720 records. It costs 0.67 us per prefetched block here (125.0 us per token over 188
+blocks), the same order as the day-61 harness's `host_resident` (445 to 455 ns per call over the same 30720 records,
+`cpu-day63/`), so it is these two lookups over large maps with wide keys, not the registry around them. `outer`'s
+largest part is the same pair of lookups again: the traced adapter reads each demanded record's pre-demand host slot
+(for the trace) through `ids` and the SLRU `table`, 6447 records over the 32 tokens; at `pf_resident`'s per-record
+cost that is about 3.9 ms of `outer`'s 5.5 ms, about 70 percent (the rest: the proxy's registry entry, identity checks
+and pending insert, the fill drain, the trace's slot map). This is an estimate from the cell's own numbers and the
+source; I21's CPU gates measure it.

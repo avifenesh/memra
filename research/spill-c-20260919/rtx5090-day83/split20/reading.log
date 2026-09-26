@@ -1,0 +1,22 @@
+DAY83 SPLIT CHECKS rig=rtx5090 runs=30 integrity=ok
+DAY83 SPLIT i15s generate N=10 tickets=2443.0 prefetched_blocks=6007.0 dispatch_misses=440.0 (us per generated token, medians)
+DAY83 SPLIT i15s generate leaves: outer=173.0 dispatch_inner=65.3 own_trace=17.0 bank_stage_lookup=8.4 bank_stage_cache=113.1 bank_stage_charge=40.8 stage_rest=21.8 bank_publish_output=5.9 bank_publish_policy=34.9 publish_rest=5.0 pf_resident=134.2 bank_host_use=3.4 bank_retire_only=0.9 bank_ack=31.2 bank_collect=1.2 retire_outer=55.7
+DAY83 SPLIT i15s generate beside: pf_demand=430.9 pf_resident=134.2 pf_retire=82.6 pf_stage=493.2 own_inner_demand=294.7 bank_stage=184.1 bank_publish=45.7 bank_retire=35.5 eng_demand=57.2
+DAY83 SPLIT i20s generate N=10 tickets=2443.0 prefetched_blocks=6007.0 dispatch_misses=440.0 (us per generated token, medians)
+DAY83 SPLIT i20s generate leaves: outer=171.0 dispatch_inner=66.3 own_trace=16.7 bank_stage_lookup=8.4 bank_stage_cache=85.1 bank_stage_charge=41.8 stage_rest=13.1 bank_publish_output=2.2 bank_publish_policy=35.0 publish_rest=5.0 pf_resident=125.0 bank_host_use=3.3 bank_retire_only=0.9 bank_ack=26.8 bank_collect=1.3 retire_outer=54.7
+DAY83 SPLIT i20s generate beside: pf_demand=390.4 pf_resident=125.0 pf_retire=78.7 pf_stage=488.6 own_inner_demand=256.6 bank_stage=148.4 bank_publish=42.1 bank_retire=31.2 eng_demand=53.5
+DAY83 SPLIT i20c generate N=10 tickets=None prefetched_blocks=6007.0 dispatch_misses=None (us per generated token, medians)
+DAY83 SPLIT i20c generate leaves: outer=- dispatch_inner=- own_trace=- bank_stage_lookup=- bank_stage_cache=- bank_stage_charge=- stage_rest=- bank_publish_output=- bank_publish_policy=- publish_rest=- pf_resident=128.4 bank_host_use=- bank_retire_only=- bank_ack=- bank_collect=- retire_outer=-
+DAY83 SPLIT i20c generate beside: pf_demand=386.0 pf_resident=128.4 pf_retire=57.9 pf_stage=492.5 own_inner_demand=- bank_stage=- bank_publish=- bank_retire=- eng_demand=-
+DAY83 SPLIT i15s window N=10 tickets=1065.0 prefetched_blocks=2835.0 dispatch_misses=120.0 (us per generated token, medians)
+DAY83 SPLIT i15s window leaves: outer=93.7 dispatch_inner=39.4 own_trace=7.0 bank_stage_lookup=3.8 bank_stage_cache=56.3 bank_stage_charge=19.9 stage_rest=10.1 bank_publish_output=2.9 bank_publish_policy=16.9 publish_rest=2.2 pf_resident=78.4 bank_host_use=1.5 bank_retire_only=0.4 bank_ack=14.5 bank_collect=0.5 retire_outer=22.9
+DAY83 SPLIT i15s window beside: pf_demand=233.2 pf_resident=78.4 pf_retire=37.4 pf_stage=237.2 own_inner_demand=151.6 bank_stage=89.8 bank_publish=22.0 bank_retire=16.5 eng_demand=19.0
+DAY83 SPLIT i20s window N=10 tickets=1065.0 prefetched_blocks=2835.0 dispatch_misses=120.0 (us per generated token, medians)
+DAY83 SPLIT i20s window leaves: outer=90.8 dispatch_inner=39.2 own_trace=6.9 bank_stage_lookup=3.9 bank_stage_cache=42.7 bank_stage_charge=19.7 stage_rest=5.9 bank_publish_output=0.9 bank_publish_policy=16.6 publish_rest=2.2 pf_resident=72.1 bank_host_use=1.5 bank_retire_only=0.4 bank_ack=12.3 bank_collect=0.6 retire_outer=22.6
+DAY83 SPLIT i20s window beside: pf_demand=210.8 pf_resident=72.1 pf_retire=35.1 pf_stage=233.0 own_inner_demand=131.0 bank_stage=72.3 bank_publish=19.6 bank_retire=14.2 eng_demand=17.9
+DAY83 SPLIT i20c window N=10 tickets=None prefetched_blocks=2835.0 dispatch_misses=None (us per generated token, medians)
+DAY83 SPLIT i20c window leaves: outer=- dispatch_inner=- own_trace=- bank_stage_lookup=- bank_stage_cache=- bank_stage_charge=- stage_rest=- bank_publish_output=- bank_publish_policy=- publish_rest=- pf_resident=73.4 bank_host_use=- bank_retire_only=- bank_ack=- bank_collect=- retire_outer=-
+DAY83 SPLIT i20c window beside: pf_demand=208.8 pf_resident=73.4 pf_retire=27.7 pf_stage=236.6 own_inner_demand=- bank_stage=- bank_publish=- bank_retire=- eng_demand=-
+DAY83 LARGEST rig=rtx5090 i20 generate: outer=171.0 us per token (26% of the door-only leaves' 656.7); second pf_resident=125.0 -> named
+DAY83 CLOCK COST rig=rtx5090 generate pf_demand i20s=390.4 i20c=386.0 us per token (the stage clock's own brackets, deciding nothing)
+DAY83 I15_TO_I20 rig=rtx5090 generate (i20s minus i15s, us per token, deciding nothing): outer=-2.0 dispatch_inner=+1.0 own_trace=-0.2 bank_stage_lookup=+0.1 bank_stage_cache=-28.0 bank_stage_charge=+1.1 stage_rest=-8.7 bank_publish_output=-3.7 bank_publish_policy=+0.1 publish_rest=-0.0 pf_resident=-9.1 bank_host_use=-0.1 bank_retire_only=-0.0 bank_ack=-4.4 bank_collect=+0.1 retire_outer=-1.0
