@@ -34,6 +34,15 @@ fn read_float_tensor(
     if info.shape != shape {
         return Err(format!("{name}: shape {:?} != {shape:?}", info.shape).into());
     }
+    let count = shape.iter().product::<u64>() as usize;
+    let element_bytes = match info.dtype.as_str() {
+        "BF16" => 2,
+        "F32" => 4,
+        other => return Err(format!("{name}: unsupported dtype {other}").into()),
+    };
+    if bytes.len() != count * element_bytes {
+        return Err(format!("{name}: byte extent does not match dtype and shape").into());
+    }
     let values = match info.dtype.as_str() {
         "BF16" => bytes
             .chunks_exact(2)
@@ -43,9 +52,8 @@ fn read_float_tensor(
             .chunks_exact(4)
             .map(|quad| f32::from_le_bytes([quad[0], quad[1], quad[2], quad[3]]))
             .collect::<Vec<_>>(),
-        other => return Err(format!("{name}: unsupported dtype {other}").into()),
+        _ => unreachable!("dtype was checked above"),
     };
-    let count = shape.iter().product::<u64>() as usize;
     if values.len() != count || values.iter().any(|value| !value.is_finite()) {
         return Err(format!("{name}: wrong byte extent or non-finite value").into());
     }
