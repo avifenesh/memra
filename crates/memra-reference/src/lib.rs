@@ -4,6 +4,7 @@
 //! external engine fallback. Unsupported canonical operations return a named error.
 
 pub mod hidden_trace;
+pub mod mimo_audio;
 pub mod mimo_vision;
 pub mod speech;
 

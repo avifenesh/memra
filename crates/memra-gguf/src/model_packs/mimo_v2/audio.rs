@@ -9,13 +9,56 @@
 //! `MiMoAudioConfig`. Callers must bind these rows against a full HF census.
 //! This sidecar does not establish an executable audio path or model support.
 
-use crate::config::MiMoAudioConfig;
+use crate::config::{Arch, MiMoAudioConfig, ModelConfig};
 use crate::tensor_contract::{
     FloatType, QuantConstraint, TensorContractError, TensorId, TensorMatch, TensorOwner,
     TensorRequirement, TensorTransform,
 };
 
 const PROJECTION_INTERMEDIATE: u64 = 16_384;
+
+/// Pinned source audio patch encoder, after the separately bundled RVQ codec.
+/// Each group of four audio-code rows becomes one 4096-wide trunk token.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MiMoAudioPatchPlan {
+    pub code_channels: usize,
+    pub group_size: usize,
+    pub code_vocab: usize,
+    pub local_hidden: usize,
+    pub local_layers: usize,
+    pub local_heads: usize,
+    pub local_head_dim: usize,
+    pub local_full_attention: bool,
+    pub local_rope_theta: f32,
+    pub projection_input: usize,
+    pub projection_intermediate: usize,
+    pub output_hidden: usize,
+}
+
+pub fn pinned_patch_plan(config: &ModelConfig) -> Result<MiMoAudioPatchPlan, &'static str> {
+    let audio = config
+        .mimo
+        .as_ref()
+        .and_then(|mimo| mimo.audio_config.as_ref())
+        .ok_or("MiMo source has no audio patch config")?;
+    if config.arch != Arch::MiMoV2 || !pinned_geometry(audio, config.n_embd) {
+        return Err("MiMo audio patch geometry differs from pinned source");
+    }
+    Ok(MiMoAudioPatchPlan {
+        code_channels: 20,
+        group_size: 4,
+        code_vocab: 1_280,
+        local_hidden: 1_024,
+        local_layers: 6,
+        local_heads: 16,
+        local_head_dim: 64,
+        local_full_attention: true,
+        local_rope_theta: 640_000.0,
+        projection_input: 4_096,
+        projection_intermediate: 16_384,
+        output_hidden: 4_096,
+    })
+}
 
 fn pinned_geometry(audio: &MiMoAudioConfig, text_hidden_size: u32) -> bool {
     text_hidden_size == 4_096
@@ -134,6 +177,34 @@ mod tests {
     fn pinned_config() -> (MiMoAudioConfig, u32) {
         let config = ModelConfig::from_hf(&HfConfig::parse(include_str!("fixtures/config.json")));
         (config.mimo.unwrap().audio_config.unwrap(), config.n_embd)
+    }
+
+    #[test]
+    fn pinned_audio_patch_plan_exposes_four_code_rows_per_trunk_token() {
+        let config = ModelConfig::from_hf(&HfConfig::parse(include_str!("fixtures/config.json")));
+        let plan = pinned_patch_plan(&config).unwrap();
+        assert_eq!(plan.code_channels, 20);
+        assert_eq!(plan.group_size, 4);
+        assert_eq!(plan.code_vocab, 1_280);
+        assert_eq!(plan.local_hidden, 1_024);
+        assert_eq!(plan.local_layers, 6);
+        assert_eq!(plan.local_heads, 16);
+        assert_eq!(plan.local_head_dim, 64);
+        assert!(plan.local_full_attention);
+        assert_eq!(plan.local_rope_theta.to_bits(), 640_000.0f32.to_bits());
+        assert_eq!(plan.projection_input, 4_096);
+        assert_eq!(plan.projection_intermediate, 16_384);
+        assert_eq!(plan.output_hidden, 4_096);
+        let mut changed = config;
+        changed
+            .mimo
+            .as_mut()
+            .unwrap()
+            .audio_config
+            .as_mut()
+            .unwrap()
+            .group_size = 2;
+        assert!(pinned_patch_plan(&changed).is_err());
     }
 
     fn census(rows: &[TensorRequirement]) -> Vec<TensorCensusEntry> {

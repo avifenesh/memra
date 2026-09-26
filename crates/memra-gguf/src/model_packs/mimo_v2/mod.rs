@@ -1,7 +1,7 @@
 //! MiMo V2.6 tensor schema slices. Only the explicit inspection profile is
 //! registered; automatic serving selection remains closed.
 
-pub(crate) mod audio;
+pub mod audio;
 pub(crate) mod mint_headers;
 pub(crate) mod mtp;
 pub mod vision;
