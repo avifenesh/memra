@@ -1,4 +1,4 @@
-# WP-A resumable state (2026-09-26, NEED TARGET CARD: R1's sitting; W's 5090 half running)
+# WP-A resumable state (2026-09-26, NEED TARGET CARD: L's sitting; R1's queued on BOX31; W's 5090 half waiting)
 
 - Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ65 took `9ab479d9c` (DAY66); integ67 takes B1 after integ66.
 - Items 21 to 25 closed (DAY53 to DAY58); item 23's addendum F2b (`b4d6f95c2`) accepted.
@@ -32,6 +32,9 @@
   selected R1 (no-source hold 12.53 / 12.54 ms). R1 is built (`04554e99f`); its sitting is `pro-single-r1/`
   (`build.sh <tip> <R1's parent>`, then `driver.sh`, last line `R1 VERDICT -> ..`).
 - B1's 5090 half read ADOPT (DAY59 section 12); B1 goes to integ67.
+- Items 14 and 19 (DAY63, design L): built (`f6dfe303a`, CPU-green, section 3). Its sitting is `pro-single-l/`
+  (`build.sh <tip> <L's parent>`, then `driver.sh`, last line `L VERDICT -> ..`). Item 17 is re-read on top after L's
+  verdict.
 - Pre-registered and waiting in order: item 13's design (DAY62, the retire seam: lines, a price, R1
   or R2), items 14 and 19 (DAY63, design L; item 17 re-read on top), item 18 (DAY64), item 20 (DAY65, design T-H).
 - The owed 5090 cells (S4's half, V's half, item 16, and B1's (a1) and (a2) as a compatibility reading) queue on the

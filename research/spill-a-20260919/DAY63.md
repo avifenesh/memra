@@ -126,3 +126,47 @@ code.
 
 **The local builds** keep out of W's 5090 timed window: before every build, the 5090 lock's holder is checked. While
 W's hold runs its timed boots, nothing of this lane builds.
+
+## 3. Design L as built (`f6dfe303a`), and its target sitting prepared
+
+- **L1, the lease pool** (`tier_transfer.rs`), as section 2 fixed it:
+  - `PinnedBacking` gains a `capacity` beside its `len`; every slice, view and copy uses `len`.
+  - `lease_class`; `LeasePool` (`take`, `put` and `close`), shared by `Rc` with each `PinnedAllocation`.
+  - `alloc_host_kind` charges the class, takes a pooled backing (its pool charge released), or allocates the class
+    zero-filled, then sets the length.
+  - `PinnedAllocation::drop` releases the lease charge, then parks the backing under a pool-tenant charge
+    (`digest("host-tier-lease-pool", ..)`) when the pool is open and under its cap, and frees it otherwise.
+  - The engine's `Drop` closes the pool. `set_lease_pool_cap` (the default of 0 pools nothing, so every existing
+    cell and caller keeps today's program until the worker sets a cap), `lease_pool()` and `lease_pool_counts()`.
+- **The worker:**
+  - the pinned capacity is three host budgets;
+  - the pool's cap is set to one budget at the context's build, and the latch closes the pool with a line;
+  - the pre-submit split's `leases` term reads `N pinned, pooled P of N`.
+- **L2:** `host_staging_lengths` (the plans' recurrent conv and ssm planes, the max count per length over models).
+  The context's build allocates them through `staging_take` and puts them back, with the boot line or the typed
+  partial line.
+- Cells:
+  - CPU: `day63_the_lease_class_table`; `day63_nothing_reads_past_a_lease_length_and_frees_stay_in_one_place` (the
+    census); `day63_the_staging_set_at_boot_is_one_image_over_the_models`;
+    `day63_the_pool_and_the_boot_staging_are_wired_as_stated`.
+  - Native (card): `day63_a_dropped_lease_backs_the_next_same_class_lease` (the same host pointer, the new length,
+    the H2D spanning it, the ledger holding the idle class then returning to zero at the close, a closed pool
+    freeing) and `day63_a_drop_past_the_cap_frees_and_the_engine_closes_the_pool`.
+  - `NATIVE_CELLS` goes from 16 to 18.
+- The red arm (`day63/red-arm.patch`: a pooled backing keeps its capacity as its length, with a printed marker). On
+  the CPU it fails the census (`assertion failed: alloc.contains("backing.set_len(bytes);")`,
+  `day63/red-arm-cpu.log`); on the card the length cell must fail too (the sitting's unit cell).
+- CPU: engine lib `578 passed; 0 failed; 51 ignored`, tier `301 passed`, server lib `940 passed; 0 failed; 26
+  ignored`; clippy `-D warnings` on the engine and the server, all targets; fmt (`day63/`).
+- **The sitting** `pro-single-l/`, receipts `/root/spill-receipts/a-l`: `build.sh <tip> <L's parent>` (l, red and base
+  from one clone), then `driver.sh`, each step under one collector hold:
+  - `unit-cells.sh`: the two native cells green, the length cell red with the marker, the CPU censuses;
+  - `gates.sh`: the 11 gates on l;
+  - `ab.sh chain` (DAY52's chain cell, base against l, 20 boots);
+  - `ab.sh demote` (20 boots);
+  - then `l-reading.py`, whose last line is `L VERDICT -> ..`.
+  - The reader was dry-run on P2's chain and demote receipts mapped as two arms. It read base's twin `kv` drop at 8.6
+    ms, the long `leases` at 24.1 to 24.3 ms and the first `spans` at 28.1 to 28.4 ms, matching DAY52 and DAY54
+    (`INCOMPLETE` there only because P2's chain cell had its third arm).
+  - About 1.5 hours of card time.
+- Item 17 (P2 re-read on top of L) is pre-registered anew once L's verdict is read, with L as its base.
