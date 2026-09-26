@@ -4844,12 +4844,6 @@ fn host_tier_governor(
     let dimensions = device
         .checked_add(1)
         .ok_or("host tier governor: device ordinal overflow")?;
-    let twice = |bytes: usize| {
-        u64::try_from(bytes)
-            .ok()
-            .and_then(|b| b.checked_mul(2))
-            .ok_or("host tier governor: capacity overflow")
-    };
     // Option C (day 16): a promote's residency charge (`tier_charge`, device=true, taken before
     // the copy) and the registration of its fresh destination planes (`register_device`, released
     // at `take_plane`) are both on this dimension while the H2D runs, over the promoted residents'
@@ -4865,7 +4859,9 @@ fn host_tier_governor(
     // pool's idle backings (capped at one budget), so a lease's charge taken while its pooled
     // backing's charge is still held never refuses.
     capacity.pinned = thrice(host_budget)?;
-    capacity.pageable = twice(host_budget)?;
+    // WP-A day 51 (design P): a third pageable term, the hash helper's payload reserve (at most
+    // one budget, `HostPayloadReserve::cap`), so its charge is never what refuses a demote.
+    capacity.pageable = thrice(host_budget)?;
     capacity.device[device] = thrice(device_budget)?;
     // Option B: the transfer engine charges one in-flight op per K or V plane of the batch
     // (`submit_batch`); the day-13 ledger left this dimension at zero, which would have refused
@@ -5021,6 +5017,9 @@ fn host_tier_context(
         .and_then(|n| n.checked_mul(3))
         .ok_or("MEMRA_KV_HOST_CONTRACTS=1: in-flight bound overflow")?;
     let governor = host_tier_governor(device, hpx.budget, prefix_cache_budget_bytes(), inflight)?;
+    // WP-A day 51 (design P): the hash helper's payload reserve, capped at one host budget (the
+    // ledger's third pageable term).
+    let reserve = HostPayloadReserve::new(governor.clone(), hpx.budget as u64);
     let ledger: std::rc::Rc<std::cell::RefCell<dyn memra_engine::cache::tiered::BudgetGovernor>> =
         std::rc::Rc::new(std::cell::RefCell::new(HostTierLedger(governor.clone())));
     // WP-A day 17 (memra#536 Move 1): the engine carries a second stream of the same context for
@@ -5052,7 +5051,7 @@ fn host_tier_context(
         transfers: Some(std::cell::RefCell::new(transfers)),
         inflight,
         fault: std::cell::Cell::new(HostContractFault::from_door(kv_host_fault())),
-        hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()))?,
+        hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()), reserve)?,
         staging: std::cell::RefCell::new(HostStaging::default()),
         lease_pool,
     };
@@ -10834,6 +10833,9 @@ struct HostHashSplit {
     copy_bytes: u64,
     copy_minflt: i64,
     hash_ms: f64,
+    /// Day 51 (design P, log only): the staged payloads and how many took a reserve buffer.
+    staged: u32,
+    reserve_hits: u32,
     /// WP-A day 65 (`DAY65.md` design T-H, log only): the scoped threads the job ran on; the
     /// copy and hash terms above are summed over them (thread time), `helper_ms` stays the wall.
     threads: usize,
@@ -11100,6 +11102,213 @@ impl HostHashFault {
 /// and an idle 2 ms poll early).
 const HOST_HASH_DEADLINE: Duration = Duration::from_secs(10);
 
+/// WP-A day 51 (`DAY51.md` design P, OWED item 17): the hash helper's reserve of heap payload
+/// buffers whose every page is already written, keyed by exact length. DAY49 placed the helper's
+/// copy into a fresh `Vec` at one minor fault per 4 KiB page (16 ms of a 157 MB job, one tick-top
+/// poll of every publication) while no host entry frees; the reserve moves those faults into the
+/// helper's idle time. Its target is the staged lengths of the last `Hash` job, clamped to `cap`
+/// bytes. It is charged on the governor's pageable ledger for the whole target BEFORE its first
+/// buffer is allocated (a refused charge allocates nothing), and the charge is released at the
+/// retarget and when the helper exits. A hit is written with `copy_from_slice` from the staged
+/// bytes and a miss allocates as before, so the payload's bytes are the same either way.
+struct HostPayloadReserve {
+    governor: memra_engine::cache::tiered::hostprefix::SharedGovernor,
+    cap: u64,
+    /// The lengths (floats) of the current target still to allocate.
+    owed: Vec<usize>,
+    /// Allocated buffers, every element written.
+    ready: Vec<Vec<f32>>,
+    charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
+    /// The current target's bytes (the charge's size).
+    target_bytes: u64,
+    /// The governor refused this target's charge: no refill until the next retarget.
+    refused: bool,
+    /// The current target's refill figures, printed when it completes (log only).
+    refill_ms: f64,
+    refill_minflt: i64,
+    yields: u32,
+    /// WP-A day 52 (`DAY52.md` design P2): the arming state. Armed, the last job's staged lengths
+    /// are the target; disarmed, the target is empty (nothing held, no charge).
+    armed: bool,
+}
+
+/// The payload reserve's ledger tenant: it belongs to the context's helper and serves every
+/// request's demote, so its charge names its own digest, disjoint from every `tenant_salt`.
+fn host_payload_reserve_tenant() -> [u8; 32] {
+    memra_engine::cache::record::digest("host-tier-payload-reserve", b"hash helper payload reserve")
+}
+
+impl HostPayloadReserve {
+    fn new(governor: memra_engine::cache::tiered::hostprefix::SharedGovernor, cap: u64) -> Self {
+        Self {
+            governor,
+            cap,
+            owed: Vec::new(),
+            ready: Vec::new(),
+            charge: None,
+            target_bytes: 0,
+            refused: false,
+            refill_ms: 0.0,
+            refill_minflt: 0,
+            yields: 0,
+            armed: true,
+        }
+    }
+    /// WP-A day 52 (`DAY52.md` design P2, the arming rule): after a `Hash` job's copies, the job's
+    /// fresh pages are its copy's minor faults (a miss faults where its memory is new, a hit does
+    /// not) plus, when the job took any reserve buffer, the minor faults of the refill that wrote
+    /// them. Armed when the fresh pages are at least half the job's staged pages: the reserve
+    /// refills to the job's shape (`retarget(lengths)`); disarmed otherwise: it holds nothing
+    /// (`retarget(&[])`), and the next copies are today's, which reuse freed memory. A job with no
+    /// staged payload decides nothing. The one line prints on a change of state.
+    fn after_job(&mut self, lengths: &[usize], copy_minflt: i64, hits: u32) {
+        if lengths.is_empty() {
+            self.retarget(&[]);
+            return;
+        }
+        let pages = lengths
+            .iter()
+            .map(|&l| (l as u64).saturating_mul(4))
+            .sum::<u64>()
+            / 4096;
+        let fresh = copy_minflt.max(0) as u64
+            + if hits > 0 {
+                self.refill_minflt.max(0) as u64
+            } else {
+                0
+            };
+        let armed = fresh.saturating_mul(2) >= pages;
+        if armed != self.armed {
+            eprintln!(
+                "[prefix-host] payload reserve {}: the job took {fresh} fresh pages of {pages} \
+                 (rule >= {pages}/2)",
+                if armed { "armed" } else { "disarmed" }
+            );
+            self.armed = armed;
+        }
+        if armed {
+            self.retarget(lengths);
+        } else {
+            self.retarget(&[]);
+        }
+    }
+    /// A written buffer of exactly `len` floats, if the reserve holds one.
+    fn take(&mut self, len: usize) -> Option<Vec<f32>> {
+        let i = self.ready.iter().position(|v| v.len() == len)?;
+        Some(self.ready.swap_remove(i))
+    }
+    /// After a `Hash` job's copies: the buffers it did not take free, the charge releases (the
+    /// image's own pageable charge covers what the job took), and `lengths` (the job's staged
+    /// payloads, in floats) become the target, clamped to `cap` bytes in the job's order.
+    fn retarget(&mut self, lengths: &[usize]) {
+        self.ready.clear();
+        self.charge = None;
+        self.owed.clear();
+        self.target_bytes = 0;
+        for &len in lengths {
+            let bytes = (len as u64).saturating_mul(4);
+            if self.target_bytes.saturating_add(bytes) > self.cap {
+                break;
+            }
+            self.target_bytes += bytes;
+            self.owed.push(len);
+        }
+        // Allocated from the end of `owed`: reverse so the job's first payload is written first.
+        self.owed.reverse();
+        self.refused = false;
+        self.refill_ms = 0.0;
+        self.refill_minflt = 0;
+        self.yields = 0;
+    }
+    /// One refill step: the charge first (once per target), then one buffer, every element
+    /// written with a value the compiler cannot see is zero (a zeroed allocation would map its
+    /// pages lazily and move the faults back onto the copy). `false` when there is nothing to do.
+    fn refill_step(&mut self) -> bool {
+        use memra_engine::cache::tiered::*;
+        if self.refused || self.owed.is_empty() {
+            return false;
+        }
+        if self.charge.is_none() {
+            let dimensions = self
+                .governor
+                .lock()
+                .map(|g| g.used().device.len())
+                .map_err(|_| "the governor is poisoned".to_string());
+            let charge = dimensions.and_then(|dimensions| {
+                let mut request = BudgetRequest {
+                    bytes: TierBudget::zero(dimensions),
+                    priority: Priority::Backup,
+                    deadline: Deadline(u64::MAX),
+                    tenant: host_payload_reserve_tenant(),
+                };
+                request.bytes.pageable = self.target_bytes;
+                hostprefix::ResidentCharge::reserve(self.governor.clone(), &request)
+                    .map_err(|e| format!("{e:?}"))
+            });
+            match charge {
+                Ok(charge) => self.charge = Some(charge),
+                Err(why) => {
+                    self.refuse(why);
+                    return false;
+                }
+            }
+        }
+        let Some(len) = self.owed.pop() else {
+            return false;
+        };
+        let (t0, f0) = (Instant::now(), thread_minflt());
+        let mut v = Vec::with_capacity(len);
+        v.resize(len, std::hint::black_box(0.0f32));
+        self.ready.push(v);
+        self.refill_minflt += thread_minflt() - f0;
+        self.refill_ms += t0.elapsed().as_secs_f64() * 1e3;
+        if self.owed.is_empty() {
+            eprintln!(
+                "[prefix-host] payload reserve ready: {} buffers, {:.1} MB in {:.2} ms (minflt +{}, \
+                 yielded {} time(s)), charged to the governor's pageable ledger",
+                self.ready.len(),
+                self.target_bytes as f64 / 1e6,
+                self.refill_ms,
+                self.refill_minflt,
+                self.yields,
+            );
+        }
+        true
+    }
+    fn refuse(&mut self, why: String) {
+        self.refused = true;
+        self.owed.clear();
+        eprintln!(
+            "[prefix-host] payload reserve refused ({} bytes): {why}; the next copies allocate",
+            self.target_bytes
+        );
+    }
+    /// The helper's idle time: refill one buffer at a time, checking the job channel before each.
+    /// `Ok(Some(job))` is a job that is waiting (served before the refill resumes), `Ok(None)` the
+    /// reserve complete (or refused, or nothing to do), `Err(())` the channel closed.
+    fn refill_until_job(
+        &mut self,
+        jobs: &std::sync::mpsc::Receiver<HostHelperJob>,
+    ) -> Result<Option<HostHelperJob>, ()> {
+        loop {
+            match jobs.try_recv() {
+                Ok(job) => {
+                    if !self.owed.is_empty() && !self.ready.is_empty() {
+                        self.yields += 1;
+                    }
+                    return Ok(Some(job));
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => return Err(()),
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    if !self.refill_step() {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// One long-lived hash helper per `HostTierContext` (never a thread per demote): a job channel in,
 /// a reply channel out, the thread handle for the join. Between jobs the helper blocks only on its
 /// job channel; inside a job it is busy for as long as the hash takes, which is unbounded when the
@@ -11117,7 +11326,7 @@ struct HostHashWorker {
 /// inside a job is the deadline's cause, and the owner thread must not wait for that job.
 const HOST_HASH_LATCH_JOIN: Duration = Duration::from_millis(50);
 impl HostHashWorker {
-    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {
+    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve) -> Result<Self, String> {
         let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<HostHelperJob>();
         let (reply_tx, reply_rx) = std::sync::mpsc::channel::<HostHashReply>();
         let (sources_tx, sources_rx) = std::sync::mpsc::channel::<HostSourcesReply>();
@@ -11128,7 +11337,20 @@ impl HostHashWorker {
                 // WP-A day 65 (T-H): the helper's shares, read once.
                 let threads =
                     host_hash_threads(std::thread::available_parallelism().map_or(1, |n| n.get()));
-                for job in jobs_rx {
+                // WP-A day 51 (design P): the reserve lives and dies with this thread; its charge
+                // releases when the thread exits by any path.
+                let mut reserve = reserve;
+                loop {
+                    // Design P: the idle time before the next job refills the reserve, one buffer
+                    // at a time; a job that is waiting is served first.
+                    let job = match reserve.refill_until_job(&jobs_rx) {
+                        Ok(Some(job)) => job,
+                        Ok(None) => match jobs_rx.recv() {
+                            Ok(job) => job,
+                            Err(_) => return,
+                        },
+                        Err(()) => return,
+                    };
                     if fault == Some(HostHashFault::HelperGone) {
                         // The red arm: the helper is gone; the job drops with it and the owner
                         // thread finds the reply channel closed.
@@ -11207,16 +11429,47 @@ impl HostHashWorker {
                         threads,
                         ..HostHashSplit::default()
                     };
+                    // WP-A day 67 (`DAY67.md` section 2: design P2 re-applied on T-H's shares). The
+                    // reserve belongs to this thread, so its buffers are handed out here, in the
+                    // job's order, before the shares run (P2's assignment, unchanged); each share
+                    // then copies into its payload's buffer, or allocates, and hashes (T-H).
+                    let mut staged_lengths = Vec::new();
+                    let assigned: Vec<_> = job
+                        .payloads
+                        .into_iter()
+                        .map(|p| {
+                            let buf = p.staged.as_ref().and_then(|staged| {
+                                let len = staged.as_f32_slice().len();
+                                staged_lengths.push(len);
+                                split.staged += 1;
+                                let got = reserve.take(len);
+                                if got.is_some() {
+                                    split.reserve_hits += 1;
+                                }
+                                got
+                            });
+                            (p, buf)
+                        })
+                        .collect();
                     // WP-A day 65 (`DAY65.md` design T-H): the payloads in contiguous shares on
                     // scoped threads, each payload whole on one (its copy, then its digest), the
                     // reply in the job's order; each share times its own copy and hash.
-                    let per = host_scoped_map(job.payloads, threads, |mut p| {
+                    let per = host_scoped_map(assigned, threads, |(mut p, buf)| {
                         let mut part = HostHashSplit::default();
                         // WP-A day 30: a landed f32 span becomes the payload's heap `Vec`.
                         // Day 49 (log only): the copy and the hash timed apart, in order.
+                        // Day 51 (design P): the `Vec` is the reserve's when it held one of this
+                        // length (every element written from the staged bytes), else allocated.
                         if let Some(staged) = &p.staged {
                             let (c0, f0) = (Instant::now(), thread_minflt());
-                            p.data = Arc::new(staged.as_f32_slice().to_vec());
+                            let src = staged.as_f32_slice();
+                            p.data = Arc::new(match buf {
+                                Some(mut v) => {
+                                    v.copy_from_slice(src);
+                                    v
+                                }
+                                None => src.to_vec(),
+                            });
                             part.copy_minflt += thread_minflt() - f0;
                             part.copy_ms += c0.elapsed().as_secs_f64() * 1e3;
                             part.copy_bytes += staged.len() as u64;
@@ -11236,6 +11489,9 @@ impl HostHashWorker {
                             (p, n, d)
                         })
                         .collect();
+                    // Design P2 (day 52): the job's staged shape is the reserve's next target
+                    // while the job's copies took fresh pages; otherwise the reserve disarms.
+                    reserve.after_job(&staged_lengths, split.copy_minflt, split.reserve_hits);
                     // WP-A day 35 (design M'): the bind's KV re-hash, the same program over the
                     // same lease bytes; the views end here, before the reply is sent. Day 65: in
                     // shares too, order kept.
@@ -15864,12 +16120,14 @@ fn host_demote_settle_hashing(
         let sp = reply.split;
         eprintln!(
             "[prefix-host] demote helper split: ticket seq={seq} copy {:.2} ms over {:.1} MB (minflt \
-             +{}), hash {:.2} ms (helper {:.1} ms); {} threads",
+             +{}), hash {:.2} ms (helper {:.1} ms); reserve {} of {} staged; {} threads",
             sp.copy_ms,
             sp.copy_bytes as f64 / 1e6,
             sp.copy_minflt,
             sp.hash_ms,
             reply.helper_ms,
+            sp.reserve_hits,
+            sp.staged,
             sp.threads,
         );
         // WP-A day 52 (`DAY52.md` step 1, log only): the publication segment's parts.
@@ -38995,6 +39253,15 @@ pub fn spawn(
 
 #[cfg(test)]
 mod tests {
+    /// WP-A day 51 (design P): a payload reserve on its own governor, for the cells that spawn a
+    /// hash helper and do not read the reserve.
+    fn test_payload_reserve() -> super::HostPayloadReserve {
+        super::HostPayloadReserve::new(
+            super::host_tier_governor(0, 1 << 30, 1 << 30, 4).unwrap(),
+            1 << 30,
+        )
+    }
+
     #[test]
     fn dspark_partial_restore_door_admits_only_strict_prefixes_when_armed() {
         use super::dspark_hit_is_restorable_with as r;
@@ -47122,7 +47389,8 @@ mod tests {
             transfers: None,
             inflight: 4,
             fault: std::cell::Cell::new(None),
-            hasher: super::HostHashWorker::spawn(None).unwrap(),
+            hasher: super::HostHashWorker::spawn(None, super::tests::test_payload_reserve())
+                .unwrap(),
             staging: std::cell::RefCell::new(super::HostStaging::default()),
             lease_pool: None,
         }
@@ -49704,8 +49972,11 @@ mod tests {
     fn hash_helper_gone_is_a_typed_refusal_that_latches_under_poll_and_under_block() {
         for wait in [super::ContractWait::Poll, super::ContractWait::Block] {
             let (mut host, key) = cpu_door_host();
-            host.tier.as_mut().unwrap().hasher =
-                super::HostHashWorker::spawn(Some(super::HostHashFault::HelperGone)).unwrap();
+            host.tier.as_mut().unwrap().hasher = super::HostHashWorker::spawn(
+                Some(super::HostHashFault::HelperGone),
+                super::tests::test_payload_reserve(),
+            )
+            .unwrap();
             cpu_pending_hashing(&mut host, &key, 5);
             // The helper exits on its first job; under `Poll` the closed channel is observed at
             // the first poll that runs after the exit (bounded here), under `Block` at once.
@@ -49736,8 +50007,11 @@ mod tests {
     fn hash_digests_never_landing_latch_at_the_deadline_under_poll_and_under_block() {
         // Poll: before the deadline the state is kept; at the first poll past it, the latch.
         let (mut host, key) = cpu_door_host();
-        host.tier.as_mut().unwrap().hasher =
-            super::HostHashWorker::spawn(Some(super::HostHashFault::NeverLands)).unwrap();
+        host.tier.as_mut().unwrap().hasher = super::HostHashWorker::spawn(
+            Some(super::HostHashFault::NeverLands),
+            super::tests::test_payload_reserve(),
+        )
+        .unwrap();
         cpu_pending_hashing(&mut host, &key, 6);
         let short = std::time::Duration::from_millis(60);
         let outcome = super::host_demote_settle_with_deadline(
@@ -49764,8 +50038,11 @@ mod tests {
         // Block: the wait is bounded by the deadline, then the same latch; the helper is alive
         // (it discarded one reply) and the latch joined it.
         let (mut host, key) = cpu_door_host();
-        host.tier.as_mut().unwrap().hasher =
-            super::HostHashWorker::spawn(Some(super::HostHashFault::NeverLands)).unwrap();
+        host.tier.as_mut().unwrap().hasher = super::HostHashWorker::spawn(
+            Some(super::HostHashFault::NeverLands),
+            super::tests::test_payload_reserve(),
+        )
+        .unwrap();
         cpu_pending_hashing(&mut host, &key, 7);
         let t = std::time::Instant::now();
         let outcome = super::host_demote_settle_with_deadline(
@@ -50059,10 +50336,12 @@ mod tests {
         // One helper per context, spawned once in production, from the existing fault door read.
         assert_eq!(code.matches("HostHashWorker::spawn(").count(), 1);
         assert!(code.contains(
-            "hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()))?,"
+            "hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()), reserve)?,"
         ));
         assert_eq!(code.matches("HostHashFault::from_door(").count(), 1);
-        let spawn_fn = body("    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {");
+        let spawn_fn = body(
+            "    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve) -> Result<Self, String> {",
+        );
         assert!(
             spawn_fn.contains(".name(\"memra-host-hash\".into())"),
             "the helper is one named thread, spawned inside HostHashWorker::spawn"
@@ -50073,7 +50352,9 @@ mod tests {
         // The helper's program is the bind's: `checksum` over the payload's bytes.
         let digest = body("fn host_hash_payload_digest(");
         assert!(digest.contains("memra_engine::cache::tiered::checksum(bytes)"));
-        let spawn = body("    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {");
+        let spawn = body(
+            "    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve) -> Result<Self, String> {",
+        );
         assert!(spawn.contains("host_hash_payload_digest(&p.data)"));
         // The bind consumes a handed-in digest only after the byte count check.
         let bind = body("    fn bind_tier_image(");
@@ -50241,7 +50522,8 @@ mod tests {
         );
         let helper = body("impl HostHashWorker {");
         assert!(
-            at(helper, "p.data = Arc::new(staged.as_f32_slice().to_vec());")
+            // (Day 67: P2's reserve buffer, handed out before T-H's shares, is filled here.)
+            at(helper, "p.data = Arc::new(match buf {")
                 < at(helper, "host_hash_payload_digest(&p.data)")
         );
         let hashing = body("fn host_demote_settle_hashing(");
@@ -50267,16 +50549,18 @@ mod tests {
             |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
         assert_eq!(
             production.matches("thread_minflt()").count(),
-            5,
-            "the definition, and two reads around each of the two copies"
+            7,
+            "the definition, two reads around each of the two copies, and (day 51, design P) two \
+             around the reserve's refill of one buffer"
         );
         // (WP-A day 65, design T-H: the split starts with the job's thread count; each payload
-        // keeps its copy then its hash, inside its share.)
+        // keeps its copy then its hash, inside its share; day 67: the copy fills P2's reserve buffer or
+        // allocates.)
         let job = &production[at(
             production,
             "let mut split = HostHashSplit {\n                        threads,",
         )..];
-        let copy = at(job, "p.data = Arc::new(staged.as_f32_slice().to_vec());");
+        let copy = at(job, "p.data = Arc::new(match buf {");
         let hash = at(job, "let (n, d) = host_hash_payload_digest(&p.data);");
         assert!(
             copy < hash,
@@ -50672,16 +50956,17 @@ mod tests {
         let worker = include_str!("worker.rs");
         let production = &worker[..worker.find("\nmod tests {").unwrap()];
         let spawn = &production[production
-            .find("    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {")
+            .find("    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve)")
             .unwrap()..];
         let spawn = &spawn[..spawn.find("\n    }\n").unwrap()];
         assert_eq!(spawn.matches("host_hash_threads(").count(), 1);
         assert_eq!(spawn.matches("host_scoped_map(").count(), 3);
         assert!(spawn.contains("host_scoped_map(job.views, threads, |v| {"));
-        assert!(spawn.contains("host_scoped_map(job.payloads, threads, |mut p| {"));
+        // (Day 67: the payloads reach the shares with P2's reserve buffers assigned.)
+        assert!(spawn.contains("host_scoped_map(assigned, threads, |(mut p, buf)| {"));
         assert!(spawn.contains("host_scoped_map(job.leases, threads, |(slot, v)| {"));
         assert!(spawn.contains("let (n, d) = host_hash_payload_digest(&p.data);"));
-        assert!(spawn.contains("p.data = Arc::new(staged.as_f32_slice().to_vec());"));
+        assert!(spawn.contains("None => src.to_vec(),"));
     }
 
     /// WP-A day 64 (`DAY64.md` section 4 step 1; CPU census): the span receipt's phase timing is
@@ -51093,6 +51378,315 @@ mod tests {
         assert!(
             production.contains("[prefix-host] demote publication split: ticket seq={seq} bind")
         );
+    }
+
+    /// WP-A day 51 (`DAY51.md` design P, section 1 (a); CPU census): the payload reserve is the
+    /// copy program. A reserve buffer is written only by `copy_from_slice` of the staged slice and
+    /// a miss allocates with `to_vec`, as before; the refill runs only at the top of the helper's
+    /// loop, before the job is read, and checks the job channel before every buffer; the charge
+    /// is reserved before the first allocation and dropped at the retarget; the ledger's pageable
+    /// capacity carries the reserve's term; nothing decides on the new figures.
+    #[test]
+    fn day51_the_payload_reserve_is_the_copy_program() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let body = |start: &str| {
+            let a = at(production, start);
+            &production[a..a + production[a..].find("\n    }\n").unwrap()]
+        };
+        // The copy: one take, a hit written from the staged slice, a miss as before.
+        assert_eq!(production.matches("reserve.take(").count(), 1);
+        // (Day 67, `DAY67.md` section 2: the take runs in the job's order before T-H's shares, the
+        // hit's copy inside its share.)
+        let job = &production[at(
+            production,
+            "let mut split = HostHashSplit {\n                        threads,",
+        )..];
+        let take = at(job, "let got = reserve.take(len);");
+        let hit = at(job, "v.copy_from_slice(src);");
+        let miss = at(job, "None => src.to_vec(),");
+        let hash = at(job, "let (n, d) = host_hash_payload_digest(&p.data);");
+        assert!(take < hit && hit < miss && miss < hash);
+        assert_eq!(production.matches("copy_from_slice(src)").count(), 1);
+        // The retarget: after the payload map, before the reply is built.
+        let retarget = at(
+            job,
+            "reserve.after_job(&staged_lengths, split.copy_minflt, split.reserve_hits);",
+        );
+        let reply = at(job, "let reply = HostHashReply {");
+        assert!(hash < retarget && retarget < reply);
+        // The refill: once, at the loop's top, before any job is looked at.
+        assert_eq!(
+            production
+                .matches("reserve.refill_until_job(&jobs_rx)")
+                .count(),
+            1
+        );
+        let spawn = body("    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve)");
+        let refill = at(
+            spawn,
+            "let job = match reserve.refill_until_job(&jobs_rx) {",
+        );
+        let gone = at(spawn, "if fault == Some(HostHashFault::HelperGone) {");
+        assert!(refill < gone);
+        assert!(!spawn.contains("for job in jobs_rx"));
+        let until = body("    fn refill_until_job(");
+        assert!(at(until, "jobs.try_recv()") < at(until, "self.refill_step()"));
+        // The charge before the first allocation; every element written, not a zeroed map.
+        let step = body("    fn refill_step(&mut self) -> bool {");
+        assert!(
+            at(
+                step,
+                "hostprefix::ResidentCharge::reserve(self.governor.clone(), &request)"
+            ) < at(step, "let mut v = Vec::with_capacity(len);")
+        );
+        assert!(step.contains("request.bytes.pageable = self.target_bytes;"));
+        assert!(step.contains("tenant: host_payload_reserve_tenant(),"));
+        assert!(step.contains("v.resize(len, std::hint::black_box(0.0f32));"));
+        assert!(!step.contains("vec![0"));
+        let re = body("    fn retarget(&mut self, lengths: &[usize]) {");
+        assert!(re.contains("self.ready.clear();") && re.contains("self.charge = None;"));
+        assert!(re.contains("if self.target_bytes.saturating_add(bytes) > self.cap {"));
+        // The ledger's third pageable term, and the one production reserve capped at one budget.
+        assert!(production.contains("capacity.pageable = thrice(host_budget)?;"));
+        assert_eq!(production.matches("HostPayloadReserve::new(").count(), 1);
+        assert!(
+            production.contains("HostPayloadReserve::new(governor.clone(), hpx.budget as u64)")
+        );
+        // Log only.
+        for field in [
+            "reserve_hits",
+            "refill_ms",
+            "refill_minflt",
+            "yields",
+            "split.staged",
+        ] {
+            assert!(
+                !production.contains(&format!("if {field}")),
+                "{field} decides nothing"
+            );
+            assert!(
+                !production.contains(&format!("if self.{field}")),
+                "{field} decides nothing"
+            );
+            assert!(
+                !production.contains(&format!("if sp.{field}")),
+                "{field} decides nothing"
+            );
+        }
+        assert!(production.contains("[prefix-host] payload reserve ready: {} buffers"));
+        assert!(production.contains("; reserve {} of {} staged"));
+    }
+
+    /// WP-A day 52 (`DAY52.md` design P2, (a); CPU census): the arming rule reads only the job's
+    /// fresh pages (its copy's faults, and the faults of the refill that wrote the buffers it
+    /// took) against half its staged pages; the state decides only which target the retarget
+    /// takes; the helper passes the job's own split figures.
+    #[test]
+    fn day52_the_arming_rule_reads_only_the_jobs_fresh_pages() {
+        let worker = include_str!("worker.rs");
+        let production = &worker[..worker.find("\nmod tests {").unwrap()];
+        let at =
+            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
+        let body = &production[at(production, "    fn after_job(")..];
+        let body = &body[..at(body, "\n    }\n")];
+        assert!(body.contains("let armed = fresh.saturating_mul(2) >= pages;"));
+        assert!(body.contains("if hits > 0 {"));
+        assert!(body.contains("self.refill_minflt"));
+        assert!(body.contains("self.retarget(lengths);") && body.contains("self.retarget(&[]);"));
+        assert_eq!(production.matches("reserve.after_job(").count(), 1);
+        assert!(production.contains(
+            "reserve.after_job(&staged_lengths, split.copy_minflt, split.reserve_hits);"
+        ));
+        // `armed` is read in the rule only: inside the reserve's impl, the rule's two uses.
+        let imp = &production[at(production, "impl HostPayloadReserve {")..];
+        let imp = &imp[..at(imp, "\n}\n")];
+        assert_eq!(imp.matches("self.armed").count(), 2);
+        assert_eq!(imp.matches(".armed").count(), 2);
+        assert!(!imp.contains("if self.armed"));
+        let helper = &production[at(
+            production,
+            "    fn spawn(fault: Option<HostHashFault>, reserve",
+        )..];
+        let helper = &helper[..at(helper, "\n    }\n")];
+        assert!(
+            !helper.contains(".armed"),
+            "the helper loop never reads the state"
+        );
+        assert!(
+            production
+                .contains("[prefix-host] payload reserve {}: the job took {fresh} fresh pages")
+        );
+    }
+
+    /// Day 52 (design P2, (a)): a job whose misses take fresh pages arms (the reserve refills to
+    /// its shape); a job whose hits came from a refill that reused memory disarms (nothing held,
+    /// no charge); a disarmed reserve re-arms on a faulting miss; the boundary is half the pages;
+    /// a job with no staged payload decides nothing.
+    #[test]
+    fn day52_the_reserve_arms_while_copies_fault_and_disarms_on_recycled_memory() {
+        let gov = super::host_tier_governor(0, 1 << 30, 1 << 30, 4).unwrap();
+        let used = || gov.lock().unwrap().used().pageable;
+        let mut r = super::HostPayloadReserve::new(gov.clone(), 1 << 30);
+        let lengths = [1024usize; 8]; // 8 x 4 KiB: 8 pages
+        let (_tx, rx) = std::sync::mpsc::channel::<super::HostHelperJob>();
+        // The first job's misses faulted every page: armed, the target is the job's shape.
+        r.after_job(&lengths, 8, 0);
+        assert!(r.armed && r.owed.len() == 8 && r.target_bytes == 8 * 4096);
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        assert_eq!((r.ready.len(), used()), (8, 8 * 4096));
+        // Hits whose refill took fresh pages (at least half): still armed.
+        r.refill_minflt = 4;
+        r.after_job(&lengths, 0, 8);
+        assert!(r.armed && r.owed.len() == 8 && r.ready.is_empty());
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        // Hits whose refill reused memory (3 of 8, under half): disarmed, nothing held.
+        r.refill_minflt = 3;
+        r.after_job(&lengths, 0, 8);
+        assert!(!r.armed && r.owed.is_empty() && r.ready.is_empty() && r.charge.is_none());
+        assert_eq!(used(), 0, "a disarmed reserve holds no charge");
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        assert!(r.ready.is_empty(), "nothing refills while disarmed");
+        // Misses that reuse memory keep it disarmed; the refill's figures do not count without a hit.
+        r.refill_minflt = 1000;
+        r.after_job(&lengths, 3, 0);
+        assert!(!r.armed && r.owed.is_empty());
+        // A faulting miss re-arms (the boundary: 4 of 8 is half).
+        r.after_job(&lengths, 4, 0);
+        assert!(r.armed && r.owed.len() == 8);
+        // A job with no staged payload decides nothing and leaves nothing held.
+        r.after_job(&[], 0, 0);
+        assert!(r.armed && r.owed.is_empty() && r.ready.is_empty());
+        assert_eq!(used(), 0);
+    }
+
+    /// Day 51 (design P, (a)): a reserve hit carries the staged bytes bitwise, special values
+    /// included, as the miss path's `to_vec` does.
+    #[test]
+    fn day51_a_reserve_hit_is_the_staged_bytes_bitwise() {
+        let mut r = test_payload_reserve();
+        r.retarget(&[5, 1030]);
+        let (_tx, rx) = std::sync::mpsc::channel::<super::HostHelperJob>();
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        let bits = [
+            0x8000_0000u32, // -0.0
+            0x7fc0_0001,    // a NaN with a payload
+            0xffff_ffff,    // a negative NaN, all payload bits set
+            0x0000_0001,    // the smallest denormal
+            0x7f80_0000,    // +inf
+            0x3f80_0000,    // 1.0
+        ];
+        let src: Vec<f32> = (0..1030)
+            .map(|i| f32::from_bits(bits[i % bits.len()]))
+            .collect();
+        let mut v = r.take(1030).expect("a buffer of the job's length");
+        assert!(
+            v.iter().all(|x| x.to_bits() == 0),
+            "every element written by the refill"
+        );
+        v.copy_from_slice(&src);
+        let miss = src.to_vec();
+        assert!(v.iter().zip(&miss).all(|(a, b)| a.to_bits() == b.to_bits()));
+        assert!(r.take(1030).is_none(), "one buffer per staged length");
+        assert_eq!(r.take(5).map(|v| v.len()), Some(5));
+    }
+
+    /// Day 51 (design P, (a)): the refill yields. A job already waiting is returned before any
+    /// buffer is allocated or any charge taken; a job sent mid-refill is returned before the
+    /// reserve completes, and the refill resumes after it.
+    #[test]
+    fn day51_the_refill_yields_to_a_waiting_job() {
+        let gov = super::host_tier_governor(0, 1 << 30, 1 << 30, 4).unwrap();
+        let mut r = super::HostPayloadReserve::new(gov.clone(), 1 << 30);
+        r.retarget(&[4096; 8]);
+        let (tx, rx) = std::sync::mpsc::channel::<super::HostHelperJob>();
+        let job = || {
+            super::HostHelperJob::Hash(super::HostHashJob {
+                seq: 1,
+                payloads: Vec::new(),
+                leases: Vec::new(),
+            })
+        };
+        tx.send(job()).unwrap();
+        assert!(matches!(r.refill_until_job(&rx), Ok(Some(_))));
+        assert!(r.ready.is_empty() && r.charge.is_none() && r.owed.len() == 8);
+        assert_eq!(gov.lock().unwrap().used().pageable, 0);
+        // One buffer, then a job arrives: it is served before the next buffer.
+        assert!(r.refill_step());
+        tx.send(job()).unwrap();
+        assert!(matches!(r.refill_until_job(&rx), Ok(Some(_))));
+        assert_eq!((r.ready.len(), r.owed.len(), r.yields), (1, 7, 1));
+        // The channel empty again: the refill completes.
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        assert_eq!((r.ready.len(), r.owed.len()), (8, 0));
+        drop(tx);
+        r.retarget(&[4096]);
+        assert!(
+            matches!(r.refill_until_job(&rx), Err(())),
+            "a closed channel ends the refill"
+        );
+        assert!(
+            r.ready.is_empty(),
+            "nothing allocated once the channel is closed"
+        );
+    }
+
+    /// Day 51 (design P, (a)): the reserve's charge is on the pageable ledger for the whole
+    /// target from its first buffer on, never before the first refill step, and gone after the
+    /// retarget and after the reserve drops (the helper's exit); a refusing governor leaves the
+    /// reserve empty; the reserve never holds more than its cap; a shape change frees the old
+    /// buffers.
+    #[test]
+    fn day51_the_reserve_charge_the_cap_and_the_shape_change() {
+        let gov = super::host_tier_governor(0, 1 << 30, 1 << 30, 4).unwrap();
+        let used = || gov.lock().unwrap().used().pageable;
+        let mut r = super::HostPayloadReserve::new(gov.clone(), 1 << 30);
+        r.retarget(&[1024, 2048]);
+        assert_eq!(used(), 0, "no charge before the first refill step");
+        assert!(r.refill_step());
+        assert_eq!(
+            used(),
+            (1024 + 2048) * 4,
+            "the whole target, from the first buffer on"
+        );
+        assert!(r.refill_step() && !r.refill_step());
+        assert_eq!(used(), (1024 + 2048) * 4);
+        r.retarget(&[3000]);
+        assert_eq!(used(), 0, "the retarget releases the charge");
+        assert!(
+            r.take(1024).is_none() && r.take(2048).is_none(),
+            "the old shape is freed"
+        );
+        let (_tx, rx) = std::sync::mpsc::channel::<super::HostHelperJob>();
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        assert_eq!(used(), 3000 * 4);
+        assert_eq!(r.take(3000).map(|v| v.len()), Some(3000));
+        drop(r);
+        assert_eq!(used(), 0, "the helper's exit releases the charge");
+        // The cap: the job's order, clamped.
+        let mut r = super::HostPayloadReserve::new(gov.clone(), 10_000);
+        r.retarget(&[1000, 1000, 1000]);
+        assert_eq!((r.owed.len(), r.target_bytes), (2, 8000));
+        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
+        assert_eq!((r.ready.len(), used()), (2, 8000));
+        drop(r);
+        // A refusing governor: a 1000-byte budget has 3000 pageable bytes; 4000 are refused.
+        let small = super::host_tier_governor(0, 1000, 1 << 30, 4).unwrap();
+        let mut r = super::HostPayloadReserve::new(small.clone(), 1 << 20);
+        r.retarget(&[1000]);
+        assert!(!r.refill_step());
+        assert!(r.refused && r.ready.is_empty() && r.take(1000).is_none());
+        assert_eq!(small.lock().unwrap().used().pageable, 0);
+        assert!(
+            matches!(r.refill_until_job(&rx), Ok(None)),
+            "refused: nothing to do"
+        );
+        // The next retarget tries again.
+        r.retarget(&[500]);
+        assert!(r.refill_step());
+        assert_eq!(small.lock().unwrap().used().pageable, 2000);
     }
 
     /// WP-A day 47 (`DAY47.md` design V, sections 1 and 1a; CPU census): the pause sweep's two shapes
@@ -51678,7 +52272,7 @@ mod tests {
         let src = include_str!("worker.rs");
         let production = &src[..src.find("\nmod tests {").unwrap()];
         let at = production
-            .find("    fn spawn(fault: Option<HostHashFault>)")
+            .find("    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve)")
             .unwrap();
         let spawn = &production[at..at + production[at..].find("\n    }\n").unwrap()];
         let sources = spawn.find("HostHelperJob::Sources(job) => {").unwrap();
@@ -51697,7 +52291,9 @@ mod tests {
         assert!(cleared < gone);
         // Behaviour: under each Sources fault a Hash job runs clean (its reply lands).
         for f in [H::SourcesGone, H::SourcesNeverLand, H::SourcesForeignReply] {
-            let helper = super::HostHashWorker::spawn(Some(f)).unwrap();
+            let helper =
+                super::HostHashWorker::spawn(Some(f), super::tests::test_payload_reserve())
+                    .unwrap();
             helper
                 .submit(super::HostHashJob {
                     seq: 9,
@@ -51976,7 +52572,8 @@ mod tests {
             transfers: Some(std::cell::RefCell::new(transfers)),
             inflight,
             fault: std::cell::Cell::new(None),
-            hasher: super::HostHashWorker::spawn(None).unwrap(),
+            hasher: super::HostHashWorker::spawn(None, super::tests::test_payload_reserve())
+                .unwrap(),
             staging: std::cell::RefCell::new(super::HostStaging::default()),
             lease_pool: None,
         }
@@ -54663,11 +55260,19 @@ mod tests {
             .unwrap()
             .reserve(&request(budget as u64, 500))
             .unwrap();
-        // A third whole-budget charge is what the LRU could never have made room for.
+        // A third whole-budget charge fits the ledger's third term on both host dimensions (the lease
+        // pool's on the pinned one, design L of WP-A day 63; the payload reserve's on the pageable
+        // one, design P2 re-applied on day 67); a fourth is what neither could make room for.
+        let third = governor
+            .lock()
+            .unwrap()
+            .reserve(&request(budget as u64, 0))
+            .unwrap();
         assert_eq!(
             governor.lock().unwrap().reserve(&request(1, 0)).err(),
             Some(Error::Capacity)
         );
+        governor.lock().unwrap().release(&third).unwrap();
         governor.lock().unwrap().release(&resident).unwrap();
         governor.lock().unwrap().release(&incoming).unwrap();
         assert_eq!(governor.lock().unwrap().used().pinned, 0);
