@@ -590,14 +590,17 @@ print(f"the next D2H receipt landed {got} span(s), {n} were handed back")
 sys.exit(0 if got == n else 1)
 PYEOF
 }
-one_staging_fill() { # $1 log: exactly one `tier span staging:` line in the boot (the refused demote filled the set, every
-                     # later demote reused it) and its fresh-buffer count equals the refusal's N
+one_staging_fill() { # $1 log: exactly one staging fill event in the boot, of the refusal's N buffers, and no other: the
+                     # refused span attach handed every buffer back, so no later demote allocated again. WP-A day 63
+                     # (DAY63 section 4): a fill event is the boot fill (`span staging set allocated at boot: N
+                     # buffers`, design L2) or a demote's fresh allocation (`tier span staging: N fresh pinned
+                     # buffer(s)`, the day-31 program's first-demote fill); either program reads the same way.
     python3 - "$1" <<'PYEOF'
 import re, sys
 lines = open(sys.argv[1], errors="replace").read().splitlines()
-fills = [int(m.group(1)) for l in lines if (m := re.search(r"tier span staging: ([0-9]+) fresh pinned buffer\(s\), [0-9]+ bytes charged", l))]
+fills = [int(m.group(1)) for l in lines if (m := re.search(r"tier span staging: ([0-9]+) fresh pinned buffer\(s\), [0-9]+ bytes charged", l) or re.search(r"span staging set allocated at boot: ([0-9]+) buffers", l))]
 ref = next((int(m.group(1)) for l in lines if "MEMRA_KV_HOST_FAULT=contract-spans" in l and (m := re.search(r"\(([0-9]+) f32 spans handed back\)", l))), None)
-print(f"staging fill line(s) {fills}, refusal N {ref}")
+print(f"staging fill event(s) {fills}, refusal N {ref}")
 sys.exit(0 if len(fills) == 1 and ref is not None and fills[0] == ref else 1)
 PYEOF
 }
@@ -675,15 +678,15 @@ print(f"promote refusal handed back {n} span(s); the next H2D receipt landed {go
 sys.exit(0 if n >= 1 and got == n else 1)
 PYEOF
 }
-one_staging_fill_promote() { # $1 log: exactly one `tier span staging:` line in the boot (r2's demote filled the set; the
-                             # refused promote, the next demote and the next promote reused it) and its fresh-buffer count
-                             # equals the promote refusal's N (the entry's recurrent plane count)
+one_staging_fill_promote() { # $1 log: exactly one staging fill event in the boot (r2's demote, or since WP-A day 63 the
+                             # boot, filled the set; the refused promote, the next demote and the next promote reused it)
+                             # of the promote refusal's N (the entry's recurrent plane count); see one_staging_fill
     python3 - "$1" <<'PYEOF'
 import re, sys
 lines = open(sys.argv[1], errors="replace").read().splitlines()
-fills = [int(m.group(1)) for l in lines if (m := re.search(r"tier span staging: ([0-9]+) fresh pinned buffer\(s\), [0-9]+ bytes charged", l))]
+fills = [int(m.group(1)) for l in lines if (m := re.search(r"tier span staging: ([0-9]+) fresh pinned buffer\(s\), [0-9]+ bytes charged", l) or re.search(r"span staging set allocated at boot: ([0-9]+) buffers", l))]
 ref = next((int(m.group(1)) for l in lines if "MEMRA_KV_HOST_FAULT=contract-promote-spans" in l and (m := re.search(r"\(([0-9]+) f32 spans handed back\)", l))), None)
-print(f"staging fill line(s) {fills}, promote refusal N {ref}")
+print(f"staging fill event(s) {fills}, promote refusal N {ref}")
 sys.exit(0 if len(fills) == 1 and ref is not None and fills[0] == ref else 1)
 PYEOF
 }
