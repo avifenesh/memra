@@ -67,3 +67,13 @@ same way. Design T's thread rule for the fill (item 3) is the precedent.
   - The reader was dry-run on P2's receipts mapped as the two arms. It parsed base's helper 82.8 / 83.2 ms, wall
     100.8 / 101.0 ms, PIN 25.9 / 26.1 ms and hump +0.51 ms (`INCOMPLETE` only from P2's three-arm chain cell).
   - About 2 hours of card time.
+
+## 3. T-H's A/B base, re-derived after L's revert and re-application and W's revert
+
+- The sitting's first base, `1cba80185` (T-H's parent), no longer differs from the tip by T-H alone. Since then the
+  tip has reverted L, re-applied it as L', reverted W, and added DAY64 step 1's timing lines.
+- The base is now the tip with T-H taken back out: branch `lane/spill-a-th-base-20260926` at `c6369b507`. It is the
+  revert of `a839d3494` on tip `771fc2a8f`, with the one test-block conflict resolved by removing only T-H's cells.
+  Server lib `942 passed`. It is never merged.
+- `pro-single-th/build.sh` fetches that branch too. The sitting's commands are `build.sh <tip> c6369b507`, then
+  `driver.sh`, still only after L' adopts: the tip carries L'.

@@ -9,7 +9,7 @@ mkdir -p "$R/bins/th" "$R/bins/base"
 L=$R/build-steps.log
 [ -d /root/wt-a/.git ] || git clone -q --filter=blob:none https://github.com/avifenesh/memra.git /root/wt-a >> "$L" 2>&1
 cd /root/wt-a || exit 1
-git fetch -q origin lane/spill-a-20260919 >> "$L" 2>&1
+git fetch -q origin lane/spill-a-20260919 lane/spill-a-th-base-20260926 >> "$L" 2>&1
 git checkout -q -B lane-a-th "$1" >> "$L" 2>&1 || { echo "rc=2 (checkout tip)" >> "$R/build.log"; exit 2; }
 TIP=$(git rev-parse HEAD); echo "$TIP" > "$R/tree-tip.sha"; echo "$2" > "$R/tree-base.sha"
 clean() { [ -z "$(git status --porcelain --untracked-files=no)" ] && [ "$(git rev-parse HEAD)" = "$TIP" ]; }

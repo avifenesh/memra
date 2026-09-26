@@ -11,8 +11,8 @@
 - **Item 18 (DAY64).** Placed at `receipt` (176 of 180 late, section 3). The design was revised before code (section 4).
   Step 1's timing lines are built (`08cdd9736`); their sitting is `pro-single-day64b/` (`build.sh <tip>`, then
   `driver.sh`, last line `DAY64B SELECT -> ..`). D1 (overlapped span digests) follows if the digests dominate.
-- **Item 20 (DAY65, T-H).** Built (`a839d3494`). Its sitting `pro-single-th/` (`build.sh <tip> 1cba80185`) runs in
-  the lead's chain only if L' adopts.
+- **Item 20 (DAY65, T-H).** Built (`a839d3494`). Its sitting `pro-single-th/` (`build.sh <tip> c6369b507`, the base branch
+  `lane/spill-a-th-base-20260926` = the tip with T-H taken out, DAY65 section 3) runs only if L' adopts.
 - The owed 5090 cells: S4's half, V's half, item 16, R1's half, and L''s and T-H's halves once they adopt.
 - Local cells run their scripts from a frozen copy of the tree, never from this worktree (DAY61 section 5's
   lesson). No build of this lane runs while one of its own timed cells holds the 5090.
