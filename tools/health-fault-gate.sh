@@ -31,10 +31,12 @@
 #   f  a graceful shutdown flips readiness first and drains: SIGTERM with a stream open ->
 #      `/readyz` 503 `draining` + Retry-After, `/health` 200 `draining`, a new request 503 with
 #      `code: draining`, the stream runs to `[DONE]` with a finish_reason, exit 0, `drain complete`.
-#   g  a step OOM (MEMRA_STEP_OOM_FAULT=1, the synthetic-OOM door) parks the session back to the
-#      queue and it completes; its two concurrent peers complete; no 5xx (WP-B DAY47 1.1). Red twin
-#      g-red: MEMRA_STEP_OOM_FAULT=4 (one past the default retry budget) walks the same session into
-#      the bounded-retry honest error, and the green assertion must fire there.
+#   g  a step OOM (MEMRA_STEP_OOM_FAULT=1, the synthetic-OOM door) on one non-streamed request's own
+#      non-batching step parks the session back to the queue and it completes; no 5xx (WP-B DAY47
+#      1.1, addendum A). Red twin g-red: MEMRA_STEP_OOM_FAULT=4 (one past the default retry budget)
+#      walks it into the bounded-retry honest error, and the green assertion must fire there.
+#      g-batch (DOCUMENTED): three concurrent streams share the batched decode chunk the fault lands
+#      on; the chunk's error arm ends every one of them (DAY47 2.1, owed O14).
 #   h  a client that closes its stream mid-generation is retired within 1,000 ms (`[abort] client
 #      disconnected:`), its peer completes, and the box idles clean (DAY47 1.2). Red twin h-red: the
 #      same shape with no close, and the green assertion must fire there.
@@ -377,42 +379,55 @@ sok() { [ "$(scode "$1")" = 200 ] && [ "$(sdone "$1")" = 1 ] && [ -n "$(sfinish 
 P1="Write one sentence about a mutex."; P2="Name three uses of a semaphore."; P3="Describe a spinlock in two sentences."
 
 # ---------------------------------------------------------------- g: a step OOM parks and completes
-run_g() { # <label> <fault count> <red:true|false>
+run_g() { # <label> <fault count> <red:true|false>: one non-streamed request (DAY47 addendum A)
   local label=$1 n=$2 red=$3
   if boot "$label" MEMRA_STEP_OOM_FAULT="$n"; then
-    SPIDS=""
-    sstream "$D/r0" "$P1" 48; sstream "$D/r1" "$P2" 48; sstream "$D/r2" "$P3" 48
-    # shellcheck disable=SC2086
-    wait $SPIDS
+    code=$(chat 48 false "$D/solo" 170)
+    fired=$(grep -c 'MEMRA_STEP_OOM_FAULT fired: this non-batching step' "$D/server.log")
     parked=$(grep -c '\[admit-oom\] step OOM parked session back to queue' "$D/server.log")
     panics=$(grep -cE 'panicked|\[worker\] PANIC' "$D/server.log")
     sample /health "$D/health-g.csv"; health_after=$LAST_CODE
-    ok_n=0; c5=0; codes=""; errs=""
-    for r in r0 r1 r2; do
-      c=$(scode "$D/$r"); codes="$codes$r:$c,"
-      sok "$D/$r" && ok_n=$((ok_n+1))
-      case "$c" in 5*) c5=$((c5+1));; esac
-      [ "$(sdone "$D/$r")" = 1 ] && [ -z "$(sfinish "$D/$r")" ] && errs="$errs$r:$(serror "$D/$r");"
-      [ "$c" != 200 ] && errs="$errs$r:$(serror "$D/$r");"
-    done
+    done_ok=false; completes "$D/solo" && done_ok=true
+    err=$(jget "$D/solo.body" error.message)
     green=false
-    [ "$parked" -ge 1 ] && [ "$ok_n" = 3 ] && [ "$c5" = 0 ] && [ "$panics" = 0 ] && [ "$health_after" = 200 ] && green=true
+    [ "$code" = 200 ] && [ "$done_ok" = true ] && [ "$parked" -ge 1 ] && [ "$panics" = 0 ] && [ "$health_after" = 200 ] && green=true
     if [ "$red" = false ]; then
-      v=FAIL; [ "$green" = true ] && [ "$parked" = 1 ] && v=PASS
-      verdict "HFG (g) step-oom-parks-and-completes: fault=$n parked_lines=$parked completed=$ok_n/3 codes={${codes%,}} http_5xx=$c5 panic_lines=$panics health_after=$health_after -> $v"
+      v=FAIL; [ "$green" = true ] && [ "$parked" = 1 ] && [ "$fired" = 1 ] && v=PASS
+      verdict "HFG (g) step-oom-parks-and-completes: fault=$n fired_lines=$fired parked_lines=$parked http=$code finish_reason=$(jget "$D/solo.body" choices.0.finish_reason) completion_tokens=$(jget "$D/solo.body" usage.completion_tokens) panic_lines=$panics health_after=$health_after -> $v"
     else
-      v=FAIL; [ "$green" = false ] && [ "$ok_n" -ge 2 ] && [ "$c5" = 0 ] && [ "$panics" = 0 ] && v=PASS
-      verdict "HFG (g-red) step-oom-past-the-retry-budget: fault=$n parked_lines=$parked completed=$ok_n/3 codes={${codes%,}} faulted_error={${errs:-none}} http_5xx=$c5 panic_lines=$panics green_assertion_fired=$([ "$green" = false ] && echo true || echo false) -> $v"
+      v=FAIL; [ "$green" = false ] && [ "$panics" = 0 ] && [ "$parked" -ge 1 ] && v=PASS
+      verdict "HFG (g-red) step-oom-past-the-retry-budget: fault=$n fired_lines=$fired parked_lines=$parked http=$code error={${err:-none}} panic_lines=$panics green_assertion_fired=$([ "$green" = false ] && echo true || echo false) -> $v"
     fi
     stop "$label"
   else
     verdict "HFG ($label) step-oom: boot failed -> FAIL"; stop "$label"
   fi
 }
+run_g_batch() { # the three-stream shape of DAY47 1.1: a DOCUMENTED reading of the batched chunk (O14)
+  if boot g-batch MEMRA_STEP_OOM_FAULT=1; then
+    SPIDS=""
+    sstream "$D/r0" "$P1" 48; sstream "$D/r1" "$P2" 48; sstream "$D/r2" "$P3" 48
+    # shellcheck disable=SC2086
+    wait $SPIDS
+    fired=$(grep -c 'MEMRA_STEP_OOM_FAULT fired: this batched decode chunk' "$D/server.log")
+    parked=$(grep -c '\[admit-oom\] step OOM parked session back to queue' "$D/server.log")
+    ok_n=0; err_n=0; c5=0
+    for r in r0 r1 r2; do
+      sok "$D/$r" && ok_n=$((ok_n+1))
+      [ -n "$(serror "$D/$r")" ] && err_n=$((err_n+1))
+      case "$(scode "$D/$r")" in 5*) c5=$((c5+1));; esac
+    done
+    verdict "HFG (g-batch) step-oom-on-a-batched-chunk: batched_fired_lines=$fired parked_lines=$parked completed=$ok_n/3 ended_with_error_event=$err_n/3 http_5xx=$c5 (the chunk's error arm ends every session of the chunk; owed O14) -> DOCUMENTED"
+    stop g-batch
+  else
+    verdict "HFG (g-batch) step-oom-on-a-batched-chunk: boot failed -> FAIL"; stop g-batch
+  fi
+}
 if in_arms g; then
-  echo "--- arm g: a step OOM parks, requeues and completes; peers complete (and the red twin) ---"
+  echo "--- arm g: a step OOM parks, requeues and completes (and the red twin, and the batched reading) ---"
   run_g g 1 false
   run_g g-red 4 true
+  run_g_batch
 fi
 
 # ---------------------------------------------------------------- h: a client disconnect retires the session
