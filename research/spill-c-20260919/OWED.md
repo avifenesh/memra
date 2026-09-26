@@ -93,7 +93,11 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   5090's half ran (queue v10, `DAY72.md` section 2): `admissible=no`, recorded, deciding nothing (beside it the
   door's GPU idles 0.16 ms per window token more than REF's with the same kernels and copies); the 5090's DAY60 gap
   (`cpu_side`), i11 (`flat`, `flat`), i13 (`flat`) read, i15 `void (inadmissible)`; queue v11 reruns i15 and gap15 on
-  the 5090 as new holds. Open: gap15 on the 285K class (BOX29, the lead).
+  the 5090 as new holds (i15 void with a foreign compute app on the card; gap15 inadmissible again). The target card
+  (BOX29, `DAY72.md` section 3): `DAY72 GAP15 VERDICT rig=pro-single integrity=ok admissible=yes partA=cpu_side
+  partB=gpu_stall`: the door's GPU work equals REF's and its GPU waits on the door's prefetch path. Day 75
+  (`DAY75.md`): I16 (`eeacfaf50`, the door's next-expert prefetch issued after the current expert's launch), CPU gates
+  green, card cell `i16` ready (`day75-box.sh`, the 285K class); the 5090's half in queue v12. Open.
 
 ## C12. The door's sensitivity to its owner thread's host placement (the 9950X class)
 
@@ -130,8 +134,11 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   COMPACT VERDICT rig=box31 integrity=ok -> not_reproduced` (no slow run, no compaction in any span); a diagnostic on
   BOX30 (a 9950X3D2, outside the class) read its one slow door run as the sitting's only span with compaction. Day 74
   (`DAY74.md`): compaction induced on purpose in half the runs of REF and the door, cell `induce`, sitting ready
-  (`day74-box.sh`). Open: DAY74 on a 9950X machine then the 285K class; DAY71's default half on BOX15's machine, then
-  the class line.
+  (`day74-box.sh`): BOX31 `not_run` (page cache), then `not_induced` (every huge-page burst came back whole); BOX29
+  `void` (no `RDPRU` on Intel). `DAY74.md` section 4 registers `induce-b` (all but 2 GiB of free memory fragmented,
+  the artifact reread before every run, the wall-time state on Intel), ready (`day74b-box.sh`). Open: `induce-b` on a
+  9950X machine and the 285K class, each with at least 98 GiB `MemFree`; DAY71's default half on BOX15's machine,
+  then the class line.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 
