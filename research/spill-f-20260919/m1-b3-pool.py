@@ -73,11 +73,14 @@ def main():
     for cell in sorted(d.glob("round-[0-9][0-9]*")):
         if cell.is_dir() and (cell / "visits").is_dir():
             cells[int(cell.name[6:8])] = cell
+    single = not cells and (d / "visits").is_dir()  # a PRO sitting cell: every round in one collector cell
+    if single:
+        cells = {0: d}
     visits, lock_arms = [], []
     for k, cell in sorted(cells.items()):
         for p in sorted((cell / "visits").glob("r*/visit.json")):
             v = json.loads(p.read_text())
-            if v["round"] != k:
+            if not single and v["round"] != k:
                 raise SystemExit(f"REFUSED: {p} carries round {v['round']}, cell is round {k}")
             v["_cell"] = cell.name
             drop = (v.get("parsed") or {}).get("drop")
@@ -103,7 +106,8 @@ def main():
     post = R.verdicts([read_gate(v) for v in kept], arms, "worker16")
     gpu_unclean = sum(1 for v in visits if v.get("gpu_cotenant"))
     fallback_visits = sum(1 for v in visits if v.get("mmap_fallbacks"))
-    summary = {"rounds": sorted(cells), "fallback_unclean_rule": fallback_unclean,
+    rounds = sorted({v["round"] for v in visits})
+    summary = {"rounds": rounds, "fallback_unclean_rule": fallback_unclean,
                "visits_with_mmap_fallbacks": fallback_visits, "cells": {k: c.name for k, c in cells.items()}, "visits": len(visits),
                "refused_arms": refused, "gpu_cotenant_unclean_visits": gpu_unclean,
                "registered": reg, "post_hoc_read_gate": post}
@@ -112,7 +116,7 @@ def main():
         for arm, x in s["arms"].items():
             print(f"{label} arm={arm} vs worker16: {x['verdict']} median_ratio={x['median_ratio']} pairs={x['n_pairs']}")
         print(f"{label} regime_scored={s['regime_scored']} contaminated={s['contaminated_visits']}")
-    print(f"rounds={sorted(cells)} visits={len(visits)} refused={refused} gpu_cotenant_unclean={gpu_unclean} "
+    print(f"rounds={rounds} visits={len(visits)} refused={refused} gpu_cotenant_unclean={gpu_unclean} "
           f"visits_with_mmap_fallbacks={fallback_visits}")
     if "--require-correct" in sys.argv[2:] and (refused or not visits):
         print("REFUSED: correctness problems: " + json.dumps(
