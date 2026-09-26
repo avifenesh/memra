@@ -478,8 +478,13 @@ __device__ __forceinline__ int memra_ar_push_wait(MemraArSignal* self_sg, MemraA
         // Every thread's pushed stores precede this release through the block barrier above.
         __threadfence_system();
         memra_ar_st_release(&peer_sg->start[blockIdx.x][rank], flag);
+        // At least this epoch, not exactly it. Without an end barrier the peer can finish this
+        // join and raise the next one's flag in the same slot before this rank has read it; a
+        // later epoch still means this join's push has landed (the peer pushed it first, and
+        // cannot run two joins ahead: its next-but-one needs this rank's next flag). Signed
+        // difference, so the u32 epoch may wrap.
         long long t0 = clock64();
-        while (memra_ar_ld_acquire(&self_sg->start[blockIdx.x][1 - rank]) != flag) {
+        while ((int)(memra_ar_ld_acquire(&self_sg->start[blockIdx.x][1 - rank]) - flag) < 0) {
             if (clock64() - t0 > spin_limit) {
                 expired = 1;
                 break;
