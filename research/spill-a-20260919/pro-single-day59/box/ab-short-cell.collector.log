@@ -1,0 +1,109 @@
+2026-09-26T03:03:07Z model sha256: 1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a Qwen3.8-27B-NVFP4-Q5K-mtp.gguf cell=short modes=fanout,prime-short prefix_mb=256
+2026-09-26T03:03:57Z short o1 fanout rc=0 STALL rule cell=d59-short-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.7 idle_p95=12.8 idle_p99=13
+2026-09-26T03:04:49Z short o1 prime-short rc=0 STALL rule cell=d59-short-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 i
+2026-09-26T03:05:40Z short o1 fanout rc=0 STALL rule cell=d59-short-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.7 idle_p95=12.8 idle_p99=13
+2026-09-26T03:06:32Z short o1 prime-short rc=0 STALL rule cell=d59-short-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 i
+2026-09-26T03:07:23Z short o1 fanout rc=0 STALL rule cell=d59-short-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.7 idle_p95=12.8 idle_p99=13
+2026-09-26T03:08:15Z short o1 prime-short rc=0 STALL rule cell=d59-short-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 i
+2026-09-26T03:09:06Z short o1 fanout rc=0 STALL rule cell=d59-short-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.7 idle_p95=12.8 idle_p99=13
+2026-09-26T03:09:58Z short o1 prime-short rc=0 STALL rule cell=d59-short-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 i
+2026-09-26T03:10:49Z short o1 fanout rc=0 STALL rule cell=d59-short-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.7 idle_p95=12.8 idle_p99=13
+2026-09-26T03:11:41Z short o1 prime-short rc=0 STALL rule cell=d59-short-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 i
+2026-09-26T03:12:33Z short o2 prime-short rc=0 STALL rule cell=d59-short-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 i
+2026-09-26T03:13:24Z short o2 fanout rc=0 STALL rule cell=d59-short-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.7 idle_p95=12.8 idle_p99=13
+2026-09-26T03:14:16Z short o2 prime-short rc=0 STALL rule cell=d59-short-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.6 idle_p95=12.8 i
+2026-09-26T03:15:08Z short o2 fanout rc=0 STALL rule cell=d59-short-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.7 idle_p95=12.8 idle_p99=13
+2026-09-26T03:15:59Z short o2 prime-short rc=0 STALL rule cell=d59-short-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 i
+2026-09-26T03:16:51Z short o2 fanout rc=0 STALL rule cell=d59-short-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.7 idle_p95=12.8 idle_p99=13
+2026-09-26T03:17:42Z short o2 prime-short rc=0 STALL rule cell=d59-short-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.6 idle_p95=12.8 i
+2026-09-26T03:18:34Z short o2 fanout rc=0 STALL rule cell=d59-short-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.7 idle_p95=12.8 idle_p99=13
+2026-09-26T03:19:26Z short o2 prime-short rc=0 STALL rule cell=d59-short-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 i
+2026-09-26T03:20:17Z short o2 fanout rc=0 STALL rule cell=d59-short-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.7 idle_p95=12.8 idle_p99=13
+2026-09-26T03:20:18Z short done
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "research/spill-a-20260919/pro-single-day59/ab-mode.sh",
+    "3",
+    "short",
+    "fanout",
+    "prime-short",
+    "256"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 1432861613885354,
+  "ended_monotonic_ns": 1433899315820340,
+  "started_utc": "2026-09-26T03:03:00.977414+00:00",
+  "ended_utc": "2026-09-26T03:20:18.679350+00:00",
+  "elapsed_seconds": 1037.701934986,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 3523,
+    "sha256": "b7878dfecad4c83a5c64c779c8cbdf1008ae62f3be68672b9cda85bc20e51ad5"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 456141,
+      "sha256": "9b2ecf38e9c86007b86cf45542812e39f1a8487eea279c67a77b9af772bc719a"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 182,
+    "sha256": "0f2e1c3c752f65d69b8acddbcbd4648fde5d3bac65294a3b689247ee94ce1297"
+  }
+}
