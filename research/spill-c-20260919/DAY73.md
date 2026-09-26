@@ -83,3 +83,57 @@ lane tip and a detached `/root/wt-c-build`, root in the container, at least 48 G
 image has it. On BOX15's machine it can follow DAY71's default half in the same sitting (separate receipts roots).
 Receipts land in `/root/spill-receipts/c-day73-<rig>/`. Expected: the build is shared with DAY71's when both run (else
 about 5 minutes), the cell about 8 minutes (20 sampled runs, 4 traced runs slower under `strace`).
+
+## 2. The registered cell (BOX31, a Ryzen 9 9950X, run by the lead as registered; `pro-single-day73-box31/`)
+
+The lead ran `D73_BUILDS="p71=6bad38150" D73_RIG=box31 bash .../day73-box.sh` on BOX31 (a Ryzen 9 9950X, 123 GB, kernel
+7.0.0-31, one RTX PRO 6000 Blackwell Workstation Edition, driver 595.84) on the tree `4130a4916`, right after integ65's
+GPU battery on the same card, 01:30Z to `box done 2026-09-26T01:36:50Z`. Receipts: 132 of 132 `OK` against
+`box-mirror-manifest.sha256` (re-checked here; `MIRROR-CHECK.txt`), `run-gen-p71` by hash. Regime (`regime.txt`): SM
+median 2610 MHz, N=931. Verbatim (`compact/reading.log`):
+
+- `DAY73 PINS rig=box31 home_l3=0-7,16-23 one=0,1,2,3,4,5,6,7,16,17,18,19 sampler_cpu=31`
+- `DAY73 COMPACT CHECKS rig=box31 runs=20 counters=on integrity=ok`
+- `DAY73 R5 rig=box31 (strace -- version 6.8) calls, door minus REF (medians of two): futex=+57556, pread64=+35062, sched_yield=-11194, rt_sigprocmask=+2904, sigaltstack=+2178, clock_nanosleep=+1329, ioctl=-955, mprotect=+907, sched_getaffinity=+847, clone=+726`
+- `DAY73 R1 rig=box31 slow=0 fast=10 of 10 door runs (slow: gate cycles per step >= 7.5, or gate ns >= 1.25 x REF's without counters)`
+- `DAY73 REF_COMPACTS rig=box31 none (REF spans from its third run on; deciding nothing)`
+- `DAY73 COMPACT VERDICT rig=box31 integrity=ok -> not_reproduced`
+
+**Read as registered: `not_reproduced`.** No door run on this 9950X entered the slow state (6.009 to 6.052 cycles per
+step at the gate), and no span, door or REF, moved `compact_isolated` or `pgmigrate_fail` (0 in all 20). The door ran
+0.247 to 0.249 s gen-only against REF's 0.243 to 0.244. So the 9950X class does not by itself carry the slow state:
+BOX15's machine and machine `b` did, this one did not.
+
+**What the lines show beside the verdict, deciding nothing.**
+- R3: `VmPin` reads 0 in every door and REF sample, although the door holds a 27 GB pinned pool: the driver's pinned
+  host memory is not accounted as `VmPin` here, so R3 cannot tell the two processes' pinned memory apart. `VmRSS` is
+  about 33.4 GB for the door against 22 to 33 GB for REF.
+- R4: this container exposes no `/proc/buddyinfo` (no `B` rows); the reader printed `normal_free_order9plus=None`
+  where `not read` is meant. R4 decides nothing; the printing is recorded, not changed after the reading.
+- R5: the door's two traced runs make 57,556 more `futex` calls and 35,062 more `pread64` calls than REF's (the host
+  fill's reads and its workers' waits), 11,194 fewer `sched_yield`, and no system-call family that a compaction or a
+  remapping would need (`madvise`, `munmap`, `mbind`, `move_pages` are not among the ten).
+
+## 2a. A diagnostic outside the registration (BOX30, a Ryzen 9 9950X3D2; `pro-single-day73-diag-9950x3d2/`)
+
+No plain 9950X was on the market at the time, so the lead ran the same driver on BOX30, a Ryzen 9 9950X3D2 (192 MB
+L3 over two domains, 123 GB, kernel 7.0.0-30), as `D73_RIG=diag-9950x3d2`, 23:33Z to `box done
+2026-09-25T23:40:21Z`: a diagnostic, not the registered class, deciding nothing. 132 of 132 receipts `OK`. Its lines:
+`DAY73 COMPACT CHECKS rig=diag-9950x3d2 runs=20 counters=on integrity=ok`, `DAY73 R1 rig=diag-9950x3d2 slow=1 fast=9
+of 10 door runs`, `DAY73 REF_COMPACTS rig=diag-9950x3d2 none`, `DAY73 COMPACT VERDICT rig=diag-9950x3d2 integrity=ok
+-> not_reproduced`.
+
+What it shows: its one slow door run is the sitting's first door run (`o1-i15-r1`, 7.723 cycles per step at the gate,
+0.306 s gen-only against REF's 0.249 to 0.250), and it is the only span in the sitting with compaction:
+`compact_isolated` 1,453,237 a second, `pgmigrate_fail` 531,032, `pgmigrate_success` 461,116 over its span. The
+compaction ran from 23:36:33.6 to 23:36:38.7, inside that run (23:36:23 to 23:36:39), and in its last pass kcompactd's
+own counter moved (`compact_daemon_migrate_scanned` 8,875,008). The other nine door runs read 6.010 to 6.021 cycles per
+step with no compaction in their spans.
+
+**The pattern across the three 9950X-family sittings with the sampler, stated as an observation, not a reading.** On
+machine `b` the slow state and compaction in the span came together in 19 of 20 door runs; on BOX30 in 1 of 10; on
+BOX31 neither appeared. No door run so far has been slow without compaction in its span, and no REF run from its
+third run on has seen compaction; REF's first two runs on `b` saw successful compaction and read 7.4 to 8.4 cycles per
+step later in those runs. That points to compaction running while the process runs as the trigger, and to the door's
+process being the one it lands on, but no registered cell has read it: `b` and BOX31 read `not_reproduced` by rule
+and BOX30 is outside the class. The next registration (`DAY74.md`) tests it directly.
