@@ -146,6 +146,10 @@ def inspect(validation, arms_path):
         or not SHA.fullmatch(arms["source_manifest_sha256"])
         or not SHA.fullmatch(arms["model_manifest_sha256"])
         or not SHA.fullmatch(arms["qualification_arms_sha256"])
+        or arms["training_prefix_preflight_status"] not in (
+            "training-prefix-visible",
+            "training-prefix-not-visible",
+        )
         or score["model_manifest_sha256"]
         != arms["model_manifest_sha256"]
         or not score["gpu_uuid"].startswith("GPU-")
@@ -344,6 +348,8 @@ def choose(validation, arms_path):
         "validation_arms_sha256": sha(arms_path),
         "qualification_arms_sha256":
         arms["qualification_arms_sha256"],
+        "training_prefix_preflight_status":
+        arms["training_prefix_preflight_status"],
         "source_manifest_sha256": arms["source_manifest_sha256"],
         "model_manifest_sha256": arms["model_manifest_sha256"],
         "quality_sha256": score["quality_sha256"],
@@ -385,6 +391,8 @@ def main():
             "selected_from_validation": sha(result_path),
             "qualification_arms_sha256":
             selection["qualification_arms_sha256"],
+            "training_prefix_preflight_status":
+            selection["training_prefix_preflight_status"],
             "domains": list(DOMAINS),
             "arms": final,
         })

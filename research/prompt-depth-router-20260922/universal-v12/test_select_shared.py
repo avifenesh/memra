@@ -60,6 +60,7 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
         "source_manifest_sha256": "c" * 64,
         "model_manifest_sha256": "d" * 64,
         "qualification_arms_sha256": "1" * 64,
+        "training_prefix_preflight_status": "training-prefix-visible",
         "arms": specs,
     })
     domains = {}
@@ -129,6 +130,24 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
 
 
 class SharedSelectionTest(unittest.TestCase):
+    def test_weak_prefix_receipt_does_not_hide_history_validation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            score, arms = fixture(Path(folder))
+            specs = json.loads(arms.read_text())
+            specs["training_prefix_preflight_status"] = (
+                "training-prefix-not-visible"
+            )
+            write(arms, specs)
+            graded = json.loads(score.read_text())
+            graded["arms_sha256"] = select_shared.sha(arms)
+            write(score, graded)
+            selection, _ = select_shared.choose(score, arms)
+            self.assertEqual(selection["status"], "selected")
+            self.assertEqual(
+                selection["training_prefix_preflight_status"],
+                "training-prefix-not-visible",
+            )
+
     def test_fixed_ranking_uses_one_common_cohort(self):
         with tempfile.TemporaryDirectory() as folder:
             score, _ = fixture(Path(folder))

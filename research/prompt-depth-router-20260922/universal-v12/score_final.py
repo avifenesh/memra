@@ -420,6 +420,8 @@ def score(args):
         "schema": 1, "phase": "final",
         "scope": "one Qwen C/K/D policy across code, prose and math",
         "selection_sha256": sha(selected_path),
+        "training_prefix_preflight_status":
+        selected["training_prefix_preflight_status"],
         "gpu_uuid": meta["gpu_uuid"],
         "arms_sha256": sha(args.arms),
         "tasks_quality_sha256": sha(args.tasks),

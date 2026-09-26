@@ -77,10 +77,12 @@ separate sealed commitment.
    marginal C cost come only from randomized rounds on the current
    V12 GPU.
    Before freezing arms, a training-conversation-heldout preflight
-   must show that the same first-16/32 token buckets used by the K
+   measures whether the same first-16/32 token buckets used by the K
    controller distinguish code, open prose and math above a 0.6
    balanced-accuracy floor, with every stratum recall at least 0.5.
-   This classifier is a diagnostic only and never routes requests.
+   A weaker result is recorded and limits claims about first-token
+   routing. It does not suppress validation of generated-history
+   behavior. This classifier never routes requests.
 2. Before validation, freeze one candidate inventory and a bounded
    fixed C/K/D menu that includes D=1/2 as controls, plus exact
    model-running no-op twins. Hold the target sampler at top-k 20,

@@ -127,7 +127,10 @@ def freeze(models, v11_rows, fresh_rows, fresh_replay,
         or sha(fresh_replay)
         != manifest["v12_fresh_training_replay_sha256"]
         or preflight["schema"] != 1
-        or preflight["status"] != "training-prefix-visible"
+        or preflight["status"] not in (
+            "training-prefix-visible",
+            "training-prefix-not-visible",
+        )
         or preflight["no_field_route"] is not True
         or preflight["scope"]
         != "training-only conversation-heldout prefix visibility"
@@ -228,6 +231,7 @@ def freeze(models, v11_rows, fresh_rows, fresh_replay,
         "v12_fresh_training_replay_sha256":
         sha(fresh_replay),
         "training_prefix_preflight_sha256": sha(preflight_path),
+        "training_prefix_preflight_status": preflight["status"],
         "fixed_c_quantiles": cutoffs,
         "domains": ["code", "prose", "math"],
         "arms": arms,
