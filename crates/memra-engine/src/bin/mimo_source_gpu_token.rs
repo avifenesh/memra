@@ -9,7 +9,9 @@ use std::time::Instant;
 use cudarc::driver::CudaSlice;
 use memra_engine::Engine;
 use memra_engine::QT_F8_E4M3_BLK;
-use memra_engine::mimo_source_moe::{PinnedMiMoSource, ResidentMiMoMoeLayer, source_moe_token};
+use memra_engine::mimo_source_moe::{
+    GroupedMiMoMoeLayer, PinnedMiMoSource, ResidentMiMoMoeLayer, source_moe_token,
+};
 use memra_engine::model::GpuTensor;
 use memra_gguf::config::{HfConfig, ModelConfig};
 use memra_gguf::model_packs;
@@ -651,7 +653,7 @@ fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.len() < 5 || args.len() > 11 {
         return Err(
-            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--resident-moe] [--resident-text] [--mirror-o-f32] [--profile-phases]"
+            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--resident-moe] [--resident-text] [--grouped-moe] [--mirror-o-f32] [--profile-phases]"
                 .into(),
         );
     }
@@ -659,6 +661,7 @@ fn run() -> Result<(), Fail> {
     let mut requested_turns: Option<usize> = None;
     let mut resident_moe = false;
     let mut resident_text = false;
+    let mut grouped_moe = false;
     let mut mirror_o_f32 = false;
     let mut profile_phases = false;
     for option in args.iter().skip(5) {
@@ -666,6 +669,7 @@ fn run() -> Result<(), Fail> {
             "--continue-one" if !continue_one => continue_one = true,
             "--resident-moe" if !resident_moe => resident_moe = true,
             "--resident-text" if !resident_text => resident_text = true,
+            "--grouped-moe" if !grouped_moe => grouped_moe = true,
             "--mirror-o-f32" if !mirror_o_f32 => mirror_o_f32 = true,
             "--profile-phases" if !profile_phases => profile_phases = true,
             _ if option.starts_with("--tokens=") && requested_turns.is_none() => {
@@ -684,6 +688,9 @@ fn run() -> Result<(), Fail> {
     if resident_text {
         resident_moe = true;
     }
+    if grouped_moe && !resident_text {
+        return Err("MiMo grouped MoE diagnostic requires --resident-text".into());
+    }
     if mirror_o_f32 && !resident_text {
         return Err("MiMo f32 attention output mirror requires --resident-text".into());
     }
@@ -695,6 +702,9 @@ fn run() -> Result<(), Fail> {
     };
     if direct_bf16 && mirror_o_f32 {
         return Err("MiMo f32 attention output mirror conflicts with direct BF16 matvec".into());
+    }
+    if grouped_moe && (direct_bf16 || mirror_o_f32) {
+        return Err("MiMo grouped MoE diagnostic requires default BF16 output arithmetic".into());
     }
     let dir = Path::new(&args[0]);
     let gpu0: usize = args[1].parse()?;
@@ -760,6 +770,8 @@ fn run() -> Result<(), Fail> {
     let engines = [Engine::new(gpu0)?, Engine::new(gpu1)?];
     let mut resident_layers: Vec<Option<ResidentMiMoMoeLayer>> =
         std::iter::repeat_with(|| None).take(LAYERS).collect();
+    let mut grouped_layers: Vec<Option<GroupedMiMoMoeLayer>> =
+        std::iter::repeat_with(|| None).take(LAYERS).collect();
     let mut resident_bytes = [0usize; 2];
     let mut resident_load_ms = 0.0f64;
     if resident_moe {
@@ -772,9 +784,15 @@ fn run() -> Result<(), Fail> {
                 return Err(format!("MiMo resident layer {index} has no MoE plan").into());
             };
             let before = Instant::now();
-            let resident = ResidentMiMoMoeLayer::load(engine, &pinned, index, moe)?;
-            resident_bytes[stage] += resident.resident_bytes();
-            resident_layers[index] = Some(resident);
+            if grouped_moe {
+                let grouped = GroupedMiMoMoeLayer::load(engine, &pinned, index, moe)?;
+                resident_bytes[stage] += grouped.resident_bytes();
+                grouped_layers[index] = Some(grouped);
+            } else {
+                let resident = ResidentMiMoMoeLayer::load(engine, &pinned, index, moe)?;
+                resident_bytes[stage] += resident.resident_bytes();
+                resident_layers[index] = Some(resident);
+            }
             eprintln!(
                 "MiMo resident layer {index} stage {stage} loaded in {:.3}s; cumulative stage bytes {}",
                 before.elapsed().as_secs_f64(),
@@ -826,6 +844,8 @@ fn run() -> Result<(), Fail> {
         "numeric_class\t{}",
         if direct_bf16 {
             "memra_block_fp8_q8_1_act_mxfp4_pow2_e4m3_moe_act_bf16_direct_f32acc"
+        } else if grouped_moe {
+            "memra_block_fp8_q8_1_act_mxfp4_pow2_e4m3_grouped_moe_candidate"
         } else if mirror_o_f32 {
             "memra_block_fp8_q8_1_act_mxfp4_pow2_e4m3_moe_act_f32_o_mirror_candidate"
         } else {
@@ -833,13 +853,16 @@ fn run() -> Result<(), Fail> {
         }
     )?;
     writeln!(report, "direct_bf16_matvec\t{direct_bf16}")?;
+    writeln!(report, "grouped_moe\t{grouped_moe}")?;
     writeln!(report, "o_proj_f32_mirror\t{mirror_o_f32}")?;
     writeln!(report, "stage_cut_before_layer\t{STAGE_CUT}")?;
     writeln!(report, "stage_transfer\thost_bounce")?;
     writeln!(
         report,
         "weight_residency\t{}",
-        if mirror_o_f32 {
+        if grouped_moe {
+            "source_grouped_moe_qkv_o_bf16_norms_head_resident_embedding_row_streamed"
+        } else if mirror_o_f32 {
             "source_moe_qkv_o_f32_norms_head_resident_embedding_row_streamed"
         } else if resident_text {
             "source_moe_projections_norms_head_resident_embedding_row_streamed"
@@ -977,7 +1000,12 @@ fn run() -> Result<(), Fail> {
                     }
                 }
                 MlpPlan::Moe(moe) if index > 0 => {
-                    let result = if resident_moe {
+                    let result = if grouped_moe {
+                        grouped_layers[index]
+                            .as_ref()
+                            .ok_or("MiMo grouped MoE layer was not loaded")?
+                            .token(engine, &post_norm, moe, &pinned)?
+                    } else if resident_moe {
                         resident_layers[index]
                             .as_ref()
                             .ok_or("MiMo resident MoE layer was not loaded")?
