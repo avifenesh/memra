@@ -305,7 +305,8 @@ the card is reset.
 - Acceptance: none registered (the same program per payload and per view, bitwise, the digests in the job's order;
   priced on the target card against the tip, the tenant's hump and the promote's PIN inside S's bounds; pre-registered
   before its code).
-- Status: open.
+- Status: **pre-registered** (DAY65 section 1: design T-H, the helper's payloads and views across scoped threads,
+  the digest program unchanged).
 
 ### 21. `tests::responses_carry_rate_limit_headers_and_slot_frees` failed once under the full server suite (found by DAY52)
 
