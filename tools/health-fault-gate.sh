@@ -37,12 +37,17 @@
 #      walks it into the bounded-retry honest error, and the green assertion must fire there.
 #      g-batch (DOCUMENTED): three concurrent streams share the batched decode chunk the fault lands
 #      on; the chunk's error arm ends every one of them (DAY47 2.1, owed O14).
+#   i  (WP-B DAY49, O14) with MEMRA_BATCH_OOM_RECOVER=1 the batched chunk's step OOM
+#      (MEMRA_STEP_OOM_FAULT=1, before any state write) takes one reclaim rung and the same
+#      batched step runs again: all three streams complete with the digests of a no-fault
+#      control boot (i-ctrl). Red twin i-red: MEMRA_STEP_OOM_FAULT=2 fails the retry too, and
+#      the chunk ends as today; the green assertion must fire there.
 #   h  a client that closes its stream mid-generation is retired within 1,000 ms (`[abort] client
 #      disconnected:`), its peer completes, and the box idles clean (DAY47 1.2). Red twin h-red: the
 #      same shape with no close, and the green assertion must fire there.
 #
 # Usage: tools/health-fault-gate.sh [model.gguf]
-#   HFG_PORT (8189; 8186 is serve-gemma4-batch-gate.sh's, revuto on #621; census of tools/ before choosing a default), HFG_ARMS (a,b,c,d,e,f,g,h; a and b share one boot), HFG_OUT (receipt dir).
+#   HFG_PORT (8189; 8186 is serve-gemma4-batch-gate.sh's, revuto on #621; census of tools/ before choosing a default), HFG_ARMS (a,b,c,d,e,f,g,h,i; a and b share one boot), HFG_OUT (receipt dir).
 #   Run under the rig lock (`flock /tmp/memra-5090.lock`, or the collector on a PRO box); the
 #   gate boots seven servers in sequence and never takes the lock itself, like serve-smoke.
 #   Exit 0 when no arm FAILED (DOCUMENTED arms do not fail the gate); 1 on any FAIL; 2 on setup.
@@ -54,7 +59,7 @@ MODEL="${1:-/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF
 PORT="${HFG_PORT:-8189}"
 ADDR=127.0.0.1:$PORT
 BASE=http://$ADDR
-ARMS="${HFG_ARMS:-a,b,c,d,e,f,g,h}"
+ARMS="${HFG_ARMS:-a,b,c,d,e,f,g,h,i}"
 OUT="${HFG_OUT:-/tmp/health-fault-gate-$(date -u +%Y%m%dT%H%M%SZ)}"
 mkdir -p "$OUT"
 VERDICTS="$OUT/VERDICTS.txt"
@@ -477,6 +482,62 @@ if in_arms h; then
   echo "--- arm h: a client disconnect retires the session within one tick; the peer completes (and the red twin) ---"
   run_h h true
   run_h h-red false
+fi
+
+# ---------------------------------------------------------------- i: the batched chunk's OOM recovers (O14)
+sdigest() { grep '^data: {' "$1.body" 2>/dev/null | sed 's/^data: //' | python3 -c '
+import json,sys,hashlib
+t=""
+for l in sys.stdin:
+    try:
+        for c in json.loads(l).get("choices",[]):
+            d=c.get("delta") or {}
+            t+=(d.get("content") or "")+(d.get("reasoning") or "")
+    except Exception: pass
+print(hashlib.sha256(t.encode()).hexdigest()[:16])'; }
+run_i() { # <label> <fault count or 0>: three concurrent streams, the recovery door on
+  local label=$1 n=$2
+  local envs=(MEMRA_BATCH_OOM_RECOVER=1)
+  [ "$n" != 0 ] && envs+=(MEMRA_STEP_OOM_FAULT="$n")
+  if boot "$label" "${envs[@]}"; then
+    SPIDS=""
+    sstream "$D/r0" "$P1" 48; sstream "$D/r1" "$P2" 48; sstream "$D/r2" "$P3" 48
+    # shellcheck disable=SC2086
+    wait $SPIDS
+    I_OK=0; I_ERR=0; I_5XX=0; I_DIG=""
+    for r in r0 r1 r2; do
+      sok "$D/$r" && I_OK=$((I_OK+1))
+      [ -n "$(serror "$D/$r")" ] && I_ERR=$((I_ERR+1))
+      case "$(scode "$D/$r")" in 5*) I_5XX=$((I_5XX+1));; esac
+      I_DIG="$I_DIG$r:$(sdigest "$D/$r"),"
+    done
+    I_RETRY=$(grep -c 'batch OOM: .* retrying the same batched step once' "$D/server.log")
+    I_RETRY_OK=$(grep -c 'batch OOM: retried (ok)' "$D/server.log")
+    I_RETRY_FAIL=$(grep -c 'batch OOM: retry failed' "$D/server.log")
+    I_PANIC=$(grep -cE 'panicked|\[worker\] PANIC' "$D/server.log")
+    stop "$label"
+    return 0
+  fi
+  stop "$label"; return 1
+}
+if in_arms i; then
+  echo "--- arm i: the batched chunk's OOM recovers with MEMRA_BATCH_OOM_RECOVER=1 (control, green, red twin) ---"
+  if run_i i-ctrl 0; then ctrl_dig=$I_DIG; ctrl_ok=$I_OK; else ctrl_dig=none; ctrl_ok=0; fi
+  if run_i i 1; then
+    v=FAIL
+    [ "$ctrl_ok" = 3 ] && [ "$I_OK" = 3 ] && [ "$I_ERR" = 0 ] && [ "$I_5XX" = 0 ] && [ "$I_RETRY" = 1 ] && [ "$I_RETRY_OK" = 1 ] && [ "$I_PANIC" = 0 ] && [ "$I_DIG" = "$ctrl_dig" ] && v=PASS
+    verdict "HFG (i) batch-oom-recovers: retry_lines=$I_RETRY retried_ok=$I_RETRY_OK completed=$I_OK/3 error_events=$I_ERR http_5xx=$I_5XX panic_lines=$I_PANIC digests={${I_DIG%,}} control={${ctrl_dig%,}} control_completed=$ctrl_ok/3 -> $v"
+  else
+    verdict "HFG (i) batch-oom-recovers: boot failed -> FAIL"
+  fi
+  if run_i i-red 2; then
+    green=false
+    [ "$I_OK" = 3 ] && [ "$I_ERR" = 0 ] && [ "$I_RETRY_OK" = 1 ] && green=true
+    v=FAIL; [ "$green" = false ] && [ "$I_RETRY" = 1 ] && [ "$I_RETRY_FAIL" = 1 ] && [ "$I_5XX" = 0 ] && [ "$I_PANIC" = 0 ] && v=PASS
+    verdict "HFG (i-red) batch-oom-retry-also-fails: retry_lines=$I_RETRY retry_failed=$I_RETRY_FAIL completed=$I_OK/3 error_events=$I_ERR http_5xx=$I_5XX panic_lines=$I_PANIC green_assertion_fired=$([ "$green" = false ] && echo true || echo false) -> $v"
+  else
+    verdict "HFG (i-red) batch-oom-retry-also-fails: boot failed -> FAIL"
+  fi
 fi
 
 echo "health-fault-gate: arms=$ARMS pass=$PASSN documented=$DOCN fail=$FAILN receipts=$OUT" | tee -a "$VERDICTS"

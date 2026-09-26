@@ -17,6 +17,7 @@ ap.add_argument("--model", default="q9")
 ap.add_argument("--n", type=int, default=0, help="run-day26-cell.sh passes it; unused")
 ap.add_argument("--order", default=None, help="run-day26-cell.sh passes it; unused")
 ap.add_argument("--warm-tokens", type=int, default=512)
+ap.add_argument("--warm-n", type=int, default=4, help="DAY49 passes 0 so the step-OOM fault lands on the burst")
 ap.add_argument("--burst", type=int, default=32)
 ap.add_argument("--length", type=int, default=6144)
 ap.add_argument("--max-tokens", type=int, default=64)
@@ -74,7 +75,7 @@ def complete(tag, phase, ids, max_tokens):
     print(f"{tag} status={status} G={row['completion_tokens']} e2e={row['e2e_ms']:.0f}", flush=True)
 
 
-for i in range(4):
+for i in range(a.warm_n):
     off = 50_000 + i * 997
     complete(f"warm-{i}", "warm", stream[off:off + a.warm_tokens], 16)
 threads = []
