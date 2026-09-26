@@ -353,27 +353,33 @@ mod tests {
 
     #[test]
     fn mimo_attention_math_blocks_generic_tuned_rewrites() {
-        let plan = tiny_text_plan().unwrap();
-        assert!(
-            plan.trunk_operations()
-                .contains(&OperationKind::MiMoAttentionMath)
-        );
         assert!(crate::op_registry::surfaces(OperationKind::MiMoAttentionMath).is_none());
-        let rewrites = execution_rewrites(&plan);
-        for surface in [
-            RewriteSurface::DecodeEager,
-            RewriteSurface::DecodeBatch,
-            RewriteSurface::DecodeGraph,
-            RewriteSurface::Pipeline,
+        let full_config =
+            ModelConfig::from_hf(&HfConfig::parse(include_str!("fixtures/config.json")));
+        for plan in [
+            tiny_text_plan().unwrap(),
+            SOURCE_PROFILE.compile_plan(&full_config).unwrap(),
         ] {
-            let rewrite = rewrites
-                .iter()
-                .find(|rewrite| rewrite.surface == surface)
-                .unwrap();
             assert!(
-                rewrite.blockers.contains(&OperationKind::MiMoAttentionMath),
-                "{surface:?} lost the MiMo math blocker"
+                plan.trunk_operations()
+                    .contains(&OperationKind::MiMoAttentionMath)
             );
+            let rewrites = execution_rewrites(&plan);
+            for surface in [
+                RewriteSurface::DecodeEager,
+                RewriteSurface::DecodeBatch,
+                RewriteSurface::DecodeGraph,
+                RewriteSurface::Pipeline,
+            ] {
+                let rewrite = rewrites
+                    .iter()
+                    .find(|rewrite| rewrite.surface == surface)
+                    .unwrap();
+                assert!(
+                    rewrite.blockers.contains(&OperationKind::MiMoAttentionMath),
+                    "{surface:?} lost the MiMo math blocker"
+                );
+            }
         }
     }
 
