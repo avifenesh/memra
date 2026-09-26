@@ -451,6 +451,16 @@ fn resolve_replay_cadence(p: &Dsv4Program) -> DoorState {
     }
 }
 
+fn resolve_vocab_head(p: &Dsv4Program) -> DoorState {
+    // The decode heads of the TP/EP program (one-row, replay, B-row); prefill and verify keep
+    // the one-rank head, whose logits are the same bits.
+    if p.tp_ep {
+        DoorState::On(DoorShape::DecodeOnlyM1)
+    } else {
+        DoorState::OffProgram("the all-layer TP/EP topology")
+    }
+}
+
 fn resolve_pdl_chain(_p: &Dsv4Program) -> DoorState {
     // Every DSv4 chain launch on every program, prefill chunks included: the attribute moves
     // block dispatch only (memra_pdl_chain.cuh).
@@ -485,6 +495,18 @@ fn resolve_hc_dot_split(p: &Dsv4Program) -> DoorState {
 /// clean receipt becomes the code (owner, 2026-09-10). See the removed-doors
 /// ledger in `docs/FLAGS.md`.
 pub const DSV4_DOORS: &[DoorRow] = &[
+    DoorRow {
+        name: "vocab-parallel head",
+        env: "MEMRA_DSV4_VOCAB_HEAD",
+        merged: "#VHEAD_PR",
+        declared_default: DeclaredDefault::On,
+        declared_served: DoorState::On(DoorShape::DecodeOnlyM1),
+        declared_bench: DoorState::On(DoorShape::DecodeOnlyM1),
+        resolve: resolve_vocab_head,
+        admitted_by: AdmittingProgram::TpEpOnly,
+        merged_gain_pct: (2.31, 2.48),
+        measured_on: "2x RTX PRO 6000 Blackwell Server Edition pair",
+    },
     DoorRow {
         name: "PDL chain",
         env: "MEMRA_DSV4_PDL",
@@ -999,11 +1021,6 @@ mod tests {
         ("MEMRA_DSV4_SAMPLE_SORT", "program selector"),
         ("MEMRA_DSV4_SPEC_DEPTH", "spec parameter"),
         ("MEMRA_DSV4_VERIFY_TOPK", "program selector"),
-        (
-            "MEMRA_DSV4_VOCAB_HEAD",
-            "head-placement door under its first A/B; every logit is the same dots row \
-             over the same inputs with it on or off",
-        ),
         ("MEMRA_DSV4_VT", "spec threshold parameter"),
         ("MEMRA_DSV4_VT_FLOOR", "spec threshold parameter"),
         ("MEMRA_DSV4_VT_TAU", "spec threshold parameter"),
@@ -1119,6 +1136,7 @@ mod tests {
         // permanence disposition asserted when this list holds nobody.
         const PERMANENTLY_UNREACHABLE: &[&str] = &[];
         const ENGAGED: &[&str] = &[
+            "vocab-parallel head",
             "PDL chain",
             "dense exact-tail transport",
             "dense-fast",
@@ -1269,7 +1287,7 @@ mod tests {
         // checks. Same lesson as the red arms above, one level up. Two anchors
         // now, neither of them a door name.
         assert!(!DSV4_DOORS.is_empty(), "an empty registry loops zero times");
-        assert_eq!(DSV4_DOORS.len(), 5);
+        assert_eq!(DSV4_DOORS.len(), 6);
         // 1. The machinery is alive and program-sensitive, by construction and
         //    permanently: the synthetic stand-in cannot be fixed.
         assert_ne!(
