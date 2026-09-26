@@ -44,9 +44,7 @@ def preflight(config_path, template_path, credential_file, out):
     price = judge_bedrock.price_quote(config)
     token = judge_bedrock.credential(credential_file)
     template = template_path.read_text()
-    if out.exists():
-        raise ValueError("judge preflight destination exists")
-    out.mkdir()
+    out.mkdir(exist_ok=True)
     receipts = []
     for order in (0, 1):
         a, b = (GOOD, BAD) if order == 0 else (BAD, GOOD)
@@ -55,10 +53,13 @@ def preflight(config_path, template_path, credential_file, out):
         )
         prompt_sha = hashlib.sha256(prompt.encode()).hexdigest()
         packet = {"prompt_sha256": prompt_sha}
-        raw = judge_bedrock.call(prompt, config, token)
-        raw["prompt_sha256"] = prompt_sha
         response_path = out / f"response-{order}.json"
-        save(response_path, raw)
+        if response_path.exists():
+            raw = json.loads(response_path.read_text())
+        else:
+            raw = judge_bedrock.call(prompt, config, token)
+            raw["prompt_sha256"] = prompt_sha
+            save(response_path, raw)
         parsed = judge_bedrock.parse_response(
             raw, config, packet, order,
         )
@@ -91,7 +92,12 @@ def preflight(config_path, template_path, credential_file, out):
         "quoted_spend_usd": actual_usd,
         "receipts": receipts,
     }
-    save(out / "manifest.json", result)
+    manifest_path = out / "manifest.json"
+    if manifest_path.exists():
+        if json.loads(manifest_path.read_text()) != result:
+            raise ValueError("resumed judge preflight receipt changed")
+    else:
+        save(manifest_path, result)
     return result
 
 
