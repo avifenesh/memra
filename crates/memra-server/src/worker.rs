@@ -5640,6 +5640,21 @@ fn serve_batching() -> bool {
 /// unset without a drafter = off (nothing to draft with); `0` = the eager/plain kill
 /// switch; explicit K >= 1 = armed at that depth (and REQUIRES MEMRA_DRAFT — boot
 /// refuses loud). Any other value REFUSES LOUD (the mis-typed-seam law).
+/// A drafter path with the route off (memra #478): `MEMRA_DSPARK_DRAFT` set while
+/// `MEMRA_DSPARK_SPEC` is not `1` loads nothing and boots the MTP route, so the operator's drafter
+/// would be discarded in silence. The reverse pairing already refuses by name; this is its twin.
+fn dspark_draft_without_spec(spec: Option<&str>, draft: Option<&str>) -> Option<String> {
+    match (spec, draft) {
+        (spec, Some(draft)) if !draft.is_empty() && spec != Some("1") => Some(format!(
+            "MEMRA_DSPARK_DRAFT={draft:?} is set but MEMRA_DSPARK_SPEC is {}: the drafter will not \
+             be used and the model would serve its MTP route; set MEMRA_DSPARK_SPEC=1 or unset \
+             MEMRA_DSPARK_DRAFT",
+            spec.map_or("unset".to_string(), |v| format!("{v:?}"))
+        )),
+        _ => None,
+    }
+}
+
 /// Boot-time ambiguity refuse list for `MEMRA_DSPARK_SPEC=1` — the 3f4597f02 guard law:
 /// two spec/parallelism programs on one model must never silently coexist, and every
 /// combination that has never been co-gated refuses LOUD at spawn. Pure (env values in,
@@ -24628,6 +24643,12 @@ pub fn run(
     // 3f4597f02 guard law: two spec programs on one model must never silently coexist,
     // so arming dspark DISABLES the MTP spec arm for that model (spec_eligible below)
     // and refuses combinations that have never been co-gated.
+    if let Some(msg) = dspark_draft_without_spec(
+        std::env::var("MEMRA_DSPARK_SPEC").ok().as_deref(),
+        std::env::var("MEMRA_DSPARK_DRAFT").ok().as_deref(),
+    ) {
+        panic!("{msg}");
+    }
     let mut dspark_drafts: std::collections::HashMap<String, memra_engine::dflash::DflashDraft> =
         Default::default();
     if std::env::var("MEMRA_DSPARK_SPEC").as_deref() == Ok("1") {
@@ -38704,6 +38725,28 @@ pub fn spawn(
 
 #[cfg(test)]
 mod tests {
+    /// memra #478: a drafter path with the route off refuses by name; the armed pairing and a
+    /// boot with neither stay quiet.
+    #[test]
+    fn a_dspark_drafter_without_the_route_refuses_by_name() {
+        let msg = super::dspark_draft_without_spec(None, Some("/data/q38/dflash2"))
+            .expect("drafter without the route refuses");
+        assert!(
+            msg.contains("MEMRA_DSPARK_DRAFT=\"/data/q38/dflash2\""),
+            "{msg}"
+        );
+        assert!(msg.contains("MEMRA_DSPARK_SPEC is unset"), "{msg}");
+        let msg = super::dspark_draft_without_spec(Some("0"), Some("/d")).expect("spec=0 refuses");
+        assert!(msg.contains("MEMRA_DSPARK_SPEC is \"0\""), "{msg}");
+        assert_eq!(
+            super::dspark_draft_without_spec(Some("1"), Some("/d")),
+            None
+        );
+        assert_eq!(super::dspark_draft_without_spec(None, None), None);
+        assert_eq!(super::dspark_draft_without_spec(Some("0"), None), None);
+        assert_eq!(super::dspark_draft_without_spec(None, Some("")), None);
+    }
+
     #[test]
     fn dspark_partial_restore_door_admits_only_strict_prefixes_when_armed() {
         use super::dspark_hit_is_restorable_with as r;
