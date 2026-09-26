@@ -999,6 +999,11 @@ mod tests {
         ("MEMRA_DSV4_SAMPLE_SORT", "program selector"),
         ("MEMRA_DSV4_SPEC_DEPTH", "spec parameter"),
         ("MEMRA_DSV4_VERIFY_TOPK", "program selector"),
+        (
+            "MEMRA_DSV4_VOCAB_HEAD",
+            "head-placement door under its first A/B; every logit is the same dots row \
+             over the same inputs with it on or off",
+        ),
         ("MEMRA_DSV4_VT", "spec threshold parameter"),
         ("MEMRA_DSV4_VT_FLOOR", "spec threshold parameter"),
         ("MEMRA_DSV4_VT_TAU", "spec threshold parameter"),
