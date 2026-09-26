@@ -227,6 +227,7 @@ struct AttentionPhase<'a> {
     q8q5_replay: bool,
     q8q8_probe: bool,
     q8q8_replay: bool,
+    global_only_kv: bool,
 }
 
 impl AttentionPhase<'_> {
@@ -796,17 +797,19 @@ fn attention_token(
     )?;
     phase.record(engine, layer, "qkv_gather_rope", phase_start)?;
     phase_start = Instant::now();
-    if let Some(restored) = fp8_kv_probe(engine, &qkv.key, &qkv.value, phase, layer)? {
-        qkv.key = restored.key;
-        qkv.value = restored.value;
-    }
-    if let Some(restored) = q8q5_kv_probe(engine, &qkv.key, &qkv.value, phase, layer)? {
-        qkv.key = restored.key;
-        qkv.value = restored.value;
-    }
-    if let Some(restored) = q8q8_kv_probe(engine, &qkv.key, &qkv.value, phase, layer)? {
-        qkv.key = restored.key;
-        qkv.value = restored.value;
+    if !phase.global_only_kv || global {
+        if let Some(restored) = fp8_kv_probe(engine, &qkv.key, &qkv.value, phase, layer)? {
+            qkv.key = restored.key;
+            qkv.value = restored.value;
+        }
+        if let Some(restored) = q8q5_kv_probe(engine, &qkv.key, &qkv.value, phase, layer)? {
+            qkv.key = restored.key;
+            qkv.value = restored.value;
+        }
+        if let Some(restored) = q8q8_kv_probe(engine, &qkv.key, &qkv.value, phase, layer)? {
+            qkv.key = restored.key;
+            qkv.value = restored.value;
+        }
     }
     let streamed_sink = if phase.resident.is_none() && !global {
         Some(engine.htod(&read_vector(
@@ -970,9 +973,9 @@ fn device_memory(engine: &Engine) -> Result<(usize, usize), Fail> {
 
 fn run() -> Result<(), Fail> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.len() < 5 || args.len() > 17 {
+    if args.len() < 5 || args.len() > 18 {
         return Err(
-            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--resident-moe] [--resident-text] [--grouped-moe] [--mirror-o-f32] [--profile-phases] [--capacity-probe=N] [--workspace-mib=N] [--kv-fp8-probe | --kv-fp8-replay | --kv-q8q5-probe | --kv-q8q5-replay | --kv-q8q8-probe | --kv-q8q8-replay]"
+            "usage: mimo_source_gpu_token <source_dir> <gpu0> <gpu1> <token_id> <report.tsv> [--continue-one | --tokens=N] [--resident-moe] [--resident-text] [--grouped-moe] [--mirror-o-f32] [--profile-phases] [--capacity-probe=N] [--workspace-mib=N] [--kv-global-only] [--kv-fp8-probe | --kv-fp8-replay | --kv-q8q5-probe | --kv-q8q5-replay | --kv-q8q8-probe | --kv-q8q8-replay]"
                 .into(),
         );
     }
@@ -991,6 +994,7 @@ fn run() -> Result<(), Fail> {
     let mut q8q5_replay = false;
     let mut q8q8_probe = false;
     let mut q8q8_replay = false;
+    let mut global_only_kv = false;
     for option in args.iter().skip(5) {
         match option.as_str() {
             "--continue-one" if !continue_one => continue_one = true,
@@ -1005,6 +1009,7 @@ fn run() -> Result<(), Fail> {
             "--kv-q8q5-replay" if !q8q5_replay => q8q5_replay = true,
             "--kv-q8q8-probe" if !q8q8_probe => q8q8_probe = true,
             "--kv-q8q8-replay" if !q8q8_replay => q8q8_replay = true,
+            "--kv-global-only" if !global_only_kv => global_only_kv = true,
             _ if option.starts_with("--tokens=") && requested_turns.is_none() => {
                 requested_turns = Some(option["--tokens=".len()..].parse()?);
             }
@@ -1032,6 +1037,9 @@ fn run() -> Result<(), Fail> {
     if u8::from(fp8_probe) + u8::from(q8q5_probe) + u8::from(q8q8_probe) > 1 {
         return Err("MiMo KV probe must select one storage format".into());
     }
+    if global_only_kv && !(fp8_probe || q8q5_probe || q8q8_probe) {
+        return Err("--kv-global-only requires one KV storage probe".into());
+    }
     let turns = requested_turns.unwrap_or(if continue_one { 2 } else { 1 });
     if !(1..=MAX_DIAGNOSTIC_TOKENS).contains(&turns) {
         return Err("MiMo diagnostic token count is outside 1..=256".into());
@@ -1044,6 +1052,7 @@ fn run() -> Result<(), Fail> {
             || fp8_probe
             || q8q5_probe
             || q8q8_probe
+            || global_only_kv
             || !resident_text
             || workspace_mib.is_some_and(|mib| mib > 8192)
         {
@@ -1338,7 +1347,13 @@ fn run() -> Result<(), Fail> {
     writeln!(
         report,
         "numeric_class\t{}",
-        if q8q8_replay {
+        if q8q8_replay && global_only_kv {
+            "memra_mimo_source_global_q8_0_k_q8_0_v_sliding_f32_candidate"
+        } else if q8q5_replay && global_only_kv {
+            "memra_mimo_source_global_q8_0_k_q5_1_v_sliding_f32_candidate"
+        } else if fp8_replay && global_only_kv {
+            "memra_mimo_source_global_e4m3_kv_sliding_f32_candidate"
+        } else if q8q8_replay {
             "memra_mimo_source_q8_0_k_q8_0_v_roundtrip_f32_attention_candidate"
         } else if q8q5_replay {
             "memra_mimo_source_q8_0_k_q5_1_v_roundtrip_f32_attention_candidate"
@@ -1365,6 +1380,7 @@ fn run() -> Result<(), Fail> {
     writeln!(report, "kv_q8q5_replay\t{q8q5_replay}")?;
     writeln!(report, "kv_q8q8_probe\t{q8q8_probe}")?;
     writeln!(report, "kv_q8q8_replay\t{q8q8_replay}")?;
+    writeln!(report, "kv_global_only\t{global_only_kv}")?;
     writeln!(report, "stage_cut_before_layer\t{STAGE_CUT}")?;
     writeln!(report, "stage_transfer\thost_bounce")?;
     writeln!(
@@ -1393,7 +1409,13 @@ fn run() -> Result<(), Fail> {
     writeln!(
         report,
         "kv_format\t{}",
-        if q8q8_replay {
+        if q8q8_replay && global_only_kv {
+            "global_q8_0_k_q8_0_v_sliding_f32_component"
+        } else if q8q5_replay && global_only_kv {
+            "global_q8_0_k_q5_1_v_sliding_f32_component"
+        } else if fp8_replay && global_only_kv {
+            "global_e4m3_kv_sliding_f32_component"
+        } else if q8q8_replay {
             "q8_0_k_q8_0_v_roundtripped_f32_contiguous_component"
         } else if q8q5_replay {
             "q8_0_k_q5_1_v_roundtripped_f32_contiguous_component"
@@ -1469,6 +1491,7 @@ fn run() -> Result<(), Fail> {
                     q8q5_replay,
                     q8q8_probe,
                     q8q8_replay,
+                    global_only_kv,
                 };
                 attention_token(
                     engine,
