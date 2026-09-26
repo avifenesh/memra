@@ -82,7 +82,10 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   session's whole life; the workspace is live only during the prime. Under `MEMRA_ADMIT_BY_MEMORY` the booked
   reading already counts `W` only for still-priming sessions (`pending_prime`, day 33), so this item is the two books'
   side.
-- Status: `open`. Price: about 0.5 agent-day plus a cell on each card.
+- Status: `pre-registered` (DAY45.md): `MEMRA_ADMIT_W_RELEASE` (default unset, decide-by 2026-10-10), one release
+  site at the tick top for every session whose prime completed, both books, the retire seam unchanged; the cell runs the
+  predictive shadow (log only) with a burst, W1 exact books, W2 one release per session, W3 identity. Price: about 0.3
+  agent-day plus about 40 min on the 5090 and 1.5 h on the target card.
 
 ### O5. The shared prime slab charged per request
 
