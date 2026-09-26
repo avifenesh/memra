@@ -181,6 +181,18 @@ def thermal_ok(header, ticks):
     return True
 
 
+def gpu_apps():
+    """Compute applications on the card (pid, name, MiB); None if the query fails."""
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-compute-apps=pid,process_name,used_gpu_memory",
+                              "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if out.returncode != 0:
+        return None
+    return [[x.strip() for x in l.split(",")] for l in out.stdout.splitlines() if l.strip()]
+
+
 def run_visit(args, lock, arm, round_index, position, visit_dir, identity, leaves, top, env_extra=None):
     visit_dir.mkdir(parents=True)
     rec = {"arm": arm["name"], "round": round_index + 1, "position": position,
@@ -209,7 +221,17 @@ def run_visit(args, lock, arm, round_index, position, visit_dir, identity, leave
                                    stdout=subprocess.DEVNULL, stderr=sampler_err)
     timed_out = False
     deadline = time.monotonic() + args.visit_timeout_s
+    gpu_seen, next_gpu = [], 0.0
     while True:
+        if args.gpu_cotenant_gate and time.monotonic() >= next_gpu:
+            apps = gpu_apps()
+            if apps is None:
+                gpu_seen = None
+            elif gpu_seen is not None:
+                for a in apps:
+                    if a not in gpu_seen:
+                        gpu_seen.append(a)
+            next_gpu = time.monotonic() + 5
         try:
             info = os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOWAIT | os.WNOHANG)
         except ChildProcessError:
@@ -234,6 +256,9 @@ def run_visit(args, lock, arm, round_index, position, visit_dir, identity, leave
     sampler.send_signal(signal.SIGTERM)
     sampler.wait(timeout=10)
     rec.update(exit_code=code, timed_out=timed_out, proc_io=proc_io, raw_log_sha256=sha(raw))
+    if args.gpu_cotenant_gate:
+        rec["gpu_apps_during"] = gpu_seen
+        rec["gpu_cotenant"] = bool(gpu_seen is None or any(a[0] != str(child.pid) for a in gpu_seen))
     after = B.filesystem_identity(Path(args.artifact).parent)
     rec["identity_after_ok"] = after == identity
     resident, pages = CACHE.residency(args.artifact)
@@ -341,10 +366,11 @@ def run(args):
             time.sleep(0.1)
     visits = []
     oracle = json.loads(Path(args.oracle_tokens).read_text()) if args.oracle_tokens else None
+    rounds = [args.only_round - 1] if args.only_round else list(range(args.rounds))
     ngen = int(lock["common_env"]["MEMRA_NGEN"])
     overread = int(lock["artifact"].get("overread_bytes_per_read", 4096))
     try:
-        for r in range(args.rounds):
+        for r in rounds:
             for position, name in enumerate(order_for(names, r)):
                 arm = next(a for a in arms if a["name"] == name)
                 vdir = args.out / f"r{r + 1:02d}-{position + 1}-{name}"
@@ -369,13 +395,14 @@ def run(args):
         if oracle is None:
             v["correctness_problems"].append("no byte oracle tokens in this run")
         c = v["contamination"]
-        if args.regime == "bounded":
+        if args.regime == "bounded" or args.bound_residency_check:
             resident, pages = v["residency_end"]
             v["bound_held"] = bool(pages and resident / pages < args.bound_residency_max)
             v["regime_ok"] = bool(v.get("regime_ok", True) and v["bound_held"])
         v["clean_timing"] = bool(v["telemetry_ok"] and v["thermal_ok"] and v["identity_after_ok"]
                                  and v.get("regime_ok", True) and c is not None
-                                 and c["foreign_share"] <= args.contamination_limit)
+                                 and c["foreign_share"] <= args.contamination_limit
+                                 and not v.get("gpu_cotenant", False))
         v["scored"] = bool(v["clean_timing"] and not v["correctness_problems"]
                            and v["exit_code"] == 0 and not v["timed_out"])
         v["tok_s"] = float(v["parsed"]["generated"][2]) if v["parsed"]["generated"] else None
@@ -431,6 +458,10 @@ def main(argv=None):
     r.add_argument("--oracle-tokens", help="byte-oracle token ids when the oracle arm is not in the run")
     r.add_argument("--contamination-limit", type=float, default=0.02)
     r.add_argument("--smoke", action="store_true", help="one round, output labelled smoke and never scored")
+    r.add_argument("--only-round", type=int, help="run exactly this 1-based round in its registered order (5090 half)")
+    r.add_argument("--gpu-cotenant-gate", action="store_true", help="5090 half: a visit sharing the card is unclean")
+    r.add_argument("--bound-residency-check", action="store_true",
+                   help="5090 bounded regime: the cgroup is the bound; require residency at visit end below --bound-residency-max")
     r.add_argument("--stub-no-lock", action="store_true")
     p = sub.add_parser("reparse")
     p.add_argument("dir")
@@ -440,6 +471,7 @@ def main(argv=None):
     B.require(args.stub_no_lock or args.lock_fd is not None, "--lock-fd (inherited canonical lock) required")
     B.require(args.rounds >= 10 or args.stub_no_lock or (args.smoke and args.rounds == 1),
               "registered protocol is 10 rounds (a smoke is exactly 1 round and never scored)")
+    B.require(args.only_round is None or 1 <= args.only_round <= args.rounds, "--only-round outside 1..rounds")
     B.require(args.contamination_limit == 0.02 or args.stub_no_lock, "the registered co-tenancy limit is 2%")
     return run(args)
 

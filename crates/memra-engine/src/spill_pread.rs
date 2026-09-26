@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 
-use cudarc::driver::{CudaEvent, CudaStream, PinnedHostSlice};
+use cudarc::driver::{CudaEvent, CudaSlice, CudaStream, PinnedHostSlice};
 
 use crate::Engine;
 
@@ -298,6 +298,10 @@ struct PinnedBuffer {
     error: Option<WorkerReadError>,
     /// Payload start inside the buffer: 0 for exact reads, the window head for a direct over-read.
     head: usize,
+    /// OWED 18 sibling, OWED 17 (`MEMRA_MOE_COLD_BYPASS=mapped`): the allocation's device alias
+    /// (`cuMemHostGetDevicePointer`), wrapped once at pool setup. Never freed through cudarc:
+    /// `Drop` leaks the wrapper before the pinned allocation goes.
+    mapped: Option<std::mem::ManuallyDrop<CudaSlice<u8>>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -499,6 +503,8 @@ pub(crate) struct PreadStats {
     pub wait_ns: u64,
     /// Payload copies submitted to the device (known and unknown-completion submissions).
     pub h2d_submits: u64,
+    /// OWED 17: payloads a kernel read in place through the buffer's device alias (no copy).
+    pub mapped_serves: u64,
 }
 
 fn elapsed_ns(started: std::time::Instant) -> u64 {
@@ -546,6 +552,7 @@ impl PreadPool {
                     ticket: None,
                     error: None,
                     head: 0,
+                    mapped: None,
                 }),
                 Err(err) if buffers.is_empty() => return Err(err.into()),
                 Err(err) => {
@@ -722,7 +729,7 @@ impl PreadPool {
         let Some(index) = self
             .buffers
             .iter()
-            .position(|buffer| buffer.phase == BufferPhase::H2d)
+            .position(|buffer| buffer.phase == BufferPhase::H2d && buffer.ready.is_some())
         else {
             return Err(
                 io::Error::other("pread buffer pool has no reusable or in-flight buffer").into(),
@@ -1066,6 +1073,72 @@ impl PreadPool {
         self.buffers[index].ready = None;
     }
 
+    /// OWED 17: wrap every buffer's device alias so a kernel can read a payload in place. Fails
+    /// (and the caller refuses the door) when the driver does not map the pinned allocations.
+    pub(crate) fn enable_mapped(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        for (i, buffer) in self.buffers.iter_mut().enumerate() {
+            if buffer.mapped.is_some() {
+                continue;
+            }
+            let data = buffer.data.as_ref().ok_or_else(|| {
+                io::Error::other(format!("pinned buffer {i} is lent out at setup"))
+            })?;
+            let host = data.as_slice()?.as_ptr();
+            let mut dptr: cudarc::driver::sys::CUdeviceptr = 0;
+            // SAFETY: documented FFI (`cuMemHostGetDevicePointer_v2(&dptr, p, 0)`); `host` is the
+            // start of a live `cuMemHostAlloc` allocation this pool owns for its whole lifetime.
+            unsafe {
+                cudarc::driver::sys::cuMemHostGetDevicePointer_v2(&mut dptr, host as *mut _, 0)
+                    .result()
+                    .map_err(|e| format!("pinned buffer {i} has no device alias: {e}"))?;
+            }
+            // SAFETY: `dptr` addresses `buffer_bytes` bytes of the same live allocation; the view
+            // is never freed through cudarc (`Drop` leaks it first) and is read only while the
+            // buffer is owned by a mapped serve (phase `H2d`, see `mark_mapped`).
+            let view = unsafe {
+                self.stream
+                    .upgrade_device_ptr::<u8>(dptr, self.buffer_bytes)
+            };
+            buffer.mapped = Some(std::mem::ManuallyDrop::new(view));
+        }
+        Ok(())
+    }
+
+    /// OWED 17: the device alias of a completed read and its payload start. `None` unless
+    /// `enable_mapped` ran and the buffer holds a completed read.
+    pub(crate) fn mapped_view(&self, index: usize) -> Option<(&CudaSlice<u8>, usize)> {
+        let buffer = self.buffers.get(index)?;
+        if !matches!(buffer.phase, BufferPhase::Ready | BufferPhase::H2d) {
+            return None;
+        }
+        buffer.mapped.as_deref().map(|view| (view, buffer.head))
+    }
+
+    /// OWED 17: a kernel will read this completed buffer in place. The buffer leaves `Ready` and
+    /// is owned (phase `H2d`, no event) until `set_consumer_event` gives it the event recorded
+    /// after that kernel; nothing can refill it before then.
+    pub(crate) fn mark_mapped(&mut self, index: usize) {
+        self.stats.mapped_serves += 1;
+        self.buffers[index].phase.begin_h2d();
+        self.buffers[index].ticket = None;
+        self.buffers[index].ready = None;
+    }
+
+    /// OWED 17: the event after the consuming kernel; the buffer returns to the pool once it fires.
+    pub(crate) fn set_consumer_event(&mut self, index: usize, ready: Arc<CudaEvent>) {
+        let buffer = &mut self.buffers[index];
+        assert_eq!(
+            buffer.phase,
+            BufferPhase::H2d,
+            "consumer event for a buffer not owned by a mapped serve"
+        );
+        assert!(
+            buffer.ready.is_none(),
+            "mapped buffer already has its consumer event"
+        );
+        buffer.ready = Some(ready);
+    }
+
     pub(crate) fn abort_read(&mut self, index: usize) {
         self.buffers[index].ticket = None;
         self.buffers[index].error = None;
@@ -1129,11 +1202,17 @@ impl PreadPool {
 impl Drop for PreadPool {
     fn drop(&mut self) {
         let _ = self.drain();
+        for buffer in &mut self.buffers {
+            if let Some(view) = buffer.mapped.take() {
+                // The alias belongs to the pinned allocation; cudarc must never cuMemFree it.
+                let _ = std::mem::ManuallyDrop::into_inner(view).leak();
+            }
+        }
         if self.stats.reads != 0 || self.stats.fallbacks != 0 || self.stats.ring_full != 0 {
             eprintln!(
                 "[spill-pread] reads={} bytes={} errors={} short_reads={} fallbacks={} \
                  buffer_waits={} ring_full={} overread_bytes={} worker_read_ns={} \
-                 demand_read_ns={} wait_ns={} h2d_submits={}",
+                 demand_read_ns={} wait_ns={} h2d_submits={} mapped_serves={}",
                 self.stats.reads,
                 self.stats.bytes,
                 self.stats.read_errors,
@@ -1146,6 +1225,7 @@ impl Drop for PreadPool {
                 self.stats.demand_read_ns,
                 self.stats.wait_ns,
                 self.stats.h2d_submits,
+                self.stats.mapped_serves,
             );
         }
     }
@@ -1594,6 +1674,83 @@ mod tests {
         let reused_buffer = pool.wait_worker(reused).unwrap();
         assert_eq!(pool.bytes(reused_buffer, 8).unwrap(), &bytes[..8]);
         pool.abort_read(reused_buffer);
+        std::fs::remove_file(path).ok();
+    }
+
+    /// OWED 17 GPU cell: a mapped serve reads the file's bytes through the device alias, the
+    /// buffer cannot be refilled while its consumer event is absent, and it returns to the pool
+    /// once the consumer event fires.
+    #[test]
+    #[ignore = "requires a CUDA GPU"]
+    fn mapped_serve_reads_in_place_and_owns_the_buffer_until_its_event() {
+        let engine = crate::Engine::new(0).unwrap();
+        let bytes: Vec<u8> = (0..4096u32)
+            .map(|i| (i.wrapping_mul(7) ^ (i >> 3)) as u8)
+            .collect();
+        let (path, file) = temp_file("mapped", &bytes);
+        let file = std::sync::Arc::new(file);
+        let mut pool = super::PreadPool::try_new(&engine, 1024, SpillIoMode::Worker).unwrap();
+        pool.enable_mapped().unwrap();
+        let depth = pool.buffers.len();
+        assert!(depth >= 2, "needs depth >= 2");
+
+        let ticket = pool.submit_worker(file.clone(), 100, 777).unwrap().unwrap();
+        let index = pool.wait_worker(ticket).unwrap();
+        pool.mark_mapped(index);
+        // Device-side read of the alias: copy it on the GPU, then back, and compare.
+        let (view, head) = pool.mapped_view(index).unwrap();
+        let stream = engine.stream().clone();
+        let mut dev = stream.alloc_zeros::<u8>(777).unwrap();
+        stream
+            .memcpy_dtod(&view.slice(head..head + 777), &mut dev)
+            .unwrap();
+        let back = stream.clone_dtoh(&dev).unwrap();
+        assert_eq!(back, &bytes[100..877], "the alias reads the landed bytes");
+        assert_eq!(pool.stats().mapped_serves, 1);
+        assert_eq!(pool.stats().h2d_submits, 0, "a mapped serve is not a copy");
+
+        // Fill every other buffer; the mapped one stays owned, so the ring is full.
+        let others: Vec<_> = (1..depth)
+            .map(|_| pool.submit_worker(file.clone(), 0, 64).unwrap().unwrap())
+            .collect();
+        let other_buffers: Vec<_> = others
+            .into_iter()
+            .map(|t| pool.wait_worker(t).unwrap())
+            .collect();
+        assert!(
+            pool.submit_worker(file.clone(), 0, 8).unwrap().is_none(),
+            "owned buffer was reused"
+        );
+        for b in other_buffers {
+            pool.abort_read(b);
+        }
+        for _ in 1..depth {
+            let t = pool.submit_worker(file.clone(), 0, 8).unwrap().unwrap();
+            let b = pool.wait_worker(t).unwrap();
+            assert_ne!(
+                b, index,
+                "the mapped buffer must not be handed out before its event"
+            );
+            pool.abort_read(b);
+        }
+        let event = std::sync::Arc::new(engine.ctx().new_event(None).unwrap());
+        event.record(&stream).unwrap();
+        pool.set_consumer_event(index, event.clone());
+        event.synchronize().unwrap();
+        let blockers: Vec<_> = (0..depth)
+            .map(|_| pool.submit_worker(file.clone(), 0, 8).unwrap().unwrap())
+            .collect();
+        let got: Vec<_> = blockers
+            .into_iter()
+            .map(|t| pool.wait_worker(t).unwrap())
+            .collect();
+        assert!(
+            got.contains(&index),
+            "the buffer returns to the pool after its event"
+        );
+        for b in got {
+            pool.abort_read(b);
+        }
         std::fs::remove_file(path).ok();
     }
 

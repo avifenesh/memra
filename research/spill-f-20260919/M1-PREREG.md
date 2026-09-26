@@ -351,3 +351,185 @@ Selection for the first route: one RTX PRO 6000 (target class), whole machine (`
 so no co-tenant shares the drive), 600 W cap, a local volume of at least 500 GB, 94 GB or more
 RAM, 16 or more cores, driver supporting CUDA 13.1 or newer, a real NVMe drive model in the
 advertisement. Three offers met this on 2026-09-25; the private file ranks them.
+
+## D. The 5090 half (OWED 19 and 23; registered 2026-09-26 before any 5090 cell)
+
+Rig: the local laptop RTX 5090 (24 GB, enforced cap reported `[N/A]`, maximum 175 W), shared
+with lanes B and C and occasionally another project's process. Storage: `/data` (LVM over a
+PCIe 4.0 x4 NVMe), proven `nvme-local-direct` in `M1-PROOF-CONTROLS.md`; a fresh proof receipt of
+`/data` is taken first and bound as in section B. Artifact: the same pinned GGUF under `/data`,
+re-hashed before the first cell. Binaries: a local release build from the lane tip whose engine
+source equals BOX27's build (`git diff --quiet ffff2d89a HEAD -- crates Cargo.toml Cargo.lock`),
+`MEMRA_CUDA_ARCH=120a`, so both rigs measure one program. Lock `/tmp/memra-5090.lock`.
+
+Rig rule, which changes the regimes: every process tree here runs under `systemd-run --user
+--scope -p CPUQuota=1200% -p MemoryMax=20G`, and page cache is charged to that cgroup. So:
+
+- **capped** (replaces cold here): cold start of each visit (DONTNEED plus `mincore` 0) inside a
+  20 GiB cgroup with `MemorySwapMax=0`. The 18.2 GB artifact plus the process cannot all be
+  cached, so this is neither the box's cold nor its bounded regime; it is the rig's ceiling.
+- **bounded**: the same, with the cgroup's `MemoryMax` set to the measured peak visit RSS plus
+  7,000,000,000 bytes (below half the bank), so the page cache cannot hold the bank. No balloon:
+  the cgroup limit is the bound, verified per visit by `mincore` (below 50% at visit end).
+- **warm** is not runnable under the rig rule (the file plus the process exceed 20 GiB); recorded
+  as refused by the rig rule, liftable only by the owner.
+
+Arms, order, correctness and verdict rule: exactly B3's (lock file, amendment 2 env). To share the
+card, each round of six visits is its own collector cell holding the lock only for that round;
+before each round the driver waits until the lock is free and no compute application is on the
+card, and records every wait (start, end, blocking processes by name and memory). Rounds keep
+their registered forward/reverse order, and verdicts pool the ten rounds of a regime. Inside a round, a visit
+during which any other compute application appears on the card (polled every 5 s) is unclean
+for timing, like a co-tenant on the drive. The
+co-tenancy gate is unchanged; `/data` also carries this desktop's `~/.cache`, so contaminated
+visits are expected and are excluded by the registered rule, not argued away.
+
+G2 5090 half: all ten registered sizes (4 KiB to 1 GiB), pinned vs pageable, both directions, D's
+protocol (calibrate each size to at least 500 ms per visit, then 5 AB plus 5 BA), the
+`h2d-probe` built as above. The laptop has no settable 600 W envelope, so D's 600/600 W check is
+replaced by: the power fields must be identical on every sample of the campaign (recorded
+verbatim). Tool: `m1-g2-5090.py`.
+
+No default follows from either half alone; with BOX27 these are the two rigs CLAUDE.md requires
+for a per-device decision.
+
+## E. OWED 18: the KV handoff O_DIRECT arm (registered 2026-09-26 before any code)
+
+Baseline (B2 on BOX27): export is serialize plus sha256 plus a 4 MiB `BufWriter` into the page
+cache, then `fsync`, about 1.5 to 1.7 GB/s end to end; import is a 4 MiB `BufReader`, validated
+frame by frame, about 1.4 GB/s. Both are far below the drive, so the question is whether the page
+cache copy and the fsync writeback are part of the engine-side cost.
+
+Mechanism: `MEMRA_KV_HOST_HANDOFF_IO=direct` (default `buffered`, a default-OFF door with a
+decide-by date 14 days after landing). Export writes the `.tmp` file with `O_DIRECT` through one
+4096-aligned 4 MiB buffer: full buffers go straight to the device, the last block is padded with
+zeros, the file is truncated to its logical length, then `fdatasync`, then the same rename.
+Import reads with `O_DIRECT` through the same aligned buffer shape. The wire format does not
+change: a direct-written file equals a buffered-written file byte for byte, and either reader
+reads either file. A filesystem that refuses `O_DIRECT` fails the export or import loudly
+(`O_DIRECT open refused`); there is no silent buffered fallback inside the direct arm.
+
+Correctness first, before any timing:
+1. Unit: the same header and frames through both writers give byte-identical files (sha256), for
+   lengths that end on, before and after a 4096 boundary, including an empty entry list; each
+   reader reads both files to identical entries; truncation and corrupt-frame behavior under the
+   direct reader equal the buffered reader's (the existing `host_handoff_tests` cells run for
+   both modes).
+2. Cell, forced ON and OFF: the B2 cycle (`m1-handoff-driver.py`, same prompts manifest, spec
+   off, 1 GiB) with each arm; every probe's text identical to cold, import entries equal export
+   entries, zero skips.
+
+Timing (5090 half now; the PRO 6000 half needs a target card): one collector cell per cycle
+pair, idle-gated like section D, 1 GiB, five forward pairs (buffered then direct) and five
+reverse pairs, alternating. Metrics per cycle: export ms, its write and fsync parts, import s.
+Verdict per metric on the within-pair ratio direct / buffered: winner at median <= 0.95 with at
+least 4 of 5 pairs below 1 in each order, loser at median >= 1.05 with the same agreement,
+otherwise flat. The 8 GiB cell runs the same way if the process fits the rig's 20 GiB cgroup; if
+it does not, that is recorded as refused by the rig rule. A 5090 result sets at most a 5090
+default; the door stays default-OFF until both rigs have a row.
+
+Section E, 5090 sizing (registered 2026-09-26 before any handoff cell): the gate boots use
+`--host-mb 4096` for the 1 GiB cell and `--host-mb 12288` for the 8 GiB cell (BOX27 used 16384;
+the rig's 20 GiB cgroup cannot hold a 16 GiB pinned tier plus the process). The 8 GiB cell also
+uses `--tenant-pct 100` (B2 amendment 3). Scratch is `/data/cache/spill-f-b2` on the proven
+filesystem; the prompt set is regenerated and checked against `b2-prompts.manifest.json`.
+Driver: `m1-5090-rounds.py --regime handoff`, round k = one pair, `buffered,direct` for odd k,
+`direct,buffered` for even k, ten rounds. No compile or other CPU campaign of this lane runs
+while a scored cell runs.
+
+Section D, bounded amendment (2026-09-26, after the capped smoke and before any bounded cell):
+the registered bound "measured peak visit RSS plus 7,000,000,000" cannot use ru_maxrss. The
+smoke's ru_maxrss is 17,802,168 kB on every arm, the full artifact, because run-gen maps the whole
+file and file-backed mapped pages count as RSS; that bound (about 25.2 GB) would be looser than the
+20 GiB capped regime. The bound is therefore the peak of RssAnon plus RssShmem (`/proc/<pid>/status`,
+250 ms samples), taken once per arm in a capped-scope cold visit by `m1-anon-peak.py`, maximum over
+the six arms, plus 7,000,000,000. That cell runs after the capped regime and before bounded;
+its visits are sizing only, never scored. Everything else in bounded is unchanged, including the
+per-visit residency check (below 50% of the artifact's pages at visit end).
+
+## F. OWED 17: the cold read-once bypass, staged and mapped (registered 2026-09-26 before any code)
+
+Fact that sets the question (5090 capped smoke, worker16): the 8-slot MoE cache hits 423 of
+583,680 dispatches (0.1%); every expert block is read, copied host to device into a slot, used
+once and evicted, 454 MB per decode token. The CLAUDE.md pipeline list and the per-expert-quant
+ladder rung 5 name the candidate: serve such a block without the copy, by letting the kernel read
+the pinned host buffer through its device address, and only for cold blocks.
+
+Mechanism, one door, `MEMRA_MOE_COLD_BYPASS` (default `off`; default-OFF door with a decide-by
+date 14 days after landing), active only on the positioned-read spill path (`MEMRA_SPILL_IO`
+pread, worker or direct) and only at the call sites that enqueue their kernel inside the same
+cache scope (the batch-1 decode expert GEMMs, f32 and q8). A doorkeeper decides "cold": a block's
+first miss is not admitted to a slot and its id enters a bounded FIFO ghost list (4 x slots, at
+least 64); a miss whose id is in the ghost list admits exactly as today. The two bypass forms:
+
+- `staged`: the first-miss block is copied into one dedicated device scratch buffer (not a cache
+  slot, never published) and the kernel reads it there. This isolates the admission change.
+- `mapped`: no copy; the kernel reads the pinned buffer through `cuMemHostGetDevicePointer`. The
+  buffer stays owned until an event recorded after that kernel completes, then returns to the
+  pool. Refused loudly if the driver will not map the pinned buffers.
+
+Every other call site keeps the exact current admission program. The bytes and the kernel are the
+same in all three arms, so the token stream must be identical to the byte oracle.
+
+Correctness first: unit cells for the doorkeeper (first miss bypasses, second admits, FIFO bound)
+and for buffer ownership under `mapped` (the buffer is not reused before its event); then the B3
+correctness gates per visit (placement, token ids equal the byte oracle, zero read errors, zero
+mmap fallbacks), plus the bypass line: `[moe-bypass] mode=<m> bypassed=N ghost_admits=M` with
+N > 0 on the bypass arms and absent on the baseline.
+
+Timing (5090 half now; the PRO 6000 half needs a target card): arms `worker16` (baseline, the B3
+lock row verbatim), `bypass-staged`, `bypass-mapped` (the same env plus the door), the capped
+regime of section D (20 GiB swapless scope, cold start per visit, idle-gated round cells, GPU
+co-tenant gate), ten rounds, forward and reverse order alternating. Verdict per arm vs worker16:
+B3's rule verbatim (winner median >= 1.05 with at least 4 of 5 per order, loser <= 0.95, otherwise
+flat; regime unscored if more than 2 contaminated visits in any arm), the B1 read gate reported
+beside it as post hoc, as for B3 on the 5090. A 5090 winner sets at most a 5090 default; the door
+stays default-OFF until both rigs have a row.
+
+Section F, precedent (added 2026-09-26, still before any code or data): the `staged` arm is the
+second-miss ghost filter with transient staging that was measured a net loss and removed on
+2026-07-08 (`MEMRA_MOE_GHOST`, docs/FLAGS.md removed doors; 5090 spill 24.2 -> 25.0 tok/s with
+it off, 2026-07-06), because every cold block paid two host-to-device copies. It stays in this
+cell as the registered control that carries the admission change without zero-copy: `mapped`
+changes the first miss from one copy (baseline) or two (staged) to none. If `staged` loses again,
+its value is deleted from the door in the lane that measures it.
+
+Section D, resync amendment (2026-09-26 about 07:53Z, after the requested 07:28Z rig reboot, before any
+further 5090 cell):
+1. The reboot remounted `/data` with mount id 250 (was 242; same device and filesystem). The
+   collector correctly refused the stale proof on rounds 5 to 10, and the round driver wrongly
+   continued past the refusal (fixed: a non-lost failure now stops the regime). `/data` is
+   re-proven (`rtx5090/proof/`, PASS, mount id 250; the pre-reboot proof is kept in
+   `rtx5090/proof-prereboot-mount242/`). Capped rounds 1 to 4 ran under the first proof, rounds 5
+   to 10 run under the second; both are the same proven device and filesystem, every visit is a
+   cold start, so the ten rounds still pool. The refused and interrupted cells are kept, never scored.
+2. G2: the laptop reports `power.limit` as `[N/A]`, which the frozen `h2d-probe` refuses
+   ("unknown power limit"). The probe now accepts exactly the literal `[N/A]` and records it
+   verbatim; every other non-watt value still refuses, and the copy and timing code is unchanged.
+   The G2 5090 probe is therefore built from the lane tip (hash in `rtx5090/build-g2/`), not from
+   BOX27's engine source; G2 compares pinned with pageable inside one binary, so no cross-rig
+   binary identity is claimed for it.
+3. The mapped GPU ownership cell runs under `flock -n -E 75 /tmp/memra-5090.lock` after the same
+   idle wait (the queue's first form failed on its own quoting before running anything).
+
+Sections D and F, fallback amendment (2026-09-26, after the capped data and before any bounded
+or f17 visit): the capped regime showed worker-path demand reads falling back to mmap when every
+pinned buffer is busy (OWED 26), on arms the registered gate does not check. For the 5090 bounded
+regime and for the OWED 17 cell, a visit whose `[spill-pread]` totals line shows any fallback is
+unclean for timing (it still gates correctness, token ids against the oracle). It counts toward
+the contamination limit like a co-tenant visit. Capped keeps its registered verdict unchanged.
+
+Bounded sizing record (2026-09-26 08:55Z, before any bounded visit): two anon-peak runs, maximum
+RssAnon plus RssShmem 864,223,232 and 864,210,944 bytes. The second run's sizing tool reported
+`all_correct: false` because its direct16 visit fell back to mmap 9 times (OWED 26); that is not a
+sizing fault, and the bound is the larger peak of the two runs plus 7,000,000,000:
+MemoryMax = 7,864,223,232 bytes, passed to the queue explicitly.
+
+Section E, 5090 sizing correction (2026-09-26 about 10:08Z, after the first 1 GiB pair failed,
+before any rerun): with `--host-mb 4096` the default 50% tenant share cap is 2,147 MB, below the
+1 GiB cell's 17 entries (17 x 127.2 MB = 2,162 MB), so the oldest entry (probe 1's prefix) was
+evicted before export, in both arms alike (`handoff-1g` round 1: probes 2 to 4 restored 6,496
+cached tokens with text identical to cold, probe 1 missed). BOX27's 16 GiB budget never bound the
+cap. The 1 GiB cell therefore also runs with `--tenant-pct 100` (B2 amendment 3's rule, already
+registered for the 8 GiB cell); host budget unchanged. The failed pair is kept as
+`refused-handoff-1g-tenant-cap`, never scored.

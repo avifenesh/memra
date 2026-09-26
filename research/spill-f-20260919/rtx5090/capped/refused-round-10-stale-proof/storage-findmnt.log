@@ -1,0 +1,10 @@
+{
+   "filesystems": [
+      {
+         "target": "/data",
+         "source": "/dev/mapper/data--vg-data",
+         "fstype": "ext4",
+         "options": "rw,noatime,stripe=64"
+      }
+   ]
+}

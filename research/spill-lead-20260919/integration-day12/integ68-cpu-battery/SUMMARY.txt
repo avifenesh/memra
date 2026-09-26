@@ -1,0 +1,65 @@
+tree ff385ce1f42ee3b1b7e27a2c17538bc07855774c started 2026-09-26T12:44:11Z host avifenesh rustc rustc 1.97.1 (8bab26f4f 2026-07-14)
+== fmt: cargo fmt --all -- --check
+   rc=0 (4s)
+== portable-suites: bash tools/portable-suites.sh
+   rc=1 (31s)
+   | 
+   | error: 1 target failed:
+   |     `-p memra-tier --test bank`
+== test-server: cargo test -p memra-server --offline --no-fail-fast
+   rc=0 (202s)
+   | 
+   | test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   | 
+== clippy: env DOCS_RS=1 cargo clippy -p memra-engine -p memra-server -p memra-tier -p memra-kv -p memra-gguf -p memra-cli --offline --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
+   rc=101 (29s)
+   |     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_is_multiple_of
+   | 
+   | error: could not compile `memra-server` (lib) due to 3 previous errors
+== check-flags: bash tools/check-flags.sh
+   rc=0 (2s)
+   | check-flags: runtime literal reads=870
+   | check-flags: no uncovered runtime names
+   | check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)
+== publish-census: bash tools/workspace-publish-census.sh
+   rc=0 (0s)
+   | publish-census: OK — 12 publishable members, 12 listed, order topological, unpublishable: memra-probe
+== docs-registry: bash tools/docs-registry-census.sh
+   rc=0 (0s)
+   | docs-registry-census: ROUTER.md lines=47 (cap 60)
+   | docs-registry-census: check-flags --list answered with 870 runtime names (coverage enforced by check-flags.sh itself)
+   | docs-registry-census: flags-table-census: docs/FLAGS.md tables=57 rows=918, every row matches its header
+== pytest-battery: python3 -m pytest -q crates/memra-tier/tests/battery/
+   rc=0 (19s)
+   | [32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m [ 57%]
+   | [0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m.[0m[32m                          [100%][0m
+   | [32m[32m[1m87 passed[0m, [32m[1m32 subtests passed[0m[32m in 18.97s[0m[0m
+== test-engine-cpu: cargo test -p memra-engine --lib --offline --no-fail-fast
+   rc=0 (33s)
+   | 
+   | test result: ok. 582 passed; 0 failed; 50 ignored; 0 measured; 0 filtered out; finished in 13.19s
+   | 
+== test-tier: cargo test -p memra-tier --offline --no-fail-fast
+   rc=101 (15s)
+   | 
+   | error: 1 target failed:
+   |     `-p memra-tier --test bank`
+== clippy-engine: cargo clippy -p memra-engine -p memra-server -p memra-tier --offline --all-targets -- -D warnings
+   rc=101 (159s)
+   |     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_is_multiple_of
+   | 
+   | error: could not compile `memra-server` (lib) due to 3 previous errors
+== conflict-markers: bash tools/check-conflict-markers.sh
+   rc=0 (3s)
+   | check-conflict-markers: OK (no conflict marker line in tracked source or docs)
+== workflow-keys: python3 tools/check-workflow-keys.py
+   rc=0 (0s)
+   | check-workflow-keys: .github/workflows/publish.yml: jobs publish
+   | check-workflow-keys: .github/workflows/release.yml: jobs guard, build, release
+   | check-workflow-keys: OK: 9 workflow files, no duplicate mapping keys (stdlib walker)
+== perf-board: python3 tools/update-perf-board.py --check
+   rc=0 (0s)
+   | perf board is up to date
+== diff-check: git diff --check origin/main HEAD
+   rc=0 (2s)
+finished 2026-09-26T12:52:30Z

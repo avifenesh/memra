@@ -1,18 +1,24 @@
-# WP-F resumable state (2026-09-26, BOX27 campaign complete; box released to the lead)
+# WP-F resumable state (2026-09-26 about 11:25Z, integrable milestone; 5090 timing queue running)
 
-- Lane `lane/spill-f-20260919`, worktree `wt-spill-f`. Box binaries were built once at
-  `ffff2d89a`; every later checkout on the box carried that engine source unchanged.
-- BOX27 done in full, receipts in `box27/` (9,569 box files mirrored and verified against a
-  box-side full manifest, `MANIFEST-FULL.sha256`; binaries by hash only; volume id sanitized,
-  originals private; large sample files stored gzip with uncompressed hashes in
-  `EXPORT-MANIFEST.json`). Results and verdicts: `box27/RESULTS.md`.
-- Resync note: a rig reboot interrupted this session at about 20:40Z on 2026-09-25; on resume the
-  local tip and origin matched (`c288d19c2`), the box's b3-bounded cell had kept running, and it
-  was left untouched until it finished.
-- Box scratch removed (`/scratch/spill-f`, `/root/wt-f`, helper scripts, `/tmp/f-*`); the
-  background sampler stopped by its recorded pid; no lane process or compute app left. The lead's
-  files and the receipt directories remain for the destroy.
-- Next item: the 5090 halves (OWED 19, 23): the B3 subset and G2 on the local RTX 5090, whose
-  storage is already proven (`M1-PROOF-CONTROLS.md`). Open candidates: OWED 17 (mapped
-  pinned-host arm), 18 (handoff O_DIRECT arm), 20 (above-RAM artifact), 21 (flag to the owning lane).
-- Private receipts: `~/.local/share/memra-lane-f-private/box27/`. Local scratch: none.
+- Lane `lane/spill-f-20260919`, worktree `wt-spill-f`; origin/main merged at a233f6fe5 (integ65);
+  integ66 (#744) merged ef5640af8.
+- Resync 07:34Z after the requested 07:28Z reboot: recorded in `M1-PREREG.md` (D resync
+  amendment); interrupted and refused cells kept under `rtx5090/` as `interrupted-*`, `refused-*`.
+- Done: BOX27 (`box27/RESULTS.md`, with the worker2 fallback correction); 5090 capped regime,
+  unscored (`rtx5090/RESULTS.md`); OWED 17 and 18 implemented, default off, correctness green
+  (`owed17/RESULTS.md`, `owed18/RESULTS.md`); OWED 20 candidates (`ITEM20-CANDIDATES.md`, owner
+  pick); OWED 26 flagged (worker demand reads fall back to mmap when the ring is busy).
+- Running, detached, idle-gated on `/tmp/memra-5090.lock` (lanes B and C hold the card most of the
+  time, so cells trickle): `m1-5090-queue.py --receipts ~/spill-f-5090/receipts --from handoff-1g
+  --bounded-max 7864223232`, steps handoff-1g (round 1 done), bounded, g2, f17, handoff-8g.
+  Progress: `~/spill-f-5090/receipts/QUEUE.jsonl` and each step's `waits.jsonl`. Hold it between
+  cells with `touch ~/spill-f-5090/PAUSE`; stop it by killing the queue and rounds PIDs (my own
+  processes); resume with `--from <step>` (and `--capped-rounds`, `--bounded-max`). A failing
+  step stops the queue. Attribution sampler `m1-io-attribution.py` (nice 19, 12 h timeout) writes
+  `~/spill-f-5090/receipts/io-attribution.jsonl`; it folds reaped children into parents.
+- After each step: mirror `~/spill-f-5090/receipts/<step>` into `rtx5090/`, `owed17/5090/` or
+  `owed18/5090/`; pool bounded with `m1-b3-pool.py <dir> --fallback-unclean`, f17 with
+  `--bypass-check --fallback-unclean`; the handoff pairs from each cycle.json (section E rule).
+- Scratch to remove when the queue ends: `~/spill-f-5090/`, `/data/cache/spill-f-b2/`,
+  `/data/cache/spill-f-5090-proof/`, `target/handoff-io-tests/` if present.
+- PRO 6000 halves of OWED 17 and 18: NEED TARGET CARD.

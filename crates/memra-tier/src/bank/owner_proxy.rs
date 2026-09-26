@@ -229,6 +229,21 @@ impl ExpertBankProxy {
     pub fn host_resident(&self, id: ExpertDispatchId) -> Result<bool> {
         self.access(|e| e.bank.as_ref().ok_or(Error::NotFound)?.host_resident(id))
     }
+    /// Day 77 (I17): `host_resident` for each record of `ids` (at most `MAX_GROUP`), in order, in
+    /// one registry entry; entries past `ids.len()` read `false`.
+    pub fn host_resident_many(&self, ids: &[ExpertDispatchId]) -> Result<[bool; MAX_GROUP]> {
+        if ids.len() > MAX_GROUP {
+            return Err(Error::Capacity);
+        }
+        self.access(|e| {
+            let bank = e.bank.as_ref().ok_or(Error::NotFound)?;
+            let mut out = [false; MAX_GROUP];
+            for (slot, &id) in out.iter_mut().zip(ids) {
+                *slot = bank.host_resident(id)?;
+            }
+            Ok(out)
+        })
+    }
     /// The registered bank's stage clock line (`ExpertDispatchBank::stage_report`), read on
     /// the owner thread like every other call; `Ok(None)` when no clock is installed.
     pub fn stage_report(&self) -> Result<Option<String>> {
@@ -378,6 +393,32 @@ impl ExpertBankProxy {
             };
             require_group(demands, token)?;
             lend(demands.leases.get(index).ok_or(Error::NotFound)?, f)
+        })
+    }
+    /// Day 77 (I17): each record's bytes of the group lent to `f(index, bytes)`, in order, in one
+    /// registry entry, with `with_bytes_at`'s checks (the group's identity, then each lease). The
+    /// first `Err` from `f` stops the walk and is returned as `Ok(Err(..))`, like `with_bytes_at`'s
+    /// value; the leases stay pending either way.
+    pub fn with_bytes_each<E>(
+        &self,
+        token: &ExpertGroupToken,
+        mut f: impl FnMut(usize, &[u8]) -> std::result::Result<(), E>,
+    ) -> Result<std::result::Result<(), E>> {
+        if token.owner != self.id {
+            return Err(Error::ForeignLease);
+        }
+        self.access(|e| {
+            let Leased::Many(demands) = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
+            else {
+                return Err(Error::ForeignLease);
+            };
+            require_group(demands, token)?;
+            for (index, lease) in demands.leases.iter().enumerate() {
+                if let Err(err) = lend(lease, |bytes| f(index, bytes))? {
+                    return Ok(Err(err));
+                }
+            }
+            Ok(Ok(()))
         })
     }
     /// Day 64 (I15): finish every lease of a group, once; the same retention on error as `finish`.

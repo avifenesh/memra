@@ -1473,4 +1473,5 @@ mod day47;
 mod day61;
 mod day63;
 mod day64;
+mod day77;
 mod slru_oracle;

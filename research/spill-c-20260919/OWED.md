@@ -93,7 +93,16 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   5090's half ran (queue v10, `DAY72.md` section 2): `admissible=no`, recorded, deciding nothing (beside it the
   door's GPU idles 0.16 ms per window token more than REF's with the same kernels and copies); the 5090's DAY60 gap
   (`cpu_side`), i11 (`flat`, `flat`), i13 (`flat`) read, i15 `void (inadmissible)`; queue v11 reruns i15 and gap15 on
-  the 5090 as new holds. Open: gap15 on the 285K class (BOX29, the lead).
+  the 5090 as new holds (i15 void with a foreign compute app on the card; gap15 inadmissible again). The target card
+  (BOX29, `DAY72.md` section 3): `DAY72 GAP15 VERDICT rig=pro-single integrity=ok admissible=yes partA=cpu_side
+  partB=gpu_stall`: the door's GPU work equals REF's and its GPU waits on the door's prefetch path. Day 75
+  (`DAY75.md`): I16 (`eeacfaf50`, the door's next-expert prefetch issued after the current expert's launch) read on
+  BOX29 `DAY75 VERDICT rig=pro-single integrity=ok i16=regresses door=i15 vs_ref=loses` (admissible; the next
+  expert's copy exposed) and reverted (`26aa54c12`); the 5090's `i16` inadmissible. Day 77 (`DAY77.md`): I17
+  (`d4ab19f1d`, the group's residency and staging each in one owner-registry entry, the same program), CPU gates
+  green, the profile 70 to 150 ns per block below I15; on BOX32 `DAY77 VERDICT rig=pro-single integrity=ok i17=flat
+  door=i17 vs_ref=loses` (stays; the door 10 ms over 32 tokens behind REF); the 5090's `i17` inadmissible. Open: the
+  next improvement of the prefetch path (`pf_demand_ns` 0.155 ms per window token), registered before code.
 
 ## C12. The door's sensitivity to its owner thread's host placement (the 9950X class)
 
@@ -130,8 +139,17 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   COMPACT VERDICT rig=box31 integrity=ok -> not_reproduced` (no slow run, no compaction in any span); a diagnostic on
   BOX30 (a 9950X3D2, outside the class) read its one slow door run as the sitting's only span with compaction. Day 74
   (`DAY74.md`): compaction induced on purpose in half the runs of REF and the door, cell `induce`, sitting ready
-  (`day74-box.sh`). Open: DAY74 on a 9950X machine then the 285K class; DAY71's default half on BOX15's machine, then
-  the class line.
+  (`day74-box.sh`): BOX31 `not_run` (page cache), then `not_induced` (every huge-page burst came back whole); BOX29
+  `void` (no `RDPRU` on Intel). `DAY74.md` section 4 registers `induce-b` (all but 2 GiB of free memory fragmented,
+  the artifact reread before every run, the wall-time state on Intel), ready (`day74b-box.sh`); on BOX29 (285K):
+  `not_induced` by rule (REF+I 0 of 6), and beside it the 285K's first slow state: the 3 door+I runs with compaction
+  in their span, 1.48x slower per chain step from the gate on, REF never compacting (`DAY74.md` section 5). Day 76
+  (`DAY76.md`): does the door's one large pinned allocation draw the compaction: the diagnostic flag
+  `--expert-bank-pool-chunk-bytes` (`7a162e6b7`, decide-by 2026-10-10) and cell `chunk` (REF+I, D+I, DC+I under the
+  fragmentation) on BOX32: `DAY76 CHUNK VERDICT rig=box32-285k integrity=ok -> chunk_does_not`; beside it the slow
+  runs are those whose compaction fails to migrate nearly every page it isolates (`DAY76.md` section 2). Open: which of
+  the door's pages compaction isolates and cannot move, registered next; `induce-b` on a 9950X with at least 98 GiB
+  `MemFree`; DAY71's default half on BOX15's machine, then the class line.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)
 

@@ -103,6 +103,7 @@ mod build_id;
 mod dsv4_admit;
 mod dsv4_serve;
 mod embed_api;
+mod handoff_io;
 /// The admission/accounting seam: the server admits, denies, and reports counts;
 /// what admission MEANS — budgets, prices, tenancy policy — is a deployment concern,
 /// supplied behind `metering::Metering` through `ServerWiring`. The stock binary

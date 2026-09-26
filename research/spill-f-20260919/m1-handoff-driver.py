@@ -139,7 +139,7 @@ class Sampler:
         return {"telemetry_ok": not problems, "problems": problems[:5], "device": delta}
 
 
-def base_env(args, host_mb, handoff):
+def base_env(args, host_mb, handoff, io_mode=None):
     env = dict(os.environ)
     env.update({"MEMRA_COMPAT": "openai", "MEMRA_MODELS": f"gate={args.artifact}",
                 "MEMRA_ADDR": f"127.0.0.1:{args.port}", "MEMRA_CTX": "8192", "MEMRA_MAX_SESSIONS": "4",
@@ -152,6 +152,9 @@ def base_env(args, host_mb, handoff):
         env["MEMRA_KV_HOST_TENANT_PCT"] = str(args.tenant_pct)  # B2 amendment 3 (single-tenant cell)
     if handoff:
         env["MEMRA_KV_HOST_HANDOFF"] = str(handoff)
+    env.pop("MEMRA_KV_HOST_HANDOFF_IO", None)
+    if io_mode is not None:
+        env["MEMRA_KV_HOST_HANDOFF_IO"] = io_mode  # OWED 18 arm (M1-PREREG.md section E)
     return env
 
 
@@ -162,11 +165,12 @@ def probes(prompts):
 def cycle(args, i, prompts, reference, leaves, top, identity):
     cdir = args.out / f"cycle-{i + 1:02d}"
     cdir.mkdir()
-    rec = {"cycle": i + 1, "size_bytes": args.size_bytes, "problems": []}
+    io_mode = args.io_schedule[i] if args.io_schedule else None
+    rec = {"cycle": i + 1, "size_bytes": args.size_bytes, "io": io_mode, "problems": []}
     handoff = Path(args.scratch) / "handoff.bin"
     B.require(not handoff.exists(), "a stale handoff file exists before the cycle")
     B.require(B.filesystem_identity(Path(args.scratch)) == identity, "scratch left the proven filesystem")
-    env = base_env(args, 16384, handoff)
+    env = base_env(args, args.host_mb, handoff, io_mode)
     a = Server(args.gate, env, cdir / "export-boot.log", args.port)
     try:
         a.wait_for(a.ready, 900, "export boot ready")
@@ -192,6 +196,8 @@ def cycle(args, i, prompts, reference, leaves, top, identity):
         rec["export"] = parse_export(a.text())
         if "[handoff-gate] export refused" in a.text() or rec["export"] is None:
             rec["problems"].append("export refused or its line is missing")
+        elif io_mode is not None and not re.search(r"handoff export: .* io=" + io_mode + r"\b", a.text()):
+            rec["problems"].append(f"export line does not carry io={io_mode}")
     finally:
         rec["export_boot_exit"] = a.stop()
     if handoff.exists():
@@ -222,6 +228,10 @@ def cycle(args, i, prompts, reference, leaves, top, identity):
             rec["problems"].append("import aborted or never finished")
         elif done["skipped"]:
             rec["problems"].append(f"import skipped {done['skipped']} entries")
+        elif io_mode is not None and not re.search(r"handoff import DONE: .* io=" + io_mode + r"\b", b.text()):
+            rec["problems"].append(f"import DONE line does not carry io={io_mode}")
+        if done and rec.get("export") and done["entries"] != rec["export"]["entries"]:
+            rec["problems"].append(f"imported {done['entries']} entries, exported {rec['export']['entries']}")
         b.wait_for(b.ready, 900, "import boot ready")
         rec["probes"] = []
         for p, ref in zip(probes(prompts), reference):
@@ -262,6 +272,7 @@ def run(args):
     ident = {"driver_sha256": RUNNER.sha(__file__), "gate_sha256": RUNNER.sha(args.gate),
              "server_sha256": RUNNER.sha(args.server), "prompts_sha256": RUNNER.sha(args.prompts),
              "proof_sha256": RUNNER.sha(args.proof), "size_bytes": args.size_bytes, "cycles": args.cycles,
+             "io_schedule": args.io_schedule, "host_mb": args.host_mb,
              "lock": lock, "leaves": leaves, "top": top, "qualified": False}
     (args.out / "identity.json").write_text(json.dumps(ident, indent=1) + "\n")
     ref = Server(args.server, base_env(args, 0, None), args.out / "reference-boot.log", args.port)
@@ -298,10 +309,17 @@ def main(argv=None):
     r.add_argument("--lock-fd", type=int)
     r.add_argument("--port", type=int, default=18119)
     r.add_argument("--tenant-pct", type=int, help="B2 amendment 3: MEMRA_KV_HOST_TENANT_PCT for a single-tenant cell")
+    r.add_argument("--host-mb", type=int, default=16384,
+                   help="MEMRA_KV_HOST_MB for gate boots (B2 on BOX27: 16384; section E sizes it per rig)")
+    r.add_argument("--io-schedule", type=lambda v: v.split(","),
+                   help="OWED 18: MEMRA_KV_HOST_HANDOFF_IO per cycle, e.g. buffered,direct")
     r.add_argument("--stub-no-lock", action="store_true")
     args = ap.parse_args(argv)
+    if args.io_schedule:
+        B.require(all(m in ("buffered", "direct") for m in args.io_schedule), "io-schedule: buffered or direct")
+        args.cycles = len(args.io_schedule)
     B.require(args.stub_no_lock or args.lock_fd is not None, "--lock-fd (inherited canonical lock) required")
-    B.require(args.cycles >= 5 or args.stub_no_lock, "registered protocol is 5 cycles per size")
+    B.require(args.cycles >= 5 or args.stub_no_lock or args.io_schedule, "registered protocol is 5 cycles per size")
     return run(args)
 
 
