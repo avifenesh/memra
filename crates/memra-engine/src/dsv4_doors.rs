@@ -507,7 +507,7 @@ pub const DSV4_DOORS: &[DoorRow] = &[
     DoorRow {
         name: "push joins",
         env: "MEMRA_DSV4_AR_PUSH",
-        merged: "#PUSH_PR",
+        merged: "#788",
         declared_default: DeclaredDefault::On,
         declared_served: DoorState::On(DoorShape::AllRoutedShapes),
         declared_bench: DoorState::On(DoorShape::AllRoutedShapes),
