@@ -10,7 +10,7 @@ use memra_gguf::config::AttentionGateKind;
 use memra_gguf::model_plan::{
     ActivationPlan, AttentionPlan, AttentionScale, GdnGateActivation, GemmaLayerScale, HcCollapse,
     LogitsTransform, MicroBlockIndexPlan, MlpPlan, ModelPlan, PleEmbeddingPlan, ResidualTopology,
-    RopePlan, ValueNorm, ValueProjection,
+    RopePlan, TensorPresence, ValueNorm, ValueProjection,
 };
 use memra_gguf::tensor_contract::{DsparkTensor, LayerTensor, MtpTensor, TensorId, VisionTensor};
 use std::collections::BTreeMap;
@@ -1325,6 +1325,15 @@ fn add_full_attention_fixture(
                 14 + layer as u64 * 31,
                 1.0 / (hidden as f32).sqrt(),
             )?,
+        );
+    }
+    if attention
+        .mimo_math
+        .is_some_and(|math| math.sink == TensorPresence::Required)
+    {
+        weights.insert(
+            layer_id(layer, LayerTensor::AttentionSink),
+            generated_tensor(&[query_heads], 15 + layer as u64 * 31, 0.1)?,
         );
     }
     Ok(())
@@ -7159,6 +7168,11 @@ fn full_attention(
             key.clone()
         }
     };
+    if let Some(math) = plan.mimo_math {
+        for element in &mut value {
+            *element *= math.value_scale_before_cache;
+        }
+    }
     apply_optional_head_norm(
         weights,
         layer_id(layer, LayerTensor::QueryNorm),
@@ -7208,6 +7222,18 @@ fn full_attention(
         AttentionScale::InverseSqrtKeyDim => 1.0 / (key_dim as f32).sqrt(),
         AttentionScale::Fixed(scale) => scale,
     };
+    let sink = if plan
+        .mimo_math
+        .is_some_and(|math| math.sink == TensorPresence::Required)
+    {
+        Some(tensor(
+            weights,
+            &layer_id(layer, LayerTensor::AttentionSink),
+            &[query_heads],
+        )?)
+    } else {
+        None
+    };
     for token in 0..tokens {
         for head in 0..query_heads {
             let kv_head = head * kv_heads / query_heads;
@@ -7236,7 +7262,11 @@ fn full_attention(
                     reason: "attention selection left a query with no visible source",
                 });
             }
-            softmax_in_place(&mut scores);
+            if let Some(sink) = sink {
+                softmax_with_sink_in_place(&mut scores, sink[head]);
+            } else {
+                softmax_in_place(&mut scores);
+            }
             for (index, probability) in scores.into_iter().enumerate() {
                 let source = sources[index];
                 for dim in 0..value_dim {
@@ -7952,6 +7982,18 @@ fn apply_rope_at_position(
 fn softmax_in_place(values: &mut [f32]) {
     let max = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
     let mut sum = 0.0;
+    for value in values.iter_mut() {
+        *value = (*value - max).exp();
+        sum += *value;
+    }
+    for value in values {
+        *value /= sum;
+    }
+}
+
+fn softmax_with_sink_in_place(values: &mut [f32], sink_logit: f32) {
+    let max = values.iter().copied().fold(sink_logit, f32::max);
+    let mut sum = (sink_logit - max).exp();
     for value in values.iter_mut() {
         *value = (*value - max).exp();
         sum += *value;
@@ -9014,6 +9056,7 @@ mod tests {
             scale: AttentionScale::InverseSqrtKeyDim,
             value_projection: ValueProjection::Separate,
             value_norm: ValueNorm::None,
+            mimo_math: None,
         };
         let identity = [1.0, 0.0, 0.0, 1.0];
         let mut weights = ReferenceWeights::new();
@@ -9044,6 +9087,65 @@ mod tests {
         let error =
             full_attention(0, &plan, None, 1e-6, &weights, &x, 2, 2, Some(&starving)).unwrap_err();
         assert!(matches!(error, ReferenceError::InvalidPlan { .. }));
+    }
+
+    #[test]
+    fn mimo_sink_only_changes_softmax_denominator_and_scaled_v_is_cached() {
+        use memra_gguf::model_plan::{FullAttentionPlan, MiMoAttentionMath, RopeFactors};
+
+        let plan = FullAttentionPlan {
+            query_heads: 1,
+            kv_heads: 1,
+            key_head_dim: 2,
+            value_head_dim: 2,
+            rope: RopePlan {
+                dimensions: 2,
+                base: 10_000.0,
+                factors: RopeFactors::None,
+            },
+            qk_norm: TensorPresence::Absent,
+            output_gate: AttentionGateKind::None,
+            scale: AttentionScale::InverseSqrtKeyDim,
+            value_projection: ValueProjection::Separate,
+            value_norm: ValueNorm::None,
+            mimo_math: Some(MiMoAttentionMath {
+                sink: TensorPresence::Required,
+                value_scale_before_cache: 0.707,
+            }),
+        };
+        let identity = [1.0, 0.0, 0.0, 1.0];
+        let zeros = [0.0; 4];
+        let mut weights = ReferenceWeights::new();
+        for tensor in [LayerTensor::Query, LayerTensor::Key] {
+            weights.insert(layer_id(0, tensor), weight(&[2, 2], &zeros));
+        }
+        for tensor in [LayerTensor::Value, LayerTensor::AttentionOutput] {
+            weights.insert(layer_id(0, tensor), weight(&[2, 2], &identity));
+        }
+        weights.insert(
+            layer_id(0, LayerTensor::AttentionSink),
+            weight(&[1], &[3.0_f32.ln()]),
+        );
+
+        let (output, state) =
+            full_attention(0, &plan, Some(128), 1e-6, &weights, &[2.0, 4.0], 1, 2, None)
+                .unwrap();
+        // One real logit 0 and sink logit ln(3): real probability 1/4.
+        // The sink has no value vector. V is scaled before attention/cache.
+        assert!((output[0] - 0.3535).abs() < 1e-6);
+        assert!((output[1] - 0.707).abs() < 1e-6);
+        let ReferenceLayerState::Kv { value, .. } = state else {
+            panic!("MiMo attention must return KV state")
+        };
+        assert!((value[0] - 1.414).abs() < 1e-6);
+        assert!((value[1] - 2.828).abs() < 1e-6);
+
+        weights.insert(layer_id(0, LayerTensor::AttentionSink), weight(&[1], &[0.0]));
+        let (equal_logits, _) =
+            full_attention(0, &plan, Some(128), 1e-6, &weights, &[2.0, 4.0], 1, 2, None)
+                .unwrap();
+        assert!((equal_logits[0] - 0.707).abs() < 1e-6);
+        assert!((equal_logits[1] - 1.414).abs() < 1e-6);
     }
 
     /// N-gram id math recomputed independently below (wrapping i64 multiply, XOR, floor

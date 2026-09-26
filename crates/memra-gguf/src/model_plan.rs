@@ -228,7 +228,7 @@ pub enum AttentionPlan {
     KimiDeltaNet(KimiDeltaNetPlan),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct FullAttentionPlan {
     pub query_heads: u32,
     pub kv_heads: u32,
@@ -240,6 +240,37 @@ pub struct FullAttentionPlan {
     pub scale: AttentionScale,
     pub value_projection: ValueProjection,
     pub value_norm: ValueNorm,
+    pub mimo_math: Option<MiMoAttentionMath>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MiMoAttentionMath {
+    /// The learned sink enters the softmax denominator, with no value row.
+    pub sink: TensorPresence,
+    /// Applied to projected V before storing or reading the KV cache.
+    pub value_scale_before_cache: f32,
+}
+
+// Plan identity uses Debug. Omit the new field for other families so their
+// serialized plan hashes retain the exact derived-Debug representation.
+impl std::fmt::Debug for FullAttentionPlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug = f.debug_struct("FullAttentionPlan");
+        debug.field("query_heads", &self.query_heads);
+        debug.field("kv_heads", &self.kv_heads);
+        debug.field("key_head_dim", &self.key_head_dim);
+        debug.field("value_head_dim", &self.value_head_dim);
+        debug.field("rope", &self.rope);
+        debug.field("qk_norm", &self.qk_norm);
+        debug.field("output_gate", &self.output_gate);
+        debug.field("scale", &self.scale);
+        debug.field("value_projection", &self.value_projection);
+        debug.field("value_norm", &self.value_norm);
+        if let Some(mimo_math) = &self.mimo_math {
+            debug.field("mimo_math", mimo_math);
+        }
+        debug.finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1397,13 +1428,59 @@ impl ModelConfig {
                     return Err(unsupported(field, format!("{value:?}")));
                 }
             }
-            // Geometry is available for sizing and census, but the generic
-            // attention plan cannot yet express MiMo's denominator-only
-            // learned sinks or pre-cache value scaling.
-            return Err(unsupported(
-                "mimo.attention_math",
-                "learned sinks and pre-cache value scaling".to_owned(),
-            ));
+            for (field, value, expected) in [
+                (
+                    "mimo.attention_projection_layout",
+                    mimo.attention_projection_layout.as_deref(),
+                    "fused_qkv",
+                ),
+                ("mimo.scoring_func", mimo.scoring_func.as_deref(), "sigmoid"),
+                ("mimo.topk_method", mimo.topk_method.as_deref(), "noaux_tc"),
+            ] {
+                if value != Some(expected) {
+                    return Err(unsupported(field, format!("{value:?}")));
+                }
+            }
+            if mimo.add_swa_attention_sink_bias != Some(true) {
+                return Err(unsupported(
+                    "mimo.add_swa_attention_sink_bias",
+                    format!("{:?}", mimo.add_swa_attention_sink_bias),
+                ));
+            }
+            if mimo.add_full_attention_sink_bias != Some(false) {
+                return Err(unsupported(
+                    "mimo.add_full_attention_sink_bias",
+                    format!("{:?}", mimo.add_full_attention_sink_bias),
+                ));
+            }
+            if !mimo
+                .attention_value_scale
+                .is_some_and(|scale| scale.is_finite() && scale > 0.0)
+            {
+                return Err(unsupported(
+                    "mimo.attention_value_scale",
+                    format!("{:?}", mimo.attention_value_scale),
+                ));
+            }
+            if mimo.norm_topk_prob != Some(true) {
+                return Err(unsupported(
+                    "mimo.norm_topk_prob",
+                    format!("{:?}", mimo.norm_topk_prob),
+                ));
+            }
+            let frequency = mimo
+                .moe_layer_freq
+                .as_ref()
+                .ok_or_else(|| unsupported("mimo.moe_layer_freq", "None".to_owned()))?;
+            if frequency.len() != self.n_layer as usize
+                || frequency.first() != Some(&0)
+                || frequency.iter().skip(1).any(|&layer| layer != 1)
+            {
+                return Err(unsupported(
+                    "mimo.moe_layer_freq",
+                    format!("{frequency:?}"),
+                ));
+            }
         }
         if let Some(window) = self.window_hint {
             let represented =
@@ -1996,6 +2073,7 @@ fn attention_geometry(
                 ValueProjection::ReuseKey
             },
             value_norm: ValueNorm::WeightlessRms,
+            mimo_math: None,
         });
     }
 
@@ -2020,6 +2098,7 @@ fn attention_geometry(
             scale: AttentionScale::InverseSqrtKeyDim,
             value_projection: ValueProjection::Separate,
             value_norm: ValueNorm::None,
+            mimo_math: None,
         });
     }
 
@@ -2060,6 +2139,20 @@ fn attention_geometry(
         scale: AttentionScale::InverseSqrtKeyDim,
         value_projection: ValueProjection::Separate,
         value_norm: ValueNorm::None,
+        mimo_math: cfg.mimo.as_ref().map(|mimo| MiMoAttentionMath {
+            sink: if geometry.window.is_some() {
+                if mimo.add_swa_attention_sink_bias == Some(true) {
+                    TensorPresence::Required
+                } else {
+                    TensorPresence::Absent
+                }
+            } else if mimo.add_full_attention_sink_bias == Some(true) {
+                TensorPresence::Required
+            } else {
+                TensorPresence::Absent
+            },
+            value_scale_before_cache: mimo.attention_value_scale.unwrap_or(1.0),
+        }),
     })
 }
 
@@ -2523,16 +2616,40 @@ mod tests {
     }
 
     #[test]
-    fn mimo_geometry_does_not_compile_without_sink_and_value_math() {
+    fn mimo_geometry_compiles_sink_and_pre_cache_value_math() {
         let cfg = config(include_str!("model_packs/mimo_v2/fixtures/config.json"));
         assert_eq!(qk_norm_presence(&cfg), TensorPresence::Absent);
-        assert!(matches!(
-            ModelPlan::compile(&cfg),
-            Err(PlanCompileError::UnsupportedSemantics {
-                field: "mimo.attention_math",
-                ..
+        let plan = ModelPlan::compile(&cfg).unwrap();
+        assert_eq!(plan.layers.len(), 48);
+        assert!(matches!(plan.layers[0].mlp, MlpPlan::Dense(_)));
+        assert!(matches!(plan.layers[1].mlp, MlpPlan::Moe(_)));
+        let AttentionPlan::Full(global) = &plan.layers[0].attention else {
+            panic!("layer 0 must be global attention")
+        };
+        assert_eq!(global.qk_norm, TensorPresence::Absent);
+        assert_eq!(
+            global.mimo_math,
+            Some(MiMoAttentionMath {
+                sink: TensorPresence::Absent,
+                value_scale_before_cache: 0.707,
             })
-        ));
+        );
+        let AttentionPlan::SlidingWindow {
+            attention: sliding,
+            window,
+        } = &plan.layers[1].attention
+        else {
+            panic!("layer 1 must be windowed attention")
+        };
+        assert_eq!(*window, 128);
+        assert_eq!(sliding.qk_norm, TensorPresence::Absent);
+        assert_eq!(
+            sliding.mimo_math,
+            Some(MiMoAttentionMath {
+                sink: TensorPresence::Required,
+                value_scale_before_cache: 0.707,
+            })
+        );
     }
 
     #[test]
