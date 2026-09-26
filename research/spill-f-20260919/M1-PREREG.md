@@ -485,3 +485,11 @@ B3's rule verbatim (winner median >= 1.05 with at least 4 of 5 per order, loser 
 flat; regime unscored if more than 2 contaminated visits in any arm), the B1 read gate reported
 beside it as post hoc, as for B3 on the 5090. A 5090 winner sets at most a 5090 default; the door
 stays default-OFF until both rigs have a row.
+
+Section F, precedent (added 2026-09-26, still before any code or data): the `staged` arm is the
+second-miss ghost filter with transient staging that was measured a net loss and removed on
+2026-07-08 (`MEMRA_MOE_GHOST`, docs/FLAGS.md removed doors; 5090 spill 24.2 -> 25.0 tok/s with
+it off, 2026-07-06), because every cold block paid two host-to-device copies. It stays in this
+cell as the registered control that carries the admission change without zero-copy: `mapped`
+changes the first miss from one copy (baseline) or two (staged) to none. If `staged` loses again,
+its value is deleted from the door in the lane that measures it.
