@@ -59,6 +59,7 @@ def inventory(base):
         "source/universal-v12": base / "universal-v12",
         "source/joint-v9": base / "joint-v9",
         "source/joint-v11": base / "joint-v11",
+        "source/joint-v4": base / "joint-v4",
         "source/private_ops": base / "ops",
         "diagnostic/pilot-results": base / "pilot-results",
         "diagnostic/judge-preflight":
@@ -139,7 +140,10 @@ def seal(base, out):
     for name, expected in metadata["source_files_sha256"].items():
         if (
             not name.startswith(
-                ("universal-v12/", "joint-v9/", "joint-v11/")
+                (
+                    "universal-v12/", "joint-v9/",
+                    "joint-v11/", "joint-v4/",
+                )
             )
             or sha(base / name) != expected
         ):

@@ -46,6 +46,7 @@ def replay(archive, manifest_path, rows_out):
         "source/universal-v12/",
         "source/joint-v9/",
         "source/joint-v11/",
+        "source/joint-v4/",
         "source/private_ops/",
         "diagnostic/pilot-results/",
         "diagnostic/judge-preflight/",
@@ -84,6 +85,9 @@ def replay(archive, manifest_path, rows_out):
             "joint-v11": (
                 "collect.py", "measurement_rows.py",
                 "training_replay.py",
+            ),
+            "joint-v4": (
+                "train_depth.py", "train_confidence.py",
             ),
         }.items():
             for name in names:
@@ -159,7 +163,10 @@ def replay(archive, manifest_path, rows_out):
         for name, expected in metadata["source_files_sha256"].items():
             if (
                 not name.startswith(
-                    ("universal-v12/", "joint-v9/", "joint-v11/")
+                    (
+                        "universal-v12/", "joint-v9/",
+                        "joint-v11/", "joint-v4/",
+                    )
                 )
                 or sha(root / "source" / name) != expected
             ):
