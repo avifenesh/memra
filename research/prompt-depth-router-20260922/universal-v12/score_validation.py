@@ -139,6 +139,14 @@ def report(root, domain, arms, tasks, prose):
         drafted = sum(row["drafted"] for row in native)
         scores[label] = {
             **total,
+            "conversations": [
+                {
+                    "tokens": row["tokens"],
+                    "seconds": row["seconds"],
+                    "loops": row["loops"],
+                }
+                for row in native
+            ],
             "task_pass": (
                 sum(
                     graded[f"validation-{domain}-{index}-{label}"][

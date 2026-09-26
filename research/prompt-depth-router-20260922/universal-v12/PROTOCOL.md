@@ -97,6 +97,8 @@ separate sealed commitment.
    on validation. It must clear the quality/cap/loop guards and have
    positive paired native tok/s point estimates against its no-op
    and each quality-eligible fixed control in code, prose and math.
+   Its pooled margin against the global fixed control also uses
+   identical unlooped conversations for both arms.
    Rank survivors by their **worst domain** margin, then pooled
    margin. If none survives, record a global no-go and leave final
    prompts unopened. There is no `chosen_by_domain` primary.

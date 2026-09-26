@@ -56,6 +56,39 @@ def pooled(domains, label):
     return tokens / seconds
 
 
+def matched_pooled_margin(domains, candidate, control):
+    totals = {
+        label: {"tokens": 0, "seconds": 0}
+        for label in (candidate, control)
+    }
+    for domain in DOMAINS:
+        a = domains[domain]["arms"][candidate]["conversations"]
+        b = domains[domain]["arms"][control]["conversations"]
+        if len(a) != 8 or len(b) != 8:
+            return None
+        included = [
+            index for index in range(8)
+            if not a[index]["loops"] and not b[index]["loops"]
+        ]
+        if len(included) < 6:
+            return None
+        for label, rows in ((candidate, a), (control, b)):
+            totals[label]["tokens"] += sum(
+                rows[index]["tokens"] for index in included
+            )
+            totals[label]["seconds"] += sum(
+                rows[index]["seconds"] for index in included
+            )
+    if not all(
+        positive(item["tokens"]) and positive(item["seconds"])
+        for item in totals.values()
+    ):
+        return None
+    a_rate = totals[candidate]["tokens"] / totals[candidate]["seconds"]
+    b_rate = totals[control]["tokens"] / totals[control]["seconds"]
+    return 100 * (a_rate / b_rate - 1)
+
+
 def inspect(validation, arms_path):
     score = json.loads(validation.read_text())
     arms = json.loads(arms_path.read_text())
@@ -132,6 +165,34 @@ def inspect(validation, arms_path):
                 or not positive(row["tok_s"])
             ):
                 raise ValueError(f"{domain} fixed quality or rate differs: {label}")
+        for label in labels:
+            row = report["arms"][label]
+            conversations = row["conversations"]
+            if len(conversations) != 8 or any(
+                not positive(item["tokens"])
+                or not positive(item["seconds"])
+                or not isinstance(item["loops"], int)
+                or item["loops"] < 0
+                for item in conversations
+            ):
+                raise ValueError(f"{domain} complete native conversation missing")
+            unlooped = [
+                item for item in conversations if not item["loops"]
+            ]
+            tokens = sum(item["tokens"] for item in unlooped)
+            seconds = sum(item["seconds"] for item in unlooped)
+            if (
+                not math.isclose(tokens, row["tokens"], rel_tol=1e-9)
+                or not math.isclose(seconds, row["seconds"], rel_tol=1e-9)
+                or (
+                    seconds > 0
+                    and not math.isclose(
+                        tokens / seconds, row["tok_s"],
+                        rel_tol=1e-9,
+                    )
+                )
+            ):
+                raise ValueError(f"{domain} native rate omits a loop boundary")
     if not SHA.fullmatch(score["domains"]["prose"]["judge_receipt_sha256"]):
         raise ValueError("prose quality lacks pinned checklist judge")
     return score, arms, by_label, fixed, learned, selectable
@@ -186,10 +247,10 @@ def choose(validation, arms_path):
             margins[domain] = deltas[domain_best_fixed[domain]]
         if len(margins) != len(DOMAINS):
             continue
-        pooled_margin = 100 * (
-            pooled(domains, label) / pooled(domains, global_fixed) - 1
+        pooled_margin = matched_pooled_margin(
+            domains, label, global_fixed,
         )
-        if pooled_margin <= 0:
+        if pooled_margin is None or pooled_margin <= 0:
             continue
         candidates.append({
             "label": label,

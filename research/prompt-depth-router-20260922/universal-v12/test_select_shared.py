@@ -80,6 +80,14 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
                 label: {
                     "tokens": rate, "seconds": 1.0,
                     "tok_s": rate, "quality_eligible": True,
+                    "conversations": [
+                        {
+                            "tokens": rate / 8,
+                            "seconds": 1 / 8,
+                            "loops": 0,
+                        }
+                        for _ in range(8)
+                    ],
                 }
                 for label, rate in rates.items()
             },
@@ -102,6 +110,28 @@ def fixture(root, prose_shared=105.0, judge="f" * 64):
 
 
 class SharedSelectionTest(unittest.TestCase):
+    def test_pooled_margin_matches_unlooped_conversations(self):
+        with tempfile.TemporaryDirectory() as folder:
+            score, _ = fixture(Path(folder))
+            domains = json.loads(score.read_text())["domains"]
+            for domain in select_shared.DOMAINS:
+                candidate = domains[domain]["arms"]["joint-shared"][
+                    "conversations"
+                ]
+                control = domains[domain]["arms"][
+                    "fixed-k20-d2-c0"
+                ]["conversations"]
+                for item in candidate:
+                    item["tokens"] = 99 / 8
+                candidate[0]["tokens"] = 1000
+                control[0]["loops"] = 1
+            self.assertLess(
+                select_shared.matched_pooled_margin(
+                    domains, "joint-shared", "fixed-k20-d2-c0",
+                ),
+                0,
+            )
+
     def test_final_arms_keep_qualifier_lineage(self):
         with tempfile.TemporaryDirectory() as folder:
             score, arms = fixture(Path(folder))
