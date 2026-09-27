@@ -77,6 +77,26 @@ the E1 to E7 cells (about 12 h on the target card, 5 h on the 5090). Arm O: abou
 its scratch set and census, the settle launcher and the arrival rule, GPU tests of bit-identity against the one-stream
 settle) plus the same cells.
 
+### 1.7 Addendum A (2026-09-27, stage 0 as built, before any stage-0 run)
+
+No clause, rule or reading changes.
+
+- **The probe:** `concat-prime-probe callcost` primes `[0, L)` once, takes a snapshot, and per R in {32, 64, 288} runs
+  one untimed warm-up and N = 5 timed calls. Before every restore and every call it idles 50 ms, so the trace separates
+  setup, restore, call, restore, call. Each timed call is `prime_cache([L, L + R))` between two stream synchronizes,
+  with `queued_after = 0`. The trunk prime only: a spec settle's draft fill (`spec_prime_settle`) is not in this shape,
+  and that is stated wherever the reading is used for the spec route.
+- **The runs (`day50-stage0.sh`):** per L, a wall run and then the same run under `nsys profile -t cuda`, each under
+  the card's lock. `day50-trace.py` splits the trace into clusters on 20 ms idle gaps, checks the count against the
+  expected shape (and prints that the split was not read when it is off), and reads each timed call. It reports the
+  GPU span, the GPU-busy union, the gaps inside the span, the host time outside it, and the busy time by kernel class
+  (full attention, GDN/conv, GEMM, other). `busy_share` is busy over the nsys run's own wall. The wall run gives the
+  wall without the profiler.
+- **Where:** the 5090 (`rtx5090-day50/run.sh`, the 9B, L 6,144 and 30,720) and the target card (the sixteenth sitting,
+  `pro-single-b-sitting16.sh`, the 27B, L 6,144, 30,720 and 122,880; it refuses to start without `nsys`).
+- **CPU checks:** the probe builds and `cargo clippy -p memra-engine --all-targets -- -D warnings` is clean. The trace
+  reader was run on a synthetic trace.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
