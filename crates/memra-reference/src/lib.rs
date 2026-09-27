@@ -8,6 +8,7 @@ pub mod mimo_audio;
 pub mod mimo_audio_attn;
 pub mod mimo_audio_codec_frontend;
 pub mod mimo_audio_codec_layer;
+pub mod mimo_modal_overlay;
 pub mod mimo_text_chunk;
 pub mod mimo_vision;
 pub mod mimo_vision_rope;

@@ -939,6 +939,7 @@ pub mod mimo_audio_patch_load;
 pub mod mimo_compressed_kv;
 pub mod mimo_compressed_text_forward;
 pub mod mimo_mixed_attn_ffi;
+pub mod mimo_modal_overlay;
 pub mod mimo_moe_load;
 pub mod mimo_mtp_forward;
 pub mod mimo_mtp_weights;

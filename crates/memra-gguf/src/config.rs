@@ -1221,6 +1221,8 @@ pub struct MiMoV2Config {
     pub vision_config: Option<MiMoVisionConfig>,
     pub audio_config: Option<MiMoAudioConfig>,
     pub vision_model_type: Option<String>,
+    pub image_token_id: Option<u32>,
+    pub video_token_id: Option<u32>,
     pub vision_start_token_id: Option<u32>,
     pub vision_end_token_id: Option<u32>,
     pub audio_token_id: Option<u32>,
@@ -2477,6 +2479,8 @@ impl ModelConfig {
             vision_config: c.mimo_vision.clone(),
             audio_config: c.mimo_audio.clone(),
             vision_model_type: c.vision_model_type.clone(),
+            image_token_id: c.image_token_id,
+            video_token_id: c.video_token_id,
             vision_start_token_id: c.vision_start_token_id,
             vision_end_token_id: c.vision_end_token_id,
             audio_token_id: c.audio_token_id,
@@ -2984,6 +2988,7 @@ pub struct HfConfig {
     /// Some, `vision` stays None — the two structs are different semantic programs.
     pub vision_glm5: Option<Glm5VisionConfig>,
     pub image_token_id: Option<u32>,
+    pub video_token_id: Option<u32>,
     pub vision_soft_tokens_per_image: Option<u32>,
     pub num_nextn_predict_layers: Option<u32>,
     pub mtp_num_hidden_layers: Option<u32>, // qwen3_5/3_6 HF key for the MTP head depth (27B: 1)
@@ -3229,6 +3234,7 @@ impl Default for HfConfig {
             vision: None,
             vision_glm5: None,
             image_token_id: None,
+            video_token_id: None,
             vision_soft_tokens_per_image: None,
             topk_method: None,
             norm_topk_prob: None,
@@ -3654,6 +3660,9 @@ impl HfConfig {
         }
         if let Some(v) = o.u32("image_token_id")? {
             self.image_token_id = Some(v);
+        }
+        if let Some(v) = o.u32("video_token_id")? {
+            self.video_token_id = Some(v);
         }
         if let Some(v) = o.u32("vision_soft_tokens_per_image")? {
             self.vision_soft_tokens_per_image = Some(v);
@@ -4548,6 +4557,8 @@ pub(crate) mod hf_tests {
         assert_eq!(vision.vit_window_attn_types[0], -1);
         assert_eq!(vision.vit_window_attn_types[5], 1);
         let mimo = config.mimo.as_ref().unwrap();
+        assert_eq!(mimo.image_token_id, Some(151655));
+        assert_eq!(mimo.video_token_id, Some(151656));
         assert_eq!(mimo.vision_model_type.as_deref(), Some("mimovl"));
         assert_eq!(mimo.vision_start_token_id, Some(151652));
         assert_eq!(mimo.vision_end_token_id, Some(151653));
