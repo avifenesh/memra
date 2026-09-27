@@ -141,3 +141,56 @@ same way. Design T's thread rule for the fill (item 3) is the precedent.
   is a new sitting on a fresh pair, after P2's verdict fixes the tree it is merged onto.
 - This is the lead's and the owner's to accept or refuse before any code. The argument is that (b) measured a regime
   section 1's own text did not name as the waiting one. Nothing here moves a bound on the regime that was named.
+
+## 7. The owner accepts T-H' as a new experiment (2026-09-27)
+
+- Owner ruling, relayed by the lead on 2026-09-27: T-H' is accepted as a new experiment, and T-H's REVERT stands.
+- T-H' runs as section 6 registered it, on a fresh sitting:
+  - T-H's code re-applied on the current tree, which is main with L', design Q, the purge scrub and P2;
+  - (b') set from section 1's pre-result prices;
+  - adopting only if (a), (b'), (c) and (d) hold in both orders.
+- Nothing in section 6 changes.
+
+## 8. T-H' as built (`67957b4f8`), and its sitting prepared
+
+- **The tree.** Branch `lane/spill-a-th2-20260927`, cut from main `80f734c77`, which carries L', R1, Q, P and P2. T-H'
+  is `67957b4f8`, the revert of T-H's revert `06b2d31db`.
+  - It applied without a conflict. So the helper's three maps run on T-H's scoped threads again, and P2's reserve is
+    handed out on the helper thread in the job's order before the shares fill and hash: DAY67 section 2's assignment,
+    restored verbatim.
+  - The helper split line reads `(helper Y ms); reserve H of S staged; T threads`.
+- **(a)'s CPU half:**
+  - server lib `989 passed; 0 failed; 27 ignored` (`day65b/server-lib.log`), with T-H's
+    `day65_the_shared_helper_digests_equal_the_one_thread_helper_bitwise`, its census, the real-helper
+    `hash_helper_digests_equal_the_owner_thread_digests_bitwise`, and P2's `day51_`/`day52_` cells green;
+  - clippy `-p memra-server --all-targets -D warnings` clean; fmt; `tools/check-flags.sh`.
+  - Built under `nice -n 19`, a 600% CPU quota and `MemoryMax=12G`, the lead's limits while four lanes work.
+  - **Red arm:** T-H's own `day65/red-arm.patch` (the shares come back reversed, with a marker) applies to this tree
+    unchanged. It fails the bitwise cell and the real-helper cell, verbatim `[day65 red arm] the shares come back in
+    reverse order` (`day65b/red-arm.log`).
+- **The sitting** `pro-single-th2/` is T-H's `pro-single-th/` scripts with the receipt root `a-th2`. The build fetches
+  the branch and main and records the markers `staged; {} threads` and `; reserve {} of {} staged` per binary. The
+  reader is `th2-reading.py`. The cells, environments, boot counts and orders are T-H's:
+  - the 11 gates on th;
+  - base against th, 20 boots each, in the demote, chain and promote cells;
+  - the hump (4 boots);
+  - then `th2-reading.py`, whose last line is `TH2 VERDICT -> ..`.
+- **The reader** `th2-reading.py` is T-H's reader with three changes:
+  - (b') is on the chain cell: th's helper median at most 0.5 x base's, and th's wall t0 to publication at most base's
+    minus 50 ms, per order, over the steady lines (each boot's second and later);
+  - the demote cell's helper and wall are a reading;
+  - the split regex admits P2's reserve term.
+  - Dry-run for parsing only on P2L2's receipts, mapping its p2 arm as th (`day65b/reader-dry-run-p2l2.log`). It read
+    the chain cell's helper at 122.4 ms against 122.4 and its wall at 410.0 against 409.9 (N=100 per arm per order),
+    so it parses every term. It reads `INCOMPLETE` and `(a)` failed only because that sitting's hump arms and gate set
+    differ.
+  - The refuted T-H sitting's chain numbers were not read.
+- **Commands** on the rented box (receipts `/root/spill-receipts/a-th2`):
+  - `bash research/spill-a-20260919/pro-single-th2/build.sh <branch tip> 80f734c77`;
+  - then `bash research/spill-a-20260919/pro-single-th2/driver.sh`.
+  - About 2 hours of card time.
+- **The box:** one RTX PRO 6000 Blackwell Workstation card, the only tenant for the sitting.
+  - At least 16 logical CPUs, so the helper's thread rule gives 8 threads as it did at T-H's sitting.
+  - At least 64 GB of RAM.
+  - The 27B at `/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf` (sha256 `1facf36c..`).
+  - The CUDA 13 toolchain and Rust to build; the lock `/tmp/memra-gpu.lock` taken by the collector per cell.
