@@ -818,6 +818,13 @@ mod tests {
     #[test]
     fn the_walker_owes_its_turn_checkpoint_until_the_row_is_primed() {
         let state = |ckpt_rel: Option<usize>, cursor: usize| MtpPrimeState {
+            rewrite_execution: crate::plan_backend::RewriteExecutionSnapshot::validated(
+                &std::sync::Arc::default(),
+                &crate::plan_backend::RewriteAdmission::LegacyUnbundled,
+                false,
+                || Ok(()),
+            )
+            .unwrap(),
             prompt: vec![0; 2061],
             base: 0,
             chunks: trunk_schedule(2061, None, Some(1024), false, false, |n| vec![(0, n)]),
