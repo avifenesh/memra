@@ -54,6 +54,16 @@ __global__ void check_bf16(const float* values, int elements, int* fault) {
     }
 }
 
+__global__ void merger_gelu_erf(const float* input, float* output, int elements) {
+    const int index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index >= elements) return;
+    const float value = input[index];
+    // nn.GELU() defaults to the erf form. The input was rounded to BF16 by
+    // nn.Linear; the output is stored in BF16 before the next nn.Linear.
+    output[index] = bf16(0.5f * value *
+                         (1.0f + erff(value * 0.7071067811865475f)));
+}
+
 }  // namespace
 
 extern "C" int memra_mimo_vision_block_epilogue(
@@ -89,6 +99,17 @@ extern "C" int memra_mimo_vision_block_check_bf16(
     check_bf16<<<(elements + 255) / 256, 256, 0,
                  static_cast<cudaStream_t>(stream_v)>>>(
         values, elements, fault);
+    const cudaError_t error = cudaPeekAtLastError();
+    return error == cudaSuccess ? 0 : 10000 + static_cast<int>(error);
+}
+
+extern "C" int memra_mimo_vision_merger_gelu_erf(
+    const float* input, float* output, int elements, void* stream_v) {
+    if (!input || !output || !stream_v || elements <= 0 ||
+        elements > 256 * 5120) return 40001;
+    merger_gelu_erf<<<(elements + 255) / 256, 256, 0,
+                      static_cast<cudaStream_t>(stream_v)>>>(
+        input, output, elements);
     const cudaError_t error = cudaPeekAtLastError();
     return error == cudaSuccess ? 0 : 10000 + static_cast<int>(error);
 }

@@ -14,7 +14,7 @@ use memra_gguf::model_packs::mimo_v2::vision::{
 use memra_reference::mimo_vision_rope::ordered_positions;
 
 use crate::Engine;
-use crate::mimo_vision_load::{MiMoVisionBlock, MiMoVisionWeights};
+use crate::mimo_vision_load::{MiMoVisionBlock, MiMoVisionMerger, MiMoVisionWeights};
 use crate::model::GpuTensor;
 
 type Fail = Box<dyn Error>;
@@ -27,6 +27,9 @@ const FF: usize = 4_608;
 // The pinned vision config omits rms_norm_eps; MiMoVisionTransformer defaults
 // it to 1e-6 when constructing each nn.RMSNorm.
 const RMS_EPSILON: f32 = 1e-6;
+const MERGER_WIDTH: usize = HIDDEN * 4;
+const MERGER_OUTPUT: usize = 4_096;
+const MERGER_LN_EPSILON: f32 = 1e-6;
 
 #[derive(Clone, Copy)]
 #[repr(i32)]
@@ -59,6 +62,12 @@ unsafe extern "C" {
         values: *const f32,
         elements: i32,
         fault: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    fn memra_mimo_vision_merger_gelu_erf(
+        input: *const f32,
+        output: *mut f32,
+        elements: i32,
         stream: *mut c_void,
     ) -> i32;
 }
@@ -109,6 +118,47 @@ fn request(
         lengths,
         patches,
     })
+}
+
+fn merger_request(
+    config: &ModelConfig,
+    grids: &[MiMoVisionGrid],
+    hidden_elements: usize,
+) -> Result<(usize, usize), Fail> {
+    // Check the same component bounds as the source block path before
+    // materializing the layout or launching a kernel.
+    let mut frames = 0usize;
+    let mut patches = 0usize;
+    for grid in grids {
+        let frame_patches = (grid.height as usize)
+            .checked_mul(grid.width as usize)
+            .ok_or("MiMo merger frame patch count overflows")?;
+        frames = frames
+            .checked_add(grid.frames as usize)
+            .ok_or("MiMo merger frame count overflows")?;
+        patches = patches
+            .checked_add(
+                (grid.frames as usize)
+                    .checked_mul(frame_patches)
+                    .ok_or("MiMo merger patch count overflows")?,
+            )
+            .ok_or("MiMo merger total patch count overflows")?;
+        if frame_patches == 0 || frame_patches > 256 || frames > 32 || patches > 1_024 {
+            return Err("MiMo merger exceeds bounded frame or patch count".into());
+        }
+    }
+    let layout = pinned_vision_layout(config, grids)?;
+    let output_tokens = patches / 4;
+    if patches == 0
+        || !patches.is_multiple_of(4)
+        || layout.row_positions.len() != patches
+        || layout.frame_ends.len() != frames
+        || layout.output_tokens as usize != output_tokens
+        || patches.checked_mul(HIDDEN) != Some(hidden_elements)
+    {
+        return Err("MiMo merger grid, merge units, or hidden extent changed".into());
+    }
+    Ok((patches, output_tokens))
 }
 
 fn check_matrix(
@@ -409,6 +459,92 @@ fn forward_block(
     Ok(result)
 }
 
+fn merger_gelu_erf(engine: &Engine, input: &CudaSlice<f32>) -> Result<CudaSlice<f32>, Fail> {
+    engine.gpu.ctx.bind_to_thread()?;
+    let stream = engine.stream();
+    if input.is_empty()
+        || input.len() > 256 * MERGER_WIDTH
+        || input.ordinal() != stream.context().ordinal()
+    {
+        return Err("MiMo merger GELU extent or GPU changed".into());
+    }
+    let mut output = engine.uninit(input.len())?;
+    let (input_ptr, input_guard) = input.device_ptr(&stream);
+    let (output_ptr, output_guard) = output.device_ptr_mut(&stream);
+    let rc = unsafe {
+        memra_mimo_vision_merger_gelu_erf(
+            input_ptr as *const f32,
+            output_ptr as *mut f32,
+            input.len() as i32,
+            stream.cu_stream() as *mut c_void,
+        )
+    };
+    drop((input_guard, output_guard));
+    if rc != 0 {
+        return Err(format!("MiMo merger GELU(erf) CUDA refusal {rc}").into());
+    }
+    Ok(output)
+}
+
+impl MiMoVisionMerger {
+    /// Apply the pinned publisher's merger to BF16-valued patch rows in
+    /// merge-unit row order. The omitted checkpoint biases are zero after
+    /// Transformers 5.3 missing-key initialization. This is a bounded
+    /// internal component over already encoded patches.
+    pub fn forward_encoded(
+        &self,
+        engine: &Engine,
+        config: &ModelConfig,
+        grids: &[MiMoVisionGrid],
+        hidden: &CudaSlice<f32>,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        let (patches, output_tokens) = merger_request(config, grids, hidden.len())?;
+        engine.gpu.ctx.bind_to_thread()?;
+        let device = engine.stream().context().ordinal();
+        if hidden.ordinal() != device {
+            return Err("MiMo merger hidden crossed GPU devices".into());
+        }
+        check_vector(&self.norm_weight, HIDDEN, device)?;
+        check_matrix(&self.mlp_0, MERGER_WIDTH, MERGER_WIDTH, device)?;
+        check_matrix(&self.mlp_2, MERGER_WIDTH, MERGER_OUTPUT, device)?;
+        check_bf16(engine, hidden)?;
+        check_bf16(engine, &self.norm_weight)?;
+
+        // nn.LayerNorm over 1280 channels. The checkpoint omits ln_q.bias;
+        // from_pretrained initializes that bias to exactly zero.
+        let zero_bias = engine.htod(&vec![0.0f32; HIDDEN])?;
+        let mut normalized = engine.uninit(hidden.len())?;
+        engine.layer_norm_bias(
+            hidden,
+            &self.norm_weight,
+            &zero_bias,
+            &mut normalized,
+            HIDDEN,
+            patches,
+            MERGER_LN_EPSILON,
+        )?;
+        let normalized = epilogue(engine, &normalized, None, HIDDEN, Epilogue::Round)?;
+        check_bf16(engine, &normalized)?;
+
+        // A view of four contiguous [1280] rows is the source [5120] row.
+        let first = engine.matmul(&self.mlp_0, &normalized, output_tokens)?;
+        if first.len() != output_tokens * MERGER_WIDTH {
+            return Err("MiMo merger first Linear extent changed".into());
+        }
+        let first = epilogue(engine, &first, None, MERGER_WIDTH, Epilogue::Round)?;
+        check_bf16(engine, &first)?;
+        let activated = merger_gelu_erf(engine, &first)?;
+        check_bf16(engine, &activated)?;
+        let second = engine.matmul(&self.mlp_2, &activated, output_tokens)?;
+        if second.len() != output_tokens * MERGER_OUTPUT {
+            return Err("MiMo merger final Linear extent changed".into());
+        }
+        let output = epilogue(engine, &second, None, MERGER_OUTPUT, Epilogue::Round)?;
+        check_bf16(engine, &output)?;
+        Ok(output)
+    }
+}
+
 impl MiMoVisionWeights {
     /// Project source-prepared `[patches, 3, 2, 16, 16]` pixel rows and run
     /// all 28 ViT blocks. The patch projector currently admits at most 256
@@ -488,13 +624,28 @@ impl MiMoVisionWeights {
         }
         output.ok_or_else(|| "MiMo vision has no source blocks".into())
     }
+
+    /// Merge row-ordered BF16 patches after all 28 source ViT blocks.
+    /// The caller owns the encoded rows and their pinned grid metadata.
+    pub fn forward_encoded_merger(
+        &self,
+        engine: &Engine,
+        config: &ModelConfig,
+        grids: &[MiMoVisionGrid],
+        hidden: &CudaSlice<f32>,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        if self.blocks.len() != 28 {
+            return Err("MiMo merger needs all 28 bound source blocks".into());
+        }
+        self.merger.forward_encoded(engine, config, grids, hidden)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use memra_gguf::config::{HfConfig, ModelConfig};
-    use memra_reference::mimo_vision::preprojected_attention;
+    use memra_reference::mimo_vision::{patch_merger_bf16, preprojected_attention};
     use memra_reference::mimo_vision_rope::rotate_qk;
 
     fn config() -> ModelConfig {
@@ -574,6 +725,75 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn merger_admits_only_pinned_bounded_merge_unit_grids() {
+        let config = config();
+        let grids = [
+            MiMoVisionGrid {
+                frames: 2,
+                height: 4,
+                width: 6,
+            },
+            MiMoVisionGrid {
+                frames: 1,
+                height: 2,
+                width: 2,
+            },
+        ];
+        assert_eq!(
+            merger_request(&config, &grids, 52 * HIDDEN).unwrap(),
+            (52, 13)
+        );
+        assert!(merger_request(&config, &grids, 52 * HIDDEN - 1).is_err());
+        assert!(merger_request(&config, &[], 0).is_err());
+        assert!(
+            merger_request(
+                &config,
+                &[MiMoVisionGrid {
+                    frames: 1,
+                    height: 3,
+                    width: 2,
+                }],
+                6 * HIDDEN,
+            )
+            .is_err()
+        );
+        assert!(
+            merger_request(
+                &config,
+                &[MiMoVisionGrid {
+                    frames: 1,
+                    height: 2,
+                    width: 258,
+                }],
+                516 * HIDDEN,
+            )
+            .is_err()
+        );
+        assert!(
+            merger_request(
+                &config,
+                &[MiMoVisionGrid {
+                    frames: 33,
+                    height: 2,
+                    width: 2,
+                }],
+                132 * HIDDEN,
+            )
+            .is_err()
+        );
+        let mut wrong = config;
+        wrong
+            .mimo
+            .as_mut()
+            .unwrap()
+            .vision_config
+            .as_mut()
+            .unwrap()
+            .spatial_merge_size = 1;
+        assert!(merger_request(&wrong, &grids, 52 * HIDDEN).is_err());
     }
 
     #[test]
@@ -834,6 +1054,84 @@ mod tests {
             eprintln!("MiMo vision one-block GPU={gpu} layer={layer} max_abs={max_abs}");
             assert!(max_abs <= 0.0625, "MiMo vision one-block parity changed");
         }
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires a dedicated MiMo GPU component lane"]
+    fn gpu_merger_matches_portable_bf16_erf_oracle() -> Result<(), Fail> {
+        let gpu: usize = std::env::var("MEMRA_MIMO_COMPONENT_GPU")
+            .unwrap_or_else(|_| "0".into())
+            .parse()?;
+        let engine = Engine::new(gpu)?;
+        let grids = [MiMoVisionGrid {
+            frames: 1,
+            height: 2,
+            width: 2,
+        }];
+        let mut input = vec![0.0f32; 4 * HIDDEN];
+        for patch in 0usize..4 {
+            // Nonzero row means make RMSNorm observably different from LayerNorm.
+            let first_half = if patch.is_multiple_of(2) { 0.0 } else { 2.0 };
+            for channel in 0..HIDDEN {
+                input[patch * HIDDEN + channel] = if channel < HIDDEN / 2 {
+                    first_half
+                } else {
+                    2.0 - first_half
+                };
+            }
+        }
+        let mut first = vec![0.0f32; MERGER_WIDTH * MERGER_WIDTH];
+        for patch in 0..4 {
+            first[patch * MERGER_WIDTH + patch * HIDDEN] = 1.0;
+        }
+        let mut second = vec![0.0f32; MERGER_OUTPUT * MERGER_WIDTH];
+        second[0] = 1.0;
+        second[MERGER_WIDTH + 1] = 1.0;
+        second[2 * MERGER_WIDTH + 2] = 1.0;
+        second[3 * MERGER_WIDTH + 3] = 1.0;
+        let norm_weight = vec![3.0f32; HIDDEN];
+        let expected =
+            patch_merger_bf16(&input, HIDDEN, MERGER_OUTPUT, &norm_weight, &first, &second)?;
+        let merger = MiMoVisionMerger {
+            norm_weight: engine.htod(&norm_weight)?,
+            mlp_0: sparse_matrix(
+                &engine,
+                MERGER_WIDTH,
+                MERGER_WIDTH,
+                &[
+                    (0, 0, 1.0),
+                    (1, HIDDEN, 1.0),
+                    (2, 2 * HIDDEN, 1.0),
+                    (3, 3 * HIDDEN, 1.0),
+                ],
+            )?,
+            mlp_2: sparse_matrix(
+                &engine,
+                MERGER_WIDTH,
+                MERGER_OUTPUT,
+                &[(0, 0, 1.0), (1, 1, 1.0), (2, 2, 1.0), (3, 3, 1.0)],
+            )?,
+        };
+        let got = merger.forward_encoded(&engine, &config(), &grids, &engine.htod(&input)?)?;
+        let got = engine.dtoh(&got)?;
+        assert_eq!(got.len(), MERGER_OUTPUT);
+        let max_abs = got
+            .iter()
+            .zip(&expected)
+            .map(|(actual, wanted)| (actual - wanted).abs())
+            .fold(0.0f32, f32::max);
+        eprintln!("MiMo merger GPU={gpu} max_abs={max_abs}");
+        assert!(max_abs <= 0.015625, "MiMo merger GPU oracle changed");
+        assert_eq!(&got[..4], &expected[..4]); // Includes the erf/tanh discriminator.
+        assert!(got.iter().all(|value| value.to_bits() & 0xffff == 0));
+        let mut bad = input;
+        bad[0] = f32::NAN;
+        assert!(
+            merger
+                .forward_encoded(&engine, &config(), &grids, &engine.htod(&bad)?)
+                .is_err()
+        );
         Ok(())
     }
 }
