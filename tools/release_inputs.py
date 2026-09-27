@@ -35,12 +35,7 @@ def actual_blob(path, mode):
     return h.hexdigest()
 
 
-def verify_checkout(repo, head="HEAD"):
-    repo = repo.resolve()
-    head = q.commit(repo, head)
-    expected = q.tree_files(repo, head)
-    links = q.source_symlink_targets(repo, head, expected)
-    # Configuration can refuse a build before the full source byte scan.
+def _cargo_configuration(repo, expected):
     configs = []
     for directory in (repo, *repo.parents):
         for name in (".cargo/config", ".cargo/config.toml"):
@@ -67,6 +62,16 @@ def verify_checkout(repo, head="HEAD"):
             q.require(not text or re.fullmatch(r"\[build\]\s+jobs\s*=\s*[1-9][0-9]*\s*", text),
                       f"unsupported effective Cargo configuration: {name}; only build.jobs is admitted")
             configs.append({"path": name, "sha256": q.sha256_file(path)})
+    return configs
+
+
+def verify_checkout(repo, head="HEAD"):
+    repo = repo.resolve()
+    head = q.commit(repo, head)
+    expected = q.tree_files(repo, head)
+    links = q.source_symlink_targets(repo, head, expected)
+    # Refuse bad configuration early, then recheck it after reading source.
+    configs = _cargo_configuration(repo, expected)
     for name, entry in expected.items():
         path = repo / name
         try:
@@ -93,6 +98,8 @@ def verify_checkout(repo, head="HEAD"):
             if "__pycache__" in Path(name).parts and name.endswith(".pyc"):
                 continue  # the producer/children never consume this cache
             raise q.GateError(f"untracked or ignored build/gate input: {name}")
+    q.require(_cargo_configuration(repo, expected) == configs,
+              "Cargo configuration changed during checkout verification")
     return configs
 
 

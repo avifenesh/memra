@@ -1,7 +1,13 @@
 # Development feedback
 
-Fast-gate explains the next development check. Release and model qualification
-remain owned by the existing qualification producer and verifier.
+Fast-gate explains the next development check. CPU-only tooling uses the contract
+and failure-injection checks in docs/TESTING.md. Native runtime/model changes and
+publication keep their qualification gates. A tooling merge grants no GPU or model
+qualification and does not promote narrower GPU selection out of shadow mode.
+
+For a CPU-only tooling change, run its CPU contract and failure-injection tests.
+The native diagnostic plan below does not turn an unrelated tooling change into
+a requirement to execute GPU probes.
 
 ## Plan before building
 

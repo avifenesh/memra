@@ -134,6 +134,19 @@ class ReleaseInputTests(unittest.TestCase):
             with self.assertRaisesRegex(q.GateError, "tracked input cannot resolve"):
                 capture.release_inputs.verify_checkout(self.f.repo)
 
+    def test_config_created_during_source_scan_still_refuses(self):
+        original = capture.release_inputs.actual_blob
+        ancestor = self.root / ".cargo/config.toml"
+        def read(path, mode):
+            result = original(path, mode)
+            if path == self.f.repo / "crates/memra-engine/src/lib.rs":
+                ancestor.parent.mkdir(exist_ok=True)
+                ancestor.write_text('[env]\nDOCS_RS={value="1",force=true}\n')
+            return result
+        with patch.object(capture.release_inputs, "actual_blob", side_effect=read):
+            with self.assertRaisesRegex(q.GateError, "unrecorded ancestor/Cargo configuration"):
+                capture.release_inputs.verify_checkout(self.f.repo)
+
     def test_owned_source_contains_git_bytes_and_omits_ignored_caller_files(self):
         (self.f.repo / ".gitignore").write_text("hidden.bin\n")
         self.f.commit("ignore caller-only input")

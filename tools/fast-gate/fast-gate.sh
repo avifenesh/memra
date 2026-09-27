@@ -5,7 +5,8 @@
 #   tools/fast-gate/fast-gate.sh --refresh-goldens [--probes a,b] [--force]
 #
 # THE CONTRACT: the full battery (tools/local-ci.sh — kernel-check ALL GREEN + run-gen argmax
-# per affected model + run-spec K=1..8 + serve-smoke) REMAINS the merge/tag gate, unchanged.
+# per affected model + run-spec K=1..8 + serve-smoke) gates native changes and tags.
+# CPU-only tooling admission is defined in docs/TESTING.md; it grants no model qualification.
 # fast-gate accelerates the loop between battery points by running only the gates a diff
 # actually needs (docs/TESTING.md):
 #
@@ -336,5 +337,5 @@ done
 echo "tier 1: requested diagnostics, $FAILS fail ($(stamp)s total)"
 echo
 echo "fast-gate is the DEV-LOOP gate only — the full battery (tools/local-ci.sh + perf stage)"
-echo "still gates every merge and tag."
+echo "gates native changes and tags. CPU-only tooling uses the admission rules in docs/TESTING.md."
 [ "$FAILS" -eq 0 ] || exit 1
