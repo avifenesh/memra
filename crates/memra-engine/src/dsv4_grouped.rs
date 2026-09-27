@@ -2823,6 +2823,7 @@ mod tests {
                             )
                         };
                         assert_eq!(gu2, 0, "fused gate/up over the router's mirror rc");
+                        launches += 1;
                         let own: Vec<usize> = sel
                             .iter()
                             .enumerate()
