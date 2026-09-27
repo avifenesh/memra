@@ -86,6 +86,10 @@ const PUBLISHER_GPU_LAYER0_FC2_LINEAR_CONTROL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-layer0-fc2-linear-control.bf16"
 ));
+const PUBLISHER_GPU_LAYER0_FC2_INPUT_LINEAR_CONTROL: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-layer0-fc2-input-linear-control.bf16"
+));
 const PUBLISHER_GPU_FRONTEND_LINEAR_CONTROL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-frontend-linear-control.bf16"
@@ -108,8 +112,12 @@ const MEL: &[u8] = include_bytes!(concat!(
 ));
 
 fn decode_bf16(bytes: &[u8], rows: usize) -> Result<Vec<f32>, Fail> {
-    if bytes.len() != rows * WIDTH * 2 {
-        return Err("MiMo pre-RVQ feature fixture extent changed".into());
+    decode_bf16_width(bytes, rows, WIDTH)
+}
+
+fn decode_bf16_width(bytes: &[u8], rows: usize, width: usize) -> Result<Vec<f32>, Fail> {
+    if width == 0 || bytes.len() != rows * width * 2 {
+        return Err("MiMo BF16 feature fixture extent changed".into());
     }
     Ok(bytes
         .chunks_exact(2)
@@ -260,6 +268,10 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
             PUBLISHER_GPU_LAYER0_FC2_LINEAR_CONTROL,
             "699708e10dcb9ddb6d8b5ebac04268f7e7c26da0e63e9fbd8c3c7937c817913b",
         ),
+        (
+            PUBLISHER_GPU_LAYER0_FC2_INPUT_LINEAR_CONTROL,
+            "0d26edb25c9814cf4db4709f5995ec55cdbce777209158470a23508a5320d07a",
+        ),
     ] {
         assert_eq!(format!("{:x}", Sha256::digest(bytes)), expected);
     }
@@ -404,6 +416,16 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
         )?;
     }
     assert_eq!(layer0_stages.len(), 5);
+    let publisher_fc2_input =
+        decode_bf16_width(PUBLISHER_GPU_LAYER0_FC2_INPUT_LINEAR_CONTROL, 5, 4_096)?;
+    let memra_fc2_from_source =
+        weights.project_layer0_fc2_source_input(&engine, &engine.htod(&publisher_fc2_input)?, 5)?;
+    feature_stats(
+        "memra_fc2_from_source_input_vs_gpu_publisher_linear_control",
+        &engine.dtoh(&memra_fc2_from_source)?,
+        &decode_bf16(PUBLISHER_GPU_LAYER0_FC2_LINEAR_CONTROL, 5)?,
+        5,
+    )?;
     let fused_layer0_values = engine.dtoh(&fused_layer0)?;
     let fused_stack = weights.encode_transformer_stack(&engine, &fused_frontend, 5)?;
     let fused_stack_values = engine.dtoh(&fused_stack)?;

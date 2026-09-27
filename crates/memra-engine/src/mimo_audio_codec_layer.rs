@@ -21,8 +21,11 @@ type Fail = Box<dyn Error>;
 const HIDDEN: usize = 1_024;
 
 #[cfg(test)]
+type Layer0Stages = Vec<(&'static str, Vec<f32>)>;
+
+#[cfg(test)]
 std::thread_local! {
-    static LAYER0_STAGES: std::cell::RefCell<Option<Vec<(&'static str, Vec<f32>)>>> =
+    static LAYER0_STAGES: std::cell::RefCell<Option<Layer0Stages>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -42,7 +45,7 @@ pub(crate) fn start_layer0_stage_capture() -> Layer0StageCaptureGuard {
 
 #[cfg(test)]
 impl Layer0StageCaptureGuard {
-    pub(crate) fn finish(self) -> Vec<(&'static str, Vec<f32>)> {
+    pub(crate) fn finish(self) -> Layer0Stages {
         LAYER0_STAGES.with(|capture| capture.borrow_mut().take().unwrap_or_default())
     }
 }
@@ -439,6 +442,25 @@ fn attended(
 }
 
 impl MiMoAudioCodecEncoderWeights {
+    #[cfg(test)]
+    pub(crate) fn project_layer0_fc2_source_input(
+        &self,
+        engine: &Engine,
+        input: &CudaSlice<f32>,
+        tokens: usize,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        if tokens != 5 || input.len() != tokens * 4_096 || input.ordinal() != self.device_ordinal {
+            return Err("MiMo source fc2 diagnostic input extent or GPU changed".into());
+        }
+        engine.gpu.ctx.bind_to_thread()?;
+        self.check_device(engine)?;
+        let weights = self.encoder_layer_bf16(0)?;
+        if weights.fc2.input != 4_096 || weights.fc2.output != HIDDEN {
+            return Err("MiMo source fc2 diagnostic matrix geometry changed".into());
+        }
+        projected(engine, input, &weights.fc2, tokens)
+    }
+
     /// Execute exactly one selected transformer layer over one frontended,
     /// BF16-valued `[tokens,1024]` sequence on the weight-owning GPU.
     ///
