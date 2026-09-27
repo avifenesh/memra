@@ -928,6 +928,15 @@ pub mod dsv4_topology;
 pub mod f16_ffi;
 pub mod fp8_ffi;
 pub mod glm5_tp_sampler;
+pub mod grid_capture;
+pub mod mmq_ffi;
+pub mod moe_cache;
+pub mod prime_graph;
+pub mod qwen_prime_graph;
+pub mod spill;
+mod spill_pread;
+
+// MiMo V2.6 inspection components. Automatic serving selection remains closed.
 pub mod mimo_attn_load;
 pub mod mimo_audio_attn_ffi;
 pub mod mimo_audio_codec_frontend;
@@ -955,12 +964,6 @@ pub mod mimo_vision_block_forward;
 pub mod mimo_vision_load;
 pub mod mimo_vision_patch;
 pub mod mimo_vision_rope_ffi;
-pub mod mmq_ffi;
-pub mod moe_cache;
-pub mod prime_graph;
-pub mod qwen_prime_graph;
-pub mod spill;
-mod spill_pread;
 
 // Fatbins are EMBEDDED (crates-release lane, 2026-08-04): build.rs still writes them to
 // OUT_DIR, but the bytes ship inside the binary via include_bytes! and load through
