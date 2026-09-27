@@ -51048,7 +51048,7 @@ mod tests {
             .expect("a pending capture settles before any session leaves active");
         // Diagnostic guards inside the loop do not move the settlement boundary.
         assert!(
-            settle < retire_loop && remove - settle < 900,
+            settle < retire_loop && retire_loop - settle < 600,
             "the settle sits right before the retire loop"
         );
         assert!(body[settle..settle + 200].contains("ContractWait::Block"));
