@@ -24,11 +24,12 @@ const VALUE: usize = 128;
 const GLOBAL_KV_HEADS: usize = 4;
 const LOCAL_KV_HEADS: usize = 8;
 const SWA: usize = 128;
+const LOCAL_ROWS: usize = 2 * SWA;
 const GLOBAL_K_BYTES: usize = GLOBAL_KV_HEADS * (QK / 32) * 34;
 const GLOBAL_V_BYTES: usize = GLOBAL_KV_HEADS * (VALUE / 64) * 36;
 const DUMMY_Q5_BYTES: usize = GLOBAL_KV_HEADS * (VALUE / 32) * 24;
-const LOCAL_K_ELEMENTS: usize = SWA * LOCAL_KV_HEADS * QK;
-const LOCAL_V_ELEMENTS: usize = SWA * LOCAL_KV_HEADS * VALUE;
+const LOCAL_K_ELEMENTS: usize = LOCAL_ROWS * LOCAL_KV_HEADS * QK;
+const LOCAL_V_ELEMENTS: usize = LOCAL_ROWS * LOCAL_KV_HEADS * VALUE;
 const MIN_FREE_AFTER_BYTES: usize = 4 * 1024 * 1024 * 1024;
 const ALLOCATION_SLACK_BYTES: usize = 64 * 1024 * 1024;
 
@@ -56,6 +57,17 @@ unsafe extern "C" {
         kv_heads: i32,
         qk_dim: i32,
         v_dim: i32,
+        window: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    fn memra_mimo_swa_ring_append_f32(
+        key: *const f32,
+        value: *const f32,
+        keys: *mut f32,
+        values: *mut f32,
+        slot: i32,
+        key_elements: i32,
+        value_elements: i32,
         window: i32,
         stream: *mut c_void,
     ) -> i32;
@@ -260,6 +272,56 @@ fn encode_value_at(
     };
     if rc != 0 {
         return Err(format!("MiMo NVFP4 V append returned {rc}").into());
+    }
+    Ok(())
+}
+
+fn append_local_twice(
+    engine: &Engine,
+    key: &CudaSlice<f32>,
+    value: &CudaSlice<f32>,
+    keys: &mut CudaSlice<f32>,
+    values: &mut CudaSlice<f32>,
+    position: usize,
+) -> Result<(), Fail> {
+    let stream = engine.stream();
+    let device = stream.context().ordinal();
+    if position >= MAX_COMPRESSED_CONTEXT_TOKENS
+        || key.len() != LOCAL_KV_HEADS * QK
+        || value.len() != LOCAL_KV_HEADS * VALUE
+        || keys.len() != LOCAL_K_ELEMENTS
+        || values.len() != LOCAL_V_ELEMENTS
+        || [
+            key.ordinal(),
+            value.ordinal(),
+            keys.ordinal(),
+            values.ordinal(),
+        ]
+        .iter()
+        .any(|&ordinal| ordinal != device)
+    {
+        return Err("MiMo duplicated local ring append extent or GPU changed".into());
+    }
+    let (key_ptr, key_guard) = key.device_ptr(&stream);
+    let (value_ptr, value_guard) = value.device_ptr(&stream);
+    let (keys_ptr, keys_guard) = keys.device_ptr_mut(&stream);
+    let (values_ptr, values_guard) = values.device_ptr_mut(&stream);
+    let rc = unsafe {
+        memra_mimo_swa_ring_append_f32(
+            key_ptr as *const f32,
+            value_ptr as *const f32,
+            keys_ptr as *mut f32,
+            values_ptr as *mut f32,
+            (position % SWA) as i32,
+            (LOCAL_KV_HEADS * QK) as i32,
+            (LOCAL_KV_HEADS * VALUE) as i32,
+            SWA as i32,
+            stream.cu_stream() as *mut c_void,
+        )
+    };
+    drop((key_guard, value_guard, keys_guard, values_guard));
+    if rc != 0 {
+        return Err(format!("MiMo duplicated local ring append returned {rc}").into());
     }
     Ok(())
 }
@@ -507,9 +569,7 @@ impl<'a> MiMoCompressedKv<'a> {
                 value: values,
                 tokens,
             } => {
-                let slot = self.cursor.position % SWA;
-                engine.dtod_copy_into(key, keys, slot * LOCAL_KV_HEADS * QK)?;
-                engine.dtod_copy_into(value, values, slot * LOCAL_KV_HEADS * VALUE)?;
+                append_local_twice(engine, key, value, keys, values, self.cursor.position)?;
                 let context = decode_local(
                     engine,
                     query,
@@ -613,13 +673,14 @@ mod tests {
         assert!(cursor.check(0, 2, 2).is_err());
     }
 
-    fn ring_value(ring: &[f32; SWA], position: usize) -> f32 {
+    fn ring_value(ring: &[f32; LOCAL_ROWS], position: usize) -> f32 {
         let first = (position + 1).saturating_sub(SWA);
+        let first_slot = first % SWA;
         let mut numerator = 0.0;
         let mut denominator = 1.0; // learned sink logit 0
-        for token in first..=position {
+        for (offset, token) in (first..=position).enumerate() {
             let weight = (token as f32 / 128.0).exp();
-            numerator += weight * ring[token % SWA];
+            numerator += weight * ring[first_slot + offset];
             denominator += weight;
         }
         numerator / denominator
@@ -627,11 +688,13 @@ mod tests {
 
     #[test]
     fn ring_chronology_matches_contiguous_window_across_wraps() {
-        let mut ring = [0.0; SWA];
+        let mut ring = [0.0; LOCAL_ROWS];
         let mut history = Vec::new();
         for position in 0..(SWA * 3 + 5) {
             let value = ((position * 17) % 97) as f32 / 31.0;
-            ring[position % SWA] = value;
+            let slot = position % SWA;
+            ring[slot] = value;
+            ring[slot + SWA] = value;
             history.push(value);
             if matches!(position, 0 | 126 | 127 | 128 | 255 | 256 | 388) {
                 let first = (position + 1).saturating_sub(SWA);
@@ -678,12 +741,7 @@ mod tests {
             }
             let gpu_k = engine.htod(&k)?;
             let gpu_v = engine.htod(&v)?;
-            engine.dtod_copy_into(&gpu_k, &mut ring_k, (position % SWA) * LOCAL_KV_HEADS * QK)?;
-            engine.dtod_copy_into(
-                &gpu_v,
-                &mut ring_v,
-                (position % SWA) * LOCAL_KV_HEADS * VALUE,
-            )?;
+            append_local_twice(&engine, &gpu_k, &gpu_v, &mut ring_k, &mut ring_v, position)?;
             full_k.extend_from_slice(&k);
             full_v.extend_from_slice(&v);
             if matches!(position, 0 | 127 | 128 | 255 | 256) {
