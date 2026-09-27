@@ -5,7 +5,8 @@
 #   tools/fast-gate/fast-gate.sh --refresh-goldens [--probes a,b] [--force]
 #
 # THE CONTRACT: the full battery (tools/local-ci.sh — kernel-check ALL GREEN + run-gen argmax
-# per affected model + run-spec K=1..8 + serve-smoke) REMAINS the merge/tag gate, unchanged.
+# per affected model + run-spec K=1..8 + serve-smoke) gates native changes and tags.
+# CPU-only tooling admission is defined in docs/TESTING.md; it grants no model qualification.
 # fast-gate accelerates the loop between battery points by running only the gates a diff
 # actually needs (docs/TESTING.md):
 #
@@ -28,6 +29,11 @@
 # GPU work runs under flock /tmp/memra-5090.lock (shared-rig serialization) and each probe's raw
 # output is tee'd to a log before parsing (evidence discipline: never parse a pipe).
 set -uo pipefail
+# CPU components use an isolated input view and never acquire a GPU.
+if [ "${1:-}" = "--component" ]; then
+    shift
+    exec python3 "$(dirname "$0")/component.py" "$@"
+fi
 FG_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$FG_DIR/../.." && pwd)"
 cd "$ROOT"
@@ -48,9 +54,11 @@ PROBES_OVERRIDE=""
 SMOKE=0
 REFRESH=0
 FORCE=0
+PLAN_ONLY=0
 while [ $# -gt 0 ]; do
     case "$1" in
-        --diff)   DIFF_REF="$2"; shift 2 ;;
+        --plan)   PLAN_ONLY=1; shift ;;
+        --diff)   DIFF_REF="${2:?--diff needs a ref}"; shift 2 ;;
         --tier)   TIER="$2"; shift 2 ;;
         --probes) PROBES_OVERRIDE="$2"; shift 2 ;;
         --smoke)  SMOKE=1; shift ;;
@@ -60,6 +68,10 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+case "$TIER" in 0|1|2) ;; *) echo "fast-gate: invalid tier $TIER"; exit 2 ;; esac
+if [ "$PLAN_ONLY" = 1 ]; then
+    exec python3 "$FG_DIR/plan.py" --diff "$DIFF_REF" --probes "$PROBES_OVERRIDE" --json
+fi
 mkdir -p "$LOGDIR"
 T_START=$(date +%s)
 stamp() { echo $(( $(date +%s) - T_START )); }
@@ -77,77 +89,48 @@ probe_field() {  # id, field-no -> value
 }
 all_probe_ids() { awk -F'\t' '$0 !~ /^#/ && NF >= 5 { print $1 }' "$MODELS_TSV"; }
 
-# ---------- diff -> plan (map.tsv is the dispatch-structure encoding) ----------
-CHANGED=$( { git diff --name-only "$DIFF_REF" 2>/dev/null;
-             git ls-files --others --exclude-standard; } | sort -u )
-# --probes names the plan explicitly, so an empty diff is NOT "nothing to gate" — it is a
-# clean tree someone is deliberately gating (a release candidate, a fresh rsync onto another
-# rig, a tree with no .git at all). Exiting 0 there is a FALSE GREEN: it reported success
-# having run zero probes. Found on the v0.71.0 pod battery, where the rsync'd tree had no
-# .git and the k27 regression check "passed" without executing. Only the diff-driven path
-# may short-circuit.
-if [ -z "$CHANGED" ] && [ "$REFRESH" = 0 ] && [ -z "$PROBES_OVERRIDE" ]; then
-    echo "fast-gate: no changes vs $DIFF_REF — nothing to gate."
-    echo "  (to gate a clean tree anyway, name the arms: --probes <id,...>)"
+# ---------- audited diff -> plan ----------
+python3 "$FG_DIR/plan.py" --diff "$DIFF_REF" --probes "$PROBES_OVERRIDE" \
+    --out "$LOGDIR/plan.json" || exit 2
+KC_SCOPE=none KC_CSV="" PLAN_PROBES="" PLAN_SPEC="" PLAN_DECISION=""
+while IFS=$'\t' read -r key value; do
+    case "$key" in
+        scope) KC_SCOPE="$value" ;;
+        sections) KC_CSV="$value" ;;
+        probes) PLAN_PROBES="$value" ;;
+        spec) PLAN_SPEC="$value" ;;
+        decision) PLAN_DECISION="$value" ;;
+    esac
+done < <(python3 "$FG_DIR/plan.py" --fields "$LOGDIR/plan.json")
+[ -n "$PLAN_DECISION" ] || { echo "fast-gate: REFUSED missing plan"; exit 2; }
+if [ "$PLAN_DECISION" = no-change ] && [ "$REFRESH" = 0 ]; then
+    echo "fast-gate: no changes; NO VALIDATION performed. Use --probes to check a clean tree."
     exit 0
 fi
-
-KC_SCOPE="none"     # none < synthetic < csv < all
-KC_CSV=""
-PLAN_PROBES=""
-PLAN_SPEC=""
-UNMATCHED=""
-add_csv() { local x; for x in ${1//,/ }; do case ",$KC_CSV," in *",$x,"*) ;; *) KC_CSV="${KC_CSV:+$KC_CSV,}$x" ;; esac; done; }
-add_probe() { local x; for x in ${1//,/ }; do [ "$x" = "-" ] && continue; case ",$PLAN_PROBES," in *",$x,"*) ;; *) PLAN_PROBES="${PLAN_PROBES:+$PLAN_PROBES,}$x" ;; esac; done; }
-add_spec() { local x; for x in ${1//,/ }; do [ "$x" = "-" ] && continue; case ",$PLAN_SPEC," in *",$x,"*) ;; *) PLAN_SPEC="${PLAN_SPEC:+$PLAN_SPEC,}$x" ;; esac; done; }
-
-for f in $CHANGED; do
-    hit=0
-    while IFS=$'\t' read -r rx scope probes spec; do
-        [ -z "$rx" ] || [ "${rx:0:1}" = "#" ] || [ "$rx" = "DEFAULT" ] && continue
-        if echo "$f" | grep -qE "$rx"; then
-            hit=1
-            case "$scope" in
-                all)       KC_SCOPE="all" ;;
-                synthetic) [ "$KC_SCOPE" = "none" ] && KC_SCOPE="synthetic" ;;
-                none)      ;;
-                *)         [ "$KC_SCOPE" != "all" ] && KC_SCOPE="csv"; add_csv "$scope" ;;
-            esac
-            add_probe "$probes"; add_spec "$spec"
-        fi
-    done < "$MAP"
-    if [ "$hit" = 0 ]; then
-        UNMATCHED="$UNMATCHED $f"
-        # DEFAULT row (map.tsv): conservative plan for unmapped paths.
-        d_scope=$(awk -F'\t' '$1=="DEFAULT"{print $2; exit}' "$MAP")
-        d_probes=$(awk -F'\t' '$1=="DEFAULT"{print $3; exit}' "$MAP")
-        d_spec=$(awk -F'\t' '$1=="DEFAULT"{print $4; exit}' "$MAP")
-        case "${d_scope:-all}" in
-            all) KC_SCOPE="all" ;;
-            synthetic) [ "$KC_SCOPE" = "none" ] && KC_SCOPE="synthetic" ;;
-            none) ;;
-            *) [ "$KC_SCOPE" != "all" ] && KC_SCOPE="csv"; add_csv "$d_scope" ;;
-        esac
-        add_probe "${d_probes:-g12,q9,q35}"; add_spec "${d_spec:--}"
-    fi
-done
-[ -n "$PROBES_OVERRIDE" ] && { PLAN_PROBES=""; PLAN_SPEC="";
-    for p in ${PROBES_OVERRIDE//,/ }; do
-        case "$(probe_field "$p" 2)" in
-            spec|gspec) add_spec "$p" ;;
-            *) add_probe "$p" ;;
-        esac
-    done; }
-
-echo "== fast-gate plan (diff vs $DIFF_REF) =="
-echo "$CHANGED" | sed 's/^/  changed: /'
-[ -n "$UNMATCHED" ] && echo "  WARNING: unmatched paths (conservative full plan):$UNMATCHED"
-echo "  kernel-check scope: $KC_SCOPE${KC_CSV:+ [$KC_CSV]}"
-echo "  tier-1 argmax probes: ${PLAN_PROBES:-none}"
-echo "  tier-1 spec probes:   ${PLAN_SPEC:-none}"
-echo "$CHANGED" | grep -q "^crates/memra-server/" && \
-    echo "  NOTE: memra-server touched — run tools/serve-smoke.sh (serving surface is not fast-gated)"
+# This map is a development diagnostic, not an admitted model dependency closure.
+# Make unknown scope explicit before spending build/model-loading time.
+if [ "$PLAN_DECISION" = expand ] && [ -z "$PROBES_OVERRIDE" ] && [ "$REFRESH" = 0 ]; then
+    echo "fast-gate: incomplete coverage. Review plan.json; use tier 2 at the qualification checkpoint."
+    echo "  Explicit --probes may run named diagnostics, but cannot qualify the expanded plan."
+    exit 2
+fi
 echo "  logs: $LOGDIR"
+
+# Refuse unavailable data before paying for a release build or acquiring a lock.
+if [ "$TIER" = 1 ] && [ "$REFRESH" = 0 ]; then
+    for id in ${PLAN_PROBES//,/ } ${PLAN_SPEC//,/ }; do
+        kind=$(probe_field "$id" 2)
+        [ "$kind" = cmd ] && continue
+        model=$(probe_field "$id" 3); prompt=$(probe_field "$id" 4)
+        [ -s "$model" ] || { echo "  $id: SKIP (no model at $model); REFUSED before build"; exit 2; }
+        prompt=${prompt#@}
+        [ -s "$ROOT/$prompt" ] || { echo "  $id: REFUSED missing/empty prompt $prompt before build"; exit 2; }
+        if [ "$kind" != gspec ] && [ ! -s "$GOLDENS/$id.tokens" ]; then
+            echo "  $id: NO GOLDEN pinned; REFUSED before build"
+            exit 2
+        fi
+    done
+fi
 
 # ---------- shared probe runner ----------
 # run_probe <id> <mode:check|refresh> -> sets PROBE_VERDICT (PASS/FAIL/SKIP) and PROBE_TOKS
@@ -174,6 +157,7 @@ run_probe() {
             echo "  $id: FAIL (exit $rc, $((t1-t0))s) — tail:"; tail -4 "$log" | sed 's/^/      /'
             return 1
         fi
+        [ -s "$log" ] || { echo "  $id: FAIL (empty command evidence)"; return 1; }
         # A self-gating script that SKIPs (missing model/artifact) also exits 0, which is
         # indistinguishable from a real pass by exit code alone — that hole reported
         # chunkinv/chunkinvc as "PASS (0s)" on a rig lacking the 9B artifact (found on the
@@ -181,13 +165,13 @@ run_probe() {
         if grep -qE "^[a-zA-Z0-9_-]+: *SKIP" "$log"; then
             echo "  $id: SKIP ($(grep -m1 -oE 'SKIP.*' "$log" | cut -c1-90))"
             PROBE_VERDICT="SKIP"; PROBE_LAST_LOG="$log"
-            return 0
+            return 1
         fi
         echo "  $id: PASS (self-gating check green, $((t1-t0))s)"
         PROBE_VERDICT="PASS"; PROBE_LAST_LOG="$log"
         return 0
     fi
-    [ -f "$model" ] || { echo "  $id: SKIP (no model at $model)"; PROBE_VERDICT="SKIP"; return 0; }
+    [ -f "$model" ] || { echo "  $id: SKIP (no model at $model)"; PROBE_VERDICT="SKIP"; return 1; }
     local log="$LOGDIR/probe-$id.log"
     local envs=("MEMRA_NGEN=$ngen" "MEMRA_NMEASURE=0")
     [ "$extra" != "-" ] && [ -n "$extra" ] && { local kv; for kv in $extra; do envs+=("$kv"); done; }
@@ -217,7 +201,7 @@ run_probe() {
         local agree
         agree=$(grep -oE "stream agreement [0-9]+/[0-9]+" "$log" | tail -1)
         local a="${agree#stream agreement }"
-        if [ -z "$agree" ] || [ "${a%/*}" != "${a#*/}" ]; then
+        if [ -z "$agree" ] || [ "${a%/*}" != "${a#*/}" ] || [ "${a%/*}" = 0 ]; then
             echo "  $id: FAIL (stream agreement '${agree:-absent}', $((t1-t0))s)"; return 1
         fi
         echo "  $id: PASS ($agree, $((t1-t0))s)"
@@ -234,11 +218,14 @@ run_probe() {
     # (run-gen "tokens: [...]" at col 0; run-spec indents its plain-generate line "  tokens:").
     PROBE_TOKS=$(grep -oE "^ *tokens: \[[0-9, ]*\]" "$log" | head -1 | sed 's/^ *//')
     [ -n "$PROBE_TOKS" ] || { echo "  $id: FAIL (no generated-tokens line, $((t1-t0))s)"; return 1; }
+    echo "$PROBE_TOKS" | grep -qE '[0-9]+' || {
+        echo "  $id: FAIL (zero generated token IDs, $((t1-t0))s)"; return 1;
+    }
     if [ "$mode" = "check" ]; then
         local gfile="$GOLDENS/$id.tokens"
         if [ ! -f "$gfile" ]; then
             echo "  $id: gates green but NO GOLDEN pinned ($((t1-t0))s) — run --refresh-goldens at a battery-green point"
-            PROBE_VERDICT="SKIP"; return 0
+            PROBE_VERDICT="SKIP"; return 1
         fi
         local golden; golden=$(sed -n '2p' "$gfile")
         if [ "$PROBE_TOKS" != "$golden" ]; then
@@ -275,6 +262,9 @@ run_probe() {
 
 # ---------- golden refresh (battery-green points ONLY) ----------
 if [ "$REFRESH" = 1 ]; then
+    git rev-parse --verify HEAD >/dev/null 2>&1 || {
+        echo "fast-gate: REFUSED golden refresh without Git provenance"; exit 2;
+    }
     if ! git diff --quiet || ! git diff --cached --quiet; then
         if [ "$FORCE" != 1 ]; then
             echo "fast-gate: refusing --refresh-goldens on a dirty tree (goldens pin battery-green"
@@ -287,21 +277,28 @@ if [ "$REFRESH" = 1 ]; then
     SHA=$(git rev-parse --short HEAD); TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     ids="${PROBES_OVERRIDE:-$(all_probe_ids | tr '\n' ',' | sed 's/,$//')}"
     echo "== fast-gate: refreshing goldens at $SHA ($TS) =="
-    FAILS=0
+    FAILS=0 SKIPS=0 REFRESHED=0
     for id in ${ids//,/ }; do
-        run_probe "$id" refresh || { FAILS=$((FAILS+1)); continue; }
-        [ "$PROBE_VERDICT" = "SKIP" ] && continue
         # gspec (in-run stream agreement) and cmd (self-gating check) probes pin no golden.
         case "$(probe_field "$id" 2)" in gspec|cmd) continue ;; esac
+        if ! run_probe "$id" refresh; then
+            if [ "$PROBE_VERDICT" = SKIP ] && [ -z "$PROBES_OVERRIDE" ]; then
+                SKIPS=$((SKIPS+1))
+            else
+                FAILS=$((FAILS+1))
+            fi
+            continue
+        fi
         { echo "# golden @ $SHA $TS ngen=$(probe_field "$id" 5) model=$(probe_field "$id" 3)";
           echo "$PROBE_TOKS"; } > "$GOLDENS/$id.tokens"
         toks=$(grep -oE "= [0-9.]+ tok/s" "$PROBE_LAST_LOG" | tail -1 | grep -oE "[0-9.]+")
         [ -n "${toks:-}" ] && { echo "# single-rep tok/s @ $SHA $TS (smoke reference only, NOT evidence)";
                                 echo "$toks"; } > "$GOLDENS/$id.perf"
         echo "  $id: golden pinned ($(echo "$PROBE_TOKS" | grep -oE '[0-9]+' | wc -l) ids)"
+        REFRESHED=$((REFRESHED+1))
     done
-    echo "goldens refresh: $FAILS fail — remember: refresh is ONLY valid at full-battery green points."
-    [ "$FAILS" -eq 0 ] || exit 1
+    echo "goldens refresh: $REFRESHED written, $SKIPS unavailable, $FAILS fail; no validation claimed."
+    [ "$FAILS" -eq 0 ] && [ "$REFRESHED" -gt 0 ] || exit 1
     exit 0
 fi
 
@@ -327,7 +324,7 @@ case "$KC_SCOPE" in
             || { echo "  kernel-check FAIL:"; tail -6 "$LOGDIR/kernel-check.log"; exit 1; }
         echo "  kernel-check (synthetic + $KC_CSV): GREEN ($(( $(date +%s) - T0B ))s)" ;;
 esac
-echo "tier 0: GREEN ($(stamp)s total)"
+echo "tier 0: requested diagnostics passed ($(stamp)s total)"
 [ "$TIER" = "0" ] && exit 0
 
 # ---------- tier 1: golden-token probes ----------
@@ -337,8 +334,8 @@ for id in ${PLAN_PROBES//,/ } ${PLAN_SPEC//,/ }; do
     run_probe "$id" check || FAILS=$((FAILS+1))
 done
 [ -z "$PLAN_PROBES$PLAN_SPEC" ] && echo "  no probes in plan (diff touches no probed dispatch class)"
-echo "tier 1: $FAILS fail ($(stamp)s total)"
+echo "tier 1: requested diagnostics, $FAILS fail ($(stamp)s total)"
 echo
 echo "fast-gate is the DEV-LOOP gate only — the full battery (tools/local-ci.sh + perf stage)"
-echo "still gates every merge and tag."
+echo "gates native changes and tags. CPU-only tooling uses the admission rules in docs/TESTING.md."
 [ "$FAILS" -eq 0 ] || exit 1

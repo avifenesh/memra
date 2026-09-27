@@ -559,12 +559,21 @@ parallel; version numbers are a shared resource. Before tagging vX.Y.Z:
 ## CI is compile-only; the exactness battery is the real gate
 
 GitHub runners have no GPU. `.github/workflows/ci.yml` catches build breaks (nvcc compiles fine
-GPU-less). The local 5090 carries the development-iteration battery. Before any merge or tag,
-re-run it on a designated non-serving 2x RTX PRO 6000 pair — `box1` is the pair that has
+GPU-less). Before merging native execution changes, and before any tag,
+re-run the full battery on a designated non-serving 2x RTX PRO 6000 pair. `box1` is the pair that has
 actually carried it (`research/coldfix-20260812/PROGRESS.md` records the stopped run
 and the green retry): `kernel-check` ALL GREEN, `run-gen` argmax MATCH on affected models, and
 `run-spec` K=1..8 self-consistency PASS. The battery never runs on a serving box (which box
 serves, and where, is a deployment fact that lives outside this repo).
+
+CPU-only development, admission and artifact-transport tooling uses its relevant
+CPU contract, failure-injection and integration checks. Artifact tooling also
+needs real native build/restore integrity evidence. This merge scope must leave
+native math, emitted native programs, compiler/build defaults, model artifacts or
+defaults, qualification tolerances and required native-gate coverage unchanged.
+Unknown impact expands to the full GPU battery. A tooling merge does not qualify
+a model, runtime or serving binary, and does not admit narrower GPU selection.
+`docs/TESTING.md` and `tools/fast-gate/README.md` define the development boundary.
 
 ## Flags doctrine
 
