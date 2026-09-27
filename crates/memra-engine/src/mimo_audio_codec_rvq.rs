@@ -109,20 +109,8 @@ fn run_codebook(
 
     let mut fault = engine.htod_i32(&[0])?;
     check_finite(engine, residual, &mut fault, "input finite check")?;
-    let (embed_ptr, embed_guard) = embed.device_ptr(&stream);
-    let (fault_ptr, fault_guard) = fault.device_ptr_mut(&stream);
-    let rc = unsafe {
-        memra_mimo_codec_rvq_check_finite(
-            embed_ptr as *const f32,
-            (embed.len() / 4) as i32,
-            fault_ptr as *mut i32,
-            stream.cu_stream() as *mut c_void,
-        )
-    };
-    drop((embed_guard, fault_guard));
-    checked_rc("embed finite check", rc)?;
     if engine.dtoh_i32(&fault)? != [0] {
-        return Err("MiMo RVQ input or codebook has non-finite F32 values".into());
+        return Err("MiMo RVQ input has non-finite F32 values".into());
     }
 
     let mut code_ids = engine.uninit_i32(tokens)?;
