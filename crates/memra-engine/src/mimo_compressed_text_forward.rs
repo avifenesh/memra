@@ -197,6 +197,8 @@ pub struct MiMoCompressedTextForward<'a> {
     position: usize,
     failed: bool,
     has_modal_payload: bool,
+    #[cfg(test)]
+    value_probe: Option<Vec<Option<Vec<f32>>>>,
 }
 
 impl MiMoTextWeights {
@@ -229,6 +231,8 @@ impl<'a> MiMoCompressedTextForward<'a> {
             position: 0,
             failed: false,
             has_modal_payload: false,
+            #[cfg(test)]
+            value_probe: None,
         })
     }
 
@@ -398,6 +402,17 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 attention.rope.base,
                 1.0,
             )?;
+            #[cfg(test)]
+            if let Some(captured) = self.value_probe.as_mut()
+                && row.attention.geometry.window == 0
+            {
+                let values = engine.dtoh(&qkv.value)?;
+                if values.len() != tokens * 4 * 128 || values.iter().any(|value| !value.is_finite())
+                {
+                    return Err("MiMo pre-cache global V capture has invalid rows".into());
+                }
+                captured[index] = Some(values);
+            }
             self.kv.append_prefill_layer(index, &qkv.key, &qkv.value)?;
             let context = self.kv.attend_appended_first_chunk(index, &qkv.query)?;
             drop((qkv, projections, norm));
@@ -1010,3 +1025,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "mimo_compressed_text_forward/value_codec_quality_probe.rs"]
+mod value_codec_quality_probe;
