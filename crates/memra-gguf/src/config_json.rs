@@ -33,6 +33,8 @@ impl<'a> ConfigObject<'a> {
                         | "num_key_value_heads"
                         | "num_attention_groups"
                         | "head_dim"
+                        | "n_shared_experts"
+                        | "routed_scaling_factor"
                         | "eos_token_id"
                         | "final_logit_softcapping"
                         | "name_or_path"
@@ -126,6 +128,24 @@ impl<'a> ConfigObject<'a> {
                     .map(|(i, v)| {
                         self.unsigned(v, &format!("{key}[{i}]"), u32::MAX.into())
                             .map(|n| n as u32)
+                    })
+                    .collect()
+            })
+            .transpose()
+    }
+    pub(super) fn i32_array(&self, key: &str) -> Result<Option<Vec<i32>>> {
+        self.array(key, false)?
+            .map(|values| {
+                values
+                    .iter()
+                    .enumerate()
+                    .map(|(i, value)| {
+                        value
+                            .as_i64()
+                            .and_then(|number| i32::try_from(number).ok())
+                            .ok_or_else(|| {
+                                self.invalid(&format!("{key}[{i}]"), "a signed 32-bit integer")
+                            })
                     })
                     .collect()
             })

@@ -28,13 +28,13 @@ use std::sync::{Arc, Mutex};
 use memmap2::Mmap;
 
 use crate::GgufFile;
-use crate::config::ModelConfig;
+use crate::config::{Arch, ModelConfig};
 use crate::hf_mapping::{HfTarget, resolve_ggml};
 use crate::model_packs::{ModelPack, OutputHeadContract, TensorConsumption, for_config};
 use crate::model_plan::ModelPlan;
 use crate::source::{
-    DiskExtent, ExpertActivationPrecision, Fp8Native, Fp8StackedNative, Nvfp4Native,
-    Nvfp4StackedNative, TensorCensus, TensorSource, TensorView, canonical_hf_name,
+    DiskExtent, ExpertActivationPrecision, Fp8Native, Fp8StackedNative, MimoMxfp4Native,
+    Nvfp4Native, Nvfp4StackedNative, TensorCensus, TensorSource, TensorView, canonical_hf_name,
 };
 use crate::tensor_contract::{
     BoundTensor, BoundTensorContract, CheckpointDialect, ContractOptions, OutputHead,
@@ -244,6 +244,21 @@ pub fn bind_census(
                 .map(|(id, tensor)| (id.clone(), tensor.checkpoint_names.clone()))
                 .collect(),
         ),
+        CheckpointDialect::HfSafetensors
+            if cfg.arch == Arch::MiMoV2
+                && pack.is_some_and(|pack| pack.family == "mimo_v2_source") =>
+        {
+            Some(
+                bound
+                    .tensors
+                    .keys()
+                    .filter_map(|id| {
+                        crate::model_packs::mimo_v2::source_ggml_name(id)
+                            .map(|name| (id.clone(), vec![name]))
+                    })
+                    .collect(),
+            )
+        }
         CheckpointDialect::HfSafetensors => {
             compile_contract(pack, cfg, plan, CheckpointDialect::Gguf, options)
                 .ok()
@@ -335,6 +350,32 @@ impl CheckpointBinding {
         })
     }
 
+    /// The single physical safetensors name for a bound semantic tensor.
+    /// MiMo's vision, audio, and separate MTP have no GGUF name map.
+    pub fn require_hf(&self, id: &TensorId) -> Result<String, String> {
+        if self.dialect != CheckpointDialect::HfSafetensors {
+            return Err(format!(
+                "pack {} cannot address {id:?} by HF name in {:?}",
+                self.family(),
+                self.dialect
+            ));
+        }
+        let tensor = self.tensor(id).ok_or_else(|| {
+            format!(
+                "pack {} contract binds no {id:?}; refusing an unbound HF source read",
+                self.family()
+            )
+        })?;
+        if tensor.checkpoint_names.len() != 1 {
+            return Err(format!(
+                "pack {} binds {id:?} to {} physical names; expected exactly one",
+                self.family(),
+                tensor.checkpoint_names.len()
+            ));
+        }
+        Ok(tensor.checkpoint_names[0].clone())
+    }
+
     /// The ggml name of the output projection: the bound `OutputProjection`, or the token
     /// embedding when the binding decided the head is tied.
     pub fn output_head_ggml_name(&self) -> Result<String, String> {
@@ -387,12 +428,21 @@ impl CheckpointBinding {
                 }
                 names
             }
-            CheckpointDialect::HfSafetensors => match resolve_ggml(ggml, cfg) {
-                Some(HfTarget::Plain(hf)) | Some(HfTarget::Transform { hf, .. }) => {
-                    vec![canonical_hf_name(&hf)]
+            CheckpointDialect::HfSafetensors => {
+                if let Some(hf) = ggml.strip_prefix("hf:") {
+                    return if hf.is_empty() {
+                        Vec::new()
+                    } else {
+                        vec![canonical_hf_name(hf)]
+                    };
                 }
-                None => Vec::new(),
-            },
+                match resolve_ggml(ggml, cfg) {
+                    Some(HfTarget::Plain(hf)) | Some(HfTarget::Transform { hf, .. }) => {
+                        vec![canonical_hf_name(&hf)]
+                    }
+                    None => Vec::new(),
+                }
+            }
         }
     }
 }
@@ -512,6 +562,25 @@ impl TensorSource for RecordingSource<'_> {
     fn find_fp8_native(&self, ggml_name: &str) -> Option<Fp8Native<'_>> {
         self.record(ggml_name);
         self.inner.find_fp8_native(ggml_name)
+    }
+    fn find_mimo_fp8_qkv_ggml(&self, ggml_name: &str) -> Option<Vec<Fp8Native<'_>>> {
+        self.record(ggml_name);
+        self.inner.find_mimo_fp8_qkv_ggml(ggml_name)
+    }
+    fn find_mimo_mxfp4_expert_ggml(&self, ggml_name: &str) -> Option<MimoMxfp4Native<'_>> {
+        self.record(ggml_name);
+        self.inner.find_mimo_mxfp4_expert_ggml(ggml_name)
+    }
+    fn find_mimo_bf16_ggml(&self, ggml_name: &str) -> Option<TensorView<'_>> {
+        self.record(ggml_name);
+        self.inner.find_mimo_bf16_ggml(ggml_name)
+    }
+    fn find_mimo_bf16_hf(&self, hf_name: &str) -> Option<TensorView<'_>> {
+        let view = self.inner.find_mimo_bf16_hf(hf_name);
+        if view.is_some() {
+            self.record(&format!("hf:{hf_name}"));
+        }
+        view
     }
     fn find_fp8_stacked_native(&self, ggml_name: &str) -> Option<Fp8StackedNative<'_>> {
         self.record(ggml_name);
@@ -893,5 +962,83 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("exposes no metadata census"), "{err}");
+    }
+
+    #[test]
+    fn pinned_modal_hf_read_is_bound_recorded_and_audited() {
+        struct ModalSource(ModelConfig);
+        impl TensorSource for ModalSource {
+            fn config(&self) -> ModelConfig {
+                self.0.clone()
+            }
+            fn find(&self, _: &str) -> Option<TensorView<'_>> {
+                None
+            }
+            fn find_mimo_bf16_hf(&self, name: &str) -> Option<TensorView<'_>> {
+                (name == "visual.merger.ln_q.weight").then(|| TensorView {
+                    bytes: std::borrow::Cow::Borrowed(&[0x80, 0x3f, 0x00, 0x40]),
+                    ggml_type: crate::GgmlType::BF16,
+                    ne: vec![2],
+                })
+            }
+        }
+        let config = ModelConfig::from_hf(&crate::config::HfConfig::parse(include_str!(
+            "model_packs/mimo_v2/fixtures/config.json"
+        )));
+        let id = TensorId::Family {
+            family: "mimo_v2_vision",
+            key: "visual.merger.ln_q.weight".into(),
+        };
+        let name = "visual.merger.ln_q.weight".to_string();
+        let mut binding = CheckpointBinding {
+            pack: Some(&crate::model_packs::mimo_v2::SOURCE_PROFILE),
+            dialect: CheckpointDialect::HfSafetensors,
+            output_head: OutputHead::Separate,
+            contract: TensorContract {
+                dialect: CheckpointDialect::HfSafetensors,
+                requirements: vec![],
+            },
+            bound: BoundTensorContract {
+                tensors: BTreeMap::from([(
+                    id.clone(),
+                    BoundTensor {
+                        checkpoint_names: vec![name.clone()],
+                        shapes: vec![vec![2]],
+                        storage: vec![StorageLayout::Float(FloatType::Bf16)],
+                        physical_bytes: 4,
+                        owner: TensorOwner::Vision(None),
+                        transform: crate::tensor_contract::TensorTransform::Identity,
+                    },
+                )]),
+            },
+            ggml_names: None,
+        };
+        assert_eq!(binding.require_hf(&id), Ok(name.clone()));
+        let source = ModalSource(config.clone());
+        let recording = RecordingSource::new(&source);
+        let view =
+            crate::model_packs::mimo_v2::read_bound_modal_bf16(&recording, &binding, &id).unwrap();
+        assert_eq!(view.bytes.as_ref(), &[0x80, 0x3f, 0x00, 0x40]);
+        assert!(recording.requested().contains(&format!("hf:{name}")));
+        assert!(
+            binding
+                .audit_consumption(&recording.requested(), &config, |_, _| false)
+                .is_empty()
+        );
+        assert!(
+            crate::model_packs::mimo_v2::read_bound_modal_bf16(
+                &recording,
+                &binding,
+                &TensorId::OutputNorm,
+            )
+            .is_err()
+        );
+        binding.bound.tensors.get_mut(&id).unwrap().storage =
+            vec![StorageLayout::Float(FloatType::F32)];
+        assert!(
+            crate::model_packs::mimo_v2::read_bound_modal_bf16(&recording, &binding, &id).is_err()
+        );
+        binding.dialect = CheckpointDialect::Gguf;
+        assert!(binding.require_hf(&id).is_err());
     }
 }

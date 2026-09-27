@@ -5,6 +5,7 @@
 //! Runtime migration can therefore compare a plan against today's behavior before selecting it.
 
 use crate::config::{Arch, AttentionGateKind, LayerKind, ModelConfig};
+use crate::model_packs::mimo_v2::audio::MiMoAudioPatchPlan;
 
 pub mod speech;
 use speech::WhisperPlan;
@@ -23,6 +24,9 @@ pub struct ModelPlan {
     pub context_length: u32,
     pub embedding_scale: f32,
     pub vision: Option<VisionPlan>,
+    /// Pinned grouped-code audio patch program. The separate PCM-to-RVQ
+    /// tokenizer is not represented by this field.
+    pub mimo_audio_patch: Option<MiMoAudioPatchPlan>,
     pub multimodal: Option<VisionTokenInjectionPlan>,
     pub layers: Vec<LayerPlan>,
     pub output_norm: NormPlan,
@@ -53,6 +57,9 @@ impl std::fmt::Debug for ModelPlan {
         d.field("context_length", &self.context_length);
         d.field("embedding_scale", &self.embedding_scale);
         d.field("vision", &self.vision);
+        if let Some(audio) = &self.mimo_audio_patch {
+            d.field("mimo_audio_patch", audio);
+        }
         d.field("multimodal", &self.multimodal);
         d.field("layers", &self.layers);
         d.field("output_norm", &self.output_norm);
@@ -108,6 +115,110 @@ pub enum VisionPlan {
     /// gated clamped merger (glm5_next family; upstream transformers
     /// `Glm5NextVisionModel`, vision classes inherited from `GlmOcrVisionModel`).
     Glm5Fused(Glm5VisionPlan),
+    /// Pinned MiMo V2.6 Conv3D and alternating row/column ViT program.
+    MiMo(MiMoVisionPlan),
+}
+
+/// The pinned source tower consumes already patchified pixel rows. Every four
+/// consecutive rows form one 2x2 spatial merge unit. All checkpoint rows are
+/// BF16; missing merger biases are derived as zero, not read from the artifact.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MiMoVisionPlan {
+    pub checkpoint_dtype: MiMoVisionDtype,
+    pub patch: MiMoVisionPatchPlan,
+    pub blocks: Vec<MiMoVisionBlockPlan>,
+    pub merger: MiMoVisionMergerPlan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiMoVisionDtype {
+    Bf16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MiMoVisionPatchPlan {
+    pub channels: u32,
+    pub temporal_patch_size: u32,
+    pub spatial_patch_size: u32,
+    pub hidden_size: u32,
+    /// `Conv3d` uses kernel == stride == (temporal, spatial, spatial).
+    pub convolution_bias: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiMoPatchOrder {
+    Row,
+    Column,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MiMoVisionRopePlan {
+    /// Independent height and width axes, each rotating half of the head.
+    pub axes: u32,
+    pub axis_dimensions: u32,
+    pub base: f32,
+    pub rotation: MiMoVisionRopeRotation,
+    /// Source casts Q/K, cos and sin to f32 for rotate-half then casts back.
+    pub rotate_in_f32: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiMoVisionRopeRotation {
+    SplitHalf,
+}
+
+/// MiMo's bidirectional per-frame attention. A local block masks keys more
+/// than `symmetric_window` positions away. `sink_first_key` adds a learned
+/// score bias to key zero inside each frame; it is not a denominator sink.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MiMoVisionAttentionPlan {
+    pub layer: u32,
+    pub query_heads: usize,
+    pub kv_heads: usize,
+    pub head_dim: usize,
+    pub scale: AttentionScale,
+    pub rope: MiMoVisionRopePlan,
+    pub frame_isolated: bool,
+    pub symmetric_window: Option<usize>,
+    pub sink_first_key: bool,
+    /// Reorders complete spatial merge units, leaving four patches per unit.
+    pub patch_order: MiMoPatchOrder,
+    pub fused_qkv_bias: bool,
+    pub output_projection_bias: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MiMoVisionBlockPlan {
+    pub index: u32,
+    pub input_norm: NormPlan,
+    pub attention: MiMoVisionAttentionPlan,
+    pub pre_mlp_norm: NormPlan,
+    pub mlp: DenseMlpPlan,
+    pub mlp_linear_biases: bool,
+    /// Source BF16 RMSNorm results feed the biased projections in BF16.
+    pub norm_output_dtype: MiMoVisionDtype,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiMoMergerBiasPlan {
+    /// The source modules declare biases, but pinned BF16 headers omit the
+    /// LayerNorm and both linear biases. Execution must supply zero vectors.
+    ZeroDerivedFromAbsentCheckpoint,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MiMoVisionMergerPlan {
+    pub merge_size: u32,
+    pub input_norm: NormPlan,
+    pub intermediate_size: u32,
+    pub activation: MiMoMergerActivation,
+    pub output_size: u32,
+    pub biases: MiMoMergerBiasPlan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MiMoMergerActivation {
+    GeluErf,
 }
 
 /// glm5_next vision tower plan. Geometry from `Glm5VisionConfig` (config.json truth);
@@ -228,7 +339,7 @@ pub enum AttentionPlan {
     KimiDeltaNet(KimiDeltaNetPlan),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct FullAttentionPlan {
     pub query_heads: u32,
     pub kv_heads: u32,
@@ -240,6 +351,39 @@ pub struct FullAttentionPlan {
     pub scale: AttentionScale,
     pub value_projection: ValueProjection,
     pub value_norm: ValueNorm,
+    pub mimo_math: Option<MiMoAttentionMath>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MiMoAttentionMath {
+    /// The learned sink enters the softmax denominator, with no value row.
+    pub sink: TensorPresence,
+    /// Applied to projected V before storing or reading the KV cache.
+    pub value_scale_before_cache: f32,
+    /// The source stores checkpoint shards as [Q, K, V] per shard.
+    pub fused_qkv_checkpoint_shards: Option<u32>,
+}
+
+// Plan identity uses Debug. Omit the new field for other families so their
+// serialized plan hashes retain the exact derived-Debug representation.
+impl std::fmt::Debug for FullAttentionPlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug = f.debug_struct("FullAttentionPlan");
+        debug.field("query_heads", &self.query_heads);
+        debug.field("kv_heads", &self.kv_heads);
+        debug.field("key_head_dim", &self.key_head_dim);
+        debug.field("value_head_dim", &self.value_head_dim);
+        debug.field("rope", &self.rope);
+        debug.field("qk_norm", &self.qk_norm);
+        debug.field("output_gate", &self.output_gate);
+        debug.field("scale", &self.scale);
+        debug.field("value_projection", &self.value_projection);
+        debug.field("value_norm", &self.value_norm);
+        if let Some(mimo_math) = &self.mimo_math {
+            debug.field("mimo_math", mimo_math);
+        }
+        debug.finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -701,6 +845,26 @@ pub enum MtpTensorPolicy {
 #[derive(Debug, Clone, PartialEq)]
 pub enum DrafterPlan {
     Dspark(DsparkPlan),
+    /// Three separate source-owned MiMo draft blocks. This is distinct from
+    /// appended trunk MTP blocks and from the DFlash auxiliary artifact.
+    MiMoMtp3(MiMoMtp3Plan),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MiMoMtp3Plan {
+    pub depths: u32,
+    pub sliding_window: u32,
+    pub query_heads: u32,
+    pub kv_heads: u32,
+    pub key_head_dim: u32,
+    pub value_head_dim: u32,
+    pub fused_qkv_shards: u32,
+    pub mlp_intermediate_size: u32,
+    /// The source `eh_proj` consumes concatenated normalized token embedding
+    /// and target or prior-draft hidden state.
+    pub fusion: MtpFusionPlan,
+    /// The separate draft reuses the resident target output projection.
+    pub shared_output_head: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -911,6 +1075,57 @@ impl ModelPlan {
                 },
             });
         }
+        let mimo_mtp3 = cfg
+            .mimo
+            .as_ref()
+            .and_then(|mimo| mimo.separate_mtp_layers.filter(|&depths| depths > 0))
+            .map(|depths| {
+                let pinned = cfg.arch == Arch::MiMoV2
+                    && depths == 3
+                    && cfg.nextn_predict_layers == 0
+                    && cfg.n_layer == 48
+                    && cfg.n_embd == 4_096
+                    && cfg.n_vocab == 152_576
+                    && cfg.rms_eps.to_bits() == 1e-6f32.to_bits()
+                    && cfg.tie_word_embeddings == Some(false);
+                let attention = layers.get(1).and_then(|layer| match &layer.attention {
+                    AttentionPlan::SlidingWindow { attention, window } if *window == 128 => {
+                        Some(attention)
+                    }
+                    _ => None,
+                });
+                if !pinned
+                    || !attention.is_some_and(|attention| {
+                        attention.query_heads == 64
+                            && attention.kv_heads == 8
+                            && attention.key_head_dim == 192
+                            && attention.value_head_dim == 128
+                            && attention.mimo_math.is_some_and(|math| {
+                                math.sink == TensorPresence::Required
+                                    && math.fused_qkv_checkpoint_shards == Some(4)
+                                    && math.value_scale_before_cache.to_bits() == 0.707f32.to_bits()
+                            })
+                    })
+                {
+                    return Err(PlanCompileError::UnsupportedSemantics {
+                        field: "MiMo separate MTP3",
+                        value: "geometry differs from the pinned source".into(),
+                    });
+                }
+                Ok(MiMoMtp3Plan {
+                    depths,
+                    sliding_window: 128,
+                    query_heads: 64,
+                    kv_heads: 8,
+                    key_head_dim: 192,
+                    value_head_dim: 128,
+                    fused_qkv_shards: 4,
+                    mlp_intermediate_size: 16_384,
+                    fusion: MtpFusionPlan::ConcatenateProjection,
+                    shared_output_head: true,
+                })
+            })
+            .transpose()?;
 
         let mut logits = Vec::new();
         if let Some(gemma) = cfg.gemma4.as_ref() {
@@ -924,7 +1139,15 @@ impl ModelPlan {
             }
         }
 
-        if cfg.vision.is_some() && cfg.vision_glm5.is_some() {
+        let mimo_vision = cfg
+            .mimo
+            .as_ref()
+            .and_then(|mimo| mimo.vision_config.as_ref());
+        if u8::from(cfg.vision.is_some())
+            + u8::from(cfg.vision_glm5.is_some())
+            + u8::from(mimo_vision.is_some())
+            > 1
+        {
             return Err(PlanCompileError::InvalidVisionConfig {
                 field: "two vision programs in one config",
             });
@@ -937,6 +1160,29 @@ impl ModelPlan {
                 cfg.vision_glm5
                     .as_ref()
                     .map(|vision| compile_vision_glm5(cfg, vision).map(VisionPlan::Glm5Fused))
+            })
+            .or_else(|| {
+                mimo_vision.map(|vision| {
+                    if cfg.arch != Arch::MiMoV2 {
+                        return Err(PlanCompileError::InvalidVisionConfig {
+                            field: "MiMo vision requires the MiMoV2 architecture",
+                        });
+                    }
+                    crate::model_packs::mimo_v2::vision::pinned_vision_plan(vision, cfg.n_embd)
+                        .map(VisionPlan::MiMo)
+                })
+            })
+            .transpose()?;
+        let mimo_audio_patch = cfg
+            .mimo
+            .as_ref()
+            .and_then(|mimo| mimo.audio_config.as_ref())
+            .map(|_| {
+                crate::model_packs::mimo_v2::audio::pinned_patch_plan(cfg).map_err(|_| {
+                    PlanCompileError::InvalidMultimodalConfig {
+                        field: "MiMo V2.6 audio patch config differs from pinned source",
+                    }
+                })
             })
             .transpose()?;
         let multimodal = match (cfg.multimodal, vision.as_ref()) {
@@ -969,6 +1215,11 @@ impl ModelPlan {
             (Some(_), Some(VisionPlan::Glm5Fused(_))) => {
                 return Err(PlanCompileError::InvalidMultimodalConfig {
                     field: "generic multimodal config on a glm5_next tower",
+                });
+            }
+            (Some(_), Some(VisionPlan::MiMo(_))) => {
+                return Err(PlanCompileError::InvalidMultimodalConfig {
+                    field: "generic multimodal config on a MiMo tower",
                 });
             }
             (Some(multimodal), Some(VisionPlan::Factored(vision))) => {
@@ -1009,6 +1260,7 @@ impl ModelPlan {
                 1.0
             },
             vision,
+            mimo_audio_patch,
             multimodal,
             partition_boundaries: (1..trunk_layers as usize).collect(),
             layers,
@@ -1019,8 +1271,10 @@ impl ModelPlan {
             }),
             logits,
             mtp_blocks,
-            drafter: None,
-            draft_source: if cfg.nextn_predict_layers > 0 {
+            drafter: mimo_mtp3.map(DrafterPlan::MiMoMtp3),
+            draft_source: if mimo_mtp3.is_some() {
+                DraftSourcePlan::ExternalArtifact
+            } else if cfg.nextn_predict_layers > 0 {
                 DraftSourcePlan::Embedded
             } else {
                 DraftSourcePlan::None
@@ -1078,6 +1332,9 @@ impl ModelPlan {
             operations.push(OperationKind::DsparkMarkovHead);
             operations.push(OperationKind::DsparkConfidenceHead);
         }
+        if matches!(self.drafter.as_ref(), Some(DrafterPlan::MiMoMtp3(_))) {
+            operations.push(OperationKind::MiMoMtp3Draft);
+        }
         if self.mtp_blocks.is_empty() && self.drafter.is_none() {
             return None;
         }
@@ -1102,6 +1359,9 @@ impl ModelPlan {
             return speech.operations();
         }
         let mut operations = Vec::new();
+        if include_frontend && self.mimo_audio_patch.is_some() {
+            operations.push(OperationKind::MiMoAudioPatch);
+        }
         if include_frontend && let Some(vision) = self.vision.as_ref() {
             match vision {
                 VisionPlan::Factored(vision) => {
@@ -1124,6 +1384,7 @@ impl ModelPlan {
                     operations.push(OperationKind::VisionDownsample);
                     operations.push(OperationKind::VisionProjection);
                 }
+                VisionPlan::MiMo(_) => operations.push(OperationKind::MiMoVisionTower),
             }
         }
         if include_frontend && self.multimodal.is_some() {
@@ -1147,6 +1408,9 @@ impl ModelPlan {
                 }
                 operations.push(OperationKind::DsparkMarkovHead);
                 operations.push(OperationKind::DsparkConfidenceHead);
+            }
+            if matches!(self.drafter.as_ref(), Some(DrafterPlan::MiMoMtp3(_))) {
+                operations.push(OperationKind::MiMoMtp3Draft);
             }
         }
         // qwen4_exp exits through the global mixer (grouped hc_norm inside); every other
@@ -1385,6 +1649,69 @@ impl ModelConfig {
     /// to bypass a pack's refusal and compile a different attention or activation program.
     pub(crate) fn validate_plan_semantics(&self) -> Result<(), PlanCompileError> {
         let unsupported = |field, value| PlanCompileError::UnsupportedSemantics { field, value };
+        if let Some(mimo) = self.mimo.as_ref() {
+            // The generic sigmoid router selects across all experts. MiMo's
+            // pinned checkpoint has one group, where that is exact; wider
+            // groups require a separate group-selection program.
+            for (field, value) in [
+                ("mimo.n_group", mimo.n_group),
+                ("mimo.topk_group", mimo.topk_group),
+            ] {
+                if value != Some(1) {
+                    return Err(unsupported(field, format!("{value:?}")));
+                }
+            }
+            for (field, value, expected) in [
+                (
+                    "mimo.attention_projection_layout",
+                    mimo.attention_projection_layout.as_deref(),
+                    "fused_qkv",
+                ),
+                ("mimo.scoring_func", mimo.scoring_func.as_deref(), "sigmoid"),
+                ("mimo.topk_method", mimo.topk_method.as_deref(), "noaux_tc"),
+            ] {
+                if value != Some(expected) {
+                    return Err(unsupported(field, format!("{value:?}")));
+                }
+            }
+            if mimo.add_swa_attention_sink_bias != Some(true) {
+                return Err(unsupported(
+                    "mimo.add_swa_attention_sink_bias",
+                    format!("{:?}", mimo.add_swa_attention_sink_bias),
+                ));
+            }
+            if mimo.add_full_attention_sink_bias != Some(false) {
+                return Err(unsupported(
+                    "mimo.add_full_attention_sink_bias",
+                    format!("{:?}", mimo.add_full_attention_sink_bias),
+                ));
+            }
+            if !mimo
+                .attention_value_scale
+                .is_some_and(|scale| scale.is_finite() && scale > 0.0)
+            {
+                return Err(unsupported(
+                    "mimo.attention_value_scale",
+                    format!("{:?}", mimo.attention_value_scale),
+                ));
+            }
+            if mimo.norm_topk_prob != Some(true) {
+                return Err(unsupported(
+                    "mimo.norm_topk_prob",
+                    format!("{:?}", mimo.norm_topk_prob),
+                ));
+            }
+            let frequency = mimo
+                .moe_layer_freq
+                .as_ref()
+                .ok_or_else(|| unsupported("mimo.moe_layer_freq", "None".to_owned()))?;
+            if frequency.len() != self.n_layer as usize
+                || frequency.first() != Some(&0)
+                || frequency.iter().skip(1).any(|&layer| layer != 1)
+            {
+                return Err(unsupported("mimo.moe_layer_freq", format!("{frequency:?}")));
+            }
+        }
         if let Some(window) = self.window_hint {
             let represented =
                 self.gemma4
@@ -1512,10 +1839,16 @@ impl LayerPlan {
         match &self.attention {
             AttentionPlan::Full(attention) => {
                 operations.push(OperationKind::FullAttention);
+                if attention.mimo_math.is_some() {
+                    operations.push(OperationKind::MiMoAttentionMath);
+                }
                 push_gate(attention.output_gate, operations);
             }
             AttentionPlan::SlidingWindow { attention, .. } => {
                 operations.push(OperationKind::SlidingWindowAttention);
+                if attention.mimo_math.is_some() {
+                    operations.push(OperationKind::MiMoAttentionMath);
+                }
                 push_gate(attention.output_gate, operations);
             }
             AttentionPlan::Mla(MlaAttentionPlan::LatentKv { sparse_index, .. }) => {
@@ -1976,6 +2309,7 @@ fn attention_geometry(
                 ValueProjection::ReuseKey
             },
             value_norm: ValueNorm::WeightlessRms,
+            mimo_math: None,
         });
     }
 
@@ -2000,6 +2334,7 @@ fn attention_geometry(
             scale: AttentionScale::InverseSqrtKeyDim,
             value_projection: ValueProjection::Separate,
             value_norm: ValueNorm::None,
+            mimo_math: None,
         });
     }
 
@@ -2040,6 +2375,23 @@ fn attention_geometry(
         scale: AttentionScale::InverseSqrtKeyDim,
         value_projection: ValueProjection::Separate,
         value_norm: ValueNorm::None,
+        mimo_math: cfg.mimo.as_ref().map(|mimo| MiMoAttentionMath {
+            sink: if geometry.window.is_some() {
+                if mimo.add_swa_attention_sink_bias == Some(true) {
+                    TensorPresence::Required
+                } else {
+                    TensorPresence::Absent
+                }
+            } else if mimo.add_full_attention_sink_bias == Some(true) {
+                TensorPresence::Required
+            } else {
+                TensorPresence::Absent
+            },
+            value_scale_before_cache: mimo.attention_value_scale.unwrap_or(1.0),
+            fused_qkv_checkpoint_shards: (mimo.attention_projection_layout.as_deref()
+                == Some("fused_qkv"))
+            .then_some(cfg.n_head_kv),
+        }),
     })
 }
 
@@ -2129,6 +2481,14 @@ fn layer_uses_moe(cfg: &ModelConfig, index: u32) -> bool {
     if moe.expert_count == 0 {
         return false;
     }
+    if let Some(mimo) = cfg.mimo.as_ref() {
+        return mimo
+            .moe_layer_freq
+            .as_ref()
+            .and_then(|layers| layers.get(index as usize))
+            .copied()
+            == Some(1);
+    }
     if let Some(m3) = cfg.m3.as_ref() {
         return m3.moe_layer_freq.get(index as usize).copied().unwrap_or(1) != 0;
     }
@@ -2178,6 +2538,7 @@ fn router(cfg: &ModelConfig, index: u32) -> RouterPlan {
         let selection_bias = cfg.m3.as_ref().is_some_and(|m3| m3.use_routing_bias)
             || cfg.hy3.as_ref().is_some_and(|hy3| hy3.use_routing_bias)
             || cfg.mla.is_some()
+            || cfg.mimo.is_some()
             || cfg.step35.is_some();
         return RouterPlan::Sigmoid {
             normalize_selected,
@@ -2287,6 +2648,9 @@ fn norm_weight_transform(cfg: &ModelConfig) -> WeightTransform {
 }
 
 fn qk_norm_presence(cfg: &ModelConfig) -> TensorPresence {
+    if cfg.mimo.is_some() {
+        return TensorPresence::Absent;
+    }
     if cfg.geometry.is_some()
         || cfg.gemma4.is_some()
         || cfg.mla.is_some()
@@ -2325,9 +2689,22 @@ pub enum OperationKind {
     VisionDownsample,
     VisionProjection,
     VisionTokenInjection,
+    /// Pinned MiMo Conv3D / alternating-window ViT / zero-bias merger program.
+    /// Generic vision rewrites do not implement this source-distinct tower.
+    MiMoVisionTower,
+    /// Pinned MiMo grouped-code embedding, local six-layer encoder, and
+    /// projection to the text hidden width. Generic audio rewrites do not
+    /// implement this source-distinct program.
+    MiMoAudioPatch,
+    /// Pinned MiMo three-block source draft with a private SWA state per
+    /// depth. Native speculative verification and rollback remain unsupported.
+    MiMoMtp3Draft,
     RmsNorm,
     FullAttention,
     SlidingWindowAttention,
+    /// MiMo fused QKV geometry, pre-cache V scale, and optional learned sink.
+    /// Generic full/sliding kernels have no license to implement this program.
+    MiMoAttentionMath,
     LatentMlaAttention,
     CompressedMlaAttention,
     KvCompressor,
@@ -2463,6 +2840,70 @@ mod tests {
 
     fn config(json: &str) -> ModelConfig {
         ModelConfig::from_hf(&HfConfig::parse(json))
+    }
+
+    #[test]
+    fn mimo_pinned_router_is_single_group_sigmoid_with_dense_first_layer() {
+        let cfg = config(include_str!("model_packs/mimo_v2/fixtures/config.json"));
+        assert!(!layer_uses_moe(&cfg, 0));
+        assert!(layer_uses_moe(&cfg, 1));
+        assert!(layer_uses_moe(&cfg, 47));
+        assert_eq!(
+            router(&cfg, 1),
+            RouterPlan::Sigmoid {
+                normalize_selected: true,
+                scaling_factor: 1.0,
+                selection_bias: true,
+            }
+        );
+        let mut unsupported = cfg.clone();
+        unsupported.mimo.as_mut().unwrap().n_group = Some(2);
+        assert!(matches!(
+            ModelPlan::compile(&unsupported),
+            Err(PlanCompileError::UnsupportedSemantics {
+                field: "mimo.n_group",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn mimo_geometry_compiles_sink_and_pre_cache_value_math() {
+        let cfg = config(include_str!("model_packs/mimo_v2/fixtures/config.json"));
+        assert_eq!(qk_norm_presence(&cfg), TensorPresence::Absent);
+        let plan = ModelPlan::compile(&cfg).unwrap();
+        assert_eq!(plan.layers.len(), 48);
+        assert!(matches!(plan.layers[0].mlp, MlpPlan::Dense(_)));
+        assert!(matches!(plan.layers[1].mlp, MlpPlan::Moe(_)));
+        let AttentionPlan::Full(global) = &plan.layers[0].attention else {
+            panic!("layer 0 must be global attention")
+        };
+        assert_eq!(global.qk_norm, TensorPresence::Absent);
+        assert_eq!(
+            global.mimo_math,
+            Some(MiMoAttentionMath {
+                sink: TensorPresence::Absent,
+                value_scale_before_cache: 0.707,
+                fused_qkv_checkpoint_shards: Some(4),
+            })
+        );
+        let AttentionPlan::SlidingWindow {
+            attention: sliding,
+            window,
+        } = &plan.layers[1].attention
+        else {
+            panic!("layer 1 must be windowed attention")
+        };
+        assert_eq!(*window, 128);
+        assert_eq!(sliding.qk_norm, TensorPresence::Absent);
+        assert_eq!(
+            sliding.mimo_math,
+            Some(MiMoAttentionMath {
+                sink: TensorPresence::Required,
+                value_scale_before_cache: 0.707,
+                fused_qkv_checkpoint_shards: Some(4),
+            })
+        );
     }
 
     #[test]

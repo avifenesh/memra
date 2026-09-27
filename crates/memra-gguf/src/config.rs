@@ -22,6 +22,7 @@ pub enum Arch {
     // 96 swa), head-wise attn gate (separate `attn_gate` tensor), dual rope base,
     // half-rotary on full layers, 288-expert sigmoid-router MoE + shared expert,
     // per-layer swiglu clamp arrays, 3 NextN/MTP blocks (shipped in a separate GGUF)
+    MiMoV2,     // Xiaomi MiMo-V2.6: 48-layer full/SWA text trunk; MTP ships separately
     DeepSeekV4, // DeepSeek-V4-Flash: MLA-lineage attention + per-layer KV compressor +
     // DSA lightning indexer (21 of 43 layers), sqrtsoftplus-scored 256-expert MoE with
     // 3 leading HASH-routed layers (tid2eid, still full expert banks — NOT dense FFN),
@@ -61,6 +62,7 @@ impl Arch {
             // StepFun writes 3.5 AND 3.7-Flash under the same arch name (upstream llama.cpp
             // `step35`, PR #23845/#19283 — 3.7 is the 196B-A11B sibling of 3.5).
             "step35" => Arch::Step35,
+            "mimo-v2" => Arch::MiMoV2,
             // No public GGUF writes this arch yet; the name is memra's own (safetensors-first).
             "deepseek-v4" => Arch::DeepSeekV4,
             // Qwen3.8-Flash-Next. Upstream llama.cpp has GGUFs for it, but memra's lane is
@@ -89,6 +91,7 @@ impl Arch {
             // official HF checkpoint (the outer VLM wrapper is `step3p7`). Both are the same
             // `step35` execution architecture used by the GGUF path.
             "step3p5" | "step3p7" => "step35",
+            "mimo_v2" => "mimo-v2",
             // GLM-5/5.2 (HF `GlmMoeDsaForCausalLM`, model_type `glm_moe_dsa`)
             "glm_moe_dsa" => "glm-dsa",
             // DeepSeek-V4-Flash (HF `DeepseekV4ForCausalLM`, model_type `deepseek_v4`)
@@ -160,6 +163,7 @@ impl Arch {
             | Arch::Qwen3
             | Arch::Qwen3Moe
             | Arch::Olmoe
+            | Arch::MiMoV2
             | Arch::Llama => Some(AttentionGateKind::None),
             // DeepSeek-V4-Flash rides its own dsv4 lane (loader/bring-up), never the hybrid
             // q_gate_split path; its attn_q out-features carry no fused gate — declared None
@@ -450,6 +454,48 @@ impl ArchGeometryTable {
         Self {
             classes,
             layer_classes,
+        }
+    }
+
+    fn mimo(c: &HfConfig, n_layer: u32, head_dim_k: u32, head_dim_v: u32, n_rot: u32) -> Self {
+        let pattern = c
+            .hybrid_layer_pattern
+            .as_ref()
+            .expect("mimo_v2 requires hybrid_layer_pattern");
+        assert_eq!(pattern.len(), n_layer as usize);
+        assert!(pattern.iter().all(|&class| class <= 1));
+        let full = LayerGeometry {
+            mixer: LayerKind::FullAttention,
+            n_head: c.num_attention_heads,
+            n_head_kv: c
+                .num_key_value_heads
+                .expect("mimo_v2 requires num_key_value_heads"),
+            head_dim_k,
+            head_dim_v,
+            n_rot,
+            rope_base: c.rope_theta,
+            window: None,
+            rope_factors: false,
+            attention_gate: AttentionGateKind::None,
+        };
+        let swa_head_dim = c.swa_head_dim.expect("mimo_v2 requires swa_head_dim");
+        let swa = LayerGeometry {
+            n_head: c
+                .swa_num_attention_heads
+                .expect("mimo_v2 requires swa_num_attention_heads"),
+            n_head_kv: c
+                .swa_num_key_value_heads
+                .expect("mimo_v2 requires swa_num_key_value_heads"),
+            head_dim_k: swa_head_dim,
+            head_dim_v: c.swa_v_head_dim.expect("mimo_v2 requires swa_v_head_dim"),
+            n_rot: resolve_rope_dim_count(c.rotary_dim, c.partial_rotary_factor, swa_head_dim),
+            rope_base: c.swa_rope_theta.expect("mimo_v2 requires swa_rope_theta"),
+            window: Some(c.sliding_window.expect("mimo_v2 requires sliding_window")),
+            ..full
+        };
+        Self {
+            classes: vec![full, swa],
+            layer_classes: pattern.iter().map(|&class| class as u16).collect(),
         }
     }
 
@@ -1108,6 +1154,83 @@ impl MlaConfig {
 }
 
 #[derive(Debug, Clone)]
+pub struct MiMoVisionConfig {
+    pub depth: u32,
+    pub fullatt_block_indexes: Vec<u32>,
+    pub hidden_act: String,
+    pub hidden_size: u32,
+    pub in_chans: u32,
+    pub intermediate_size: u32,
+    pub num_heads: u32,
+    pub num_key_value_heads: u32,
+    pub num_query_groups: u32,
+    pub out_hidden_size: u32,
+    pub patch_size: u32,
+    pub spatial_merge_size: u32,
+    pub spatial_patch_size: u32,
+    pub temporal_patch_size: u32,
+    pub tokens_per_second: u32,
+    pub use_sink: bool,
+    pub visual_token_window_size: u32,
+    pub vit_window_attn_types: Vec<i32>,
+    pub window_size: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct MiMoAudioConfig {
+    pub add_post_norm: bool,
+    pub audio_channels: u32,
+    pub audio_segment_size: u32,
+    pub group_size: u32,
+    pub input_full_attention: bool,
+    pub input_local_attn_heads: u32,
+    pub input_local_dim: u32,
+    pub input_local_head_dim: u32,
+    pub input_local_hidden_dropout: f32,
+    pub input_local_intermediate_size: u32,
+    pub input_local_layers: u32,
+    pub out_hidden_size: u32,
+    pub partial_rotary_factor: f32,
+    pub projection_layers: u32,
+    pub rope_theta: f32,
+    pub speech_vocab_size: u32,
+    pub speech_zeroemb_idx: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct MiMoV2Config {
+    pub hybrid_layer_pattern: Option<Vec<u32>>,
+    pub swa_num_attention_heads: Option<u32>,
+    pub swa_num_key_value_heads: Option<u32>,
+    pub swa_head_dim: Option<u32>,
+    pub swa_v_head_dim: Option<u32>,
+    pub swa_rope_theta: Option<f32>,
+    pub attention_projection_layout: Option<String>,
+    pub attention_value_scale: Option<f32>,
+    pub add_swa_attention_sink_bias: Option<bool>,
+    pub add_full_attention_sink_bias: Option<bool>,
+    pub scoring_func: Option<String>,
+    pub topk_method: Option<String>,
+    pub n_group: Option<u32>,
+    pub topk_group: Option<u32>,
+    pub norm_topk_prob: Option<bool>,
+    pub routed_scaling_factor: Option<f32>,
+    pub moe_router_dtype: Option<String>,
+    pub moe_layer_freq: Option<Vec<u32>>,
+    pub separate_mtp_layers: Option<u32>,
+    pub vision_config: Option<MiMoVisionConfig>,
+    pub audio_config: Option<MiMoAudioConfig>,
+    pub vision_model_type: Option<String>,
+    pub image_token_id: Option<u32>,
+    pub video_token_id: Option<u32>,
+    pub vision_start_token_id: Option<u32>,
+    pub vision_end_token_id: Option<u32>,
+    pub audio_token_id: Option<u32>,
+    pub audio_start_token_id: Option<u32>,
+    pub audio_end_token_id: Option<u32>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ModelConfig {
     pub arch: Arch,
     pub prefill_activation: Option<crate::model_packs::qwen35::activation::PrefillFp4>,
@@ -1149,6 +1272,8 @@ pub struct ModelConfig {
     pub step35: Option<Step35Config>,
     // DeepSeek-V4-Flash extras — `deepseek_v4` only (None for every other arch)
     pub dsv4: Option<DeepSeekV4Config>,
+    // MiMo-V2.6 extras — exact hybrid geometry and source-specific attention math.
+    pub mimo: Option<MiMoV2Config>,
     // Qwen3.8-Flash-Next extras — `qwen4_exp` only (None for every other arch)
     pub qwen4exp: Option<Qwen4ExpConfig>,
     /// YaRN rope scaling on the full-attention rope. Populated ONLY by the qwen4_exp HF
@@ -1631,6 +1756,7 @@ impl ModelConfig {
             mla,
             step35,
             dsv4: None, // safetensors-first arch: no GGUF artifact exists (loader lane)
+            mimo: None, // MiMo-V2.6 is safetensors-first and has no GGUF pack.
             qwen4exp: None, // safetensors-first arch: no GGUF artifact exists (loader lane)
             rope_yarn: None,
             glm5: None, // safetensors-first arch: no GGUF artifact exists (bring-up lane)
@@ -1650,17 +1776,26 @@ impl ModelConfig {
         // HF counts only trunk blocks; GGUF block_count includes appended NextN blocks.
         // qwen4_exp nests the depth in an `mtp` sub-object (its flat twin key usually rides
         // beside it; the object is the fallback for a sibling that drops the flat spelling).
-        let nextn = c
-            .num_nextn_predict_layers
-            .or(c.mtp_num_hidden_layers)
-            .or(c.qwen4exp_mtp_num_hidden_layers)
-            .unwrap_or(0);
+        let mut nextn = if matches!(arch, Arch::MiMoV2) {
+            // MiMo's three draft blocks live in model_mtp.safetensors, not the
+            // main checkpoint's 48-layer trunk.
+            0
+        } else {
+            c.num_nextn_predict_layers
+                .or(c.mtp_num_hidden_layers)
+                .or(c.qwen4exp_mtp_num_hidden_layers)
+                .unwrap_or(0)
+        };
         let n_layer = c.num_hidden_layers + nextn;
         let base_n_head = c.num_attention_heads;
         let head_dim_k = c
             .head_dim
             .unwrap_or_else(|| c.hidden_size / base_n_head.max(1));
-        let head_dim_v = head_dim_k;
+        let head_dim_v = if matches!(arch, Arch::MiMoV2) {
+            c.v_head_dim.unwrap_or(head_dim_k)
+        } else {
+            head_dim_k
+        };
         let base_n_head_kv = c.num_key_value_heads.unwrap_or(base_n_head);
 
         let expert_count = c.num_experts.or(c.num_local_experts).unwrap_or(0);
@@ -1874,11 +2009,8 @@ impl ModelConfig {
         // NVIDIA + local text ckpts) uses `mtp_num_hidden_layers`. Same meaning (head depth = 1).
         // qwen4_exp carries both a flat `mtp_num_hidden_layers` and an `mtp` sub-object; the
         // object is the fallback and is cross-checked against the flat key below.
-        let mut nextn = c
-            .num_nextn_predict_layers
-            .or(c.mtp_num_hidden_layers)
-            .or(c.qwen4exp_mtp_num_hidden_layers)
-            .unwrap_or(0);
+        // Start from the family-resolved depth above. In particular, MiMo's
+        // separate MTP artifact must not be re-counted as trunk layers here.
         // deepseek_v4: `num_nextn_predict_layers` is VESTIGIAL on 0731 — still 1 while the
         // drafter is 3 DSpark blocks (the repo's own inference/config.json: n_mtp_layers 3).
         // The load-bearing derivation is len(compress_ratios) − num_hidden_layers, and every
@@ -2308,6 +2440,13 @@ impl ModelConfig {
                     .as_ref()
                     .expect("step35 geometry needs step35 config"),
             )),
+            Arch::MiMoV2 => Some(ArchGeometryTable::mimo(
+                c,
+                n_layer,
+                head_dim_k,
+                head_dim_v,
+                rope_dim_count,
+            )),
             _ => None,
         };
         // Step's published config omits this key because its configuration class defaults to
@@ -2317,6 +2456,37 @@ impl ModelConfig {
         } else {
             c.rms_norm_eps
         };
+        let mimo = matches!(arch, Arch::MiMoV2).then(|| MiMoV2Config {
+            hybrid_layer_pattern: c.hybrid_layer_pattern.clone(),
+            swa_num_attention_heads: c.swa_num_attention_heads,
+            swa_num_key_value_heads: c.swa_num_key_value_heads,
+            swa_head_dim: c.swa_head_dim,
+            swa_v_head_dim: c.swa_v_head_dim,
+            swa_rope_theta: c.swa_rope_theta,
+            attention_projection_layout: c.attention_projection_layout.clone(),
+            attention_value_scale: c.attention_value_scale,
+            add_swa_attention_sink_bias: c.add_swa_attention_sink_bias,
+            add_full_attention_sink_bias: c.add_full_attention_sink_bias,
+            scoring_func: c.scoring_func.clone(),
+            topk_method: c.topk_method.clone(),
+            n_group: c.n_group,
+            topk_group: c.topk_group,
+            norm_topk_prob: c.norm_topk_prob,
+            routed_scaling_factor: c.routed_scaling_factor,
+            moe_router_dtype: c.moe_router_dtype.clone(),
+            moe_layer_freq: c.moe_layer_freq.clone(),
+            separate_mtp_layers: c.num_nextn_predict_layers,
+            vision_config: c.mimo_vision.clone(),
+            audio_config: c.mimo_audio.clone(),
+            vision_model_type: c.vision_model_type.clone(),
+            image_token_id: c.image_token_id,
+            video_token_id: c.video_token_id,
+            vision_start_token_id: c.vision_start_token_id,
+            vision_end_token_id: c.vision_end_token_id,
+            audio_token_id: c.audio_token_id,
+            audio_start_token_id: c.audio_start_token_id,
+            audio_end_token_id: c.audio_end_token_id,
+        });
 
         ModelConfig {
             arch,
@@ -2412,6 +2582,7 @@ impl ModelConfig {
             mla: None, // GGUF-first arch (glm-dsa): HF/safetensors import is a later arc
             step35,
             dsv4,
+            mimo,
             qwen4exp,
             rope_yarn,
             glm5,
@@ -2588,6 +2759,15 @@ impl ModelConfig {
         // no selection bias, and weights summing to 1 instead of 2.5.
         if let Some(g5) = self.glm5.as_ref() {
             return Some((g5.routed_scaling_factor, g5.norm_topk_prob));
+        }
+        if let Some(mimo) = self.mimo.as_ref()
+            && mimo.scoring_func.as_deref() == Some("sigmoid")
+            && mimo.topk_method.as_deref() == Some("noaux_tc")
+        {
+            return Some((
+                mimo.routed_scaling_factor.unwrap_or(1.0),
+                mimo.norm_topk_prob.unwrap_or(false),
+            ));
         }
         if let Some(m3) = self.m3.as_ref()
             && m3.sigmoid_routing
@@ -2808,6 +2988,7 @@ pub struct HfConfig {
     /// Some, `vision` stays None — the two structs are different semantic programs.
     pub vision_glm5: Option<Glm5VisionConfig>,
     pub image_token_id: Option<u32>,
+    pub video_token_id: Option<u32>,
     pub vision_soft_tokens_per_image: Option<u32>,
     pub num_nextn_predict_layers: Option<u32>,
     pub mtp_num_hidden_layers: Option<u32>, // qwen3_5/3_6 HF key for the MTP head depth (27B: 1)
@@ -2836,6 +3017,27 @@ pub struct HfConfig {
     pub swiglu_alpha: Option<f32>, // swigluoai clamp params
     pub swiglu_limit: Option<f32>,
     pub moe_layer_freq: Option<Vec<u32>>, // per-layer 0=dense 1=moe
+    // ---- MiMo-V2.6 (`mimo_v2`) ----
+    pub hybrid_layer_pattern: Option<Vec<u32>>, // 0=global, 1=windowed
+    pub swa_num_attention_heads: Option<u32>,
+    pub swa_num_key_value_heads: Option<u32>,
+    pub swa_head_dim: Option<u32>,
+    pub swa_v_head_dim: Option<u32>,
+    pub swa_rope_theta: Option<f32>,
+    pub attention_projection_layout: Option<String>,
+    pub attention_value_scale: Option<f32>,
+    pub add_swa_attention_sink_bias: Option<bool>,
+    pub add_full_attention_sink_bias: Option<bool>,
+    pub n_group: Option<u32>,
+    pub topk_group: Option<u32>,
+    pub mimo_vision: Option<MiMoVisionConfig>,
+    pub mimo_audio: Option<MiMoAudioConfig>,
+    pub vision_model_type: Option<String>,
+    pub vision_start_token_id: Option<u32>,
+    pub vision_end_token_id: Option<u32>,
+    pub audio_token_id: Option<u32>,
+    pub audio_start_token_id: Option<u32>,
+    pub audio_end_token_id: Option<u32>,
     // ---- Hy3 (`hy_v3`) ----
     pub first_k_dense_replace: Option<u32>,
     pub moe_router_use_sigmoid: Option<bool>,
@@ -2991,6 +3193,26 @@ impl Default for HfConfig {
             swiglu_alpha: None,
             swiglu_limit: None,
             moe_layer_freq: None,
+            hybrid_layer_pattern: None,
+            swa_num_attention_heads: None,
+            swa_num_key_value_heads: None,
+            swa_head_dim: None,
+            swa_v_head_dim: None,
+            swa_rope_theta: None,
+            attention_projection_layout: None,
+            attention_value_scale: None,
+            add_swa_attention_sink_bias: None,
+            add_full_attention_sink_bias: None,
+            n_group: None,
+            topk_group: None,
+            mimo_vision: None,
+            mimo_audio: None,
+            vision_model_type: None,
+            vision_start_token_id: None,
+            vision_end_token_id: None,
+            audio_token_id: None,
+            audio_start_token_id: None,
+            audio_end_token_id: None,
             first_k_dense_replace: None,
             moe_router_use_sigmoid: None,
             moe_router_enable_expert_bias: None,
@@ -3012,6 +3234,7 @@ impl Default for HfConfig {
             vision: None,
             vision_glm5: None,
             image_token_id: None,
+            video_token_id: None,
             vision_soft_tokens_per_image: None,
             topk_method: None,
             norm_topk_prob: None,
@@ -3170,6 +3393,9 @@ impl HfConfig {
         let glm_dsa = effective_type
             .as_deref()
             .is_some_and(|kind| Arch::from_hf_model_type(kind) == Arch::GlmDsa);
+        let mimo_v2 = effective_type
+            .as_deref()
+            .is_some_and(|kind| Arch::from_hf_model_type(kind) == Arch::MiMoV2);
         let mut cfg = HfConfig::default();
         cfg.apply(&top, glm_dsa)?;
         if let Some(q) = top.object("quantization_config")? {
@@ -3190,7 +3416,48 @@ impl HfConfig {
         }
         if let Some(vision) = top.object("vision_config")? {
             let vision_type = vision.string("model_type")?;
-            if vision_type.as_deref() == Some("qwen4_exp") {
+            if mimo_v2 {
+                let req_u = |key: &str| {
+                    required(vision.u32(key)?, "mimo_v2", &format!("vision_config.{key}"))
+                };
+                cfg.mimo_vision = Some(MiMoVisionConfig {
+                    depth: req_u("depth")?,
+                    fullatt_block_indexes: required(
+                        vision.u32_array("fullatt_block_indexes")?,
+                        "mimo_v2",
+                        "vision_config.fullatt_block_indexes",
+                    )?,
+                    hidden_act: required(
+                        vision.string("hidden_act")?,
+                        "mimo_v2",
+                        "vision_config.hidden_act",
+                    )?,
+                    hidden_size: req_u("hidden_size")?,
+                    in_chans: req_u("in_chans")?,
+                    intermediate_size: req_u("intermediate_size")?,
+                    num_heads: req_u("num_heads")?,
+                    num_key_value_heads: req_u("num_key_value_heads")?,
+                    num_query_groups: req_u("num_query_groups")?,
+                    out_hidden_size: req_u("out_hidden_size")?,
+                    patch_size: req_u("patch_size")?,
+                    spatial_merge_size: req_u("spatial_merge_size")?,
+                    spatial_patch_size: req_u("spatial_patch_size")?,
+                    temporal_patch_size: req_u("temporal_patch_size")?,
+                    tokens_per_second: req_u("tokens_per_second")?,
+                    use_sink: required(
+                        vision.boolean("use_sink")?,
+                        "mimo_v2",
+                        "vision_config.use_sink",
+                    )?,
+                    visual_token_window_size: req_u("visual_token_window_size")?,
+                    vit_window_attn_types: required(
+                        vision.i32_array("vit_window_attn_types")?,
+                        "mimo_v2",
+                        "vision_config.vit_window_attn_types",
+                    )?,
+                    window_size: req_u("window_size")?,
+                });
+            } else if vision_type.as_deref() == Some("qwen4_exp") {
                 let req = |key: &str| -> Result<u32, String> {
                     vision.u32(key)?.ok_or_else(|| {
                         format!("qwen4_exp vision_config missing required field {key}")
@@ -3285,6 +3552,10 @@ impl HfConfig {
                 // Preserve the existing native Step route without fabricating a canonical
                 // Gemma tower. Unified Gemma's encoder-free program remains unrepresented.
                 cfg.vision = None;
+            } else if mimo_v2 {
+                // MiMo's typed tower was parsed above. A generic tower would invent
+                // unrelated defaults for its model_type-less vision_config.
+                cfg.vision = None;
             } else {
                 let rope_theta = match vision.object("rope_parameters")? {
                     Some(rope) => rope.f32("rope_theta")?.unwrap_or(100.0),
@@ -3313,6 +3584,48 @@ impl HfConfig {
                     clipped_linears: vision.boolean("use_clipped_linears")?.unwrap_or(false),
                 });
             }
+        }
+        if mimo_v2 && let Some(audio) = top.object("audio_config")? {
+            let req_u =
+                |key: &str| required(audio.u32(key)?, "mimo_v2", &format!("audio_config.{key}"));
+            let req_f =
+                |key: &str| required(audio.f32(key)?, "mimo_v2", &format!("audio_config.{key}"));
+            let req_b = |key: &str| {
+                required(
+                    audio.boolean(key)?,
+                    "mimo_v2",
+                    &format!("audio_config.{key}"),
+                )
+            };
+            let decimal_string = |key: &str| -> Result<u32, String> {
+                let value = required(
+                    audio.string(key)?,
+                    "mimo_v2",
+                    &format!("audio_config.{key}"),
+                )?;
+                value
+                    .parse::<u32>()
+                    .map_err(|_| format!("mimo_v2 audio_config.{key} must be a decimal u32 string"))
+            };
+            cfg.mimo_audio = Some(MiMoAudioConfig {
+                add_post_norm: req_b("add_post_norm")?,
+                audio_channels: req_u("audio_channels")?,
+                audio_segment_size: req_u("audio_segment_size")?,
+                group_size: req_u("group_size")?,
+                input_full_attention: req_b("input_full_attention")?,
+                input_local_attn_heads: req_u("input_local_attn_heads")?,
+                input_local_dim: req_u("input_local_dim")?,
+                input_local_head_dim: req_u("input_local_head_dim")?,
+                input_local_hidden_dropout: req_f("input_local_hidden_dropout")?,
+                input_local_intermediate_size: req_u("input_local_intermediate_size")?,
+                input_local_layers: req_u("input_local_layers")?,
+                out_hidden_size: req_u("out_hidden_size")?,
+                partial_rotary_factor: req_f("partial_rotary_factor")?,
+                projection_layers: req_u("projection_layers")?,
+                rope_theta: req_f("rope_theta")?,
+                speech_vocab_size: decimal_string("speech_vocab_size")?,
+                speech_zeroemb_idx: decimal_string("speech_zeroemb_idx")?,
+            });
         }
         // Keep the existing top/text overlay order and architecture fallback.
         if let Some(text) = text {
@@ -3347,6 +3660,9 @@ impl HfConfig {
         }
         if let Some(v) = o.u32("image_token_id")? {
             self.image_token_id = Some(v);
+        }
+        if let Some(v) = o.u32("video_token_id")? {
+            self.video_token_id = Some(v);
         }
         if let Some(v) = o.u32("vision_soft_tokens_per_image")? {
             self.vision_soft_tokens_per_image = Some(v);
@@ -3598,6 +3914,61 @@ impl HfConfig {
         }
         if let Some(v) = o.moe_layer_freq(glm_dsa)? {
             self.moe_layer_freq = Some(v);
+        }
+        // MiMo's mixed attention layers and per-layer attention math.
+        if let Some(v) = o.u32_array("hybrid_layer_pattern")? {
+            self.hybrid_layer_pattern = Some(v);
+        }
+        if let Some(v) = o.u32("swa_num_attention_heads")? {
+            self.swa_num_attention_heads = Some(v);
+        }
+        if let Some(v) = o.u32("swa_num_key_value_heads")? {
+            self.swa_num_key_value_heads = Some(v);
+        }
+        if let Some(v) = o.u32("swa_head_dim")? {
+            self.swa_head_dim = Some(v);
+        }
+        if let Some(v) = o.u32("swa_v_head_dim")? {
+            self.swa_v_head_dim = Some(v);
+        }
+        if let Some(v) = o.f32("swa_rope_theta")? {
+            self.swa_rope_theta = Some(v);
+        }
+        if let Some(v) = o.string("attention_projection_layout")? {
+            self.attention_projection_layout = Some(v);
+        }
+        if let Some(v) = o.f32("attention_value_scale")? {
+            self.attention_value_scale = Some(v);
+        }
+        if let Some(v) = o.boolean("add_swa_attention_sink_bias")? {
+            self.add_swa_attention_sink_bias = Some(v);
+        }
+        if let Some(v) = o.boolean("add_full_attention_sink_bias")? {
+            self.add_full_attention_sink_bias = Some(v);
+        }
+        if let Some(v) = o.u32("n_group")? {
+            self.n_group = Some(v);
+        }
+        if let Some(v) = o.u32("topk_group")? {
+            self.topk_group = Some(v);
+        }
+        if let Some(v) = o.string("vision_model_type")? {
+            self.vision_model_type = Some(v);
+        }
+        if let Some(v) = o.u32("vision_start_token_id")? {
+            self.vision_start_token_id = Some(v);
+        }
+        if let Some(v) = o.u32("vision_end_token_id")? {
+            self.vision_end_token_id = Some(v);
+        }
+        if let Some(v) = o.u32("audio_token_id")? {
+            self.audio_token_id = Some(v);
+        }
+        if let Some(v) = o.u32("audio_start_token_id")? {
+            self.audio_start_token_id = Some(v);
+        }
+        if let Some(v) = o.u32("audio_end_token_id")? {
+            self.audio_end_token_id = Some(v);
         }
         // ---- Hy3 keys ----
         if let Some(v) = o.u32("first_k_dense_replace")? {
@@ -4076,6 +4447,159 @@ fn read_value_raw(b: &[u8], i: &mut usize) -> String {
 #[cfg(test)]
 pub(crate) mod hf_tests {
     use super::*;
+
+    fn pinned_mimo_config() -> ModelConfig {
+        let c = HfConfig::parse(include_str!("model_packs/mimo_v2/fixtures/config.json"));
+        ModelConfig::from_hf(&c)
+    }
+
+    #[test]
+    fn mimo_v2_source_trunk_and_head_geometry() {
+        let config = pinned_mimo_config();
+        assert_eq!(config.arch, Arch::MiMoV2);
+        assert_eq!(config.n_layer, 48);
+        assert_eq!(config.n_layer_total, 48);
+        assert_eq!(config.nextn_predict_layers, 0);
+        assert_eq!(config.head_dim_k, 192);
+        assert_eq!(config.head_dim_v, 128);
+        assert_eq!(config.rope_dim_count, 64);
+        let mimo = config.mimo.as_ref().unwrap();
+        let pattern = mimo.hybrid_layer_pattern.as_ref().unwrap();
+        assert_eq!(pattern.len(), 48);
+        assert_eq!(pattern.iter().filter(|&&layer| layer == 0).count(), 9);
+        assert_eq!(pattern[0], 0);
+        assert_eq!(pattern[47], 0);
+        assert_eq!(mimo.swa_num_key_value_heads, Some(8));
+        assert_eq!(mimo.swa_num_attention_heads, Some(64));
+        assert_eq!(mimo.swa_head_dim, Some(192));
+        assert_eq!(mimo.swa_v_head_dim, Some(128));
+        assert_eq!(mimo.swa_rope_theta, Some(10_000.0));
+        assert_eq!(config.geometry.as_ref().unwrap().classes().len(), 2);
+        for index in [0, 5, 11, 17, 23, 29, 35, 41, 47] {
+            let layer = config.layer_geometry(index).unwrap();
+            assert_eq!(layer.n_head, 64);
+            assert_eq!(layer.n_head_kv, 4);
+            assert_eq!(layer.head_dim_k, 192);
+            assert_eq!(layer.head_dim_v, 128);
+            assert_eq!(layer.n_rot, 64);
+            assert_eq!(layer.rope_base, 10_000_000.0);
+            assert_eq!(layer.window, None);
+        }
+        for index in [1, 4, 6, 46] {
+            let layer = config.layer_geometry(index).unwrap();
+            assert_eq!(layer.n_head, 64);
+            assert_eq!(layer.n_head_kv, 8);
+            assert_eq!(layer.head_dim_k, 192);
+            assert_eq!(layer.head_dim_v, 128);
+            assert_eq!(layer.n_rot, 64);
+            assert_eq!(layer.rope_base, 10_000.0);
+            assert_eq!(layer.window, Some(128));
+        }
+    }
+
+    #[test]
+    fn mimo_v2_source_attention_scaling_and_sinks() {
+        let config = pinned_mimo_config();
+        let mimo = config.mimo.as_ref().unwrap();
+        assert_eq!(
+            mimo.attention_projection_layout.as_deref(),
+            Some("fused_qkv")
+        );
+        assert_eq!(mimo.attention_value_scale, Some(0.707));
+        assert_eq!(mimo.add_swa_attention_sink_bias, Some(true));
+        assert_eq!(mimo.add_full_attention_sink_bias, Some(false));
+    }
+
+    #[test]
+    fn mimo_v2_source_router_and_separate_draft() {
+        let source = HfConfig::parse(include_str!("model_packs/mimo_v2/fixtures/config.json"));
+        assert_eq!(source.n_shared_experts, None);
+        assert_eq!(source.routed_scaling_factor, None);
+        let config = ModelConfig::from_hf(&source);
+        assert_eq!(config.moe.as_ref().unwrap().expert_count, 256);
+        assert_eq!(config.moe.as_ref().unwrap().expert_used_count, 8);
+        let mimo = config.mimo.as_ref().unwrap();
+        assert_eq!(mimo.scoring_func.as_deref(), Some("sigmoid"));
+        assert_eq!(mimo.topk_method.as_deref(), Some("noaux_tc"));
+        assert_eq!(mimo.n_group, Some(1));
+        assert_eq!(mimo.topk_group, Some(1));
+        assert_eq!(mimo.norm_topk_prob, Some(true));
+        assert_eq!(mimo.routed_scaling_factor, None);
+        assert_eq!(config.sigmoid_router(), Some((1.0, true)));
+        assert_eq!(mimo.moe_router_dtype.as_deref(), Some("bfloat16"));
+        assert_eq!(mimo.moe_layer_freq.as_ref().unwrap().len(), 48);
+        assert_eq!(mimo.separate_mtp_layers, Some(3));
+    }
+
+    #[test]
+    fn mimo_v2_source_modal_geometry_is_typed_without_generic_vision_defaults() {
+        let source = HfConfig::parse(include_str!("model_packs/mimo_v2/fixtures/config.json"));
+        assert!(source.vision.is_none());
+        let config = ModelConfig::from_hf(&source);
+        assert!(config.vision.is_none());
+        let vision = config
+            .mimo
+            .as_ref()
+            .unwrap()
+            .vision_config
+            .as_ref()
+            .unwrap();
+        assert_eq!(vision.depth, 28);
+        assert_eq!(vision.fullatt_block_indexes, vec![0, 9, 18, 27]);
+        assert_eq!(vision.hidden_size, 1280);
+        assert_eq!(vision.intermediate_size, 4608);
+        assert_eq!(vision.num_heads, 32);
+        assert_eq!(vision.num_key_value_heads, 8);
+        assert_eq!(vision.num_query_groups, 4);
+        assert_eq!(vision.out_hidden_size, 4096);
+        assert_eq!(vision.temporal_patch_size, 2);
+        assert_eq!(vision.vit_window_attn_types.len(), 28);
+        assert_eq!(vision.vit_window_attn_types[0], -1);
+        assert_eq!(vision.vit_window_attn_types[5], 1);
+        let mimo = config.mimo.as_ref().unwrap();
+        assert_eq!(mimo.image_token_id, Some(151655));
+        assert_eq!(mimo.video_token_id, Some(151656));
+        assert_eq!(mimo.vision_model_type.as_deref(), Some("mimovl"));
+        assert_eq!(mimo.vision_start_token_id, Some(151652));
+        assert_eq!(mimo.vision_end_token_id, Some(151653));
+        assert_eq!(mimo.audio_token_id, Some(151669));
+        assert_eq!(mimo.audio_start_token_id, Some(151673));
+        assert_eq!(mimo.audio_end_token_id, Some(151674));
+        let audio = config.mimo.as_ref().unwrap().audio_config.as_ref().unwrap();
+        assert_eq!(audio.audio_channels, 20);
+        assert_eq!(audio.input_local_layers, 6);
+        assert_eq!(audio.input_local_dim, 1024);
+        assert_eq!(audio.input_local_attn_heads, 16);
+        assert_eq!(audio.input_local_head_dim, 64);
+        assert_eq!(audio.out_hidden_size, 4096);
+        assert_eq!(audio.speech_vocab_size, 1280);
+        assert_eq!(audio.speech_zeroemb_idx, 1024);
+        let plan = crate::model_plan::ModelPlan::compile(&config).unwrap();
+        assert!(matches!(
+            plan.vision,
+            Some(crate::model_plan::VisionPlan::MiMo(_))
+        ));
+    }
+
+    #[test]
+    fn mimo_v2_rejects_invalid_signed_vision_pattern_and_audio_id() {
+        let fixture = include_str!("model_packs/mimo_v2/fixtures/config.json");
+        let mut malformed: serde_json::Value = serde_json::from_str(fixture).unwrap();
+        malformed["vision_config"]["vit_window_attn_types"][0] =
+            serde_json::Value::String("full".into());
+        assert!(HfConfig::try_parse(&malformed.to_string()).is_err());
+        malformed["vision_config"]["vit_window_attn_types"][0] = serde_json::Value::from(-1);
+        malformed["audio_config"]["speech_vocab_size"] =
+            serde_json::Value::String("not-a-number".into());
+        assert!(HfConfig::try_parse(&malformed.to_string()).is_err());
+    }
+
+    #[test]
+    fn mimo_v2_source_remains_unregistered() {
+        let config = pinned_mimo_config();
+        assert!(crate::model_packs::for_config(&config).is_none());
+        assert!(crate::model_packs::compile_for_load(&config).is_err());
+    }
 
     const QWEN3_17B: &str = r#"{
       "architectures": ["Qwen3ForCausalLM"],

@@ -1181,6 +1181,7 @@ mod tests {
             context_length: 32,
             embedding_scale: 1.0,
             vision: None,
+            mimo_audio_patch: None,
             multimodal: None,
             layers: vec![layer(0, residuals[0]), layer(1, residuals[1])],
             output_norm: norm(),

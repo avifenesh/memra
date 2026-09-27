@@ -149,6 +149,7 @@ pub mod glm5_tp_sym_graph;
 pub mod glm_spec;
 pub mod graph_update;
 pub mod kda;
+pub mod mimo_source_moe;
 /// MLA (multi-head latent attention) CPU f32 reference — GLM-5.2 bring-up lane increment 1.
 /// Naive vs absorbed decode forms + NORM/NEOX rope permutation, unit-tested; the permanent
 /// oracle for the MLA kernel family (`research/mla-bringup-20260801/DESIGN.md`). No CUDA deps.
@@ -1008,6 +1009,35 @@ pub mod qwen_prime_graph;
 pub mod spill;
 mod spill_pread;
 pub mod step_guard;
+
+// MiMo V2.6 inspection components. Automatic serving selection remains closed.
+pub mod mimo_attn_load;
+pub mod mimo_audio_attn_ffi;
+pub mod mimo_audio_codec_frontend;
+pub mod mimo_audio_codec_layer;
+pub mod mimo_audio_codec_rvq;
+pub mod mimo_audio_codec_weights;
+pub mod mimo_audio_embed_ffi;
+pub mod mimo_audio_patch_forward;
+pub mod mimo_audio_patch_load;
+pub mod mimo_compressed_kv;
+pub mod mimo_compressed_text_forward;
+pub mod mimo_mixed_attn_ffi;
+pub mod mimo_modal_overlay;
+pub mod mimo_moe_load;
+pub mod mimo_mtp_forward;
+pub mod mimo_mtp_weights;
+pub mod mimo_nvfp4_ffi;
+pub mod mimo_qkv_ffi;
+pub mod mimo_sink_ffi;
+pub mod mimo_text_chunk_ffi;
+pub mod mimo_text_forward;
+pub mod mimo_text_weights;
+pub mod mimo_vision_attn_ffi;
+pub mod mimo_vision_block_forward;
+pub mod mimo_vision_load;
+pub mod mimo_vision_patch;
+pub mod mimo_vision_rope_ffi;
 
 // Fatbins are EMBEDDED (crates-release lane, 2026-08-04): build.rs still writes them to
 // OUT_DIR, but the bytes ship inside the binary via include_bytes! and load through

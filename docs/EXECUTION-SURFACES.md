@@ -64,9 +64,13 @@ pre-existing allowlists for every operation, pinned by
 | `VisionDownsample` | — | — | — | — | — | — | — | — | — | — |
 | `VisionProjection` | — | — | — | — | — | — | — | — | — | — |
 | `VisionTokenInjection` | — | — | — | — | — | — | — | — | — | — |
+| `MiMoVisionTower` | — | — | — | — | — | — | — | — | — | — |
+| `MiMoAudioPatch` | — | — | — | — | — | — | — | — | — | — |
+| `MiMoMtp3Draft` | — | — | — | — | — | — | — | — | — | — |
 | `RmsNorm` | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
 | `FullAttention` | yes | yes | yes | yes | yes | yes | — | — | yes | yes |
 | `SlidingWindowAttention` | — | — | yes | — | yes | yes | — | — | yes | yes |
+| `MiMoAttentionMath` | — | — | — | — | — | — | — | — | — | — |
 | `LatentMlaAttention` | — | — | — | — | — | — | yes | yes | yes | — |
 | `CompressedMlaAttention` | — | — | — | — | — | — | — | — | — | — |
 | `KvCompressor` | — | — | — | — | — | — | — | — | — | — |

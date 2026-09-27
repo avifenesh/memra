@@ -82,6 +82,7 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
         context_length: 32,
         embedding_scale: 1.0,
         vision: None,
+        mimo_audio_patch: None,
         multimodal: None,
         layers: vec![
             layer(
