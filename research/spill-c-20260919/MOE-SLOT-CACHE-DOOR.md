@@ -53,6 +53,13 @@ step of `admit_banked`, the banked branch of `admit_native`, the owner's demand 
 line. No `MEMRA_*` read, no decision changes. It goes with the door. `run-gen` also prints,
 for every arm, `MoE cache STEADY-STATE window: <n> decode steps in <s>s`.
 
+Day 92 (`DAY92.md` section 1, I25a): `--expert-bank-trace` (no value, a door flag) writes the complete host demand
+trace, one `[expert-host-slru] key=... bytes= slot= hit= victim=` line per demanded record in day 48's format, that
+the gates' and cells' integrity checks read. It is set by the gates and cells that read the sequence. Without it the
+door reads no pre-demand slot and writes nothing; the demands and every answer are the same (the engine test
+`an_untraced_door_demands_as_the_traced_one`). The stage clock's owner section then prints `trace=off` in place of
+the host hit and miss counts. No `MEMRA_*` read. It goes with the door.
+
 | Surface | File | What it does |
 |---|---|---|
 | Owner registry | `crates/memra-tier/src/bank/owner_proxy.rs` | `ExpertBankOwner` (`!Send` via `PhantomData<Rc<()>>`) registers a `Box<dyn ExpertDispatchBank>` in a thread-local `OWNERS` map. `ExpertBankProxy` (`Clone`, `Send + Sync`: a `ThreadId` and a `u64`) and `ExpertLeaseToken` (`Send + Sync`, no pointer: owner and lease numbers plus the identity the registry holds for the lease, `record()` the `(layer, proj, expert)` key derived from the leased `BankId` through `bank::dispatch_id`, `artifact()` the record's artifact digest, `epochs()` the staging ticket's epochs; day twelve) are the only things that leave the owner thread. `demand` refuses a bank that leases another record than the one demanded (`ProgramMismatch`, retiring the lease first); `with_bytes` / `finish` refuse a token whose identity does not match the pending lease (`ForeignLease`). `access` refuses `WrongOwner` off-thread; `close` refuses `Busy` with an open lease; `Entry::drop` forgets pending backing on unknown completion instead of releasing it. Not RPC: a migrated caller refuses. |

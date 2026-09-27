@@ -872,6 +872,8 @@ impl Engine {
             );
         }
         let stage_clock = budget.stage_clock;
+        // Day 92 (I25a): read before `budget` names the governor below.
+        let traced = budget.trace;
         let clock = |started: Instant| stage_clock.then(|| elapsed_ns(started));
         let install_started = Instant::now();
         // Day 88: the already-open inode was authenticated before the model loaded
@@ -1190,7 +1192,13 @@ impl Engine {
                 ..OwnerClock::default()
             }),
             fill: Some(fill_intake),
-            trace: String::with_capacity(TRACE_CHUNK + 256),
+            // Day 92 (I25a): the buffer only under `--expert-bank-trace`.
+            trace: if traced {
+                String::with_capacity(TRACE_CHUNK + 256)
+            } else {
+                String::new()
+            },
+            traced,
         };
         // DAY57 (I10): the fill completes inside the install, as the legacy's pinned host copy
         // completes inside its load, so no decode demand races it.
@@ -1440,6 +1448,9 @@ struct TracedDispatch {
     /// DAY48 (I5): the host-demand trace, byte for byte as the unbuffered lines were, written to
     /// stderr in one call whenever it passes `TRACE_CHUNK` (always at a line end) and at close.
     trace: String,
+    /// Day 92 (I25a, `research/spill-c-20260919/DAY92.md`): `--expert-bank-trace`. Without it no pre-demand slot is
+    /// read, no occupant kept and no line written; every demand passes to `inner` exactly as with it.
+    traced: bool,
 }
 /// DAY48: bytes of trace buffered before one stderr write.
 const TRACE_CHUNK: usize = 64 * 1024;
@@ -1646,6 +1657,15 @@ impl ExpertDispatchBank for TracedDispatch {
     }
     fn demand(&mut self, local: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand> {
         self.drain_fill(32);
+        if !self.traced {
+            // Day 92 (I25a): untraced, the demand alone (the stage clock times it and counts no hit or miss).
+            let demand_started = self.clock.as_ref().map(|_| Instant::now());
+            let demand = self.inner.demand(local, bytes);
+            if let (Some(started), Some(clock)) = (demand_started, self.clock.as_mut()) {
+                clock.inner_demand_ns = clock.inner_demand_ns.saturating_add(elapsed_ns(started));
+            }
+            return demand;
+        }
         // DAY84 (I21): the pre-demand slot by catalog position, the answer the id's lookup gave.
         let before = self.inner.resident_slot(local)?;
         let hit = before.is_some();
@@ -1676,6 +1696,15 @@ impl ExpertDispatchBank for TracedDispatch {
             return Err(Error::Capacity);
         }
         self.drain_fill(32);
+        if !self.traced {
+            // Day 92 (I25a): untraced, the grouped demand alone, as `demand`.
+            let demand_started = self.clock.as_ref().map(|_| Instant::now());
+            let demands = self.inner.demand_many(blocks);
+            if let (Some(started), Some(clock)) = (demand_started, self.clock.as_mut()) {
+                clock.inner_demand_ns = clock.inner_demand_ns.saturating_add(elapsed_ns(started));
+            }
+            return demands;
+        }
         let mut before = [None; MAX_GROUP];
         for (slot, &(local, _)) in before.iter_mut().zip(blocks) {
             // DAY84 (I21): by catalog position, as in `demand`.
@@ -1712,10 +1741,17 @@ impl ExpertDispatchBank for TracedDispatch {
             .as_ref()
             .map(|f| f.counts.line())
             .unwrap_or_else(|| "fill absent".to_owned());
+        // Day 92 (I25a): the hit and miss counts come from the trace's pre-demand read; untraced, `trace=off`.
+        let hits = if self.traced {
+            format!(
+                "host_hits={} host_misses={}",
+                clock.host_hits, clock.host_misses
+            )
+        } else {
+            "trace=off".to_owned()
+        };
         Some(format!(
-            "| owner host_hits={} host_misses={} inner_demand_ns={} trace_ns={} reads={} pread_ns={} | {fill} | bank {}",
-            clock.host_hits,
-            clock.host_misses,
+            "| owner {hits} inner_demand_ns={} trace_ns={} reads={} pread_ns={} | {fill} | bank {}",
             clock.inner_demand_ns,
             clock.trace_ns,
             clock.reads.get(),
@@ -2607,6 +2643,7 @@ mod day61_profile {
                 clock: None,
                 fill: None,
                 trace: String::with_capacity(TRACE_CHUNK + 256),
+                traced: true,
             },
             entries,
             ids,
@@ -2708,6 +2745,101 @@ mod day61_profile {
             check(&mut s.traced, local, true);
         }
         drop(s);
+        std::fs::remove_file(path).ok();
+    }
+
+    /// Day 92 (I25a, `research/spill-c-20260919/DAY92.md`): an untraced door over the same bank takes the same demands
+    /// as the traced one, over the fill (every record a host miss) and routed singles and groups of host hits: the same
+    /// leased records and bytes, the same SLRU slot for every demanded record and the same cached records after every
+    /// finish. The traced one writes one day-48 line per demanded record, the untraced one none.
+    #[test]
+    fn an_untraced_door_demands_as_the_traced_one() {
+        let (path, bytes) = artifact("untraced");
+        let mut a = stack(&path, &bytes, false);
+        let mut b = stack(&path, &bytes, false);
+        b.traced.traced = false;
+        b.traced.trace = String::new();
+        let ids = a.ids.clone();
+        // A heap `Vec` or a pooled buffer, the bytes either way (as the proxy's `lend` reads them).
+        let payload = |lease: &BankLease| match lease.resource::<Vec<u8>>() {
+            Ok(v) => v.clone(),
+            Err(_) => lease
+                .resource::<Box<dyn HostBuffer>>()
+                .unwrap()
+                .as_slice()
+                .to_vec(),
+        };
+        let same = |a: &mut Stack, b: &mut Stack, blocks: &[(ExpertDispatchId, usize)]| {
+            let (da, db) = if blocks.len() == 1 {
+                let (x, y) = (
+                    a.traced.demand(blocks[0].0, blocks[0].1).unwrap(),
+                    b.traced.demand(blocks[0].0, blocks[0].1).unwrap(),
+                );
+                (
+                    ExpertDemands {
+                        ticket: x.ticket,
+                        leases: vec![x.lease],
+                    },
+                    ExpertDemands {
+                        ticket: y.ticket,
+                        leases: vec![y.lease],
+                    },
+                )
+            } else {
+                (
+                    a.traced.demand_many(blocks).unwrap(),
+                    b.traced.demand_many(blocks).unwrap(),
+                )
+            };
+            assert_eq!(da.leases.len(), db.leases.len());
+            for (x, y) in da.leases.iter().zip(&db.leases) {
+                assert_eq!(x.id(), y.id());
+                assert_eq!(payload(x), payload(y));
+            }
+            assert_eq!(a.traced.trace.lines().count(), blocks.len());
+            assert!(b.traced.trace.is_empty());
+            a.traced.trace.clear();
+            if blocks.len() == 1 {
+                let one = |d: ExpertDemands| ExpertDemand {
+                    ticket: d.ticket,
+                    lease: d.leases.into_iter().next().unwrap(),
+                };
+                a.traced.finish(&one(da)).unwrap();
+                b.traced.finish(&one(db)).unwrap();
+            } else {
+                a.traced.finish_many(&da).unwrap();
+                b.traced.finish_many(&db).unwrap();
+            }
+            for &(local, _) in blocks {
+                let id = &ids[&local];
+                assert_eq!(
+                    a.traced.inner.bank().slru_policy().unwrap().resident(id),
+                    b.traced.inner.bank().slru_policy().unwrap().resident(id)
+                );
+            }
+            assert_eq!(
+                a.traced.inner.bank().cached_records(),
+                b.traced.inner.bank().cached_records()
+            );
+        };
+        for &local in ids.keys() {
+            same(&mut a, &mut b, &[(local, LEN as usize)]);
+        }
+        let routed = order();
+        let mut k = 0;
+        while k < 12_000 {
+            let n = 1 + k % MAX_GROUP;
+            let mut blocks: Vec<(ExpertDispatchId, usize)> = Vec::new();
+            for &local in routed.iter().skip(k).take(n) {
+                if !blocks.iter().any(|&(l, _)| l == local) {
+                    blocks.push((local, LEN as usize));
+                }
+            }
+            same(&mut a, &mut b, &blocks);
+            k += n;
+        }
+        drop(a);
+        drop(b);
         std::fs::remove_file(path).ok();
     }
 

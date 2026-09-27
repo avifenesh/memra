@@ -261,6 +261,10 @@ pub struct ExpertBankBudget {
     /// default pool is private anonymous memory registered with `cuMemHostRegister` (DAY80), which
     /// compaction skips instead of isolating.
     pub pool_allocated: bool,
+    /// Day 92 (I25a, `research/spill-c-20260919/DAY92.md`): `--expert-bank-trace` writes the complete host demand
+    /// trace (`[expert-host-slru] key=...`, one line per demanded record) that the gates' and cells' integrity checks
+    /// read. A diagnostic the gate sets: without it the door traces nothing and changes no decision.
+    pub trace: bool,
 }
 
 /// Day 88 (`research/spill-c-20260919/DAY88.md`, phase 1 of the door's promotion): how the gate
@@ -368,10 +372,12 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
     const GPU: &str = "--expert-bank-gpu-bytes";
     const STAGES: &str = "--expert-bank-stages";
     const ALLOCATED: &str = "--expert-bank-pool-allocated";
+    const TRACE: &str = "--expert-bank-trace";
     const FAMILY: &str = "--expert-bank-";
     let mut door = false;
     let mut stages = false;
     let mut allocated = false;
+    let mut trace = false;
     let mut host = None;
     let mut gpu = None;
     for arg in args {
@@ -387,14 +393,14 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
                 door = true;
                 continue;
             }
-            STAGES | ALLOCATED => {
+            STAGES | ALLOCATED | TRACE => {
                 if value.is_some() {
                     return Err(format!("{key} takes no value"));
                 }
-                let flag = if key == STAGES {
-                    &mut stages
-                } else {
-                    &mut allocated
+                let flag = match key {
+                    STAGES => &mut stages,
+                    TRACE => &mut trace,
+                    _ => &mut allocated,
                 };
                 if std::mem::replace(flag, true) {
                     return Err(format!("{key} given more than once"));
@@ -405,7 +411,7 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
             GPU => &mut gpu,
             _ if key.starts_with(FAMILY) || key.starts_with(DOOR) => {
                 return Err(format!(
-                    "unknown expert bank flag {key:?}; expected {DOOR}, {HOST}=<bytes>, {GPU}=<bytes>, {ALLOCATED} or {STAGES}"
+                    "unknown expert bank flag {key:?}; expected {DOOR}, {HOST}=<bytes>, {GPU}=<bytes>, {ALLOCATED}, {STAGES} or {TRACE}"
                 ));
             }
             _ => continue,
@@ -424,12 +430,13 @@ pub fn expert_bank_cli<I: IntoIterator<Item = String>>(
         } else {
             ExpertBankMode::Default
         },
-        door_flags: host.is_some() || gpu.is_some() || stages || allocated,
+        door_flags: host.is_some() || gpu.is_some() || stages || allocated || trace,
         budget: ExpertBankBudget {
             host_bytes: host,
             gpu_bytes: gpu,
             stage_clock: stages,
             pool_allocated: allocated,
+            trace,
         },
     })
 }

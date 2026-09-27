@@ -229,7 +229,7 @@ fn expert_bank_cli_parses_the_default_door_and_its_budgets() {
         Err(
             "unknown expert bank flag \"--expert-bank-host-bytes-x\"; expected \
              --experts-via-tier, --expert-bank-host-bytes=<bytes>, --expert-bank-gpu-bytes=<bytes>, \
-             --expert-bank-pool-allocated or --expert-bank-stages"
+             --expert-bank-pool-allocated, --expert-bank-stages or --expert-bank-trace"
                 .to_owned()
         )
     );
@@ -285,6 +285,7 @@ fn the_rollback_seam_refuses_to_name_two_programs() {
         &["--expert-bank-host-bytes=1"][..],
         &["--expert-bank-pool-allocated"][..],
         &["--expert-bank-stages"][..],
+        &["--expert-bank-trace"][..],
         &["--expert-bank-gpu-bytes=6881344"][..],
     ] {
         let parsed = expert_bank_cli(argv(flags)).unwrap();
@@ -315,6 +316,53 @@ fn a_qualified_artifact_prints_its_digest() {
         Qualification::Qualified(artifact),
         Qualification::Off("not a qualified artifact".to_owned())
     );
+}
+
+/// Day 92 (I25a, `research/spill-c-20260919/DAY92.md`): `--expert-bank-trace` is the host demand trace the gates
+/// set. It takes no value, refuses a repeat and a look-alike key, is a door flag, is off by default, and leaves the
+/// budgets and the stage clock as they were.
+#[test]
+fn expert_bank_trace_parses_as_a_door_flag() {
+    assert!(!ExpertBankBudget::default().trace);
+    assert_eq!(
+        expert_bank_cli(argv(&["--expert-bank-trace", "--expert-bank-stages"])),
+        Ok(cli(
+            ExpertBankMode::Default,
+            ExpertBankBudget {
+                trace: true,
+                stage_clock: true,
+                ..ExpertBankBudget::default()
+            },
+            true
+        ))
+    );
+    assert_eq!(
+        expert_bank_cli(argv(&["--experts-via-tier", "--expert-bank-trace"])),
+        Ok(cli(
+            ExpertBankMode::Required,
+            ExpertBankBudget {
+                trace: true,
+                ..ExpertBankBudget::default()
+            },
+            true
+        ))
+    );
+    assert_eq!(
+        expert_bank_cli(argv(&["--expert-bank-trace=1"])),
+        Err("--expert-bank-trace takes no value".to_owned())
+    );
+    assert_eq!(
+        expert_bank_cli(argv(&["--expert-bank-trace", "--expert-bank-trace"])),
+        Err("--expert-bank-trace given more than once".to_owned())
+    );
+    for junk in [
+        "--expert-bank-traces",
+        "--expert-bank-trac",
+        "--expert-bank-trace-x",
+    ] {
+        let err = expert_bank_cli(argv(&[junk])).unwrap_err();
+        assert!(err.contains("unknown expert bank flag"), "{junk}: {err}");
+    }
 }
 
 /// Day 40: `--expert-bank-stages` is the door's log-only stage clock. It takes no value, refuses a
