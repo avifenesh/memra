@@ -1,7 +1,7 @@
 #![allow(clippy::needless_range_loop)] // rows and columns index three parallel outputs
 //! Kernel-boundary bit gate for the multi-row dense-fast FP8 GEMV (memra #710 B-row).
 //!
-//! At m = 2..8 the FP8 dense projection (B-row decode, verify rounds) runs
+//! At m = 2..16 the FP8 dense projection (B-row decode, verify rounds) runs
 //! `dsv4_dense_fast_fp8_kernel<2, false, M>` instead of `dsv4_gemv_fp8_m_kernel<M>`. The claim:
 //! every output bit equals the old m-row kernel's (dense-fast armed off) and each row's own
 //! one-row launch, at the served shapes, with contiguous and strided activations and outputs.
@@ -118,7 +118,7 @@ fn multi_row_dense_fast_is_the_m_row_gemv_and_the_one_row_launch_bit_for_bit() {
         let sc = scales(n, kk, 0x3C ^ si as u64);
         let w_dev: CudaSlice<u8> = e.stream().clone_htod(&w).unwrap();
         let sc_dev: CudaSlice<f32> = e.htod(&sc).unwrap();
-        for m in 2..=8usize {
+        for m in 2..=16usize {
             for (xs, ys) in [(kk, n), (kk + 8 * 3, n + 5)] {
                 let x = bf16_rows(m * xs, 0x91 ^ ((m as u64) << 8) ^ si as u64);
                 let x_dev: CudaSlice<u16> = e.stream().clone_htod(&x).unwrap();
@@ -231,7 +231,7 @@ fn run_dots(
 }
 
 /// The same claim for the f32-activation dots (compressor, indexer and head projections): the
-/// 2..8-row dense-fast dots equal the m-row dots kernel and each row's one-row launch, over BF16
+/// 2..16-row dense-fast dots equal the m-row dots kernel and each row's one-row launch, over BF16
 /// and f32 weight planes.
 #[test]
 #[ignore = "needs a CUDA device; run under the rig's GPU lock"]
@@ -259,7 +259,7 @@ fn multi_row_dense_fast_dots_are_the_m_row_dots_and_the_one_row_launch_bit_for_b
             } else {
                 w_f32.device_ptr(&st).0 as *const c_void
             };
-            for s in 2..=8usize {
+            for s in 2..=16usize {
                 let x = f32_rows(s * kk, 0x63 ^ ((s as u64) << 8) ^ si as u64);
                 let x_dev: CudaSlice<f32> = e.htod(&x).unwrap();
                 let fast = run_dots(&e, &x_dev, w, bf16, s, n, kk);

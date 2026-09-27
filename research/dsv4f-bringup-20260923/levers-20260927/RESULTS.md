@@ -728,3 +728,43 @@ without a NaN. It takes a vocabulary row from 18.43 to 10.25 us, stream-serializ
 (`../ceiling/raw/floors-se-v7a/`). That is about 8 us of a 9.9 ms step. The long gate,
 M A A M M A, reads 9.84 .. 9.97 ms per token on both arms. Not merged; the commit stays on the
 remote branch `lane/dsv4-argmax-20260927`.
+
+## Dense-fast M-row launches to 16 rows (adopted)
+
+Lane `lane/dsv4-dense16-20260927`, on the B-row lane, first SE pair (`raw/se-dense16-v7c/`). The
+16-row census after the B-row lane put 19.1 ms of a 50.0 ms step in `dsv4_gemv_fp8_m_kernel`.
+Above 8 rows the FP8 GEMVs, their pairs, the gated shared-expert launches, the grouped wo_a and
+the dots all left the dense-fast transport for the generic M-row kernels.
+
+**What changed.** Every dense-fast M-row dispatch takes M up to 16 (`DSV4_DENSE_FAST_M_MAX`):
+- `memra_dsv4_gemv_fp8_m`, its pair and the gated pair;
+- the grouped wo_a (`memra_dsv4_gemv_fp8_grouped_m`, and the owner shared expert on the Rust
+  side);
+- the M-row dots and their pair. The compressor hoist takes one 16-row launch instead of two
+  8-row ones.
+
+The bodies are the M up to 8 ones: each row keeps its own accumulator in the same leaf order and
+its own reduction through the same tree.
+
+**Correctness.**
+- `tests/dsv4_dense_fast_rows_gpu.rs` at M = 2..16: 270 FP8 cases and 180 dots cases equal the
+  m-row kernel and each row's one-row launch, bit for bit.
+- The grouped test's 45 cells at M = 2..16 pass.
+- The long gate hash is `fbce1a0492d69635`, and the TP/EP rows gate and wide 16 pass.
+- All 80 served requests have the same text as the B-row lane.
+
+**16-row captured step** (D B D B): 37.38 .. 37.52 ms against 48.59 .. 48.80, -23.1%, 427 tok/s.
+
+**Served** (cells-c24, B D D B):
+
+| cell | B-row lane | lane | change |
+|---|---|---|---|
+| greedy c16 | 276.04 / 272.71 (TPOT 53.1 ms) | 340.45 / 336.49 (TPOT 42.0 ms) | +23.4% |
+| greedy c24 | 276.52 / 278.72 | 314.72 / 311.58 | +12.8% |
+| greedy c8 | 296.32 / 298.16 | 289.47 / 293.59 | -1.9% |
+| greedy c4 | 214.92 / 213.51 | 209.10 / 212.11 | -1.3% |
+| sampled c8 | 273.38 / 274.02 | 274.09 / 274.06 | flat |
+
+Steps of up to 8 rows run the same kernels in both builds, so the c4 and c8 spread is boot to boot.
+Against main `80f734c77` on this card shape, the B-row lane and this one together take greedy c16
+from about 200 to 338 tok/s and c24 from about 199 to 313.
