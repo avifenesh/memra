@@ -18,6 +18,13 @@ use std::thread::{self, ThreadId};
 static NEXT_OWNER: AtomicU64 = AtomicU64::new(1);
 thread_local! {
     static OWNERS: RefCell<BTreeMap<u64, Entry>> = const { RefCell::new(BTreeMap::new()) };
+    /// Day 92 (I25b, `research/spill-c-20260919/DAY92.md`): this thread's id, read by the owner check without
+    /// cloning the thread handle on every registry entry.
+    static CURRENT: ThreadId = thread::current().id();
+}
+/// Day 92 (I25b): the calling thread's id, the value `thread::current().id()` gives.
+fn current_thread() -> ThreadId {
+    CURRENT.with(|id| *id)
 }
 /// What a pending lease number holds: one record's demand, or (day 64, I15) one grouped demand. Day 90 (I24,
 /// `research/spill-c-20260919/DAY90.md`): each beside the identity its token was minted from, the value `demand` and
@@ -186,7 +193,7 @@ impl ExpertBankOwner {
         });
         Ok(Self {
             proxy: ExpertBankProxy {
-                owner: thread::current().id(),
+                owner: current_thread(),
                 id,
             },
             _owner_only: PhantomData,
@@ -218,7 +225,7 @@ impl Drop for ExpertBankOwner {
 }
 impl ExpertBankProxy {
     fn access<T>(&self, f: impl FnOnce(&mut Entry) -> Result<T>) -> Result<T> {
-        if self.owner != thread::current().id() {
+        if self.owner != current_thread() {
             return Err(Error::WrongOwner);
         }
         OWNERS.with(|owners| {
