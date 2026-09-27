@@ -232,3 +232,34 @@ DAY48 V4 card=pro6000 order=O2 rows_200_both=45 status_mismatch=4 differ=[] -> P
   measurable on this model and card; 2.1 stands.
 - What V5's coverage needs to be observed as registered is a physical debt line on every admission, not only when the
   cost key changes. That is a server log change and a sitting, registered as its own addendum before its code.
+
+### 2.3 The target card (the twentieth sitting, addendum E on 15a7fbcc8, one RTX PRO 6000 Blackwell Workstation Edition at 600 W, 2026-09-27 19:08 to 19:19Z)
+
+Chain tree `c6d7f034f`; the binary built on the box from `15a7fbcc8`, sha256 `679b5e83...ff584fbb65e` (mirrored by hash). The
+artifact is 2.1's. Receipts at `pro-single-day48/box-c/`: the sitting's own `MANIFEST.sha256`, and the lead's, re-checked.
+Every boot `rc=0`; the hold runner held the box lock at once for each boot. Verbatim (`read.log`; V2, V3 and the readings
+read as in 2.2):
+
+```
+DAY48 V1 card=pro6000 boot=O1-enforce-vg pool_engaged_lines=1 physical_debt_lines=45 physical_debt_mb_max=34 vg_debt_lines=107 vg_debt_max=33554432 -> PASS
+DAY48 V5 card=pro6000 boot=O1-enforce-vg paired=45 apart=[] predictive_without_physical=60 -> PASS
+DAY48 V5E card=pro6000 boot=O1-enforce-vg admitted_vg=45 paired_by_id=45 unobserved=[] apart=[] -> PASS
+DAY48 V5 card=pro6000 boot=O2-enforce-vg paired=45 apart=[] predictive_without_physical=60 -> PASS
+DAY48 V5E card=pro6000 boot=O2-enforce-vg admitted_vg=45 paired_by_id=45 unobserved=[] apart=[] -> PASS
+DAY48 V6 READING card=pro6000 boot=O1-enforce-vg physical_debt_lines=45 distinct_mb=[34]
+DAY48 V4 card=pro6000 order=O1 rows_200_both=46 status_mismatch=2 differ=[] -> PASS
+DAY48 V4 card=pro6000 order=O2 rows_200_both=45 status_mismatch=4 differ=[] -> PASS
+```
+
+- **V5 observed as registered, PASS on both `enforce-vg` boots.** Each of the 45 admissions with a predictive `vg_debt`
+  above 0 has the physical line of the same request id, and every pair shows one debt (34 MB on both lines). No
+  admission is unobserved. The sequential V5 line now pairs 45 of 45 too. Its 60 unpaired predictive lines are the
+  `reject-kv` verdicts, which never reach the physical gate.
+- **The door-off program is unchanged:** on the `enforce` boots the physical line prints under the request-cost dedup
+  as before (41 and 39 lines, none with an id). On `enforce-vg` it prints on every admission (45 lines, all with an id).
+- V1 to V4 PASS on all four boots, both orders. The readings are 2.1's: both arms admit 35 of 64 of the burst and 1 of 32
+  of the second wave. V6 reads the pool at 34 MB throughout.
+- **O8 closes on this reading.** The door's debt read is one debt per admission, observed on every admission (the fix
+  `521fdbbbc`, its growing-pool engine test, and now V5E). What the door changes on this model and card stays
+  nothing measurable (2.1). The door stays default off, and the owner decides at its decide-by (2026-10-11).
+

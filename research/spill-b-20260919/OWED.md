@@ -165,8 +165,9 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   recorded as it reads; V6 the pool held at 34 MB, so the growing-pool case is the engine test's alone. Open: a physical
   debt line on every admission and a sitting to observe V5's coverage as registered (its own addendum, after integ72
   merges); a clause revision is the owner's. The owner kept the clause as written (2026-09-27): addendum E, the
-  per-admission line with the door on (`15a7fbcc8`) and the V5E reader line; NEED TARGET CARD, the twentieth sitting
-  (`pro-single-b-sitting20.sh`, receipts `b-day48c`). Before: target card `read` (DAY48 2.1, the eighteenth sitting): V1 to V4 PASS on all four boots; the pool's remaining
+  per-admission line with the door on (`15a7fbcc8`) and the V5E reader line. The twentieth sitting read it (DAY48 2.3):
+  `V5E ... admitted_vg=45 paired_by_id=45 unobserved=[] apart=[] -> PASS` on both enforce-vg boots, V1 to V4 PASS.
+  **Closed** (2026-09-27); the door stays default off to its decide-by (2026-10-11), the owner's call. Before: target card `read` (DAY48 2.1, the eighteenth sitting): V1 to V4 PASS on all four boots; the pool's remaining
   debt is at most 34 MB, so both arms admit the same (35 of 64, 1 of 32). The owner's input; the 5090 half runs. Before:
   `running`. DAY46 read, so DAY48 left text only: addendum A (the door and the cell as built); code `5a6f1898f`
   (`MEMRA_ADMIT_PREDICT_VG_DEBT`, default off, decide-by 2026-10-11; memra-server lib 987 passed, clippy clean); the
