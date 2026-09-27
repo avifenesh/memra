@@ -460,3 +460,49 @@ moves no value, and the hash stays `fbce1a0492d69635`.
 Long gate, second SE pair, order M P P M M P: main 10.85 .. 11.04 ms/token against 10.82 .. 10.95.
 That is flat. Few blocks are resident early enough to matter. Where they are, the predecessor's
 own stream already holds the bandwidth. Not merged.
+
+## The fused pair on one card: where its time goes, and a refuted wider CTA
+
+`tools/dsv4-moe-fused-bench.cu` times the pair on one card at the TP/EP partition shape: 128
+local experts of 256, 6 slots per row, 3 of them local. Each launch takes a fresh expert set, so
+the weights stream from DRAM.
+
+Its variants instantiate the kernel templates directly:
+- a stage-major packed copy of the weights (each warp's stage contiguous), checked bit for bit
+  against the standard kernel;
+- decomposition twins that stream without computing, or compute without streaming, with and
+  without the x mirror;
+- other ring depths and CTA widths.
+
+Receipts: `raw/se2-moe-bench-s2z/`, `raw/se2-moe-bench2-s2za/`, `raw/se2-moe-bench3-s2zb/`,
+`raw/se2-moe-bench4-s2zc/`. Second SE pair. The pair has no performance-counter access, so the
+Nsight run in s2z refused.
+
+**One token row**, gate/up launch, us:
+
+| arm | us | TB/s over the weights |
+|---|---|---|
+| the committed kernel | 28.6 | 0.99 |
+| its skeleton (no epilogue) | 27.9 | 1.02 |
+| no x mirror | 22.8 | 1.24 |
+| streaming only, no mirror | 20.7 | 1.37 |
+| compute only, no loads | 18.7 | 1.51 |
+| the stage-major packed copy | 29.7 | 0.95 |
+
+At one row the launch is compute and stream in about equal parts, overlapped well, plus about
+5 us of x mirror that does not overlap. The packed layout loses 3%, which refutes the access
+pattern as the limit. At four rows the same kernel reads 1.17 TB/s, and the down launch 0.95.
+
+**Refuted: 16-warp CTAs.** On the bench, 16-warp CTAs cut both launches at one row:
+- gate/up from 28.6 to 25.2 us (8 warps per projection);
+- down from 17.5 to 15.2 us (16 warps).
+
+Fewer CTAs rebuild each mirror. In the program they lose. Long gate, second SE pair, order
+M W W M M W, the bits the same (`fbce1a0492d69635`, `raw/se2-moe-wide-s2zd/`, code in
+`wide-cta.patch`):
+- main: 10.60 .. 10.70 ms/token;
+- lane: 10.74 .. 10.87, +1.4%.
+
+One served row per arm agrees: greedy c1 91.00 against 90.30. The bench times each launch alone.
+In the chain, the wider CTAs leave half the SMs idle at one row (96 CTAs of 512 threads against
+192 of 256), and that costs more than the mirrors it saves. Not merged.
