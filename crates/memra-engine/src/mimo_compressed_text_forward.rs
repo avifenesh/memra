@@ -11,7 +11,7 @@ use crate::Engine;
 use crate::mimo_compressed_kv::{MAX_COMPRESSED_CONTEXT_TOKENS, MiMoCompressedKv};
 use crate::mimo_modal_overlay::MiMoGpuEmbeddingChunk;
 use crate::mimo_text_forward::{MiMoTextStep, dense_token, normalized, read_text_output};
-use crate::mimo_text_weights::{MiMoTextWeights, stage_for_layer};
+use crate::mimo_text_weights::{MiMoDenseWeights, MiMoTextWeights, stage_for_layer};
 use crate::model::GpuTensor;
 
 type Fail = Box<dyn Error>;
@@ -19,6 +19,47 @@ const HIDDEN: usize = 4096;
 const VOCAB: usize = 152_576;
 const LAYERS: usize = 48;
 const STAGE_CUT: usize = 24;
+const MAX_FIRST_BATCH_CHUNK: usize = 128;
+
+fn first_batch_rows(tokens: usize) -> Result<usize, &'static str> {
+    if !(1..=MAX_FIRST_BATCH_CHUNK).contains(&tokens) {
+        return Err("MiMo first batch chunk must contain 1..=128 tokens");
+    }
+    Ok(tokens)
+}
+
+fn normalized_rows(
+    engine: &Engine,
+    input: &CudaSlice<f32>,
+    weight: &CudaSlice<f32>,
+    rows: usize,
+    epsilon: f32,
+) -> Result<CudaSlice<f32>, Fail> {
+    if first_batch_rows(rows).is_err()
+        || input.len() != rows * HIDDEN
+        || weight.len() != HIDDEN
+        || input.ordinal() != engine.stream().context().ordinal()
+        || weight.ordinal() != input.ordinal()
+    {
+        return Err("MiMo batch RMS input width, rows, or GPU changed".into());
+    }
+    let mut output = engine.uninit(rows * HIDDEN)?;
+    engine.rms_norm(input, weight, &mut output, HIDDEN, rows, epsilon)?;
+    Ok(output)
+}
+
+fn dense_rows(
+    engine: &Engine,
+    input: &CudaSlice<f32>,
+    weights: &MiMoDenseWeights,
+    rows: usize,
+) -> Result<CudaSlice<f32>, Fail> {
+    let gate = engine.matmul(&weights.gate, input, rows)?;
+    let up = engine.matmul(&weights.up, input, rows)?;
+    let mut activated = engine.uninit(rows * 16_384)?;
+    engine.silu_mul(&gate, &up, &mut activated, rows * 16_384)?;
+    engine.matmul(&weights.down, &activated, rows)
+}
 
 fn check_step(
     position: usize,
@@ -166,6 +207,204 @@ impl<'a> MiMoCompressedTextForward<'a> {
             position,
             logits,
             hidden_before_norm: hidden.ok_or("MiMo modal final hidden capture was omitted")?,
+        })
+    }
+
+    /// Execute one fresh source-ordered chunk with row-batched projections,
+    /// attention, and resident MoE. Only the first 1..=128 positions are
+    /// admitted: the current chunk attention has no preceding cache input.
+    /// Each layer stores Q8_0 K / NVFP4 V or local F32 rows for later decode.
+    ///
+    /// The fresh chunk attends with pre-quantized F32 K/V, so this is a
+    /// separately qualified arithmetic path. It is never selected by the
+    /// ordinary serial `consume_embedding_chunk` or customer serving.
+    pub fn consume_embedding_chunk_batched(
+        &mut self,
+        chunk: &MiMoGpuEmbeddingChunk,
+    ) -> Result<MiMoTextStep, Fail> {
+        let tokens = first_batch_rows(chunk.token_count())?;
+        check_chunk_admission(
+            self.position,
+            self.kv.position(),
+            self.max_tokens,
+            self.failed,
+            tokens,
+            chunk.embeddings().len(),
+            [
+                chunk.embeddings().ordinal(),
+                self.engines[0].stream().context().ordinal(),
+            ],
+        )?;
+        self.kv.begin_prefill_batch(tokens)?;
+        self.failed = true;
+        let positions = (0..tokens)
+            .map(|position| position as i32)
+            .collect::<Vec<_>>();
+        let position_ids = [
+            self.engines[0].htod_i32(&positions)?,
+            self.engines[1].htod_i32(&positions)?,
+        ];
+        let first = self.engines[0];
+        first.gpu.ctx.bind_to_thread()?;
+        let mut hidden = first.uninit(tokens * HIDDEN)?;
+        first
+            .stream()
+            .memcpy_dtod(chunk.embeddings(), &mut hidden)?;
+
+        for index in 0..LAYERS {
+            if index == STAGE_CUT {
+                let values = first.dtoh(&hidden)?;
+                if values.len() != tokens * HIDDEN || values.iter().any(|value| !value.is_finite())
+                {
+                    return Err("MiMo batch stage transfer carried invalid hidden values".into());
+                }
+                self.engines[1].gpu.ctx.bind_to_thread()?;
+                hidden = self.engines[1].htod(&values)?;
+            }
+            let stage = stage_for_layer(index)?;
+            let engine = self.engines[stage];
+            engine.gpu.ctx.bind_to_thread()?;
+            let plan = &self.weights.plan.layers[index];
+            let row = &self.weights.layers[index];
+            let attention = match &plan.attention {
+                AttentionPlan::Full(attention) | AttentionPlan::SlidingWindow { attention, .. } => {
+                    attention
+                }
+                _ => return Err("MiMo batch layer lost its full or sliding attention".into()),
+            };
+            let norm = normalized_rows(
+                engine,
+                &hidden,
+                &row.attention_norm,
+                tokens,
+                plan.pre_attention_norm.epsilon,
+            )?;
+            let projections = row
+                .attention
+                .qkv
+                .iter()
+                .map(|shard| engine.matmul(shard, &norm, tokens))
+                .collect::<Result<Vec<_>, _>>()?;
+            let mut qkv = engine.mimo_gather_qkv(
+                [
+                    &projections[0],
+                    &projections[1],
+                    &projections[2],
+                    &projections[3],
+                ],
+                tokens,
+                attention,
+            )?;
+            engine.rope_neox(
+                &mut qkv.query,
+                &position_ids[stage],
+                192,
+                64,
+                64,
+                tokens,
+                attention.rope.base,
+                1.0,
+            )?;
+            engine.rope_neox(
+                &mut qkv.key,
+                &position_ids[stage],
+                192,
+                64,
+                row.attention.geometry.kv_heads,
+                tokens,
+                attention.rope.base,
+                1.0,
+            )?;
+            let context = engine.mimo_text_chunk_attention(
+                &plan.attention,
+                &qkv.query,
+                &qkv.key,
+                &qkv.value,
+                row.attention.sink.as_ref(),
+                tokens,
+            )?;
+            self.kv.append_prefill_layer(index, &qkv.key, &qkv.value)?;
+            drop((qkv, projections, norm));
+            let attention_output = engine.matmul(&row.attention.output, &context, tokens)?;
+            let mut after_attention = engine.uninit(tokens * HIDDEN)?;
+            engine.add(
+                &hidden,
+                &attention_output,
+                &mut after_attention,
+                tokens * HIDDEN,
+            )?;
+            let mlp_input = normalized_rows(
+                engine,
+                &after_attention,
+                &row.mlp_norm,
+                tokens,
+                plan.pre_mlp_norm.epsilon,
+            )?;
+            let mlp = match &plan.mlp {
+                MlpPlan::Dense(_) if index == 0 => dense_rows(
+                    engine,
+                    &mlp_input,
+                    row.dense
+                        .as_ref()
+                        .ok_or("MiMo batch layer 0 dense weights missing")?,
+                    tokens,
+                )?,
+                MlpPlan::Moe(moe) if index > 0 => {
+                    self.weights.routed[index]
+                        .as_ref()
+                        .ok_or("MiMo batch routed weights missing")?
+                        .batch_bound(
+                            engine,
+                            &mlp_input,
+                            tokens,
+                            moe,
+                            &self.weights.config,
+                            &self.weights.plan,
+                        )?
+                        .output
+                }
+                _ => return Err(format!("MiMo batch layer {index} MLP changed").into()),
+            };
+            let mut after_mlp = engine.uninit(tokens * HIDDEN)?;
+            engine.add(&after_attention, &mlp, &mut after_mlp, tokens * HIDDEN)?;
+            hidden = after_mlp;
+        }
+        self.kv.finish_prefill_batch()?;
+        if self.kv.position() != tokens {
+            return Err("MiMo batch text KV cursor did not commit all rows".into());
+        }
+        let last = self.engines[1];
+        last.gpu.ctx.bind_to_thread()?;
+        let mut final_hidden = last.uninit(HIDDEN)?;
+        last.dtod_copy_view(
+            &hidden.slice((tokens - 1) * HIDDEN..tokens * HIDDEN),
+            &mut final_hidden,
+        )?;
+        let final_norm = normalized(
+            last,
+            &final_hidden,
+            &self.weights.output_norm,
+            self.weights.plan.output_norm.epsilon,
+        )?;
+        let GpuTensor::FloatBf16 { data, ne } = &self.weights.output_head else {
+            return Err("MiMo batch head lost the source BF16 output projection".into());
+        };
+        if ne.as_slice() != [HIDDEN as u64, VOCAB as u64]
+            || data.len() != HIDDEN * VOCAB * 2
+            || data.ordinal() != last.stream().context().ordinal()
+        {
+            return Err("MiMo batch head source shape or GPU changed".into());
+        }
+        let mut logits_gpu = last.uninit(VOCAB)?;
+        last.matvec_bf16_rows_into(data, &final_norm, &mut logits_gpu, HIDDEN, VOCAB, 1)?;
+        let (logits, final_hidden) = read_text_output::<true>(last, &final_hidden, &logits_gpu)?;
+        self.position = tokens;
+        self.failed = false;
+        self.has_modal_payload = chunk.requires_payload_identity();
+        Ok(MiMoTextStep {
+            position: tokens - 1,
+            logits,
+            hidden_before_norm: final_hidden.ok_or("MiMo batch text hidden capture was omitted")?,
         })
     }
 
@@ -375,6 +614,17 @@ mod tests {
     }
 
     #[test]
+    fn first_batch_chunk_has_explicit_qkv_and_fresh_sequence_bound() {
+        assert_eq!(first_batch_rows(1).unwrap(), 1);
+        assert_eq!(first_batch_rows(20).unwrap(), 20);
+        assert_eq!(first_batch_rows(128).unwrap(), 128);
+        assert!(first_batch_rows(0).is_err());
+        assert!(first_batch_rows(129).is_err());
+        assert!(check_chunk_admission(0, 0, 128, false, 128, 128 * HIDDEN, [0, 0]).is_ok());
+        assert!(check_chunk_admission(1, 1, 128, false, 20, 20 * HIDDEN, [0, 0]).is_err());
+    }
+
+    #[test]
     #[ignore = "requires pinned MiMo source and a dedicated two-card GPU lane"]
     fn source_modal_chunk_runs_text_kv_and_preserves_text_token_bits() -> Result<(), Fail> {
         use std::path::Path;
@@ -435,6 +685,97 @@ mod tests {
         assert_eq!(sequence.position(), 5);
         assert_eq!(continuation.len(), 152_576);
         assert!(continuation.iter().all(|value| value.is_finite()));
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires pinned MiMo source and a dedicated two-card GPU lane"]
+    fn first_batch_chunk_replays_and_hands_off_to_ordinary_decode() -> Result<(), Fail> {
+        use std::path::Path;
+        use std::sync::Arc;
+
+        use memra_gguf::source::SafetensorsSource;
+        use memra_reference::mimo_modal_overlay::{AUDIO_TOKEN_ID, IMAGE_TOKEN_ID, VIDEO_TOKEN_ID};
+
+        const FOUR_GIB: usize = 4 * 1024 * 1024 * 1024;
+        let root = std::env::var("MIMO_PINNED_SOURCE_ROOT")?;
+        let source = Arc::new(SafetensorsSource::open(Path::new(&root))?);
+        let cards = [Engine::new(0)?, Engine::new(1)?];
+        let engines = [&cards[0], &cards[1]];
+        let text = MiMoTextWeights::load(engines, source)?;
+        let tokens = [42, IMAGE_TOKEN_ID, VIDEO_TOKEN_ID, AUDIO_TOKEN_ID];
+        let image = vec![vec![0.125; HIDDEN]];
+        let video = vec![vec![-0.25; HIDDEN]];
+        let audio = vec![vec![0.5; HIDDEN]];
+        let prepared =
+            text.modal_embedding_gpu_chunk(&cards[0], &tokens, &image, &video, &audio)?;
+
+        let run_batch = || -> Result<(MiMoTextStep, Vec<f32>), Fail> {
+            let mut sequence = text.compressed_text_forward(engines, 5, [FOUR_GIB; 2])?;
+            let step = sequence.consume_embedding_chunk_batched(&prepared)?;
+            if step.position != 3
+                || sequence.position() != 4
+                || !sequence.has_modal_payload()
+                || step.hidden_before_norm.len() != HIDDEN
+                || step.logits.len() != VOCAB
+            {
+                return Err("MiMo first batch chunk returned an incomplete source step".into());
+            }
+            let continuing = sequence.token(220)?;
+            if sequence.position() != 5 || continuing.len() != VOCAB {
+                return Err("MiMo first batch chunk did not hand off to decode".into());
+            }
+            Ok((step, continuing))
+        };
+        let (first, first_next) = run_batch()?;
+        let (second, second_next) = run_batch()?;
+        if first
+            .logits
+            .iter()
+            .zip(&second.logits)
+            .any(|(a, b)| a.to_bits() != b.to_bits())
+            || first
+                .hidden_before_norm
+                .iter()
+                .zip(&second.hidden_before_norm)
+                .any(|(a, b)| a.to_bits() != b.to_bits())
+            || first_next
+                .iter()
+                .zip(&second_next)
+                .any(|(a, b)| a.to_bits() != b.to_bits())
+        {
+            return Err("MiMo first batch chunk changed on byte-identical GPU replay".into());
+        }
+        let mut serial = text.compressed_text_forward(engines, 5, [FOUR_GIB; 2])?;
+        let serial_step = serial.consume_embedding_chunk(&prepared)?;
+        let serial_next = serial.token(220)?;
+        let relative_l2 = |candidate: &[f32], control: &[f32]| {
+            let (diff, base) = candidate.iter().zip(control).fold(
+                (0.0f64, 0.0f64),
+                |(diff, base), (&got, &want)| {
+                    (
+                        diff + f64::from(got - want).powi(2),
+                        base + f64::from(want).powi(2),
+                    )
+                },
+            );
+            (diff / base).sqrt()
+        };
+        let argmax = |logits: &[f32]| {
+            logits
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.total_cmp(b))
+                .map(|(index, _)| index)
+                .unwrap()
+        };
+        println!(
+            "mimo_first_chunk_batch\tlast_rel_l2={:.9e}\tdecode_rel_l2={:.9e}\tlast_argmax={}\tserial_argmax={}",
+            relative_l2(&first.logits, &serial_step.logits),
+            relative_l2(&first_next, &serial_next),
+            argmax(&first.logits),
+            argmax(&serial_step.logits),
+        );
         Ok(())
     }
 
