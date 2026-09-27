@@ -531,6 +531,7 @@ fn main() {
             "cu/mimo_audio_embed.cu",
             // Four-token noncausal MiMo audio patch attention after QKV and RoPE.
             "cu/mimo_audio_attn.cu",
+            "cu/mimo_audio_patch_forward.cu",
             // Small-message cross-rank all-reduce for TP decode (lane/tp-allreduce-20260906).
             // Portable CUDA C; peer stores plus a bounded flag wait, no oracle to match, so it
             // takes the default flags rather than dsv4_gpu.cu's -fmad=false.
