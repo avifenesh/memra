@@ -4672,6 +4672,177 @@ extern "C" int memra_dsv4_gemv_fp8_m_pair(const void* wa, const float* sca, int 
     return 0;
 }
 
+// The shared expert on one TP/EP rank (memra #710). The fused gate/up launch names the rank
+// with fewer of the step's routed slots in each rank's owner word `run`; these launches run on
+// the named rank and exit at entry on the other. Each block runs the body of the ungated
+// launch, so every output keeps its bits. Admitted exactly where memra_dsv4_gemv_fp8_m and
+// memra_dsv4_gemv_fp8_m_pair take the dense-fast transport; anything else refuses 40004 and
+// the caller keeps the replicated shared expert.
+template <int M>
+__global__ void dsv4_dense_fast_fp8_kernel_gated(const uint8_t* __restrict__ w,
+                                                 const float* __restrict__ sc, int sc_cols,
+                                                 const uint16_t* __restrict__ x,
+                                                 float* __restrict__ y, int n, int k, int xstride,
+                                                 int ystride, const int* __restrict__ run) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    if (!*run) return;
+    dsv4_dense_fast_fp8_body<2, false, M>(w, sc, sc_cols, x, y, n, k, xstride, ystride, 0, 0,
+                                          blockIdx.x);
+}
+
+template <int M>
+__global__ void dsv4_dense_fast_fp8_kernel_pair_gated(
+        const uint8_t* __restrict__ wa, const float* __restrict__ sca, int sc_cols_a,
+        float* __restrict__ ya, int na, const uint8_t* __restrict__ wb,
+        const float* __restrict__ scb, int sc_cols_b, float* __restrict__ yb, int nb, int nblk_a,
+        const uint16_t* __restrict__ x, int k, const int* __restrict__ run) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    if (!*run) return;
+    if ((int)blockIdx.x < nblk_a)
+        dsv4_dense_fast_fp8_body<2, false, M>(wa, sca, sc_cols_a, x, ya, na, k, k, na, 0, 0,
+                                              blockIdx.x);
+    else
+        dsv4_dense_fast_fp8_body<2, false, M>(wb, scb, sc_cols_b, x, yb, nb, k, k, nb, 0, 0,
+                                              blockIdx.x - nblk_a);
+}
+
+static bool dsv4_dense_fast_gated_admits(const void* w, const float* sc, int sc_cols,
+                                         const void* x, float* y, int m, int n, int k) {
+    return m >= 1 && m <= 8 && k % 8 == 0 && sc_cols > 0 && dsv4_dense_exact_tail_enabled &&
+           !dsv4_dense_exact_tail_suppressed && dsv4_dense_fast_enabled &&
+           dsv4_dense_exact_tail_fp8_admits(w, sc, sc_cols, x, y, 1, n, k);
+}
+
+// y [m][ystride] (ystride <= 0 is n) = memra_dsv4_gemv_fp8_m's dense-fast launch, on the rank
+// `run` names.
+extern "C" int memra_dsv4_gemv_fp8_m_gated(const void* w_codes, const float* sc_f32, int sc_cols,
+                                           const void* x_bf16, float* y, int m, int n, int k,
+                                           int ystride, const int* run, void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (!run || !dsv4_dense_fast_gated_admits(w_codes, sc_f32, sc_cols, x_bf16, y, m, n, k))
+        return 40004;
+    if (ystride <= 0) ystride = n;
+    if (dsv4_dense_fast_observer) {
+        int rc = dsv4_dense_fast_observer(0, w_codes, sc_f32, sc_cols, x_bf16, n, k, stream_v);
+        if (rc) return rc;
+    }
+    if (m >= 2) dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, n, k);
+    const unsigned grid = (unsigned)((n + 1LL) / 2);
+    switch (m) {
+#define DSV4_FP8_GATED_CASE(MM)                                                             \
+    case MM:                                                                                \
+        memra_chain_launch(dsv4_dense_fast_fp8_kernel_gated<MM>, grid, 256, 0, stream)(       \
+            (const uint8_t*)w_codes, sc_f32, sc_cols, (const uint16_t*)x_bf16, y, n, k, k,    \
+            ystride, run);                                                                  \
+        break;
+        DSV4_FP8_GATED_CASE(1)
+        DSV4_FP8_GATED_CASE(2)
+        DSV4_FP8_GATED_CASE(3)
+        DSV4_FP8_GATED_CASE(4)
+        DSV4_FP8_GATED_CASE(5)
+        DSV4_FP8_GATED_CASE(6)
+        DSV4_FP8_GATED_CASE(7)
+        DSV4_FP8_GATED_CASE(8)
+#undef DSV4_FP8_GATED_CASE
+    }
+    DSV4_ERR();
+    if (m == 1) ++dsv4_dense_fast_enqueues[0];
+    return 0;
+}
+
+// memra_dsv4_gemv_fp8_m_pair's dense-fast launch (contiguous rows), on the rank `run` names.
+extern "C" int memra_dsv4_gemv_fp8_m_pair_gated(const void* wa, const float* sca, int sc_cols_a,
+                                                float* ya, int na, const void* wb,
+                                                const float* scb, int sc_cols_b, float* yb,
+                                                int nb, const void* x_bf16, int m, int k,
+                                                const int* run, void* stream_v) {
+    cudaStream_t stream = (cudaStream_t)stream_v;
+    if (!run || !dsv4_dense_fast_gated_admits(wa, sca, sc_cols_a, x_bf16, ya, m, na, k) ||
+        !dsv4_dense_fast_gated_admits(wb, scb, sc_cols_b, x_bf16, yb, m, nb, k))
+        return 40004;
+    if (dsv4_dense_fast_observer) {
+        int rc = dsv4_dense_fast_observer(0, wa, sca, sc_cols_a, x_bf16, na, k, stream_v);
+        if (rc) return rc;
+        rc = dsv4_dense_fast_observer(0, wb, scb, sc_cols_b, x_bf16, nb, k, stream_v);
+        if (rc) return rc;
+    }
+    if (m >= 2) {
+        dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, na, k);
+        dsv4_dense_census_note(DSV4_DENSE_ENTRY_GEMV_FP8, m, nb, k);
+    }
+    const int nblk_a = (int)((na + 1LL) / 2), nblk_b = (int)((nb + 1LL) / 2);
+    const unsigned grid = (unsigned)(nblk_a + nblk_b);
+    switch (m) {
+#define DSV4_FP8_PAIR_GATED_CASE(MM)                                                        \
+    case MM:                                                                                \
+        memra_chain_launch(dsv4_dense_fast_fp8_kernel_pair_gated<MM>, grid, 256, 0, stream)(  \
+            (const uint8_t*)wa, sca, sc_cols_a, ya, na, (const uint8_t*)wb, scb, sc_cols_b,   \
+            yb, nb, nblk_a, (const uint16_t*)x_bf16, k, run);                               \
+        break;
+        DSV4_FP8_PAIR_GATED_CASE(1)
+        DSV4_FP8_PAIR_GATED_CASE(2)
+        DSV4_FP8_PAIR_GATED_CASE(3)
+        DSV4_FP8_PAIR_GATED_CASE(4)
+        DSV4_FP8_PAIR_GATED_CASE(5)
+        DSV4_FP8_PAIR_GATED_CASE(6)
+        DSV4_FP8_PAIR_GATED_CASE(7)
+        DSV4_FP8_PAIR_GATED_CASE(8)
+#undef DSV4_FP8_PAIR_GATED_CASE
+    }
+    DSV4_ERR();
+    if (m == 1) dsv4_dense_fast_enqueues[0] += 2;
+    return 0;
+}
+
+// dsv4_cvt_bf16_kernel on the rank `run` names.
+static __global__ void dsv4_cvt_bf16_gated_kernel(const float* __restrict__ x,
+                                                  __nv_bfloat16* __restrict__ o, long n,
+                                                  const int* __restrict__ run) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    if (!*run) return;
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) o[i] = __float2bfloat16(x[i]);
+}
+
+extern "C" int memra_dsv4_cvt_bf16_gated(const float* x, void* o, long n, const int* run,
+                                         void* stream_v) {
+    if (!x || !o || !run || n < 1) return 40004;
+    const long blocks = (n + 255) / 256;
+    memra_chain_launch(dsv4_cvt_bf16_gated_kernel, (unsigned)blocks, 256, 0,
+                       (cudaStream_t)stream_v)(x, (__nv_bfloat16*)o, n, run);
+    DSV4_ERR();
+    return 0;
+}
+
+// dsv4_swiglu_kernel (no routing weight) then dsv4_cvt_bf16_kernel in one launch, on the rank
+// `run` names: the same two ops per element, so the bf16 row keeps its bits.
+static __global__ void dsv4_swiglu_bf16_gated_kernel(const float* __restrict__ gate,
+                                                     const float* __restrict__ up,
+                                                     __nv_bfloat16* __restrict__ dst,
+                                                     float limit, long n,
+                                                     const int* __restrict__ run) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    if (!*run) return;
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    float u = fminf(fmaxf(up[i], -limit), limit);
+    float g = fminf(gate[i], limit);
+    float h = g * dsv4_sigmoid(g) * u;
+    dst[i] = __float2bfloat16(h);
+}
+
+extern "C" int memra_dsv4_swiglu_bf16_gated(const float* gate, const float* up, void* dst,
+                                            int rows, int inter, float limit, const int* run,
+                                            void* stream_v) {
+    if (!gate || !up || !dst || !run || rows < 1 || inter < 1) return 40004;
+    const long n = (long)rows * inter;
+    const long blocks = (n + 255) / 256;
+    memra_chain_launch(dsv4_swiglu_bf16_gated_kernel, (unsigned)blocks, 256, 0,
+                       (cudaStream_t)stream_v)(gate, up, (__nv_bfloat16*)dst, limit, n, run);
+    DSV4_ERR();
+    return 0;
+}
+
 // Plain t=1 grouped output-projection twin. Each group owns one contiguous slice of
 // the activation and output planes, while the weight rows remain contiguous across groups.
 // The arithmetic body is the same dsv4_gemv_fp8_m_kernel<1> body above; only the row/group
@@ -8323,8 +8494,8 @@ dsv4_moe_fused_gu_kernel(const unsigned long long* __restrict__ table, int n_exp
                          int global_experts, int first_expert, int slots_per_row,
                          const int* __restrict__ sel, const float* __restrict__ selw,
                          const float* __restrict__ scale2, const float* __restrict__ xf,
-                         float* __restrict__ H, int in_f, int out_f, float limit, long row_bytes,
-                         int* __restrict__ fault) {
+                         float* __restrict__ H, int* __restrict__ shared_run, int in_f,
+                         int out_f, float limit, long row_bytes, int* __restrict__ fault) {
     MEMRA_PDL_CHAIN_ENTRY();
     using R = Dsv4M1Ring<KC, STAGES>;
     extern __shared__ __align__(16) unsigned char fz_smem[];
@@ -8340,6 +8511,24 @@ dsv4_moe_fused_gu_kernel(const unsigned long long* __restrict__ table, int n_exp
     const bool in_range = e >= 0 && e < global_experts;
     const int le = e - first_expert;
     const bool valid = in_range && le >= 0 && le < n_expert;
+    if (shared_run && blockIdx.x == 0 && blockIdx.y == 0 && warp == 0) {
+        // The shared expert's owner word (memra #710): this rank runs it when it holds fewer of
+        // the launch's routed slots than the other rank, rank 0 (first_expert 0) on a tie.
+        int mine = 0, theirs = 0;
+        for (int i = lane; i < (int)gridDim.y; i += 32) {
+            const int g = sel[i];
+            const bool live = g >= 0 && g < global_experts;
+            const bool own = live && g >= first_expert && g - first_expert < n_expert;
+            mine += own;
+            theirs += live && !own;
+        }
+#pragma unroll
+        for (int o = 16; o; o >>= 1) {
+            mine += __shfl_xor_sync(0xffffffffu, mine, o);
+            theirs += __shfl_xor_sync(0xffffffffu, theirs, o);
+        }
+        if (lane == 0) *shared_run = mine < theirs || (mine == theirs && first_expert == 0);
+    }
     // Another rank's expert: the partition route omits the slot, so no h row is read for it.
     if (in_range && !valid) return;
     const bool up = warp >= WP;
@@ -8496,12 +8685,14 @@ static bool dsv4_moe_fused_shape_ok(int n_expert, int topk, int in_f, int out_f,
 // `table` holds experts [first, first + n_expert) of `global_experts`; sel and scale2 carry
 // global ids. The full bank is first = 0 and n_expert = global_experts.
 // `rows` token rows of `topk` slots each: x is [rows][in_f], sel/selw/h [rows * topk].
+// A non-null shared_run takes the partition's shared-expert owner word
+// (memra_dsv4_gemv_fp8_m_gated).
 extern "C" int memra_dsv4_moe_fused_gu_part(const unsigned long long* table, int n_expert,
                                             int global_experts, int first, const int* sel,
                                             const float* selw, const float* scale2,
-                                            const float* xf, float* h, int topk, int rows,
-                                            int in_f, int out_f, float limit, int* fault,
-                                            void* stream_v) {
+                                            const float* xf, float* h, int* shared_run,
+                                            int topk, int rows, int in_f, int out_f, float limit,
+                                            int* fault, void* stream_v) {
     constexpr int WP = DSV4_MOE_FUSED_WARPS, KC = DSV4_MOE_FUSED_KC, ST = DSV4_MOE_FUSED_STAGES;
     if (!table || !sel || !selw || !scale2 || !xf || !h || first < 0 || rows < 1 ||
         global_experts < n_expert || first > global_experts - n_expert ||
@@ -8513,7 +8704,8 @@ extern "C" int memra_dsv4_moe_fused_gu_part(const unsigned long long* table, int
     memra_chain_launch(dsv4_moe_fused_gu_kernel<WP, KC, ST>,
         dim3((unsigned)(out_f / (8 * WP)), (unsigned)(rows * topk)), dim3(32, 2 * WP), smem,
            (cudaStream_t)stream_v)(table, n_expert, global_experts, first, topk, sel, selw,
-                                     scale2, xf, h, in_f, out_f, limit, (long)(in_f / 2), fault);
+                                     scale2, xf, h, shared_run, in_f, out_f, limit,
+                                     (long)(in_f / 2), fault);
     DSV4_ERR();
     g_dsv4_moe_fused_dispatches.fetch_add(1, std::memory_order_relaxed);
     return 0;
@@ -8524,7 +8716,7 @@ extern "C" int memra_dsv4_moe_fused_gu(const unsigned long long* table, int n_ex
                                        const float* xf, float* h, int topk, int in_f, int out_f,
                                        float limit, int* fault, void* stream_v) {
     return memra_dsv4_moe_fused_gu_part(table, n_expert, n_expert, 0, sel, selw, scale2, xf, h,
-                                        topk, 1, in_f, out_f, limit, fault, stream_v);
+                                        nullptr, topk, 1, in_f, out_f, limit, fault, stream_v);
 }
 
 // One token: h is [topk][in_f] (in_f = moe_inter), contribution [topk][out_f], y [out_f];

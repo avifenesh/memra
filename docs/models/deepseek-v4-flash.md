@@ -70,6 +70,11 @@ Since 2026-09-27 the HC finish runs its Sinkhorn projection on a fifth warp, bes
 and the RMSNorm (`research/dsv4f-bringup-20260923/hc-finish/`). Greedy c1 goes from 89.17 to
 91.01 tok/s (+2.0%, decode 96.1) on the SE pair, N=2. Same bits.
 
+Since 2026-09-27 the shared expert runs on one TP/EP rank per layer, the one with fewer of the
+step's routed slots, and its rows ride the expert join
+(`research/dsv4f-bringup-20260923/levers-20260927/`). Greedy c1 goes from 91.18 to 94.66 tok/s
+(+3.7%, decode 99.1) on the second SE pair, N=2. Same bits.
+
 Concurrency: the plain TP/EP route serves four lanes whose steps share one captured B-row
 graph step (memra #710). Aggregate on the Workstation pair:
 
