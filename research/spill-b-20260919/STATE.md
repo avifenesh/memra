@@ -1,3 +1,8 @@
+# WP-B checkpoint 2026-09-27 05:3xZ: integ71's GPU battery on BOX43 (e8af7cf53) all green for this lane's twelve cells
+(the lead's receipts: research/spill-lead-20260919/integration-day12/integ71-pro-run1/lane-b/; serve-smoke fails only
+#777's Q35 line). The lead's CRLF finding: 209 committed *.hdr captures had been stored LF under core.autocrlf=input
+(90 checked against their manifests, 119 local against the untouched working copies); restored to their CRLF bytes
+with research/spill-b-20260919/.gitattributes (*.hdr, *.body -text -whitespace) and listed in hdr-crlf-record.tsv.
 # WP-B checkpoint 2026-09-27 05:0xZ: DAY39 2.4 (the 5090 GREEN; O5 read on both classes) and DAY50 2.2 (the 5090 stage 0:
 arm O on this class too) read; DAY50 addendum C registered (arm O's census, the shadow, stage 1 next); the eighteenth
 sitting (DAY48) queued on BOX43 behind integ71's battery; local: DAY49D, DAY46C, DAY48, queue-m (DAY40), chain-r5 (gates).
