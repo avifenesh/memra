@@ -531,6 +531,8 @@ fn main() {
             "cu/mimo_swa_ring_attn.cu",
             // Source-inspection NVFP4 cache row codec.
             "cu/mimo_kv_nvfp4.cu",
+            // Standalone signed 5-bit MiMo V component codec.
+            "cu/mimo_s5_g16_codec.cu",
             // Source BF16 speech-table gather for the MiMo audio patch encoder.
             "cu/mimo_audio_embed.cu",
             // Four-token noncausal MiMo audio patch attention after QKV and RoPE.

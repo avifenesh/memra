@@ -1,5 +1,19 @@
 # Kernel inventory
 
+## MiMo signed 5-bit V component, 2026-09-27
+
+The standalone [128] V head-row codec uses eight groups of 16 signed
+two's-complement codes. Each group has one UE4M3 scale and 80 little-endian
+packed bits: 88 bytes per head row and 352 bytes per four-head token row.
+Scale selection and rounding follow the source-only probe at `ece94bf4`.
+This component has no cache or serving caller. Hardware byte parity, error,
+and timing remain to be measured before integration.
+
+| Symbol | Purpose | Types | Architecture | Door | Binding |
+| --- | --- | --- | --- | --- | --- |
+| `memra_mimo_s5_g16_encode_f32` | Encode up to 1024 complete [128] V head rows | f32 to packed u8 | Portable CUDA C | None; component only | `Engine::mimo_s5_g16_encode_rows` |
+| `memra_mimo_s5_g16_decode_f32` | Decode the same rows for numeric comparison | packed u8 to f32 | Portable CUDA C | None; component only | `Engine::mimo_s5_g16_decode_rows` |
+
 ## Qwen FA2 attention experiment, 2026-09-09
 
 Both entries carry the same numerical body: BF16 MMA, FP32 direct PV accumulation,
