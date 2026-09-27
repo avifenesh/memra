@@ -120,7 +120,9 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   the fuller charge"). Dropped from STATE at day 33 with no closing record; restored here.
 - Acceptance to pre-register: `MEMRA_ADMIT_PREDICT_ENFORCE=1` against a budget arm on both cards, the day-24 sequence
   and a burst, before and after the day-24 charge, every refusal a typed 429 with its `Retry-After`, no OOM.
-- Status: target card `read` (DAY46 2.2, the seventeenth sitting, addendum C): P1 to P5 PASS on all four enforcing
+- Status (2026-09-28): `read` on both cards. On the 5090 (DAY46 2.3, queue-n) P1 to P5 PASS on all four enforcing boots,
+  and the W release admits 6 of 16 second-wave requests against 1 of 16. The owner's input. Earlier: target card `read`
+  (DAY46 2.2, the seventeenth sitting, addendum C): P1 to P5 PASS on all four enforcing
   boots, both orders. The W release takes the book from 60.60 GB to 20.47 GB by the second wave, and the enforcing door
   admits 11 of 32 of that wave with the release against 1 of 32 without it (39 against 29 over the boot, no OOM on
   either arm). The owner's input for both doors; no default moves. The 5090 half runs from `rtx5090-day46c/run.sh`.
@@ -188,9 +190,9 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   device work, or a torn-state check), or split it, keeping one numeric program per request (a retried chunk is the
   same batched step); sessions that never emitted park as today. Design, the torn-state argument and the cells are
   pre-registered before code (DAY49).
-- Status (2026-09-27): the owner's ruling: `MEMRA_BATCH_OOM_RECOVER` is ON by default on the RTX PRO 6000 Blackwell
-  class (DAY49 addendum F, `be4d7f92c`, `docs/decisions/BATCH-OOM-RECOVER-DEFAULT.md`; `=0` the seam, decide-by
-  2026-10-11). The RTX 5090's flip waits for queue-n's serving boots (decide-by 2026-10-10). Earlier:
+- Status (2026-09-28): ON by default on both first-class classes. The RTX PRO 6000 Blackwell class came first (DAY49
+  addendum F, `be4d7f92c`). The RTX 5090 class followed once queue-n's serving boots read (2.7, addendum G,
+  `c28363d08`). `=0` is the seam, decide-by 2026-10-12 (`docs/decisions/BATCH-OOM-RECOVER-DEFAULT.md`). Earlier:
   Status: `running`. Pre-registered (DAY49), addendum A (the marker check replaced by the engine step guard),
   addendum B (the cells). Code `6102fb63a` and `02dbdfa40` (`MEMRA_BATCH_OOM_RECOVER`, decide-by 2026-10-10; engine
   and server suites pass, clippy clean). The gate's arm i with its red twin and the serving shape run locally
