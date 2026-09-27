@@ -192,6 +192,16 @@ import json, sys
 r = json.load(open('$1'))
 sys.exit(0 if ($2) else 1)"
 }
+whole_entry_hit() { # $1 response json: 0 < cached_tokens == capture_len(prompt_tokens) (memra#602)
+    python3 - "$1" "$HERE" <<'PY'
+import json, sys
+sys.path.insert(0, sys.argv[2])
+from cache_qualification import capture_len
+usage = json.load(open(sys.argv[1]))["usage"]
+cached = usage["prompt_tokens_details"]["cached_tokens"]
+sys.exit(0 if 0 < cached == capture_len(usage["prompt_tokens"]) else 1)
+PY
+}
 text_eq() { # $1 file $2 file
     python3 -c "
 import json, sys
@@ -252,9 +262,10 @@ else
         jqpy "$EV/host-on-metrics.json" \
         "r['prefix_host_demotions'] >= 1 and r['prefix_host_promotions'] >= 1 and r['prefix_host_rejected_allocs'] == 0"
     if [ "$DRAFTER_ARM" = 1 ]; then
-        chk "drafter arm: r3 served a whole-cover hit through the promoted entry" \
-            jqpy "$EV/host-on-r3.json" \
-            "0 < r['usage']['prompt_tokens_details']['cached_tokens'] == r['usage']['prompt_tokens']"
+        # memra#602/#777: the re-send restores the seed's GDN-grid entry, capture_len(P_A), not
+        # the prompt end (tools/cache_qualification.py capture_len, the server's grid).
+        chk "drafter arm: r3 served a whole-entry hit through the promoted entry (cached == capture_len(prompt))" \
+            whole_entry_hit "$EV/host-on-r3.json"
     else
         chk "r3 served a strict-prefix hit through the promoted entry" \
             jqpy "$EV/host-on-r3.json" \

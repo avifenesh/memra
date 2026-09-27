@@ -11,6 +11,7 @@ import http.client
 import json
 import os
 from pathlib import Path
+import re
 import time
 import urllib.error
 import urllib.request
@@ -18,6 +19,35 @@ import urllib.request
 
 class QualificationError(ValueError):
     pass
+
+
+# The memra#602 capture law (crates/memra-server/src/worker.rs `seed_capture_boundary`): a
+# whole-prompt re-send restores the entry the prompt-end seed published, which sits on the GDN
+# prime grid, so its cached_tokens is capture_len(prompt_tokens), not prompt_tokens.
+PRIME_MIN_T = 16
+PREFIX_CACHE_MIN_TOKENS = 64
+
+
+def gdn_grid(env=None):
+    """Engine::gdn_chunk_size(): MEMRA_GDN_CHUNK as a usize, default 32, clamped to
+    [32, 128] and rounded down to a multiple of 32."""
+    raw = (os.environ if env is None else env).get("MEMRA_GDN_CHUNK")
+    value = 32
+    if raw is not None and re.fullmatch(r"\+?[0-9]+", raw) and int(raw) < 2**64:
+        value = int(raw)
+    return max(32, min(128, value)) // 32 * 32
+
+
+def capture_len(prompt_tokens, grid=None):
+    """The entry length the prompt-end seed publishes for a prompt of `prompt_tokens`; None when
+    the server refuses the seed (aligned length under PREFIX_CACHE_MIN_TOKENS)."""
+    grid = gdn_grid() if grid is None else grid
+    if prompt_tokens % grid == 0:
+        return prompt_tokens
+    boundary = prompt_tokens // grid * grid
+    while boundary >= grid and prompt_tokens - boundary < PRIME_MIN_T:
+        boundary -= grid
+    return boundary if boundary >= PREFIX_CACHE_MIN_TOKENS else None
 
 
 def load_prompt_pool(path, minimum=8, explicit=True):
