@@ -95,9 +95,22 @@ fn run() -> Result<(), Fail> {
             );
         }
     };
+    let vision_dump = match args.next() {
+        None => None,
+        Some(flag) if rgb8 && flag == "--vision-f32le" => {
+            let path = args
+                .next()
+                .ok_or("MiMo vision dump needs an absolute output path")?;
+            if !Path::new(&path).is_absolute() {
+                return Err("MiMo vision dump needs an absolute output path".into());
+            }
+            Some(path)
+        }
+        _ => return Err("MiMo combined source has an unknown extra option".into()),
+    };
     if args.next().is_some() {
         return Err(
-            "usage: mimo_combined_modal_source_probe <source_dir> [--rgb8 | --raw-modal <absolute-mkl-path>]"
+            "usage: mimo_combined_modal_source_probe <source_dir> [--rgb8 | --raw-modal <absolute-mkl-path>] [--vision-f32le <absolute-output-path>]"
                 .into(),
         );
     }
@@ -193,12 +206,21 @@ fn run() -> Result<(), Fail> {
     if rgb8 {
         println!("rgb_image_tokens\t{image_tokens}");
         println!("rgb_video_tokens\t{video_tokens}");
+        println!("rgb_patch_rows_sha256\t{}", digest(&pixels));
     }
     let vision_output =
         vision.forward_patchified_vision(&cards[0], &config, &grids, &cards[0].htod(&pixels)?)?;
     let visual_rows = cards[0].dtoh(&vision_output)?;
     if visual_rows.len() != (image_tokens + video_tokens) * HIDDEN {
         return Err("MiMo combined source vision rows are incomplete".into());
+    }
+    if let Some(path) = vision_dump {
+        let mut bytes = Vec::with_capacity(visual_rows.len() * size_of::<f32>());
+        for &value in &visual_rows {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        std::fs::write(path, &bytes)?;
+        println!("vision_f32le_sha256\t{}", digest_bytes(&bytes));
     }
     let image_rows = visual_rows[..image_tokens * HIDDEN]
         .chunks_exact(HIDDEN)
