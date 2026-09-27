@@ -194,3 +194,19 @@ same way. Design T's thread rule for the fill (item 3) is the precedent.
   - At least 64 GB of RAM.
   - The 27B at `/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf` (sha256 `1facf36c..`).
   - The CUDA 13 toolchain and Rust to build; the lock `/tmp/memra-gpu.lock` taken by the collector per cell.
+
+## 9. T-H''s sitting, started
+
+- Run by the lead on BOX44, a fresh box: a Core Ultra 9 285K class host (24 threads), one RTX PRO 6000 Blackwell
+  Workstation card at 600 W, 249 GB of RAM.
+  - Acceptance passed: no power brake, zero PCIe replays, and the FMA spin at 2797 MHz.
+  - It is the host class that carried L''s, R1's and P2L2's sittings. It is not the machine with the hourly host-wide
+    stall that lane C found.
+- The helper's thread rule gives `clamp(24 / 2, 1, 8) = 8` threads there, T-H's count at its sitting.
+- The lead's chain:
+  - stages the 27B, sha-checked;
+  - clones `lane/spill-a-th2-20260927` and checks the tip is `67af1b71e`;
+  - runs `build.sh 67af1b71e 80f734c77`, then `driver.sh`, into `/root/spill-receipts/a-th2`.
+  - It ends with `TH2-CHAIN-DONE` and the reader's `TH2 VERDICT -> ..` line.
+- The lead mirrors the receipts to a staging directory outside this worktree when the chain finishes. They are copied
+  in and read here as registered in sections 6 and 8.
