@@ -375,6 +375,21 @@ static BUILD_SEQ: AtomicU64 = AtomicU64::new(0);
 static ENSURE_SEQ: AtomicU64 = AtomicU64::new(0);
 static FAULTS: Mutex<Option<VmmFaults>> = Mutex::new(None);
 
+/// The fault door's forged grow failure. It is a quoted CUDA OOM (the server's `is_cuda_oom` text match takes it as a
+/// driver failure) that names the door, and it formats without the driver: a `cudarc` `DriverError`'s `Display` calls
+/// `cuGetErrorString`, which loads libcuda, so a host without the driver library (the GPU-less CI runner) panicked
+/// formatting the forged error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VmmFaultOom;
+
+impl std::fmt::Display for VmmFaultOom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("CUDA_ERROR_OUT_OF_MEMORY (synthetic: MEMRA_KV_VMM_FAULT diagnostic door)")
+    }
+}
+
+impl std::error::Error for VmmFaultOom {}
+
 /// Arm (or, with `None`, disarm) the fault door.
 pub fn vmm_set_faults(faults: Option<VmmFaults>) {
     *FAULTS.lock().unwrap_or_else(|p| p.into_inner()) = faults;
@@ -770,9 +785,7 @@ impl OnDemand {
         }
         if fault_fires(class) {
             GROW_FAILURES_TOTAL.fetch_add(1, Ordering::Relaxed);
-            return Err(Box::new(cudarc::driver::DriverError(
-                sys::cudaError_enum::CUDA_ERROR_OUT_OF_MEMORY,
-            )));
+            return Err(Box::new(VmmFaultOom));
         }
         if let Err(e) = p.map_extent(&mut st, need - end) {
             GROW_FAILURES_TOTAL.fetch_add(1, Ordering::Relaxed);
@@ -1696,8 +1709,12 @@ mod tests {
             mapper_all: false,
         }));
         let (mut od, drv) = fake_plane(4 * G, 904);
-        let err = od.ensure(G, GrowClass::Ensure).unwrap_err().to_string();
-        assert!(err.contains("OUT_OF_MEMORY"), "{err}");
+        let err = od.ensure(G, GrowClass::Ensure).unwrap_err();
+        // The forged error formats without the CUDA driver library (a GPU-less host), and it is a quoted OOM.
+        assert!(err.downcast_ref::<VmmFaultOom>().is_some());
+        let err = err.to_string();
+        assert!(err.contains("CUDA_ERROR_OUT_OF_MEMORY"), "{err}");
+        assert!(err.contains("MEMRA_KV_VMM_FAULT"), "{err}");
         assert!(drv.calls.lock().unwrap().is_empty());
         // Once only: the next ensure grows.
         assert!(od.ensure(G, GrowClass::Ensure).unwrap().is_some());
