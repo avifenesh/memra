@@ -18,10 +18,11 @@
 #     commit, topology and route; NativeTuned adds RewriteParity;
 #   * every NativeReference/NativeQualified/NativeTuned token in README.md, STATUS.md,
 #     CLAUDE.md and docs/ carries a `<!-- support: <id>[,<id>] -->` marker naming records in
-#     that state, or `<!-- support: none -->` on a definition, negation or pending mention.
-#     A line that names a state only to deny it adds `; not <State> [<State>...]` to the marker
-#     (`<!-- support: hy3-bf16-reference; not NativeQualified -->`); a denied state must rank
-#     above every named record, so a marker can never deny what its records prove.
+#     that state. A line that names a state without claiming it (pending, negated, a rule)
+#     denies it: `<!-- support: none; not NativeQualified -->`, or beside a record,
+#     `<!-- support: hy3-bf16-reference; not NativeQualified -->`. A denied state must rank
+#     above every named record, so a marker can never deny what its records prove. A bare
+#     `<!-- support: none -->` is allowed only on a definition entry (`- **NativeReference**: ...`).
 #
 # Gates not passed are listed as "pending". A pending gate is the honest state, never a gap to
 # paper over. Evidence outside this repository never backs a gate here: a receipt that cannot

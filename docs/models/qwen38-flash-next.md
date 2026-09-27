@@ -1,10 +1,10 @@
 # Qwen3.8-Flash-Next
 
-Support state: **bring-up only**, not yet NativeReference. <!-- support: none -->
+Support state: **bring-up only**, not yet NativeReference. <!-- support: none; not NativeReference -->
 The `qwen4_exp` model pack declares no support state (`support: None`): its tiny plan executes in
 the reference executor, but no support record claims the family, and the evidence below lives on
 the hand-written gate path. There is no serving surface, and
-production admission still requires the NativeQualified gate set. <!-- support: none -->
+production admission still requires the NativeQualified gate set. <!-- support: none; not NativeQualified -->
 
 ## What is gated
 

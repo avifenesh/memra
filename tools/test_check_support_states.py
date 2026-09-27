@@ -126,6 +126,30 @@ class SupportStateCensus(unittest.TestCase):
         (self.root / "docs/NEW.md").write_text("Foo is NativeQualified on B200. <!-- support: none -->\n")
         self.assert_fails("support: none on a line that reads as a claim")
 
+    def test_cue_words_do_not_excuse_a_none_claim(self):
+        # revuto on #891: each line holds a word ("state", "no", "plus") a cue list would accept.
+        for claim in (
+            "Support state: **NativeQualified** on B200.",
+            "Hy3 NVFP4 is NativeQualified on four cards with no fallback.",
+            "Qwen3.5-9B NVFP4 is NativeQualified, plus MTP.",
+        ):
+            with self.subTest(claim=claim):
+                (self.root / "docs/NEW.md").write_text(claim + " <!-- support: none -->\n")
+                self.assert_fails("docs/NEW.md:1: support: none on a line that reads as a claim of NativeQualified")
+
+    def test_none_must_deny_every_state_it_names(self):
+        (self.root / "docs/NEW.md").write_text(
+            "Pending NativeQualified; Foo is NativeTuned. <!-- support: none; not NativeQualified -->\n"
+        )
+        self.assert_fails("reads as a claim of NativeTuned")
+
+    def test_denied_none_line_passes(self):
+        (self.root / "docs/NEW.md").write_text(
+            "Foo still needs the NativeQualified gate set. <!-- support: none; not NativeQualified -->\n"
+        )
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_denying_a_proven_state(self):
         (self.root / "docs/NEW.md").write_text(
             "Hy3 is NativeReference. <!-- support: hy3-bf16-reference; not NativeReference -->\n"

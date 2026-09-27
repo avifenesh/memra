@@ -2,7 +2,7 @@
 
 Support state: **NativeReference** for the `glm5_next` pack <!-- support: glm5_next-reference -->. The two-card RTX PRO
 6000 Blackwell Server TP, vision and MTP receipts below gate the hand-written path, not the pack;
-NativeQualified admission is the next gate and needs pack checkpoint parity and serve. <!-- support: none -->
+NativeQualified admission is the next gate and needs pack checkpoint parity and serve. <!-- support: none; not NativeQualified -->
 
 - Source: `zai-org/GLM-5.3-Flash@04c4e9e95c5da8862dced7e5056455116f83a7e0` (FP8 e4m3, MIT).
 - Architecture, read from the modeling source rather than the card: 45 decoder layers + 1

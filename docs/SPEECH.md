@@ -29,7 +29,7 @@ less than one that starts from a measured deficit.
 | Nemotron 3.5 streaming RNNT `[56,0]` | The whole path executes and streams: frontend, cache-aware FastConformer, prompt kernel, LSTM predictor, joint, greedy, session state | 657/657 tensors, frontend 5.34058e-05, encoder 2.533197403e-07 over 26 chunks, head 9.155273438e-05, greedy 9/9, session 26/26 partials plus final identical |
 | Audio-LM class (Qwen3-ASR, Voxtral) | Not started | n/a |
 | **GPU execution for any speech operation** | **Does not exist.** No CUDA kernel, no residency plan, no performance receipt | Every number above is a CPU reference measured on efficiency cores |
-| Streaming TTS (§2.4) | **A non-executing `qwen3_tts` pack defines the pinned tensor, prefill, decode and emit contracts; `NativeReference` remains unset.** <!-- support: none --> Header fixtures cover 404 talker tensors and 271 codec-decoder tensors, with refusal tests for malformed contracts. The native forward, codec decoder and stage-parity execution are still unimplemented. The streaming emit contract is fixed in §2.4.1 and measured parity bounds are recorded in §2.4.2 | `crates/memra-gguf/src/model_packs/qwen3_tts/`; `docs/SPEECH.md` §2.4.1, §2.4.2; receipts private (darklanes `research/tts-pack-20260911/`) |
+| Streaming TTS (§2.4) | **A non-executing `qwen3_tts` pack defines the pinned tensor, prefill, decode and emit contracts; `NativeReference` remains unset.** <!-- support: none; not NativeReference --> Header fixtures cover 404 talker tensors and 271 codec-decoder tensors, with refusal tests for malformed contracts. The native forward, codec decoder and stage-parity execution are still unimplemented. The streaming emit contract is fixed in §2.4.1 and measured parity bounds are recorded in §2.4.2 | `crates/memra-gguf/src/model_packs/qwen3_tts/`; `docs/SPEECH.md` §2.4.1, §2.4.2; receipts private (darklanes `research/tts-pack-20260911/`) |
 | **Audio endpoint in `memra serve`** | **Exists as of 2026-09-11 and fails CLOSED.** `/v1/audio/transcriptions` plus the `/v1/audio/sessions` lifecycle (open / frames / close / list) carry the session contract, the resident-session cap, the per-lane bounded queue, the typed shed taxonomy and the declared decode; with no speech pack resident every path refuses `engine_unbound` rather than answering with something that is not the model. **The transcript bytes are step 2's work** | `audio_api.rs`, 18 handler + contract tests; scheduler in `memra-lanes::audio_stream`, 20 tests |
 
 So: memra has a correctness spine for two speech families, a serving surface that admits and
@@ -42,7 +42,7 @@ of 2026-09-11 ("engineering needed is not a blocker ever, thats what we are doin
 engine and selling its work"), no model, family or step in this document is ranked by how much
 work it is.
 
-`NativeReference` is unset for every speech model. Nothing here is production permission. <!-- support: none -->
+`NativeReference` is unset for every speech model. Nothing here is production permission. <!-- support: none; not NativeReference -->
 
 ---
 
@@ -310,7 +310,7 @@ and one bundle hash. Minimum state for production admission.
 **`NativeTuned`**, `NativeQualified` plus current binary-bound rewrite receipts for each <!-- support: none -->
 admitted device and execution surface, with phase profiles and end-to-end measurements.
 
-Both current checkpoints are below `NativeReference`: the state is unset for every speech pack, <!-- support: none -->
+Both current checkpoints are below `NativeReference`: the state is unset for every speech pack, <!-- support: none; not NativeReference -->
 and that is why no speech model may be served.
 
 ---
@@ -755,7 +755,7 @@ write-up:
 
 - **The parity oracle is bit-reproducible**, all five stages at max abs delta 0.0 under greedy on
   both loops with a fixed seed, so the native port can be checked stage by stage from its first
-  kernel instead of argued. Reference-runtime only; `NativeReference` stays unset. <!-- support: none -->
+  kernel instead of argued. Reference-runtime only; `NativeReference` stays unset. <!-- support: none; not NativeReference -->
 - **`torch.compile(mode="reduce-overhead")` REFUSES this shape**: CUDA graph trees fail on
   warm-up with `accessing tensor output of CUDAGraphs that has been overwritten by a subsequent
   run`, raised inside the talker's own decoder layer loop, because the nested code predictor
@@ -810,7 +810,7 @@ result reorders the plan so that step 3 comes first.
 
 ## 9. What this program does not claim
 
-- No speech model is supported. `NativeReference` is unset for both current checkpoints, <!-- support: none --> and
+- No speech model is supported. `NativeReference` is unset for both current checkpoints, <!-- support: none; not NativeReference --> and
   loading, running and streaming on a CPU reference are not support. The TTS family entered
   scope on 2026-09-11 with **no pack, no codec decoder and no reference**, so it is further
   from support than either ASR family, not closer.
