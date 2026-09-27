@@ -1693,6 +1693,13 @@ struct CoalesceState<S, A> {
     members: usize,
     /// Rows taken by batches that have not published yet.
     in_flight: usize,
+    /// When the last batch published: with one workspace a partial batch's window runs from here,
+    /// not from the deposit, so rows that deposited while a batch ran wait for its lanes too.
+    published: std::time::Instant,
+    /// How long the last batch ran: with one workspace a partial batch waits for the rest of its
+    /// lanes up to a tenth of it, so a lane's host work between steps (its stream, its stop
+    /// checks) does not cost it the next step.
+    last_run: std::time::Duration,
     next: u64,
     waiting: Vec<(u64, u32, A, Lent<S>)>,
     done: std::collections::HashMap<u64, Result<RowOut, String>>,
@@ -1735,6 +1742,8 @@ impl<S, A: Copy> Coalescer<S, A> {
             inner: std::sync::Mutex::new(CoalesceState {
                 members: 0,
                 in_flight: 0,
+                published: std::time::Instant::now(),
+                last_run: std::time::Duration::ZERO,
                 next: 0,
                 waiting: Vec::new(),
                 done: std::collections::HashMap::new(),
@@ -1782,9 +1791,28 @@ impl<S, A: Copy> Coalescer<S, A> {
             let pos = g.waiting.iter().position(|d| d.0 == ticket);
             let free = g.members.saturating_sub(g.in_flight);
             let target = g.members.div_ceil(self.groups).clamp(1, self.bmax);
-            let full = g.waiting.len() >= target.min(free).max(1);
+            // One workspace (TP/EP, memra #667): a batch in flight holds it, so a row that
+            // deposits meanwhile waits for that batch to publish and then for its lanes to
+            // deposit again. Leading the rows that happened to arrive first would run a second,
+            // partial batch, and the lanes would stay split in two phases for the rest of the run.
+            let serial = self.groups == 1;
+            if serial && g.in_flight > 0 {
+                g = self.cv.wait(g).unwrap_or_else(|p| p.into_inner());
+                continue;
+            }
+            let since = if serial { t0.max(g.published) } else { t0 };
+            let window = if serial {
+                self.window.max(g.last_run / 10)
+            } else {
+                self.window
+            };
+            let full = if serial {
+                g.waiting.len() >= target
+            } else {
+                g.waiting.len() >= target.min(free).max(1)
+            };
             if let Some(mine) = pos
-                && (full || t0.elapsed() >= self.window)
+                && (full || since.elapsed() >= window)
             {
                 // Lead: the oldest deposits, with ours among them.
                 let mut take: Vec<usize> = (0..g.waiting.len()).collect();
@@ -1810,12 +1838,15 @@ impl<S, A: Copy> Coalescer<S, A> {
                     batch.iter().map(|d| unsafe { &mut *d.3.0 }).collect();
                 // A panicking step must not wedge the lanes that lent it their rows: every member
                 // gets an error, `in_flight` comes down, and the leader then unwinds as before.
+                let ran = std::time::Instant::now();
                 let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     run(&toks, &wants, &mut states)
                 }));
                 drop(states);
                 g = self.lock();
                 g.in_flight -= batch.len();
+                g.published = std::time::Instant::now();
+                g.last_run = ran.elapsed();
                 let out = match out {
                     Ok(out) => out,
                     Err(panic) => {
@@ -1853,7 +1884,7 @@ impl<S, A: Copy> Coalescer<S, A> {
                 continue;
             }
             g = if pos.is_some() {
-                let left = self.window.saturating_sub(t0.elapsed());
+                let left = window.saturating_sub(since.elapsed());
                 self.cv
                     .wait_timeout(g, left.max(std::time::Duration::from_micros(20)))
                     .unwrap_or_else(|p| p.into_inner())
@@ -3901,6 +3932,60 @@ mod c4_host_budget_tests {
         assert!(
             waited >= window,
             "a partial batch ran after {waited:?}, inside its {window:?} window"
+        );
+    }
+
+    /// memra #667: with one workspace, lanes whose host work between steps outlasts the base
+    /// window still ride full batches. Sixteen lanes, a 20 ms step, up to 1.5 ms of jittered host
+    /// work per lane per step: a row that deposits while a batch runs waits for that batch and its
+    /// lanes, and a partial batch waits up to a tenth of the last step, so the lanes never split
+    /// into phases.
+    #[test]
+    fn one_workspace_keeps_jittered_lanes_in_full_batches() {
+        use super::{Coalescer, RowOut};
+        use std::sync::{Arc, Mutex};
+        let (lanes, steps) = (16usize, 12usize);
+        let core = Arc::new(Coalescer::<u32>::new(16, 1));
+        let widths = Arc::new(Mutex::new(Vec::new()));
+        let barrier = Arc::new(std::sync::Barrier::new(lanes));
+        let handles: Vec<_> = (0..lanes)
+            .map(|lane| {
+                let (core, widths, barrier) = (core.clone(), widths.clone(), barrier.clone());
+                std::thread::spawn(move || {
+                    core.join();
+                    barrier.wait();
+                    let mut state = 0u32;
+                    for step in 0..steps {
+                        let r = core.step(step as u32, false, &mut state, &mut |toks, _, _| {
+                            widths.lock().unwrap().push(toks.len());
+                            std::thread::sleep(std::time::Duration::from_millis(20));
+                            Ok(toks
+                                .iter()
+                                .map(|&tok| RowOut { tok, logits: None })
+                                .collect())
+                        });
+                        assert!(r.is_ok());
+                        let jitter = ((lane * 7 + step * 3) % 16) as u64 * 100;
+                        std::thread::sleep(std::time::Duration::from_micros(jitter));
+                    }
+                    core.leave();
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        let widths = widths.lock().unwrap().clone();
+        assert_eq!(widths.iter().sum::<usize>(), lanes * steps);
+        let full = widths.iter().filter(|&&w| w == lanes).count();
+        eprintln!(
+            "jittered lanes: {full} of {} batches full, widths {widths:?}",
+            widths.len()
+        );
+        // The first step has no last run to size the window, so it may split once.
+        assert!(
+            widths.len() <= steps + 2 && full + 2 >= steps,
+            "the lanes split: widths {widths:?}"
         );
     }
 
