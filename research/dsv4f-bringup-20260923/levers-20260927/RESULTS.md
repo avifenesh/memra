@@ -57,9 +57,64 @@ piece is 128 bytes.
 - The DSpark TP/EP gate's plain arm takes 27520 fused dispatches, and its proposal shas equal
   main's on the pod.
 
-**Long-gate replay:** 11.33 ms per token, against 12.39 to 12.51 for main on the same pod.
+**Long-gate replay**, interleaved M F F M: 11.32 to 11.41 ms per token against 12.38 to 12.52 for
+main, -9.0%.
 
-**Served:** pending (`raw/se2-fused-s2j/`, order M F F M M F F M M F).
+**Served**, the one-row form: second SE pair, one boot per row, order M F F M M F F M M F, N=5
+(`raw/se2-fused-s2j/`):
+
+| cell | main | fused | delta |
+|---|---|---|---|
+| greedy c1 | 77.48 (77.25..77.73), decode 81.01 | 85.16 (84.80..85.34), decode 89.32 | +9.91% |
+| sampled c1 | 77.26 | 85.62 | +10.82% |
+| greedy c2 | 104.02 | 105.63 | +1.55% |
+| greedy c4 | 133.21 | 133.40 | +0.14% |
+| c2, 1500-word context | 19.18 (TTFT 10.38 s) | 19.42 (10.25 s) | +1.25% |
+
+- Every fused row is above every main row at c1.
+- Every cell's texts are identical across both arms, the sampled ones included.
+- c2 and c4 barely move: a B-row step of 2 to 4 rows still ran the chain in this form.
+
+The multi-row form (next section) covers those steps.
+
+**The multi-row form.** Slot p reads token row p / topk, so one launch covers 1 to 16 rows. That is
+every step the stream visitors covered: one token, the four-lane B-row steps and the DSpark
+verify rounds.
+
+The multi-row visitor puts the rows of one expert in one pass. The fused pair runs each slot
+alone, and an MMA output row depends only on its own A row, so each slot keeps the chain's bits.
+The component test adds a three-row case with experts repeated across rows on both halves of the
+bank. The full-bank form stays one row, because its in-kernel slot sum is one row.
+
+**Correctness, multi-row form** (second SE pair, `raw/se2-fused-rows-s2m/`):
+- the component tests pass, the three-row case exact on both ranks;
+- the long gate's `PROGRAM_SHA256` is `fbce1a0492d69635`;
+- `dsv4_rows_gate` TP/EP passes: every B-row step bit-identical to its solo step across join, leave
+  and row moves, and the sampled B-row graph draws equal the eager ones;
+- `dsv4_kv_split_gate` passes;
+- the DSpark TP/EP gate gives main's proposal shas, with batched equal to sequential over 3206 cache
+  classes.
+
+**Served, multi-row form**, same pair, one boot per row, plain M F F M M F then DSpark M F F M M F,
+N=3:
+
+| cell | main | fused | delta |
+|---|---|---|---|
+| greedy c1 | 77.36 (76.57..77.84), decode 80.93 | 84.49 (84.45..84.87), decode 88.86 | +9.22% |
+| sampled c1 | 77.36 | 84.80 | +9.62% |
+| greedy c2 | 103.75 (103.31..105.18) | 116.45 (115.24..116.65) | +12.24% |
+| greedy c4 | 130.48 (103.99..131.70) | 146.44 (95.26..146.64) | +12.2% on the medians |
+| c2, 1500-word context | 19.10 (TTFT 10.32 s) | 19.16 (10.46 s) | +0.3% |
+| DSpark greedy c1 | 88.99 (86.18..89.45) | 95.63 (94.57..95.81) | +7.46% |
+| DSpark sampled c1 | 75.16 | 79.43 | +5.68% |
+
+Every text in every cell is identical across both arms.
+
+**The c4 cell on this pair is bimodal in both arms.** One main row and one fused row ran every step
+of the cell about 1.5x slower: ITL p10 36 ms against 23 ms, and in one row the slowdown began
+mid-cell. Nothing in the server logs differs between fast and slow boots. The same pair showed
+this before (`../levers-20260926/`, two of five push boots). It is recorded as the pair's own
+noise, and the c4 row wants a confirmation on the first pair.
 
 ## Refuted: loading weights before the PDL wait
 
@@ -107,3 +162,42 @@ was measured three reps per run, order M S4 S8 S12 S12 S8 S4 M:
 
 Every build keeps the program hash. More 64-byte requests in flight make the stream slower, not
 faster, which points at the access pattern, not at the queue depth.
+
+**S4 is not merged either.** It put gate and up in one launch of the stream visitors and chained
+the multi-row visitor on PDL (`raw/se2-ring-s2i/gu-launch.patch`). It was flat at c1, and on
+TP/EP the fused pair's multi-row form now takes every step those visitors took, so only the PP-2
+rollback would still run them.
+
+## Refuted: more output rows per dense-fast block
+
+The FP8 dense-fast GEMV puts two output rows (256 threads) in a block, and every block reads the
+whole activation row. More rows per block would share those reads through L1. Box-local builds
+changed only the rows constant, for the one-token and grouped launches and for the M-row
+launches (`raw/se-rows-v6a/`). Long-gate replay ms per token, order Z A B C C B A Z, first-pod
+builds of the fused lane:
+
+| build (rows, M-row rows) | replay ms/token |
+|---|---|
+| Z (2, 2), committed | 11.12 .. 11.26 |
+| A (4, 4) | 11.09 .. 11.25, flat |
+| B (8, 4) | 11.67 .. 11.90, +5% |
+| C (8, 2) | 11.68 .. 12.05, +5% |
+
+Every build keeps the program hash. Eight rows halve the grid, and the single-wave kernels lose
+more to the smaller grid than they gain from shared reads. The constants are not merged.
+
+## The fused pair's ring
+
+The pair streams KC k per stage through a STAGES-deep ring; the committed setting is (256, 2). On
+the second SE pair, box-local builds, order M F G H H G F M (`raw/se2-fused-ring-s2k/`):
+
+| build | replay ms/token |
+|---|---|
+| main | 12.37 .. 12.50 |
+| F (256, 2), committed | 11.32 .. 11.39 |
+| G (256, 3) | 11.24 .. 11.31, -0.6% |
+| H (512, 2) | 11.25 .. 11.35, -0.6% |
+
+The ring is not what holds the pair near 0.9 TB/s. With about three local experts, the committed
+4 warps per projection give about 192 live CTAs of 8 warps on 188 SMs, so the SMs that hold two
+CTAs set the kernel time. The CTA-width sweep is `raw/se-fused-cta-v6c/`.

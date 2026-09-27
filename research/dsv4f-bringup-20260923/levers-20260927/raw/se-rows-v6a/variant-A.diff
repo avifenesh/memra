@@ -1,0 +1,17 @@
+diff --git a/crates/memra-engine/cu/dsv4_dense_m1_exact_tail.cuh b/crates/memra-engine/cu/dsv4_dense_m1_exact_tail.cuh
+index bc38de21f..517d75d00 100644
+--- a/crates/memra-engine/cu/dsv4_dense_m1_exact_tail.cuh
++++ b/crates/memra-engine/cu/dsv4_dense_m1_exact_tail.cuh
+@@ -294,10 +294,10 @@ __global__ void dsv4_dense_exact_tail_dots_kernel(const float* __restrict__ x,
+ // and, through L1, its activation reads. ONE row count for one-token and grouped launches, and
+ // one for the M-row launches, whose register footprint grows with M.
+ #ifndef DSV4_DENSE_FAST_ROWS
+-#define DSV4_DENSE_FAST_ROWS 2
++#define DSV4_DENSE_FAST_ROWS 4
+ #endif
+ #ifndef DSV4_DENSE_FAST_ROWS_M
+-#define DSV4_DENSE_FAST_ROWS_M 2
++#define DSV4_DENSE_FAST_ROWS_M 4
+ #endif
+ 
+ template <int ROWS, bool GROUPED = false, int M = 1>

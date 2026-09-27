@@ -1,0 +1,11 @@
+build mftG KC=256 STAGES=3 SERVER_EXIT=0 ENGINE_EXIT=0  diff_lines 13
+build mftH KC=512 STAGES=2 SERVER_EXIT=0 ENGINE_EXIT=0  diff_lines 13
+long r1 M rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=12.494 replay_ms_per_token=12.426 replay_ms_per_token=12.368 
+long r2 F rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=11.385 replay_ms_per_token=11.326 replay_ms_per_token=11.319 
+long r3 G rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=11.314 replay_ms_per_token=11.262 replay_ms_per_token=11.237 
+long r4 H rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=11.309 replay_ms_per_token=11.267 replay_ms_per_token=11.248 
+long r5 H rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=11.346 replay_ms_per_token=11.289 replay_ms_per_token=11.257 
+long r6 G rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=11.313 replay_ms_per_token=11.256 replay_ms_per_token=11.247 
+long r7 F rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=11.372 replay_ms_per_token=11.342 replay_ms_per_token=11.315 
+long r8 M rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=12.504 replay_ms_per_token=12.452 replay_ms_per_token=12.376 
+S2K_DONE 25f2796d11f92dcbccbf05ba21299bdefd49abe7
