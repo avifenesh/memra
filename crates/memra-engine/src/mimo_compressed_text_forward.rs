@@ -111,6 +111,10 @@ pub struct MiMoCompressedTextForward<'a> {
     position: usize,
     failed: bool,
     has_modal_payload: bool,
+    #[cfg(test)]
+    trace_position: Option<usize>,
+    #[cfg(test)]
+    trace_rows: Vec<(usize, Vec<f32>)>,
 }
 
 impl MiMoTextWeights {
@@ -143,6 +147,10 @@ impl<'a> MiMoCompressedTextForward<'a> {
             position: 0,
             failed: false,
             has_modal_payload: false,
+            #[cfg(test)]
+            trace_position: None,
+            #[cfg(test)]
+            trace_rows: Vec::new(),
         })
     }
 
@@ -368,6 +376,12 @@ impl<'a> MiMoCompressedTextForward<'a> {
             let mut after_mlp = engine.uninit(tokens * HIDDEN)?;
             engine.add(&after_attention, &mlp, &mut after_mlp, tokens * HIDDEN)?;
             hidden = after_mlp;
+            #[cfg(test)]
+            if let Some(position) = self.trace_position.filter(|&position| position < tokens) {
+                let values =
+                    engine.dtoh_view(&hidden.slice(position * HIDDEN..(position + 1) * HIDDEN))?;
+                self.trace_rows.push((index, values));
+            }
         }
         self.kv.finish_prefill_batch()?;
         if self.kv.position() != tokens {
@@ -570,6 +584,10 @@ impl<'a> MiMoCompressedTextForward<'a> {
             let mut after_mlp = engine.uninit(HIDDEN)?;
             engine.add(&after_attention, &mlp, &mut after_mlp, HIDDEN)?;
             hidden = after_mlp;
+            #[cfg(test)]
+            if self.trace_position == Some(self.position) {
+                self.trace_rows.push((index, engine.dtoh(&hidden)?));
+            }
         }
         let last = self.engines[1];
         let final_norm = normalized(
@@ -775,6 +793,80 @@ mod tests {
             relative_l2(&first_next, &serial_next),
             argmax(&first.logits),
             argmax(&serial_step.logits),
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires pinned MiMo source and a dedicated two-card GPU lane"]
+    fn first_batch_chunk_layerwise_diagnostic() -> Result<(), Fail> {
+        use std::path::Path;
+        use std::sync::Arc;
+
+        use memra_gguf::source::SafetensorsSource;
+        use memra_reference::mimo_modal_overlay::{AUDIO_TOKEN_ID, IMAGE_TOKEN_ID, VIDEO_TOKEN_ID};
+
+        const FOUR_GIB: usize = 4 * 1024 * 1024 * 1024;
+        let root = std::env::var("MIMO_PINNED_SOURCE_ROOT")?;
+        let source = Arc::new(SafetensorsSource::open(Path::new(&root))?);
+        let cards = [Engine::new(0)?, Engine::new(1)?];
+        let engines = [&cards[0], &cards[1]];
+        let text = MiMoTextWeights::load(engines, source)?;
+        let tokens = [42, IMAGE_TOKEN_ID, VIDEO_TOKEN_ID, AUDIO_TOKEN_ID];
+        let image = vec![vec![0.125; HIDDEN]];
+        let video = vec![vec![-0.25; HIDDEN]];
+        let audio = vec![vec![0.5; HIDDEN]];
+        let prepared =
+            text.modal_embedding_gpu_chunk(&cards[0], &tokens, &image, &video, &audio)?;
+
+        let (batched, batched_rows) = {
+            let mut sequence = text.compressed_text_forward(engines, 4, [FOUR_GIB; 2])?;
+            sequence.trace_position = Some(3);
+            let step = sequence.consume_embedding_chunk_batched(&prepared)?;
+            (step, sequence.trace_rows)
+        };
+        let (serial, serial_rows) = {
+            let mut sequence = text.compressed_text_forward(engines, 4, [FOUR_GIB; 2])?;
+            sequence.trace_position = Some(3);
+            let step = sequence.consume_embedding_chunk(&prepared)?;
+            (step, sequence.trace_rows)
+        };
+        if batched_rows.len() != LAYERS || serial_rows.len() != LAYERS {
+            return Err("MiMo layerwise diagnostic did not capture all layers".into());
+        }
+        for ((batch_layer, batch), (serial_layer, control)) in batched_rows.iter().zip(&serial_rows)
+        {
+            if batch_layer != serial_layer || batch.len() != HIDDEN || control.len() != HIDDEN {
+                return Err("MiMo layerwise diagnostic rows are misaligned".into());
+            }
+            let mut diff_squared = 0.0f64;
+            let mut base_squared = 0.0f64;
+            let mut max_abs = 0.0f32;
+            let mut matching_bits = 0usize;
+            for (&got, &want) in batch.iter().zip(control) {
+                let delta = (got - want).abs();
+                max_abs = max_abs.max(delta);
+                diff_squared += f64::from(delta).powi(2);
+                base_squared += f64::from(want).powi(2);
+                matching_bits += usize::from(got.to_bits() == want.to_bits());
+            }
+            println!(
+                "mimo_batch_layer\tlayer={batch_layer}\trel_l2={:.9e}\tmax_abs={max_abs:.9e}\tmatching_bits={matching_bits}",
+                (diff_squared / base_squared).sqrt(),
+            );
+        }
+        let argmax = |logits: &[f32]| {
+            logits
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.total_cmp(b))
+                .map(|(index, _)| index)
+                .unwrap()
+        };
+        println!(
+            "mimo_batch_layer\tfinal_batch_argmax={}\tfinal_serial_argmax={}",
+            argmax(&batched.logits),
+            argmax(&serial.logits)
         );
         Ok(())
     }
