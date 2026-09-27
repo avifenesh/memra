@@ -2269,9 +2269,12 @@ static DSV4_AR_PHASE_ARMED: AtomicBool = AtomicBool::new(false);
 /// The positions a full-token replay covers at most: its indexer scores up to 4096 compressed
 /// blocks, 16384 positions at ratio 4 (memra #710).
 const REPLAY_LIMIT: usize = 16384;
+/// The widest M-row launch on the dense-fast transport (cu/dsv4_gpu.cu `DSV4_DENSE_FAST_M_MAX`,
+/// memra #710 B-row).
+const DENSE_FAST_M_MAX: usize = 16;
 /// Rows per hoisted compressor projection launch in a multi-request step: the widest M-row dots
 /// launch on the dense-fast transport (memra #710).
-const CMP_HOIST_CHUNK: usize = 8;
+const CMP_HOIST_CHUNK: usize = DENSE_FAST_M_MAX;
 /// The one-pass stage of `attention_rows_dev`'s per-request loop; a multi-request replay step
 /// without the two-launch sink attention runs its stage 2 (the attention) only.
 const ROWS_STAGE_ALL: u8 = u8::MAX;
@@ -16127,7 +16130,7 @@ impl Dsv4Gpu {
         Ok(true)
     }
 
-    /// [`Self::gemv_wo_a_grouped_fp8_m1_dev`] for `m` rows of 2 to 8 (memra #710 B-row): row `t`
+    /// [`Self::gemv_wo_a_grouped_fp8_m1_dev`] for `m` rows of 2 to 16 (memra #710 B-row): row `t`
     /// of group `g` reads `x + t * xstride + g * x_group_stride` and writes `y + t * ystride +
     /// g * rows_per_group`. `Ok(false)` when the dense-fast transport does not admit the slices;
     /// the caller then runs the per-group launches.
@@ -18975,7 +18978,7 @@ impl Dsv4Gpu {
                 gw,
                 o_lora,
             )?
-        } else if (2..=8).contains(&t) && !vws.is_prefill {
+        } else if (2..=DENSE_FAST_M_MAX).contains(&t) && !vws.is_prefill {
             // A multi-request step or a verify round: every group's M rows in one launch.
             Self::gemv_wo_a_grouped_fp8_m_dev(
                 st,
@@ -19603,7 +19606,7 @@ impl Dsv4Gpu {
         else {
             return Ok(false);
         };
-        if !(1..=8).contains(&t) || vws.contrib.len() < t * (topk + 1) * hidden {
+        if !(1..=DENSE_FAST_M_MAX).contains(&t) || vws.contrib.len() < t * (topk + 1) * hidden {
             return Ok(false);
         }
         let sh_inter = vws.sg1.len() / vws.tmax;
@@ -25945,7 +25948,7 @@ mod dense_wo_a_grouped_fp8_component_tests {
     }
 
     /// The grouped M-row launch (memra #710 B-row) against each group's own M-row launch, bit
-    /// for bit, at M = 2..8 on the attention TP2 rank shape and the one-card shape, with the
+    /// for bit, at M = 2..16 on the attention TP2 rank shape and the one-card shape, with the
     /// padding between token rows left untouched; malformed shapes refuse.
     #[test]
     #[ignore = "requires an exclusively locked CUDA device; grouped M-row wo_a FP8 component identity"]
@@ -25973,7 +25976,7 @@ mod dense_wo_a_grouped_fp8_component_tests {
                 .collect();
             let codes = stream.clone_htod(&codes_host).unwrap();
             let scales = stream.clone_htod(&scales_host).unwrap();
-            for m in 2..=8usize {
+            for m in 2..=16usize {
                 let x_host: Vec<u16> = (0..m * xstride)
                     .map(|index| {
                         let col = index % xstride;
@@ -26067,7 +26070,7 @@ mod dense_wo_a_grouped_fp8_component_tests {
             )
         };
         assert_eq!(refuse(1, 1024, 4096), 40020, "m=1 belongs to the m1 launch");
-        assert_eq!(refuse(9, 1024, 4096), 40020, "m>8 refuses");
+        assert_eq!(refuse(17, 1024, 4096), 40020, "m>16 refuses");
         assert_eq!(refuse(4, 1020, 4096), 40020, "short group stride refuses");
         assert_eq!(refuse(4, 1024, 4095), 40020, "short output row refuses");
         println!("PASS grouped wo_a FP8 m-row: {cells} cells bit-exact against per-group launches");

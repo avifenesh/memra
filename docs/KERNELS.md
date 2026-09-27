@@ -563,13 +563,13 @@ served shape. The ignored
 `cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue` test
 compares the real 8x1024x4096 shape and padded two-group case bitwise and
 checks invalid-stride refusals. Since 2026-09-27 (memra #710 B-row)
-`memra_dsv4_gemv_fp8_grouped_m` takes the 2- to 8-row widths too: one
+`memra_dsv4_gemv_fp8_grouped_m` takes the 2- to 16-row widths too: one
 `dsv4_dense_fast_fp8_kernel<2,true,M>` launch over every group's M rows, each
 token row at the addresses its group's own M-row launch reads and writes. It
 returns 1 without launching when dense fast does not admit the slices, and the
 caller runs the per-group launches. The ignored
 `cuda_gemv_fp8_grouped_m_matches_per_group_m_row_launches` test compares it
-bitwise against the per-group launches at M = 2..8 on 4x1024x4096, 8x1024x4096
+bitwise against the per-group launches at M = 2..16 on 4x1024x4096, 8x1024x4096
 and 2x128x4096 and checks the refusals. Full-model gate: `dsv4_plain_perf_gate wo-a`,
 holding half2 ON in both arms. Both-device memcheck and all 28 full-model
 token/logit/KV rows pass. Measured +1.897%/+1.491% at 256/8192; serving
@@ -948,7 +948,7 @@ with identity, alongside the standalone cadence #508 and dense #507 receipts.
 `cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_dense_fast_fp8_kernel<2>`
 and `dsv4_dense_fast_dots_kernel<1>`, selected in the existing raw exact-tail
 launchers by `MEMRA_DSV4_DENSE_FAST`. Since memra #710 the FP8 kernel takes a third template argument, `M` token rows
-(`dsv4_dense_fast_fp8_kernel<2, false, M>`, M = 2..8): `memra_dsv4_gemv_fp8_m` routes B-row
+(`dsv4_dense_fast_fp8_kernel<2, false, M>`, M = 2..16 since 2026-09-27, 2..8 before): `memra_dsv4_gemv_fp8_m` routes B-row
 decode and verify widths there instead of `dsv4_gemv_fp8_m_kernel<M>`. The rows share each
 weight load, and each keeps its own accumulator in the same leaf order and its own reduction
 through the same tree, with two barriers per row instead of seven. Every bit equals the m-row
