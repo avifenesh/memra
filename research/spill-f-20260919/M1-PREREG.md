@@ -689,3 +689,12 @@ either value on, so no per-rig default exists. Under door hygiene the lane that 
 its call sites, the mapped pinned-buffer views, their GPU cells and the FLAGS row; the verdict and
 receipt pointers move to the FLAGS "Removed doors" ledger. The OWED 26 demand wait stays; only its
 guard for mapped buffers (`awaiting_consumer`) goes with the door.
+
+Section E, 8 GiB rebuild amendment (2026-09-27 about 19:41Z, after the scratch loss, before any
+new 8 GiB cycle): the 8 GiB cell's first run (rounds 1 to 8) was lost with the local scratch
+(`rtx5090/RESULTS.md`, scratch loss). It reruns in full, rounds 1 to 10, on a rebuild of the same
+commit `5b001e125` (`owed18/build-rebuild/`). The rebuild's bytes differ from the 1 GiB cell's
+binaries (the build ran in another directory and target dir; no build path string appears in the
+binary, so the exact source of the difference is not established); the source commit is the same. Each pair
+compares buffered and direct inside one binary, so the 8 GiB verdict stands on its own; no cross-size
+statement assumes one binary.
