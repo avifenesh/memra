@@ -15782,20 +15782,19 @@ fn batch_oom_recover_on() -> bool {
 }
 
 /// The recovery's arm for a door value and a device name, and the boot line's `source=`. Unset:
-/// ON on the RTX PRO 6000 Blackwell class (the target card read in full, DAY49 2.3 and 2.4; the
-/// owner's ruling 2026-09-27), OFF on every other card (the RTX 5090's flip waits for its serving
-/// boots). `0` is OFF and `1` is ON on any card; `0` is the rollback seam (decide-by 2026-10-11).
-/// Any other value keeps the card's default and names the value it ignored.
+/// ON on the two first-class card classes, the RTX PRO 6000 Blackwell (DAY49 2.3 and 2.4, addendum
+/// F) and the RTX 5090 (2.6 and 2.7, addendum G), the owner's rulings; OFF on any other device.
+/// `0` is OFF and `1` is ON on any card; `0` is the rollback seam (decide-by 2026-10-12). Any other
+/// value keeps the card's default and names the value it ignored.
 fn batch_oom_recover_decision(value: Option<&str>, device_name: &str) -> (bool, String) {
-    let class_default = matches!(
-        memra_engine::parallel::hardware_target_of(device_name),
-        Some(memra_engine::parallel::HardwareTarget::RtxPro6000Blackwell)
-    );
-    let default_source = if class_default {
-        "pro6000-class-default"
-    } else {
-        "no default on this card"
+    use memra_engine::parallel::HardwareTarget;
+    let default_source = match memra_engine::parallel::hardware_target_of(device_name) {
+        Some(HardwareTarget::RtxPro6000Blackwell) => Some("pro6000-class-default"),
+        Some(HardwareTarget::Rtx5090) => Some("rtx5090-class-default"),
+        None => None,
     };
+    let class_default = default_source.is_some();
+    let default_source = default_source.unwrap_or("no default on this card");
     match value.map(str::trim) {
         None | Some("") => (class_default, default_source.to_string()),
         Some("0") => (false, "MEMRA_BATCH_OOM_RECOVER=0".to_string()),
@@ -59672,8 +59671,9 @@ mod tests {
         assert_eq!(fa_pregrow_rows(16, Some(20)), 21);
     }
 
-    /// DAY49 addendum F: the recovery is the naked default on the RTX PRO 6000 Blackwell class
-    /// (every variant), off elsewhere until the card's own flip; `0` and `1` decide on any card.
+    /// DAY49 addenda F and G: the recovery is the naked default on the RTX PRO 6000 Blackwell class
+    /// (every variant) and the RTX 5090 class, off on any other device; `0` and `1` decide on any
+    /// card.
     #[test]
     fn batch_oom_recover_defaults_per_card_class() {
         let pro = [
@@ -59681,12 +59681,22 @@ mod tests {
             "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
             "NVIDIA RTX PRO 6000 Blackwell Server Edition",
         ];
-        let other = [
+        for name in [
             "NVIDIA GeForce RTX 5090 Laptop GPU",
             "NVIDIA GeForce RTX 5090",
-            "NVIDIA H100 80GB HBM3",
-            "",
-        ];
+        ] {
+            assert_eq!(
+                batch_oom_recover_decision(None, name),
+                (true, "rtx5090-class-default".to_string()),
+                "{name}"
+            );
+            assert_eq!(
+                batch_oom_recover_decision(Some("0"), name),
+                (false, "MEMRA_BATCH_OOM_RECOVER=0".to_string()),
+                "the rollback seam: {name}"
+            );
+        }
+        let other = ["NVIDIA H100 80GB HBM3", "NVIDIA GeForce RTX 4090", ""];
         for name in pro {
             assert_eq!(
                 batch_oom_recover_decision(None, name),
