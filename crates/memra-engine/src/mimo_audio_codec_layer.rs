@@ -11,8 +11,7 @@ use memra_reference::mimo_audio_codec_layer::MAX_COMPONENT_TOKENS;
 
 use crate::Engine;
 use crate::mimo_audio_codec_weights::{
-    CodecEncoderBf16Layer, CodecEncoderBf16Linear, CodecEncoderBf16Norm,
-    MiMoAudioCodecEncoderWeights,
+    CodecEncoderBf16Linear, CodecEncoderBf16Norm, MiMoAudioCodecEncoderWeights,
 };
 
 type Fail = Box<dyn Error>;
