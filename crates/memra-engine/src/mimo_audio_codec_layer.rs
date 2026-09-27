@@ -772,6 +772,30 @@ mod tests {
             let actual = resident.downsample_post_stack(&engine, &engine.htod(&input)?, tokens)?;
             let actual = engine.dtoh(&actual)?;
             assert_eq!(actual.len(), tokens.div_ceil(2) * HIDDEN);
+            let max_abs = actual
+                .iter()
+                .zip(&expected)
+                .map(|(got, want)| (got - want).abs())
+                .fold(0.0f32, f32::max);
+            let squared_error = actual
+                .iter()
+                .zip(&expected)
+                .map(|(got, want)| f64::from(got - want).powi(2))
+                .sum::<f64>();
+            let reference_squared = expected
+                .iter()
+                .map(|value| f64::from(*value).powi(2))
+                .sum::<f64>();
+            let relative_l2 = (squared_error / reference_squared).sqrt();
+            let bit_equal = actual
+                .iter()
+                .zip(&expected)
+                .filter(|(got, want)| got.to_bits() == want.to_bits())
+                .count();
+            eprintln!(
+                "MiMo codec downsample GPU {gpu}, tokens {tokens}: max_abs={max_abs}, relative_l2={relative_l2}, bit_equal={bit_equal}/{}",
+                actual.len()
+            );
             for (index, (&got, &want)) in actual.iter().zip(&expected).enumerate() {
                 assert!(got.is_finite() && got.to_bits() & 0xffff == 0);
                 assert!(
