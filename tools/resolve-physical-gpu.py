@@ -51,16 +51,28 @@ def _is_uuid_selector(selector):
     return upper.startswith("GPU-") or upper.startswith("MIG-")
 
 
-def resolve_physical_device(devices, cuda_visible_devices, logical_index=0):
+def resolve_physical_device(devices, cuda_visible_devices, logical_index=0, cuda_device_order=None):
     """Resolve `logical_index` under `cuda_visible_devices` to its physical device record.
 
     `devices` is the full, unfiltered list from `parse_nvidia_smi_query` (or an equivalent
-    stand-in), in nvidia-smi's own order. `cuda_visible_devices` is the exact value of the
-    CUDA_VISIBLE_DEVICES environment variable, or None if it is unset.
+    stand-in), in nvidia-smi's own order (PCI bus order). `cuda_visible_devices` is the exact
+    value of the CUDA_VISIBLE_DEVICES environment variable, or None if it is unset.
+    `cuda_device_order` is the exact value of the CUDA_DEVICE_ORDER environment variable, or
+    None if it is unset.
 
     Refuses (raises GpuResolutionError) rather than guessing when the variable is empty, mixes
     ordinal and UUID selectors, repeats a selector, names an unknown card, or leaves the
     requested logical index out of range. It never silently substitutes another card.
+
+    ORDINAL ORDER IS NOT A GIVEN (revuto, PR #898). nvidia-smi always lists devices in PCI bus
+    order. CUDA's own default numbering is FASTEST_FIRST, not PCI bus order, and an unset
+    CUDA_VISIBLE_DEVICES or an ordinal selector is read in CUDA's order. On a host with more
+    than one GPU model, CUDA's logical device 0 (or ordinal N) can therefore name a different
+    physical card than nvidia-smi's index 0 (or index N) unless CUDA_DEVICE_ORDER is pinned to
+    PCI_BUS_ID, the same pin tools/qualify-model-device-memory.py already sets next to
+    CUDA_VISIBLE_DEVICES. A UUID selector names a physical card directly and is unaffected. So
+    with more than one device present, an unset or ordinal selector REFUSES unless the caller
+    has pinned CUDA_DEVICE_ORDER=PCI_BUS_ID; it never assumes the two orders agree.
     """
     if not devices:
         raise GpuResolutionError("no physical GPUs reported")
@@ -69,6 +81,13 @@ def resolve_physical_device(devices, cuda_visible_devices, logical_index=0):
     by_uuid = {d["uuid"]: d for d in devices}
 
     if cuda_visible_devices is None:
+        if len(devices) > 1 and cuda_device_order != "PCI_BUS_ID":
+            raise GpuResolutionError(
+                "CUDA_VISIBLE_DEVICES is unset with more than one GPU present: CUDA's default "
+                "device order is FASTEST_FIRST, not nvidia-smi's PCI bus order, so logical "
+                "device 0 cannot be assumed to be nvidia-smi index 0. Set "
+                "CUDA_DEVICE_ORDER=PCI_BUS_ID or refuse."
+            )
         visible = [d["index"] for d in devices]
     elif cuda_visible_devices == "":
         # CUDA's own contract: an explicitly empty selector means NO device is visible.
@@ -82,6 +101,14 @@ def resolve_physical_device(devices, cuda_visible_devices, logical_index=0):
                 f"CUDA_VISIBLE_DEVICES has no usable selectors: {cuda_visible_devices!r}"
             )
         uuid_flags = [_is_uuid_selector(s) for s in selectors]
+        if len(devices) > 1 and not all(uuid_flags) and cuda_device_order != "PCI_BUS_ID":
+            raise GpuResolutionError(
+                f"CUDA_VISIBLE_DEVICES={cuda_visible_devices!r} uses an ordinal selector with "
+                "more than one GPU present: CUDA reads ordinals in its own FASTEST_FIRST "
+                "order, not nvidia-smi's PCI bus order, so the named ordinal cannot be "
+                "assumed to match nvidia-smi's index of the same number. Set "
+                "CUDA_DEVICE_ORDER=PCI_BUS_ID or refuse."
+            )
         if any(uuid_flags) and not all(uuid_flags):
             raise GpuResolutionError(
                 f"CUDA_VISIBLE_DEVICES mixes ordinal and UUID selectors: {cuda_visible_devices!r}"
@@ -137,9 +164,15 @@ def main():
         default=None,
         help="override CUDA_VISIBLE_DEVICES instead of reading it from the environment",
     )
+    parser.add_argument(
+        "--cuda-device-order",
+        default=None,
+        help="override CUDA_DEVICE_ORDER instead of reading it from the environment",
+    )
     args = parser.parse_args()
 
     cvd = args.cuda_visible_devices if args.cuda_visible_devices is not None else os.environ.get("CUDA_VISIBLE_DEVICES")
+    cdo = args.cuda_device_order if args.cuda_device_order is not None else os.environ.get("CUDA_DEVICE_ORDER")
 
     try:
         if args.device_list_file:
@@ -147,7 +180,7 @@ def main():
                 devices = parse_nvidia_smi_query(handle.read())
         else:
             devices = query_nvidia_smi()
-        device = resolve_physical_device(devices, cvd, args.logical_index)
+        device = resolve_physical_device(devices, cvd, args.logical_index, cdo)
     except GpuResolutionError as error:
         print(f"resolve-physical-gpu: refused: {error}", file=sys.stderr)
         return 1

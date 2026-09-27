@@ -12,6 +12,18 @@
 #
 # Exit 0 only when every required arm PASSED. Prints a receipt block for the tag message.
 set -u
+
+# PIN CUDA'S DEVICE ORDER TO nvidia-smi's, for the whole script and every child process it
+# execs (revuto, PR #898). CUDA's default numbering is FASTEST_FIRST, not nvidia-smi's PCI
+# bus order; an unset or ordinal CUDA_VISIBLE_DEVICES is read in CUDA's order, so on a host
+# with more than one GPU model, CUDA's logical device 0 can be a different physical card than
+# nvidia-smi index 0 unless this is pinned. tools/qualify-model-device-memory.py already sets
+# this next to CUDA_VISIBLE_DEVICES for the identical reason. Exporting it here, before the
+# physical-GPU resolver runs and before kernel-check/run-spec/argmax-margin-gate.sh ever
+# start, keeps the resolver's assumption and the engine's actual device numbering the same
+# thing rather than two guesses that happen to agree.
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
+
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
 BIN=$ROOT/target/release
