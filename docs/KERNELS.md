@@ -1,5 +1,17 @@
 # Kernel inventory
 
+## MiMo first-chunk local ring attention, 2026-09-27
+
+The new entry launches one CTA per `(query, head)` over a fresh 1..128-token
+chunk. Each CTA uses the existing `memra_mimo_swa_ring_decode_f32` reduction
+and learned-sink arithmetic at its own position. It reads already appended
+F32 K/V ring rows and is selected only by the explicit first-chunk component.
+Serving dispatch is unchanged; target-GPU bit parity and speed are gates.
+
+| Symbol | Purpose | Types | Architecture | Door | Binding |
+| --- | --- | --- | --- | --- | --- |
+| `memra_mimo_swa_ring_first_chunk_f32` | Run source local attention for every fresh-chunk query in one grid | F32 Q/K/V/sink/output | sm_120a | Explicit MiMo component, no serving door | `MiMoCompressedKv::attend_appended_first_chunk` |
+
 ## Qwen FA2 attention experiment, 2026-09-09
 
 Both entries carry the same numerical body: BF16 MMA, FP32 direct PV accumulation,

@@ -60,6 +60,20 @@ unsafe extern "C" {
         window: i32,
         stream: *mut c_void,
     ) -> i32;
+    fn memra_mimo_swa_ring_first_chunk_f32(
+        q: *const f32,
+        k: *const f32,
+        v: *const f32,
+        sink: *const f32,
+        output: *mut f32,
+        queries: i32,
+        heads: i32,
+        kv_heads: i32,
+        qk_dim: i32,
+        v_dim: i32,
+        window: i32,
+        stream: *mut c_void,
+    ) -> i32;
 }
 
 /// Exact persistent allocations, before allocator granularity and transient
@@ -365,6 +379,57 @@ fn decode_local(
     Ok(output)
 }
 
+fn decode_local_first_chunk(
+    engine: &Engine,
+    queries: &CudaSlice<f32>,
+    key: &CudaSlice<f32>,
+    value: &CudaSlice<f32>,
+    sink: &CudaSlice<f32>,
+    tokens: usize,
+) -> Result<CudaSlice<f32>, Fail> {
+    engine.gpu.ctx.bind_to_thread()?;
+    let stream = engine.stream();
+    let device = stream.context().ordinal();
+    if !(1..=SWA).contains(&tokens)
+        || queries.len() != tokens * HEADS * QK
+        || key.len() != LOCAL_K_ELEMENTS
+        || value.len() != LOCAL_V_ELEMENTS
+        || sink.len() != HEADS
+        || [
+            queries.ordinal(),
+            key.ordinal(),
+            value.ordinal(),
+            sink.ordinal(),
+        ]
+        .iter()
+        .any(|&ordinal| ordinal != device)
+    {
+        return Err("MiMo local first chunk extent, tokens, or GPU changed".into());
+    }
+    let mut output = engine.uninit(tokens * HEADS * VALUE)?;
+    let rc = unsafe {
+        memra_mimo_swa_ring_first_chunk_f32(
+            queries.device_ptr(&stream).0 as *const f32,
+            key.device_ptr(&stream).0 as *const f32,
+            value.device_ptr(&stream).0 as *const f32,
+            sink.device_ptr(&stream).0 as *const f32,
+            output.device_ptr_mut(&stream).0 as *mut f32,
+            tokens as i32,
+            HEADS as i32,
+            LOCAL_KV_HEADS as i32,
+            QK as i32,
+            VALUE as i32,
+            SWA as i32,
+            stream.cu_stream() as *mut c_void,
+        )
+    };
+    if rc != 0 {
+        return Err(format!("MiMo local first-chunk attention returned {rc}").into());
+    }
+    stream.synchronize()?;
+    Ok(output)
+}
+
 impl MiMoTextWeights {
     /// Admit a separate two-card compressed KV sequence. Caller supplies
     /// minimum free headroom per card after cache and workspace allocations;
@@ -602,9 +667,9 @@ impl<'a> MiMoCompressedKv<'a> {
     }
 
     /// Attend a fresh 1..=128 row chunk against the layer cache just appended.
-    /// Each query uses the same packed global or F32 local kernel as ordinary
-    /// decode at that sequence position. The layer cursor stays poisoned
-    /// until all layers append and the outer batch commits.
+    /// Global queries retain per-position packed decode. Local queries use
+    /// one grid launch whose CTAs execute the ordinary ring decoder's exact
+    /// per-position arithmetic. The cursor stays poisoned until commit.
     pub(crate) fn attend_appended_first_chunk(
         &mut self,
         layer: usize,
@@ -630,6 +695,20 @@ impl<'a> MiMoCompressedKv<'a> {
         {
             return Err("MiMo first-chunk query shape or GPU changed".into());
         }
+        if let LayerCache::Local { key, value, .. } = cache {
+            return decode_local_first_chunk(
+                engine,
+                query_rows,
+                key,
+                value,
+                self.weights.layers[layer]
+                    .attention
+                    .sink
+                    .as_ref()
+                    .ok_or("MiMo first-chunk local sink is missing")?,
+                batch.rows,
+            );
+        }
         let mut output = engine.uninit(batch.rows * HEADS * VALUE)?;
         for position in 0..batch.rows {
             let mut query = engine.uninit(HEADS * QK)?;
@@ -645,18 +724,9 @@ impl<'a> MiMoCompressedKv<'a> {
                     position + 1,
                     &mut self.workspaces[stage],
                 )?,
-                LayerCache::Local { key, value, .. } => decode_local(
-                    engine,
-                    &query,
-                    key,
-                    value,
-                    self.weights.layers[layer]
-                        .attention
-                        .sink
-                        .as_ref()
-                        .ok_or("MiMo first-chunk local sink is missing")?,
-                    position,
-                )?,
+                LayerCache::Local { .. } => {
+                    return Err("MiMo local first-chunk cache changed after admission".into());
+                }
             };
             engine.dtod_copy_into(&context, &mut output, position * HEADS * VALUE)?;
         }
@@ -1125,6 +1195,70 @@ mod tests {
                 }
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires a dedicated MiMo GPU component lane"]
+    fn gpu_local_first_chunk_matches_per_position_ring_bits() -> Result<(), Fail> {
+        let gpu: usize = std::env::var("MEMRA_MIMO_COMPONENT_GPU")
+            .unwrap_or_else(|_| "0".into())
+            .parse()?;
+        let engine = Engine::new(gpu)?;
+        engine.gpu.ctx.bind_to_thread()?;
+        let key = (0..LOCAL_K_ELEMENTS)
+            .map(|index| ((index * 17 % 79) as f32 - 39.0) / 71.0)
+            .collect::<Vec<_>>();
+        let value = (0..LOCAL_V_ELEMENTS)
+            .map(|index| ((index * 23 % 89) as f32 - 44.0) / 83.0)
+            .collect::<Vec<_>>();
+        let sink = (0..HEADS)
+            .map(|head| (head as f32 - 31.0) / 47.0)
+            .collect::<Vec<_>>();
+        let key_gpu = engine.htod(&key)?;
+        let value_gpu = engine.htod(&value)?;
+        let sink_gpu = engine.htod(&sink)?;
+        for tokens in [1, 9, 128] {
+            let queries = (0..tokens * HEADS * QK)
+                .map(|index| ((index * 19 % 97) as f32 - 48.0) / 61.0)
+                .collect::<Vec<_>>();
+            let queries_gpu = engine.htod(&queries)?;
+            let batch = decode_local_first_chunk(
+                &engine,
+                &queries_gpu,
+                &key_gpu,
+                &value_gpu,
+                &sink_gpu,
+                tokens,
+            )?;
+            let batch = engine.dtoh(&batch)?;
+            assert_eq!(batch.len(), tokens * HEADS * VALUE);
+            for position in 0..tokens {
+                let row =
+                    engine.htod(&queries[position * HEADS * QK..(position + 1) * HEADS * QK])?;
+                let serial =
+                    decode_local(&engine, &row, &key_gpu, &value_gpu, &sink_gpu, position)?;
+                let serial = engine.dtoh(&serial)?;
+                for (element, (&got, &want)) in batch
+                    [position * HEADS * VALUE..(position + 1) * HEADS * VALUE]
+                    .iter()
+                    .zip(&serial)
+                    .enumerate()
+                {
+                    assert!(
+                        got.to_bits() == want.to_bits(),
+                        "MiMo local first chunk {tokens} position {position} element {element}: {got} != {want}"
+                    );
+                }
+            }
+        }
+        let one = engine.htod(&vec![0.0f32; HEADS * QK])?;
+        assert!(
+            decode_local_first_chunk(&engine, &one, &key_gpu, &value_gpu, &sink_gpu, 0).is_err()
+        );
+        assert!(
+            decode_local_first_chunk(&engine, &one, &key_gpu, &value_gpu, &sink_gpu, 129).is_err()
+        );
         Ok(())
     }
 }
