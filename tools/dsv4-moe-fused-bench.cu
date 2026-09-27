@@ -307,7 +307,7 @@ static void bench_gu_std(const unsigned long long* table, const int* sel, const 
     if (smem > 48 * 1024)
         cudaFuncSetAttribute(dsv4_moe_fused_gu_kernel<WP, KC, ST>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
     dsv4_moe_fused_gu_kernel<WP, KC, ST><<<dim3(INTER / (8 * WP), rows * TOPK), dim3(32, 2 * WP), smem, s>>>(
-        table, NE, NG, 0, TOPK, sel, selw, scale2, xf, h, nullptr, HID, INTER, 10.0f, (long)(HID / 2), fault);
+        table, NE, NG, 0, TOPK, sel, selw, scale2, xf, nullptr, nullptr, h, nullptr, HID, INTER, 10.0f, (long)(HID / 2), fault);
 }
 
 template<int WP, int KC, int ST>
@@ -372,7 +372,7 @@ int main(int argc, char** argv) {
         ck(cudaMalloc(&dfault, 4)); ck(cudaMemset(dfault, 0, 4));
         ck(cudaStreamSynchronize(s));
         auto gu = [&](int it) {
-            api(memra_dsv4_moe_fused_gu_part(dtable, NE, NG, 0, dsel + (size_t)it * slots, dselw, dscale2, dx, dh, nullptr, TOPK, rows, HID, INTER, 10.0f, dfault, s));
+            api(memra_dsv4_moe_fused_gu_part(dtable, NE, NG, 0, dsel + (size_t)it * slots, dselw, dscale2, dx, nullptr, nullptr, dh, nullptr, TOPK, rows, HID, INTER, 10.0f, dfault, s));
         };
         auto down = [&](int it) {
             api(memra_dsv4_moe_fused_down_part(dtable, NE, NG, 0, dsel + (size_t)it * slots, dscale2, dh, dc, nullptr, nullptr, nullptr, TOPK, rows, INTER, HID, dfault, s));
