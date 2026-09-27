@@ -1,4 +1,4 @@
-# WP-F resumable state (2026-09-27 about 18:40Z; NEED TARGET CARD for OWED 20; 5090 handoff 8 GiB finishing)
+# WP-F resumable state (2026-09-27 about 20:00Z; NEED TARGET CARD for OWED 20; 5090 handoff 8 GiB rerunning)
 
 - Lane `lane/spill-f-20260919`, worktree `wt-spill-f`; tip on origin; main 21ce97836 (integ72)
   fast-forwarded in. Everything through d58f4bfd8 (OWED 26, 17 and 18 code, BOX36) is in main.
@@ -12,10 +12,15 @@
   `owed20/raw/HEADS.sha256`): the 16 MiB binaries tripped the public-boundary patterns, and the
   unpushed commits carrying them were rebuilt without them (backup ref
   `backup/spill-f-pre-heads-fix`, local only; delete after integration).
-- 5090 queue: handoff-8g rounds 9 and 10 remain (idle-gated, 300 s yield after every cell); a
-  one-off `poolcells-after-deletion` step runs the pool's GPU cells on the post-deletion build.
-  After handoff-8g: `m1-handoff-pairs.py ~/spill-f-5090/receipts/handoff-8g`, then the OWED 18
-  decision (section E rules, both rigs).
+- Scratch loss (~19:20Z): `~/spill-f-5090` vanished, cause unknown (`rtx5090/RESULTS.md`); the
+  handoff-8g cell's first run (rounds 1 to 8) was lost. Rerun from round 1 on a rebuild of
+  5b001e125 (`owed18/build-rebuild/`, section E rebuild amendment), started 19:42Z; round 1 passed
+  and is mirrored; a nice-19 watcher (`~/spill-f-5090/mirror-8g.sh`, 12 h timeout) mirrors each
+  later round into `owed18/5090/handoff-8g/` (drop the `.mirrored` marker files before committing).
+  The driver now mirrors cells itself (`--mirror`, from the next launch).
+- Post-deletion pool GPU cells: 6 of 6 on the 5090 (`owed17/deletion/poolcells-after-deletion`).
+- After handoff-8g: `m1-handoff-pairs.py owed18/5090/handoff-8g`, then the OWED 18 decision
+  (section E, both rigs).
 - Builds: nice 19, CPUQuota=600%, MemoryMax=12G (lead, four lanes at once). Pre-push list:
   fmt; both battery clippy forms; tier and kv tests; touched suites; check-flags; an edit to
   `moe_cache.rs` re-pins the SLRU fixture after the SLRU-statement check.
