@@ -5,7 +5,7 @@
 # the burst's first 200; then day48-read.py. Refuses to start without ss or lsof. Every step's exit is captured
 # on its own line. Never a signal to anything this lane did not start. Receipts /root/spill-receipts/b-day48.
 set -uo pipefail
-R=/root/spill-receipts/b-day48; mkdir -p "$R/bins" "$R/boots"
+R=${R48:-/root/spill-receipts/b-day48}; mkdir -p "$R/bins" "$R/boots"
 # Exported: build-arms.sh and day48-run.sh read WT and RIG_LOCK from the environment (their defaults are the local rig's).
 export WT=/root/wt-b RIG_LOCK=/tmp/memra-gpu.lock
 MODEL=${MODEL:-/root/artifacts/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf}

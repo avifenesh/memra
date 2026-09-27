@@ -92,6 +92,33 @@ for n in names:
         say(f"DAY48 READING card={card} boot={n} wave={wave} n={len(wr)} ok200={len(ok200)} "
             f"r429={sum(1 for r in wr if r['status'] == 429)} ttft_ms p50={pct(ttft, 0.5):.1f} p95={pct(ttft, 0.95):.1f} "
             f"N={len(ttft)}")
+# Addendum C: V5, one debt per admission on enforce-vg (the predictive vg_debt and the physical pool debt that follows
+# it for the same admission, in MB); V6, the physical debt values per boot (a reading).
+LINE_DEBT = re.compile(r"(?:vg_debt=(\d+))|(?:\[admission\] dspark verify-graph pool debt: \+(\d+)MB)")
+for n in names:
+    arm = n.split("-", 1)[1]
+    t = read(os.path.join(root, "boots", n, "server.log"))
+    phys_vals = [int(x) for x in PHYS.findall(t)]
+    say(f"DAY48 V6 READING card={card} boot={n} physical_debt_lines={len(phys_vals)} "
+        f"distinct_mb={sorted(set(phys_vals))[:8]}")
+    if arm != "enforce-vg":
+        continue
+    pending = None
+    pairs, apart, unpaired = 0, [], 0
+    for m in LINE_DEBT.finditer(t):
+        if m.group(1) is not None:
+            v = int(m.group(1))
+            if pending is not None:
+                unpaired += 1
+            pending = v if v > 0 else None
+        elif pending is not None:
+            mb = int(m.group(2))
+            pairs += 1
+            if round(pending / 1e6) != mb:
+                apart.append((pending, mb))
+            pending = None
+    say(f"DAY48 V5 card={card} boot={n} paired={pairs} apart={apart[:4]} predictive_without_physical={unpaired} -> "
+        f"{'PASS' if pairs and not apart else 'FAIL'}")
 for order in ("O1", "O2"):
     a, b = f"{order}-enforce", f"{order}-enforce-vg"
     if a in by and b in by:
