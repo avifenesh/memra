@@ -16,7 +16,7 @@ use memra_gguf::source::MimoMxfp4Native;
 use crate::Engine;
 use crate::dsv4_ffi::{
     memra_dsv4_act_quant_fp8, memra_dsv4_fp4_gemm, memra_dsv4_fp4_gemm_sel,
-    memra_dsv4_fp4_gemm_sel_g_arm,
+    memra_dsv4_fp4_gemm_sel_g_arm, memra_dsv4_fp4_gemm_sel_mimo_reuse,
 };
 use crate::mimo_moe_load::MiMoRoutedSource;
 
@@ -26,6 +26,9 @@ const EXPERTS: usize = 256;
 const TOP_K: usize = 8;
 const EXPERT_WIDTH: usize = 2048;
 pub const MIMO_MOE_MAX_BATCH_TOKENS: usize = 256;
+// Keep in sync with DSV4_MIMO_REUSE_SLOTS in cu/dsv4_gpu.cu.
+const REUSE_SLOTS_PER_CTA: usize = 4;
+const REUSE_GROUP_WORDS: usize = 1 + REUSE_SLOTS_PER_CTA;
 
 pub struct MiMoMoeToken {
     pub output: CudaSlice<f32>,
@@ -74,6 +77,37 @@ fn grouped_projection_shape(projection: i32, rows: usize, cols: usize, per_slot:
         (projection, rows, cols, per_slot),
         (0 | 2, EXPERT_WIDTH, HIDDEN, false) | (1, HIDDEN, EXPERT_WIDTH, true)
     )
+}
+
+/// Packed `[expert, slot0, slot1, slot2, slot3]` rows in expert order.
+/// Slots inside each expert remain in the router's original token-major order;
+/// `-1` pads the final group for an expert. Kernel stores still use slot indices.
+fn group_selected_experts(ids: &[i32], tokens: usize) -> Result<Vec<i32>, Fail> {
+    if !(2..=MIMO_MOE_MAX_BATCH_TOKENS).contains(&tokens) || ids.len() != tokens * TOP_K {
+        return Err("MiMo selected-expert reuse route extent changed".into());
+    }
+    let mut by_expert = vec![Vec::new(); EXPERTS];
+    for (slot, &expert) in ids.iter().enumerate() {
+        let expert = usize::try_from(expert)
+            .ok()
+            .filter(|&expert| expert < EXPERTS)
+            .ok_or("MiMo selected-expert reuse route ID changed")?;
+        by_expert[expert].push(slot as i32);
+    }
+    let mut packed = Vec::with_capacity(ids.len() * REUSE_GROUP_WORDS);
+    for (expert, slots) in by_expert.iter().enumerate() {
+        for chunk in slots.chunks(REUSE_SLOTS_PER_CTA) {
+            packed.push(expert as i32);
+            packed.extend_from_slice(chunk);
+            packed.extend(std::iter::repeat_n(-1, REUSE_SLOTS_PER_CTA - chunk.len()));
+        }
+    }
+    Ok(packed)
+}
+
+struct SelectedExpertGroups {
+    packed: CudaSlice<i32>,
+    count: usize,
 }
 
 /// A source whose complete pinned header census and model plan were checked
@@ -510,6 +544,7 @@ impl InterleavedExperts {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn project(
         &self,
         engine: &Engine,
@@ -518,6 +553,7 @@ impl InterleavedExperts {
         selected: &CudaSlice<i32>,
         shape: (i32, usize, usize, bool),
         tokens: usize,
+        groups: Option<&SelectedExpertGroups>,
     ) -> Result<CudaSlice<f32>, Fail> {
         let (projection, rows, cols, per_slot) = shape;
         if !(1..=MIMO_MOE_MAX_BATCH_TOKENS).contains(&tokens) {
@@ -542,6 +578,13 @@ impl InterleavedExperts {
             ]
             .into_iter()
             .any(|device| device != ordinal)
+            || groups.is_some_and(|groups| {
+                tokens == 1
+                    || groups.count == 0
+                    || groups.count > slots
+                    || groups.packed.len() != groups.count * REUSE_GROUP_WORDS
+                    || groups.packed.ordinal() != ordinal
+            })
         {
             return Err("MiMo grouped expert projection shape or GPU changed".into());
         }
@@ -575,6 +618,27 @@ impl InterleavedExperts {
                     self.scale_stride as i64,
                     stream.cu_stream() as *mut c_void,
                 )
+            } else if let Some(groups) = groups {
+                let (groups_ptr, groups_guard) = groups.packed.device_ptr(&stream);
+                let rc = memra_dsv4_fp4_gemm_sel_mimo_reuse(
+                    codes_ptr as *const c_void,
+                    activation_scales_ptr as *const f32,
+                    weight_ptr as *const c_void,
+                    weight_scales_ptr as *const c_void,
+                    groups_ptr as *const i32,
+                    projection,
+                    i32::from(per_slot),
+                    output_ptr as *mut f32,
+                    slots as i32,
+                    groups.count as i32,
+                    rows as i32,
+                    cols as i32,
+                    self.weight_stride as i64,
+                    self.scale_stride as i64,
+                    stream.cu_stream() as *mut c_void,
+                );
+                drop(groups_guard);
+                rc
             } else {
                 // Gate/up consume one activation row per token (slot / 8).
                 // Down consumes the independently quantized row of each slot.
@@ -864,6 +928,7 @@ impl GroupedMiMoMoeLayer {
             &ids_gpu,
             (0, EXPERT_WIDTH, HIDDEN, false),
             1,
+            None,
         )?;
         let up = self.experts.project(
             engine,
@@ -872,6 +937,7 @@ impl GroupedMiMoMoeLayer {
             &ids_gpu,
             (2, EXPERT_WIDTH, HIDDEN, false),
             1,
+            None,
         )?;
         let mut activated = engine.uninit(TOP_K * EXPERT_WIDTH)?;
         engine.silu_mul(&gate, &up, &mut activated, TOP_K * EXPERT_WIDTH)?;
@@ -884,6 +950,7 @@ impl GroupedMiMoMoeLayer {
             &ids_gpu,
             (1, HIDDEN, EXPERT_WIDTH, true),
             1,
+            None,
         )?;
         let mut output = engine.uninit(HIDDEN)?;
         engine.axpy_rows_seq_into(&down, &weights_gpu, &mut output, HIDDEN, TOP_K)?;
@@ -916,6 +983,34 @@ impl GroupedMiMoMoeLayer {
         plan: &MoeMlpPlan,
         config: &ModelConfig,
         compiled: &ModelPlan,
+    ) -> Result<MiMoMoeBatch, Fail> {
+        self.batch_bound_route(engine, x, tokens, plan, config, compiled, false)
+    }
+
+    /// Experimental four-slot selected-expert projection. The caller chooses
+    /// this per batch; the default and one-token projection paths stay intact.
+    pub fn batch_bound_experimental_weight_reuse(
+        &self,
+        engine: &Engine,
+        x: &CudaSlice<f32>,
+        tokens: usize,
+        plan: &MoeMlpPlan,
+        config: &ModelConfig,
+        compiled: &ModelPlan,
+    ) -> Result<MiMoMoeBatch, Fail> {
+        self.batch_bound_route(engine, x, tokens, plan, config, compiled, true)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn batch_bound_route(
+        &self,
+        engine: &Engine,
+        x: &CudaSlice<f32>,
+        tokens: usize,
+        plan: &MoeMlpPlan,
+        config: &ModelConfig,
+        compiled: &ModelPlan,
+        weight_reuse: bool,
     ) -> Result<MiMoMoeBatch, Fail> {
         validate_batch_plan(&self.bound_plan, config, compiled, plan, self.layer)?;
         let ordinal = engine.stream().context().ordinal();
@@ -952,6 +1047,16 @@ impl GroupedMiMoMoeLayer {
         let weights = engine.dtoh(&weights_gpu)?;
         let selected = validate_batch_selection(&ids, &weights, tokens)?;
         let weights = weights.chunks_exact(TOP_K).map(<[f32]>::to_vec).collect();
+        let groups = if weight_reuse && tokens > 1 {
+            let packed = group_selected_experts(&ids, tokens)?;
+            let count = packed.len() / REUSE_GROUP_WORDS;
+            Some(SelectedExpertGroups {
+                packed: engine.htod_i32(&packed)?,
+                count,
+            })
+        } else {
+            None
+        };
 
         let (codes, scales) = quantize_rows(engine, x, HIDDEN, tokens)?;
         let gate = self.experts.project(
@@ -961,6 +1066,7 @@ impl GroupedMiMoMoeLayer {
             &ids_gpu,
             (0, EXPERT_WIDTH, HIDDEN, false),
             tokens,
+            groups.as_ref(),
         )?;
         let up = self.experts.project(
             engine,
@@ -969,6 +1075,7 @@ impl GroupedMiMoMoeLayer {
             &ids_gpu,
             (2, EXPERT_WIDTH, HIDDEN, false),
             tokens,
+            groups.as_ref(),
         )?;
         let mut activated = engine.uninit(slots * EXPERT_WIDTH)?;
         engine.silu_mul(&gate, &up, &mut activated, slots * EXPERT_WIDTH)?;
@@ -981,6 +1088,7 @@ impl GroupedMiMoMoeLayer {
             &ids_gpu,
             (1, HIDDEN, EXPERT_WIDTH, true),
             tokens,
+            groups.as_ref(),
         )?;
         let mut output = engine.uninit(tokens * HIDDEN)?;
         engine.axpy_rows_seq_tokens_into(
@@ -1266,6 +1374,193 @@ mod tests {
     }
 
     #[test]
+    fn selected_expert_reuse_groups_are_stable_bounded_and_cover_original_slots() {
+        for tokens in [9, 128, MIMO_MOE_MAX_BATCH_TOKENS] {
+            let ids = (0..tokens)
+                .flat_map(|token| {
+                    (0..TOP_K).map(move |rank| {
+                        if rank == 0 {
+                            255
+                        } else {
+                            ((token * 7 + rank * 31) % 255) as i32
+                        }
+                    })
+                })
+                .collect::<Vec<_>>();
+            let packed = group_selected_experts(&ids, tokens).unwrap();
+            assert_eq!(packed.len() % REUSE_GROUP_WORDS, 0);
+            let mut recovered = vec![Vec::new(); EXPERTS];
+            let mut seen = vec![false; ids.len()];
+            let mut previous_expert = -1;
+            for group in packed.chunks_exact(REUSE_GROUP_WORDS) {
+                let expert = group[0];
+                assert!(expert >= previous_expert);
+                previous_expert = expert;
+                let mut padding_started = false;
+                for &slot in &group[1..] {
+                    if slot == -1 {
+                        padding_started = true;
+                        continue;
+                    }
+                    assert!(!padding_started);
+                    let slot = slot as usize;
+                    assert!(!std::mem::replace(&mut seen[slot], true));
+                    assert_eq!(ids[slot], expert);
+                    recovered[expert as usize].push(slot);
+                }
+            }
+            assert!(seen.into_iter().all(std::convert::identity));
+            for (expert, recovered_slots) in recovered.iter().enumerate() {
+                let expected = ids
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(slot, &id)| (id as usize == expert).then_some(slot))
+                    .collect::<Vec<_>>();
+                assert_eq!(recovered_slots, &expected);
+            }
+            assert_eq!(recovered[255].len(), tokens);
+        }
+
+        let ids = vec![0; 2 * TOP_K];
+        assert!(group_selected_experts(&ids, 1).is_err());
+        assert!(group_selected_experts(&ids[..TOP_K], 2).is_err());
+        let mut invalid = ids;
+        invalid[0] = -1;
+        assert!(group_selected_experts(&invalid, 2).is_err());
+        invalid[0] = EXPERTS as i32;
+        assert!(group_selected_experts(&invalid, 2).is_err());
+    }
+
+    #[test]
+    #[ignore = "requires a dedicated GPU; compares synthetic MXFP4 projections byte-for-byte"]
+    fn selected_expert_reuse_matches_exact_warp_projection() -> Result<(), Fail> {
+        let gpu: usize = std::env::var("MEMRA_MIMO_REUSE_GPU")?.parse()?;
+        let engine = Engine::new(gpu)?;
+        engine.gpu.ctx.bind_to_thread()?;
+        for tokens in [9, 128] {
+            let slots = tokens * TOP_K;
+            let ids = (0..tokens)
+                .flat_map(|token| {
+                    (0..TOP_K).map(move |rank| {
+                        if rank == 0 {
+                            255
+                        } else {
+                            ((token * 13 + rank * 7) % 16) as i32
+                        }
+                    })
+                })
+                .collect::<Vec<_>>();
+            let packed = group_selected_experts(&ids, tokens)?;
+            let group_count = packed.len() / REUSE_GROUP_WORDS;
+            let ids_gpu = engine.htod_i32(&ids)?;
+            let groups_gpu = engine.htod_i32(&packed)?;
+            let scale2_gpu = engine.htod(&vec![0.0f32; EXPERTS * 3])?;
+            for (projection, kdim, per_slot) in
+                [(0, 4096, false), (2, 4096, false), (1, 2048, true)]
+            {
+                let n = 8usize;
+                let rows = if per_slot { slots } else { tokens };
+                let codes = (0..rows * kdim)
+                    .map(|i| [0x00, 0x38, 0xb8, 0x40, 0xc0, 0x20, 0xa0][(i * 37 + i / kdim) % 7])
+                    .collect::<Vec<u8>>();
+                let activation_scales = (0..rows * kdim / 128)
+                    .map(|i| [0.5f32, 1.0, 2.0][i % 3])
+                    .collect::<Vec<_>>();
+                let wstride = n * kdim / 2;
+                let sstride = n * kdim / 32;
+                let weight = (0..EXPERTS * 3 * wstride)
+                    .map(|i| ((i * 13 + i / 19 * 7) % 256) as u8)
+                    .collect::<Vec<_>>();
+                let scales = (0..EXPERTS * 3 * sstride)
+                    .map(|i| 120 + ((i * 11 + i / 17) % 15) as u8)
+                    .collect::<Vec<_>>();
+                let codes_gpu = engine.htod_bytes(&codes)?;
+                let as_gpu = engine.htod(&activation_scales)?;
+                let weight_gpu = engine.htod_bytes(&weight)?;
+                let scales_gpu = engine.htod_bytes(&scales)?;
+                let mut baseline = engine.uninit(slots * n)?;
+                let mut reuse = engine.uninit(slots * n)?;
+                let stream = engine.stream();
+                let (codes_ptr, codes_guard) = codes_gpu.device_ptr(&stream);
+                let (as_ptr, as_guard) = as_gpu.device_ptr(&stream);
+                let (weight_ptr, weight_guard) = weight_gpu.device_ptr(&stream);
+                let (scales_ptr, scales_guard) = scales_gpu.device_ptr(&stream);
+                let (scale2_ptr, scale2_guard) = scale2_gpu.device_ptr(&stream);
+                let (ids_ptr, ids_guard) = ids_gpu.device_ptr(&stream);
+                let (groups_ptr, groups_guard) = groups_gpu.device_ptr(&stream);
+                let (baseline_ptr, baseline_guard) = baseline.device_ptr_mut(&stream);
+                let (reuse_ptr, reuse_guard) = reuse.device_ptr_mut(&stream);
+                let rc_baseline = unsafe {
+                    memra_dsv4_fp4_gemm_sel_g_arm(
+                        codes_ptr as *const c_void,
+                        as_ptr as *const f32,
+                        weight_ptr as *const c_void,
+                        scales_ptr as *const c_void,
+                        scale2_ptr as *const f32,
+                        ids_ptr as *const i32,
+                        projection,
+                        i32::from(per_slot),
+                        1,
+                        baseline_ptr as *mut f32,
+                        slots as i32,
+                        n as i32,
+                        kdim as i32,
+                        wstride as i64,
+                        sstride as i64,
+                        if per_slot { 0 } else { TOP_K as i32 },
+                        1,
+                        stream.cu_stream() as *mut c_void,
+                    )
+                };
+                let rc_reuse = unsafe {
+                    memra_dsv4_fp4_gemm_sel_mimo_reuse(
+                        codes_ptr as *const c_void,
+                        as_ptr as *const f32,
+                        weight_ptr as *const c_void,
+                        scales_ptr as *const c_void,
+                        groups_ptr as *const i32,
+                        projection,
+                        i32::from(per_slot),
+                        reuse_ptr as *mut f32,
+                        slots as i32,
+                        group_count as i32,
+                        n as i32,
+                        kdim as i32,
+                        wstride as i64,
+                        sstride as i64,
+                        stream.cu_stream() as *mut c_void,
+                    )
+                };
+                drop((
+                    codes_guard,
+                    as_guard,
+                    weight_guard,
+                    scales_guard,
+                    scale2_guard,
+                    ids_guard,
+                    groups_guard,
+                    baseline_guard,
+                    reuse_guard,
+                ));
+                assert_eq!(rc_baseline, 0);
+                assert_eq!(rc_reuse, 0);
+                let baseline = engine.dtoh(&baseline)?;
+                let reuse = engine.dtoh(&reuse)?;
+                assert!(baseline.iter().any(|&value| value != 0.0));
+                for (slot, (&expected, &actual)) in baseline.iter().zip(&reuse).enumerate() {
+                    assert!(expected.is_finite() && actual.is_finite());
+                    assert_eq!(
+                        actual.to_bits(),
+                        expected.to_bits(),
+                        "tokens {tokens}, projection {projection}, output {slot}"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     #[ignore = "requires pinned MiMo source and a dedicated two-card GPU lane"]
     fn grouped_batch_matches_serial_token_on_two_cards() -> Result<(), Fail> {
         use std::path::Path;
@@ -1308,6 +1603,25 @@ mod tests {
                 let input_gpu = engine.htod(&input)?;
                 let batch = grouped.batch(&engine, &input_gpu, tokens, plan, &pinned)?;
                 let batch_output = engine.dtoh(&batch.output)?;
+                let experimental = grouped.batch_bound_experimental_weight_reuse(
+                    &engine, &input_gpu, tokens, plan, &config, &compiled,
+                )?;
+                assert_eq!(experimental.selected, batch.selected);
+                assert!(
+                    experimental
+                        .weights
+                        .iter()
+                        .flatten()
+                        .zip(batch.weights.iter().flatten())
+                        .all(|(got, want)| got.to_bits() == want.to_bits())
+                );
+                let experimental_output = engine.dtoh(&experimental.output)?;
+                assert!(
+                    experimental_output
+                        .iter()
+                        .zip(&batch_output)
+                        .all(|(got, want)| got.to_bits() == want.to_bits())
+                );
                 assert_eq!(batch_output.len(), tokens * HIDDEN);
                 assert_eq!(batch.selected.len(), tokens);
                 assert_eq!(batch.weights.len(), tokens);

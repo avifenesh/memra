@@ -1324,6 +1324,26 @@ unsafe extern "C" {
         reduce_arm: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// MiMo MXFP4 only. Groups are packed `[expert, slot0..slot3]` with -1 padding.
+    /// Outputs remain indexed by the router's original slot.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_fp4_gemm_sel_mimo_reuse(
+        a_codes: *const c_void,
+        a_scales: *const f32,
+        w_base: *const c_void,
+        sc_base: *const c_void,
+        groups: *const i32,
+        proj: i32,
+        per_slot: i32,
+        out: *mut f32,
+        slots: i32,
+        group_count: i32,
+        n: i32,
+        kdim: i32,
+        wstride: i64,
+        sstride: i64,
+        stream: *mut c_void,
+    ) -> i32;
     #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_combine_rows_m(
         contrib: *const f32,
