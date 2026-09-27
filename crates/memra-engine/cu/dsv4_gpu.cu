@@ -7053,6 +7053,49 @@ extern "C" __global__ void dsv4_combine_rows_m_kernel(const float* __restrict__ 
     y[(long)p * d + i] = acc;
 }
 
+// The TP/EP joined MoE tail in one launch (memra #710): combine_rows_m's slot sum of the routed
+// rows, the joined shared expert's rows added as dsv4_add_inplace_kernel adds them, then
+// dsv4_hc_post_kernel's expression for each of the hc copies. Each value is those kernels' op in
+// their order, so y and out keep their bits; three launches become one.
+extern "C" __global__ void dsv4_moe_tail_hc_post_kernel(
+        const float* __restrict__ contrib, const int* __restrict__ order, int topk,
+        const float* __restrict__ shared, float* __restrict__ y,
+        const float* __restrict__ residual, const float* __restrict__ post,
+        const float* __restrict__ comb, float* __restrict__ out, int hc, long d) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    int t = blockIdx.y;
+    if (i >= d) return;
+    const int* orow = order + (long)t * topk;
+    const float* crow = contrib + (long)t * topk * d;
+    float acc = 0.0f;
+    for (int k = 0; k < topk; k++) acc += crow[(long)orow[k] * d + i];
+    float f = acc;
+    f += shared[(long)t * d + i];
+    y[(long)t * d + i] = f;
+    for (int k = 0; k < hc; k++) {
+        float a = post[(long)t * hc + k] * f;
+        for (int j = 0; j < hc; j++)
+            a += comb[((long)t * hc + j) * hc + k] * residual[((long)t * hc + j) * d + i];
+        out[((long)t * hc + k) * d + i] = a;
+    }
+}
+
+extern "C" int memra_dsv4_moe_tail_hc_post(const float* contrib, const int* order, int topk,
+                                           const float* shared, float* y, const float* residual,
+                                           const float* post, const float* comb, float* out,
+                                           int s, int hc, long d, void* stream_v) {
+    if (!contrib || !order || !shared || !y || !residual || !post || !comb || !out || s < 1 ||
+        s > DSV4_GRID_Y_MAX || hc < 1)
+        return 40004;
+    const int threads = 256;
+    dim3 grid((unsigned)((d + threads - 1) / threads), (unsigned)s);
+    memra_chain_launch(dsv4_moe_tail_hc_post_kernel, grid, threads, 0, (cudaStream_t)stream_v)(
+        contrib, order, topk, shared, y, residual, post, comb, out, hc, d);
+    DSV4_ERR();
+    return 0;
+}
+
 extern "C" int memra_dsv4_combine_rows_m(const float* contrib, const int* order, int topk,
                                          float* y, long d, int s, void* stream_v) {
     cudaStream_t stream = (cudaStream_t)stream_v;
