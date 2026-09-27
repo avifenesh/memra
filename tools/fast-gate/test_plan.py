@@ -149,6 +149,15 @@ class CheckoutAndWrapperTests(unittest.TestCase):
         self.fg.mkdir(parents=True)
         for name in ("fast-gate.sh", "plan.py", "map.tsv", "models.tsv", "dependencies.json"):
             shutil.copy2(HERE / name, self.fg / name)
+        registry = self.fg / "models.tsv"
+        lines = []
+        for line in registry.read_text().splitlines():
+            fields = line.split("\t")
+            if len(fields) == 6 and not line.startswith("#") and fields[1] != "cmd":
+                fields[2] = str(self.root / ("absent-" + fields[0] + ".gguf"))
+                line = "\t".join(fields)
+            lines.append(line)
+        registry.write_text("\n".join(lines) + "\n")
         (self.repo / "crates").mkdir()
         (self.repo / "crates/tracked.rs").write_text("// tracked fixture\n")
         (self.repo / ".gitignore").write_text("crates/ignored.inc\ntools/__pycache__/\n")
@@ -323,6 +332,36 @@ class CheckoutAndWrapperTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("NO GOLDEN pinned", result.stdout)
         self.assertFalse(self.calls.exists(), "missing golden must refuse before compilation")
+
+    def test_explicit_probes_work_without_git_but_claim_unknown_coverage(self):
+        self.setup_model_probe("g31spec", "gspec", "stream agreement 8/8")
+        shutil.rmtree(self.repo / ".git")
+        result = self.wrapper("--probes", "g31spec")
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("change coverage unknown", result.stdout)
+        self.assertIn("g31spec: PASS", result.stdout)
+
+    def test_default_refresh_pins_available_goldens_and_names_missing_ones(self):
+        self.setup_model_probe("g12", "argmax", "argmax=1 decode argmax=1 CPU MATCH\ntokens: [1, 2]")
+        result = self.wrapper("--refresh-goldens", "--force")
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("1 written", result.stdout)
+        self.assertIn("unavailable", result.stdout)
+        self.assertTrue((self.fg / "goldens/g12.tokens").is_file())
+        self.assertNotIn("cargo stub", self.calls.read_text() if self.calls.exists() else "")
+
+    def test_refresh_of_only_missing_explicit_model_fails(self):
+        self.replace_probe("g12", ["argmax", str(self.root / "absent.gguf"), "@prompt.txt", "20", "-"])
+        result = self.wrapper("--refresh-goldens", "--probes", "g12", "--force")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("0 written", result.stdout)
+
+    def test_refresh_without_git_cannot_pin_unidentified_goldens(self):
+        self.setup_model_probe("g12", "argmax", "argmax=1 decode argmax=1 CPU MATCH\ntokens: [1, 2]")
+        shutil.rmtree(self.repo / ".git")
+        result = self.wrapper("--refresh-goldens", "--probes", "g12", "--force")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("REFUSED golden refresh without Git provenance", result.stdout)
 
 
 if __name__ == "__main__":

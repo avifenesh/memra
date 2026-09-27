@@ -31,6 +31,11 @@ qualification checkpoint run tier 2 and the affected model's own gates. Explicit
 probes prove only those probes. Missing models, missing goldens, self-SKIP and
 zero stream agreement fail. An invalid Git ref refuses instead of becoming an
 empty diff. A no-change response says that no validation ran.
+Explicit probes also work in a source-only tree without Git, with change coverage
+reported as unknown. Golden refresh requires Git provenance. A default refresh
+pins available goldens and reports missing ones; self-gating probes have no
+goldens and are excluded. An explicitly requested missing golden or a refresh
+that writes nothing fails.
 
 Before admitting a narrower GPU class, retain a selected/full comparison on the
 same candidate, artifact, request shape and target hardware. Replay its historical

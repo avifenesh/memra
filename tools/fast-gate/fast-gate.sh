@@ -258,6 +258,9 @@ run_probe() {
 
 # ---------- golden refresh (battery-green points ONLY) ----------
 if [ "$REFRESH" = 1 ]; then
+    git rev-parse --verify HEAD >/dev/null 2>&1 || {
+        echo "fast-gate: REFUSED golden refresh without Git provenance"; exit 2;
+    }
     if ! git diff --quiet || ! git diff --cached --quiet; then
         if [ "$FORCE" != 1 ]; then
             echo "fast-gate: refusing --refresh-goldens on a dirty tree (goldens pin battery-green"
@@ -270,21 +273,28 @@ if [ "$REFRESH" = 1 ]; then
     SHA=$(git rev-parse --short HEAD); TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     ids="${PROBES_OVERRIDE:-$(all_probe_ids | tr '\n' ',' | sed 's/,$//')}"
     echo "== fast-gate: refreshing goldens at $SHA ($TS) =="
-    FAILS=0
+    FAILS=0 SKIPS=0 REFRESHED=0
     for id in ${ids//,/ }; do
-        run_probe "$id" refresh || { FAILS=$((FAILS+1)); continue; }
-        [ "$PROBE_VERDICT" = "SKIP" ] && continue
         # gspec (in-run stream agreement) and cmd (self-gating check) probes pin no golden.
         case "$(probe_field "$id" 2)" in gspec|cmd) continue ;; esac
+        if ! run_probe "$id" refresh; then
+            if [ "$PROBE_VERDICT" = SKIP ] && [ -z "$PROBES_OVERRIDE" ]; then
+                SKIPS=$((SKIPS+1))
+            else
+                FAILS=$((FAILS+1))
+            fi
+            continue
+        fi
         { echo "# golden @ $SHA $TS ngen=$(probe_field "$id" 5) model=$(probe_field "$id" 3)";
           echo "$PROBE_TOKS"; } > "$GOLDENS/$id.tokens"
         toks=$(grep -oE "= [0-9.]+ tok/s" "$PROBE_LAST_LOG" | tail -1 | grep -oE "[0-9.]+")
         [ -n "${toks:-}" ] && { echo "# single-rep tok/s @ $SHA $TS (smoke reference only, NOT evidence)";
                                 echo "$toks"; } > "$GOLDENS/$id.perf"
         echo "  $id: golden pinned ($(echo "$PROBE_TOKS" | grep -oE '[0-9]+' | wc -l) ids)"
+        REFRESHED=$((REFRESHED+1))
     done
-    echo "goldens refresh: $FAILS fail — remember: refresh is ONLY valid at full-battery green points."
-    [ "$FAILS" -eq 0 ] || exit 1
+    echo "goldens refresh: $REFRESHED written, $SKIPS unavailable, $FAILS fail; no validation claimed."
+    [ "$FAILS" -eq 0 ] && [ "$REFRESHED" -gt 0 ] || exit 1
     exit 0
 fi
 

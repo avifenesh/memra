@@ -200,14 +200,32 @@ def main():
                          ("decision", plan["decision"])):
                 print(k + "\t" + v)
             return 0
-        paths, hidden = (args.changed, []) if args.changed is not None else changed_paths(args.repo, args.diff)
+        no_git_diagnostics = False
+        if args.changed is not None:
+            paths, hidden = args.changed, []
+        else:
+            try:
+                root = Path(git(args.repo, "rev-parse", "--show-toplevel").decode().strip())
+                has_git = root.resolve() == args.repo.resolve()
+            except subprocess.SubprocessError:
+                has_git = False
+            if not has_git and args.probes:
+                # Explicit diagnostics are useful in source-only rsync trees.
+                # They have no change-coverage or qualification authority.
+                paths, hidden, no_git_diagnostics = [], [], True
+            else:
+                paths, hidden = changed_paths(args.repo, args.diff)
         plan = make_plan(paths, overrides=csv(args.probes), hidden=hidden, context_changes=args.context_changed)
+        if no_git_diagnostics:
+            plan["decision"] = "expand"
+            plan["expansion"].append("Git metadata unavailable: explicit probe diagnostics only; change coverage unknown")
         if args.cache:
             from component import lookup
             for item in plan["components"]:
                 item.update(lookup(args.repo, args.cache, item["id"]))
         plan["diff"] = args.diff
         plan["offline_paths"] = args.changed is not None
+        plan["no_git_diagnostics"] = no_git_diagnostics
         encoded = json.dumps(plan, indent=2, sort_keys=True) + "\n"
         if args.out:
             args.out.write_text(encoded)

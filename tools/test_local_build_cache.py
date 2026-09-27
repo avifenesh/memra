@@ -105,10 +105,38 @@ class BuildCacheTests(unittest.TestCase):
         self.assertEqual((self.out / "fetch.log").read_bytes(), b"")
 
     def test_duplicate_metadata_keys_refuse_export(self):
-        path = self.build / "oracle-manifest.json"
+        path = self.build / "build.json"
         value = path.read_text().rstrip()
-        path.write_text(value[:-1] + ', "schema": "memra-gpu-ci-inputs-v1"}')
+        path.write_text(value[:-1] + ', "schema": "memra-native-build-v3"}')
         self.assert_refused(lambda: cache.describe(self.repo, self.build), "duplicate JSON key")
+
+    def test_every_required_bundle_member_is_mandatory(self):
+        for name in sorted(cache.capsule_files(self.expected["scope"])):
+            with self.subTest(member=name):
+                path = self.build / name
+                content = path.read_bytes()
+                path.unlink()
+                # Only the oracle attachment is optional on the producer's output.
+                # Removing it changes scope and cannot satisfy the old expectation.
+                self.assert_refused(lambda: cache.verify_capsule(self.repo, self.build, self.expected))
+                path.write_bytes(content)
+
+    def test_unexpected_duplicate_and_link_archive_members_refuse(self):
+        self.store()
+        archive_path = cache.cache_entry(self.storage, self.expected)
+        original = archive_path.read_bytes()
+        archive_path.chmod(0o644)
+        for name, kind in (("unexpected.txt", tarfile.REGTYPE), ("build.log", tarfile.REGTYPE),
+                           ("linked", tarfile.SYMTYPE), ("../escape", tarfile.REGTYPE)):
+            with self.subTest(name=name, kind=kind):
+                archive_path.write_bytes(original)
+                with tarfile.open(archive_path, "a") as archive:
+                    member = tarfile.TarInfo(name)
+                    member.type = kind
+                    member.linkname = "/etc/passwd" if kind == tarfile.SYMTYPE else ""
+                    member.size = 0
+                    archive.addfile(member)
+                self.assert_refused(self.load, "unexpected member")
 
     def test_actual_source_bytes_override_git_assume_unchanged(self):
         self.store()
@@ -151,13 +179,14 @@ class BuildCacheTests(unittest.TestCase):
 
     def test_compiler_platform_numeric_and_oracle_context_changes_miss(self):
         self.store()
-        mutations = (
+        mutations = [
             lambda e: e["build"]["recipe"]["compilers"]["nvcc"].update(sha256="b" * 64),
             lambda e: e["build"]["platform"].update(glibc="different"),
             lambda e: e["build"]["compiler_environment"].update(MEMRA_CUDA_ARCH="b" * 64),
             lambda e: e["build"].update(command=["different", "build"]),
-            lambda e: e["oracle_manifest"]["oracles"][0].update(sha256="b" * 64),
-        )
+        ]
+        if self.expected["oracle_manifest"] is not None:
+            mutations.append(lambda e: e["oracle_manifest"]["oracles"][0].update(sha256="b" * 64))
         for change in mutations:
             expected = copy.deepcopy(self.expected)
             change(expected)
@@ -235,8 +264,52 @@ class BuildCacheTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             row = json.loads(result.stdout)
             self.assertGreater(row["seconds"], 0)
+            self.assertEqual(row["scope"], self.expected["scope"])
+            if arguments[0] == "load":
+                self.assertEqual(row["oracle_manifest_attached"], self.expected["scope"] == cache.GPU_CAPSULE)
             rows.append({"operation": arguments[0], "seconds": row["seconds"]})
-        print("synthetic_capsule_timings=" + json.dumps(rows), flush=True)
+        print("synthetic_capsule_timings=" + json.dumps({"scope": self.expected["scope"], "rows": rows}), flush=True)
+
+
+class BuildOnlyCacheTests(BuildCacheTests):
+    """Run every admission control again before any oracle attachment exists."""
+    def setUp(self):
+        super().setUp()
+        (self.build / "oracle-manifest.json").unlink()
+        self.expected = cache.describe(self.repo, self.build)
+
+    def test_absent_oracle_is_explicit_and_not_a_gpu_capsule(self):
+        self.assertEqual(self.expected["scope"], cache.BUILD_ONLY)
+        self.assertIsNone(self.expected["oracle_manifest"])
+        self.assertEqual(set(self.expected["payloads"]), cache.BUILD_FILES)
+        self.store()
+        result = self.load()
+        self.assertFalse(result["oracle_manifest_attached"])
+        self.assertFalse((self.out / "oracle-manifest.json").exists())
+        with self.assertRaises(FileNotFoundError):
+            cache.ci.verify_build(self.repo, self.out, self.expected["source"]["commit"])
+
+    def test_oracle_attachment_cannot_be_smuggled_into_build_only_archive(self):
+        self.store()
+        self.mutate_archive(lambda files: files.update({"oracle-manifest.json": b"{}"}))
+        self.assert_refused(self.load, "unexpected member")
+
+    def test_scope_and_oracle_claim_must_agree(self):
+        for mutation in (lambda e: e.update(scope=cache.GPU_CAPSULE),
+                         lambda e: e.update(oracle_manifest={}),
+                         lambda e: e.update(schema="memra-local-build-expectation-v1")):
+            value = copy.deepcopy(self.expected)
+            mutation(value)
+            self.assert_refused(lambda: cache.expectation_key(value))
+
+    def test_missing_native_provenance_cannot_be_described(self):
+        original = cache.read_json(self.build / "build.json")
+        for field in ("binaries", "source_before", "input_view_after", "compiler_environment", "recipe"):
+            value = copy.deepcopy(original)
+            value.pop(field)
+            self.fixture.put("build.json", value)
+            with self.subTest(field=field), self.assertRaises((q.GateError, KeyError)):
+                cache.describe(self.repo, self.build)
 
 
 if __name__ == "__main__":

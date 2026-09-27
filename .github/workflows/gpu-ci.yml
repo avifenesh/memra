@@ -9,6 +9,11 @@ on:
         description: Full 40-character commit to qualify
         required: true
         type: string
+      build_reuse_only:
+        description: Measure controlled compilation and verified restore on CPU only, with no GPU job
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -23,6 +28,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ !inputs.build_reuse_only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     outputs:
@@ -118,9 +124,58 @@ jobs:
             ${{ runner.temp }}/reused-qualification.json
           retention-days: 7
 
+  build-feedback-measurement:
+    if: ${{ inputs.build_reuse_only }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.candidate }}
+          fetch-depth: 1
+      - name: Pin the requested candidate before compilation
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE"
+      - name: Install the native compiler and isolated input view
+        run: |
+          bash tools/install-cuda-ci.sh
+          bash tools/install-release-sandbox-ci.sh
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: "1.97.1"
+      - name: Measure native build and three verified restores without GPU execution
+        run: |
+          python3 tools/measure_build_reuse.py --out "$RUNNER_TEMP/build-feedback" \
+            --nvcc /usr/local/cuda-13.1/bin/nvcc \
+            --bwrap /usr/local/libexec/memra-release-sandbox/bwrap --jobs 2
+      - name: Retain native preparation diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: build-feedback-diagnostics-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/build-feedback/timing.json
+            ${{ runner.temp }}/build-feedback/producer.log
+            ${{ runner.temp }}/build-feedback/*version.txt
+            ${{ runner.temp }}/build-feedback/native-build/*.json
+            ${{ runner.temp }}/build-feedback/native-build/*.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain the exact reusable build capsule
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: build-feedback-capsule-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/build-feedback/cache/*.tar
+            ${{ runner.temp }}/build-feedback/expected.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+
   gpu:
     needs: build
-    if: needs.build.outputs.reused != 'true'
+    if: ${{ !inputs.build_reuse_only && needs.build.outputs.reused != 'true' }}
     runs-on: ${{ format('memra-ci-pro-ubuntu24-{0}', github.run_id) }}
     timeout-minutes: 150
     outputs:
@@ -163,7 +218,7 @@ jobs:
 
   qualification-result:
     needs: [build, gpu]
-    if: always()
+    if: ${{ always() && !inputs.build_reuse_only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
