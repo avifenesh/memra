@@ -251,6 +251,40 @@ fn graphed(gpu: &Dsv4Gpu, prompts: &[Vec<u32>], capacity: usize, steps: usize) -
     trace
 }
 
+/// `DSV4_ROWS_GATE_WIDE=N` (memra #667): N sessions, every one in every step, through the eager
+/// B-row step or the captured one. Returns each session's (token, logits hash) per step.
+fn wide(gpu: &Dsv4Gpu, prompts: &[Vec<u32>], capacity: usize, steps: usize, graph: bool) -> Trace {
+    let mut sessions: Vec<Session> = prompts.iter().map(|p| prime(gpu, p, capacity)).collect();
+    let mut rows = gpu
+        .alloc_rows_state(sessions.len())
+        .expect("wide B-row workspace");
+    let n = sessions.len();
+    let mut trace: Trace = vec![Vec::new(); n];
+    for _ in 0..steps {
+        let toks: Vec<u32> = sessions.iter().map(|s| s.next).collect();
+        let mut states: Vec<&mut DecodeState> = sessions.iter_mut().map(|s| &mut s.state).collect();
+        let logits = if graph {
+            let draws = vec![Dsv4RowDraw::Argmax; n];
+            gpu.decode_rows_draw(&toks, &mut states, &mut rows, &draws)
+                .expect("wide graph B-row step");
+            drop(states);
+            gpu.rows_logits_for_gate(&rows, n)
+                .expect("wide rows logits")
+        } else {
+            let logits = gpu
+                .decode_rows_logits(&toks, &mut states, &mut rows)
+                .expect("wide B-row step");
+            drop(states);
+            logits
+        };
+        for ((s, row), t) in sessions.iter_mut().zip(&logits).zip(trace.iter_mut()) {
+            s.next = argmax(row);
+            t.push((s.next, bits_hash(row)));
+        }
+    }
+    trace
+}
+
 /// Four sessions stepping together for `steps` sampled steps at the vendor default, through
 /// the eager B-row step (graphs off) and through the captured one; the draws must match.
 fn sampled_graph_vs_eager(
@@ -521,6 +555,72 @@ fn main() {
             }
         }
         println!("PASS: pipelined groups bit-identical to solo steps");
+    }
+
+    if let Ok(n) = std::env::var("DSV4_ROWS_GATE_WIDE") {
+        let n: usize = n.parse().expect("DSV4_ROWS_GATE_WIDE rows");
+        assert!((5..=16).contains(&n), "DSV4_ROWS_GATE_WIDE must be 5..=16");
+        // Frames cycle; each cycle shortens the prompt, so every row sits at its own position.
+        let wide_prompts: Vec<Vec<u32>> = (0..n)
+            .map(|i| {
+                let len = LENS[i % 4] - 13 * (i / 4);
+                tape.prompt(&tokenizer, FRAMES[i % 4], len)[..len].to_vec()
+            })
+            .collect();
+        let reference = solo(&gpu, &wide_prompts, capacity, steps);
+        let arms: &[(&str, bool)] = if tp_ep {
+            &[("eager", false), ("graph", true)]
+        } else {
+            &[("eager", false)]
+        };
+        for &(arm, graph) in arms {
+            let got = wide(&gpu, &wide_prompts, capacity, steps, graph);
+            for s in 0..n {
+                if let Some(i) = (0..steps).find(|&i| reference[s][i] != got[s][i]) {
+                    println!(
+                        "WIDE {arm} SESSION {s} FIRST DIVERGENCE step={i} solo=(tok {}, bits {:016x}) rows=(tok {}, bits {:016x})",
+                        reference[s][i].0, reference[s][i].1, got[s][i].0, got[s][i].1
+                    );
+                    println!("FAILED: the {n}-row {arm} step diverged");
+                    std::process::exit(1);
+                }
+            }
+            println!(
+                "PASS: {n}-row {arm} B-row steps bit-identical to solo steps ({steps} steps x {n} rows)"
+            );
+        }
+        for rep in 0..2 {
+            let mut sessions: Vec<Session> = wide_prompts
+                .iter()
+                .map(|p| prime(&gpu, p, capacity))
+                .collect();
+            let mut rows = gpu.alloc_rows_state(n).expect("wide B-row workspace");
+            let draws = vec![Dsv4RowDraw::Argmax; n];
+            drain(&gpu);
+            let t0 = Instant::now();
+            for _ in 0..timing_steps {
+                let toks: Vec<u32> = sessions.iter().map(|s| s.next).collect();
+                let mut states: Vec<&mut DecodeState> =
+                    sessions.iter_mut().map(|s| &mut s.state).collect();
+                let next = if tp_ep {
+                    gpu.decode_rows_draw(&toks, &mut states, &mut rows, &draws)
+                        .expect("wide graph B-row")
+                } else {
+                    gpu.decode_rows_greedy(&toks, &mut states, &mut rows)
+                        .expect("wide B-row")
+                };
+                drop(states);
+                for (s, t) in sessions.iter_mut().zip(next) {
+                    s.next = t;
+                }
+            }
+            let secs = t0.elapsed().as_secs_f64();
+            println!(
+                "TIME rep={rep} WIDE B={n} ms_per_step={:.3} tok_s={:.2} (first step captures)",
+                1e3 * secs / timing_steps as f64,
+                (n * timing_steps) as f64 / secs
+            );
+        }
     }
 
     // Timing: one-row steps vs B-row steps, fresh sessions each arm, decode wall only.

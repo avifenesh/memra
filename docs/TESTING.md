@@ -1132,6 +1132,10 @@ bits against it:
 - A sampled arm, which draws four rows at the vendor default through the eager B-row step and
   through the graph; the draws must match.
 
+`DSV4_ROWS_GATE_WIDE=N` (5 to 16, memra #667) adds N sessions at their own positions, every
+one in every step, through the eager step and, on TP/EP, the graph; each row's logits bits must
+equal its solo trace, and timing adds the graph step at B=N.
+
 Timing adds the graph step at B=2 and 4. `cargo test -p memra-engine --release --test
 dsv4_dense_fast_rows_gpu -- --ignored --test-threads=1` (one card) checks the multi-row
 dense-fast FP8 GEMV against the m-row kernel and each row's one-row launch at the served
