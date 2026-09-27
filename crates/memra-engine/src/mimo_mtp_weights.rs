@@ -20,6 +20,8 @@ use memra_gguf::tensor_contract::{
 use sha2::{Digest, Sha256};
 
 use crate::Engine;
+use crate::QT_F8_E4M3_BLK;
+use crate::model::{Fp8BlockScales, GpuTensor};
 
 type Fail = Box<dyn std::error::Error>;
 
@@ -113,17 +115,21 @@ const SPECS: [WeightSpec; 12] = [
     },
 ];
 
-/// Original BF16 bytes in checkpoint row-major shape, including norms and sinks.
-pub struct MtpBf16 {
-    pub data: CudaSlice<u8>,
-    pub shape: Vec<u64>,
+/// Matrices retain the original BF16 bytes through `FloatBf16`. Norm and sink
+/// vectors retain those bytes and a decoded f32 operand for the native kernels.
+pub enum MtpBf16 {
+    Vector {
+        raw: CudaSlice<u8>,
+        values: CudaSlice<f32>,
+    },
+    Matrix(Box<GpuTensor>),
 }
 
 /// Original E4M3 codes and F32 `weight_scale_inv` block-128 grids in
-/// checkpoint row-major order. Forward must undo the inverse scale.
+/// checkpoint row-major order. `weight_scale_inv` is the dequant multiplier:
+/// decoded weight = E4M3 code * weight_scale_inv, with no second inversion.
 pub struct MtpFp8 {
-    pub codes: CudaSlice<u8>,
-    pub inverse_scales: CudaSlice<f32>,
+    pub weight: Box<GpuTensor>,
     pub shape: [u64; 2],
     pub inverse_scale_shape: [u64; 2],
 }
@@ -136,10 +142,18 @@ pub enum MtpResidentTensor {
 impl MtpResidentTensor {
     fn on_device(&self, ordinal: usize) -> bool {
         match self {
-            Self::Bf16(weight) => weight.data.ordinal() == ordinal,
-            Self::Fp8(weight) => {
-                weight.codes.ordinal() == ordinal && weight.inverse_scales.ordinal() == ordinal
+            Self::Bf16(MtpBf16::Vector { raw, values }) => {
+                raw.ordinal() == ordinal && values.ordinal() == ordinal
             }
+            Self::Bf16(MtpBf16::Matrix(weight)) => weight.ordinal() == ordinal,
+            Self::Fp8(weight) => matches!(
+                weight.weight.as_ref(),
+                GpuTensor::Quant {
+                    bytes,
+                    blk: Some(grid),
+                    ..
+                } if bytes.ordinal() == ordinal && grid.scales.ordinal() == ordinal
+            ),
         }
     }
 }
@@ -205,6 +219,7 @@ impl Mtp3Weights {
         // cudarc queues host-to-device copies on the stream. Retain the
         // decoded scale vectors and mapped sidecar until the final sync.
         let mut host_inverse_scales = Vec::with_capacity(12);
+        let mut host_vectors = Vec::with_capacity(24);
         let mut drain = UploadDrain {
             engine,
             active: true,
@@ -228,8 +243,25 @@ impl Mtp3Weights {
                         return Err(format!("{name}: FP8 weight is not a matrix").into());
                     };
                     let weight = MtpFp8 {
-                        codes: engine.htod_bytes(codes)?,
-                        inverse_scales: engine.htod(&inverse_scales)?,
+                        weight: Box::new(GpuTensor::Quant {
+                            bytes: engine.htod_bytes(codes)?,
+                            qtype: QT_F8_E4M3_BLK,
+                            row_bytes: *input as usize,
+                            ne: vec![*input, *out],
+                            scale: 1.0,
+                            rp: false,
+                            #[cfg(memra_cutlass)]
+                            cutlass: None,
+                            fp8: None,
+                            rp4: None,
+                            blk: Some(Fp8BlockScales {
+                                scales: engine.htod(&inverse_scales)?,
+                                rows: out.div_ceil(128) as usize,
+                                cols: input.div_ceil(128) as usize,
+                            }),
+                            f16: None,
+                            a4: None,
+                        }),
                         shape: [*out, *input],
                         inverse_scale_shape: [out.div_ceil(128), input.div_ceil(128)],
                     };
@@ -241,10 +273,32 @@ impl Mtp3Weights {
                         .raw(&name)
                         .ok_or_else(|| format!("MiMo MTP3 lost {name} during upload"))?;
                     check_bf16(&name, bytes)?;
-                    MtpResidentTensor::Bf16(MtpBf16 {
-                        data: engine.htod_bytes(bytes)?,
-                        shape: spec.shape.to_vec(),
-                    })
+                    let raw = engine.htod_bytes(bytes)?;
+                    let weight = if spec.shape.len() == 1 {
+                        let values = bytes
+                            .chunks_exact(2)
+                            .map(|pair| {
+                                f32::from_bits(
+                                    u32::from(u16::from_le_bytes([pair[0], pair[1]])) << 16,
+                                )
+                            })
+                            .collect::<Vec<_>>();
+                        let vector = MtpBf16::Vector {
+                            raw,
+                            values: engine.htod(&values)?,
+                        };
+                        host_vectors.push(values);
+                        vector
+                    } else {
+                        let [out, input] = spec.shape else {
+                            return Err(format!("{name}: BF16 weight is not a matrix").into());
+                        };
+                        MtpBf16::Matrix(Box::new(GpuTensor::FloatBf16 {
+                            data: raw,
+                            ne: vec![*input, *out],
+                        }))
+                    };
+                    MtpResidentTensor::Bf16(weight)
                 };
                 if !tensor.on_device(ordinal) {
                     return Err(format!("{name}: upload landed on a different GPU").into());
