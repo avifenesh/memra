@@ -120,8 +120,8 @@ Source: `../levers-20260927/`.
     registers);
   - an L2 weight prefetch before the PDL wait (flat).
 
-The step census after the Sinkhorn warp (`../levers-20260927/`, replay with PDL off, first SE
-pair) is 11.21 ms captured, 10.42 ms of kernels per rank and 2,118 launches per step:
+The step census after the Sinkhorn warp (`../levers-20260927/raw/se-census-v6q/`, replay with
+PDL off, first SE pair) is 11.21 ms captured, 10.42 ms of kernels per rank and 2,118 launches per step:
 - dense FP8 GEMV, single and pair: 2.96 ms;
 - the fused MoE pair: 1.98 ms;
 - dots: 1.05 ms;
@@ -131,6 +131,16 @@ pair) is 11.21 ms captured, 10.42 ms of kernels per rank and 2,118 launches per 
 - 1,235 launches under 3 us: 1.44 ms together.
 
 With PDL on the same replay is 10.70 ms.
+
+At four B-row requests (`../levers-20260927/raw/se-census-rows-v6r/`, the captured B-row step,
+PDL off) a step is 23.9 ms against 13.3 at one row, over 5,405 launches:
+- the fused MoE pair: 5.5 ms, from the union of the rows' experts;
+- dense GEMV: 4.4 ms;
+- per-row attention launches that one row does not pay: sink, indexer, compressor pool, and the
+  replay row copies.
+
+Per added row that is about 1,150 launches, most of them per-row-group kernels. One launch over
+all the row groups would remove most of them.
 
 The plain step after the fused pair, with PDL off: 11.3 ms of kernels per step. That breaks
 down as:
