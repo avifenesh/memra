@@ -1,3 +1,9 @@
+# WP-B checkpoint 2026-09-27 19:5xZ (NEED TARGET CARD, sittings 20 and 21; lane push held until integ73 merges):
+integ73 carries the lane through c6d7f034f (items 1 to 3 and #476). Local and unpushed in wt-b-records: DAY50 addendum D
+(stage 1 as built), the kvrow and overlap probe modes, day50-stage1.sh and its runners, OWED O9 done. The local DAY51
+cell (`rtx5090-day51/run.sh`, in wt-b-integ72) waits under the hold runner behind lane A's A/B on the 5090. After
+integ73 merges: push the stage-1 records and code, run the local stage 1, hand the target-card stage 1 (sitting 22) to
+the lead, then arm O's design from the readings. darklanes#1173 merged; its worktree and branch are removed.
 # WP-B checkpoint 2026-09-27 19:xxZ (NEED TARGET CARD, the twentieth sitting): integ72 merged (#857, main 21ce97836); the
 lane fast-forwarded to it. The owner's rulings of 2026-09-27, in order: (1) MEMRA_BATCH_OOM_RECOVER ON by default on the
 RTX PRO 6000 Blackwell class (DAY49 addendum F, be4d7f92c; the 5090 flip waits for queue-n); (2) DAY44 addendum D
