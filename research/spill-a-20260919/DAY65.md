@@ -210,3 +210,46 @@ same way. Design T's thread rule for the fill (item 3) is the precedent.
   - It ends with `TH2-CHAIN-DONE` and the reader's `TH2 VERDICT -> ..` line.
 - The lead mirrors the receipts to a staging directory outside this worktree when the chain finishes. They are copied
   in and read here as registered in sections 6 and 8.
+
+## 10. T-H''s sitting, read as registered: ADOPT
+
+- Run by the lead on BOX44 (section 9), 17:15Z to 18:44Z on 2026-09-27, tree `67af1b71e` (`build.sh 67af1b71e
+  80f734c77`), sole tenant.
+  - Mirror `pro-single-th2/box/`, checked against the lead's box manifest (`MIRROR-CHECK.txt`, and here `sha256sum -c
+    LEAD-MANIFEST.sha256` rc 0). The executables are recorded by hash; th and base differ (`binaries.sha256`).
+- Verbatim (`box/reading-th2.log`; re-read here by the same reader on the mirror, identical):
+
+      TH2 READING cell=demote order=o1 stall base=68.04 th=68.11 | helper base=48.3 th=22.5 ms (N=40, th threads [8], thread time 66.0 ms) | wall base=94.7 th=94.9 ms (N=40)
+      TH2 READING cell=chain order=o1 stall base=71.76 th=71.79 | helper base=82.8 th=29.8 ms (N=100, th threads [8], thread time 84.9 ms) | wall base=370.8 th=313.8 ms (N=100) | chain base=315.2 th=249.4 ms
+      TH2 READING cell=promote order=o1 stall base=66.33 th=66.62 | pin base=27.20 th=15.50 | e2e base=120.7 th=117.4 ms
+      TH2 READING cell=demote order=o2 stall base=68.03 th=68.17 | helper base=48.3 th=21.4 ms (N=40, th threads [8], thread time 60.6 ms) | wall base=94.8 th=94.8 ms (N=40)
+      TH2 READING cell=chain order=o2 stall base=71.67 th=71.80 | helper base=82.7 th=30.9 ms (N=100, th threads [8], thread time 85.4 ms) | wall base=370.9 th=313.4 ms (N=100) | chain base=315.2 th=249.6 ms
+      TH2 READING cell=promote order=o2 stall base=66.35 th=66.60 | pin base=16.70 th=15.40 | e2e base=117.4 th=110.0 ms
+      TH2 READING hump base=+0.049 th=+0.036 ms
+      TH2 (b') PASS [True, True]
+      TH2 (c) PASS [True, True]
+      TH2 (d) PASS [True, True, True, True, True, True, True, True, True]
+      TH2 VERDICT -> ADOPT (T-H prime is the naked program)
+
+  (a): all 11 gates `.exit` 0, and the CPU cells and red arm of section 8.
+- **Read:**
+  - **(b') holds.** In the chain cell's long entries, the helper falls from 82.8 / 82.7 to 29.8 / 30.9 ms (0.36 and
+    0.37 of base) on 8 threads. The publication wall falls from 370.8 / 370.9 to 313.8 / 313.4 ms (-57.0 / -57.5
+    against -50).
+  - **(c) holds:** the chained request falls from 315.2 to 249.4 / 249.6 ms (-66 against -30).
+  - **(d) holds:** the stall, the hump, the PIN and the promote e2e are all within their bounds.
+  - **The 64-token demote cell, a reading as registered:** the helper halves (48.3 to 22.5 / 21.4 ms) and the wall is
+    flat (94.7 against 94.9, 94.8 against 94.8). As section 5 read it, the 64-token publication is bounded by its copy
+    phase and its tick-top polls, not by the helper.
+- **Adopted as registered:** T-H' is the naked program.
+  - Its 5090 half is owed, section 1's "the 5090 its own (b) and (d) after", now (b') and (d). It is registered after
+    the running DAY68 chain, as P2's is.
+  - For the integ, T-H''s commit is rebased onto main `21ce97836`.
+- **A harness defect, placed.** `markers.txt` reads `threads wording: 0` for both binaries. T-H's own sitting
+  (`pro-single-th/box/markers.txt`) read the same.
+  - The marker greps the binary for a whole format string with its placeholder (`staged; {} threads`, and `helper
+    {:.1} ms); {} threads` in T-H's). A compiled binary holds the pieces between placeholders, not the string, so the
+    marker can match nothing in either arm.
+  - The arms are told apart by their own logs instead. In the chain cell, all 210 of th's helper split lines end
+    `staged; 8 threads`, and none of base's 210 carry a threads term. The binary hashes differ.
+  - A later marker greps a literal piece (` staged; `, which only th's format holds).

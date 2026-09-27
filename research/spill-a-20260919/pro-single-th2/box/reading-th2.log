@@ -1,0 +1,12 @@
+TH2 (a) gates {'contract-fault-plain': '0', 'contract-fault': '0', 'failure-off': '0', 'failure-on': '0', 'hitgate-off': '0', 'hitgate-on': '0', 'identity-default-off': '0', 'identity-default-on': '0', 'identity-plain-off': '0', 'identity-plain-on': '0', 'pause-demote': '0'}
+TH2 READING cell=demote order=o1 stall base=68.04 th=68.11 | helper base=48.3 th=22.5 ms (N=40, th threads [8], thread time 66.0 ms) | wall base=94.7 th=94.9 ms (N=40)
+TH2 READING cell=chain order=o1 stall base=71.76 th=71.79 | helper base=82.8 th=29.8 ms (N=100, th threads [8], thread time 84.9 ms) | wall base=370.8 th=313.8 ms (N=100) | chain base=315.2 th=249.4 ms
+TH2 READING cell=promote order=o1 stall base=66.33 th=66.62 | pin base=27.20 th=15.50 | e2e base=120.7 th=117.4 ms
+TH2 READING cell=demote order=o2 stall base=68.03 th=68.17 | helper base=48.3 th=21.4 ms (N=40, th threads [8], thread time 60.6 ms) | wall base=94.8 th=94.8 ms (N=40)
+TH2 READING cell=chain order=o2 stall base=71.67 th=71.80 | helper base=82.7 th=30.9 ms (N=100, th threads [8], thread time 85.4 ms) | wall base=370.9 th=313.4 ms (N=100) | chain base=315.2 th=249.6 ms
+TH2 READING cell=promote order=o2 stall base=66.35 th=66.60 | pin base=16.70 th=15.40 | e2e base=117.4 th=110.0 ms
+TH2 READING hump base=+0.049 th=+0.036 ms
+TH2 (b') PASS [True, True]
+TH2 (c) PASS [True, True]
+TH2 (d) PASS [True, True, True, True, True, True, True, True, True]
+TH2 VERDICT -> ADOPT (T-H prime is the naked program)
