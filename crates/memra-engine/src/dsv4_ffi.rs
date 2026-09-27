@@ -565,7 +565,9 @@ unsafe extern "C" {
     /// `memra_dsv4_moe_fused_gu` over a partition (memra #710, a TP/EP rank): `table` holds
     /// experts `[first, first + n_expert)` of `global_experts`, `sel` and `scale2` carry global
     /// ids, and another rank's slot is skipped. `rows` token rows of `topk` slots each (x is
-    /// `[rows][in_f]`). Fault bit 0x1 is an id outside the bank.
+    /// `[rows][in_f]`). Fault bit 0x1 is an id outside the bank. A non-null `shared_run` takes
+    /// this rank's shared-expert owner word: 1 when the rank holds fewer of the launch's routed
+    /// slots than the other rank (rank 0, `first == 0`, on a tie), else 0.
     #[allow(clippy::too_many_arguments)]
     pub fn memra_dsv4_moe_fused_gu_part(
         table: *const u64,
@@ -577,6 +579,7 @@ unsafe extern "C" {
         scale2: *const f32,
         xf: *const f32,
         h: *mut f32,
+        shared_run: *mut i32,
         topk: i32,
         rows: i32,
         in_f: i32,
@@ -606,6 +609,64 @@ unsafe extern "C" {
         in_f: i32,
         out_f: i32,
         fault: *mut i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_gemv_fp8_m`'s dense-fast launch, run only where `*run` is nonzero (the
+    /// shared expert on its TP/EP owner rank, memra #710). Rows 1 to 8; 40004 wherever the
+    /// ungated launch would not take the dense-fast transport.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_gemv_fp8_m_gated(
+        w_codes: *const c_void,
+        sc_f32: *const f32,
+        sc_cols: i32,
+        x_bf16: *const c_void,
+        y: *mut f32,
+        m: i32,
+        n: i32,
+        k: i32,
+        ystride: i32,
+        run: *const i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_gemv_fp8_m_pair`'s dense-fast launch over contiguous rows, run only where
+    /// `*run` is nonzero.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_gemv_fp8_m_pair_gated(
+        wa: *const c_void,
+        sca: *const f32,
+        sc_cols_a: i32,
+        ya: *mut f32,
+        na: i32,
+        wb: *const c_void,
+        scb: *const f32,
+        sc_cols_b: i32,
+        yb: *mut f32,
+        nb: i32,
+        x_bf16: *const c_void,
+        m: i32,
+        k: i32,
+        run: *const i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_cvt_bf16`, run only where `*run` is nonzero.
+    pub fn memra_dsv4_cvt_bf16_gated(
+        x: *const f32,
+        o: *mut c_void,
+        n: i64,
+        run: *const i32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_swiglu` (no routing weight) then `memra_dsv4_cvt_bf16` in one launch, run
+    /// only where `*run` is nonzero.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_swiglu_bf16_gated(
+        gate: *const f32,
+        up: *const f32,
+        dst: *mut c_void,
+        rows: i32,
+        inter: i32,
+        limit: f32,
+        run: *const i32,
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_moe_fused_dispatches() -> u64;

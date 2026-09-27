@@ -12335,6 +12335,14 @@ impl Dsv4Gpu {
                     )?;
                 }
             }
+            // The shared expert ran on one rank and rides the join (memra #710), or ran on
+            // neither yet and runs on both in the tail.
+            let shared_joined = owner_ws.shared_in_plane;
+            if peer_ws.shared_in_plane != shared_joined {
+                return Err(format!(
+                    "TP/EP layer {il}: the ranks disagree on the shared expert's placement"
+                ));
+            }
             {
                 let (owner_output, peer_output) = ar_outputs.split_at_mut(1);
                 let mut ar = self
@@ -12350,7 +12358,7 @@ impl Dsv4Gpu {
                         &peer_ws.contrib,
                         &mut owner_output[0],
                         &mut peer_output[0],
-                        t * topk * hidden,
+                        t * (topk + usize::from(shared_joined)) * hidden,
                         capture,
                         None,
                         2 * il as u32 + 1,
@@ -12378,6 +12386,7 @@ impl Dsv4Gpu {
                 true,
                 Some(&ar_outputs[0]),
                 false,
+                shared_joined,
             )?;
             self.moe_verify_common_tail(
                 &self.stages[1],
@@ -12390,6 +12399,7 @@ impl Dsv4Gpu {
                 true,
                 Some(&ar_outputs[1]),
                 false,
+                shared_joined,
             )?;
             if let (Some(tp), Some(tg)) = (taps.as_mut(), targets.as_ref())
                 && let Some(kk) = tg.iter().position(|&tl| tl == il)
@@ -14496,6 +14506,12 @@ pub struct VerifyWs {
     /// Column-tile arrival counters of the fused one-token down kernel, `hidden / 32` of
     /// them, zeroed here once; the kernel's last arriver resets its own counter.
     moe_tile_cnt: Option<CudaSlice<i32>>,
+    /// A TP/EP rank's shared-expert owner word (memra #710), written by the fused gate/up
+    /// launch: 1 on the rank with fewer of the step's routed slots, rank 0 on a tie.
+    shared_run: Option<CudaSlice<i32>>,
+    /// This layer's shared-expert output rides the expert join: the owner rank wrote it after
+    /// the routed rows of `contrib` (rows `t * topk ..`), the other rank left them cleared.
+    shared_in_plane: bool,
     c4_gather: Option<C4Gather>,
     pub tmax: usize,
     /// Phase identity, not inferred from row count. Spec verification never sets it.
@@ -15679,6 +15695,12 @@ impl Dsv4Gpu {
                 } else {
                     None
                 },
+                shared_run: if self.matrix_moe && self.topology.is_tp_ep() {
+                    Some(i(1)?)
+                } else {
+                    None
+                },
+                shared_in_plane: false,
                 ep: if self.ep_enabled {
                     Some(EpScratch::new(
                         &st.gpu,
@@ -15742,7 +15764,8 @@ impl Dsv4Gpu {
                 hbuf: f(tmax * topk * inter)?,
                 hq: b(tmax * topk * inter)?,
                 hs: f(tmax * topk * inter / 128)?,
-                contrib: f(tmax * topk * hidden)?,
+                // TP/EP: the shared expert's rows ride the expert join after the routed rows.
+                contrib: f(tmax * (topk + usize::from(self.topology.is_tp_ep())) * hidden)?,
                 y: f(tmax * hidden)?,
                 xb: b(tmax * hidden * 2)?,
                 sg1: f(tmax * sh_inter)?,
@@ -15926,12 +15949,14 @@ impl Dsv4Gpu {
                     .ctx
                     .bind_to_thread()
                     .map_err(e("bind TP/EP AR output"))?;
+                // The routed rows, then the shared expert's (`VerifyWs::shared_in_plane`).
+                let plane = tmax * (topk + 1) * hidden;
                 let output = st
                     .gpu
                     .stream()
-                    .alloc_zeros::<f32>(tmax * topk * hidden)
+                    .alloc_zeros::<f32>(plane)
                     .map_err(e("TP/EP AR output"))?;
-                bytes[stage_i] += (tmax * topk * hidden * 4) as u64;
+                bytes[stage_i] += (plane * 4) as u64;
                 outputs.push(output);
             }
             Some(
@@ -18826,6 +18851,9 @@ impl Dsv4Gpu {
         stream
             .memset_zeros(&mut vws.contrib)
             .map_err(|e| format!("TP/EP fused contribution clear: {e}"))?;
+        let shared_run = vws.shared_run.as_mut().map_or(std::ptr::null_mut(), |w| {
+            w.device_ptr_mut(&stream).0 as *mut i32
+        });
         unsafe {
             ck(
                 "TP/EP fused MoE gate/up",
@@ -18839,6 +18867,7 @@ impl Dsv4Gpu {
                     dpf!(layer.experts_s2_dev, &stream),
                     dpf!(vws.xf, &stream),
                     dpm!(vws.hbuf, &stream),
+                    shared_run,
                     topk as i32,
                     t as i32,
                     hidden as i32,
@@ -18871,6 +18900,10 @@ impl Dsv4Gpu {
                 ),
             )?;
         }
+        if !shared_run.is_null() {
+            vws.shared_in_plane =
+                self.shared_expert_on_owner(st, layer, vws, t, topk, hidden, limit, shared_run)?;
+        }
         self.grouped_device_route_calls
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -18883,6 +18916,130 @@ impl Dsv4Gpu {
             );
         }
         Ok(())
+    }
+
+    /// The shared expert on the TP/EP rank the fused gate/up launch named (memra #710): cvt,
+    /// gate/up pair, SwiGLU with its bf16 pack, and down into the rows after the routed ones in
+    /// `contrib`, each launch exiting at entry on the other rank. The expert join then carries
+    /// the rows to both ranks and the tail adds them, so the bits are the replicated chain's
+    /// while one rank streams the shared expert's weights instead of both, on the rank with less
+    /// routed work. Returns false, with every output left to the tail's replicated chain, where
+    /// a launch does not take the dense-fast transport.
+    #[allow(clippy::too_many_arguments)]
+    fn shared_expert_on_owner(
+        &self,
+        st: &Stage,
+        layer: &LayerDev,
+        vws: &mut VerifyWs,
+        t: usize,
+        topk: usize,
+        hidden: usize,
+        limit: f32,
+        run: *const i32,
+    ) -> Res<bool> {
+        let stream = st.gpu.stream();
+        let dw = |i: usize| {
+            dwsel(
+                self.dense_fp8,
+                &stream,
+                &layer.shared_w[i],
+                &layer.shared_fp8[i],
+            )
+        };
+        let (
+            DW::Fp8 {
+                codes: c1,
+                scales: s1,
+                sc_cols: k1,
+            },
+            DW::Fp8 {
+                codes: c2,
+                scales: s2,
+                sc_cols: k2,
+            },
+            DW::Fp8 {
+                codes: c3,
+                scales: s3,
+                sc_cols: k3,
+            },
+        ) = (dw(0), dw(1), dw(2))
+        else {
+            return Ok(false);
+        };
+        if !(1..=8).contains(&t) || vws.contrib.len() < t * (topk + 1) * hidden {
+            return Ok(false);
+        }
+        let sh_inter = vws.sg1.len() / vws.tmax;
+        let rows = |rc: i32, what: &str| -> Res<bool> {
+            match rc {
+                0 => Ok(true),
+                40004 => Ok(false),
+                rc => Err(format!("shared expert on its owner rank, {what}: rc {rc}")),
+            }
+        };
+        unsafe {
+            if !rows(
+                k::memra_dsv4_cvt_bf16_gated(
+                    dpf!(vws.xf, &stream),
+                    vws.xb.device_ptr_mut(&stream).0 as *mut c_void,
+                    (t * hidden) as i64,
+                    run,
+                    sp(&stream),
+                ),
+                "cvt",
+            )? || !rows(
+                k::memra_dsv4_gemv_fp8_m_pair_gated(
+                    c1,
+                    s1,
+                    k1,
+                    dpm!(vws.sg1, &stream),
+                    sh_inter as i32,
+                    c3,
+                    s3,
+                    k3,
+                    dpm!(vws.sg3, &stream),
+                    sh_inter as i32,
+                    vws.xb.device_ptr(&stream).0 as *const c_void,
+                    t as i32,
+                    hidden as i32,
+                    run,
+                    sp(&stream),
+                ),
+                "gate/up",
+            )? || !rows(
+                k::memra_dsv4_swiglu_bf16_gated(
+                    dpf!(vws.sg1, &stream),
+                    dpf!(vws.sg3, &stream),
+                    vws.shb16.device_ptr_mut(&stream).0 as *mut c_void,
+                    t as i32,
+                    sh_inter as i32,
+                    limit,
+                    run,
+                    sp(&stream),
+                ),
+                "SwiGLU",
+            )? {
+                return Ok(false);
+            }
+            let plane =
+                (vws.contrib.device_ptr_mut(&stream).0 as *mut f32).wrapping_add(t * topk * hidden);
+            rows(
+                k::memra_dsv4_gemv_fp8_m_gated(
+                    c2,
+                    s2,
+                    k2,
+                    vws.shb16.device_ptr(&stream).0 as *const c_void,
+                    plane,
+                    t as i32,
+                    hidden as i32,
+                    sh_inter as i32,
+                    hidden as i32,
+                    run,
+                    sp(&stream),
+                ),
+                "down",
+            )
+        }
     }
 
     /// Common routed+shared-expert tail after either the matrix EP graph or
@@ -18902,6 +19059,8 @@ impl Dsv4Gpu {
         include_hc_post: bool,
         joined_contribution: Option<&CudaSlice<f32>>,
         routed_combined: bool,
+        // The joined plane carries the shared expert's rows after the routed rows (memra #710).
+        shared_joined: bool,
     ) -> Res<()> {
         let stream = st.gpu.stream();
         let contribution = joined_contribution.unwrap_or(&vws.contrib);
@@ -18920,7 +19079,26 @@ impl Dsv4Gpu {
                     ),
                 )?;
             }
-            {
+        }
+        if shared_joined {
+            // The owner rank's shared-expert rows, joined: `x + 0.0` of the replicated chain's
+            // sh_out on each rank, and a dense-fast output never becomes -0.0, so y gets the
+            // bits the chain below would give it.
+            let shared =
+                (contribution.device_ptr(&stream).0 as *const f32).wrapping_add(t * topk * hidden);
+            unsafe {
+                ck(
+                    "add joined shared batch",
+                    k::memra_dsv4_add_inplace(
+                        dpm!(vws.y, &stream),
+                        shared,
+                        (t * hidden) as i64,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+        } else {
+            unsafe {
                 ck(
                     "cvt xb batch",
                     k::memra_dsv4_cvt_bf16(
@@ -18931,81 +19109,81 @@ impl Dsv4Gpu {
                     ),
                 )?;
             }
-        }
-        let sh_inter = vws.sg1.len() / vws.tmax;
-        // The shared expert's gate and up in one launch (memra #710).
-        Self::gemv_m_dev_pair(
-            st,
-            dwsel(
-                self.dense_fp8,
-                &stream,
-                &layer.shared_w[0],
-                &layer.shared_fp8[0],
-            ),
-            vws.sg1.device_ptr_mut(&stream).0 as *mut f32,
-            sh_inter,
-            dwsel(
-                self.dense_fp8,
-                &stream,
-                &layer.shared_w[2],
-                &layer.shared_fp8[2],
-            ),
-            vws.sg3.device_ptr_mut(&stream).0 as *mut f32,
-            sh_inter,
-            vws.xb.device_ptr(&stream).0 as *const c_void,
-            t,
-            hidden,
-        )?;
-        unsafe {
-            ck(
-                "swiglu sh batch",
-                k::memra_dsv4_swiglu(
-                    dpf!(vws.sg1, &stream),
-                    dpf!(vws.sg3, &stream),
-                    dpm!(vws.shbuf, &stream),
-                    t as i32,
-                    sh_inter as i32,
-                    limit,
-                    std::ptr::null(),
-                    sp(&stream),
+            let sh_inter = vws.sg1.len() / vws.tmax;
+            // The shared expert's gate and up in one launch (memra #710).
+            Self::gemv_m_dev_pair(
+                st,
+                dwsel(
+                    self.dense_fp8,
+                    &stream,
+                    &layer.shared_w[0],
+                    &layer.shared_fp8[0],
                 ),
-            )?;
-            ck(
-                "cvt sh batch",
-                k::memra_dsv4_cvt_bf16(
-                    dpf!(vws.shbuf, &stream),
-                    vws.shb16.device_ptr_mut(&stream).0 as *mut c_void,
-                    (t * sh_inter) as i64,
-                    sp(&stream),
+                vws.sg1.device_ptr_mut(&stream).0 as *mut f32,
+                sh_inter,
+                dwsel(
+                    self.dense_fp8,
+                    &stream,
+                    &layer.shared_w[2],
+                    &layer.shared_fp8[2],
                 ),
+                vws.sg3.device_ptr_mut(&stream).0 as *mut f32,
+                sh_inter,
+                vws.xb.device_ptr(&stream).0 as *const c_void,
+                t,
+                hidden,
             )?;
-        }
-        Self::gemv_m_dev(
-            st,
-            dwsel(
-                self.dense_fp8,
-                &stream,
-                &layer.shared_w[1],
-                &layer.shared_fp8[1],
-            ),
-            vws.shb16.device_ptr(&stream).0 as *const c_void,
-            vws.sh_out.device_ptr_mut(&stream).0 as *mut f32,
-            t,
-            hidden,
-            sh_inter,
-            0,
-            0,
-        )?;
-        unsafe {
-            ck(
-                "add shared batch",
-                k::memra_dsv4_add_inplace(
-                    dpm!(vws.y, &stream),
-                    dpf!(vws.sh_out, &stream),
-                    (t * hidden) as i64,
-                    sp(&stream),
+            unsafe {
+                ck(
+                    "swiglu sh batch",
+                    k::memra_dsv4_swiglu(
+                        dpf!(vws.sg1, &stream),
+                        dpf!(vws.sg3, &stream),
+                        dpm!(vws.shbuf, &stream),
+                        t as i32,
+                        sh_inter as i32,
+                        limit,
+                        std::ptr::null(),
+                        sp(&stream),
+                    ),
+                )?;
+                ck(
+                    "cvt sh batch",
+                    k::memra_dsv4_cvt_bf16(
+                        dpf!(vws.shbuf, &stream),
+                        vws.shb16.device_ptr_mut(&stream).0 as *mut c_void,
+                        (t * sh_inter) as i64,
+                        sp(&stream),
+                    ),
+                )?;
+            }
+            Self::gemv_m_dev(
+                st,
+                dwsel(
+                    self.dense_fp8,
+                    &stream,
+                    &layer.shared_w[1],
+                    &layer.shared_fp8[1],
                 ),
+                vws.shb16.device_ptr(&stream).0 as *const c_void,
+                vws.sh_out.device_ptr_mut(&stream).0 as *mut f32,
+                t,
+                hidden,
+                sh_inter,
+                0,
+                0,
             )?;
+            unsafe {
+                ck(
+                    "add shared batch",
+                    k::memra_dsv4_add_inplace(
+                        dpm!(vws.y, &stream),
+                        dpf!(vws.sh_out, &stream),
+                        (t * hidden) as i64,
+                        sp(&stream),
+                    ),
+                )?;
+            }
         }
         if include_hc_post {
             let hc = self.model.cfg().hc_mult as usize;
@@ -19056,6 +19234,8 @@ impl Dsv4Gpu {
         let inter = moe.expert_ff_length as usize;
         let limit = d.swiglu_limit;
         let stream = st.gpu.stream();
+        // Set again only by a TP/EP fused step whose shared expert rides the join.
+        vws.shared_in_plane = false;
         let kind = match layer.expert_kind {
             ExpertKind::Nvfp4 => 0i32,
             ExpertKind::Mxfp4 => 1i32,
@@ -19297,6 +19477,7 @@ impl Dsv4Gpu {
                                     }
                                     self.moe_verify_common_tail(
                                         st, layer, vws, t, topk, hidden, limit, true, None, false,
+                                        false,
                                     )
                                 })
                             }) {
@@ -19511,6 +19692,7 @@ impl Dsv4Gpu {
             include_hc_post,
             None,
             routed_combined,
+            false,
         )?;
         Ok(())
     }

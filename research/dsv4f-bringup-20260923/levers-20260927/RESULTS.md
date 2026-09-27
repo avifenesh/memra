@@ -212,6 +212,87 @@ The wq_b pair on top (`raw/se2-small2-s2r/`):
 - long-gate replay S T T S: 10.86 to 10.99 against 10.91 to 11.01 ms per token, about -0.3%, the
   size its 21 launches predict.
 
+## The shared expert on the rank with fewer routed slots (adopted)
+
+Lane `lane/dsv4-shared-owner-main-20260927`. Raw data is in `raw/se2-shared-owner-s2x/`: the queue
+script, the summary, every gate and served row.
+
+**Why.**
+- TP/EP ran the shared expert on both ranks, after the expert join. That is 25.2 MB of FP8
+  weights per layer (gate, up and down at 2048 x 4096), about 1.08 GB per step per rank: a
+  third of the dense GEMV bytes.
+- The routed experts split between the ranks as Binomial(6, 0.5), so one rank waits in the join
+  for the other in most layers.
+- The shared expert reads only the MoE input, which is replicated. Which rank computes it does
+  not change a bit.
+
+**What changed.**
+1. **The owner word.** One warp of the fused gate/up launch counts the step's routed slots on
+   each rank. It writes the rank's owner word: 1 on the rank with fewer slots, rank 0 on a tie.
+2. **The owner's shared expert.** After the fused down, the owner rank runs the shared expert:
+   - the bf16 pack of the MoE input;
+   - the gate/up pair;
+   - SwiGLU with its bf16 pack, in one launch;
+   - down, into the rows after the routed ones in the contribution plane.
+   The other rank runs the same four launches, and each exits at entry
+   (`memra_dsv4_gemv_fp8_m_gated`, `_pair_gated`, `memra_dsv4_cvt_bf16_gated`,
+   `memra_dsv4_swiglu_bf16_gated`). Every block runs the ungated launch's body.
+3. **The join and the tail.** The expert join carries the shared rows too. The tail adds them
+   where it used to recompute the shared expert. That add is `y + (sh + 0.0)`, and a dense-fast
+   output cannot be -0.0 because its partials start at +0.0 and only add, so y keeps its bits.
+4. **Fallback.** A step of more than 8 rows, or one where a launch would leave the dense-fast
+   transport, keeps the replicated shared expert.
+
+**Expected size.** One routed expert is about 15.5 us per layer at the pair's rate, and the
+shared expert about 22.5 us. Over the Binomial(6, 0.5) split, the critical path falls from
+about 83.6 us per layer to about 68 us, less the gated no-op launches on the heavier rank:
+about 0.5 ms per step.
+
+**Correctness** (second SE pair):
+- The fused partition fixture asserts the owner word on both ranks of every clean case.
+- The dense-fast component gate's `gated_case` compares each gated launch with its ungated
+  launch at M = 1, 2, 4 and 8 on both cards. It also checks that a clear word moves no output
+  byte: `PASS gated ... bits=1 owner_off_untouched=1`, eight lines.
+- The long gate's `PROGRAM_SHA256` is `fbce1a0492d69635`.
+- The TP/EP rows gate, the KV split gate and the DSpark TP/EP gate pass. DSpark's proposal shas
+  are the pair's.
+- Every served request's text is identical in all six rows.
+
+**Long gate.** Replay ms/token, order M S S M M S: main 10.84 .. 11.01 against 10.38 .. 10.59,
+**-4.2%**.
+
+**Served.** cells-pdl, one boot per row, order M S S M M S, N=3 per arm:
+
+| cell | main agg tok/s | lane agg tok/s | delta |
+|---|---|---|---|
+| greedy c1 | 88.52 / 88.84 / 88.76 | 91.96 / 92.39 / 92.07 | **+3.9%** |
+| sampled c1 | 88.26 / 89.37 / 89.33 | 91.79 / 92.79 / 91.95 | +3.6% |
+| greedy c2 | 118.81 / 120.37 / 120.16 | 122.73 / 124.15 / 122.19 | +2.7% |
+| greedy c4 | 150.91 / 153.56 / 151.96 | 112.33 / 157.55 / 152.96 | see below |
+| greedy c2, 2k prompt | 23.81 / 23.87 / 24.10 | 23.88 / 23.25 / 24.14 | flat |
+
+TPOT p50 at c1 falls from 10.74 .. 10.76 ms to 10.31 .. 10.35 ms. One lane boot (r2) ran its c4
+cell at 112 tok/s with TPOT p50 34 ms. Its c1 and c2 cells were in line, and the other two lane
+boots ran c4 at 157.6 and 153.0. Slow-c4 boots have been seen on main on both pairs. This one
+is kept, and the rebased rows below add c4 rows. Thermal: median power 267 .. 271 W while the
+cards work, SM clock median 2400 MHz, max 50 C.
+
+**Rebased on main `c566d2096`** (with the Sinkhorn warp and the prefill tile), same pair
+(`raw/se2-shared-owner-rebased-s2y/`):
+- The fused partition fixtures pass, and so do the dense-fast gate's eight gated cases.
+- The long gate hash is `fbce1a0492d69635`.
+- The TP/EP rows gate, the KV split gate and the DSpark TP/EP gate pass.
+- Long gate, order M S S M: 10.65 .. 10.77 ms/token against 10.17 .. 10.27, **-4.7%**.
+- Served cells-pdl, order M S S M, N=2:
+
+| cell | main agg tok/s | lane agg tok/s | delta |
+|---|---|---|---|
+| greedy c1 | 91.18 / 90.92 (decode 95.3 / 95.1) | 94.66 / 94.14 (decode 99.1 / 98.9) | **+3.7%** |
+| sampled c1 | 91.41 / 91.31 | 94.73 / 93.97 | +3.3% |
+| greedy c2 | 122.53 / 122.22 | 124.71 / 125.35 | +2.0% |
+| greedy c4 | 153.85 / 155.82 | 157.81 / 158.67 | +2.2% |
+| greedy c2, 2k prompt | 24.63 / 26.04 | 25.63 / 25.48 | flat |
+
 ## Refuted: loading weights before the PDL wait
 
 The weights and block scales of the dense-fast FP8 GEMV, the BF16 dots and the HC split partial
@@ -310,3 +391,72 @@ Each CTA computes its row's x mirror before it streams, so halving the warps per
 mirrors and halves the warps that share each one. Nsight Compute on the committed pair
 (`raw/se-ncu-v6b/`) reads 18% of peak warps active, 27% of SM throughput and 22% of L2
 throughput. The committed setting stays.
+
+## What the fused pair's mirrors cost, and two refuted ways to recover it
+
+**Probe** (second SE pair, `raw/se2-mirror-probe-s2s/`). These are box-local builds of main that skip
+the mirrors, using `mirror_hack.py` with the variant diffs kept. The outputs are wrong by design,
+so only the long gate's replay ms per token is read. Order M X1 X2 X2 X1 M:
+
+| build | replay ms/token |
+|---|---|
+| main | 11.10 .. 11.18 |
+| X1, no x mirror in the gate/up launch | 11.02 .. 11.14 |
+| X2, no x mirror and no h mirror in the down launch | 10.76 .. 10.86 |
+
+Every down CTA of a slot rebuilds the same h mirror from the f32 row, and that costs about
+0.3 ms per step.
+
+**Refuted: the h mirror published once per slot** (`raw/se2-hmirror-s2t/`, code in
+`h-mirror.patch`).
+- Design: the last gate/up CTA of each slot to finish its h columns builds the mirror once,
+  from the row through L2. It writes the swizzled halves and the row scale to global. Down CTAs
+  load them instead of rebuilding.
+- The bits are the same by construction: `PROGRAM_SHA256 fbce1a0492d69635`. The fused-pair
+  component tests pass, with a standalone publish kernel for the fixtures that edit h between
+  launches. The TP/EP rows gate passes, and so does the DSpark TP/EP gate with the pair's
+  proposal shas.
+- Speed: it is slower. Long gate, order M H H M M H: main 10.87 .. 11.00 ms/token against
+  10.94 .. 11.03.
+- Served cells-pdl, same order, N=3:
+  - greedy c1: 88.32 .. 88.77 tok/s on main against 87.83 .. 87.95, -0.7%;
+  - sampled c1: 88.53 .. 88.98 against 87.88 .. 88.29;
+  - c2 and c4 flat within row noise.
+- Why: the publish is a serial tail at the end of the gate/up launch that nothing overlaps. It
+  costs more than the parallel rebuild it replaces, whose loads overlap each down CTA's first
+  weight stage.
+
+**Refuted: register-held mirror groups with exact reciprocal divides**
+(`raw/se2-mirror-regs-s2v/`, `m2-mirror-regs.patch` on main, `h2-on-h.patch` on the published
+form).
+- Design: each warp keeps its groups' float4 values in registers across the mirror's two passes,
+  with every load in flight at once. The divisions by the power-of-two group and row scales
+  become multiplies by their exact reciprocals. `x * (1 / 2^k)` is the same correctly rounded
+  value as `x / 2^k`.
+- The bits are the same: `fbce1a0492d69635` on every build.
+- Long gate, order M M2 H H2 H2 H M2 M:
+
+| build | replay ms/token |
+|---|---|
+| M, main | 10.86 .. 10.95 |
+| M2, main with the held groups | 11.05 .. 11.15, +1.8% |
+| H, the published mirror | 10.91 .. 11.01 |
+| H2, the published mirror with the held groups | 10.95 .. 11.02 |
+
+The held groups push the gate/up kernel from 47 registers to 57 (55 in H2): `cuobjdump
+-res-usage` on the gate binaries. That takes its 256-thread CTAs from five per SM to four, which
+costs more than the saved loads. The down kernel stays at 48. Neither form is merged. Recovering
+the probe's 0.3 ms needs a mirror that adds no work to the gate/up launch's critical path and
+no registers to it.
+
+## Refuted: dense-fast blocks prefetching their weight rows into L2 before the PDL wait
+
+Weights never depend on the predecessor. A dense-fast block that becomes resident while a
+latency-bound predecessor runs (an HC finish, a norm) could start its stream from L2. The probe
+issues `prefetch.global.L2` over each block's weight rows ahead of `griddepcontrol.wait`. It covers
+the single, pair and dots launches (`raw/se2-l2-prefetch-s2w/l2-prefetch.patch`). A prefetch
+moves no value, and the hash stays `fbce1a0492d69635`.
+
+Long gate, second SE pair, order M P P M M P: main 10.85 .. 11.04 ms/token against 10.82 .. 10.95.
+That is flat. Few blocks are resident early enough to matter. Where they are, the predecessor's
+own stream already holds the bandwidth. Not merged.

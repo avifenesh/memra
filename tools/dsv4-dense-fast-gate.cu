@@ -128,6 +128,52 @@ static void pair_case(int rank,int kind,int na,int nb,int k,int m){
     ck(cudaGraphDestroy(g));
     printf("PASS pair rank=%d kind=%d na=%d nb=%d k=%d m=%d bits=1 one_launch=1 symbol=%s\n",rank,kind,na,nb,k,m,name);fflush(stdout);
 }
+// memra #710: the shared expert's owner-gated launches. With the owner word set, each output has
+// the bits of its ungated launch (the pair, the M-row launch into a plane at an offset, SwiGLU
+// then the bf16 pack, the bf16 pack); with it clear, no output byte moves.
+static void gated_case(int rank,int na,int k,int m){
+    ck(cudaSetDevice(rank));Stream s;
+    Case a=synthetic(rank,0,na,k),b=synthetic(rank,0,na,k),d=synthetic(rank,0,k,na);
+    {auto w=b.w;const size_t count=w.size();for(size_t i=0;i<count;++i)b.w[i]=w[count-1-i];}
+    std::vector<uint8_t> xs(size_t(m)*k*2),hs(size_t(m)*na*2);
+    for(int r=0;r<m;++r)for(int i=0;i<k;++i)memcpy(xs.data()+(size_t(r)*k+i)*2,a.x.data()+size_t((i+7*r)%k)*2,2);
+    for(int r=0;r<m;++r)for(int i=0;i<na;++i)memcpy(hs.data()+(size_t(r)*na+i)*2,d.x.data()+size_t((i+5*r)%na)*2,2);
+    Guard<uint8_t> wa(a.w.size(),s.value),wb(b.w.size(),s.value),wd(d.w.size(),s.value),x(xs.size(),s.value),h(hs.size(),s.value);
+    Guard<float> sa(a.sc.size(),s.value),sb(b.sc.size(),s.value),sd(d.sc.size(),s.value);
+    wa.upload(a.w);wb.upload(b.w);wd.upload(d.w);x.upload(xs);h.upload(hs);sa.upload(a.sc);sb.upload(b.sc);sd.upload(d.sc);
+    Guard<int> on(1,s.value),off(1,s.value);on.upload({1});off.upload({0});
+    const size_t plane=size_t(m)*k,skip=size_t(3)*k;  // the shared rows after three routed rows
+    Guard<float> ya1(size_t(m)*na,s.value),yb1(size_t(m)*na,s.value),ya2(size_t(m)*na,s.value),yb2(size_t(m)*na,s.value);
+    Guard<float> yd1(plane,s.value),yd2(skip+plane,s.value),yd3(skip+plane,s.value);
+    Guard<float> ya3(size_t(m)*na,s.value),yb3(size_t(m)*na,s.value);
+    api(memra_dsv4_dense_fast_set_for_gate(1));
+    api(memra_dsv4_gemv_fp8_m_pair(wa.data(),sa.data(),a.sc_cols,ya1.data(),na,0,wb.data(),sb.data(),b.sc_cols,yb1.data(),na,0,x.data(),m,k,0,s.value));
+    api(memra_dsv4_gemv_fp8_m_pair_gated(wa.data(),sa.data(),a.sc_cols,ya2.data(),na,wb.data(),sb.data(),b.sc_cols,yb2.data(),na,x.data(),m,k,on.data(),s.value));
+    api(memra_dsv4_gemv_fp8_m_pair_gated(wa.data(),sa.data(),a.sc_cols,ya3.data(),na,wb.data(),sb.data(),b.sc_cols,yb3.data(),na,x.data(),m,k,off.data(),s.value));
+    api(memra_dsv4_gemv_fp8_m(wd.data(),sd.data(),d.sc_cols,h.data(),yd1.data(),m,k,na,0,0,s.value));
+    api(memra_dsv4_gemv_fp8_m_gated(wd.data(),sd.data(),d.sc_cols,h.data(),yd2.data()+skip,m,k,na,k,on.data(),s.value));
+    api(memra_dsv4_gemv_fp8_m_gated(wd.data(),sd.data(),d.sc_cols,h.data(),yd3.data()+skip,m,k,na,k,off.data(),s.value));
+    ck(cudaStreamSynchronize(s.value));
+    equal(ya1.output(size_t(m)*na),ya2.output(size_t(m)*na));equal(yb1.output(size_t(m)*na),yb2.output(size_t(m)*na));
+    {auto full=yd2.output(skip+plane);std::vector<float> rows(full.begin()+skip,full.end());equal(yd1.output(plane),rows);}
+    ya3.immutable();yb3.immutable();yd3.immutable();
+    // SwiGLU then the pack, against the two launches it fuses; values past the limit clamp.
+    const long n=long(m)*na;const float limit=7.0f;std::vector<float> g(n),u(n);
+    for(long i=0;i<n;++i){g[i]=float(int((i*29+3)%211)-105)/9.0f;u[i]=float(int((i*31+11)%197)-98)/8.0f;}
+    Guard<float> gg(n,s.value),uu(n,s.value),f32(n,s.value);gg.upload(g);uu.upload(u);
+    Guard<uint16_t> p1(n,s.value),p2(n,s.value),p3(n,s.value),c1(n,s.value),c2(n,s.value),c3(n,s.value);
+    api(memra_dsv4_swiglu(gg.data(),uu.data(),f32.data(),m,na,limit,nullptr,s.value));
+    api(memra_dsv4_cvt_bf16(f32.data(),p1.data(),n,s.value));
+    api(memra_dsv4_swiglu_bf16_gated(gg.data(),uu.data(),p2.data(),m,na,limit,on.data(),s.value));
+    api(memra_dsv4_swiglu_bf16_gated(gg.data(),uu.data(),p3.data(),m,na,limit,off.data(),s.value));
+    api(memra_dsv4_cvt_bf16(gg.data(),c1.data(),n,s.value));
+    api(memra_dsv4_cvt_bf16_gated(gg.data(),c2.data(),n,on.data(),s.value));
+    api(memra_dsv4_cvt_bf16_gated(gg.data(),c3.data(),n,off.data(),s.value));
+    ck(cudaStreamSynchronize(s.value));
+    insist(p1.output(n)==p2.output(n),"gated SwiGLU pack bits");insist(c1.output(n)==c2.output(n),"gated pack bits");
+    p3.immutable();c3.immutable();
+    printf("PASS gated rank=%d na=%d k=%d m=%d bits=1 owner_off_untouched=1\n",rank,na,k,m);fflush(stdout);
+}
 int main(int argc,char** argv){try{
     api(memra_dsv4_hc_dot_split_set_for_gate(0));
     insist(memra_dsv4_hc_dot_split_slices_for_gate()==0,"HC split control override");
@@ -151,5 +197,7 @@ int main(int argc,char** argv){try{
     for(int rank=0;rank<2;++rank)for(int m:{1,2,4,6}){
         pair_case(rank,0,2048,2048,4096,m);pair_case(rank,0,1024,512,4096,m);
         pair_case(rank,2,1024,1024,4096,m);pair_case(rank,2,256,256,4096,m);}
+    // The shared expert's owner-gated launches at its shape (inter 2048, hidden 4096).
+    for(int rank=0;rank<2;++rank)for(int m:{1,2,4,8})gated_case(rank,2048,4096,m);
     puts("PASS dense_fast_components");return 0;
 }catch(const std::exception& e){fprintf(stderr,"FAIL %s\n",e.what());return 1;}}

@@ -1,0 +1,68 @@
+diff --git a/crates/memra-engine/cu/dsv4_dense_m1_exact_tail.cuh b/crates/memra-engine/cu/dsv4_dense_m1_exact_tail.cuh
+index aeb60be5a..3e2eef656 100644
+--- a/crates/memra-engine/cu/dsv4_dense_m1_exact_tail.cuh
++++ b/crates/memra-engine/cu/dsv4_dense_m1_exact_tail.cuh
+@@ -402,12 +402,26 @@ __device__ __forceinline__ void dsv4_dense_fast_fp8_body(const uint8_t* __restri
+     }
+ }
+ 
++// The block's weight rows into L2 before the PDL wait (memra #710). Weights never depend on the
++// predecessor, so a block that becomes resident while a latency-bound predecessor runs starts
++// its stream from L2. A prefetch moves no value, so no output bit can.
++__device__ __forceinline__ void dsv4_l2_prefetch_bytes(const void* base, long bytes) {
++    const char* p = (const char*)base;
++    for (long o = (long)threadIdx.x * 128; o < bytes; o += (long)blockDim.x * 128)
++        asm volatile("prefetch.global.L2 [%0];" ::"l"(p + o));
++}
++
+ template <int ROWS, bool GROUPED = false, int M = 1>
+ __global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
+                                        const float* __restrict__ sc, int sc_cols,
+                                        const uint16_t* __restrict__ x, float* __restrict__ y,
+                                        int n, int k, int xstride, int ystride,
+                                        int group_xstride, int group_ystride) {
++    if constexpr (!GROUPED) {
++        const long first = (long)blockIdx.x * ROWS;
++        const long rows = first >= n ? 0 : (first + ROWS <= n ? ROWS : n - first);
++        dsv4_l2_prefetch_bytes(w + first * k, rows * k);
++    }
+     MEMRA_PDL_CHAIN_ENTRY();
+     dsv4_dense_fast_fp8_body<ROWS, GROUPED, M>(w, sc, sc_cols, x, y, n, k, xstride, ystride,
+                                                  group_xstride, group_ystride, blockIdx.x);
+@@ -423,6 +437,12 @@ __global__ void dsv4_dense_fast_fp8_kernel_pair(
+         const uint8_t* __restrict__ wb, const float* __restrict__ scb, int sc_cols_b,
+         float* __restrict__ yb, int nb, int ystride_b, int nblk_a,
+         const uint16_t* __restrict__ x, int k, int xstride) {
++    {
++        const bool a = (int)blockIdx.x < nblk_a;
++        const long first = (long)(a ? blockIdx.x : blockIdx.x - nblk_a) * ROWS, n = a ? na : nb;
++        const long rows = first + ROWS <= n ? ROWS : n - first;
++        dsv4_l2_prefetch_bytes((a ? wa : wb) + first * k, rows * k);
++    }
+     MEMRA_PDL_CHAIN_ENTRY();
+     if ((int)blockIdx.x < nblk_a)
+         dsv4_dense_fast_fp8_body<ROWS, false, M>(wa, sca, sc_cols_a, x, ya, na, k, xstride,
+@@ -506,6 +526,9 @@ template <int M>
+ __global__ void dsv4_dense_fast_dots_kernel(const float* __restrict__ x,
+                                              const void* __restrict__ w, int w_is_bf16,
+                                              float* __restrict__ y, int k, int n) {
++    if ((int)blockIdx.x < n)
++        dsv4_l2_prefetch_bytes((const char*)w + (long)blockIdx.x * k * (w_is_bf16 ? 2 : 4),
++                               (long)k * (w_is_bf16 ? 2 : 4));
+     MEMRA_PDL_CHAIN_ENTRY();
+     dsv4_dense_fast_dots_body<M>(x, w, w_is_bf16, y, k, n, blockIdx.x);
+ }
+@@ -519,6 +542,13 @@ __global__ void dsv4_dense_fast_dots_kernel_pair(const float* __restrict__ x,
+                                                   const void* __restrict__ wb,
+                                                   float* __restrict__ yb, int nb, int w_is_bf16,
+                                                   int k) {
++    {
++        const bool a = (int)blockIdx.x < na;
++        const int j = a ? blockIdx.x : blockIdx.x - na;
++        if (j < (a ? na : nb))
++            dsv4_l2_prefetch_bytes((const char*)(a ? wa : wb) + (long)j * k * (w_is_bf16 ? 2 : 4),
++                                   (long)k * (w_is_bf16 ? 2 : 4));
++    }
+     MEMRA_PDL_CHAIN_ENTRY();
+     if ((int)blockIdx.x < na)
+         dsv4_dense_fast_dots_body<M>(x, wa, w_is_bf16, ya, k, na, blockIdx.x);
