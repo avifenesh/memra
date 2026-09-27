@@ -1,7 +1,99 @@
 //! Portable MiMo ViT attention arithmetic over already projected, rotated Q/K/V.
-//! The image patcher, axial RoPE, block MLP, and merger need separate parity.
+//! The image patcher, axial RoPE, block MLP, and merger have separate gates.
 
 use memra_gguf::model_packs::mimo_v2::vision::MiMoVisionAttentionPlan;
+
+use crate::speech::encoder::gelu_erf;
+
+fn bf16(value: f32) -> f32 {
+    let bits = value.to_bits();
+    let rounding = 0x7fff + ((bits >> 16) & 1);
+    f32::from_bits(bits.wrapping_add(rounding) & 0xffff_0000)
+}
+
+/// Portable publisher merger over BF16-valued rows. Small widths let tests
+/// check the arithmetic; the GPU path separately admits only 1280 -> 5120
+/// -> 4096. The three missing checkpoint biases are exactly zero.
+pub fn patch_merger_bf16(
+    input: &[f32],
+    context_dim: usize,
+    output_dim: usize,
+    norm_weight: &[f32],
+    mlp_0: &[f32],
+    mlp_2: &[f32],
+) -> Result<Vec<f32>, String> {
+    let merged_width = context_dim
+        .checked_mul(4)
+        .ok_or("MiMo merger width overflows")?;
+    let patches = input.len().checked_div(context_dim).unwrap_or(0);
+    let tokens = patches / 4;
+    if context_dim == 0
+        || context_dim > 1_280
+        || output_dim == 0
+        || output_dim > 4_096
+        || !(4..=1_024).contains(&patches)
+        || !patches.is_multiple_of(4)
+        || patches.checked_mul(context_dim) != Some(input.len())
+        || norm_weight.len() != context_dim
+        || merged_width.checked_mul(merged_width) != Some(mlp_0.len())
+        || merged_width.checked_mul(output_dim) != Some(mlp_2.len())
+    {
+        return Err("MiMo merger reference extent differs from bounded rows".into());
+    }
+    if input
+        .iter()
+        .chain(norm_weight)
+        .chain(mlp_0)
+        .chain(mlp_2)
+        .any(|value| !value.is_finite() || (value.to_bits() & 0xffff) != 0)
+    {
+        return Err("MiMo merger reference needs finite BF16-valued operands".into());
+    }
+    let mut normalized = vec![0.0f32; input.len()];
+    for row in 0..patches {
+        let values = &input[row * context_dim..(row + 1) * context_dim];
+        let mean = values.iter().copied().sum::<f32>() / context_dim as f32;
+        let variance = values
+            .iter()
+            .map(|value| {
+                let delta = value - mean;
+                delta * delta
+            })
+            .sum::<f32>()
+            / context_dim as f32;
+        let inverse = (variance + 1e-6).sqrt().recip();
+        for col in 0..context_dim {
+            normalized[row * context_dim + col] =
+                bf16((values[col] - mean) * inverse * norm_weight[col]);
+        }
+    }
+    let mut activated = vec![0.0f32; tokens * merged_width];
+    for token in 0..tokens {
+        for out in 0..merged_width {
+            let mut sum = 0.0f32;
+            for col in 0..merged_width {
+                sum = normalized[token * merged_width + col]
+                    .mul_add(mlp_0[out * merged_width + col], sum);
+            }
+            activated[token * merged_width + out] = bf16(gelu_erf(bf16(sum)));
+        }
+    }
+    let mut output = vec![0.0f32; tokens * output_dim];
+    for token in 0..tokens {
+        for out in 0..output_dim {
+            let mut sum = 0.0f32;
+            for col in 0..merged_width {
+                sum = activated[token * merged_width + col]
+                    .mul_add(mlp_2[out * merged_width + col], sum);
+            }
+            output[token * output_dim + out] = bf16(sum);
+        }
+    }
+    if output.iter().any(|value| !value.is_finite()) {
+        return Err("MiMo merger reference output is non-finite".into());
+    }
+    Ok(output)
+}
 
 /// Source ViT's column walk over 2x2 spatial merge blocks. Each block keeps
 /// its four patch rows together; the source restores row order before block 27.
@@ -172,6 +264,67 @@ mod tests {
             }
         }
         (vec![0.0; values.len() * 32 * 64], vec![0.0; v.len()], v)
+    }
+
+    #[test]
+    fn merger_uses_layernorm_erf_gelu_zero_bias_and_four_row_groups() {
+        let input = [
+            1.0, 3.0, 4.0, 0.0, 2.0, 2.0, -1.0, 5.0, // first merge unit
+            4.0, 0.0, 1.0, 3.0, 2.0, 2.0, -1.0, 5.0, // second merge unit
+        ];
+        let mut first = vec![0.0; 8 * 8];
+        for channel in 0..8 {
+            first[channel * 8 + channel] = 1.0;
+        }
+        let mut second = vec![0.0; 2 * 8];
+        second[0] = 1.0;
+        second[8 + 2] = 1.0;
+        let output = patch_merger_bf16(&input, 2, 2, &[3.0, 1.0], &first, &second).unwrap();
+        assert_eq!(
+            output,
+            [
+                bf16(gelu_erf(-3.0)),
+                bf16(gelu_erf(3.0)),
+                bf16(gelu_erf(3.0)),
+                bf16(gelu_erf(-3.0)),
+            ]
+        );
+        assert!(output[0] < 0.0); // RMSNorm would keep the first row positive.
+        assert_eq!(output[0].to_bits(), 0xbb85_0000); // tanh GELU gives 0xbb6e_0000.
+    }
+
+    #[test]
+    fn merger_rounds_first_linear_and_erf_gelu_before_final_linear() {
+        let input = [0.0f32, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0];
+        let mut first = vec![0.0f32; 8 * 8];
+        first[0] = 1.710_937_5;
+        let mut second = vec![0.0f32; 8];
+        second[0] = 3.828_125;
+        let output = patch_merger_bf16(&input, 2, 1, &[2.1875, 1.0], &first, &second).unwrap();
+        let product = -2.1875 * 1.710_937_5;
+        let first = bf16(product);
+        let activated = bf16(gelu_erf(first));
+        let expected = bf16(activated * second[0]);
+        let skipped_linear_round = bf16(bf16(gelu_erf(product)) * second[0]);
+        let skipped_gelu_round = bf16(gelu_erf(first) * second[0]);
+        assert_ne!(expected, skipped_linear_round);
+        assert_ne!(expected, skipped_gelu_round);
+        assert_eq!(output, [expected]);
+    }
+
+    #[test]
+    fn merger_rejects_bad_extents_nonfinite_and_unrounded_operands() {
+        let mut first = vec![0.0; 8 * 8];
+        first[0] = 1.0;
+        let mut input = [0.0f32; 8];
+        assert!(patch_merger_bf16(&input, 2, 1, &[1.0, 1.0], &first, &[0.0; 8]).is_ok());
+        assert!(patch_merger_bf16(&input[..7], 2, 1, &[1.0, 1.0], &first, &[0.0; 8]).is_err());
+        assert!(patch_merger_bf16(&input, 2, 1, &[1.0], &first, &[0.0; 8]).is_err());
+        assert!(patch_merger_bf16(&input, 2, 1, &[1.0, 1.0], &first[..7], &[0.0; 8]).is_err());
+        input[0] = f32::NAN;
+        assert!(patch_merger_bf16(&input, 2, 1, &[1.0, 1.0], &first, &[0.0; 8]).is_err());
+        input[0] = 1.001;
+        assert!(patch_merger_bf16(&input, 2, 1, &[1.0, 1.0], &first, &[0.0; 8]).is_err());
     }
 
     #[test]

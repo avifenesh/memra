@@ -50,12 +50,12 @@ pub struct MiMoVisionBlock {
 }
 
 pub struct MiMoVisionMerger {
-    /// The checkpoint calls this `ln_q`. The published Python merger applies
-    /// LayerNorm, while SGLang applies RMSNorm. Execution must resolve this.
+    /// The pinned publisher applies LayerNorm with epsilon 1e-6. The absent
+    /// `ln_q.bias` is zero after Transformers 5.3 missing-key initialization.
     pub norm_weight: CudaSlice<f32>,
     pub mlp_0: GpuTensor,
     pub mlp_2: GpuTensor,
-    // The pinned checkpoint has no merger bias tensors.
+    // The two absent Linear biases are also initialized to zero.
 }
 
 pub struct MiMoVisionWeights {
