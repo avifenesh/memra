@@ -3541,6 +3541,11 @@ struct ChatCompletionReq {
     /// "auto" (default) | "none". "required"/named-function need constrained decoding -> 400.
     #[serde(default)]
     tool_choice: Option<serde_json::Value>,
+    /// OpenAI default `true` is a no-op (this server never limited call count). Explicit
+    /// `false` asks for stop-after-first-call, which is not wired -> named 400
+    /// (`validate_parallel_tool_calls`), not the silent ignore an absent field used to get.
+    #[serde(default)]
+    parallel_tool_calls: Option<bool>,
     /// OpenAI reasoning effort — ONE surface, per-arch native mapping (see `parse_think`'s
     /// table): low|medium|high = thinking ON at that budget, none|minimal = thinking OFF,
     /// absent = the model's own default. Binary-switch templates (qwen enable_thinking,
@@ -5051,27 +5056,89 @@ fn reject_unsupported(fields: &[(&str, bool, &str)]) -> Result<(), (String, Stri
     Ok(())
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 enum ToolChoice {
     Auto,
     None,
 }
 
-fn parse_tool_choice(v: &Option<serde_json::Value>) -> Result<ToolChoice, String> {
+/// `tool_choice` parsing and validation (issue #530). `auto`/`none` are the two forms this
+/// server actually honors today: no constrained decoding forces a call, so `required` and
+/// named-function are refused, matching the honesty gate elsewhere in this file (a param we
+/// cannot honor is a named 400, never a silent downgrade the client has to discover by
+/// prompting around). Kept as a pure function of the parsed value plus the request's own
+/// `tools` so unit tests can drive every shape without a worker: `auto`, `none`, `required`,
+/// a named function that IS declared, a named function that is NOT declared, and malformed
+/// shapes. The undeclared-name case gets its OWN message ahead of the generic "not
+/// supported" one, because that mismatch stays wrong even after forced tool calls ship:
+/// it is a request bug, not a missing feature.
+fn parse_tool_choice(
+    v: &Option<serde_json::Value>,
+    tools: &[serde_json::Value],
+) -> Result<ToolChoice, String> {
     match v {
         None | Some(serde_json::Value::Null) => Ok(ToolChoice::Auto),
         Some(serde_json::Value::String(s)) => match s.as_str() {
             "auto" => Ok(ToolChoice::Auto),
             "none" => Ok(ToolChoice::None),
             "required" => Err("tool_choice \"required\" is not supported (no constrained \
-                               decoding); use \"auto\""
+                               decoding to force a tool call yet); use \"auto\""
                 .into()),
             other => Err(format!("bad tool_choice {other:?} (auto|none)")),
         },
-        Some(serde_json::Value::Object(_)) => {
-            Err("named-function tool_choice is not supported; use \"auto\"".into())
+        Some(serde_json::Value::Object(obj)) => {
+            let ty = obj.get("type").and_then(|t| t.as_str());
+            if ty != Some("function") {
+                return Err(format!(
+                    "bad tool_choice object: \"type\" must be \"function\", got {ty:?}"
+                ));
+            }
+            let name = obj
+                .get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|n| n.as_str())
+                .ok_or("tool_choice function object needs function.name")?;
+            let declared = tools.iter().any(|t| {
+                t.get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|n| n.as_str())
+                    == Some(name)
+            });
+            if !declared {
+                return Err(format!(
+                    "tool_choice names function {name:?}, which is not declared in this \
+                     request's tools"
+                ));
+            }
+            Err(format!(
+                "named-function tool_choice ({name:?}) is not supported (no constrained \
+                 decoding to force a tool call yet); use \"auto\""
+            ))
         }
         Some(other) => Err(format!("bad tool_choice: {other}")),
+    }
+}
+
+/// `parallel_tool_calls` on the chat-completions surface (issue #530). OpenAI's default is
+/// `true` (the model may emit more than one call) and that is already what this server does
+/// today: nothing here stops a template from rendering several `<tool_call>` blocks, so
+/// omitted or explicit `true` is a no-op, byte-identical to before this function existed.
+/// `false` asks the server to stop generation after the first complete call: honoring that
+/// needs a stop condition wired into the decode loop (or the same grammar-completion signal
+/// `constrained.rs` already uses for `response_format`), which is not built yet. The old
+/// behavior silently ignored `false` (the field was not even in `ChatCompletionReq`); this
+/// turns that into a named 400, per the honesty gate this file already applies to every
+/// other semantic param it cannot honor (`reject_unsupported`). A client asking for one
+/// call at a time and never finding out it got several is the exact silent-downgrade shape
+/// the gate exists to close.
+fn validate_parallel_tool_calls(v: Option<bool>) -> Result<(), String> {
+    match v {
+        None | Some(true) => Ok(()),
+        Some(false) => Err(
+            "parallel_tool_calls: false is not supported (no stop-after-\
+                             first-call decoding yet); omit it or send true"
+                .into(),
+        ),
     }
 }
 
@@ -8469,7 +8536,8 @@ fn build_chat_request_with_trace(
     // The client's own expression is snapshotted here; the omitted fields resolve to a
     // vendor arm only once the thinking mode is final (see `sampler_cfg` below).
     let client_sampling: ClientSampling = (&req).into();
-    let tool_choice = parse_tool_choice(&req.tool_choice)?;
+    let tool_choice = parse_tool_choice(&req.tool_choice, &req.tools)?;
+    validate_parallel_tool_calls(req.parallel_tool_calls)?;
     // Template honesty gate (serve-st lane, 2026-08-04): a directory checkpoint
     // (safetensors/repack) with NO chat template cannot honestly serve chat — 400 with a
     // clear message instead of silently rendering fallback ChatML the model never saw.
@@ -14761,6 +14829,136 @@ mod tests {
                 None
             )
             .is_err()
+        );
+    }
+
+    /// `parse_tool_choice` red-arm census (issue #530): every shape a client sends, run
+    /// straight against the pure function so the assertion never depends on the worker,
+    /// the template, or a model's caps. `auto`/`none` are the only forms this server
+    /// honors; `required` and named-function stay 400 (no constrained decoding to force a
+    /// call yet), but a named function that is not even declared in `tools` gets its own
+    /// message ahead of that, since that mismatch is a request bug regardless of what
+    /// this server can force.
+    #[test]
+    fn parse_tool_choice_covers_every_wire_shape() {
+        let tools = vec![json!({"type": "function", "function": {"name": "get_weather"}})];
+        let no_tools: Vec<serde_json::Value> = Vec::new();
+
+        assert!(parse_tool_choice(&None, &tools).is_ok_and(|c| c == ToolChoice::Auto));
+        assert!(
+            parse_tool_choice(&Some(json!("auto")), &tools).is_ok_and(|c| c == ToolChoice::Auto)
+        );
+        assert!(
+            parse_tool_choice(&Some(json!("none")), &tools).is_ok_and(|c| c == ToolChoice::None)
+        );
+
+        let required_err = parse_tool_choice(&Some(json!("required")), &tools).unwrap_err();
+        assert!(
+            required_err.contains("not supported"),
+            "required: {required_err}"
+        );
+
+        let named_ok = json!({"type": "function", "function": {"name": "get_weather"}});
+        let named_ok_err = parse_tool_choice(&Some(named_ok), &tools).unwrap_err();
+        assert!(
+            named_ok_err.contains("get_weather") && named_ok_err.contains("not supported"),
+            "declared named function still refuses (no forcing yet), by name: {named_ok_err}"
+        );
+
+        let named_unknown = json!({"type": "function", "function": {"name": "get_time"}});
+        let named_unknown_err = parse_tool_choice(&Some(named_unknown), &no_tools).unwrap_err();
+        assert!(
+            named_unknown_err.contains("not declared"),
+            "an undeclared function name gets its OWN message, not the generic \
+             not-supported one: {named_unknown_err}"
+        );
+        // Same undeclared case against a NON-empty tools list that just doesn't carry the
+        // name; the declared check is a name match, not "tools is empty".
+        let named_unknown_amid_others = parse_tool_choice(
+            &Some(json!({"type": "function", "function": {"name": "get_time"}})),
+            &tools,
+        )
+        .unwrap_err();
+        assert!(named_unknown_amid_others.contains("not declared"));
+
+        let bad_type = json!({"type": "custom", "function": {"name": "get_weather"}});
+        let bad_type_err = parse_tool_choice(&Some(bad_type), &tools).unwrap_err();
+        assert!(
+            bad_type_err.contains("must be \"function\""),
+            "{bad_type_err}"
+        );
+
+        let no_name = json!({"type": "function", "function": {}});
+        assert!(parse_tool_choice(&Some(no_name), &tools).is_err());
+
+        assert!(parse_tool_choice(&Some(json!("bogus")), &tools).is_err());
+        assert!(parse_tool_choice(&Some(json!(42)), &tools).is_err());
+        assert!(
+            parse_tool_choice(&Some(serde_json::Value::Null), &tools)
+                .is_ok_and(|c| c == ToolChoice::Auto)
+        );
+    }
+
+    /// `validate_parallel_tool_calls` red arms: `true`/omitted are a no-op (this server
+    /// never limited call count, so there is nothing to enforce); `false` asks for a
+    /// stop-after-first-call decode that is not wired, and must 400 rather than silently
+    /// keep behaving like `true`: that is the exact silent-downgrade shape the honesty gate bans.
+    #[test]
+    fn validate_parallel_tool_calls_true_and_omitted_pass_false_refuses() {
+        assert!(validate_parallel_tool_calls(None).is_ok());
+        assert!(validate_parallel_tool_calls(Some(true)).is_ok());
+        let err = validate_parallel_tool_calls(Some(false)).unwrap_err();
+        assert!(err.contains("parallel_tool_calls"), "{err}");
+        assert!(err.contains("not supported"), "{err}");
+    }
+
+    /// End-to-end twin through `build_chat_request`: a declared-but-forced named
+    /// `tool_choice` and an undeclared named `tool_choice` both 400, with DIFFERENT
+    /// messages, and `parallel_tool_calls: false` 400s next to a tool-bearing request
+    /// exactly like every other unsupported semantic param on this surface.
+    #[test]
+    fn tool_choice_named_and_parallel_tool_calls_400_through_build_chat_request() {
+        let (tx, _rx) = worker::event_channel();
+        let undeclared = match build_chat_request(
+            weather_request(json!({"tool_choice":
+                {"type": "function", "function": {"name": "get_time"}}})),
+            Some(&tool_caps()),
+            tx,
+            lanes::Lane::Interactive,
+            None,
+        ) {
+            Err(e) => e,
+            Ok(_) => panic!("undeclared named tool_choice must 400"),
+        };
+        assert!(undeclared.contains("not declared"), "{undeclared}");
+
+        let (tx, _rx) = worker::event_channel();
+        let parallel_false = match build_chat_request(
+            weather_request(json!({"parallel_tool_calls": false})),
+            Some(&tool_caps()),
+            tx,
+            lanes::Lane::Interactive,
+            None,
+        ) {
+            Err(e) => e,
+            Ok(_) => panic!("parallel_tool_calls: false must 400"),
+        };
+        assert!(
+            parallel_false.contains("parallel_tool_calls"),
+            "{parallel_false}"
+        );
+
+        // parallel_tool_calls: true stays a no-op, byte-identical to omitting it.
+        let (tx, _rx) = worker::event_channel();
+        assert!(
+            build_chat_request(
+                weather_request(json!({"parallel_tool_calls": true})),
+                Some(&tool_caps()),
+                tx,
+                lanes::Lane::Interactive,
+                None,
+            )
+            .is_ok()
         );
     }
 

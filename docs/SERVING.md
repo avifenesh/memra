@@ -608,9 +608,14 @@ request ("chat template has no tools branch") — that class of gap now blocks a
 model from being announced as served.
 
 `/v1/chat/completions` accepts `tools`, `tool_choice` (`"auto"`|`"none"`; `"required"` and
-named-function forms 400 — the grammar engine isn't wired to tool selection yet),
-assistant-history `tool_calls`,
-`role:"tool"` result turns, and `reasoning_effort`/`reasoning`. The path is **template +
+named-function forms 400, since the grammar engine isn't wired to tool selection yet; a
+named-function `tool_choice` whose name is not in the request's own `tools` gets its own
+message ahead of that generic refusal, since that mismatch is a request bug regardless of
+whether forcing ever ships), `parallel_tool_calls` (`true`/omitted is a no-op, since this
+server never limited call count; explicit `false` 400s, because stopping generation after
+the first call needs a decode-loop hook that is not built yet, issue #530),
+assistant-history `tool_calls`, `role:"tool"` result turns, and
+`reasoning_effort`/`reasoning`. The path is **template +
 parsing only — zero engine changes**:
 
 - Tool schemas render into each model's own tools branch. Qwen3.5/3.6 uses its ChatML
