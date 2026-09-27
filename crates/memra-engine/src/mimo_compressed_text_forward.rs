@@ -197,6 +197,7 @@ pub struct MiMoCompressedTextForward<'a> {
     position: usize,
     failed: bool,
     has_modal_payload: bool,
+    experimental_weight_reuse: bool,
 }
 
 impl MiMoTextWeights {
@@ -229,7 +230,18 @@ impl<'a> MiMoCompressedTextForward<'a> {
             position: 0,
             failed: false,
             has_modal_payload: false,
+            experimental_weight_reuse: false,
         })
+    }
+
+    /// Select the experimental expert weight-reuse arm for this fresh batch.
+    /// The ordinary model and serving constructors leave it disabled.
+    pub fn enable_experimental_weight_reuse(&mut self) -> Result<(), Fail> {
+        if self.position != 0 || self.kv.position() != 0 || self.failed {
+            return Err("MiMo expert reuse must be selected before the first token".into());
+        }
+        self.experimental_weight_reuse = true;
+        Ok(())
     }
 
     /// Number of complete 48-layer token and logits steps.
@@ -427,10 +439,11 @@ impl<'a> MiMoCompressedTextForward<'a> {
                     tokens,
                 )?,
                 MlpPlan::Moe(moe) if index > 0 => {
-                    self.weights.routed[index]
+                    let routed = self.weights.routed[index]
                         .as_ref()
-                        .ok_or("MiMo batch routed weights missing")?
-                        .batch_bound(
+                        .ok_or("MiMo batch routed weights missing")?;
+                    let batch = if self.experimental_weight_reuse {
+                        routed.batch_bound_experimental_weight_reuse(
                             engine,
                             &mlp_input,
                             tokens,
@@ -438,7 +451,17 @@ impl<'a> MiMoCompressedTextForward<'a> {
                             &self.weights.config,
                             &self.weights.plan,
                         )?
-                        .output
+                    } else {
+                        routed.batch_bound(
+                            engine,
+                            &mlp_input,
+                            tokens,
+                            moe,
+                            &self.weights.config,
+                            &self.weights.plan,
+                        )?
+                    };
+                    batch.output
                 }
                 _ => return Err(format!("MiMo batch layer {index} MLP changed").into()),
             };
@@ -823,6 +846,35 @@ mod tests {
         {
             return Err("MiMo first batch chunk changed on byte-identical GPU replay".into());
         }
+        let (reused, reused_next) = {
+            let mut sequence = text.compressed_text_forward(engines, 5, [FOUR_GIB; 2])?;
+            sequence.enable_experimental_weight_reuse()?;
+            let step = sequence.consume_embedding_chunk_batched(&prepared)?;
+            let next = sequence.token(220)?;
+            (step, next)
+        };
+        for (label, got, want) in [
+            ("last", reused.logits.as_slice(), first.logits.as_slice()),
+            (
+                "hidden",
+                reused.hidden_before_norm.as_slice(),
+                first.hidden_before_norm.as_slice(),
+            ),
+            (
+                "continuation",
+                reused_next.as_slice(),
+                first_next.as_slice(),
+            ),
+        ] {
+            if got.len() != want.len()
+                || got
+                    .iter()
+                    .zip(want)
+                    .any(|(got, want)| got.to_bits() != want.to_bits())
+            {
+                return Err(format!("MiMo modal expert reuse {label} differs from batch").into());
+            }
+        }
         let mut serial = text.compressed_text_forward(engines, 5, [FOUR_GIB; 2])?;
         let serial_step = serial.consume_embedding_chunk(&prepared)?;
         let serial_next = serial.token(220)?;
@@ -908,6 +960,16 @@ mod tests {
             }
             (step, next)
         };
+        let (reused, reused_next) = {
+            let mut sequence = text.compressed_text_forward(engines, TOKENS + 1, [FOUR_GIB; 2])?;
+            sequence.enable_experimental_weight_reuse()?;
+            let step = sequence.consume_embedding_chunk_batched(&prepared)?;
+            let next = sequence.token(220)?;
+            if sequence.position() != TOKENS + 1 || step.position != TOKENS - 1 {
+                return Err("MiMo 128-row expert reuse cursor drifted".into());
+            }
+            (step, next)
+        };
         let (serial, serial_next) = {
             let mut sequence = text.compressed_text_forward(engines, TOKENS + 1, [FOUR_GIB; 2])?;
             let step = sequence.consume_embedding_chunk(&prepared)?;
@@ -939,6 +1001,29 @@ mod tests {
                 return Err(format!("MiMo 128-row {label} differs from serial decode").into());
             }
             println!("mimo_packed_128_exact\t{label}\t{} bits", got.len());
+        }
+        for (label, got, want) in [
+            ("last", reused.logits.as_slice(), batch.logits.as_slice()),
+            (
+                "hidden",
+                reused.hidden_before_norm.as_slice(),
+                batch.hidden_before_norm.as_slice(),
+            ),
+            (
+                "continuation",
+                reused_next.as_slice(),
+                batch_next.as_slice(),
+            ),
+        ] {
+            if got.len() != want.len()
+                || got
+                    .iter()
+                    .zip(want)
+                    .any(|(got, want)| got.to_bits() != want.to_bits())
+            {
+                return Err(format!("MiMo 128-row expert reuse {label} differs from batch").into());
+            }
+            println!("mimo_expert_reuse_128_exact\t{label}\t{} bits", got.len());
         }
         Ok(())
     }
