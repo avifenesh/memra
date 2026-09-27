@@ -50872,6 +50872,10 @@ mod tests {
                 polls: 0,
                 copy_ms: 0.0,
                 settled_by: String::new(),
+                recur: super::RestoreRecurTiming {
+                    host_ms: 0.0,
+                    events: None,
+                },
             });
             let trace = crate::ttft::Trace::for_test("/v1/completions");
             trace.bind_request("queued-request", "fixture");
