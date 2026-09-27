@@ -3168,6 +3168,36 @@ extern "C" __global__ void dsv4_small_norm_pack_f32_fixed_order_kernel(
     constexpr int B = 128;
     x += (long)blockIdx.x * n;
     packed += (long)blockIdx.x * n;
+    __shared__ float sh[B];
+    // Register-resident form (memra #710), rmsnorm_f32acc_regs' pattern: every owned x and w
+    // element loads before the first add, the sum is the loop form's per-thread ascending order,
+    // the tree is block_sum_f32's pairing at 128 threads, and the second pass reuses the
+    // registers where the loop form reloads x. Same expressions, so the same bits.
+    if (blockDim.x == B && n <= 8 * B) {
+        float xv[8], wv[8];
+#pragma unroll
+        for (int k = 0; k < 8; ++k) {
+            const int j = threadIdx.x + k * B;
+            xv[k] = j < n ? x[j] : 0.0f;
+            wv[k] = j < n && w ? w[j] : 1.0f;
+        }
+        float acc = 0.0f;
+#pragma unroll
+        for (int k = 0; k < 8; ++k)
+            if (threadIdx.x + k * B < n) acc += xv[k] * xv[k];
+        const float tot = dsv4_block_sum128_f32(acc, sh);
+        const float rsq = 1.0f / sqrtf(tot / (float)n + eps);
+#pragma unroll
+        for (int k = 0; k < 8; ++k) {
+            const int j = threadIdx.x + k * B;
+            if (j < n) {
+                const float v = wv[k] * (xv[k] * rsq);
+                x[j] = v;
+                packed[j] = __float2bfloat16_rn(v);
+            }
+        }
+        return;
+    }
     float acc = 0.0f;
     int i = threadIdx.x;
     for (; i + 7*B < n; i += 8*B) {
@@ -3177,7 +3207,6 @@ extern "C" __global__ void dsv4_small_norm_pack_f32_fixed_order_kernel(
         acc += v4*v4; acc += v5*v5; acc += v6*v6; acc += v7*v7;
     }
     for (; i < n; i += B) { float v=x[i]; acc += v*v; }
-    __shared__ float sh[B];
     float tot = dsv4_block_sum_f32(acc, sh);
     float rsq = 1.0f / sqrtf(tot / (float)n + eps);
     for (int k = threadIdx.x; k < n; k += B) {
@@ -3202,12 +3231,34 @@ extern "C" __global__ void dsv4_headrms_f32acc_kernel(float* __restrict__ x, int
     MEMRA_PDL_CHAIN_ENTRY();
     int row = blockIdx.x;
     float* xr = x + (long)row * d;
+    extern __shared__ float shf32[];
+    // Register-resident form at 128 threads (memra #710): the loop form's per-thread ascending
+    // elements and block_sum_f32's pairing, with x kept in registers for the scale pass.
+    if (blockDim.x == 128 && d <= 4 * 128) {
+        float xv[4];
+#pragma unroll
+        for (int k = 0; k < 4; ++k) {
+            const int j = threadIdx.x + k * 128;
+            xv[k] = j < d ? xr[j] : 0.0f;
+        }
+        float acc = 0.0f;
+#pragma unroll
+        for (int k = 0; k < 4; ++k)
+            if (threadIdx.x + k * 128 < d) acc += xv[k] * xv[k];
+        const float tot = dsv4_block_sum128_f32(acc, shf32);
+        const float rsq = 1.0f / sqrtf(tot / (float)d + eps);
+#pragma unroll
+        for (int k = 0; k < 4; ++k) {
+            const int j = threadIdx.x + k * 128;
+            if (j < d) xr[j] = xv[k] * rsq;
+        }
+        return;
+    }
     float acc = 0.0f;
     for (int i = threadIdx.x; i < d; i += blockDim.x) {
         float v = xr[i];
         acc += v * v;
     }
-    extern __shared__ float shf32[];
     float tot = dsv4_block_sum_f32(acc, shf32);
     float rsq = 1.0f / sqrtf(tot / (float)d + eps);
     for (int i = threadIdx.x; i < d; i += blockDim.x) xr[i] *= rsq;
