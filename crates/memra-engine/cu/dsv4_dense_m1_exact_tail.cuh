@@ -290,16 +290,15 @@ __global__ void dsv4_dense_exact_tail_dots_kernel(const float* __restrict__ x,
 // its own accumulator in the same leaf order, and each row reduces through the same
 // tree, so row t's bits equal its M=1 launch (and dsv4_gemv_fp8_m_kernel<M>'s).
 template <int ROWS, bool GROUPED = false, int M = 1>
-__global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
+__device__ __forceinline__ void dsv4_dense_fast_fp8_body(const uint8_t* __restrict__ w,
                                        const float* __restrict__ sc, int sc_cols,
                                        const uint16_t* __restrict__ x, float* __restrict__ y,
                                        int n, int k, int xstride, int ystride,
-                                       int group_xstride, int group_ystride) {
-    MEMRA_PDL_CHAIN_ENTRY();
+                                       int group_xstride, int group_ystride, int bid) {
     static_assert(M == 1 || !GROUPED, "the grouped plane is one token row");
     const int leaf = threadIdx.x % 128;
     const int tile_row = threadIdx.x / 128;
-    const int flat = blockIdx.x * ROWS + tile_row;
+    const int flat = bid * ROWS + tile_row;
     const int group = GROUPED ? flat / n : 0;
     const int row = GROUPED ? flat % n : flat;
     const int weight_row = flat;
@@ -403,12 +402,40 @@ __global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
     }
 }
 
-template <int M>
-__global__ void dsv4_dense_fast_dots_kernel(const float* __restrict__ x,
-                                             const void* __restrict__ w, int w_is_bf16,
-                                             float* __restrict__ y, int k, int n) {
+template <int ROWS, bool GROUPED = false, int M = 1>
+__global__ void dsv4_dense_fast_fp8_kernel(const uint8_t* __restrict__ w,
+                                       const float* __restrict__ sc, int sc_cols,
+                                       const uint16_t* __restrict__ x, float* __restrict__ y,
+                                       int n, int k, int xstride, int ystride,
+                                       int group_xstride, int group_ystride) {
     MEMRA_PDL_CHAIN_ENTRY();
-    int j = blockIdx.x;
+    dsv4_dense_fast_fp8_body<ROWS, GROUPED, M>(w, sc, sc_cols, x, y, n, k, xstride, ystride,
+                                                 group_xstride, group_ystride, blockIdx.x);
+}
+
+// Two weight matrices over the same activation rows in one launch (memra #710): blocks
+// [0, nblk_a) run matrix a's launch and the rest matrix b's, each block the body its own launch
+// runs with its own block index, so both outputs keep their bits. One launch ramp instead of two.
+template <int ROWS, int M = 1>
+__global__ void dsv4_dense_fast_fp8_kernel_pair(
+        const uint8_t* __restrict__ wa, const float* __restrict__ sca, int sc_cols_a,
+        float* __restrict__ ya, int na, int ystride_a,
+        const uint8_t* __restrict__ wb, const float* __restrict__ scb, int sc_cols_b,
+        float* __restrict__ yb, int nb, int ystride_b, int nblk_a,
+        const uint16_t* __restrict__ x, int k, int xstride) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    if ((int)blockIdx.x < nblk_a)
+        dsv4_dense_fast_fp8_body<ROWS, false, M>(wa, sca, sc_cols_a, x, ya, na, k, xstride,
+                                                   ystride_a, 0, 0, blockIdx.x);
+    else
+        dsv4_dense_fast_fp8_body<ROWS, false, M>(wb, scb, sc_cols_b, x, yb, nb, k, xstride,
+                                                   ystride_b, 0, 0, blockIdx.x - nblk_a);
+}
+
+template <int M>
+__device__ __forceinline__ void dsv4_dense_fast_dots_body(const float* __restrict__ x,
+                                             const void* __restrict__ w, int w_is_bf16,
+                                             float* __restrict__ y, int k, int n, int j) {
     if (j >= n) return;
     float part[M];
 #pragma unroll
@@ -473,6 +500,30 @@ __global__ void dsv4_dense_fast_dots_kernel(const float* __restrict__ x,
             if (threadIdx.x == 0) y[(long)t * n + j] = v;
         }
     }
+}
+
+template <int M>
+__global__ void dsv4_dense_fast_dots_kernel(const float* __restrict__ x,
+                                             const void* __restrict__ w, int w_is_bf16,
+                                             float* __restrict__ y, int k, int n) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    dsv4_dense_fast_dots_body<M>(x, w, w_is_bf16, y, k, n, blockIdx.x);
+}
+
+// Two weight matrices of one storage over the same activation rows in one launch (memra #710):
+// rows [0, na) are matrix a's, the rest matrix b's, each block the body its own launch runs.
+template <int M>
+__global__ void dsv4_dense_fast_dots_kernel_pair(const float* __restrict__ x,
+                                                  const void* __restrict__ wa,
+                                                  float* __restrict__ ya, int na,
+                                                  const void* __restrict__ wb,
+                                                  float* __restrict__ yb, int nb, int w_is_bf16,
+                                                  int k) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    if ((int)blockIdx.x < na)
+        dsv4_dense_fast_dots_body<M>(x, wa, w_is_bf16, ya, k, na, blockIdx.x);
+    else
+        dsv4_dense_fast_dots_body<M>(x, wb, w_is_bf16, yb, k, nb, blockIdx.x - na);
 }
 
 // Raw candidates refuse unsupported arguments before enqueue. Production-facing

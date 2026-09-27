@@ -1,0 +1,22 @@
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 100.88GB (expert budget 96.28GB) -> RESIDENT
+[q8rp] split-plane decode mirrors built: 191 tensors
+prime-gate: qwen35moe (40 layers) prompts=8 chat=false steps=0
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 4096 -> 24576 ml_len 16 -> 96 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 24576 -> 49152 ml_len 96 -> 192 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 49152 -> 98304 ml_len 192 -> 384 (retired kept, zero=false)
+[fa-pool] grow #4 dev=0 o_len 98304 -> 196608 ml_len 384 -> 768 (retired kept, zero=false)
+[moe-sk-form] dev=0 qt=6 sms=188 occ128=1 occ32=6 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=252 max_m=119
+[moe-sk-form] dev=0 qt=5 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=252 max_m=119
+[moe-sk-form] dev=0 qt=2 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=187 max_m=184
+prompt  0 (T=512): tw=365 (margin 0.2187) bp=365 (margin 0.9009) fl=365 maxdiff=1.3343e0 det=BIT-IDENTICAL MATCH
+prompt  1 (T=54): tw=1921 (margin 0.8667) bp=1921 (margin 0.9841) fl=1921 maxdiff=9.5744e-1 det=BIT-IDENTICAL MATCH
+prompt  2 (T=36): tw=271 (margin 4.8103) bp=271 (margin 4.8474) fl=271 maxdiff=9.7970e-1 det=BIT-IDENTICAL MATCH
+prompt  3 (T=40): tw=198 (margin 0.6124) bp=198 (margin 0.5696) fl=198 maxdiff=1.0781e0 det=BIT-IDENTICAL MATCH
+prompt  4 (T=79): tw=271 (margin 4.8987) bp=271 (margin 4.7765) fl=271 maxdiff=8.5044e-1 det=BIT-IDENTICAL MATCH
+prompt  5 (T=36): tw=279 (margin 1.6587) bp=279 (margin 1.7848) fl=279 maxdiff=1.1209e0 det=BIT-IDENTICAL MATCH
+prompt  6 (T=21): tw=271 (margin 1.4450) bp=271 (margin 1.1337) fl=271 maxdiff=9.0147e-1 det=BIT-IDENTICAL MATCH
+prompt  7 (T=60): tw=198 (margin 1.2126) bp=198 (margin 1.2959) fl=198 maxdiff=5.6162e-1 det=BIT-IDENTICAL MATCH
+prime-gate SUMMARY: 8 prompts (0 skipped short) | MATCH=8 FLIP-NEARTIE=0 STRUCTURED=0 det_fails=0 | worst maxdiff=1.3343e0 min flip margin=-
+prime-gate: ALL GREEN

@@ -126,6 +126,92 @@ mid-cell. Nothing in the server logs differs between fast and slow boots. The sa
 this before (`../levers-20260926/`, two of five push boots). It is recorded as the pair's own
 noise, and the c4 row wants a confirmation on the first pair.
 
+**Confirmed on the first pair after the merge.** Main before the merge (`df006602e`) against main
+with it (`5420d34bd`), one boot per row A B B A A B, N=3 (`raw/se-merge-v6d/`):
+
+| cell | before | after | delta |
+|---|---|---|---|
+| greedy c1 | 78.15 (78.13..78.24), decode 82.00 | 85.67 (85.66..85.76), decode 90.03 | +9.62% |
+| sampled c1 | 79.26 | 86.43 | +9.05% |
+| greedy c2 | 106.92 | 119.33 | +11.61% |
+| greedy c4 | 134.39 (98.67..136.10) | 151.08 (150.64..151.16) | +12.42% |
+| c2, 1500-word context | 21.24 (TTFT 9.20 s) | 21.68 (9.20 s) | +2.07% |
+
+One before-row ran its c4 cell at 98.67. The slow-c4 boot is rarer on this pair, but it is not
+the second pair's alone.
+
+## Sibling projections in one launch (adopted)
+
+Lane `lane/dsv4-dense-pair-20260927`. A dense-fast launch pays about 2 us of ramp on top of its
+bytes, and the TP/EP step issued four pairs back to back over the same activation rows:
+- the shared expert's gate and up;
+- wq_a and wkv;
+- each compressor's kv and gate dots, in the one-row step and the hoisted B-row step.
+
+The FP8 dense-fast and BF16 dots bodies are now device functions. The single kernels call them
+with their block index. The pair kernels run matrix a's body on blocks `[0, nblk_a)` and matrix
+b's on the rest, so both outputs keep the bits of their own launches. The pair launchers take the
+pair only when both matrices admit the dense-fast transport at M = 1..8, and otherwise make the
+two ordinary calls. wkv now projects with wq_a: nothing between them touches its output. About
+130 fewer launches per step.
+
+**Correctness** (second SE pair, `raw/se2-pair-s2p/`):
+- the dense-fast component gate's 32 pair cases pass: both outputs equal the single launches at
+  M = 1, 2, 4 and 6 on the four pair shapes, and each capture holds one pair node;
+- the long gate's `PROGRAM_SHA256` is `fbce1a0492d69635`;
+- the TP/EP rows gate passes;
+- the DSpark TP/EP gate passes with main's proposal shas;
+- every served text is identical across arms.
+
+**Long-gate replay**, F P P F: 11.06 to 11.19 ms per token against 11.31 to 11.44, -2.2%.
+
+**Served**, one boot per row F P P F F P, N=3, F being the fused lane:
+
+| cell | fused | fused + pairs | delta |
+|---|---|---|---|
+| greedy c1 | 85.04 (84.60..85.29), decode 88.97 | 86.51 (86.37..87.11), decode 90.79 | +1.73% |
+| sampled c1 | 85.09 | 86.72 | +1.92% |
+| greedy c2 | 116.64 | 117.58 | +0.81% |
+| greedy c4 | 145.22 | 149.89 | +3.22% |
+| c2, 1500-word context | 23.58 (TTFT 8.19 s) | 24.04 (8.00 s) | +1.95% |
+
+Every pair row is above every fused row at c1.
+
+## Register-resident row kernels, and wq_b paired with the indexer's (adopted)
+
+Lane `lane/dsv4-small-regs-20260927`, stacked on the sibling pairs.
+
+**Register-resident row kernels.** The q-LoRA norm pack and the per-head RMS are one-block-per-row
+kernels on the decode chain. Both reloaded x for their scale pass and reduced through
+`block_sum_f32`'s seven-barrier tree. At 128 threads they now load every owned element (and
+weight) before the first add, keep them for the scale pass, and reduce through
+`dsv4_block_sum128_f32`. That tree pairs exactly as `block_sum_f32` does at 128 threads, the
+pattern `dsv4_rmsnorm_f32acc_regs` already uses.
+
+**wq_b paired with the indexer's.** On the 21 ratio-4 layers, wq_b and the indexer's wq_b read the
+same q-LoRA rows, so they now share one pair launch (the previous section's kernel).
+
+**Served** (second SE pair, `raw/se2-small-s2q/`), register kernels only against the sibling-pair
+tree, one boot per row P S S P P S, N=3:
+
+| cell | pairs | pairs + register kernels | delta |
+|---|---|---|---|
+| greedy c1 | 86.99 (86.44..87.18), decode 91.10 | 88.36 (87.59..88.44), decode 92.62 | +1.57% |
+| sampled c1 | 87.42 | 88.50 | +1.24% |
+| greedy c2 | 118.61 | 119.37 | +0.64% |
+| greedy c4 | 150.37 | 152.44 | +1.38% |
+
+**Long-gate replay**, P S S P: 10.92 to 10.99 ms per token against 11.10 to 11.22.
+
+Every gate keeps `PROGRAM_SHA256` `fbce1a0492d69635`, and every served text is identical across
+arms.
+
+The wq_b pair on top (`raw/se2-small2-s2r/`):
+- `PROGRAM_SHA256` unchanged;
+- the rows and DSpark gates pass;
+- long-gate replay S T T S: 10.86 to 10.99 against 10.91 to 11.01 ms per token, about -0.3%, the
+  size its 21 launches predict.
+
 ## Refuted: loading weights before the PDL wait
 
 The weights and block scales of the dense-fast FP8 GEMV, the BF16 dots and the HC split partial
