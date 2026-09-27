@@ -158,3 +158,49 @@ DAY46 P4 card=pro6000 order=O2 arm=enforce-wrel rows_200_both=18 status_mismatch
   17 admitted primes were still running. Their `w-release` lines land about 150 s later, at the second wave's
   1790475568278 against 1790475417526. So both enforcing arms read the same book at the second wave (64.46 GB) and
   refuse all 32. That is the client defect addendum C fixes; the P lines above stand.
+
+### 2.2 Addendum C on the target card (the seventeenth sitting, the same card class and box, 2026-09-27 03:10 to 03:59Z)
+
+Chain tree `43dbdb29f` (the fixed client); the binary built on the box from `8926ccfb3`, sha256 `35719237...4cef2bd27d` (the
+lead mirrored it by hash). Receipts at `pro-single-day46/box-c/` (the sitting's own `MANIFEST.sha256`, the lead's
+`LEAD-MANIFEST.sha256` re-checked). Each boot's `wave2.txt` names the trigger: the burst's first `200` (`burst-0` to
+`burst-3`). Every boot `rc=0`. Verbatim, the clause lines (the enforcing boots in both orders read alike; O1 shown):
+
+```
+DAY46 P2 card=pro6000 boot=O1-enforce oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY46 P1 card=pro6000 boot=O1-enforce r429=78 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY46 P3 card=pro6000 boot=O1-enforce admit_lines=29 over_budget=[] -> PASS
+DAY46 P5-PROBE card=pro6000 boot=O1-enforce probe_booked=0 probe_booked_real=0 -> PASS
+DAY46 P2 card=pro6000 boot=O1-enforce-wrel oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY46 P1 card=pro6000 boot=O1-enforce-wrel r429=68 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY46 P3 card=pro6000 boot=O1-enforce-wrel admit_lines=39 over_budget=[] -> PASS
+DAY46 P5 card=pro6000 boot=O1-enforce-wrel w_booked=39 w_release=38 w_retire_unreleased=1 twice=[] bytes_mismatch=[] neither=[] -> PASS
+DAY46 P2-READING card=pro6000 boot=O1-shadow oom_lines=55 parked_oom_lines=0 crash_lines=0 r503=0 -> READING (the before)
+DAY46 P4 card=pro6000 order=O1 arm=enforce rows_200_both=19 status_mismatch=78 differ=[] -> PASS
+DAY46 P4 card=pro6000 order=O1 arm=enforce-wrel rows_200_both=29 status_mismatch=68 differ=[] -> PASS
+DAY46 P4 card=pro6000 order=O2 arm=enforce rows_200_both=19 status_mismatch=78 differ=[] -> PASS
+DAY46 P4 card=pro6000 order=O2 arm=enforce-wrel rows_200_both=29 status_mismatch=68 differ=[] -> PASS
+```
+
+and the wave readings, verbatim:
+
+```
+DAY46 READING card=pro6000 boot=O1-enforce wave=wave2 n=32 ok200=1 r429=31 booked_at_first_line=60602103104 ttft_ms p50=9329.5 p95=9329.5 N=1 time_to_429_ms p50=57.1 max=83.3
+DAY46 READING card=pro6000 boot=O1-enforce-wrel wave=wave2 n=32 ok200=11 r429=21 booked_at_first_line=20471002432 ttft_ms p50=97338.0 p95=98386.0 N=11 time_to_429_ms p50=50.6 max=64.5
+DAY46 READING card=pro6000 boot=O2-enforce wave=wave2 n=32 ok200=1 r429=31 booked_at_first_line=60602103168 ttft_ms p50=10103.2 p95=10103.2 N=1 time_to_429_ms p50=48.6 max=81.2
+DAY46 READING card=pro6000 boot=O2-enforce-wrel wave=wave2 n=32 ok200=11 r429=21 booked_at_first_line=20471002496 ttft_ms p50=98617.5 p95=99449.3 N=11 time_to_429_ms p50=49.5 max=76.5
+```
+
+- **P1 to P5 PASS on all four enforcing boots, both orders.** Every refusal is typed, with its own reject line. There is
+  no OOM, parked OOM, 503 or crash. Every admitted line is within the budget (peak 64.46 GB against 65.88 GB), and the
+  probe reads both books at 0. On `enforce-wrel`, 38 of 39 booked workspaces release at prime completion (the probe's
+  retires the same tick). The requests `200` on both boots of a pair have equal digests (19 and 29 rows).
+- **The value reading (addendum A), both orders alike:** by the second wave the W release has taken the book from
+  60.60 GB down to 20.47 GB. The enforcing door then admits 11 of the 32 second-wave requests with the release,
+  against 1 of 32 without it. Over the whole boot that is 39 admitted against 29, with no OOM on either arm.
+- **The same as 2.1:** the burst admits 17 of 64 on both enforcing arms. Its TTFT p50 is 150 to 155 s (N=17), because
+  the 17 primes of 30,720 tokens run as one batched prime. The DAY24 sequence is admitted 9 of 9 on every boot.
+- **The before (`shadow`, no door):** 55 and 56 OOM lines. The burst ends `200` on 11 and 10 of 64, and the second wave
+  32 of 32 after the storm.
+- **What it decides:** no default moves. This is the owner's input for the enforcing predictive door, and for the W
+  release that is its second arm.

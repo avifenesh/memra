@@ -97,7 +97,8 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   the eleventh sitting: DAY45 2.2, every clause PASS on the target card (W1 and W4 on 4 boots, W2 53 booked = 48
   released + 5 same-tick retire receipts, W3 53 rows equal in both orders; no OOM, no 503). The release lands 217 to
   459 s after booking, after the second wave was refused, so the books read the same on both arms: its value is read
-  by O6's `enforce-wrel` (DAY46 addendum A). The 5090 half runs from queue-m (item 9, `target/day45` from `09badfe57`).
+  by O6's `enforce-wrel` (DAY46 addendum A); read in DAY46 2.2: 11 of 32 second-wave requests admitted with the
+  release against 1 of 32 without it. The 5090 half runs from queue-m (item 9, `target/day45` from `09badfe57`).
 
 ### O5. The shared prime slab charged per request
 
@@ -119,7 +120,11 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   the fuller charge"). Dropped from STATE at day 33 with no closing record; restored here.
 - Acceptance to pre-register: `MEMRA_ADMIT_PREDICT_ENFORCE=1` against a budget arm on both cards, the day-24 sequence
   and a burst, before and after the day-24 charge, every refusal a typed 429 with its `Retry-After`, no OOM.
-- Status: `running`. Target card (DAY46 2.1, the fifteenth sitting): P1 to P5 PASS on all four enforcing boots
+- Status: target card `read` (DAY46 2.2, the seventeenth sitting, addendum C): P1 to P5 PASS on all four enforcing
+  boots, both orders. The W release takes the book from 60.60 GB to 20.47 GB by the second wave, and the enforcing door
+  admits 11 of 32 of that wave with the release against 1 of 32 without it (39 against 29 over the boot, no OOM on
+  either arm). The owner's input for both doors; no default moves. The 5090 half runs from `rtx5090-day46c/run.sh`.
+  Before: Target card (DAY46 2.1, the fifteenth sitting): P1 to P5 PASS on all four enforcing boots
   (burst 17 of 64 admitted, 47 + 32 typed 429s, no OOM, within the 65.9 GB budget, W released 27 of 28); shadow OOMs as
   the before reading. The value reading (the second wave on `enforce-wrel` against `enforce`) was not measured: the
   client released the second wave at the burst's first 429. Addendum C fixes the trigger (the first 200); the whole cell
