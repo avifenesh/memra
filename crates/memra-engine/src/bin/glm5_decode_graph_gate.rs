@@ -12,7 +12,7 @@
 //! pair at `n_pairs = n_used`. That pair is the per-row form of the fused epilogue, which is the
 //! per-token form of the sequential `qmatvec_expert_q8` + `ffn_act_lim` + `axpy_into` chain, and
 //! the table values are term-for-term the host loop's. So the two arms are ONE numeric program,
-//! and this gate is the proof rather than the assertion (CLAUDE.md, "one numeric program per
+//! and this gate is the proof rather than the assertion (AGENTS.md, "one numeric program per
 //! request": graph vs eager is a named pair to keep honest).
 //!
 //! ARMS, from ONE prompt and ONE artifact:

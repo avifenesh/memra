@@ -4,7 +4,8 @@
 accelerates development between those checkpoints. A fast-gate green is a
 *keep going* signal, never model or serving qualification.
 
-CPU-only tooling can merge on relevant CPU contract, failure-injection and
+Documentation changes use text and link checks. CPU-only tooling can merge on
+relevant CPU contract, failure-injection and
 integration checks. Tools that transport native artifacts also need real build
 and artifact-integrity evidence. This class must leave native math, generated
 native programs, compiler/build defaults, model artifacts/defaults, qualification

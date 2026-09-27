@@ -9,7 +9,7 @@
 #      Every file-shaped token in the doc must resolve somewhere in the tracked tree.
 #   2. docs/MODELS.md speaks the three-state support vocabulary defined in
 #      crates/memra-gguf/src/model_packs/mod.rs (NativeReference, NativeQualified,
-#      NativeTuned; see CLAUDE.md "three positive support states"). Any Native-cased
+#      NativeTuned; see AGENTS.md "three positive support states"). Any Native-cased
 #      token outside that set is a typo or an invented fourth state, both of which have
 #      shipped in prose before anyone could grep for them.
 #   3. docs/ROUTER.md must exist and stay at or under 60 lines. The router points at the
