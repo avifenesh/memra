@@ -99,3 +99,9 @@ GPU batteries, lane B's DAY46, DAY50 stage 0, DAY46C and DAY48), about 6.5 h of 
   table also shows when, if ever, the host's door runs turn slow. Dry-checked under stubs (`day86-cpu/dry-check-load.log`).
 - **For BOX43 now:** the queued sittings first, then `D86_LOAD_HOURS` set to what the 12 hours still lack (about 5.5
   if nothing else runs), then `slow86` right after the load ends.
+
+**Correction to the count (the lead's, before any cell).** The eight sittings sum to 306 minutes (17, 37, 36, 47, 6, 52,
+97 and 14), 5.1 h, not the 6.5 h first written above. The load fills the rest: `D86_LOAD_HOURS=6.9 bash day86-load.sh`
+started 2026-09-27T06:29Z on the tree `ce026510b` (host uptime 161850 s), 37 minutes after the last sitting ended (inside
+the one-hour gap), and the chain starts `slow86` right after the load ends (about 13:25Z) with no gap. A sitting that
+runs between the load's runs (lane B's DAY44 rerun, if it comes) counts toward the 12 hours too.
