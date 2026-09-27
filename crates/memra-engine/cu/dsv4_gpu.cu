@@ -8795,6 +8795,7 @@ extern "C" int memra_dsv4_replay_floor_instantiate(void* graph, int mode, void**
         const bool join = strstr(name, "memra_tp_ar_1stage_kernel") ||
                           strstr(name, "memra_tp_ar_gather_rows_f32_kernel") ||
                           strstr(name, "memra_tp_ar_push_reduce_kernel") ||
+                          strstr(name, "memra_tp_ar_push_reduce_owned_kernel") ||
                           strstr(name, "memra_tp_ar_push_gather_rows_kernel");
         if (mode == 1 && join) {
             ++counts[1];
