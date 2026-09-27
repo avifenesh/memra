@@ -26,7 +26,7 @@ class CollectorTests(private_lock.PrivateLockMixin, unittest.TestCase):
             with self.assertRaises(ValueError): B.paired_orders(n)
 
     def test_canonical_lock_exclusion_no_third_name(self):
-        # The production table is exactly two names (CLAUDE.md, lock names are a correctness
+        # The production table is exactly two names (AGENTS.md, lock names are a correctness
         # surface); the ruling-12 seam puts the SAME two names in this test's private directory.
         self.assertEqual(B.CANONICAL_LOCKS, {'rtx5090': '/tmp/memra-5090.lock', 'pro-single': '/tmp/memra-gpu.lock',
                                              'pro-pair': '/tmp/memra-gpu.lock', 'pro-four': '/tmp/memra-gpu.lock', 'cpu': None})

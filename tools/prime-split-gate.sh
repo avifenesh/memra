@@ -27,7 +27,7 @@
 #
 # NEEDS 2-4 GPUs with P2P. On a single-GPU rig (the local 5090) it SKIPs:
 # a same-device "split" exercises the seam but not the placement this lever exists for; the
-# box battery is the authority (CLAUDE.md: CI is compile-only, the battery is the real gate).
+# box battery is the authority (AGENTS.md: CI is compile-only, the battery is the real gate).
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 PROBE=./target/release/concat-prime-probe

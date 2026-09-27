@@ -721,7 +721,7 @@ SCENARIOS = (
         source_paths=(
             "tools/build_expert_tier_plan.py",
             "tools/prepare_mixed_expert_repack.py",
-            "CLAUDE.md",
+            "AGENTS.md",
         ),
         good_module=dedent(
             """

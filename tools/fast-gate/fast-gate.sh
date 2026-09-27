@@ -43,7 +43,7 @@ MODELS_TSV="$FG_DIR/models.tsv"
 GOLDENS="$FG_DIR/goldens"
 # MEMRA_GPU_LOCK, not MEMRA_GATE_LOCK: the v0.96.0 train standardised every gate on the one
 # seam (round 2's convention). The DEFAULT path stays /tmp/memra-5090.lock per the lock-path
-# table in CLAUDE.md — the path is what gives mutual exclusion, the var is only the override.
+# table in AGENTS.md — the path is what gives mutual exclusion, the var is only the override.
 LOCK="${MEMRA_GPU_LOCK:-/tmp/memra-5090.lock}"
 LOCK_WAIT="${MEMRA_GPU_LOCK_WAIT:-7200}"
 LOGDIR="${MEMRA_GATE_LOGDIR:-/tmp/fast-gate-$(date +%Y%m%d-%H%M%S)}"

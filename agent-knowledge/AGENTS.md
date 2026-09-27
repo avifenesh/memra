@@ -1,6 +1,6 @@
 # Agent Knowledge Base Index
 
-Learning guides synthesized from web research, designed for RAG retrieval by AI agents working on this repository. (OpenCode / Codex compatible index — same content as `CLAUDE.md`.)
+Learning guides synthesized from web research, designed for RAG retrieval by AI agents working on this repository.
 
 ## Available Learning Guides
 
@@ -71,8 +71,7 @@ It contains fabricated evidence: an invented mistral.rs benchmark row, an invent
 
 ```
 agent-knowledge/
-├── CLAUDE.md                          # Claude Code index (same content)
-├── AGENTS.md                          # This file
+├── AGENTS.md                          # Shared agent index
 ├── readme-craft-inference-engine.md   # Authoritative README guide + review checklist
 └── resources/
     └── {topic-slug}-sources.json      # Source metadata, quality scores, stated gaps
