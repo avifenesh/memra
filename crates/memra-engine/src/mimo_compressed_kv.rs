@@ -31,6 +31,7 @@ const LOCAL_K_ELEMENTS: usize = SWA * LOCAL_KV_HEADS * QK;
 const LOCAL_V_ELEMENTS: usize = SWA * LOCAL_KV_HEADS * VALUE;
 const MIN_FREE_AFTER_BYTES: usize = 4 * 1024 * 1024 * 1024;
 const ALLOCATION_SLACK_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_MIMO_KV_BATCH_TOKENS: usize = 256;
 
 /// The pinned source context includes both input and generated tokens.
 pub const MAX_COMPRESSED_CONTEXT_TOKENS: usize = 1_048_576;
@@ -190,6 +191,55 @@ impl Cursor {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BatchState {
+    start: usize,
+    rows: usize,
+    next_layer: usize,
+}
+
+impl BatchState {
+    fn begin(cursor: Cursor, rows: usize, max_tokens: usize) -> Result<Self, &'static str> {
+        if cursor.failed
+            || cursor.next_layer != 0
+            || !(1..=MAX_MIMO_KV_BATCH_TOKENS).contains(&rows)
+            || cursor
+                .position
+                .checked_add(rows)
+                .is_none_or(|end| end > max_tokens)
+        {
+            return Err("MiMo KV batch start, extent, or cursor is invalid");
+        }
+        Ok(Self {
+            start: cursor.position,
+            rows,
+            next_layer: 0,
+        })
+    }
+
+    fn check_layer(self, layer: usize, cached: usize) -> Result<(), &'static str> {
+        if layer != self.next_layer || layer >= LAYERS || cached != self.start {
+            return Err("MiMo KV batch layer or cache cursor drifted");
+        }
+        Ok(())
+    }
+}
+
+/// Split a token-major batch into contiguous writes to the 128-row local
+/// ring. A 256-row batch may wrap twice; later writes deliberately replace
+/// the same slots, leaving exactly the latest 128 rows.
+fn local_ring_segments(start: usize, rows: usize) -> Vec<(usize, usize, usize)> {
+    let mut segments = Vec::new();
+    let mut source_row = 0;
+    while source_row < rows {
+        let ring_row = (start + source_row) % SWA;
+        let count = (rows - source_row).min(SWA - ring_row);
+        segments.push((source_row, ring_row, count));
+        source_row += count;
+    }
+    segments
+}
+
 /// One continuing text sequence. Calls must visit layers 0..47 in order for
 /// each token. An error after a GPU operation poisons the instance because a
 /// partial token cannot be rolled back.
@@ -201,6 +251,7 @@ pub struct MiMoCompressedKv<'a> {
     key_staging: [CudaSlice<u8>; 2],
     dummy_q5: [CudaSlice<u8>; 2],
     cursor: Cursor,
+    batch: Option<BatchState>,
     max_tokens: usize,
     min_free_after: [usize; 2],
     budget: MiMoCompressedKvBudget,
@@ -402,6 +453,7 @@ impl<'a> MiMoCompressedKv<'a> {
                 next_layer: 0,
                 failed: false,
             },
+            batch: None,
             max_tokens,
             min_free_after,
             budget,
@@ -415,6 +467,162 @@ impl<'a> MiMoCompressedKv<'a> {
 
     pub fn budget(&self) -> MiMoCompressedKvBudget {
         self.budget
+    }
+
+    /// Begin a bounded layer-major cache append for a prefill chunk. This
+    /// does not compute attention or logits. The cache remains poisoned until
+    /// all 48 layers have appended and `finish_prefill_batch` succeeds.
+    pub fn begin_prefill_batch(&mut self, rows: usize) -> Result<(), Fail> {
+        if self.batch.is_some() {
+            return Err("MiMo KV already has an unfinished prefill batch".into());
+        }
+        let batch = BatchState::begin(self.cursor, rows, self.max_tokens)?;
+        if self
+            .caches
+            .iter()
+            .any(|cache| cache.tokens() != batch.start)
+        {
+            return Err("MiMo KV batch begins with drifted layer cursors".into());
+        }
+        require_memory(self.engines, self.min_free_after, [0, 0])?;
+        self.cursor.failed = true;
+        self.batch = Some(batch);
+        Ok(())
+    }
+
+    /// Store one complete layer's post-RoPE K and pre-scaled V rows in the
+    /// model-owned cache. Global K is Q8_0 and V is GGUF NVFP4, matching
+    /// serial decode storage. Local K/V keep the latest 128 F32 rows. Calls
+    /// must visit layers 0..47 in source order for the same chunk.
+    pub fn append_prefill_layer(
+        &mut self,
+        layer: usize,
+        key_rows: &CudaSlice<f32>,
+        value_rows: &CudaSlice<f32>,
+    ) -> Result<(), Fail> {
+        let batch = self.batch.ok_or("MiMo KV has no active prefill batch")?;
+        if !self.cursor.failed || self.cursor.position != batch.start || self.cursor.next_layer != 0
+        {
+            return Err("MiMo KV prefill cursor changed during batch append".into());
+        }
+        let cache = self
+            .caches
+            .get(layer)
+            .ok_or("MiMo KV prefill layer is out of range")?;
+        batch.check_layer(layer, cache.tokens())?;
+        let geometry = MiMoAttentionGeometry::from_plan(&self.weights.plan, layer)?;
+        let stage = stage_for_layer(layer)?;
+        let engine = self.engines[stage];
+        engine.gpu.ctx.bind_to_thread()?;
+        let device = engine.stream().context().ordinal();
+        let key_width = geometry.kv_heads * QK;
+        let value_width = geometry.kv_heads * VALUE;
+        if !cache.validate(geometry, self.max_tokens, device)
+            || key_rows.len() != batch.rows * key_width
+            || value_rows.len() != batch.rows * value_width
+            || key_rows.ordinal() != device
+            || value_rows.ordinal() != device
+        {
+            return Err("MiMo KV batch source shape, plan, or GPU changed".into());
+        }
+        let end = batch.start + batch.rows;
+        let extra = if geometry.window == 0 {
+            batch.rows * (GLOBAL_K_BYTES + DUMMY_Q5_BYTES + GLOBAL_V_BYTES)
+        } else {
+            0
+        };
+        let mut staged = [0, 0];
+        staged[stage] = extra;
+        require_memory(self.engines, self.min_free_after, staged)?;
+        engine.gpu.ctx.bind_to_thread()?;
+        match &mut self.caches[layer] {
+            LayerCache::Global {
+                key: keys,
+                value: values,
+                tokens,
+            } => {
+                let mut packed_key = engine.alloc_u8_uninit(batch.rows * GLOBAL_K_BYTES)?;
+                let mut unused_q5 = engine.alloc_u8_uninit(batch.rows * DUMMY_Q5_BYTES)?;
+                engine.append_kv_quantized_rows(
+                    key_rows,
+                    value_rows,
+                    &mut packed_key,
+                    &mut unused_q5,
+                    0,
+                    batch.rows,
+                    key_width,
+                    value_width,
+                    GLOBAL_K_BYTES,
+                    DUMMY_Q5_BYTES,
+                    false,
+                )?;
+                let key_start = batch.start * GLOBAL_K_BYTES;
+                engine.stream().memcpy_dtod(
+                    &packed_key,
+                    &mut keys.slice_mut(key_start..key_start + packed_key.len()),
+                )?;
+                let packed_value = engine.mimo_nvfp4_encode_rows(value_rows, VALUE)?;
+                if packed_value.len() != batch.rows * GLOBAL_V_BYTES {
+                    return Err("MiMo KV batch NVFP4 V byte extent changed".into());
+                }
+                let value_start = batch.start * GLOBAL_V_BYTES;
+                engine.stream().memcpy_dtod(
+                    &packed_value,
+                    &mut values.slice_mut(value_start..value_start + packed_value.len()),
+                )?;
+                *tokens = end;
+            }
+            LayerCache::Local {
+                key: keys,
+                value: values,
+                tokens,
+            } => {
+                for (source_row, ring_row, count) in local_ring_segments(batch.start, batch.rows) {
+                    let key_source = source_row * key_width;
+                    let key_ring = ring_row * key_width;
+                    engine.stream().memcpy_dtod(
+                        &key_rows.slice(key_source..key_source + count * key_width),
+                        &mut keys.slice_mut(key_ring..key_ring + count * key_width),
+                    )?;
+                    let value_source = source_row * value_width;
+                    let value_ring = ring_row * value_width;
+                    engine.stream().memcpy_dtod(
+                        &value_rows.slice(value_source..value_source + count * value_width),
+                        &mut values.slice_mut(value_ring..value_ring + count * value_width),
+                    )?;
+                }
+                *tokens = end;
+            }
+        }
+        self.batch
+            .as_mut()
+            .ok_or("MiMo KV prefill state disappeared")?
+            .next_layer += 1;
+        Ok(())
+    }
+
+    /// Complete the layer-major append only after every layer and both GPU
+    /// streams have committed. Any failure leaves the sequence poisoned.
+    pub fn finish_prefill_batch(&mut self) -> Result<(), Fail> {
+        let batch = self.batch.ok_or("MiMo KV has no active prefill batch")?;
+        let end = batch.start + batch.rows;
+        if !self.cursor.failed
+            || self.cursor.position != batch.start
+            || batch.next_layer != LAYERS
+            || self.caches.iter().any(|cache| cache.tokens() != end)
+        {
+            return Err("MiMo KV prefill batch is incomplete or drifted".into());
+        }
+        for engine in self.engines {
+            engine.gpu.ctx.bind_to_thread()?;
+            engine.stream().synchronize()?;
+        }
+        require_memory(self.engines, self.min_free_after, [0, 0])?;
+        self.cursor.position = end;
+        self.cursor.next_layer = 0;
+        self.cursor.failed = false;
+        self.batch = None;
+        Ok(())
     }
 
     /// Append one post-RoPE key and pre-scaled value, then attend with the
@@ -613,6 +821,66 @@ mod tests {
         assert!(cursor.check(0, 2, 2).is_err());
     }
 
+    #[test]
+    fn batch_cursor_requires_complete_layer_order_and_capacity() {
+        let cursor = Cursor {
+            position: 127,
+            next_layer: 0,
+            failed: false,
+        };
+        let mut batch = BatchState::begin(cursor, 129, 256).unwrap();
+        assert!(batch.check_layer(1, 127).is_err());
+        for layer in 0..LAYERS {
+            batch.check_layer(layer, 127).unwrap();
+            assert!(batch.check_layer(layer, 128).is_err());
+            batch.next_layer += 1;
+        }
+        assert_eq!((batch.start, batch.rows, batch.next_layer), (127, 129, 48));
+        assert!(batch.check_layer(0, 127).is_err());
+        assert!(BatchState::begin(cursor, 130, 256).is_err());
+        assert!(BatchState::begin(cursor, 0, 256).is_err());
+        assert!(BatchState::begin(cursor, 257, 1_048_576).is_err());
+        assert!(
+            BatchState::begin(
+                Cursor {
+                    failed: true,
+                    ..cursor
+                },
+                1,
+                256
+            )
+            .is_err()
+        );
+        assert!(
+            BatchState::begin(
+                Cursor {
+                    next_layer: 1,
+                    ..cursor
+                },
+                1,
+                256
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn batch_local_ring_segments_leave_latest_128_rows_after_two_wraps() {
+        let segments = local_ring_segments(127, 256);
+        assert_eq!(segments, [(0, 127, 1), (1, 0, 128), (129, 0, 127)]);
+        let mut ring = [0usize; SWA];
+        for (source_row, ring_row, count) in segments {
+            for offset in 0..count {
+                ring[ring_row + offset] = 127 + source_row + offset;
+            }
+        }
+        for position in 255..383 {
+            assert_eq!(ring[position % SWA], position);
+        }
+        assert_eq!(local_ring_segments(0, 1), [(0, 0, 1)]);
+        assert_eq!(local_ring_segments(126, 3), [(0, 126, 2), (2, 0, 1)]);
+    }
+
     fn ring_value(ring: &[f32; SWA], position: usize) -> f32 {
         let first = (position + 1).saturating_sub(SWA);
         let mut numerator = 0.0;
@@ -645,6 +913,94 @@ mod tests {
                 assert!((ring_value(&ring, position) - numerator / denominator).abs() < 1e-6);
             }
         }
+    }
+
+    #[test]
+    #[ignore = "requires pinned MiMo source and a dedicated two-card GPU lane"]
+    fn gpu_batch_append_preserves_codec_rows_ring_and_decode_handoff() -> Result<(), Fail> {
+        use std::path::Path;
+        use std::sync::Arc;
+
+        use memra_gguf::nvfp4_repack::{f32_to_nvfp4, f32_to_q8_0};
+        use memra_gguf::source::SafetensorsSource;
+
+        let root = std::env::var("MIMO_PINNED_SOURCE_ROOT")?;
+        let gpu0: usize = std::env::var("MEMRA_MIMO_BATCH_GPU0")?.parse()?;
+        let gpu1: usize = std::env::var("MEMRA_MIMO_BATCH_GPU1")?.parse()?;
+        if gpu0 == gpu1 {
+            return Err("MiMo batch KV handoff needs distinct dedicated GPUs".into());
+        }
+        let source = Arc::new(SafetensorsSource::open(Path::new(&root))?);
+        let cards = [Engine::new(gpu0)?, Engine::new(gpu1)?];
+        let engines = [&cards[0], &cards[1]];
+        let text = MiMoTextWeights::load(engines, source)?;
+        let mut kv = text.compressed_text_kv(engines, 130, [MIN_FREE_AFTER_BYTES; 2])?;
+        let rows = 129;
+        kv.begin_prefill_batch(rows)?;
+        for layer in 0..LAYERS {
+            let geometry = MiMoAttentionGeometry::from_plan(&text.plan, layer)?;
+            let stage = stage_for_layer(layer)?;
+            let engine = &cards[stage];
+            engine.gpu.ctx.bind_to_thread()?;
+            let key_width = geometry.kv_heads * QK;
+            let value_width = geometry.kv_heads * VALUE;
+            let keys = (0..rows * key_width)
+                .map(|index| ((index * 17 + layer * 11) % 101) as f32 / 64.0 - 0.75)
+                .collect::<Vec<_>>();
+            let values = (0..rows * value_width)
+                .map(|index| ((index * 23 + layer * 7) % 97) as f32 / 64.0 - 0.5)
+                .collect::<Vec<_>>();
+            kv.append_prefill_layer(layer, &engine.htod(&keys)?, &engine.htod(&values)?)?;
+            if layer == 0 {
+                let LayerCache::Global { key, value, .. } = &kv.caches[layer] else {
+                    return Err("MiMo batch KV layer zero lost its global cache".into());
+                };
+                let got_key = engine
+                    .stream()
+                    .clone_dtoh(&key.slice(0..rows * GLOBAL_K_BYTES))?;
+                let got_value = engine
+                    .stream()
+                    .clone_dtoh(&value.slice(0..rows * GLOBAL_V_BYTES))?;
+                engine.stream().synchronize()?;
+                assert_eq!(got_key, f32_to_q8_0(&keys));
+                assert_eq!(got_value, f32_to_nvfp4(&values));
+            }
+            if layer == 1 {
+                let LayerCache::Local { key, value, .. } = &kv.caches[layer] else {
+                    return Err("MiMo batch KV layer one lost its local ring".into());
+                };
+                let got_key = engine.dtoh(key)?;
+                let got_value = engine.dtoh(value)?;
+                for absolute in [1, 127, 128] {
+                    let ring = absolute % SWA;
+                    assert_eq!(
+                        &got_key[ring * key_width..(ring + 1) * key_width],
+                        &keys[absolute * key_width..(absolute + 1) * key_width]
+                    );
+                    assert_eq!(
+                        &got_value[ring * value_width..(ring + 1) * value_width],
+                        &values[absolute * value_width..(absolute + 1) * value_width]
+                    );
+                }
+            }
+        }
+        kv.finish_prefill_batch()?;
+        assert_eq!(kv.position(), rows);
+        for layer in 0..LAYERS {
+            let geometry = MiMoAttentionGeometry::from_plan(&text.plan, layer)?;
+            let stage = stage_for_layer(layer)?;
+            let engine = &cards[stage];
+            engine.gpu.ctx.bind_to_thread()?;
+            let query = engine.htod(&vec![0.0f32; HEADS * QK])?;
+            let key = engine.htod(&vec![0.125f32; geometry.kv_heads * QK])?;
+            let value = engine.htod(&vec![0.25f32; geometry.kv_heads * VALUE])?;
+            let output = kv.append_and_attend(layer, &query, &key, &value)?;
+            let output = engine.dtoh(&output)?;
+            assert_eq!(output.len(), HEADS * VALUE);
+            assert!(output.iter().all(|x| x.is_finite()));
+        }
+        assert_eq!(kv.position(), rows + 1);
+        Ok(())
     }
 
     #[test]
