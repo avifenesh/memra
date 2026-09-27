@@ -1,3 +1,6 @@
+# WP-B checkpoint 2026-09-27 04:3xZ (NEED TARGET CARD, the eighteenth sitting, DAY48): DAY46 2.2 read (the W release
+admits 11 of 32 of the second wave against 1 of 32); DAY48 coded (`5a6f1898f`, after integ71's base 24bddc8cb, so it
+goes into the next integ); the DAY46C and DAY48 local runners run from wt-b-integ71; integ71's battery runs on BOX43.
 # WP-B checkpoint 2026-09-27 03:4xZ: integ71's GPU cells for this lane sent to the lead (12 cells: grid_capture_gpu,
 the continuation gate, the rewind probe, prime-gate, run-spec, run-gen, the health gate g,h,j and j under VMM, the VMM grow
 series, the serving gates under VMM, a DAY44 mini cell with EXTERNAL_LOCK=1, admit-mem burst with the W release); tip
