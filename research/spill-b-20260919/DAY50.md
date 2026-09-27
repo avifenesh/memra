@@ -97,6 +97,64 @@ No clause, rule or reading changes.
 - **CPU checks:** the probe builds and `cargo clippy -p memra-engine --all-targets -- -D warnings` is clean. The trace
   reader was run on a synthetic trace.
 
+### 1.8 Addendum B (2026-09-27, the trace reader's split, after its first read printed "not read")
+
+On the target card's traces `day50-trace.py` printed `clusters=38 expected=37 (cluster count off: the per-call split
+is not read)` at every L. The extra cluster is the weight upload before the setup prime (850 `[CUDA memcpy
+Host-to-Device]` events, 3.45 s at 6,144), which 1.2's shape did not count. The reader now takes the calls as the LAST
+2 x len(rows) x (reps + 1) clusters. It checks that each pair's first cluster holds only memops (the restore) and its
+second holds kernels, and prints `restore_call_shape=off` (not read) when either check fails. The count and
+content checks set the split, not any time value. The re-read below ran on the fixed reader before this addendum was
+pushed, and it is recorded that way. No clause, rule or reading changes.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
+
+### 2.1 Stage 0 on the target card (the sixteenth sitting, one RTX PRO 6000 Blackwell Workstation Edition at 600 W, 2026-09-27 02:44 to 02:48Z)
+
+Chain tree `1df7e7852`, the probe built on the box from `5d94e26ae` (sha256 `5b5918a3...`, `probe.sha256`), the 27B,
+nsys 2025.4.1. Receipts at `pro-single-day50/box/`: the trace CSVs gzipped, with their raw sha256 in
+`stage0/trace-csv-raw.sha256`; the six nsys files are outside git, by hash in `LEAD-EXCLUDED.sha256`. The wall runs
+(no profiler), verbatim:
+
+```
+callcost L=6144 R=32 N=5 wall_ms p50=68.93 min=68.91 max=68.98 all=[68.93,68.98,68.91,68.92,68.97]
+callcost L=6144 R=64 N=5 wall_ms p50=70.20 min=70.15 max=70.22 all=[70.15,70.20,70.21,70.22,70.18]
+callcost L=6144 R=288 N=5 wall_ms p50=112.41 min=112.37 max=112.45 all=[112.41,112.37,112.44,112.38,112.45]
+callcost L=30720 R=32 N=5 wall_ms p50=94.26 min=94.25 max=94.29 all=[94.29,94.25,94.26,94.28,94.25]
+callcost L=30720 R=64 N=5 wall_ms p50=95.70 min=95.61 max=95.73 all=[95.73,95.70,95.65,95.61,95.72]
+callcost L=30720 R=288 N=5 wall_ms p50=137.90 min=137.88 max=138.03 all=[137.88,138.03,137.90,137.90,138.00]
+callcost L=122880 R=32 N=5 wall_ms p50=189.14 min=189.08 max=189.20 all=[189.20,189.14,189.17,189.11,189.08]
+callcost L=122880 R=64 N=5 wall_ms p50=190.21 min=190.14 max=190.44 all=[190.14,190.44,190.20,190.25,190.21]
+callcost L=122880 R=288 N=5 wall_ms p50=233.66 min=233.60 max=233.79 all=[233.60,233.60,233.66,233.79,233.67]
+```
+
+The traces, read under addendum B (every L: `clusters=38 leading=2 pairs=18 restore_call_shape=ok`):
+
+```
+DAY50 S0 card=pro6000 L=6144 R=32 N=5 wall_ms p50=69.39 gpu_span_ms p50=69.22 gpu_busy_ms p50=65.82 busy_share=0.949 in_span_gaps_ms p50=3.41 host_outside_span_ms p50=0.17 attn_ms=0.27 gdn_ms=1.56 gemm_ms=55.89 other_ms=8.10
+DAY50 S0 card=pro6000 L=6144 R=64 N=5 wall_ms p50=71.18 gpu_span_ms p50=71.02 gpu_busy_ms p50=66.95 busy_share=0.941 in_span_gaps_ms p50=4.07 host_outside_span_ms p50=0.16 attn_ms=0.28 gdn_ms=1.85 gemm_ms=56.29 other_ms=8.53
+DAY50 S0 card=pro6000 L=6144 R=288 N=5 wall_ms p50=112.97 gpu_span_ms p50=112.79 gpu_busy_ms p50=108.90 busy_share=0.964 in_span_gaps_ms p50=3.89 host_outside_span_ms p50=0.18 attn_ms=0.79 gdn_ms=4.12 gemm_ms=91.92 other_ms=12.06
+DAY50 S0 card=pro6000 L=30720 R=32 N=5 wall_ms p50=94.96 gpu_span_ms p50=94.80 gpu_busy_ms p50=91.42 busy_share=0.963 in_span_gaps_ms p50=3.39 host_outside_span_ms p50=0.16 attn_ms=0.27 gdn_ms=1.56 gemm_ms=56.20 other_ms=33.38
+DAY50 S0 card=pro6000 L=30720 R=64 N=5 wall_ms p50=96.84 gpu_span_ms p50=96.67 gpu_busy_ms p50=92.61 busy_share=0.956 in_span_gaps_ms p50=4.07 host_outside_span_ms p50=0.17 attn_ms=0.28 gdn_ms=1.86 gemm_ms=56.61 other_ms=33.86
+DAY50 S0 card=pro6000 L=30720 R=288 N=5 wall_ms p50=138.77 gpu_span_ms p50=138.60 gpu_busy_ms p50=134.73 busy_share=0.971 in_span_gaps_ms p50=3.87 host_outside_span_ms p50=0.17 attn_ms=0.79 gdn_ms=4.13 gemm_ms=92.27 other_ms=37.54
+DAY50 S0 card=pro6000 L=122880 R=32 N=5 wall_ms p50=190.67 gpu_span_ms p50=190.51 gpu_busy_ms p50=186.87 busy_share=0.980 in_span_gaps_ms p50=3.63 host_outside_span_ms p50=0.16 attn_ms=0.28 gdn_ms=1.58 gemm_ms=56.70 other_ms=128.32
+DAY50 S0 card=pro6000 L=122880 R=64 N=5 wall_ms p50=192.29 gpu_span_ms p50=192.14 gpu_busy_ms p50=188.04 busy_share=0.978 in_span_gaps_ms p50=4.09 host_outside_span_ms p50=0.15 attn_ms=0.28 gdn_ms=1.87 gemm_ms=57.11 other_ms=128.79
+DAY50 S0 card=pro6000 L=122880 R=288 N=5 wall_ms p50=235.86 gpu_span_ms p50=235.68 gpu_busy_ms p50=231.78 busy_share=0.983 in_span_gaps_ms p50=3.90 host_outside_span_ms p50=0.18 attn_ms=0.81 gdn_ms=4.17 gemm_ms=93.56 other_ms=133.25
+```
+
+- **The rule of 1.3 selects arm O.** The 32-row call is GPU-busy for 94.9%, 96.3% and 98.0% of its wall at the three
+  L, far above arm S's 60% line. Host time outside the GPU span is 0.16 to 0.18 ms, and gaps inside it are 3.4 to 4.1 ms.
+  The fixed cost is GPU work, not host overhead.
+- **What the GPU time is (readings, not a rule input).** Two kernel families make up the short call:
+  - The NVFP4 GEMM `mul_mat_q_nvfp4_w4a8<128, 128, ...>` costs 55.4 to 57.1 ms for 32 and for 64 rows alike: the
+    128-row tile makes a 32-row call cost what a 128-row call does. At 288 rows it costs 92 to 94 ms.
+  - The full-attention prefill `fa_prefill_qw_db` plus `fa_dequant_kv_ws_bf16` grows with the context: about 8 ms at
+    6,144, 33 at 30,720, and 113 + 14 ms at 122,880 for 32 rows (16 layers). The reader's `attn` class missed these
+    names; they sit in `other`.
+  - The GDN scan is 1.6 to 4.2 ms.
+- **What this means for the design.** Arm O's side stream has to overlap a call that is GPU-bound. Whether a
+  small-M prime kernel can keep the cold prime's exact numbers (the same K-reduction order per output) is a separate
+  improvement. It would shorten `keep`'s resume too, so it does not change E2's ratio, and it is recorded as a
+  candidate, not an arm of this day. The 5090 half (`rtx5090-day50/`) waits for the card.
