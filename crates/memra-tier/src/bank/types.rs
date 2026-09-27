@@ -104,6 +104,38 @@ impl Catalog {
             index,
         })
     }
+    /// Day 84 (I21, `research/spill-c-20260919/DAY84.md`): the id's position in `BankId` order (the index this
+    /// catalog keeps), for a masked id too; `NotFound` for an id it does not hold. A hashed read: the lease path reads
+    /// positions resolved once, not this.
+    pub fn position(&self, id: &BankId) -> Result<usize> {
+        id.validate()?;
+        self.index.get(id).copied().ok_or(Error::NotFound)
+    }
+    /// Day 85 (I22, `research/spill-c-20260919/DAY85.md`): the id at `position` (`NotFound` past the end).
+    pub fn id_at(&self, position: usize) -> Result<&BankId> {
+        self.entries
+            .get(position)
+            .map(|(id, _)| id)
+            .ok_or(Error::NotFound)
+    }
+    /// Day 85 (I22): `entry` for the id at `position`, without its hashed index: `NotFound` past the end, `MaskedId`
+    /// for a masked id, as `entry` answers for that id.
+    pub(crate) fn entry_at(&self, position: usize) -> Result<&CatalogEntry> {
+        self.entries
+            .get(position)
+            .ok_or(Error::NotFound)?
+            .1
+            .as_ref()
+            .ok_or(Error::MaskedId)
+    }
+    /// Day 84 (I21): how many ids (retained and masked) the catalog holds; every `position` is below it.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+    /// Day 84 (I21): whether the catalog holds no id.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
     /// Every id in `BankId` order.
     pub(crate) fn ids(&self) -> impl Iterator<Item = &BankId> {
         self.entries.iter().map(|(id, _)| id)

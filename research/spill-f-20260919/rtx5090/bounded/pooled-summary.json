@@ -1,0 +1,113 @@
+{
+ "rounds": [
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10
+ ],
+ "fallback_unclean_rule": true,
+ "visits_with_mmap_fallbacks": 29,
+ "cells": {
+  "1": "round-01",
+  "2": "round-02",
+  "3": "round-03",
+  "4": "round-04",
+  "5": "round-05",
+  "6": "round-06",
+  "7": "round-07",
+  "8": "round-08-attempt2",
+  "9": "round-09",
+  "10": "round-10"
+ },
+ "visits": 60,
+ "refused_arms": [
+  "direct16"
+ ],
+ "gpu_cotenant_unclean_visits": 2,
+ "registered": {
+  "regime_scored": false,
+  "contaminated_visits": {
+   "worker16": 10,
+   "mmap-random": 10,
+   "mmap-normal": 4,
+   "pread16": 5,
+   "worker2": 10
+  },
+  "arms": {
+   "mmap-random": {
+    "verdict": "unscored-regime",
+    "n_pairs": 0,
+    "median_ratio": null,
+    "ratios_forward": [],
+    "ratios_reverse": []
+   },
+   "mmap-normal": {
+    "verdict": "unscored-regime",
+    "n_pairs": 0,
+    "median_ratio": null,
+    "ratios_forward": [],
+    "ratios_reverse": []
+   },
+   "pread16": {
+    "verdict": "unscored-regime",
+    "n_pairs": 0,
+    "median_ratio": null,
+    "ratios_forward": [],
+    "ratios_reverse": []
+   },
+   "worker2": {
+    "verdict": "unscored-regime",
+    "n_pairs": 0,
+    "median_ratio": null,
+    "ratios_forward": [],
+    "ratios_reverse": []
+   }
+  }
+ },
+ "post_hoc_read_gate": {
+  "regime_scored": false,
+  "contaminated_visits": {
+   "worker16": 10,
+   "mmap-random": 7,
+   "mmap-normal": 1,
+   "pread16": 2,
+   "worker2": 10
+  },
+  "arms": {
+   "mmap-random": {
+    "verdict": "unscored-regime",
+    "n_pairs": 0,
+    "median_ratio": null,
+    "ratios_forward": [],
+    "ratios_reverse": []
+   },
+   "mmap-normal": {
+    "verdict": "unscored-regime",
+    "n_pairs": 0,
+    "median_ratio": null,
+    "ratios_forward": [],
+    "ratios_reverse": []
+   },
+   "pread16": {
+    "verdict": "unscored-regime",
+    "n_pairs": 0,
+    "median_ratio": null,
+    "ratios_forward": [],
+    "ratios_reverse": []
+   },
+   "worker2": {
+    "verdict": "unscored-regime",
+    "n_pairs": 0,
+    "median_ratio": null,
+    "ratios_forward": [],
+    "ratios_reverse": []
+   }
+  }
+ }
+}

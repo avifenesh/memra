@@ -960,7 +960,7 @@ impl Engine {
         request.bytes = TierBudget::zero(1);
         let dispatch = SlruExpertDispatch::new(
             bank,
-            ids.clone(),
+            ids,
             request,
             Epochs {
                 state: 0,
@@ -973,8 +973,7 @@ impl Engine {
             start_fill(fill_file, fill_jobs, fill_counts.clone(), fill_buffers);
         let mut traced = TracedDispatch {
             inner: dispatch,
-            ids,
-            occupants: BTreeMap::new(),
+            occupants: Vec::new(),
             clock: stage_clock.then(|| OwnerClock {
                 pread_ns: pread_ns.clone().unwrap_or_default(),
                 reads: reads.clone(),
@@ -1222,8 +1221,9 @@ fn bank_projection(
 // most host_slots entries. No numeric data or machine identity is logged.
 struct TracedDispatch {
     inner: SlruExpertDispatch<Heat, FileReader>,
-    ids: BTreeMap<ExpertDispatchId, BankId>,
-    occupants: BTreeMap<usize, ExpertDispatchId>,
+    /// DAY84 (I21): the trace's lease-path reads go through `inner` by catalog position, so the id map this held
+    /// (a copy of `inner`'s) is gone. The trace's host slot map, slot to the last record traced there (a vector by slot).
+    occupants: Vec<Option<ExpertDispatchId>>,
     /// `--expert-bank-stages` only (DAY40): the owner side of the door's stage clock.
     clock: Option<OwnerClock>,
     /// DAY45: finished host fills, admitted at the start of each demand.
@@ -1261,19 +1261,16 @@ impl TracedDispatch {
         let hit = before.is_some();
         let slot = match before {
             Some(slot) => slot,
-            None => {
-                let id = self.ids.get(&local).ok_or(Error::NotFound)?;
-                self.inner
-                    .bank()
-                    .slru_policy()
-                    .ok_or(Error::Incomplete)?
-                    .resident(id)
-                    .ok_or(Error::Incomplete)?
-            }
+            // DAY84 (I21): the published slot by catalog position, as in `demand`.
+            None => self.inner.resident_slot(local)?.ok_or(Error::Incomplete)?,
         };
-        let victim = self
-            .occupants
-            .insert(slot, local)
+        // DAY84 (I21): the slot map as a vector indexed by host slot (growing on demand), the same
+        // replace-and-compare the map's `insert` gave.
+        if slot >= self.occupants.len() {
+            self.occupants.resize(slot + 1, None);
+        }
+        let victim = self.occupants[slot]
+            .replace(local)
             .filter(|old| *old != local);
         let trace_started = self.clock.as_ref().map(|_| Instant::now());
         push_trace_line(&mut self.trace, local, bytes, slot, hit, victim);
@@ -1440,13 +1437,8 @@ impl ExpertDispatchBank for TracedDispatch {
     }
     fn demand(&mut self, local: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand> {
         self.drain_fill(32);
-        let id = self.ids.get(&local).ok_or(Error::NotFound)?;
-        let before = self
-            .inner
-            .bank()
-            .slru_policy()
-            .ok_or(Error::Incomplete)?
-            .resident(id);
+        // DAY84 (I21): the pre-demand slot by catalog position, the answer the id's lookup gave.
+        let before = self.inner.resident_slot(local)?;
         let hit = before.is_some();
         let demand_started = self.clock.as_ref().map(|_| Instant::now());
         let demand = self.inner.demand(local, bytes);
@@ -1477,13 +1469,8 @@ impl ExpertDispatchBank for TracedDispatch {
         self.drain_fill(32);
         let mut before = [None; MAX_GROUP];
         for (slot, &(local, _)) in before.iter_mut().zip(blocks) {
-            let id = self.ids.get(&local).ok_or(Error::NotFound)?;
-            *slot = self
-                .inner
-                .bank()
-                .slru_policy()
-                .ok_or(Error::Incomplete)?
-                .resident(id);
+            // DAY84 (I21): by catalog position, as in `demand`.
+            *slot = self.inner.resident_slot(local)?;
         }
         let demand_started = self.clock.as_ref().map(|_| Instant::now());
         let demands = self.inner.demand_many(blocks);
@@ -2274,8 +2261,7 @@ mod day61_profile {
         Stack {
             traced: TracedDispatch {
                 inner: dispatch,
-                ids: ids.clone(),
-                occupants: BTreeMap::new(),
+                occupants: Vec::new(),
                 clock: None,
                 fill: None,
                 trace: String::with_capacity(TRACE_CHUNK + 256),
@@ -2513,6 +2499,59 @@ mod day61_profile {
             "DAY77 P9 group calls per_block_ns cycle={:.1} | P8 again cycle={:.1}",
             per_block(p9[0]),
             per_block(p8b[0])
+        );
+        // DAY82 P10: heap allocations of the grouped cycle, per call, counted by the test build's
+        // allocator (`alloc_census`); the groups are built before the counted spans.
+        let groups: Vec<[(ExpertDispatchId, usize); 3]> = seq
+            .chunks_exact(3)
+            .take(20_000)
+            .map(|e| {
+                [
+                    (e[0], LEN as usize),
+                    (e[1], LEN as usize),
+                    (e[2], LEN as usize),
+                ]
+            })
+            .collect();
+        let mut calls = [(0u64, 0u64); 4];
+        for g in &groups {
+            let ids = [g[0].0, g[1].0, g[2].0];
+            let a = crate::alloc_census::snapshot();
+            let resident = proxy.host_resident_many(&ids).unwrap();
+            let b = crate::alloc_census::snapshot();
+            let token = proxy.demand_many(g).unwrap();
+            let c = crate::alloc_census::snapshot();
+            proxy
+                .with_bytes_each(&token, |_, bytes| {
+                    std::hint::black_box(bytes[0]);
+                    Ok::<(), ()>(())
+                })
+                .unwrap()
+                .unwrap();
+            let d = crate::alloc_census::snapshot();
+            proxy.finish_group(&token).unwrap();
+            let f = crate::alloc_census::snapshot();
+            std::hint::black_box(resident);
+            for (slot, (x, y)) in calls.iter_mut().zip([(a, b), (b, c), (c, d), (d, f)]) {
+                slot.0 += y.0 - x.0;
+                slot.1 += y.1 - x.1;
+            }
+        }
+        let n = groups.len() as f64;
+        let total = calls.iter().fold((0, 0), |t, c| (t.0 + c.0, t.1 + c.1));
+        println!(
+            "DAY82 P10 allocations per grouped cycle={:.2} bytes={:.1} | host_resident_many={:.2}/{:.1} \
+             demand_many={:.2}/{:.1} with_bytes_each={:.2}/{:.1} finish_group={:.2}/{:.1}",
+            total.0 as f64 / n,
+            total.1 as f64 / n,
+            calls[0].0 as f64 / n,
+            calls[0].1 as f64 / n,
+            calls[1].0 as f64 / n,
+            calls[1].1 as f64 / n,
+            calls[2].0 as f64 / n,
+            calls[2].1 as f64 / n,
+            calls[3].0 as f64 / n,
+            calls[3].1 as f64 / n
         );
         owner.close().unwrap();
         drop(owner);

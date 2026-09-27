@@ -77,3 +77,67 @@ same way. Design T's thread rule for the fill (item 3) is the precedent.
   Server lib `942 passed`. It is never merged.
 - `pro-single-th/build.sh` fetches that branch too. The sitting's commands are `build.sh <tip> c6369b507`, then
   `driver.sh`, still only after L' adopts: the tip carries L'.
+
+## 4. The void first start of T-H's sitting, banked
+
+- The lead's chain started T-H at 14:27Z with the old pair (`build.sh 21984b527 1cba80185`), before section 3's base
+  reached it. The lead stopped it in its gates cell (the lead's processes only; the card emptied) and banked it as
+  `/root/spill-receipts/a-th-void-stale-base-1cba80185/` with a `VOID.txt`.
+- Mirrored as `pro-single-th/box-void-stale-base/` (200 receipts, sha256-checked against the box manifest; the
+  executables by hash). Nothing in it is read: its base differs from the tip by more than T-H.
+- The sitting restarted at 14:34Z on section 3's pair (`build.sh 50fdbcfaf c6369b507`). Its gates cell finished rc 0
+  at 14:54Z.
+
+## 5. T-H's sitting, read as registered: REVERT (b)
+
+- Run by the lead on one RTX PRO 6000 Blackwell Workstation card, `build.sh 50fdbcfaf c6369b507` then `driver.sh`.
+  Mirror `pro-single-th/box/`, sha256-checked against the box manifest (0 mismatches); the executables are recorded by
+  hash.
+- Verbatim (`box/reading-th.log`):
+
+      TH READING cell=demote order=o1 stall base=64.02 th=64.15 | helper base=82.5 th=24.9 ms (th threads [8], thread time 95.1 ms) | wall base=101.0 th=88.8 ms
+      TH READING cell=chain order=o1 stall base=68.10 th=68.26 | chain base=371.1 th=245.7 ms
+      TH READING cell=promote order=o1 stall base=62.49 th=62.53 | pin base=25.80 th=25.90 | e2e base=113.9 th=114.1 ms
+      TH READING cell=demote order=o2 stall base=64.21 th=64.18 | helper base=82.8 th=25.1 ms (th threads [8], thread time 95.5 ms) | wall base=101.2 th=88.9 ms
+      TH READING cell=chain order=o2 stall base=68.11 th=68.26 | chain base=371.1 th=245.6 ms
+      TH READING cell=promote order=o2 stall base=62.48 th=62.55 | pin base=25.90 th=25.80 | e2e base=113.9 th=114.0 ms
+      TH READING hump base=+0.022 th=+0.029 ms
+      TH (b) FAIL [False, False]
+      TH (c) PASS [True, True]
+      TH (d) PASS [True, True, True, True, True, True, True, True, True]
+      TH VERDICT -> REVERT ((a) passed; failed b): recorded as read, reverted in one commit
+
+- Read:
+  - (b)'s helper half passes: 82.5 / 82.8 against 24.9 / 25.1 ms, a ratio of 0.30. Its wall half fails: 101.0 / 101.2
+    against 88.8 / 88.9 ms, -12.2 / -12.3 against the -20 bound.
+  - (c) passes by far more than its bound: the chained request falls from 371.1 to 245.7 ms (-125 ms against -30).
+  - (d) passes: the stall, the PIN, the e2e and the hump are unchanged.
+- **Reverted** as registered, in one commit (`06b2d31db`), with the receipts kept. P2's reserve, which sat on T-H's
+  shares (DAY67 section 2), returns to its own sequential payload map, DAY52's code verbatim.
+- Whether the 64-token wall was the right measure for T-H is a new registration's question, argued from this
+  section's text before any rerun (section 6), not a moved bound.
+
+## 6. T-H', pre-registered (committed before any rerun): the clause that measures what DAY65 named
+
+- **The argument, from section 1's own text.** Section 1 priced the helper in two regimes. At 64 tokens: copy 23.7 ms
+  plus hash 59.1 ms, the wall 101 ms. At 5122-token entries: helper 122 to 140 ms, the wall 362 to 444 ms.
+  - It named the waiting case: "a request that meets the entry `Demoting` waits for it (DAY43: at long entries the
+    chained hit waits on the helper, not the copy)".
+  - Clause (b)'s wall bound was taken at 64 tokens on the assumption that the 64-token publication waits on the
+    helper. Section 5 shows it does not: the helper fell 58 ms there and the wall 12 ms. The 64-token publication is
+    bounded by its copy phase and its tick-top polls.
+  - The regime section 1 named, long entries, is the chain cell's. There (c) was registered and passed.
+- **T-H'** is T-H's code unchanged, re-applied on the tree at its sitting (merged with P2's reserve if P2 adopts,
+  under the same assignment rule DAY67 section 2 named). Its (b) is restated from section 1's long-entry numbers:
+  - **(b')** In the chain cell (long entries), th's helper median at most half of base's, and th's steady wall t0 to
+    publication at most base's minus 50 ms, per order.
+    - The bound is set from section 1's prices. Half of the 122 to 140 ms helper is 61 to 70 ms; 50 ms leaves room
+      for the publication's other terms.
+    - The refuted sitting's chain numbers are not used to set it, and that sitting is not reused.
+  - The 64-token demote wall becomes a reading, stated with section 5's result and its reason.
+  - (a), (c) and (d) are section 1's, verbatim: the chain e2e at most base's minus 30 ms; the stall, the hump, and the
+    promote PIN and e2e bounds as registered.
+- **The rule.** T-H' adopts if (a), (b'), (c) and (d) hold in both orders; otherwise it is reverted in one commit. It
+  is a new sitting on a fresh pair, after P2's verdict fixes the tree it is merged onto.
+- This is the lead's and the owner's to accept or refuse before any code. The argument is that (b) measured a regime
+  section 1's own text did not name as the waiting one. Nothing here moves a bound on the regime that was named.

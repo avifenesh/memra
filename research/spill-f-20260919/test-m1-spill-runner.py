@@ -122,6 +122,24 @@ class DryRun(Harness):
         problems = json.loads(next(out.glob("*-direct16/visit.json")).read_text())["correctness_problems"]
         self.assertTrue(any("overread_bytes" in p for p in problems), problems)
 
+    def test_fallbacks_gate_every_positioned_read_arm(self):
+        # OWED 26 G1: a worker arm with fallbacks is unclean (counted), a direct arm is refused.
+        proc, out = self.run_runner("fallback", env={"M1_STUB_FALLBACKS": "worker16"}, rounds="2")
+        self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
+        visits = {v["dir"]: v for v in (json.loads(p.read_text()) for p in out.glob("*/visit.json"))}
+        w16 = [v for v in visits.values() if v["arm"] == "worker16"]
+        self.assertTrue(w16 and all(v["mmap_fallbacks"] == 7 and v["fallback_unclean"] for v in w16))
+        self.assertTrue(all(not v["clean_timing"] and not v["scored"] for v in w16))
+        self.assertTrue(all(not v["correctness_problems"] for v in w16), "unclean, not refused")
+        others = [v for v in visits.values() if v["arm"] != "worker16"]
+        self.assertTrue(all(not v["fallback_unclean"] for v in others))
+        summary = json.loads((out / "summary.json").read_text())
+        self.assertEqual(summary["mmap_fallback_visits"]["worker16"], 2)
+        self.assertEqual(summary["contaminated_visits"]["worker16"], 2)
+        proc, out = self.run_runner("fallback-direct", env={"M1_STUB_FALLBACKS": "direct16"}, rounds="2")
+        summary = json.loads((out / "summary.json").read_text())
+        self.assertIn("direct16", summary["refused_arms"])
+
     def test_identity_mismatch_refuses_before_any_visit(self):
         proof = json.loads(self.proof.read_text())
         proof["A8_identity"]["mount_id"] += 1

@@ -533,3 +533,94 @@ cached tokens with text identical to cold, probe 1 missed). BOX27's 16 GiB budge
 cap. The 1 GiB cell therefore also runs with `--tenant-pct 100` (B2 amendment 3's rule, already
 registered for the 8 GiB cell); host budget unchanged. The failed pair is kept as
 `refused-handoff-1g-tenant-cap`, never scored.
+
+## G. OWED 26: worker demand reads that fall back to mmap (registered 2026-09-26 about 11:18Z, before any code)
+
+Routed to F by the coordinator (the spill positioned-read path). Mechanism, from the code: in
+worker mode a demand read calls `submit_worker_with_admission(.., Demand)`; when no pinned buffer
+is `Free` it returns `Ok(None)` and `dispatch_disk` reads the block through mmap with
+`[spill-pread] falling back to mmap: worker read ring is busy`. The bytes are the same, but the
+visit then runs two I/O programs. The blocking `pread` arm never does this (it waits in
+`wait_for_one`), which is why `pread16` shows zero fallbacks everywhere.
+
+G1, visibility first (applies to every cell that starts after this commit; recorded rows are
+re-read, not rescored). The runner parses the fallback count from the `[spill-pread]` totals line
+for every positioned-read arm and writes it into `visit.json` and the per-arm summary. A direct
+arm with any fallback stays a correctness refusal (registered B3 amendment 2). Any other
+positioned-read arm with a fallback is unclean for timing and counted toward the contamination
+limit (the D and F fallback amendment, now in the runner itself, not only the pool tool). An mmap
+arm that prints a positioned-read line is already refused.
+
+G2, the fix (`fix(engine)`, no door: a fallback that is not an error is a defect). A demand submit
+that finds no free buffer waits for one instead of switching program, in this order: reap
+completed H2D events; if a buffer is in `H2d` with its event, wait on the oldest such event; else
+if a buffer is `Reading` or `Canceled`, block on the next worker completion; else every buffer is
+`Ready` or `Failed` and owned by a prefetch ticket, so the pool returns `HeldByPrefetch` and the
+cache cancels one prefetch ticket (not the requested block) and retries; else (only buffers whose
+H2D completion is unknown) synchronize the compute stream once. Each step waits on a concrete
+in-flight completion, so the wait is finite while the device and the workers progress. Liveness
+bound: a demand read that has waited 30 s in total errors loudly (`demand wait exceeded 30 s`), is
+counted (`demand_wait_timeouts`), and only then takes the existing mmap error path; the bound is a
+watchdog, never expected to fire. New counters on the totals line: `demand_waits`,
+`demand_wait_ns`, `prefetch_cancels`, `demand_wait_timeouts`.
+
+G2 red arm: a GPU unit cell fills every pinned buffer with completed reads marked `H2d` behind a
+busy compute stream, then submits a demand read. On the pre-fix code the submit returns `None`
+(red, run in a scratch worktree at the pre-fix commit with only the test added, its failing log
+kept); on the fix it returns a ticket after waiting, with `demand_waits == 1`. A second cell holds
+every buffer `Ready` under prefetch tickets and asserts `HeldByPrefetch`, then the cache-level
+cancel-and-retry is exercised by the serving-shape check below.
+
+G2 serving-shape check (5090, unscored, like the door-off diagnostic): `worker2` and `worker16`
+visits on the fixed build, capped scope, cold start: zero fallbacks, token ids equal the byte
+oracle, the new counters printed. The fix then becomes the build for the OWED 17 cell and for both
+PRO 6000 sittings; the B3 capped and bounded rows keep the B3 build (engine source equal to BOX27's).
+
+G3, re-reading recorded rows: a census of every committed receipt whose totals line shows
+fallbacks (`owed26/CENSUS.md`): lane, cell, arm, visits affected, counts. Nothing recorded is
+rewritten; the BOX27 worker2 correction note stays as written.
+
+Telemetry amendment (coordinator, 2026-09-26, same time): the collector already writes a 250 ms
+GPU CSV per cell (SM and memory clock, power draw and limits, temperature). From the next cell on,
+every timed visit (runner visits, handoff export and import windows, G2 visits) also runs its own
+250 ms `nvidia-smi` sampler with `clocks.sm`, `clocks.max.sm`, `power.draw`, `enforced.power.limit`,
+`temperature.gpu` and `clocks_event_reasons.active`, and its record carries a summary: SM clock
+median and minimum, power draw median and maximum, maximum temperature, and the share of samples
+with each active throttle reason. Recording only, never a gate. Recorded cells get the same
+per-visit summary post hoc from the collector CSV (no reason bits there).
+
+Section F build amendment (2026-09-26, after the OWED 26 fix and before any timed OWED 17 visit):
+the OWED 17 ten-round cell runs on the fix build (`owed26/build/`, the OWED 17 door plus the
+OWED 26 demand wait), not on `owed17/build/`. Reason: on the earlier build every arm's visits carry
+ring-busy fallbacks (smoke: 2,372, 3,646 and 8,287), which the fallback amendment makes unclean, so
+that cell could only come out unscored while measuring a mixed program. It runs only after the
+OWED 26 red/green cells and the serving-shape check pass. Arms, oracle, regime and verdict rule
+are unchanged. Both PRO 6000 sittings use the same fix build.
+
+Section F correctness addition (2026-09-26, before any spec cell with the door on): `run-spec`
+K=1..8 self-consistency for `bypass-staged` and `bypass-mapped` on the fix build
+(`m1-spec-cell.py` with the F lock, B3's verdict line `=== SELF-CONSISTENCY PASS ===`), on the 5090
+before the timed cell and again in the PRO 6000 sitting.
+
+Section G, first serving-shape check FAILED (2026-09-26 11:56Z) and its correction, registered
+before the corrected code: the fix build's first visit (`worker2`) generated tokens equal to the
+oracle but ran at 0.65 tok/s and stalled in run-gen's 32-step steady-state window; it was stopped
+after 729.6 s (`owed26/5090/owed26-serve-attempt1`). Cause, from the code: `wait_for_any_buffer`
+reaps H2D completions again; when an event completed between the submit's own reap and this one,
+a buffer is free and no read is in flight, and the code still blocked in `recv_timeout` for the whole
+30 s bound. Correction: if the second reap freed a buffer, or a buffer is free with nothing in
+flight, return at once and retry the submit; every blocking wait on a worker completion is capped
+at 50 ms per iteration and the loop re-evaluates, so a mis-placed wait costs at most 50 ms, and the
+30 s liveness bound still ends the whole demand wait. Red arm: a GPU cell calls the wait with one
+buffer free and nothing in flight, and a second with every H2D event already complete; both must
+return within 1 s. On the e5d899500 build both take the full 30 s (red, run in the scratch worktree
+at e5d899500 with only the cells added); on the corrected build they return at once. The serving-
+shape check then reruns in full.
+
+Section D, bounded OOM record (2026-09-26 14:53Z) and fix, before any bounded visit: the first
+bounded cell died 3.6 s in, quoted from the kernel: `Memory cgroup out of memory: Killed process
+643352 (python3) total-vm:17828376kB, anon-rss:7636208kB` (systemd: `The kernel OOM killer killed
+some processes in this unit`). The runner's `sha()` read the whole 18.2 GB artifact into memory to
+check its hash, which fits the 20 GiB capped scope but not the 7,864,223,232-byte bounded one.
+Fix: `sha()` streams in 1 MiB blocks (the collector's own digest shape; same values). No visit
+changes; the refused cell is kept as `refused-bounded-oom-runner-hash`.

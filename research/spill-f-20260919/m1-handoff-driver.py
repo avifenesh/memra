@@ -42,6 +42,7 @@ CACHE = load("regime", HERE / "m1-cache-regime.py")
 RUNNER = load("runner", HERE / "m1-spill-runner.py")
 SAMPLER = HERE / "m1-host-sampler.py"
 SAMPLE = load("sampler", SAMPLER)
+GPU = load("gpusampler", HERE / "m1-gpu-sampler.py")  # telemetry amendment: recording only
 PROBE_SUFFIX = " Finally, state which single item most often fails first and why."
 
 EXPORT = re.compile(r"\[prefix-host\] handoff export: (\d+) entries / ([\d.]+)MB to (\S+) in (\d+)ms "
@@ -189,10 +190,13 @@ def cycle(args, i, prompts, reference, leaves, top, identity):
         if rec["host_bytes_before_export"] < args.size_bytes:
             rec["problems"].append("prompts exhausted before the host tier reached the size")
         s = Sampler(leaves + [top], a.proc.pid, cdir / "export-host.jsonl")
+        g = None if args.stub_no_lock else GPU.GpuSampler(cdir / "export-gpu.csv").start()
         a.proc.send_signal(signal.SIGUSR1)
         a.wait_for(lambda: "[handoff-gate] export ok" in a.text() or "[handoff-gate] export refused" in a.text(),
                    900, "export answer")
         rec["export_window"] = s.stop(leaves)
+        if g is not None:
+            rec["export_gpu"] = g.stop()
         rec["export"] = parse_export(a.text())
         if "[handoff-gate] export refused" in a.text() or rec["export"] is None:
             rec["problems"].append("export refused or its line is missing")
@@ -220,8 +224,11 @@ def cycle(args, i, prompts, reference, leaves, top, identity):
                    900, "import armed at boot")
         rec["import_window_opened_after_done"] = bool(DONE.search(b.text()))
         s = Sampler(leaves + [top], b.proc.pid, cdir / "import-host.jsonl")
+        g = None if args.stub_no_lock else GPU.GpuSampler(cdir / "import-gpu.csv").start()
         b.wait_for(lambda: DONE.search(b.text()) or ABORTED in b.text(), 1800, "import DONE")
         rec["import_window"] = s.stop(leaves)
+        if g is not None:
+            rec["import_gpu"] = g.stop()
         rec["import"] = parse_import(b.text())
         done = rec["import"]["done"]
         if rec["import"]["aborted"] or done is None:
