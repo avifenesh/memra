@@ -1102,6 +1102,43 @@ response you abandon is billed for what was generated.* A client that walks away
 mid-stream after receiving tokens is the existing `abandoned` path — user fault, partial
 billed. Everything that is OUR fault bills zero (the census below).
 
+### Background delivery for long non-streaming requests (`background: true`)
+
+memra#550, `docs/decisions/COMPLETE-RESULT-PATH-V1.md`. `MEMRA_BACKGROUND_RESPONSES`
+(default OFF, `docs/FLAGS.md`) opens a per-request delivery mode on `/v1/responses`: the
+90 s non-streaming deadline above stops applying, and the caller does not hold a
+connection open for the run.
+
+With the door open, `background: true` on `/v1/responses` (refused together with
+`stream: true`, a contradiction) is admitted through the exact same budget/capacity/
+deadline-feasibility gates as a synchronous request, then answers immediately with a
+`status: "queued"` envelope carrying the request id. Generation continues in a spawned
+task with no wall-clock bound. `GET /v1/responses/{id}` polls the job; a terminal poll
+(`completed`, `incomplete`, `cancelled`, or `failed`) carries the same output accumulator
+a synchronous call would have rendered, never a resummarized or regenerated answer.
+`POST /v1/responses/{id}/cancel` refuses with 409 once the job is already terminal;
+otherwise it stops the task and drops its worker channel, the same cancel idiom the
+synchronous deadline path already uses, and the task's own single write settles the job
+`Cancelled` and bills the ledger exactly once (a deadline-partial outcome if any tokens
+were produced, an unbilled `cancelled` outcome if none were).
+
+The buffered output between the worker finishing and the caller's `GET` lives in
+`AppState.job_store` (`crate::metering::JobStore`), the stock in-memory reference
+implementation, bounded by `MEMRA_BACKGROUND_JOB_TTL_SECS` and
+`MEMRA_BACKGROUND_JOB_MAX_BYTES` (`docs/FLAGS.md`). A `put` that would push the store past
+its byte cap is refused at submit, before any worker time is spent. A job past its TTL is
+evicted lazily on the next store touch; polling it afterward reads exactly like an id that
+never existed.
+
+Scoped out of this wiring, named here rather than left silent: chat-dialect job polling
+(the design doc's `/v1/jobs/{id}` for `/v1/chat/completions` and `/v1/completions`) is not
+built; only `/v1/responses` is wired. Poll and cancel have no per-tenant ownership check on
+the job id; any authenticated tenant that knows an id can read or cancel it. The `JobStore`
+has no deployment-pluggable wiring hook yet (unlike `Metering`); the stock in-memory store
+is what every deployment gets today. A real over-90 s background generation against a live
+GPU worker, polled to completion, plus one cancelled mid-generation with its terminal
+ledger row inspected, is still owed (memra#550) and cannot run in a CPU-only lane.
+
 ### Fault attribution: which outcomes may bill
 
 Every request ends with exactly one ledger `outcome`, and only the outcomes in

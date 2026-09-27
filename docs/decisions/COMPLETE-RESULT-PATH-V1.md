@@ -1,9 +1,16 @@
 # Complete-result path for long non-streaming requests (2026-09-28)
 
-**Status:** interface frozen, design only. Nothing in this document is built, wired, or
-gated. Issue: `avifenesh/memra#550`. Scope: a supported way for a request whose valid
-workload cannot finish inside the synchronous non-streaming deadline to receive its
-complete output without holding one HTTP connection open for the entire run.
+**Status:** interface frozen at the time this document was written; the sentence below is
+the ORIGINAL design snapshot and is left as written. The "Owed" section at the bottom of
+this document tracks what has since been built and what still is not: as of the route
+wiring lane (memra#550), the `JobStore`, its reference implementation, and the
+`GET`/`POST /v1/responses/{id}` routes exist and are wired; a GPU box run and the owner's
+TTL/byte-cap call remain outstanding.
+
+**Original status line:** interface frozen, design only. Nothing in this document is
+built, wired, or gated. Issue: `avifenesh/memra#550`. Scope: a supported way for a request
+whose valid workload cannot finish inside the synchronous non-streaming deadline to
+receive its complete output without holding one HTTP connection open for the entire run.
 
 ## Problem, grounded in the current code
 
@@ -136,32 +143,37 @@ rather than hardwiring storage into the handler:
   fresh generation.
 - "Test a legitimately over-synchronous-budget request through the actual endpoint,
   including status/result retrieval or resume, cancellation, and terminal usage
-  callbacks": **not satisfied yet.** This needs the routes, the `JobStore` trait and its
-  reference implementation, worker-cancellation wiring, and a real over-90-second
-  generation exercised against a running `memra-server` on a GPU box. `memra-server`
-  compiles CUDA fatbins and is not buildable in a CPU-only lane; GitHub CI builds it but
-  does not run a live server end to end either.
+  callbacks": routes, the `JobStore`, and worker-cancellation wiring are DONE on
+  `/v1/responses` (route wiring lane, memra#550), covered by route-level tests against
+  the fake worker harness. **Still not satisfied**: a real over-90-second generation
+  exercised against a running `memra-server` on a GPU box. `memra-server` compiles CUDA
+  fatbins and is not buildable in a CPU-only lane; GitHub CI builds it but does not run a
+  live server end to end either.
 - "Keep partial/deadline failures explicit, and document deployment ownership of
-  pricing/accounting policy": addressed by points 5-7 above. A `docs/FLAGS.md` row is
-  owed once a flag exists; none is added by this document.
+  pricing/accounting policy": addressed by points 5-7 above, and by the three
+  `docs/FLAGS.md` rows PR #905 added.
 
 ## Owed (why issue #550 stays open)
 
-1. Implementation: the `JobStore` trait plus its in-memory reference implementation, the
-   `GET`/`POST` routes on both dialects, and splitting the `background` gate in
-   `translate()` (`responses_api.rs:152`-`153`) so it restores this one field while
-   `previous_response_id`, `store`, and `conversation` keep refusing. Cancel wiring
-   splits by dialect: chat/completions reuses the existing `drop(rx)` +
-   `complete_deadline_partial` sequence (`lib.rs:11351`-`11394`); `/v1/responses` needs
-   the partial-delivery/billing behavior that surface deliberately does not have today
-   (`responses_api.rs:705`-`715`) ported onto it, which is new engine work, not reuse.
-2. A default-OFF flag (for example `MEMRA_BACKGROUND_RESPONSES`) with its
-   `docs/FLAGS.md` row (default, both arms, rollback seam, receipt pointer, decide-by
-   date) once the code exists. Not created by this document.
+1. DONE (route wiring lane, memra#550): the `JobStore` trait, its in-memory reference
+   implementation, and the `GET`/`POST` routes on `/v1/responses` (`responses_api.rs`,
+   `poll_admitted` / `cancel_admitted`). The `background` gate in `translate()` was split
+   in the prior lane (PR #905); this lane is what makes accepting the field actually
+   deliver. Cancel on `/v1/responses` ported the partial-delivery/billing behavior this
+   document named as new engine work: the spawned background task carries its own
+   accumulator and settles the receipt itself (`complete_deadline_partial` with tokens
+   produced, `settle_unbilled("cancelled", ...)` with none) when the cancel signal fires,
+   then writes the one terminal `JobStore` row. Chat-dialect job polling (the `GET
+   /v1/jobs/{id}` shape named in the Contract section's point 4, above) is NOT built;
+   only `/v1/responses` is wired. Poll and cancel have no per-tenant ownership check on
+   the job id yet.
+2. DONE (PR #905): `MEMRA_BACKGROUND_RESPONSES`, `MEMRA_BACKGROUND_JOB_TTL_SECS`, and
+   `MEMRA_BACKGROUND_JOB_MAX_BYTES`, all in `docs/FLAGS.md`.
 3. A box run: a real generation submitted with `background: true` that legitimately
    exceeds 90 s, polled through to completion; a second one cancelled mid-generation; and
    a terminal usage row inspected in the ledger for both. Requires a GPU box; not
-   runnable in this CPU-only lane.
+   runnable in this CPU-only lane. Still owed.
 4. An owner decision on the in-memory `JobStore`'s default TTL and default max resident
-   bytes. The memory cost of buffering uncollected output is a capacity decision this
-   document does not invent a number for.
+   bytes. PR #905 shipped conservative placeholders (900 s, 64 MiB), both
+   env-configurable and explicitly not measured numbers; the owner may change either
+   without a code change. Still owed.

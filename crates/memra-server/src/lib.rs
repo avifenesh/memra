@@ -2068,6 +2068,23 @@ struct AppState {
     /// resident, which is every deployment today — so the surface refuses with
     /// `engine_unbound` rather than answering with something that is not the model.
     audio: audio_api::SharedAudio,
+    /// Background job buffered-output store (memra#550,
+    /// `docs/decisions/COMPLETE-RESULT-PATH-V1.md`). Always present, the same way `metrics`
+    /// always exists: the stock binary wires the in-memory reference implementation
+    /// (`job_store::InMemoryJobStore::from_env`). A deployment that needs a job to survive a
+    /// restart or a store shared across replicas has no wiring hook for that yet (unlike
+    /// `metering`, this is not deployment-pluggable today; owed follow-up). Only reachable
+    /// when MEMRA_BACKGROUND_RESPONSES is on: with the door closed, `responses_api::translate`
+    /// refuses `background: true` before any handler touches this.
+    job_store: Arc<dyn metering::JobStore>,
+    /// Per-job cancellation signal for a background job with a live task on a worker
+    /// (memra#550). The spawned task holding that job's `EventReceiver` races this against
+    /// the worker's event stream (`tokio::select!`); `POST /v1/responses/{id}/cancel` fires it
+    /// and the task itself removes its own entry once it finalizes. An id absent from this map
+    /// means either no background job with that id exists, or its task already finished; the
+    /// `JobStore`'s own terminal-status check is what actually answers 404 / already-terminal,
+    /// this map is only the stop signal.
+    background_cancel: Arc<Mutex<HashMap<String, Arc<tokio::sync::Notify>>>>,
 }
 
 impl AppState {
@@ -6199,6 +6216,8 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         // No speech pack can be resident yet: no speech operation has a CUDA kernel
         // (docs/SPEECH.md §1). The surface exists and fails closed.
         audio: audio_api::shared_audio(false),
+        job_store: Arc::new(job_store::InMemoryJobStore::from_env()),
+        background_cancel: Arc::new(Mutex::new(HashMap::new())),
     };
     let inflight_handle = state.inflight.clone();
     // For the drain-kill fault-attribution latch: the drain future outlives the
@@ -6240,6 +6259,14 @@ pub async fn serve_with(wiring: ServerWiring) -> Result<(), Box<dyn std::error::
         // `?beta=true` query some clients append arrives here too.
         .route("/v1/messages", post(anthropic::messages_admitted))
         .route("/v1/responses", post(responses_api::responses_admitted))
+        // Background job poll/cancel (memra#550, MEMRA_BACKGROUND_RESPONSES): a plain
+        // segment param is enough: job ids are `resp_<hex128>`, never contain a slash, unlike
+        // the model-id wildcard above.
+        .route("/v1/responses/:id", get(responses_api::poll_admitted))
+        .route(
+            "/v1/responses/:id/cancel",
+            post(responses_api::cancel_admitted),
+        )
         // Audio (lane/audio-endpoint-g8). `transcriptions` is the OpenAI-named batch surface
         // and the target of G7's live half; the `sessions` trio is the streaming lane
         // lifecycle whose admission is the thing the c4 collapse broke.
@@ -22409,6 +22436,386 @@ temperature = 0.6
         );
     }
 
+    // ---- background job route wiring (memra#550, docs/decisions/COMPLETE-RESULT-PATH-V1.md) --
+
+    /// Serializes every test that flips `MEMRA_BACKGROUND_RESPONSES`: the on-arm mutates
+    /// process-global env and the door-off tests would observe that mutation if they ran in
+    /// parallel. Same shape as `gate_env_lock`, a different flag.
+    static BACKGROUND_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn background_env_lock() -> std::sync::MutexGuard<'static, ()> {
+        let guard = BACKGROUND_ENV_LOCK.lock().unwrap_or_else(|poisoned| {
+            BACKGROUND_ENV_LOCK.clear_poison();
+            poisoned.into_inner()
+        });
+        unsafe { std::env::remove_var(responses_api::BACKGROUND_RESPONSES_ENV) };
+        guard
+    }
+
+    /// Door OFF: a route-level `background: true` request refuses exactly like before this
+    /// lane, and never reaches the JobStore (no id is created, so a follow-up poll on any id
+    /// this request could plausibly have gotten is still a 404, not a stale record).
+    #[tokio::test]
+    async fn background_door_off_route_refuses_and_creates_no_job() {
+        let _env_lock = background_env_lock();
+        let st = fake_worker_state();
+        let resp = responses_api::responses(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({"model": "m", "input": "hi", "background": true}).to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let body = body_value(resp).await;
+        assert_eq!(body["error"]["param"], "background");
+    }
+
+    /// Door ON: `background: true` is admitted, answers immediately with a queued envelope
+    /// carrying the request id, and the worker's actual output later shows up on `GET
+    /// /v1/responses/{id}`, the same accumulator a synchronous call would have rendered,
+    /// never a resummarized answer.
+    #[tokio::test]
+    async fn background_submit_returns_queued_then_poll_reaches_completed() {
+        let _l = drain_lock();
+        let _env_lock = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+
+        let st = fake_worker_state_with_steps(3, std::time::Duration::from_millis(2));
+        let resp = responses_api::responses(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({"model": "m", "input": "hi", "background": true}).to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_value(resp).await;
+        assert_eq!(body["status"], "queued");
+        let id = body["id"].as_str().unwrap().to_string();
+
+        let mut final_body = None;
+        for _ in 0..500 {
+            let poll = responses_api::poll_admitted(
+                State(st.clone()),
+                axum::http::HeaderMap::new(),
+                Path(id.clone()),
+            )
+            .await;
+            assert_eq!(poll.status(), StatusCode::OK, "poll must never itself fail");
+            let b = body_value(poll).await;
+            if b["status"] == "completed" {
+                final_body = Some(b);
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        let b = final_body.expect("background job never reached completed");
+        assert_eq!(b["output"][0]["content"][0]["text"], "xxx");
+        assert_eq!(b["usage"]["output_tokens"], 3);
+    }
+
+    /// `GET` on an id the store never admitted (never submitted, or a typo) is a plain 404,
+    /// not a 500 or an empty 200. The same answer applies whether the id never existed or existed
+    /// and was TTL-evicted (the sweep just removes the record; there is no tombstone).
+    #[tokio::test]
+    async fn poll_unknown_job_id_is_404() {
+        let st = fake_worker_state();
+        let resp = responses_api::poll_admitted(
+            State(st),
+            axum::http::HeaderMap::new(),
+            Path("resp_does-not-exist".to_string()),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// A cancel after the job already completed is refused (409), not a silent no-op: the
+    /// caller must be able to tell "too late, it already finished" from "cancelled".
+    #[tokio::test]
+    async fn cancel_after_completion_is_conflict_not_a_silent_noop() {
+        let _l = drain_lock();
+        let _env_lock = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+
+        let st = fake_worker_state_with_steps(1, std::time::Duration::ZERO);
+        let resp = responses_api::responses(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({"model": "m", "input": "hi", "background": true}).to_string(),
+            ),
+        )
+        .await;
+        let body = body_value(resp).await;
+        let id = body["id"].as_str().unwrap().to_string();
+
+        let mut completed = false;
+        for _ in 0..500 {
+            let poll = responses_api::poll_admitted(
+                State(st.clone()),
+                axum::http::HeaderMap::new(),
+                Path(id.clone()),
+            )
+            .await;
+            if body_value(poll).await["status"] == "completed" {
+                completed = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        assert!(completed, "setup: job never reached completed");
+
+        let cancel = responses_api::cancel_admitted(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            Path(id.clone()),
+        )
+        .await;
+        assert_eq!(cancel.status(), StatusCode::CONFLICT);
+        let cb = body_value(cancel).await;
+        assert_eq!(cb["error"]["code"], "background_job_already_terminal");
+
+        // The completed record is untouched by the refused cancel.
+        let poll = responses_api::poll_admitted(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            Path(id.clone()),
+        )
+        .await;
+        assert_eq!(body_value(poll).await["status"], "completed");
+    }
+
+    /// Cancel mid-run: the running task actually stops (the worker's event channel closes,
+    /// mirroring the existing deadline-cancel idiom), the ledger gets exactly ONE terminal
+    /// row (a deadline-partial billing the one token that was produced, never a plain
+    /// `complete` and never left unfinalized on `Drop`), and the store carries the partial
+    /// text under `status: "cancelled"`.
+    #[tokio::test]
+    async fn cancel_mid_run_stops_the_worker_and_writes_one_cancelled_row() {
+        let _l = drain_lock();
+        let _env_lock = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+
+        let (cmd_tx, cmd_rx) = std::sync::mpsc::channel::<Cmd>();
+        let health = health::WorkerHealth::new();
+        let h = health.clone();
+        let worker_saw_cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let worker_saw_cancel2 = worker_saw_cancel.clone();
+        std::thread::spawn(move || {
+            h.mark_ready();
+            while let Ok(Cmd::Generate(req)) = cmd_rx.recv() {
+                worker::release_pending_admit();
+                worker::release_admission_reservation(req.lane);
+                let _ = req.tx.send(Event::PromptUsage {
+                    n_prompt: 1,
+                    n_cached: 0,
+                });
+                let _ = req.tx.send(Event::Token {
+                    id: 1,
+                    text: "partial".into(),
+                });
+                // Never sends Done: this job is cancelled before the worker would finish.
+                // The cancel signal is `rx` being dropped on the consumer side; this loop
+                // proves it happened by watching the sender's own channel close.
+                for _ in 0..5_000 {
+                    if req.tx.is_closed() {
+                        worker_saw_cancel2.store(true, std::sync::atomic::Ordering::SeqCst);
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            }
+        });
+        for _ in 0..2_000 {
+            if health.live().is_ok() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+
+        let mut st = fake_worker_state();
+        st.cmd_tx = cmd_tx;
+        st.health = health;
+        let mock = MockMetering::admit_all();
+        st.metering = Some(mock.clone());
+
+        let resp = responses_api::responses(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({"model": "m", "input": "hi", "background": true}).to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_value(resp).await;
+        let id = body["id"].as_str().unwrap().to_string();
+
+        // Give the background task a moment to record the one token before cancelling.
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+        let cancel = responses_api::cancel_admitted(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            Path(id.clone()),
+        )
+        .await;
+        assert_eq!(cancel.status(), StatusCode::OK);
+        let cb = body_value(cancel).await;
+        assert_eq!(cb["status"], "cancelled");
+        assert_eq!(
+            cb["output"][0]["content"][0]["text"], "partial",
+            "the partial output actually produced must be preserved, never dropped: {cb}"
+        );
+
+        assert!(
+            worker_saw_cancel.load(std::sync::atomic::Ordering::SeqCst),
+            "the worker must observe its event channel close: cancel did not stop generation"
+        );
+
+        // Exactly one terminal ledger row: a deadline-partial billing the one token that
+        // was produced (the design doc's "zero tokens bills zero, some tokens bills what
+        // was delivered", reusing the existing partial-billing outcome), never a plain
+        // `complete`, and never left unfinalized on Drop.
+        let events = mock.events();
+        let terminal_rows: Vec<_> = events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    MeterEvent::Complete { .. }
+                        | MeterEvent::DeadlinePartial { .. }
+                        | MeterEvent::Reject { .. }
+                        | MeterEvent::Unbilled { .. }
+                        | MeterEvent::Dropped { .. }
+                )
+            })
+            .collect();
+        assert_eq!(
+            terminal_rows.len(),
+            1,
+            "exactly one terminal row per job: {events:?}"
+        );
+        assert!(
+            matches!(
+                terminal_rows[0],
+                MeterEvent::DeadlinePartial { completion: 1, .. }
+            ),
+            "a cancel with tokens already produced bills the partial, never zero and never \
+             a full `complete`: {events:?}"
+        );
+
+        // The job is terminal; a poll afterward still reports cancelled, never resurrected
+        // back to in_progress by a late worker write racing this test's own assertions.
+        let poll = responses_api::poll_admitted(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            Path(id.clone()),
+        )
+        .await;
+        assert_eq!(body_value(poll).await["status"], "cancelled");
+    }
+
+    /// A worker result arriving after a job was cancelled and already collected must not
+    /// resurrect it. This is the exact race `job_store::tests::a_stale_write_after_cancel_and_...`
+    /// covers at the `JobStore` level, exercised here through the same store instance a
+    /// route would use (`AppState.job_store`), not a bespoke store built just for this test.
+    #[test]
+    fn late_worker_write_after_cancel_and_collect_does_not_resurrect_the_job() {
+        let st = fake_worker_state();
+        st.job_store
+            .put("resp_late", metering::JobRecord::queued())
+            .unwrap();
+        st.job_store.cancel("resp_late").unwrap();
+        let taken = st.job_store.take("resp_late").unwrap();
+        assert_eq!(taken.status, metering::JobStatus::Cancelled);
+
+        // A worker that had not yet noticed the cancel writes late, non-terminal or
+        // terminal: both are refused because the id is now unknown to the store, never
+        // treated as permission to resurrect a job the store already forgot.
+        let late_in_progress = st.job_store.put(
+            "resp_late",
+            metering::JobRecord {
+                status: metering::JobStatus::InProgress,
+                output: Some(json!({"text": "still going"})),
+                error: None,
+            },
+        );
+        assert_eq!(late_in_progress, Err(metering::JobStoreError::NotFound));
+        assert_eq!(st.job_store.get("resp_late"), None);
+    }
+
+    /// A byte-cap tight enough to admit the `Queued` placeholder but not the real job is
+    /// refused at SUBMIT, before any worker time is spent, with the same 503 shape a deployment
+    /// can already recognize by its `code`.
+    #[tokio::test]
+    async fn byte_cap_refuses_submission_before_any_worker_time_is_spent() {
+        let _env_lock = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+
+        let mut st = fake_worker_state();
+        // Tight enough that the Queued placeholder itself does not fit.
+        st.job_store = Arc::new(job_store::InMemoryJobStore::new(
+            std::time::Duration::from_secs(60),
+            8,
+        ));
+        let resp = responses_api::responses(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({"model": "m", "input": "hi", "background": true}).to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let body = body_value(resp).await;
+        assert_eq!(
+            body["error"]["code"],
+            "background_job_store_capacity_exceeded"
+        );
+    }
+
+    /// A job past its TTL is evicted lazily on the next store touch; polling it afterward is
+    /// indistinguishable from an id that never existed: a 404, not a stale "completed".
+    #[tokio::test]
+    async fn ttl_eviction_then_poll_is_404() {
+        let mut st = fake_worker_state();
+        st.job_store = Arc::new(job_store::InMemoryJobStore::new(
+            std::time::Duration::from_millis(10),
+            job_store::DEFAULT_MAX_BYTES,
+        ));
+        st.job_store
+            .put("resp_ttl", metering::JobRecord::queued())
+            .unwrap();
+        st.job_store
+            .put(
+                "resp_ttl",
+                metering::JobRecord {
+                    status: metering::JobStatus::Completed,
+                    output: Some(json!({"id": "resp_ttl", "status": "completed"})),
+                    error: None,
+                },
+            )
+            .unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+
+        let resp = responses_api::poll_admitted(
+            State(st),
+            axum::http::HeaderMap::new(),
+            Path("resp_ttl".to_string()),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
     fn fake_worker_state() -> AppState {
         fake_worker_state_with_steps(1, std::time::Duration::ZERO)
     }
@@ -22546,6 +22953,8 @@ temperature = 0.6
             health,
             bg: None,
             audio: audio_api::shared_audio(false),
+            job_store: Arc::new(job_store::InMemoryJobStore::from_env()),
+            background_cancel: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
