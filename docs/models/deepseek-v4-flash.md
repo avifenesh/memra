@@ -75,6 +75,26 @@ step's routed slots, and its rows ride the expert join
 (`research/dsv4f-bringup-20260923/levers-20260927/`). Greedy c1 goes from 91.18 to 94.66 tok/s
 (+3.7%, decode 99.1) on the second SE pair, N=2. Same bits.
 
+By the close of 2026-09-27, with the TP/EP joined MoE tail, the attention small-kernel fusions and
+the router-built x mirror also landed, greedy c1 is 97.10 / 97.26 tok/s (decode 102.1, TPOT 9.8
+ms) and sampled c1 97.96 / 97.97 on the SE pair. That is +9.0% over the same morning's main
+(`research/dsv4f-bringup-20260923/ceiling/CEILING.md`, "Close"). The same file measures the
+step's floors: 6.7 GB read per rank per step, and a 1.45 ms launch floor.
+
+Since 2026-09-28 a multi-request step runs each per-request stage as one launch for every row,
+and captured B-row steps take up to 16 rows (#906). Dense-fast M-row launches also take 16 rows
+(#909). Against main of 2026-09-27, one boot per row, 16 serving lanes:
+
+| cell | before | after #906 (second SE pair) | after #909 too (first SE pair) |
+|---|---|---|---|
+| greedy c4 | 160 tok/s | 206 .. 209 | 209 .. 215 |
+| greedy c8 | 199 | 286 .. 288 | 289 .. 298 |
+| greedy c16 | 200 (TPOT 73 ms) | 266 .. 267 (TPOT 53 ms) | 336 .. 340 (TPOT 42 ms) |
+| greedy c24 | 199 | 268 .. 269 | 312 .. 315 |
+
+A 16-row captured step goes from 68.3 to 37.4 ms. Every served text is the same as main's
+(`research/dsv4f-bringup-20260923/levers-20260927/`).
+
 Concurrency: the plain TP/EP route serves sixteen lanes whose steps share one captured B-row
 graph step (memra #710, #667; four until 2026-09-27). Aggregate on the Workstation pair, at four
 lanes:

@@ -1,0 +1,15 @@
+build A 6a4a624a3 SERVER_EXIT=0 ENGINE_EXIT=0 
+component rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 656 filtered out; finished in 0.33s 
+long-304 A rc=0 PASS: 304 PROGRAM_SHA256 fbce1a0492d69635 
+rows tp_ep rc=0 PASS: replayed, then 8 B-row steps beside a peer while armed, then replayed again: bit-identical to  PASS: B-row graph steps bit-identical to solo steps across join, leave and row moves (5 captures, 28 PASS: sampled B-row graph draws equal the eager B-row draws (24 steps x 4 rows) 
+dspark-tpep A 62b368f10f1becea d404da5fe101077f d404da5fe101077f  | GPU DSPARK GATE [PASS] GATE_DONE rc=0 utc=2026-09-27T20:20:52Z 
+floor pdl1 rc=0 FLOOR rep=0 mode=graph iters=200 ms_per_step=9.5862 [[0, 0], [0, 0]] FLOOR rep=0 mode=empty iters=200 ms_per_step=1.4572 [[1709, 0], [1709, 0]] FLOOR rep=0 mode=joins iters=200 ms_per_step=1.6415 [[1580, 129], [1580, 129]] FLOOR rep=1 mode=empty iters=200 ms_per_step=1.4573 [[1709, 0], [1709, 0]] FLOOR rep=1 mode=joins iters=200 ms_per_step=1.6404 [[1580, 129], [1580, 129]] FLOOR rep=1 mode=graph iters=200 ms_per_step=9.5062 [[0, 0], [0, 0]] FLOOR rep=2 mode=joins iters=200 ms_per_step=1.6368 [[1580, 129], [1580, 129]] FLOOR rep=2 mode=graph iters=200 ms_per_step=9.4724 [[0, 0], [0, 0]] FLOOR rep=2 mode=empty iters=200 ms_per_step=1.4230 [[1709, 0], [1709, 0]] 
+floor pdl0 rc=0 FLOOR rep=0 mode=graph iters=200 ms_per_step=9.9821 [[0, 0], [0, 0]] FLOOR rep=0 mode=empty iters=200 ms_per_step=1.7036 [[1709, 0], [1709, 0]] FLOOR rep=0 mode=joins iters=200 ms_per_step=2.2305 [[1580, 129], [1580, 129]] FLOOR rep=1 mode=empty iters=200 ms_per_step=1.7055 [[1709, 0], [1709, 0]] FLOOR rep=1 mode=joins iters=200 ms_per_step=2.2311 [[1580, 129], [1580, 129]] FLOOR rep=1 mode=graph iters=200 ms_per_step=10.0226 [[0, 0], [0, 0]] FLOOR rep=2 mode=joins iters=200 ms_per_step=2.2296 [[1580, 129], [1580, 129]] FLOOR rep=2 mode=graph iters=200 ms_per_step=9.9570 [[0, 0], [0, 0]] FLOOR rep=2 mode=empty iters=200 ms_per_step=1.6910 [[1709, 0], [1709, 0]] 
+gpu-metrics rc=0 PROFILE arm=replay steps=64 ms_per_token=10.031  GM type=281479271677952 dev=None DRAM Read Bandwidth [Throughput %]: mean=32.84 samples=16325 GM type=281479271677953 dev=None DRAM Read Bandwidth [Throughput %]: mean=29.24 samples=17416 
+long t1 M rc=0 PROGRAM_SHA256 fbce1a0492d69635 replay_ms_per_token=9.967 replay_ms_per_token=9.902 replay_ms_per_token=9.839 
+long t2 A rc=0 PROGRAM_SHA256 fbce1a0492d69635 replay_ms_per_token=9.965 replay_ms_per_token=9.956 replay_ms_per_token=9.841 
+long t3 A rc=0 PROGRAM_SHA256 fbce1a0492d69635 replay_ms_per_token=9.967 replay_ms_per_token=9.963 replay_ms_per_token=9.839 
+long t4 M rc=0 PROGRAM_SHA256 fbce1a0492d69635 replay_ms_per_token=9.953 replay_ms_per_token=9.875 replay_ms_per_token=9.839 
+long t5 M rc=0 PROGRAM_SHA256 fbce1a0492d69635 replay_ms_per_token=9.840 replay_ms_per_token=9.836 replay_ms_per_token=9.835 
+long t6 A rc=0 PROGRAM_SHA256 fbce1a0492d69635 replay_ms_per_token=9.954 replay_ms_per_token=9.877 replay_ms_per_token=9.842 
+V7A_DONE 6a4a624a3 served cut: the argmax change is flat on the long gate (8 us of a 9.9 ms step), dropped

@@ -1,0 +1,10 @@
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running unittests src/lib.rs (/root/lane/target-main13/release/deps/memra_engine-c8ff6b35b7df7707)
+
+running 1 test
+test dsv4_gpu::argmax_component_tests::cuda_argmax_wide_matches_narrow_on_finite_and_infinite_rows ... PASS argmax wide == narrow on 49 rows; vocabulary row 18.43 us narrow, 10.25 us wide (stream-serialized, launch included)
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 656 filtered out; finished in 0.33s
+

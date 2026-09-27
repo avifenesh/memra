@@ -1291,6 +1291,16 @@ unsafe extern "C" {
         stream: *mut c_void,
     ) -> i32;
     pub fn memra_dsv4_argmax(v: *const f32, n: i64, out: *mut i32, stream: *mut c_void) -> i32;
+    /// Gate-only: an instantiated clone of a captured replay graph whose kernel nodes run an
+    /// empty kernel on their own grids (mode 0), or all but the cross-rank joins (mode 1).
+    /// `counts` receives [emptied, kept] kernel nodes.
+    pub fn memra_dsv4_replay_floor_instantiate(
+        graph: *mut c_void,
+        mode: i32,
+        exec_out: *mut *mut c_void,
+        counts: *mut u64,
+    ) -> i32;
+    pub fn memra_dsv4_replay_exec_destroy(exec: *mut c_void) -> i32;
     pub fn memra_dsv4_gemv_bf16(
         w_bf16: *const c_void,
         x_bf16: *const c_void,

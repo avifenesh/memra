@@ -8765,6 +8765,62 @@ extern "C" int memra_dsv4_replay_census(void* graph, unsigned long long* out) {
     }
     return 0;
 }
+// Gate-only launch floor of a captured step (memra #710 ceiling): an instantiated clone of the
+// graph with every kernel node running this empty kernel on its own grid and block (mode 0), or
+// every kernel but the cross-rank joins (mode 1). The edges, programmatic dependencies, copies
+// and memsets are the graph's own, so the clone's replay time is the step's launch and
+// dependency cost, with mode 1 adding the joins' handshakes. counts: [emptied, kept].
+extern "C" __global__ void dsv4_floor_empty_kernel() {}
+extern "C" int memra_dsv4_replay_floor_instantiate(void* graph, int mode, void** exec_out,
+                                                   unsigned long long* counts) {
+    if (!graph || !exec_out || !counts || (mode != 0 && mode != 1)) return 40074;
+    cudaGraph_t clone = nullptr;
+    auto rc = cudaGraphClone(&clone, (cudaGraph_t)graph);
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    size_t n = 0;
+    rc = cudaGraphGetNodes(clone, nullptr, &n);
+    std::vector<cudaGraphNode_t> nodes(n);
+    if (rc == cudaSuccess) rc = cudaGraphGetNodes(clone, nodes.data(), &n);
+    counts[0] = counts[1] = 0;
+    for (size_t i = 0; rc == cudaSuccess && i < n; ++i) {
+        cudaGraphNodeType type;
+        rc = cudaGraphNodeGetType(nodes[i], &type);
+        if (rc != cudaSuccess || type != cudaGraphNodeTypeKernel) continue;
+        cudaKernelNodeParams params{};
+        rc = cudaGraphKernelNodeGetParams(nodes[i], &params);
+        const char* name = nullptr;
+        if (rc == cudaSuccess) rc = cudaFuncGetName(&name, params.func);
+        if (rc != cudaSuccess) break;
+        const bool join = strstr(name, "memra_tp_ar_1stage_kernel") ||
+                          strstr(name, "memra_tp_ar_gather_rows_f32_kernel") ||
+                          strstr(name, "memra_tp_ar_push_reduce_kernel") ||
+                          strstr(name, "memra_tp_ar_push_gather_rows_kernel");
+        if (mode == 1 && join) {
+            ++counts[1];
+            continue;
+        }
+        cudaKernelNodeParams empty{};
+        empty.func = (void*)dsv4_floor_empty_kernel;
+        empty.gridDim = params.gridDim;
+        empty.blockDim = params.blockDim;
+        empty.sharedMemBytes = 0;
+        empty.kernelParams = nullptr;
+        empty.extra = nullptr;
+        rc = cudaGraphKernelNodeSetParams(nodes[i], &empty);
+        ++counts[0];
+    }
+    cudaGraphExec_t exec = nullptr;
+    if (rc == cudaSuccess) rc = cudaGraphInstantiate(&exec, clone, 0);
+    cudaGraphDestroy(clone);
+    if (rc != cudaSuccess) return 10000 + (int)rc;
+    *exec_out = exec;
+    return 0;
+}
+extern "C" int memra_dsv4_replay_exec_destroy(void* exec) {
+    if (!exec) return 0;
+    auto rc = cudaGraphExecDestroy((cudaGraphExec_t)exec);
+    return rc == cudaSuccess ? 0 : 10000 + (int)rc;
+}
 extern "C" int memra_dsv4_replay_dump(void* graph, const char* path) {
     if (!graph || !path) return 40074;
     auto rc=cudaGraphDebugDotPrint((cudaGraph_t)graph,path,cudaGraphDebugDotFlagsVerbose);
