@@ -178,3 +178,17 @@ GPU. Both registrations said "the 5090 half follows"; this file fixes how, befor
      - A second miss is recorded and goes to the lead with both holds' telemetry, as DAY45 registered.
   3. **S4's and V's halves,** as section 4 registered them.
 - **Owed after it:** P2's 5090 half, registered next.
+
+## 10. The lead's ruling on R1's 5090 half (2026-09-27)
+
+- **Closed as "R1 unexercised on the 5090". That is not a PASS.**
+  - Zero no-source settles occurred in either arm and either order, so the branch R1 changes never ran. (b) can be
+    neither met nor failed on this card.
+  - R1 stays the naked program everywhere. On the 5090 it runs the same settles as base.
+- **The queued repeat still runs** (section 9, part 1: the whole timed cell, of which o2 `retire-seam` is the
+  question). An e2e of +18.2 ms with identical settles in both arms comes either from this lane's build window
+  (section 7) or from something R1-independent, and the repeat tells which.
+  - If o2 `retire-seam` reads inside the bound with no builds, the first run's failure is placed on the build window.
+  - If it repeats outside the bound with no builds, it is placed as its own finding, not R1's, and registered then.
+- Item 16's `REGIME NOT REPRODUCED` and S4's and V's `NOT RUN` stand as they read (section 8), and section 9's chain
+  runs as queued.
