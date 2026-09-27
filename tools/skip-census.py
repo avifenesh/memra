@@ -580,20 +580,31 @@ def cmd_run(args: argparse.Namespace) -> int:
         for line in proc.stdout.splitlines():
             if line.startswith("test ") and "FAILED" in line:
                 print(f"    {line}")
-        # A fixed 20-line tail loses the actual "failures:\n    tests::name" block on any
-        # multi-crate/multi-binary run once doctest or other-binary output follows the failing
-        # binary's summary in the same combined stdout (memra#543 PR #897 cost real time to a
-        # 20-line tail that showed only the aggregate "N passed; M failed" line and an unrelated
-        # crate's doctest output, never the failing test's own name). Print from the LAST
-        # "failures:" section onward, which is cargo's own list of failing test names, falling
-        # back to a much longer tail if no such section is found in this captured output.
+        # A fixed 20-line tail loses both the panic message AND the "failures:\n    tests::name"
+        # block on any multi-crate/multi-binary run: --nocapture prints a failing test's own
+        # "thread '...' panicked at ...: <message>" INLINE, while it runs, well before the
+        # harness's "failures:" summary at the end of that binary's own run; a 20-line tail
+        # showed neither (memra#543 PR #897 cost real time to a tail that showed only the
+        # aggregate "N passed; M failed" line and an unrelated crate's doctest output, never the
+        # failing test's own name or panic reason). Print from the FIRST "panicked at" line
+        # (the actual cause), or else the LAST "failures:" section (the failing names cargo
+        # lists), whichever is found and earliest, to the end. Falls back to a much longer tail
+        # if neither is found in this captured output.
         lines = proc.stdout.splitlines()
+        first_panic_at = next(
+            (index for index, line in enumerate(lines) if "panicked at" in line), None
+        )
         last_failures_at = None
         for index, line in enumerate(lines):
             if line.strip() == "failures:":
                 last_failures_at = index
-        if last_failures_at is not None:
-            print("\n".join(lines[last_failures_at:]))
+        candidates = [at for at in (first_panic_at, last_failures_at) if at is not None]
+        if candidates:
+            start = min(candidates)
+            # Cap the slice: a panic early in a 300+ test combined run should not dump every
+            # later crate's entire suite into the CI console. The failing test's own panic and
+            # cargo's "failures:" list both land well inside this many lines in practice.
+            print("\n".join(lines[start : start + 400]))
         else:
             print("\n".join(lines[-200:]))
         return 1
