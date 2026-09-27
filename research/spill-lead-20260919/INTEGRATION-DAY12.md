@@ -4701,6 +4701,9 @@ reader checks, or a physical line on every admission, lane B's next addendum) is
 - Main moved after GPU run 2 to `83225c1dc` (#871 and #874: DSv4 serving lanes and B-row width to 16, the fused MoE
   tail, DSv4 FLAGS and TESTING rows), merged in clean (`a775249bd`); none of it is reachable from the spill cells (DSv4
   only), so this merge is gated by a CPU battery on the merged head (`integ72-cpu-battery-main874/`) and the PR's CI.
+- Main moved again to `60bed3b51` (#875, DSv4 attention fusions: `dsv4_gpu.cu`, its FFI and KERNELS rows), merged in
+  clean; DSv4 only, so this last merge is gated by the PR's CI on the merged head (which builds and runs every suite
+  the CPU battery runs) rather than a sixth local battery.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
