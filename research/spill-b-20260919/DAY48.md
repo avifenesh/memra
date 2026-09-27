@@ -100,6 +100,26 @@ admission one debt:
 - The target card as the nineteenth sitting (`pro-single-b-sitting19.sh`, S48 = `521fdbbbc`, receipts `b-day48b`);
   V1 to V4 as registered.
 
+### 1.8 Addendum D (2026-09-27, the runner, after the nineteenth sitting did not run, before its rerun)
+
+The nineteenth sitting did not run. Its run.log reads `boot O1-enforce: waiting for an idle rig` at 10:28:26Z, then
+`boot O1-enforce: rig not idle after 7200 s; not run` and the chain's `boots stopped rc=3` at 12:28:27Z. Another lane's
+load took the box lock per run, back to back. day48-run.sh polled for an idle rig (`flock -n`, then no compute app) and
+never found the lock free, because the load re-took it at once. The not-run receipts are banked on the box as
+`b-day48b-notrun-idlewait-1229` and the lead mirrors them as a not-run record. The runner changes; the cell does not:
+- day48-run.sh takes the rig lock first, blocking, bounded by the boot's 7200 s deadline. Under the hold it checks the
+  rig idle on 1.2's conditions (no compute app, at least 24 GB host memory available), then boots through
+  run-day26-cell.sh with `LOCK=none` (the cell's "held by the collector" path). The cell runs with the hold's fd closed,
+  so the server never inherits the lock. The hold is released after the cell, before the yield.
+- A rig still busy under the hold after 120 s (a process that does not take the lock) releases the hold and retries
+  after 30 s, within the same deadline. Every hold, busy reading, release and not-run is a run.log line, and each
+  boot's `.arm.txt` records the hold.
+- The helper is a new file, `rig-hold.sh`. `test-rig-hold.sh` checks it against a fixture lock and a stub
+  `nvidia-smi`: a lock taker that re-takes the lock back to back (the hold gets in; the old poll's hits are a reading),
+  a compute app that clears under the hold, and one that does not (the hold is released and the deadline ends it).
+- The binary, the cell, the arms, the shapes and V1 to V6 are addendum C's. The rerun is the same command on the lane
+  tip. Closed runners keep the poll they ran with; their receipts record it.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
