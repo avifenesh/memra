@@ -695,7 +695,10 @@ fn main() {
     // ---- arm DB (batched verify) x runs
     // The multi-row visitor (memra #669) takes the T=k+1 verify rows under the same switch, so
     // the batched arm carries the same engagement claim arm P carries for the one-token one.
+    // Under TP/EP with the fused pair on, its partition form takes those rows instead (memra
+    // #710), so the claim moves to fused dispatches.
     let mrow_before = memra_engine::dsv4_moe_mrow_stream_dispatches();
+    let db_fused_before = memra_engine::dsv4_moe_fused_dispatches();
     let mut db_runs: Vec<DraftedOut> = Vec::new();
     for r in 0..runs {
         let d = run_drafted_batched(&gpu, &prompt, n_new);
@@ -716,11 +719,23 @@ fn main() {
         db_runs.push(d);
     }
     let mrow_taken = memra_engine::dsv4_moe_mrow_stream_dispatches() - mrow_before;
+    let db_fused_taken = memra_engine::dsv4_moe_fused_dispatches() - db_fused_before;
     println!(
-        "arm DB mrow stream {} dispatches {mrow_taken}",
+        "arm DB mrow stream {} dispatches {mrow_taken} | fused MoE dispatches {db_fused_taken}",
         if stream_on { "ON" } else { "OFF" }
     );
-    if stream_on == (mrow_taken == 0) {
+    let db_fused_expected = tp_ep && fused_on && stream_on;
+    if db_fused_expected == (db_fused_taken == 0) {
+        fails.push(format!(
+            "FUSED MOE ENGAGEMENT (batched): fused {} stream {} on {} but the batched arm took \
+             {db_fused_taken} fused dispatches",
+            if fused_on { "ON" } else { "OFF" },
+            if stream_on { "ON" } else { "OFF" },
+            if tp_ep { "TP/EP" } else { "PP" }
+        ));
+    }
+    let mrow_expected = stream_on && !db_fused_expected;
+    if mrow_expected == (mrow_taken == 0) {
         fails.push(format!(
             "MROW STREAM ENGAGEMENT: stream {} but the batched arm took {mrow_taken} dispatches",
             if stream_on { "ON" } else { "OFF" }
