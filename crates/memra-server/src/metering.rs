@@ -274,10 +274,16 @@ pub enum JobStoreError {
 /// existing statelessness claim in `docs/API-SURFACES.md`: this buffers one in-flight
 /// request's own output, never a CONVERSATION, and only until collected or expired.
 pub trait JobStore: Send + Sync {
-    /// Insert or update a job's record. Refused with `AlreadyTerminal` if a record already
-    /// exists for `id` and is terminal (a terminal record is final; a subsequent `put` is a
-    /// bug in the caller, not a state transition). Refused with `CapacityExceeded` if storing
-    /// this record would push the store over its configured resident-byte cap.
+    /// Insert or update a job's record. A brand-new id may only be admitted as `Queued`
+    /// (`Err(NotFound)` for any other status on an id the store does not already hold): a
+    /// job's own id is minted once, by the `Queued` `put` that creates it, so any later write
+    /// under an id the store has no record of is treated as stale, most likely a worker
+    /// finishing after its job was already cancelled and collected (`take`) or TTL-evicted,
+    /// never as permission to resurrect a job the store has already forgotten. Refused with
+    /// `AlreadyTerminal` if a record already exists for `id` and is terminal (a terminal
+    /// record is final; a subsequent `put` is a bug in the caller, not a state transition).
+    /// Refused with `CapacityExceeded` if storing this record would push the store over its
+    /// configured resident-byte cap.
     fn put(&self, id: &str, record: JobRecord) -> Result<(), JobStoreError>;
 
     /// Read the current record without consuming it, for repeated polling before terminal

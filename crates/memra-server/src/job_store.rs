@@ -131,10 +131,21 @@ impl JobStore for InMemoryJobStore {
         let mut inner = self.inner.lock().unwrap();
         self.sweep_locked(&mut inner);
 
-        if let Some(existing) = inner.map.get(id)
-            && existing.record.status.is_terminal()
-        {
-            return Err(JobStoreError::AlreadyTerminal);
+        match inner.map.get(id) {
+            Some(existing) if existing.record.status.is_terminal() => {
+                return Err(JobStoreError::AlreadyTerminal);
+            }
+            None if record.status != JobStatus::Queued => {
+                // An id the store has no record of may only be admitted as Queued (the
+                // write that mints it). Anything else under an unknown id is a stale write:
+                // most likely a worker finishing after its job was already cancelled and
+                // collected (take), or TTL-evicted, and it must not resurrect a job the
+                // store has already forgotten (revuto finding on the initial version of
+                // this file: without this check, take()/TTL eviction of a Cancelled record
+                // opened exactly that window).
+                return Err(JobStoreError::NotFound);
+            }
+            _ => {}
         }
 
         let size = record_size_bytes(&record);
@@ -251,6 +262,7 @@ mod tests {
     #[test]
     fn cancel_after_completion_is_refused_and_does_not_clobber() {
         let s = store(Duration::from_secs(60), DEFAULT_MAX_BYTES);
+        s.put("job-2", JobRecord::queued()).unwrap();
         s.put(
             "job-2",
             JobRecord {
@@ -273,6 +285,7 @@ mod tests {
     #[test]
     fn cancel_in_progress_keeps_partial_output() {
         let s = store(Duration::from_secs(60), DEFAULT_MAX_BYTES);
+        s.put("job-3", JobRecord::queued()).unwrap();
         s.put(
             "job-3",
             JobRecord {
@@ -296,6 +309,7 @@ mod tests {
     #[test]
     fn put_past_terminal_is_refused() {
         let s = store(Duration::from_secs(60), DEFAULT_MAX_BYTES);
+        s.put("job-4", JobRecord::queued()).unwrap();
         s.put(
             "job-4",
             JobRecord {
@@ -325,6 +339,7 @@ mod tests {
     #[test]
     fn ttl_eviction_removes_finished_jobs_only() {
         let s = store(Duration::from_millis(20), DEFAULT_MAX_BYTES);
+        s.put("finished", JobRecord::queued()).unwrap();
         s.put(
             "finished",
             JobRecord {
@@ -348,8 +363,10 @@ mod tests {
     fn sweep_reports_the_eviction_count() {
         let s = store(Duration::from_millis(10), DEFAULT_MAX_BYTES);
         for i in 0..3 {
+            let id = format!("job-{i}");
+            s.put(&id, JobRecord::queued()).unwrap();
             s.put(
-                &format!("job-{i}"),
+                &id,
                 JobRecord {
                     status: JobStatus::Completed,
                     output: Some(json!({"i": i})),
@@ -365,8 +382,10 @@ mod tests {
 
     #[test]
     fn byte_cap_refuses_a_record_that_would_exceed_it() {
-        // A cap far too small for even one real record.
-        let s = store(Duration::from_secs(60), 32);
+        // A cap that admits the initial Queued placeholder (the only way to mint an id) but
+        // is far too small for the real (large) completed output that follows it.
+        let s = store(Duration::from_secs(60), 200);
+        s.put("too-big", JobRecord::queued()).unwrap();
         let big_output = json!({"text": "x".repeat(1024)});
         let attempt = s.put(
             "too-big",
@@ -377,7 +396,8 @@ mod tests {
             },
         );
         assert_eq!(attempt, Err(JobStoreError::CapacityExceeded));
-        assert_eq!(s.get("too-big"), None);
+        // The refused update did not land; the job is still Queued.
+        assert_eq!(s.get("too-big").unwrap().status, JobStatus::Queued);
     }
 
     #[test]
@@ -389,7 +409,63 @@ mod tests {
         };
         let size = record_size_bytes(&small);
         let s = store(Duration::from_secs(60), size);
+        s.put("fits", JobRecord::queued()).unwrap();
         assert!(s.put("fits", small).is_ok());
+    }
+
+    #[test]
+    fn put_on_an_unknown_id_is_refused_unless_queued() {
+        // A brand-new id may only be admitted as Queued: that put is the one that mints it.
+        let s = store(Duration::from_secs(60), DEFAULT_MAX_BYTES);
+        let attempt = s.put(
+            "never-seen",
+            JobRecord {
+                status: JobStatus::InProgress,
+                output: None,
+                error: None,
+            },
+        );
+        assert_eq!(attempt, Err(JobStoreError::NotFound));
+        assert_eq!(s.get("never-seen"), None);
+    }
+
+    #[test]
+    fn a_stale_write_after_cancel_and_collection_is_refused_not_resurrected() {
+        // The race revuto's review of the first version of this file named: cancel, then
+        // take() (collect) removes the record; a worker that has not yet noticed the cancel
+        // then calls put() on the same id. Before the unknown-id check this put() succeeded
+        // and brought the job back after it was already terminal and collected.
+        let s = store(Duration::from_secs(60), DEFAULT_MAX_BYTES);
+        s.put("job-6", JobRecord::queued()).unwrap();
+        s.cancel("job-6").unwrap();
+        let taken = s.take("job-6").unwrap();
+        assert_eq!(taken.status, JobStatus::Cancelled);
+        assert_eq!(s.get("job-6"), None);
+
+        // The worker's late write, non-terminal or terminal, is refused either way: the id
+        // is unknown to the store and the write is not Queued.
+        let late_in_progress = s.put(
+            "job-6",
+            JobRecord {
+                status: JobStatus::InProgress,
+                output: Some(json!({"text": "still going, did not get the memo"})),
+                error: None,
+            },
+        );
+        assert_eq!(late_in_progress, Err(JobStoreError::NotFound));
+
+        let late_completed = s.put(
+            "job-6",
+            JobRecord {
+                status: JobStatus::Completed,
+                output: Some(json!({"text": "finished after all"})),
+                error: None,
+            },
+        );
+        assert_eq!(late_completed, Err(JobStoreError::NotFound));
+
+        // Nothing was resurrected.
+        assert_eq!(s.get("job-6"), None);
     }
 
     #[test]
