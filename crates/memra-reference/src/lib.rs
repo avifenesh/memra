@@ -12,6 +12,7 @@ pub mod mimo_audio_codec_rvq;
 pub mod mimo_modal_overlay;
 pub mod mimo_text_chunk;
 pub mod mimo_vision;
+pub mod mimo_vision_patchify;
 pub mod mimo_vision_rope;
 pub mod speech;
 
