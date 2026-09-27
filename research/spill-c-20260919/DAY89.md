@@ -117,3 +117,33 @@ following; GitHub CI runs the rest.
     generated token from `p88s` to `i24s`. Then the next candidates register before any card (`DAY90.md`: the proxy's
     registry entry, `validated`, the host cache).
   - At 155 or more, NEED TARGET CARD for the one `promo` sitting on both classes.
+
+## 3. I23 and I24 landed on the lane, CPU-gated (2026-09-27)
+
+- **I23's trace fixture** (`4f9dea3e2`, before any I23 line; crates equal to `0155bc69f`):
+  `tests/contracts/day89.rs`, three seeded governor traces (9025 lines) and one bare issuer trace (3000 lines).
+  - The traces reach every refusal the registration names: `AlreadyReleased`, `Busy`, `Capacity`, `Deadline`,
+    `ForeignLease` and `NotFound`, with 52 admissions and 199 expiries.
+  - `Quarantined` is absent: it needs a poisoned lock.
+  - The transcripts are banked under `day89-cpu/fixture/`.
+- **I23** (`e0855552b`): the tenant rides in the charge record (`issue_for`, `release_for`); the governor's
+  `charged_tenants` and the issuer's `records` map are gone.
+  - The fixture reproduces exactly.
+  - The governor's recount test reads the tenants from the charges it holds.
+  - `day89-cpu/gates.log` records memra-tier's tests, memra-kv's lib tests, clippy on both, and fmt.
+- **I24's trace fixture** (`948216b01`, at I23, before any I24 line): `tests/bank/day90.rs`, four seeded traces
+  (11996 lines) through the owner proxy over a six-record, three-slot bank.
+  - 303 injected finish failures with their retries.
+  - Up to nine owned leases against three cached, so `collect_evicted` has candidates.
+- **I24** (`1fd4b24c0`): the three changes of `DAY90.md` section 1.
+  - The fixture reproduces exactly.
+  - The test banks and call sites change only their argument types.
+  - `retire_backing` takes a backing out of its shared cell whatever the alias count, so the source confirms the alias
+    argument.
+  - `moe_cache.rs` is untouched.
+  - `day90-cpu/gates.log` records memra-tier's tests, memra-engine's `banked_native` tests, memra-kv's lib tests,
+    clippy (memra-tier all targets, memra-engine lib and tests), and fmt.
+- **Local binaries**, from their exact commits (`target/c-bins/logs/`): `run-gen-i23` `47696bf7...` and `run-gen-i24`
+  `d298553f...`, beside `run-gen-p88`.
+- **Queue v21** (`rtx5090-queue-v21-20260927.sh`): dry-checked under stubs (`day89-cpu/dry-check-queue.log`: 64 runs in
+  the registered order, both readers run), and launched at 21:16Z. It waits for the card, which lane B's server holds.
