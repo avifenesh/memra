@@ -318,6 +318,19 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
         &publisher_linear_frontend,
         5,
     )?;
+    let fused_frontend = MiMoAudioCodecEncoderWeights::encode_gelu_from_preact(
+        &engine,
+        &engine.htod(&fused_bias)?,
+        5,
+    )?;
+    let fused_frontend_values = engine.dtoh(&fused_frontend)?;
+    let fused_stack = weights.encode_transformer_stack(&engine, &fused_frontend, 5)?;
+    let fused_stack_values = engine.dtoh(&fused_stack)?;
+    let fused_features = weights.downsample_post_stack(&engine, &fused_stack, 5)?;
+    let fused_feature_values = engine.dtoh(&fused_features)?;
+    let fused_ids = weights
+        .encode_20_rvq(&engine, &fused_features, TOKENS)?
+        .code_ids;
     let first = weights.encode_prepared_mel_conv(&engine, &engine.htod(&mel)?, 9)?;
     let frontend_values = engine.dtoh(&first)?;
     let stack = weights.encode_transformer_stack(&engine, &first, 5)?;
@@ -331,6 +344,24 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
     let publisher_linear_frontend = decode_bf16(PUBLISHER_GPU_FRONTEND_LINEAR_CONTROL, 5)?;
     let publisher_linear_stack = decode_bf16(PUBLISHER_GPU_STACK_LINEAR_CONTROL, 5)?;
     let publisher_linear_pre_rvq = decode_bf16(PUBLISHER_GPU_PRE_RVQ_LINEAR_CONTROL, TOKENS)?;
+    feature_stats(
+        "memra_fused_bias_frontend_vs_gpu_publisher_linear_control",
+        &fused_frontend_values,
+        &publisher_linear_frontend,
+        5,
+    )?;
+    feature_stats(
+        "memra_fused_bias_stack_vs_gpu_publisher_linear_control",
+        &fused_stack_values,
+        &publisher_linear_stack,
+        5,
+    )?;
+    feature_stats(
+        "memra_fused_bias_pre_rvq_vs_gpu_publisher_linear_control",
+        &fused_feature_values,
+        &publisher_linear_pre_rvq,
+        TOKENS,
+    )?;
     feature_stats(
         "memra_vs_gpu_publisher_frontend",
         &frontend_values,
@@ -387,6 +418,16 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
         "memra_vs_gpu_publisher_linear_control",
         &memra_ids,
         &PUBLISHER_GPU_LINEAR_CONTROL_IDS,
+    )?;
+    code_diff(
+        "memra_fused_bias_vs_gpu_publisher_linear_control",
+        &fused_ids,
+        &PUBLISHER_GPU_LINEAR_CONTROL_IDS,
+    )?;
+    code_diff(
+        "memra_fused_bias_vs_gpu_publisher_cudnn",
+        &fused_ids,
+        &PUBLISHER_GPU_IDS,
     )?;
     for (label, reference_features, expected) in [
         ("gpu_rvq_on_cpu_features", &cpu_features, &CPU_IDS),
