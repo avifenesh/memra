@@ -63,13 +63,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let n_pairs = t * n_used;
     let stream = e.stream();
     let (gin, n_ff) = (4096usize, 2048usize);
-    // the served posture for this kernel: ILP on, every other rows door off
-    for (k, v) in [
-        ("MEMRA_MOE_VROWS_ILP", "1"),
-        ("MEMRA_MOE_VROWS_ORD", "0"),
-        ("MEMRA_MOE_VROWS_DEDUP_ORDER", "0"),
-        ("MEMRA_MOE_VROWS_PACK", "0"),
-    ] {
+    // the served posture for this kernel: ILP on, every other rows door off. Doors M
+    // (MEMRA_MOE_VROWS_PACK) and E (MEMRA_MOE_VROWS_DEDUP_ORDER) were removed 2026-09-28
+    // (memra#886, door hygiene); this bench no longer pins them.
+    for (k, v) in [("MEMRA_MOE_VROWS_ILP", "1"), ("MEMRA_MOE_VROWS_ORD", "0")] {
         setenv(k, v);
     }
     let (grows, grb) = synth_rows(n_ff, gin, 0x8181);
