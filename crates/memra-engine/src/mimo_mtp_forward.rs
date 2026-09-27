@@ -11,7 +11,10 @@ use std::error::Error;
 
 use cudarc::driver::CudaSlice;
 use memra_gguf::config::{Arch, ModelConfig};
-use memra_gguf::model_plan::{AttentionPlan, ModelPlan, RopeFactors, TensorPresence};
+use memra_gguf::model_plan::{
+    AttentionPlan, DraftSourcePlan, DrafterPlan, MiMoMtp3Plan, ModelPlan, MtpFusionPlan,
+    RopeFactors, TensorPresence,
+};
 use memra_gguf::tensor_contract::MtpTensor;
 
 use crate::Engine;
@@ -81,6 +84,20 @@ fn validate_contract(config: &ModelConfig, plan: &ModelPlan) -> Result<(), &'sta
         || config.rms_eps.to_bits() != 1e-6f32.to_bits()
         || config.tie_word_embeddings != Some(false)
         || mimo.separate_mtp_layers != Some(DEPTHS as u32)
+        || plan.draft_source != DraftSourcePlan::ExternalArtifact
+        || plan.drafter.as_ref()
+            != Some(&DrafterPlan::MiMoMtp3(MiMoMtp3Plan {
+                depths: DEPTHS as u32,
+                sliding_window: MTP_SWA as u32,
+                query_heads: QUERY_HEADS as u32,
+                kv_heads: KV_HEADS as u32,
+                key_head_dim: QK as u32,
+                value_head_dim: VALUE as u32,
+                fused_qkv_shards: SHARDS as u32,
+                mlp_intermediate_size: INTERMEDIATE as u32,
+                fusion: MtpFusionPlan::ConcatenateProjection,
+                shared_output_head: true,
+            }))
         || mimo.swa_num_attention_heads != Some(QUERY_HEADS as u32)
         || mimo.swa_num_key_value_heads != Some(KV_HEADS as u32)
         || mimo.swa_head_dim != Some(QK as u32)

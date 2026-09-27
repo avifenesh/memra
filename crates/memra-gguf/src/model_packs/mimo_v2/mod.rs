@@ -478,9 +478,9 @@ mod tests {
     use crate::execution_manifest::{NATIVE_EAGER, RewriteSurface, execution_rewrites};
     use crate::hf_mapping::{HfTarget, resolve_ggml};
     use crate::model_plan::{
-        AttentionPlan, AttentionScale, MiMoMergerActivation, MiMoMergerBiasPlan, MiMoPatchOrder,
-        MiMoVisionDtype, MiMoVisionRopeRotation, MlpPlan, NormKind, OperationKind, TensorPresence,
-        VisionPlan, WeightTransform,
+        AttentionPlan, AttentionScale, DraftSourcePlan, DrafterPlan, MiMoMergerActivation,
+        MiMoMergerBiasPlan, MiMoPatchOrder, MiMoVisionDtype, MiMoVisionRopeRotation, MlpPlan,
+        NormKind, OperationKind, TensorPresence, VisionPlan, WeightTransform,
     };
     use crate::tensor_contract::{
         CheckpointDialect, ContractOptions, QuantLayout, StorageLayout, TensorCensusEntry,
@@ -673,6 +673,43 @@ mod tests {
             SOURCE_PROFILE.compile_plan(&changed),
             Err(PlanCompileError::InvalidMultimodalConfig {
                 field: "MiMo V2.6 audio patch config differs from pinned source",
+            })
+        ));
+    }
+
+    #[test]
+    fn source_mtp3_compiles_as_separate_pinned_draft() {
+        let config = ModelConfig::from_hf(&HfConfig::parse(include_str!("fixtures/config.json")));
+        let plan = SOURCE_PROFILE.compile_plan(&config).unwrap();
+        let Some(DrafterPlan::MiMoMtp3(draft)) = plan.drafter.as_ref() else {
+            panic!("pinned source must compile the separate MTP3 draft");
+        };
+        assert_eq!(draft.depths, 3);
+        assert_eq!(draft.sliding_window, 128);
+        assert_eq!(draft.fused_qkv_shards, 4);
+        assert!(draft.shared_output_head);
+        assert_eq!(plan.draft_source, DraftSourcePlan::ExternalArtifact);
+        assert!(plan.mtp_blocks.is_empty());
+        assert!(
+            plan.draft_operations()
+                .unwrap()
+                .contains(&OperationKind::MiMoMtp3Draft)
+        );
+        assert!(
+            !plan
+                .trunk_operations()
+                .contains(&OperationKind::MiMoMtp3Draft)
+        );
+        assert!(crate::op_registry::surfaces(OperationKind::MiMoMtp3Draft).is_none());
+        assert!(SOURCE_PROFILE.support.is_none());
+
+        let mut changed = config;
+        changed.mimo.as_mut().unwrap().separate_mtp_layers = Some(2);
+        assert!(matches!(
+            SOURCE_PROFILE.compile_plan(&changed),
+            Err(PlanCompileError::UnsupportedSemantics {
+                field: "MiMo separate MTP3",
+                ..
             })
         ));
     }

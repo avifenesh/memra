@@ -845,6 +845,26 @@ pub enum MtpTensorPolicy {
 #[derive(Debug, Clone, PartialEq)]
 pub enum DrafterPlan {
     Dspark(DsparkPlan),
+    /// Three separate source-owned MiMo draft blocks. This is distinct from
+    /// appended trunk MTP blocks and from the DFlash auxiliary artifact.
+    MiMoMtp3(MiMoMtp3Plan),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MiMoMtp3Plan {
+    pub depths: u32,
+    pub sliding_window: u32,
+    pub query_heads: u32,
+    pub kv_heads: u32,
+    pub key_head_dim: u32,
+    pub value_head_dim: u32,
+    pub fused_qkv_shards: u32,
+    pub mlp_intermediate_size: u32,
+    /// The source `eh_proj` consumes concatenated normalized token embedding
+    /// and target or prior-draft hidden state.
+    pub fusion: MtpFusionPlan,
+    /// The separate draft reuses the resident target output projection.
+    pub shared_output_head: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1055,6 +1075,57 @@ impl ModelPlan {
                 },
             });
         }
+        let mimo_mtp3 = cfg
+            .mimo
+            .as_ref()
+            .and_then(|mimo| mimo.separate_mtp_layers.filter(|&depths| depths > 0))
+            .map(|depths| {
+                let pinned = cfg.arch == Arch::MiMoV2
+                    && depths == 3
+                    && cfg.nextn_predict_layers == 0
+                    && cfg.n_layer == 48
+                    && cfg.n_embd == 4_096
+                    && cfg.n_vocab == 152_576
+                    && cfg.rms_eps.to_bits() == 1e-6f32.to_bits()
+                    && cfg.tie_word_embeddings == Some(false);
+                let attention = layers.get(1).and_then(|layer| match &layer.attention {
+                    AttentionPlan::SlidingWindow { attention, window } if *window == 128 => {
+                        Some(attention)
+                    }
+                    _ => None,
+                });
+                if !pinned
+                    || !attention.is_some_and(|attention| {
+                        attention.query_heads == 64
+                            && attention.kv_heads == 8
+                            && attention.key_head_dim == 192
+                            && attention.value_head_dim == 128
+                            && attention.mimo_math.is_some_and(|math| {
+                                math.sink == TensorPresence::Required
+                                    && math.fused_qkv_checkpoint_shards == Some(4)
+                                    && math.value_scale_before_cache.to_bits() == 0.707f32.to_bits()
+                            })
+                    })
+                {
+                    return Err(PlanCompileError::UnsupportedSemantics {
+                        field: "MiMo separate MTP3",
+                        value: "geometry differs from the pinned source".into(),
+                    });
+                }
+                Ok(MiMoMtp3Plan {
+                    depths,
+                    sliding_window: 128,
+                    query_heads: 64,
+                    kv_heads: 8,
+                    key_head_dim: 192,
+                    value_head_dim: 128,
+                    fused_qkv_shards: 4,
+                    mlp_intermediate_size: 16_384,
+                    fusion: MtpFusionPlan::ConcatenateProjection,
+                    shared_output_head: true,
+                })
+            })
+            .transpose()?;
 
         let mut logits = Vec::new();
         if let Some(gemma) = cfg.gemma4.as_ref() {
@@ -1200,8 +1271,10 @@ impl ModelPlan {
             }),
             logits,
             mtp_blocks,
-            drafter: None,
-            draft_source: if cfg.nextn_predict_layers > 0 {
+            drafter: mimo_mtp3.map(DrafterPlan::MiMoMtp3),
+            draft_source: if mimo_mtp3.is_some() {
+                DraftSourcePlan::ExternalArtifact
+            } else if cfg.nextn_predict_layers > 0 {
                 DraftSourcePlan::Embedded
             } else {
                 DraftSourcePlan::None
@@ -1258,6 +1331,9 @@ impl ModelPlan {
             }
             operations.push(OperationKind::DsparkMarkovHead);
             operations.push(OperationKind::DsparkConfidenceHead);
+        }
+        if matches!(self.drafter.as_ref(), Some(DrafterPlan::MiMoMtp3(_))) {
+            operations.push(OperationKind::MiMoMtp3Draft);
         }
         if self.mtp_blocks.is_empty() && self.drafter.is_none() {
             return None;
@@ -1332,6 +1408,9 @@ impl ModelPlan {
                 }
                 operations.push(OperationKind::DsparkMarkovHead);
                 operations.push(OperationKind::DsparkConfidenceHead);
+            }
+            if matches!(self.drafter.as_ref(), Some(DrafterPlan::MiMoMtp3(_))) {
+                operations.push(OperationKind::MiMoMtp3Draft);
             }
         }
         // qwen4_exp exits through the global mixer (grouped hc_norm inside); every other
@@ -2617,6 +2696,9 @@ pub enum OperationKind {
     /// projection to the text hidden width. Generic audio rewrites do not
     /// implement this source-distinct program.
     MiMoAudioPatch,
+    /// Pinned MiMo three-block source draft with a private SWA state per
+    /// depth. Native speculative verification and rollback remain unsupported.
+    MiMoMtp3Draft,
     RmsNorm,
     FullAttention,
     SlidingWindowAttention,

@@ -258,6 +258,15 @@ pub fn deterministic_fixture(plan: &ModelPlan) -> Result<ReferenceFixture, Refer
             operation: "native speech execution pending",
         });
     }
+    if matches!(
+        plan.drafter.as_ref(),
+        Some(memra_gguf::model_plan::DrafterPlan::MiMoMtp3(_))
+    ) {
+        return Err(ReferenceError::UnsupportedOperation {
+            layer: None,
+            operation: "MiMo V2.6 separate MTP3 reference execution",
+        });
+    }
     let hidden = plan.hidden_size as usize;
     let vocab = plan.vocab_size as usize;
     if hidden == 0 || vocab < 2 || hidden > 256 || vocab > 262_144 {
@@ -2103,8 +2112,9 @@ fn execute_embedded(
 
     let mut state = Vec::with_capacity(plan.layers.len());
     let mut layer_hidden = Vec::with_capacity(plan.layers.len());
-    let dspark = plan.drafter.as_ref().map(|drafter| match drafter {
-        memra_gguf::model_plan::DrafterPlan::Dspark(plan) => plan,
+    let dspark = plan.drafter.as_ref().and_then(|drafter| match drafter {
+        memra_gguf::model_plan::DrafterPlan::Dspark(plan) => Some(plan),
+        memra_gguf::model_plan::DrafterPlan::MiMoMtp3(_) => None,
     });
     let mut draft_taps = dspark.map(|plan| vec![None; plan.target_layer_ids.len()]);
     for layer in &plan.layers {
