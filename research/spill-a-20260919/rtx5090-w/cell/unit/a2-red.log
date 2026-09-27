@@ -1,0 +1,18 @@
+
+running 1 test
+test tier_transfer::tests::day61_the_streamed_checksum_is_the_checksum_on_pinned_memory ... [day61 red arm] the second vector of each chunk is not copied
+
+thread 'tier_transfer::tests::day61_the_streamed_checksum_is_the_checksum_on_pinned_memory' (3185336) panicked at crates/memra-engine/src/tier_transfer.rs:5312:21:
+assertion `left == right` failed: write-combined len 4099 off 0
+  left: [94, 224, 85, 250, 45, 105, 188, 219, 27, 65, 108, 233, 104, 166, 45, 77, 29, 28, 100, 60, 154, 170, 159, 196, 211, 182, 183, 123, 107, 87, 108, 143]
+ right: [16, 115, 25, 93, 71, 124, 220, 199, 127, 6, 183, 128, 208, 94, 241, 120, 166, 23, 96, 81, 147, 4, 255, 134, 68, 224, 22, 254, 88, 87, 91, 64]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    tier_transfer::tests::day61_the_streamed_checksum_is_the_checksum_on_pinned_memory
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 623 filtered out; finished in 1.40s
+

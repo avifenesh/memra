@@ -279,3 +279,55 @@ with the three 5090 cells already queued.
   - The 5090's (a1) and (a2) stay owed as a compatibility reading, not a gate.
 - Item 10's remaining publishers (DFlash, GLM-5, latent) stay owed to their artifacts and rigs (DAY54). The fanout's
   insert (2.2 ms, the evicted entry's demote pre-submit) is item 19's.
+
+## 11. integ67's two asks: the grid limit (fixed) and B1's 5090 half (running)
+
+- **The grid limit** (review of `e522a9417`). The batched launch uses `gridDim.y = n + 1`, and CUDA caps it at 65535.
+  A batch of more than 65534 items would have failed at launch, after the table upload.
+  - `Engine::copy_batch_items_rows(n)` now refuses it before any device work, naming the count (`batched copy of N
+    items refused: N+1 grid rows exceed CUDA's gridDim.y limit of 65535`).
+  - The CPU test `copy_batch_items_refuses_more_rows_than_the_grid_holds` covers 0, 128 (the 27B's snapshot), 65534
+    (the largest legal batch) and the refusal at 65535. Engine lib `576 passed`; clippy; fmt. Commit `231fba087`.
+  - Red arm (`b1/grid-red-arm.patch`, the check skipped, with a marker): the test fails on `called
+    Result::unwrap_err() on an Ok value: 65536` (`b1/grid-red-arm.log`).
+  - Today's shapes are far below the limit (the 27B's restore is 129 items), so the program and its bytes are
+    unchanged.
+- **B1's 5090 half.** B1 changes the naked snapshot and restore program on every card, so by the per-hardware rule it
+  needs a 5090 reading before main. `rtx5090-b1/` runs it on the target sitting's own trees:
+  - b1 at `7edc329d9`, base at `9ab479d9c`, red at b1 plus `pro-single-b1/red-arm.patch`, built in one scratch
+    worktree with its own target dir (both removed after), the executables outside `/tmp`.
+  - One bounded hold of `/tmp/memra-5090.lock` with the idle rule: (a1) and (a2) green and red with
+    `MEMRA_B1_MODEL` set to the 27B, the censuses, the identity gate default and plain door OFF and ON, and the hit
+    gate OFF and ON, all through `--external-lock 9`.
+  - Then the 40-boot paired cell in the target sitting's environment, and `b1-reading.py`.
+  - A 5090 regression makes B1 a per-card default question, not a revert on the target.
+  - It runs ahead of W's 5090 half. W's run had taken the hold at 07:33Z and passed (a) and four identity gates when
+    I stopped it at 07:36Z, before its timed cell, so B1 could go first. It is banked as
+    `rtx5090-w/cell/stopped-0736Z/` and repeats whole after B1.
+
+## 12. B1's 5090 half, read by the same reader: ADOPT on the 5090 too
+
+- The local RTX 5090 Laptop GPU; the target sitting's trees (b1 `7edc329d9`, base `9ab479d9c`, red b1 plus the red-arm
+  patch); one hold of `/tmp/memra-5090.lock` taken at 08:53:54Z, after lane F's queue released the card (it waited
+  30 attempts); receipts `rtx5090-b1/cell/`, the executables recorded by hash (`binaries.sha256`) and kept outside the
+  repo.
+  - No compute app at any boot's start (40 of 40).
+  - The host load at the boots' starts read 1.48 to 7.97 (lanes B, C and F active on the rig; none of this lane's
+    builds ran inside the hold, whose timed boots began at 08:55Z). Recorded as the condition, not removed.
+- Verbatim (`rtx5090-b1/cell/reading-b1.log`):
+
+      B1 (a) UNIT a1-green=0 a2-green=0 a1-red=101 (marker 1) a2-red=101 (marker 1) censuses=0
+      B1 (a) gates {'identity-default-off': '0', 'identity-default-on': '0', 'identity-plain-off': '0', 'identity-plain-on': '0', 'hitgate-off': '0', 'hitgate-on': '0'}
+      B1 READING order=o1 N_own=45 own base=1.93 b1=0.49 ms | fanout-minus-prime base=+7.20 b1=+5.74 (gain +1.46) ms | members wall base=190.4 b1=189.0 ms
+      B1 READING order=o2 N_own=45 own base=1.92 b1=0.49 ms | fanout-minus-prime base=+9.18 b1=+3.57 (gain +5.61) ms | members wall base=187.9 b1=186.2 ms
+      B1 (b) PASS per order [True, True]
+      B1 (c) PASS per order [True, True]
+      B1 (d) PASS per order [True, True]
+      B1 VERDICT -> ADOPT (B1 is the naked program)
+
+- Read:
+  - On the 5090 the fanout's own time falls from 1.93 to 0.49 ms, 25% of base.
+  - The tenant's stall gain is 1.46 / 5.61 ms. The o2 base reads +9.18 against o1's +7.20; the 5090's idle p50 is
+    22 ms under the shared rig's load, so its per-order spread is wider than the target card's.
+  - Both cards adopt: B1 is the naked program on the RTX PRO 6000 and on the 5090, so there is no per-card question.
+    integ67 takes it.

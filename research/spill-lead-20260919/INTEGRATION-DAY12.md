@@ -4328,6 +4328,142 @@ is F's running sitting. C's I16 revert and I17 stand as read. The Q35 arm's fail
   and ON 61 and 68 ok; `ADMIT-MEM BURST GATE: ALL GREEN`; `SPEC-CTX-EDGE GATE: ALL GREEN`; the pause gate with the 27B
   `ALL GREEN` (40 ok).
 
+## integ69 (`lane/spill-integ69-20260926`): lane A's design L' (the pinned lease pool and the staging set at boot) and R1 (a retire settles a pending capture only when its source retires), with the staging-fill gate change; lane C's I18 and two diagnostic pool flags
+Lane tips merged: A's integ branch `lane/spill-a-integ69-20260926` at `dba7c0a0c` (A's line with design T-H and the
+re-applied P2 taken out, since both verdicts are pending; built by A from P2's A/B base with T-H reverted) and C
+`9bb17bd8d`, on main `ff53e3e50` (#779), clean; `moe_cache.rs` untouched, so the day-4 fixture pin holds. The change:
+- `tier_transfer.rs`, `worker.rs` (A, L'): pinned lease backings are kept in a size-class pool (next power of two to
+  1 MiB, then whole MiB) under their own governor tenant, capped at one host budget, closed at the tier latch and at
+  engine drop; each lease charges its class; the span staging set is allocated at boot. The steady path no longer calls
+  `cuMemFreeHost` or allocates fresh pinned memory. A reused backing is not re-zeroed; every copy spans exactly the
+  lease length and a census pins that nothing reads past it.
+- `worker.rs` (A, R1): the retire pass settles a pending capture only when a retiring session is its source (by request
+  id or the plain cache's address); other retires go on without waiting.
+- `tools/kv-host-contract-fault-gate.sh`: the staging-fill checks count fill events (the boot line or a fresh line)
+  and still require exactly one of the refusal's N, with a red arm (refusals that drop their buffers) caught 2 of 2.
+- A's log-only DAY62 and DAY64 lines; C's I18 (a bank ticket keeps its records by position) and the diagnostic flags
+  `--expert-bank-pool-pageable` and `--expert-bank-pool-registered` (DAY78 and DAY80; nothing changes unless passed).
+
+**Lanes, verbatim.** A: `L2 VERDICT -> ADOPT (L' is the naked program; the gate change stands)`, chain o2 twin kv
+9.87 -> 0.05 ms, long leases 26.27 -> 0.04, tenant stall 95.05 -> 68.36, chained request 282.4 -> 246.1 ms; demote first
+spans 28.50 -> 0.17 ms (the boot pays 28.6 to 28.9 ms instead); `R1 VERDICT -> ADOPT (R1 is the naked program)`, the
+no-source settle (12.6 ms) skipped 45 of 45 per order, the no-source shape's e2e -10 ms; `DAY64 PLACE -> receipt (176
+late of 180)` (log only). The first L read `REFUTED ((a) failed)` on the two staging-fill checks, placed as a stale gate
+(the one fill moved to boot, the property held), the gate change registered with its red arm before the rerun. W and R2
+read FAIL and are reverted (net nothing in the crates). C: `DAY79 VERDICT ... i18=flat` (kept);
+`DAY78 PAGES VERDICT ... -> pool_draws (fail_heavy: di 8 of 8, dpi 0 of 8, refi 0 of 8)`; `DAY80 REGPOOL VERDICT
+rig=box37-285k ... -> registered_clears (fail_heavy: di 6 of 8, dri 0 of 8, refi 0 of 8; slow: dri 0 of 8)`, regtime
+flat on the 285K and the 9950X (no natural slow boots there).
+
+**Lead review.** L': the pool takes only an exact class and kind, charges idle backings to its own tenant and refuses
+past its cap (freeing), closes on the tier latch and the engine's drop, and the class table and the length census are
+CPU cells; the change in each lease's charge (its class, not its length) is stated in DAY63 section 2. R1: the source
+identity carries the request id from all four publishers, so a spec-boundary capture (whose source is the session's
+spec, DFlash or GLM-5 cache) is matched, and its red arm (the id dropped) fails the decision cell. The gate change
+keeps the property the check was written for and its red arm shows it still catches the defect.
+
+**Ruling 64:** L' and R1 are the naked program on the target card (items 13, 14 and 19 close); their 5090 halves are
+owed by A. The staging-fill gate change stands. C's I18 stays; the registered pool is the owner's decision (DAY80
+section 4a), with C1(c) and C10.
+
+**Found by the battery, fixed in two test-only steps.** The worker's GPU span cells (`option_b_*`, `option_c_*`,
+native, serial) had not run in any of L's sittings.
+- Run 1 (`integ69-pro-run1-held/`, tree `64101769b`): `worker-span-cells ... FAILED. 5 passed; 13 failed`. Twelve
+  asserted the pinned total as requested bytes, `(1392, 0, 0)`, and read `(2304, 0, 0)`: under L1.2 each lease charges
+  its class, 272 bytes to 512 and 192 to 256, three planes of 768 = 2304. The staging-refusal cell's co-tenant was sized
+  for a two-budget pinned capacity that L1.5 made three. Lane A's `fb639631c` (the charge helper `gpu_lease_charge()`,
+  the co-tenant as `3 x 1 GiB - gpu_lease_charge() - first`).
+- Run 2 (`integ69-pro-run2/`, tree `2af058a86`): `17 passed; 1 failed`: the refusal cell's later ledger check still
+  expected the two-budget co-tenant (`left: (3221223168, 0, 0) right: (2147481344, 0, 0)`). Lane A's `6c60d798f`; the
+  18 cells read `18 passed; 0 failed` on the local RTX 5090 from the branch's frozen binary.
+- Run 3 (`integ69-pro-run3/`, tree `53a79d747`): `worker-span-cells rc=0 test result: ok. 18 passed; 0 failed`.
+Each placement preceded its edit; every cell asserts the property it asserted before.
+
+**Checks.**
+- CPU battery 15 of 15 on the first merged tree (`integ69-cpu-battery/`: server 955, engine lib 584, tier 315), on the
+  first fix (`integ69-cpu-battery-fix/`), and on the final head (`integ69-cpu-battery-final/`).
+- GPU battery run 3 on BOX39 (a Core Ultra 9 285K with one RTX PRO 6000 WS; `integ69-pro-run3/`, 467 receipts mirrored
+  and checked), binary `93d22fc2`, one hold 18:43Z to 18:56Z: serve-smoke 1 failed (the Q35 arm, #777, main's own);
+  engine span cells `10 passed`; worker span cells `18 passed`; identity 12 ok; fault default and plain 255 ok each; hit
+  OFF and ON 61 and 68 ok; `ADMIT-MEM BURST GATE: ALL GREEN`; `SPEC-CTX-EDGE GATE: ALL GREEN`; the pause gate with the 27B
+  `ALL GREEN` (40 ok). Runs 1 and 2 read the same on every gate.
+- Main moved to `7b9815296` (#788 the DSv4 all-reduce push, #795 a DSpark drafter-without-route boot refusal, a MiMo
+  chat-template path in `memra-tokenizer`) after the last battery; merged in clean (`7ca871320`). None is reachable from
+  the spill battery's cells (the DSpark refusal fires only with `MEMRA_DSPARK_DRAFT` set, the template path only for
+  MiMo), so this merge is gated by the PR's CI on the merge head and the lead's quick censuses (check-flags, docs
+  registry, `git diff --check`, fmt, all rc=0), not a fourth battery.
+
+**Revuto round 1 found a real defect in L', fixed in lane A before the merge.** Review comment 4112582951 on #801:
+since L', a tenant purge's dropped host leases parked in the lease pool with the revoked tenant's q8/q5 KV bytes still in
+them (`put` does not scrub, `take` does not refill), up to one host budget, until a same-class reuse, the latch or the
+engine drop. Before L' the drop freed the pages at once, so the purge's promise held. Lane A placed it (DAY69) and found a
+second retention of the same kind, older than L' (day 30): the span staging set's idle buffers keep the last demote's or
+promote's recurrent state, and the purge never touched them. The device purge drops device planes only; the restore
+purge and the promoted-pin release touch device state and pins only. Fix `4f297e7bd` (DAY69 design P):
+`LeasePool::drain()` frees every idle backing and releases its pool charge (the pool stays open) and advances an epoch;
+a backing parks only if its lease was allocated in the current epoch, so a purged tenant's lease that a holder drops
+after the purge frees instead of parking. `purge_tenant` ends with the drain and zeroes the staging set's idle buffers in
+place (buffers and charges kept, so the gate's staging-fill counts do not move). The steady path gains one integer
+compare per drop. Cost: a purge frees other tenants' idle backings too, and until post-purge leases refill the pool the
+next demotes run the pre-L' program (DAY63: 26.27 ms of lease time per long demote against 0.04 ms). Red arms: the CPU
+test fails with `put` ignoring the epoch (`left: 2, right: 3` on the late drop); the worker census fails with the scrub
+call removed (`the purge scrubs`). Lane A also answered the second question: no read reaches past `len`, and inside `len`
+the engine refuses any D2H that does not cover the whole lease or whose lease is shared, so a reused backing is not
+readable by another tenant without a purge. Two latent hazards are owed items, not defects here: the API would let a
+caller read a fresh pooled lease before its copy lands (no production caller does), and the GLM-5 TP startup arena
+returns released regions unscrubbed.
+
+Main moved again to `df006602e` (#800, the DSv4 DSpark round: drafter doors deleted, single-launch rollback and verify
+placement, DSv4 docs), merged in clean (`af40fe0c8`); none of it is reachable from the spill cells. The fix merged on
+top (`061833794`). CPU battery 15 of 15 on `061833794` (`integ69-cpu-battery-purge/`: server lib 950, engine lib 586).
+GPU battery run 4 on BOX41 (a Core Ultra 9 285K with one RTX PRO 6000 WS, the machine runs 1 to 3 used;
+`integ69-pro-run4/`, 468 receipts mirrored and checked), tree `900be48e9`, binary `4136ace6`, one hold 21:32Z to
+21:48Z, with run 3's cells plus the engine cells the fix adds or touches (`day69_` and every ignored
+`tier_transfer::tests::` cell, beside the d2d_, d2h_span and h2d_ filters; nothing removed or relaxed): serve-smoke 1
+failed (the Q35 arm, #777, its summary line byte-identical to run 3's); engine cells `18 passed` (the new
+`day69_a_drained_backing_is_never_the_next_lease` among them); worker span cells `19 passed` (the new
+`option_b_purge_drains_the_pool_and_zeroes_the_staging_set` among them); identity, fault default and plain, hit OFF and
+ON, admit-mem burst, spec-ctx-edge and the pause gate with the 27B all `ALL GREEN`.
+
+**Revuto round 2 found a second real defect in L', fixed in lane A before the merge.** Review comment 4112859255 on
+#801 (head `511760f8a`): L1.2 charged each lease its size class (the next power of two to 1 MiB, then whole MiB), while
+the host LRU keeps residents at or under one budget of actual bytes. For short prefixes the residents' class charges
+approach two budgets; with the pool's idle backings (up to one budget, in other classes) and the staging set's pinned
+charges, the next demote's reserve refused where main's two-budget ledger admits it, and nothing gave the idle pool's
+charges back. Lane A placed it with a CPU test on `4f297e7bd` (DAY70): a 64 MiB budget, 109 resident planes of 600 KiB
+(one budget of length, charged 109 MiB), the pool full of 4 MiB-class idle backings and an 8 MiB staging charge; L'
+refused a 16-plane short demote at its 12th lease with `Capacity`, and main admits all 16 at 81 of its 128 MiB. It was
+worse than a lost demote: the contract route maps a lease refusal to `Alloc`, and the caller latches the tier off. Fix
+`a57f85897` (DAY70 design Q): a lease is charged its length, main's charge; the pool is charged its idle backings plus
+each live lease's tail (backing size minus length), together capped at one budget; a new lease takes an idle backing of
+its class, else a fresh class-sized backing while its tail fits the cap, else a fresh backing at its exact length as
+main does; only class-sized backings park. The three-budget ledger is main's two plus the pool's one, so a lease is
+refused only where main's ledger refuses it, and a pool reserve that does not fit never errors. Revuto's two options
+(drain and retry, or a headroom-bound cap) were rejected because both leave the residents' class inflation in the
+ledger, which already exceeds three budgets with an empty pool in the placed shape; an LRU in charged bytes was rejected
+because it changes which entries stay resident. Cost: once tails fill the cap, new leases are exact-length and never
+pool (for short-prefix residents at about 1.7x inflation, around 1.4 budgets of length); the long 27B planes the L'
+cells measured keep L''s program. The red arm (charge back to the class) fails all three new CPU cells, the placement
+refusal among them. `411177fea`'s class arithmetic in the worker cells returns to the lengths (1392 B), those fixtures
+having a pool cap of 0. No earlier reading is affected: demote counts are equal between arms in every A/B cell and order
+of L, L', T-H and P2L2, and no A/B server log in those sittings carries `TIER DISABLED` or a pinned alloc failure (the
+27B's planes are about 2 to 3 MB, far from the short-prefix shape).
+
+Main moved to `dba926cdc` (#807: a dedicated route prices a queued request by its decode rounds, and the DSv4 route's
+two-card receipt), merged in clean (`c7a0dcf42`); the server change is covered by the batteries below. CPU battery on
+`c7a0dcf42` (`integ69-cpu-battery-q/`): 14 of 15 (server lib 951, engine lib 589 with the `day70_` cells); the 15th,
+`diff-check`, flagged run 4's raw gate logs' trailing blank lines, which the receipts' `.gitattributes` now exempts as
+run 3's does, and `git diff --check origin/main HEAD` then reads rc 0.
+GPU battery run 5 on BOX43 (a Ryzen 9 9950X with one RTX PRO 6000 WS; `integ69-pro-run5/`, 572 receipts mirrored and
+checked), tree `6521d9072`, binary `8999b9c1`, one hold 23:13Z to 23:28Z then the pause gate's hold, with run 4's cells
+plus the engine `day63_` and `day70_` cells (the pool's charge program changed) and, after the pause gate under its
+hold, lane A's tier gate binaries (DAY70 section 5): serve-smoke 1 failed (the Q35 arm, #777, its summary line identical
+to run 4's); engine cells `19 passed` (`day70_a_lease_past_the_pool_cap_is_its_length_and_never_parks` and both `day63_`
+pool cells among them); worker span cells `19 passed`; identity, fault default and plain, hit OFF and ON, admit-mem
+burst, spec-ctx-edge and the pause gate `ALL GREEN`; `tier-transfer-gate conformance` 13 PASS lines ending `PASS native
+governor zero after controlled drain`; `roundtrip` six byte-exact lines to 268435456 bytes; `kv-tier-gate` with the 27B,
+all seven fault arms `FAULT-ARM PASS` (the missing-host arm's `pinned-released` check reads the plane's length again).
+
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
 - B day 13 sealed and pushed (`1fef60006`); merged into integ10.

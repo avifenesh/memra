@@ -1,0 +1,308 @@
+== cell presubmit: MEMRA_KV_HOST_FAULT=contract-presubmit (one-shot) ==
+  ok: presubmit: the boot's last publication landed before stop (bounded 15 s wait)
+  ok: presubmit: three completions served
+  ok: presubmit: door ON with the transfer engine
+  ok: presubmit: exactly one typed injected refusal, the producer fence
+  ok: presubmit: the next demote completes with a D2H contract receipt after the refusal
+receipt seq=3 expected 1 + 2 capture ticket(s) submitted before it = 3
+  ok: presubmit: the receipt's seq is 1 plus the capture tickets submitted before it
+  ok: presubmit: the next demote publishes
+  ok: presubmit: the tier never latched off
+  ok: presubmit: no entry was dropped as not whole (no quarantine)
+  ok: presubmit: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: presubmit: no host-tier refusal line beyond the injected one
+== cell postpublish: MEMRA_KV_HOST_FAULT=contract-postpublish (one-shot) ==
+  ok: postpublish: the boot's last publication landed before stop (bounded 15 s wait)
+  ok: postpublish: three completions served
+  ok: postpublish: door ON with the transfer engine
+  ok: postpublish: exactly one typed injected refusal, the receipt
+  ok: postpublish: the next demote completes with a D2H contract receipt after the refusal
+receipt seq=4 expected 2 + 2 capture ticket(s) submitted before it = 4
+  ok: postpublish: the receipt's seq is 2 plus the capture tickets submitted before it
+  ok: postpublish: the next demote publishes
+  ok: postpublish: the tier never latched off
+  ok: postpublish: no entry was dropped as not whole (no quarantine)
+  ok: postpublish: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: postpublish: no host-tier refusal line beyond the injected one
+== cell promote-presubmit: MEMRA_KV_HOST_FAULT=contract-promote-presubmit (one-shot, promote side) ==
+  ok: promote-presubmit: four completions served
+  ok: promote-presubmit: door ON with the transfer engine on both sides
+  ok: promote-presubmit: exactly one typed injected refusal, the producer fence
+  ok: promote-presubmit: a clean demote with a D2H receipt follows the refusal (the cold path's insert evicted)
+  ok: promote-presubmit: the next promote completes with an H2D contract receipt after the refusal
+  ok: promote-presubmit: the next promote publishes
+  ok: promote-presubmit: the promote refusal kept the host entry
+  ok: promote-presubmit: the tier never latched off
+  ok: promote-presubmit: no entry was dropped as not whole (no quarantine)
+  ok: promote-presubmit: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: promote-presubmit: no host-tier refusal line beyond the injected one
+== cell promote-postpublish: MEMRA_KV_HOST_FAULT=contract-promote-postpublish (one-shot, promote side) ==
+  ok: promote-postpublish: four completions served
+  ok: promote-postpublish: door ON with the transfer engine on both sides
+  ok: promote-postpublish: exactly one typed injected refusal, the publication
+  ok: promote-postpublish: a clean demote with a D2H receipt follows the refusal (the cold path's insert evicted)
+  ok: promote-postpublish: the next promote completes with an H2D contract receipt after the refusal
+  ok: promote-postpublish: the next promote publishes
+  ok: promote-postpublish: the promote refusal kept the host entry
+  ok: promote-postpublish: the tier never latched off
+  ok: promote-postpublish: no entry was dropped as not whole (no quarantine)
+  ok: promote-postpublish: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: promote-postpublish: no host-tier refusal line beyond the injected one
+== cell promote-reject: MEMRA_KV_HOST_FAULT=contract-promote-reject (one-shot, promote side) ==
+  promote-reject: the entry's plane count from the server's r2 D2H receipt: items=32
+  ok: promote-reject: the r2 D2H receipt names the entry's item total (the artifact's plane count)
+  ok: promote-reject: the injected refusal's `1 of M items` M equals that receipt's items=N
+  ok: promote-reject: the entry carries at least two planes, so the reject is partial (items=N >= 2)
+  ok: promote-reject: four completions served
+  ok: promote-reject: door ON with the transfer engine on both sides
+  ok: promote-reject: exactly one typed injected refusal, the partial-reject
+  ok: promote-reject: a clean demote with a D2H receipt follows the refusal (the cold path's insert evicted)
+  ok: promote-reject: the next promote completes with an H2D contract receipt after the refusal
+  ok: promote-reject: the next promote publishes
+  ok: promote-reject: the promote refusal kept the host entry
+  ok: promote-reject: the tier never latched off
+  ok: promote-reject: no entry was dropped as not whole (no quarantine)
+  ok: promote-reject: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: promote-reject: no host-tier refusal line beyond the injected one
+== cell promote-readyview: MEMRA_KV_HOST_FAULT=contract-promote-readyview (one-shot, promote side) ==
+  ok: promote-readyview: four completions served
+  ok: promote-readyview: door ON with the transfer engine on both sides
+  ok: promote-readyview: exactly one typed injected refusal, the tier H2D destination 0 not publishable: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-readyview)
+  ok: promote-readyview: a clean demote with a D2H receipt follows the refusal (the cold path's insert evicted)
+  ok: promote-readyview: the next promote completes with an H2D contract receipt after the refusal
+  ok: promote-readyview: the next promote publishes
+  ok: promote-readyview: the promote refusal kept the host entry
+  ok: promote-readyview: the tier never latched off
+  ok: promote-readyview: no entry was dropped as not whole (no quarantine)
+  ok: promote-readyview: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: promote-readyview: no host-tier refusal line beyond the injected one
+== cell d2d-capture: MEMRA_KV_HOST_FAULT=d2d-delay-capture (one-shot, the D2D capture receipt's red arm) ==
+  ok: d2d-capture: two completions served
+  ok: d2d-capture: door ON with the transfer engine
+  ok: d2d-capture: the fault was armed on the first capture
+capture receipt refused: source_digests_sha256=d11e5c4b614f3a68.. destination_digests_sha256=1462aed093ef5fee..
+  ok: d2d-capture: exactly one refused D2D capture receipt naming two different digests
+  ok: d2d-capture: no capture receipt was accepted (the route latched on the first)
+  ok: d2d-capture: the capture route latched typed on the mismatch
+  ok: d2d-capture: the tier latched off
+  ok: d2d-capture: nothing was published off the tick
+  ok: d2d-capture: nothing was hit (no entry existed before r2)
+  ok: d2d-capture: r2's capture ran on the tick after the latch (an insert follows the refusal)
+  ok: d2d-capture: r1's text equals r2's (the tick program served both)
+  ok: d2d-capture: no ticket leaked (no Capacity refusal, no leaked wording)
+== cell d2d-restore: MEMRA_KV_HOST_FAULT=d2d-delay-restore (one-shot, the D2D restore receipt's red arm) ==
+  ok: d2d-restore: two completions served
+  ok: d2d-restore: door ON with the transfer engine
+  ok: d2d-restore: r1's capture receipt was accepted (the green arm, live)
+  ok: d2d-restore: r1's capture published off the tick
+  ok: d2d-restore: the fault was armed on the first restore
+  ok: d2d-restore: exactly one restore was submitted off the tick
+restore receipt refused: source_digests_sha256=d11e5c4b614f3a68.. destination_digests_sha256=1462aed093ef5fee..
+  ok: d2d-restore: exactly one refused D2D restore receipt naming two different digests
+  ok: d2d-restore: no restore receipt was accepted
+  ok: d2d-restore: the restore route latched typed on the mismatch
+  ok: d2d-restore: the tier latched off
+  ok: d2d-restore: nothing landed off the tick (nothing primed on the refused cache)
+  ok: d2d-restore: the tick program restored r2 after the refusal
+  ok: d2d-restore: r1's text equals r2's
+  ok: d2d-restore: no ticket leaked (no Capacity refusal, no leaked wording)
+== cell hash-helper-gone: MEMRA_KV_HOST_FAULT=hash-helper-gone (one-shot, the hash helper's red arm) ==
+  ok: hash-helper-gone: three completions served (the tick program serves)
+  ok: hash-helper-gone: door ON with the transfer engine
+  ok: hash-helper-gone: exactly one copy completed and handed its heap payloads to the hash helper
+  ok: hash-helper-gone: exactly one typed injected refusal, helper gone
+hand-off ticket(s) ['2'], refusal ticket(s) ['2']
+  ok: hash-helper-gone: the refusal names the hand-off's ticket
+  ok: hash-helper-gone: the refusal says nothing published and the tier latches
+  ok: hash-helper-gone: the tier latched off exactly once
+  ok: hash-helper-gone: the hash helper joined at the latch
+  ok: hash-helper-gone: nothing published in the boot (no demote line)
+  ok: hash-helper-gone: no digests landed
+  ok: hash-helper-gone: no entry was dropped as not whole (no quarantine)
+  ok: hash-helper-gone: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: hash-helper-gone: r3's own demote met the latched tier as pre-registered (0 refusal line(s))
+  ok: hash-helper-gone: no host-tier refusal line beyond the injected one and r3's latched-off refusal
+== cell hash-never-lands: MEMRA_KV_HOST_FAULT=hash-never-lands (one-shot, the hash helper's red arm) ==
+  ok: hash-never-lands: three completions served (the tick program serves)
+  ok: hash-never-lands: door ON with the transfer engine
+  ok: hash-never-lands: exactly one copy completed and handed its heap payloads to the hash helper
+  ok: hash-never-lands: exactly one typed injected refusal, digests never landed
+hand-off ticket(s) ['2'], refusal ticket(s) ['2']
+  ok: hash-never-lands: the refusal names the hand-off's ticket
+  ok: hash-never-lands: the refusal says nothing published and the tier latches
+  ok: hash-never-lands: the tier latched off exactly once
+  ok: hash-never-lands: the hash helper joined at the latch
+  ok: hash-never-lands: nothing published in the boot (no demote line)
+  ok: hash-never-lands: no digests landed
+  ok: hash-never-lands: no entry was dropped as not whole (no quarantine)
+  ok: hash-never-lands: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: hash-never-lands: r3's own demote met the latched tier as pre-registered (1 refusal line(s))
+  ok: hash-never-lands: no host-tier refusal line beyond the injected one and r3's latched-off refusal
+== cell span-refusal: MEMRA_KV_HOST_FAULT=contract-spans (one-shot, the off-tick span attach's red arm) ==
+== cell span-refusal: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) ==
+  ok: span-refusal: r3's publication landed before r4 (bounded 15 s wait)
+  ok: span-refusal: every submitted demote published before stop (bounded 15 s wait)
+  ok: span-refusal: four completions served
+  ok: span-refusal: door ON with the transfer engine
+  ok: span-refusal: exactly one typed injected spans refusal
+refusal handed back 96 span(s); the next copy-complete carries 96
+  ok: span-refusal: the refusal's N spans handed back equals the next copy-complete's span count (N >= 1)
+the next D2H receipt landed 96 span(s), 96 were handed back
+  ok: span-refusal: the next D2H receipt landed its N spans under the ticket
+receipt seq=4 expected 2 + 2 capture ticket(s) submitted before it = 4
+  ok: span-refusal: the refused ticket consumed one sequence (the next receipt's seq is 2 plus captures)
+  ok: span-refusal: the next demote publishes
+staging fill event(s) [96], refusal N 96
+  ok: span-refusal: the staging set filled once and every later demote reused it
+  ok: span-refusal: r4 hit E_B on the host and promoted
+  ok: span-refusal: the tier never latched off
+  ok: span-refusal: no entry was dropped as not whole (no quarantine)
+  ok: span-refusal: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: span-refusal: no host-tier refusal line beyond the injected one
+  ok: span-refusal: OFF boot: four completions served
+  ok: span-refusal: OFF boot: the contracts door is off
+  ok: span-refusal: OFF boot: r4 hit E_B on the host and promoted (the same route shape)
+byte-unequal request(s): none
+  ok: span-refusal: r1..r4 byte-equal to the door-OFF boot
+== cell promote-span-refusal: MEMRA_KV_HOST_FAULT=contract-promote-spans (one-shot, the off-tick promote span attach's red arm) ==
+== cell promote-span-refusal: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) ==
+  ok: promote-span-refusal: every submitted demote published before stop (bounded 15 s wait)
+  ok: promote-span-refusal: four completions served
+  ok: promote-span-refusal: door ON with the transfer engine on both sides
+  ok: promote-span-refusal: exactly one typed injected promote spans refusal
+promote refusal handed back 96 span(s); the next H2D receipt landed 96
+  ok: promote-span-refusal: the refusal's N spans handed back equals the next H2D receipt's span count (N >= 1)
+refusal at 58, filled span submissions 1, after the refusal 1
+  ok: promote-span-refusal: the next promote's submission carries its spans filled on the copy stream
+  ok: promote-span-refusal: a clean demote with a D2H receipt follows the refusal (the cold path's insert evicted)
+  ok: promote-span-refusal: the next promote publishes
+staging fill event(s) [96], promote refusal N 96
+  ok: promote-span-refusal: the staging set filled once and every later demote and promote reused it
+  ok: promote-span-refusal: the promote refusal kept the host entry
+  ok: promote-span-refusal: the tier never latched off
+  ok: promote-span-refusal: no entry was dropped as not whole (no quarantine)
+  ok: promote-span-refusal: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: promote-span-refusal: no host-tier refusal line beyond the injected one
+  ok: promote-span-refusal: OFF boot: four completions served
+  ok: promote-span-refusal: OFF boot: the contracts door is off
+  ok: promote-span-refusal: OFF boot: the host hits promoted (the same route shape)
+byte-unequal request(s): none
+  ok: promote-span-refusal: r1..r4 byte-equal to the door-OFF boot
+== cell source-flip: MEMRA_KV_HOST_FAULT=d2h-source-flip (one-shot, the device receipt's red arm) ==
+== cell source-flip: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) ==
+  ok: source-flip: the refused demote settled before r3 (bounded 15 s wait)
+  ok: source-flip: every submitted demote published or refused before stop (bounded 15 s wait)
+  ok: source-flip: four completions served
+  ok: source-flip: door ON with the transfer engine
+  ok: source-flip: the fault was armed once
+  ok: source-flip: the D2H receipts ran on the copy stream (design G4)
+  ok: source-flip: exactly one typed bind refusal of the flipped image
+  ok: source-flip: the next demote publishes
+  ok: source-flip: r3 primed cold and only r4 promoted (the refused image was never published)
+  ok: source-flip: the tier never latched off
+  ok: source-flip: no entry was dropped as not whole (no quarantine)
+  ok: source-flip: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: source-flip: OFF boot: four completions served
+  ok: source-flip: OFF boot: the contracts door is off
+byte-unequal request(s): none
+  ok: source-flip: r1..r4 byte-equal to the door-OFF boot
+== cell copy-phase-hit: MEMRA_KV_HOST_FAULT=d2h-delay (one-shot, the copy-phase park's red arm) ==
+== cell copy-phase-hit: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) ==
+  ok: copy-phase-hit: every submitted demote published before stop (bounded 15 s wait)
+  ok: copy-phase-hit: four completions served
+  ok: copy-phase-hit: the fault was armed once
+the first copy phase lasted 3000.6 ms (bound 3000)
+  ok: copy-phase-hit: the delayed copy phase lasted at least 3000 ms
+  ok: copy-phase-hit: exactly one copy-phase park line (r3)
+  ok: copy-phase-hit: the entry published after the park
+  ok: copy-phase-hit: the published entry's ledger names the parked hit
+  ok: copy-phase-hit: r3 promoted after its park (not a cold prime)
+  ok: copy-phase-hit: r3 and r4 both promoted, as on the door-OFF boot
+  ok: copy-phase-hit: no parked request re-admitted cold
+  ok: copy-phase-hit: the tier never latched off
+  ok: copy-phase-hit: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: copy-phase-hit: OFF boot: four completions served
+  ok: copy-phase-hit: OFF boot: r3 and r4 promoted
+byte-unequal request(s): none
+  ok: copy-phase-hit: r1..r4 byte-equal to the door-OFF boot
+== cell sources-helper-gone: MEMRA_KV_HOST_FAULT=sources-helper-gone (one-shot, design K's promote-side red arm) ==
+== cell sources-helper-gone: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) ==
+  ok: sources-helper-gone: four completions served
+  ok: sources-helper-gone: door ON with the transfer engine on both sides
+  ok: sources-helper-gone: r2's demote landed its digests and published (its Hash job ran clean)
+  ok: sources-helper-gone: exactly one helper-fault line, on the Sources job
+  ok: sources-helper-gone: exactly one TIER DISABLED line in the arm's own words
+  ok: sources-helper-gone: the tier latched off exactly once
+  ok: sources-helper-gone: the promote never published
+  ok: sources-helper-gone: the hash helper joined at the latch
+  ok: sources-helper-gone: no entry was dropped as not whole (no quarantine)
+  ok: sources-helper-gone: no Capacity refusal
+  ok: sources-helper-gone: OFF boot: four completions served
+  ok: sources-helper-gone: OFF boot: the contracts door is off
+byte-unequal request(s): none
+  ok: sources-helper-gone: r1..r4 byte-equal to the door-OFF boot
+== cell sources-never-land: MEMRA_KV_HOST_FAULT=sources-never-land (one-shot, design K's promote-side red arm) ==
+== cell sources-never-land: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) ==
+  ok: sources-never-land: four completions served
+  ok: sources-never-land: door ON with the transfer engine on both sides
+  ok: sources-never-land: r2's demote landed its digests and published (its Hash job ran clean)
+  ok: sources-never-land: exactly one helper-fault line, on the Sources job
+  ok: sources-never-land: exactly one TIER DISABLED line in the arm's own words
+  ok: sources-never-land: the tier latched off exactly once
+  ok: sources-never-land: the promote never published
+  ok: sources-never-land: the hash helper joined at the latch
+  ok: sources-never-land: no entry was dropped as not whole (no quarantine)
+  ok: sources-never-land: no Capacity refusal
+  ok: sources-never-land: OFF boot: four completions served
+  ok: sources-never-land: OFF boot: the contracts door is off
+byte-unequal request(s): none
+  ok: sources-never-land: r1..r4 byte-equal to the door-OFF boot
+== cell sources-foreign-reply: MEMRA_KV_HOST_FAULT=sources-foreign-reply (one-shot, design K's promote-side red arm) ==
+== cell sources-foreign-reply: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) ==
+  ok: sources-foreign-reply: four completions served
+  ok: sources-foreign-reply: door ON with the transfer engine on both sides
+  ok: sources-foreign-reply: r2's demote landed its digests and published (its Hash job ran clean)
+  ok: sources-foreign-reply: exactly one helper-fault line, on the Sources job
+  ok: sources-foreign-reply: exactly one TIER DISABLED line in the arm's own words
+  ok: sources-foreign-reply: the tier latched off exactly once
+  ok: sources-foreign-reply: the promote never published
+  ok: sources-foreign-reply: the hash helper joined at the latch
+  ok: sources-foreign-reply: no entry was dropped as not whole (no quarantine)
+  ok: sources-foreign-reply: no Capacity refusal
+  ok: sources-foreign-reply: OFF boot: four completions served
+  ok: sources-foreign-reply: OFF boot: the contracts door is off
+byte-unequal request(s): none
+  ok: sources-foreign-reply: r1..r4 byte-equal to the door-OFF boot
+== cell span-flip-landed: MEMRA_KV_HOST_FAULT=span-flip-landed (one-shot, the D2H span receipt's red arm) ==
+== cell span-flip-landed: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) ==
+  ok: span-flip-landed: the refused demote settled before r3 (bounded 15 s wait)
+  ok: span-flip-landed: every submitted demote published or refused before stop (bounded 15 s wait)
+  ok: span-flip-landed: four completions served
+  ok: span-flip-landed: door ON with the transfer engine
+  ok: span-flip-landed: the fault was armed once
+  ok: span-flip-landed: exactly one typed refusal of the flipped span
+  ok: span-flip-landed: the next demote publishes
+  ok: span-flip-landed: r3 primed cold and only r4 promoted (the refused image was never published)
+  ok: span-flip-landed: the tier never latched off
+  ok: span-flip-landed: no entry was dropped as not whole (no quarantine)
+  ok: span-flip-landed: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: span-flip-landed: OFF boot: four completions served
+  ok: span-flip-landed: OFF boot: the contracts door is off
+byte-unequal request(s): none
+  ok: span-flip-landed: r1..r4 byte-equal to the door-OFF boot
+== cell span-flip-resident: MEMRA_KV_HOST_FAULT=span-flip-resident (one-shot, the H2D span receipt's red arm) ==
+== cell span-flip-resident: the door-OFF reference boot (MEMRA_KV_HOST_CONTRACTS=0, no fault) ==
+  ok: span-flip-resident: four completions served
+  ok: span-flip-resident: door ON with the transfer engine on both sides
+  ok: span-flip-resident: the fault was armed once
+  ok: span-flip-resident: exactly one typed refusal of the differing span
+  ok: span-flip-resident: the next promote publishes
+  ok: span-flip-resident: exactly one host entry dropped, the refused one
+  ok: span-flip-resident: the tier never latched off
+  ok: span-flip-resident: no entry was dropped as not whole (no quarantine)
+  ok: span-flip-resident: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: span-flip-resident: OFF boot: four completions served
+  ok: span-flip-resident: OFF boot: the contracts door is off
+byte-unequal request(s): none
+  ok: span-flip-resident: r1..r4 byte-equal to the door-OFF boot
+KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
