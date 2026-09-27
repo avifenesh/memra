@@ -24,4 +24,4 @@ half — "we tried X and it lost by Y% on Z" cannot be reconstructed from the co
 
 Adding one: a decision that changes a default, a format, a target or an arm belongs here, with
 the measurement that settled it. Superseded records get a banner naming what replaced them —
-they are not deleted. See `CLAUDE.md` § "Measurements and decisions are a corpus".
+they are not deleted. See `AGENTS.md` § "Measurements and decisions are a corpus".

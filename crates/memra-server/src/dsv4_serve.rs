@@ -2410,7 +2410,7 @@ fn render_prompt(m: &Dsv4Model, req: &Request) -> Result<Vec<u32>, EngineError> 
     let prompt = if !req.prompt_ids.is_empty() {
         req.prompt_ids.clone()
     } else if !req.chat_turns.is_empty() {
-        // ONE predicate for the plain-vs-tools render (memra CLAUDE.md, v0.109.1 lesson): the
+        // ONE predicate for the plain-vs-tools render (memra AGENTS.md, v0.109.1 lesson): the
         // worker, the HTTP-side accounting and this route must agree, or `/v1/tokenize` and
         // the prepaid reservation count a different prompt than the one served here. The
         // local copy this replaces dropped the `reasoning` and effort-ladder terms.

@@ -115,7 +115,7 @@ ssh_source_cidr = "(?i)(cidr|ingress|allow|ssh|port[^\\n]{0,6}22)[^\\n]{0,60}\\b
 serve_home = "(?i)(current|live)\\s+serv(e|ing)\\s+(home|surface)"
 # `serve_home` above only sees the words "serving home/surface" — the hermes review
 # (2026-08-22) found two provider-role identity assertions it could not see: FLAGS.md's
-# header naming providers as the verify and serving boxes, and CLAUDE.md/AGENTS.md's "The
+# header naming providers as the verify and serving boxes, and AGENTS.md's "The
 # Vast box serves". This twin anchors on the PROVIDER NAME joined to a serving/verify
 # role noun (both word orders), which is the identity assertion itself; bare provider
 # names in dated receipt prose stay out of scope exactly as the note above demands.

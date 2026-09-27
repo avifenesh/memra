@@ -1325,7 +1325,7 @@ pub(crate) fn mmv_block() -> u32 {
 /// occupancy/latency signature from kernels tuned for the RTX PRO 6000's 188-SM/1.8-TB/s shape,
 /// not the B200's 148-SM/8-TB/s one. Restricted to `sm_100a` BUILDS (`MEMRA_BUILT_CUDA_ARCH`,
 /// baked in at compile time): setting the var on an `sm_120a` build is a documented no-op, so
-/// the naked sm_120a defaults stay byte-identical (per-hardware arm selection law, CLAUDE.md).
+/// the naked sm_120a defaults stay byte-identical (per-hardware arm selection law, AGENTS.md).
 /// Default OFF everywhere; the arms are BIT-IDENTICAL per-output twins pending their B200 A/B —
 /// see docs/FLAGS.md and research/b200-matvec-occupancy-20260902/LANE.md.
 pub(crate) fn b200_matvec_arm_on() -> bool {

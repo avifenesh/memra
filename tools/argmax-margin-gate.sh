@@ -158,7 +158,7 @@ if [ $rc -ne 0 ]; then
     # A VRAM shortage says nothing about argmax margins. On a shared rig another lane can hold
     # the card (seen live: "Error: DriverError(CUDA_ERROR_OUT_OF_MEMORY, ...)" with 21.6 GB held
     # by a concurrent job), and failing the exactness battery for that is a flake, not a find.
-    # SKIP with the cause QUOTED — an inferred cause is not a cause (CLAUDE.md evidence rules).
+    # SKIP with the cause QUOTED — an inferred cause is not a cause (AGENTS.md evidence rules).
     if grep -qaE 'CUDA_ERROR_OUT_OF_MEMORY|out of memory' "$LOG"; then
         echo "argmax-margin-gate: SKIP (GPU out of memory — not an exactness signal)"
         grep -aE 'CUDA_ERROR_OUT_OF_MEMORY|out of memory' "$LOG" | head -2 | sed 's/^/  quoted: /'
