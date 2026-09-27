@@ -78,11 +78,11 @@ fn parity_with_llama_tokenize() {
     let model = model_path();
     let bin = llama_tokenize_path();
     if !Path::new(&model).exists() {
-        eprintln!("SKIP: model not found at {model} (set MEMRA_TEST_MODEL)");
+        eprintln!("SKIP[{model}]: llama-tokenize parity not run (set MEMRA_TEST_MODEL)");
         return;
     }
     if !Path::new(&bin).exists() {
-        eprintln!("SKIP: llama-tokenize not found at {bin} (set MEMRA_LLAMA_TOKENIZE)");
+        eprintln!("SKIP[{bin}]: llama-tokenize parity not run (set MEMRA_LLAMA_TOKENIZE)");
         return;
     }
 
@@ -126,7 +126,7 @@ fn parity_with_llama_tokenize() {
 fn round_trip() {
     let model = model_path();
     if !Path::new(&model).exists() {
-        eprintln!("SKIP: model not found at {model}");
+        eprintln!("SKIP[{model}]: tokenizer assertions on the real GGUF not run");
         return;
     }
     let g = GgufFile::open(&model).expect("open gguf");
@@ -146,7 +146,7 @@ fn round_trip() {
 fn golden_pairs() {
     let model = model_path();
     if !Path::new(&model).exists() {
-        eprintln!("SKIP: model not found at {model}");
+        eprintln!("SKIP[{model}]: tokenizer assertions on the real GGUF not run");
         return;
     }
     let g = GgufFile::open(&model).expect("open gguf");

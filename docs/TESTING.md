@@ -752,36 +752,68 @@ Two mechanical rules that follow:
 if !ckpt.exists() { eprintln!("SKIP: ckpt/twin absent"); return; }   // the test PASSES
 ```
 
-Twelve `#[test]` fns in memra-gguf are written like this, and a hosted runner has no checkpoints,
-so `cargo test -p memra-gguf --lib` reports `90 passed` whether or not one model-backed assertion
-ran, including `nv27b_twin_parity`, where the `n_rot` rotary-width geometry check lands. It is
-`ALL GREEN (N cells, M skipped)` in Rust, and it stayed invisible until the suite acquired a
-caller.
+Model-backed `#[test]` fns in memra-gguf were written like this, and a hosted runner has no
+checkpoints, so `cargo test -p memra-gguf --lib` reported `90 passed` whether or not one
+model-backed assertion ran, including `nv27b_twin_parity`, where the `n_rot` rotary-width
+geometry check lands. It is `ALL GREEN (N cells, M skipped)` in Rust, and it stayed invisible
+until the suite acquired a caller.
+
+**The skip protocol (memra #484).** A test that skips prints exactly one form, one line per
+missing case:
+
+```rust
+eprintln!("SKIP[{path}]: pretokenizer resolution case not run");   // SKIP[<artifact>]: <reason>
+```
+
+`<artifact>` names what was missing (a path, `CUDA device`, `2 CUDA devices`, an env var);
+`<reason>` says what the test would have proven with it. A loop over staged cases that
+`continue`s past a missing one prints a line per missing case, so zero of three cases executed
+counts three skips, not one green test. Any other skip-shaped print in test code (the word skip
+in any case, anywhere in the literal, including a literal on the line after `eprintln!(`) fails
+the census as unstructured. Before #484 the census matched only a capital `SKIP` on the same
+line as the macro, and eight skips in the CUDA-free crates went uncounted: `skipping:` in the
+RNNT archive census and the Whisper tests, `skip: {path} not staged` per case in the staged
+tokenizer test, and a multi-line `SKIP {fixture}` in the upstream vision fixture test.
 
 The mechanism is `tools/skip-census.py` plus the `tools/skip-census.tsv` manifest, and it is
 deliberately harness-level (the same place `tools/validate-h100.sh` used to gate kernel-check's
 skip count, before the Hopper battery was retired) rather than in the tests:
 
-- `verify`: the STATIC census (every `#[test]` in the crate that prints SKIP and returns) is
-  compared with the manifest in BOTH directions. An undeclared test fails (it would be born
-  invisible); a stale row fails (it inflates the budget and silently permits a different skip).
-- `run -- cargo test …`: asserts the suite's own verdict FIRST (exit status, every
-  `test result: ok.`, nothing filtered, not vacuous), then counts the SKIPs against a NAMED
-  budget, **default 0**. Uses `--test-threads=1 --nocapture`, which is load-bearing: parallel
-  libtest interleaves un-attributed output, so a SKIP cannot be tied to the test that emitted it.
+- `static`: prints the census the source implies, in manifest form. Regenerate rows from it.
+- `verify`: the STATIC census over every crate under `crates/` (`src/` and `tests/`) is compared
+  with the manifest in BOTH directions. An undeclared skip fails (it would be born invisible); a
+  stale row fails (it inflates the budget and silently permits a different skip); a row whose
+  file no longer holds the test fails; an unstructured skip print fails; a skip print in a test
+  helper fails unless the helper is registered in `SKIP_HELPERS`, in which case every `#[test]`
+  that calls it is a row. Rows carry the FILE only: a `file:line` anchor is refused, because by
+  2026-09-19 every line anchor had drifted and the drift NOTE fired on every row.
+- `run -- cargo test ...`: asserts the suite's own verdict FIRST (exit status, every
+  `test result: ok.`, nothing filtered, not vacuous), then counts the protocol lines against a
+  NAMED budget, **default 0**. Each line must match a manifest row for its test in full (format
+  placeholders match any text, the rest is literal), and a line that starts with the skip word
+  but is not in the protocol form fails. Uses `--test-threads=1 --nocapture`, which is
+  load-bearing: parallel libtest interleaves un-attributed output, so a SKIP cannot be tied to
+  the test that emitted it.
 - `report <file> --expect N`: the same census for shell gates, which append to
   `$MEMRA_SKIP_CENSUS`. A **missing** file fails: absent is ambiguous between "nothing skipped"
   and "the census was never wired", and the second reads as the first.
 
+The negative controls are `tools/test_skip_census.py` (CI step "Skip census negative controls"):
+a lowercase `skipping:`, a per-case `skip:`, a multi-line literal, an undeclared protocol skip,
+a stale row, a line anchor, a wrong file and an unregistered helper must each red `verify`; an
+unstructured run line, an undeclared run line, a prefix-only template match and three skipped
+cases over a budget of two must each red `run`.
+
 Where the budgets live and why they differ: `tools/local-ci.sh` runs the memra-gguf census
 WITH artifacts present at budget 10 (rehomed 2026-09-02 from the deleted Hopper battery;
-measured on the rig: 212 passed, 10 skipped — ckpt/twin, Hy3-repack and iq3s artifacts not
+measured on the rig: 212 passed, 10 skipped, the ckpt/twin, Hy3-repack and iq3s artifacts not
 staged there) and enforces kernel-check's skipped cells against a budget of 11 (missing-model
 cells plus the sigrouter env capture). `local-ci.sh` keeps the same discipline by
 requiring kernel-check's full verdict shape.
-`.github/workflows/ci.yml` uses **12** because a hosted runner has no `/data` at all: twelve is
-the number of model-backed assertions CI is blind to, stated out loud instead of hidden inside a
-green `90 passed`. If it grows, CI reds.
+`.github/workflows/ci.yml` uses **20** because a hosted runner has no `/data` at all: twenty is
+the number of model-backed assertions CI is blind to across memra-gguf, memra-tokenizer and
+memra-reference, stated out loud instead of hidden inside a green pass count. If it grows, CI
+reds.
 
 A developer without artifacts is not blocked: raise the budget, or set
 `MEMRA_ARCH_GATE_ALLOW_SKIP=1` for the generated serving gates. The escape hatch is explicit and
@@ -1459,7 +1491,7 @@ skips, now declared in `tools/skip-census.tsv`). The raw cargo output is banked 
 `target/portable-suites.log`. Its teeth are `tools/test_portable_suites.sh`, run by the same CI
 job: a copy of the tree with a planted failing retirement/ownership test in `tests/contracts`,
 a planted KV test and a planted onboarding-receipt test must red the wrapper with all three
-targets named (arm 1); a planted `#[test]` that prints `SKIP` and returns, as a new file under
+targets named (arm 1); a planted `#[test]` that prints `SKIP[planted artifact]: ...` and returns, as a new file under
 `crates/memra-cli/tests/` (arm 2a) and inside `src/` (arm 2b), must red the static census before
 cargo runs; the wiring is asserted (arm 3). The copy builds into `target/portable-suites-teeth`, never the
 tree's own target dir: cargo's metadata hash for a workspace member excludes its path and

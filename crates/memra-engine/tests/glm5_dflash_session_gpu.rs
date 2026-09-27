@@ -1675,7 +1675,7 @@ fn gpu_dflash_rank_trimmed_head_moves_acceptance_never_the_tape() {
         );
         assert_eq!(sess.rank_trimmed_rounds, sess.rounds);
         println!(
-            "gate 13 RED PASS: remap skipped -> tape identical, drafted sequence moved \
+            "gate 13 RED PASS: remap off -> tape identical, drafted sequence moved \
              ({accepted}/{drafted} accepted)"
         );
     }

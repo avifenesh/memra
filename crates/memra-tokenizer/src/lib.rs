@@ -2302,7 +2302,7 @@ mod hf_tests {
         for (path, want) in cases {
             let dir = std::path::Path::new(path);
             if !dir.join("tokenizer.json").exists() {
-                eprintln!("skip: {path} not staged");
+                eprintln!("SKIP[{path}/tokenizer.json]: pretokenizer resolution case not run");
                 continue;
             }
             let tok = Tokenizer::from_hf_dir(dir).unwrap_or_else(|e| panic!("{path}: {e}"));

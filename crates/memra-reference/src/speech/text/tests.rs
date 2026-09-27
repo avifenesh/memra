@@ -16,7 +16,7 @@ const CHECKPOINT: &str = "/home/avifenesh/hebrew-asr-data/models/whisper-large-v
 fn a_window_of_pinned_oracle_ids_reads_as_hebrew() {
     let dir = std::path::Path::new(CHECKPOINT);
     if !dir.exists() {
-        eprintln!("skipping: whisper checkpoint is not on this machine");
+        eprintln!("SKIP[{CHECKPOINT}]: Whisper transcript assembly on the real vocabulary not run");
         return;
     }
     let plan = plan();
@@ -36,7 +36,7 @@ fn a_window_of_pinned_oracle_ids_reads_as_hebrew() {
 fn timestamps_and_the_terminator_never_reach_the_transcript() {
     let dir = std::path::Path::new(CHECKPOINT);
     if !dir.exists() {
-        eprintln!("skipping: whisper checkpoint is not on this machine");
+        eprintln!("SKIP[{CHECKPOINT}]: Whisper transcript assembly on the real vocabulary not run");
         return;
     }
     let plan = plan();

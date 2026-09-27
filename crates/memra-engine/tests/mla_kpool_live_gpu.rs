@@ -24,7 +24,7 @@ fn bits(v: &[f32]) -> Vec<u32> {
 #[test]
 fn kpool_live_count_twins_match_scalar_launches_bitwise() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     let (heads, d, pool, select_k_cap, cap) = (32usize, 128usize, 16usize, 8usize, 512usize);
@@ -311,7 +311,7 @@ fn kpool_live_count_twins_match_scalar_launches_bitwise() {
 #[test]
 fn kpool_live_twins_match_scalar_launches_at_t_rows() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     let (heads, d, pool, select_k_cap, cap, t) =

@@ -45,7 +45,7 @@ fn q8_tensor(e: &Engine, w: &[f32], in_f: usize, out_f: usize) -> GpuTensor {
 #[test]
 fn q8_narrow_f32in_matches_quantize_then_mmvq_bitwise() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     unsafe {

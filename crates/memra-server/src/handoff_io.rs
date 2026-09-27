@@ -423,7 +423,7 @@ mod tests {
     #[test]
     fn both_writers_produce_identical_bytes_and_both_readers_read_both() {
         if !direct_supported() {
-            eprintln!("SKIP: the test filesystem refuses O_DIRECT");
+            eprintln!("SKIP[O_DIRECT filesystem]: direct writer and reader parity not run");
             return;
         }
         for len in [

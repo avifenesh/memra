@@ -46,7 +46,7 @@ fn activation(in_f: usize) -> Vec<f32> {
 #[test]
 fn e4m3_fused_six_is_bit_identical_to_six_separate_launches() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     // Unequal out_f across the group, exactly like the real KDA six (q/k/v wide, f_a/g_a/b thin),

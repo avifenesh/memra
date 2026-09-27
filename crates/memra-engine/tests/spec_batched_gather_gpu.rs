@@ -20,7 +20,7 @@ fn vecf(n: usize, seed: u64) -> Vec<f32> {
 #[test]
 fn launched_words_land_exact_bits() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     let u: Vec<u32> = vec![0, 7, 4_294_967_295, 151_329, 1, 2, 3, 9];
@@ -57,7 +57,7 @@ fn launched_words_land_exact_bits() {
 #[test]
 fn batched_drafter_gather_matches_per_draft_bitwise() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     let (k, d_vocab, temp) = (4usize, 4096usize, 0.7f32);

@@ -43,7 +43,7 @@ fn vecf(n: usize, seed: u64) -> Vec<f32> {
 #[test]
 fn bf16_absorb_planes_match_the_f32_wp_kernels_bitwise() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     let stream = e.stream();

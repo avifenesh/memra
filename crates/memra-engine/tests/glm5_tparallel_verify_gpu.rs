@@ -1240,7 +1240,7 @@ fn gpu_frspec_trim_equivalence_partial_and_skipped_remap_red() {
         .filter(|(x, y)| x != y)
         .count();
     println!(
-        "gate 7 RED bites: {diverged}/{} drafts diverge with the remap skipped \
+        "gate 7 RED bites: {diverged}/{} drafts diverge with the remap off \
          (acceptance {accepted_red}/{drafted_red} vs remapped {accepted_a}/{drafted_a}); \
          tape stayed identical — exactly the silent defect class this arm makes loud",
         drafts_a.len()

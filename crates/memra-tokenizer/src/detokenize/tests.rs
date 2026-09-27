@@ -58,7 +58,10 @@ fn the_real_whisper_vocabulary_decodes_hebrew_when_the_checkpoint_is_present() {
         "/home/avifenesh/hebrew-asr-data/models/whisper-large-v3-ivrit-766847c9",
     );
     if !dir.exists() {
-        eprintln!("skipping: whisper checkpoint is not on this machine");
+        eprintln!(
+            "SKIP[{}]: real Whisper vocabulary decode not run",
+            dir.display()
+        );
         return;
     }
     let d = Detokenizer::from_hf_dir(dir).unwrap();
@@ -92,7 +95,7 @@ fn spm_model() -> Option<Vec<u8>> {
 #[test]
 fn the_real_sentencepiece_model_decodes_the_pinned_hebrew_tokens() {
     let Some(bytes) = spm_model() else {
-        eprintln!("skipping: {NEMO} is not on this machine");
+        eprintln!("SKIP[{NEMO}]: real SentencePiece decode not run");
         return;
     };
     let spm = SpmDetokenizer::from_proto(&bytes).unwrap();

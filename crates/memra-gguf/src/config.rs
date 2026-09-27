@@ -5757,7 +5757,7 @@ mod minimax_tests {
     #[test]
     fn parse_minimax_m3_vl() {
         let Ok(txt) = std::fs::read_to_string(format!("{MINIMAX_DIR}/config.json")) else {
-            eprintln!("SKIP parse_minimax_m3_vl: no model at {MINIMAX_DIR}");
+            eprintln!("SKIP[{MINIMAX_DIR}]: MiniMax-M3-VL config parse not run");
             return;
         };
         let cfg = HfConfig::try_parse(&txt).expect("valid fixture config");
@@ -5797,7 +5797,7 @@ mod minimax_tests {
     fn minimax_name_mapping_against_index() {
         use crate::hf_mapping::{HfTarget, ggml_to_hf, hf_expert_name, resolve_ggml};
         let Ok(cfg_txt) = std::fs::read_to_string(format!("{MINIMAX_DIR}/config.json")) else {
-            eprintln!("SKIP minimax_name_mapping_against_index: no model at {MINIMAX_DIR}");
+            eprintln!("SKIP[{MINIMAX_DIR}]: MiniMax name mapping against the index not run");
             return;
         };
         let cfg = ModelConfig::from_hf(&HfConfig::parse(&cfg_txt));

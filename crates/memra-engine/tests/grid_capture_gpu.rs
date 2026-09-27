@@ -151,7 +151,7 @@ fn bits(v: &[f32]) -> Vec<u32> {
 #[ignore = "needs a CUDA device and MEMRA_TEST_QWEN_GGUF; run under flock /tmp/memra-5090.lock"]
 fn gpu_model_capture_equals_split_and_resumes_cold_exact() {
     let Some((e, m)) = model() else {
-        eprintln!("MEMRA_TEST_QWEN_GGUF unset; skipped");
+        eprintln!("SKIP[MEMRA_TEST_QWEN_GGUF]: model-backed capture test not run");
         return;
     };
     let ctx = 4096;
@@ -216,7 +216,7 @@ fn gpu_model_capture_equals_split_and_resumes_cold_exact() {
 #[ignore = "needs a CUDA device and MEMRA_TEST_QWEN_GGUF; run under flock /tmp/memra-5090.lock"]
 fn gpu_model_boundary_capture_is_the_live_state() {
     let Some((e, m)) = model() else {
-        eprintln!("MEMRA_TEST_QWEN_GGUF unset; skipped");
+        eprintln!("SKIP[MEMRA_TEST_QWEN_GGUF]: model-backed capture test not run");
         return;
     };
     let p = prompt(640, 17);
@@ -246,7 +246,7 @@ fn gpu_model_boundary_capture_is_the_live_state() {
 #[ignore = "needs a CUDA device and MEMRA_TEST_QWEN_GGUF; run under flock /tmp/memra-5090.lock"]
 fn gpu_model_settle_then_resume_is_cold_exact() {
     let Some((e, m)) = model() else {
-        eprintln!("MEMRA_TEST_QWEN_GGUF unset; skipped");
+        eprintln!("SKIP[MEMRA_TEST_QWEN_GGUF]: model-backed capture test not run");
         return;
     };
     let ctx = 4096;

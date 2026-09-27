@@ -103,7 +103,7 @@ fn bits(a: &[f32], b: &[f32]) -> usize {
 #[test]
 fn hc_pre_v4_is_bit_identical_to_v3() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     let rows = (2 + HC) * HC;

@@ -62633,7 +62633,7 @@ mod host_handoff_tests {
         write(&pb, HandoffIo::Buffered).unwrap();
         if let Err(e) = write(&pd, HandoffIo::Direct) {
             assert!(e.contains("O_DIRECT open refused"), "{e}");
-            eprintln!("SKIP: the test filesystem refuses O_DIRECT: {e}");
+            eprintln!("SKIP[O_DIRECT filesystem]: direct handoff arm not run: {e}");
             let _ = std::fs::remove_file(&pb);
             return;
         }

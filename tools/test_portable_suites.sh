@@ -172,7 +172,7 @@ mkdir -p "$copy/crates/memra-cli/tests"
 cat > "$copy/crates/memra-cli/tests/planted_skip.rs" <<'EOF'
 #[test]
 fn planted_artifact_gated_integration_test() {
-    eprintln!("SKIP: planted artifact absent (tools/test_portable_suites.sh, tests/)");
+    eprintln!("SKIP[planted artifact]: planted skip not run (tools/test_portable_suites.sh, tests/)");
 }
 EOF
 skip_arm arm2a planted_artifact_gated_integration_test
@@ -185,7 +185,7 @@ cat >> "$copy/crates/memra-cli/src/lib.rs" <<'EOF'
 mod planted_skip {
     #[test]
     fn planted_artifact_gated_test() {
-        eprintln!("SKIP: planted artifact absent (tools/test_portable_suites.sh, src/)");
+        eprintln!("SKIP[planted artifact]: planted skip not run (tools/test_portable_suites.sh, src/)");
     }
 }
 EOF
