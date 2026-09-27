@@ -286,3 +286,27 @@ This lane recommends 1, with 2's prefetch landing now if the owner wants the 65 
 GPU CHECK PASS`. Every run `MATCH` with one tape; the promoted binary by default and I22 as qualified read one host
 demand sequence (`4bdc2610c3534e42`, 22077 lines); the default runs print `qualified`, `installed`, the registered
 pool and the prefetch on; the rollback prints `off: MEMRA_EXPERTS_VIA_TIER=0`, the prefetch on and no host demand line.
+
+## 6c. DAY88b, `promo-res` under section 6a, read as registered (run by the lead, tree `64326c89c`)
+
+**9950X class** (BOX45, the first sitting's host and card, one RTX PRO 6000 WS at 600 W, driver 595.91.07; 19:37Z to
+19:40Z; `pro-single-day88b-9950x/`, 106 files, the lead's manifest re-checked here OK):
+- **The build.** The cell ran the first sitting's `run-gen-p88`, `00bad053...` from `0155bc69f`. The build found it
+  cached (0.04 s, the same hash, `builds.log`).
+- **The card.** 43 to 56 C over 781 samples; SM median 2625 MHz over the 201 samples with GPU utilization above zero
+  (a short cell of mostly load).
+- **The reading, verbatim** (`reading.log`; re-read here with `day88-read.py --rig pro-single --only promo-res`, and the
+  output is identical):
+  - `DAY88 PROMO-RES CHECKS rig=pro-single runs=20 integrity=ok`
+  - `DAY88 PROMO-RES ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0000 failing=[] -> admissible`
+  - `DAY88 PROMO-RES gen-only decode medians (N=10 each): naked=0.112 legacy=0.112`
+  - `DAY88 PROMO-RES naked_vs_legacy gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0000 -> flat`
+  - `DAY88 PROMO-RES to_prefill_s medians (beside): naked=8.48 legacy=9.75`
+  - `DAY88 PROMO-RES VERDICT rig=pro-single -> passes`
+
+Read as registered: `promo-res` passes on the 9950X class. The resident decode is equal at the printed millisecond
+(IQR 0 in both arms), and the promoted binary reaches prefill 1.3 s sooner, as in the first sitting (8.5 against
+9.8 s). On this class all three cells now pass (`promo` beats, `promo-spec` passes, `promo-res` passes). Section 5
+decides on both classes, so phase 1 still does not land while the 285K class's `promo` loses. That half of DAY88b
+(BOX44, after integ73's GPU battery) records whether the resident shape needs its own fix there (section 6a's last
+clause).
