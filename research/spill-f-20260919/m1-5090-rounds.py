@@ -35,7 +35,9 @@ PUBLIC_PROOF = HERE / "rtx5090/proof/PROOF.json"
 PROBE = "/home/avifenesh/spill-f-5090/bin-g2/h2d-probe"  # resync amendment 2: accepts [N/A]
 GPU_CELL = "spill_pread::tests::mapped_serve_reads_in_place_and_owns_the_buffer_until_its_event"
 BIN18 = "/home/avifenesh/spill-f-5090/bin18"
-BIN17 = "/home/avifenesh/spill-f-5090/bin17/run-gen"
+BIN17 = "/home/avifenesh/spill-f-5090/bin26/run-gen"  # section G: the OWED 17 cell runs on the fix build
+BIN26 = "/home/avifenesh/spill-f-5090/bin26/run-gen"
+TESTS26 = "/home/avifenesh/spill-f-5090/bin26-tests"
 B2_PROMPTS = "/home/avifenesh/spill-f-5090/b2-prompts.jsonl"
 B2_SCRATCH = "/data/cache/spill-f-b2"
 
@@ -61,6 +63,10 @@ def lock_free():
 
 
 PAUSE = Path("/home/avifenesh/spill-f-5090/PAUSE")
+# Card sharing (coordinator, 2026-09-26): after every cell this driver releases the lock and sits
+# out YIELD_S before its idle check, longer than lane B's 240 s post-boot yield, so other lanes'
+# polls find the lock free. A registered cell stays one continuous hold; only the gaps change.
+YIELD_S = 300
 
 
 def wait_idle(log, label):
@@ -83,7 +89,8 @@ def wait_idle(log, label):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    ap.add_argument("--regime", choices=["capped", "bounded", "g2", "handoff", "anonpeak", "f17", "gpucell", "diag"], required=True)
+    ap.add_argument("--regime", choices=["capped", "bounded", "g2", "handoff", "anonpeak", "f17", "gpucell", "diag",
+                                              "owed26cells", "owed26serve", "spec"], required=True)
     ap.add_argument("--memory-max", type=int, required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--rounds", default="1-10")
@@ -91,6 +98,7 @@ def main():
     ap.add_argument("--size-bytes", type=int)
     ap.add_argument("--host-mb", type=int)
     ap.add_argument("--tenant-pct", type=int)
+    ap.add_argument("--arm", help="spec regime: the F lock arm to run run-spec with")
     a = ap.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -105,7 +113,15 @@ def main():
                         "-p", f"MemoryMax={a.memory_max}", "-p", "MemorySwapMax=0",
                         sys.executable, str(ROOT / "tools/tier-battery.py"), "--rig", "rtx5090", "--timeout", "10800",
                         "--external-lock", "--out", str(target), "--execute", sys.executable]
-                if a.regime == "diag":
+                if a.regime in ("owed26cells", "owed26serve"):
+                    # Section G: the red/green GPU cells, then the serving-shape check, under the lock.
+                    tail = (["bash", str(HERE / "owed26/run-cells2.sh"), str(target), TESTS26 + "/red2-lib-tests",
+                             TESTS26 + "/green2-lib-tests"] if a.regime == "owed26cells" else
+                            [sys.executable, str(HERE / "owed26/serve-check.py"), "--binary", BIN26,
+                             "--out", str(target)])
+                    argv = ["flock", "-n", "-E", "75", LOCK, "systemd-run", "--user", "--scope", "-q",
+                            "-p", "CPUQuota=1200%", "-p", f"MemoryMax={a.memory_max}", "-p", "MemorySwapMax=0"] + tail
+                elif a.regime == "diag":
                     # Unscored door-off diagnostic (m1-doorless-diag.py) under the canonical lock.
                     argv = ["flock", "-n", "-E", "75", LOCK, "systemd-run", "--user", "--scope", "-q",
                             "-p", "CPUQuota=1200%", "-p", f"MemoryMax={a.memory_max}", "-p", "MemorySwapMax=0",
@@ -116,6 +132,13 @@ def main():
                             "-p", "CPUQuota=1200%", "-p", f"MemoryMax={a.memory_max}", "env",
                             "MEMRA_CUDA_ARCH=120a", "cargo", "test", "--release", "-p", "memra-engine", "--lib",
                             "--", "--ignored", "--exact", GPU_CELL, "--nocapture"]
+                elif a.regime == "spec":
+                    # run-spec takes no lock FD: without the placeholder the collector must not be
+                    # asked to substitute one (it refuses `--external-lock` with no token).
+                    argv.remove("--external-lock")
+                    argv[-4:-4] = ["--storage-root", "/data/cache", "--storage-proof", str(PUBLIC_PROOF)]
+                    argv += [str(HERE / "m1-spec-cell.py"), "--arms-lock", str(HERE / "m1-prereg/f17-arms.lock.json"),
+                             "--arm", a.arm, "--binary", BIN26.replace("run-gen", "run-spec"), "--artifact", ART]
                 elif a.regime == "handoff":
                     order = "buffered,direct" if k % 2 else "direct,buffered"
                     argv[-4:-4] = ["--storage-root", B2_SCRATCH, "--storage-proof", str(PUBLIC_PROOF)]
@@ -150,7 +173,7 @@ def main():
                 with (out / f"round-{k:02d}.driver-attempt{attempt}.log").open("xb") as dl:
                     rc = subprocess.run(argv, stdout=dl, stderr=subprocess.STDOUT, cwd=ROOT).returncode
                 text = (out / f"round-{k:02d}.driver-attempt{attempt}.log").read_text(errors="replace")
-                lost = (rc == 75 if a.regime in ("gpucell", "diag") else
+                lost = (rc == 75 if a.regime in ("gpucell", "diag", "owed26cells", "owed26serve") else
                         rc != 0 and "Resource temporarily unavailable" in text and not (target / "visits").exists())
                 log.write(json.dumps({"utc": now(), "event": "cell", "round": k, "attempt": attempt, "rc": rc,
                                       "seconds": round(time.monotonic() - t0, 1), "lost_lock_race": lost,
@@ -159,7 +182,15 @@ def main():
                 print(f"M1-5090 regime={a.regime} round={k} attempt={attempt} rc={rc} lost_lock_race={lost}", flush=True)
                 if not lost:
                     break
-                time.sleep(10)
+                # A lost race means a peer took the card: yield as after a cell before retrying.
+                log.write(json.dumps({"utc": now(), "event": "yield", "after_lost_race_round": k,
+                                      "seconds": YIELD_S}) + "\n")
+                log.flush()
+                time.sleep(YIELD_S)
+            log.write(json.dumps({"utc": now(), "event": "yield", "after_round": k, "seconds": YIELD_S,
+                                  "why": "release the shared card between registered cells"}) + "\n")
+            log.flush()
+            time.sleep(YIELD_S)
             if rc != 0:
                 # A cell that failed for any reason other than a lost lock race stops the regime:
                 # the next round must not run on a state nobody has read (resync 2026-09-26).
@@ -167,7 +198,7 @@ def main():
                 log.flush()
                 print(f"M1-5090 regime={a.regime} STOPPED at round {k} rc={rc}", flush=True)
                 return 2
-            if a.smoke or a.regime in ("g2", "anonpeak", "gpucell", "diag"):
+            if a.smoke or a.regime in ("g2", "anonpeak", "gpucell", "diag", "owed26cells", "owed26serve", "spec"):
                 break
     return 0
 

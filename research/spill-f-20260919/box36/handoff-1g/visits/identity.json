@@ -1,0 +1,45 @@
+{
+ "driver_sha256": "20aa411529f8bbe1eb4d0f553c3e279e6669b6e0def434b39c6469c234c387fd",
+ "gate_sha256": "0f319e9c3eeb27ce8147ab0d682446a7d65aa70f99da0a060e5a1d6e407beb51",
+ "server_sha256": "f00ad414366754dce672274a5219db1bcbc905f5ca3d12aaf29121c27c1df9f7",
+ "prompts_sha256": "8e3970093c73d61caa0162851251f6e4b47e86eaf8e75fca0193fbeafee0e4e8",
+ "proof_sha256": "ed37966abf5d8668b325ce7fadcadbf6da352d8e60c30f80d08c95c30c77c6a5",
+ "size_bytes": 1073741824,
+ "cycles": 20,
+ "io_schedule": [
+  "buffered",
+  "direct",
+  "direct",
+  "buffered",
+  "buffered",
+  "direct",
+  "direct",
+  "buffered",
+  "buffered",
+  "direct",
+  "direct",
+  "buffered",
+  "buffered",
+  "direct",
+  "direct",
+  "buffered",
+  "buffered",
+  "direct",
+  "direct",
+  "buffered"
+ ],
+ "host_mb": 16384,
+ "lock": {
+  "owner": "collector",
+  "lock": "/tmp/memra-gpu.lock",
+  "mechanism": "inherited-flock-same-open-description",
+  "device": 55,
+  "inode": 10211016200,
+  "qualification": false
+ },
+ "leaves": [
+  "nvme0n1"
+ ],
+ "top": "nvme0n1p3",
+ "qualified": false
+}
