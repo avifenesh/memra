@@ -1,0 +1,114 @@
+# WP-C day 93 (2026-09-27): OWED C2, option 1: I26's design (the host hit without a transfer ticket), registered before any code
+
+`DAY91.md` section 1 names I26 and the questions its design must answer from the source before code. The lead:
+"I26: design first, as you wrote." This file is that design. Its code waits for the lead's read of it; the answers
+below are what the code must keep. Tree at start: `eb1ec5fc2` (I25 landed).
+
+## 0. What a host hit does today (`bank/residency.rs`, `bank/expert_dispatch.rs`)
+
+The adapter's `demand` and `demand_many` stage a ticket for every demand, then drive the full lifecycle.
+- **`stage_at`** checks, in order:
+  - the batch is not empty;
+  - the batch is at most `limits.items` ids, and the pending tickets are fewer than `limits.tickets`;
+  - the request is valid;
+  - a prefetch-priority batch finds fewer than `limits.tickets - 1` pending;
+  - no device, peer, replica or pinned bytes are asked for;
+  - each id is the catalog's, and the logical bytes stay within `limits.batch_bytes`.
+
+  For a batch with no misses, it then reads the host cache per unique record and clones each cached lease. It
+  reserves the queue charge: pageable equal to the batch's metadata allowance (the records' ticket metadata; no
+  output and no slot, since nothing is read), staging 0, and in flight 1. It inserts a `Pending` with an empty read
+  plan.
+- **`progress`** finds nothing to read.
+- **`publish`** makes the outputs, the cached leases in block order. For demand priority it records `heat.demand` per
+  id, then per id in order the SLRU `hit_at` (demand) or `resident_at` (prefetch); each answers resident.
+- **`finish_ticket`** marks host use done, retires (nothing unpublished), and acknowledges: it releases the queue
+  charge and removes the ticket.
+- **`collect_evicted`** then releases any evicted lease no unretired ticket references.
+
+**What the ticket protects.** An evicted lease is released by `collect_evicted` only when `can_release` finds no
+unretired pending ticket referencing it. So the ticket is also the in-use guard: the bytes a copy is still reading
+are not released.
+
+**The door's configuration** (`install_expert_bank_gate`):
+- `open_leases = BANKED_INFLIGHT + 1 = 33` sets four things: the proxy's pending limit, the bank's `limits.tickets`,
+  the governor's in-flight capacity and its staging capacity (33 records).
+- The door's governor is its own instance: its clock always reads 0, every request's deadline is `u64::MAX`, and
+  nothing enqueues.
+- Its pageable capacity is the planned payload, plus 4096 bytes per host slot, plus 512 MiB of headroom.
+
+Under the qualified door every decode demand is a host hit (`DAY91.md` section 0: `host_misses=0`).
+
+## 1. The design: I26
+
+**Scope.** A demand, single or grouped, of demand or prefetch priority, whose every record the host cache holds
+when the demand is staged. Any miss, anywhere in the batch, takes today's ticket path unchanged, and so do the
+fill and every refusal path.
+
+**The hit path** (in the bank, crate-private, called by the adapter by catalog position).
+1. **The same checks, in the same order, with the same answers**: empty, items, the ticket limit, the request's
+   validity, the prefetch reservation, the device and pinned refusal, the ids, the batch bytes.
+   - The two ticket-count checks read `pending.len() + open_hits`, where `open_hits` counts the hit demands not yet
+     finished. A hit occupies the same slot a ticket did.
+2. **The same policy effects, in the same order**: for demand priority `heat.demand` per id, then per id the SLRU
+   `hit_at` or `resident_at`, exactly as `publish` runs them.
+3. **The same outputs**: the cached leases, cloned in block order.
+4. **The in-use guard.** Each leased record's use count goes up (a map from the lease's charge id to its count, on
+   the Fx hasher), and `can_release` answers `Busy` while that count is nonzero, as it does for an unretired ticket
+   today. The hit demand gets a hit ticket from the bank's ticket sequence, with the same epochs and a distinct flag,
+   so a finish finds its records and never a `Pending`.
+5. **The finish** (`finish_ticket` on a hit ticket): the use counts go down, `open_hits` goes down, then
+   `collect_evicted`, the same point as today. An unknown or already finished hit ticket refuses as an unknown ticket
+   does (`UnknownTicket`).
+
+**What goes, and why each is provably inert in the door's configuration.**
+- **The pending ticket, the empty plan, the `progress` loop, the unpublished and expected sets, and the retire and
+  acknowledge bookkeeping.** For a batch with no misses they hold nothing, and the in-use guard (4) takes the one
+  role that matters.
+- **The queue charge (the batch's metadata allowance pageable, in flight 1).**
+  - **In flight.** The governor's in-flight capacity is 33, and the bank's ticket limit (also 33, now counting
+    hits) bounds tickets plus hits. So no reservation of the door's could be refused for in-flight capacity with or
+    without the hits' charges.
+  - **Pageable.** The hits' charges together are at most `open_leases x MAX_GROUP x` the largest ticket metadata
+    allowance, a few hundred KiB against 512 MiB of headroom. "About" is not a proof, so the install computes the
+    bound. The worst case of every other pageable charge is:
+    - the record charges of the planned slots (payload plus metadata);
+    - the SLRU metadata charge;
+    - the evicted leases open tickets may still hold;
+    - the misses' ticket charges.
+
+    If the headroom left over covers the hits' bound, the hit path drops the charge. Otherwise it keeps the queue
+    charge as today, and one install line says which. The answers are then the same in every configuration, by
+    construction.
+  - **Order and time.** The door's governor has no queue and no clock, so its `Busy` and `Deadline` answers never
+    arise.
+  - **What it changes.** Only `used()` during a hit, and nothing in the door reads it.
+  - This argument holds for the door's governor only. A bank built on another governor (`memra-kv`'s, the object
+    store's) never takes the hit path, because the hit path is the adapter's, and the adapter is the door's alone.
+- **The misses keep everything.**
+
+**What the proxy, the engine and the trace see.** Nothing different. The proxy registers and finishes the same
+demands with the same tokens, the engine's retire walk and its events are unchanged, and `TracedDispatch`'s
+pre-demand reads and lines stay above the bank.
+
+## 2. The gates, registered now
+
+- **The fixture first, at I25, before any I26 line.** A seeded trace through the adapter, over a bank with fewer
+  host slots than records, so hits, misses, evictions and pinned evicted leases all occur. Singles and groups, both
+  priorities, injected finish failures, and refusals at the ticket and batch limits. After every operation the
+  transcript records:
+  - every outcome, including the refusal kinds;
+  - the leased records and their bytes;
+  - each demanded record's SLRU slot and the SLRU queue orders;
+  - the heat of each id;
+  - `cached_records` and `owned_leases`;
+  - `used()` outside every hit's flight (after each finish).
+
+  The ticket inventory and `used()` during a hit are excluded by design (section 1); the transcript says so in its
+  header. The install's bound line and both of its branches get their own test. I26 must reproduce the transcript exactly.
+- **The existing suites.** I24's proxy fixture changes by design (it records tickets and the in-flight charge), so
+  it is re-recorded at I26 with the reason in its header. Its I25 transcript stays banked beside it. Then
+  memra-tier's tests, memra-engine's `banked_native` tests, and clippy on both crates.
+- **The local queue v23:** the check (p88 and I26 traced, one tape and one host demand sequence), then the split of
+  `p88s`, `i25s` and `i26s` under DAY89 section 2's sizing rule, cumulative from `p88s`.
+- **The card.** At `reaches`, NEED TARGET CARD for the `promo` sitting with the traced twin (`DAY92.md` section 1).
