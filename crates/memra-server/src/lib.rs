@@ -6748,15 +6748,73 @@ fn insert_peer_probe_metrics(
 }
 
 /// Flat serving counters + engine-truth step latency percentiles.
-/// memra#522: `Accept: text/plain` (any `text/plain` media range, e.g. the standard
-/// Prometheus client's `text/plain;version=0.0.4`) asks for the Prometheus exposition
-/// instead of the default JSON body. Absent or non-matching `Accept` keeps today's JSON
-/// response byte-for-byte, so no existing scraper's behavior changes.
+/// One parsed `Accept` media range: the type/subtype (already lowercased, params like
+/// `version=0.0.4` stripped) and its `q` weight, defaulting to 1.0 per RFC 9110 §12.5.1.
+struct AcceptRange {
+    media: String,
+    q: f32,
+}
+
+fn parse_accept(value: &str) -> Vec<AcceptRange> {
+    value
+        .split(',')
+        .filter_map(|part| {
+            let mut segs = part.split(';');
+            let media = segs.next()?.trim().to_ascii_lowercase();
+            if media.is_empty() {
+                return None;
+            }
+            let q = segs
+                .filter_map(|p| {
+                    let p = p.trim();
+                    p.strip_prefix("q=").and_then(|v| v.trim().parse().ok())
+                })
+                .next()
+                .unwrap_or(1.0f32);
+            Some(AcceptRange { media, q })
+        })
+        .collect()
+}
+
+/// memra#522: `Accept: text/plain` (or `application/openmetrics-text`, the OpenMetrics
+/// exposition media type) asks for the Prometheus exposition instead of the default JSON
+/// body, but ONLY when the client actually prefers it over JSON. A naive substring check on
+/// the raw header flips axios's default `Accept: application/json, text/plain, */*` (and
+/// any other "JSON first, text/plain as fallback" header) to Prometheus and breaks every
+/// existing JSON consumer (revuto, PR #896 review round 1). That is why the header is
+/// parsed into weighted media ranges instead of matched as a substring.
+///
+/// Rule, deliberately simple rather than a full RFC 9110 content-negotiation
+/// implementation: if any range names `application/json` (or `application/*` / `*/*`) with
+/// `q > 0`, JSON wins and this returns `false`. Existing scrapers that list `text/plain` as
+/// a fallback keep getting JSON, unchanged. Otherwise, a `text/plain` or
+/// `application/openmetrics-text` range with `q > 0` asks for Prometheus. Absent or
+/// unparsable `Accept` keeps today's JSON response byte-for-byte.
 fn wants_prometheus(headers: &HeaderMap) -> bool {
-    headers
+    let Some(raw) = headers
         .get(axum::http::header::ACCEPT)
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| v.to_ascii_lowercase().contains("text/plain"))
+    else {
+        return false;
+    };
+    let ranges = parse_accept(raw);
+    let json_acceptable = ranges.iter().any(|r| {
+        r.q > 0.0
+            && matches!(
+                r.media.as_str(),
+                "application/json" | "application/*" | "*/*"
+            )
+    });
+    if json_acceptable {
+        return false;
+    }
+    ranges.iter().any(|r| {
+        r.q > 0.0
+            && matches!(
+                r.media.as_str(),
+                "text/plain" | "application/openmetrics-text"
+            )
+    })
 }
 
 /// Render the Prometheus text exposition (memra#522) from the same authorized snapshot the
@@ -19129,6 +19187,45 @@ default_reasoning_effort = "always"
             "memra_route_requests_total{route=\"t522-fake-route\",code=\"completed\"} 1"
         ));
         assert!(text.contains("le=\"+Inf\""));
+
+        // memra#522 revuto round 1: axios's default Accept lists text/plain as a fallback
+        // AFTER application/json. That must still get JSON, not Prometheus, or every
+        // existing JSON scraper that happens to send this (very common) default header
+        // breaks.
+        let mut axios_headers = HeaderMap::new();
+        axios_headers.insert(
+            axum::http::header::ACCEPT,
+            "application/json, text/plain, */*".parse().unwrap(),
+        );
+        let axios_resp = get_metrics(State(st.clone()), axios_headers).await;
+        assert_eq!(axios_resp.status(), StatusCode::OK);
+        assert!(
+            axios_resp
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains("json"),
+            "application/json present anywhere in Accept must win over a text/plain fallback"
+        );
+
+        // A caller that explicitly refuses text/plain (`q=0`) alongside JSON still gets JSON.
+        let mut refused_headers = HeaderMap::new();
+        refused_headers.insert(
+            axum::http::header::ACCEPT,
+            "text/plain;q=0, application/json".parse().unwrap(),
+        );
+        let refused_resp = get_metrics(State(st.clone()), refused_headers).await;
+        assert!(
+            refused_resp
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains("json")
+        );
     }
 
     /// A fake DSv4-shaped route whose worker runs the route's real memory door
