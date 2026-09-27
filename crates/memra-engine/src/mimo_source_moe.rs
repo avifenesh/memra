@@ -1,5 +1,5 @@
-//! One-token, source-MXFP4 MiMo MoE diagnostics. The streamed path reads
-//! selected experts per call; the resident path holds all experts on one GPU.
+//! Source-MXFP4 MiMo MoE diagnostics. The streamed path reads selected experts
+//! per token; the grouped path also accepts one bounded text-prefill chunk.
 //! Neither path is a serving admission gate.
 
 use std::collections::BTreeMap;
@@ -14,7 +14,10 @@ use memra_gguf::safetensors::StModel;
 use memra_gguf::source::MimoMxfp4Native;
 
 use crate::Engine;
-use crate::dsv4_ffi::{memra_dsv4_act_quant_fp8, memra_dsv4_fp4_gemm, memra_dsv4_fp4_gemm_sel};
+use crate::dsv4_ffi::{
+    memra_dsv4_act_quant_fp8, memra_dsv4_fp4_gemm, memra_dsv4_fp4_gemm_sel,
+    memra_dsv4_fp4_gemm_sel_g,
+};
 use crate::mimo_moe_load::MiMoRoutedSource;
 
 type Fail = Box<dyn Error>;
@@ -22,11 +25,55 @@ const HIDDEN: usize = 4096;
 const EXPERTS: usize = 256;
 const TOP_K: usize = 8;
 const EXPERT_WIDTH: usize = 2048;
+pub const MIMO_MOE_MAX_BATCH_TOKENS: usize = 256;
 
 pub struct MiMoMoeToken {
     pub output: CudaSlice<f32>,
     pub selected: Vec<u32>,
     pub weights: Vec<f32>,
+}
+
+/// Token-major `[tokens,4096]` output. Routing records use the same token-major,
+/// eight-slot order as the selected-expert kernels.
+pub struct MiMoMoeBatch {
+    pub output: CudaSlice<f32>,
+    pub selected: Vec<Vec<u32>>,
+    pub weights: Vec<Vec<f32>>,
+}
+
+fn validate_batch_request(
+    tokens: usize,
+    elements: usize,
+    engine_device: usize,
+    tensor_devices: &[usize],
+) -> Result<usize, Fail> {
+    if !(1..=MIMO_MOE_MAX_BATCH_TOKENS).contains(&tokens)
+        || elements != tokens * HIDDEN
+        || tensor_devices.iter().any(|&device| device != engine_device)
+    {
+        return Err("MiMo grouped MoE batch shape or GPU changed".into());
+    }
+    Ok(tokens * TOP_K)
+}
+
+fn validate_batch_plan(
+    bound: &ModelPlan,
+    config: &ModelConfig,
+    compiled: &ModelPlan,
+    plan: &MoeMlpPlan,
+    layer: usize,
+) -> Result<(), Fail> {
+    if bound != compiled {
+        return Err("MiMo grouped MoE batch plan differs from the loaded plan".into());
+    }
+    validate_contract(config, compiled, plan, layer)
+}
+
+fn grouped_projection_shape(projection: i32, rows: usize, cols: usize, per_slot: bool) -> bool {
+    matches!(
+        (projection, rows, cols, per_slot),
+        (0 | 2, EXPERT_WIDTH, HIDDEN, false) | (1, HIDDEN, EXPERT_WIDTH, true)
+    )
 }
 
 /// A source whose complete pinned header census and model plan were checked
@@ -470,16 +517,21 @@ impl InterleavedExperts {
         activation_scales: &CudaSlice<f32>,
         selected: &CudaSlice<i32>,
         shape: (i32, usize, usize, bool),
+        tokens: usize,
     ) -> Result<CudaSlice<f32>, Fail> {
         let (projection, rows, cols, per_slot) = shape;
-        let expected = if per_slot { TOP_K } else { 1 };
+        if !(1..=MIMO_MOE_MAX_BATCH_TOKENS).contains(&tokens) {
+            return Err("MiMo grouped expert token count changed".into());
+        }
+        let slots = tokens * TOP_K;
+        let expected = if per_slot { slots } else { tokens };
         let ordinal = engine.stream().context().ordinal();
-        if !(0..=2).contains(&projection)
+        if !grouped_projection_shape(projection, rows, cols, per_slot)
             || rows * cols / 2 != self.weight_stride
             || rows * cols / 32 != self.scale_stride
             || codes.len() != expected * cols
             || activation_scales.len() != expected * cols / 128
-            || selected.len() != TOP_K
+            || selected.len() != slots
             || [
                 codes.ordinal(),
                 activation_scales.ordinal(),
@@ -494,7 +546,7 @@ impl InterleavedExperts {
             return Err("MiMo grouped expert projection shape or GPU changed".into());
         }
         let stream = engine.stream();
-        let mut output = stream.alloc_zeros::<f32>(TOP_K * rows)?;
+        let mut output = stream.alloc_zeros::<f32>(slots * rows)?;
         let (codes_ptr, codes_guard) = codes.device_ptr(&stream);
         let (activation_scales_ptr, activation_scales_guard) =
             activation_scales.device_ptr(&stream);
@@ -504,24 +556,48 @@ impl InterleavedExperts {
         let (selected_ptr, selected_guard) = selected.device_ptr(&stream);
         let (output_ptr, output_guard) = output.device_ptr_mut(&stream);
         let rc = unsafe {
-            memra_dsv4_fp4_gemm_sel(
-                codes_ptr as *const c_void,
-                activation_scales_ptr as *const f32,
-                weight_ptr as *const c_void,
-                weight_scales_ptr as *const c_void,
-                scale2_ptr as *const f32,
-                selected_ptr as *const i32,
-                projection,
-                i32::from(per_slot),
-                1,
-                output_ptr as *mut f32,
-                TOP_K as i32,
-                rows as i32,
-                cols as i32,
-                self.weight_stride as i64,
-                self.scale_stride as i64,
-                stream.cu_stream() as *mut c_void,
-            )
+            if tokens == 1 {
+                memra_dsv4_fp4_gemm_sel(
+                    codes_ptr as *const c_void,
+                    activation_scales_ptr as *const f32,
+                    weight_ptr as *const c_void,
+                    weight_scales_ptr as *const c_void,
+                    scale2_ptr as *const f32,
+                    selected_ptr as *const i32,
+                    projection,
+                    i32::from(per_slot),
+                    1,
+                    output_ptr as *mut f32,
+                    slots as i32,
+                    rows as i32,
+                    cols as i32,
+                    self.weight_stride as i64,
+                    self.scale_stride as i64,
+                    stream.cu_stream() as *mut c_void,
+                )
+            } else {
+                // Gate/up consume one activation row per token (slot / 8).
+                // Down consumes the independently quantized row of each slot.
+                memra_dsv4_fp4_gemm_sel_g(
+                    codes_ptr as *const c_void,
+                    activation_scales_ptr as *const f32,
+                    weight_ptr as *const c_void,
+                    weight_scales_ptr as *const c_void,
+                    scale2_ptr as *const f32,
+                    selected_ptr as *const i32,
+                    projection,
+                    i32::from(per_slot),
+                    1,
+                    output_ptr as *mut f32,
+                    slots as i32,
+                    rows as i32,
+                    cols as i32,
+                    self.weight_stride as i64,
+                    self.scale_stride as i64,
+                    if per_slot { 0 } else { TOP_K as i32 },
+                    stream.cu_stream() as *mut c_void,
+                )
+            }
         };
         drop((
             codes_guard,
@@ -667,6 +743,7 @@ impl ResidentMiMoMoeLayer {
 /// projection. Router and accumulation order match the streamed control.
 pub struct GroupedMiMoMoeLayer {
     layer: usize,
+    bound_plan: ModelPlan,
     matrix: CudaSlice<f32>,
     bias: CudaSlice<f32>,
     active: CudaSlice<u8>,
@@ -712,6 +789,7 @@ impl GroupedMiMoMoeLayer {
         let experts = InterleavedExperts::load(engine, source)?;
         Ok(Self {
             layer,
+            bound_plan: compiled.clone(),
             matrix,
             bias,
             active,
@@ -782,6 +860,7 @@ impl GroupedMiMoMoeLayer {
             &scales,
             &ids_gpu,
             (0, EXPERT_WIDTH, HIDDEN, false),
+            1,
         )?;
         let up = self.experts.project(
             engine,
@@ -789,6 +868,7 @@ impl GroupedMiMoMoeLayer {
             &scales,
             &ids_gpu,
             (2, EXPERT_WIDTH, HIDDEN, false),
+            1,
         )?;
         let mut activated = engine.uninit(TOP_K * EXPERT_WIDTH)?;
         engine.silu_mul(&gate, &up, &mut activated, TOP_K * EXPERT_WIDTH)?;
@@ -800,10 +880,113 @@ impl GroupedMiMoMoeLayer {
             &activation_scales,
             &ids_gpu,
             (1, HIDDEN, EXPERT_WIDTH, true),
+            1,
         )?;
         let mut output = engine.uninit(HIDDEN)?;
         engine.axpy_rows_seq_into(&down, &weights_gpu, &mut output, HIDDEN, TOP_K)?;
         Ok(MiMoMoeToken {
+            output,
+            selected,
+            weights,
+        })
+    }
+
+    /// Run one BF16-valued f32 `[tokens,4096]` chunk, with `1 <= tokens <= 256`.
+    /// This is a native component path. It does not alter text-forward dispatch.
+    pub fn batch(
+        &self,
+        engine: &Engine,
+        x: &CudaSlice<f32>,
+        tokens: usize,
+        plan: &MoeMlpPlan,
+        pinned: &PinnedMiMoSource<'_>,
+    ) -> Result<MiMoMoeBatch, Fail> {
+        self.batch_bound(engine, x, tokens, plan, pinned.config, pinned.plan)
+    }
+
+    /// Runtime entry after the owning loader has pinned the source and plan.
+    pub fn batch_bound(
+        &self,
+        engine: &Engine,
+        x: &CudaSlice<f32>,
+        tokens: usize,
+        plan: &MoeMlpPlan,
+        config: &ModelConfig,
+        compiled: &ModelPlan,
+    ) -> Result<MiMoMoeBatch, Fail> {
+        validate_batch_plan(&self.bound_plan, config, compiled, plan, self.layer)?;
+        let ordinal = engine.stream().context().ordinal();
+        let slots = validate_batch_request(
+            tokens,
+            x.len(),
+            ordinal,
+            &[
+                x.ordinal(),
+                self.matrix.ordinal(),
+                self.bias.ordinal(),
+                self.active.ordinal(),
+                self.experts.weight.ordinal(),
+                self.experts.scales.ordinal(),
+                self.experts.scale2_dummy.ordinal(),
+            ],
+        )?;
+        engine.gpu.ctx.bind_to_thread()?;
+        let logits = engine.linear(x, &self.matrix, tokens, HIDDEN, EXPERTS)?;
+        let (ids_gpu, weights_gpu) = engine.moe_router_sigmoid_topk(
+            &logits,
+            tokens,
+            EXPERTS,
+            TOP_K,
+            EXPERTS,
+            &self.bias,
+            &self.active,
+            1.0,
+            true,
+        )?;
+        let ids = engine.dtoh_i32(&ids_gpu)?;
+        let weights = engine.dtoh(&weights_gpu)?;
+        let selected = validate_batch_selection(&ids, &weights, tokens)?;
+        let weights = weights.chunks_exact(TOP_K).map(<[f32]>::to_vec).collect();
+
+        let (codes, scales) = quantize_rows(engine, x, HIDDEN, tokens)?;
+        let gate = self.experts.project(
+            engine,
+            &codes,
+            &scales,
+            &ids_gpu,
+            (0, EXPERT_WIDTH, HIDDEN, false),
+            tokens,
+        )?;
+        let up = self.experts.project(
+            engine,
+            &codes,
+            &scales,
+            &ids_gpu,
+            (2, EXPERT_WIDTH, HIDDEN, false),
+            tokens,
+        )?;
+        let mut activated = engine.uninit(slots * EXPERT_WIDTH)?;
+        engine.silu_mul(&gate, &up, &mut activated, slots * EXPERT_WIDTH)?;
+        let (activation_codes, activation_scales) =
+            quantize_rows(engine, &activated, EXPERT_WIDTH, slots)?;
+        let down = self.experts.project(
+            engine,
+            &activation_codes,
+            &activation_scales,
+            &ids_gpu,
+            (1, HIDDEN, EXPERT_WIDTH, true),
+            tokens,
+        )?;
+        let mut output = engine.uninit(tokens * HIDDEN)?;
+        engine.axpy_rows_seq_tokens_into(
+            &down,
+            &weights_gpu,
+            &mut output,
+            HIDDEN,
+            TOP_K,
+            tokens,
+        )?;
+        Ok(MiMoMoeBatch {
             output,
             selected,
             weights,
@@ -843,6 +1026,26 @@ fn validate_selection(ids: &[i32], weights: &[f32]) -> Result<Vec<u32>, Fail> {
         })
         .collect::<Result<Vec<_>, _>>()
         .map_err(Into::into)
+}
+
+fn validate_batch_selection(
+    ids: &[i32],
+    weights: &[f32],
+    tokens: usize,
+) -> Result<Vec<Vec<u32>>, Fail> {
+    let slots = tokens
+        .checked_mul(TOP_K)
+        .ok_or("MiMo batch top-8 count overflow")?;
+    if !(1..=MIMO_MOE_MAX_BATCH_TOKENS).contains(&tokens)
+        || ids.len() != slots
+        || weights.len() != slots
+    {
+        return Err("MiMo batch router extent changed".into());
+    }
+    ids.chunks_exact(TOP_K)
+        .zip(weights.chunks_exact(TOP_K))
+        .map(|(row_ids, row_weights)| validate_selection(row_ids, row_weights))
+        .collect()
 }
 
 /// Evaluate one pre-MLP-normalized 4096-element token. The output is the
@@ -996,5 +1199,151 @@ mod tests {
         bad_weights = weights;
         bad_weights[0] = 0.0;
         assert!(validate_selection(&ids, &bad_weights).is_err());
+    }
+
+    #[test]
+    fn grouped_batch_contract_checks_bounds_device_plan_and_row_routing() {
+        assert!(grouped_projection_shape(0, EXPERT_WIDTH, HIDDEN, false));
+        assert!(grouped_projection_shape(2, EXPERT_WIDTH, HIDDEN, false));
+        assert!(grouped_projection_shape(1, HIDDEN, EXPERT_WIDTH, true));
+        assert!(!grouped_projection_shape(1, EXPERT_WIDTH, HIDDEN, true));
+        assert!(!grouped_projection_shape(0, EXPERT_WIDTH, HIDDEN, true));
+        for tokens in [1, 9, 129, MIMO_MOE_MAX_BATCH_TOKENS] {
+            assert_eq!(
+                validate_batch_request(tokens, tokens * HIDDEN, 3, &[3; 7]).unwrap(),
+                tokens * TOP_K
+            );
+        }
+        assert!(validate_batch_request(0, 0, 3, &[3; 7]).is_err());
+        assert!(
+            validate_batch_request(
+                MIMO_MOE_MAX_BATCH_TOKENS + 1,
+                (MIMO_MOE_MAX_BATCH_TOKENS + 1) * HIDDEN,
+                3,
+                &[3; 7]
+            )
+            .is_err()
+        );
+        assert!(validate_batch_request(9, 9 * HIDDEN - 1, 3, &[3; 7]).is_err());
+        assert!(validate_batch_request(9, 10 * HIDDEN, 3, &[3; 7]).is_err());
+        assert!(validate_batch_request(9, 9 * HIDDEN, 3, &[3, 3, 3, 3, 3, 4, 3]).is_err());
+
+        let row = [0, 255, 2, 3, 4, 5, 6, 7];
+        let ids = [row, row].concat();
+        let weights = [0.125; 2 * TOP_K];
+        assert_eq!(
+            validate_batch_selection(&ids, &weights, 2).unwrap(),
+            vec![row.map(|id| id as u32).to_vec(); 2]
+        );
+        assert!(validate_batch_selection(&ids[..TOP_K], &weights, 2).is_err());
+        assert!(validate_batch_selection(&ids, &weights[..TOP_K], 2).is_err());
+        let mut duplicate_second_row = ids.clone();
+        duplicate_second_row[TOP_K + 7] = row[0];
+        assert!(validate_batch_selection(&duplicate_second_row, &weights, 2).is_err());
+        let mut invalid_second_row = weights;
+        invalid_second_row[TOP_K] = f32::NAN;
+        assert!(validate_batch_selection(&ids, &invalid_second_row, 2).is_err());
+
+        let fixture = include_str!("../../memra-gguf/src/model_packs/mimo_v2/fixtures/config.json");
+        let config = ModelConfig::from_hf(&HfConfig::parse(fixture));
+        let compiled = ModelPlan::compile(&config).unwrap();
+        let MlpPlan::Moe(plan) = &compiled.layers[1].mlp else {
+            panic!("fixture layer 1 must be MoE");
+        };
+        let mut drifted = compiled.clone();
+        drifted.layers[1].mlp = compiled.layers[0].mlp.clone();
+        assert!(validate_batch_plan(&compiled, &config, &drifted, plan, 1).is_err());
+        let mut nonlocal_drift = compiled.clone();
+        nonlocal_drift.layers[0].mlp = compiled.layers[1].mlp.clone();
+        assert!(validate_contract(&config, &nonlocal_drift, plan, 1).is_ok());
+        assert!(validate_batch_plan(&compiled, &config, &nonlocal_drift, plan, 1).is_err());
+        assert!(validate_batch_plan(&compiled, &config, &compiled, plan, 1).is_ok());
+    }
+
+    #[test]
+    #[ignore = "requires pinned MiMo source and a dedicated two-card GPU lane"]
+    fn grouped_batch_matches_serial_token_on_two_cards() -> Result<(), Fail> {
+        use std::path::Path;
+
+        use memra_gguf::model_packs::mimo_v2::bind_pinned_text_source;
+        use memra_gguf::source::SafetensorsSource;
+
+        use crate::mimo_moe_load::MiMoMlpSource;
+
+        let root = std::env::var("MIMO_PINNED_SOURCE_ROOT")?;
+        let gpu0: usize = std::env::var("MEMRA_MIMO_BATCH_GPU0")?.parse()?;
+        let gpu1: usize = std::env::var("MEMRA_MIMO_BATCH_GPU1")?.parse()?;
+        if gpu0 == gpu1 {
+            return Err("MiMo batch parity needs distinct dedicated GPUs".into());
+        }
+        let root = Path::new(&root);
+        let model = StModel::open(root)?;
+        let source = SafetensorsSource::open(root)?;
+        let (config, compiled, binding) = bind_pinned_text_source(&source)?;
+        let pinned = PinnedMiMoSource::bind(&model, &config, &compiled)?;
+        for (gpu, layer_index) in [(gpu0, 1usize), (gpu1, 24usize)] {
+            let engine = Engine::new(gpu)?;
+            let MlpPlan::Moe(plan) = &compiled.layers[layer_index].mlp else {
+                return Err("MiMo batch parity layer lost its routed plan".into());
+            };
+            let MiMoMlpSource::Routed(bound) =
+                MiMoMlpSource::acquire(&source, &binding, &compiled, layer_index)?
+            else {
+                return Err("MiMo batch parity layer lost its routed source".into());
+            };
+            let grouped = GroupedMiMoMoeLayer::load(&engine, &pinned, layer_index, plan, &bound)?;
+            for tokens in [1, 9, 129, MIMO_MOE_MAX_BATCH_TOKENS] {
+                let input = (0..tokens * HIDDEN)
+                    .map(|index| {
+                        let row = index / HIDDEN;
+                        let col = index % HIDDEN;
+                        ((col * 37 + row * 19) % 257) as f32 / 128.0 - 1.0
+                    })
+                    .collect::<Vec<_>>();
+                let input_gpu = engine.htod(&input)?;
+                let batch = grouped.batch(&engine, &input_gpu, tokens, plan, &pinned)?;
+                let batch_output = engine.dtoh(&batch.output)?;
+                assert_eq!(batch_output.len(), tokens * HIDDEN);
+                assert_eq!(batch.selected.len(), tokens);
+                assert_eq!(batch.weights.len(), tokens);
+                for row in 0..tokens {
+                    let one = engine.htod(&input[row * HIDDEN..(row + 1) * HIDDEN])?;
+                    let serial = grouped.token(&engine, &one, plan, &pinned)?;
+                    assert_eq!(
+                        batch.selected[row], serial.selected,
+                        "GPU {gpu}, layer {layer_index}, tokens {tokens}, row {row}"
+                    );
+                    let exact_weights = batch.weights[row]
+                        .iter()
+                        .zip(&serial.weights)
+                        .all(|(got, want)| got.to_bits() == want.to_bits());
+                    for slot in 0..TOP_K {
+                        let got = batch.weights[row][slot];
+                        let want = serial.weights[slot];
+                        assert!(
+                            (got - want).abs() <= 1e-5,
+                            "GPU {gpu}, layer {layer_index}, tokens {tokens}, row {row}, slot {slot}: {got} vs {want}"
+                        );
+                    }
+                    let serial_output = engine.dtoh(&serial.output)?;
+                    for col in 0..HIDDEN {
+                        let got = batch_output[row * HIDDEN + col];
+                        let want = serial_output[col];
+                        if exact_weights {
+                            assert_eq!(
+                                got.to_bits(),
+                                want.to_bits(),
+                                "GPU {gpu}, layer {layer_index}, tokens {tokens}, row {row}, col {col}"
+                            );
+                        }
+                        assert!(
+                            got.is_finite() && (got - want).abs() <= 2e-3 * want.abs().max(1.0),
+                            "GPU {gpu}, layer {layer_index}, tokens {tokens}, row {row}, col {col}: {got} vs {want}"
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
