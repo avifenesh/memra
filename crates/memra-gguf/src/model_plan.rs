@@ -5,6 +5,7 @@
 //! Runtime migration can therefore compare a plan against today's behavior before selecting it.
 
 use crate::config::{Arch, AttentionGateKind, LayerKind, ModelConfig};
+use crate::model_packs::mimo_v2::audio::MiMoAudioPatchPlan;
 
 pub mod speech;
 use speech::WhisperPlan;
@@ -23,6 +24,9 @@ pub struct ModelPlan {
     pub context_length: u32,
     pub embedding_scale: f32,
     pub vision: Option<VisionPlan>,
+    /// Pinned grouped-code audio patch program. The separate PCM-to-RVQ
+    /// tokenizer is not represented by this field.
+    pub mimo_audio_patch: Option<MiMoAudioPatchPlan>,
     pub multimodal: Option<VisionTokenInjectionPlan>,
     pub layers: Vec<LayerPlan>,
     pub output_norm: NormPlan,
@@ -53,6 +57,9 @@ impl std::fmt::Debug for ModelPlan {
         d.field("context_length", &self.context_length);
         d.field("embedding_scale", &self.embedding_scale);
         d.field("vision", &self.vision);
+        if let Some(audio) = &self.mimo_audio_patch {
+            d.field("mimo_audio_patch", audio);
+        }
         d.field("multimodal", &self.multimodal);
         d.field("layers", &self.layers);
         d.field("output_norm", &self.output_norm);
@@ -1095,6 +1102,18 @@ impl ModelPlan {
                 })
             })
             .transpose()?;
+        let mimo_audio_patch = cfg
+            .mimo
+            .as_ref()
+            .and_then(|mimo| mimo.audio_config.as_ref())
+            .map(|_| {
+                crate::model_packs::mimo_v2::audio::pinned_patch_plan(cfg).map_err(|_| {
+                    PlanCompileError::InvalidMultimodalConfig {
+                        field: "MiMo V2.6 audio patch config differs from pinned source",
+                    }
+                })
+            })
+            .transpose()?;
         let multimodal = match (cfg.multimodal, vision.as_ref()) {
             // glm5_next carries its splice ids inside vision_config truth, not the generic
             // image_token_id/vision_soft_tokens_per_image pair.
@@ -1170,6 +1189,7 @@ impl ModelPlan {
                 1.0
             },
             vision,
+            mimo_audio_patch,
             multimodal,
             partition_boundaries: (1..trunk_layers as usize).collect(),
             layers,
@@ -1263,6 +1283,9 @@ impl ModelPlan {
             return speech.operations();
         }
         let mut operations = Vec::new();
+        if include_frontend && self.mimo_audio_patch.is_some() {
+            operations.push(OperationKind::MiMoAudioPatch);
+        }
         if include_frontend && let Some(vision) = self.vision.as_ref() {
             match vision {
                 VisionPlan::Factored(vision) => {
@@ -2590,6 +2613,10 @@ pub enum OperationKind {
     /// Pinned MiMo Conv3D / alternating-window ViT / zero-bias merger program.
     /// Generic vision rewrites do not implement this source-distinct tower.
     MiMoVisionTower,
+    /// Pinned MiMo grouped-code embedding, local six-layer encoder, and
+    /// projection to the text hidden width. Generic audio rewrites do not
+    /// implement this source-distinct program.
+    MiMoAudioPatch,
     RmsNorm,
     FullAttention,
     SlidingWindowAttention,

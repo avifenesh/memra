@@ -638,6 +638,46 @@ mod tests {
     }
 
     #[test]
+    fn source_audio_patch_compiles_as_distinct_pinned_program() {
+        let config = ModelConfig::from_hf(&HfConfig::parse(include_str!("fixtures/config.json")));
+        let plan = SOURCE_PROFILE.compile_plan(&config).unwrap();
+        let audio = plan
+            .mimo_audio_patch
+            .expect("pinned source must compile the grouped-code audio patch");
+        assert_eq!(audio.code_channels, 20);
+        assert_eq!(audio.group_size, 4);
+        assert_eq!(audio.local_layers, 6);
+        assert_eq!(audio.output_hidden, 4096);
+        assert!(
+            plan.multimodal_prefill_operations()
+                .contains(&OperationKind::MiMoAudioPatch)
+        );
+        assert!(
+            !plan
+                .trunk_operations()
+                .contains(&OperationKind::MiMoAudioPatch)
+        );
+        assert!(crate::op_registry::surfaces(OperationKind::MiMoAudioPatch).is_none());
+        assert!(SOURCE_PROFILE.support.is_none());
+
+        let mut changed = config;
+        changed
+            .mimo
+            .as_mut()
+            .unwrap()
+            .audio_config
+            .as_mut()
+            .unwrap()
+            .group_size = 2;
+        assert!(matches!(
+            SOURCE_PROFILE.compile_plan(&changed),
+            Err(PlanCompileError::InvalidMultimodalConfig {
+                field: "MiMo V2.6 audio patch config differs from pinned source",
+            })
+        ));
+    }
+
+    #[test]
     fn pinned_profiles_reject_missing_or_drifted_vision() {
         let config = ModelConfig::from_hf(&HfConfig::parse(include_str!("fixtures/config.json")));
         for profile in [&SOURCE_PROFILE, &MINT_PROFILE] {

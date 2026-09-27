@@ -1263,6 +1263,7 @@ mod tests {
             context_length: 512,
             embedding_scale: 1.0,
             vision: None,
+            mimo_audio_patch: None,
             multimodal: None,
             layers: vec![LayerPlan {
                 index: 0,

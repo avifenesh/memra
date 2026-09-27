@@ -65,6 +65,7 @@ pre-existing allowlists for every operation, pinned by
 | `VisionProjection` | — | — | — | — | — | — | — | — | — | — |
 | `VisionTokenInjection` | — | — | — | — | — | — | — | — | — | — |
 | `MiMoVisionTower` | — | — | — | — | — | — | — | — | — | — |
+| `MiMoAudioPatch` | — | — | — | — | — | — | — | — | — | — |
 | `RmsNorm` | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
 | `FullAttention` | yes | yes | yes | yes | yes | yes | — | — | yes | yes |
 | `SlidingWindowAttention` | — | — | yes | — | yes | yes | — | — | yes | yes |

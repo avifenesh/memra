@@ -149,6 +149,7 @@ impl WhisperPlan {
             },
             speech: Some(self),
             vision: None,
+            mimo_audio_patch: None,
             multimodal: None,
             layers: Vec::new(),
             exit_mixer: None,
