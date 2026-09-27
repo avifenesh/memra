@@ -1,0 +1,8 @@
+cell=identity-default-on cmd=bash tools/kv-host-spill-identity-gate.sh --external-lock 9 /root/models/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf /root/wt-integ72/target/release/memra-server
+env=MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_KV_HOST_CONTRACTS=1
+lock=/tmp/memra-gpu.lock owner=collector-fd9
+tree=50bad99d2bafa22418fbe8824b2aba449264146d
+binary_sha256=96fd08c62763a267c3634ad35a102c8c140c5eb6d11bcce3d1c2323d8ee35a2b
+model=Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+gpu=NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 600.00 W
+status=executed-not-qualified

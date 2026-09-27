@@ -3,6 +3,7 @@
 //! dense M=1 kernel functions. First capture is timed once for EACH scored arm.
 use memra_engine::dsv4_gpu::{DecodeState, Dsv4Gpu, Dsv4SampleCfg, dsv4_pos_uniform, dsv4_prof_on};
 use memra_engine::dsv4_sampler::{Dsv4DeviceSampler, Dsv4Sampler, dsv4_sampler};
+use memra_engine::dsv4_source_tape::SourceTape;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -15,7 +16,6 @@ use std::{
 const PRIME: usize = 256;
 const OUTPUT: usize = 256;
 const CAPACITY: usize = PRIME + OUTPUT + 8;
-const SOURCE_SHA: &str = "f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded";
 const FP8_NODES: &str = "dsv4_dense_exact_tail_fp8_kernel";
 const DOT_NODES: &str = "dsv4_dense_exact_tail_dots_kernel";
 const CONTROL_FP8: &str = "dsv4_gemv_fp8_m_kernel";
@@ -112,7 +112,10 @@ fn captures_once(gpu: &Dsv4Gpu, state: &DecodeState) {
         [1, 1]
     );
     for rank in gpu.full_token_replay_census_for_gate(state).unwrap() {
-        assert_eq!(rank[0][2], 86, "43 layers, two ARs each");
+        assert_eq!(
+            rank[0][2], 129,
+            "43 layers: an expert reduction and two attention row gathers each"
+        );
         assert_eq!(rank[0][3], 1, "embedding");
         assert_eq!(rank[0][4], 86, "HC posts");
         assert_eq!(rank[0][6], 0, "unsupported forward nodes");
@@ -265,7 +268,7 @@ fn refusal_cells(
             let first = failed.prepare(gpu);
             let before_host = enqueues();
             for &token in &inputs[..position - PRIME] {
-                gpu.decode_sample_full_token_for_gate(token, &mut failed.state)
+                gpu.decode_sample_full_token(token, &mut failed.state)
                     .expect("fault setup");
             }
             failed.check_enqueues(before_host, first);
@@ -282,7 +285,7 @@ fn refusal_cells(
             gpu.arm_attention_tp_join_refusal_for_gate(layer, rank, code)
                 .unwrap();
             let error = gpu
-                .decode_sample_full_token_for_gate(inputs[position - PRIME], &mut failed.state)
+                .decode_sample_full_token(inputs[position - PRIME], &mut failed.state)
                 .unwrap_err();
             assert!(error.contains("one-shot reduction refused"), "{error}");
             let mut words = [0, 0];
@@ -300,7 +303,7 @@ fn refusal_cells(
                 assert_eq!(after[r], [counts[r][0] + 1, counts[r][1]], "refusal commit");
             }
             assert!(
-                gpu.decode_sample_full_token_for_gate(inputs[position - PRIME], &mut failed.state)
+                gpu.decode_sample_full_token(inputs[position - PRIME], &mut failed.state)
                     .unwrap_err()
                     .contains("unfinished transaction")
             );
@@ -361,7 +364,7 @@ fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, output: &Path, reve
             let capturing = arm.prepare(gpu);
             let host = enqueues();
             let actual = gpu
-                .decode_sample_full_token_for_gate(carry, &mut arm.state)
+                .decode_sample_full_token(carry, &mut arm.state)
                 .expect("correctness full replay");
             assert_eq!(
                 actual, next,
@@ -422,9 +425,7 @@ fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, output: &Path, reve
         let mut token = first;
         for &expected in &inputs {
             assert_eq!(token, expected);
-            token = gpu
-                .decode_sample_full_token_for_gate(token, &mut arm.state)
-                .unwrap();
+            token = gpu.decode_sample_full_token(token, &mut arm.state).unwrap();
         }
         assert_eq!(token, expected_next);
         assert_eq!(identity(gpu, &arm.state), expected_identity);
@@ -486,7 +487,7 @@ fn run(gpu: &Dsv4Gpu, prompt: &[u32], tokenizer: &Tokenizer, output: &Path, reve
             assert_ne!(carry, tokenizer.eos_id(), "early EOS row");
             tokens.push(carry);
             carry = gpu
-                .decode_sample_full_token_for_gate(carry, &mut active.state)
+                .decode_sample_full_token(carry, &mut active.state)
                 .expect("scored replay");
         }
         drain(gpu);
@@ -573,7 +574,6 @@ fn main() {
         ("MEMRA_DSV4_VERIFY_TOPK", "device"),
         ("MEMRA_DSV4_PREFILL_MOE", "reference"),
         ("MEMRA_DSV4_DRAFTER", "off"),
-        ("MEMRA_DSV4_SMALL_KERNEL_DIET", "1"),
         ("MEMRA_MOE_F16G", "2"),
         ("MEMRA_F16G_SK", "32"),
     ] {
@@ -587,17 +587,13 @@ fn main() {
     // Pin the historical control program independently of the graph default.
     // This source pin contains neither cadence nor GU N32 implementation. The
     // controller binds the source; no future-default support is inferred.
-    let source = std::fs::read_to_string(&args[2]).expect("source tape");
-    assert_eq!(
-        format!("{:x}", Sha256::digest(source.as_bytes())),
-        SOURCE_SHA
-    );
+    let tape = SourceTape::read(&args[2]).expect("source tape");
     let tokenizer = Tokenizer::from_hf_dir(Path::new(&args[1])).expect("tokenizer");
-    let prompt = tokenizer.encode(
-        &format!("Review this inference engine source:\n\n{source}"),
-        true,
+    let prompt = tape.prompt(
+        &tokenizer,
+        "Review this inference engine source:\n\n",
+        PRIME,
     );
-    assert!(prompt.len() >= PRIME);
     let output = PathBuf::from(&args[3]);
     std::fs::create_dir(&output).expect("new output directory");
     Dsv4Gpu::set_tp_ep_topology_for_gate(true);

@@ -1,0 +1,147 @@
+diff --git a/crates/memra-engine/cu/dsv4_gpu.cu b/crates/memra-engine/cu/dsv4_gpu.cu
+index 8ae455b5f..0b81b01fc 100644
+--- a/crates/memra-engine/cu/dsv4_gpu.cu
++++ b/crates/memra-engine/cu/dsv4_gpu.cu
+@@ -8202,22 +8202,90 @@ __device__ __forceinline__ float dsv4_warp_max(float v) {
+ // dsv4_act_quant_fp8_kernel then dsv4_fp8_gather_half_kernel on one row, written straight into
+ // the swizzled half staging of the stream body. A max is exact in any order, so the warp
+ // reductions give those kernels' group amax and row scale. Returns this thread's lossy flag.
+-template<int NW>
++// CG reads the row through L2, for a row other CTAs of the same launch wrote.
++template<bool CG>
++__device__ __forceinline__ float4 dsv4_moe_fused_mirror_ld(const float* xrow, int g, int lane) {
++    const float4* src = reinterpret_cast<const float4*>(xrow + (size_t)g * 128) + lane;
++    if constexpr (CG) return __ldcg(src);
++    return *src;
++}
++
++// x / d where d may be a normal power of two with a normal reciprocal: x * (1 / d) is then the
++// same correctly rounded value, so the multiply keeps the division's bits. Any other divisor
++// divides.
++__device__ __forceinline__ bool dsv4_normal_pow2(float d) {
++    const unsigned b = __float_as_uint(d), e = (b >> 23) & 0xFFu;
++    return (b & 0x807FFFFFu) == 0 && e >= 1 && e <= 253;
++}
++
++__device__ __forceinline__ float dsv4_div_p2(float x, float d, float inv, bool p2) {
++    return p2 ? x * inv : x / d;
++}
++
++// Group g's scale into s_scale[g]: the act_quant group amax, floored, over 448, rounded up to a
++// power of two.
++__device__ __forceinline__ void dsv4_moe_fused_mirror_amax(const float4 v, float* s_scale, int g,
++                                                           int lane) {
++    float a = 0.0f;
++    a = fmaxf(a, fabsf(v.x));
++    a = fmaxf(a, fabsf(v.y));
++    a = fmaxf(a, fabsf(v.z));
++    a = fmaxf(a, fabsf(v.w));
++    float amax = dsv4_warp_max(a);
++    amax = fmaxf(amax, 1e-4f);
++    const float inv = (float)(1.0 / 448.0);
++    if (lane == 0) s_scale[g] = dsv4_pow2_ceil(amax * inv);
++}
++
++// Group g's four values of this lane into the swizzled half staging; returns the lossy flag.
++__device__ __forceinline__ bool dsv4_moe_fused_mirror_pack(const float4 v, const float* s_scale,
++                                                           float rs, float inv_rs, bool rs_p2,
++                                                           uint32_t* As, int g, int lane) {
++    const float s = s_scale[g];
++    const bool s_p2 = dsv4_normal_pow2(s);
++    const float inv_s = s_p2 ? 1.0f / s : 0.0f;
++    const float xv[4] = {v.x, v.y, v.z, v.w};
++    uint32_t hb[4];
++    bool bad = false;
++#pragma unroll
++    for (int j = 0; j < 4; j++) {
++        float q = fminf(fmaxf(dsv4_div_p2(xv[j], s, inv_s, s_p2), -448.0f), 448.0f);
++        uint8_t c = (uint8_t)__nv_cvt_float_to_fp8(q, __NV_SATFINITE, __NV_E4M3);
++        if ((c & 0x7F) == 0) c = 0;
++        float val = dsv4_e4m3(c) * s;
++        __half h = __float2half_rn(dsv4_div_p2(val, rs, inv_rs, rs_p2));
++        float back = __half2float(h) * rs;
++        if ((c & 127) == 127 || !isfinite(val) || __float_as_uint(back) != __float_as_uint(val))
++            bad = true;
++        hb[j] = __half_as_ushort(h);
++    }
++    const int w0 = (g * 128 + lane * 4) / 2;
++    As[dsv4_m1_swz(w0)] = hb[0] | (hb[1] << 16);
++    As[dsv4_m1_swz(w0 + 1)] = hb[2] | (hb[3] << 16);
++    return bad;
++}
++
++template<int NW, bool CG = false>
+ __device__ __forceinline__ bool dsv4_moe_fused_mirror(const float* __restrict__ xrow, int cols,
+                                                       uint32_t* As, float* s_scale, float* s_rs,
+                                                       int warp, int lane) {
++    // Up to HELD groups per warp stay in registers between the two passes, all loads in flight
++    // at once; wider rows read each group again.
++    constexpr int HELD = 4;
+     const int groups = cols / 128;
+-    for (int g = warp; g < groups; g += NW) {
+-        const float4 v = reinterpret_cast<const float4*>(xrow + (size_t)g * 128)[lane];
+-        float a = 0.0f;
+-        a = fmaxf(a, fabsf(v.x));
+-        a = fmaxf(a, fabsf(v.y));
+-        a = fmaxf(a, fabsf(v.z));
+-        a = fmaxf(a, fabsf(v.w));
+-        float amax = dsv4_warp_max(a);
+-        amax = fmaxf(amax, 1e-4f);
+-        const float inv = (float)(1.0 / 448.0);
+-        if (lane == 0) s_scale[g] = dsv4_pow2_ceil(amax * inv);
++    const bool held = groups <= NW * HELD;
++    float4 v[HELD];
++    if (held) {
++#pragma unroll
++        for (int i = 0; i < HELD; i++)
++            if (warp + i * NW < groups) v[i] = dsv4_moe_fused_mirror_ld<CG>(xrow, warp + i * NW, lane);
++#pragma unroll
++        for (int i = 0; i < HELD; i++)
++            if (warp + i * NW < groups) dsv4_moe_fused_mirror_amax(v[i], s_scale, warp + i * NW, lane);
++    } else {
++        for (int g = warp; g < groups; g += NW)
++            dsv4_moe_fused_mirror_amax(dsv4_moe_fused_mirror_ld<CG>(xrow, g, lane), s_scale, g,
++                                       lane);
+     }
+     __syncthreads();
+     if (warp == 0) {
+@@ -8228,28 +8296,19 @@ __device__ __forceinline__ bool dsv4_moe_fused_mirror(const float* __restrict__
+     }
+     __syncthreads();
+     const float rs = *s_rs;
++    const bool rs_p2 = dsv4_normal_pow2(rs);
++    const float inv_rs = rs_p2 ? 1.0f / rs : 0.0f;
+     bool bad = !(rs > 0.0f) || !isfinite(rs);
+-    for (int g = warp; g < groups; g += NW) {
+-        const float4 v = reinterpret_cast<const float4*>(xrow + (size_t)g * 128)[lane];
+-        const float s = s_scale[g];
+-        const float xv[4] = {v.x, v.y, v.z, v.w};
+-        uint32_t hb[4];
++    if (held) {
+ #pragma unroll
+-        for (int j = 0; j < 4; j++) {
+-            float q = fminf(fmaxf(xv[j] / s, -448.0f), 448.0f);
+-            uint8_t c = (uint8_t)__nv_cvt_float_to_fp8(q, __NV_SATFINITE, __NV_E4M3);
+-            if ((c & 0x7F) == 0) c = 0;
+-            float val = dsv4_e4m3(c) * s;
+-            __half h = __float2half_rn(val / rs);
+-            float back = __half2float(h) * rs;
+-            if ((c & 127) == 127 || !isfinite(val) ||
+-                __float_as_uint(back) != __float_as_uint(val))
+-                bad = true;
+-            hb[j] = __half_as_ushort(h);
+-        }
+-        const int w0 = (g * 128 + lane * 4) / 2;
+-        As[dsv4_m1_swz(w0)] = hb[0] | (hb[1] << 16);
+-        As[dsv4_m1_swz(w0 + 1)] = hb[2] | (hb[3] << 16);
++        for (int i = 0; i < HELD; i++)
++            if (warp + i * NW < groups)
++                bad |= dsv4_moe_fused_mirror_pack(v[i], s_scale, rs, inv_rs, rs_p2, As,
++                                                  warp + i * NW, lane);
++    } else {
++        for (int g = warp; g < groups; g += NW)
++            bad |= dsv4_moe_fused_mirror_pack(dsv4_moe_fused_mirror_ld<CG>(xrow, g, lane), s_scale,
++                                              rs, inv_rs, rs_p2, As, g, lane);
+     }
+     return bad;
+ }

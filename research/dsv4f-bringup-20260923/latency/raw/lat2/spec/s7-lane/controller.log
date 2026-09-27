@@ -1,0 +1,8 @@
+START utc=2026-09-23T12:24:43Z bin=/root/lane/target-latlane/release/memra-server env=MEMRA_DSV4_DRAFTER=dspark MEMRA_ENV_AUDIT=warn
+READY after=132s port=51809
+CELL warmup c=1 ok=1/1 agg=55.57 tok/s decode_p50=144.47 tok/s ttft_p50=361 ms tpot_p50=6.92 ms errs=[]
+CELL greedy-c1 c=1 ok=8/8 agg=70.82 tok/s decode_p50=76.01 tok/s ttft_p50=240 ms tpot_p50=13.16 ms errs=[]
+CELL sampled-c1 c=1 ok=8/8 agg=60.33 tok/s decode_p50=62.47 tok/s ttft_p50=251 ms tpot_p50=16.01 ms errs=[]
+CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=70.32 tok/s decode_p50=76.00 tok/s ttft_p50=239 ms tpot_p50=13.16 ms errs=[]
+CELLS_DONE utc=2026-09-23T12:28:13Z
+TERMINAL rc=0 utc=2026-09-23T12:28:15Z

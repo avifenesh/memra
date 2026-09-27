@@ -1,0 +1,19 @@
+DAY72 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0012 max_iqr_window=0.0010 failing=[] -> admissible
+DAY60 GAP CHECKS rig=pro-single runs=40 integrity=ok
+DAY60 R1 gen_gap_ms_per_token on_minus_ref pooled=+0.281 o1=+0.281 o2=+0.281 | medians ref=0.255 refc=0.255 on=0.264 onc=0.265 (N=10 each)
+DAY60 R1 window_gap_ms_per_token on_minus_ref pooled=+0.172 o1=+0.156 o2=+0.188 | medians ref=0.226 refc=0.226 on=0.232 onc=0.232 (N=10 each)
+DAY60 R2 instrument_ms_per_token refc_minus_ref=+0.000 onc_minus_on=+0.016 bound=0.017 -> within_bound
+DAY60 R3 window per token: dispatch_ns=-0.008 prefetch_ns=+0.266 pf_reserve_ns=+0.000 pf_stage_ns=+0.021 pf_retire_ns=+0.030 pf_resident_ns=+0.046 pf_demand_ns=+0.154 | refc dispatch_calls=471.0 dispatch_hits=378.7 dispatch_pending=88.6 dispatch_sync=3.8 prefetch_calls=412.1 prefetch_issued=88.6 | onc dispatch_calls=471.0 dispatch_hits=378.7 dispatch_pending=88.6 dispatch_sync=3.8 prefetch_calls=412.1 prefetch_issued=88.6
+DAY60 R4 window wall_gap=+0.172 cpu_gap=+0.258 residual=-0.087 top=prefetch_ns (+0.266) -> cpu_side
+DAY60 R3 gen per token: dispatch_ns=+0.007 prefetch_ns=+0.574 pf_reserve_ns=+0.001 pf_stage_ns=+0.048 pf_retire_ns=+0.061 pf_resident_ns=+0.094 pf_demand_ns=+0.322 | refc dispatch_calls=631.5 dispatch_hits=430.0 dispatch_pending=187.8 dispatch_sync=13.7 prefetch_calls=552.6 prefetch_issued=187.8 | onc dispatch_calls=631.5 dispatch_hits=430.0 dispatch_pending=187.7 dispatch_sync=13.8 prefetch_calls=552.6 prefetch_issued=187.7
+DAY60 R4 gen wall_gap=+0.281 cpu_gap=+0.581 residual=-0.300 top=prefetch_ns (+0.574) -> cpu_side
+DAY60 GAP rig=pro-single integrity=ok window: wall_gap=+0.172 cpu_gap=+0.258 top=prefetch_ns cpu_side; gen: wall_gap=+0.281 cpu_gap=+0.581 top=prefetch_ns cpu_side
+DAY72 PART B rig=pro-single nsys=/usr/local/bin/nsys
+DAY72 B p-ref-r1: window_ms=270.0 per window token (ms): gpu_busy=5.3216 gpu_idle=3.1159 kernel_sum=5.3237 kernels=1870.0 h2d_count=94.1 h2d_mb=45.39 h2d_busy=1.2290 h2d_exposed=0.7513
+DAY72 B p-on-r1: window_ms=283.0 per window token (ms): gpu_busy=5.3190 gpu_idle=3.5248 kernel_sum=5.3204 kernels=1868.5 h2d_count=94.3 h2d_mb=45.57 h2d_busy=1.2575 h2d_exposed=0.7829
+DAY72 B p-on-r2: window_ms=282.0 per window token (ms): gpu_busy=5.3202 gpu_idle=3.4923 kernel_sum=5.3219 kernels=1870.6 h2d_count=94.3 h2d_mb=45.57 h2d_busy=1.2540 h2d_exposed=0.7794
+DAY72 B p-ref-r2: window_ms=270.0 per window token (ms): gpu_busy=5.3162 gpu_idle=3.1213 kernel_sum=5.3180 kernels=1870.3 h2d_count=94.3 h2d_mb=45.57 h2d_busy=1.2345 h2d_exposed=0.7575
+DAY72 B door_minus_ref per window token (ms, medians of two): gpu_busy=+0.0007 gpu_idle=+0.3899 kernel_sum=+0.0003 h2d_busy=+0.0241 h2d_exposed=+0.0268 h2d_count=+0.1406 h2d_mb=+0.0892
+DAY72 B3 kernels differing most (door minus ref, ms per window token): qmatvec_q6_K_mmvq_rp=+0.0041, qmatvec_q8_0_mmvq_fused2=-0.0027, qmatvec_expert_q8=+0.0023, router_gemv_f32_w8=-0.0014, qmatvec_q8_0_mmvq_rp_g2=-0.0013
+DAY72 B rule: half of Part A's window_gap=+0.0860 ms per token
+DAY72 GAP15 VERDICT rig=pro-single integrity=ok admissible=yes partA=cpu_side partB=gpu_stall

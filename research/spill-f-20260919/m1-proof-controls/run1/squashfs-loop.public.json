@@ -1,0 +1,63 @@
+{
+ "A1_kernel": {
+  "cpu_flag_lines": true,
+  "dmi_virtual_markers": [],
+  "hypervisor_flag": false,
+  "pci_emulated_devices": [],
+  "pci_functions": 40,
+  "sys_hypervisor_type": null
+ },
+ "A2_A3_mount": {
+  "fstype": "squashfs",
+  "identity": {
+   "device": 1792,
+   "filesystem_id_sha256_16": "88831144c552348a",
+   "mount_id": 56
+  },
+  "st_dev": "7:0",
+  "statx": {
+   "dev_major": 7,
+   "dev_minor": 0,
+   "dio_mem_align": null,
+   "dio_offset_align": null,
+   "mask": 6143,
+   "mnt_id": 56
+  }
+ },
+ "A4_block_graph": {
+  "leaves": [],
+  "nodes": [
+   {
+    "kind": "loop",
+    "major_minor": "7:0",
+    "name": "loop0",
+    "rotational": "0",
+    "via": "mount"
+   }
+  ]
+ },
+ "A5_controllers": [],
+ "A7_capacity": {
+  "free_bytes": 0,
+  "reserve_bytes": 21474836480
+ },
+ "A8_identity": {
+  "device": 1792,
+  "filesystem_id_sha256_16": "88831144c552348a",
+  "mount_id": 56
+ },
+ "class": null,
+ "private_capture_sha256": "be1781daf57b44cd1d540cbe109f985d17a6fffb2976fddd8caf48ed4854d360",
+ "reasons": [
+  "A2: path is not writable",
+  "A3: filesystem type 'squashfs' is not block-traceable here (admitted: ext4, xfs)",
+  "A4: loop0 is a loop device (a loop layer is not the spill path's native storage, whatever backs it)",
+  "A5: no controller to check",
+  "A7: free 0 bytes < reserve 21474836480",
+  "A6: not run (--bind-bytes 0); a PASS requires the I/O binding"
+ ],
+ "registration": "research/spill-f-20260919/M1-PREREG.md section A",
+ "schema": "m1-nvme-proof-v1",
+ "utc": "2026-09-25T14:23:40.630016+00:00",
+ "verdict": "FAIL"
+}

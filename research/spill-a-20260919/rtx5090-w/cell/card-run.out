@@ -1,0 +1,70 @@
+2026-09-26T12:26:05Z model sha256 (outside the hold): 1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+2026-09-26T12:26:05Z lock busy, attempt 1 of 60, waiting 120 s
+2026-09-26T12:28:05Z lock busy, attempt 2 of 60, waiting 120 s
+2026-09-26T12:30:05Z lock busy, attempt 3 of 60, waiting 120 s
+2026-09-26T12:32:05Z lock busy, attempt 4 of 60, waiting 120 s
+2026-09-26T12:34:05Z lock busy, attempt 5 of 60, waiting 120 s
+2026-09-26T12:36:05Z lock busy, attempt 6 of 60, waiting 120 s
+2026-09-26T12:38:05Z lock busy, attempt 7 of 60, waiting 120 s
+2026-09-26T12:40:05Z lock busy, attempt 8 of 60, waiting 120 s
+2026-09-26T12:42:05Z lock busy, attempt 9 of 60, waiting 120 s
+2026-09-26T12:44:05Z lock busy, attempt 10 of 60, waiting 120 s
+2026-09-26T12:46:05Z lock busy, attempt 11 of 60, waiting 120 s
+2026-09-26T12:48:05Z lock busy, attempt 12 of 60, waiting 120 s
+2026-09-26T12:50:05Z lock busy, attempt 13 of 60, waiting 120 s
+2026-09-26T12:52:05Z lock busy, attempt 14 of 60, waiting 120 s
+2026-09-26T12:54:05Z lock busy, attempt 15 of 60, waiting 120 s
+2026-09-26T12:56:05Z lock busy, attempt 16 of 60, waiting 120 s
+2026-09-26T12:58:05Z hold taken
+2026-09-26T12:58:06Z a1-green rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 623 filtered out; finished in 0.36s
+2026-09-26T12:58:09Z a2-green rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 623 filtered out; finished in 2.06s
+2026-09-26T12:58:09Z a1-red rc=101 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 623 filtered out; finished in 0.01s
+2026-09-26T12:58:11Z a2-red rc=101 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 623 filtered out; finished in 1.40s
+UNIT a1-green=0 a2-green=0 a1-red=101 (marker 1) a2-red=101 (marker 1) censuses=0
+2026-09-26T12:58:59Z identity-default-off rc=0
+2026-09-26T12:59:38Z identity-default-on rc=0
+2026-09-26T13:00:06Z identity-plain-off rc=0
+2026-09-26T13:00:37Z identity-plain-on rc=0
+2026-09-26T13:09:45Z contract-fault rc=0
+2026-09-26T13:12:23Z contract-fault-plain rc=2
+2026-09-26T13:13:55Z o1 base demote rc=0 STALL rule cell=w-5090-base-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=23.2 idle_p95=25.4
+2026-09-26T13:15:31Z o1 w demote rc=0 STALL rule cell=w-5090-w-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=23.6 idle_p95=26.1 id
+2026-09-26T13:17:06Z o1 base promote rc=0 STALL rule cell=w-5090-base-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=24.0 idle_p95=26
+2026-09-26T13:18:46Z o1 w promote rc=0 STALL rule cell=w-5090-w-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=25.0 idle_p95=27.7 
+2026-09-26T13:20:23Z o1 base demote rc=0 STALL rule cell=w-5090-base-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=23.5 idle_p95=26.0
+2026-09-26T13:21:59Z o1 w demote rc=0 STALL rule cell=w-5090-w-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=23.6 idle_p95=26.2 id
+2026-09-26T13:23:35Z o1 base promote rc=0 STALL rule cell=w-5090-base-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=23.7 idle_p95=26
+2026-09-26T13:25:08Z o1 w promote rc=0 STALL rule cell=w-5090-w-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=23.5 idle_p95=25.6 
+2026-09-26T13:26:40Z o1 base demote rc=0 STALL rule cell=w-5090-base-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.8 idle_p95=24.8
+2026-09-26T13:28:11Z o1 w demote rc=0 STALL rule cell=w-5090-w-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.7 idle_p95=24.9 id
+2026-09-26T13:29:47Z o1 base promote rc=0 STALL rule cell=w-5090-base-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=24.2 idle_p95=26
+2026-09-26T13:31:23Z o1 w promote rc=0 STALL rule cell=w-5090-w-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=24.2 idle_p95=27.4 
+2026-09-26T13:32:57Z o1 base demote rc=0 STALL rule cell=w-5090-base-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=23.4 idle_p95=26.0
+2026-09-26T13:34:31Z o1 w demote rc=0 STALL rule cell=w-5090-w-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=23.2 idle_p95=25.8 id
+2026-09-26T13:36:04Z o1 base promote rc=0 STALL rule cell=w-5090-base-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=23.4 idle_p95=26
+2026-09-26T13:37:36Z o1 w promote rc=0 STALL rule cell=w-5090-w-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.8 idle_p95=25.4 
+2026-09-26T13:39:08Z o1 base demote rc=0 STALL rule cell=w-5090-base-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=23.0 idle_p95=25.6
+2026-09-26T13:40:42Z o1 w demote rc=0 STALL rule cell=w-5090-w-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=23.2 idle_p95=25.8 id
+2026-09-26T13:42:13Z o1 base promote rc=0 STALL rule cell=w-5090-base-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.8 idle_p95=25
+2026-09-26T13:43:43Z o1 w promote rc=0 STALL rule cell=w-5090-w-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.7 idle_p95=24.8 
+2026-09-26T13:45:15Z o2 w promote rc=0 STALL rule cell=w-5090-w-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.9 idle_p95=25.4 
+2026-09-26T13:46:46Z o2 base promote rc=0 STALL rule cell=w-5090-base-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.8 idle_p95=25
+2026-09-26T13:48:18Z o2 w demote rc=0 STALL rule cell=w-5090-w-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.9 idle_p95=24.9 id
+2026-09-26T13:49:55Z o2 base demote rc=0 STALL rule cell=w-5090-base-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=24.0 idle_p95=27.1
+2026-09-26T13:51:34Z o2 w promote rc=0 STALL rule cell=w-5090-w-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=24.3 idle_p95=27.2 
+2026-09-26T13:53:14Z o2 base promote rc=0 STALL rule cell=w-5090-base-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=24.8 idle_p95=28
+2026-09-26T13:54:54Z o2 w demote rc=0 STALL rule cell=w-5090-w-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=24.2 idle_p95=27.2 id
+2026-09-26T13:56:34Z o2 base demote rc=0 STALL rule cell=w-5090-base-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=24.5 idle_p95=27.5
+2026-09-26T13:58:18Z o2 w promote rc=0 STALL rule cell=w-5090-w-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=25.6 idle_p95=29.5 
+2026-09-26T14:00:10Z o2 base promote rc=0 STALL rule cell=w-5090-base-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=25.1 idle_p95=30
+2026-09-26T14:01:57Z o2 w demote rc=0 STALL rule cell=w-5090-w-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=25.5 idle_p95=29.5 id
+2026-09-26T14:03:41Z o2 base demote rc=0 STALL rule cell=w-5090-base-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=25.5 idle_p95=28.5
+2026-09-26T14:05:22Z o2 w promote rc=0 STALL rule cell=w-5090-w-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=25.2 idle_p95=28.4 
+2026-09-26T14:07:06Z o2 base promote rc=0 STALL rule cell=w-5090-base-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=25.9 idle_p95=29
+2026-09-26T14:08:50Z o2 w demote rc=0 STALL rule cell=w-5090-w-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=24.4 idle_p95=27.0 id
+2026-09-26T14:10:31Z o2 base demote rc=0 STALL rule cell=w-5090-base-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=24.5 idle_p95=33.5
+2026-09-26T14:12:17Z o2 w promote rc=0 STALL rule cell=w-5090-w-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=24.5 idle_p95=27.7 
+2026-09-26T14:13:52Z o2 base promote rc=0 STALL rule cell=w-5090-base-promote arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=23.6 idle_p95=26
+2026-09-26T14:15:28Z o2 w demote rc=0 STALL rule cell=w-5090-w-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=23.8 idle_p95=26.4 id
+2026-09-26T14:17:01Z o2 base demote rc=0 STALL rule cell=w-5090-base-demote arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.9 idle_p95=25.4
+2026-09-26T14:17:02Z done; reading rc=0 W VERDICT card=5090 -> FAIL (a, d)

@@ -1,0 +1,33 @@
+START utc=2026-09-23T15:23:37Z bin=/root/lane/target-tpep3/release/memra-server env=MEMRA_DSV4_DRAFTER=dspark MEMRA_DSV4_TOPOLOGY=tp_ep_attn MEMRA_DSV4_EP=pair MEMRA_ENV_AUDIT=warn
+BOOT_FAIL
+[load] sampled candidate order: Radix
+[load] placement: split_at=23 trunk_layers=43 dspark_tail_reserve=10.83 GiB
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] topology: TpEpAllLayers | layers=43 per-rank-resident=all
+[load] indexer score: Scalar
+[load] prefill head: All
+[load] prefill DSpark prime: All
+[load] sampled DSpark proposal: Greedy
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 371.1ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> 2 rank copies done t=21s
+[load] layer 7 -> 2 rank copies done t=42s
+[load] layer 11 -> 2 rank copies done t=63s
+[load] layer 15 -> 2 rank copies done t=84s
+[load] layer 19 -> 2 rank copies done t=105s
+[load] layer 23 -> 2 rank copies done t=126s
+[load] layer 27 -> 2 rank copies done t=147s
+[load] layer 31 -> 2 rank copies done t=167s
+[load] layer 35 -> 2 rank copies done t=188s
+[load] layer 39 -> 2 rank copies done t=209s
+[load] layer 42 -> 2 rank copies done t=225s
+[load] drafter: DSpark (3 blocks, block_size 5, targets [40, 41, 42]) resident on stage 1
+[load] sink score: Scalar
+[TP/EP load] local expert banks resident by ID: rank0=0..128, rank1=128..256; peer dispatch disabled
+[load] expert program: matrix (grouped ModelOpt split-plane executor via dsv4_grouped; tensor-core MMA class, the loaded default since 2026-09-11), EP pair (all-layer TP/EP local banks)
+[server] FATAL: worker init failed: load dsv4f: FP8 pack code allocation: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")
+TERMINAL rc=71 utc=2026-09-23T15:27:37Z

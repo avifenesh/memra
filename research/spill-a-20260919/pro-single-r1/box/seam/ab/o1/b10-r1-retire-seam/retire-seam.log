@@ -1,0 +1,21 @@
+  run  1 order 1 idle     tokens=160 p50=11.5 max=12.9 stall=1.3 demote=[] promote=[] intruder=None
+  run  2 order 1 retire-seam tokens=160 p50=11.5 max=325.1 stall=313.6 demote=[398.7] promote=[] intruder=1734.6724432427436
+  run  3 order 1 idle     tokens=160 p50=11.5 max=12.9 stall=1.4 demote=[] promote=[] intruder=None
+  run  4 order 1 retire-seam tokens=160 p50=11.5 max=295.1 stall=283.6 demote=[360.5, 101.4] promote=[] intruder=1786.109637003392
+  run  5 order 1 idle     tokens=160 p50=11.5 max=12.9 stall=1.4 demote=[] promote=[] intruder=None
+  run  6 order 1 retire-seam tokens=160 p50=11.5 max=294.6 stall=283.1 demote=[359.5, 101.0] promote=[] intruder=1788.2781089283526
+  run  7 order 1 idle     tokens=160 p50=11.5 max=12.9 stall=1.3 demote=[] promote=[] intruder=None
+  run  8 order 1 retire-seam tokens=160 p50=11.6 max=293.8 stall=282.2 demote=[358.7, 101.4] promote=[] intruder=1786.6156538948417
+  run  9 order 1 idle     tokens=160 p50=11.5 max=12.9 stall=1.4 demote=[] promote=[] intruder=None
+  run 10 order 1 retire-seam tokens=160 p50=11.6 max=294.2 stall=282.6 demote=[356.2, 101.3] promote=[] intruder=1786.8236098438501
+  run 11 order 2 retire-seam tokens=160 p50=11.6 max=293.9 stall=282.4 demote=[355.6, 101.4] promote=[] intruder=1784.6340872347355
+  run 12 order 2 idle     tokens=160 p50=11.6 max=12.9 stall=1.3 demote=[] promote=[] intruder=None
+  run 13 order 2 retire-seam tokens=160 p50=11.5 max=293.1 stall=281.6 demote=[355.1, 101.5] promote=[] intruder=1784.3962160404772
+  run 14 order 2 idle     tokens=160 p50=11.5 max=13.0 stall=1.4 demote=[] promote=[] intruder=None
+  run 15 order 2 retire-seam tokens=160 p50=11.6 max=293.2 stall=281.7 demote=[354.8, 101.6] promote=[] intruder=1786.5100849885494
+  run 16 order 2 idle     tokens=160 p50=11.6 max=12.9 stall=1.3 demote=[] promote=[] intruder=None
+  run 17 order 2 retire-seam tokens=160 p50=11.6 max=293.7 stall=282.1 demote=[355.6, 101.6] promote=[] intruder=1788.4094179607928
+  run 18 order 2 idle     tokens=160 p50=11.6 max=13.0 stall=1.4 demote=[] promote=[] intruder=None
+  run 19 order 2 retire-seam tokens=160 p50=11.6 max=293.1 stall=281.5 demote=[366.6, 88.8] promote=[] intruder=1798.379449173808
+  run 20 order 2 idle     tokens=160 p50=11.6 max=12.9 stall=1.3 demote=[] promote=[] intruder=None
+STALL rule cell=r1-seam-r1-retire-seam arm=retire-seam n_per_order=5 pooled=10 idle_runs=10 idle_p50=11.5 idle_p95=12.8 idle_p99=12.9 idle_max=13.0 arm_runs=10 arm_p50=11.6 arm_p95=74.5 arm_p99=268.2 arm_max=325.1 stall_median=282.3 stall_min=281.5 stall_max=313.6 server_demote_ms=[398.7, 360.5, 101.4, 359.5, 101.0, 358.7, 101.4, 356.2, 101.3, 355.6, 101.4, 355.1, 101.5, 354.8, 101.6, 355.6, 101.6, 366.6, 88.8] server_promote_ms=[] intruder_prompt_tokens=[5121, 5123, 5122, 5123, 5123, 5123, 5121, 5123, 5121, 5122] tenant_text_identical=True errors=0

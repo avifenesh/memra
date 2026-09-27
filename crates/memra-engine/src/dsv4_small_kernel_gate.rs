@@ -45,6 +45,13 @@ impl Dsv4Gpu {
         self.small_kernel_component_mask.load(Ordering::Relaxed) == 15
     }
 
+    /// A component cell still waits for this rank's first live call of `kind`.
+    pub(super) fn small_component_pending(&self, dev: usize, kind: usize) -> bool {
+        dev < 2
+            && self.small_kernel_component_mask.load(Ordering::Relaxed) & (1 << (dev * 2 + kind))
+                == 0
+    }
+
     pub(super) fn small_component_claim(&self, dev: usize, kind: usize) -> bool {
         if dev >= 2 {
             return false;

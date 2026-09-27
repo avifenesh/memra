@@ -1,0 +1,8 @@
+RIGHOLD T1 reading: the old flock -n poll found the lock free on 0 of 20 probes over 10 s
+RIGHOLD T1 hold gets in against a back-to-back taker rc=0 took=0s (want rc 0 within 10 s) -> PASS
+RIGHOLD T2 app clears under the hold rc=0 held=1 idle=1 busy=0 (want 0 1 1 0) -> PASS
+RIGHOLD T4 another flock -n while held rc=1 (want 1), child with 8>&- sees fd 8 rc=1 (want 1), without it rc=0 (want 0) -> PASS
+RIGHOLD T5 flock -n after rig_release rc=0 (want 0) -> PASS
+RIGHOLD T3 app never clears rc=3 busy_lines=3 free_between_tries=0 free_after=0 (want 3 >=2 0 0) -> PASS
+RIGHOLD all checks -> PASS
+rc=0

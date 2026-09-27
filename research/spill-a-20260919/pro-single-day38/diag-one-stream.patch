@@ -1,0 +1,13 @@
+diff --git a/crates/memra-engine/src/tier_transfer.rs b/crates/memra-engine/src/tier_transfer.rs
+index 088d1c89b..906b90916 100644
+--- a/crates/memra-engine/src/tier_transfer.rs
++++ b/crates/memra-engine/src/tier_transfer.rs
+@@ -731,7 +731,7 @@ impl CudaTransfers {
+     pub fn new_with_copy_stream(owner: Arc<CudaStream>, governor: SharedBudget) -> Result<Self> {
+         let mut t = Self::new(owner, governor)?;
+         t.copy = Some(cuda(t.stream.context().new_stream())?);
+-        t.receipt_stream = Some(cuda(t.stream.context().new_stream())?);
++        t.receipt_stream = t.copy.clone();
+         // WP-A day 22: the D2D classes carry a receipt, so the copy stream comes with its kernels;
+         // a module that will not load is a construction refusal, never a receipt-less class.
+         let module = cuda(

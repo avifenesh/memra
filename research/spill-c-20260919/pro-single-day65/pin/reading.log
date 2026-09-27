@@ -1,0 +1,31 @@
+DAY65 PINS rig=pro-single two=0-11 one=0,1,2,3,4,5,6,7,16,17,18,19 home_l3=0-7,16-23 two_l3_domains=2
+DAY65 PIN CHECKS rig=pro-single runs=40 integrity=ok
+DAY65 R1 ref2: gen median=0.245 iqr=0.0000 | window median=0.218 iqr=0.0010 (N=10)
+DAY65 R1 i15two: gen median=0.311 iqr=0.0200 | window median=0.273 iqr=0.0175 (N=10)
+DAY65 R1 ref1: gen median=0.245 iqr=0.0000 | window median=0.218 iqr=0.0000 (N=10)
+DAY65 R1 i15one: gen median=0.312 iqr=0.0192 | window median=0.273 iqr=0.0162 (N=10)
+DAY65 R2 i15two: slow=8 of 10 (gen-only over ref2 median + 0.03) ['o1-i15two-r1', 'o1-i15two-r3', 'o1-i15two-r4', 'o1-i15two-r5', 'o2-i15two-r1', 'o2-i15two-r2', 'o2-i15two-r3', 'o2-i15two-r4']
+DAY65 R2 i15one: slow=8 of 10 (gen-only over ref1 median + 0.03) ['o1-i15one-r1', 'o1-i15one-r2', 'o1-i15one-r3', 'o1-i15one-r4', 'o1-i15one-r5', 'o2-i15one-r1', 'o2-i15one-r2', 'o2-i15one-r5']
+DAY65 R3 o1-i15one-r1: samples=54 home_share=1.00 slow
+DAY65 R3 o1-i15one-r2: samples=55 home_share=1.00 slow
+DAY65 R3 o1-i15one-r3: samples=53 home_share=1.00 slow
+DAY65 R3 o1-i15one-r4: samples=55 home_share=1.00 slow
+DAY65 R3 o1-i15one-r5: samples=55 home_share=1.00 slow
+DAY65 R3 o1-i15two-r1: samples=54 home_share=0.96 slow
+DAY65 R3 o1-i15two-r2: samples=52 home_share=1.00 fast
+DAY65 R3 o1-i15two-r3: samples=53 home_share=0.94 slow
+DAY65 R3 o1-i15two-r4: samples=54 home_share=0.96 slow
+DAY65 R3 o1-i15two-r5: samples=54 home_share=0.93 slow
+DAY65 R3 o2-i15one-r1: samples=54 home_share=1.00 slow
+DAY65 R3 o2-i15one-r2: samples=54 home_share=1.00 slow
+DAY65 R3 o2-i15one-r3: samples=52 home_share=1.00 fast
+DAY65 R3 o2-i15one-r4: samples=53 home_share=1.00 fast
+DAY65 R3 o2-i15one-r5: samples=54 home_share=1.00 slow
+DAY65 R3 o2-i15two-r1: samples=54 home_share=1.00 slow
+DAY65 R3 o2-i15two-r2: samples=54 home_share=1.00 slow
+DAY65 R3 o2-i15two-r3: samples=54 home_share=1.00 slow
+DAY65 R3 o2-i15two-r4: samples=54 home_share=0.96 slow
+DAY65 R3 o2-i15two-r5: samples=52 home_share=0.98 fast
+DAY65 R4 i15one_vs_ref1 gen-only decode: pooled=+0.0670 o1=+0.0680 o2=+0.0660 noise=0.0192 -> void (inadmissible)
+DAY65 R4 i15one_vs_ref1 steady window: pooled=+0.0550 o1=+0.0550 o2=+0.0530 noise=0.0162 -> void (inadmissible)
+DAY65 PIN VERDICT rig=pro-single integrity=ok -> pin_does_not placement_does_not_track; one-domain door vs REF: gen void (inadmissible), window void (inadmissible)

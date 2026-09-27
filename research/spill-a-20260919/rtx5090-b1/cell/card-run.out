@@ -1,0 +1,89 @@
+44af8d0fad9ff52ebc4f7216b3c584b0c6b314f7997db1a9c13905841950350b  /home/avifenesh/spill-a-cells/b1-bins/b1/memra-engine-tests
+fc0bd3a30690347a3282e8753780d9d76df9f811d37ce03da2bbd88edd491c4c  /home/avifenesh/spill-a-cells/b1-bins/b1/memra-server
+f786f4765cc0ac3cd3672c37c806911ea1ad6bd028bde3e4c843b7157ae2fbbd  /home/avifenesh/spill-a-cells/b1-bins/b1/memra-server-tests
+39c97a14e89f507e70f3a17d913fa2404fb5c14f1bf52295c3233c0b2de7dfef  /home/avifenesh/spill-a-cells/b1-bins/base/memra-server
+29faa6e6ab52d16a6fe349305b740dfd82d9b11f862a917abe6fc08d72fc1123  /home/avifenesh/spill-a-cells/b1-bins/red/memra-engine-tests
+40faf9760ae7b2b1d1aa22b8ba552a84ea5bda52854dcc39a2ca04f1c5ade6b7  /home/avifenesh/spill-a-cells/b1-bins/red/memra-server-tests
+2026-09-26T07:55:54Z model sha256 (outside the hold): 1facf36c2db359dcf9c2475cf8f85fe84a528d10aaaaff20f7c0db3d561e024a Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+2026-09-26T07:55:54Z lock busy, attempt 1 of 60, waiting 120 s
+2026-09-26T07:57:54Z lock busy, attempt 2 of 60, waiting 120 s
+2026-09-26T07:59:54Z lock busy, attempt 3 of 60, waiting 120 s
+2026-09-26T08:01:54Z lock busy, attempt 4 of 60, waiting 120 s
+2026-09-26T08:03:54Z lock busy, attempt 5 of 60, waiting 120 s
+2026-09-26T08:05:54Z lock busy, attempt 6 of 60, waiting 120 s
+2026-09-26T08:07:54Z lock busy, attempt 7 of 60, waiting 120 s
+2026-09-26T08:09:54Z lock busy, attempt 8 of 60, waiting 120 s
+2026-09-26T08:11:54Z lock busy, attempt 9 of 60, waiting 120 s
+2026-09-26T08:13:54Z lock busy, attempt 10 of 60, waiting 120 s
+2026-09-26T08:15:54Z lock busy, attempt 11 of 60, waiting 120 s
+2026-09-26T08:17:54Z lock busy, attempt 12 of 60, waiting 120 s
+2026-09-26T08:19:54Z lock busy, attempt 13 of 60, waiting 120 s
+2026-09-26T08:21:54Z lock busy, attempt 14 of 60, waiting 120 s
+2026-09-26T08:23:54Z lock busy, attempt 15 of 60, waiting 120 s
+2026-09-26T08:25:54Z lock busy, attempt 16 of 60, waiting 120 s
+2026-09-26T08:27:54Z lock busy, attempt 17 of 60, waiting 120 s
+2026-09-26T08:29:54Z lock busy, attempt 18 of 60, waiting 120 s
+2026-09-26T08:31:54Z lock busy, attempt 19 of 60, waiting 120 s
+2026-09-26T08:33:54Z lock busy, attempt 20 of 60, waiting 120 s
+2026-09-26T08:35:54Z lock busy, attempt 21 of 60, waiting 120 s
+2026-09-26T08:37:54Z lock busy, attempt 22 of 60, waiting 120 s
+2026-09-26T08:39:54Z lock busy, attempt 23 of 60, waiting 120 s
+2026-09-26T08:41:54Z lock busy, attempt 24 of 60, waiting 120 s
+2026-09-26T08:43:54Z lock busy, attempt 25 of 60, waiting 120 s
+2026-09-26T08:45:54Z lock busy, attempt 26 of 60, waiting 120 s
+2026-09-26T08:47:54Z lock busy, attempt 27 of 60, waiting 120 s
+2026-09-26T08:49:54Z lock busy, attempt 28 of 60, waiting 120 s
+2026-09-26T08:51:54Z lock busy, attempt 29 of 60, waiting 120 s
+2026-09-26T08:53:54Z hold taken
+2026-09-26T08:53:55Z a1-green rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 620 filtered out; finished in 0.39s
+2026-09-26T08:53:57Z a2-green rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 960 filtered out; finished in 2.24s
+2026-09-26T08:53:58Z a1-red rc=101 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 620 filtered out; finished in 0.30s
+2026-09-26T08:53:58Z a2-red rc=101 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 960 filtered out; finished in 0.29s
+UNIT a1-green=0 a2-green=0 a1-red=101 (marker 1) a2-red=101 (marker 1) censuses=0
+2026-09-26T08:54:42Z identity-default-off rc=0
+2026-09-26T08:55:16Z identity-default-on rc=0
+2026-09-26T08:55:43Z identity-plain-off rc=0
+2026-09-26T08:56:14Z identity-plain-on rc=0
+2026-09-26T08:57:04Z hitgate-off rc=0
+2026-09-26T08:58:04Z hitgate-on rc=0
+2026-09-26T08:59:33Z o1 base fanout rc=0 STALL rule cell=b1-5090-base-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.4 idle_p95=24.
+2026-09-26T09:01:03Z o1 b1 fanout rc=0 STALL rule cell=b1-5090-b1-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.5 idle_p95=24.3 
+2026-09-26T09:02:34Z o1 base prime-short rc=0 STALL rule cell=b1-5090-base-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.7 id
+2026-09-26T09:04:05Z o1 b1 prime-short rc=0 STALL rule cell=b1-5090-b1-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.6 idle
+2026-09-26T09:05:35Z o1 base fanout rc=0 STALL rule cell=b1-5090-base-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.5 idle_p95=24.
+2026-09-26T09:07:04Z o1 b1 fanout rc=0 STALL rule cell=b1-5090-b1-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.3 idle_p95=23.7 
+2026-09-26T09:08:31Z o1 base prime-short rc=0 STALL rule cell=b1-5090-base-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=21.5 id
+2026-09-26T09:09:57Z o1 b1 prime-short rc=0 STALL rule cell=b1-5090-b1-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=21.3 idle
+2026-09-26T09:11:25Z o1 base fanout rc=0 STALL rule cell=b1-5090-base-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=21.8 idle_p95=23.
+2026-09-26T09:12:49Z o1 b1 fanout rc=0 STALL rule cell=b1-5090-b1-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=20.9 idle_p95=22.1 
+2026-09-26T09:14:16Z o1 base prime-short rc=0 STALL rule cell=b1-5090-base-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=21.4 id
+2026-09-26T09:15:43Z o1 b1 prime-short rc=0 STALL rule cell=b1-5090-b1-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=21.5 idle
+2026-09-26T09:17:13Z o1 base fanout rc=0 STALL rule cell=b1-5090-base-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.8 idle_p95=26.
+2026-09-26T09:18:44Z o1 b1 fanout rc=0 STALL rule cell=b1-5090-b1-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.2 idle_p95=24.4 
+2026-09-26T09:20:13Z o1 base prime-short rc=0 STALL rule cell=b1-5090-base-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.3 id
+2026-09-26T09:21:42Z o1 b1 prime-short rc=0 STALL rule cell=b1-5090-b1-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.2 idle
+2026-09-26T09:23:10Z o1 base fanout rc=0 STALL rule cell=b1-5090-base-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.2 idle_p95=23.
+2026-09-26T09:24:40Z o1 b1 fanout rc=0 STALL rule cell=b1-5090-b1-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.7 idle_p95=25.6 
+2026-09-26T09:26:13Z o1 base prime-short rc=0 STALL rule cell=b1-5090-base-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=23.1 id
+2026-09-26T09:27:46Z o1 b1 prime-short rc=0 STALL rule cell=b1-5090-b1-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.9 idle
+2026-09-26T09:29:16Z o2 b1 prime-short rc=0 STALL rule cell=b1-5090-b1-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.4 idle
+2026-09-26T09:30:44Z o2 base prime-short rc=0 STALL rule cell=b1-5090-base-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=21.8 id
+2026-09-26T09:32:13Z o2 b1 fanout rc=0 STALL rule cell=b1-5090-b1-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.2 idle_p95=24.7 
+2026-09-26T09:33:38Z o2 base fanout rc=0 STALL rule cell=b1-5090-base-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=21.3 idle_p95=22.
+2026-09-26T09:35:05Z o2 b1 prime-short rc=0 STALL rule cell=b1-5090-b1-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=21.3 idle
+2026-09-26T09:36:32Z o2 base prime-short rc=0 STALL rule cell=b1-5090-base-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=21.6 id
+2026-09-26T09:37:58Z o2 b1 fanout rc=0 STALL rule cell=b1-5090-b1-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=21.4 idle_p95=23.6 
+2026-09-26T09:39:24Z o2 base fanout rc=0 STALL rule cell=b1-5090-base-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=21.3 idle_p95=23.
+2026-09-26T09:40:52Z o2 b1 prime-short rc=0 STALL rule cell=b1-5090-b1-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=21.7 idle
+2026-09-26T09:42:17Z o2 base prime-short rc=0 STALL rule cell=b1-5090-base-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=21.1 id
+2026-09-26T09:43:42Z o2 b1 fanout rc=0 STALL rule cell=b1-5090-b1-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=20.9 idle_p95=22.7 
+2026-09-26T09:45:13Z o2 base fanout rc=0 STALL rule cell=b1-5090-base-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.9 idle_p95=25.
+2026-09-26T09:46:43Z o2 b1 prime-short rc=0 STALL rule cell=b1-5090-b1-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.3 idle
+2026-09-26T09:48:11Z o2 base prime-short rc=0 STALL rule cell=b1-5090-base-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=21.9 id
+2026-09-26T09:49:40Z o2 b1 fanout rc=0 STALL rule cell=b1-5090-b1-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.2 idle_p95=24.4 
+2026-09-26T09:51:08Z o2 base fanout rc=0 STALL rule cell=b1-5090-base-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.0 idle_p95=24.
+2026-09-26T09:52:40Z o2 b1 prime-short rc=0 STALL rule cell=b1-5090-b1-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.7 idle
+2026-09-26T09:54:07Z o2 base prime-short rc=0 STALL rule cell=b1-5090-base-prime-short arm=prime-short n_per_order=5 pooled=10 idle_runs=10 idle_p50=21.6 id
+2026-09-26T09:55:35Z o2 b1 fanout rc=0 STALL rule cell=b1-5090-b1-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.1 idle_p95=24.5 
+2026-09-26T09:57:04Z o2 base fanout rc=0 STALL rule cell=b1-5090-base-fanout arm=fanout n_per_order=5 pooled=10 idle_runs=10 idle_p50=22.2 idle_p95=24.
+2026-09-26T09:57:05Z done; reading rc=0 B1 VERDICT -> ADOPT (B1 is the naked program)

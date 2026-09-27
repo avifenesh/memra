@@ -1,0 +1,29 @@
+== card rtx5090
+DAY33 V-BOOT boot=red-G2 arm=on8192 door_line=present -> PASS role=red shape=G2
+DAY33 V-BOOT boot=red-L64 arm=on32768 door_line=present -> PASS role=red shape=L64
+DAY33 V-BOOT boot=red-off arm=off door_line=present -> PASS role=red shape=off
+DAY33 V-BOOT boot=green-G2-r1 arm=on8192 door_line=present -> PASS role=green shape=G2
+DAY33 V-BOOT boot=green-G2-r2 arm=on8192 door_line=present -> PASS role=green shape=G2
+DAY33 V-BOOT boot=green-off arm=off door_line=present -> PASS role=green shape=off
+== R-OOM / G-NOOM / G-BOOK (ON boots)
+DAY33 R-OOM card=rtx5090 boot=red-G2 role=red shape=G2 v=8192 oom_lines=0 burst={429: 28, 200: 36} first_oom=none -> NOT-RED
+DAY33 G-NOOM card=rtx5090 boot=red-G2 role=red shape=G2 oom_lines=0 burst_503=0 crash_lines=0 burst_200=36 other_non200=0 r429=28 refuse_lines=28 retry_after_in_1_60=True -> PASS
+DAY33 G-BOOK card=rtx5090 boot=red-G2 role=red shape=G2 admit_lines=52 admit_lines_in_burst=36 est_over_booked_free=0 -> PASS
+DAY33 R-OOM card=rtx5090 boot=red-L64 role=red shape=L64 v=32768 oom_lines=0 burst={429: 45, 200: 19} first_oom=none -> NOT-RED
+DAY33 G-NOOM card=rtx5090 boot=red-L64 role=red shape=L64 oom_lines=0 burst_503=0 crash_lines=0 burst_200=19 other_non200=0 r429=45 refuse_lines=45 retry_after_in_1_60=True -> PASS
+DAY33 G-BOOK card=rtx5090 boot=red-L64 role=red shape=L64 admit_lines=35 admit_lines_in_burst=19 est_over_booked_free=0 -> PASS
+DAY33 R-OOM card=rtx5090 boot=green-G2-r1 role=green shape=G2 v=8192 oom_lines=0 burst={429: 28, 200: 36} first_oom=none -> NOT-RED
+DAY33 G-NOOM card=rtx5090 boot=green-G2-r1 role=green shape=G2 oom_lines=0 burst_503=0 crash_lines=0 burst_200=36 other_non200=0 r429=28 refuse_lines=28 retry_after_in_1_60=True -> PASS
+DAY33 G-BOOK card=rtx5090 boot=green-G2-r1 role=green shape=G2 admit_lines=52 admit_lines_in_burst=36 est_over_booked_free=0 -> PASS
+DAY33 R-OOM card=rtx5090 boot=green-G2-r2 role=green shape=G2 v=8192 oom_lines=0 burst={429: 28, 200: 36} first_oom=none -> NOT-RED
+DAY33 G-NOOM card=rtx5090 boot=green-G2-r2 role=green shape=G2 oom_lines=0 burst_503=0 crash_lines=0 burst_200=36 other_non200=0 r429=28 refuse_lines=28 retry_after_in_1_60=True -> PASS
+DAY33 G-BOOK card=rtx5090 boot=green-G2-r2 role=green shape=G2 admit_lines=52 admit_lines_in_burst=36 est_over_booked_free=0 -> PASS
+== V-ID-FIX (green ON against red ON, same shape, sequential rows)
+DAY33 V-ID-FIX card=rtx5090 shape=G2 green=green-G2-r1 red=red-G2 eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID-FIX card=rtx5090 shape=G2 green=green-G2-r2 red=red-G2 eligible=16 equal=16 differ=0 -> PASS
+== V-ID (the day-32 term: green ON against green OFF)
+DAY33 V-ID card=rtx5090 shape=G2 on=green-G2-r1 off=green-off eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID card=rtx5090 shape=G2 on=green-G2-r2 off=green-off eligible=16 equal=16 differ=0 -> PASS
+== V-OFF (green OFF against red OFF: the default-OFF program unchanged)
+DAY33 V-OFF card=rtx5090 green=green-off red=red-off rows=16 equal=16 differ=0 admit_mem_lines=0 -> PASS
+DAY33 VERDICT card=rtx5090 boots=6 v_boot_all=True green_noom_book_all=True v_id_fix_all=True v_id_all=True v_off_all=True -> GREEN

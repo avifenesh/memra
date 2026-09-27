@@ -58,6 +58,52 @@ fn ensure_tensor_stream_device<T>(
 pub use memra_gguf;
 pub use memra_runtime;
 
+pub mod cpu_probe;
+
+/// DAY82 (`research/spill-c-20260919/DAY82.md`): a counting wrapper around the system allocator in
+/// the library's test build only (never in a binary): allocations and bytes, read by the day-61
+/// profile's P10. It changes no allocation, only counts them.
+#[cfg(test)]
+pub(crate) mod alloc_census {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static COUNT: AtomicU64 = AtomicU64::new(0);
+    static BYTES: AtomicU64 = AtomicU64::new(0);
+    struct Counting;
+    // SAFETY: every call forwards to `System` with the caller's arguments; the counters are atomics.
+    unsafe impl GlobalAlloc for Counting {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            COUNT.fetch_add(1, Ordering::Relaxed);
+            BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
+            // SAFETY: the caller's contract for `alloc`.
+            unsafe { System.alloc(layout) }
+        }
+        unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+            COUNT.fetch_add(1, Ordering::Relaxed);
+            BYTES.fetch_add(layout.size() as u64, Ordering::Relaxed);
+            // SAFETY: the caller's contract for `alloc_zeroed`.
+            unsafe { System.alloc_zeroed(layout) }
+        }
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+            COUNT.fetch_add(1, Ordering::Relaxed);
+            BYTES.fetch_add(new_size as u64, Ordering::Relaxed);
+            // SAFETY: the caller's contract for `realloc`.
+            unsafe { System.realloc(ptr, layout, new_size) }
+        }
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            // SAFETY: the caller's contract for `dealloc`.
+            unsafe { System.dealloc(ptr, layout) }
+        }
+    }
+    #[global_allocator]
+    static GLOBAL: Counting = Counting;
+
+    /// Allocations and bytes so far, process-wide.
+    pub(crate) fn snapshot() -> (u64, u64) {
+        (COUNT.load(Ordering::Relaxed), BYTES.load(Ordering::Relaxed))
+    }
+}
 pub mod env_audit;
 pub mod forward;
 pub mod hybrid;
@@ -109,6 +155,7 @@ pub mod kda;
 pub mod mla;
 pub mod mla_ffi;
 mod model_memory;
+
 #[cfg(test)]
 mod model_memory_fixture;
 /// Pair-only GPU tests (the exclusively locked development pair) announce an explicit skip on
@@ -481,6 +528,65 @@ pub fn moe_f16g_gu_half2_dispatches() -> u64 {
 /// Snapshot of the CUDA-side successful enqueue receipt for the packed m_e=1 down launcher.
 pub fn moe_f16g_down_m1_half2_dispatches() -> u64 {
     unsafe { mmq_ffi::memra_moe_kq_gemm_sk_m1_half2_dispatches() }
+}
+
+/// DSV4 one-token streaming MoE visitor (memra #664). Same ModelOpt f16-MMA numeric program
+/// as the sktail tail, one warp per n8 column tile; the grouped caller takes it for the
+/// one-token plain step's gate, up and down projections. It is the code, not a door: a
+/// same-class win with a clean receipt (owner ruling 2026-09-10), measured +29% served plain
+/// decode on 2x RTX PRO 6000 (`research/dsv4f-bringup-20260923/m1-stream-664/`). There is no
+/// environment read. The gate override runs the sktail reference arm in one loaded model.
+static DSV4_MOE_M1_STREAM_OVERRIDE: AtomicI8 = AtomicI8::new(-1);
+
+pub fn dsv4_moe_m1_stream_on() -> bool {
+    DSV4_MOE_M1_STREAM_OVERRIDE.load(Ordering::Acquire) != 0
+}
+
+pub fn set_dsv4_moe_m1_stream_for_gate(enabled: bool) -> bool {
+    let previous = dsv4_moe_m1_stream_on();
+    DSV4_MOE_M1_STREAM_OVERRIDE.store(enabled as i8, Ordering::Release);
+    previous
+}
+
+pub fn clear_dsv4_moe_m1_stream_for_gate() {
+    DSV4_MOE_M1_STREAM_OVERRIDE.store(-1, Ordering::Release);
+}
+
+/// Snapshot of the CUDA-side successful enqueue receipt for the streaming visitor.
+pub fn dsv4_moe_m1_stream_dispatches() -> u64 {
+    unsafe { mmq_ffi::memra_moe_kq_m1_stream_dispatches() }
+}
+
+/// DSV4 fused one-token MoE (memra #17 lane, `research/dsv4f-bringup-20260923/moe-fused/`).
+/// Two launches replace the grouped chain's 16 on the plain one-token step when the checks
+/// are deferred to the step-end fault word, bit-identical to that chain. Like the stream
+/// visitor above it is the code, not a door: there is no environment read, and the gate
+/// override runs the unfused chain in one loaded model.
+static DSV4_MOE_FUSED_OVERRIDE: AtomicI8 = AtomicI8::new(-1);
+
+pub fn dsv4_moe_fused_on() -> bool {
+    DSV4_MOE_FUSED_OVERRIDE.load(Ordering::Acquire) != 0
+}
+
+pub fn set_dsv4_moe_fused_for_gate(enabled: bool) -> bool {
+    let previous = dsv4_moe_fused_on();
+    DSV4_MOE_FUSED_OVERRIDE.store(enabled as i8, Ordering::Release);
+    previous
+}
+
+pub fn clear_dsv4_moe_fused_for_gate() {
+    DSV4_MOE_FUSED_OVERRIDE.store(-1, Ordering::Release);
+}
+
+/// Snapshot of the CUDA-side successful enqueue receipt for both fused MoE launchers.
+pub fn dsv4_moe_fused_dispatches() -> u64 {
+    unsafe { dsv4_ffi::memra_dsv4_moe_fused_dispatches() }
+}
+
+/// Snapshot of the CUDA-side successful enqueue receipt for the multi-row streaming visitor,
+/// which small multi-row steps (verify rounds) take under the same switch.
+pub fn dsv4_moe_mrow_stream_dispatches() -> u64 {
+    unsafe { mmq_ffi::memra_moe_kq_mrow_stream_dispatches() }
 }
 
 /// Per-model door for the gemma-MoE (gelu) grouped path: round 49's Hopper default
@@ -889,16 +995,19 @@ pub mod dsv4_gpu;
 mod dsv4_graph;
 mod dsv4_grouped;
 pub mod dsv4_sampler;
+pub mod dsv4_source_tape;
 pub mod dsv4_topology;
 pub mod f16_ffi;
 pub mod fp8_ffi;
 pub mod glm5_tp_sampler;
+pub mod grid_capture;
 pub mod mmq_ffi;
 pub mod moe_cache;
 pub mod prime_graph;
 pub mod qwen_prime_graph;
 pub mod spill;
 mod spill_pread;
+pub mod step_guard;
 
 // Fatbins are EMBEDDED (crates-release lane, 2026-08-04): build.rs still writes them to
 // OUT_DIR, but the bytes ship inside the binary via include_bytes! and load through
@@ -1770,6 +1879,47 @@ pub const QT_Q2_K: i32 = 13;
 /// on the SAME resident bytes+grid (fp8_ffi::try_fp8_blk_mmq) — ONE weight copy total.
 pub const QT_F8_E4M3_BLK: i32 = 14;
 
+/// Spill positioned-read stage counters, cumulative since model load (see
+/// `Engine::moe_pread_stage_stats`). Clocks are host wall nanoseconds summed per stage.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SpillStageStats {
+    /// Positioned-read time on worker threads; concurrent reads overlap.
+    pub worker_read_ns: u64,
+    /// Blocking positioned-read time on the CUDA owner (`MEMRA_SPILL_IO=pread`).
+    pub demand_read_ns: u64,
+    /// Owner time blocked on a worker completion or an H2D event freeing a buffer.
+    pub wait_ns: u64,
+    /// Payload copies submitted to the device from pinned read buffers.
+    pub h2d_submits: u64,
+    /// Direct-window bytes read beyond the payload.
+    pub overread_bytes: u64,
+}
+
+impl SpillStageStats {
+    /// Counter growth from `before` to `self` (saturating: counters never move backwards).
+    pub fn since(&self, before: &Self) -> Self {
+        Self {
+            worker_read_ns: self.worker_read_ns.saturating_sub(before.worker_read_ns),
+            demand_read_ns: self.demand_read_ns.saturating_sub(before.demand_read_ns),
+            wait_ns: self.wait_ns.saturating_sub(before.wait_ns),
+            h2d_submits: self.h2d_submits.saturating_sub(before.h2d_submits),
+            overread_bytes: self.overread_bytes.saturating_sub(before.overread_bytes),
+        }
+    }
+
+    /// One `key=value` line body shared by run-gen and the server snapshot.
+    pub fn fields(&self) -> String {
+        format!(
+            "worker_read_ms={:.3} demand_read_ms={:.3} wait_ms={:.3} h2d_submits={} overread_bytes={}",
+            self.worker_read_ns as f64 / 1e6,
+            self.demand_read_ns as f64 / 1e6,
+            self.wait_ns as f64 / 1e6,
+            self.h2d_submits,
+            self.overread_bytes
+        )
+    }
+}
+
 /// Engine device context: CUDA context, stream, loaded kernel modules, cuBLASLt (via runtime::Gpu).
 pub struct Engine {
     pub gpu: memra_runtime::Gpu,
@@ -1791,6 +1941,17 @@ pub struct Engine {
     /// MEMRA_MOE_CACHE. `Mutex` makes it multi-agent safe (§E.2); the lock covers only lookup/admit/
     /// memcpy-issue (µs), NOT the GEMM, so streams still overlap. `None` => cache disabled.
     moe_cache: Mutex<Option<crate::moe_cache::MoeSlotCache>>,
+    /// The MoE slot cache door's load option (`research/spill-c-20260919/DAY44.md`): when set
+    /// before a model loads, stacked expert banks load as views of the artifact's own mapping
+    /// (`HostBuf::Mmap`) instead of a pinned copy the door never reads. Only the gate binaries
+    /// set it, and only with `--experts-via-tier`; false is every loader path as before.
+    expert_host_mapped: std::sync::atomic::AtomicBool,
+    /// DAY50: the MoE slot cache door is installed and prefetches the next routed expert through
+    /// its owner. Set only by the door's installer; false keeps the legacy prefetch condition.
+    expert_bank_prefetch: std::sync::atomic::AtomicBool,
+    /// DAY60: `--moe-dispatch-clock` (a gate binary's log-only flag): every MoE slot cache built
+    /// after it is set keeps a dispatch clock (both the legacy program and the door).
+    moe_dispatch_clock: std::sync::atomic::AtomicBool,
     /// CALIBRATED-A4 CLIPPING DIAGNOSTIC (research/qwen-fp4-activation-mint-20260909). `None`
     /// while serving, so the quantizer takes a null pointer and does no atomics. When a
     /// diagnostic run enables it, this is a device buffer of 4 u64 per program slot
@@ -2152,9 +2313,6 @@ pub use pinned_host::{PinnedHostArena, PinnedHostBuf};
 /// x 256 threads = 65536 threads covering the 248K-vocab scan in ~4 strided loads/thread.
 pub const ARGMAX_NB: usize = 256;
 
-/// crate-visible alias for the batched FA3 shim entry (hybrid_forward's batch arm).
-pub(crate) use memra_fa3_vl as fa3_vl_raw;
-
 unsafe extern "C" {
     /// FA3 v10 shim (cu/fa3_prefill.cu): TMA-swizzled wgmma FA, fresh causal hd256.
     fn memra_fa3_prefill(
@@ -2163,20 +2321,6 @@ unsafe extern "C" {
         v16: *const core::ffi::c_void,
         o: *mut f32,
         t: i32,
-        h: i32,
-        hkv: i32,
-        d: i32,
-        scale: f32,
-        stream: *mut core::ffi::c_void,
-    ) -> i32;
-    /// batched varlen twin: host arrays of device pointers per seq (B <= 8).
-    pub(crate) fn memra_fa3_vl(
-        q16s: *const *const core::ffi::c_void,
-        k16s: *const *const core::ffi::c_void,
-        v16s: *const *const core::ffi::c_void,
-        os: *const *mut f32,
-        ts: *const i32,
-        b: i32,
         h: i32,
         hkv: i32,
         d: i32,
@@ -2271,47 +2415,6 @@ unsafe impl cudarc::driver::DeviceRepr for GdnPrepVl {}
 #[derive(Clone, Copy)]
 pub struct GdnPrepVl8(pub [GdnPrepVl; 8]);
 unsafe impl cudarc::driver::DeviceRepr for GdnPrepVl8 {}
-
-/// task #18 (attn side): per-seq varlen FA args (CUDA `faseq_t`/`favl_t`).
-#[repr(C)]
-#[derive(Clone, Copy, Default)]
-pub struct FaSeqVl {
-    pub q: u64,
-    pub k16: u64,
-    pub v16: u64,
-    pub o: u64,
-    pub kf: u64,
-    pub vf: u64,
-    pub t: i32,
-    pub pad: i32,
-}
-unsafe impl cudarc::driver::DeviceRepr for FaSeqVl {}
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct FaVl8(pub [FaSeqVl; 8]);
-unsafe impl cudarc::driver::DeviceRepr for FaVl8 {}
-
-/// task #18 (attn pre-FA): per-seq split/norm/rope/append args (CUDA `attnpre_t`).
-#[repr(C)]
-#[derive(Clone, Copy, Default)]
-pub struct AttnPreVl {
-    pub qf: u64,
-    pub kf: u64,
-    pub vf: u64,
-    pub q: u64,
-    pub gate: u64,
-    pub qn: u64,
-    pub kn: u64,
-    pub kc: u64,
-    pub vc: u64,
-    pub t: i32,
-    pub pad: i32,
-}
-unsafe impl cudarc::driver::DeviceRepr for AttnPreVl {}
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct AttnPreVl8(pub [AttnPreVl; 8]);
-unsafe impl cudarc::driver::DeviceRepr for AttnPreVl8 {}
 
 /// task #18 increment 2: one sequence's FULL chunk-buffer set (alloc-only; the
 /// varlen K1-K5 chain fills them).
@@ -3771,6 +3874,9 @@ impl Engine {
             router,
             sample,
             moe_cache: Mutex::new(None),
+            expert_host_mapped: std::sync::atomic::AtomicBool::new(false),
+            expert_bank_prefetch: std::sync::atomic::AtomicBool::new(false),
+            moe_dispatch_clock: std::sync::atomic::AtomicBool::new(false),
             a4_clip_stats: Mutex::new(None),
             w8_mirrors: Mutex::new(std::collections::HashMap::new()),
             w8_act: Mutex::new(std::collections::HashMap::new()),
@@ -6625,6 +6731,64 @@ impl Engine {
 
     /// Snapshot the MoE cache counters (hits, misses, staged_bytes, n_slots) for the §D.4 PCIe gate.
     /// Returns None if the cache was never built (disabled or no MoE forward ran).
+    /// Set the MoE slot cache door's load option before a model loads (DAY44): stacked expert
+    /// banks load as views of the artifact's mapping, never a pinned copy. Gate binaries only.
+    pub fn set_expert_host_mapped(&self, mapped: bool) {
+        self.expert_host_mapped
+            .store(mapped, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// DAY50: set by the door's installer once the bank is installed.
+    pub(crate) fn set_expert_bank_prefetch(&self, on: bool) {
+        self.expert_bank_prefetch
+            .store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// DAY60: `--moe-dispatch-clock`, set by a gate binary before its model loads (log only).
+    pub fn set_moe_dispatch_clock(&self, on: bool) {
+        self.moe_dispatch_clock
+            .store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// DAY60: whether slot caches built from now on keep a dispatch clock.
+    pub(crate) fn moe_dispatch_clock(&self) -> bool {
+        self.moe_dispatch_clock
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// DAY60: the slot cache's cumulative dispatch-clock line, `None` without a cache or a clock.
+    pub fn moe_dispatch_clock_line(&self) -> Option<String> {
+        self.moe_cache
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|cache| cache.dispatch_clock_line())
+    }
+
+    /// DAY50: whether the door prefetches through its owner (the forward's prefetch condition).
+    pub(crate) fn expert_bank_prefetch(&self) -> bool {
+        self.expert_bank_prefetch
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Whether the door's mapped-expert load option is set (DAY44).
+    pub(crate) fn expert_host_mapped(&self) -> bool {
+        self.expert_host_mapped
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// The MoE slot cache door's stage line (`--expert-bank-stages`,
+    /// `research/spill-c-20260919/DAY40.md`): `Ok(None)` without the door or the flag. Never
+    /// builds a cache; the bank half is read through the proxy on the owner thread.
+    pub(crate) fn expert_bank_stage_line(
+        &self,
+    ) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        match self.moe_cache.lock().unwrap().as_mut() {
+            Some(cache) => cache.bank_stage_line(),
+            None => Ok(None),
+        }
+    }
+
     pub fn moe_cache_stats(&self) -> Option<(u64, u64, u64, usize)> {
         let guard = self.moe_cache.lock().unwrap();
         guard
@@ -6675,6 +6839,22 @@ impl Engine {
                     stats.buffer_waits,
                     stats.ring_full,
                 )
+            })
+    }
+
+    /// Positioned-read stage counters (lane/spill-f-20260919 OWED 8): host wall time and
+    /// over-read bytes of the spill path, `None` when no positioned-read backend was requested.
+    pub fn moe_pread_stage_stats(&self) -> Option<SpillStageStats> {
+        let guard = self.moe_cache.lock().unwrap();
+        guard
+            .as_ref()
+            .and_then(|cache| cache.pread_stats())
+            .map(|stats| SpillStageStats {
+                worker_read_ns: stats.worker_read_ns,
+                demand_read_ns: stats.demand_read_ns,
+                wait_ns: stats.wait_ns,
+                h2d_submits: stats.h2d_submits,
+                overread_bytes: stats.overread_bytes,
             })
     }
 
@@ -7306,6 +7486,65 @@ impl Engine {
         Ok(())
     }
 
+    /// WP-A design B1's launch shape (`research/spill-a-20260919/DAY59.md` section 7; integ67 review): the
+    /// grid's y dimension holds one row per item plus the set row, and CUDA caps `gridDim.y` at 65535. More
+    /// items than that is refused with the count named, before any device work, never a launch failure
+    /// after the table upload.
+    pub fn copy_batch_items_rows(n: usize) -> Result<u32, String> {
+        const GRID_Y_MAX: usize = 65535;
+        if n + 1 > GRID_Y_MAX {
+            return Err(format!(
+                "batched copy of {n} items refused: {} grid rows exceed CUDA's gridDim.y limit of {GRID_Y_MAX}",
+                n + 1
+            ));
+        }
+        Ok((n + 1) as u32)
+    }
+
+    /// WP-A design B1 (`research/spill-a-20260919/DAY59.md` section 7): copy every `(src, dst, bytes)`
+    /// item and write every `(dst, value)` i32 set in ONE launch on the owner stream. The pointers are raw
+    /// device addresses the caller holds live (with their cudarc guards) across this call; the items must
+    /// be disjoint. The table is uploaded once and freed in stream order. Bytes are those of the memcpy
+    /// sequence it replaces.
+    pub fn copy_batch_items_u8(
+        &self,
+        items: &[(u64, u64, u64)],
+        sets: &[(u64, i32)],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let items: Vec<(u64, u64, u64)> = items.iter().copied().filter(|it| it.2 > 0).collect();
+        if items.is_empty() && sets.is_empty() {
+            return Ok(());
+        }
+        let (n, m) = (items.len(), sets.len());
+        // Fail closed before any device work: the grid's y dimension is n + 1 rows.
+        let rows = Self::copy_batch_items_rows(n)?;
+        let ni = i32::try_from(n).map_err(|_| "batched copy item count exceeds i32")?;
+        let mi = i32::try_from(m).map_err(|_| "batched copy set count exceeds i32")?;
+        let mut table = Vec::with_capacity(3 * n + 2 * m);
+        table.extend(items.iter().map(|it| it.0));
+        table.extend(items.iter().map(|it| it.1));
+        table.extend(items.iter().map(|it| it.2));
+        table.extend(sets.iter().map(|s| s.0));
+        table.extend(sets.iter().map(|s| s.1 as u32 as u64));
+        let table_d = self.htod_u64(&table)?;
+        let max_bytes = items.iter().map(|it| it.2).max().unwrap_or(0) as usize;
+        // Enough blocks to stream a multi-MB plane, capped so (chunks x n) stays a sane grid.
+        let chunks = (max_bytes / 16).max(1).div_ceil(256).min(64) as u32;
+        let f = self.func("copy_batch_items_u8");
+        let cfg = LaunchConfig {
+            grid_dim: (chunks, rows, 1),
+            block_dim: (256, 1, 1),
+            shared_mem_bytes: 0,
+        };
+        let stream = self.gpu.stream();
+        let mut b = stream.launch_builder(&f);
+        b.arg(&table_d).arg(&ni).arg(&mi);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(())
+    }
+
     /// Copy one uniform quantized K/V row range for each layer in `table` and publish every
     /// layer's device length in the same launch. Table layout is five pointer planes:
     /// K source, V source, K destination, V destination, and i32 length destination.
@@ -7486,6 +7725,18 @@ impl Engine {
     pub fn alloc_u8(&self, n: usize) -> Result<CudaSlice<u8>, Box<dyn std::error::Error>> {
         crate::alloc_trace_hit(n);
         let s = self.gpu.stream().alloc_zeros::<u8>(n)?;
+        self.keep_if_capturing(&s);
+        Ok(s)
+    }
+
+    /// WP-A day 32 (the promote's f32 H2D span destinations, `tier_transfer::H2dSpan`):
+    /// uninitialized f32 device memory on the owner stream, no memset. ONLY for a destination whose
+    /// whole range the span's copy writes before any reader: `take_h2d_spans` hands it out only
+    /// after the copy's event is observed complete and the owner stream waits on it.
+    #[track_caller]
+    pub fn alloc_f32_uninit(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        crate::alloc_trace_hit(n * 4);
+        let s = unsafe { self.gpu.stream().alloc::<f32>(n)? };
         self.keep_if_capturing(&s);
         Ok(s)
     }
@@ -29264,180 +29515,6 @@ impl Engine {
         Ok(())
     }
 
-    /// task #18 (attn side): varlen FA — bf16 K/V mirrors (2 launches) + ONE
-    /// fa_prefill_bf16kv launch for every fresh sequence. Same per-block math as the
-    /// per-seq path (bit-gateable). Caller guarantees: fresh causal (T_kv == T),
-    /// head_dim in {256, 128}, bf16kv lane on.
-    #[allow(clippy::too_many_arguments)]
-    pub fn fa_prefill_vl8(
-        &self,
-        seqs: &[FaSeqVl],
-        head_dim: usize,
-        n_head: usize,
-        n_head_kv: usize,
-        scale: f32,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        const BK: usize = 32;
-        let b = seqs.len();
-        assert!((1..=8).contains(&b));
-        let mut packed = [FaSeqVl::default(); 8];
-        packed[..b].copy_from_slice(seqs);
-        let v = FaVl8(packed);
-        let max_t = seqs.iter().map(|s| s.t).max().unwrap() as u32;
-        let ept = (n_head_kv * head_dim) as i32;
-        {
-            let f = self.func("fa_mirror_vl");
-            let max_n = (max_t as i64) * ept as i64;
-            let blocks = ((max_n as u32).div_ceil(4)).div_ceil(256);
-            for which in 0..2i32 {
-                let cfg = LaunchConfig {
-                    grid_dim: (blocks, 1, b as u32),
-                    block_dim: (256, 1, 1),
-                    shared_mem_bytes: 0,
-                };
-                let __s_lb = self.gpu.stream();
-                let mut lb = __s_lb.launch_builder(&f);
-                lb.arg(&v).arg(&ept).arg(&which);
-                unsafe {
-                    lb.launch(cfg)?;
-                }
-            }
-        }
-        let hd_sfx = fa_hd_suffix(head_dim)?;
-        let f = self.func(&format!("fa_prefill_bf16kv_vl{hd_sfx}"));
-        let block_q = 64usize;
-        let kv_stages = 2usize;
-        let shmem = (2 * (kv_stages * 2 * BK * head_dim + block_q * BK)
-            + 4 * (block_q * BK + 2 * block_q)) as u32;
-        use cudarc::driver::sys::CUfunction_attribute_enum as A;
-        f.set_attribute(
-            A::CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
-            shmem as i32,
-        )?;
-        let cfg = LaunchConfig {
-            grid_dim: (max_t.div_ceil(block_q as u32), n_head as u32, b as u32),
-            block_dim: (32, 4, 1),
-            shared_mem_bytes: shmem,
-        };
-        let (hd, nh, nhkv) = (head_dim as i32, n_head as i32, n_head_kv as i32);
-        let __s_lb = self.gpu.stream();
-        let mut lb = __s_lb.launch_builder(&f);
-        lb.arg(&v).arg(&hd).arg(&nh).arg(&nhkv).arg(&scale);
-        unsafe {
-            lb.launch(cfg)?;
-        }
-        Ok(())
-    }
-
-    /// task #18 (attn pre-FA): varlen split + QK-norm + RoPE + KV-append — FOUR launches
-    /// for every fresh sequence (was 6 x B, plus the q/k/v split copies which the view
-    /// inputs remove entirely). Fresh-only (append at t0=0, RoPE pos = token index).
-    #[allow(clippy::too_many_arguments)]
-    pub fn attn_pre_vl8(
-        &self,
-        seqs: &[AttnPreVl],
-        wq: Option<&CudaSlice<f32>>,
-        wk: Option<&CudaSlice<f32>>,
-        head_dim: usize,
-        rope_dims: usize,
-        n_head: usize,
-        n_head_kv: usize,
-        eps: f32,
-        freq_base: f32,
-        freq_scale: f32,
-        kv_dim_k: usize,
-        kv_dim_v: usize,
-        k_tok_bytes: usize,
-        v_tok_bytes: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        // 0 = this family has no such norm; every kernel here reads a null
-        // weight as "pass the row through" (an all-ones weight would not be).
-        let __wq_ptr: u64 = wq.map(|t| self.addr_f32(t)).unwrap_or(0);
-        let __wk_ptr: u64 = wk.map(|t| self.addr_f32(t)).unwrap_or(0);
-        let b = seqs.len();
-        assert!((1..=8).contains(&b));
-        let mut packed = [AttnPreVl::default(); 8];
-        packed[..b].copy_from_slice(seqs);
-        let v = AttnPreVl8(packed);
-        let max_t = seqs.iter().map(|s| s.t).max().unwrap() as u32;
-        let (hd, nh, nhkv) = (head_dim as i32, n_head as i32, n_head_kv as i32);
-        {
-            let f = self.func("q_gate_split_vl");
-            let n = max_t * (n_head * head_dim) as u32;
-            let cfg = LaunchConfig {
-                grid_dim: (n.div_ceil(256), 1, b as u32),
-                block_dim: (256, 1, 1),
-                shared_mem_bytes: 0,
-            };
-            let __s_lb = self.gpu.stream();
-            let mut lb = __s_lb.launch_builder(&f);
-            lb.arg(&v).arg(&hd).arg(&nh);
-            unsafe {
-                lb.launch(cfg)?;
-            }
-        }
-        {
-            let f = self.func("attn_rms_vl");
-            let cfg = LaunchConfig {
-                grid_dim: (max_t * n_head as u32, 2, b as u32),
-                block_dim: (rms_block(), 1, 1),
-                shared_mem_bytes: 0,
-            };
-            let __s_lb = self.gpu.stream();
-            let mut lb = __s_lb.launch_builder(&f);
-            lb.arg(&v)
-                .arg(&__wq_ptr)
-                .arg(&__wk_ptr)
-                .arg(&hd)
-                .arg(&nh)
-                .arg(&nhkv)
-                .arg(&eps);
-            unsafe {
-                lb.launch(cfg)?;
-            }
-        }
-        {
-            let f = self.func("attn_rope_vl");
-            let theta_scale = freq_base.powf(-2.0 / rope_dims as f32);
-            let nd = rope_dims as i32;
-            let cfg = LaunchConfig {
-                grid_dim: (max_t * n_head as u32, 2, b as u32),
-                block_dim: ((head_dim / 2) as u32, 1, 1),
-                shared_mem_bytes: 0,
-            };
-            let __s_lb = self.gpu.stream();
-            let mut lb = __s_lb.launch_builder(&f);
-            lb.arg(&v)
-                .arg(&hd)
-                .arg(&nd)
-                .arg(&nh)
-                .arg(&nhkv)
-                .arg(&theta_scale)
-                .arg(&freq_scale);
-            unsafe {
-                lb.launch(cfg)?;
-            }
-        }
-        {
-            let f = self.func("append_kv_vl");
-            let nblk = (kv_dim_k.max(kv_dim_v) / 32) as u32;
-            let cfg = LaunchConfig {
-                grid_dim: (nblk, max_t, b as u32),
-                block_dim: (32, 1, 1),
-                shared_mem_bytes: 0,
-            };
-            let (kdk, kdv) = (kv_dim_k as i32, kv_dim_v as i32);
-            let (ktb, vtb) = (k_tok_bytes as i64, v_tok_bytes as i64);
-            let __s_lb = self.gpu.stream();
-            let mut lb = __s_lb.launch_builder(&f);
-            lb.arg(&v).arg(&kdk).arg(&kdv).arg(&ktb).arg(&vtb);
-            unsafe {
-                lb.launch(cfg)?;
-            }
-        }
-        Ok(())
-    }
-
     /// FA prefill where K/V are QUANTIZED CudaViews into the resident byte KV cache (the T=K verify
     /// path, MTP-PLAN §D.3). Uses `fa_prefill_q` (inline-dequant during stage-to-smem). The view's
     /// base+offset pointer is honored; the kernel reads [0..t_kv*tok_bytes). Q is the T fresh query
@@ -34043,12 +34120,38 @@ impl Engine {
             && std::env::var("MEMRA_GDN_WGMMA").as_deref() != Ok("0")
     }
 
+    /// GRID CAPTURE (WP-B day 44, `grid_capture`): the conv ring at `rows` into the call, i.e.
+    /// the ring update of a call that ended there: rows `rows - (d_conv - 1) .. rows` of the
+    /// token-major conv input, through the same ring-update kernel (a copy).
+    pub fn ssm_conv_ring_capture(
+        &self,
+        qkv_tm: &cudarc::driver::CudaView<f32>,
+        conv_dim: usize,
+        rows: usize,
+        d_conv: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        assert!(rows >= d_conv - 1, "ring capture needs rows >= pad");
+        let n = conv_dim * (d_conv - 1);
+        let mut dst = self.uninit(n)?;
+        let f = self.func("ssm_conv_ring_update_f32");
+        let cfg = LaunchConfig::for_num_elems(n as u32);
+        let (cd, ti, dc) = (conv_dim as i32, rows as i32, d_conv as i32);
+        let __s_b = self.gpu.stream();
+        let mut b = __s_b.launch_builder(&f);
+        b.arg(qkv_tm).arg(&mut dst).arg(&cd).arg(&ti).arg(&dc);
+        unsafe {
+            b.launch(cfg)?;
+        }
+        Ok(dst)
+    }
+
     /// task #18 conv-fuse: carried-ring conv + SiLU + GDN repack in ONE pass (the
     /// conv_out intermediate and its transposed re-read disappear — 11.8ms of the
     /// T=2048 prime). Ring update stays the separate follow-up launch (pad-aware).
     /// BIT-IDENTICAL values to ssm_conv1d_tm_state_pad + qkv_to_gdn_repack.
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::manual_div_ceil)] // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
+    #[allow(clippy::manual_div_ceil)]
+    // allow: explicit (n + k - 1) / k is the load-bearing sizing form, kept textually identical to the kernel-side math
     pub fn ssm_conv1d_gdn_state_pad(
         &self,
         qkv_tm: &cudarc::driver::CudaView<f32>,
@@ -34614,7 +34717,41 @@ impl Engine {
         c: usize,
         hk: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.gdn_scan_chunked_capture(
+            q, k, v, g, beta, kb16_pre, qb16_pre, state_in, state_out, o, n_head, t, scale, c, hk,
+            None,
+        )
+    }
+
+    /// `gdn_scan_chunked` plus the in-call grid capture (WP-B day 44, `grid_capture`): with
+    /// `capture = Some((rows, slot))`, after the scan one extra state-pass launch over the first
+    /// `rows / c` chunks writes the f32 state at `rows` into `slot`. The state pass is sequential
+    /// over chunks and reads only prefix-indexed buffers, so that state is the one the full pass
+    /// carried through chunk `rows / c`. The Hopper fused K4+K5 arm leaves `slot` empty (no
+    /// capture; the caller then keeps its previous checkpoint). `None`: byte-identical to the
+    /// plain scan.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gdn_scan_chunked_capture(
+        &self,
+        q: &CudaSlice<f32>,
+        k: &CudaSlice<f32>,
+        v: &CudaSlice<f32>,
+        g: &CudaSlice<f32>,
+        beta: &CudaSlice<f32>,
+        kb16_pre: Option<&CudaSlice<u8>>,
+        qb16_pre: Option<&CudaSlice<u8>>,
+        state_in: &CudaSlice<f32>,
+        state_out: &mut CudaSlice<f32>,
+        o: &mut CudaSlice<f32>,
+        n_head: usize,
+        t: usize,
+        scale: f32,
+        c: usize,
+        hk: usize,
+        capture: Option<(usize, &mut Option<CudaSlice<f32>>)>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         const D: usize = 128;
+        let capture = capture.filter(|(rows, _)| *rows > 0 && *rows < t && rows.is_multiple_of(c));
         const NSPLIT: u32 = 4;
         assert!(
             (1..=128).contains(&c),
@@ -34842,6 +34979,39 @@ impl Engine {
                     b.launch(cfg)?;
                 }
             }
+            // GRID CAPTURE (WP-B day 44): the same K4 over the prefix, after K5 consumed the
+            // full pass's Y and Ssnap (the rerun rewrites their first chunks with the same values).
+            if let Some((rows, slot)) = capture
+                && crate::qwen_prime_graph::current().is_none()
+            {
+                let mut st = self.uninit(state_out.len())?;
+                let f = self.func("gdn_chunk_state_mma");
+                let cfg = LaunchConfig {
+                    grid_dim: (h as u32, NSPLIT, 1),
+                    block_dim: (256, 1, 1),
+                    shared_mem_bytes: 0,
+                };
+                let (hki, ri) = (hk as i32, rows as i32);
+                let __s_b = self.gpu.stream();
+                let mut b = __s_b.launch_builder(&f);
+                b.arg(kb16_ref)
+                    .arg(&gcum)
+                    .arg(beta)
+                    .arg(&u)
+                    .arg(&wb16)
+                    .arg(&mut y16)
+                    .arg(&mut ssnap16)
+                    .arg(state_in)
+                    .arg(&mut st)
+                    .arg(&hi)
+                    .arg(&ri)
+                    .arg(&ci)
+                    .arg(&hki);
+                unsafe {
+                    b.launch(cfg)?;
+                }
+                *slot = Some(st);
+            }
             return Ok(());
         }
         {
@@ -34897,6 +35067,35 @@ impl Engine {
                 b.launch(cfg)?;
             }
         }
+        // GRID CAPTURE (WP-B day 44): the f32 K4 over the prefix, after K5.
+        if let Some((rows, slot)) = capture {
+            let mut st = self.uninit(state_out.len())?;
+            let f = self.func("gdn_chunk_state_f32");
+            let cfg = LaunchConfig {
+                grid_dim: (h as u32, NSPLIT, 1),
+                block_dim: (256, 1, 1),
+                shared_mem_bytes: 0,
+            };
+            let ri = rows as i32;
+            let __s_b = self.gpu.stream();
+            let mut b = __s_b.launch_builder(&f);
+            b.arg(k)
+                .arg(&gcum)
+                .arg(beta)
+                .arg(&u)
+                .arg(&w)
+                .arg(&mut y)
+                .arg(&mut ssnap)
+                .arg(state_in)
+                .arg(&mut st)
+                .arg(&hi)
+                .arg(&ri)
+                .arg(&ci);
+            unsafe {
+                b.launch(cfg)?;
+            }
+            *slot = Some(st);
+        }
         Ok(())
     }
 
@@ -34927,12 +35126,39 @@ impl Engine {
         scale: f32,
         hk: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.gdn_scan_prefill_capture(
+            q, k, v, g, beta, kb16_pre, qb16_pre, state_in, state_out, o, n_head, t, scale, hk,
+            None,
+        )
+    }
+
+    /// `gdn_scan_prefill` plus the in-call grid capture (WP-B day 44): only the chunked form
+    /// captures; the oracle and sequential forms leave the slot empty.
+    #[allow(clippy::too_many_arguments)]
+    pub fn gdn_scan_prefill_capture(
+        &self,
+        q: &CudaSlice<f32>,
+        k: &CudaSlice<f32>,
+        v: &CudaSlice<f32>,
+        g: &CudaSlice<f32>,
+        beta: &CudaSlice<f32>,
+        kb16_pre: Option<&CudaSlice<u8>>,
+        qb16_pre: Option<&CudaSlice<u8>>,
+        state_in: &CudaSlice<f32>,
+        state_out: &mut CudaSlice<f32>,
+        o: &mut CudaSlice<f32>,
+        n_head: usize,
+        t: usize,
+        scale: f32,
+        hk: usize,
+        capture: Option<(usize, &mut Option<CudaSlice<f32>>)>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if std::env::var("MEMRA_GDN_DIFF").is_ok() && t >= 16 {
             assert!(hk == n_head, "GDN_DIFF oracle is broadcast-only");
             return self.gdn_scan_diff(q, k, v, g, beta, state_in, state_out, o, n_head, t, scale);
         }
         if Self::gdn_chunked_enabled() && t >= 16 {
-            self.gdn_scan_chunked(
+            self.gdn_scan_chunked_capture(
                 q,
                 k,
                 v,
@@ -34948,6 +35174,7 @@ impl Engine {
                 scale,
                 Self::gdn_chunk_size(),
                 hk,
+                capture,
             )
         } else {
             assert!(
@@ -35771,6 +35998,16 @@ impl memra_kv::KvDev for Engine {
     fn alloc_vmm_u8(&self, n: usize) -> Result<memra_kv::KvPlane, Box<dyn std::error::Error>> {
         memra_kv::KvPlane::vmm(self.stream(), n)
     }
+    fn alloc_vmm_on_demand_u8(
+        &self,
+        capacity: usize,
+        initial: usize,
+    ) -> Result<memra_kv::KvPlane, Box<dyn std::error::Error>> {
+        memra_kv::KvPlane::vmm_on_demand(self.stream(), capacity, initial)
+    }
+    fn kv_vmm_granularity(&self) -> Option<usize> {
+        memra_kv::vmm_granularity_for(&self.stream()).ok()
+    }
     fn zeros(&self, n: usize) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
         Engine::zeros(self, n)
     }
@@ -35833,6 +36070,107 @@ mod fused_gate_bounds_tests {
     /// `compute-sanitizer --tool memcheck` on the half-width case reported invalid `__global__`
     /// reads of size 4 in `q_gate_split_f32`; with the guard in place the same run is clean and
     /// the call returns `Err`. Receipt in the lane report.
+    /// integ67 review (B1): more items than `gridDim.y` can hold is refused with the count named,
+    /// before any device work; the largest legal batch and today's shapes pass.
+    #[test]
+    fn copy_batch_items_refuses_more_rows_than_the_grid_holds() {
+        assert_eq!(Engine::copy_batch_items_rows(0), Ok(1));
+        assert_eq!(
+            Engine::copy_batch_items_rows(128),
+            Ok(129),
+            "the 27B's snapshot"
+        );
+        assert_eq!(
+            Engine::copy_batch_items_rows(65534),
+            Ok(65535),
+            "the largest legal batch"
+        );
+        let err = Engine::copy_batch_items_rows(65535).unwrap_err();
+        assert!(
+            err.contains("65535 items refused") && err.contains("65536 grid rows"),
+            "{err}"
+        );
+    }
+
+    /// WP-A design B1 (`research/spill-a-20260919/DAY59.md` section 7, cell (a1)): the batched
+    /// item copy is the memcpy program. Items at 16-byte-aligned and unaligned addresses, sizes 0,
+    /// 1, 15, 17, 4096 + 3 and 4 MiB + 5, plus i32 sets: each destination range equals its source,
+    /// every byte outside the ranges keeps its fill, and each set reads its value.
+    #[test]
+    #[ignore = "requires a CUDA GPU"]
+    fn copy_batch_items_u8_is_the_memcpy_program() {
+        use cudarc::driver::{DevicePtr, DevicePtrMut};
+        let e = Engine::new(0).unwrap();
+        let st = e.stream();
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed as u8
+        };
+        // (source offset, destination offset, bytes): aligned pairs, unaligned pairs, mixed.
+        let shapes: [(usize, usize, usize); 9] = [
+            (0, 0, 0),
+            (0, 0, 1),
+            (3, 5, 15),
+            (16, 32, 17),
+            (1, 0, 4096 + 3),
+            (0, 7, 4096 + 3),
+            (0, 0, (4 << 20) + 5),
+            (9, 9, (4 << 20) + 5),
+            (0, 0, 64 * 1024),
+        ];
+        let pad = 64usize;
+        let mut srcs = Vec::new();
+        let mut dsts = Vec::new();
+        let mut host_src = Vec::new();
+        let mut host_dst = Vec::new();
+        for &(so, doff, n) in &shapes {
+            let hs: Vec<u8> = (0..so + n + pad).map(|_| next()).collect();
+            let hd: Vec<u8> = (0..doff + n + pad).map(|_| next()).collect();
+            srcs.push(e.htod_bytes(&hs).unwrap());
+            dsts.push(e.htod_bytes(&hd).unwrap());
+            host_src.push(hs);
+            host_dst.push(hd);
+        }
+        let mut lens: Vec<CudaSlice<i32>> = (0..3).map(|_| e.htod_i32(&[-1]).unwrap()).collect();
+        let values = [0i32, 97, i32::MAX];
+        {
+            let mut items = Vec::new();
+            let mut sets = Vec::new();
+            let mut guards = Vec::new();
+            for ((s, d), &(so, doff, n)) in srcs.iter().zip(dsts.iter_mut()).zip(&shapes) {
+                let (sp, gs) = s.device_ptr(&st);
+                let (dp, gd) = d.device_ptr_mut(&st);
+                items.push((sp + so as u64, dp + doff as u64, n as u64));
+                guards.push(gs);
+                guards.push(gd);
+            }
+            for (l, &v) in lens.iter_mut().zip(&values) {
+                let (lp, gl) = l.device_ptr_mut(&st);
+                sets.push((lp, v));
+                guards.push(gl);
+            }
+            e.copy_batch_items_u8(&items, &sets).unwrap();
+            drop(guards);
+        }
+        for (i, &(so, doff, n)) in shapes.iter().enumerate() {
+            let got = e.dtoh_u8(&dsts[i]).unwrap();
+            let mut want = host_dst[i].clone();
+            want[doff..doff + n].copy_from_slice(&host_src[i][so..so + n]);
+            let bad = got.iter().zip(&want).position(|(a, b)| a != b);
+            assert!(
+                bad.is_none(),
+                "item {i} {:?}: first differing byte at {bad:?}",
+                shapes[i]
+            );
+        }
+        for (l, &v) in lens.iter().zip(&values) {
+            assert_eq!(e.dtoh_i32(l).unwrap(), vec![v], "set reads its value");
+        }
+    }
+
     #[test]
     #[ignore = "requires a CUDA GPU"]
     fn q_gate_split_refuses_a_separate_gate_wq_instead_of_reading_past_it() {

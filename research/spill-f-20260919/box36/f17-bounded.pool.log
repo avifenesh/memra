@@ -1,0 +1,7 @@
+M1-5090-VERDICT arm=bypass-staged vs worker16: flat median_ratio=1.0095147478591817 pairs=9
+M1-5090-VERDICT arm=bypass-mapped vs worker16: loser median_ratio=0.8957934990439769 pairs=9
+M1-5090-VERDICT regime_scored=True contaminated={'worker16': 1, 'bypass-staged': 0, 'bypass-mapped': 0}
+M1-5090-VERDICT-READGATE(post-hoc) arm=bypass-staged vs worker16: flat median_ratio=1.0095147478591817 pairs=9
+M1-5090-VERDICT-READGATE(post-hoc) arm=bypass-mapped vs worker16: loser median_ratio=0.8957934990439769 pairs=9
+M1-5090-VERDICT-READGATE(post-hoc) regime_scored=True contaminated={'worker16': 1, 'bypass-staged': 0, 'bypass-mapped': 0}
+rounds=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10] visits=30 refused=[] gpu_cotenant_unclean=0 visits_with_mmap_fallbacks=0

@@ -1,0 +1,13 @@
+diff --git a/crates/memra-engine/src/tier_transfer.rs b/crates/memra-engine/src/tier_transfer.rs
+index 088d1c89b..ae768d1e6 100644
+--- a/crates/memra-engine/src/tier_transfer.rs
++++ b/crates/memra-engine/src/tier_transfer.rs
+@@ -931,7 +931,7 @@ impl CudaTransfers {
+                     let backing = self.owner.resolve::<Rc<RefCell<KvPlane>>>(&o.device)?;
+                     let plane = backing.borrow();
+                     let view = plane.slice(..o.bytes as usize);
+-                    let (ptr, _record) = view.device_ptr(&rs);
++                    let (ptr, _record) = view.device_ptr(&self.stream);
+                     sources.push((ptr, o.bytes));
+                 }
+                 _ => sources.push((0, 0)),

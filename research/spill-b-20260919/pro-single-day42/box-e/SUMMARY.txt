@@ -1,0 +1,31 @@
+DAY42 F3 card=pro6000 boot=ontick-O1 oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 17, 429: 47} counts={'ontick_demoted': 2, 'plans': 0, 'submitted': 0, 'published': 24, 'landing_defers': 0, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=offtick-O1 oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 15, 429: 49} counts={'ontick_demoted': 0, 'plans': 1, 'submitted': 10, 'published': 34, 'landing_defers': 49, 'landing_refusals': 49} -> PASS
+DAY42 F3 card=pro6000 boot=offtick-O2 oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 16, 429: 48} counts={'ontick_demoted': 0, 'plans': 2, 'submitted': 22, 'published': 32, 'landing_defers': 49, 'landing_refusals': 48} -> PASS
+DAY42 F3 card=pro6000 boot=ontick-O2 oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 17, 429: 47} counts={'ontick_demoted': 2, 'plans': 0, 'submitted': 0, 'published': 24, 'landing_defers': 0, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=ontick-nocontracts oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 17, 429: 47} counts={'ontick_demoted': 2, 'plans': 0, 'submitted': 0, 'published': 25, 'landing_defers': 0, 'landing_refusals': 0} -> PASS
+DAY42 F3 card=pro6000 boot=fault-d2h-delay oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 16, 429: 48} counts={'ontick_demoted': 0, 'plans': 2, 'submitted': 22, 'published': 32, 'landing_defers': 49, 'landing_refusals': 48} -> PASS
+DAY42 F3 card=pro6000 boot=fault-d2h-source-flip oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 16, 429: 48} counts={'ontick_demoted': 0, 'plans': 2, 'submitted': 22, 'published': 31, 'landing_defers': 49, 'landing_refusals': 48} -> PASS
+DAY42 F3 card=pro6000 boot=fault-sources-helper-gone oom_lines=0 crash_lines=0 r503=0 bad_429=[] burst_status={200: 16, 429: 48} counts={'ontick_demoted': 0, 'plans': 2, 'submitted': 22, 'published': 22, 'landing_defers': 49, 'landing_refusals': 48} -> PASS
+DAY42 P0 card=pro6000 boot=ontick-O1 warm_published_before_burst=24 memory_verdict_lines=95 flush_runs=2 -> EXERCISED
+DAY42 P0 card=pro6000 boot=offtick-O1 warm_published_before_burst=24 memory_verdict_lines=98 flush_runs=1 -> EXERCISED
+DAY42 P0 card=pro6000 boot=offtick-O2 warm_published_before_burst=24 memory_verdict_lines=97 flush_runs=2 -> EXERCISED
+DAY42 P0 card=pro6000 boot=ontick-O2 warm_published_before_burst=24 memory_verdict_lines=95 flush_runs=2 -> EXERCISED
+DAY42 P0 card=pro6000 boot=ontick-nocontracts warm_published_before_burst=24 memory_verdict_lines=95 flush_runs=2 -> EXERCISED
+DAY42 P0 card=pro6000 boot=fault-d2h-delay warm_published_before_burst=24 memory_verdict_lines=97 flush_runs=2 -> EXERCISED
+DAY42 P0 card=pro6000 boot=fault-d2h-source-flip warm_published_before_burst=24 memory_verdict_lines=97 flush_runs=2 -> EXERCISED
+DAY42 P0 card=pro6000 boot=fault-sources-helper-gone warm_published_before_burst=24 memory_verdict_lines=97 flush_runs=2 -> EXERCISED
+DAY42 F1 card=pro6000 order=O1 rows=52 arm_differ=[] cold_differ=[] -> PASS
+DAY42 F2 card=pro6000 order=O1 ontick={'ontick_demoted': 2, 'plans': 0, 'submitted': 0, 'published': 24, 'landing_defers': 0, 'landing_refusals': 0} offtick={'ontick_demoted': 0, 'plans': 1, 'submitted': 10, 'published': 34, 'landing_defers': 49, 'landing_refusals': 49} -> PASS
+DAY42 F1 card=pro6000 order=O2 rows=52 arm_differ=[] cold_differ=[] -> PASS
+DAY42 F2 card=pro6000 order=O2 ontick={'ontick_demoted': 2, 'plans': 0, 'submitted': 0, 'published': 24, 'landing_defers': 0, 'landing_refusals': 0} offtick={'ontick_demoted': 0, 'plans': 2, 'submitted': 22, 'published': 32, 'landing_defers': 49, 'landing_refusals': 48} -> PASS
+DAY42 F4 card=pro6000 boot=fault-d2h-delay burst=64 all_200_or_429=True landing_refusals=48 armed=True -> PASS
+DAY42 F4 card=pro6000 boot=fault-d2h-source-flip burst=64 all_200_or_429=True armed=True submitted=22 published=31 first_outcome_after_arm='demote failed (tier image Key plane checksum differs from it' -> PASS
+DAY42 F4 card=pro6000 boot=fault-sources-helper-gone burst=64 all_200_or_429=True latch_lines=1 -> PASS
+DAY42 READING card=pro6000 boot=ontick-O1 tenant_gap_ms_in_burst N=276 p50=51.3 p99=8932.1 max=8932.4 burst_ttft_ms N=17 p50=11835.0 p95=14369.7 demoted_MB=9005 warmth_hits=10/24
+DAY42 READING card=pro6000 boot=offtick-O1 tenant_gap_ms_in_burst N=268 p50=50.8 p99=4059.3 max=4059.8 burst_ttft_ms N=15 p50=7892.6 p95=7897.5 demoted_MB=11192 warmth_hits=10/24
+DAY42 READING card=pro6000 boot=offtick-O2 tenant_gap_ms_in_burst N=440 p50=50.6 p99=2954.2 max=3957.7 burst_ttft_ms N=16 p50=6910.9 p95=8708.6 demoted_MB=10755 warmth_hits=10/24
+DAY42 READING card=pro6000 boot=ontick-O2 tenant_gap_ms_in_burst N=276 p50=51.5 p99=9015.6 max=9016.0 burst_ttft_ms N=17 p50=11977.3 p95=14536.4 demoted_MB=9005 warmth_hits=10/24
+DAY42 READING card=pro6000 boot=ontick-nocontracts tenant_gap_ms_in_burst N=276 p50=54.1 p99=5403.1 max=5403.9 burst_ttft_ms N=17 p50=8365.2 p95=10351.5 demoted_MB=9422 warmth_hits=10/24
+DAY42 READING card=pro6000 boot=fault-d2h-delay tenant_gap_ms_in_burst N=440 p50=52.5 p99=3502.6 max=3942.0 burst_ttft_ms N=16 p50=7444.7 p95=8760.3 demoted_MB=10755 warmth_hits=10/24
+DAY42 READING card=pro6000 boot=fault-d2h-source-flip tenant_gap_ms_in_burst N=440 p50=52.5 p99=3506.6 max=3936.0 burst_ttft_ms N=16 p50=7442.0 p95=8765.6 demoted_MB=10338 warmth_hits=9/24
+DAY42 READING card=pro6000 boot=fault-sources-helper-gone tenant_gap_ms_in_burst N=440 p50=52.5 p99=3505.8 max=3932.0 burst_ttft_ms N=16 p50=7434.5 p95=8750.4 demoted_MB=6788 warmth_hits=0/24

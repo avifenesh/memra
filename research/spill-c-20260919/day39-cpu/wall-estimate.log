@@ -1,0 +1,9 @@
+target-card boot prime: 68.2 s boot-to-stopped (spill-a-20260919/pro-single-day16/box/stall-prime/ev/marks.tsv)
+target-card boot off: 101.3 s boot-to-stopped (spill-a-20260919/pro-single-day16/box/stall-off/ev/marks.tsv)
+target-card boot on: 111.0 s boot-to-stopped (spill-a-20260919/pro-single-day16/box/stall-on/ev/marks.tsv)
+day 23 boot off: 101.5 s boot-to-stopped
+day 23 boot on: 111.0 s boot-to-stopped
+one program (2 prime + 2 off + 2 on boots, the larger on figure): 561 s = 9.4 min
+4 programs: 37.4 min; with 15% per-boot overhead (snapshots, replays, stop waits): 43.0 min
+6 programs: 56.1 min; with 15% per-boot overhead (snapshots, replays, stop waits): 64.5 min
+collector timeout pre-registered: 5400 s (90 min)

@@ -1,0 +1,15 @@
+DAY39 READING mode=5090 order=o1 arm=ft boots=5 e2e N=50 median=70.47 min=68.23 max=79.81 boot-medians [72.47, 70.24, 70.44, 70.41, 70.2] | pin-steady N=45 median=16.60 min=16.10 max=21.00 boot-medians [16.7, 16.5, 16.5, 16.6, 16.6] | steady polls [2] (counts [45]) | helper-ms N=50 median=9.20 min=9.00 max=10.00
+DAY39 READING mode=5090 order=o1 arm=f1 boots=5 e2e N=50 median=70.47 min=68.52 max=73.12 boot-medians [70.72, 70.33, 70.44, 70.67, 70.34] | pin-steady N=45 median=16.50 min=16.10 max=20.10 boot-medians [16.6, 16.5, 16.4, 16.5, 16.7] | steady polls [2] (counts [45]) | helper-ms N=50 median=8.80 min=8.60 max=10.00
+DAY39 READING mode=5090 order=o1 arm=off boots=5 e2e N=50 median=62.16 min=59.93 max=80.48 boot-medians [62.29, 62.16, 61.97, 63.09, 61.56] | pin-steady N=45 median=9.60 min=7.90 max=29.10 boot-medians [9.5, 9.7, 9.4, 10.4, 9.1] | steady polls [] (counts []) | helper-ms N=0
+DAY39 READING mode=5090 order=o2 arm=ft boots=5 e2e N=50 median=70.39 min=67.56 max=72.74 boot-medians [69.99, 70.48, 70.29, 70.65, 70.88] | pin-steady N=45 median=16.50 min=16.10 max=18.50 boot-medians [16.4, 16.6, 16.7, 16.5, 16.5] | steady polls [2] (counts [45]) | helper-ms N=50 median=9.30 min=9.00 max=10.10
+DAY39 READING mode=5090 order=o2 arm=f1 boots=5 e2e N=50 median=70.49 min=67.95 max=73.44 boot-medians [70.04, 70.74, 70.19, 70.42, 70.43] | pin-steady N=45 median=16.60 min=16.10 max=19.60 boot-medians [16.5, 16.5, 16.6, 16.6, 16.6] | steady polls [2] (counts [45]) | helper-ms N=50 median=8.80 min=8.60 max=9.00
+DAY39 READING mode=5090 order=o2 arm=off boots=5 e2e N=50 median=63.12 min=60.69 max=80.86 boot-medians [62.43, 63.25, 62.23, 63.39, 63.37] | pin-steady N=45 median=10.20 min=8.80 max=31.50 boot-medians [9.7, 10.4, 9.8, 10.3, 10.0] | steady polls [] (counts []) | helper-ms N=0
+DAY39 1b READING order=o1 arm=ft on=70.5 off=62.2 on_minus_off=+8.3 rule <=+20.0 -> PASS
+DAY39 1b READING order=o1 arm=f1 on=70.5 off=62.2 on_minus_off=+8.3 rule <=+20.0 -> PASS
+DAY39 1b READING order=o2 arm=ft on=70.4 off=63.1 on_minus_off=+7.3 rule <=+20.0 -> PASS
+DAY39 1b READING order=o2 arm=f1 on=70.5 off=63.1 on_minus_off=+7.4 rule <=+20.0 -> PASS
+DAY39 T CLAUSE (e) order=o1 metric=e2e ft=70.47 f1=70.47 ft-minus-f1=+0.00 pair-noise=2.27 (ft range 2.27, f1 range 0.39) rule ft-minus-f1<=pair-noise -> PASS
+DAY39 T CLAUSE (e) order=o1 metric=pin ft=16.60 f1=16.50 ft-minus-f1=+0.10 pair-noise=0.30 (ft range 0.20, f1 range 0.30) rule ft-minus-f1<=pair-noise -> PASS
+DAY39 T CLAUSE (e) order=o2 metric=e2e ft=70.39 f1=70.49 ft-minus-f1=-0.10 pair-noise=0.90 (ft range 0.90, f1 range 0.69) rule ft-minus-f1<=pair-noise -> PASS
+DAY39 T CLAUSE (e) order=o2 metric=pin ft=16.50 f1=16.60 ft-minus-f1=-0.10 pair-noise=0.30 (ft range 0.30, f1 range 0.10) rule ft-minus-f1<=pair-noise -> PASS
+DAY39 T 5090 (e) -> PASS (the gates and the unit cells are read from their logs)

@@ -1,0 +1,10 @@
+build probeM SERVER_EXIT=0 ENGINE_EXIT=0  diff_lines 0
+build probeX1 SERVER_EXIT=0 ENGINE_EXIT=0  diff_lines 18
+build probeX2 SERVER_EXIT=0 ENGINE_EXIT=0  diff_lines 32
+long r1 M rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=11.163 replay_ms_per_token=11.102 replay_ms_per_token=11.117 
+long r2 X1 rc=0 PROGRAM_SHA256 6a95431b9d0f62f4 PASS: 304  replay_ms_per_token=11.138 replay_ms_per_token=11.076 replay_ms_per_token=11.047 
+long r3 X2 rc=0 PROGRAM_SHA256 6a95431b9d0f62f4 PASS: 304  replay_ms_per_token=10.855 replay_ms_per_token=10.793 replay_ms_per_token=10.755 
+long r4 X2 rc=0 PROGRAM_SHA256 6a95431b9d0f62f4 PASS: 304  replay_ms_per_token=10.837 replay_ms_per_token=10.779 replay_ms_per_token=10.766 
+long r5 X1 rc=0 PROGRAM_SHA256 6a95431b9d0f62f4 PASS: 304  replay_ms_per_token=11.099 replay_ms_per_token=11.025 replay_ms_per_token=11.020 
+long r6 M rc=0 PROGRAM_SHA256 fbce1a0492d69635 PASS: 304  replay_ms_per_token=11.175 replay_ms_per_token=11.127 replay_ms_per_token=11.102 
+S2S_DONE 1dad104ea

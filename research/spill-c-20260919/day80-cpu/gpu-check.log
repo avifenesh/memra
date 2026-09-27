@@ -1,0 +1,24 @@
+# DAY80 local GPU check (the development host's RTX 5090, under /tmp/memra-5090.lock, run-gen-p80 = 57086efc8 sha256 a5c28e11168740b9...): the door, then the door with --expert-bank-pool-registered, the 35B, 256 tokens each, and a page census of each run's own process after its fill
+door rc=0
+registered rc=0
+== door
+  [experts-via-tier] host pinned pool bytes=15417016320 classes=3 headroom=106 fill_reserve=34
+  prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH
+  generated 256 tokens in 2.789s = 91.79 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.019s) [stop: MaxNew]
+  MoE cache STEADY-STATE window: 32 decode steps in 0.295s
+  census:
+    14:17:23.366	access	pid=3850518	CapEff=0x0	cap_sys_admin=no	kpageflags=unreadable (Permission denied)	page_owner=absent	tracefs=absent
+    14:17:23.366	pass	0	mappings=166	mappings_with_pfns=0
+    72952c000000-7298c2ed0000	rw-s	/dev/zero (deleted)	pages=3763920	present=3763920	rss_kb=15055680	locked_kb=0	vmflags=rd wr sh mr mw me ms sd
+    729902000000-729d3f57e000	r--s	/data/ai-ml/hf-models/qwen36-35b-a3b-mtp-gguf-5bc3e238/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf	pages=4445566	present=3970482	rss_kb=15885512	locked_kb=0	vmflags=rd mr me ms sd
+== registered
+  [experts-via-tier] host pinned pool bytes=15417016320 classes=3 headroom=106 fill_reserve=34 registered
+  prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH
+  generated 256 tokens in 2.820s = 90.77 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.020s) [stop: MaxNew]
+  MoE cache STEADY-STATE window: 32 decode steps in 0.295s
+  census:
+    14:17:44.011	access	pid=3853385	CapEff=0x0	cap_sys_admin=no	kpageflags=unreadable (Permission denied)	page_owner=absent	tracefs=absent
+    14:17:44.011	pass	0	mappings=169	mappings_with_pfns=0
+    7e6b65130000-7e6efc03d000	rw-p	[anon]	pages=3763981	present=3763981	rss_kb=15055924	locked_kb=0	vmflags=rd wr mr mw me ac sd
+    7e6f3aa00000-7e7377f7e000	r--s	/data/ai-ml/hf-models/qwen36-35b-a3b-mtp-gguf-5bc3e238/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf	pages=4445566	present=4337312	rss_kb=17349248	locked_kb=0	vmflags=rd mr me ms sd
+tokens: the same tape in both runs

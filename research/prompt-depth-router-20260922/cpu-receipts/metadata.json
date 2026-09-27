@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "scope": "CPU classification and depth selection; no model decoding",
+  "utc": "2026-09-22T08:13:48Z",
+  "source_commit": "fcdea815d59a4dcff75e62042796237ce5a465af",
+  "source_hashes": {
+    "router.rs": "bd44b75e213e548fddc0a4fcbe8458430ccb8853055270f50ad22ab51f691eaf",
+    "main.rs": "dd66bcf14c5e7d453701579f1aa24c7cdf38f44be5f3cfdc1d35f965aa66bb9b",
+    "request_routing.rs": "3b661db738fd08444f43bd694efcc2eab203e52a7e909c7a60e48e2bccc580be",
+    "cases.tsv": "d369aa9f25c82ac46ec8551487f424545eb7a1b4b071cf708e5c3363cf608b6a",
+    "run_cpu.py": "d2940b63b82e5f64ca6c2e5ea6ae0b1dc06939cb2e07ce88542a6c116f9f8637",
+    "fit_profile.py": "53e54fe144eb9328b0b2554e1afa8844366fb160b31f930292f43c2e61c265cd",
+    "test_fit_profile.py": "5df629324639b61e2332e9a746c04be9b8ac5913e01a2e99598a759618c74a84"
+  },
+  "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+  "machine": "x86_64",
+  "logical_cpus": 4,
+  "cpu_affinity": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "cpu_model": "Intel(R) Xeon(R) 6973P-C",
+  "profile": [
+    2,
+    4,
+    4,
+    4
+  ],
+  "ceiling": 8,
+  "batches": 5,
+  "iterations_per_group_per_batch": 20000,
+  "input_byte_limit": 262144,
+  "timer": "std::time::Instant; timer-inclusive, in-process complete routing call",
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.1\nLLVM version: 22.1.6\n",
+  "binary_sha256": "33734eecc5d6b255001647085b20400355b7c5c1dad82ddd32e37926320c2c81"
+}

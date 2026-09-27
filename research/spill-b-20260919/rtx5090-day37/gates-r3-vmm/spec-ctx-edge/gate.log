@@ -1,0 +1,22 @@
+== spec-ctx-edge-gate: arms=on,plain,off port=8193 open=64 ctx=384 out=/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day37/gates-r3-vmm/spec-ctx-edge/ev ==
+--- arm on: door ON, open output 64, default spec ---
+  [on] ready (pid 1189938)
+SCE (on) r1 open request: http=200 finish_reason=length prompt_tokens=31 completion_tokens=64 expected=64 -> PASS
+SCE (on) r2 open request: http=200 finish_reason=length prompt_tokens=31 completion_tokens=64 expected=64 -> PASS
+SCE (on) r3 open request: http=200 finish_reason=length prompt_tokens=31 completion_tokens=64 expected=64 -> PASS
+SCE (on) r4 open request: http=200 finish_reason=length prompt_tokens=31 completion_tokens=64 expected=64 -> PASS
+SCE (on) bounded control: http=200 completion_tokens=16 expected=16 -> PASS
+SCE (on) boot census: alive=1 health=200 panicked=0 argmax_sentinel=0 worker_fatal=0 respawn=0 verify_refused=0 spec_acc_lines=9 (spec expected=1) -> PASS
+--- arm plain: door ON, open output 64, MEMRA_SERVE_SPEC=0 ---
+  [plain] ready (pid 1190304)
+SCE (plain) r1 open request: http=200 finish_reason=length completion_tokens=64 expected=64 -> PASS
+SCE (plain) message equals the on arm's r1: plain=341ddf3169a9d21a spec=341ddf3169a9d21a -> PASS
+SCE (plain) boot census: alive=1 health=200 panicked=0 argmax_sentinel=0 worker_fatal=0 respawn=0 verify_refused=0 spec_acc_lines=0 (spec expected=0) -> PASS
+--- arm off: door OFF, MEMRA_CTX=384, default spec ---
+  [off] ready (pid 1190574)
+SCE (off) r1 open request to the cap: http=200 finish_reason=length prompt_tokens=31 completion_tokens=352 room=353 -> PASS
+SCE (off) r2 open request to the cap: http=200 finish_reason=length prompt_tokens=31 completion_tokens=352 room=353 -> PASS
+SCE (off) r3 open request to the cap: http=200 finish_reason=length prompt_tokens=31 completion_tokens=352 room=353 -> PASS
+SCE (off) boot census: alive=1 health=200 panicked=0 argmax_sentinel=0 worker_fatal=0 respawn=0 verify_refused=0 spec_acc_lines=33 (spec expected=1) -> PASS
+== spec-ctx-edge-gate: 13 PASS, 0 FAIL ==
+SPEC-CTX-EDGE GATE: ALL GREEN

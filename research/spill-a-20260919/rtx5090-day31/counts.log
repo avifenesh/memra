@@ -1,0 +1,47 @@
+## completion lines (A3): copy-complete batch totals, D2H receipt KV items, receipt span suffixes
+     18 items=64 (16 KV, 48 f32 spans)
+     20 items=66 (18 KV, 48 f32 spans)
+     18 items=16 (8 KV planes)
+     20 items=18 (8 KV planes, draft)
+     38 ; 48 f32 spans landed under the ticket and taken back before the retire
+## demote submissions (tokens, MB, items)
+     19 demote submitted off the tick: 64 tokens, 54.6MB, 16 items
+     21 demote submitted off the tick: 64 tokens, 54.8MB, 18 items
+## logs where submissions exceed copy completions
+rtx5090-day31/fault-default/ev/postpublish-server.log submitted=2 copy_complete=1
+rtx5090-day31/fault-plain/ev/postpublish-server.log submitted=2 copy_complete=1
+## demote failures, verbatim
+      2 [prefix-host] demote failed (tier D2H producer fence refused: injected failure (MEMRA_KV_HOST_FAULT=contract-presubmit)); nothing demoted
+      2 [prefix-host] demote failed (tier D2H receipt refused: injected failure (MEMRA_KV_HOST_FAULT=contract-postpublish)); nothing demoted
+      2 [prefix-host] demote failed (tier D2H spans refused: injected failure (MEMRA_KV_HOST_FAULT=contract-spans) (48 f32 spans handed back)); nothing demoted
+      1 [prefix-host] demote failed (tier hash digests never landed: ticket seq=2 waited 10.0s past the hand-off, deadline 10s (50 payloads, 53.7MB, 3248 poll(s), settled synchronously by a second demote)); nothing published; the tier latches off
+      1 [prefix-host] demote failed (tier hash digests never landed: ticket seq=3 waited 10.0s past the hand-off, deadline 10s (50 payloads, 53.7MB, 2 poll(s), settled synchronously by a second demote)); nothing published; the tier latches off
+      1 [prefix-host] demote failed (tier hash helper gone: the reply channel closed before the digests of ticket seq=2 landed (50 payloads, 53.7MB, 1 poll(s), tick-top poll)); nothing published; the tier latches off
+      1 [prefix-host] demote failed (tier hash helper gone: the reply channel closed before the digests of ticket seq=3 landed (50 payloads, 53.7MB, 1 poll(s), tick-top poll)); nothing published; the tier latches off
+## span refusals (the typed refusal line)
+2
+## demote ledger lines per top-level cell dir: pre-submit, helper, owner in-completion (A2 reads the double-park steady set only)
+rtx5090-day31/fault-default: N=16 pre-submit median=2.10 min=0.45 max=23.96; helper median=28.00 min=26.60 max=29.50; owner in-completion median=11.43 min=9.71 max=33.36
+rtx5090-day31/fault-plain: N=16 pre-submit median=1.98 min=0.42 max=24.02; helper median=28.80 min=27.80 max=30.40; owner in-completion median=10.27 min=8.72 max=32.33
+rtx5090-day31/identity-default-on: N=2 pre-submit median=40.88 min=32.66 max=49.10; helper median=29.00 min=27.70 max=30.30; owner in-completion median=50.06 min=41.77 max=58.34
+## hits parked on a Hashing entry, per server log
+rtx5090-day31/fault-default/ev/promote-postpublish-server.log:2
+rtx5090-day31/fault-default/ev/promote-presubmit-server.log:2
+rtx5090-day31/fault-default/ev/promote-readyview-server.log:2
+rtx5090-day31/fault-default/ev/promote-reject-server.log:2
+rtx5090-day31/identity-default-on/ev/host-on-server.log:1
+## verdict lines per gate log
+rtx5090-day31/battery.log: ok=0 | 2026-09-22T22:05:38Z done hit-on rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+rtx5090-day31/fault-default/gate.log: ok=142 | KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+rtx5090-day31/fault-plain/gate.log: ok=142 | KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+rtx5090-day31/hit-off/gate.log: ok=61 | SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+rtx5090-day31/hit-on/gate.log: ok=68 | SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+rtx5090-day31/identity-default-on/gate.log: ok=12 | KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+## GPU telemetry per collector cell (command.gpu.csv)
+## collector cells (CELL.jsonl status, qualification, exit_code of the closing row)
+## lock retries: 0 file(s)
+## day 31: span staging fills (1b), span-refusal lines (1c), slot-class tallies (1d)
+     19 tier span staging: 48 fresh pinned buffer(s), 52690944 bytes charged
+      2 demote failed (tier D2H spans refused: injected failure (MEMRA_KV_HOST_FAULT=contract-spans) (48 f32 spans handed back)); nothing demoted
+     18 by slot class: conv 24 (2359296 B), ssm 24 (50331648 B), hidden 1 (0 B), logits 1 (993280 B)
+     20 by slot class: conv 24 (2359296 B), ssm 24 (50331648 B), hidden 1 (16384 B), logits 1 (993280 B)

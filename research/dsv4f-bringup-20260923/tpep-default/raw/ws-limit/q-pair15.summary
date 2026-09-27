@@ -1,0 +1,3 @@
+build flip 6695e7c0b rc=0 gate 9c983d6b7949c7c0
+gate limit16384-greedy rc=0 [load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 494.1ms HANDOFF Some(16384) (the position replay handed the request to the eager step) REPLAY_VARIANTS rank0=[11988, 15984, 3871, 125] rank1=[11988, 15984, 3871, 125] (ordinary, commit, c4, c4+c128) captures=[3, 1] PASS: 16100 steps from position 400 to 16500 bit-identical to eager (token and logits every step, cache and hidden digests every 256 steps and around the handoff), 15984 of them replayed, then eager from the handoff at 16384; tokens_sha256=0c17e11b42db18583a2f 
+PAIR15_DONE

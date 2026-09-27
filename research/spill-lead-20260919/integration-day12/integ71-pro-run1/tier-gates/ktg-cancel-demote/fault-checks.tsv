@@ -1,0 +1,9 @@
+check	expected	observed	ok
+cancel	Ok(PublicationRevoked)	Ok(PublicationRevoked)	true
+take-after-cancel	Err(Cancelled)	Err(Cancelled)	true
+retire	Ok(())	Ok(())	true
+acknowledge	Ok(())	Ok(())	true
+pinned-after-cancel	0	0	true
+source-returned	len=8912904 vmm=false	len=8912904 vmm=false	true
+budget-zero	true	true	true
+restored-identical	true	true	true

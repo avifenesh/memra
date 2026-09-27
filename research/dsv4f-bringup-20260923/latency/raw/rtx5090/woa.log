@@ -1,0 +1,9 @@
+
+running 2 tests
+test dsv4_gpu::dense_wo_a_grouped_fp8_component_tests::cuda_gemv_fp8_grouped_dense_fast_matches_every_slice_program ... PASS grouped dense-fast wo_a FP8: cells=27 shapes=8x1024,2x128,3x256 k=4096 slice programs=3 grouped programs=3 bit-exact, dense-fast enqueue=1 only on the dense-fast arm
+ok
+test dsv4_gpu::dense_wo_a_grouped_fp8_component_tests::cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue ... PASS grouped wo_a FP8: groups=8 rows/group=1024 k=4096 bit-exact, padding guarded, dispatch_delta=1, small=2x128, malformed strides refused
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 578 filtered out; finished in 1.01s
+

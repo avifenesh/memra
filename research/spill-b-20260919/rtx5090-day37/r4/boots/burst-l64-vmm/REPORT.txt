@@ -1,0 +1,39 @@
+== shape
+order=AB n=5 model_key=q9 ctx=65536 lock=/tmp/memra-5090.lock warm=deferred park_compact=unset serve_spec=default client=day33-client.py args=--chars 5000 --skip-long --burst 64 admit_by_memory=1 open_output_tokens=32768 timeout_ms_max=3600000 max_sessions=unset kv_host_mb=unset
+== arm on32768
+== boot door line (verbatim)
+[admit-mem] door=ON open_output_tokens=32768 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+DAY31 V-BOOT boot=burst-l64-vmm arm=on32768 door_line=present -> PASS
+== shadow budget line (verbatim)
+[admit-predict] shadow armed: budget_bytes=12845565056 budget_src=derived(effective_free_bytes=16507716736 - prefix_cache_budget_bytes=2051538944 - admission_reserve_bytes=1610612736) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+== fatal lines
+(none)
+== sequential requests: tag | status | finish | P | G | cached | path | bpt | booked_ctx | alloc_bytes | used_bytes | cost_src | message_sha256[:16]
+warmup | 200 | length | 90 | 32 | 0 | spec | 16704 | 186 | 2037888 | 2037888 | own | cbec9a51a14363b1
+i-L0-r0 | 200 | stop | 1439 | 3921 | 0 | spec | 16704 | 34271 | 571393728 | 89533440 | own | be76c8efe8b20a79
+i-L0-r1 | 200 | stop | 1439 | 4363 | 0 | spec | 16704 | 34271 | 571393728 | 96916608 | inherited | e8e007a00f20896e
+i-L0-r2 | 200 | stop | 1442 | 4123 | 0 | spec | 16704 | 34274 | 571443840 | 92957760 | own | 8fd172978d5caa1c
+i-L0-r3 | 200 | stop | 1442 | 4761 | 0 | spec | 16704 | 34274 | 571443840 | 103614912 | inherited | 8f084f7491dd0f3f
+i-L0-r4 | 200 | stop | 1441 | 5048 | 0 | spec | 16704 | 34273 | 571427136 | 108392256 | own | 81c4de7cf0a6b75e
+ii-L0-r0 | 200 | length | 1673 | 96 | 0 | spec | 16704 | 1833 | 29549376 | 29549376 | own | 2e33a266a6139157
+ii-L0-r1 | 200 | length | 1672 | 96 | 0 | spec | 16704 | 1832 | 29532672 | 29532672 | own | 6d9fb7383d0b20e4
+ii-L0-r2 | 200 | length | 1671 | 96 | 0 | spec | 16704 | 1831 | 29515968 | 29515968 | own | 51db360e35d5efb1
+ii-L0-r3 | 200 | length | 1671 | 96 | 0 | spec | 16704 | 1831 | 29515968 | 29515968 | inherited | 483de37d0f96bac6
+ii-L0-r4 | 200 | length | 1668 | 96 | 0 | spec | 16704 | 1828 | 29465856 | 29465856 | own | 324b31f3ddaf48f5
+iii-L0-r0 | 200 | stop | 1486 | 2173 | 1408 | spec | 16704 | 34318 | 572178816 | 61119936 | own | 8ee8bd098e12efe7
+iii-L0-r1 | 200 | stop | 1500 | 4715 | 1408 | spec | 16704 | 34332 | 572412672 | 103815360 | own | deb805f1ec388d15
+iii-L0-r2 | 200 | stop | 1519 | 4038 | 1408 | spec | 16704 | 34351 | 572730048 | 92824128 | own | e6b8bef522873724
+iii-L0-r3 | 200 | stop | 1498 | 2606 | 1408 | spec | 16704 | 34330 | 572379264 | 68553216 | own | 7f674c1d4dc0bce0
+iii-L0-r4 | 200 | stop | 1492 | 4473 | 1408 | spec | 16704 | 34324 | 572279040 | 99639360 | own | 3666e62bb6a3c6bb
+== burst
+window_ms=838798 B=64 status={429: 45, 200: 19} finish={'stop': 16, 'length': 3} retry_after={'43': 45}
+active_sessions_max=19.0 admission_booked_bytes_max=20777386856.0 samples=3355 shadow_budget_bytes=12845565056 burst_cost_lines=224 burst_cost_total_mb_median=1094.0 arith_sessions=11
+admit_mem_id_lines=110 by_verdict={'admit': 19, 'defer': 46, 'refuse': 45} reclaim_lines=0
+[admit-mem] id=chatcmpl-6be517e48342218060a2b604724456e4 model="q9" verdict=admit prompt=1334 output_bound=- charged_ctx=34166 est_bytes=2705068024 est_context=507296768 est_fixed=2197771256 device_free=14658975320 pending_prime=0 pending_prime_v1=0 pending_seed=0 host_free=0 demotable=1166917632 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-a9e8436c401fb7bf0d8edf43a9c2d285 model="q9" verdict=admit prompt=1339 output_bound=- charged_ctx=34171 est_bytes=2706944504 est_context=507371008 est_fixed=2199573496 device_free=13898675764 pending_prime=0 pending_prime_v1=111738880 pending_seed=72171520 host_free=0 demotable=1166917632 short_by=0 inflight=1 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-c84ce8460b1a8fcc9ff22a70464ab923 model="q9" verdict=admit prompt=1332 output_bound=- charged_ctx=34164 est_bytes=2704317432 est_context=507267072 est_fixed=2197050360 device_free=13135941136 pending_prime=0 pending_prime_v1=594378752 pending_seed=146778112 host_free=0 demotable=1166917632 short_by=0 inflight=2 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-bc19475a9cb6e5dae3c2a7266e467cdc model="q9" verdict=admit prompt=1330 output_bound=- charged_ctx=34162 est_bytes=2703566840 est_context=507237376 est_fixed=2196329464 device_free=12373206508 pending_prime=0 pending_prime_v1=1074495488 pending_seed=221384704 host_free=0 demotable=1166917632 short_by=0 inflight=3 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-1dd71e9402cb76ae0e99462ab3e5b985 model="q9" verdict=admit prompt=1330 output_bound=- charged_ctx=34162 est_bytes=2703566840 est_context=507237376 est_fixed=2196329464 device_free=11610471880 pending_prime=0 pending_prime_v1=1553891328 pending_seed=295991296 host_free=0 demotable=1166917632 short_by=0 inflight=4 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-d20d7104c38b89cff3ae1a557c37416b model="q9" verdict=admit prompt=1330 output_bound=- charged_ctx=34162 est_bytes=2703566840 est_context=507237376 est_fixed=2196329464 device_free=10847737252 pending_prime=0 pending_prime_v1=2033287168 pending_seed=370597888 host_free=0 demotable=1166917632 short_by=0 inflight=5 cap=64 waited_ms=0 retry_after_s=-
+... 104 more [admit-mem] id= lines in server.log
+== open-class G (this boot): n=10 min=2173 p50=4363 max=5048 stop=10 length=0 other=0

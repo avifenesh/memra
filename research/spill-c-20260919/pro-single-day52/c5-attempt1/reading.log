@@ -1,0 +1,9 @@
+DAY56 ARM off rig=pro-single exit=1 verdict='KV-HOST-SPILL IDENTITY GATE: 1 FAILURE(S) (teeth=0)' checks=13 demotes=[('89', '164.2'), ('86', '164.0'), ('89', '164.2')] tails=[] restores=1 refusals=0
+DAY56 ARM on rig=pro-single exit=1 verdict='KV-HOST-SPILL IDENTITY GATE: 2 FAILURE(S) (teeth=0)' checks=15 demotes=[('89', '164.2'), ('86', '164.0'), ('89', '164.2')] tails=[(5, 10, 3645440), (5, 10, 3522560), (5, 10, 3645440)] restores=0 refusals=0
+DAY56 TERM all_green_both -> FAIL
+DAY56 TERM same_verdict_lines -> FAIL
+DAY56 TERM equal_demote_bytes -> PASS
+DAY56 TERM tail_receipt_2L -> PASS
+DAY56 TERM restore_both_same_text -> FAIL
+DAY56 TERM no_refusal_on -> PASS
+DAY56 DFLASH TAIL rig=pro-single -> FAIL

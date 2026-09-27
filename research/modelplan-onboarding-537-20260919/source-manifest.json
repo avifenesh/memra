@@ -1,0 +1,29 @@
+{
+  "base_commit": "b3487a03b0ee3f833c1157e7b7d68f2cb35a3843",
+  "branch": "codex/537-model-semantics",
+  "platform": {
+    "system": "Darwin",
+    "release": "25.6.0",
+    "machine": "arm64"
+  },
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: aarch64-apple-darwin\nrelease: 1.97.1\nLLVM version: 22.1.6",
+  "source_sha256": {
+    "crates/memra-engine/src/hybrid.rs": "6618c23a1d935afd16405ff93d727ff82cd893a39cd23ab4fab1ba8dd4d6464d",
+    "crates/memra-engine/src/model.rs": "b4dd9cd63c8720162a974ed0db15666dbb677db4c096c72ebc91a73d920c6dfe",
+    "crates/memra-engine/src/parallel.rs": "61a89364a635adafc6971a3f7fe9be22bae5de09cf74ecd775e588279fb9ee0d",
+    "crates/memra-gguf/src/config.rs": "c00fdaf3a2c3d6c9dd6d6e866e8291a57daa3b1fed3f3b3ddaad0496be0ab04a",
+    "crates/memra-gguf/src/model_packs/deepseek_v4/mod.rs": "df8e3f4d6bea61690b5f5ff10f95fb4168d3cca1b575d1523ec1abbafba7a9a5",
+    "crates/memra-gguf/src/model_packs/llama_dense/mod.rs": "6aed1068b3c3e593ba4372c7434967035b65a6bdccd342529d0cc8adb35e06ab",
+    "crates/memra-gguf/src/model_packs/minimax_m3/mod.rs": "ec0ea6d604c08165e66fcab3f44761155931451c53ad35369cbaf7d7ccdb7402",
+    "crates/memra-gguf/src/model_packs/mod.rs": "2db110da031ec3d80d839c6339005a9ab7fc135f0caaf7cb1603c90792a24f72",
+    "crates/memra-gguf/src/model_packs/olmoe/mod.rs": "d689eff1a406cdb2adc9aa6f5de476e7c54fee2f2eceab9e02f9b4c7891a7ece",
+    "crates/memra-gguf/src/model_packs/step35/mod.rs": "53edd6a82054b4c06a28a5d3a8cf1c45f3ce2df7e471c475d500e0b8dce8edc8",
+    "crates/memra-gguf/src/model_plan.rs": "77e5fc3bbec0054797115fee221bb9371b6d07d458b1ad28b1577feca369e8e6",
+    "crates/memra-gguf/src/model_plan/semantics_tests.rs": "4aa7d84ae2b181741ff40011624807dbfdaddfa2579832a38c9d9681f516196f",
+    "crates/memra-gguf/src/tensor_contract.rs": "00a30239efc9ca7d87620529a2cc89e178aff391b4b175295c6cbca25698ac6b"
+  },
+  "test_binary_sha256": {
+    "target/debug/deps/memra_gguf-e80b7f4edcbfcfe8": "e6e801b1e07a9609f8eaf8d0a2df5101ab9f8b8c938a15cacecef0c50f3b9c96"
+  },
+  "qualification": "CPU only; no native CUDA binary or GPU qualification receipt"
+}

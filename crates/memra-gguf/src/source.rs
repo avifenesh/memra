@@ -978,37 +978,25 @@ impl Hy3RepackSource {
         } else {
             None
         };
-        let mut cfg = if let Some(source) = &fallback {
-            source.config()
+        let (mut cfg, expert_activation_precision) = if let Some(source) = &fallback {
+            (source.config(), source.expert_activation_precision())
         } else {
             let cfg_path = source_dir
                 .clone()
                 .map(|p| p.join("config.json"))
                 .filter(|p| p.exists())
                 .unwrap_or_else(|| dir.join("config.json"));
-            ModelConfig::from_config_json(&cfg_path)?
+            let raw = std::fs::read_to_string(cfg_path)?;
+            let hf = crate::config::HfConfig::try_parse(&raw).map_err(invalid_data)?;
+            (
+                ModelConfig::from_hf(&hf),
+                expert_activation_precision_from_quant_algo(hf.quant_algo.as_deref()),
+            )
         };
-        // A complete repack can intentionally omit the appended MTP block. An expert overlay is
-        // sparse by definition: tensors absent from its manifest resolve through the fallback, so
-        // its highest overridden block says nothing about whether the fallback still has MTP.
+        // Only a complete repack may declare that appended MTP weights were stripped.
         if fallback.is_none() {
             apply_stripped_mtp_override(&mut cfg, &tensors);
         }
-        let expert_activation_precision = fallback
-            .as_ref()
-            .map(RepackFallback::expert_activation_precision)
-            .unwrap_or_else(|| {
-                let cfg_path = source_dir
-                    .clone()
-                    .map(|path| path.join("config.json"))
-                    .filter(|path| path.exists())
-                    .unwrap_or_else(|| dir.join("config.json"));
-                let quant_algo = std::fs::read_to_string(cfg_path)
-                    .ok()
-                    .map(|json| crate::config::HfConfig::parse(&json))
-                    .and_then(|config| config.quant_algo);
-                expert_activation_precision_from_quant_algo(quant_algo.as_deref())
-            });
         let mut active_experts = BTreeMap::new();
         if let Some(pruned) = top.object("pruned_experts") {
             let moe = cfg.moe.as_ref().ok_or_else(|| {
@@ -1499,19 +1487,24 @@ pub enum Nvfp4ScaleLayout {
 /// checkpoint minted before 2026-09-04). A PRESENT but unrecognised `nvfp4_scale` is an error:
 /// a future layout must not be read as linear just because this build has not learned it yet.
 fn read_nvfp4_scale_layout(dir: &std::path::Path) -> std::io::Result<Nvfp4ScaleLayout> {
-    let Ok(text) = std::fs::read_to_string(dir.join("LAYOUT.json")) else {
+    let text = match std::fs::read_to_string(dir.join("LAYOUT.json")) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Nvfp4ScaleLayout::Linear);
+        }
+        Err(error) => return Err(error),
+    };
+    let object = crate::strict_json::parse_object(&text).map_err(invalid_data)?;
+    let Some(value) =
+        crate::strict_json::optional_string(&object, "nvfp4_scale").map_err(invalid_data)?
+    else {
         return Ok(Nvfp4ScaleLayout::Linear);
     };
-    let Some(rest) = text.split("\"nvfp4_scale\"").nth(1) else {
-        return Ok(Nvfp4ScaleLayout::Linear);
-    };
-    let value = rest
-        .split_once(':')
-        .and_then(|(_, v)| v.trim_start().strip_prefix('"'))
-        .and_then(|v| v.split('"').next())
-        .unwrap_or("")
-        .trim();
-    if value.starts_with("Swizzle32x4x4") {
+    let value = value.trim();
+    if matches!(
+        value,
+        "Swizzle32x4x4" | "Swizzle32x4x4 float8_e4m3fn padded N%128 K%4"
+    ) {
         // LOAD-TIME ENGAGEMENT RECEIPT. Choosing this layout silently would leave "did the
         // unswizzle run?" answerable only by inference, and the failure it prevents is a model
         // that loads and speaks fluently on wrong weights. Announce it, once, at the only place
@@ -1522,7 +1515,7 @@ fn read_nvfp4_scale_layout(dir: &std::path::Path) -> std::io::Result<Nvfp4ScaleL
             dir.join("LAYOUT.json").display()
         );
         Ok(Nvfp4ScaleLayout::Swizzle32x4x4)
-    } else if value.eq_ignore_ascii_case("linear") || value.is_empty() {
+    } else if value.eq_ignore_ascii_case("linear") {
         Ok(Nvfp4ScaleLayout::Linear)
     } else {
         Err(invalid_data(format!(
@@ -1558,9 +1551,9 @@ impl SafetensorsSource {
         };
         let config = std::fs::read_to_string(dir.join("config.json"))?;
         let (hf, cfg) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let hf = crate::config::HfConfig::parse(&config);
+            let hf = crate::config::HfConfig::try_parse(&config).map_err(invalid_data)?;
             let cfg = ModelConfig::from_hf(&hf);
-            (hf, cfg)
+            Ok::<_, std::io::Error>((hf, cfg))
         }))
         .map_err(|payload| {
             invalid_data(format!(
@@ -1571,7 +1564,7 @@ impl SafetensorsSource {
                     .or_else(|| payload.downcast_ref::<&str>().copied())
                     .unwrap_or("unknown panic")
             ))
-        })?;
+        })??;
         let model = StModel::open(path)?;
         let nvfp4_scale_layout = read_nvfp4_scale_layout(dir)?;
         Ok(Self {
@@ -1587,7 +1580,6 @@ impl SafetensorsSource {
 
     /// Open with an explicitly-provided config (e.g. tests, or config.json elsewhere).
     pub fn open_with_config(path: &std::path::Path, cfg: ModelConfig) -> std::io::Result<Self> {
-        let model = StModel::open(path)?;
         let dir = if path.is_file() {
             path.parent()
                 .unwrap_or(std::path::Path::new("."))
@@ -1595,9 +1587,11 @@ impl SafetensorsSource {
         } else {
             path.to_path_buf()
         };
-        let hf = std::fs::read_to_string(dir.join("config.json"))
-            .ok()
-            .map(|json| crate::config::HfConfig::parse(&json));
+        let hf = match std::fs::read_to_string(dir.join("config.json")) {
+            Ok(json) => Some(crate::config::HfConfig::try_parse(&json).map_err(invalid_data)?),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error),
+        };
         let modules_to_not_convert = hf
             .as_ref()
             .map(|config| config.modules_to_not_convert.clone())
@@ -1607,6 +1601,7 @@ impl SafetensorsSource {
             .is_some_and(|config| config.preserve_checkpoint_bf16);
         let quant_algo = hf.as_ref().and_then(|config| config.quant_algo.clone());
         let nvfp4_scale_layout = read_nvfp4_scale_layout(&dir)?;
+        let model = StModel::open(path)?;
         Ok(Self {
             model,
             cfg,
@@ -4879,5 +4874,48 @@ mod pre_quant_scale_census_tests {
         );
         // 8 (weight) + 8 (weight_scale) + 16 (pre_quant_scale)
         assert_eq!(weight.physical_bytes, 32);
+    }
+}
+
+#[cfg(test)]
+mod canonical_layout_tests {
+    use super::*;
+    #[test]
+    fn layout_declarations_use_strict_decoded_keys_and_values() {
+        let dir = std::env::temp_dir().join(format!("memra-layout-json-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for text in [
+            r#"{"nvfp4_scale":"Swizzle32x4x4"}"#,
+            r#"{"nvfp4\u005fscale":"Swizzle32x4x\u0034"}"#,
+        ] {
+            std::fs::write(dir.join("LAYOUT.json"), text).unwrap();
+            assert_eq!(
+                read_nvfp4_scale_layout(&dir).unwrap(),
+                Nvfp4ScaleLayout::Swizzle32x4x4
+            );
+        }
+        for text in [
+            r#"{"nvfp4_scale":false}"#,
+            r#"{"nvfp4_scale":null}"#,
+            r#"{"nvfp4_scale":""}"#,
+            r#"{"nvfp4_scale":"linear","nvfp4\u005fscale":"Swizzle32x4x4"}"#,
+            r#"{"nvfp4\u005fscale":"SomeFutureOrder"}"#,
+            r#"{"nvfp4_scale":"Swizzle32x4x4OtherProgram"}"#,
+            r#"{"nvfp4_scale":"linear"} trailing"#,
+        ] {
+            std::fs::write(dir.join("LAYOUT.json"), text).unwrap();
+            assert!(read_nvfp4_scale_layout(&dir).is_err(), "{text}");
+        }
+        std::fs::write(dir.join("LAYOUT.json"), "{}").unwrap();
+        assert_eq!(
+            read_nvfp4_scale_layout(&dir).unwrap(),
+            Nvfp4ScaleLayout::Linear
+        );
+        std::fs::remove_file(dir.join("LAYOUT.json")).unwrap();
+        assert_eq!(
+            read_nvfp4_scale_layout(&dir).unwrap(),
+            Nvfp4ScaleLayout::Linear
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

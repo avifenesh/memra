@@ -153,7 +153,40 @@ fn epoch() -> Instant {
 }
 
 fn now_ms() -> u64 {
+    #[cfg(test)]
+    if let Some(t) = TEST_NOW_MS.with(std::cell::Cell::get) {
+        return t;
+    }
     epoch().elapsed().as_millis() as u64
+}
+
+#[cfg(test)]
+thread_local! {
+    /// WP-A day 55 (`research/spill-a-20260919/DAY55.md` section 5, OWED item 22, T-c): a test-only
+    /// virtual clock for THIS thread's `now_ms()` reads. Only a test sets it, through
+    /// `TestClock`, and every other thread (and every non-test build) reads the real clock.
+    static TEST_NOW_MS: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+/// A test's virtual clock for `WorkerHealth` on the calling thread; dropped, the thread reads the
+/// real clock again.
+#[cfg(test)]
+pub(crate) struct TestClock;
+#[cfg(test)]
+impl TestClock {
+    pub(crate) fn start(at_ms: u64) -> Self {
+        TEST_NOW_MS.with(|c| c.set(Some(at_ms)));
+        TestClock
+    }
+    pub(crate) fn advance(&self, ms: u64) {
+        TEST_NOW_MS.with(|c| c.set(Some(c.get().unwrap_or(0) + ms)));
+    }
+}
+#[cfg(test)]
+impl Drop for TestClock {
+    fn drop(&mut self) {
+        TEST_NOW_MS.with(|c| c.set(None));
+    }
 }
 
 /// MEMRA_HEALTH_STALL_S (default 120): how long a BUSY worker may go without stamping a beat
@@ -592,14 +625,17 @@ impl WorkerHealth {
 
     /// Milliseconds since this process last attested FORWARD PROGRESS, the fresher of the
     /// scheduler heartbeat and the engine's prime odometer (memra#50; see the module doc's
-    /// "BUSY IS NOT HUNG"). Lock-free: two relaxed loads, one acquire load and one
-    /// `Instant::now()`, so the verdict can still be computed while the worker is wedged.
+    /// "BUSY IS NOT HUNG"), from a beat age the caller sampled. Lock-free: two relaxed loads and
+    /// one acquire load, so the verdict can still be computed while the worker is wedged.
     ///
     /// The odometer can only ever make this SMALLER, so this cannot turn a healthy verdict
     /// into an unhealthy one, the change is strictly in the direction of not restarting a
     /// server that is working.
-    fn forward_progress_age_ms(&self) -> u64 {
-        let beat = self.beat_age_ms();
+    ///
+    /// WP-A day 55 (`DAY55.md`, OWED item 22): a snapshot or a verdict reads the clock ONCE and
+    /// hands its beat age here, so with no progress source the published progress age IS the beat
+    /// age published beside it, never a second, later sample.
+    fn forward_progress_age_from(&self, beat: u64) -> u64 {
         match self.progress.as_ref().and_then(|p| p()) {
             Some(p) => beat.min(p.age_ms),
             None => beat,
@@ -614,12 +650,14 @@ impl WorkerHealth {
     /// `Some(age)` when BUSY and that age exceeds the bound. Returns the age it judged rather
     /// than a bare bool so `live()` reports the number that PRODUCED the verdict: recomputing
     /// it for the message would print a second, later sample.
-    fn stalled_for_ms(&self) -> Option<u64> {
+    fn stalled_for_ms(&self) -> Option<(u64, u64)> {
         if self.phase.load(Ordering::Acquire) != PHASE_BUSY {
             return None;
         }
-        let age = self.forward_progress_age_ms();
-        (age > self.stall_ms).then_some(age)
+        // Day 55: one clock sample; the message prints the beat age this verdict judged with.
+        let beat = self.beat_age_ms();
+        let age = self.forward_progress_age_from(beat);
+        (age > self.stall_ms).then_some((age, beat))
     }
 
     /// LIVENESS (`/health`, `/livez`): should this process be restarted? Draining is NOT a
@@ -647,10 +685,9 @@ impl WorkerHealth {
                                   (readiness follows its completion)"
                 .into()),
             _ => match self.stalled_for_ms() {
-                Some(age) => Err(format!(
-                    "worker stalled: no forward progress for {age} ms (beat age {} ms, \
+                Some((age, beat)) => Err(format!(
+                    "worker stalled: no forward progress for {age} ms (beat age {beat} ms, \
                      threshold {} ms)",
-                    self.beat_age_ms(),
                     self.stall_ms
                 )),
                 None => {
@@ -712,7 +749,7 @@ impl WorkerHealth {
             xid_warns: self.xid_warns.load(Ordering::Relaxed),
             gpu_probe: self.gpu_probe(),
             stall_threshold_ms: self.stall_ms,
-            forward_progress_age_ms: self.forward_progress_age_ms(),
+            forward_progress_age_ms: self.forward_progress_age_from(beat_age_ms),
             progress: self.progress.as_ref().and_then(|p| p()),
         }
     }
@@ -765,6 +802,12 @@ pub struct RouteHealth {
     rounds: AtomicU64,
     requests: AtomicU64,
     request_faults: AtomicU64,
+    /// Requests between `begin_request` and `end_request`. A route serving several sessions
+    /// (memra #667) is BUSY while any is in flight and IDLE only when the last one ends.
+    in_flight: std::sync::atomic::AtomicUsize,
+    /// Serializes each in-flight change with the phase it implies, so a request that begins
+    /// on one lane while the last one ends on another never reads IDLE (memra #667 review).
+    lanes: Mutex<()>,
     dead_reason: Mutex<String>,
     load: Arc<crate::route_telemetry::RouteLoad>,
 }
@@ -802,6 +845,8 @@ impl RouteHealth {
             rounds: AtomicU64::new(0),
             requests: AtomicU64::new(0),
             request_faults: AtomicU64::new(0),
+            in_flight: std::sync::atomic::AtomicUsize::new(0),
+            lanes: Mutex::new(()),
             dead_reason: Mutex::new(String::new()),
             load,
         }
@@ -828,7 +873,30 @@ impl RouteHealth {
     /// The thread dequeued a request and starts serving it.
     pub fn begin_request(&self) {
         self.requests.fetch_add(1, Ordering::Relaxed);
+        let _lanes = self.lanes.lock().unwrap_or_else(|p| p.into_inner());
+        self.in_flight.fetch_add(1, Ordering::AcqRel);
         self.set(PHASE_BUSY);
+    }
+
+    /// A request ended, served or failed. The route reads IDLE once no request is in flight.
+    pub fn end_request(&self) {
+        let _lanes = self.lanes.lock().unwrap_or_else(|p| p.into_inner());
+        let before = self
+            .in_flight
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| v.checked_sub(1))
+            .unwrap_or(0);
+        if before <= 1 {
+            self.set(PHASE_IDLE);
+        }
+    }
+
+    /// A serving lane is about to wait on its queue: publish IDLE only if no other lane of the
+    /// route holds a request, so a waiting lane never masks a busy one.
+    pub fn set_idle_if_free(&self) {
+        let _lanes = self.lanes.lock().unwrap_or_else(|p| p.into_inner());
+        if self.in_flight.load(Ordering::Acquire) == 0 {
+            self.set(PHASE_IDLE);
+        }
     }
 
     /// `rows` prime rows completed (the thread's odometer sink).
@@ -858,23 +926,34 @@ impl RouteHealth {
     }
 
     fn registered_age_ms(&self) -> u64 {
-        now_ms().saturating_sub(self.registered_ms)
-    }
-
-    fn beat_age_ms(&self) -> u64 {
-        now_ms().saturating_sub(self.beat_ms.load(Ordering::Acquire))
-    }
-
-    fn progress_age_ms(&self) -> Option<u64> {
-        match self.progress_ms.load(Ordering::Acquire) {
-            0 => None,
-            t => Some(now_ms().saturating_sub(t - 1)),
-        }
+        self.registered_age_at(now_ms())
     }
 
     fn forward_progress_age_ms(&self) -> u64 {
-        let beat = self.beat_age_ms();
-        self.progress_age_ms().map_or(beat, |p| beat.min(p))
+        self.forward_progress_age_at(now_ms())
+    }
+
+    // WP-A day 55 (`DAY55.md`, OWED item 22): every age from ONE clock sample `now`, so a snapshot
+    // publishes ages that agree with each other (the forward-progress age is exactly the min of
+    // the beat and progress ages it publishes beside it).
+    fn registered_age_at(&self, now: u64) -> u64 {
+        now.saturating_sub(self.registered_ms)
+    }
+
+    fn beat_age_at(&self, now: u64) -> u64 {
+        now.saturating_sub(self.beat_ms.load(Ordering::Acquire))
+    }
+
+    fn progress_age_at(&self, now: u64) -> Option<u64> {
+        match self.progress_ms.load(Ordering::Acquire) {
+            0 => None,
+            t => Some(now.saturating_sub(t - 1)),
+        }
+    }
+
+    fn forward_progress_age_at(&self, now: u64) -> u64 {
+        let beat = self.beat_age_at(now);
+        self.progress_age_at(now).map_or(beat, |p| beat.min(p))
     }
 
     /// The route's liveness under the process stall bound. Three distinct failures: a thread
@@ -920,13 +999,14 @@ impl RouteHealth {
 
     fn snapshot(&self) -> RouteSnapshot {
         let phase = self.phase();
+        let now = now_ms();
         RouteSnapshot {
             name: self.name.clone(),
             phase,
-            registered_age_ms: self.registered_age_ms(),
-            beat_age_ms: self.beat_age_ms(),
-            progress_age_ms: self.progress_age_ms(),
-            forward_progress_age_ms: self.forward_progress_age_ms(),
+            registered_age_ms: self.registered_age_at(now),
+            beat_age_ms: self.beat_age_at(now),
+            progress_age_ms: self.progress_age_at(now),
+            forward_progress_age_ms: self.forward_progress_age_at(now),
             rows: self.rows.load(Ordering::Relaxed),
             rounds: self.rounds.load(Ordering::Relaxed),
             requests: self.requests.load(Ordering::Relaxed),
@@ -1421,6 +1501,33 @@ pub fn spawn_sd_watchdog(health: SharedHealth) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_route_never_reads_idle_with_a_request_in_flight() {
+        let h = std::sync::Arc::new(RouteHealth::new("ds-race", route_load("ds-race")));
+        let lanes: Vec<_> = (0..4)
+            .map(|_| {
+                let h = h.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..20_000 {
+                        h.begin_request();
+                        h.set_idle_if_free();
+                        h.end_request();
+                        h.set_idle_if_free();
+                        let _l = h.lanes.lock().unwrap();
+                        let busy = h.phase.load(Ordering::Acquire) == PHASE_BUSY;
+                        let n = h.in_flight.load(Ordering::Acquire);
+                        assert_eq!(busy, n > 0, "phase busy={busy} with {n} in flight");
+                    }
+                })
+            })
+            .collect();
+        for l in lanes {
+            l.join().unwrap();
+        }
+        assert_eq!(h.in_flight.load(Ordering::Acquire), 0);
+        assert_eq!(h.phase.load(Ordering::Acquire), PHASE_IDLE);
+    }
     use super::*;
 
     fn fresh() -> WorkerHealth {
@@ -1777,6 +1884,49 @@ mod tests {
         );
     }
 
+    /// WP-A day 55 (`research/spill-a-20260919/DAY55.md`, OWED item 22, T-a; CPU census): a snapshot
+    /// and the stall verdict read the clock ONCE. `WorkerHealth::snapshot` samples the beat age once
+    /// and derives the forward-progress age from that sample; the stall verdict judges and reports one
+    /// beat sample; a route's snapshot takes one `now` for every age it publishes.
+    #[test]
+    fn day55_a_snapshot_reads_the_clock_once() {
+        let src = include_str!("health.rs");
+        let prod = &src[..src.find("\nmod tests {").unwrap()];
+        let body = |start: &str| {
+            let a = prod
+                .find(start)
+                .unwrap_or_else(|| panic!("{start} missing"));
+            &prod[a..a + prod[a..].find("\n    }\n").unwrap()]
+        };
+        let snap = body("    pub fn snapshot(&self) -> HealthSnapshot {");
+        assert_eq!(snap.matches("self.beat_age_ms()").count(), 1);
+        assert!(
+            snap.contains("forward_progress_age_ms: self.forward_progress_age_from(beat_age_ms),")
+        );
+        assert!(!snap.contains("self.forward_progress_age_ms()"));
+        let stall = body("    fn stalled_for_ms(&self) -> Option<(u64, u64)> {");
+        assert_eq!(stall.matches("self.beat_age_ms()").count(), 1);
+        assert!(stall.contains("self.forward_progress_age_from(beat)"));
+        let route = body("    fn snapshot(&self) -> RouteSnapshot {");
+        assert_eq!(route.matches("now_ms()").count(), 1);
+        for f in [
+            "registered_age_at(now)",
+            "beat_age_at(now)",
+            "progress_age_at(now)",
+            "forward_progress_age_at(now)",
+        ] {
+            assert!(route.contains(f), "{f}");
+        }
+        // Behaviour: with no source, the published progress age is the published beat age.
+        let h = WorkerHealth::with_stall_ms(20);
+        h.mark_ready();
+        h.beat_busy();
+        for _ in 0..200 {
+            let s = h.snapshot();
+            assert_eq!(s.forward_progress_age_ms, s.beat_age_ms);
+        }
+    }
+
     /// The `MEMRA_HEALTH_PROGRESS=0` rollback seam: with no source, the verdict is
     /// byte-identical to the pre-memra#50 beat-age semantics. `with_stall_ms` is that arm,
     /// and `idle_is_healthy_at_any_age_but_busy_stalls` below is its assertion; this one
@@ -1920,6 +2070,38 @@ mod tests {
 
     fn route_load(name: &str) -> Arc<crate::route_telemetry::RouteLoad> {
         crate::route_telemetry::RouteLoad::new(name, 1)
+    }
+
+    /// A multi-session route (memra #667) reads BUSY while any request is in flight: a lane that
+    /// finishes, or one that goes back to its queue, never masks a lane still serving.
+    #[test]
+    fn a_multi_session_route_stays_busy_until_its_last_request_ends() {
+        let h = WorkerHealth::with_stall_ms(60_000);
+        let r = h.register_route("ds-lanes", route_load("ds-lanes"));
+        r.set_idle();
+        r.begin_request();
+        r.begin_request();
+        r.end_request();
+        r.set_idle_if_free();
+        assert_eq!(
+            r.snapshot().phase,
+            PHASE_BUSY,
+            "one of two requests still runs"
+        );
+        r.end_request();
+        assert_eq!(r.snapshot().phase, PHASE_IDLE);
+        r.end_request();
+        assert_eq!(
+            r.snapshot().phase,
+            PHASE_IDLE,
+            "an extra end saturates at idle"
+        );
+        r.begin_request();
+        assert_eq!(
+            r.snapshot().phase,
+            PHASE_BUSY,
+            "the count did not go negative"
+        );
     }
 
     /// A registered route that never publishes is its own failure: not ready at once, not live

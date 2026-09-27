@@ -1,0 +1,7 @@
+START utc=2026-09-24T00:24:38Z bin=/root/lane/target-idx/release/memra-server env=MEMRA_TIMEOUT_MS_MAX=900000 MEMRA_DSV4_DRAFTER=dspark
+READY after=137s port=50221
+CELL warmup c=1 ok=1/1 agg=50.57 tok/s decode_p50=125.79 tok/s ttft_p50=386 ms tpot_p50=7.95 ms errs=[]
+CELL greedy-32k c=1 ok=2/2 agg=2.15 tok/s decode_p50=52.99 tok/s ttft_p50=114232 ms tpot_p50=18.87 ms errs=[]
+CELL greedy-64k c=1 ok=1/1 agg=1.05 tok/s decode_p50=47.37 tok/s ttft_p50=237892 ms tpot_p50=21.11 ms errs=[]
+CELLS_DONE utc=2026-09-24T00:34:58Z
+TERMINAL rc=0 utc=2026-09-24T00:35:06Z

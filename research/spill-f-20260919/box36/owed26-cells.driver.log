@@ -1,0 +1,203 @@
+
+running 7 tests
+test spill_pread::tests::demand_submit_returns_none_only_when_prefetches_hold_every_buffer ... [spill-worker] WARNING: effective depth 2 < 6; grouped current+next overlap is degraded; continuing with projection concurrency and mmap fallback
+[spill-pread] enabled: depth=2 buffer_bytes=1024 payload_capacity=1024 total_pinned_bytes=2048 (bounded worker prefetch, caller-thread compute-stream H2D, mmap error fallback)
+[spill-pread] reads=3 bytes=96 errors=0 short_reads=0 fallbacks=0 buffer_waits=1 ring_full=1 overread_bytes=0 worker_read_ns=31058 demand_read_ns=0 wait_ns=44273 h2d_submits=0 mapped_serves=0 demand_waits=1 demand_wait_ns=38622 prefetch_cancels=0 demand_wait_timeouts=0
+ok
+test spill_pread::tests::demand_submit_waits_for_a_buffer_instead_of_returning_ring_busy ... [spill-worker] WARNING: effective depth 2 < 6; grouped current+next overlap is degraded; continuing with projection concurrency and mmap fallback
+[spill-pread] enabled: depth=2 buffer_bytes=1024 payload_capacity=1024 total_pinned_bytes=2048 (bounded worker prefetch, caller-thread compute-stream H2D, mmap error fallback)
+[spill-pread] reads=3 bytes=192 errors=0 short_reads=0 fallbacks=0 buffer_waits=4 ring_full=1 overread_bytes=0 worker_read_ns=9007 demand_read_ns=0 wait_ns=17792561 h2d_submits=2 mapped_serves=0 demand_waits=1 demand_wait_ns=17759630 prefetch_cancels=0 demand_wait_timeouts=0
+ok
+test spill_pread::tests::demand_wait_after_every_h2d_event_completed_returns_at_once ... [spill-worker] WARNING: effective depth 2 < 6; grouped current+next overlap is degraded; continuing with projection concurrency and mmap fallback
+[spill-pread] enabled: depth=2 buffer_bytes=1024 payload_capacity=1024 total_pinned_bytes=2048 (bounded worker prefetch, caller-thread compute-stream H2D, mmap error fallback)
+[spill-pread] reads=2 bytes=128 errors=0 short_reads=0 fallbacks=0 buffer_waits=2 ring_full=0 overread_bytes=0 worker_read_ns=28603 demand_read_ns=0 wait_ns=63189 h2d_submits=2 mapped_serves=0 demand_waits=0 demand_wait_ns=0 prefetch_cancels=0 demand_wait_timeouts=0
+ok
+test spill_pread::tests::demand_wait_with_a_free_buffer_and_nothing_in_flight_returns_at_once ... [spill-worker] WARNING: effective depth 2 < 6; grouped current+next overlap is degraded; continuing with projection concurrency and mmap fallback
+[spill-pread] enabled: depth=2 buffer_bytes=1024 payload_capacity=1024 total_pinned_bytes=2048 (bounded worker prefetch, caller-thread compute-stream H2D, mmap error fallback)
+[spill-pread] reads=1 bytes=64 errors=0 short_reads=0 fallbacks=0 buffer_waits=1 ring_full=0 overread_bytes=0 worker_read_ns=16701 demand_read_ns=0 wait_ns=25227 h2d_submits=0 mapped_serves=0 demand_waits=0 demand_wait_ns=0 prefetch_cancels=0 demand_wait_timeouts=0
+ok
+test spill_pread::tests::direct_worker_overread_preserves_exact_bytes ... [spill-worker] WARNING: effective depth 2 < 6; grouped current+next overlap is degraded; continuing with projection concurrency and mmap fallback
+[spill-pread] enabled: depth=2 buffer_bytes=561152 payload_capacity=557056 total_pinned_bytes=1122304 (bounded O_DIRECT worker prefetch, 4 KiB-window over-read, caller-thread compute-stream H2D, mmap error fallback)
+[spill-pread] reads=12 bytes=4477525 errors=0 short_reads=0 fallbacks=0 buffer_waits=12 ring_full=0 overread_bytes=40363 worker_read_ns=4031289 demand_read_ns=0 wait_ns=4253029 h2d_submits=0 mapped_serves=0 demand_waits=0 demand_wait_ns=0 prefetch_cancels=0 demand_wait_timeouts=0
+ok
+test spill_pread::tests::mapped_serve_reads_in_place_and_owns_the_buffer_until_its_event ... [spill-worker] WARNING: effective depth 2 < 6; grouped current+next overlap is degraded; continuing with projection concurrency and mmap fallback
+[spill-pread] enabled: depth=2 buffer_bytes=1024 payload_capacity=1024 total_pinned_bytes=2048 (bounded worker prefetch, caller-thread compute-stream H2D, mmap error fallback)
+[spill-pread] reads=5 bytes=865 errors=0 short_reads=0 fallbacks=0 buffer_waits=4 ring_full=1 overread_bytes=0 worker_read_ns=9357 demand_read_ns=0 wait_ns=34945 h2d_submits=0 mapped_serves=1 demand_waits=1 demand_wait_ns=591 prefetch_cancels=0 demand_wait_timeouts=0
+ok
+test spill_pread::tests::worker_positioned_reads_preserve_exact_bytes_and_reuse_after_short_read ... [spill-worker] WARNING: effective depth 2 < 6; grouped current+next overlap is degraded; continuing with projection concurrency and mmap fallback
+[spill-pread] enabled: depth=2 buffer_bytes=64 payload_capacity=64 total_pinned_bytes=128 (bounded worker prefetch, caller-thread compute-stream H2D, mmap error fallback)
+[spill-pread] reads=8 bytes=175 errors=1 short_reads=1 fallbacks=0 buffer_waits=4 ring_full=3 overread_bytes=0 worker_read_ns=11201 demand_read_ns=0 wait_ns=36428 h2d_submits=0 mapped_serves=0 demand_waits=2 demand_wait_ns=12885 prefetch_cancels=0 demand_wait_timeouts=0
+ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 621 filtered out; finished in 0.32s
+
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "/scratch/spill-f/bin/engine-lib-tests",
+    "--ignored",
+    "spill_pread::tests",
+    "--test-threads",
+    "1",
+    "--nocapture"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 457538037448136,
+  "ended_monotonic_ns": 457538597732699,
+  "started_utc": "2026-09-26T13:20:19.360523+00:00",
+  "ended_utc": "2026-09-26T13:20:19.920809+00:00",
+  "elapsed_seconds": 0.560284563,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": {
+    "class": "nvme-local-direct",
+    "nvme_proven": true,
+    "nvme_name_hint": false,
+    "label": "M1 proof: physical local NVMe (nvme-local-direct); not measured spill speed",
+    "allow_unproven_storage": false,
+    "root": "/scratch/spill-f",
+    "commands": [
+      {
+        "command": [
+          "findmnt",
+          "-J",
+          "-T",
+          "/scratch/spill-f"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-findmnt.log",
+          "bytes": 260,
+          "sha256": "1d848ebef5f7235c8cfb9dc178199991ddbc41f8fe100d2a99bfdd4f05d0ba62"
+        }
+      },
+      {
+        "command": [
+          "lsblk",
+          "-J",
+          "-o",
+          "NAME,TYPE,SIZE,ROTA,TRAN,MOUNTPOINTS"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-lsblk.log",
+          "bytes": 4174,
+          "sha256": "2289aa6d5b1944536abc239309cb48358e3c170a8752677e2ccea800442bef64"
+        }
+      },
+      {
+        "command": [
+          "findmnt",
+          "-n",
+          "-o",
+          "SOURCE",
+          "-T",
+          "/scratch/spill-f"
+        ],
+        "exit_code": 0,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-source.log",
+          "bytes": 42,
+          "sha256": "b566f23a261bad08fd6ed3091e85e11cf52dd69c2609352af3d31e7cf4740aa7"
+        }
+      },
+      {
+        "command": [
+          "lsblk",
+          "-s",
+          "-r",
+          "-n",
+          "-o",
+          "KNAME",
+          "/dev/nvme0n1p3"
+        ],
+        "exit_code": 32,
+        "timed_out": false,
+        "raw_log": {
+          "path": "storage-ancestry.log",
+          "bytes": 42,
+          "sha256": "b67470269669175458deed3ea5edc911c509b799a5fa2fcefff20fe54d29b718"
+        }
+      }
+    ],
+    "qualification": false,
+    "m1_proof": {
+      "receipt": {
+        "path": "STORAGE-PROOF.json",
+        "bytes": 3720,
+        "sha256": "f20e215b15aca20706a956da4fc890a7b3e9b240b7ce1262fc370f1fcb221415"
+      },
+      "tool_sha256": "d59851b624339e16d2290b21b94567a593645266eb0e5dd83d4490decbb78864",
+      "identity": {
+        "device": 66307,
+        "filesystem_id": 66307,
+        "mount_id": 577
+      },
+      "proof_utc": "2026-09-26T13:20:17.778000+00:00"
+    }
+  },
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 4967,
+    "sha256": "c26149a20395e987ba8d9ad3fd848bc15ebb765d374f457206c8e4ab2eec70c6"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 443,
+      "sha256": "278096790586279ed705fa307686fd45ec2576334820e63350ff820e1edfa571"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}

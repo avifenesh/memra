@@ -1,0 +1,24 @@
+
+running 1 test
+test tests::a_fake_route_memory_door_refuses_defers_and_recovers_through_the_handler ... FAILED
+
+failures:
+
+---- tests::a_fake_route_memory_door_refuses_defers_and_recovers_through_the_handler stdout ----
+[meter] admit id=cmpl-6578e251d304730ca50c0c212a7c2023 tenant=default lane=interactive model="t503-fake-route"
+[meter] admit id=cmpl-4e23cceb9b0f843c0981c709ba9f4e5d tenant=default lane=interactive model="t503-fake-route"
+[meter] admit id=cmpl-e93e680558ab02b5f58e18ce3fa27455 tenant=default lane=interactive model="t503-fake-route"
+[meter] admit id=cmpl-684235386b67c15c1c621941a05549d7 tenant=default lane=interactive model="t503-fake-route"
+
+thread 'tests::a_fake_route_memory_door_refuses_defers_and_recovers_through_the_handler' (2395672) panicked at crates/memra-server/src/lib.rs:19151:9:
+assertion `left == right` failed
+  left: (0, 1, 0)
+ right: (0, 0, 0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::a_fake_route_memory_door_refuses_defers_and_recovers_through_the_handler
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 955 filtered out; finished in 0.30s
+

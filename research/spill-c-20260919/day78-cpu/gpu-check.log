@@ -1,0 +1,14 @@
+# DAY78 local GPU check (the development host's RTX 5090, under /tmp/memra-5090.lock, run-gen-p78 = a1786bc32 sha256 fee2fdf404ee059f...): the door, then the door with --expert-bank-pool-pageable, the 35B, one run each
+door rc=0
+pageable rc=0
+== door
+  [experts-via-tier] host pinned pool bytes=15417016320 classes=3 headroom=106 fill_reserve=34
+  prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH
+  generated 32 tokens in 0.393s = 81.50 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.020s) [stop: MaxNew]
+  MoE cache STEADY-STATE window: 32 decode steps in 0.337s
+== pageable
+  [experts-via-tier] host pinned pool bytes=15417016320 classes=3 headroom=106 fill_reserve=34 pageable
+  prefill argmax=198  decode argmax=198  logit maxdiff=6.482e-1  MATCH
+  generated 32 tokens in 0.585s = 54.66 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.020s) [stop: MaxNew]
+  MoE cache STEADY-STATE window: 32 decode steps in 0.431s
+tokens: the same tape in both runs

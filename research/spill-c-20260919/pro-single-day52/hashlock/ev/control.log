@@ -1,0 +1,7 @@
+02:04:06.772	[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+02:04:11.586	loaded qwen35 (64 trunk layers; optional MTP skipped)
+02:04:11.586	prompt tokens: [55, 88, 13]
+02:04:11.660	[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+02:04:11.695	prefill argmax=271  decode argmax=271  logit maxdiff=2.591e-1  MATCH
+02:04:11.823	generated 8 tokens in 0.093s = 85.70 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.034s) [stop: MaxNew]
+02:04:11.823	tokens: [271, 550, 220, 16, 13, 271, 550, 220]

@@ -1,0 +1,625 @@
+diff --git a/crates/memra-engine/src/spec.rs b/crates/memra-engine/src/spec.rs
+--- a/crates/memra-engine/src/spec.rs
++++ b/crates/memra-engine/src/spec.rs
+@@ -1496,10 +1496,24 @@
+     pub output_end: usize,
+ }
+ 
++/// Research-only feedback from an offered sampled MTP prefix.
++pub struct MtpConfidenceRound {
++    pub chosen_probabilities: Vec<f32>,
++    pub accepted_prefix: usize,
++    pub drafted: usize,
++    pub emitted: usize,
++    pub elapsed: std::time::Duration,
++    pub eligible_for_learning: bool,
++}
++
+ pub struct SpecSession {
+     /// A learned action counts K+1 (draft steps plus the bonus), as in Gemma.
+     pub depth_experiment: Option<MtpDepthExperiment>,
+     pub depth_rounds: Vec<MtpDepthRound>,
++    /// An explicit research driver may change C between turns of one native session.
++    pub confidence_cutoff: Option<[f32; 2]>,
++    pub collect_confidence: bool,
++    pub confidence_rounds: Vec<MtpConfidenceRound>,
+     prime_ready: Option<prime::PreparedMtp>,
+     pub(crate) cache: Cache,
+     pub(crate) scratch: MtpScratch,
+@@ -9089,6 +9103,9 @@
+         Ok(SpecSession {
+             depth_experiment: None,
+             depth_rounds: Vec::new(),
++            confidence_cutoff: None,
++            collect_confidence: false,
++            confidence_rounds: Vec::new(),
+             prime_ready: None,
+             // STAGE-OWNED KV (lane/pp2-spec 2026-08-06): `pp::new_cache`, not `Cache::new`. This
+             // is the SERVING spec-session path, and with the ppN door open across two cards a
+@@ -9677,6 +9694,9 @@
+             committed,
+             depth_experiment: None,
+             depth_rounds: Vec::new(),
++            confidence_cutoff: None,
++            collect_confidence: false,
++            confidence_rounds: Vec::new(),
+             last_h: last_h_dev,
+             next_pred,
+             sctr,
+@@ -10315,7 +10335,7 @@
+         pen_on: bool,
+         sess_capture_disabled: bool,
+         dmask_on: bool,
+-        p_min: f32,
++        confidence_on: bool,
+         embd_gpu: Option<&CudaSlice<u8>>,
+         embd_qt: i32,
+         embd_rb: usize,
+@@ -10443,7 +10463,7 @@
+                     e.htod_u32_into(g_dmask, &vec![u32::MAX; dmask_words])?;
+                 }
+                 let g_dmask_ro: &CudaSlice<u32> = &*g_dmask;
+-                let with_prob = p_min > 0.0;
++                let with_prob = confidence_on;
+                 // CAPTURE-RETAIN (#68 fix): one keeper for the whole chain — every graph's
+                 // warmup transients stay pinned as long as any of them replays.
+                 let cap_res = (|| -> Result<DraftChainGraphs, Box<dyn std::error::Error>> {
+@@ -10621,7 +10641,7 @@
+                         g_p,
+                         &mut *scratch,
+                         0,
+-                        p_min > 0.0,
++                        confidence_on,
+                         true,
+                         embd_gpu.expect("graph draft requires resident embedding"),
+                         embd_qt,
+@@ -10749,7 +10769,7 @@
+                     g_mx,
+                     ..
+                 } = &mut dctx;
+-                let with_prob = p_min > 0.0;
++                let with_prob = confidence_on;
+                 let cap_res = (|| -> Result<DraftChainGraphs, Box<dyn std::error::Error>> {
+                     // dcw pre-arm INSIDE the fallible closure (vram-admission lane): an OOM
+                     // here is a capture failure with the LOUD WARN, never a step error.
+@@ -10951,7 +10971,7 @@
+                         g_p,
+                         &mut *scratch,
+                         0,
+-                        p_min > 0.0,
++                        confidence_on,
+                         true,
+                         embd_gpu.expect("graph draft requires resident embedding"),
+                         embd_qt,
+@@ -11245,6 +11265,9 @@
+         // FAIL-SAFE bit threaded out of the session (see `SpecSession::capture_disabled`).
+         let mut sess_capture_disabled = false;
+         let mut depth_study = None;
++        let mut session_confidence_cutoff = None;
++        let mut collect_confidence = false;
++        let mut confidence_rounds = None;
+         let (
+             cache,
+             scratch,
+@@ -11272,6 +11295,9 @@
+                 let SpecSession {
+                     depth_experiment,
+                     depth_rounds,
++                    confidence_cutoff,
++                    collect_confidence: collect,
++                    confidence_rounds: rounds,
+                     cache,
+                     scratch,
+                     committed,
+@@ -11292,6 +11318,9 @@
+                 depth_study = depth_experiment
+                     .as_mut()
+                     .map(|policy| (policy, depth_rounds));
++                session_confidence_cutoff = *confidence_cutoff;
++                collect_confidence = *collect;
++                confidence_rounds = Some(rounds);
+                 sess_capture_disabled = *capture_disabled;
+                 sess_capture = Some((capture_at.take(), boundary_captures));
+                 ckpt_req = ckpt_at.take();
+@@ -11979,8 +12008,8 @@
+         let debug_spec = std::env::var("MEMRA_DEBUG_SPEC").is_ok();
+         // MEMRA_SPEC_STATS=1: per-slot accept histogram + draft-length histogram, printed once at
+         // the end. Metric normalization vs the reference engine: BOTH engines count
+-        // accepted/drafted where the chain stopped at p-min and the sub-threshold token is
+-        // discarded uncounted — per-slot decay + chain-length mix are the extra dimensions.
++        // accepted/drafted over the offered chain; sampled p-min keeps the low-confidence
++        // pick as its final proposal before target verification.
+         let spec_stats = std::env::var("MEMRA_SPEC_STATS").is_ok();
+         let mut st_drafted = vec![0usize; k];
+         let mut st_accepted = vec![0usize; k];
+@@ -11990,21 +12019,40 @@
+         // stop the draft chain early when the head's softmax confidence in its own pick drops
+         // below p_min. Hoisted above the loop: the graph capture bakes the prob kernels iff on.
+         static PMIN: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+-        let p_min = *PMIN.get_or_init(|| {
++        let configured_p_min = *PMIN.get_or_init(|| {
+             std::env::var("MEMRA_SPEC_PMIN")
+                 .ok()
+                 .and_then(|v| v.parse().ok())
+                 .unwrap_or(0.0)
+         });
+-        // ZERO-DRAFT ROUNDS (MEMRA_SPEC_PMIN0=1, vendored from llama.cpp's draft gating): let the
+-        // p-min gate apply at j==0 too, so a low-confidence round drafts NOTHING and the verify
+-        // batch is just the pending bonus (m=1 = a plain decode step). llama's 35B win rides
+-        // exactly this — draft acceptance 76% at mean len 2.5 because unpredictable stretches
+-        // never pay draft+verify overhead. Only legal when a pending bonus exists (an empty
+-        // verify batch is not); the j==0 exemption stays for pending-less rounds.
++        let confidence_cutoffs =
++            session_confidence_cutoff.unwrap_or([configured_p_min; 2]);
++        if confidence_cutoffs
++            .iter()
++            .any(|c| !c.is_finite() || !(0.0..=1.0).contains(c))
++        {
++            return Err("research confidence cutoff is outside [0, 1]".into());
++        }
++        let p_min = session_confidence_cutoff
++            .map(|cutoffs| cutoffs.into_iter().fold(0.0_f32, f32::max))
++            .unwrap_or(configured_p_min);
++        let cutoff_for_slot = |j: usize| match session_confidence_cutoff {
++            Some(cutoffs) => cutoffs.get(j).copied().unwrap_or(0.0),
++            None => configured_p_min,
++        };
++        if collect_confidence && (depth_study.is_none() || !sampled) {
++            return Err("confidence observations require a sampled depth-study session".into());
++        }
++        let confidence_on = p_min > 0.0 || collect_confidence;
++        // A sampled zero-draft choice must be made before drawing a proposal.
++        // This research source retains low-confidence sampled picks, so it refuses
++        // positive PMIN0 until a separate pre-draw rule is qualified.
+         let pmin0 = std::env::var("MEMRA_SPEC_PMIN0")
+             .map(|v| v == "1")
+             .unwrap_or(false);
++        if sampled && pmin0 && p_min > 0.0 {
++            return Err("sampled PMIN0 needs a pre-draw decision; refusing chosen-token censoring".into());
++        }
+ 
+         // --- GRAPH DRAFT setup: persistent I/O buffers + ONE capture (2 warmups inside). The
+         // warmups mutate scratch len_d / pos / tok / seed — all reset at every round start, so the
+@@ -12043,7 +12091,7 @@
+                 constraint
+                     .as_deref()
+                     .is_some_and(|c| c.draft_mask_enabled()),
+-                p_min,
++                confidence_on,
+                 embd_gpu,
+                 embd_qt,
+                 embd_rb,
+@@ -12561,9 +12609,8 @@
+             ph_mark(&mut ph_rest, phase_on);
+ 
+             // --- 1. DRAFT k tokens with the NextN head (autoregressive, T=1 each) ---
+-            // p-min semantics (both paths): stop the chain early when the head's confidence in
+-            // its own pick drops below p_min — the just-drafted token is DISCARDED, but its
+-            // scratch append stands (identical to the eager chain's ordering). j==0 always drafts.
++            // Sampled p-min offers the low-confidence pick to the target, then stops
++            // before another draft step. Greedy retains its recorded early-stop rule.
+             let base0 = if pending.is_some() { 1usize } else { 0usize };
+             // fixed draft length by default; MEMRA_SPEC_ADAPT=1 drafts at last round's
+             // accepted run + 1 (the gemma law — see the setup block above the loop).
+@@ -12582,6 +12629,7 @@
+             }
+             let mut draft: Vec<u32> = Vec::with_capacity(k);
+             let mut draft_idx: Vec<u32> = Vec::with_capacity(k); // trimmed-vocab ids (== draft when untrimmed)
++            let mut chosen_probabilities: Vec<f32> = Vec::with_capacity(k);
+             {
+                 // Round-start draft-KV sync (BOTH paths). Persistent: truncate/align to the committed
+                 // history — slots 0..P hold entries for the tokens before last_token@P (P = pos +
+@@ -12775,7 +12823,7 @@
+                             scratch.plane_mut(index).0.len += 1;
+                         }
+                         sctr += 1; // mirrors the in-graph g_ctr bump (eager parity:
+-                        // counts the p-min-discarded token too)
++                        // counts the terminal low-confidence offer too)
+                         // q retention: ONE async D2D of the persistent head-logits buffer
+                         // into this round's slot j (stream-ordered after the replay).
+                         e.copy_into(&mut dctx.q_slots[j], 0, &dctx.g_q, d_vocab)?;
+@@ -12783,7 +12831,7 @@
+                         // replay instead of a second full-vocab filter_stats per slot post-
+                         // chain — bit-exact (the values the in-graph perturb consumed) and
+                         // measured worth ~5% of vendor-default serving tok/s at K=3. Before
+-                        // the p-min break so the discarded slot's stats land too.
++                        // the p-min stop so the terminal offered slot's stats land too.
+                         if filtered_stats_in_graph {
+                             draft_stats.push((
+                                 e.dtoh(&dctx.g_mx)?[0],
+@@ -12809,15 +12857,25 @@
+                             None => idx,
+                         };
+                         draft_idx.push(idx);
+-                        if p_min > 0.0 {
+-                            let p = e.dtoh(&dctx.g_p)?[0];
+-                            if p < p_min && (j > 0 || (pmin0 && base0 == 1)) {
+-                                break;
++                        let draft_p = if confidence_on {
++                            Some(e.dtoh(&dctx.g_p)?[0])
++                        } else {
++                            None
++                        };
++                        if collect_confidence {
++                            let p = draft_p.ok_or("sampled confidence trace has no chosen probability")?;
++                            if !p.is_finite() || !(0.0..=1.0).contains(&p) {
++                                return Err("invalid sampled confidence observation".into());
+                             }
++                            chosen_probabilities.push(p);
+                         }
+                         draft.push(d);
+                         chain_tokens.push(d);
+                         chain_seed_bufs.push(e.clone_dtod(&dctx.g_seed)?);
++                        // Retaining this pick keeps the verifier's proposal law unchanged.
++                        if draft_p.is_some_and(|p| cutoff_for_slot(j) > 0.0 && p < cutoff_for_slot(j)) {
++                            break;
++                        }
+                     }
+                     // PURE-TEMP accept path: stats per used slot recomputed from the RETAINED
+                     // q with the SAME filter_stats program the eager arm runs (deployment-
+@@ -12981,7 +13039,7 @@
+                         gr.launch()?;
+                         scratch.kv.len += 1; // host mirror (len_d advanced in-graph)
+                         sctr += 1; // mirrors the in-graph g_ctr bump (eager parity:
+-                        // counts the p-min-discarded token too)
++                        // counts the terminal low-confidence offer too)
+                         // q retention: ONE async D2D of the persistent head-logits buffer into this
+                         // round's slot j (stream-ordered after the replay, before the next one).
+                         e.copy_into(&mut dctx.q_slots[j], 0, &dctx.g_q, d_vocab)?;
+@@ -12990,7 +13048,7 @@
+                         // full-vocab filter_stats per slot post-chain (measured ~5% of vendor-
+                         // default serving tok/s at K=3). Bit-exact by construction: these are
+                         // the very values the in-graph perturb consumed. Read BEFORE the p-min
+-                        // break so the discarded slot's stats land too (accept-path indexing).
++                        // stop so the terminal offered slot's stats land too (accept-path indexing).
+                         if filtered_stats_in_graph {
+                             draft_stats.push((
+                                 e.dtoh(&dctx.g_mx)?[0],
+@@ -13016,16 +13074,25 @@
+                             None => idx,
+                         };
+                         draft_idx.push(idx);
+-                        if p_min > 0.0 {
+-                            let p = e.dtoh(&dctx.g_p)?[0];
+-                            if p < p_min && (j > 0 || (pmin0 && base0 == 1)) {
+-                                break;
++                        let draft_p = if confidence_on {
++                            Some(e.dtoh(&dctx.g_p)?[0])
++                        } else {
++                            None
++                        };
++                        if collect_confidence {
++                            let p = draft_p.ok_or("sampled confidence trace has no chosen probability")?;
++                            if !p.is_finite() || !(0.0..=1.0).contains(&p) {
++                                return Err("invalid sampled confidence observation".into());
+                             }
++                            chosen_probabilities.push(p);
+                         }
+                         draft.push(d);
+                         // trimmed head: the NEXT embed must read the TARGET id (see the greedy arm).
+                         if d != idx {
+                             e.set_u32_one(&mut dctx.g_tok, d)?;
++                        }
++                        if draft_p.is_some_and(|p| cutoff_for_slot(j) > 0.0 && p < cutoff_for_slot(j)) {
++                            break;
+                         }
+                     }
+                     // PURE-TEMP accept path: fill draft_stats per used slot post-chain (the
+@@ -13198,13 +13265,22 @@
+                         if sampled {
+                             draft_idx.push(idx);
+                         }
+-                        let draft_p = if p_min > 0.0 {
++                        let draft_p = if confidence_on {
+                             let p_d = e.prob_of_token_device(&dl_d, &tok_d, d_vocab)?;
+                             Some(e.dtoh(&p_d)?[0])
+                         } else {
+                             None
+                         };
+-                        if let Some(p) = draft_p.filter(|_| p_min > 0.0)
++                        if sampled && collect_confidence {
++                            let p = draft_p.ok_or("sampled confidence trace has no chosen probability")?;
++                            if !p.is_finite() || !(0.0..=1.0).contains(&p) {
++                                return Err("invalid sampled confidence observation".into());
++                            }
++                            chosen_probabilities.push(p);
++                        }
++                        if !sampled
++                            && let Some(p) = draft_p
++                            && p_min > 0.0
+                             && p < p_min
+                             && (j > 0 || (pmin0 && base0 == 1))
+                         {
+@@ -13227,6 +13303,9 @@
+                                 .draft_advance(d)
+                                 .map_err(|e2| format!("constraint: {e2}"))?
+                         {
++                            break;
++                        }
++                        if sampled && draft_p.is_some_and(|p| cutoff_for_slot(j) > 0.0 && p < cutoff_for_slot(j)) {
+                             break;
+                         }
+                     }
+@@ -14080,6 +14159,22 @@
+                 let elapsed = started.elapsed();
+                 let emitted = out.len() - output_before;
+                 let eligible_for_learning = keep_going && out.len() < max_new && emitted > 0;
++                if collect_confidence {
++                    if chosen_probabilities.len() != k_round || k_round == 0 {
++                        return Err("confidence trace differs from offered sampled prefix".into());
++                    }
++                    confidence_rounds
++                        .as_mut()
++                        .ok_or("missing confidence trace destination")?
++                        .push(MtpConfidenceRound {
++                            chosen_probabilities,
++                            accepted_prefix: n_acc,
++                            drafted: k_round,
++                            emitted,
++                            elapsed,
++                            eligible_for_learning,
++                        });
++                }
+                 let (policy, traces) = depth_study.as_mut().expect("study timer has policy");
+                 if let MtpDepthExperiment::Learned(learner) = &mut **policy {
+                     learner.observe_output(
+diff --git a/crates/memra-engine/src/spec/prime.rs b/crates/memra-engine/src/spec/prime.rs
+--- a/crates/memra-engine/src/spec/prime.rs
++++ b/crates/memra-engine/src/spec/prime.rs
+@@ -522,7 +522,13 @@
+             self.constraint
+                 .as_deref()
+                 .is_some_and(|c| c.draft_mask_enabled()),
+-            p_min,
++            self.sess.collect_confidence
++                || self
++                    .sess
++                    .confidence_cutoff
++                    .as_ref()
++                    .map(|cutoffs| cutoffs.iter().any(|c| *c > 0.0))
++                    .unwrap_or(p_min > 0.0),
+             embd_gpu,
+             qt,
+             rb,
+diff --git a/crates/memra-engine/src/bin/mtp_depth_study.rs b/crates/memra-engine/src/bin/mtp_depth_study.rs
+--- a/crates/memra-engine/src/bin/mtp_depth_study.rs
++++ b/crates/memra-engine/src/bin/mtp_depth_study.rs
+@@ -8,6 +8,7 @@
+ use memra_tokenizer::chat::{ThinkMode, Turn};
+ use std::io::Write;
+ use std::path::Path;
++use std::process::Command;
+ use std::time::{Duration, Instant};
+ 
+ mod depth_study_io;
+@@ -19,6 +20,12 @@
+     vocabulary: usize,
+     priors: Option<&str>,
+ ) -> Result<Option<MtpDepthExperiment>, Box<dyn std::error::Error>> {
++    let arm = match arm {
++        "trace-c1" => "fixed:1",
++        "trace-c2" => "fixed:2",
++        "trace-c3" | "learn-c3" | "monitor-c3" | "fixed-c3" => "fixed:3",
++        other => other,
++    };
+     Ok(match arm {
+         "native" => None,
+         "measured" => Some(MtpDepthExperiment::MeasuredNative),
+@@ -96,15 +103,56 @@
+         println!("{}", prompt.len());
+         return Ok(());
+     }
+-    if !(10..=12).contains(&args.len()) {
+-        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <native|measured|learned|fixed> <seed> <max-new> <ctx> <temperature> [gate|gate-cold]".into());
++    if !(10..=16).contains(&args.len()) {
++        return Err("usage: mtp-depth-study <target.gguf> embedded <workload.txt> <new-output-dir> <arm> <seed> <max-new> <ctx> <temperature> [gate|gate-cold] [confidence-policy=PATH] [confidence-costs=PATH] [confidence-fixed=C0,C1]".into());
+     }
+     let arm = args[5].as_str();
+     let seed: u64 = args[6].parse()?;
+     let max_new: usize = args[7].parse()?;
+     let ctx: usize = args[8].parse()?;
+     let temperature: f32 = args[9].parse()?;
+-    let (gate, cold_reference, priors) = depth_study_io::extra_args(&args)?;
++    let mut standard_args = args[..10].to_vec();
++    let mut confidence_policy = None;
++    let mut confidence_costs = None;
++    let mut fixed_cutoffs = None;
++    for option in &args[10..] {
++        if let Some(path) = option.strip_prefix("confidence-policy=") {
++            if path.is_empty() || confidence_policy.replace(path).is_some() {
++                return Err("invalid confidence policy path".into());
++            }
++        } else if let Some(path) = option.strip_prefix("confidence-costs=") {
++            if path.is_empty() || confidence_costs.replace(path).is_some() {
++                return Err("invalid measured confidence cost path".into());
++            }
++        } else if let Some(values) = option.strip_prefix("confidence-fixed=") {
++            if fixed_cutoffs.is_some() {
++                return Err("duplicate fixed confidence control".into());
++            }
++            let parsed = values
++                .split(',')
++                .map(str::parse::<f32>)
++                .collect::<Result<Vec<_>, _>>()?;
++            let cutoffs: [f32; 2] = parsed
++                .try_into()
++                .map_err(|_| "fixed confidence control needs two positions")?;
++            if cutoffs.iter().any(|c| !c.is_finite() || !(0.0..=1.0).contains(c)) {
++                return Err("invalid fixed confidence control".into());
++            }
++            fixed_cutoffs = Some(cutoffs);
++        } else {
++            standard_args.push(option.clone());
++        }
++    }
++    let (gate, cold_reference, priors) = depth_study_io::extra_args(&standard_args)?;
++    let live_confidence = matches!(arm, "learn-c3" | "monitor-c3");
++    let trace_confidence = live_confidence || matches!(arm, "trace-c1" | "trace-c2" | "trace-c3");
++    if confidence_policy.is_some() != live_confidence
++        || confidence_costs.is_some() != live_confidence
++        || (arm == "fixed-c3") != fixed_cutoffs.is_some()
++        || (gate && trace_confidence)
++    {
++        return Err("confidence arm needs its matching policy/cost/control arguments and sampled decoding".into());
++    }
+     if cold_reference && temperature != 0.0 {
+         return Err("cold reference is a greedy correctness diagnostic only".into());
+     }
+@@ -121,7 +169,7 @@
+     let mut rows = std::fs::File::create_new(output.join("turns.tsv"))?;
+     writeln!(
+         rows,
+-        "turn\tseed\tprompt_tokens\toutput_tokens\telapsed_s\tresumed\tdrafted\taccepted\tpolicy_rounds\tswitches\tfinish_reason\tcommitted_overshoot\tcached_tokens\tnew_input_tokens\tcheckpoint_tokens"
++        "turn\tseed\tprompt_tokens\toutput_tokens\telapsed_s\tresumed\tdrafted\taccepted\tpolicy_rounds\tswitches\tfinish_reason\tcommitted_overshoot\tcached_tokens\tnew_input_tokens\tcheckpoint_tokens\tconfidence_before\tconfidence_after\tconfidence_policy_ns"
+     )?;
+     let mut trace = std::fs::File::create_new(output.join("rounds.tsv"))?;
+     writeln!(
+@@ -199,6 +247,8 @@
+     let mut history: Vec<Turn> = Vec::new();
+     let mut carried_policy = initial_experiment;
+     let mut parked: Option<SpecSession> = None;
++    let mut learned_cutoffs = [0.0_f32; 2];
++    let mut confidence_state: Option<std::path::PathBuf> = None;
+     let mut total_tokens = 0usize;
+     let mut total_seconds = 0f64;
+     let mut measured_rounds = 0usize;
+@@ -259,11 +309,21 @@
+         if let Some(selection) = request_selection {
+             sess.depth_experiment = Some(MtpDepthExperiment::Learned(memra_engine::learned_depth::LearnedDepth::fixed(usize::from(selection.decision.k) + 1)?));
+         }
++        let applied_cutoffs = if live_confidence {
++            Some(learned_cutoffs)
++        } else if trace_confidence {
++            Some([0.0, 0.0])
++        } else {
++            fixed_cutoffs
++        };
++        sess.confidence_cutoff = applied_cutoffs;
++        sess.collect_confidence = trace_confidence;
+         if let Some(MtpDepthExperiment::Learned(policy)) = &mut sess.depth_experiment {
+             policy.begin_request(user);
+         }
+         let new_input_tokens = prompt.len() - cached_tokens;
+         let trace_start = sess.depth_rounds.len();
++        let confidence_start = sess.confidence_rounds.len();
+         let mut on_commit = |chunk: &[u32]| !chunk.iter().any(|id| eos.contains(id));
+         let (mut ids, drafted, accepted) = model.generate_spec_session_sampled(
+             &e,
+@@ -307,6 +367,94 @@
+             .unwrap_or(ids.len());
+         let raw = tok.decode_special(&ids[..end], true);
+         let answer = qwen_assistant_turn(&raw);
++        let mut confidence_policy_ns = 0_u128;
++        if trace_confidence {
++            let policy_started = Instant::now();
++            let confidence_rows = &sess.confidence_rounds[confidence_start..];
++            if confidence_rows.len() != sess.depth_rounds.len() - trace_start
++                || confidence_rows.is_empty()
++            {
++                return Err("sampled confidence feedback did not cover each native round".into());
++            }
++            let trace_path = output.join(format!("turn-{turn}.confidence.tsv"));
++            let mut confidence_trace = std::fs::File::create_new(&trace_path)?;
++            writeln!(
++                confidence_trace,
++                "round\tdrafted\taccepted_prefix\temitted\telapsed_ns\teligible\tq_bits"
++            )?;
++            for (index, row) in confidence_rows.iter().enumerate() {
++                let bits = row
++                    .chosen_probabilities
++                    .iter()
++                    .map(|p| p.to_bits().to_string())
++                    .collect::<Vec<_>>()
++                    .join(",");
++                writeln!(
++                    confidence_trace,
++                    "{}\t{}\t{}\t{}\t{}\t{}\t{bits}",
++                    index + 1,
++                    row.drafted,
++                    row.accepted_prefix,
++                    row.emitted,
++                    row.elapsed.as_nanos(),
++                    row.eligible_for_learning,
++                )?;
++            }
++            confidence_trace.flush()?;
++            if live_confidence {
++                let policy_output = output.join(format!("turn-{turn}.policy-output.ids"));
++                save_ids(&policy_output, &ids)?;
++                let state_out = output.join(format!("turn-{turn}.c-state.json"));
++                let decision_out = output.join(format!("turn-{turn}.c-decision.json"));
++                let mut command = Command::new("python3");
++                command
++                    .arg(confidence_policy.ok_or("missing live confidence policy")?)
++                    .arg("--trace")
++                    .arg(&trace_path)
++                    .arg("--costs")
++                    .arg(confidence_costs.ok_or("missing measured confidence cost table")?)
++                    .arg("--output-ids")
++                    .arg(&policy_output)
++                    .arg("--turn")
++                    .arg(turn.to_string())
++                    .arg("--state-out")
++                    .arg(&state_out)
++                    .arg("--decision-out")
++                    .arg(&decision_out);
++                if let Some(path) = &confidence_state {
++                    command.arg("--state").arg(path);
++                }
++                let result = command.output()?;
++                if !result.status.success() {
++                    return Err(format!(
++                        "live confidence policy failed on turn {turn}: {}",
++                        String::from_utf8_lossy(&result.stderr)
++                    )
++                    .into());
++                }
++                let values = String::from_utf8(result.stdout)?;
++                let parts = values
++                    .split_whitespace()
++                    .map(str::parse::<f32>)
++                    .collect::<Result<Vec<_>, _>>()?;
++                let proposed: [f32; 2] = parts
++                    .try_into()
++                    .map_err(|_| "live confidence policy returned another cutoff count")?;
++                if proposed
++                    .iter()
++                    .any(|c| !c.is_finite() || !(0.0..=1.0).contains(c))
++                {
++                    return Err("live confidence policy returned an invalid cutoff".into());
++                }
++                learned_cutoffs = if arm == "monitor-c3" {
++                    [0.0, 0.0]
++                } else {
++                    proposed
++                };
++                confidence_state = Some(state_out);
++            }
++            confidence_policy_ns = policy_started.elapsed().as_nanos();
++        }
+         let seconds = started.elapsed().as_secs_f64();
+         let new_trace = &sess.depth_rounds[trace_start..];
+         for row in new_trace {
+@@ -358,10 +506,20 @@
+         };
+         writeln!(
+             rows,
+-            "{turn}\t{seed}\t{}\t{}\t{seconds:.9}\t{resumed}\t{drafted}\t{accepted}\t{}\t{switches}\t{stop_reason}\t{overshoot}\t{cached_tokens}\t{new_input_tokens}\t{checkpoint_tokens}",
++            "{turn}\t{seed}\t{}\t{}\t{seconds:.9}\t{resumed}\t{drafted}\t{accepted}\t{}\t{switches}\t{stop_reason}\t{overshoot}\t{cached_tokens}\t{new_input_tokens}\t{checkpoint_tokens}\t{}\t{}\t{confidence_policy_ns}",
+             prompt.len(),
+             ids.len(),
+-            new_trace.len()
++            new_trace.len(),
++            applied_cutoffs
++                .map(|c| format!("{:.9},{:.9}", c[0], c[1]))
++                .unwrap_or_else(|| "-".into()),
++            if live_confidence {
++                format!("{:.9},{:.9}", learned_cutoffs[0], learned_cutoffs[1])
++            } else {
++                applied_cutoffs
++                    .map(|c| format!("{:.9},{:.9}", c[0], c[1]))
++                    .unwrap_or_else(|| "-".into())
++            },
+         )?;
+         rows.flush()?;
+         trace.flush()?;

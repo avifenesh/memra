@@ -308,6 +308,78 @@ pub fn write_glm52_meta_only(path: &Path) -> std::io::Result<()> {
 
 // ---------------------------------------------------------------------------------------------
 // step35 (StepFun Step-3.7-Flash) metadata pin
+
+/// Complete, small Step GGUF for source/contract admission tests. The two layers use
+/// full/SWA attention with hd128 and a compact32 or full-head64 rotary factor tensor.
+/// Other shapes are intentionally available for malformed-source regression cases.
+/// This is a synthetic binding fixture, not model-scale numerical qualification.
+pub fn write_step35_rope_contract_fixture(
+    path: &Path,
+    factor_shape: &[u64],
+) -> std::io::Result<()> {
+    use crate::config::{HfConfig, ModelConfig};
+    use crate::model_plan::ModelPlan;
+    use crate::tensor_contract::{CheckpointDialect, ContractOptions, TensorContract, TensorId};
+
+    let config = ModelConfig::from_hf(&HfConfig::parse(
+        r#"{"model_type":"step3p5","num_hidden_layers":2,"hidden_size":16,
+        "intermediate_size":32,"num_attention_heads":2,"num_attention_groups":1,
+        "head_dim":128,"vocab_size":8,"max_position_embeddings":128,
+        "sliding_window":8,"layer_types":["full_attention","sliding_attention"],
+        "rope_theta":[10000,10000],"partial_rotary_factors":[0.5,1.0],
+        "attention_other_setting":{"num_attention_heads":2,"num_attention_groups":1},
+        "swiglu_limits":[0,0],"swiglu_limits_shared":[0,0]}"#,
+    ));
+    let plan = ModelPlan::compile(&config).map_err(std::io::Error::other)?;
+    // Build from canonical operations, not the Step pack's source-shape selection:
+    // the fixture's factor extent must remain independent of the code under test.
+    let contract =
+        TensorContract::for_plan(&plan, CheckpointDialect::Gguf, ContractOptions::default())
+            .map_err(std::io::Error::other)?;
+    let mut writer = GgufWriter::new();
+    writer.kv("general.architecture", MetaW::Str("step35"));
+    for (key, value) in [
+        ("block_count", 2),
+        ("embedding_length", 16),
+        ("feed_forward_length", 32),
+        ("attention.key_length", 128),
+        ("attention.value_length", 128),
+        ("attention.sliding_window", 8),
+        ("context_length", 128),
+        ("vocab_size", 8),
+    ] {
+        writer.kv(&format!("step35.{key}"), MetaW::U32(value));
+    }
+    writer.kv("step35.attention.head_count", MetaW::ArrU32(vec![2, 2]));
+    writer.kv("step35.attention.head_count_kv", MetaW::ArrU32(vec![1, 1]));
+    writer.kv(
+        "step35.attention.sliding_window_pattern",
+        MetaW::ArrBool(vec![false, true]),
+    );
+    writer.kv("step35.rope.scaling.type", MetaW::Str("llama3"));
+    writer.kv("tokenizer.ggml.model", MetaW::Str("gpt2"));
+    writer.kv(
+        "tokenizer.ggml.tokens",
+        MetaW::ArrString((0..8).map(|i| format!("t{i}")).collect()),
+    );
+    writer.kv(
+        "tokenizer.chat_template",
+        MetaW::Str("{{ messages[0]['content'] }}"),
+    );
+    for tensor in &contract.requirements {
+        if !tensor.required {
+            continue;
+        }
+        let shape = if tensor.id == TensorId::RopeFactors {
+            factor_shape
+        } else {
+            &tensor.shape
+        };
+        let data = vec![1.0; shape.iter().product::<u64>() as usize];
+        writer.tensor_f32(&tensor.names[0], shape, &data);
+    }
+    writer.write(path)
+}
 // ---------------------------------------------------------------------------------------------
 
 /// The 3:1 SWA pattern of Step-3.7-Flash, as the official GGUF serializes it:

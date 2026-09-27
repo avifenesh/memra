@@ -1,0 +1,63 @@
+diff --git a/crates/memra-engine/src/spill_pread.rs b/crates/memra-engine/src/spill_pread.rs
+index 9f6b24671..0f5bac4c1 100644
+--- a/crates/memra-engine/src/spill_pread.rs
++++ b/crates/memra-engine/src/spill_pread.rs
+@@ -1677,6 +1677,58 @@ mod tests {
+         std::fs::remove_file(path).ok();
+     }
+ 
++    /// Keep the compute stream busy for a while (device-to-device copies), so events recorded
++    /// after it complete later than the host's next call.
++    fn busy_stream(
++        engine: &crate::Engine,
++    ) -> (cudarc::driver::CudaSlice<u8>, cudarc::driver::CudaSlice<u8>) {
++        let stream = engine.stream().clone();
++        let src = stream.alloc_zeros::<u8>(512 << 20).unwrap();
++        let mut dst = stream.alloc_zeros::<u8>(512 << 20).unwrap();
++        for _ in 0..24 {
++            stream.memcpy_dtod(&src, &mut dst).unwrap();
++        }
++        (src, dst)
++    }
++
++    /// OWED 26 red-arm cell (M1-PREREG G2): every pinned buffer holds a completed read in `H2d`
++    /// behind a busy compute stream. A demand submit must wait for the oldest event and return a
++    /// ticket; the pre-fix code returned `None` here and the cache then read through mmap.
++    #[test]
++    #[ignore = "requires a CUDA GPU"]
++    fn demand_submit_waits_for_a_buffer_instead_of_returning_ring_busy() {
++        let engine = crate::Engine::new(0).unwrap();
++        let bytes: Vec<u8> = (0..4096u32)
++            .map(|i| (i.wrapping_mul(13) ^ (i >> 2)) as u8)
++            .collect();
++        let (path, file) = temp_file("demand-wait", &bytes);
++        let file = std::sync::Arc::new(file);
++        let mut pool = super::PreadPool::try_new(&engine, 1024, SpillIoMode::Worker).unwrap();
++        let depth = pool.buffers.len();
++        assert!(depth >= 2, "needs depth >= 2");
++        let mut held = Vec::new();
++        for _ in 0..depth {
++            let ticket = pool.submit_worker(file.clone(), 0, 64).unwrap().unwrap();
++            held.push(pool.wait_worker(ticket).unwrap());
++        }
++        let _work = busy_stream(&engine);
++        for &index in &held {
++            let event = std::sync::Arc::new(engine.ctx().new_event(None).unwrap());
++            event.record(&engine.stream()).unwrap();
++            pool.mark_h2d(index, event);
++        }
++        let ticket = pool.submit_worker(file.clone(), 128, 64).unwrap();
++        assert!(
++            ticket.is_some(),
++            "demand submit returned None with every buffer in H2d: the ring-busy mmap fallback"
++        );
++        let index = pool.wait_worker(ticket.unwrap()).unwrap();
++        assert_eq!(pool.bytes(index, 64).unwrap(), &bytes[128..192]);
++        pool.abort_read(index);
++        engine.stream().synchronize().unwrap();
++        std::fs::remove_file(path).ok();
++    }
++
+     /// OWED 17 GPU cell: a mapped serve reads the file's bytes through the device alias, the
+     /// buffer cannot be refilled while its consumer event is absent, and it returns to the pool
+     /// once the consumer event fires.

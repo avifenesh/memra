@@ -1,0 +1,18 @@
+== run 1 calls
+STUB day63-box-build.sh D/root/wt-c-build D/root/spill-receipts/c-day74b-pro-single p71=1
+STUB day40-run-cell.sh induce-b 5400 script=D/root/wt-c/research/spill-c-20260919/day74b-cell.sh
+STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day74b-pro-single/induce-b
+STUB day74-read.py D/root/spill-receipts/c-day74b-pro-single/induce-b --rig pro-single --induce-b
+== run 1 driver lines
+box start 2026-09-26T05:50:24Z tree c7af481d15852d51f4621910d56a811b5d633b35 rig pro-single
+cpu cap: each run pinned by the cell to its arm's 12 CPUs (DAY74 section 4); the runner unpinned
+induce-b rc=0 2026-09-26T05:50:24Z
+induce-b validate rc=0
+induce-b reader rc=0
+box done 2026-09-26T05:50:24Z
+== run 2 calls
+== run 2 driver lines
+box start 2026-09-26T05:50:24Z tree c7af481d15852d51f4621910d56a811b5d633b35 rig pro-single
+cpu cap: each run pinned by the cell to its arm's 12 CPUs (DAY74 section 4); the runner unpinned
+induce-b already done
+box done 2026-09-26T05:50:24Z

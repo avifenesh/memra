@@ -1,0 +1,48 @@
+kernel 6.8.0-138-generic
+clocksource tsc
+amd_pstate cat: /sys/devices/system/cpu/amd_pstate/status: No such file or directory
+thp always [madvise] never
+cpuidle_driver intel_idle
+/proc/sys/vm/compaction_proactiveness 20
+/proc/sys/vm/compact_unevictable_allowed 1
+/proc/sys/vm/extfrag_threshold 500
+/proc/sys/vm/watermark_scale_factor 10
+/proc/sys/vm/watermark_boost_factor 15000
+/proc/sys/vm/min_free_kbytes 67584
+/proc/sys/vm/numa_stat 1
+/proc/sys/vm/zone_reclaim_mode 0
+/sys/kernel/mm/transparent_hugepage/defrag always defer defer+madvise [madvise] never
+/sys/kernel/mm/transparent_hugepage/khugepaged/defrag 1
+/sys/kernel/mm/transparent_hugepage/khugepaged/pages_to_scan 4096
+/proc/sys/kernel/numa_balancing 0
+MemTotal:       261106060 kB
+MemFree:        214710644 kB
+MemAvailable:   255145976 kB
+Unevictable:      109568 kB
+Mlocked:           23188 kB
+AnonHugePages:         0 kB
+HugePages_Total:       0
+cpu0 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=7200000
+cpu1 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6900000
+cpu10 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6500000
+cpu11 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6500000
+cpu12 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6500000
+cpu13 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6500000
+cpu14 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6500000
+cpu15 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6500000
+cpu16 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6500000
+cpu17 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6500000
+cpu18 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6500000
+cpu19 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6500000
+cpu2 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=7200000
+cpu20 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6500000
+cpu21 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6500000
+cpu22 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6500000
+cpu23 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6500000
+cpu3 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6900000
+cpu4 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6900000
+cpu5 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6900000
+cpu6 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6900000
+cpu7 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6900000
+cpu8 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6500000
+cpu9 driver=intel_pstate governor=powersave epp=balance_performance min=800000 max=6500000

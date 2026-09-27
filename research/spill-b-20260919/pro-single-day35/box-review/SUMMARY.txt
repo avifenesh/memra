@@ -1,0 +1,25 @@
+== card pro6000
+DAY33 V-BOOT boot=red-R64 arm=on32768 door_line=present -> PASS role=red shape=R64
+DAY33 V-BOOT boot=red-off arm=off door_line=present -> PASS role=red shape=off
+DAY33 V-BOOT boot=green-R64-a1 arm=on32768 door_line=present -> PASS role=green shape=R64
+DAY33 V-BOOT boot=green-R64-a2 arm=on32768 door_line=present -> PASS role=green shape=R64
+DAY33 V-BOOT boot=green-off-a arm=off door_line=present -> PASS role=green shape=off
+== R-OOM / G-NOOM / G-BOOK (ON boots)
+DAY33 R-OOM card=pro6000 boot=red-R64 role=red shape=R64 v=32768 oom_lines=3 burst={429: 15, 200: 49} first_oom=server.log:743 1790202433730 [admit-mem] prefill OOM parked session back to queue (model q38, retry 1/3): DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory") -> RED
+DAY33 G-NOOM card=pro6000 boot=red-R64 role=red shape=R64 oom_lines=3 burst_503=0 crash_lines=0 burst_200=49 other_non200=0 r429=15 refuse_lines=15 retry_after_in_1_60=True -> FAIL
+DAY33 G-BOOK card=pro6000 boot=red-R64 role=red shape=R64 admit_lines=68 admit_lines_in_burst=52 est_over_booked_free=0 -> PASS
+DAY33 R-OOM card=pro6000 boot=green-R64-a1 role=green shape=R64 v=32768 oom_lines=0 burst={429: 20, 200: 44} first_oom=none -> NOT-RED
+DAY33 G-NOOM card=pro6000 boot=green-R64-a1 role=green shape=R64 oom_lines=0 burst_503=0 crash_lines=0 burst_200=44 other_non200=0 r429=20 refuse_lines=20 retry_after_in_1_60=True -> PASS
+DAY33 G-BOOK card=pro6000 boot=green-R64-a1 role=green shape=R64 admit_lines=60 admit_lines_in_burst=44 est_over_booked_free=0 -> PASS
+DAY33 R-OOM card=pro6000 boot=green-R64-a2 role=green shape=R64 v=32768 oom_lines=0 burst={429: 20, 200: 44} first_oom=none -> NOT-RED
+DAY33 G-NOOM card=pro6000 boot=green-R64-a2 role=green shape=R64 oom_lines=0 burst_503=0 crash_lines=0 burst_200=44 other_non200=0 r429=20 refuse_lines=20 retry_after_in_1_60=True -> PASS
+DAY33 G-BOOK card=pro6000 boot=green-R64-a2 role=green shape=R64 admit_lines=60 admit_lines_in_burst=44 est_over_booked_free=0 -> PASS
+== V-ID-FIX (green ON against red ON, same shape, sequential rows)
+DAY33 V-ID-FIX card=pro6000 shape=R64 green=green-R64-a1 red=red-R64 eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID-FIX card=pro6000 shape=R64 green=green-R64-a2 red=red-R64 eligible=16 equal=16 differ=0 -> PASS
+== V-ID (the day-32 term: green ON against green OFF)
+DAY33 V-ID card=pro6000 shape=R64 on=green-R64-a1 off=green-off-a eligible=16 equal=16 differ=0 -> PASS
+DAY33 V-ID card=pro6000 shape=R64 on=green-R64-a2 off=green-off-a eligible=16 equal=16 differ=0 -> PASS
+== V-OFF (green OFF against red OFF: the default-OFF program unchanged)
+DAY33 V-OFF card=pro6000 green=green-off-a red=red-off rows=16 equal=16 differ=0 admit_mem_lines=0 -> PASS
+DAY33 VERDICT card=pro6000 boots=5 v_boot_all=True green_noom_book_all=True v_id_fix_all=True v_id_all=True v_off_all=True -> GREEN

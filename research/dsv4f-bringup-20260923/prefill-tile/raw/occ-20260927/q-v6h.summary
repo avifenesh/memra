@@ -1,0 +1,19 @@
+build tileE TT=8 TN=4 SUB=8 DEC=1 MINB=4   Executable tests/dsv4_gemm_tile_gpu.rs (/root/lane/target-tile/release/deps/ds diff_lines 24
+build tileI TT=8 TN=4 SUB=4 DEC=1 MINB=5   Executable tests/dsv4_gemm_tile_gpu.rs (/root/lane/target-tile/release/deps/ds diff_lines 25
+build tileJ TT=8 TN=2 SUB=8 DEC=1 MINB=6   Executable tests/dsv4_gemm_tile_gpu.rs (/root/lane/target-tile/release/deps/ds diff_lines 24
+build tileK TT=4 TN=4 SUB=8 DEC=1 MINB=6   Executable tests/dsv4_gemm_tile_gpu.rs (/root/lane/target-tile/release/deps/ds diff_lines 28
+build tileL TT=8 TN=4 SUB=8 DEC=0 MINB=4   Executable tests/dsv4_gemm_tile_gpu.rs (/root/lane/target-tile/release/deps/ds diff_lines 22
+build tileM TT=16 TN=2 SUB=8 DEC=1 MINB=4   Executable tests/dsv4_gemm_tile_gpu.rs (/root/lane/target-tile/release/deps/ds diff_lines 28
+run1 E rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | tile 245.2 ms over 318 launches
+run2 I rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | tile 283.6 ms over 318 launches
+run3 J rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | tile 239.0 ms over 318 launches
+run4 K rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | tile 252.8 ms over 318 launches
+run5 L rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | tile 291.8 ms over 318 launches
+run6 M rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | tile 340.1 ms over 318 launches
+run7 M rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | tile 339.3 ms over 318 launches
+run8 L rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | tile 290.9 ms over 318 launches
+run9 K rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | tile 252.7 ms over 318 launches
+run10 J rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | tile 237.7 ms over 318 launches
+run11 I rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | tile 281.1 ms over 318 launches
+run12 E rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini | tile 241.5 ms over 318 launches
+V6H_DONE 9e89104ea68126a62dc6c77319789b00a5286df4

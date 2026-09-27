@@ -1,0 +1,39 @@
+== tree 53dac5a56 dirty=[] bins: probe bd1ec128f602c3c7 pbg 6d405899264cedec server 3083cb82913b0b67 2026-09-23T09:12:38+03:00
+    tickshape: T_a=2048 T_b=2048 T_c=4096 tick=1024 steps=32 join=4 ctx=4192 arms=["ref", "ref2", "tick", "bp", "bps", "wave"] canary=false
+    arm ref prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+    arm ref verdict: EXACT
+    arm ref2 prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+    arm ref2 verdict: EXACT
+    arm tick prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+    arm tick verdict: EXACT
+    arm bp prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+    arm bp verdict: EXACT
+    arm bps prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+    arm bps verdict: EXACT
+    arm wave prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+    arm wave verdict: EXACT
+    tickshape verdict: ALL ARMS EXACT
+prime-tick-exact-gate: PASS (every prime shape is bit-identical to the solo prime; log /home/avifenesh/projects/wt-decode-exact-641/research/decode-exact-641-20260923/raw/final/gate-ptick-naked.probe.log)
+ptick naked rc=0
+    tickshape: T_a=2048 T_b=2048 T_c=4096 tick=1024 steps=32 join=4 ctx=4192 arms=["ref", "ref2", "tick", "bp", "bps", "wave"] canary=true
+    arm ref prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+    arm ref verdict: EXACT
+    arm ref2 prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+    arm ref2 verdict: EXACT
+    arm tick prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+    arm tick verdict: EXACT
+    arm bp prime: logits bitdiff=248320 maxabs=4.302328e-1 argmax ref=82 arm=82 | h_seed bitdiff=4096 | hidden bitdiff=8388605 maxabs=9.140336e1 first_row=Some(0) | cache digests differ 63/66 first=["L3.k", "L3.v", "L7.k", "L7.v", "L11.k", "L11
+    arm bp verdict: DIFFERS (greedy text diverges at token 2)
+    arm bps prime: logits bitdiff=248320 maxabs=4.302328e-1 argmax ref=82 arm=82 | h_seed bitdiff=4096 | hidden bitdiff=8388605 maxabs=9.140336e1 first_row=Some(0) | cache digests differ 63/66 first=["L3.k", "L3.v", "L7.k", "L7.v", "L11.k", "L1
+    arm bps verdict: DIFFERS (greedy text diverges at token 2)
+    arm wave prime: logits bitdiff=0 maxabs=0.000000e0 argmax ref=82 arm=82 | h_seed bitdiff=0 | hidden bitdiff=0 maxabs=0.000000e0 first_row=None | cache digests differ 0/66 first=[]
+    arm wave verdict: EXACT
+    tickshape verdict: AT LEAST ONE ARM DIFFERS
+prime-tick-exact-gate: CANARY OK (bp and bps DIFFER with B's batch prompt changed; log /home/avifenesh/projects/wt-decode-exact-641/research/decode-exact-641-20260923/raw/final/gate-ptick-canary.probe.log)
+ptick canary rc=0
+   pbg exact-b3-p24 rc=0 ALL GREEN: prime-batch gate (batch=3, uneven lengths) 
+   pbg exact-b4-p1100 rc=0 ALL GREEN: prime-batch gate (batch=4, uneven lengths) 
+   pbg carried-b3-exact rc=0 ALL GREEN: prime-batch gate (batch=3, uneven lengths) 
+   serve-smoke rc=0 serve-smoke: 0 failed
+   fairness rc=0 PRIME-FAIRNESS: long=131072 peers=3x1 bytes=yes peer_p95=52.61/1.54s peer_max=52.61/1.54s tick_max=54112/2456ms long_ttft=54.12/57.92s yields=142 engaged=yes -> PASS
+== done 2026-09-23T09:17:38+03:00

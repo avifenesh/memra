@@ -1,0 +1,7 @@
+tree attn2 d2a97c8268bebb6404bf20125fae4a7aab1a700f + topology-lane.patch 478d1f8a57e6a73e
+build attn2 SERVER_EXIT=0 ENGINE_EXIT=0  gate 7c0b7617f6ce1639
+tpep-gate merged at0 DIGEST output_sha256=c1e0448db09d82969adff4b1b8863457961a07275ffeb7d3d584d31b205aa1c2 state_sha256=c391bfaa3f8503d1dc995eefe4d7ee9da8c672a9c15aa7fb8ebdcfefc1cc2483 PASS plain-only all-layer TP/EP ranks=2 layers=43 numeric_class=dsv4_expert_id_ep_slot_order_f32_rank_reduce no_pp_fallback=true deterministic=true internal_consistency=true refusal_boundary=true oracle_equivalence=false GATE_DONE rc=0 utc=2026-09-24T03:14:10Z
+tpep-gate merged at1 DIGEST output_sha256=c1e0448db09d82969adff4b1b8863457961a07275ffeb7d3d584d31b205aa1c2 state_sha256=c391bfaa3f8503d1dc995eefe4d7ee9da8c672a9c15aa7fb8ebdcfefc1cc2483 PASS plain-only all-layer TP/EP ranks=2 layers=43 numeric_class=dsv4_attention_head_split_row_gather_exact no_pp_fallback=true deterministic=true internal_consistency=true refusal_boundary=true oracle_equivalence=false GATE_DONE rc=0 utc=2026-09-24T03:19:30Z
+DIGEST_EQUAL merged yes
+replay at1b PASS replay correctness and 6 live refusal cells; beginning bounded 20-row comparison cadence=false GATE_DONE rc=0 utc=2026-09-24T03:26:46Z  20 measures
+V3F_DONE

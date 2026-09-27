@@ -1,0 +1,12 @@
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+   Compiling memra-engine v0.138.0 (/root/memra-mtp-depth/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 0.39s
+     Running unittests src/bin/mtp_depth_study.rs (/root/target-learned-d/release/deps/mtp_depth_study-5cbd999b75208443)
+
+running 3 tests
+test history_tests::completed_thinking_preserves_answer_and_only_consumes_two_newlines ... ok
+test history_tests::length_stopped_thinking_is_not_replayed_as_an_answer ... ok
+test history_tests::native_qwen_template_replays_the_correct_channel ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

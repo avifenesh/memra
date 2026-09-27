@@ -1,0 +1,17 @@
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); batch=3
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+seq 0 (T=24): prefill argmax batched=11 individual=11 MATCH
+seq 1 (T=41): prefill argmax batched=269 individual=269 MATCH
+seq 2 (T=58): prefill argmax batched=903 individual=903 MATCH
+seq 0: decode-16 stream MATCH
+seq 1: decode-16 stream MATCH
+seq 2: decode-16 stream MATCH
+bench-run B=3 T=1024 rep=1 order=serial,batch serial_ms=635.994 batch_ms=628.318
+bench-run B=3 T=1024 rep=2 order=batch,serial serial_ms=668.022 batch_ms=627.950
+bench-run B=3 T=1024 rep=3 order=serial,batch serial_ms=684.159 batch_ms=638.901
+bench-run B=3 T=1024 rep=4 order=batch,serial serial_ms=684.250 batch_ms=639.169
+bench-run B=3 T=1024 rep=5 order=serial,batch serial_ms=684.722 batch_ms=651.153
+bench B=3 T=1024 N=5 alternating: serial_wall_ms=684.159 batch_wall_ms=638.901 sequential=4490.2 tok/s batched=4808.3 tok/s (+7.1%)
+ALL GREEN: prime-batch gate (batch=3, uneven lengths)

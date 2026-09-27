@@ -1,0 +1,438 @@
+{
+ "kind": "G2-5090-development",
+ "qualification": false,
+ "capture_seconds": 794.841963177,
+ "scored_samples": 400,
+ "calibration_samples": 128,
+ "thermal": {
+  "samples": 3160,
+  "interval_median_ms": 251.0,
+  "interval_max_ms": 297.0,
+  "power_envelope": {
+   "power.limit": "[N/A]",
+   "power.max_limit": "175.00 W"
+  },
+  "temperature.gpu": {
+   "min": 59.0,
+   "max": 72.0
+  },
+  "clocks.current.sm [MHz]": {
+   "min": 1590.0,
+   "max": 2805.0
+  },
+  "power.draw [W]": {
+   "min": 30.57,
+   "max": 72.54
+  },
+  "pcie.link.gen.current": {
+   "min": 5.0,
+   "max": 5.0
+  },
+  "pcie.link.width.current": {
+   "min": 8.0,
+   "max": 8.0
+  }
+ },
+ "medians": [
+  {
+   "bytes": 4096,
+   "direction": "d2h",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 46213,
+   "median_us_per_copy": 11.979916181593923,
+   "median_GiB_s": 0.3184245098149626,
+   "minimum_visit_ms": 538.905145
+  },
+  {
+   "bytes": 4096,
+   "direction": "d2h",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 46213,
+   "median_us_per_copy": 11.002693278947483,
+   "median_GiB_s": 0.3467061394918247,
+   "minimum_visit_ms": 504.951977
+  },
+  {
+   "bytes": 4096,
+   "direction": "h2d",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 46213,
+   "median_us_per_copy": 10.994908845995715,
+   "median_GiB_s": 0.34695173443659677,
+   "minimum_visit_ms": 502.056292
+  },
+  {
+   "bytes": 4096,
+   "direction": "h2d",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 46213,
+   "median_us_per_copy": 12.237763248436588,
+   "median_GiB_s": 0.3117162225355015,
+   "minimum_visit_ms": 562.863664
+  },
+  {
+   "bytes": 16384,
+   "direction": "d2h",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 45798,
+   "median_us_per_copy": 13.324811498318706,
+   "median_GiB_s": 1.1452051151639862,
+   "minimum_visit_ms": 597.528025
+  },
+  {
+   "bytes": 16384,
+   "direction": "d2h",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 45798,
+   "median_us_per_copy": 11.179885737368444,
+   "median_GiB_s": 1.3648472957590312,
+   "minimum_visit_ms": 502.44043
+  },
+  {
+   "bytes": 16384,
+   "direction": "h2d",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 45798,
+   "median_us_per_copy": 11.351853574391894,
+   "median_GiB_s": 1.3441747370124297,
+   "minimum_visit_ms": 505.8657
+  },
+  {
+   "bytes": 16384,
+   "direction": "h2d",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 45798,
+   "median_us_per_copy": 12.360541519280318,
+   "median_GiB_s": 1.2344887695927107,
+   "minimum_visit_ms": 553.342405
+  },
+  {
+   "bytes": 65536,
+   "direction": "d2h",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 39880,
+   "median_us_per_copy": 18.769629074724172,
+   "median_GiB_s": 3.251884549636984,
+   "minimum_visit_ms": 740.008101
+  },
+  {
+   "bytes": 65536,
+   "direction": "d2h",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 39880,
+   "median_us_per_copy": 12.624495875125376,
+   "median_GiB_s": 4.834686938815918,
+   "minimum_visit_ms": 498.254832
+  },
+  {
+   "bytes": 65536,
+   "direction": "h2d",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 39880,
+   "median_us_per_copy": 15.516611120862589,
+   "median_GiB_s": 3.9335367612148526,
+   "minimum_visit_ms": 601.839501
+  },
+  {
+   "bytes": 65536,
+   "direction": "h2d",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 39880,
+   "median_us_per_copy": 13.898034353059177,
+   "median_GiB_s": 4.391639709579836,
+   "minimum_visit_ms": 550.435324
+  },
+  {
+   "bytes": 262144,
+   "direction": "d2h",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 26027,
+   "median_us_per_copy": 35.346128462750215,
+   "median_GiB_s": 6.907141903763112,
+   "minimum_visit_ms": 906.024425
+  },
+  {
+   "bytes": 262144,
+   "direction": "d2h",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 26027,
+   "median_us_per_copy": 19.251240538671382,
+   "median_GiB_s": 12.681812645615949,
+   "minimum_visit_ms": 499.098405
+  },
+  {
+   "bytes": 262144,
+   "direction": "h2d",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 26027,
+   "median_us_per_copy": 25.819912321819647,
+   "median_GiB_s": 9.455594784781026,
+   "minimum_visit_ms": 656.527108
+  },
+  {
+   "bytes": 262144,
+   "direction": "h2d",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 26027,
+   "median_us_per_copy": 20.57431878433934,
+   "median_GiB_s": 11.86628121228813,
+   "minimum_visit_ms": 531.325917
+  },
+  {
+   "bytes": 1048576,
+   "direction": "d2h",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 10330,
+   "median_us_per_copy": 111.38126461761857,
+   "median_GiB_s": 8.767873644894813,
+   "minimum_visit_ms": 1135.924122
+  },
+  {
+   "bytes": 1048576,
+   "direction": "d2h",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 10330,
+   "median_us_per_copy": 53.574895837366896,
+   "median_GiB_s": 18.22798809249469,
+   "minimum_visit_ms": 547.938014
+  },
+  {
+   "bytes": 1048576,
+   "direction": "h2d",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 10330,
+   "median_us_per_copy": 64.96564714424008,
+   "median_GiB_s": 15.03198561668692,
+   "minimum_visit_ms": 650.144464
+  },
+  {
+   "bytes": 1048576,
+   "direction": "h2d",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 10330,
+   "median_us_per_copy": 48.47982497579865,
+   "median_GiB_s": 20.143693841345403,
+   "minimum_visit_ms": 499.965684
+  },
+  {
+   "bytes": 4194304,
+   "direction": "d2h",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 3158,
+   "median_us_per_copy": 367.29627343255225,
+   "median_GiB_s": 10.635487522655481,
+   "minimum_visit_ms": 1144.221884
+  },
+  {
+   "bytes": 4194304,
+   "direction": "d2h",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 3158,
+   "median_us_per_copy": 184.6912974984167,
+   "median_GiB_s": 21.15019586934816,
+   "minimum_visit_ms": 579.861925
+  },
+  {
+   "bytes": 4194304,
+   "direction": "h2d",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 3158,
+   "median_us_per_copy": 201.7931190626979,
+   "median_GiB_s": 19.357861486318022,
+   "minimum_visit_ms": 627.193207
+  },
+  {
+   "bytes": 4194304,
+   "direction": "h2d",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 3158,
+   "median_us_per_copy": 158.62302137428753,
+   "median_GiB_s": 24.625998697050655,
+   "minimum_visit_ms": 499.815528
+  },
+  {
+   "bytes": 16777216,
+   "direction": "d2h",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 836,
+   "median_us_per_copy": 1629.4453857655503,
+   "median_GiB_s": 9.65854956975317,
+   "minimum_visit_ms": 1080.493785
+  },
+  {
+   "bytes": 16777216,
+   "direction": "d2h",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 836,
+   "median_us_per_copy": 796.4160364832536,
+   "median_GiB_s": 19.64263970364386,
+   "minimum_visit_ms": 588.397699
+  },
+  {
+   "bytes": 16777216,
+   "direction": "h2d",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 836,
+   "median_us_per_copy": 962.35420215311,
+   "median_GiB_s": 16.247242718170337,
+   "minimum_visit_ms": 569.833714
+  },
+  {
+   "bytes": 16777216,
+   "direction": "h2d",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 836,
+   "median_us_per_copy": 602.4146124401914,
+   "median_GiB_s": 25.937300877425887,
+   "minimum_visit_ms": 500.891028
+  },
+  {
+   "bytes": 67108864,
+   "direction": "d2h",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 213,
+   "median_us_per_copy": 5071.2506807511745,
+   "median_GiB_s": 12.324375966320998,
+   "minimum_visit_ms": 1075.817039
+  },
+  {
+   "bytes": 67108864,
+   "direction": "d2h",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 213,
+   "median_us_per_copy": 2829.3239178403755,
+   "median_GiB_s": 22.090083002667654,
+   "minimum_visit_ms": 599.053253
+  },
+  {
+   "bytes": 67108864,
+   "direction": "h2d",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 213,
+   "median_us_per_copy": 4286.427392018779,
+   "median_GiB_s": 14.580938890692419,
+   "minimum_visit_ms": 874.784081
+  },
+  {
+   "bytes": 67108864,
+   "direction": "h2d",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 213,
+   "median_us_per_copy": 2358.7011103286386,
+   "median_GiB_s": 26.49763453634763,
+   "minimum_visit_ms": 501.996636
+  },
+  {
+   "bytes": 268435456,
+   "direction": "d2h",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 54,
+   "median_us_per_copy": 21117.728111111108,
+   "median_GiB_s": 11.83851758876482,
+   "minimum_visit_ms": 1090.724671
+  },
+  {
+   "bytes": 268435456,
+   "direction": "d2h",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 54,
+   "median_us_per_copy": 11663.681444444443,
+   "median_GiB_s": 21.43407544505921,
+   "minimum_visit_ms": 620.864383
+  },
+  {
+   "bytes": 268435456,
+   "direction": "h2d",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 54,
+   "median_us_per_copy": 19786.719175925926,
+   "median_GiB_s": 12.634754807917865,
+   "minimum_visit_ms": 983.328898
+  },
+  {
+   "bytes": 268435456,
+   "direction": "h2d",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 54,
+   "median_us_per_copy": 9404.712638888888,
+   "median_GiB_s": 26.58241792783718,
+   "minimum_visit_ms": 507.372472
+  },
+  {
+   "bytes": 1073741824,
+   "direction": "d2h",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 14,
+   "median_us_per_copy": 83513.20032142857,
+   "median_GiB_s": 11.974176662375955,
+   "minimum_visit_ms": 1134.10205
+  },
+  {
+   "bytes": 1073741824,
+   "direction": "d2h",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 14,
+   "median_us_per_copy": 48225.97989285714,
+   "median_GiB_s": 20.735721402269014,
+   "minimum_visit_ms": 654.085049
+  },
+  {
+   "bytes": 1073741824,
+   "direction": "h2d",
+   "arm": "pageable",
+   "n": 10,
+   "copies_per_visit": 14,
+   "median_us_per_copy": 78894.55046428571,
+   "median_GiB_s": 12.675157364150833,
+   "minimum_visit_ms": 1009.103801
+  },
+  {
+   "bytes": 1073741824,
+   "direction": "h2d",
+   "arm": "pinned-cacheable",
+   "n": 10,
+   "copies_per_visit": 14,
+   "median_us_per_copy": 37623.260642857145,
+   "median_GiB_s": 26.57930599970511,
+   "minimum_visit_ms": 525.747957
+  }
+ ]
+}

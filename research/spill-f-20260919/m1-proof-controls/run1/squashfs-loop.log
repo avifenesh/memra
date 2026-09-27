@@ -1,0 +1,8 @@
+M1-PROOF verdict=FAIL class=None reasons=6
+  A2: path is not writable
+  A3: filesystem type 'squashfs' is not block-traceable here (admitted: ext4, xfs)
+  A4: loop0 is a loop device (a loop layer is not the spill path's native storage, whatever backs it)
+  A5: no controller to check
+  A7: free 0 bytes < reserve 21474836480
+  A6: not run (--bind-bytes 0); a PASS requires the I/O binding
+exit=3

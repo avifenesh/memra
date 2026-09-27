@@ -1,0 +1,8 @@
+START utc=2026-09-23T15:18:21Z bin=/root/lane/target-tpep3/release/memra-server env=MEMRA_DSV4_TOPOLOGY=tp_ep MEMRA_DSV4_EP=pair MEMRA_ENV_AUDIT=warn
+READY after=227s port=42335
+CELL warmup c=1 ok=1/1 agg=47.37 tok/s decode_p50=65.59 tok/s ttft_p50=202 ms tpot_p50=15.25 ms errs=[]
+CELL greedy-c1 c=1 ok=8/8 agg=62.66 tok/s decode_p50=65.02 tok/s ttft_p50=164 ms tpot_p50=15.38 ms errs=[]
+CELL sampled-c1 c=1 ok=8/8 agg=57.02 tok/s decode_p50=59.06 tok/s ttft_p50=166 ms tpot_p50=16.93 ms errs=[]
+CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=62.53 tok/s decode_p50=64.95 tok/s ttft_p50=165 ms tpot_p50=15.40 ms errs=[]
+CELLS_DONE utc=2026-09-23T15:23:34Z
+TERMINAL rc=0 utc=2026-09-23T15:23:37Z

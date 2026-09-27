@@ -1,0 +1,35 @@
+diff --git a/crates/memra-engine/src/dsv4_gpu.rs b/crates/memra-engine/src/dsv4_gpu.rs
+index 92b51b990..6f7147716 100644
+--- a/crates/memra-engine/src/dsv4_gpu.rs
++++ b/crates/memra-engine/src/dsv4_gpu.rs
+@@ -14665,6 +14665,12 @@ impl Dsv4Gpu {
+     }
+ }
+ 
++/// Lane-only A/B read, never merged: `MEMRA_DSV4_DIET_AB=t1` keeps the diet on t=1 rows only.
++fn diet_ab_t1_only() -> bool {
++    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    *V.get_or_init(|| std::env::var("MEMRA_DSV4_DIET_AB").as_deref() == Ok("t1"))
++}
++
+ impl Dsv4Gpu {
+     /// Gate selector for fresh eager calls/captures. Drain before switching;
+     /// retained graphs contain fixed functions and do not read this selector.
+@@ -14758,7 +14764,7 @@ impl Dsv4Gpu {
+                 st, h_ptr, &vws.mixes, scale_dev, base_dev, hidden, iters, hc_eps,
+             )?;
+         }
+-        if self.small_kernel_diet && t == 1 && !host_math {
++        if self.small_kernel_diet && !host_math && (t == 1 || !diet_ab_t1_only()) {
+             unsafe {
+                 ck(
+                     "small HC f32 fixed order",
+@@ -15351,7 +15357,7 @@ impl Dsv4Gpu {
+         if t == 1 && !host_math && self.small_component_claim(st.dev, 1) {
+             self.small_component_norm(st, &vws.qr, &layer.q_norm, q_lora, eps)?;
+         }
+-        if self.small_kernel_diet && t == 1 && !host_math {
++        if self.small_kernel_diet && !host_math && (t == 1 || !diet_ab_t1_only()) {
+             unsafe {
+                 ck(
+                     "small Q norm pack f32 fixed order",

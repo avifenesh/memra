@@ -1,0 +1,207 @@
+# WP-A day 42: OWED item 4 again, design S2 (S's revision, DAY40 section 7)
+
+Lane `lane/spill-a-20260919`, worktree `wt-spill-a`. Resync (the lead's resume message): `git fetch`; `origin/main`
+`5d653e851` (integ59, #723, merged this lane's tip `e9c9c062c`) merged into the lane (a fast-forward). Ruling 54 read
+(`research/spill-lead-20260919/INTEGRATION-DAY12.md`): S refuted and reverted; item 4 open under DAY40 section 7's
+revision; order of work item 4, item 15 (both arms), the 9950X-class fill reading, the 5090 hump replicate, items 6 to 14.
+Every cell `executed-not-qualified`. Behind `MEMRA_KV_HOST_CONTRACTS` (default OFF).
+
+## 1. Pre-registration (committed before any S2 code)
+
+**What S taught** (DAY40 sections 5 and 7). Its correctness held on the 5090 (every span digest bitwise, both red arms
+witnessed by exactly their span, identity, failure and hit gates green). Its price did not: about 3.1 ms of copy-stream
+work on the demote's landing path (48 source digests 0.61 ms, 48 landed digests 2.49 ms, 96 launches) pushed the landing
+past the first tick-top poll on 73 of 90 demotes (wall +40.25 / +39.30 ms), and the kernels beside the intruder's last
+steps cost its e2e +1.16 to +1.53 ms.
+
+**Design S2** (on G4's one side stream; everything below is on the copy stream):
+
+1. **One batched kernel.** `span_receipt_digests(SpanItems items, u64* lanes)` in `cu/tier_receipt.cu`: the four-lane
+   program of `d2d_receipt_digest` (the CPU oracle `memra_tier::conformance::receipt_digest`), one item per `blockIdx.y`
+   (up to 64 items per launch, their device addresses and byte lengths passed by value), a grid-stride loop over the
+   item's words in `blockIdx.x`, one atomic per lane per block into the item's 32-byte lanes. Order-independent wrapping
+   sums, so the device answer is the oracle's per item. A `docs/KERNELS.md` row.
+2. **The source digests stay before the copies, in one launch.** `submit_d2h_spans`, behind its producer fence and the
+   lanes' zero-fill: one launch (per 64 spans) over every span's device source, then the span copies and their events
+   exactly as G4. **The batch lands with its copies** (G4's landing; nothing of the receipt is on it after this launch,
+   about 0.15 ms for the 9B's 52.7 MB and 0.6 ms for the 27B's 157 MB of device memory).
+3. **The landed digests leave the landing path.** `take_d2h_spans` (the landing observed) enqueues, on the copy stream,
+   the `span-flip-landed` flip under its fault, then one launch (per 64) over every span's pinned staging through its
+   device address, the lanes' D2H into a pooled twin and the span receipt's event, and returns the spans with a span
+   receipt id. `d2h_span_receipt(id)`: `Ok(None)` while its event is pending, `Ok(Some(pairs))` once observed (each
+   span's `(source, landed)` digests; the entry leaves the engine, its twin back to the pool); `d2h_span_receipt_wait(id)`
+   for a `Block` settle; `d2h_span_receipt_abandon(id)` for a demote that ends unpublished (the entry is reaped when its
+   event is observed, at the next span receipt call; the engine's drop leaks what is left, as it leaks any in-flight
+   input).
+4. **Why the sources and the staging may leave at the take** (stated so its census can hold it): the sources were
+   digested before their copies, so the source digest is complete when the batch lands; every writer of a staging
+   buffer is on the copy stream (the demote's span copies, the promote's fill host function), so a staging buffer the
+   set hands out again is written only behind the landed digest in stream order. The hash helper's CPU read of the
+   staging runs beside the landed digest's device read: two readers, no writer.
+5. **The H2D destination digests in one launch, on the landing.** `attach_h2d_spans`: after the span copies, one launch
+   (per 64) over every destination, the lanes' D2H and the receipt event; the H2D batch lands with them (as S; S's (d)
+   read PIN +0.50 / +0.30 ms there with 48 launches).
+
+**The server.**
+
+6. **The demote's publication waits for the span receipt, its landing does not.** The settle takes the spans back at
+   the landing (the staging to the helper as today) and keeps the span receipt id (with the spans' slots) on the
+   `Hashing` phase. Each `Hashing` poll first polls the span receipt: pending, the entry stays `Hashing` (the same
+   10 s deadline; past it, or under a `Block` settle after `d2h_span_receipt_wait`, a receipt that never landed latches
+   the tier typed: `tier span receipt never landed: ticket seq=S ..`); observed, the pairs are kept and the poll goes on
+   to the helper's reply. On the reply, BEFORE any staging goes back to the set: a span whose pair differs refuses the
+   demote typed (`demote failed (tier image <slot> span landed bytes differ from their device source); nothing
+   published`), the staging returned, the tier on; equal pairs keep each source digest with the published entry
+   (`HostPrefixEntry::span_digests`, S's field). Every other exit of a demote holding a span receipt abandons it.
+7. **The promote**, as S: the destination digests against the entry's kept source digests before the reader wait's
+   publication; a difference takes the KV receipt mismatch's path (the entry dropped, the cold path serves); an entry
+   without a kept digest (a handoff import) keeps the weak span receipt.
+8. **Red arms** on the existing `MEMRA_KV_HOST_FAULT` row: `span-flip-landed` (the flip at the take, before the landed
+   digest) and `span-flip-resident` (S's); fault gate cells `span-flip-landed` and `span-flip-resident` (S's cells, with
+   the settle helper taking the cell's refusal words).
+9. **The tier rule** `span_receipt`, revised for the split landing: a D2H span batch lands with its copies; the demote
+   publishes only after its span receipt is observed and only if every pair agrees; an H2D span batch lands with its
+   destination digests and the promote publishes only if they equal the kept sources. Red arms: a caller that publishes
+   before the span receipt is observed, and one that publishes a differing pair. CPU binding.
+10. **Censuses**: the kernel's one launch per 64 spans in each place; the D2H order (fence, zero-fill wait, source
+    launch, copies, events) and the take's order (flip, landed launch, lanes, event); the Hashing step's order (span
+    receipt poll before the reply; the pair check before the first `staging_put`); every exit that abandons.
+
+**Acceptance, stated before any code** (each card its own; the bounds are S's, unchanged):
+
+- (a) Semantics: the tier rule and its red arms; native cells (the batched kernel bitwise the CPU oracle per item on
+  1 B to 3 MiB + 3 at offsets 0 to 7, 1 to 70 items, device and pinned host memory; the D2H span cell's pairs and its
+  flip arm, span 0 alone; the H2D span cells' destination digests); the fault gate's two cells green.
+- (b) The gate set ALL GREEN (identity x4, failure OFF and ON, the fault gate default and plain with every cell, twin
+  OFF and ON on the target card, hit OFF and ON) and the unit cells.
+- (c) Demote price: S2 against G4 (DAY38 section 3's demote A/B, 20 boots): per order the steady demotes' wall median at
+  most +8.0 ms and the demoting intruder's e2e median at most +1.0 ms.
+- (d) Promote price: S2 against G4 (the promote A/B, 20 boots, `--n 5`): per order PIN median at most +1.0 ms and the
+  promoting intruder's e2e median at most +1.0 ms.
+- (e) The hump clause on S2 (two S2 boots, the G'' control beside them, 16 demote runs each): median HUMP at most 0.15
+  ms; each boot's start temperature and SM clock and the hold's 250 ms telemetry recorded (ruling 54's regime record).
+- Reading, no clause: the copy stream's side work per demote from one traced boot of each arm (DAY40 section 6's
+  reader, its grouping fixed to S2's order).
+
+**Predictions.** (c): the copy phase lands at the first poll as G4's (8.4 ms) with the source launch's 0.15 ms added;
+the wall within +2 ms; the e2e within +0.5 ms (the landed launch runs about 8 ms later, at the copy-settle poll). (d):
+PIN about +0.2 ms. (e): flat, as G4.
+
+**What each card decides.** Each card its own (a) to (e).
+
+**Budget.** 1.5 agent-days: the kernel and the engine 0.4, the server and the tier rule 0.4, the 5090 cells 0.4, the
+target sitting 0.3.
+
+## 1a. Amendments to section 1's mechanics, before any S2 code (no bound, clause or rule changes)
+
+Reading the settle's exits before writing the code found that section 1's step 3 (the landed digests enqueued inside
+`take_d2h_spans`) would leave a device read of the staging pending across every refusal exit of the settle and of its
+`Done` arm. Those exits put the staging back into the set, and a latched set frees it (`staging_put` after the latch,
+`clear` at the latch). DAY37's probe says `cuMemFreeHost` waits for the context's queued work, but that is a driver
+behavior, not a construction, and the design does not rely on it. Three mechanics change. The acceptance of section 1
+((a) to (e), the bounds, the predictions, what each card decides) is unchanged.
+
+1. **The take and the seal are two calls.** `take_d2h_spans` returns the landed spans and a span receipt id. The id
+   holds the batch's lanes: the source digests are complete, because the batch landed after them in stream order.
+   Nothing more is enqueued at the take. The landed digests are enqueued by `seal_d2h_span_receipt(id, &staging)`,
+   called in the `Done` arm at the hand-off to the hash helper, after every exit of the settle and of the arm that
+   returns staging to the set. The seal enqueues one batched launch (per 64) over each span's pinned staging through its
+   device address (the count and every length checked against the take's), the lanes' D2H into a pooled twin, and the
+   receipt event. At most one span receipt is live per engine: a take discards any earlier one. An unsealed one drops at
+   once (its lanes are complete and nothing else was enqueued on them). A sealed one moves to a reap list, and its lanes
+   and twin free only once its event is observed. Any span receipt call and the release paths reap. The engine's drop
+   leaks a sealed receipt it has not observed, the `Entry` rule ("a leak, never a free").
+2. **`span-flip-landed` flips at the submit.** The flip is enqueued on the copy stream after span 0's copy and before
+   span 0's event, so the landing covers it. The landed bytes carry the flip for the helper's copy too, the landed
+   digest witnesses it, and no device write runs beside the helper's CPU read. Section 1 step 8 said "at the take".
+3. **The staging under a sealed receipt is guarded.** From the seal, each staging buffer travels (to the helper and
+   back) as a guard that shares a seen flag with the demote's `Hashing` state. The owner thread sets the flag when it
+   observes the span receipt. Before that, any drop of the guard, on the helper (the helper gone, a discarded reply) or
+   on the owner (a latch exit), LEAKS the buffer (the M' lease guard's rule). After it, a drop frees normally. The owner
+   returns a buffer to the set only through the guard after the observation. So no pinned free and no reuse of a
+   staging buffer can run under the landed digest's read, by construction. A buffer leaked this way stays allocated
+   with its charge released at the latch, the lease guard's shape.
+
+Step 10's census adds: no exit between the take and the seal meets a pending read (the seal is the hand-off's last step
+before `submit`); the guard's only unguarded exit is after the observation; the take's discard of an earlier receipt;
+the reap on observation only.
+
+## 2. S2 as built (`7ce3f3243`), its CPU cells, and its sittings pre-registered
+
+- **Built** (section 1 with 1a's mechanics): `span_receipt_digests` (`cu/tier_receipt.cu`; the day-22 body moved into
+  one shared device function, `memra_receipt_lanes`, so `d2d_receipt_digest` and the new kernel run one program);
+  `CudaTransfers::span_digests_on` (one launch per 64 spans), `flip_staging_on`; `take_d2h_spans` returns
+  `TakenD2hSpans { spans, receipt }`; `seal_d2h_span_receipt`, `d2h_span_receipt`, `d2h_span_receipt_wait`,
+  `d2h_span_receipt_abandon` (one live receipt, a reap list, `SpanReceipt`'s drop leaking a sealed unobserved one); the
+  D2H landing on the copies alone again; the H2D destination digests in one launch. Server: `ContractSettle::Done`
+  carries the unsealed id; the `Done` arm guards the staging (`HostStagingHeld`, `HostStagingQuiet`), seals as the last
+  step before the job, gives the receipt back on every exit before it; the `Hashing` step reads the receipt before the
+  reply, sets `quiet` on its observation, checks the pairs before the first staging return and keeps each source digest
+  (`HostPrefixEntry::span_digests`), and its latch and the shutdown drain give the receipt back. The promote's check and
+  both red arms are S's; `span-flip-landed` flips at the submit. Tier rule `span_receipt` revised (rules 1 to 4, three
+  red arms). The engine re-exports the CPU oracle for the worker's cells.
+- **CPU cells, green** (under the CPU quota): engine lib `552 passed; 0 failed; 44 ignored` (the censuses
+  `span_receipt_rules_are_as_stated`, `one_side_stream_beside_the_owner` (10 copy-stream helper calls, two early readers,
+  six direct launches), `native_cells_own_their_context` at 14 cells); server lib `912 passed; 0 failed; 24 ignored`
+  (the new `day42_the_span_receipt_is_required_before_the_publication`, the day-31 staging census with the arm's two
+  unstage exits again); the tier crate (`span_receipt_bindings` 4 passed, every other suite green); clippy
+  `-D warnings` on the three crates, `cargo fmt --check`, `git diff --check`, `tools/check-flags.sh` clean.
+- **The 5090 is down, found before its cells.** `nvidia-smi` at 02:10Z reads the card `ERR!` with `[GPU requires
+  reset]` and no compute process; the kernel log, verbatim: `NVRM: Xid (PCI:0000:02:00): 119, pid=3398639,
+  name=nvidia-smi, Timeout after 6s of waiting for RPC response from GPU0 GSP! Expected function 76 (GSP_RM_CONTROL)`
+  (01:25:24Z, then 01:25:30Z, and `pid=2055, name=nvidia-powerd` at 01:25:37Z), then `NVRM: Xid (PCI:0000:02:00): 154,
+  GPU recovery action changed from 0x0 (None) to 0x1 (GPU Reset Required)`, and `Check failed: Reset required
+  [NV_ERR_RESET_REQUIRED]` every few seconds since. The 5090 lock file was last touched at 01:25Z. This lane ran nothing
+  on the card after its day-40 trace cell (before the S revert, 00:07Z). A reset or a reboot is the owner's; the 5090
+  half of S2 waits for it.
+- **The 5090 sitting, pre-registered** (`rtx5090-day42/`): `build.sh <out> b4816eda8` (s2 the tip; g4 the lane before
+  S2's code, its crates equal to main `5d653e851`; gpp `358749c9f`, the 5090's day-38 G'' control; the scratch
+  worktree and target on disk, removed at the end), `card-run.sh` (section 1's (a) to (e): the unit cells, the demote and
+  promote A/Bs g4 against s2 read by `day42-reading.py`, the hump cell xgpp xs2 xs2 xgpp with each boot's start
+  temperature and SM clock, the gates on s2), `trace.sh` (the reading, `day42-trace-reading.py`).
+- **The target sitting, pre-registered** (`pro-single-s2/`, one RTX PRO 6000 Blackwell, the collector's hold, receipts
+  under `/root/spill-receipts/a-s2`): `build.sh <tip> b4816eda8` (s2, g4 and gpp from one clone, the tree checked back
+  at the tip after each), `driver.sh` (`ab-demote.sh` (c), `ab-promote.sh` (d), `hump.sh` (e) with the regime record,
+  `gates.sh` (a) and (b) with twin OFF and ON, `hitgate.sh`, `unit-cells.sh` (day 42's censuses added), `trace.sh`).
+  Any host class; the CPU class matters only for the fill reading (item 3's owed 9950X-class cell rides a separate
+  sitting, DAY43 section 1).
+
+## 3. S2 on the target card, as it ran (`pro-single-s2/`, one RTX PRO 6000 Blackwell Workstation Edition on a host whose `lscpu` reads `AMD Ryzen 9 9950X3D2 16-Core Processor`, 32 CPUs, 124 GB)
+
+- The run (`pro-single-day42/run-all.sh c62a34175 b4816eda8`, every build before any cell): `s2 build rc=0` at 02:59:48Z;
+  s2 `bf1ce8372148d764..`, g4 `edc411520ecb45f8..`, gpp `b1d527cda6904c9f..`; markers `s2 span-receipt-sealed
+  wording: 1`, `g4 .. 0`, `gpp .. 0`. The build notes `the s2 rebuild differs in bytes` (the tip rebuilt after the arms,
+  for the test binaries, is not byte-identical to the first build; every cell ran `bins/s2`, the first). Model sha256
+  `1facf36c..e024a`. Receipts banked in `pro-single-s2/box-readings/` (the full mirror follows the box's last sitting).
+- **(c), verbatim** (`demote/reading-day42-demote.log`, `ab-demote rc=0` 03:27:10Z; 20 boots, 20 of 20 replays): `DAY42
+  S2 C order=o1 wall g4=101.45 s2=104.60 s2-minus-g4=+3.15 rule <=+8.0 | e2e g4=176.08 s2=179.25 s2-minus-g4=+3.16 rule
+  <=+1.0 -> FAIL`; `DAY42 S2 C order=o2 wall g4=101.55 s2=104.60 s2-minus-g4=+3.05 rule <=+8.0 | e2e g4=176.25 s2=179.32
+  s2-minus-g4=+3.06 rule <=+1.0 -> FAIL`; **`DAY42 S2 DEMOTE -> FAIL`**. The copy settle reads 0.27 (g4) and 0.30 (s2) ms,
+  the helper 84.6 and 85.1 ms (`b01`, `b02`), both publishing after 2 polls; the tenant's stall median per boot 64.0 to
+  64.4 (g4) and 65.8 to 66.2 (s2) ms.
+- **(d), verbatim** (`promote/reading-day42-promote.log`, 03:44:29Z): `DAY42 S2 D order=o1 pin g4=13.50 s2=13.70
+  s2-minus-g4=+0.20 rule <=+1.0 | e2e g4=102.23 s2=102.56 s2-minus-g4=+0.33 rule <=+1.0 -> PASS`; `order=o2 pin
+  g4=13.50 s2=13.60 .. +0.10 .. e2e g4=102.24 s2=102.54 .. +0.30 .. -> PASS`; `DAY42 S2 PROMOTE -> PASS`.
+- **(e), verbatim** (`hump/reading-hump.log`, 03:49:36Z): `HUMP arm=xs2 boots=2 median-hump=+0.027 humps=False`, the
+  control `HUMP arm=xgpp boots=2 median-hump=+0.514 humps=True`: PASS. Boot starts 71 to 73 C at 2805 to 2820 MHz.
+- **(a) and (b)**: the gates on s2, each `.exit` 0, verbatim: `KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)` x4,
+  `KV-HOST-SPILL FAILURE GATE: ALL GREEN` OFF and ON, `KV-HOST-CONTRACT-FAULT GATE: ALL GREEN` default and plain (the
+  `span-flip-landed` and `span-flip-resident` cells green in both), `PREFIX-NEWEST-TURN-FITS: .. cached_ok=7/7 ..` OFF
+  and ON, `SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)` OFF and ON; the unit cells `unit-cells parallel=3/3
+  engine-serial-rc=0 door-rc=0 cpu-rc=0 engine-census-rc=0 tier-rc=0` (the native cells `14 passed`, the batched
+  kernel's bitwise cell among them).
+- **The reading, and where the price sits** (`trace/nsys-*/reading.log`, and `box-readings/owner-during-landed.log`
+  from `pro-single-s2/owner-during-landed.py` over the same sqlite exports, a reading written after the result): `TRACE
+  steady N=6 .. landed_wall_ms=2.97 .. seal_delay_ms=8.39 receipt_after_copies_ms=11.39` (s2; g4 has no span kernel).
+  The landed digests are two launches, `grid=192x64` and `grid=192x32` (12288 and 6144 blocks), 1.05 and 1.88 to 1.92
+  ms, and **during every one of them the owner stream runs no kernel at all**: `landed dur=1.88 owner busy in=0.00ms n=0 |
+  before busy=1.84ms n=185`. The source digests (`192x64`, `192x32`, 0.05 to 0.09 ms) do the same for their length. A
+  grid of that size fills every SM with blocks that wait on PCIe reads of pinned host memory (157 MB), and the owner's
+  kernels do not start until it drains: about 3 ms of owner stall per demote, which the intruder's e2e (+3.1 ms), the
+  publication (+3.1 ms) and the tenant's stall (+1.8 ms) all carry. S2's receipt left the landing path as designed
+  (the copy settle moved 0.03 ms); its grid shape is the price.
+
+**Verdict, as registered: S2 FAILS (c) on the target card and is refuted.** Its correctness cells are green on the
+target ((a), (b), (e) and every gate); its price clause (c) is not. S2 is reverted in one commit with these receipts
+banked (the code returns to `b4816eda8`'s, G4 and T), its 5090 sitting is cancelled, and the revision is pre-registered
+(`DAY46.md`) before its code: the span digests' grid bounded so a launch never fills the card.

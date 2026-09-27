@@ -1,0 +1,9 @@
+DAY52 VIEW day=45 reader=day45-fill.py arms=off<-off,i9g<-i9g,fill<-fill rc=1
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day45-fill.py", line 120, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day45-fill.py", line 67, in main
+    check(r["physical_reads"] == r["trace_misses"], f"{label} physical_reads != hit=false lines")
+          ~^^^^^^^^^^^^^^^^^^
+KeyError: 'physical_reads'

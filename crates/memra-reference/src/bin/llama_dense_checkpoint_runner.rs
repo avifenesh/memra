@@ -139,7 +139,7 @@ fn self_test() -> Result<(), Fail> {
 fn run_checkpoint(dir: &Path, token_ids: &[u32], out: &Path) -> Result<(), Fail> {
     let started = Instant::now();
     let config_text = std::fs::read_to_string(dir.join("config.json"))?;
-    let config = ModelConfig::from_hf(&HfConfig::parse(&config_text));
+    let config = ModelConfig::from_hf(&HfConfig::try_parse(&config_text)?);
     if config.arch != Arch::Llama {
         return Err(format!("checkpoint arch {:?} is not the llama program", config.arch).into());
     }

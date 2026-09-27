@@ -1,0 +1,14 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.17s
+== health-fault-gate: arms=i port=8189 out=/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day49/g1 ==
+--- arm i: the batched chunk's OOM recovers with MEMRA_BATCH_OOM_RECOVER=1 (control, green, red twin) ---
+  [i-ctrl] ready after 4564 ms (pid 3503242)
+  [i-ctrl] exit 0
+  [i] ready after 3262 ms (pid 3503755)
+  [i] exit 0
+HFG (i) batch-oom-recovers: retry_lines=1 retried_ok=1 completed=3/3 error_events=0 http_5xx=0 panic_lines=0 digests={r0:20e4033303b76715,r1:16e2547b5b1fafb5,r2:1d620d3efb9e2f90} control={r0:20e4033303b76715,r1:16e2547b5b1fafb5,r2:1d620d3efb9e2f90} control_completed=3/3 -> PASS
+  [i-red] ready after 3200 ms (pid 3504237)
+  [i-red] exit 0
+HFG (i-red) batch-oom-retry-also-fails: retry_lines=1 retry_failed=1 completed=0/3 error_events=3 http_5xx=0 panic_lines=0 green_assertion_fired=true -> PASS
+health-fault-gate: arms=i pass=2 documented=0 fail=0 receipts=/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day49/g1

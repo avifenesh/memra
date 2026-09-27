@@ -1,0 +1,44 @@
+warning: unused import: `std::os::fd::AsRawFd`
+  --> crates/memra-gguf/src/source.rs:20:5
+   |
+20 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-gguf` (lib) generated 1 warning (run `cargo fix --lib -p memra-gguf` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running tests/model_semantics.rs (target/debug/deps/model_semantics-43be92d572048f4e)
+
+running 3 tests
+test canonical_compiler_refuses_unrepresented_activation ... FAILED
+test canonical_compiler_refuses_unrepresented_sliding_window ... FAILED
+test canonical_compiler_refuses_unrepresented_rope_scaling ... FAILED
+
+failures:
+
+---- canonical_compiler_refuses_unrepresented_activation stdout ----
+
+thread 'canonical_compiler_refuses_unrepresented_activation' (18705459) panicked at crates/memra-gguf/tests/model_semantics.rs:15:41:
+must not substitute a different program: ModelPlan { arch: Llama, hidden_size: 8, vocab_size: 32, context_length: 8192, embedding_scale: 1.0, vision: None, multimodal: None, layers: [LayerPlan { index: 0, pre_attention_norm: NormPlan { kind: Rms, epsilon: 1e-6, weight_transform: Identity }, attention: Full(FullAttentionPlan { query_heads: 2, kv_heads: 1, key_head_dim: 4, value_head_dim: 4, rope: RopePlan { dimensions: 4, base: 10000.0, factors: None }, qk_norm: Absent, output_gate: None, scale: InverseSqrtKeyDim, value_projection: Separate, value_norm: None }), pre_mlp_norm: NormPlan { kind: Rms, epsilon: 1e-6, weight_transform: Identity }, mlp: Dense(DenseMlpPlan { intermediate_size: 16, activation: Silu }), residual: Serial, state: KvCache { key_width: 4, value_width: 4 }, sparse_overlay: None, ple: None }, LayerPlan { index: 1, pre_attention_norm: NormPlan { kind: Rms, epsilon: 1e-6, weight_transform: Identity }, attention: Full(FullAttentionPlan { query_heads: 2, kv_heads: 1, key_head_dim: 4, value_head_dim: 4, rope: RopePlan { dimensions: 4, base: 10000.0, factors: None }, qk_norm: Absent, output_gate: None, scale: InverseSqrtKeyDim, value_projection: Separate, value_norm: None }), pre_mlp_norm: NormPlan { kind: Rms, epsilon: 1e-6, weight_transform: Identity }, mlp: Dense(DenseMlpPlan { intermediate_size: 16, activation: Silu }), residual: Serial, state: KvCache { key_width: 4, value_width: 4 }, sparse_overlay: None, ple: None }], output_norm: NormPlan { kind: Rms, epsilon: 1e-6, weight_transform: Identity }, exit_mixer: None, logits: [], mtp_blocks: [], drafter: None, draft_source: None, sampling_defaults: None, partition_boundaries: [1] }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- canonical_compiler_refuses_unrepresented_sliding_window stdout ----
+
+thread 'canonical_compiler_refuses_unrepresented_sliding_window' (18705461) panicked at crates/memra-gguf/tests/model_semantics.rs:15:41:
+must not substitute a different program: ModelPlan { arch: Llama, hidden_size: 8, vocab_size: 32, context_length: 8192, embedding_scale: 1.0, vision: None, multimodal: None, layers: [LayerPlan { index: 0, pre_attention_norm: NormPlan { kind: Rms, epsilon: 1e-6, weight_transform: Identity }, attention: Full(FullAttentionPlan { query_heads: 2, kv_heads: 1, key_head_dim: 4, value_head_dim: 4, rope: RopePlan { dimensions: 4, base: 10000.0, factors: None }, qk_norm: Absent, output_gate: None, scale: InverseSqrtKeyDim, value_projection: Separate, value_norm: None }), pre_mlp_norm: NormPlan { kind: Rms, epsilon: 1e-6, weight_transform: Identity }, mlp: Dense(DenseMlpPlan { intermediate_size: 16, activation: Silu }), residual: Serial, state: KvCache { key_width: 4, value_width: 4 }, sparse_overlay: None, ple: None }, LayerPlan { index: 1, pre_attention_norm: NormPlan { kind: Rms, epsilon: 1e-6, weight_transform: Identity }, attention: Full(FullAttentionPlan { query_heads: 2, kv_heads: 1, key_head_dim: 4, value_head_dim: 4, rope: RopePlan { dimensions: 4, base: 10000.0, factors: None }, qk_norm: Absent, output_gate: None, scale: InverseSqrtKeyDim, value_projection: Separate, value_norm: None }), pre_mlp_norm: NormPlan { kind: Rms, epsilon: 1e-6, weight_transform: Identity }, mlp: Dense(DenseMlpPlan { intermediate_size: 16, activation: Silu }), residual: Serial, state: KvCache { key_width: 4, value_width: 4 }, sparse_overlay: None, ple: None }], output_norm: NormPlan { kind: Rms, epsilon: 1e-6, weight_transform: Identity }, exit_mixer: None, logits: [], mtp_blocks: [], drafter: None, draft_source: None, sampling_defaults: None, partition_boundaries: [1] }
+
+---- canonical_compiler_refuses_unrepresented_rope_scaling stdout ----
+
+thread 'canonical_compiler_refuses_unrepresented_rope_scaling' (18705460) panicked at crates/memra-gguf/tests/model_semantics.rs:15:41:
+must not substitute a different program: ModelPlan { arch: Llama, hidden_size: 8, vocab_size: 32, context_length: 8192, embedding_scale: 1.0, vision: None, multimodal: None, layers: [LayerPlan { index: 0, pre_attention_norm: NormPlan { kind: Rms, epsilon: 1e-6, weight_transform: Identity }, attention: Full(FullAttentionPlan { query_heads: 2, kv_heads: 1, key_head_dim: 4, value_head_dim: 4, rope: RopePlan { dimensions: 4, base: 10000.0, factors: None }, qk_norm: Absent, output_gate: None, scale: InverseSqrtKeyDim, value_projection: Separate, value_norm: None }), pre_mlp_norm: NormPlan { kind: Rms, epsilon: 1e-6, weight_transform: Identity }, mlp: Dense(DenseMlpPlan { intermediate_size: 16, activation: Silu }), residual: Serial, state: KvCache { key_width: 4, value_width: 4 }, sparse_overlay: None, ple: None }, LayerPlan { index: 1, pre_attention_norm: NormPlan { kind: Rms, epsilon: 1e-6, weight_transform: Identity }, attention: Full(FullAttentionPlan { query_heads: 2, kv_heads: 1, key_head_dim: 4, value_head_dim: 4, rope: RopePlan { dimensions: 4, base: 10000.0, factors: None }, qk_norm: Absent, output_gate: None, scale: InverseSqrtKeyDim, value_projection: Separate, value_norm: None }), pre_mlp_norm: NormPlan { kind: Rms, epsilon: 1e-6, weight_transform: Identity }, mlp: Dense(DenseMlpPlan { intermediate_size: 16, activation: Silu }), residual: Serial, state: KvCache { key_width: 4, value_width: 4 }, sparse_overlay: None, ple: None }], output_norm: NormPlan { kind: Rms, epsilon: 1e-6, weight_transform: Identity }, exit_mixer: None, logits: [], mtp_blocks: [], drafter: None, draft_source: None, sampling_defaults: None, partition_boundaries: [1] }
+
+
+failures:
+    canonical_compiler_refuses_unrepresented_activation
+    canonical_compiler_refuses_unrepresented_rope_scaling
+    canonical_compiler_refuses_unrepresented_sliding_window
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-gguf --test model_semantics`

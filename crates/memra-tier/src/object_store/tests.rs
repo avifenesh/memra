@@ -2,6 +2,68 @@ use super::*;
 use crate::contracts::{Deadline, Priority, TierBudget};
 use std::sync::Arc;
 
+#[cfg(unix)]
+#[test]
+fn gc_gate_scope_ends_even_while_a_child_holds_copied_descriptors() {
+    use std::process::{Command, Stdio};
+    use std::time::Duration;
+
+    let directory = std::env::temp_dir().join(format!("memra-gc-fd-copy-{}", std::process::id()));
+    fs::create_dir(&directory).unwrap();
+    let old_backend = FileBackend::open(&directory).unwrap();
+    let gate = lock_gc_gate(&directory).unwrap();
+    // A concurrent fork before exec temporarily copies all open descriptors.
+    // Keep those same open-file descriptions in a bounded child deliberately,
+    // making the otherwise tiny close-on-exec window deterministic and safe.
+    let mut child = Command::new("/bin/sh")
+        .args(["-c", "printf ready; exec sleep 30"])
+        .stdin(Stdio::from(gate.try_clone().unwrap()))
+        .stderr(Stdio::from(old_backend.ownership.try_clone().unwrap()))
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
+    let reader = std::thread::spawn(move || {
+        let mut bytes = [0; 5];
+        let result = stdout.read_exact(&mut bytes).map(|()| bytes);
+        let _ = ready_tx.send(result);
+    });
+    let ready = ready_rx.recv_timeout(Duration::from_secs(5));
+    let blocked_during_scope = matches!(FileBackend::open(&directory), Err(Error::Busy));
+    drop(gate);
+    drop(old_backend);
+    // The GC gate must end with its critical section. In contrast, a copied
+    // lifetime-ownership descriptor MUST continue to fence garbage collection.
+    let mut reopened = FileBackend::open(&directory);
+    let admitted = reopened.is_ok();
+    let error = reopened.as_ref().err().map(|error| format!("{error:?}"));
+    let lifetime_fenced = reopened
+        .as_mut()
+        .ok()
+        .map(|backend| backend.evict_root([0; 32], EvictionPermit(HashSet::new())));
+    if child.try_wait().unwrap().is_none() {
+        child.kill().unwrap();
+    }
+    child.wait().unwrap();
+    reader.join().unwrap();
+    let after_child = reopened
+        .as_mut()
+        .ok()
+        .map(|backend| backend.evict_root([0; 32], EvictionPermit(HashSet::new())));
+    drop(reopened);
+    fs::remove_dir_all(&directory).unwrap();
+    // Cleanup precedes assertions, including in the deliberately red control.
+    assert_eq!(ready.unwrap().unwrap(), *b"ready");
+    assert!(blocked_during_scope);
+    assert!(
+        admitted,
+        "descriptor copy extended completed GC scope: {error:?}"
+    );
+    assert_eq!(lifetime_fenced, Some(Err(Error::Busy)));
+    assert_eq!(after_child, Some(Err(Error::NotFound)));
+}
+
 #[test]
 fn review_gc_upgrade_window_keeps_other_stores_lease_fenced() {
     let directory = std::env::temp_dir().join(format!("memra-gc-upgrade-{}", std::process::id()));

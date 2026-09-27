@@ -293,7 +293,18 @@ impl RouteContract {
     /// (#500, #501 and #503 done; #449 open). Declared here and not in `dsv4_serve.rs` so the
     /// wiring test's grep of that file cannot be satisfied by the declaration text itself.
     pub fn dsv4_thread(model: impl Into<String>) -> Self {
-        Self::new(model, "dsv4-thread", "dsv4_serve.rs", RouteCapacity::Serial)
+        Self::dsv4_thread_sessions(model, 1)
+    }
+
+    /// The DSv4 thread with `sessions` pipelined serving lanes (memra #667, `MEMRA_DSV4_SESSIONS`):
+    /// one lane is the serial route above; more lanes share the queue and the launch turn.
+    pub fn dsv4_thread_sessions(model: impl Into<String>, sessions: usize) -> Self {
+        let capacity = if sessions > 1 {
+            RouteCapacity::Sessions(sessions)
+        } else {
+            RouteCapacity::Serial
+        };
+        Self::new(model, "dsv4-thread", "dsv4_serve.rs", capacity)
             .implemented(
                 PolicySurface::Capacity,
                 "std::sync::mpsc::channel::<Box<Request>>()",
@@ -309,7 +320,7 @@ impl RouteContract {
             .implemented(PolicySurface::FaultOwnership, "std::panic::catch_unwind(")
             .implemented(
                 PolicySurface::ShutdownOwnership,
-                "let Ok(mut req) = rx.recv() else { break };",
+                "let Ok(mut req) = next else { break };",
             )
             // memra#503: the route's own per-device charge through the shared decision rule,
             // before any allocation (dsv4_admit).
@@ -495,6 +506,22 @@ mod tests {
         }
         assert_eq!(route.capacity.concurrency(), 64);
         assert!(route.describe().contains("refused=[]"));
+    }
+
+    #[test]
+    fn the_dsv4_contract_declares_its_serving_lanes() {
+        assert_eq!(
+            RouteContract::dsv4_thread("ds").capacity,
+            RouteCapacity::Serial
+        );
+        let lanes = RouteContract::dsv4_thread_sessions("ds", 2);
+        assert_eq!(lanes.capacity, RouteCapacity::Sessions(2));
+        assert_eq!(lanes.capacity.concurrency(), 2);
+        lanes.check_declared().unwrap();
+        assert_eq!(
+            RouteContract::dsv4_thread_sessions("ds", 1).capacity,
+            RouteCapacity::Serial
+        );
     }
 
     #[test]

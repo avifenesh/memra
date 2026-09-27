@@ -1,0 +1,5 @@
+DAY43 RESIDFIX CHECKS rig=pro-single runs=30 integrity=ok
+DAY43 FIX ARM base window_door_ms_per_token pooled=17.44 o1=17.41 o2=17.44 gen_door_ms_per_token=37.27 window_s median=0.809 iqr=0.003 | per token: demand=15.129 verify=9.030 step=4.030 pread=2.550 stage=1.268 alloc=0.712 drain=1.342 enqueue=1.033 validate=0.457 finish=0.276 collect=0.141 publish=0.229 miss_total=18.252 gpu_misses=92.3 host_hits=0.0 host_misses=92.3 reads=92.3
+DAY43 FIX ARM i10d window_door_ms_per_token pooled=13.45 o1=13.47 o2=13.44 gen_door_ms_per_token=28.58 window_s median=0.681 iqr=0.004 | per token: demand=13.773 verify=9.026 step=3.715 pread=3.704 stage=0.561 alloc=0.008 drain=0.000 enqueue=0.175 validate=0.039 finish=0.006 collect=0.100 publish=0.235 miss_total=14.246 gpu_misses=92.3 host_hits=0.0 host_misses=92.3 reads=92.3
+DAY43 CLAUSE no_regression i10d_minus_base pooled=-0.128 o1=-0.126 o2=-0.128 noise=0.004 rule <=noise pooled and both orders -> PASS
+DAY43 RESIDFIX rig=pro-single integrity=ok no_regression=PASS

@@ -1,0 +1,491 @@
+[server] build: memra-0.138.0-41d2c94238fa (id: source-tree, git: 30a5ab697d84)
+[server] starting; models config = [("amb", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "amb" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+[worker]   loaded "amb": 33 layers, eos=248046, stop=[248046]
+[worker] amb: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="amb" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] amb: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 2052MB (2051538944 B, derived: 2 x 1025769472 B max entry for model "amb" at served ctx 65536 (from MEMRA_CTX; MEMRA_CTX set), requested 2051538944 B; boot driver free 18244501504 B, post-reserve clamp 16633888768 B), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "amb": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="amb" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":1442840576,"still_owned_bytes":8327347072,"pool_reserved_bytes":8455716864,"pool_cached_bytes":128369792,"driver_free_bytes":16365453312,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+[admit-cal] boot calibration done: model="amb" route=mtp transient floor 1536MB (static was 1536MB; measured 1266MB; probe kv charge 67MB, draft-state 41MB, drafted 48 accepted 47; [dev0 peak-mapped 9440MB rest-mapped 8064MB charged 109MB -> 1266MB]; 1.2s)
+[admit-mem] door=ON open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["amb"]
+[server] listening on http://127.0.0.1:8194
+[meter] admit id=chatcmpl-3694f7c1b6360e6d6db5c48c07f6ad15 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-8607a65c70ae5fc4d92311758065ad31 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-86803bc96f0928cdd02700d511aa72f9 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-92c19e28c42338460767fffe9653001d tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-7444742d1bdc642ec4de26a33481cf1d tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-4a5cf5986c7db3cc40966c047b4f4430 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-121a022750c663b793827c2960dbf38d tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-a3284a12c9c4701e7951712055410927 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-36e2a7c810042e2bacc4fcbbc7f01a45 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-ea3293fb0ded87f9499fcc38328a61b9 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-244788adb6c527187d66650e6ffbb6d4 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-0a71bf46bafde8e7bf6af4676a7f41fe tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-74683cf854854e8f1e7dc2fb8a5f0113 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-30e3d90db72f77b5d9fec17b66ab94af tenant=default lane=interactive model="amb"
+[admission] request cost: model="amb" ctx=9588 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 0MB fixed = 622MB
+[meter] admit id=chatcmpl-857e166e7c830dff318fae58c46fd357 tenant=default lane=interactive model="amb"
+[admit-mem] id=chatcmpl-3694f7c1b6360e6d6db5c48c07f6ad15 model="amb" verdict=admit prompt=1332 output_bound=- charged_ctx=9588 est_bytes=2233092096 est_context=142362624 est_fixed=2090729472 device_free=16493823104 pending_prime=0 host_free=0 demotable=0 short_by=0 inflight=0 cap=64 waited_ms=0 retry_after_s=-
+[meter] admit id=chatcmpl-1815a60be15da8b130bd6edcda4eafb7 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-9491aa635ac4eee7efe4ff4165cb8443 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-66d3487b8d43c340184a8743d18409c2 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-b9d00c6c5300a148e119f6285d3da5a9 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-56f345009f71759e81b3666c9b99092d tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-8b0b3aa1027a628142d6de78fa594a3a tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-94562c5fa236b92d98e63e1f6a571db9 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-6a9fdc36a7a983d406f746f85a3ce391 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-1c1f5420341ff25627038dc7978e7bba tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-626ceecb8c9524281f6f47644a0a1376 tenant=default lane=interactive model="amb"
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1332 cached=0 lcp=0 active=1 wave=25 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="amb" 121MB (observed 262MB at ctx 9532 path=plain)
+[meter] admit id=chatcmpl-8a0eab6666fbabcac3d6c337e0dd6700 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-cdd2f099018da6ab45770a9e7608fd7e tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-cce2fed6cd8657f89ee403d5c95cb3fc tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-9cbc9a93f62480963d99574c3bd5b44b tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-7f9b6a8be445a7ab8abd874723137eb0 tenant=default lane=interactive model="amb"
+[admission] request cost: model="amb" ctx=9587 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-mem] id=chatcmpl-8607a65c70ae5fc4d92311758065ad31 model="amb" verdict=admit prompt=1331 output_bound=- charged_ctx=9587 est_bytes=2353430964 est_context=142347776 est_fixed=2211083188 device_free=15751461068 pending_prime=480116736 host_free=0 demotable=0 short_by=0 inflight=1 cap=64 waited_ms=0 retry_after_s=-
+[meter] admit id=chatcmpl-3d81e703a5e477e8730cde0056684f7b tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-ebd377b4abed32db8fc85fe2eeaa6b5c tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-529c9e1e6149cc8be569852396c28f5b tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-f44f5901637b7c04155892f42eea73cb tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-02f7414f0395980ca17cfcd3ac1a1b54 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-8409255253e7939691dc2f3fbdaf7f4f tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-865f827ef7684064518fe2d86a583be4 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-0ad7d18b3bd43ac0230c1236bb496dc1 tenant=default lane=interactive model="amb"
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1331 cached=0 lcp=0 active=2 wave=38 placement=single-or-non-pp2
+[meter] admit id=chatcmpl-d948a0c04b7f3075985d212f5c313e6a tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-d19c5ff554ca72d776ea84bb2fa11d6e tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-883e8ab89b23d467b864d5038f64c8e5 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-62ff031e42b22d6781021a3437197597 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-07f0c3fdcec06d9bc10ed9e228b23d17 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-05ca8e465f0a5a1ee5b1beb68be1de8e tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-c6bcc8ebd781ad9c5a9d94bac98763a8 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-1edfdd68cc33bee852dd41ecb6c41021 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-d69e7328d53bc67537e9ea2a4b86d8c6 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-dd3de4b0c7559452931b9f5836c5e9e0 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-2cf40f01735c20a93ba630690a47eb81 tenant=default lane=interactive model="amb"
+[admission] request cost: model="amb" ctx=9589 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 744MB
+[admit-mem] id=chatcmpl-86803bc96f0928cdd02700d511aa72f9 model="amb" verdict=admit prompt=1333 output_bound=- charged_ctx=9589 est_bytes=2354181556 est_context=142377472 est_fixed=2211804084 device_free=15009476184 pending_prime=959873024 host_free=0 demotable=0 short_by=0 inflight=2 cap=64 waited_ms=0 retry_after_s=-
+[meter] admit id=chatcmpl-7e4e91dcadc6fd5dd2e52827c5c2af77 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-afd0967c30a437dc4aa8386071844f46 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-9143155a0fb8281a0f6d5e04c1e670df tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-8a5edc1027a8aa32f48e84983e33e18a tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-e3ea548f810abd68512d261c96b47491 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-5ead6b141475478607c48ff4501a0aaf tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-1fdd952e9325fedfe4fb8e2d6970ff4e tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-a2443f47bdcb00bb70e8ad5ca7a88985 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-275fcb94bb6fd7853162fc141047f019 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-e30ab65cd151f27f14120ca19906ac9a tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-1f228e91684ffc21a49003131d52621c tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-81f6fc4aa591e8ae7118a63884ee24fc tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-2723ab67f785990b80579411271e6ae1 tenant=default lane=interactive model="amb"
+[meter] admit id=chatcmpl-d41caad9c0268d8626670d301a825ec0 tenant=default lane=interactive model="amb"
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1333 cached=0 lcp=0 active=3 wave=63 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="amb" 121MB (observed 262MB at ctx 9533 path=plain)
+[meter] admit id=chatcmpl-0a42df9ceb5db3019c45d9bb10824123 tenant=default lane=interactive model="amb"
+[admission] request cost: model="amb" ctx=9588 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-mem] id=chatcmpl-92c19e28c42338460767fffe9653001d model="amb" verdict=admit prompt=1332 output_bound=- charged_ctx=9588 est_bytes=2353808116 est_context=142362624 est_fixed=2211445492 device_free=14266736996 pending_prime=1440350208 host_free=0 demotable=0 short_by=0 inflight=3 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1332 cached=0 lcp=0 active=4 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9586 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-7444742d1bdc642ec4de26a33481cf1d model="amb" verdict=admit prompt=1330 output_bound=- charged_ctx=9586 est_bytes=2353057524 est_context=142332928 est_fixed=2210724596 device_free=15000769968 pending_prime=444071936 host_free=0 demotable=0 short_by=0 inflight=4 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1330 cached=0 lcp=0 active=5 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9589 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 744MB
+[admit-mem] id=chatcmpl-4a5cf5986c7db3cc40966c047b4f4430 model="amb" verdict=admit prompt=1333 output_bound=- charged_ctx=9589 est_bytes=2354183412 est_context=142377472 est_fixed=2211805940 device_free=14259162236 pending_prime=923467776 host_free=0 demotable=0 short_by=0 inflight=5 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1333 cached=0 lcp=0 active=6 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-121a022750c663b793827c2960dbf38d model="amb" verdict=admit prompt=1328 output_bound=- charged_ctx=9584 est_bytes=2352306932 est_context=142303232 est_fixed=2210003700 device_free=13516423048 pending_prime=1403944960 host_free=0 demotable=0 short_by=0 inflight=6 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1328 cached=0 lcp=0 active=7 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9587 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-mem] id=chatcmpl-a3284a12c9c4701e7951712055410927 model="amb" verdict=admit prompt=1331 output_bound=- charged_ctx=9587 est_bytes=2353432820 est_context=142347776 est_fixed=2211085044 device_free=12775569620 pending_prime=1882619904 host_free=0 demotable=0 short_by=0 inflight=7 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1331 cached=0 lcp=0 active=8 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9588 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-mem] id=chatcmpl-36e2a7c810042e2bacc4fcbbc7f01a45 model="amb" verdict=admit prompt=1332 output_bound=- charged_ctx=9588 est_bytes=2353808116 est_context=142362624 est_fixed=2211445492 device_free=12033584736 pending_prime=2362376192 host_free=0 demotable=0 short_by=0 inflight=8 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1332 cached=0 lcp=0 active=9 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-ea3293fb0ded87f9499fcc38328a61b9 model="amb" verdict=admit prompt=1328 output_bound=- charged_ctx=9584 est_bytes=2352306932 est_context=142303232 est_fixed=2210003700 device_free=11291222700 pending_prime=2842492928 host_free=0 demotable=0 short_by=0 inflight=9 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1328 cached=0 lcp=0 active=10 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9592 path=plain = 14848 B/token x ctx + 482MB prefill-workspace + 121MB fixed = 745MB
+[admit-mem] id=chatcmpl-244788adb6c527187d66650e6ffbb6d4 model="amb" verdict=admit prompt=1336 output_bound=- charged_ctx=9592 est_bytes=2355309300 est_context=142422016 est_fixed=2212887284 device_free=10550369272 pending_prime=3321167872 host_free=0 demotable=0 short_by=0 inflight=10 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1336 cached=0 lcp=0 active=11 wave=64 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="amb" 121MB (observed 262MB at ctx 9536 path=plain)
+[admission] request cost: model="amb" ctx=9588 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-mem] id=chatcmpl-0a71bf46bafde8e7bf6af4676a7f41fe model="amb" verdict=admit prompt=1332 output_bound=- charged_ctx=9588 est_bytes=2353813684 est_context=142362624 est_fixed=2211451060 device_free=9806498628 pending_prime=3802726400 host_free=0 demotable=0 short_by=0 inflight=11 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1332 cached=0 lcp=0 active=12 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9586 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-74683cf854854e8f1e7dc2fb8a5f0113 model="amb" verdict=admit prompt=1330 output_bound=- charged_ctx=9586 est_bytes=2353063092 est_context=142332928 est_fixed=2210730164 device_free=9064136592 pending_prime=4282843136 host_free=0 demotable=0 short_by=0 inflight=12 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1330 cached=0 lcp=0 active=13 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9592 path=plain = 14848 B/token x ctx + 482MB prefill-workspace + 121MB fixed = 745MB
+[admit-mem] id=chatcmpl-30e3d90db72f77b5d9fec17b66ab94af model="amb" verdict=admit prompt=1336 output_bound=- charged_ctx=9592 est_bytes=2355314868 est_context=142422016 est_fixed=2212892852 device_free=8322528860 pending_prime=4762238976 host_free=0 demotable=0 short_by=0 inflight=13 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1336 cached=0 lcp=0 active=14 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9587 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-mem] id=chatcmpl-857e166e7c830dff318fae58c46fd357 model="amb" verdict=admit prompt=1331 output_bound=- charged_ctx=9587 est_bytes=2353438388 est_context=142347776 est_fixed=2211090612 device_free=7578658216 pending_prime=5243797504 host_free=0 demotable=0 short_by=0 inflight=14 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1331 cached=0 lcp=0 active=15 wave=64 placement=single-or-non-pp2
+[admit-mem] id=chatcmpl-1815a60be15da8b130bd6edcda4eafb7 model="amb" verdict=admit prompt=1331 output_bound=- charged_ctx=9587 est_bytes=2353438388 est_context=142347776 est_fixed=2211090612 device_free=6836673332 pending_prime=5723553792 host_free=0 demotable=0 short_by=0 inflight=15 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1331 cached=0 lcp=0 active=16 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9588 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-mem] id=chatcmpl-9491aa635ac4eee7efe4ff4165cb8443 model="amb" verdict=admit prompt=1332 output_bound=- charged_ctx=9588 est_bytes=2353813684 est_context=142362624 est_fixed=2211451060 device_free=6094688448 pending_prime=6203310080 host_free=0 demotable=0 short_by=0 inflight=16 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1332 cached=0 lcp=0 active=17 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9593 path=plain = 14848 B/token x ctx + 482MB prefill-workspace + 121MB fixed = 745MB
+[admit-mem] id=chatcmpl-66d3487b8d43c340184a8743d18409c2 model="amb" verdict=admit prompt=1337 output_bound=- charged_ctx=9593 est_bytes=2355690164 est_context=142436864 est_fixed=2213253300 device_free=5352326412 pending_prime=6683426816 host_free=0 demotable=0 short_by=0 inflight=17 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1337 cached=0 lcp=0 active=18 wave=64 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="amb" 121MB (observed 262MB at ctx 9537 path=plain)
+[admission] request cost: model="amb" ctx=9588 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-mem] id=chatcmpl-b9d00c6c5300a148e119f6285d3da5a9 model="amb" verdict=admit prompt=1332 output_bound=- charged_ctx=9588 est_bytes=2353815540 est_context=142362624 est_fixed=2211452916 device_free=4608078616 pending_prime=7165345792 host_free=0 demotable=0 short_by=0 inflight=18 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1332 cached=0 lcp=0 active=19 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9589 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 744MB
+[admit-mem] id=chatcmpl-56f345009f71759e81b3666c9b99092d model="amb" verdict=admit prompt=1333 output_bound=- charged_ctx=9589 est_bytes=2354190836 est_context=142377472 est_fixed=2211813364 device_free=3865716580 pending_prime=7645462528 host_free=0 demotable=0 short_by=0 inflight=19 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1333 cached=0 lcp=0 active=20 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9588 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-mem] id=chatcmpl-8b0b3aa1027a628142d6de78fa594a3a model="amb" verdict=admit prompt=1332 output_bound=- charged_ctx=9588 est_bytes=2353815540 est_context=142362624 est_fixed=2211452916 device_free=3122977392 pending_prime=8125939712 host_free=0 demotable=0 short_by=0 inflight=20 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1332 cached=0 lcp=0 active=21 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9589 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 744MB
+[admit-mem] id=chatcmpl-94562c5fa236b92d98e63e1f6a571db9 model="amb" verdict=admit prompt=1333 output_bound=- charged_ctx=9589 est_bytes=2354190836 est_context=142377472 est_fixed=2211813364 device_free=2380615356 pending_prime=8606056448 host_free=0 demotable=0 short_by=0 inflight=21 cap=64 waited_ms=0 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1333 cached=0 lcp=0 active=22 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9588 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-oom] VRAM defer: 22 active, effective free 1638MB (driver + 30MB pool-cached) < cost 743MB + reserve 1611MB — queueing (FIFO) [pool res 14126MB used 14097MB; parked spec sessions 0; plain reuse 0; queue 41]
+[admit-mem] id=chatcmpl-6a9fdc36a7a983d406f746f85a3ce391 model="amb" verdict=defer prompt=1332 output_bound=- charged_ctx=9588 est_bytes=2353815540 est_context=142362624 est_fixed=2211452916 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=715939372 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9586 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-1c1f5420341ff25627038dc7978e7bba model="amb" verdict=defer prompt=1330 output_bound=- charged_ctx=9586 est_bytes=2353064948 est_context=142332928 est_fixed=2210732020 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=715188780 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9587 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-mem] id=chatcmpl-626ceecb8c9524281f6f47644a0a1376 model="amb" verdict=defer prompt=1331 output_bound=- charged_ctx=9587 est_bytes=2353440244 est_context=142347776 est_fixed=2211092468 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=715564076 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admit-mem] id=chatcmpl-8a0eab6666fbabcac3d6c337e0dd6700 model="amb" verdict=defer prompt=1334 output_bound=- charged_ctx=9590 est_bytes=2354566132 est_context=142392320 est_fixed=2212173812 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=716689964 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9586 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-cdd2f099018da6ab45770a9e7608fd7e model="amb" verdict=defer prompt=1330 output_bound=- charged_ctx=9586 est_bytes=2353064948 est_context=142332928 est_fixed=2210732020 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=715188780 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9583 path=plain = 14848 B/token x ctx + 478MB prefill-workspace + 121MB fixed = 741MB
+[admit-mem] id=chatcmpl-cce2fed6cd8657f89ee403d5c95cb3fc model="amb" verdict=defer prompt=1327 output_bound=- charged_ctx=9583 est_bytes=2351939060 est_context=142288384 est_fixed=2209650676 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=714062892 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9586 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-9cbc9a93f62480963d99574c3bd5b44b model="amb" verdict=defer prompt=1330 output_bound=- charged_ctx=9586 est_bytes=2353064948 est_context=142332928 est_fixed=2210732020 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=715188780 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9585 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-7f9b6a8be445a7ab8abd874723137eb0 model="amb" verdict=defer prompt=1329 output_bound=- charged_ctx=9585 est_bytes=2352689652 est_context=142318080 est_fixed=2210371572 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=714813484 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-3d81e703a5e477e8730cde0056684f7b model="amb" verdict=defer prompt=1328 output_bound=- charged_ctx=9584 est_bytes=2352314356 est_context=142303232 est_fixed=2210011124 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=714438188 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9597 path=plain = 14848 B/token x ctx + 483MB prefill-workspace + 121MB fixed = 747MB
+[admit-mem] id=chatcmpl-ebd377b4abed32db8fc85fe2eeaa6b5c model="amb" verdict=defer prompt=1341 output_bound=- charged_ctx=9597 est_bytes=2357193204 est_context=142496256 est_fixed=2214696948 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=719317036 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9595 path=plain = 14848 B/token x ctx + 483MB prefill-workspace + 121MB fixed = 746MB
+[admit-mem] id=chatcmpl-529c9e1e6149cc8be569852396c28f5b model="amb" verdict=defer prompt=1339 output_bound=- charged_ctx=9595 est_bytes=2356442612 est_context=142466560 est_fixed=2213976052 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=718566444 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-f44f5901637b7c04155892f42eea73cb model="amb" verdict=defer prompt=1339 output_bound=- charged_ctx=9595 est_bytes=2356442612 est_context=142466560 est_fixed=2213976052 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=718566444 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9585 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-02f7414f0395980ca17cfcd3ac1a1b54 model="amb" verdict=defer prompt=1329 output_bound=- charged_ctx=9585 est_bytes=2352689652 est_context=142318080 est_fixed=2210371572 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=714813484 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-8409255253e7939691dc2f3fbdaf7f4f model="amb" verdict=defer prompt=1328 output_bound=- charged_ctx=9584 est_bytes=2352314356 est_context=142303232 est_fixed=2210011124 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=714438188 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9591 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admit-mem] id=chatcmpl-865f827ef7684064518fe2d86a583be4 model="amb" verdict=defer prompt=1335 output_bound=- charged_ctx=9591 est_bytes=2354941428 est_context=142407168 est_fixed=2212534260 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=717065260 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-0ad7d18b3bd43ac0230c1236bb496dc1 model="amb" verdict=defer prompt=1328 output_bound=- charged_ctx=9584 est_bytes=2352314356 est_context=142303232 est_fixed=2210011124 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=714438188 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9587 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-mem] id=chatcmpl-d948a0c04b7f3075985d212f5c313e6a model="amb" verdict=defer prompt=1331 output_bound=- charged_ctx=9587 est_bytes=2353440244 est_context=142347776 est_fixed=2211092468 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=715564076 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-d19c5ff554ca72d776ea84bb2fa11d6e model="amb" verdict=defer prompt=1331 output_bound=- charged_ctx=9587 est_bytes=2353440244 est_context=142347776 est_fixed=2211092468 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=715564076 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9586 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-883e8ab89b23d467b864d5038f64c8e5 model="amb" verdict=defer prompt=1330 output_bound=- charged_ctx=9586 est_bytes=2353064948 est_context=142332928 est_fixed=2210732020 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=715188780 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9593 path=plain = 14848 B/token x ctx + 482MB prefill-workspace + 121MB fixed = 745MB
+[admit-mem] id=chatcmpl-62ff031e42b22d6781021a3437197597 model="amb" verdict=defer prompt=1337 output_bound=- charged_ctx=9593 est_bytes=2355692020 est_context=142436864 est_fixed=2213255156 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=717815852 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-07f0c3fdcec06d9bc10ed9e228b23d17 model="amb" verdict=defer prompt=1328 output_bound=- charged_ctx=9584 est_bytes=2352314356 est_context=142303232 est_fixed=2210011124 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=714438188 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9591 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admit-mem] id=chatcmpl-05ca8e465f0a5a1ee5b1beb68be1de8e model="amb" verdict=defer prompt=1335 output_bound=- charged_ctx=9591 est_bytes=2354941428 est_context=142407168 est_fixed=2212534260 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=717065260 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admit-mem] id=chatcmpl-c6bcc8ebd781ad9c5a9d94bac98763a8 model="amb" verdict=defer prompt=1334 output_bound=- charged_ctx=9590 est_bytes=2354566132 est_context=142392320 est_fixed=2212173812 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=716689964 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9587 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-mem] id=chatcmpl-1edfdd68cc33bee852dd41ecb6c41021 model="amb" verdict=defer prompt=1331 output_bound=- charged_ctx=9587 est_bytes=2353440244 est_context=142347776 est_fixed=2211092468 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=715564076 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-d69e7328d53bc67537e9ea2a4b86d8c6 model="amb" verdict=defer prompt=1328 output_bound=- charged_ctx=9584 est_bytes=2352314356 est_context=142303232 est_fixed=2210011124 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=714438188 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admit-mem] id=chatcmpl-dd3de4b0c7559452931b9f5836c5e9e0 model="amb" verdict=defer prompt=1334 output_bound=- charged_ctx=9590 est_bytes=2354566132 est_context=142392320 est_fixed=2212173812 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=716689964 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9588 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-mem] id=chatcmpl-2cf40f01735c20a93ba630690a47eb81 model="amb" verdict=defer prompt=1332 output_bound=- charged_ctx=9588 est_bytes=2353815540 est_context=142362624 est_fixed=2211452916 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=715939372 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admit-mem] id=chatcmpl-7e4e91dcadc6fd5dd2e52827c5c2af77 model="amb" verdict=defer prompt=1334 output_bound=- charged_ctx=9590 est_bytes=2354566132 est_context=142392320 est_fixed=2212173812 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=716689964 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9594 path=plain = 14848 B/token x ctx + 482MB prefill-workspace + 121MB fixed = 745MB
+[admit-mem] id=chatcmpl-afd0967c30a437dc4aa8386071844f46 model="amb" verdict=defer prompt=1338 output_bound=- charged_ctx=9594 est_bytes=2356067316 est_context=142451712 est_fixed=2213615604 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=718191148 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9585 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-9143155a0fb8281a0f6d5e04c1e670df model="amb" verdict=defer prompt=1329 output_bound=- charged_ctx=9585 est_bytes=2352689652 est_context=142318080 est_fixed=2210371572 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=714813484 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admit-mem] id=chatcmpl-8a5edc1027a8aa32f48e84983e33e18a model="amb" verdict=defer prompt=1329 output_bound=- charged_ctx=9585 est_bytes=2352689652 est_context=142318080 est_fixed=2210371572 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=714813484 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admit-mem] id=chatcmpl-e3ea548f810abd68512d261c96b47491 model="amb" verdict=defer prompt=1334 output_bound=- charged_ctx=9590 est_bytes=2354566132 est_context=142392320 est_fixed=2212173812 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=716689964 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9581 path=plain = 14848 B/token x ctx + 478MB prefill-workspace + 121MB fixed = 741MB
+[admit-mem] id=chatcmpl-5ead6b141475478607c48ff4501a0aaf model="amb" verdict=defer prompt=1325 output_bound=- charged_ctx=9581 est_bytes=2351188468 est_context=142258688 est_fixed=2208929780 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=713312300 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9585 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-1fdd952e9325fedfe4fb8e2d6970ff4e model="amb" verdict=defer prompt=1329 output_bound=- charged_ctx=9585 est_bytes=2352689652 est_context=142318080 est_fixed=2210371572 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=714813484 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9586 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-a2443f47bdcb00bb70e8ad5ca7a88985 model="amb" verdict=defer prompt=1330 output_bound=- charged_ctx=9586 est_bytes=2353064948 est_context=142332928 est_fixed=2210732020 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=715188780 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9593 path=plain = 14848 B/token x ctx + 482MB prefill-workspace + 121MB fixed = 745MB
+[admit-mem] id=chatcmpl-275fcb94bb6fd7853162fc141047f019 model="amb" verdict=defer prompt=1337 output_bound=- charged_ctx=9593 est_bytes=2355692020 est_context=142436864 est_fixed=2213255156 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=717815852 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9587 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-mem] id=chatcmpl-e30ab65cd151f27f14120ca19906ac9a model="amb" verdict=defer prompt=1331 output_bound=- charged_ctx=9587 est_bytes=2353440244 est_context=142347776 est_fixed=2211092468 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=715564076 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9591 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admit-mem] id=chatcmpl-1f228e91684ffc21a49003131d52621c model="amb" verdict=defer prompt=1335 output_bound=- charged_ctx=9591 est_bytes=2354941428 est_context=142407168 est_fixed=2212534260 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=717065260 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9582 path=plain = 14848 B/token x ctx + 478MB prefill-workspace + 121MB fixed = 741MB
+[admit-mem] id=chatcmpl-81f6fc4aa591e8ae7118a63884ee24fc model="amb" verdict=defer prompt=1326 output_bound=- charged_ctx=9582 est_bytes=2351563764 est_context=142273536 est_fixed=2209290228 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=713687596 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-2723ab67f785990b80579411271e6ae1 model="amb" verdict=defer prompt=1328 output_bound=- charged_ctx=9584 est_bytes=2352314356 est_context=142303232 est_fixed=2210011124 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=714438188 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9589 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 744MB
+[admit-mem] id=chatcmpl-d41caad9c0268d8626670d301a825ec0 model="amb" verdict=defer prompt=1333 output_bound=- charged_ctx=9589 est_bytes=2354190836 est_context=142377472 est_fixed=2211813364 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=716314668 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[admission] request cost: model="amb" ctx=9585 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-0a42df9ceb5db3019c45d9bb10824123 model="amb" verdict=defer prompt=1329 output_bound=- charged_ctx=9585 est_bytes=2352689652 est_context=142318080 est_fixed=2210371572 device_free=1637876168 pending_prime=9086533632 host_free=0 demotable=0 short_by=714813484 inflight=22 cap=64 waited_ms=0 retry_after_s=-
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 72.2MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 144.3MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 216.5MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 288.7MB / 2052MB, model amb)
+[admission] request cost: model="amb" ctx=9588 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-mem] id=chatcmpl-6a9fdc36a7a983d406f746f85a3ce391 model="amb" verdict=admit prompt=1332 output_bound=- charged_ctx=9588 est_bytes=2353815540 est_context=142362624 est_fixed=2211452916 device_free=8197439944 pending_prime=2027520000 host_free=0 demotable=288686080 short_by=0 inflight=22 cap=64 waited_ms=4098 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1332 cached=0 lcp=6 active=23 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9586 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-1c1f5420341ff25627038dc7978e7bba model="amb" verdict=admit prompt=1330 output_bound=- charged_ctx=9586 est_bytes=2353064948 est_context=142332928 est_fixed=2210732020 device_free=7455077908 pending_prime=2507636736 host_free=0 demotable=288686080 short_by=0 inflight=23 cap=64 waited_ms=4096 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1330 cached=0 lcp=6 active=24 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9587 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-mem] id=chatcmpl-626ceecb8c9524281f6f47644a0a1376 model="amb" verdict=admit prompt=1331 output_bound=- charged_ctx=9587 est_bytes=2353440244 est_context=142347776 est_fixed=2211092468 device_free=6713470176 pending_prime=2987032576 host_free=0 demotable=288686080 short_by=0 inflight=24 cap=64 waited_ms=4096 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1331 cached=0 lcp=5 active=25 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admit-mem] id=chatcmpl-8a0eab6666fbabcac3d6c337e0dd6700 model="amb" verdict=admit prompt=1334 output_bound=- charged_ctx=9590 est_bytes=2354566132 est_context=142392320 est_fixed=2212173812 device_free=5971485292 pending_prime=3466788864 host_free=0 demotable=288686080 short_by=0 inflight=25 cap=64 waited_ms=4097 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1334 cached=0 lcp=5 active=26 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9586 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-cdd2f099018da6ab45770a9e7608fd7e model="amb" verdict=admit prompt=1330 output_bound=- charged_ctx=9586 est_bytes=2353064948 est_context=142332928 est_fixed=2210732020 device_free=5228368952 pending_prime=3947626496 host_free=0 demotable=288686080 short_by=0 inflight=26 cap=64 waited_ms=4101 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1330 cached=0 lcp=6 active=27 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9583 path=plain = 14848 B/token x ctx + 478MB prefill-workspace + 121MB fixed = 741MB
+[admit-mem] id=chatcmpl-cce2fed6cd8657f89ee403d5c95cb3fc model="amb" verdict=admit prompt=1327 output_bound=- charged_ctx=9583 est_bytes=2351939060 est_context=142288384 est_fixed=2209650676 device_free=4486761220 pending_prime=4427022336 host_free=0 demotable=288686080 short_by=0 inflight=27 cap=64 waited_ms=4101 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1327 cached=0 lcp=5 active=28 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9586 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-9cbc9a93f62480963d99574c3bd5b44b model="amb" verdict=admit prompt=1330 output_bound=- charged_ctx=9586 est_bytes=2353064948 est_context=142332928 est_fixed=2210732020 device_free=3746284944 pending_prime=4905336832 host_free=0 demotable=288686080 short_by=0 inflight=28 cap=64 waited_ms=4102 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1330 cached=0 lcp=5 active=29 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9585 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-7f9b6a8be445a7ab8abd874723137eb0 model="amb" verdict=admit prompt=1329 output_bound=- charged_ctx=9585 est_bytes=2352689652 est_context=142318080 est_fixed=2210371572 device_free=3004677212 pending_prime=5384732672 host_free=0 demotable=288686080 short_by=0 inflight=29 cap=64 waited_ms=4102 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1329 cached=0 lcp=5 active=30 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=288686080 pool_cached_gain_bytes=288686080 trim_released_bytes=167772160 driver_free_bytes 8111063040 -> 8278835200 pool_reserved_bytes 16710107136 -> 16542334976 pool_used_bytes 16693955480 -> 16405269400 pool_retained_bytes=120913920 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 4 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2263MB -> 2552MB
+[admit-mem] id=chatcmpl-3d81e703a5e477e8730cde0056684f7b model="amb" verdict=admit prompt=1328 output_bound=- charged_ctx=9584 est_bytes=2352314356 est_context=142303232 est_fixed=2210011124 device_free=2552132712 pending_prime=5863768064 host_free=0 demotable=0 short_by=0 inflight=30 cap=64 waited_ms=4103 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1328 cached=0 lcp=0 active=31 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9597 path=plain = 14848 B/token x ctx + 483MB prefill-workspace + 121MB fixed = 747MB
+[admit-oom] VRAM defer: 31 active, effective free 1811MB (driver + 43MB pool-cached) < cost 747MB + reserve 1611MB — queueing (FIFO) [pool res 16710MB used 16667MB; parked spec sessions 0; plain reuse 0; queue 32]
+[admission] request cost: model="amb" ctx=9595 path=plain = 14848 B/token x ctx + 483MB prefill-workspace + 121MB fixed = 746MB
+[admission] request cost: model="amb" ctx=9585 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admission] request cost: model="amb" ctx=9591 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admission] request cost: model="amb" ctx=9587 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admission] request cost: model="amb" ctx=9586 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admission] request cost: model="amb" ctx=9593 path=plain = 14848 B/token x ctx + 482MB prefill-workspace + 121MB fixed = 745MB
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admission] request cost: model="amb" ctx=9591 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admission] request cost: model="amb" ctx=9587 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admission] request cost: model="amb" ctx=9588 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admission] request cost: model="amb" ctx=9594 path=plain = 14848 B/token x ctx + 482MB prefill-workspace + 121MB fixed = 745MB
+[admission] request cost: model="amb" ctx=9585 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admission] request cost: model="amb" ctx=9581 path=plain = 14848 B/token x ctx + 478MB prefill-workspace + 121MB fixed = 741MB
+[admission] request cost: model="amb" ctx=9585 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admission] request cost: model="amb" ctx=9586 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admission] request cost: model="amb" ctx=9593 path=plain = 14848 B/token x ctx + 482MB prefill-workspace + 121MB fixed = 745MB
+[admission] request cost: model="amb" ctx=9587 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admission] request cost: model="amb" ctx=9591 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admission] request cost: model="amb" ctx=9582 path=plain = 14848 B/token x ctx + 478MB prefill-workspace + 121MB fixed = 741MB
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admission] request cost: model="amb" ctx=9589 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 744MB
+[admission] request cost: model="amb" ctx=9585 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[prime-batch] B=4 tokens=80 carried=4 partial=0 in 53.8ms
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 72.2MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 144.3MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 216.5MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 288.7MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 360.9MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 433.0MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 505.2MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 577.4MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 649.5MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 721.7MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 793.9MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 866.1MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 938.2MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 1010.4MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 1082.6MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 1154.7MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 1226.9MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 1299.1MB / 2052MB, model amb)
+[admission] request cost: model="amb" ctx=9597 path=plain = 14848 B/token x ctx + 483MB prefill-workspace + 121MB fixed = 747MB
+[admit-mem] id=chatcmpl-ebd377b4abed32db8fc85fe2eeaa6b5c model="amb" verdict=admit prompt=1341 output_bound=- charged_ctx=9597 est_bytes=2357193204 est_context=142496256 est_fixed=2214696948 device_free=4779068852 pending_prime=1123155968 host_free=0 demotable=1299087360 short_by=0 inflight=31 cap=64 waited_ms=7526 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1341 cached=0 lcp=6 active=32 wave=64 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="amb" 121MB (observed 262MB at ctx 9541 path=plain)
+[admission] request cost: model="amb" ctx=9595 path=plain = 14848 B/token x ctx + 483MB prefill-workspace + 121MB fixed = 746MB
+[admit-mem] id=chatcmpl-529c9e1e6149cc8be569852396c28f5b model="amb" verdict=admit prompt=1339 output_bound=- charged_ctx=9595 est_bytes=2356450036 est_context=142466560 est_fixed=2213983476 device_free=4033312448 pending_prime=1606516736 host_free=0 demotable=1299087360 short_by=0 inflight=32 cap=64 waited_ms=7527 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1339 cached=0 lcp=6 active=33 wave=64 placement=single-or-non-pp2
+[admit-mem] id=chatcmpl-f44f5901637b7c04155892f42eea73cb model="amb" verdict=admit prompt=1339 output_bound=- charged_ctx=9595 est_bytes=2356450036 est_context=142466560 est_fixed=2213983476 device_free=3288310348 pending_prime=2089156608 host_free=0 demotable=1299087360 short_by=0 inflight=33 cap=64 waited_ms=7528 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1339 cached=0 lcp=6 active=34 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9585 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-02f7414f0395980ca17cfcd3ac1a1b54 model="amb" verdict=admit prompt=1329 output_bound=- charged_ctx=9585 est_bytes=2352697076 est_context=142318080 est_fixed=2210378996 device_free=2543308248 pending_prime=2571796480 host_free=0 demotable=1299087360 short_by=0 inflight=34 cap=64 waited_ms=7528 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1329 cached=0 lcp=6 active=35 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=1299087360 pool_cached_gain_bytes=1299087360 trim_released_bytes=704643072 driver_free_bytes 4822728704 -> 5527371776 pool_reserved_bytes 19998441472 -> 19293798400 pool_used_bytes 19968260636 -> 18669173276 pool_retained_bytes=594444288 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 18 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 1802MB -> 3101MB
+[admit-mem] id=chatcmpl-8409255253e7939691dc2f3fbdaf7f4f model="amb" verdict=admit prompt=1328 output_bound=- charged_ctx=9584 est_bytes=2352321780 est_context=142303232 est_fixed=2210018548 device_free=3101165028 pending_prime=3050831872 host_free=0 demotable=0 short_by=0 inflight=35 cap=64 waited_ms=7532 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1328 cached=0 lcp=0 active=36 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9591 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admit-mem] id=chatcmpl-865f827ef7684064518fe2d86a583be4 model="amb" verdict=admit prompt=1335 output_bound=- charged_ctx=9591 est_bytes=2354948852 est_context=142407168 est_fixed=2212541684 device_free=2360311600 pending_prime=3529506816 host_free=0 demotable=0 short_by=0 inflight=36 cap=64 waited_ms=7532 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1335 cached=0 lcp=0 active=37 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-oom] VRAM defer: 37 active, effective free 1617MB (driver + 402MB pool-cached) < cost 742MB + reserve 1611MB — queueing (FIFO) [pool res 19596MB used 19194MB; parked spec sessions 0; plain reuse 0; queue 26]
+[admission] request cost: model="amb" ctx=9587 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admission] request cost: model="amb" ctx=9586 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admission] request cost: model="amb" ctx=9593 path=plain = 14848 B/token x ctx + 482MB prefill-workspace + 121MB fixed = 745MB
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admission] request cost: model="amb" ctx=9591 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admission] request cost: model="amb" ctx=9587 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admission] request cost: model="amb" ctx=9588 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admission] request cost: model="amb" ctx=9594 path=plain = 14848 B/token x ctx + 482MB prefill-workspace + 121MB fixed = 745MB
+[admission] request cost: model="amb" ctx=9585 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admission] request cost: model="amb" ctx=9581 path=plain = 14848 B/token x ctx + 478MB prefill-workspace + 121MB fixed = 741MB
+[admission] request cost: model="amb" ctx=9585 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admission] request cost: model="amb" ctx=9586 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admission] request cost: model="amb" ctx=9593 path=plain = 14848 B/token x ctx + 482MB prefill-workspace + 121MB fixed = 745MB
+[admission] request cost: model="amb" ctx=9587 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admission] request cost: model="amb" ctx=9591 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admission] request cost: model="amb" ctx=9582 path=plain = 14848 B/token x ctx + 478MB prefill-workspace + 121MB fixed = 741MB
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admission] request cost: model="amb" ctx=9589 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 744MB
+[admission] request cost: model="amb" ctx=9585 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[prime-batch] B=6 tokens=110 carried=6 partial=0 in 68.0ms
+[prime-batch] B=6 tokens=124 carried=6 partial=0 in 64.1ms
+[prime-batch] B=6 tokens=127 carried=6 partial=0 in 64.6ms
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 72.2MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 144.3MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 216.5MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 288.7MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 360.9MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1280 tokens, 71.7MB (resident 432.6MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 504.7MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 576.9MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 649.1MB / 2052MB, model amb)
+[fa-pool] grow #3 dev=0 o_len 1064960 -> 2129920 ml_len 4160 -> 8320 (retired kept, zero=false)
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-mem] id=chatcmpl-0ad7d18b3bd43ac0230c1236bb496dc1 model="amb" verdict=admit prompt=1328 output_bound=- charged_ctx=9584 est_bytes=2352321780 est_context=142303232 est_fixed=2210018548 device_free=3732429756 pending_prime=743243776 host_free=0 demotable=649068544 short_by=0 inflight=37 cap=64 waited_ms=9773 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1328 cached=0 lcp=6 active=38 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9587 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-mem] id=chatcmpl-d948a0c04b7f3075985d212f5c313e6a model="amb" verdict=admit prompt=1331 output_bound=- charged_ctx=9587 est_bytes=2353447668 est_context=142347776 est_fixed=2211099892 device_free=2991576328 pending_prime=1221918720 host_free=0 demotable=649068544 short_by=0 inflight=38 cap=64 waited_ms=9774 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1331 cached=0 lcp=5 active=39 wave=64 placement=single-or-non-pp2
+[admit-oom] reclaim settle (reclaim-on-defer): dev0 evicted_prefix_bytes=649068544 pool_cached_gain_bytes=649068544 trim_released_bytes=167772160 driver_free_bytes 3914661888 -> 4082434048 pool_reserved_bytes 20904411136 -> 20736638976 pool_used_bytes 20867806572 -> 20218738028 pool_retained_bytes=481296384 (live neighbour or fragmentation; counted as pool-cached headroom, not driver free)
+[admit-oom] reclaim-on-defer: evicted 9 prefix entries + 0 plain + 0 spec + 0 dspark parked sessions (global LRU); effective free 2250MB -> 2899MB
+[admit-mem] id=chatcmpl-d19c5ff554ca72d776ea84bb2fa11d6e model="amb" verdict=admit prompt=1331 output_bound=- charged_ctx=9587 est_bytes=2353447668 est_context=142347776 est_fixed=2211099892 device_free=2898659988 pending_prime=1701675008 host_free=0 demotable=0 short_by=0 inflight=39 cap=64 waited_ms=9775 retry_after_s=-
+[spec-k] model="amb" tenant="" K=0 source=concurrency prompt=1331 cached=0 lcp=0 active=40 wave=64 placement=single-or-non-pp2
+[admission] request cost: model="amb" ctx=9586 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 742MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 23]
+[admit-mem] id=chatcmpl-883e8ab89b23d467b864d5038f64c8e5 model="amb" verdict=refuse prompt=1330 output_bound=- charged_ctx=9586 est_bytes=2353072372 est_context=142332928 est_fixed=2210739444 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=196397268 inflight=40 cap=64 waited_ms=9776 retry_after_s=1
+[admission] request cost: model="amb" ctx=9593 path=plain = 14848 B/token x ctx + 482MB prefill-workspace + 121MB fixed = 745MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 745MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 22]
+[admit-mem] id=chatcmpl-62ff031e42b22d6781021a3437197597 model="amb" verdict=refuse prompt=1337 output_bound=- charged_ctx=9593 est_bytes=2355699444 est_context=142436864 est_fixed=2213262580 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=199024340 inflight=40 cap=64 waited_ms=9775 retry_after_s=1
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 742MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 21]
+[admit-mem] id=chatcmpl-07f0c3fdcec06d9bc10ed9e228b23d17 model="amb" verdict=refuse prompt=1328 output_bound=- charged_ctx=9584 est_bytes=2352321780 est_context=142303232 est_fixed=2210018548 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=195646676 inflight=40 cap=64 waited_ms=9774 retry_after_s=1
+[admission] request cost: model="amb" ctx=9591 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 744MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 20]
+[admit-mem] id=chatcmpl-05ca8e465f0a5a1ee5b1beb68be1de8e model="amb" verdict=refuse prompt=1335 output_bound=- charged_ctx=9591 est_bytes=2354948852 est_context=142407168 est_fixed=2212541684 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=198273748 inflight=40 cap=64 waited_ms=9772 retry_after_s=1
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 744MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 19]
+[admit-mem] id=chatcmpl-c6bcc8ebd781ad9c5a9d94bac98763a8 model="amb" verdict=refuse prompt=1334 output_bound=- charged_ctx=9590 est_bytes=2354573556 est_context=142392320 est_fixed=2212181236 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=197898452 inflight=40 cap=64 waited_ms=9771 retry_after_s=1
+[admission] request cost: model="amb" ctx=9587 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 743MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 18]
+[admit-mem] id=chatcmpl-1edfdd68cc33bee852dd41ecb6c41021 model="amb" verdict=refuse prompt=1331 output_bound=- charged_ctx=9587 est_bytes=2353447668 est_context=142347776 est_fixed=2211099892 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=196772564 inflight=40 cap=64 waited_ms=9770 retry_after_s=1
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 742MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 17]
+[admit-mem] id=chatcmpl-d69e7328d53bc67537e9ea2a4b86d8c6 model="amb" verdict=refuse prompt=1328 output_bound=- charged_ctx=9584 est_bytes=2352321780 est_context=142303232 est_fixed=2210018548 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=195646676 inflight=40 cap=64 waited_ms=9769 retry_after_s=1
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 744MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 16]
+[admit-mem] id=chatcmpl-dd3de4b0c7559452931b9f5836c5e9e0 model="amb" verdict=refuse prompt=1334 output_bound=- charged_ctx=9590 est_bytes=2354573556 est_context=142392320 est_fixed=2212181236 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=197898452 inflight=40 cap=64 waited_ms=9768 retry_after_s=1
+[admission] request cost: model="amb" ctx=9588 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 743MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 15]
+[admit-mem] id=chatcmpl-2cf40f01735c20a93ba630690a47eb81 model="amb" verdict=refuse prompt=1332 output_bound=- charged_ctx=9588 est_bytes=2353822964 est_context=142362624 est_fixed=2211460340 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=197147860 inflight=40 cap=64 waited_ms=9766 retry_after_s=1
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 744MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 14]
+[admit-mem] id=chatcmpl-7e4e91dcadc6fd5dd2e52827c5c2af77 model="amb" verdict=refuse prompt=1334 output_bound=- charged_ctx=9590 est_bytes=2354573556 est_context=142392320 est_fixed=2212181236 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=197898452 inflight=40 cap=64 waited_ms=9765 retry_after_s=1
+[admission] request cost: model="amb" ctx=9594 path=plain = 14848 B/token x ctx + 482MB prefill-workspace + 121MB fixed = 745MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 745MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 13]
+[admit-mem] id=chatcmpl-afd0967c30a437dc4aa8386071844f46 model="amb" verdict=refuse prompt=1338 output_bound=- charged_ctx=9594 est_bytes=2356074740 est_context=142451712 est_fixed=2213623028 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=199399636 inflight=40 cap=64 waited_ms=9764 retry_after_s=1
+[admission] request cost: model="amb" ctx=9585 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 742MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 12]
+[admit-mem] id=chatcmpl-9143155a0fb8281a0f6d5e04c1e670df model="amb" verdict=refuse prompt=1329 output_bound=- charged_ctx=9585 est_bytes=2352697076 est_context=142318080 est_fixed=2210378996 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=196021972 inflight=40 cap=64 waited_ms=9763 retry_after_s=1
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 742MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 11]
+[admit-mem] id=chatcmpl-8a5edc1027a8aa32f48e84983e33e18a model="amb" verdict=refuse prompt=1329 output_bound=- charged_ctx=9585 est_bytes=2352697076 est_context=142318080 est_fixed=2210378996 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=196021972 inflight=40 cap=64 waited_ms=9762 retry_after_s=1
+[admission] request cost: model="amb" ctx=9590 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 744MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 10]
+[admit-mem] id=chatcmpl-e3ea548f810abd68512d261c96b47491 model="amb" verdict=refuse prompt=1334 output_bound=- charged_ctx=9590 est_bytes=2354573556 est_context=142392320 est_fixed=2212181236 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=197898452 inflight=40 cap=64 waited_ms=9761 retry_after_s=1
+[admission] request cost: model="amb" ctx=9581 path=plain = 14848 B/token x ctx + 478MB prefill-workspace + 121MB fixed = 741MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 741MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 9]
+[admit-mem] id=chatcmpl-5ead6b141475478607c48ff4501a0aaf model="amb" verdict=refuse prompt=1325 output_bound=- charged_ctx=9581 est_bytes=2351195892 est_context=142258688 est_fixed=2208937204 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=194520788 inflight=40 cap=64 waited_ms=9759 retry_after_s=1
+[admission] request cost: model="amb" ctx=9585 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 742MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 8]
+[admit-mem] id=chatcmpl-1fdd952e9325fedfe4fb8e2d6970ff4e model="amb" verdict=refuse prompt=1329 output_bound=- charged_ctx=9585 est_bytes=2352697076 est_context=142318080 est_fixed=2210378996 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=196021972 inflight=40 cap=64 waited_ms=9758 retry_after_s=1
+[admission] request cost: model="amb" ctx=9586 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 742MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 7]
+[admit-mem] id=chatcmpl-a2443f47bdcb00bb70e8ad5ca7a88985 model="amb" verdict=refuse prompt=1330 output_bound=- charged_ctx=9586 est_bytes=2353072372 est_context=142332928 est_fixed=2210739444 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=196397268 inflight=40 cap=64 waited_ms=9757 retry_after_s=1
+[admission] request cost: model="amb" ctx=9593 path=plain = 14848 B/token x ctx + 482MB prefill-workspace + 121MB fixed = 745MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 745MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 6]
+[admit-mem] id=chatcmpl-275fcb94bb6fd7853162fc141047f019 model="amb" verdict=refuse prompt=1337 output_bound=- charged_ctx=9593 est_bytes=2355699444 est_context=142436864 est_fixed=2213262580 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=199024340 inflight=40 cap=64 waited_ms=9756 retry_after_s=1
+[admission] request cost: model="amb" ctx=9587 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 743MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 743MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 5]
+[admit-mem] id=chatcmpl-e30ab65cd151f27f14120ca19906ac9a model="amb" verdict=refuse prompt=1331 output_bound=- charged_ctx=9587 est_bytes=2353447668 est_context=142347776 est_fixed=2211099892 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=196772564 inflight=40 cap=64 waited_ms=9755 retry_after_s=1
+[admission] request cost: model="amb" ctx=9591 path=plain = 14848 B/token x ctx + 481MB prefill-workspace + 121MB fixed = 744MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 744MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 4]
+[admit-mem] id=chatcmpl-1f228e91684ffc21a49003131d52621c model="amb" verdict=refuse prompt=1335 output_bound=- charged_ctx=9591 est_bytes=2354948852 est_context=142407168 est_fixed=2212541684 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=198273748 inflight=40 cap=64 waited_ms=9753 retry_after_s=1
+[admission] request cost: model="amb" ctx=9582 path=plain = 14848 B/token x ctx + 478MB prefill-workspace + 121MB fixed = 741MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 741MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 3]
+[admit-mem] id=chatcmpl-81f6fc4aa591e8ae7118a63884ee24fc model="amb" verdict=refuse prompt=1326 output_bound=- charged_ctx=9582 est_bytes=2351571188 est_context=142273536 est_fixed=2209297652 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=194896084 inflight=40 cap=64 waited_ms=9752 retry_after_s=1
+[admission] request cost: model="amb" ctx=9584 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 742MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 2]
+[admit-mem] id=chatcmpl-2723ab67f785990b80579411271e6ae1 model="amb" verdict=refuse prompt=1328 output_bound=- charged_ctx=9584 est_bytes=2352321780 est_context=142303232 est_fixed=2210018548 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=195646676 inflight=40 cap=64 waited_ms=9751 retry_after_s=1
+[admission] request cost: model="amb" ctx=9589 path=plain = 14848 B/token x ctx + 480MB prefill-workspace + 121MB fixed = 744MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 744MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 1]
+[admit-mem] id=chatcmpl-d41caad9c0268d8626670d301a825ec0 model="amb" verdict=refuse prompt=1333 output_bound=- charged_ctx=9589 est_bytes=2354198260 est_context=142377472 est_fixed=2211820788 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=197523156 inflight=40 cap=64 waited_ms=9750 retry_after_s=1
+[admission] request cost: model="amb" ctx=9585 path=plain = 14848 B/token x ctx + 479MB prefill-workspace + 121MB fixed = 742MB
+[admit-oom] VRAM defer: 40 active, effective free 2157MB (driver + 256MB pool-cached) < cost 742MB + reserve 1611MB — queueing (FIFO) [pool res 20737MB used 20481MB; parked spec sessions 0; plain reuse 0; queue 0]
+[admit-mem] id=chatcmpl-0a42df9ceb5db3019c45d9bb10824123 model="amb" verdict=refuse prompt=1329 output_bound=- charged_ctx=9585 est_bytes=2352697076 est_context=142318080 est_fixed=2210378996 device_free=2156675104 pending_prime=2181431296 host_free=0 demotable=0 short_by=196021972 inflight=40 cap=64 waited_ms=9749 retry_after_s=1
+[prime-batch] B=6 tokens=144 carried=6 partial=0 in 82.2ms
+[prime-batch] B=3 tokens=51 carried=3 partial=0 in 49.2ms
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 72.2MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 144.3MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 216.5MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 288.7MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 360.9MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 433.0MB / 2052MB, model amb)
+[prime-batch] B=6 tokens=139 carried=6 partial=0 in 84.7ms
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 505.2MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 577.4MB / 2052MB, model amb)
+[prefix-cache] insert (lcp-split): 1312 tokens, 72.2MB (resident 649.5MB / 2052MB, model amb)
+[prime-batch] B=3 tokens=54 carried=3 partial=0 in 50.7ms
+[fa-pool] grow #4 dev=0 o_len 2129920 -> 4259840 ml_len 8320 -> 16640 (retired kept, zero=false)
+[fa-pool] grow #5 dev=0 o_len 4259840 -> 8519680 ml_len 16640 -> 33280 (retired kept, zero=false)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

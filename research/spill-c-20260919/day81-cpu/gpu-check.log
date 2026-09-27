@@ -1,0 +1,12 @@
+# DAY81 local GPU check (the development host's RTX 5090 under its lock): the door at I18 (run-gen-i18 da081bbcc55117d8...) and at I19 (run-gen-i19 2e92c4a45961fac9... = 9e23cc5bb), 32 tokens each, order i18 i19 i19 i18; per run: MATCH, gen-only and window seconds, and the host demand sequence's hash (trace lines without slot numbers)
+i18-a rc=0
+i19-a rc=0
+i19-b rc=0
+i18-b rc=0
+i18-a MATCH generated 32 tokens in 0.396s window: 32 decode steps in 0.337s trace=822fecd4961b5341
+i19-a MATCH generated 32 tokens in 0.390s window: 32 decode steps in 0.337s trace=822fecd4961b5341
+i19-b MATCH generated 32 tokens in 0.395s window: 32 decode steps in 0.349s trace=822fecd4961b5341
+i18-b MATCH generated 32 tokens in 0.391s window: 32 decode steps in 0.344s trace=822fecd4961b5341
+i19-a: the same tape as i18-a
+i19-b: the same tape as i18-a
+i18-b: the same tape as i18-a

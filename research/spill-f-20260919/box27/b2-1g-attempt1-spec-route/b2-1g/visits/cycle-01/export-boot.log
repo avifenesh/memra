@@ -1,0 +1,1303 @@
+[server] build: memra-0.138.0-7fa9fc83a253 (id: source-tree, git: ffff2d89afb7)
+[server] starting; models config = [("gate", "/scratch/spill-f/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /scratch/spill-f/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf
+[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[moe] resident-experts decision (dev0): experts 15.60GB + trunk 2.60GB vs free 100.92GB (expert budget 96.32GB) -> RESIDENT
+[q8rp] split-plane decode mirrors built: 191 tensors
+[worker]   loaded "gate": 41 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[route-contract] model="gate" route=hybrid-worker capacity=4 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+[worker] gate: decode wave cap 8; scheduler tick cap 8
+[prefix-host] on: budget 17180MB pinned cacheable host RAM (MEMRA_KV_HOST_MB, startup budget policy), plain byte-LRU, demote on device capacity eviction, promote on exact-prefix probe; verify=off (MEMRA_KV_HOST_VERIFY); tenant share cap 50% = 8590MB (MEMRA_KV_HOST_TENANT_PCT)
+[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 9280 B/token, spec 10208 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="gate" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[moe-sk-form] dev=0 qt=6 sms=188 occ128=1 occ32=6 occt=3 cross=64 xcross=64 bdb=0 in_f=2048 out_f=512 n_active=79 max_m=1639
+[moe-sk-form] dev=0 qt=5 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=79 max_m=1639
+[moe-sk-form] dev=0 qt=2 sms=188 occ128=1 occ32=7 occt=3 cross=64 xcross=64 bdb=0 in_f=512 out_f=2048 n_active=201 max_m=3650
+[fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+[spec-vg] MTP verify-graph pool ENGAGED (vt_cap=4)
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq_b4_rp
+[func] CAPTURE-TIME kernel lookup (not warmed): ssm_conv1d_fused_decode_tloop_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): gdn_scan_s128_tsnap
+[func] CAPTURE-TIME kernel lookup (not warmed): moe_gate_up_silu8_dev_q8_csr_iq4
+[func] CAPTURE-TIME kernel lookup (not warmed): moe_down8_fma_dev_q8_w8h2v_rows
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq_fused2_b4
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq_b4
+[fa-pool] grow #2 dev=0 o_len 532480 -> 1572864 ml_len 2080 -> 6144 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): moe_gate_up_silu8_dev_q8_v_rows
+[fa-pool] grow #3 dev=0 o_len 1572864 -> 3145728 ml_len 6144 -> 12288 (retired kept, zero=false)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":805306368,"still_owned_bytes":20820485980,"pool_reserved_bytes":21005074432,"pool_cached_bytes":184588452,"driver_free_bytes":80345104384,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 768MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=mtp transient floor 1536MB (static was 1536MB; measured 685MB; probe kv charge 41MB, draft-state 41MB, drafted 63 accepted 43; [dev0 peak-mapped 20800MB rest-mapped 20032MB charged 82MB -> 685MB]; 0.5s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["gate"]
+[handoff-gate] armed: SIGUSR1 exports the host tier
+[server] listening on http://127.0.0.1:18119
+[meter] admit id=cmpl-37c9d2422c175ee760c4120e7b451304 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 0MB fixed = 1496MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 135MB (observed 201MB at ctx 6526 path=spec)
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=231.495 max_chunk_ms=231.495
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=148.401 max_chunk_ms=148.401
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.194 max_chunk_ms=29.194
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.673 max_chunk_ms=18.673
+[meter] admit id=cmpl-111100a8d51a9b04b7c2d18cd1e74307 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6587 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 1 parked, 6522 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6522 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 135MB (observed 202MB at ctx 6531 path=spec)
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.355 max_chunk_ms=233.355
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=151.317 max_chunk_ms=151.317
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.769 max_chunk_ms=30.769
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.688 max_chunk_ms=18.688
+[meter] admit id=cmpl-0a9c6df610b35b168b3fafcb7399b59d tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6578 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6513 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6513 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.413 max_chunk_ms=232.413
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.905 max_chunk_ms=149.905
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.065 max_chunk_ms=29.065
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.688 max_chunk_ms=18.688
+[meter] admit id=cmpl-94ad3e5265c0268d0c90de83005e4d76 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6580 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6522; 2 parked, 6515 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6515 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.554 max_chunk_ms=232.554
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=148.736 max_chunk_ms=148.736
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.041 max_chunk_ms=29.041
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.652 max_chunk_ms=18.652
+[meter] admit id=cmpl-b663e9de761a76c55f74b293b0e23761 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6577 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6513; 2 parked, 6512 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6512 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.341 max_chunk_ms=232.341
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=148.700 max_chunk_ms=148.700
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=25.808 max_chunk_ms=25.808
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.618 max_chunk_ms=18.618
+[meter] admit id=cmpl-8abbb578e4050a0300b82c87b7762e0d tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6579 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6515; 2 parked, 6514 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6514 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.161 max_chunk_ms=232.161
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.235 max_chunk_ms=149.235
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.108 max_chunk_ms=29.108
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.728 max_chunk_ms=18.728
+[meter] admit id=cmpl-c84b1f7ade962efce9a73fd6bd92f43e tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6578 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6512; 2 parked, 6513 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6513 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.983 max_chunk_ms=232.983
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.047 max_chunk_ms=150.047
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=28.759 max_chunk_ms=28.759
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.697 max_chunk_ms=18.697
+[meter] admit id=cmpl-17ed0b3443753f0aa725b1366e085e75 tenant=default lane=interactive model="gate"
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6514; 2 parked, 6513 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6513 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.575 max_chunk_ms=232.575
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.383 max_chunk_ms=150.383
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=28.475 max_chunk_ms=28.475
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.562 max_chunk_ms=18.562
+[meter] admit id=cmpl-d6b2df6401f88e0e508ba826e4f17456 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6513; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.116 max_chunk_ms=232.116
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.396 max_chunk_ms=149.396
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.331 max_chunk_ms=29.331
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.632 max_chunk_ms=18.632
+[meter] admit id=cmpl-50d72ab3a6e7e76c2baf93b0dd5e4e45 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6583 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6513; 2 parked, 6518 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6518 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.415 max_chunk_ms=232.415
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.685 max_chunk_ms=150.685
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.144 max_chunk_ms=29.144
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.659 max_chunk_ms=18.659
+[meter] admit id=cmpl-8d241bb783855efd528758358702c3dd tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6581 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6516 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6516 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.513 max_chunk_ms=232.513
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.575 max_chunk_ms=149.575
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.258 max_chunk_ms=29.258
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.630 max_chunk_ms=18.630
+[meter] admit id=cmpl-b67e23ac08d387a970445826d4c1f416 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6577 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6518; 2 parked, 6512 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6512 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.620 max_chunk_ms=232.620
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.187 max_chunk_ms=149.187
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=25.883 max_chunk_ms=25.883
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.639 max_chunk_ms=18.639
+[meter] admit id=cmpl-4de232d5254bc89d4926df3afdbe883d tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6516; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=231.392 max_chunk_ms=231.392
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.081 max_chunk_ms=149.081
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=28.983 max_chunk_ms=28.983
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.618 max_chunk_ms=18.618
+[meter] admit id=cmpl-ce42799cbd45a0036283f84d540a3dce tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6586 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6512; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.390 max_chunk_ms=232.390
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.720 max_chunk_ms=149.720
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.822 max_chunk_ms=29.822
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.780 max_chunk_ms=18.780
+[meter] admit id=cmpl-f2082b93f6727c83ef75e45a9a936c37 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6584 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6519 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6519 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=231.636 max_chunk_ms=231.636
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.494 max_chunk_ms=150.494
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.569 max_chunk_ms=29.569
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.578 max_chunk_ms=18.578
+[meter] admit id=cmpl-47b93e5655687c074439c8b0c079f37e tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6580 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6515 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6515 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.821 max_chunk_ms=232.821
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.528 max_chunk_ms=150.528
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.005 max_chunk_ms=29.005
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.624 max_chunk_ms=18.624
+[meter] admit id=cmpl-18add578a88ac84213fdc32211f90a57 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6577 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6519; 2 parked, 6512 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6512 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=231.791 max_chunk_ms=231.791
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=148.744 max_chunk_ms=148.744
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=25.894 max_chunk_ms=25.894
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.587 max_chunk_ms=18.587
+[meter] admit id=cmpl-030ef4bae594bf2ad74b8ac5a99c8bdd tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6515; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=231.916 max_chunk_ms=231.916
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.700 max_chunk_ms=150.700
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.351 max_chunk_ms=29.351
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.631 max_chunk_ms=18.631
+[meter] admit id=cmpl-1386918b3a82c9de4f0ec0d53fe8e821 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6580 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6512; 2 parked, 6515 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6515 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=231.095 max_chunk_ms=231.095
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.028 max_chunk_ms=149.028
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=28.865 max_chunk_ms=28.865
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.677 max_chunk_ms=18.677
+[meter] admit id=cmpl-5ea4ee162193117f6ed687d92302a3a8 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6584 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6519 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6519 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.094 max_chunk_ms=233.094
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.123 max_chunk_ms=150.123
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.924 max_chunk_ms=29.924
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.643 max_chunk_ms=18.643
+[meter] admit id=cmpl-c1aaa6814d4447ba95c106024ddc81a9 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6515; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=231.857 max_chunk_ms=231.857
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.903 max_chunk_ms=149.903
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.470 max_chunk_ms=29.470
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.605 max_chunk_ms=18.605
+[meter] admit id=cmpl-7214bfd37994f64aaa3c288b8db0d1cc tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6584 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6519; 2 parked, 6519 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6519 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.553 max_chunk_ms=232.553
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.430 max_chunk_ms=150.430
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.369 max_chunk_ms=29.369
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.616 max_chunk_ms=18.616
+[meter] admit id=cmpl-08b732c7c0cccba4dc4f0647d3ea86a2 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.492 max_chunk_ms=232.492
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.579 max_chunk_ms=150.579
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.700 max_chunk_ms=29.700
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.677 max_chunk_ms=18.677
+[meter] admit id=cmpl-6eb91bd2d6c735b8c313267f2abd849c tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6589 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6519; 2 parked, 6524 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6524 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 135MB (observed 202MB at ctx 6533 path=spec)
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.125 max_chunk_ms=232.125
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.452 max_chunk_ms=149.452
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.290 max_chunk_ms=30.290
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.638 max_chunk_ms=18.638
+[meter] admit id=cmpl-dfbf184c5d1596341102eadb339af572 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6588 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6523 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6523 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=231.252 max_chunk_ms=231.252
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.675 max_chunk_ms=149.675
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.951 max_chunk_ms=29.951
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.609 max_chunk_ms=18.609
+[meter] admit id=cmpl-93b8cc7c91edb37a4441e5c18fb78c5d tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6583 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6524; 2 parked, 6518 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6518 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.349 max_chunk_ms=232.349
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.250 max_chunk_ms=150.250
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.586 max_chunk_ms=29.586
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.688 max_chunk_ms=18.688
+[meter] admit id=cmpl-c7bfb5f5387c31a0ceff1500c194a6a4 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6585 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6523; 2 parked, 6520 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6520 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.228 max_chunk_ms=232.228
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.845 max_chunk_ms=150.845
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.821 max_chunk_ms=29.821
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.699 max_chunk_ms=18.699
+[meter] admit id=cmpl-0221e956603a997918cbeb96d0bc3dca tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6586 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6518; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.128 max_chunk_ms=233.128
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.824 max_chunk_ms=149.824
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.878 max_chunk_ms=29.878
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.676 max_chunk_ms=18.676
+[meter] admit id=cmpl-a717c9fd4953655628cccb1113366d7b tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6584 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6520; 2 parked, 6519 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6519 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.761 max_chunk_ms=232.761
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=148.801 max_chunk_ms=148.801
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.389 max_chunk_ms=29.389
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.663 max_chunk_ms=18.663
+[meter] admit id=cmpl-f554c120ef036c5a2c68db5d3bd1dbc4 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6583 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6518 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6518 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.744 max_chunk_ms=233.744
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.729 max_chunk_ms=149.729
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.669 max_chunk_ms=29.669
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.731 max_chunk_ms=18.731
+[meter] admit id=cmpl-f8e918be347d147c38c967ad31d8e247 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6581 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6519; 2 parked, 6516 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6516 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.935 max_chunk_ms=232.935
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.165 max_chunk_ms=149.165
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.021 max_chunk_ms=29.021
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.638 max_chunk_ms=18.638
+[meter] admit id=cmpl-5c290ee7ffc9fdf2f831d2c04639cca1 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6584 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6518; 2 parked, 6519 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6519 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.013 max_chunk_ms=232.013
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.054 max_chunk_ms=150.054
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.651 max_chunk_ms=29.651
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.690 max_chunk_ms=18.690
+[meter] admit id=cmpl-ea15edbbe23b3776b797a5ccf0472d71 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6581 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6516; 2 parked, 6516 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6516 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.923 max_chunk_ms=232.923
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.006 max_chunk_ms=149.006
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.094 max_chunk_ms=29.094
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.722 max_chunk_ms=18.722
+[meter] admit id=cmpl-12afbb4838f87c57f26a865f09c84fd6 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6583 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6519; 2 parked, 6518 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6518 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.525 max_chunk_ms=232.525
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.155 max_chunk_ms=150.155
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.513 max_chunk_ms=29.513
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.599 max_chunk_ms=18.599
+[meter] admit id=cmpl-1a1bde15971d4274a0db1c95f5704f8f tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6586 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6516; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.118 max_chunk_ms=232.118
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.653 max_chunk_ms=150.653
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.249 max_chunk_ms=30.249
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.669 max_chunk_ms=18.669
+[meter] admit id=cmpl-8452e890e91f9ddf8ad8a2df62e31e12 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6587 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6518; 2 parked, 6522 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6522 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.954 max_chunk_ms=232.954
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=148.503 max_chunk_ms=148.503
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.872 max_chunk_ms=29.872
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.753 max_chunk_ms=18.753
+[meter] admit id=cmpl-e0620ced7ef8fdd4ffa589ec6f9b8e46 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6590 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6525 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6525 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 135MB (observed 202MB at ctx 6534 path=spec)
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.363 max_chunk_ms=233.363
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.987 max_chunk_ms=149.987
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.610 max_chunk_ms=30.610
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.743 max_chunk_ms=18.743
+[meter] admit id=cmpl-4047870640ce135350449af0822ee2f0 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6585 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6522; 2 parked, 6520 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6520 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.658 max_chunk_ms=232.658
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.971 max_chunk_ms=150.971
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.867 max_chunk_ms=29.867
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.726 max_chunk_ms=18.726
+[meter] admit id=cmpl-7b43c20dff677ca8804cdc4c1ae279f2 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6580 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6525; 2 parked, 6515 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6515 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.855 max_chunk_ms=233.855
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.100 max_chunk_ms=150.100
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.096 max_chunk_ms=29.096
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.613 max_chunk_ms=18.613
+[meter] admit id=cmpl-a1de309a6a641532c2bfe3248c983384 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6589 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6520; 2 parked, 6524 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6524 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.380 max_chunk_ms=233.380
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.359 max_chunk_ms=149.359
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.222 max_chunk_ms=30.222
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.699 max_chunk_ms=18.699
+[meter] admit id=cmpl-9e506e52c0f398e169c5ae2fd280417c tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6586 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6515; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.726 max_chunk_ms=233.726
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.711 max_chunk_ms=149.711
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.697 max_chunk_ms=29.697
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.724 max_chunk_ms=18.724
+[meter] admit id=cmpl-28a6e897d6cf7a5ad9a48f6b4079682a tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6581 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6524; 2 parked, 6516 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6516 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.558 max_chunk_ms=232.558
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.999 max_chunk_ms=150.999
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.219 max_chunk_ms=29.219
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.687 max_chunk_ms=18.687
+[meter] admit id=cmpl-30f92faeec8e885050230ada2a4176d5 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.767 max_chunk_ms=233.767
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.443 max_chunk_ms=150.443
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.514 max_chunk_ms=29.514
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.635 max_chunk_ms=18.635
+[meter] admit id=cmpl-2a45b3dc4e13693f5a6df5161c036377 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6588 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6516; 2 parked, 6523 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6523 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.679 max_chunk_ms=233.679
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.545 max_chunk_ms=150.545
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.277 max_chunk_ms=30.277
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.713 max_chunk_ms=18.713
+[meter] admit id=cmpl-43fe63c78f99428a53dd204ca6837a23 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6586 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.926 max_chunk_ms=233.926
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.314 max_chunk_ms=149.314
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.047 max_chunk_ms=30.047
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=19.010 max_chunk_ms=19.010
+[meter] admit id=cmpl-974bf0583ae5eca88c3d195f7211b96f tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6590 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6523; 2 parked, 6525 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6525 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.176 max_chunk_ms=233.176
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=151.057 max_chunk_ms=151.057
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.391 max_chunk_ms=30.391
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.800 max_chunk_ms=18.800
+[meter] admit id=cmpl-385090d11ba981c3aaba779442ea3eaf tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6584 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6519 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6519 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.490 max_chunk_ms=232.490
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.338 max_chunk_ms=150.338
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.768 max_chunk_ms=29.768
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.673 max_chunk_ms=18.673
+[meter] admit id=cmpl-8ca92f86a1b55135eea8cb55ba69123e tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6581 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6525; 2 parked, 6516 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6516 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.017 max_chunk_ms=234.017
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.852 max_chunk_ms=150.852
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.159 max_chunk_ms=29.159
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.710 max_chunk_ms=18.710
+[meter] admit id=cmpl-6246d271a5d38d1535b7681fa4cd893d tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6519; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.777 max_chunk_ms=232.777
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.328 max_chunk_ms=149.328
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.708 max_chunk_ms=29.708
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.640 max_chunk_ms=18.640
+[meter] admit id=cmpl-36370fbc657882a2b19fb3999c6b4fe5 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6587 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6516; 2 parked, 6522 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6522 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.929 max_chunk_ms=233.929
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.992 max_chunk_ms=149.992
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.390 max_chunk_ms=30.390
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.669 max_chunk_ms=18.669
+[meter] admit id=cmpl-f400638106225f0223bce48c71d40c22 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6586 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.674 max_chunk_ms=232.674
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.633 max_chunk_ms=150.633
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.779 max_chunk_ms=29.779
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.641 max_chunk_ms=18.641
+[meter] admit id=cmpl-a22c84b04e4fda0d17c524ee127dcb18 tenant=default lane=interactive model="gate"
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6522; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.785 max_chunk_ms=232.785
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.703 max_chunk_ms=150.703
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.496 max_chunk_ms=30.496
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.643 max_chunk_ms=18.643
+[meter] admit id=cmpl-d062a561651741bad2cc8326f810ae03 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6580 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6515 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6515 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.350 max_chunk_ms=233.350
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=148.786 max_chunk_ms=148.786
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.121 max_chunk_ms=29.121
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.610 max_chunk_ms=18.610
+[meter] admit id=cmpl-c1bf793f6cfe54e3045dd21c21d36e2e tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6586 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.802 max_chunk_ms=232.802
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.284 max_chunk_ms=150.284
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.343 max_chunk_ms=30.343
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.629 max_chunk_ms=18.629
+[meter] admit id=cmpl-6c222731df3ba6017162d04562c3ac19 tenant=default lane=interactive model="gate"
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6515; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.671 max_chunk_ms=232.671
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.611 max_chunk_ms=150.611
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.339 max_chunk_ms=30.339
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.654 max_chunk_ms=18.654
+[meter] admit id=cmpl-a2cf94750f18292d4a2e269385f3d0bb tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6583 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6518 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6518 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.308 max_chunk_ms=232.308
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.677 max_chunk_ms=149.677
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.694 max_chunk_ms=29.694
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.708 max_chunk_ms=18.708
+[meter] admit id=cmpl-e13e64124f0d46cb442b21437b4ee3a3 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6596 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6531 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6531 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 135MB (observed 202MB at ctx 6540 path=spec)
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.686 max_chunk_ms=233.686
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.965 max_chunk_ms=150.965
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=31.274 max_chunk_ms=31.274
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.714 max_chunk_ms=18.714
+[meter] admit id=cmpl-fdfabf385181d45a1dbd51fc1ba6b9c4 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6584 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6518; 2 parked, 6519 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6519 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.458 max_chunk_ms=233.458
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.506 max_chunk_ms=150.506
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.653 max_chunk_ms=29.653
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.620 max_chunk_ms=18.620
+[meter] admit id=cmpl-462f97b9545ae6683e9cff175eb7c205 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6586 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6531; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.720 max_chunk_ms=233.720
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.522 max_chunk_ms=150.522
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.817 max_chunk_ms=29.817
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.684 max_chunk_ms=18.684
+[meter] admit id=cmpl-f3b8f32df1c2127b282b6cc37aed34e2 tenant=default lane=interactive model="gate"
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6519; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.896 max_chunk_ms=233.896
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.514 max_chunk_ms=150.514
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.923 max_chunk_ms=29.923
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.691 max_chunk_ms=18.691
+[meter] admit id=cmpl-b364967a3b4465736efee239818cf0cf tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6584 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6519 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6519 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.323 max_chunk_ms=233.323
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.994 max_chunk_ms=150.994
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.925 max_chunk_ms=29.925
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.691 max_chunk_ms=18.691
+[meter] admit id=cmpl-d711b49a06ea200b6d28fc2f5f8a6c63 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.117 max_chunk_ms=234.117
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.727 max_chunk_ms=150.727
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.699 max_chunk_ms=29.699
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.698 max_chunk_ms=18.698
+[meter] admit id=cmpl-d55bd7f252dda37c9fb5a180430981d9 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6586 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6519; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.883 max_chunk_ms=233.883
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=151.190 max_chunk_ms=151.190
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.428 max_chunk_ms=30.428
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.647 max_chunk_ms=18.647
+[meter] admit id=cmpl-b7de85ed4b7dd626b2ae6d2496eef91d tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6590 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6525 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6525 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.102 max_chunk_ms=233.102
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=151.318 max_chunk_ms=151.318
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.707 max_chunk_ms=30.707
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.683 max_chunk_ms=18.683
+[meter] admit id=cmpl-581267e3ca029688b2a0ba9ed293ebfb tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6588 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6523 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6523 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.370 max_chunk_ms=232.370
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.947 max_chunk_ms=150.947
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.487 max_chunk_ms=30.487
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.660 max_chunk_ms=18.660
+[meter] admit id=cmpl-b4d17ac990e3036f4d3b0f1732a670f0 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6589 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6525; 2 parked, 6524 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6524 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.824 max_chunk_ms=233.824
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.322 max_chunk_ms=150.322
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.311 max_chunk_ms=30.311
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.712 max_chunk_ms=18.712
+[meter] admit id=cmpl-690e8c369e85cda1067e8ee3d7b783ce tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6583 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6523; 2 parked, 6518 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6518 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.180 max_chunk_ms=234.180
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.125 max_chunk_ms=150.125
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.429 max_chunk_ms=29.429
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.804 max_chunk_ms=18.804
+[meter] admit id=cmpl-5582807af24b153244e505c2e89165ad tenant=default lane=interactive model="gate"
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6524; 2 parked, 6518 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6518 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.781 max_chunk_ms=233.781
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.570 max_chunk_ms=150.570
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.800 max_chunk_ms=29.800
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.660 max_chunk_ms=18.660
+[meter] admit id=cmpl-4292b9056f55461f3d621ae296000e15 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6585 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6518; 2 parked, 6520 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6520 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.943 max_chunk_ms=233.943
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.411 max_chunk_ms=150.411
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.905 max_chunk_ms=29.905
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.709 max_chunk_ms=18.709
+[meter] admit id=cmpl-f83429518e2d73da6d4bb6b97872e90a tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6584 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6518; 2 parked, 6519 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6519 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.959 max_chunk_ms=232.959
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.224 max_chunk_ms=150.224
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.520 max_chunk_ms=29.520
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.594 max_chunk_ms=18.594
+[meter] admit id=cmpl-3a8d231c8647e41829b48a69b5873920 tenant=default lane=interactive model="gate"
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6520; 2 parked, 6519 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6519 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.275 max_chunk_ms=234.275
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=151.394 max_chunk_ms=151.394
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.720 max_chunk_ms=29.720
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.597 max_chunk_ms=18.597
+[meter] admit id=cmpl-5a248ad5952283cd7b71b1a11adc3e10 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6587 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6519; 2 parked, 6522 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6522 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.467 max_chunk_ms=234.467
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=151.022 max_chunk_ms=151.022
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.486 max_chunk_ms=30.486
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.785 max_chunk_ms=18.785
+[meter] admit id=cmpl-3026f93052a91b07ac4151ccb12ca9b1 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6583 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6519; 2 parked, 6518 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6518 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.129 max_chunk_ms=234.129
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.195 max_chunk_ms=150.195
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.584 max_chunk_ms=29.584
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.743 max_chunk_ms=18.743
+[meter] admit id=cmpl-9ca72da2c4a7b9ab03fafa90d0220249 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6522; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.923 max_chunk_ms=233.923
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.774 max_chunk_ms=150.774
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.307 max_chunk_ms=29.307
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.739 max_chunk_ms=18.739
+[meter] admit id=cmpl-466a39520a687d490483b8f65afe68b5 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6588 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6518; 2 parked, 6523 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6523 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.864 max_chunk_ms=233.864
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=151.034 max_chunk_ms=151.034
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.333 max_chunk_ms=30.333
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.683 max_chunk_ms=18.683
+[meter] admit id=cmpl-ed2e8b4ac5b024057e5956551203a188 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6584 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6519 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6519 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.066 max_chunk_ms=234.066
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.949 max_chunk_ms=149.949
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.007 max_chunk_ms=30.007
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.626 max_chunk_ms=18.626
+[meter] admit id=cmpl-34633c7ff9e045f7c3ceddbc20fa5fd0 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6586 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6523; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.343 max_chunk_ms=234.343
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.936 max_chunk_ms=150.936
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.085 max_chunk_ms=30.085
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.691 max_chunk_ms=18.691
+[meter] admit id=cmpl-486342c045b1df14ce5d8bf0bf23815e tenant=default lane=interactive model="gate"
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6519; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.956 max_chunk_ms=232.956
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.786 max_chunk_ms=150.786
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.046 max_chunk_ms=30.046
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.675 max_chunk_ms=18.675
+[meter] admit id=cmpl-b1d775ad6d08f74e72e8a59b4edab688 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.852 max_chunk_ms=233.852
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.064 max_chunk_ms=150.064
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.390 max_chunk_ms=29.390
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.675 max_chunk_ms=18.675
+[meter] admit id=cmpl-5f08802012b0fbe507ea30a84701c474 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6585 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6520 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6520 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.509 max_chunk_ms=234.509
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.133 max_chunk_ms=150.133
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.970 max_chunk_ms=29.970
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.856 max_chunk_ms=18.856
+[meter] admit id=cmpl-20a51709d25f1c4509279e3bdeb97416 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6589 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6524 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6524 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.872 max_chunk_ms=233.872
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.329 max_chunk_ms=150.329
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.464 max_chunk_ms=30.464
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.730 max_chunk_ms=18.730
+[meter] admit id=cmpl-82031375bd20e8d0789830a17fbf95ca tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6520; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.232 max_chunk_ms=233.232
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.007 max_chunk_ms=150.007
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.850 max_chunk_ms=29.850
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.695 max_chunk_ms=18.695
+[meter] admit id=cmpl-471068ca009b3287206b831ff342e849 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6586 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6524; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.610 max_chunk_ms=233.610
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.760 max_chunk_ms=150.760
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.131 max_chunk_ms=30.131
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.718 max_chunk_ms=18.718
+[meter] admit id=cmpl-df71a765bd321f901e40feb5e287aa55 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.060 max_chunk_ms=233.060
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.796 max_chunk_ms=149.796
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.315 max_chunk_ms=29.315
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.776 max_chunk_ms=18.776
+[meter] admit id=cmpl-0892ffb37c959d42ddd0506fa4db0507 tenant=default lane=interactive model="gate"
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.002 max_chunk_ms=233.002
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.476 max_chunk_ms=149.476
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.543 max_chunk_ms=29.543
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.795 max_chunk_ms=18.795
+[meter] admit id=cmpl-b4fd0a808bbb7102ead44b8b33040756 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6590 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6525 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6525 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.758 max_chunk_ms=233.758
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=151.111 max_chunk_ms=151.111
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.565 max_chunk_ms=30.565
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.715 max_chunk_ms=18.715
+[meter] admit id=cmpl-a6219fa753e1e0633c992dbd08ff1c47 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6591 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6526 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6526 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.105 max_chunk_ms=233.105
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.472 max_chunk_ms=150.472
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.626 max_chunk_ms=30.626
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.663 max_chunk_ms=18.663
+[meter] admit id=cmpl-5adc42ab8dadb7618dba7e32eb51a8ba tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6585 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6525; 2 parked, 6520 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6520 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.239 max_chunk_ms=233.239
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.627 max_chunk_ms=149.627
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.504 max_chunk_ms=29.504
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.639 max_chunk_ms=18.639
+[meter] admit id=cmpl-832cda61b843073dd99842bd51589e31 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6589 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6526; 2 parked, 6524 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6524 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.302 max_chunk_ms=234.302
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.607 max_chunk_ms=150.607
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.436 max_chunk_ms=30.436
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.657 max_chunk_ms=18.657
+[meter] admit id=cmpl-4e93d0a7c751638bfd3588520e04a321 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6588 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6520; 2 parked, 6523 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6523 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=232.954 max_chunk_ms=232.954
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=151.200 max_chunk_ms=151.200
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.524 max_chunk_ms=30.524
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.727 max_chunk_ms=18.727
+[meter] admit id=cmpl-259d434a795f72e61b043a9cc7dc5d04 tenant=default lane=interactive model="gate"
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6524; 2 parked, 6523 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6523 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.172 max_chunk_ms=234.172
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.535 max_chunk_ms=149.535
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.261 max_chunk_ms=30.261
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.715 max_chunk_ms=18.715
+[meter] admit id=cmpl-2b577756dd266696fac206ba27cb9626 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6523; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.199 max_chunk_ms=233.199
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.415 max_chunk_ms=150.415
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.322 max_chunk_ms=29.322
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.727 max_chunk_ms=18.727
+[meter] admit id=cmpl-e1b6ddfa35291c49960b60d73a31d7be tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6583 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6523; 2 parked, 6518 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6518 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.430 max_chunk_ms=233.430
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.938 max_chunk_ms=150.938
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.410 max_chunk_ms=29.410
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.665 max_chunk_ms=18.665
+[meter] admit id=cmpl-0505e08174762ef1a908bd5ea8216c30 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6584 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6519 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6519 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.098 max_chunk_ms=233.098
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.876 max_chunk_ms=149.876
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.603 max_chunk_ms=29.603
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.873 max_chunk_ms=18.873
+[meter] admit id=cmpl-63be0964aca61b16b1bb6ea17199508f tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6586 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6518; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.425 max_chunk_ms=233.425
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.838 max_chunk_ms=150.838
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.024 max_chunk_ms=30.024
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.717 max_chunk_ms=18.717
+[meter] admit id=cmpl-f68995cf5bda3d5ccb64d22503b72936 tenant=default lane=interactive model="gate"
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6519; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.380 max_chunk_ms=233.380
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.499 max_chunk_ms=150.499
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.156 max_chunk_ms=30.156
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.696 max_chunk_ms=18.696
+[meter] admit id=cmpl-b2d2ba6f4a14fdae7e2e4b83ea962509 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6590 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6525 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6525 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.584 max_chunk_ms=233.584
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.857 max_chunk_ms=149.857
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.580 max_chunk_ms=30.580
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.763 max_chunk_ms=18.763
+[meter] admit id=cmpl-30dc4b915321554b839a0aad282fd07b tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6584 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6519 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6519 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.160 max_chunk_ms=234.160
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=151.166 max_chunk_ms=151.166
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.899 max_chunk_ms=29.899
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.771 max_chunk_ms=18.771
+[meter] admit id=cmpl-cb422b46b50157c0eb6c3d507f912dad tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6583 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6525; 2 parked, 6518 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6518 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.284 max_chunk_ms=233.284
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.309 max_chunk_ms=150.309
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.822 max_chunk_ms=29.822
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.713 max_chunk_ms=18.713
+[meter] admit id=cmpl-1f8ba1559a8423a8d52bcb6d24f93bd7 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6586 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6519; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.346 max_chunk_ms=233.346
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.528 max_chunk_ms=149.528
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.857 max_chunk_ms=29.857
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.699 max_chunk_ms=18.699
+[meter] admit id=cmpl-aa0d6210a78cbee622e6a7f3952a8ef4 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6592 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6518; 2 parked, 6527 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6527 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.610 max_chunk_ms=233.610
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.021 max_chunk_ms=150.021
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.653 max_chunk_ms=30.653
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.687 max_chunk_ms=18.687
+[meter] admit id=cmpl-2a9b587e06f035e7d8778a3a1cefed68 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6588 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6523 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6523 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.277 max_chunk_ms=234.277
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=151.238 max_chunk_ms=151.238
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.190 max_chunk_ms=30.190
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.777 max_chunk_ms=18.777
+[meter] admit id=cmpl-7a8df4dd4c83f6d313455486979ecb08 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6589 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6527; 2 parked, 6524 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6524 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.724 max_chunk_ms=234.724
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.964 max_chunk_ms=149.964
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.222 max_chunk_ms=30.222
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.714 max_chunk_ms=18.714
+[meter] admit id=cmpl-764676edfd19ee9e36556e179a5d5631 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6523; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.372 max_chunk_ms=234.372
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.262 max_chunk_ms=150.262
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.320 max_chunk_ms=29.320
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.690 max_chunk_ms=18.690
+[meter] admit id=cmpl-dba839746b95821563191ceb9e5da3e2 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6585 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6524; 2 parked, 6520 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6520 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.694 max_chunk_ms=234.694
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=151.093 max_chunk_ms=151.093
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.753 max_chunk_ms=29.753
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.679 max_chunk_ms=18.679
+[meter] admit id=cmpl-f05ec79124a776e5324a607e1915b636 tenant=default lane=interactive model="gate"
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6520 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6520 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.051 max_chunk_ms=234.051
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=148.993 max_chunk_ms=148.993
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.956 max_chunk_ms=29.956
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.772 max_chunk_ms=18.772
+[meter] admit id=cmpl-2e7846882ae80b277ee5fd15c2a5e602 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6584 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6520; 2 parked, 6519 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6519 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.473 max_chunk_ms=233.473
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.070 max_chunk_ms=149.070
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.685 max_chunk_ms=29.685
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.720 max_chunk_ms=18.720
+[meter] admit id=cmpl-e1ef103650b2cf4595395b1549f7c8f5 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6588 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6520; 2 parked, 6523 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6523 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.657 max_chunk_ms=233.657
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.777 max_chunk_ms=150.777
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.443 max_chunk_ms=30.443
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.721 max_chunk_ms=18.721
+[meter] admit id=cmpl-a9be3bfa766adf88f789ba8d873e2cb7 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6584 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6519; 2 parked, 6519 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6519 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.677 max_chunk_ms=233.677
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.044 max_chunk_ms=150.044
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.755 max_chunk_ms=29.755
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.726 max_chunk_ms=18.726
+[meter] admit id=cmpl-8f2974efe4f7f246505f0ff0fff564be tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6589 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6523; 2 parked, 6524 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6524 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=235.218 max_chunk_ms=235.218
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.884 max_chunk_ms=149.884
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.280 max_chunk_ms=30.280
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.685 max_chunk_ms=18.685
+[meter] admit id=cmpl-f45f45cfb1d9e952f924e9f8dd7a4441 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6519; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.613 max_chunk_ms=233.613
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.073 max_chunk_ms=150.073
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.663 max_chunk_ms=29.663
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.704 max_chunk_ms=18.704
+[meter] admit id=cmpl-a2ecd9cb5d2fc53e8142513501975df9 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6586 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6524; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.164 max_chunk_ms=234.164
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=151.044 max_chunk_ms=151.044
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.176 max_chunk_ms=30.176
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.691 max_chunk_ms=18.691
+[meter] admit id=cmpl-25d1c3ff95ea1c27db98fe3a45cd74c2 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.675 max_chunk_ms=234.675
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.515 max_chunk_ms=149.515
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.406 max_chunk_ms=29.406
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.752 max_chunk_ms=18.752
+[meter] admit id=cmpl-08db02548ed1f5167da23cab8d4681c7 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6585 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6520 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6520 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.128 max_chunk_ms=233.128
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.975 max_chunk_ms=149.975
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.925 max_chunk_ms=29.925
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.777 max_chunk_ms=18.777
+[meter] admit id=cmpl-1a41a5a20d8d1e0d7fdc1c80e72efa80 tenant=default lane=interactive model="gate"
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6520 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6520 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.146 max_chunk_ms=234.146
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.439 max_chunk_ms=150.439
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.998 max_chunk_ms=29.998
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.810 max_chunk_ms=18.810
+[meter] admit id=cmpl-55150dd75d8c390903c8fdec264027ee tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6591 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6520; 2 parked, 6526 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6526 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.908 max_chunk_ms=234.908
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.166 max_chunk_ms=150.166
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.558 max_chunk_ms=30.558
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.783 max_chunk_ms=18.783
+[meter] admit id=cmpl-e0669e42a0bc62259478b9cfc21c586c tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6590 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6520; 2 parked, 6525 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6525 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.336 max_chunk_ms=234.336
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.879 max_chunk_ms=149.879
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.409 max_chunk_ms=30.409
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.692 max_chunk_ms=18.692
+[meter] admit id=cmpl-289c8879bd7396b8b9b575be67332865 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6586 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6526; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.459 max_chunk_ms=233.459
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.166 max_chunk_ms=150.166
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.880 max_chunk_ms=29.880
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.690 max_chunk_ms=18.690
+[meter] admit id=cmpl-a00a8d6014f40225f56a8aede139e13d tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6588 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6525; 2 parked, 6523 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6523 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.893 max_chunk_ms=233.893
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.233 max_chunk_ms=150.233
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.469 max_chunk_ms=30.469
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.784 max_chunk_ms=18.784
+[meter] admit id=cmpl-d5b70581a494ccc244d414db8b0f079f tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6590 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6525 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6525 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.324 max_chunk_ms=234.324
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.933 max_chunk_ms=149.933
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.530 max_chunk_ms=30.530
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.728 max_chunk_ms=18.728
+[meter] admit id=cmpl-dea7e308496bce108b00c09685df9ea4 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6523; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.798 max_chunk_ms=233.798
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=149.274 max_chunk_ms=149.274
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.333 max_chunk_ms=29.333
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.769 max_chunk_ms=18.769
+[meter] admit id=cmpl-e9fab03e0ce5ef45b00cd89678ac2dc6 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6585 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6525; 2 parked, 6520 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6520 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.267 max_chunk_ms=234.267
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.149 max_chunk_ms=150.149
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.088 max_chunk_ms=30.088
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.762 max_chunk_ms=18.762
+[meter] admit id=cmpl-80ddf70cfc18522d8acdd453642622ab tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6586 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.559 max_chunk_ms=234.559
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.143 max_chunk_ms=150.143
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.159 max_chunk_ms=30.159
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.629 max_chunk_ms=18.629
+[meter] admit id=cmpl-921003907d9863ac5de5a20a4f30bbf6 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6582 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6520; 2 parked, 6517 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6517 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=233.746 max_chunk_ms=233.746
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.613 max_chunk_ms=150.613
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.452 max_chunk_ms=29.452
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.708 max_chunk_ms=18.708
+[meter] admit id=cmpl-19ef8f264f64ee564bae8638800360d3 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6593 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6521; 2 parked, 6528 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6528 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=3 chunks=1 wall_ms=234.254 max_chunk_ms=234.254
+[prime-yield] count=2 remaining=2 chunks=1 wall_ms=159.130 max_chunk_ms=159.130
+[prime-yield] count=3 remaining=1 chunks=1 wall_ms=18.742 max_chunk_ms=18.742
+[meter] admit id=cmpl-5809cd8feeef3ef3729bfa05cdce9967 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6591 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6517; 2 parked, 6526 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6526 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.850 max_chunk_ms=234.850
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.328 max_chunk_ms=150.328
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.714 max_chunk_ms=30.714
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.706 max_chunk_ms=18.706
+[meter] admit id=cmpl-2bf3ec319fdc220df31c8be26a92d6e5 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6586 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6528; 2 parked, 6521 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6521 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=234.361 max_chunk_ms=234.361
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=150.601 max_chunk_ms=150.601
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=29.900 max_chunk_ms=29.900
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.854 max_chunk_ms=18.854
+[meter] admit id=cmpl-e05db25c0dd3b03995596d439e278574 tenant=default lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +43MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=6590 path=spec = 10208 B/token x ctx + 1429MB prefill-workspace + 135MB fixed = 1631MB
+[admission] dspark verify-graph pool debt: +34MB reserved (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)
+[worker] spec-affinity: declined (history diverged at 2 of checkpoint 6526; 2 parked, 6525 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=3 source=cold-long prompt=6525 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[prime-yield] count=1 remaining=4 chunks=1 wall_ms=235.206 max_chunk_ms=235.206
+[prime-yield] count=2 remaining=3 chunks=1 wall_ms=151.675 max_chunk_ms=151.675
+[prime-yield] count=3 remaining=2 chunks=1 wall_ms=30.471 max_chunk_ms=30.471
+[prime-yield] count=4 remaining=1 chunks=1 wall_ms=18.832 max_chunk_ms=18.832
+[prefix-host] handoff export: 0 entries / 0.0MB to /scratch/spill-f/b2/handoff.bin in 2ms write_ms=0.2 fsync_ms=1.8 (drain-demoted 0 device entries first; 0 skipped over the MEMRA_KV_HOST_HANDOFF_MB cap)
+[handoff-gate] export ok {"path":"/scratch/spill-f/b2/handoff.bin","demoted_from_device":0,"entries":0,"bytes":0,"skipped_over_cap":0,"ms":2.114551}
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[handoff-gate] handles dropped on drain
+[server] GPU worker shutdown complete

@@ -1,0 +1,14 @@
+M1-FIO prepare bw=6505.1MB/s iops=1551 cpu_s/GiB=0.0427951875
+M1-FIO grid-4096-1-psync bw=77.9MB/s iops=19013 cpu_s/GiB=0.9289094174222186
+Traceback (most recent call last):
+  File "/root/wt-f/research/spill-f-20260919/m1-fio-envelope.py", line 224, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-f/research/spill-f-20260919/m1-fio-envelope.py", line 220, in main
+    return run(args)
+           ^^^^^^^^^
+  File "/root/wt-f/research/spill-f-20260919/m1-fio-envelope.py", line 175, in run
+    B.require(child.returncode == 0, f"fio failed in {step['name']}; see {step['name']}.stderr")
+  File "/root/wt-f/tools/tier-battery.py", line 60, in require
+    raise ValueError(message)
+ValueError: fio failed in grid-4096-1-io_uring; see grid-4096-1-io_uring.stderr

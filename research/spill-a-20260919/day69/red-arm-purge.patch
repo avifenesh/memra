@@ -1,0 +1,14 @@
+diff --git a/crates/memra-server/src/worker.rs b/crates/memra-server/src/worker.rs
+index ae8cdbc38..387419f67 100644
+--- a/crates/memra-server/src/worker.rs
++++ b/crates/memra-server/src/worker.rs
+@@ -9682,8 +9682,7 @@ impl HostPrefixCache {
+         self.purges += 1;
+         self.purged_entries += entries as u64;
+         self.purged_bytes += bytes as u64;
+-        // WP-A day 69 (`DAY69.md` design P.4): the scrub, after the settles and the entries' drop.
+-        self.purge_scrub();
++        // day69 red arm: the purge does not scrub.
+         (victims.len(), entries, bytes)
+     }
+ 

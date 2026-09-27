@@ -1,0 +1,17 @@
+diff --git a/crates/memra-engine/cu/dsv4_gpu.cu b/crates/memra-engine/cu/dsv4_gpu.cu
+index f13146de1..8591e77e3 100644
+--- a/crates/memra-engine/cu/dsv4_gpu.cu
++++ b/crates/memra-engine/cu/dsv4_gpu.cu
+@@ -4354,10 +4354,10 @@ static void dsv4_gemm_fp8_tile_launch(const void* w_codes, const float* sc_f32,
+ #define DSV4_DOTS_TILE_TT 8
+ #endif
+ #ifndef DSV4_DOTS_TILE_TN
+-#define DSV4_DOTS_TILE_TN 8
++#define DSV4_DOTS_TILE_TN 4
+ #endif
+ #ifndef DSV4_DOTS_TILE_MINB
+-#define DSV4_DOTS_TILE_MINB 1
++#define DSV4_DOTS_TILE_MINB 4
+ #endif
+ template <int TT, int TN, int MINB>
+ __global__ void __launch_bounds__(128, MINB) dsv4_dots_f32acc_tile_kernel(

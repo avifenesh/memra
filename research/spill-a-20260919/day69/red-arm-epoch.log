@@ -1,0 +1,34 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-a-i69/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.43s
+     Running unittests src/lib.rs (/home/avifenesh/projects/wt-spill-a/target/debug/deps/memra_engine-47ae06a2f9cbea34)
+
+running 3 tests
+test tier_transfer::tests::day69_a_drained_backing_is_never_the_next_lease ... ignored, native CUDA required; run under the provided one-card exclusive lock
+test tier_transfer::tests::day69_a_drain_frees_every_idle_backing_and_no_earlier_backing_parks_again ... FAILED
+test tier_transfer::tests::day69_the_pool_parks_only_in_its_epoch_and_the_drain_advances_it_first ... FAILED
+
+failures:
+
+---- tier_transfer::tests::day69_a_drain_frees_every_idle_backing_and_no_earlier_backing_parks_again stdout ----
+
+thread 'tier_transfer::tests::day69_a_drain_frees_every_idle_backing_and_no_earlier_backing_parks_again' (4147299) panicked at crates/memra-engine/src/tier_transfer.rs:5626:9:
+assertion `left == right` failed: the earlier backing freed at its drop
+  left: 2
+ right: 3
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- tier_transfer::tests::day69_the_pool_parks_only_in_its_epoch_and_the_drain_advances_it_first stdout ----
+
+thread 'tier_transfer::tests::day69_the_pool_parks_only_in_its_epoch_and_the_drain_advances_it_first' (4147300) panicked at crates/memra-engine/src/tier_transfer.rs:5686:9:
+assertion failed: put.contains("|| epoch != self.epoch.get()")
+
+
+failures:
+    tier_transfer::tests::day69_a_drain_frees_every_idle_backing_and_no_earlier_backing_parks_again
+    tier_transfer::tests::day69_the_pool_parks_only_in_its_epoch_and_the_drain_advances_it_first
+
+test result: FAILED. 0 passed; 2 failed; 1 ignored; 0 measured; 626 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-engine --lib`

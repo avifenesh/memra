@@ -1,0 +1,8 @@
+DAY44 MAPPED CHECKS rig=rtx5090 runs=30 integrity=ok
+DAY44 CLAUSE census i9 mmap=120 (15219032064 bytes) pinned=0 (0) paged=0 (0) rule pinned=0 paged=0 mmap>0 on every i9 run -> PASS
+DAY44 ARM i6 window_door_ms_per_token pooled=21.97 o1=21.59 o2=21.97 window_s median=1.034 iqr=0.017 install_s median=60.74 iqr=1.45 loaded_s median=4.98 iqr=0.71
+DAY44 ARM i9 window_door_ms_per_token pooled=21.86 o1=21.53 o2=22.00 window_s median=1.030 iqr=0.018 install_s median=9.84 iqr=0.17 loaded_s median=0.73 iqr=0.04
+DAY44 CLAUSE (i) no_regression i9_minus_i6 window pooled=-0.004 o1=-0.002 o2=+0.001 noise=0.018 rule <=noise pooled and both orders -> PASS
+DAY44 READING (ii) install i9_minus_i6 o1=-51.71 o2=-50.47 noise=1.45 -> install_falls
+DAY44 READING (iii) load i9_minus_i6 o1=-4.53 o2=-3.84 noise=0.71 -> load_not_higher
+DAY44 MAPPED rig=rtx5090 integrity=ok census=PASS no_regression=PASS

@@ -1,0 +1,7 @@
+DAY62 READING order=o1 stall prime=280.20 retire-seam=280.36 retire-seam-other=259.02 ms | holds source N=45 median=86.69 no-source N=0 median=nan ms
+DAY62 READING order=o2 stall prime=280.40 retire-seam=280.53 retire-seam-other=259.07 ms | holds source N=45 median=86.85 no-source N=0 median=nan ms
+DAY62 IN-FLIGHT shape=source {'demote': 90}
+DAY62 IN-FLIGHT shape=no-source {}
+DAY62 OTHER retire settles (not a shape's): {('prime', 'yes'): 90}
+DAY62 SHAPE MISSING (o1 no-source, o2 no-source) -> that shape selects nothing
+DAY62 SELECT -> R2 (the source's planes held by the capture)

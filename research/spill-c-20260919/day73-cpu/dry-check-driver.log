@@ -1,0 +1,18 @@
+== run 1 calls
+STUB day63-box-build.sh D/root/wt-c-build D/root/spill-receipts/c-day73-pro-single p71=1
+STUB day40-run-cell.sh compact 5400 script=D/root/wt-c/research/spill-c-20260919/day73-cell.sh
+STUB tier-battery --rig pro-single --validate D/root/spill-receipts/c-day73-pro-single/compact
+STUB day73-read.py D/root/spill-receipts/c-day73-pro-single/compact --rig pro-single
+== run 1 driver lines
+box start 2026-09-25T23:02:16Z tree 0ff13c74c75e726c1a7dc1735a22c6aef0895425 rig pro-single
+cpu cap: each run pinned by the cell to its arm's 12 CPUs (DAY73 section 1); the runner unpinned
+compact rc=0 2026-09-25T23:02:16Z
+compact validate rc=0
+compact reader rc=0
+box done 2026-09-25T23:02:16Z
+== run 2 calls
+== run 2 driver lines
+box start 2026-09-25T23:02:16Z tree 0ff13c74c75e726c1a7dc1735a22c6aef0895425 rig pro-single
+cpu cap: each run pinned by the cell to its arm's 12 CPUs (DAY73 section 1); the runner unpinned
+compact already done
+box done 2026-09-25T23:02:16Z

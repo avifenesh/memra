@@ -1,0 +1,40 @@
+{
+ "object": "chat.completion",
+ "model": "gate",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": "The file `notes/tide-gauges.md` says that its first section lists twelve stations north to south with their datum epochs.",
+    "reasoning": "The file's contents are as follows: \"The first section lists 12 observation stations from north to south, along with their reference epochs.\"\n\nThe user is asking what the first section says. The file itself describes the first section. I should report this.\n",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The file's contents are as follows: \"The first section lists 12 observation stations from north to south, along with their reference epochs.\"\n\nThe user is asking what the first section says. The file itself describes the first section. I should report this.\n"
+     }
+    ]
+   },
+   "finish_reason": "stop"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 569,
+  "completion_tokens": 84,
+  "total_tokens": 653,
+  "prompt_tokens_details": {
+   "cached_tokens": 416
+  },
+  "elapsed_s": 0.620926165,
+  "spec": {
+   "rounds": 31,
+   "drafted": 93,
+   "accepted": 70,
+   "acceptance_rate": 0.7526881720430108
+  }
+ },
+ "id": "chatcmpl-c447ac26a1757e34c1bb3cb8c32e4102",
+ "created": 1790420221,
+ "system_fingerprint": "memra-0.138.0-9ee60b9f92c2",
+ "_gate_wall_ms": 650.46057687141
+}

@@ -180,7 +180,15 @@ pub(crate) struct TpEpArState {
     signal: [CudaSlice<u8>; 2],
     error: [CudaSlice<i32>; 2],
     launches: u64,
+    gathers: u64,
     instrument: Option<ArInstrument>,
+    /// `MEMRA_DSV4_AR_PUSH`: joins whose caller marks them `push_ok` take the push kernels
+    /// (`memra_tp_ar_push_*`, one fabric crossing, no end barrier).
+    push: bool,
+    /// Both ranks' output addresses of the last push join. A push join lands in the peer's output
+    /// before the peer reaches it, which is safe only when consecutive joins write different
+    /// buffers; a repeat is refused rather than raced.
+    last_push_out: [usize; 2],
 }
 
 /// Gate-only causal instrument for the residual all-reduce pool. Allocated ONLY when the process
@@ -240,8 +248,37 @@ impl TpEpArState {
             signal: [signal0, signal1],
             error: [error0, error1],
             launches: 0,
+            gathers: 0,
             instrument: None,
+            push: false,
+            last_push_out: [0; 2],
         })
+    }
+
+    /// Select the push joins for `push_ok` call sites (the load's `MEMRA_DSV4_AR_PUSH`).
+    pub(crate) fn set_push(&mut self, on: bool) {
+        self.push = on;
+    }
+
+    /// Whether this join takes a push kernel, and if so, that it does not write the previous push
+    /// join's output buffers.
+    fn push_join(&mut self, push_ok: bool, outputs: [usize; 2]) -> Res<bool> {
+        if !(self.push && push_ok && self.instrument.is_none()) {
+            return Ok(false);
+        }
+        if outputs
+            .iter()
+            .zip(self.last_push_out)
+            .any(|(&o, last)| o == last)
+        {
+            return Err(
+                "TP/EP push join writes the previous push join's output; consecutive push joins \
+                 need distinct buffers"
+                    .into(),
+            );
+        }
+        self.last_push_out = outputs;
+        Ok(true)
     }
 
     /// Arm the gate-only phase instrument. `capacity` is records PER RANK for one collection
@@ -413,6 +450,9 @@ impl TpEpArState {
         // for the expert join. Distinct from the replay fault word's `site`, which is the layer
         // index and whose meaning the injection gates already depend on.
         phase_site: u32,
+        // The outputs are persistent workspace buffers consumed before the next join, so a push
+        // join may write them early (`memra_tp_ar_push_reduce`); false keeps the pull join.
+        push_ok: bool,
     ) -> Res<()> {
         if n == 0
             || owner_input.len() < n
@@ -452,6 +492,60 @@ impl TpEpArState {
             return Err("TP/EP one-shot reduction output aliases an input".into());
         }
         let blocks = crate::tp_ar::ar_blocks_for(n);
+        if self.push_join(
+            push_ok,
+            [owner_output_ptr as usize, peer_output_ptr as usize],
+        )? {
+            for (rank, gpu, input, out, peer_out, self_signal, peer_signal, error) in [
+                (
+                    0,
+                    owner,
+                    owner_input_ptr,
+                    owner_output_ptr,
+                    peer_output_ptr,
+                    owner_signal_ptr,
+                    peer_signal_ptr,
+                    owner_error_ptr,
+                ),
+                (
+                    1,
+                    peer,
+                    peer_input_ptr,
+                    peer_output_ptr,
+                    owner_output_ptr,
+                    peer_signal_ptr,
+                    owner_signal_ptr,
+                    peer_error_ptr,
+                ),
+            ] {
+                if capture {
+                    gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+                }
+                let stream = gpu.stream();
+                let rc = unsafe {
+                    crate::tp_ar::memra_tp_ar_push_reduce(
+                        input,
+                        out,
+                        peer_out,
+                        self_signal,
+                        peer_signal,
+                        rank,
+                        n as i64,
+                        error,
+                        crate::tp_ar::AR_SPIN_LIMIT,
+                        blocks,
+                        stream.cu_stream().cast(),
+                        fault.map_or(std::ptr::null(), |(inputs, _)| inputs[rank as usize].cast()),
+                        fault.map_or(-1, |(_, site)| site),
+                    )
+                };
+                if rc != 0 {
+                    return Err(format!("TP/EP push reduction launch rc {rc} rank {rank}"));
+                }
+            }
+            self.launches += 1;
+            return Ok(());
+        }
         // Gate-only instrument pointers, resolved once per join. `None` on every serving process:
         // `arm_instrument` is reachable only from the armed gate path, so the ordinary walk below
         // takes exactly the launch entries it took before this lane.
@@ -571,8 +665,136 @@ impl TpEpArState {
         Ok(())
     }
 
+    /// Exact attention TP join: rank r's `rows x width` block lands at column `r * width` of
+    /// each `2 * width` output row on BOTH ranks. Pure bit movement on the one-shot barrier and
+    /// refusal words; `fault` is the replay fault word for `site` (the layer). Counted apart
+    /// from the reductions so reduction-count receipts keep their meaning.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn gather_rows_into(
+        &mut self,
+        owner: &Gpu,
+        peer: &Gpu,
+        owner_input: &CudaSlice<f32>,
+        peer_input: &CudaSlice<f32>,
+        owner_output: &mut CudaSlice<f32>,
+        peer_output: &mut CudaSlice<f32>,
+        rows: usize,
+        width: usize,
+        capture: bool,
+        fault: Option<([*const u64; 2], i32)>,
+        // As `all_reduce_into`'s: persistent outputs consumed before the next join.
+        push_ok: bool,
+    ) -> Res<()> {
+        let n = rows * width;
+        if n == 0
+            || owner_input.len() < n
+            || peer_input.len() < n
+            || owner_output.len() < 2 * n
+            || peer_output.len() < 2 * n
+        {
+            return Err("TP/EP row gather buffer shape mismatch".into());
+        }
+        let mut ptrs = [(
+            std::ptr::null(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        ); 2];
+        for (rank, (gpu, input, output)) in [
+            (owner, owner_input, &mut *owner_output),
+            (peer, peer_input, &mut *peer_output),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+            let stream = gpu.stream();
+            ptrs[rank] = (
+                input.device_ptr(&stream).0 as *const f32,
+                output.device_ptr_mut(&stream).0 as *mut f32,
+                self.signal[rank].device_ptr_mut(&stream).0 as *mut c_void,
+                self.error[rank].device_ptr_mut(&stream).0 as *mut i32,
+            );
+        }
+        if ptrs
+            .iter()
+            .any(|&(input, output, _, _)| std::ptr::eq(input, output))
+        {
+            return Err("TP/EP row gather output aliases an input".into());
+        }
+        let blocks = crate::tp_ar::ar_blocks_for(n);
+        if self.push_join(push_ok, [ptrs[0].1 as usize, ptrs[1].1 as usize])? {
+            for (rank, gpu) in [owner, peer].into_iter().enumerate() {
+                if capture {
+                    gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+                }
+                let stream = gpu.stream();
+                let (input, out, self_signal, error) = ptrs[rank];
+                let (_, peer_out, peer_signal, _) = ptrs[1 - rank];
+                let rc = unsafe {
+                    crate::tp_ar::memra_tp_ar_push_gather_rows_f32(
+                        input,
+                        out,
+                        peer_out,
+                        self_signal,
+                        peer_signal,
+                        rank as i32,
+                        rows as i64,
+                        width as i64,
+                        error,
+                        crate::tp_ar::AR_SPIN_LIMIT,
+                        blocks,
+                        stream.cu_stream().cast(),
+                        fault.map_or(std::ptr::null(), |(inputs, _)| inputs[rank].cast()),
+                        fault.map_or(-1, |(_, site)| site),
+                    )
+                };
+                if rc != 0 {
+                    return Err(format!("TP/EP push row gather launch rc {rc} rank {rank}"));
+                }
+            }
+            self.gathers += 1;
+            return Ok(());
+        }
+        for (rank, gpu) in [owner, peer].into_iter().enumerate() {
+            if capture {
+                gpu.ctx.bind_to_thread().map_err(|e| e.to_string())?;
+            }
+            let stream = gpu.stream();
+            let (_, out, self_signal, error) = ptrs[rank];
+            let peer_signal = ptrs[1 - rank].2;
+            let rc = unsafe {
+                crate::tp_ar::memra_tp_ar_gather_rows_f32(
+                    ptrs[0].0,
+                    ptrs[1].0,
+                    out,
+                    self_signal,
+                    peer_signal,
+                    rank as i32,
+                    rows as i64,
+                    width as i64,
+                    error,
+                    crate::tp_ar::AR_SPIN_LIMIT,
+                    blocks,
+                    stream.cu_stream().cast(),
+                    fault.map_or(std::ptr::null(), |(inputs, _)| inputs[rank].cast()),
+                    fault.map_or(-1, |(_, site)| site),
+                )
+            };
+            if rc != 0 {
+                return Err(format!("TP/EP row gather launch rc {rc} rank {rank}"));
+            }
+        }
+        self.gathers += 1;
+        Ok(())
+    }
+
     pub(crate) fn launches(&self) -> u64 {
         self.launches
+    }
+
+    pub(crate) fn gathers(&self) -> u64 {
+        self.gathers
     }
     pub(crate) fn epochs_for_gate(&self, owner: &Gpu, peer: &Gpu) -> Res<[Vec<u32>; 2]> {
         let offset = unsafe { crate::tp_ar::memra_tp_ar_seq_offset_bytes() } as usize;

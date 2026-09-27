@@ -1,0 +1,4 @@
+[b1 grid red arm] the row check is skipped
+thread 'fused_gate_bounds_tests::copy_batch_items_refuses_more_rows_than_the_grid_holds' (319185) panicked at crates/memra-engine/src/lib.rs:35881:56:
+called `Result::unwrap_err()` on an `Ok` value: 65536
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 624 filtered out; finished in 0.00s

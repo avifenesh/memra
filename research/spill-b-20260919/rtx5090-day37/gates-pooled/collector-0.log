@@ -1,0 +1,106 @@
+2026-09-24T13:24:26Z start serve-smoke env=[ ]
+2026-09-24T13:24:56Z done serve-smoke rc=0 door_on=0 door_off=0 serve-smoke: 0 failed
+2026-09-24T13:24:56Z start identity-default-on env=[ MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T13:25:11Z done identity-default-on rc=0 door_on=0 door_off=2 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-24T13:25:11Z start fault-default env=[ MEMRA_HOSTGATE_CACHE_MB=64]
+2026-09-24T13:27:12Z done fault-default rc=0 door_on=0 door_off=14 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-24T13:27:12Z start fault-plain env=[ MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_SERVE_SPEC=0]
+2026-09-24T13:28:52Z done fault-plain rc=0 door_on=0 door_off=14 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-24T13:28:52Z start hit-off env=[ ]
+2026-09-24T13:29:14Z done hit-off rc=0 door_on=0 door_off=2 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-24T13:29:14Z start hit-on env=[ MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T13:29:40Z done hit-on rc=0 door_on=0 door_off=2 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-24T13:29:40Z start twin-off env=[ ]
+2026-09-24T13:30:18Z done twin-off rc=2 door_on=0 door_off=2 
+2026-09-24T13:30:18Z start twin-on env=[ MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T13:30:56Z done twin-on rc=2 door_on=0 door_off=2 
+2026-09-24T13:30:56Z start admit-mem-burst env=[ ]
+2026-09-24T13:37:13Z done admit-mem-burst rc=0 door_on=0 door_off=1 ADMIT-MEM BURST GATE: ALL GREEN
+2026-09-24T13:37:13Z start spec-ctx-edge env=[ ]
+2026-09-24T13:37:29Z done spec-ctx-edge rc=0 door_on=0 door_off=3 SPEC-CTX-EDGE GATE: ALL GREEN
+2026-09-24T13:37:29Z gates done arm=pooled
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "research/spill-b-20260919/rtx5090-day37/gates.sh",
+    "3",
+    "pooled",
+    "/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day37/gates-pooled"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "[N/A]",
+      "power.max_limit": "175.00 W"
+    }
+  ],
+  "started_monotonic_ns": 360486468724306,
+  "ended_monotonic_ns": 361269498398175,
+  "started_utc": "2026-09-24T13:24:26.519183+00:00",
+  "ended_utc": "2026-09-24T13:37:29.548857+00:00",
+  "elapsed_seconds": 783.029673869,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 1623,
+    "sha256": "9a51628db4629dc36f6c94b6e00883ec65b51cbe9f5f6d8136b93fb3cb6066c1"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 327919,
+      "sha256": "31e2f81b8cdca5b2b0d170184db0ae990d1323c1666380881e3c76d5d9769a15"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 176,
+    "sha256": "dcb17b61c672c6c1abd4bc4e9c6a9c7ff69efc7ddf1d5cd8f9847e59430d9842"
+  }
+}

@@ -1,0 +1,366 @@
+START utc=2026-09-26T03:15:42Z cmd=/root/lane/target-ks/release/dsv4-gpu-dspark-gate /data/dsv4f/nvfp4 /root/box/dspark-fx-tape416.json /root/rcpt/kv-split-68f5d4995/dspark-tpep/out 2 0,1 --served --tpep
+program: served defaults
+dsv4-gpu-dspark-gate | model /data/dsv4f/nvfp4 | variant ref | p0 256 | n_new 160 | runs 2 | devices [0, 1] | torch accept_mean 0.0000
+[load] sampled candidate order: Radix
+[load] placement: split_at=23 trunk_layers=43 dspark_tail_reserve=10.83 GiB
+[load] plain sampler: Device (the topology's default)
+[load] expert arm: Native | decode path: Device { host_math: false } | dots arm: f32x (dots + sink/norm/indexer chains)
+[load] topology: TpEpAllLayers | layers=43 per-rank-resident=all
+[load] indexer score: Knee
+[load] prefill head: All
+[load] prefill DSpark prime: All
+[load] sampled DSpark proposal: Greedy
+[load] prefill MoE: reference
+[load] dspark exit-head dots arm: f32x (rung-4c fork; drafts only, never the emitted stream)
+[load] dspark selected-expert dispatch: per-expert reference
+[load] dense arm: fp8 (iteration-5; fp8 = FP8-blk linears as-stored on the device decode/verify paths, bit-identical twins)
+[load] lane-8 peer byte-integrity probe PASS: 1 boundaries, 10 copies, ladder [16384, 65536, 524288, 1048576, 67108864] bytes, 351.4ms
+[load] lane-8 peer transport enabled (1 boundaries)
+[load] layer 3 -> 2 rank copies done t=49s
+[load] layer 7 -> 2 rank copies done t=71s
+[load] layer 11 -> 2 rank copies done t=100s
+[load] layer 15 -> 2 rank copies done t=124s
+[load] layer 19 -> 2 rank copies done t=146s
+[load] layer 23 -> 2 rank copies done t=169s
+[load] layer 27 -> 2 rank copies done t=190s
+[load] layer 31 -> 2 rank copies done t=211s
+[load] layer 35 -> 2 rank copies done t=231s
+[load] layer 39 -> 2 rank copies done t=251s
+[load] layer 42 -> 2 rank copies done t=267s
+[load] drafter: DSpark (3 blocks, block_size 5, targets [40, 41, 42]) resident on stage 1
+[TP/EP load] local expert banks resident by ID: rank0=0..128, rank1=128..256; peer dispatch disabled
+[load] expert program: matrix (grouped ModelOpt split-plane executor via dsv4_grouped; tensor-core MMA class, the loaded default since 2026-09-11), EP pair (all-layer TP/EP local banks)
+[attention-TP2] packed rank-local Q_b/wo_a/wo_b rows: heads=32 groups=4 wo_b_rows=2048 full_planes_freed=8.06 GiB numeric_class=dsv4_attention_head_split_row_gather_exact
+[dsv4-doors] program=loaded door="replay cadence" env=MEMRA_DSV4_REPLAY_CADENCE merged=#374 declared_default=On resolved=OffProgram("the drafter-less TP/EP plain route, which arms full-token replay on every greedy or vendor-default sampled request") disposition=PortAdmissionOrRedeclare
+[dsv4-doors] program=loaded door="dense exact-tail transport" env=MEMRA_DSV4_DENSE_EXACT_TAIL merged=#374 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="dense-fast" env=MEMRA_DSV4_DENSE_FAST merged=#404 declared_default=On resolved=On(DecodeOnlyM1) disposition=Engaged
+[dsv4-doors] program=loaded door="HC dot split S16" env=MEMRA_DSV4_HC_DOT_SPLIT merged=#418 declared_default=On resolved=On(AllRoutedShapes) disposition=Engaged
+loaded: topology tp_ep, split at layer 23, verify tmax 6, t=316s
+[vram post-load] dev0 used 87.17/94.97 GiB (resident 84.39) | dev1 used 87.52/94.97 GiB (resident 84.49)
+[moe-sk-form] dev=0 qt=108 sms=188 occ128=1 occ32=7 occt=3 cross=2147483647 xcross=2147483647 bdb=0 in_f=4096 out_f=2048 n_active=128 max_m=1530
+bit-gate cell warm=1 T=6 commit=1: FAIL (6 logit rows, 229 cache classes) t=318s
+bit-gate cell warm=1 T=6 commit=5: FAIL (6 logit rows, 229 cache classes) t=320s
+bit-gate cell warm=1 T=6 commit=6: FAIL (6 logit rows, 229 cache classes) t=321s
+bit-gate cell warm=2 T=6 commit=1: FAIL (6 logit rows, 229 cache classes) t=323s
+bit-gate cell warm=2 T=6 commit=5: FAIL (6 logit rows, 229 cache classes) t=325s
+bit-gate cell warm=2 T=6 commit=6: FAIL (6 logit rows, 229 cache classes) t=327s
+bit-gate cell warm=3 T=6 commit=1: FAIL (6 logit rows, 229 cache classes) t=328s
+bit-gate cell warm=3 T=6 commit=5: FAIL (6 logit rows, 229 cache classes) t=330s
+bit-gate cell warm=3 T=6 commit=6: FAIL (6 logit rows, 229 cache classes) t=332s
+bit-gate cell warm=4 T=6 commit=1: FAIL (6 logit rows, 229 cache classes) t=334s
+bit-gate cell warm=4 T=6 commit=5: FAIL (6 logit rows, 229 cache classes) t=336s
+bit-gate cell warm=4 T=6 commit=6: FAIL (6 logit rows, 229 cache classes) t=337s
+bit-gate cell warm=1 T=2 commit=1: FAIL (2 logit rows, 229 cache classes) t=339s
+bit-gate cell warm=3 T=3 commit=2: FAIL (3 logit rows, 229 cache classes) t=341s
+verdict (c) batched==sequential: 14 cells, 77 logit rows, 3206 cache-class comparisons — FAILURES PRESENT
+[vram post-bitgate] dev0 used 87.26/94.97 GiB (resident 84.39) | dev1 used 87.61/94.97 GiB (resident 84.49)
+arm P (plain device greedy): 160 tokens t=344s | m1 stream ON dispatches 41280 | fused MoE ON dispatches 0
+arm P' (plain + a ring write at every position): 3 ring classes t=348s
+arm DS (drafted, sequential verify): 160 tokens | rounds 47 | accepted 125 (mean 2.6596/round) | verified 159 | accept sha 2b2ec5f43f6833e572f9ff763150117d75764faa4fe79ec4925b86556414f07f | proposal sha 62b368f10f1becea7a0edc83db9afd592acb94867aa64029c1ffa7ac05e221a4 | t=352s
+arm DB run0 (drafted, BATCHED T=k+1 verify): 160 tokens | rounds 45 | accepted 115 (mean 2.5556/round) | verified 147 | mean T forwarded 6.0000 | accept sha 470ef0af3fa8e99cfc6b93e24eaad22d4760a796705292fcf033e3d3b560ce16 | proposal sha d404da5fe101077f42f0898fed132dea82e1161098d4db06ff80e446d60ec1cc | t=354s
+arm DB run1 (drafted, BATCHED T=k+1 verify): 160 tokens | rounds 45 | accepted 115 (mean 2.5556/round) | verified 147 | mean T forwarded 6.0000 | accept sha 470ef0af3fa8e99cfc6b93e24eaad22d4760a796705292fcf033e3d3b560ce16 | proposal sha d404da5fe101077f42f0898fed132dea82e1161098d4db06ff80e446d60ec1cc | t=357s
+arm DB mrow stream ON dispatches 22704
+[vram post-drafted] dev0 used 87.26/94.97 GiB (resident 84.39) | dev1 used 87.61/94.97 GiB (resident 84.49)
+verdict (d) accepted-position ring writes: 3 ring classes compared, 0 mismatching
+determinism across 2 batched runs: tokens IDENTICAL | per-round accepts BYTE-IDENTICAL | drafter rings BIT-IDENTICAL
+[REPORTED, not gated] arm P vs banked torch REF trajectory: 0/160 positions equal, common prefix 0 (torch-vs-GPU realization flips are the teacher-forcing gate's business, lane-6 in-band policy; the banked 0731 decode gate records an in-band argmax flip at s=54 in all three dots arms)
+
+*** ACCEPTANCE IS A CORRECTNESS OBSERVABLE ONLY — NOT A SPEED CLAIM ***
+batched arm: rounds 45 | accepted 115 | mean accepted/round 2.5556 | mean T forwarded 6.0000 | tokens per round 3.5556 | torch teacher-forced accept_mean 0.0000 (different loop: teacher-forced vs free-running, so these are not required to match)
+
+GPU DSPARK GATE: [FAIL] 294 finding(s)
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l2.cmp_store: 3040/32768 elements differ, worst |Δ| 5.251e0
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l4.cmp_store: 3043/32768 elements differ, worst |Δ| 4.867e0
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l6.cmp_store: 3037/32768 elements differ, worst |Δ| 8.371e0
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l8.cmp_store: 3037/32768 elements differ, worst |Δ| 7.608e0
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l10.cmp_store: 3027/32768 elements differ, worst |Δ| 8.311e0
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l12.cmp_store: 3036/32768 elements differ, worst |Δ| 9.911e0
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l14.cmp_store: 3026/32768 elements differ, worst |Δ| 9.681e0
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l16.cmp_store: 3032/32768 elements differ, worst |Δ| 1.141e1
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l18.cmp_store: 3032/32768 elements differ, worst |Δ| 1.161e1
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l20.cmp_store: 3040/32768 elements differ, worst |Δ| 1.039e1
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l22.cmp_store: 3041/32768 elements differ, worst |Δ| 1.108e1
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l24.cmp_store: 3047/32768 elements differ, worst |Δ| 7.646e0
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l26.cmp_store: 3045/32768 elements differ, worst |Δ| 1.000e1
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l28.cmp_store: 3031/32768 elements differ, worst |Δ| 1.144e1
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l30.cmp_store: 3034/32768 elements differ, worst |Δ| 9.576e0
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l32.cmp_store: 3041/32768 elements differ, worst |Δ| 1.027e1
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l34.cmp_store: 3047/32768 elements differ, worst |Δ| 8.655e0
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l36.cmp_store: 3037/32768 elements differ, worst |Δ| 1.090e1
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l38.cmp_store: 3038/32768 elements differ, worst |Δ| 6.755e0
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l40.cmp_store: 3040/32768 elements differ, worst |Δ| 5.786e0
+  [warm=1 T=6 commit=1] STATE BIT FAIL class l42.cmp_store: 3040/32768 elements differ, worst |Δ| 6.625e0
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l2.cmp_store: 3032/33280 elements differ, worst |Δ| 5.336e0
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l4.cmp_store: 3035/33280 elements differ, worst |Δ| 5.749e0
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l6.cmp_store: 3032/33280 elements differ, worst |Δ| 8.371e0
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l8.cmp_store: 3033/33280 elements differ, worst |Δ| 7.608e0
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l10.cmp_store: 3013/33280 elements differ, worst |Δ| 8.311e0
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l12.cmp_store: 3029/33280 elements differ, worst |Δ| 9.911e0
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l14.cmp_store: 3023/33280 elements differ, worst |Δ| 9.681e0
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l16.cmp_store: 3025/33280 elements differ, worst |Δ| 1.141e1
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l18.cmp_store: 3026/33280 elements differ, worst |Δ| 1.161e1
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l20.cmp_store: 3036/33280 elements differ, worst |Δ| 1.039e1
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l22.cmp_store: 3038/33280 elements differ, worst |Δ| 1.108e1
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l24.cmp_store: 3036/33280 elements differ, worst |Δ| 7.646e0
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l26.cmp_store: 3039/33280 elements differ, worst |Δ| 9.141e0
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l28.cmp_store: 3024/33280 elements differ, worst |Δ| 1.144e1
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l30.cmp_store: 3026/33280 elements differ, worst |Δ| 9.576e0
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l32.cmp_store: 3033/33280 elements differ, worst |Δ| 1.027e1
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l34.cmp_store: 3035/33280 elements differ, worst |Δ| 8.655e0
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l36.cmp_store: 3033/33280 elements differ, worst |Δ| 1.090e1
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l38.cmp_store: 3031/33280 elements differ, worst |Δ| 6.755e0
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l40.cmp_store: 3034/33280 elements differ, worst |Δ| 5.786e0
+  [warm=1 T=6 commit=5] STATE BIT FAIL class l42.cmp_store: 3036/33280 elements differ, worst |Δ| 6.625e0
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l2.cmp_store: 3030/33280 elements differ, worst |Δ| 5.251e0
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l4.cmp_store: 3034/33280 elements differ, worst |Δ| 5.297e0
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l6.cmp_store: 3033/33280 elements differ, worst |Δ| 8.371e0
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l8.cmp_store: 3032/33280 elements differ, worst |Δ| 7.608e0
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l10.cmp_store: 3023/33280 elements differ, worst |Δ| 8.311e0
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l12.cmp_store: 3026/33280 elements differ, worst |Δ| 9.911e0
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l14.cmp_store: 3017/33280 elements differ, worst |Δ| 9.681e0
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l16.cmp_store: 3024/33280 elements differ, worst |Δ| 1.141e1
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l18.cmp_store: 3027/33280 elements differ, worst |Δ| 1.161e1
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l20.cmp_store: 3035/33280 elements differ, worst |Δ| 1.039e1
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l22.cmp_store: 3036/33280 elements differ, worst |Δ| 1.108e1
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l24.cmp_store: 3042/33280 elements differ, worst |Δ| 7.646e0
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l26.cmp_store: 3039/33280 elements differ, worst |Δ| 9.141e0
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l28.cmp_store: 3025/33280 elements differ, worst |Δ| 1.144e1
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l30.cmp_store: 3021/33280 elements differ, worst |Δ| 9.576e0
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l32.cmp_store: 3035/33280 elements differ, worst |Δ| 1.027e1
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l34.cmp_store: 3039/33280 elements differ, worst |Δ| 8.655e0
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l36.cmp_store: 3026/33280 elements differ, worst |Δ| 1.090e1
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l38.cmp_store: 3030/33280 elements differ, worst |Δ| 6.755e0
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l40.cmp_store: 3035/33280 elements differ, worst |Δ| 5.786e0
+  [warm=1 T=6 commit=6] STATE BIT FAIL class l42.cmp_store: 3035/33280 elements differ, worst |Δ| 6.625e0
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l2.cmp_store: 3038/32768 elements differ, worst |Δ| 5.310e0
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l4.cmp_store: 3043/32768 elements differ, worst |Δ| 5.013e0
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l6.cmp_store: 3035/32768 elements differ, worst |Δ| 8.359e0
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l8.cmp_store: 3042/32768 elements differ, worst |Δ| 7.766e0
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l10.cmp_store: 3033/32768 elements differ, worst |Δ| 8.534e0
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l12.cmp_store: 3038/32768 elements differ, worst |Δ| 9.779e0
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l14.cmp_store: 3030/32768 elements differ, worst |Δ| 9.861e0
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l16.cmp_store: 3042/32768 elements differ, worst |Δ| 1.156e1
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l18.cmp_store: 3040/32768 elements differ, worst |Δ| 1.126e1
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l20.cmp_store: 3050/32768 elements differ, worst |Δ| 1.051e1
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l22.cmp_store: 3031/32768 elements differ, worst |Δ| 1.150e1
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l24.cmp_store: 3033/32768 elements differ, worst |Δ| 6.117e0
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l26.cmp_store: 3042/32768 elements differ, worst |Δ| 1.000e1
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l28.cmp_store: 3031/32768 elements differ, worst |Δ| 1.117e1
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l30.cmp_store: 3025/32768 elements differ, worst |Δ| 9.992e0
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l32.cmp_store: 3037/32768 elements differ, worst |Δ| 1.025e1
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l34.cmp_store: 3046/32768 elements differ, worst |Δ| 8.338e0
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l36.cmp_store: 3043/32768 elements differ, worst |Δ| 1.104e1
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l38.cmp_store: 3040/32768 elements differ, worst |Δ| 6.824e0
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l40.cmp_store: 3044/32768 elements differ, worst |Δ| 6.271e0
+  [warm=2 T=6 commit=1] STATE BIT FAIL class l42.cmp_store: 3039/32768 elements differ, worst |Δ| 6.625e0
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l2.cmp_store: 3032/33280 elements differ, worst |Δ| 5.310e0
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l4.cmp_store: 3034/33280 elements differ, worst |Δ| 5.013e0
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l6.cmp_store: 3027/33280 elements differ, worst |Δ| 8.359e0
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l8.cmp_store: 3036/33280 elements differ, worst |Δ| 7.766e0
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l10.cmp_store: 3025/33280 elements differ, worst |Δ| 8.534e0
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l12.cmp_store: 3036/33280 elements differ, worst |Δ| 9.779e0
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l14.cmp_store: 3025/33280 elements differ, worst |Δ| 9.861e0
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l16.cmp_store: 3040/33280 elements differ, worst |Δ| 1.156e1
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l18.cmp_store: 3035/33280 elements differ, worst |Δ| 1.126e1
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l20.cmp_store: 3042/33280 elements differ, worst |Δ| 1.051e1
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l22.cmp_store: 3020/33280 elements differ, worst |Δ| 1.150e1
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l24.cmp_store: 3023/33280 elements differ, worst |Δ| 6.117e0
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l26.cmp_store: 3034/33280 elements differ, worst |Δ| 9.193e0
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l28.cmp_store: 3024/33280 elements differ, worst |Δ| 1.117e1
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l30.cmp_store: 3019/33280 elements differ, worst |Δ| 9.992e0
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l32.cmp_store: 3033/33280 elements differ, worst |Δ| 1.025e1
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l34.cmp_store: 3038/33280 elements differ, worst |Δ| 8.338e0
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l36.cmp_store: 3034/33280 elements differ, worst |Δ| 1.104e1
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l38.cmp_store: 3031/33280 elements differ, worst |Δ| 6.824e0
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l40.cmp_store: 3035/33280 elements differ, worst |Δ| 6.271e0
+  [warm=2 T=6 commit=5] STATE BIT FAIL class l42.cmp_store: 3029/33280 elements differ, worst |Δ| 6.625e0
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l2.cmp_store: 3034/33792 elements differ, worst |Δ| 5.310e0
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l4.cmp_store: 3032/33792 elements differ, worst |Δ| 5.280e0
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l6.cmp_store: 3026/33792 elements differ, worst |Δ| 8.359e0
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l8.cmp_store: 3034/33792 elements differ, worst |Δ| 7.766e0
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l10.cmp_store: 3031/33792 elements differ, worst |Δ| 8.534e0
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l12.cmp_store: 3034/33792 elements differ, worst |Δ| 9.779e0
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l14.cmp_store: 3020/33792 elements differ, worst |Δ| 9.861e0
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l16.cmp_store: 3035/33792 elements differ, worst |Δ| 1.156e1
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l18.cmp_store: 3033/33792 elements differ, worst |Δ| 1.126e1
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l20.cmp_store: 3042/33792 elements differ, worst |Δ| 1.051e1
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l22.cmp_store: 3022/33792 elements differ, worst |Δ| 1.150e1
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l24.cmp_store: 3023/33792 elements differ, worst |Δ| 6.117e0
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l26.cmp_store: 3037/33792 elements differ, worst |Δ| 9.193e0
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l28.cmp_store: 3025/33792 elements differ, worst |Δ| 1.117e1
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l30.cmp_store: 3016/33792 elements differ, worst |Δ| 9.992e0
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l32.cmp_store: 3028/33792 elements differ, worst |Δ| 1.025e1
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l34.cmp_store: 3036/33792 elements differ, worst |Δ| 8.338e0
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l36.cmp_store: 3034/33792 elements differ, worst |Δ| 1.104e1
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l38.cmp_store: 3033/33792 elements differ, worst |Δ| 6.824e0
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l40.cmp_store: 3037/33792 elements differ, worst |Δ| 6.271e0
+  [warm=2 T=6 commit=6] STATE BIT FAIL class l42.cmp_store: 3035/33792 elements differ, worst |Δ| 6.625e0
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l2.cmp_store: 2530/33280 elements differ, worst |Δ| 5.377e0
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l4.cmp_store: 2530/33280 elements differ, worst |Δ| 5.110e0
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l6.cmp_store: 2523/33280 elements differ, worst |Δ| 8.460e0
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l8.cmp_store: 2535/33280 elements differ, worst |Δ| 7.642e0
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l10.cmp_store: 2528/33280 elements differ, worst |Δ| 8.589e0
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l12.cmp_store: 2536/33280 elements differ, worst |Δ| 1.038e1
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l14.cmp_store: 2530/33280 elements differ, worst |Δ| 9.828e0
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l16.cmp_store: 2527/33280 elements differ, worst |Δ| 1.138e1
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l18.cmp_store: 2514/33280 elements differ, worst |Δ| 1.097e1
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l20.cmp_store: 2519/33280 elements differ, worst |Δ| 1.020e1
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l22.cmp_store: 2533/33280 elements differ, worst |Δ| 1.127e1
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l24.cmp_store: 2521/33280 elements differ, worst |Δ| 6.121e0
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l26.cmp_store: 2527/33280 elements differ, worst |Δ| 9.254e0
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l28.cmp_store: 2519/33280 elements differ, worst |Δ| 1.178e1
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l30.cmp_store: 2530/33280 elements differ, worst |Δ| 9.579e0
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l32.cmp_store: 2527/33280 elements differ, worst |Δ| 1.043e1
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l34.cmp_store: 2527/33280 elements differ, worst |Δ| 8.478e0
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l36.cmp_store: 2526/33280 elements differ, worst |Δ| 1.077e1
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l38.cmp_store: 2533/33280 elements differ, worst |Δ| 6.362e0
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l40.cmp_store: 2526/33280 elements differ, worst |Δ| 5.742e0
+  [warm=3 T=6 commit=1] STATE BIT FAIL class l42.cmp_store: 2524/33280 elements differ, worst |Δ| 6.625e0
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l2.cmp_store: 3036/33792 elements differ, worst |Δ| 5.377e0
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l4.cmp_store: 3038/33792 elements differ, worst |Δ| 5.562e0
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l6.cmp_store: 3026/33792 elements differ, worst |Δ| 8.460e0
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l8.cmp_store: 3039/33792 elements differ, worst |Δ| 7.642e0
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l10.cmp_store: 3033/33792 elements differ, worst |Δ| 8.589e0
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l12.cmp_store: 3042/33792 elements differ, worst |Δ| 1.038e1
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l14.cmp_store: 3037/33792 elements differ, worst |Δ| 9.828e0
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l16.cmp_store: 3028/33792 elements differ, worst |Δ| 1.138e1
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l18.cmp_store: 3019/33792 elements differ, worst |Δ| 1.097e1
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l20.cmp_store: 3028/33792 elements differ, worst |Δ| 1.020e1
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l22.cmp_store: 3042/33792 elements differ, worst |Δ| 1.127e1
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l24.cmp_store: 3028/33792 elements differ, worst |Δ| 6.416e0
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l26.cmp_store: 3029/33792 elements differ, worst |Δ| 9.254e0
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l28.cmp_store: 3022/33792 elements differ, worst |Δ| 1.178e1
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l30.cmp_store: 3033/33792 elements differ, worst |Δ| 9.579e0
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l32.cmp_store: 3032/33792 elements differ, worst |Δ| 1.043e1
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l34.cmp_store: 3030/33792 elements differ, worst |Δ| 8.478e0
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l36.cmp_store: 3029/33792 elements differ, worst |Δ| 1.077e1
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l38.cmp_store: 3038/33792 elements differ, worst |Δ| 6.362e0
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l40.cmp_store: 3034/33792 elements differ, worst |Δ| 7.750e0
+  [warm=3 T=6 commit=5] STATE BIT FAIL class l42.cmp_store: 3030/33792 elements differ, worst |Δ| 6.625e0
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l2.cmp_store: 3036/33792 elements differ, worst |Δ| 5.377e0
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l4.cmp_store: 3032/33792 elements differ, worst |Δ| 5.110e0
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l6.cmp_store: 3025/33792 elements differ, worst |Δ| 8.460e0
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l8.cmp_store: 3037/33792 elements differ, worst |Δ| 7.642e0
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l10.cmp_store: 3037/33792 elements differ, worst |Δ| 8.589e0
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l12.cmp_store: 3036/33792 elements differ, worst |Δ| 1.038e1
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l14.cmp_store: 3035/33792 elements differ, worst |Δ| 9.828e0
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l16.cmp_store: 3032/33792 elements differ, worst |Δ| 1.138e1
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l18.cmp_store: 3015/33792 elements differ, worst |Δ| 1.097e1
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l20.cmp_store: 3019/33792 elements differ, worst |Δ| 1.020e1
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l22.cmp_store: 3041/33792 elements differ, worst |Δ| 1.127e1
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l24.cmp_store: 3026/33792 elements differ, worst |Δ| 6.121e0
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l26.cmp_store: 3028/33792 elements differ, worst |Δ| 9.254e0
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l28.cmp_store: 3026/33792 elements differ, worst |Δ| 1.178e1
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l30.cmp_store: 3028/33792 elements differ, worst |Δ| 9.579e0
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l32.cmp_store: 3032/33792 elements differ, worst |Δ| 1.043e1
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l34.cmp_store: 3036/33792 elements differ, worst |Δ| 8.478e0
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l36.cmp_store: 3034/33792 elements differ, worst |Δ| 1.077e1
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l38.cmp_store: 3033/33792 elements differ, worst |Δ| 6.362e0
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l40.cmp_store: 3034/33792 elements differ, worst |Δ| 7.500e0
+  [warm=3 T=6 commit=6] STATE BIT FAIL class l42.cmp_store: 3028/33792 elements differ, worst |Δ| 6.625e0
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l2.cmp_store: 2525/33280 elements differ, worst |Δ| 5.412e0
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l4.cmp_store: 2525/33280 elements differ, worst |Δ| 5.236e0
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l6.cmp_store: 2519/33280 elements differ, worst |Δ| 8.313e0
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l8.cmp_store: 2524/33280 elements differ, worst |Δ| 7.878e0
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l10.cmp_store: 2522/33280 elements differ, worst |Δ| 8.911e0
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l12.cmp_store: 2524/33280 elements differ, worst |Δ| 9.659e0
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l14.cmp_store: 2525/33280 elements differ, worst |Δ| 1.029e1
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l16.cmp_store: 2522/33280 elements differ, worst |Δ| 1.142e1
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l18.cmp_store: 2526/33280 elements differ, worst |Δ| 1.086e1
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l20.cmp_store: 2535/33280 elements differ, worst |Δ| 1.017e1
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l22.cmp_store: 2536/33280 elements differ, worst |Δ| 1.178e1
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l24.cmp_store: 2518/33280 elements differ, worst |Δ| 6.848e0
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l26.cmp_store: 2528/33280 elements differ, worst |Δ| 9.280e0
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l28.cmp_store: 2522/33280 elements differ, worst |Δ| 1.165e1
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l30.cmp_store: 2528/33280 elements differ, worst |Δ| 1.007e1
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l32.cmp_store: 2518/33280 elements differ, worst |Δ| 1.005e1
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l34.cmp_store: 2522/33280 elements differ, worst |Δ| 8.662e0
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l36.cmp_store: 2527/33280 elements differ, worst |Δ| 1.078e1
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l38.cmp_store: 2526/33280 elements differ, worst |Δ| 6.392e0
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l40.cmp_store: 2517/33280 elements differ, worst |Δ| 5.740e0
+  [warm=4 T=6 commit=1] STATE BIT FAIL class l42.cmp_store: 2523/33280 elements differ, worst |Δ| 6.625e0
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l2.cmp_store: 3033/33792 elements differ, worst |Δ| 5.412e0
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l4.cmp_store: 3028/33792 elements differ, worst |Δ| 5.236e0
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l6.cmp_store: 3020/33792 elements differ, worst |Δ| 8.313e0
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l8.cmp_store: 3027/33792 elements differ, worst |Δ| 7.878e0
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l10.cmp_store: 3024/33792 elements differ, worst |Δ| 8.911e0
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l12.cmp_store: 3028/33792 elements differ, worst |Δ| 9.659e0
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l14.cmp_store: 3027/33792 elements differ, worst |Δ| 1.029e1
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l16.cmp_store: 3033/33792 elements differ, worst |Δ| 1.142e1
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l18.cmp_store: 3029/33792 elements differ, worst |Δ| 1.086e1
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l20.cmp_store: 3033/33792 elements differ, worst |Δ| 1.017e1
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l22.cmp_store: 3040/33792 elements differ, worst |Δ| 1.178e1
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l24.cmp_store: 3021/33792 elements differ, worst |Δ| 6.848e0
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l26.cmp_store: 3026/33792 elements differ, worst |Δ| 9.280e0
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l28.cmp_store: 3026/33792 elements differ, worst |Δ| 1.165e1
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l30.cmp_store: 3028/33792 elements differ, worst |Δ| 1.007e1
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l32.cmp_store: 3019/33792 elements differ, worst |Δ| 1.005e1
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l34.cmp_store: 3029/33792 elements differ, worst |Δ| 8.662e0
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l36.cmp_store: 3032/33792 elements differ, worst |Δ| 1.078e1
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l38.cmp_store: 3030/33792 elements differ, worst |Δ| 6.392e0
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l40.cmp_store: 3020/33792 elements differ, worst |Δ| 5.740e0
+  [warm=4 T=6 commit=5] STATE BIT FAIL class l42.cmp_store: 3028/33792 elements differ, worst |Δ| 6.625e0
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l2.cmp_store: 3026/33792 elements differ, worst |Δ| 5.412e0
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l4.cmp_store: 3027/33792 elements differ, worst |Δ| 5.236e0
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l6.cmp_store: 3022/33792 elements differ, worst |Δ| 8.313e0
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l8.cmp_store: 3032/33792 elements differ, worst |Δ| 7.878e0
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l10.cmp_store: 3030/33792 elements differ, worst |Δ| 8.911e0
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l12.cmp_store: 3032/33792 elements differ, worst |Δ| 9.659e0
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l14.cmp_store: 3034/33792 elements differ, worst |Δ| 1.029e1
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l16.cmp_store: 3031/33792 elements differ, worst |Δ| 1.142e1
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l18.cmp_store: 3028/33792 elements differ, worst |Δ| 1.086e1
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l20.cmp_store: 3042/33792 elements differ, worst |Δ| 1.017e1
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l22.cmp_store: 3040/33792 elements differ, worst |Δ| 1.178e1
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l24.cmp_store: 3023/33792 elements differ, worst |Δ| 6.848e0
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l26.cmp_store: 3036/33792 elements differ, worst |Δ| 9.280e0
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l28.cmp_store: 3026/33792 elements differ, worst |Δ| 1.165e1
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l30.cmp_store: 3027/33792 elements differ, worst |Δ| 1.007e1
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l32.cmp_store: 3022/33792 elements differ, worst |Δ| 1.005e1
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l34.cmp_store: 3027/33792 elements differ, worst |Δ| 8.662e0
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l36.cmp_store: 3031/33792 elements differ, worst |Δ| 1.078e1
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l38.cmp_store: 3030/33792 elements differ, worst |Δ| 7.203e0
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l40.cmp_store: 3022/33792 elements differ, worst |Δ| 5.740e0
+  [warm=4 T=6 commit=6] STATE BIT FAIL class l42.cmp_store: 3027/33792 elements differ, worst |Δ| 6.625e0
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l2.cmp_store: 503/32768 elements differ, worst |Δ| 4.332e0
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l4.cmp_store: 505/32768 elements differ, worst |Δ| 4.652e0
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l6.cmp_store: 496/32768 elements differ, worst |Δ| 7.222e0
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l8.cmp_store: 503/32768 elements differ, worst |Δ| 7.521e0
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l10.cmp_store: 502/32768 elements differ, worst |Δ| 8.288e0
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l12.cmp_store: 502/32768 elements differ, worst |Δ| 9.911e0
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l14.cmp_store: 494/32768 elements differ, worst |Δ| 8.954e0
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l16.cmp_store: 508/32768 elements differ, worst |Δ| 1.073e1
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l18.cmp_store: 501/32768 elements differ, worst |Δ| 1.072e1
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l20.cmp_store: 510/32768 elements differ, worst |Δ| 8.619e0
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l22.cmp_store: 502/32768 elements differ, worst |Δ| 1.108e1
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l24.cmp_store: 512/32768 elements differ, worst |Δ| 5.084e0
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l26.cmp_store: 505/32768 elements differ, worst |Δ| 7.772e0
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l28.cmp_store: 499/32768 elements differ, worst |Δ| 1.086e1
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l30.cmp_store: 508/32768 elements differ, worst |Δ| 8.402e0
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l32.cmp_store: 504/32768 elements differ, worst |Δ| 9.532e0
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l34.cmp_store: 509/32768 elements differ, worst |Δ| 7.594e0
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l36.cmp_store: 505/32768 elements differ, worst |Δ| 1.004e1
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l38.cmp_store: 507/32768 elements differ, worst |Δ| 6.755e0
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l40.cmp_store: 505/32768 elements differ, worst |Δ| 5.000e0
+  [warm=1 T=2 commit=1] STATE BIT FAIL class l42.cmp_store: 506/32768 elements differ, worst |Δ| 3.715e0
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l2.cmp_store: 1520/33280 elements differ, worst |Δ| 4.461e0
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l4.cmp_store: 1517/33280 elements differ, worst |Δ| 4.837e0
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l6.cmp_store: 1515/33280 elements differ, worst |Δ| 7.043e0
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l8.cmp_store: 1518/33280 elements differ, worst |Δ| 7.642e0
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l10.cmp_store: 1519/33280 elements differ, worst |Δ| 8.589e0
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l12.cmp_store: 1517/33280 elements differ, worst |Δ| 1.038e1
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l14.cmp_store: 1515/33280 elements differ, worst |Δ| 9.441e0
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l16.cmp_store: 1515/33280 elements differ, worst |Δ| 1.138e1
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l18.cmp_store: 1507/33280 elements differ, worst |Δ| 1.097e1
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l20.cmp_store: 1510/33280 elements differ, worst |Δ| 8.883e0
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l22.cmp_store: 1515/33280 elements differ, worst |Δ| 1.127e1
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l24.cmp_store: 1518/33280 elements differ, worst |Δ| 5.874e0
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l26.cmp_store: 1512/33280 elements differ, worst |Δ| 9.254e0
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l28.cmp_store: 1513/33280 elements differ, worst |Δ| 1.178e1
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l30.cmp_store: 1516/33280 elements differ, worst |Δ| 9.097e0
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l32.cmp_store: 1513/33280 elements differ, worst |Δ| 1.043e1
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l34.cmp_store: 1512/33280 elements differ, worst |Δ| 8.213e0
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l36.cmp_store: 1509/33280 elements differ, worst |Δ| 1.031e1
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l38.cmp_store: 1510/33280 elements differ, worst |Δ| 6.362e0
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l40.cmp_store: 1511/33280 elements differ, worst |Δ| 5.125e0
+  [warm=3 T=3 commit=2] STATE BIT FAIL class l42.cmp_store: 1504/33280 elements differ, worst |Δ| 4.772e0
+GATE_DONE rc=1 utc=2026-09-26T03:21:44Z

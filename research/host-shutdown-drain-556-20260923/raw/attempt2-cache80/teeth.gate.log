@@ -1,0 +1,12 @@
+== host-tier ON boot, FORCED-TINY RED ARM (MEMRA_KV_HOST_MB=1) ==
+  ok: device budget forced an eviction (the tier's feed)
+  FAIL: teeth: demote refused by name (entry > 1 MiB host budget)
+  ok: teeth: no promote happened
+  ok: teeth: metrics agree (0 demotions, 0 promotions)
+  ok: teeth: r3 re-primed cold (no tier to hit)
+== host-tier OFF twin boot (MEMRA_KV_HOST_MB=0: the rollback seam) ==
+  ok: OFF boot never touches the tier (no [prefix-host] line at all)
+  ok: OFF r3 re-primed cold (nothing preserved the evicted entry)
+  ok: r1 ON == OFF byte identity (cold path unperturbed)
+  ok: r3 ON == OFF byte identity (promoted restore == cold re-prime)
+KV-HOST-SPILL IDENTITY GATE: 1 FAILURE(S) (teeth=1)
