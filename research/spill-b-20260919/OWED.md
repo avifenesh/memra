@@ -217,9 +217,11 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 
 - Source: `DAY30.md` section 6; the lane's comment on #464 (2026-09-22): two guard-only seeds, "the format is your
   call"; the code is darklanes' `recover_request_ledger` (the money path).
-- Status: waiting on the owner's format choice (sidecar `requests.jsonl.accounted`, which the issue itself names, or
-  a zero-amount `debit` row per carried id). The implementation is 0.5 agent-day once chosen. The lane does not
-  choose a money-path format.
+- Status: `done` (2026-09-27). The owner delegated the money-path formats to the lead, who chose a zero-amount `debit`
+  row per carried id. Built as darklanes `memra-server carry-guard` (a read-only dry run and an `--execute` that refuses
+  a live journal), with the budget journal's source-file top-up rows (form b2: `amount_micro` 0, `source_delta_micro`,
+  an atomic first-boot cut) on the same branch. darklanes#1173 merged (darklanes main `31eda55ee`); the lead closed
+  memra#464. Test logs: `darklanes-money-20260927/`. Earlier: waiting on the owner's format choice.
 
 ### O10. The part (b) arm of `MEMRA_ADMIT_BY_MEMORY` with the host tier armed
 
