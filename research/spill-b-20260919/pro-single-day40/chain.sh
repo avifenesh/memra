@@ -40,5 +40,5 @@ python3 research/spill-b-20260919/day34-compare.py --card pro6000 --served-ctx 2
   O2:$B/O2-on8192 O2:$B/O2-on32768 > "$R/SUMMARY.txt" 2>&1
 python3 research/spill-b-20260919/day31-faults.py "$R/boots" > "$R/FAULTS.txt" 2>&1
 python3 research/spill-b-20260919/day40-read.py pro6000 "$R/boots" > "$R/READINGS.txt" 2>&1
-( cd "$R" && find . -type f ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
+( cd "$R" && find . -type f ! -name MANIFEST.sha256 ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
 log "LANE-B-DAY40-BOX-DONE"

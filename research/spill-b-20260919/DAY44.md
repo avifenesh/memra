@@ -198,7 +198,7 @@ Written after the runs. Section 1 is unchanged.
 Tree `3182da256`. Arm binaries built on the box: `tip` from the DAY44 source, sha256 `62e7f81c...dce334c19`; `offprev`
 (`day44-nodoor.patch`), `8adcfa8f...a6438843`. The lead mirrored them by hash only. The 27B. 18 boots, each `rc=0` in
 `run.log` (day44-run.sh's own capture; the chain's rc lines are date's). Receipts at `pro-single-day44/box/` (434
-files; box manifest OK). `read.log` is 105 lines, quoted whole in the receipt. Its clause lines, verbatim where short:
+files; box manifest OK). Note (2026-09-27, from the lead): the `MANIFEST.sha256` in this mirror is the lead's mirror-time manifest, not the sitting's own. The lead's earlier mirror script wrote its manifest over the sitting's, and the originals are gone (the box copies were destroyed or overwritten). Every mirrored file is verified against the lead's manifest, which hashed the box files at mirror time, so no receipt content is affected. `read.log` is 105 lines, quoted whole in the receipt. Its clause lines, verbatim where short:
 
 - **E1 exactness PASS on all 8 `exact` boots:** `resumed=60 differ_vs_cold=[] exact_lines=60 -> PASS`, both routes,
   both shapes, both orders, every L (6,144, 30,720, 122,880) and G (32, 256). The `keep` boots flip 24 of 60 resumed

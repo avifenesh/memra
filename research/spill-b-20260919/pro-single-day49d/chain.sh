@@ -65,5 +65,5 @@ rc=$?
 python3 research/spill-b-20260919/day49d-read.py serve pro6000 "$R" > "$R/read-serve.log" 2>&1
 [ "$BOOTS_ONLY" = 1 ] || python3 research/spill-b-20260919/day49d-read.py vmm pro6000 "$R/vmm-green" "$R/vmm-red" > "$R/read-vmm.log" 2>&1
 for T in "$G" "$RD"; do [ -d "$T" ] && git worktree remove --force "$T" >> "$R/chain.log" 2>&1; done
-( cd "$R" && find . -type f -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
+( cd "$R" && find . -type f ! -name MANIFEST.sha256 -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
 if [ "$BOOTS_ONLY" = 1 ]; then log "LANE-B-DAY49D-BOOTS-DONE"; else log "LANE-B-DAY49D-BOX-DONE"; fi

@@ -38,5 +38,5 @@ done
 bash research/spill-b-20260919/day44-run.sh "$R" offprev:offprev:plain:RX6 fault-plain-rxg6:fault:plain:RXg6 \
   || log "offprev/fault stopped rc=$?"
 python3 research/spill-b-20260919/day44-read.py pro6000 "$R" > "$R/read.log" 2>&1
-( cd "$R" && find . -type f ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
+( cd "$R" && find . -type f ! -name MANIFEST.sha256 ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
 log "LANE-B-DAY44-BOX-DONE"

@@ -37,5 +37,5 @@ for s in "${SIDES[@]}"; do
 done
 python3 research/spill-b-20260919/day49c-read.py pro6000 "$R/green" "$R/red" > "$R/read.log" 2>&1
 for s in "${SIDES[@]}"; do git worktree remove --force "$WT/target/wt-day49c-${s%%:*}" >> "$R/chain.log" 2>&1; done
-( cd "$R" && find . -type f -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
+( cd "$R" && find . -type f ! -name MANIFEST.sha256 -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
 log "LANE-B-DAY49C-BOX-DONE"

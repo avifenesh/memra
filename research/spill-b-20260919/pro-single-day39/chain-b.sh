@@ -37,5 +37,5 @@ python3 research/spill-b-20260919/day33-compare.py --card pro6000 red:R64:$B/v2-
   green:R64:$B/v3-R64-r1 green:off:$B/v3-off green:R64:$B/v3-R64-r2 > "$R/SUMMARY.txt" 2>&1
 python3 research/spill-b-20260919/day39-read.py pro6000 $B/v1-R64 $B/v2-R64 $B/v3-R64-r1 $B/v3-R64-r2 $B/v2-off $B/v3-off \
   > "$R/READINGS.txt" 2>&1
-( cd "$R" && find . -type f ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
+( cd "$R" && find . -type f ! -name MANIFEST.sha256 ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
 log "LANE-B-DAY39B-BOX-DONE"

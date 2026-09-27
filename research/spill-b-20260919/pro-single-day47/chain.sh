@@ -26,5 +26,5 @@ for run in b1 b2; do
     > "$R/$run.log" 2>&1
   log "$run rc=$? $(tail -1 "$R/$run.log")"
 done
-( cd "$R" && find . -type f -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
+( cd "$R" && find . -type f ! -name MANIFEST.sha256 -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
 log "LANE-B-DAY47-BOX-DONE"

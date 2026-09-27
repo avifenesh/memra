@@ -32,5 +32,5 @@ LENGTHS=6144,30720,122880 YIELD_S=5 bash research/spill-b-20260919/day50-stage0.
 rc=$?
 log "stage0 rc=$rc"
 git worktree remove --force "$T" >> "$R/chain.log" 2>&1
-( cd "$R" && find . -type f ! -name '*.nsys-rep' ! -name '*.sqlite' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
+( cd "$R" && find . -type f ! -name MANIFEST.sha256 ! -name '*.nsys-rep' ! -name '*.sqlite' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
 log "LANE-B-DAY50-S0-BOX-DONE"

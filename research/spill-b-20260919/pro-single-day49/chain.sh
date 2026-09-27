@@ -35,5 +35,5 @@ done
 export RIG_LOCK=/tmp/memra-gpu.lock BIN="$R/bins/tip/memra-server" MODEL MODEL_KEY=q38 BOOT_CTX='' NO_SCOPE=1 \
   CLIENT_EXTRA="--warm-n 0 --burst 8 --length 6144 --max-tokens 64"
 bash research/spill-b-20260919/day49-run.sh "$R" O1-off:off O1-on:on O2-on:on O2-off:off || log "boots stopped rc=$?"
-( cd "$R" && find . -type f ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
+( cd "$R" && find . -type f ! -name MANIFEST.sha256 ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
 log "LANE-B-DAY49-BOX-DONE"

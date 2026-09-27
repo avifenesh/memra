@@ -145,7 +145,7 @@ Written after the runs. Section 1 is unchanged.
 Tree `77fe12114`. The gate's release binary was built on the box from that tree, so it carries `95d35c383` (addendum C's
 reap, unreachable here: no VMM door is set). The serving boots ran `bins/tip` from `02dbdfa40`, sha256
 `bfb107ad...5f93cf5a0`. The 27B. Receipts at `pro-single-day49/box/` (the lead's `MIRROR-CHECK.txt`: box manifest OK,
-no ELF). The gate lines, verbatim (`g1`, then `g2`):
+no ELF). Note (2026-09-27, from the lead): the `MANIFEST.sha256` in this mirror is the lead's mirror-time manifest, not the sitting's own. The lead's earlier mirror script wrote its manifest over the sitting's, and the originals are gone (the box copies were destroyed or overwritten). Every mirrored file is verified against the lead's manifest, which hashed the box files at mirror time, so no receipt content is affected. The gate lines, verbatim (`g1`, then `g2`):
 
 ```
 HFG (i) batch-oom-recovers: retry_lines=0 retried_ok=0 completed=3/3 error_events=0 http_5xx=0 panic_lines=0 digests={r0:9544bb8cfe5453f9,r1:d6443173460ba4da,r2:9c2aecc336dfecfc} control={r0:9544bb8cfe5453f9,r1:d6443173460ba4da,r2:9c2aecc336dfecfc} control_completed=3/3 -> FAIL
@@ -176,7 +176,7 @@ health-fault-gate: arms=i pass=0 documented=0 fail=2 receipts=/root/spill-receip
 ### 2.2 Addendum C's i-vmm cell on the target card (the thirteenth sitting, the same card, 2026-09-26 18:11 to 18:12Z)
 
 Tree `50bbd44d7`. Green built on the box from `95d35c383` (sha256 `bfa6f49d...ee258054d`), red from `02dbdfa40`
-(`f4410984...2d33e80f`), each in its own worktree. Receipts at `pro-single-day49c/box/` (box manifest OK, no ELF).
+(`f4410984...2d33e80f`), each in its own worktree. Receipts at `pro-single-day49c/box/` (box manifest OK, no ELF). Note (2026-09-27, from the lead): the `MANIFEST.sha256` in this mirror is the lead's mirror-time manifest, not the sitting's own. The lead's earlier mirror script wrote its manifest over the sitting's, and the originals are gone (the box copies were destroyed or overwritten). Every mirrored file is verified against the lead's manifest, which hashed the box files at mirror time, so no receipt content is affected.
 Verbatim (`read.log`):
 
 ```
@@ -204,7 +204,7 @@ DAY49C I-VMM card=pro6000 role=red gate_i=FAIL gate_i_red=PASS i-ctrl=[door_on=1
 
 Tree `9e39bc314`. Green built on the box from `8926ccfb3`, sha256 `707c2ac5...4d1bfe63`. Red is the same commit with
 `day49d-noreap.patch` (sha256 `5d3b7239...fb6671ad`), sha256 `4b8501b7...4c052d239`. Both built in worktrees. The 27B.
-Receipts at `pro-single-day49d/box/` (the lead's `MIRROR-CHECK.txt`: box manifest OK, no ELF). The gate lines read the
+Receipts at `pro-single-day49d/box/` (the lead's `MIRROR-CHECK.txt`: box manifest OK, no ELF). Note (2026-09-27, from the lead): the `MANIFEST.sha256` in this mirror is the lead's mirror-time manifest, not the sitting's own. The lead's earlier mirror script wrote its manifest over the sitting's, and the originals are gone (the box copies were destroyed or overwritten). Every mirrored file is verified against the lead's manifest, which hashed the box files at mirror time, so no receipt content is affected. The gate lines read the
 same on all four runs (`j1`, `j2`, `vmm-green`, `vmm-red`), verbatim once:
 
 ```
@@ -236,7 +236,7 @@ DAY49D J-VMM card=pro6000 role=red gate_j=PASS gate_j_red=PASS j-ctrl=[door_on=1
 
 Chain tree `09b15280f` (the sitting records HEAD `6cef1bbe3`). Green was rebuilt on the box from `8926ccfb3`, sha256
 `f6252707...761dcf3a6`; the 27B. Burst 8 x 6,144, no warm, `MEMRA_STEP_OOM_FAULT=batch:1`. Receipts at
-`pro-single-day49d/box-boots/` (the lead's `MIRROR-CHECK.txt`: box manifest OK, no ELF). Verbatim (`read-serve.log`):
+`pro-single-day49d/box-boots/` (the lead's `MIRROR-CHECK.txt`: box manifest OK, no ELF). Note (2026-09-27, from the lead): the `MANIFEST.sha256` in this mirror is the lead's mirror-time manifest, not the sitting's own. The lead's earlier mirror script wrote its manifest over the sitting's, and the originals are gone (the box copies were destroyed or overwritten). Every mirrored file is verified against the lead's manifest, which hashed the box files at mirror time, so no receipt content is affected. Verbatim (`read-serve.log`):
 
 ```
 DAY49D SERVE card=pro6000 boot=O1-off arm=off route=spec-default batch_fired=[8] other_fired=0 retry_lines=0 retried_ok=0 retry_failed=0 rows=9 status={200: 1, 503: 8} error_rows=8 -> READING (the before)

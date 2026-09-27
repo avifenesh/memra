@@ -29,5 +29,5 @@ export RIG_LOCK=/tmp/memra-gpu.lock BIN="$R/bins/tip/memra-server" MODEL MODEL_K
   CLIENT_EXTRA="--burst 64 --length 30720 --max-tokens 64 --wave2-delay-s 10" DOOR_MEMORY=1
 bash research/spill-b-20260919/day45-run.sh "$R" O1-off:off O1-on:on O2-on:on O2-off:off || log "boots stopped rc=$?"
 python3 research/spill-b-20260919/day45-read.py pro6000 "$R" > "$R/read.log" 2>&1
-( cd "$R" && find . -type f ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
+( cd "$R" && find . -type f ! -name MANIFEST.sha256 ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
 log "LANE-B-DAY45B-BOX-DONE"

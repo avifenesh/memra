@@ -34,5 +34,5 @@ bash research/spill-b-20260919/day46-run.sh "$R" O1-shadow:shadow O1-enforce:enf
 rc=$?
 [ $rc = 0 ] || log "boots stopped rc=$rc"
 python3 research/spill-b-20260919/day46-read.py pro6000 "$R" > "$R/read.log" 2>&1
-( cd "$R" && find . -type f ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
+( cd "$R" && find . -type f ! -name MANIFEST.sha256 ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
 log "LANE-B-DAY46-BOX-DONE"

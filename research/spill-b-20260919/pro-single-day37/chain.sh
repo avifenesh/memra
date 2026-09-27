@@ -109,5 +109,5 @@ for k in 1 2 3 4 5; do args+=("stream-O2-$k-vmm:vmm:stream" "stream-O2-$k-pooled
 bash $B "$R" "${args[@]}"
 # 6. reader
 python3 research/spill-b-20260919/day37-read.py pro6000 "$R" gates-r4 > "$R/read.log" 2>&1
-( cd "$R" && find . -type f ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
+( cd "$R" && find . -type f ! -name MANIFEST.sha256 ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
 log "LANE-B-DAY37-BOX-DONE"

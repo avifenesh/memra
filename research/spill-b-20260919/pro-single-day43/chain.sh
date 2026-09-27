@@ -29,5 +29,5 @@ export RIG_LOCK=/tmp/memra-gpu.lock BIN="$R/bins/tip/memra-server" PREV_BIN="$R/
 bash research/spill-b-20260919/day43-run.sh "$R" rx-spec-O1-unset:unset:spec:RX rx-spec-O1-clamp:clamp:spec:RX \
   rx-spec-O2-clamp:clamp:spec:RX rx-spec-O2-unset:unset:spec:RX offprev:offprev:spec:RX || log "boots stopped rc=$?"
 python3 research/spill-b-20260919/day43-read.py pro6000 "$R" > "$R/read.log" 2>&1
-( cd "$R" && find . -type f ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
+( cd "$R" && find . -type f ! -name MANIFEST.sha256 ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
 log "LANE-B-DAY43-BOX-DONE"

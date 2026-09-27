@@ -64,5 +64,5 @@ export LANE_BIN="$R/bins/lane/memra-server" MAIN_BIN="$R/bins/main/memra-server"
 bash research/spill-b-20260919/rtx5090-day37/boots-f.sh "$R" off-lane:pooled:mixspec fault-mapper:vmm-mapperfault:mixspec \
   off-main:main:mixspec burst-g2-vmm:vmm:g2 fault-ensure:vmm-ensurefault:g2
 python3 research/spill-b-20260919/day37-read.py pro6000 "$R" gates-r4b > "$R/read.log" 2>&1
-( cd "$R" && find . -type f ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
+( cd "$R" && find . -type f ! -name MANIFEST.sha256 ! -path './bins/*' -print0 | sort -z | xargs -0 sha256sum > "$R/MANIFEST.sha256" )
 log "LANE-B-DAY37F-BOX-DONE"
