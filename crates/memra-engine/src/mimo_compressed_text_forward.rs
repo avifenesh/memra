@@ -12,9 +12,11 @@ use crate::mimo_compressed_kv::{MAX_COMPRESSED_CONTEXT_TOKENS, MiMoCompressedKv}
 use crate::mimo_modal_overlay::MiMoGpuEmbeddingChunk;
 use crate::mimo_text_forward::{MiMoTextStep, dense_token, normalized, read_text_output};
 use crate::mimo_text_weights::{MiMoTextWeights, stage_for_layer};
+use crate::model::GpuTensor;
 
 type Fail = Box<dyn Error>;
 const HIDDEN: usize = 4096;
+const VOCAB: usize = 152_576;
 const LAYERS: usize = 48;
 const STAGE_CUT: usize = 24;
 
@@ -337,7 +339,17 @@ impl<'a> MiMoCompressedTextForward<'a> {
             &self.weights.output_norm,
             self.weights.plan.output_norm.epsilon,
         )?;
-        let logits_gpu = last.matmul(&self.weights.output_head, &final_norm, 1)?;
+        let GpuTensor::FloatBf16 { data, ne } = &self.weights.output_head else {
+            return Err("MiMo head-only BF16 candidate lost the source output head".into());
+        };
+        if ne.as_slice() != [HIDDEN as u64, VOCAB as u64]
+            || data.len() != HIDDEN * VOCAB * 2
+            || data.ordinal() != last.stream().context().ordinal()
+        {
+            return Err("MiMo head-only BF16 candidate head shape or stage changed".into());
+        }
+        let mut logits_gpu = last.uninit(VOCAB)?;
+        last.matvec_bf16_rows_into(data, &final_norm, &mut logits_gpu, HIDDEN, VOCAB, 1)?;
         read_text_output::<CAPTURE_HIDDEN>(last, &hidden, &logits_gpu)
     }
 }
