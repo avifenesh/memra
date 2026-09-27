@@ -3,6 +3,8 @@ use crate::config::HfConfig;
 
 pub static PACK: ModelPack = ModelPack {
     family: "qwen35_moe",
+    output_head: OutputHeadContract::SeparateHead,
+    tensor_consumption: TensorConsumption::Report,
     aliases: &[
         "qwen3_5_moe",
         "qwen3_5_moe_text",

@@ -1,0 +1,6 @@
+Labelled failure, kept. The lock was acquired at once (lock.txt) but the card was already at 23,806 of 24,463 MiB
+(gpu-before.csv): two processes of another session held 20,778 + 1,604 MiB outside the canonical lock
+(compute-apps-at-failure.csv; identified by cwd only, not inspected further, not signalled). The server died at boot,
+quoted: `[server] FATAL: worker init failed: Engine::new failed: DriverError(CUDA_ERROR_OUT_OF_MEMORY, "out of memory")`.
+The runner exited 5 (server never ready). No conclusion is built on this attempt; the cell is re-queued behind a
+bounded wait for the card to free (wait-then-run.sh).

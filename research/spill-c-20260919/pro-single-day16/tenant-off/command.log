@@ -1,0 +1,34 @@
+cd8e9c11493ff7538c2251af4d7dc2d1be153c95e427d77cf131f09aee808aa8  /root/spill-receipts/c-day16/bins/memra-server
+== fix arm boot (host 1024 MiB, tenant share 38%, device 384 MiB, two keyring tenants) ==
+cd8e9c11493ff7538c2251af4d7dc2d1be153c95e427d77cf131f09aee808aa8  /root/spill-receipts/c-day16/bins/memra-server
+== both arms: shape ==
+  ok: r1 HTTP 200
+  ok: r2 HTTP 200
+  ok: r3 HTTP 200
+  ok: r4 HTTP 200
+  ok: r5 HTTP 200
+  ok: r6 HTTP 200
+  ok: r7 HTTP 200
+  ok: r8 HTTP 200
+  ok: /metrics scraped with the operator token (200, process-wide counters present)
+  ok: no device-tier promote-insert skip (the device budget holds a promote beside a protected entry)
+  ok: the tier is on with the configured share cap
+  ok: the pool never filled: no LRU eviction
+  ok: no allocation refusal
+  ok: no host-tier refusal or failure line
+  ok: beta's first demote landed
+  ok: acme's first two demotes landed (r3, r4)
+  ok: beta's entry promotes at r7 in this arm: acme's cap did not touch beta's row
+  ok: the r7 promote line names beta
+  ok: no tenant-share eviction ever names beta
+  ok: every tenant-share eviction names acme, in both the row and the namespace
+== fix arm: the verdict lines ==
+  ok: fix: no evaporation line
+  ok: fix: acme's own oldest entry was evicted at the cap
+  ok: fix: every tenant-share eviction is followed by acme's own demote landing (D2H after the reclaim)
+  ok: fix: r8 promotes the reclaimed admission (cached_tokens == r6 prompt_tokens)
+  ok: fix: the r8 promote line names acme
+  ok: fix: /metrics counts the reclaims and no rejects
+  ok: fix: /metrics has no wasted reclaim (every reclaim's demotion inserted)
+  ok: fix: no WASTED line
+GATE: kv-host-tenant-reclaim (fix arm) PASS

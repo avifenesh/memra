@@ -1,0 +1,24 @@
+405466cf745f36e24350c2692ebb443e02f7b3ce
+b30ac09d04f4de309f6cb509054a2c87eb2d9252ab540e2c78604a0c802aaa0f  /root/spill-receipts/a-day12/bins/memra-server-base
+== base arm boot (host 1024 MiB, tenant share 38%, device 256 MiB, two keyring tenants) ==
+b30ac09d04f4de309f6cb509054a2c87eb2d9252ab540e2c78604a0c802aaa0f  /root/spill-receipts/a-day12/bins/memra-server-base
+Traceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+  File "/usr/lib/python3.12/urllib/request.py", line 215, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 521, in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 630, in http_response
+    response = self.parent.error(
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 559, in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 492, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/lib/python3.12/urllib/request.py", line 639, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 401: Unauthorized

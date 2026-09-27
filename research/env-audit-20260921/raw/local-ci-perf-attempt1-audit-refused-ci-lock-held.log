@@ -1,0 +1,11 @@
+== local-ci: clippy gate (-D warnings) ==
+== local-ci: memra-server HTTP-surface unit suite ==
+== local-ci: memra-engine lib suite (CPU-safe part) ==
+== local-ci: memra-gguf artifact-present skip census ==
+== local-ci: tier, KV and onboarding-CLI suites (tools/portable-suites.sh) ==
+== local-ci: correctness stage ==
+== local-ci: prime continuation gate (one call vs head + tail; tails 16/48/80) ==
+== serve-smoke: plain serving ==
+Error: "[env-audit] REFUSED: the environment names doors this build does not have:\n  MEMRA_CI_LOCK_HELD: unknown MEMRA_CI_* name (3 documented names in that family, none is this one). Neither a documented name nor a retired one in docs/FLAGS.md: a typo or a name from another tree. It would be read by nothing.\n  Unset them (or MEMRA_ENV_AUDIT=warn for one boot while the launcher is fixed). Registry: docs/FLAGS.md, generated into this binary at build time."
+serve-smoke FAIL
+LOCAL_CI_RC=1

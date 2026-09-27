@@ -1,0 +1,31 @@
+ok   control: yaml.safe_load accepts the duplicate job key (exit 0)
+ok   default: duplicate job key reds
+ok   default: the refusal names the key, its line and column and the first line
+ok   default: duplicate nested key (two run: in one step) reds
+ok   default: duplicate key inside with: reds
+ok   default: the with: refusal names line 11 column 11
+ok   default: clean file greens
+ok   default: the green names the jobs
+ok   default: block scalars, sibling mappings, comments, flow sequences and quoted keys (one is "*") green
+ok   default: the constructs file lists its two jobs
+ok   default: a flow mapping is refused as cannot-answer (exit 2, never green)
+ok   default: the cannot-answer names the line and the construct
+ok   default: empty workflow directory reds (vacuity)
+ok   default: the tree's own .github/workflows greens
+ok   default: no traceback, no import error in any verdict
+ok   no-PyYAML: duplicate job key reds
+ok   no-PyYAML: the refusal names the key, its line and column and the first line
+ok   no-PyYAML: duplicate nested key (two run: in one step) reds
+ok   no-PyYAML: duplicate key inside with: reds
+ok   no-PyYAML: the with: refusal names line 11 column 11
+ok   no-PyYAML: clean file greens
+ok   no-PyYAML: the green names the jobs
+ok   no-PyYAML: block scalars, sibling mappings, comments, flow sequences and quoted keys (one is "*") green
+ok   no-PyYAML: the constructs file lists its two jobs
+ok   no-PyYAML: a flow mapping is refused as cannot-answer (exit 2, never green)
+ok   no-PyYAML: the cannot-answer names the line and the construct
+ok   no-PyYAML: empty workflow directory reds (vacuity)
+ok   no-PyYAML: the tree's own .github/workflows greens
+ok   no-PyYAML: no traceback, no import error in any verdict
+ok   the shadow package raises on import yaml (the no-PyYAML arm is real)
+test_workflow_keys: 30 ok, 0 FAIL

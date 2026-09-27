@@ -510,6 +510,11 @@ else
     mkdir -p "$CRATE_COPY/tools" "$CRATE_COPY/crates/memra-gguf/src"
     cp "$CENSUS_TOOL" "$CRATE_COPY/tools/"
     cp "$GATE_SRC/tools/skip-census.tsv" "$CRATE_COPY/tools/" 2>/dev/null || true
+    # The manifest also declares memra-tokenizer's integration-test skips (the static census
+    # scans crates/<crate>/tests since 2026-09-21), so the copy carries that crate's tree too;
+    # without it `verify` would refuse on a missing crate directory instead of judging gguf.
+    mkdir -p "$CRATE_COPY/crates/memra-tokenizer/src"
+    cp -r "$GATE_SRC/crates/memra-tokenizer/tests" "$CRATE_COPY/crates/memra-tokenizer/" 2>/dev/null || true
     cat > "$CRATE_COPY/crates/memra-gguf/src/source.rs" <<'RS'
 #[cfg(test)]
 mod probe {

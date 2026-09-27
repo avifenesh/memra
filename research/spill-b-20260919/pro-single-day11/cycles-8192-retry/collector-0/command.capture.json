@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "env",
+    "NVIDIA_TF32_OVERRIDE=0",
+    "target/release/kv-tier-gate",
+    "--artifact",
+    "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "--case",
+    "active",
+    "--context",
+    "8192",
+    "--tiers",
+    "host",
+    "--same-program",
+    "--kv-allocator",
+    "vmm",
+    "--reclaim-diagnostic",
+    "--reclaim-cycles",
+    "5",
+    "--out",
+    "/root/spill-receipts/b-day11/cycles-8192-retry/receipt"
+  ],
+  "exit_code": 2,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "refused",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 23923623318681,
+  "ended_monotonic_ns": 24052429337374,
+  "started_utc": "2026-09-20T21:30:38.617176+00:00",
+  "ended_utc": "2026-09-20T21:32:47.423196+00:00",
+  "elapsed_seconds": 128.806018693,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 1694,
+    "sha256": "496597016806a232e3c7b7514cd4d435174dbd99e169f44859cb9f8d5888a94d"
+  },
+  "failure_quote": "REFUSED: diagnostic could not re-reserve original VMM address",
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 56285,
+      "sha256": "420aded40e98994f099fefa66635b2495e71d790a7c385567c9fd7c29472c308"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "failure": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.failure.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}

@@ -110,6 +110,24 @@ echo '  PASS: fixture calibrated margin gate'
     def test_complete(self):
         self.run_battery()
 
+    def test_evidence_records_each_actual_producer_before_parsing(self):
+        for code in ("0", "1"):
+            with self.subTest(kernel_exit=code):
+                destination = self.root / f"evidence-{code}"
+                result = subprocess.run(
+                    ["bash", str(self.tools / "release-battery.sh"), "--roster", str(self.roster),
+                     "--evidence-dir", str(destination)], cwd=self.root,
+                    env={**self.env, "FIXTURE_KC_RC": code}, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60)
+                self.assertEqual(result.returncode == 0, code == "0", result.stdout)
+                rows = [line.split("\t") for line in (destination / "runs.tsv").read_text().splitlines()]
+                self.assertEqual([(row[0], row[1]) for row in rows],
+                                 [("kernel", "kernel"), ("argmax", "fixture"), ("spec", "fixture")])
+                self.assertEqual(rows[0][2], code)
+                self.assertEqual((destination / rows[0][3]).read_text(), self.kernel_log.read_text().rstrip() + "\n")
+                self.assertEqual((destination / rows[2][3]).read_text(), self.spec_log.read_text().rstrip() + "\n")
+                if code != "0": self.assertNotIn("RELEASE BATTERY PASS", result.stdout)
+
     def test_complete_in_reverse_order(self):
         self.spec_log.write_text(spec_output(range(8, 0, -1)))
         self.run_battery()

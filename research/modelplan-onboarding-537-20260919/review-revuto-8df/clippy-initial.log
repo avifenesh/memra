@@ -1,0 +1,27 @@
+    Checking memra-gguf v0.138.0 (/Users/avifen/.codex/worktrees/b6ce/memra/crates/memra-gguf)
+    Checking memra-tokenizer v0.138.0 (/Users/avifen/.codex/worktrees/b6ce/memra/crates/memra-tokenizer)
+error: called `.err().expect()` on a `Result` value
+   --> crates/memra-gguf/src/model_plan/semantics_tests.rs:335:22
+    |
+335 |                       .err()
+    |  ______________________^
+336 | |                     .expect("a source factor tensor must not be ignored");
+    | |___________________________^ help: try: `expect_err`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#err_expect
+    = note: `-D clippy::err-expect` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::err_expect)]`
+
+error: called `.err().expect()` on a `Result` value
+   --> crates/memra-gguf/src/model_plan/semantics_tests.rs:551:14
+    |
+551 |               .err()
+    |  ______________^
+552 | |             .expect("the actual Step header requires factors without a scaling-type key");
+    | |___________________^ help: try: `expect_err`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#err_expect
+
+    Checking memra-reference v0.138.0 (/Users/avifen/.codex/worktrees/b6ce/memra/crates/memra-reference)
+error: could not compile `memra-gguf` (lib test) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...

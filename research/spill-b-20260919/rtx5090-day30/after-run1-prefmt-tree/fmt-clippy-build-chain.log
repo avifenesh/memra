@@ -1,0 +1,172 @@
+== fmt
+Diff in darklanes-metering/src/admin.rs:194:
+                 "/admin/tenants/:tenant/capture",
+                 get(capture_status).post(set_capture),
+             )
+[31m-            .route(
+[m[31m-                "/admin/capture/rotate",
+[m[31m-                post(rotate_capture),
+[m[31m-            )
+[m[32m+            .route("/admin/capture/rotate", post(rotate_capture))
+[m             .fallback(not_found)
+             .layer(middleware::from_fn_with_state(
+                 state.clone(),
+Diff in darklanes-metering/src/capture.rs:297:
+             match self.inner.tx.try_send(pending) {
+                 Ok(()) => break,
+                 Err(TrySendError::Disconnected(_)) => {
+[31m-                    return Err("capture writer is not running".to_string())
+[m[32m+                    return Err("capture writer is not running".to_string());
+[m                 }
+                 Err(TrySendError::Full(msg)) => {
+                     if std::time::Instant::now() >= deadline {
+Diff in darklanes-metering/src/capture.rs:304:
+[31m-                        return Err("capture queue stayed full for 10s; rotate not enqueued".to_string());
+[m[32m+                        return Err(
+[m[32m+                            "capture queue stayed full for 10s; rotate not enqueued".to_string()
+[m[32m+                        );
+[m                     }
+                     pending = msg;
+                     std::thread::sleep(std::time::Duration::from_millis(25));
+Diff in darklanes-metering/src/capture.rs:715:
+         let sealed = std::fs::read_to_string(dir.join("capture-000000.jsonl")).unwrap();
+         let next = std::fs::read_to_string(dir.join("capture-000001.jsonl")).unwrap();
+         assert!(sealed.contains("\"before\""), "sealed file: {sealed:?}");
+[31m-        assert!(!sealed.contains("\"after\""), "a post-rotate row landed in the sealed file");
+[m[32m+        assert!(
+[m[32m+            !sealed.contains("\"after\""),
+[m[32m+            "a post-rotate row landed in the sealed file"
+[m[32m+        );
+[m         assert!(next.contains("\"after\""), "next file: {next:?}");
+[31m-        assert!(!next.contains("\"before\""), "a pre-rotate row landed in the new file");
+[m[32m+        assert!(
+[m[32m+            !next.contains("\"before\""),
+[m[32m+            "a pre-rotate row landed in the new file"
+[m[32m+        );
+[m     }
+ 
+     /// The retirement drain rotates, then the purge rotates again. Neither may leave an
+Diff in darklanes-metering/src/capture.rs:734:
+ 
+         let second = store.rotate().unwrap();
+         assert_eq!(second.sealed, None);
+[31m-        assert_eq!(second.live, "capture-000000.jsonl", "index must not advance");
+[m[32m+        assert_eq!(
+[m[32m+            second.live, "capture-000000.jsonl",
+[m[32m+            "index must not advance"
+[m[32m+        );
+[m 
+         let files: Vec<_> = std::fs::read_dir(&dir)
+             .unwrap()
+Diff in darklanes-metering/src/capture.rs:742:
+             .map(|e| e.file_name().to_string_lossy().into_owned())
+             .filter(|n| n.ends_with(".jsonl"))
+             .collect();
+[31m-        assert_eq!(files.len(), 1, "repeated rotates littered the directory: {files:?}");
+[m[32m+        assert_eq!(
+[m[32m+            files.len(),
+[m[32m+            1,
+[m[32m+            "repeated rotates littered the directory: {files:?}"
+[m[32m+        );
+[m     }
+ 
+     /// A sealed file must be on disk, not in a page cache the shred is about to outrun.
+Diff in darklanes-metering/src/capture.rs:756:
+             store.submit(&serde_json::json!({"tenant": "t", "n": n}));
+         }
+         let rotated = store.rotate().unwrap();
+[31m-        let sealed = dir.join(rotated.sealed.expect("rows were submitted, so something sealed"));
+[m[32m+        let sealed = dir.join(
+[m[32m+            rotated
+[m[32m+                .sealed
+[m[32m+                .expect("rows were submitted, so something sealed"),
+[m[32m+        );
+[m         let text = std::fs::read_to_string(&sealed).unwrap();
+[31m-        assert_eq!(text.lines().count(), 64, "not every submitted row reached the sealed file");
+[m[31m-        assert!(text.ends_with('\n'), "sealed file must end on a row boundary");
+[m[32m+        assert_eq!(
+[m[32m+            text.lines().count(),
+[m[32m+            64,
+[m[32m+            "not every submitted row reached the sealed file"
+[m[32m+        );
+[m[32m+        assert!(
+[m[32m+            text.ends_with('\n'),
+[m[32m+            "sealed file must end on a row boundary"
+[m[32m+        );
+[m     }
+ 
+     #[test]
+Diff in darklanes-metering/src/ledger.rs:6974:
+         let (budgets, journal) = open_walkable("journal-chain-interleaved", 1_000_000);
+         let mut permit_a = budgets.admit("tenant-a", None, 100).unwrap().unwrap();
+         let mut permit_b = budgets.admit("tenant-a", None, 200).unwrap().unwrap();
+[31m-        assert_eq!(budgets.balance("tenant-a").unwrap().unwrap().balance_micro, 999_700);
+[m[32m+        assert_eq!(
+[m[32m+            budgets.balance("tenant-a").unwrap().unwrap().balance_micro,
+[m[32m+            999_700
+[m[32m+        );
+[m         permit_a.settle("req-a", 30, "0.0000300000").unwrap();
+         let rows = journal_rows(&journal);
+         assert_eq!(
+Diff in darklanes-metering/src/ledger.rs:6986:
+         let (violations, last) = walk_chain(&journal, 1_000_000);
+         assert!(violations.is_empty(), "chain breaks: {violations:?}");
+         assert_eq!(last, 999_920);
+[31m-        assert_eq!(budgets.balance("tenant-a").unwrap().unwrap().balance_micro, 999_920);
+[m[32m+        assert_eq!(
+[m[32m+            budgets.balance("tenant-a").unwrap().unwrap().balance_micro,
+[m[32m+            999_920
+[m[32m+        );
+[m     }
+ 
+     #[test]
+Diff in darklanes-metering/src/ledger.rs:7000:
+         let (violations, last) = walk_chain(&journal, 1_000_000);
+         assert!(violations.is_empty(), "chain breaks: {violations:?}");
+         assert_eq!(last, 999_970);
+[31m-        assert_eq!(budgets.balance("tenant-a").unwrap().unwrap().balance_micro, 999_970);
+[m[32m+        assert_eq!(
+[m[32m+            budgets.balance("tenant-a").unwrap().unwrap().balance_micro,
+[m[32m+            999_970
+[m[32m+        );
+[m     }
+ 
+     #[test]
+Diff in darklanes-metering/src/ledger.rs:7021:
+         let (violations, last) = walk_chain(&journal, 1_000_000);
+         assert!(violations.is_empty(), "chain breaks: {violations:?}");
+         assert_eq!(last, 1_000_670);
+[31m-        assert_eq!(budgets.balance("tenant-a").unwrap().unwrap().balance_micro, 1_000_670);
+[m[32m+        assert_eq!(
+[m[32m+            budgets.balance("tenant-a").unwrap().unwrap().balance_micro,
+[m[32m+            1_000_670
+[m[32m+        );
+[m     }
+ 
+     #[test]
+Diff in darklanes-metering/src/ledger.rs:7055:
+             .collect();
+         let spent: u64 = threads.into_iter().map(|t| t.join().unwrap()).sum();
+         let (violations, last) = walk_chain(&journal, 100_000_000);
+[31m-        assert!(violations.is_empty(), "{} chain breaks, first: {:?}", violations.len(), violations.first());
+[m[32m+        assert!(
+[m[32m+            violations.is_empty(),
+[m[32m+            "{} chain breaks, first: {:?}",
+[m[32m+            violations.len(),
+[m[32m+            violations.first()
+[m[32m+        );
+[m         assert_eq!(last, 100_000_000 - spent as i64);
+         assert_eq!(
+             budgets.balance("tenant-a").unwrap().unwrap().balance_micro,
+fmt_rc=1
+== clippy
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 16.56s
+clippy_rc=0
+== build
+    Finished `release` profile [optimized] target(s) in 6.97s
+build_rc=0
+d0c811843d85b64a26978e0241ae4a52f549952bc234aec3e1b1609a270b86c4  target/release/memra-server
+== cell after
+requests ok=16/16 credit_status=200 boot_s=4.0 load_s=1.9
+JOURNAL-ORDER CELL arm=after N=16 rows=17 chain_violations=0 order_violations=0 conservation=ok cancel_sum=0 -> PASS
+cell_rc=0

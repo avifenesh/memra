@@ -1,5 +1,9 @@
 # DSV4F small-kernel diet
 
+> **Superseded 2026-09-23 (#339):** the diet is no longer a door. It is the code on every device
+> f32x HC4 / hidden 4096 load, PP-2 included; see
+> `research/dsv4f-bringup-20260923/small-diet/RESULTS.md`. The TP/EP numbers below stand as measured.
+
 Candidate passes the target component and sampled ABBA gates. Default remains
 OFF. This is a plain TP/EP measurement, with no serving-default promotion.
 

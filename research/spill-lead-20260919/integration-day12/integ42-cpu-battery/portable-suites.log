@@ -1,0 +1,27 @@
+portable-suites: static skip census over memra-tier memra-kv memra-cli, src/ and tests/ (an artifact-gated #[test] must be declared)
+skip-census: memra-cli: 0 artifact-gated skipping test(s), all declared
+skip-census: NOTE — memra-gguf config::minimax_tests::parse_minimax_m3_vl moved: manifest says crates/memra-gguf/src/config.rs:2570, source says crates/memra-gguf/src/config.rs:5233
+skip-census: NOTE — memra-gguf config::minimax_tests::minimax_name_mapping_against_index moved: manifest says crates/memra-gguf/src/config.rs:2609, source says crates/memra-gguf/src/config.rs:5273
+skip-census: NOTE — memra-gguf dequant::tests::iq3s_vs_ggml_oracle moved: manifest says crates/memra-gguf/src/dequant.rs:711, source says crates/memra-gguf/src/dequant.rs:740
+skip-census: NOTE — memra-gguf model_packs::qwen4_exp::tests::expected_census_matches_the_banked_artifact_and_the_contract_binds_it moved: manifest says crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:1084, source says crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:1099
+skip-census: NOTE — memra-gguf model_packs::qwen4_exp::tests::nvfp4_census_matches_the_banked_mint_and_the_dialect_contract_binds_it moved: manifest says crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:1264, source says crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:1279
+skip-census: NOTE — memra-gguf safetensors::tests::real_qwen3_17b_header moved: manifest says crates/memra-gguf/src/safetensors.rs:572, source says crates/memra-gguf/src/safetensors.rs:1520
+skip-census: NOTE — memra-gguf safetensors::tests::real_qwen3_17b_config moved: manifest says crates/memra-gguf/src/safetensors.rs:622, source says crates/memra-gguf/src/safetensors.rs:1570
+skip-census: NOTE — memra-gguf source::hy3_repack_probe::hy3_manifest_offset_roundtrip moved: manifest says crates/memra-gguf/src/source.rs:1820, source says crates/memra-gguf/src/source.rs:3744
+skip-census: NOTE — memra-gguf source::hy3_repack_probe::hy3_inventory_dtype_shape_assertions moved: manifest says crates/memra-gguf/src/source.rs:1858, source says crates/memra-gguf/src/source.rs:3782
+skip-census: NOTE — memra-gguf source::hy3_repack_probe::hy3_load_plan_dry_run_no_cuda moved: manifest says crates/memra-gguf/src/source.rs:1935, source says crates/memra-gguf/src/source.rs:3859
+skip-census: NOTE — memra-gguf source::nv27b_probe::nvidia_27b_dtype_routing moved: manifest says crates/memra-gguf/src/source.rs:2004, source says crates/memra-gguf/src/source.rs:3928
+skip-census: NOTE — memra-gguf source::nv27b_probe::nvidia_27b_mtp_mapping moved: manifest says crates/memra-gguf/src/source.rs:2040, source says crates/memra-gguf/src/source.rs:3964
+skip-census: NOTE — memra-gguf source::m3_probe::minimax_m3_lm_head_q8 moved: manifest says crates/memra-gguf/src/source.rs:2098, source says crates/memra-gguf/src/source.rs:4022
+skip-census: NOTE — memra-gguf source::nv27b_twin_parity::nvidia_27b_vs_gguf_twin_f32_parity moved: manifest says crates/memra-gguf/src/source.rs:2133, source says crates/memra-gguf/src/source.rs:4057
+skip-census: memra-gguf: 14 artifact-gated skipping test(s), all declared
+skip-census: memra-kv: 0 artifact-gated skipping test(s), all declared
+skip-census: memra-tier: 0 artifact-gated skipping test(s), all declared
+skip-census: memra-tokenizer: 4 artifact-gated skipping test(s), all declared
+skip-census: VERIFY OK
+portable-suites: cargo test -p memra-tier -p memra-kv -p memra-cli --offline --locked --no-fail-fast
+portable-suites: CPU execution of the tier, KV and onboarding CLI suites; NOT GPU qualification
+skip-census: running: cargo test -p memra-tier -p memra-kv -p memra-cli --offline --locked --no-fail-fast -- --test-threads=1 --nocapture
+skip-census: output banked at /home/avifenesh/projects/wt-spill-integ42/target/portable-suites.log
+skip-census: 354 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 14 binaries
+portable-suites: PASS (tier, KV and onboarding CLI suites executed on CPU; skips 0 of budget 0; NOT GPU qualification)

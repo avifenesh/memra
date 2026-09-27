@@ -1,0 +1,94 @@
+== day-33 hash-wc cell: rtx5090-day33/hashwc/hash-wc
+ok:   lock proof: collector /tmp/memra-5090.lock acquired=True owner=collector; cell proof owner=collector same file=True (inode 166260)
+ok:   collector status [None, 'executed-not-qualified']
+ok:   premise: PINNED-DEFAULT device="NVIDIA GeForce RTX 5090 Laptop GPU" kind=write-combined flags=4
+ok:   compute-apps.before.csv: no compute app ([])
+ok:   compute-apps.after.csv: no compute app ([])
+ok:   micro-54m: exit 0
+ok:   micro-54m: one `HASH-MICRO rule` line
+ok:   micro-54m: 10 passes per kind {'cached': 10, 'wc': 10, 'heap': 10}
+ok:   micro-54m: cached median agrees with the pass lines (11.862 ms)
+ok:   micro-54m: wc median agrees with the pass lines (473.846 ms)
+ok:   micro-54m: heap median agrees with the pass lines (11.939 ms)
+ok:   micro-54m: digests equal across kinds
+ok:   micro-54m: driver flags: WC bit on the WC buffer only
+ok:   micro-54m: bytes=54800000 n_per_order=5
+micro-54m rule: HASH-MICRO rule device="NVIDIA GeForce RTX 5090 Laptop GPU" bytes=54800000 n_per_order=5 pooled=10 orders=2 digest_equal=true wc_bit_cached=false wc_bit_wc=true cached_ms=11.862 wc_ms=473.846 heap_ms=11.939 cached_range=11.786..12.053 wc_range=468.756..476.108 heap_range=11.783..13.526 cached_o1=11.912 cached_o2=11.846 wc_o1=473.700 wc_o2=474.727 heap_o1=11.834 heap_o2=12.846 cached_gbps=4.620 wc_gbps=0.116 heap_gbps=4.590 wc_over_cached=39.948 cached_over_heap=0.994 two_hashes_cached_ms=23.723 one_hash_cached_ms=11.862
+ok:   twostep-54m: exit 0
+ok:   twostep-54m: one `HASH-MICRO two-step rule` line
+ok:   twostep-54m: 10 passes per kind {'wc': 10, 'wc_copy': 10}
+ok:   twostep-54m: wc median agrees with the pass lines (473.409 ms)
+ok:   twostep-54m: wc_copy median agrees with the pass lines (224.178 ms)
+ok:   twostep-54m: digests equal across kinds
+ok:   twostep-54m: driver flags: WC bit on the WC buffer, none on the copy
+ok:   twostep-54m: bytes=54800000 n_per_order=5
+twostep-54m rule: HASH-MICRO two-step rule device="NVIDIA GeForce RTX 5090 Laptop GPU" bytes=54800000 n_per_order=5 pooled=10 orders=2 digest_equal=true wc_bit_wc=true wc_bit_copy=false wc_ms=473.409 wc_copy_ms=224.178 wc_copy_memcpy_ms=212.329 wc_copy_hash_ms=11.837 wc_range=469.934..476.108 wc_copy_range=222.009..225.832 wc_copy_memcpy_range=210.188..213.998 wc_copy_hash_range=11.821..11.959 wc_o1=473.144 wc_o2=473.673 wc_copy_o1=223.409 wc_copy_o2=225.163 wc_gbps=0.116 wc_copy_gbps=0.244 wc_copy_over_wc=0.474
+ok:   micro-160m: exit 0
+ok:   micro-160m: one `HASH-MICRO rule` line
+ok:   micro-160m: 10 passes per kind {'cached': 10, 'wc': 10, 'heap': 10}
+ok:   micro-160m: cached median agrees with the pass lines (36.585 ms)
+ok:   micro-160m: wc median agrees with the pass lines (1450.827 ms)
+ok:   micro-160m: heap median agrees with the pass lines (37.223 ms)
+ok:   micro-160m: digests equal across kinds
+ok:   micro-160m: driver flags: WC bit on the WC buffer only
+ok:   micro-160m: bytes=167772160 n_per_order=5
+micro-160m rule: HASH-MICRO rule device="NVIDIA GeForce RTX 5090 Laptop GPU" bytes=167772160 n_per_order=5 pooled=10 orders=2 digest_equal=true wc_bit_cached=false wc_bit_wc=true cached_ms=36.585 wc_ms=1450.827 heap_ms=37.223 cached_range=36.296..38.160 wc_range=1442.075..1456.979 heap_range=34.934..39.313 cached_o1=36.546 cached_o2=37.100 wc_o1=1451.463 wc_o2=1450.191 heap_o1=37.464 heap_o2=36.982 cached_gbps=4.586 wc_gbps=0.116 heap_gbps=4.507 wc_over_cached=39.657 cached_over_heap=0.983 two_hashes_cached_ms=73.169 one_hash_cached_ms=36.585
+ok:   twostep-160m: exit 0
+ok:   twostep-160m: one `HASH-MICRO two-step rule` line
+ok:   twostep-160m: 10 passes per kind {'wc': 10, 'wc_copy': 10}
+ok:   twostep-160m: wc median agrees with the pass lines (1450.024 ms)
+ok:   twostep-160m: wc_copy median agrees with the pass lines (686.817 ms)
+ok:   twostep-160m: digests equal across kinds
+ok:   twostep-160m: driver flags: WC bit on the WC buffer, none on the copy
+ok:   twostep-160m: bytes=167772160 n_per_order=5
+twostep-160m rule: HASH-MICRO two-step rule device="NVIDIA GeForce RTX 5090 Laptop GPU" bytes=167772160 n_per_order=5 pooled=10 orders=2 digest_equal=true wc_bit_wc=true wc_bit_copy=false wc_ms=1450.024 wc_copy_ms=686.817 wc_copy_memcpy_ms=650.234 wc_copy_hash_ms=36.628 wc_range=1444.339..1455.452 wc_copy_range=680.107..691.253 wc_copy_memcpy_range=643.744..653.727 wc_copy_hash_range=36.136..39.006 wc_o1=1448.638 wc_o2=1451.433 wc_copy_o1=686.637 wc_copy_o2=687.173 wc_gbps=0.116 wc_copy_gbps=0.244 wc_copy_over_wc=0.474
+telemetry (collector, 250 ms): 252 samples; temperature 56..58 C; power draw 9.5..31.7 W (limit [N/A]); SM clock 180..1635 MHz; memory used 15..533 MiB
+card.before.csv: NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, 15 MiB, 23970 MiB, 57, 31.69 W, P0
+card.after.csv: NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, 15 MiB, 23970 MiB, 56, 11.21 W, P8
+loadavg.before.txt: 17:49:18 up 2 days,  5:32,  0 users,  load average: 2.47, 2.35, 2.20
+loadavg.after.txt: 17:50:20 up 2 days,  5:34,  0 users,  load average: 1.66, 2.13, 2.14
+== day-31 pair receipts re-read (rtx5090-day31/pair/wc-pair/ev/*-server.log; the logs carry no per-line timestamps)
+| boot | seq | `demote submitted` | `D2H receipt` (items, require) | `from submission to completion` ms | `in` ms | `in` minus completion ms |
+|---|---|---|---|---|---|---|
+| o1-off | (door OFF) | n/a | n/a | n/a | 23.1 | n/a |
+| o1-off | (door OFF) | n/a | n/a | n/a | 23.8 | n/a |
+| o1-off | (door OFF) | n/a | n/a | n/a | 21.8 | n/a |
+| o1-off | (door OFF) | n/a | n/a | n/a | 5.1 | n/a |
+| o1-off | (door OFF) | n/a | n/a | n/a | 4.8 | n/a |
+| o1-off | (door OFF) | n/a | n/a | n/a | 5.3 | n/a |
+| o1-on | 3 | 64 tok, 54.8 MB, 18 items | seq=3 items=18 (8 KV planes, draft) complete=18 require=ok | 34.8 | 57.8 | 23.0 |
+| o1-on | 5 | 64 tok, 54.8 MB, 18 items | seq=5 items=18 (8 KV planes, draft) complete=18 require=ok | 37.4 | 60.4 | 23.0 |
+| o1-on | 8 | 64 tok, 54.8 MB, 18 items | seq=8 items=18 (8 KV planes, draft) complete=18 require=ok | 37.2 | 58.9 | 21.7 |
+| o1-on | 11 | 64 tok, 54.8 MB, 18 items | seq=11 items=18 (8 KV planes, draft) complete=18 require=ok | 18.3 | 39.7 | 21.4 |
+| o1-on | 14 | 64 tok, 54.8 MB, 18 items | seq=14 items=18 (8 KV planes, draft) complete=18 require=ok | 18.0 | 39.5 | 21.5 |
+| o1-on | 17 | 64 tok, 54.8 MB, 18 items | seq=17 items=18 (8 KV planes, draft) complete=18 require=ok | 18.1 | 39.7 | 21.6 |
+| o2-on | 3 | 64 tok, 54.8 MB, 18 items | seq=3 items=18 (8 KV planes, draft) complete=18 require=ok | 35.3 | 57.7 | 22.4 |
+| o2-on | 5 | 64 tok, 54.8 MB, 18 items | seq=5 items=18 (8 KV planes, draft) complete=18 require=ok | 36.3 | 58.8 | 22.5 |
+| o2-on | 8 | 64 tok, 54.8 MB, 18 items | seq=8 items=18 (8 KV planes, draft) complete=18 require=ok | 35.5 | 56.9 | 21.4 |
+| o2-on | 11 | 64 tok, 54.8 MB, 18 items | seq=11 items=18 (8 KV planes, draft) complete=18 require=ok | 18.1 | 39.4 | 21.3 |
+| o2-on | 14 | 64 tok, 54.8 MB, 18 items | seq=14 items=18 (8 KV planes, draft) complete=18 require=ok | 17.3 | 38.5 | 21.2 |
+| o2-on | 17 | 64 tok, 54.8 MB, 18 items | seq=17 items=18 (8 KV planes, draft) complete=18 require=ok | 17.5 | 38.7 | 21.2 |
+| o2-off | (door OFF) | n/a | n/a | n/a | 18.2 | n/a |
+| o2-off | (door OFF) | n/a | n/a | n/a | 24.1 | n/a |
+| o2-off | (door OFF) | n/a | n/a | n/a | 22.6 | n/a |
+| o2-off | (door OFF) | n/a | n/a | n/a | 5.4 | n/a |
+| o2-off | (door OFF) | n/a | n/a | n/a | 6.5 | n/a |
+| o2-off | (door OFF) | n/a | n/a | n/a | 17.6 | n/a |
+ok:   12 ON demotes with `in` and completion figures (in=12, completion=12)
+ok:   12 OFF demotes with `in` figures (12)
+day31 ON  demote `in`:                          median 48.3 (N=12, min 38.5, max 60.4, IQR 18.8)  raw [57.8, 60.4, 58.9, 39.7, 39.5, 39.7, 57.7, 58.8, 56.9, 39.4, 38.5, 38.7]
+day31 ON  `from submission to completion`:      median 26.5 (N=12, min 17.3, max 37.4, IQR 17.8)  raw [34.8, 37.4, 37.2, 18.3, 18.0, 18.1, 35.3, 36.3, 35.5, 18.1, 17.3, 17.5]
+day31 ON  `in` minus completion:                median 21.6 (N=12, min 21.2, max 23.0, IQR 1.1)  raw [23.0, 23.0, 21.7, 21.4, 21.5, 21.6, 22.4, 22.5, 21.4, 21.3, 21.2, 21.2]
+day31 OFF demote `in`:                          median 17.9 (N=12, min 4.8, max 24.1, IQR 17.5)  raw [23.1, 23.8, 21.8, 5.1, 4.8, 5.3, 18.2, 24.1, 22.6, 5.4, 6.5, 17.6]
+day31 `D2H receipt` timing: the line carries none by format (issuer, seq, epochs, items, complete, require, checksums_sha256, retired); nothing to tabulate, nothing missing
+== medians (ms), N=10 pooled per kind (N=5 per order), this card, this sitting
+| size | cached | wc (single pass) | heap | wc_copy (memcpy + hash) | memcpy step | hash step |
+|---|---|---|---|---|---|---|
+| 54,800,000 B | 11.861 | 473.846 (two-step invocation's own wc arm 473.409) | 11.939 | 224.178 | 212.329 | 11.837 |
+| 160 MiB | 36.584 | 1450.827 (two-step invocation's own wc arm 1450.024) | 37.223 | 686.817 | 650.235 | 36.628 |
+== clauses
+clause H1-single: the fastest single-pass WC hash at 54,800,000 B (468.8 ms, N=20 across both invocations) fits inside the slowest day-31 ON demote `in` (60.4 ms): False
+clause H1-twostep: the fastest memcpy+hash of the WC buffer at 54,800,000 B (222.0 ms, N=10) fits inside the slowest day-31 ON demote `in` (60.4 ms): False
+arithmetic (no clause): two cached passes at 54,800,000 B = 23.7 ms; one = 11.9; day-31 ON `in` minus completion median 21.6 (max 23.0); ON `in` median 48.3
+DAY33 HASH-WC VERDICT: 54.8MB cached 11.9 wc 473.8 heap 11.9 wc_copy 224.2 (N=10 each); 160MiB cached 36.6 wc 1450.8 heap 37.2 wc_copy 686.8 (N=10 each); day31 ON in median 48.3 max 60.4 (N=12) in_minus_completion median 21.6 (N=12); H1-single fits=False H1-twostep fits=False -> H1 refuted (no WC read route fits the ON demote's wall time; H2 or H3 stands, separated by the code census, not by this cell); pinned=write-combined; admissible=True
+checks: 41 ok, 0 FAIL

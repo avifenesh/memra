@@ -1,0 +1,21 @@
+build-fix rc=1 exit=checkout-failed
+build failed; chain stops
+build-fix rc=0 exit=0
+gate-fix-day16-shape rc=0 attempt=0 out=gate-fix-day16-shape
+validate-gate-fix-day16-shape rc=0
+restore-fix-t10 rc=0 attempt=0 out=restore-fix-t10
+validate-restore-fix-t10 rc=0
+serve-smoke rc=0 attempt=0 out=serve-smoke
+validate-serve-smoke rc=0
+cache-meter rc=0 attempt=0 out=cache-meter
+validate-cache-meter rc=0
+kv-host-fix rc=1 attempt=0 out=kv-host-fix
+validate-kv-host-fix rc=0
+evict-reclaim-fix rc=0 attempt=0 out=evict-reclaim-fix
+validate-evict-reclaim-fix rc=0
+evict-reclaim-base rc=0 attempt=0 out=evict-reclaim-base
+validate-evict-reclaim-base rc=0
+done 2026-09-21T12:38:42Z
+kv-host-fix-2 rc=0 attempt=0 out=kv-host-fix-2
+validate-kv-host-fix-2 rc=0
+rest done 2026-09-21T12:39:06Z

@@ -1,0 +1,18 @@
+STALL rule cell=stall-demote-off arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.5 idle_p95=14.7 idle_p99=14.9 idle_max=15.8 arm_runs=10 arm_p50=13.5 arm_p95=14.8 arm_p99=87.7 arm_max=132.1 stall_median=117.5 stall_min=78.5 stall_max=118.7 server_demote_ms=[38.1, 42.9, 42.9, 42.0, 42.4, 42.1, 41.5, 41.4, 41.7] server_promote_ms=[] intruder_prompt_tokens=[95, 99, 97, 98, 97, 99, 97, 97, 97, 97] tenant_text_identical=True errors=0
+  replay=PASS errors=0 tenant_text_identical=True
+STALL rule cell=stall-promote-off arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.4 idle_p95=14.7 idle_p99=14.8 idle_max=16.8 arm_runs=10 arm_p50=13.4 arm_p95=14.7 arm_p99=16.6 arm_max=134.2 stall_median=85.2 stall_min=84.4 stall_max=120.8 server_demote_ms=[40.6, 42.1, 6.8, 6.3, 6.1, 6.1, 6.0, 6.1, 6.1, 6.0] server_promote_ms=[45.0, 46.5, 11.2, 10.6, 10.5, 10.4, 10.4, 10.5, 10.5, 10.3] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+  replay=PASS errors=0 tenant_text_identical=True
+STALL rule cell=stall-demote-on arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.4 idle_p95=14.7 idle_p99=14.8 idle_max=15.0 arm_runs=10 arm_p50=13.4 arm_p95=14.8 arm_p99=130.9 arm_max=163.1 stall_median=149.5 stall_min=75.8 stall_max=149.7 server_demote_ms=[127.6, 132.6, 132.5, 132.2, 132.4, 132.0, 132.5, 132.2, 131.9] server_promote_ms=[] intruder_prompt_tokens=[95, 99, 97, 98, 97, 99, 97, 97, 97, 97] tenant_text_identical=True errors=0
+  replay=PASS errors=0 tenant_text_identical=True
+STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.4 idle_p95=14.7 idle_p99=14.8 idle_max=14.9 arm_runs=10 arm_p50=13.4 arm_p95=14.8 arm_p99=92.5 arm_max=131.0 stall_median=81.9 stall_min=81.4 stall_max=117.6 server_demote_ms=[207.7, 207.8, 172.6, 171.8, 172.3, 172.0, 172.4, 171.8, 172.5, 171.9] server_promote_ms=[61.3, 61.6, 26.4, 25.8, 25.9, 26.0, 25.9, 26.1, 25.9, 26.0] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+  replay=PASS errors=0 tenant_text_identical=True
+  ON promote admissibility: submitted=10 published=10 h2d_receipts=10 cached_tokens=[64, 64, 64, 64, 64, 64, 64, 64, 64, 64] bad_lines=0 settled_synchronously_by_a_promote=0
+  ON promote publish polls (recorded, no rule): [1, 1, 1, 1, 1, 1, 1, 1, 1, 1] submission_to_completion_ms=[19.5, 19.6, 19.6, 19.5, 19.5, 19.5, 19.5, 19.7, 19.5, 19.5]
+  admissible=True
+DAY23 STALL READING P1 promote ON stall against day 18 (81.9): at_or_under_day18 (stall_median=81.9 bounds <=81.9 | <=83.9)
+DAY23 STALL READING P2 promote ON server_promote_ms steady against day 18 (26.1): within_wait (steady_median=25.9 bound <=28.1; first_pair_max=61.6 first_pair_within_wait bound <=63.9)
+DAY23 STALL READING P3 promote ON against OFF, same window: on_at_off (on=81.9 off=85.2 bound on<=93.7)
+DAY23 STALL READING P4 promote OFF regime against day 16 (85.0): off_stable (off=85.2 band 76.5..93.5)
+DAY23 STALL READING P5 demote ON against day 18 (149.7): demote_half_unchanged (on=149.5 band 134.7..164.7)
+DAY23 STALL READING P6 demote OFF regime against day 16 (117.5): off_stable (off=117.5 band 105.8..129.3)
+DAY23 STALL READING summary: admissible=True P1=at_or_under_day18 P2=within_wait P3=on_at_off P4=off_stable P5=demote_half_unchanged P6=off_stable

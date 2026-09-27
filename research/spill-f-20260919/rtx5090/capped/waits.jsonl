@@ -1,0 +1,36 @@
+{"utc": "2026-09-26T06:49:44.693916+00:00", "event": "idle", "for": "round 1 attempt 1", "waited_s": 30.0, "blockers": [{"lock_free": false, "apps": ["1838887, /home/avifenesh/projects/wt-spill-b/target/day39/red/memra-server, 21636"], "lane_pause": false}]}
+{"utc": "2026-09-26T06:57:47.723968+00:00", "event": "cell", "round": 1, "attempt": 1, "rc": 0, "seconds": 483.0, "lost_lock_race": false, "dir": "round-01"}
+{"utc": "2026-09-26T06:57:47.742247+00:00", "event": "idle", "for": "round 2 attempt 1", "waited_s": 0.0, "blockers": []}
+{"utc": "2026-09-26T07:05:45.033289+00:00", "event": "cell", "round": 2, "attempt": 1, "rc": 0, "seconds": 477.3, "lost_lock_race": false, "dir": "round-02"}
+{"utc": "2026-09-26T07:05:45.051607+00:00", "event": "idle", "for": "round 3 attempt 1", "waited_s": 0.0, "blockers": []}
+{"utc": "2026-09-26T07:14:02.150363+00:00", "event": "cell", "round": 3, "attempt": 1, "rc": 0, "seconds": 497.1, "lost_lock_race": false, "dir": "round-03"}
+{"utc": "2026-09-26T07:14:02.167930+00:00", "event": "idle", "for": "round 4 attempt 1", "waited_s": 0.0, "blockers": []}
+{"utc": "2026-09-26T07:22:30.755911+00:00", "event": "cell", "round": 4, "attempt": 1, "rc": 0, "seconds": 508.6, "lost_lock_race": false, "dir": "round-04"}
+{"utc": "2026-09-26T07:22:30.775741+00:00", "event": "idle", "for": "round 5 attempt 1", "waited_s": 0.0, "blockers": []}
+{"utc": "2026-09-26T07:36:00+00:00", "event": "interrupted", "round": 5, "attempt": 1, "cause": "requested rig reboot at 07:28Z (coordinator); 4 of 6 visits finished, visit 5 (worker2) died mid-run", "banked_as": "interrupted-round-05-reboot", "scored": false}
+{"utc": "2026-09-26T07:39:48.419025+00:00", "event": "idle", "for": "round 5 attempt 1", "waited_s": 300.3, "blockers": [{"lock_free": false, "apps": ["42589, /home/avifenesh/projects/wt-spill-a/research/spill-a-20260919/rtx5090-w/cell/bins/w/memra-server, 4066"], "lane_pause": false}, {"lock_free": false, "apps": ["49275, /home/avifenesh/projects/wt-spill-a/research/spill-a-20260919/rtx5090-w/cell/bins/w/memra-server, 4514"], "lane_pause": false}, {"lock_free": false, "apps": [], "lane_pause": false}, {"lock_free": false, "apps": ["61427, /home/avifenesh/projects/wt-spill-a/research/spill-a-20260919/rtx5090-w/cell/bins/w/memra-server, 14434"], "lane_pause": true}, {"lock_free": true, "apps": [], "lane_pause": true}]}
+{"utc": "2026-09-26T07:39:48.505921+00:00", "event": "cell", "round": 5, "attempt": 1, "rc": 2, "seconds": 0.1, "lost_lock_race": false, "dir": "round-05"}
+{"utc": "2026-09-26T07:39:48.538324+00:00", "event": "idle", "for": "round 6 attempt 1", "waited_s": 0.0, "blockers": []}
+{"utc": "2026-09-26T07:39:48.606515+00:00", "event": "cell", "round": 6, "attempt": 1, "rc": 2, "seconds": 0.1, "lost_lock_race": false, "dir": "round-06"}
+{"utc": "2026-09-26T07:39:48.636287+00:00", "event": "idle", "for": "round 7 attempt 1", "waited_s": 0.0, "blockers": []}
+{"utc": "2026-09-26T07:39:48.708130+00:00", "event": "cell", "round": 7, "attempt": 1, "rc": 2, "seconds": 0.1, "lost_lock_race": false, "dir": "round-07"}
+{"utc": "2026-09-26T07:39:48.741466+00:00", "event": "idle", "for": "round 8 attempt 1", "waited_s": 0.0, "blockers": []}
+{"utc": "2026-09-26T07:39:48.819315+00:00", "event": "cell", "round": 8, "attempt": 1, "rc": 2, "seconds": 0.1, "lost_lock_race": false, "dir": "round-08"}
+{"utc": "2026-09-26T07:39:48.848688+00:00", "event": "idle", "for": "round 9 attempt 1", "waited_s": 0.0, "blockers": []}
+{"utc": "2026-09-26T07:39:48.914086+00:00", "event": "cell", "round": 9, "attempt": 1, "rc": 2, "seconds": 0.1, "lost_lock_race": false, "dir": "round-09"}
+{"utc": "2026-09-26T07:39:48.942973+00:00", "event": "idle", "for": "round 10 attempt 1", "waited_s": 0.0, "blockers": []}
+{"utc": "2026-09-26T07:39:49.009749+00:00", "event": "cell", "round": 10, "attempt": 1, "rc": 2, "seconds": 0.1, "lost_lock_race": false, "dir": "round-10"}
+{"utc": "2026-09-26T08:05:00+00:00", "event": "refused", "rounds": "5-10", "cause": "collector: storage proof identity is not this mount (the reboot changed /data mount id 242 -> 250); driver continued past the refusal (bug, fixed: a non-lost failure now stops the regime)", "banked_as": "refused-round-KK-stale-proof", "scored": false}
+{"utc": "2026-09-26T07:54:35.905327+00:00", "event": "idle", "for": "round 5 attempt 1", "waited_s": 0.0, "blockers": []}
+{"utc": "2026-09-26T07:55:30+00:00", "event": "correction", "of": "the refused line for rounds 5-10", "note": "its utc 08:05:00 was hand-written and wrong; the line was written at about 07:53Z, before the 07:54:35Z relaunch"}
+{"utc": "2026-09-26T08:02:40.860804+00:00", "event": "cell", "round": 5, "attempt": 1, "rc": 0, "seconds": 485.0, "lost_lock_race": false, "dir": "round-05"}
+{"utc": "2026-09-26T08:02:40.878932+00:00", "event": "idle", "for": "round 6 attempt 1", "waited_s": 0.0, "blockers": []}
+{"utc": "2026-09-26T08:10:40.912166+00:00", "event": "cell", "round": 6, "attempt": 1, "rc": 0, "seconds": 480.0, "lost_lock_race": false, "dir": "round-06"}
+{"utc": "2026-09-26T08:10:40.930167+00:00", "event": "idle", "for": "round 7 attempt 1", "waited_s": 0.0, "blockers": []}
+{"utc": "2026-09-26T08:18:46.837819+00:00", "event": "cell", "round": 7, "attempt": 1, "rc": 0, "seconds": 485.9, "lost_lock_race": false, "dir": "round-07"}
+{"utc": "2026-09-26T08:18:46.855360+00:00", "event": "idle", "for": "round 8 attempt 1", "waited_s": 0.0, "blockers": []}
+{"utc": "2026-09-26T08:27:14.865967+00:00", "event": "cell", "round": 8, "attempt": 1, "rc": 0, "seconds": 508.0, "lost_lock_race": false, "dir": "round-08"}
+{"utc": "2026-09-26T08:27:14.887412+00:00", "event": "idle", "for": "round 9 attempt 1", "waited_s": 0.0, "blockers": []}
+{"utc": "2026-09-26T08:35:37.906618+00:00", "event": "cell", "round": 9, "attempt": 1, "rc": 0, "seconds": 503.0, "lost_lock_race": false, "dir": "round-09"}
+{"utc": "2026-09-26T08:35:37.924294+00:00", "event": "idle", "for": "round 10 attempt 1", "waited_s": 0.0, "blockers": []}
+{"utc": "2026-09-26T08:43:44.102958+00:00", "event": "cell", "round": 10, "attempt": 1, "rc": 0, "seconds": 486.2, "lost_lock_race": false, "dir": "round-10"}

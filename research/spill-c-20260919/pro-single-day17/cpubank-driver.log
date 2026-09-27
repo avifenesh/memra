@@ -1,0 +1,107 @@
+9221ab327befeedbc3be118b6c20e7cf0e281c06727a0b2e045558b9790645a6  /root/spill-receipts/c-day17/bins/libmemra-cpu-experts.so
+cd12c468f5417d297c35477cbe8cd4f78c953d82b4e78f78f120a12f2ed8a7db  /root/spill-receipts/c-day17/bins/cpu_native_check
+0b55f7b39b26ae58b5830ebe695656f5b3962b95
+6.8.0-139-generic
+ok: barrier
+ok: barrier has barrier: primaries complete, alternates held: inflight_signed=3 expected=3
+ok: barrier has extra projection admitted=0 expected=0
+ok: barrier has barrier: drained after the retry landed: inflight_signed=0 expected=0
+ok: barrier has BARRIER_OK
+ok: failure
+ok: failure has failure: alternate half failed with EIO, sentinel read entered: inflight_signed=1 expected=1
+ok: failure has failure: drained after the retry landed: inflight_signed=0 expected=0
+ok: failure has FAILURE_PATH_OK
+ok: parity
+ok: parity has parity: three single-job reads held: inflight_signed=3 expected=3
+ok: parity has parity: drained: inflight_signed=0 expected=0
+ok: parity has PARITY_OK
+cpu expert prefetch accounting tests: ALL GREEN
+ABI v2 symbols, production MoE, and non-finite/subnormal checks: PASS
+memra native CPU quant check: ALL GREEN
+[memra-cpu-cache] hits=12 misses=15 hit_rate=44.44% read_GB=0.000 resident_GB=0.000
+[memra-cpu-profile] calls=46 prepare=0.000074s io=0.000021s insert=0.000004s compute=0.001273s read_projections=12 read_GB=0.000 stage_entry=0.000179s stage_cached=0.000353s stage_missing=0.000081s stage_accum=0.000015s prefetch_projections=3 prefetch_GB=0.000
+cpubank cell rc=0
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "/root/spill-receipts/c-day17/cpubank-cell.sh",
+    "3",
+    "cpubank"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 91673444506724,
+  "ended_monotonic_ns": 91676560704552,
+  "started_utc": "2026-09-21T16:19:48.438364+00:00",
+  "ended_utc": "2026-09-21T16:19:51.554564+00:00",
+  "elapsed_seconds": 3.116197828,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 1509,
+    "sha256": "f93d6c8b7843a6029c5486ef688c292d91e5f3e017212240718d4cff3d5a9b79"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 1450,
+      "sha256": "b6a7161950367524455ba122160b2178ae240689386a1314f2af93ed1d898ccb"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}

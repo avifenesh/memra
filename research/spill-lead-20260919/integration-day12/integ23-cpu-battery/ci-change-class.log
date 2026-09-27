@@ -1,0 +1,19 @@
+ok   arm1 docs-only pull_request (reason=docs-only:4-files)
+ok   arm2 docs-only push (reason=docs-only:4-files)
+ok   arm3 source file (reason=code-path:crates/memra-engine/src/x.rs)
+ok   arm4 docs+tools (reason=code-path:tools/thing.sh)
+ok   arm5 crate README (reason=code-path:crates/memra-gguf/README.md)
+ok   arm6 workflow file (reason=code-path:.github/workflows/ci.yml)
+ok   arm7 Cargo.toml (reason=code-path:Cargo.toml)
+ok   arm8 zero before (reason=push-without-before)
+ok   arm9 unreachable base (reason=pr-base-unreachable)
+ok   arm10 empty diff (reason=empty-diff)
+ok   arm11 unknown event (reason=event-workflow_dispatch)
+ok   arm12 missing args
+ok   arm13 non-repo dir
+ok   arm15 included research file (reason=compile-input:research/lane/fixtures/load.csv)
+ok   arm16 non-included research file beside an include (reason=docs-only:1-files)
+ok   arm17 multi-line included research file (reason=compile-input:research/ep-map/example.json)
+ok   arm18 real-tree census (6 paths, none unresolved)
+ok   arm14 ci.yml wiring (7 gated jobs, fail-closed form)
+test_ci_change_class: 18 arms PASS

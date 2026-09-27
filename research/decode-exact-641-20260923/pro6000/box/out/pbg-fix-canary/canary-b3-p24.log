@@ -1,0 +1,17 @@
+[tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+loaded qwen35 (64 layers); batch=3
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+canary: seq 0 token 0 55 -> 54 inside the batched prime only
+seq 0 (T=24): prefill argmax batched=68 individual=68 MATCH
+seq 0: exact logits diff 248320/248320 h_seed diff 5120/5120 hidden diff 122880/122880
+seq 1 (T=41): prefill argmax batched=269 individual=269 MATCH
+seq 1: exact logits diff 0/248320 h_seed diff 0/5120 hidden diff 0/209920
+seq 2 (T=58): prefill argmax batched=903 individual=903 MATCH
+seq 2: exact logits diff 0/248320 h_seed diff 0/5120 hidden diff 0/296960
+seq 0: decode-16 stream MATCH
+seq 0: teacher-forced decode logit diff 3973118
+seq 1: decode-16 stream MATCH
+seq 1: teacher-forced decode logit diff 0
+seq 2: decode-16 stream MATCH
+seq 2: teacher-forced decode logit diff 0
+Error: "prime-batch-gate: 2 FAIL(s)"

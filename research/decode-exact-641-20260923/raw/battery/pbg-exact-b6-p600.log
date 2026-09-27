@@ -1,0 +1,30 @@
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); batch=6
+[fa-pool] grow #0 dev=0 o_len 0 -> 40960 ml_len 0 -> 160 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 40960 -> 81920 ml_len 160 -> 320 (retired kept, zero=false)
+seq 0 (T=600): prefill argmax batched=220 individual=220 MATCH
+seq 0: exact logits diff 0/248320 h_seed diff 0/4096 hidden diff 0/2457600
+seq 1 (T=617): prefill argmax batched=220 individual=220 MATCH
+seq 1: exact logits diff 0/248320 h_seed diff 0/4096 hidden diff 0/2527232
+seq 2 (T=634): prefill argmax batched=75 individual=75 MATCH
+seq 2: exact logits diff 0/248320 h_seed diff 0/4096 hidden diff 0/2596864
+seq 3 (T=651): prefill argmax batched=290 individual=290 MATCH
+seq 3: exact logits diff 0/248320 h_seed diff 0/4096 hidden diff 0/2666496
+seq 4 (T=668): prefill argmax batched=248046 individual=248046 MATCH
+seq 4: exact logits diff 0/248320 h_seed diff 0/4096 hidden diff 0/2736128
+seq 5 (T=685): prefill argmax batched=5830 individual=5830 MATCH
+seq 5: exact logits diff 0/248320 h_seed diff 0/4096 hidden diff 0/2805760
+seq 0: decode-16 stream MATCH
+seq 0: teacher-forced decode logit diff 0
+seq 1: decode-16 stream MATCH
+seq 1: teacher-forced decode logit diff 0
+seq 2: decode-16 stream MATCH
+seq 2: teacher-forced decode logit diff 0
+seq 3: decode-16 stream MATCH
+seq 3: teacher-forced decode logit diff 0
+seq 4: decode-16 stream MATCH
+seq 4: teacher-forced decode logit diff 0
+seq 5: decode-16 stream MATCH
+seq 5: teacher-forced decode logit diff 0
+ALL GREEN: prime-batch gate (batch=6, uneven lengths)

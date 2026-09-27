@@ -1,0 +1,201 @@
+{
+  "kind": "day12-fault-arms-replay",
+  "arms": 7,
+  "source": "55f242e98fcc4f71d3754eab233c5e12c3f0b152",
+  "binary_sha256": "02e72db9b54323109609e2f94948a33f04d4073470dd9a623262890a1c334264",
+  "transfer_binary_sha256": "7fd972dbd5ea89482a4b024a791b84df39eb63f4b56864e811d6d345cac89f5a",
+  "build_receipt": "build",
+  "build_attempts": [
+    {
+      "dir": "build",
+      "exits": {
+        "exit": "0",
+        "clippy.exit": "0",
+        "tests.exit": "0"
+      },
+      "green": true
+    }
+  ],
+  "frozen_bundle_source": "8ef562b12f16fd3378f866939be347df3a6d3d96",
+  "telemetry": {
+    "samples": 3752,
+    "gpu_temperature_c": [
+      32,
+      51
+    ],
+    "power_draw_w": [
+      33.03,
+      361.7
+    ],
+    "power_limit_w": 600
+  },
+  "qualification": false,
+  "table": [
+    {
+      "arm": "cancel-demote",
+      "injection": "TransferEngine::cancel after D2H synchronize, before take_destination",
+      "expected": "PASS, cache whole and bit-identical, continuation matches the frozen bundle",
+      "printed": "FAULT-ARM PASS cancel-demote committed=8192 generated=128",
+      "checks": 8,
+      "failed": [],
+      "faulted_layer": "3",
+      "faulted_valid_bytes": "8773632",
+      "observations": {
+        "whole_state_pinned_bytes": "239468544",
+        "governor_pinned_capacity_bytes": "2147483648",
+        "governor_device_capacity_bytes": "2147483648",
+        "suspended_layers": "16",
+        "pinned_charged_after_demote_bytes": "230694912",
+        "device_charged_after_demote_bytes": "0",
+        "device_registry_after_drain": "0"
+      },
+      "receipt": "spill-d-20260919/pro-single-day12/cancel-demote"
+    },
+    {
+      "arm": "cancel-restore",
+      "injection": "TransferEngine::cancel after H2D synchronize, before ready_view; rule 1: retire holds, recover_source hands the demoted copy back once, same plane restored",
+      "expected": "PASS, cache whole and bit-identical, continuation matches the frozen bundle",
+      "printed": "FAULT-ARM PASS cancel-restore committed=8192 generated=128",
+      "checks": 17,
+      "failed": [],
+      "faulted_layer": "3",
+      "faulted_valid_bytes": "8773632",
+      "observations": {
+        "whole_state_pinned_bytes": "239468544",
+        "governor_pinned_capacity_bytes": "2147483648",
+        "governor_device_capacity_bytes": "2147483648",
+        "suspended_layers": "16",
+        "pinned_charged_after_demote_bytes": "239468544",
+        "device_charged_after_demote_bytes": "0",
+        "pinned_before_recovery_bytes": "239468544",
+        "h2d_source_recovered": "true",
+        "h2d_source_bytes": "8773632",
+        "device_registry_after_drain": "0"
+      },
+      "receipt": "spill-d-20260919/pro-single-day12/cancel-restore"
+    },
+    {
+      "arm": "corrupt-host",
+      "injection": "CudaPinnedLease::write (Busy under the live D2H ticket; Ok after its drain), then restore",
+      "expected": "PASS, no publish, no token, holed cache refuses a continuation",
+      "printed": "FAULT-ARM PASS corrupt-host committed=8064 generated=0",
+      "checks": 6,
+      "failed": [],
+      "faulted_layer": "3",
+      "faulted_valid_bytes": "8773632",
+      "observations": {
+        "whole_state_pinned_bytes": "239468544",
+        "governor_pinned_capacity_bytes": "2147483648",
+        "governor_device_capacity_bytes": "2147483648",
+        "corrupt_byte_index": "4386816",
+        "suspended_layers": "16",
+        "pinned_charged_after_demote_bytes": "239468544",
+        "device_charged_after_demote_bytes": "0",
+        "holed_register_layers": "[3]",
+        "device_registry_after_drain": "0"
+      },
+      "receipt": "spill-d-20260919/pro-single-day12/corrupt-host"
+    },
+    {
+      "arm": "missing-host",
+      "injection": "untaken D2H ticket retired and acknowledged; take_destination at restore",
+      "expected": "PASS, no publish, no token, holed cache refuses a continuation",
+      "printed": "FAULT-ARM PASS missing-host committed=8064 generated=0",
+      "checks": 6,
+      "failed": [],
+      "faulted_layer": "3",
+      "faulted_valid_bytes": "8773632",
+      "observations": {
+        "whole_state_pinned_bytes": "239468544",
+        "governor_pinned_capacity_bytes": "2147483648",
+        "governor_device_capacity_bytes": "2147483648",
+        "suspended_layers": "16",
+        "pinned_charged_after_demote_bytes": "230694912",
+        "device_charged_after_demote_bytes": "0",
+        "holed_register_layers": "[3]",
+        "device_registry_after_drain": "0"
+      },
+      "receipt": "spill-d-20260919/pro-single-day12/missing-host"
+    },
+    {
+      "arm": "host-budget-short",
+      "injection": "governor pinned capacity = whole demoted bytes minus 1; admit_whole_state",
+      "expected": "PASS, cache whole and bit-identical, continuation matches the frozen bundle",
+      "printed": "FAULT-ARM PASS host-budget-short committed=8192 generated=128",
+      "checks": 5,
+      "failed": [],
+      "faulted_layer": "none",
+      "faulted_valid_bytes": "0",
+      "observations": {
+        "whole_state_pinned_bytes": "239468544",
+        "governor_pinned_capacity_bytes": "239468543",
+        "governor_device_capacity_bytes": "2147483648"
+      },
+      "receipt": "spill-d-20260919/pro-single-day12/host-budget-short"
+    },
+    {
+      "arm": "device-short",
+      "injection": "competing tenant reserves the governor device dimension; restore alloc_device",
+      "expected": "PASS, cache whole and bit-identical, continuation matches the frozen bundle",
+      "printed": "FAULT-ARM PASS device-short committed=8192 generated=128",
+      "checks": 5,
+      "failed": [],
+      "faulted_layer": "3",
+      "faulted_valid_bytes": "8773632",
+      "observations": {
+        "whole_state_pinned_bytes": "239468544",
+        "governor_pinned_capacity_bytes": "2147483648",
+        "governor_device_capacity_bytes": "2147483648",
+        "suspended_layers": "16",
+        "pinned_charged_after_demote_bytes": "239468544",
+        "device_charged_after_demote_bytes": "0",
+        "competitor_device_bytes": "2138570745",
+        "device_headroom_bytes": "8912903",
+        "restore_device_bytes": "8912904",
+        "device_registry_after_drain": "0"
+      },
+      "receipt": "spill-d-20260919/pro-single-day12/device-short"
+    },
+    {
+      "arm": "require-resident",
+      "injection": "Cache::suspend_layer for every plane; Cache::ensure_usable asked while suspended and after a partial resume (rule 2: ContinuationRefused naming the layers), Ok after resume_layer",
+      "expected": "PASS, cache whole and bit-identical, continuation matches the frozen bundle",
+      "printed": "FAULT-ARM PASS require-resident committed=8192 generated=128",
+      "checks": 8,
+      "failed": [],
+      "faulted_layer": "3",
+      "faulted_valid_bytes": "8773632",
+      "observations": {
+        "whole_state_pinned_bytes": "239468544",
+        "governor_pinned_capacity_bytes": "2147483648",
+        "governor_device_capacity_bytes": "2147483648",
+        "suspended_layers": "16",
+        "pinned_charged_after_demote_bytes": "239468544",
+        "device_charged_after_demote_bytes": "0",
+        "device_registry_after_drain": "0"
+      },
+      "receipt": "spill-d-20260919/pro-single-day12/require-resident"
+    }
+  ],
+  "transfer_gate": [
+    {
+      "case": "conformance",
+      "lines": 13,
+      "printed_last": "PASS native governor zero after controlled drain",
+      "rule_lines": [
+        "PASS rule cancelled-restore-recovers-source native CUDA",
+        "PASS rule cancel-refused-after-source-consumed native CUDA"
+      ],
+      "receipt": "spill-d-20260919/pro-single-day12/transfer-gate/conformance"
+    },
+    {
+      "case": "roundtrip",
+      "lines": 6,
+      "printed_last": "PASS native D2H-H2D roundtrip bytes=268435456 N=1 expected_sha256=6020d865b68ed263bbee3a2556e6c064906410f5e220a584827034fdbc72191b actual_sha256=6020d865b68ed263bbee3a2556e6c064906410f5e220a584827034fdbc72191b byte_exact=true source_freed_host_live=true handback_no_copy=true governor_zero=true",
+      "rule_lines": [],
+      "receipt": "spill-d-20260919/pro-single-day12/transfer-gate/roundtrip"
+    }
+  ]
+}
+DAY12 FAULT-ARM REPLAY MATCH: 7 arms; 7 PASS, 0 refusals; N=1 each; NOT qualification
+DAY12 TIER-TRANSFER-GATE REPLAY MATCH: 2 cells; both day-11 rule lines printed natively; NOT qualification

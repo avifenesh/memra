@@ -1,0 +1,134 @@
+parallel run 1 rc=0 test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 581 filtered out; finished in 3.39s
+parallel run 2 rc=0 test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 581 filtered out; finished in 3.38s
+parallel run 3 rc=0 test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 581 filtered out; finished in 3.39s
+test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ok
+test tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt ... ok
+test tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle ... ok
+test tier_transfer::tests::d2d_receipt_digest_price_against_the_copy ... D2D-RECEIPT PRICE order=copy-first bytes=165675008 n_per_arm=5 copy_ms=[0.195424, 0.193504, 0.197088, 0.198272, 0.196672] copy_median=0.197 digest_ms=[0.137984, 0.132896, 0.131552, 0.133344, 0.132416] digest_median=0.133 pair_median=0.266 pair_over_copy=1.35
+test tier_transfer::tests::d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait ... ok
+test tier_transfer::tests::d2h_device_receipt_lands_with_the_source_digest ... D2H DEVICE RECEIPT cell flip=false items=3 gpu_ms=27.749
+test tier_transfer::tests::d2h_source_flip_is_witnessed_by_the_landed_bytes ... D2H DEVICE RECEIPT cell flip=true items=3 gpu_ms=27.752
+test tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... HOLD READING cell=d2h_span_batch first_item_seen_ms=19.31 polls=1862 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+test tier_transfer::tests::h2d_deferred_checksum_lands_with_the_supplied_digests ... ok
+test tier_transfer::tests::h2d_fill_host_function_does_not_hold_the_owner_thread ... owner-thread work while the copy stream's host function sleeps: 0.43 ms; the copy behind the host function still pending: true
+test tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream ... HOLD READING cell=h2d_span_batch first_item_seen_ms=14.85 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+test tier_transfer::tests::h2d_span_filled_batch_fills_on_the_copy_stream_before_its_copies ... HOLD READING cell=h2d_span_filled_batch first_item_seen_ms=7.49 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+test tier_transfer::tests::pinned_kind_arm_is_honoured_by_the_driver ... ok
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 581 filtered out; finished in 8.27s
+test worker::tests::option_b_off_tick_demote_hashes_ride_the_helper_and_a_changed_lease_is_refused ... ok
+test worker::tests::option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_span_attach_fault_hands_every_span_back ... ok
+test worker::tests::option_b_span_postpublish_refusal_returns_the_staging_to_the_set ... ok
+test worker::tests::option_b_span_refusal_returns_every_plane_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_span_staging_charge_refusal_refuses_the_attach_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_spans_ride_the_ticket_and_land_bitwise ... ok
+test worker::tests::option_c_first_ready_view_failure_unwinds_through_the_published_arm ... ok
+test worker::tests::option_c_off_tick_checksums_ride_the_hash_helper_and_a_corrupt_lease_is_refused ... ok
+test worker::tests::option_c_partial_acceptance_unwinds_refused_with_every_destination_released ... ok
+test worker::tests::option_c_postpublish_refusal_retires_the_ticket_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_presubmit_refusal_releases_every_destination_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_promote_routes_every_contract_plane_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_receipt_mismatch_cancels_before_publication_and_recovers_the_source ... ok
+test worker::tests::option_c_span_attach_fault_hands_every_span_back ... ok
+test worker::tests::option_c_span_postpublish_refusal_returns_the_staging_to_the_set ... ok
+test worker::tests::option_c_spans_ride_the_promote_ticket_and_land_bitwise ... ok
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 917 filtered out; finished in 0.52s
+test result: ok. 20 passed; 0 failed; 1 ignored; 0 measured; 914 filtered out; finished in 0.70s
+test tier_transfer::tests::day39_fill_shares_cover_every_byte_once ... ok
+test tier_transfer::tests::d2d_restore_rules_are_as_stated ... ok
+test tier_transfer::tests::copy_stream_issue_and_owner_wait_rules_are_as_stated ... ok
+test tier_transfer::tests::h2d_deferred_checksum_rules_are_as_stated ... ok
+test tier_transfer::tests::native_cells_own_their_context ... ok
+test tier_transfer::tests::d2h_span_rules_are_as_stated ... ok
+test tier_transfer::tests::d2h_device_receipt_rules_are_as_stated ... ok
+test tier_transfer::tests::d2d_capture_rules_are_as_stated ... ok
+test tier_transfer::tests::one_kernel_stream_beside_the_owner ... ok
+test tier_transfer::tests::h2d_span_rules_are_as_stated ... ok
+test tier_transfer::tests::day39_threaded_fill_is_bitwise_the_planes ... ok
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 583 filtered out; finished in 0.11s
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 69 filtered out; finished in 0.00s
+unit-cells parallel=3/3 engine-serial-rc=0 door-rc=0 cpu-rc=0 engine-census-rc=0 tier-rc=0
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "research/spill-a-20260919/pro-single-g3/unit-cells.sh",
+    "3"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 629434561528834,
+  "ended_monotonic_ns": 629459266712975,
+  "started_utc": "2026-09-24T22:19:31.891910+00:00",
+  "ended_utc": "2026-09-24T22:19:56.597097+00:00",
+  "elapsed_seconds": 24.705184141,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 5463,
+    "sha256": "643e3627f7e0bbb370cc8666374f8284cafc61d6c68fac2fa498d78fdd13e887"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 10279,
+      "sha256": "3a3c3d38b755ce00bdd2abcbe8fea6349634a20ef9af879062c740046d504e71"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 182,
+    "sha256": "4f38c797d9682e96b14e151fc54f26a1e81ac41ffc9de73db19263b704bc8888"
+  }
+}

@@ -1,0 +1,50 @@
+Running as unit: run-p2426552-i10780502.scope; invocation ID: a3dbf97c698e49b8bc9de358daf7ebd8
+   Compiling memra-gguf v0.138.0 (/home/avifenesh/projects/wt-spill-c/crates/memra-gguf)
+   Compiling memra-tier v0.138.0 (/home/avifenesh/projects/wt-spill-c/crates/memra-tier)
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-c/crates/memra-engine)
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-c/crates/memra-server)
+   Compiling memra-tokenizer v0.138.0 (/home/avifenesh/projects/wt-spill-c/crates/memra-tokenizer)
+   Compiling memra-runtime v0.138.0 (/home/avifenesh/projects/wt-spill-c/crates/memra-runtime)
+   Compiling memra-kv v0.138.0 (/home/avifenesh/projects/wt-spill-c/crates/memra-kv)
+   Compiling memra-reference v0.138.0 (/home/avifenesh/projects/wt-spill-c/crates/memra-reference)
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 32s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-e53347545693156a)
+
+running 13 tests
+test admit_memory::tests::a_short_probe_is_not_a_long_session ... ok
+test admit_memory::tests::decide_walks_device_then_host_then_time ... ok
+test admit_memory::tests::boot_line_states_the_door_and_its_knobs ... ok
+test admit_memory::tests::demote_budget_is_the_shortfall_only ... ok
+test admit_memory::tests::memory_line_locks_fields ... ok
+test admit_memory::tests::memory_line_renders_every_arm_and_its_placeholders ... ok
+test admit_memory::tests::one_long_and_eight_short_all_admit_on_one_card ... ok
+test admit_memory::tests::open_output_charges_the_output_not_the_envelope ... ok
+test admit_memory::tests::retry_after_is_clamped_to_the_shed_window ... ok
+test admit_memory::tests::ring_geometry_caps_the_ring_class_only ... ok
+test admit_memory::tests::waited_ms_is_zero_until_the_first_defer_stamps_it ... ok
+test worker::tests::the_open_output_arm_charges_the_envelope_off_the_door_and_the_output_on_it ... ok
+test worker::tests::the_memory_admission_door_is_wired_at_the_admission_seam ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 810 filtered out; finished in 0.01s
+
+     Running unittests src/main.rs (target/debug/deps/memra_server-808f3804baa4de41)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/argv_boot.rs (target/debug/deps/argv_boot-e42646d960b1d5b6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+   Doc-tests memra_server
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+exit=

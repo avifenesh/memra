@@ -1,0 +1,19 @@
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-e53347545693156a)
+
+running 10 tests
+test worker::tests::hash_fault_door_values_are_the_helpers_and_never_the_contract_routes ... ok
+test worker::tests::hash_helper_gone_is_a_typed_refusal_that_latches_under_poll_and_under_block ... ok
+test worker::tests::every_path_that_meets_a_demoting_entry_settles_it_first ... ok
+test worker::tests::the_run_loop_waits_boundedly_when_the_queue_is_only_requests_parked_on_a_promote ... ok
+test worker::tests::every_path_that_meets_a_hashing_demote_meets_it_through_the_same_settle ... ok
+test worker::tests::hashing_hit_parks_the_request_once_per_id_and_a_miss_does_not ... ok
+test worker::tests::hashing_demote_keeps_its_state_until_the_digests_land_then_reaches_publication ... ok
+test worker::tests::hash_digests_never_landing_latch_at_the_deadline_under_poll_and_under_block ... ok
+test worker::tests::hash_helper_digests_equal_the_owner_thread_digests_bitwise ... ok
+test worker::tests::hash_reply_that_does_not_describe_the_image_is_a_typed_refusal_that_latches ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 830 filtered out; finished in 0.36s
+

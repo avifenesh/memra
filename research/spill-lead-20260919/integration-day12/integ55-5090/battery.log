@@ -1,0 +1,73 @@
+2026-09-24T01:56:28Z hold attempt 1: the lock stayed busy for 120 s
+2026-09-24T01:58:28Z hold attempt 2: the lock stayed busy for 120 s
+2026-09-24T02:00:28Z hold attempt 3: the lock stayed busy for 120 s
+2026-09-24T02:02:28Z hold attempt 4: the lock stayed busy for 120 s
+2026-09-24T02:04:28Z hold attempt 5: the lock stayed busy for 120 s
+2026-09-24T02:06:28Z hold attempt 6: the lock stayed busy for 120 s
+2026-09-24T02:08:28Z hold attempt 7: the lock stayed busy for 120 s
+2026-09-24T02:10:28Z hold attempt 8: the lock stayed busy for 120 s
+2026-09-24T02:12:28Z hold attempt 9: the lock stayed busy for 120 s
+2026-09-24T02:14:28Z hold attempt 10: the lock stayed busy for 120 s
+2026-09-24T02:16:28Z hold attempt 11: the lock stayed busy for 120 s
+2026-09-24T02:18:28Z hold attempt 12: the lock stayed busy for 120 s
+2026-09-24T02:20:28Z hold attempt 13: the lock stayed busy for 120 s
+2026-09-24T02:22:28Z hold attempt 14: the lock stayed busy for 120 s
+2026-09-24T02:24:28Z hold attempt 15: the lock stayed busy for 120 s
+2026-09-24T02:26:28Z hold attempt 16: the lock stayed busy for 120 s
+2026-09-24T02:28:28Z hold attempt 17: the lock stayed busy for 120 s
+2026-09-24T02:30:28Z hold attempt 18: the lock stayed busy for 120 s
+2026-09-24T02:32:28Z hold attempt 19: the lock stayed busy for 120 s
+2026-09-24T02:34:28Z hold attempt 20: the lock stayed busy for 120 s
+2026-09-24T02:36:28Z hold attempt 21: the lock stayed busy for 120 s
+2026-09-24T02:38:28Z hold attempt 22: the lock stayed busy for 120 s
+2026-09-24T02:40:28Z hold attempt 23: the lock stayed busy for 120 s
+2026-09-24T02:42:28Z hold attempt 24: the lock stayed busy for 120 s
+2026-09-24T02:44:28Z hold attempt 25: the lock stayed busy for 120 s
+2026-09-24T02:46:28Z hold attempt 26: the lock stayed busy for 120 s
+2026-09-24T02:48:28Z hold attempt 27: the lock stayed busy for 120 s
+2026-09-24T02:50:28Z hold attempt 28: the lock stayed busy for 120 s
+2026-09-24T02:52:28Z hold attempt 29: the lock stayed busy for 120 s
+2026-09-24T02:54:28Z hold attempt 30: the lock stayed busy for 120 s
+2026-09-24T02:56:28Z hold attempt 31: the lock stayed busy for 120 s
+2026-09-24T02:58:28Z hold attempt 32: the lock stayed busy for 120 s
+2026-09-24T03:00:28Z hold attempt 33: the lock stayed busy for 120 s
+2026-09-24T03:02:28Z hold attempt 34: the lock stayed busy for 120 s
+2026-09-24T03:04:28Z hold attempt 35: the lock stayed busy for 120 s
+2026-09-24T03:06:28Z hold attempt 36: the lock stayed busy for 120 s
+2026-09-24T03:08:28Z hold attempt 37: the lock stayed busy for 120 s
+2026-09-24T03:10:28Z hold attempt 38: the lock stayed busy for 120 s
+2026-09-24T03:12:28Z hold attempt 39: the lock stayed busy for 120 s
+2026-09-24T03:14:28Z hold attempt 40: the lock stayed busy for 120 s
+2026-09-24T03:16:28Z hold attempt 41: the lock stayed busy for 120 s
+2026-09-24T03:18:28Z hold attempt 42: the lock stayed busy for 120 s
+2026-09-24T03:20:28Z hold attempt 43: the lock stayed busy for 120 s
+2026-09-24T03:22:28Z hold attempt 44: the lock stayed busy for 120 s
+2026-09-24T03:24:28Z hold attempt 45: the lock stayed busy for 120 s
+2026-09-24T03:26:28Z hold attempt 46: the lock stayed busy for 120 s
+2026-09-24T03:28:28Z hold attempt 47: the lock stayed busy for 120 s
+2026-09-24T03:30:28Z hold attempt 48: the lock stayed busy for 120 s
+2026-09-24T03:32:28Z hold attempt 49: the lock stayed busy for 120 s
+2026-09-24T03:34:28Z hold attempt 50: the lock stayed busy for 120 s
+2026-09-24T03:35:56Z collector hold taken on /tmp/memra-5090.lock (fd 9) tree=38b35dc5e821f8b2d9234bac7ec593396b3f4922
+2026-09-24T03:35:57Z start serve-smoke env=[]
+2026-09-24T03:36:07Z done serve-smoke rc=0 serve-smoke: 0 failed
+2026-09-24T03:36:07Z binary after serve-smoke's build: cd97b0156501c642
+2026-09-24T03:36:07Z start engine-gpu-cells env=[]
+2026-09-24T03:36:13Z done engine-gpu-cells rc=0 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 576 filtered out; finished in 5.07s
+2026-09-24T03:36:13Z start worker-span-cells env=[]
+2026-09-24T03:36:18Z done worker-span-cells rc=0 test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 896 filtered out; finished in 0.54s
+2026-09-24T03:36:18Z start identity-default-on env=[MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T03:36:33Z done identity-default-on rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-24T03:36:33Z start fault-default env=[MEMRA_HOSTGATE_CACHE_MB=64]
+2026-09-24T03:38:33Z done fault-default rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-24T03:38:33Z start fault-plain env=[MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_SERVE_SPEC=0]
+2026-09-24T03:40:14Z done fault-plain rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-24T03:40:14Z start hit-off env=[]
+2026-09-24T03:40:36Z done hit-off rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-24T03:40:36Z start hit-on env=[MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-24T03:41:02Z done hit-on rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-24T03:41:02Z start admit-mem-burst env=[]
+2026-09-24T03:47:02Z done admit-mem-burst rc=0 ADMIT-MEM BURST GATE: ALL GREEN
+2026-09-24T03:47:02Z start spec-ctx-edge env=[]
+2026-09-24T03:47:19Z done spec-ctx-edge rc=0 SPEC-CTX-EDGE GATE: ALL GREEN
+2026-09-24T03:47:19Z collector hold released; INTEG55-5090-DONE

@@ -1,0 +1,11 @@
+
+running 2 tests
+HOLD READING cell=d2h_span_batch first_item_seen_ms=14.19 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=d2h_span_batch htod-pageable@-40.57+0.25 pinned-alloc@-40.32+2.38 htod-pageable@-37.93+0.37 pinned-alloc@-37.56+2.74 htod-pageable@-34.82+0.33 pinned-alloc@-34.49+1.26 delay@0.00+0.03 htod-pageable@0.03+0.26 pinned-alloc@0.29+0.96 htod-pageable@1.25+0.44 pinned-alloc@1.69+1.81 htod-pageable@3.50+0.31 pinned-alloc@3.81+2.39 submit@6.21+0.03 htod-pageable@6.24+0.24 pinned-alloc@6.49+2.25 htod-pageable@8.73+0.41 pinned-alloc@9.15+2.65 htod-pageable@11.80+0.35 pinned-alloc@12.15+2.03 submit-busy@14.18+0.00
+HOLD READING cell=h2d_span_batch first_item_seen_ms=12.47 polls=1 longest_poll_ms=0.01 longest_gap_ms=0.00 batch_landed_at_first_sight=false
+HOLD STEPS cell=h2d_span_batch pinned-alloc@-47.03+0.97 pinned-write@-46.05+0.31 device-alloc@-45.74+0.01 pinned-alloc@-45.72+2.48 pinned-write@-43.25+0.52 device-alloc@-42.73+1.00 pinned-alloc@-41.72+1.47 pinned-write@-40.25+0.41 device-alloc@-39.84+0.02 pinned-alloc@-8.78+0.73 pinned-write@-8.06+0.20 device-alloc@-7.85+0.01 pinned-alloc@-7.84+1.34 device-alloc@-6.50+0.01 pinned-alloc@-6.49+1.09 pinned-write@-5.41+0.40 device-alloc@-5.01+0.01 delay@0.00+0.01 pinned-alloc@0.01+0.74 pinned-write@0.75+0.25 device-alloc@1.01+0.01 pinned-alloc@1.02+2.27 pinned-write@3.29+0.52 device-alloc@3.81+0.01 pinned-alloc@3.82+2.53 pinned-write@6.36+0.41 device-alloc@6.77+0.92 submit@7.69+0.03 pinned-alloc@7.72+1.01 pinned-write@8.74+0.28 device-alloc@9.02+0.01 pinned-alloc@9.03+1.44 pinned-write@10.47+0.49 device-alloc@10.96+0.01 pinned-alloc@10.97+1.11 pinned-write@12.08+0.36 device-alloc@12.44+0.01 submit-busy@12.46+0.00
+test tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+test tier_transfer::tests::h2d_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 585 filtered out; finished in 1.50s
+

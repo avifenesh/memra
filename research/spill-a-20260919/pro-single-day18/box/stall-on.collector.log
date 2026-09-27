@@ -1,0 +1,128 @@
+f67f763a61fd9673896c7000874993ac8d59be47b13cb0d008bd87b8aaa2ba81  /root/spill-receipts/a-day18/bins/memra-server
+  run  1 order 1 idle     tokens=160 p50=13.4 max=14.9 stall=1.5 demote=[] promote=[] intruder=None
+  run  2 order 1 demote   tokens=160 p50=13.4 max=89.2 stall=75.9 demote=[] promote=[] intruder=206.27883799897972
+  run  3 order 1 idle     tokens=160 p50=13.3 max=14.9 stall=1.5 demote=[] promote=[] intruder=None
+  run  4 order 1 demote   tokens=160 p50=13.4 max=163.2 stall=149.9 demote=[132.0] promote=[] intruder=324.39508399693295
+  run  5 order 1 idle     tokens=160 p50=13.4 max=14.8 stall=1.5 demote=[] promote=[] intruder=None
+  run  6 order 1 demote   tokens=160 p50=13.3 max=163.1 stall=149.7 demote=[134.4] promote=[] intruder=326.34872700145934
+  run  7 order 1 idle     tokens=160 p50=13.4 max=14.8 stall=1.5 demote=[] promote=[] intruder=None
+  run  8 order 1 demote   tokens=160 p50=13.4 max=163.1 stall=149.7 demote=[133.4] promote=[] intruder=325.2968349988805
+  run  9 order 1 idle     tokens=160 p50=13.4 max=14.8 stall=1.5 demote=[] promote=[] intruder=None
+  run 10 order 1 demote   tokens=160 p50=13.4 max=162.9 stall=149.5 demote=[132.6] promote=[] intruder=324.3338619940914
+  run 11 order 2 demote   tokens=160 p50=13.4 max=163.5 stall=150.1 demote=[133.1] promote=[] intruder=325.2441240038024
+  run 12 order 2 idle     tokens=160 p50=13.4 max=14.9 stall=1.4 demote=[] promote=[] intruder=None
+  run 13 order 2 demote   tokens=160 p50=13.4 max=163.0 stall=149.7 demote=[133.0] promote=[] intruder=324.899152998114
+  run 14 order 2 idle     tokens=160 p50=13.4 max=14.9 stall=1.4 demote=[] promote=[] intruder=None
+  run 15 order 2 demote   tokens=160 p50=13.4 max=163.3 stall=149.9 demote=[133.1] promote=[] intruder=324.9599830014631
+  run 16 order 2 idle     tokens=160 p50=13.4 max=14.9 stall=1.4 demote=[] promote=[] intruder=None
+  run 17 order 2 demote   tokens=160 p50=13.4 max=162.9 stall=149.6 demote=[133.0] promote=[] intruder=324.9440229992615
+  run 18 order 2 idle     tokens=160 p50=13.4 max=14.8 stall=1.5 demote=[] promote=[] intruder=None
+  run 19 order 2 demote   tokens=160 p50=13.4 max=163.0 stall=149.6 demote=[132.4] promote=[] intruder=324.5178610086441
+  run 20 order 2 idle     tokens=160 p50=13.4 max=14.8 stall=1.4 demote=[] promote=[] intruder=None
+STALL rule cell=stall-demote-on arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.4 idle_p95=14.7 idle_p99=14.8 idle_max=14.9 arm_runs=10 arm_p50=13.4 arm_p95=14.8 arm_p99=131.2 arm_max=163.5 stall_median=149.7 stall_min=75.9 stall_max=150.1 server_demote_ms=[132.0, 134.4, 133.4, 132.6, 133.1, 133.0, 133.1, 133.0, 132.4] server_promote_ms=[] intruder_prompt_tokens=[95, 99, 97, 98, 97, 99, 97, 97, 97, 97] tenant_text_identical=True errors=0
+  run  1 order 1 idle     tokens=160 p50=13.4 max=14.8 stall=1.5 demote=[] promote=[] intruder=None
+  run  2 order 1 promote  tokens=160 p50=13.4 max=130.3 stall=116.8 demote=[207.0] promote=[60.8] intruder=241.42513099650387
+  run  3 order 1 idle     tokens=160 p50=13.4 max=14.9 stall=1.5 demote=[] promote=[] intruder=None
+  run  4 order 1 promote  tokens=160 p50=13.4 max=131.1 stall=117.7 demote=[208.1] promote=[61.9] intruder=242.57641199801583
+  run  5 order 1 idle     tokens=160 p50=13.4 max=14.9 stall=1.5 demote=[] promote=[] intruder=None
+  run  6 order 1 promote  tokens=160 p50=13.4 max=95.6 stall=82.2 demote=[172.7] promote=[26.4] intruder=207.0320070051821
+  run  7 order 1 idle     tokens=160 p50=13.4 max=14.9 stall=1.4 demote=[] promote=[] intruder=None
+  run  8 order 1 promote  tokens=160 p50=13.4 max=95.0 stall=81.6 demote=[172.0] promote=[26.1] intruder=206.35123499960173
+  run  9 order 1 idle     tokens=160 p50=13.4 max=14.9 stall=1.5 demote=[] promote=[] intruder=None
+  run 10 order 1 promote  tokens=160 p50=13.4 max=95.4 stall=82.0 demote=[172.4] promote=[26.1] intruder=206.80783699208405
+  run 11 order 2 promote  tokens=160 p50=13.4 max=95.0 stall=81.7 demote=[172.1] promote=[26.1] intruder=206.51415499742143
+  run 12 order 2 idle     tokens=160 p50=13.4 max=14.8 stall=1.4 demote=[] promote=[] intruder=None
+  run 13 order 2 promote  tokens=160 p50=13.4 max=95.1 stall=81.7 demote=[172.2] promote=[25.9] intruder=206.50563600065652
+  run 14 order 2 idle     tokens=160 p50=13.4 max=14.9 stall=1.5 demote=[] promote=[] intruder=None
+  run 15 order 2 promote  tokens=160 p50=13.4 max=95.0 stall=81.6 demote=[172.1] promote=[26.1] intruder=206.61028499307577
+  run 16 order 2 idle     tokens=160 p50=13.4 max=14.9 stall=1.5 demote=[] promote=[] intruder=None
+  run 17 order 2 promote  tokens=160 p50=13.4 max=95.5 stall=82.1 demote=[172.7] promote=[26.0] intruder=206.93121600197628
+  run 18 order 2 idle     tokens=160 p50=13.4 max=14.8 stall=1.4 demote=[] promote=[] intruder=None
+  run 19 order 2 promote  tokens=160 p50=13.4 max=94.9 stall=81.5 demote=[172.0] promote=[25.9] intruder=206.2730250036111
+  run 20 order 2 idle     tokens=160 p50=13.4 max=14.9 stall=1.5 demote=[] promote=[] intruder=None
+STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.4 idle_p95=14.7 idle_p99=14.8 idle_max=14.9 arm_runs=10 arm_p50=13.4 arm_p95=14.8 arm_p99=92.6 arm_max=131.1 stall_median=81.9 stall_min=81.5 stall_max=117.7 server_demote_ms=[207.0, 208.1, 172.7, 172.0, 172.4, 172.1, 172.2, 172.1, 172.7, 172.0] server_promote_ms=[60.8, 61.9, 26.4, 26.1, 26.1, 26.1, 25.9, 26.1, 26.0, 25.9] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+stall-on rc=0
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "research/spill-a-20260919/pro-single-day18/stall-cell.sh",
+    "3",
+    "on"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 127728572633370,
+  "ended_monotonic_ns": 127839767329087,
+  "started_utc": "2026-09-22T02:20:43.566491+00:00",
+  "ended_utc": "2026-09-22T02:22:34.761188+00:00",
+  "elapsed_seconds": 111.194695717,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 5547,
+    "sha256": "b06a21ed76224b1965bc049dab7831866769499f54081559b6d8da0377df92d7"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 48821,
+      "sha256": "cbc30c19b286ac1c9d6ea1dd059b1ff3be16021692cdfa78c9acc820bd5c548d"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}

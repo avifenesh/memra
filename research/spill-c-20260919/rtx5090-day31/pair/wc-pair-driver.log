@@ -1,0 +1,100 @@
+efa7119b0973feef2172142be24d576043b0d956300ba7b3aaeca9c56840bcaa  /home/avifenesh/projects/wt-spill-c/target/release/memra-server
+PINNED-DEFAULT device="NVIDIA GeForce RTX 5090 Laptop GPU" kind=write-combined flags=4
+PINNED-DEFAULT roundtrip bytes=4096 kind=write-combined driver_flags=6
+PINNED-DEFAULT roundtrip bytes=65536 kind=write-combined driver_flags=6
+PINNED-DEFAULT roundtrip bytes=1048576 kind=write-combined driver_flags=6
+PINNED-DEFAULT roundtrip bytes=16777216 kind=write-combined driver_flags=6
+PINNED-DEFAULT roundtrip bytes=67108864 kind=write-combined driver_flags=6
+PINNED-DEFAULT roundtrip bytes=268435456 kind=write-combined driver_flags=6
+o1-off: 6 demotes, 5 promotes, 0 parked, 0 restores
+o1-on: 6 demotes, 5 promotes, 10 parked, 5 restores
+o2-on: 6 demotes, 5 promotes, 10 parked, 5 restores
+o2-off: 6 demotes, 5 promotes, 0 parked, 0 restores
+wc-pair cell rc=0
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "research/spill-c-20260919/day31-wc-cell.sh",
+    "3",
+    "/home/avifenesh/projects/wt-spill-c",
+    "/home/avifenesh/projects/wt-spill-c/research/spill-c-20260919/rtx5090-day31",
+    "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf",
+    "/home/avifenesh/projects/wt-spill-c/target/release/memra-server"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "[N/A]",
+      "power.max_limit": "175.00 W"
+    }
+  ],
+  "started_monotonic_ns": 185458842311600,
+  "ended_monotonic_ns": 185507215744890,
+  "started_utc": "2026-09-22T12:47:18.892769+00:00",
+  "ended_utc": "2026-09-22T12:48:07.266204+00:00",
+  "elapsed_seconds": 48.37343329,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 886,
+    "sha256": "7633d151db643497502a9d70468c27d3322f0020ae65b64fda9823dd74f4bb48"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 20046,
+      "sha256": "bfa2c024817865a796752a1f87fdc781c6a4ef86e078f60bb00af43843d90555"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 176,
+    "sha256": "dcb17b61c672c6c1abd4bc4e9c6a9c7ff69efc7ddf1d5cd8f9847e59430d9842"
+  }
+}

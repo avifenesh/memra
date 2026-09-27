@@ -1,0 +1,737 @@
+   Compiling memra-tier v0.138.0 (/home/avifenesh/projects/wt-spill-integ10/crates/memra-tier)
+   Compiling memra-kv v0.138.0 (/home/avifenesh/projects/wt-spill-integ10/crates/memra-kv)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.36s
+     Running unittests src/lib.rs (target/debug/deps/memra_gguf-e3365e72a0b7fb23)
+
+running 292 tests
+test config::hf_tests::fused_q_gate_extent_catches_the_2x_overread ... ok
+test config::hf_tests::moe_config ... ok
+test config::hf_tests::head_dim_fallback ... ok
+test config::hf_tests::nested_text_config_hybrid ... ok
+test config::hf_tests::n_rot_agrees_across_the_gguf_and_hf_loader_paths ... ok
+test config::hf_tests::every_registered_arch_declares_a_gate_layout ... ok
+test config::hf_tests::qwen35_hf_without_a_partial_rotary_declaration_is_full_rope ... ok
+test config::hf_tests::glm5_next_layer_types_crosscheck_panics - should panic ... ok
+test config::hf_tests::qwen35_hf_partial_rotary_under_rope_parameters_is_read_too ... ok
+test config::hf_tests::qwen35_mtp_layer_is_explicit_full_attention_geometry ... ok
+test config::hf_tests::parse_step37_per_layer_geometry_and_moe_aliases ... ok
+test config::hf_tests::parse_hy3_reap_config ... ok
+test config::hf_tests::parse_qwen3_dense ... ok
+test config::hf_tests::resolve_rope_dim_count_precedence ... ok
+test config::hf_tests::glm5_next_missing_field_panics - should panic ... ok
+test config::hf_tests::registered_arches_validate_their_layout ... ok
+test config::hf_tests::gemma4_partial_rotary_does_not_truncate_n_rot ... ok
+test config::minimax_tests::parse_minimax_m3_vl ... ok
+test config::hf_tests::unregistered_arch_never_inherits_a_fused_gate ... ok
+test dequant::tests::bf16_dequant_on_use_kernel_contract ... ok
+test config::minimax_tests::minimax_name_mapping_against_index ... ok
+test dequant::tests::bf16_known_values ... ok
+test config::hf_tests::parse_dsv4_0731_derives_nextn_from_compress_ratios ... ok
+test dequant::tests::fp16_known_values ... ok
+test config::hf_tests::qwen3next_gguf_experts_survive_the_dense_arch_alias ... ok
+test dequant::tests::iq3s_vs_ggml_oracle ... ok
+test config::hf_tests::parse_dsv4_preview_nextn_unchanged ... ok
+test dequant::tests::nvfp4_table_and_finite ... ok
+test dequant::tests::q2k_planes_scales_and_minimum ... ok
+test config::hf_tests::step37_hf_defaults_and_llama3_rope_factors ... ok
+test dequant::tests::q3k_hmask_offset ... ok
+test config::hf_tests::parse_qwen4exp_all_family_fields ... ok
+test dequant::tests::q8_0_roundtrip_simple ... ok
+test dequant::tests::q5k_no_nan_zeromean ... ok
+test dsv4::tests::e8m0_known_values ... ok
+test dsv4::tests::mxfp4_synthetic_decode ... ok
+test dsv4_decode::tests::argmax_first_on_ties ... ok
+test dsv4::tests::nvfp4_matches_qwen_lane_reference ... ok
+test dsv4_decode::tests::compress_idxs_decode_matches_reference ... ok
+test dsv4_decode::tests::window_idxs_decode_matches_reference ... ok
+test dsv4_decode::tests::sparse_attn_query_single_row_passthrough ... ok
+test dsv4::tests::config_parses_all_dsv4_fields ... ok
+test dsv4_dspark::tests::dspark_topk_idxs_matches_reference ... ok
+test dsv4_dspark::tests::dspark_topk_idxs_refuses_prefill - should panic ... ok
+test dsv4_forward::tests::act_quant_grid_values_roundtrip_exact ... ok
+test dsv4_forward::tests::e2m1_rne_ties_to_even ... ok
+test dsv4_forward::tests::hadamard_sylvester_order_and_involution ... ok
+test dsv4_forward::tests::freqs_cis_no_yarn_matches_closed_form ... ok
+test dsv4_forward::tests::pow2_ceil_exact_and_between ... ok
+test dsv4_forward::tests::rope_roundtrip_inverse ... ok
+test dsv4_forward::tests::sinkhorn_comb_is_doubly_stochastic ... ok
+test dsv4_forward::tests::window_and_compress_idxs_match_reference_shapes ... ok
+test execution_manifest::glm5_spec_class_matrix::glm5_without_an_mtp_block_fails_closed_on_the_draft_plan ... ok
+test execution_manifest::glm5_spec_class_matrix::foreign_state_classes_fail_closed_under_glm5_spec ... ok
+test dsv4_forward::tests::matmul_f64_accum_small ... ok
+test execution_manifest::glm5_spec_class_matrix::the_two_spec_programs_never_both_claim_one_plan ... ok
+test execution_manifest::glm5_spec_class_matrix::glm5_with_mtp_block_is_supported_and_the_rewrite_row_is_eligible ... ok
+test execution_manifest::glm5_spec_class_matrix::registry_reproduces_every_legacy_manifest_table ... ok
+test dsv4_forward::tests::npz_reader_parses_synthetic_stored_zip ... ok
+test expert_banks::tests::a_contract_with_two_entries_for_one_bank_is_ambiguous ... ok
+test dsv4::tests::fp8_blk128_synthetic_decode ... ok
+test execution_manifest::tests::manifest_reports_operation_blockers_instead_of_model_names ... ok
+test expert_banks::tests::a_dense_plan_has_no_expert_projections ... ok
+test expert_banks::tests::a_contract_without_the_bank_entry_is_refused ... ok
+test expert_banks::tests::errors_read_as_one_sentence ... ok
+test execution_manifest::tests::rewrite_receipts_bind_plan_program_binary_and_outputs ... ok
+test expert_banks::tests::a_duplicated_expert_tensor_is_ambiguous ... ok
+test expert_banks::tests::a_missing_expert_tensor_is_the_contract_missing_verdict ... ok
+test expert_banks::tests::a_scale_plane_on_a_bank_is_refused_by_name ... ok
+test expert_banks::tests::a_shape_incompatible_expert_tensor_is_refused ... ok
+test hf::tests::pattern_selects_a_rank_sidecar_gguf_from_a_model_cache ... ok
+test hf_mapping::tests::block_perm_alignment ... ok
+test expert_banks::tests::a_non_gguf_contract_is_refused ... ok
+test hf_mapping::tests::expert_names ... ok
+test hf_mapping::tests::fp8_blk_non_aligned_refused ... ok
+test hf_mapping::tests::glm5_next_kda_names_match_the_contract ... ok
+test hf_mapping::tests::hy3_appended_mtp_names_use_layer_namespace ... ok
+test hf_mapping::tests::hy3_moe_names ... ok
+test config::hf_tests::parse_glm5_next_flash_banked_config ... ok
+test expert_banks::tests::plan_derived_catalog_matches_the_literal_day10_spelling ... ok
+test hf_mapping::tests::mla_kv_split_has_no_packed_fast_path ... ok
+test hf_mapping::tests::glm5_next_mla_names_match_the_contract ... ok
+test hf_mapping::tests::per_layer_dense ... ok
+test hf_mapping::tests::llama_dense_every_contract_tensor_resolves_through_the_engine_map ... ok
+test hf_mapping::tests::qwen35_moe_appended_mtp_names_use_mtp_namespace ... ok
+test hf_mapping::tests::glm5_next_every_contract_tensor_resolves_through_the_engine_map ... ok
+test hf_mapping::tests::mla_kv_split_matches_the_micro_fixture_convention ... ok
+test hf_mapping::tests::norm_transform_is_arch_specific ... ok
+test hf_mapping::tests::step37_stacked_moe_gate_and_appended_mtp_names ... ok
+test hf_mapping::tests::unmapped_returns_none ... ok
+test hf_mapping::tests::v_reorder_permutation ... ok
+test hf_mapping::tests::glm5_next_mtp_block_resolves_through_the_engine_map ... ok
+test hf_mapping::tests::v_reorder_rows ... ok
+test hf_mapping::tests::top_level_names ... ok
+test micro_gguf::tests::non_glm_arch_has_no_mla ... ok
+test micro_gguf::tests::parse_glm52_without_indexer_types_key ... ok
+test micro_gguf::tests::parse_glm52_pinned_metadata ... ok
+test micro_gguf::tests::parse_step35_pinned_metadata ... ok
+test model_packs::gemma4_dense::tests::unified_12b_lands_on_the_dense_pack_as_a_text_only_plan ... ok
+test micro_gguf::tests::parse_step35_mtp_drafter_metadata_and_trunk_fallback_trap ... ok
+test hf_mapping::glm5_hc_resolve::glm5_next_hc_names_resolve_through_the_source_path ... ok
+test model_packs::gemma4_dense::tests::vision_config_compiles_to_typed_plan_and_exact_auxiliary_schema ... ok
+test model_packs::hy3::tests::tiny_plan_covers_hy3_dense_moe_and_embedded_mtp_semantics ... ok
+test model_packs::llama_dense::tests::a_dense_mistral_with_a_sliding_window_is_refused ... ok
+test model_packs::llama_dense::tests::dictalm_24b_compiles_the_dense_gqa_stack ... ok
+test model_packs::llama_dense::tests::a_llama3_rope_scaled_config_is_refused ... ok
+test model_packs::hy3::tests::nvfp4_profile_quantizes_every_routed_expert_including_mtp ... ok
+test model_packs::llama_dense::tests::mistral_model_type_is_the_llama_program_and_selects_this_pack ... ok
+test model_packs::llama_dense::tests::qwen3_shaped_config_does_not_land_in_this_pack ... ok
+test model_packs::llama_dense::tests::the_dictalm_config_still_matches ... ok
+test model_packs::deepseek_v4::tests::three_block_config_selects_live_dspark_schema_and_plan ... ok
+test model_packs::llama_dense::tests::tiny_fixture_compiles ... ok
+test dsv4_decode::tests::comp_reset_is_construction_state ... ok
+test model_packs::deepseek_v4::tests::generated_schema_binds_all_three_quant_recipes_and_auxiliaries ... ok
+test model_packs::nemotron_rnnt::tests::the_qualified_streaming_arm_never_reads_future_audio ... ok
+test model_packs::nemotron_rnnt::tests::the_prompt_slot_is_the_encoder_row_plus_a_language_slot ... ok
+test model_packs::gemma4_moe::tests::official_a4b_geometry_compiles_parallel_moe_tensor_contract ... ok
+test model_packs::qwen35::activation::tests::scale_less_artifact_never_selects_a4 ... ok
+test model_packs::qwen35::activation::tests::digest_separates_two_calibrations_and_the_receipt_carries_it ... ok
+test model_packs::llama_dense::tests::tensor_contract_compiles_on_both_dialects ... ok
+test model_packs::qwen3_tts::tests::a_census_whose_total_moves_is_refused_even_when_every_name_binds ... ok
+test hf_mapping::tests::fp8_blk_v_reorder_is_exact ... ok
+test model_packs::qwen3_tts::tests::a_missing_tensor_is_refused_by_name ... ok
+test model_packs::qwen35::activation::tests::scaled_artifact_is_prefill_only_and_preserves_precision_islands ... ok
+test model_packs::nemotron_rnnt::tests::aliased_storage_fails_the_bind_before_any_shape_is_checked ... ok
+test model_packs::qwen3_tts::tests::a_reshaped_tensor_is_refused_with_both_shapes ... ok
+test model_packs::qwen3_tts::tests::a_tensor_that_does_not_read_its_own_storage_densely_is_refused ... ok
+test model_packs::qwen3_tts::tests::a_wrong_storage_dtype_is_refused ... ok
+test model_packs::nemotron_rnnt::tests::the_contract_binds_the_pinned_hebrew_checkpoint_exactly ... ok
+test model_packs::qwen3_tts::tests::a_geometry_that_disagrees_with_the_artifact_fails_rather_than_binding_a_shorter_model ... ok
+test model_packs::qwen3_tts::tests::suppression_bans_every_control_and_speaker_id_except_codec_eos ... ok
+test model_packs::qwen3_tts::tests::the_audio_contract_is_read_off_the_artifact_and_closes_on_itself ... ok
+test model_packs::qwen3_tts::tests::the_codec_upsample_chain_multiplies_to_exactly_one_frame ... ok
+test model_packs::qwen3_tts::tests::the_emit_contract_is_one_whole_frame_and_declares_its_silence ... ok
+test model_packs::qwen3_tts::tests::the_pin_and_licence_are_the_artifacts_own_and_not_a_family_inheritance ... ok
+test model_packs::qwen3_tts::tests::the_prefill_rows_are_the_exact_codec_sequence_in_order ... ok
+test model_packs::qwen3_tts::tests::the_prefill_widths_close_against_three_measured_values ... ok
+test model_packs::qwen3_tts::tests::the_served_decode_is_sampled_on_both_loops_and_greedy_is_only_the_instrument ... ok
+test model_packs::qwen3_tts::tests::the_speaker_and_language_tables_match_the_artifact_and_the_dialect_rule_holds ... ok
+test model_packs::qwen3_tts::tests::aliased_storage_is_refused_before_any_shape_is_checked ... ok
+test micro_gguf::tests::micro_fixture_parse_and_tensor_audit ... ok
+test model_packs::qwen3_tts::tests::an_extra_tensor_is_refused_by_name ... ok
+test model_packs::qwen3_tts::tests::the_generated_contract_reproduces_the_census_groups_the_artifact_reports ... ok
+test micro_gguf::tests::micro_fixture_kv_b_split_convention ... ok
+test model_packs::qwen4_exp::tests::pack_resolves_by_alias_and_matches_the_artifact_config ... ok
+test model_packs::qwen4_exp::tests::tiny_plan_compiles_the_whole_family_program ... ok
+test model_packs::tests::pack_aliases_are_unique_and_manifests_are_complete ... ok
+test model_packs::qwen4_exp::tests::expected_census_totals_and_spot_shapes ... ok
+test model_packs::tests::registered_pack_compiles_plan_and_schema_and_refuses_other_family ... ok
+test model_packs::qwen3_tts::tests::the_talker_contract_binds_the_pinned_artifact_exactly ... ok
+test model_packs::whisper::tests::decode_constants_come_from_the_pinned_generation_config ... ok
+test model_packs::qwen3_tts::tests::the_codec_encoder_half_is_refused_by_the_decoder_contract ... ok
+test model_packs::nemotron_rnnt::tests::a_missing_extra_or_reshaped_tensor_fails_the_bind ... ok
+test model_packs::qwen3_tts::tests::the_codec_decoder_contract_binds_exactly_and_the_encoder_half_is_dead_weight ... ok
+test model_packs::whisper::tests::changed_graph_frontend_and_storage_are_refused ... ok
+test model_packs::nemotron_rnnt::tests::the_real_archive_census_matches_the_fixture_when_the_artifact_is_present ... ok
+test model_packs::whisper::tests::fixture_bytes_are_the_pinned_source_metadata ... ok
+test model_packs::whisper::tests::suppressed_ids_are_sorted_unique_and_never_timestamps ... ok
+test model_plan::tests::compiles_dense_hf_config_into_typed_layers ... ok
+test model_plan::tests::capabilities_are_intersection_of_required_operations ... ok
+test model_plan::tests::compiles_moe_and_shared_mlp_without_architecture_capability_checks ... ok
+test model_plan::tests::compiles_gdn_full_attention_and_mtp_from_one_config ... ok
+test model_plan::tests::compiles_gemma_swa_and_logits_transforms ... ok
+test model_plan::tests::executor_selection_is_derived_from_plan_operations ... ok
+test model_plan::tests::compiles_qwen4exp_qsa_gdn_ple_gated_residual_and_mtp ... ok
+test model_plan::tests::external_draft_attachment_updates_the_canonical_spec_subplan ... ok
+test model_plan::tests::invalid_gdn_metadata_fails_during_compilation ... ok
+test model_plan::tests::topology_limits_refuse_artifact_controlled_allocation_counts ... ok
+test model_plan::tests::compiles_qwen4exp_yarn_rope_from_config ... ok
+test model_plan::tests::yarn_divisors_match_the_banked_transformers_receipt ... ok
+test nemo::tests::a_checkpoint_that_names_an_executable_global_is_refused ... ok
+test nemo::tests::aliased_storages_are_reported_together ... ok
+test model_plan::tests::standalone_step_draft_metadata_attaches_three_typed_swa_blocks ... ok
+test nemo::tests::a_truncated_pickle_does_not_return_a_short_census ... ok
+test nemo::tests::pax_extended_header_names_the_member_not_the_truncated_ustar_field ... ok
+test nemo::tests::unsupported_tar_entries_and_broken_headers_are_refused ... ok
+test nemo::tests::zip_entries_refuse_compression_and_bad_offsets ... ok
+test nvfp4_repack::fp8_tests::e4m3_encode_roundtrip ... ok
+test nvfp4_repack::fp8_tests::e4m3_known_values ... ok
+test nvfp4_repack::swizzle_tests::a_swapped_row_group_is_caught ... ok
+test nemo::tests::census_of_the_pinned_hebrew_rnnt_checkpoint ... ok
+test nemo::tests::every_storage_in_the_pinned_checkpoint_belongs_to_exactly_one_tensor ... ok
+test model_packs::whisper::tests::real_ivrit_metadata_binds_every_tensor_and_stays_unsupported ... ok
+test nvfp4_repack::swizzle_tests::the_permutation_is_a_bijection_on_the_unpadded_coordinates ... ok
+test nvfp4_repack::tests::col_perm_nvfp4_equals_f32 ... ok
+test model_packs::whisper::tests::same_size_wrong_shape_and_unexpected_bias_fail_the_tensor_contract ... ok
+test nvfp4_repack::tests::nibble_order_conversion ... ok
+test nvfp4_repack::tests::repack_roundtrip_matches_modelopt ... ok
+test nvfp4_repack::tests::f32_to_nvfp4_roundtrip_class_error ... ok
+test nvfp4_repack::tests::row_perm_nvfp4_equals_f32 ... ok
+test op_registry::tests::print_execution_surfaces_table ... ignored
+test op_registry::tests::none_rows_are_really_none ... ok
+test op_registry::tests::registry_lists_every_operation_once ... ok
+test placement::tests::byte_cost_overflow_refuses ... ok
+test placement::tests::dense_uniform_costs_split_evenly_and_include_fixed_and_kv_bytes ... ok
+test placement::tests::equal_peak_tie_chooses_lexicographically_first_cuts ... ok
+test nvfp4_repack::tests::split_plane_matches_gguf_blocks ... ok
+test placement::tests::illegal_and_insufficient_boundaries_refuse ... ok
+test placement::tests::moe_heavy_tail_uses_three_contiguous_stages ... ok
+test placement::tests::four_stage_uniform_plan_is_stable ... ok
+test safetensors::tests::accepts_current_spec_subbyte_fnuz_and_complex_dtypes ... ok
+test safetensors::tests::checked_parsers_enforce_required_unique_and_metadata_contracts ... ok
+test op_registry::tests::rendered_table_matches_docs_execution_surfaces ... ok
+test safetensors::tests::malformed_safetensors_headers_return_errors_without_panicking ... ok
+test safetensors::tests::model_index_rejects_absolute_parent_and_symlink_shard_paths ... ok
+test safetensors::tests::huggingface_snapshot_symlinks_are_confined_to_same_repository_blobs ... ok
+test safetensors::tests::multi_shard_header_sidecar_survives_an_incomplete_index ... ok
+test safetensors::tests::multi_shard_index_routing ... ok
+test safetensors::tests::real_qwen3_17b_config ... ok
+test safetensors::tests::multi_shard_index_refuses_missing_and_duplicate_tensor_ownership ... ok
+test safetensors::tests::rejects_overlaps_gaps_and_unclaimed_payload_tail ... ok
+test safetensors::tests::single_file_model_open ... ok
+test safetensors::tests::rejects_tensor_extents_that_disagree_with_shape_or_payload ... ok
+test safetensors::tests::unsupported_generic_dtypes_are_fallible ... ok
+test safetensors::tests::synthetic_dequant_through_path ... ok
+test safetensors::tests::synthetic_header_roundtrip ... ok
+test source::expert_slab_populate_tests::empty_or_unknown_budget_never_underflows ... ok
+test source::expert_slab_populate_tests::floor_is_enforced_against_a_slab_that_would_just_fit ... ok
+test source::compressed_tensors_roundtrip::modelopt_scale2_direct_borrow ... ok
+test source::expert_slab_populate_tests::populate_policy_parses_both_arms_and_rejects_junk ... ok
+test source::compressed_tensors_roundtrip::ct_global_scale_inversion ... ok
+test source::expert_slab_populate_tests::slab_fitting_under_the_floor_populates ... ok
+test source::expert_slab_populate_tests::unset_advice_is_random_and_unset_populate_is_fits ... ok
+test source::expert_slab_populate_tests::slab_larger_than_available_ram_does_not_populate ... ok
+test safetensors::tests::real_qwen3_17b_header ... ok
+test source::f8_block128::per_tensor_scale_class_unchanged ... ok
+test source::f8_block128::scale_shape_detection ... ok
+test source::hy3_repack_probe::hy3_inventory_dtype_shape_assertions ... ok
+test source::f8_block128::fp8_native_carries_block_grid ... ok
+test source::hy3_repack_probe::hy3_load_plan_dry_run_no_cuda ... ok
+test source::hy3_repack_probe::hy3_manifest_offset_roundtrip ... ok
+test source::m3_probe::minimax_m3_lm_head_q8 ... ok
+test source::nv27b_probe::nvidia_27b_dtype_routing ... ok
+test source::nv27b_probe::nvidia_27b_mtp_mapping ... ok
+test source::nv27b_twin_parity::nvidia_27b_vs_gguf_twin_f32_parity ... ok
+test source::pre_quant_scale_census_tests::pre_quant_scale_is_an_auxiliary_of_its_weight_in_the_census ... ok
+test source::pre_quant_scale_lookup::pre_quant_scale_resolves_through_find ... ok
+test source::tests::expert_activation_precision_is_artifact_metadata_not_family_identity ... ok
+test source::tests::expert_mmap_advice_parser_preserves_random_default ... ok
+test source::tests::expert_overlay_overrides_selected_tensor_and_falls_back_to_hf ... ok
+test model_packs::whisper::tests::mmap_loader_validates_real_checkpoint_metadata_without_weight_download ... ok
+test source::tests::hy3_expert_bias_resolves_current_and_preview_keys ... ok
+test source::tests::hy3_modelopt_router_and_shared_expert_aliases_resolve ... ok
+test model_packs::qwen4_exp::tests::expected_census_matches_the_banked_artifact_and_the_contract_binds_it ... ok
+test source::tests::manifest_payload_paths_cannot_escape_artifact_root ... ok
+test model_packs::whisper::tests::missing_duplicate_wrong_shard_and_truncated_payload_are_rejected ... ok
+test source::tests::repack_census_reads_manifest_lengths_without_tensor_views ... ok
+test source::tests::repack_manifest_requires_exact_encoded_extent ... ok
+test source::tests::repack_shard_symlink_is_rejected_without_an_explicit_trusted_root ... ok
+test source::tests::safetensors_census_is_header_only_and_counts_quant_auxiliaries ... ok
+test source::tests::safetensors_source_find_maps_names ... ok
+test source::tests::nvfp4_scale_layout_is_declared_and_unrecognised_declarations_refuse_to_load ... ok
+test source::f8_block128::block128_dequant_bit_exact ... ok
+test split_tests::a_non_gguf_file_is_an_error_not_a_panic ... ok
+test source::tests::step_stacked_fp8_native_preserves_expert_scale_and_file_axes ... ok
+test source::tests::v2_overlay_supports_repack_fallback_offsets_and_prune_mask ... ok
+test split_tests::any_shard_is_a_valid_entry_point ... ok
+test split_tests::impossible_counts_and_array_lengths_are_errors_not_panics ... ok
+test split_tests::invalid_dimensions_and_tensor_sizes_are_errors_not_panics ... ok
+test split_tests::signed_metadata_cannot_become_a_large_unsigned_value ... ok
+test split_tests::metadata_string_and_tensor_rank_limits_fail_before_allocation ... ok
+test split_tests::single_file_gguf_is_unchanged_one_shard ... ok
+test split_tests::split_model_presents_one_merged_tensor_table ... ok
+test split_tests::split_shard_with_a_nonstandard_filename_is_a_clear_error ... ok
+test split_tests::split_metadata_mismatches_are_errors_not_panics ... ok
+test split_tests::tensor_file_range_is_relative_to_the_owning_shard ... ok
+test split_tests::tensor_ranges_are_rejected_during_open_not_deferred_to_slicing ... ok
+test split_tests::truncated_fixed_fields_and_strings_are_errors_not_panics ... ok
+test tensor_contract::glm5_dump::dump_glm5_contract_names ... ignored
+test tensor_contract::pre_quant_scale_tests::pre_quant_scale_is_declared_on_the_hf_dialect_only ... ok
+test split_tests::unknown_types_and_zero_alignment_are_errors_not_panics ... ok
+test tensor_contract::pre_quant_scale_tests::scaling_the_input_equals_scaling_the_weight_columns ... ok
+test tensor_contract::tests::bound_tensor_preserves_checked_physical_byte_total ... ok
+test source::f8_block128::qwen_official_fp8_find_q8_0_roundtrip ... ok
+test tensor_contract::tests::dense_hf_contract_binds_every_tensor_to_stable_ids ... ok
+test tensor_contract::tests::dense_gemma_contract_pins_norms_scale_factors_and_k_as_v ... ok
+test tensor_contract::tests::gguf_and_hf_contracts_have_same_semantic_ids_and_transposed_matrix_shapes ... ok
+test tensor_contract::tests::gdn_contract_pins_hf_shapes_and_value_reorder_transforms ... ok
+test tensor_contract::tests::missing_extra_ambiguous_shape_and_layout_all_fail_closed ... ok
+test tensor_contract::tests::hy3_contract_binds_modelopt_router_bias_and_shared_expert_aliases ... ok
+test tensor_contract::tests::moe_bank_id_binds_hf_expert_group_and_gguf_stack ... ok
+test source::tests::exact_step37_fp8_preserves_every_bf16_checkpoint_surface ... ok
+test tensor_contract::tests::mtp_contract_reuses_block_schema_and_rewrites_hf_namespace ... ok
+test split_tests::every_prefix_truncation_of_a_valid_gguf_is_an_error_not_a_panic ... ok
+test source::tests::hy3_nvfp4_formats_preserve_deliberately_unquantized_bf16_linears ... ok
+test nvfp4_repack::swizzle_tests::round_trip_on_the_served_expert_shapes ... ok
+test tensor_contract::tests::glm_mla_moe_mtp_contract_binds_the_existing_micro_fixture ... ok
+test dsv4_decode::tests::comp_ckpt_rollback_replay_matches_plain_decode ... ok
+test dsv4::tests::census_matches_artifact_totals ... ok
+test source::tests::glm5_next_mla_kv_b_splits_to_f32_3d_planes_through_the_source ... ok
+test model_packs::qwen4_exp::tests::nvfp4_expected_census_totals_and_spot_shapes ... ok
+test model_packs::qwen4_exp::tests::nvfp4_census_matches_the_banked_mint_and_the_dialect_contract_binds_it ... ok
+
+test result: ok. 290 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.45s
+
+     Running unittests src/bin/dsv4_census.rs (target/debug/deps/dsv4_census-5ce937461a59b85c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_decode_oracle_check.rs (target/debug/deps/dsv4_decode_oracle_check-ff712ecfce9f7b8e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_dspark_gate.rs (target/debug/deps/dsv4_dspark_gate-e074985f9bbabeb5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_forward_gate.rs (target/debug/deps/dsv4_forward-c8a26ecbc6aebb47)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_greedy_verify.rs (target/debug/deps/dsv4_greedy_verify-2aa0283fb0a2ad8b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_mtp_probe.rs (target/debug/deps/dsv4_mtp_probe-bca0843992950925)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/dsv4_mint.rs (target/debug/deps/dsv4_mint-94696945b4493fa3)
+
+running 7 tests
+test tests::scale_cast_is_lossless_and_refuses_nan ... ok
+test tests::synthetic_cast_decodes_bit_identical ... ok
+test tests::trunk_stem_filter ... ok
+test tests::config_derives_three_dspark_blocks ... ok
+test tests::safetensors_writer_roundtrips ... ok
+test tests::e4m3_pow2_codes_roundtrip_and_refuse ... ok
+test tests::census_totals_match_artifact ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running unittests src/bin/inspect.rs (target/debug/deps/gguf_inspect-e78f251b630d7a65)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/nvfp4_validate.rs (target/debug/deps/nvfp4_validate-69c0b146ed8ee472)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/memra_kv-c972eefcc2f30c92)
+
+running 67 tests
+test continuation_gate_tests::day11_ensure_usable_refuses_a_suspended_cache_until_restored ... ok
+test continuation_gate_tests::day11_refusal_is_typed_and_names_the_layers ... ok
+test plane::tests::edges_empty_and_refusals ... ok
+test plane::tests::capability_refusals_are_named ... ok
+test swa_ring_tests::ring_matches_flat_bytes_before_wrap ... ok
+test continuation_gate_tests::day11_seam_refusals_on_a_cache_without_resident_planes ... ok
+test tiered::tests::calibrated_prefix_costs_include_suffix_and_materialization_and_never_discard_admitted_state ... ok
+test swa_ring_tests::wrap_rebases_the_exact_aligned_prime_view ... ok
+test plane::tests::allocator_dispatch_has_no_bootstrap_or_fallback ... ok
+test plane::tests::frozen_qwen_prefix_whole_chunk_counts ... ok
+test tiered::tests::day4::program_residency_refuses_cross_tenant_before_charging_and_retains_full_identity ... ok
+test swa_ring_tests::retain_grants_rewind_slack_but_never_asks_below_base ... ok
+test tiered::tests::day4::active_state_cannot_recompute_even_with_optional_priority ... ok
+test swa_ring_tests::allocation_rows_cover_window_max_prime_and_alignment_slack ... ok
+test tiered::tests::canonical_wire_group_specific_counts_padding_and_opaque_fixtures ... ok
+test swa_ring_tests::rewind_declines_once_the_required_window_was_lapped ... ok
+test swa_ring_tests::restore_plan_copies_the_window_not_the_absolute_length ... ok
+test tiered::tests::day4::fixture_load_winner_advances_frozen_plan_without_losing_decision ... ok
+test tiered::tests::advisory_lookup_complete_identity_and_full_operand_refusal ... ok
+test tiered::tests::day5::b_admission_d_capacity_local_materializer_and_retirement_share_one_governor ... ok
+test tiered::tests::day4::peer_lookup_capacity_denial_downgrade_local_materialize_and_busy_retry ... ok
+test tiered::tests::disk_not_device_and_publication_cancel_linearization ... ok
+test tiered::tests::lead_governor_headroom_foreign_double_release_pin_schedule_replayed ... ok
+test tiered::tests::frozen_tier_cancel_schedule_runs_against_hierarchy ... ok
+test tiered::tests::hostprefix_identity_lease_is_unbound_by_default_and_revoked_on_remove_or_purge ... ok
+test tiered::tests::hostprefix_rebinding_revokes_old_lease_and_does_not_migrate_handoff_implicitly ... ok
+test tiered::tests::policy_frontier_fixture_table_and_mandatory_refusal ... ok
+test tiered::tests::native_qwen_materializer_exact_bytes_identity_and_stable_address ... ok
+test tiered::tests::recompute_load_cross_product_fixture_is_not_a_runtime_default ... ok
+test tiered::tests::day4::opaque_packed_all_and_trailing_exact_bytes_identity_and_mixed_layout_refusal ... ok
+test tiered::tests::revision_v11_generic_governor ... ok
+test tiered::tests::native_format_substitution_partial_history_and_ring_layout_refuse ... ok
+test tiered::tests::direct_local_and_peer_paths_skip_host_stage_but_not_fences ... ok
+test tiered::tests::native_multi_page_odd_tail_is_not_reordered_and_full_history_is_required ... ok
+test tiered::tests::owned_prefix_seal_copies_committed_bytes_not_an_active_alias ... ok
+test tiered::tests::revision_v11_tier_unknown_and_missing_backing ... ok
+test tiered::tests::revision_v11_governor_actual_dispatch_priority ... ok
+test tiered::tests::each_epoch_independently_refuses_and_rollback_seal_keeps_prefix_stable ... ok
+test tiered::tests::synchronous_residency_guard_charges_once_and_keeps_host_twin_on_promotion ... ok
+test tiered::tests::shared_dimensions_queue_fairness_headroom_and_dirty_backpressure ... ok
+test tiered::tests::write_and_eviction_primitives_remain_byte_policy_only ... ok
+test tp_transaction_tests::cache_reports_a_materialized_distributed_swa_ring ... ok
+test tp_transaction_tests::device_rewind_updates_host_visibility_after_external_rank_writes ... ok
+test tp_transaction_tests::grow_preserves_generation_and_publishes_only_the_checkpoint_prefix ... ok
+test tp_transaction_tests::grow_refuses_active_source_and_invalid_target_state_or_layout ... ok
+test tp_transaction_tests::index_ring_sizing_is_pure_and_carries_no_per_call_t ... ok
+test tp_transaction_tests::index_ring_take_drains_instead_of_bounding_the_call ... ok
+test tp_transaction_tests::partial_commit_publishes_only_the_accepted_prefix ... ok
+test tiered::tests::revision_v11_tier_complete_cancel_identity_and_planes ... ok
+test tp_transaction_tests::rejects_nested_stale_and_out_of_range_actions ... ok
+test tiered::tests::unknown_shutdown_retains_source_and_reservation_pins ... ok
+test tp_transaction_tests::rewind_resets_visibility_and_invalidates_an_active_transaction ... ok
+test tp_transaction_tests::rollback_restores_the_committed_boundary ... ok
+test tp_transaction_tests::step_tp8_rank_allocation_matches_the_official_kv_geometry ... ok
+test tiered::tests::fake_scheduler_concurrent_churn_cancel_rollback_and_quota_no_double_charge ... ok
+test tiered::tests::scheduler_equal_priority_deadline_alternates_tenants_before_second_fifo_turn ... ok
+test tp_transaction_tests::swa_grow_normalizes_only_the_live_prefix_and_preserves_generation ... ok
+test tiered::tests::zero_accept_and_partial_submit_return_unaccepted_allocation_ownership ... ok
+test tiered::tests::scheduler_rearrival_cannot_starve_backlogged_tenant ... ok
+test tiered::tests::scheduler_priority_deadline_fifo_bounded_fairness_and_timeout ... ok
+test tiered::tests::every_bad_segment_and_unknown_completion_retains_until_drain ... ok
+test tp_transaction_tests::tp_rank_allocation_refuses_non_divisible_and_non_block_aligned_shards ... ok
+test tp_transaction_tests::swa_transaction_rebase_preserves_the_rollback_window ... ok
+test tp_transaction_tests::the_derived_ring_serves_a_monolithic_prime_of_the_whole_configured_context ... ok
+test tiered::tests::queue_bounds_deadline_expiry_no_bypass_and_atomic_concurrent_reservations ... ok
+test tiered::tests::scheduler_eviction_floor_protects_backlog_under_priority_churn ... ok
+test tiered::tests::day4::request_plan_records_fixture_policy_and_never_loads_recompute_winners ... ok
+
+test result: ok. 67 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running tests/contracts_v12.rs (target/debug/deps/contracts_v12-0fed87518ff84f5f)
+
+running 2 tests
+test revision_v12_native_q8_q5_materializer ... ok
+test revision_v12_opaque_264_byte_materializer ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/memra_tier-c4d1d6dcdf923bbe)
+
+running 2 tests
+test tier::governor::tests::fairness_idle_cap_keeps_inflight_and_queued_stamps_and_eviction_floor ... ok
+test object_store::tests::review_gc_upgrade_window_keeps_other_stores_lease_fenced ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/bank/main.rs (target/debug/deps/bank-df547c80365b27e9)
+
+running 61 tests
+test day4::banked_residency_budget_refuses_instead_of_rounding_up ... ok
+test day10::expert_bank_cli_parses_only_behind_the_door ... ok
+test day10::gpu_bank_slots_refuses_instead_of_clamping ... ok
+test bounds_wrong_ids_overflow_and_device_request_fail_closed ... ok
+test day4::patch_v2_source_bounds_preserve_split_offset_zero_without_substitution ... ok
+test day10::typed_refusals_name_requested_minimum_and_ceiling ... ok
+test alternate_layout_cannot_resurrect_masked_original_identity ... ok
+test cancel_retains_charge_until_retirement_and_tombstone_ack ... ok
+test borrowed_view_and_alias_survive_busy_retirement ... ok
+test actual_q2_q3_nvfp4_codes_are_preserved_without_kernel_promotion ... ok
+test device_rows::row_device_publication_requires_wait_epochs_integrity_and_retirement ... ok
+test device_rows::row_device_rejection_returns_inputs_and_cancel_never_publishes ... ok
+test all_three_epochs_cross_service_and_publish_replay_refuse ... ok
+test discontiguous_row_scale_planes_are_required_and_exact ... ok
+test expert_dispatch_slru_preserves_ids_bytes_hits_and_refuses_unknown ... ok
+test device_rows::row_device_native_gather_submits_exact_coalesced_bits ... ok
+test day4::bank_source_installation_refuses_missing_ambiguous_and_wrong_layout ... ok
+test day4::slru_bank_residency_charges_retained_aliases_and_metadata ... ok
+test integration::governor_rearrival_cannot_starve_backlogged_tenant ... ok
+test frozen_bank_cancel_schedule_runs_on_implementation ... ok
+test failed_transfer_completion_enumerates_all_records_and_segments ... ok
+test host_bridge::bridge_uses_per_record_metadata_and_preserves_existing_scale_planes ... ok
+test integration::ngram_hint_is_byte_bounded_deduplicated_and_domain_separate ... ok
+test host_exps_uniform_mixed_original_mask_and_split_offsets ... ok
+test frozen_row_order_schedule_runs_on_implementation ... ok
+test missing_or_extra_checksums_and_false_uniform_declarations_refuse ... ok
+test original_masks_foreign_catalog_and_wrong_domain_refuse_before_reads ... ok
+test integration::shared_governor_hints_cannot_starve_mandatory_loads ... ok
+test owner_proxy::dropping_owner_invalidates_proxy_without_auto_finishing_open_dma ... ok
+test overlapping_cache_hit_tickets_hold_same_allocation_until_all_retire ... ok
+test owner_proxy::proxy_and_token_are_send_sync_but_staging_is_owner_only ... ok
+test owner_proxy::proxy_bounds_pending_and_preserves_failed_finish_and_foreign_tokens ... ok
+test pinned_ple_test_oracle_matches_native_function_bodies ... ok
+test ple_rows_native::native_ple_rows_legacy_output_and_partial_admission ... ok
+test ple_rows_native::native_ple_rows_refuses_invalid_bounds_and_budget_without_leak ... ok
+test predictions_are_bounded_mask_checked_and_not_demand_heat ... ok
+test read_planning_clamps_tail_but_refuses_truncated_payload_and_invalid_granularity ... ok
+test refused_publication_retains_owned_charge_until_explicit_retirement ... ok
+test ple_rows_native::native_ple_rows_bits_duplicates_forced_misses_and_drained_budget ... ok
+test revision_v11_bank_cancel_identity_uniform ... ok
+test integration::object_transfer_experts_partial_failure_never_publishes_successful_sibling ... ok
+test revision_v11_rows_complete_cancel ... ok
+test row_release_busy_preserves_retry_after_partial_alias_retirement ... ok
+test revision_v11_corrupt_sibling_and_row_namespace ... ok
+test shared_budget_atomic_refusal_and_tombstone_bound ... ok
+test revision_v11_rows_bytes_dedup_bounded_straddles ... ok
+test short_and_corrupt_reads_never_publish_partial_batch ... ok
+test sparse_amplification_and_default_policy_are_explicit_arithmetic_not_io_benchmarks ... ok
+test uniform_proof_checks_actual_source_even_homogeneous_subset ... ok
+test zero_small_full_cache_preserves_exact_bytes_and_scales ... ok
+test integration::object_reader_tail_rows_8191 ... ok
+test synthetic_ple_trace_preserves_chunk_rewind_eos_and_native_expansion_bits ... ok
+test integration::object_reader_tail_rows_8193 ... ok
+test day4::slru_matches_recorded_native_semantics_synthetic_trace ... ok
+test rows_straddles_duplicates_pool_smaller_than_batch_and_retirement ... ok
+test day4::slru_banked_residency_serial_trace_matches_oracle_and_releases_charge ... ok
+test integration::object_store_transfer_rows_forced_misses_order_and_retirement ... ok
+test day8::banked_residency_8g_gen_pressure ... ok
+test day8::banked_residency_4g_gen_pressure ... ok
+test day8::banked_residency_8g_spec_pressure ... ok
+test day8::banked_residency_4g_spec_pressure ... ok
+
+test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.57s
+
+     Running tests/contracts/mod.rs (target/debug/deps/contracts-7e738aecefe88b56)
+
+running 60 tests
+test peer::contiguous_bounds_overflow_and_foreign_owner_fail_closed ... ok
+test peer::peer_capacity_grants_budget_source_lifetime_and_explicit_release ... ok
+test peer::peer_three_epochs_local_only_and_cancel_linearization ... ok
+test resident_bindings::day11_suspended_layers_refuse_continuation_until_restored ... ok
+test peer::revision_v12_peer_framed_logical_bytes ... ok
+test resident_bindings::day11_red_arm_taint_flag_lets_a_suspended_cache_continue ... ok
+test services::bank_scale_plane_missing_is_not_a_complete_uniform_record ... ok
+test peer::peer_partial_vector_cannot_materialize_missing_sibling ... ok
+test services::budget_device_headroom_and_priority_deadline_order ... ok
+test services::bank_lease_keeps_backing_pinned_and_explicit_retirement_invalidates_aliases ... ok
+test services::invalid_bank_publication_returns_charge_and_backing_for_explicit_release ... ok
+test services::common_governor_headroom_foreign_double_release_and_pin_lifetime ... ok
+test services::object_cancel_before_and_after_commit_and_chunked_progress ... ok
+test services::bank_masked_ids_partial_completion_and_uniform_mixed_refusal ... ok
+test services::object_partial_short_and_interrupted_root_never_publish ... ok
+test peer::revision_v11_directed_reference_routes ... ok
+test rows::row_straddles_deduplicate_physical_reads_and_preserve_exact_duplicate_bytes ... ok
+test services::object_full_key_collision_corruption_and_version_refusal ... ok
+test services::rows_rejected_read_and_cancel_never_publish_logical_subset ... ok
+test services::revision_v13_unmodified_backend_defaults_to_unsupported ... ok
+test peer::reusable_peer_schedule ... ok
+test transfer::completion_refuses_each_epoch_bad_checksum_missing_fence_and_short_vector ... ok
+test services::revision_v11_generic_governor_and_object ... ok
+test services::reusable_object_tier_bank_row_schedules ... ok
+test transfer::copy_bounds_and_consumer_context_generation_are_checked ... ok
+test services::revision_v12_tier_logical_record_preserved ... ok
+test services::rows_duplicate_order_dedup_charge_and_delayed_consumer_retirement ... ok
+test services::revision_v11_bank_row_unknown_retirement_hooks ... ok
+test services::tier_advisory_lookup_identity_completeness_and_epochs ... ok
+test transfer::day11_cancel_is_refused_after_the_source_left ... ok
+test services::tier_cancel_after_load_before_ready_and_unknown_retirement ... ok
+test transfer::revision_v11_zero_accept_preserves_owned_hosts ... ok
+test transfer::revision_v11_complete_cancel_and_lifetime ... ok
+test services::revision_v11_bank_and_rows_complete_before_cancel ... ok
+test transfer::revision_v11_indexed_acceptance ... ok
+test transfer::day11_red_arm_legacy_transport_drains_a_cancelled_restore ... ok
+test transfer::day11_cancelled_restore_recovers_its_source ... ok
+test transfer::revision_v12_transfer_framed_logical_bytes ... ok
+test transfer::transfer_cancel_after_completion_before_publication_revokes ... ok
+test transfer::revision_v13_source_retirement_preserves_taken_destination ... ok
+test transfer::reusable_transfer_schedule ... ok
+test peer::revision_v11_peer_complete_cancel ... ok
+test transfer::transfer_partial_batch_and_broken_aggregate_are_detected ... ok
+test wire::completion_requires_logical_payload_not_framed_io ... ok
+test v12_bindings::revision_v12_directed_grants_bind_exported_d_capacity ... ok
+test transfer::transfer_ready_take_is_owner_bound_and_post_publish_cannot_revoke ... ok
+test transfer::unknown_backend_shutdown_does_not_free_accepted_host_source ... ok
+test transfer::unknown_cancel_and_delayed_fences_quarantine_until_retired ... ok
+test v13_bindings::original_device_backing_is_handed_back_only_after_last_pin ... ok
+test transfer::transfer_zero_accept_error_returns_every_input_and_empty_refuses ... ok
+test v12_bindings::revision_v12_ready_owner_and_consumer_fence_identity ... ok
+test wire::layout_duplicate_overflow_and_group_specific_counts_refuse ... ok
+test wire::placement_negative_headroom_route_labels_and_estimates_survive_wire ... ok
+test wire::heterogeneous_all_trailing_groups_aliases_and_padding ... ok
+test wire::immutable_seal_and_committed_high_water_cannot_publish_rollback_tail ... ok
+test v12_bindings::revision_v12_bank_source_install_fail_closed ... ok
+test wire::identity_domains_full_program_and_canonical_roundtrip ... ok
+test rows::row_batch_larger_than_pool_progresses_and_one_bad_physical_read_refuses_all_output ... ok
+test v12_bindings::revision_v12_object_bank_and_row_logical_completion_boundaries ... ok
+test wire::golden_fixture_hashes_are_pinned ... ok
+
+test result: ok. 60 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/peer/mod.rs (target/debug/deps/peer-aeb4baa6aa5529f5)
+
+running 18 tests
+test exported_capacity_is_fail_closed_sized_and_shared ... ok
+test fake::directed_fault_after_reservation_returns_owned_copies_without_acceptance ... ok
+test fake::quarantine_graph_pins_foreign_tickets_and_shared_budget ... ok
+test fake::directed_fault_controls_are_independent_and_missing_routes_refuse ... ok
+test fake::revision_v11_peer_capacity ... ok
+test fake::capacity_grants_padding_and_homogeneous_ticket_refusal ... ok
+test fake::partial_acceptance_and_zero_accept_return_owned_inputs ... ok
+test fake::revision_v11_peer_complete_cancel_and_quarantine ... ok
+test fake::caller_source_drop_keeps_owned_bytes_until_acknowledged ... ok
+test topology_is_directed_grant_bound_and_never_host_bounce ... ok
+test observation_expires_with_context_topology_or_binary ... ok
+test fake::shared_schedule_runs_on_d_byte_fake ... ok
+test fake::revision_v11_peer_submit_epochs_and_zero_accept ... ok
+test idle_downshift_is_deferred_active_downgrade_refuses ... ok
+test fake::short_corrupt_and_wrong_context_completion_refuse ... ok
+test fake::exact_bytes_epochs_cancel_and_fence_issuer ... ok
+test fake::revision_v11_directed_capacity ... ok
+test fake::revision_v11_peer_indexed_acceptance ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/placement/mod.rs (target/debug/deps/placement-7b9322859e535017)
+
+running 6 tests
+test odd_tails_and_replicas_are_counted_not_quartered ... ok
+test equal_split_reproduces_census_slope_and_frontier ... ok
+test invalid_geometry_and_integer_overflow_refuse ... ok
+test staging_loader_scratch_and_routes_are_explicit ... ok
+test report_is_frozen_wire_and_replica_breakdown_not_extra_charge ... ok
+test alternate_bytes_and_explicit_reserve_are_not_format_fallbacks ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/reclaim/main.rs (target/debug/deps/reclaim-89ea62f396a995cb)
+
+running 30 tests
+test cli::tests::collector_refusal_is_unwrapped_but_failures_are_not_refusals ... ok
+test cli::tests::exact_contract_and_all_cases ... ok
+test cli::tests::missing_duplicate_and_unknown_refuse ... ok
+test cli::tests::allocator_defaults_and_refusals ... ok
+test cli::tests::residual_diagnostic_is_explicit_and_scoped ... ok
+test cli::tests::fault_arms_parse_only_on_the_active_pooled_roundtrip ... ok
+test cli::tests::unsupported_ladder_and_routes_refuse ... ok
+test cli::tests::reclaim_cycles_refusals_are_explicit_and_fail_closed ... ok
+test cli::tests::fault_arms_refuse_the_vmm_door_and_the_reclaim_diagnostic ... ok
+test cli::tests::reclaim_cycles_accepts_a_count_of_at_least_two_under_the_diagnostic ... ok
+test cli::tests::fault_door_is_a_usage_error_off_the_active_case_and_fails_closed ... ok
+test fault_contract::tests::extra_checks_must_also_hold_and_the_tsv_is_flat ... ok
+test fault_contract::tests::names_round_trip_and_unknown_is_none ... ok
+test fault::red_arm_without_its_fault_never_prints_the_pass_line ... ok
+test fault_contract::tests::a_missing_required_check_or_a_differing_restore_never_passes ... ok
+test fault_contract::tests::only_the_five_bound_arms_can_pass_and_three_continue ... ok
+test fault_contract::tests::red_arm_fault_not_injected_is_a_failure_not_a_pass_and_not_a_refusal ... ok
+test fault_contract::tests::refusal_arms_never_print_pass_even_when_every_check_holds ... ok
+test reclaim_contract::tests::exact_and_bounded_remain_distinct ... ok
+test reclaim_contract::tests::growing_shrinking_and_drifting_series_are_not_one_time_metadata ... ok
+test day11::the_reclaim_cycles_door_refuses_outside_a_diagnostic_vmm_series ... ok
+test reclaim_contract::tests::series_classes_follow_the_lead_ruling_and_never_promote ... ok
+test reclaim_contract::tests::series_verdict_lifts_tightening_e_only_under_lead_ruling_six ... ok
+test fault::every_arm_is_a_door_on_the_active_pooled_roundtrip_only ... ok
+test fault::committed_target_card_receipts_replay_their_verdicts ... ok
+test day11::a_growing_or_unreturned_residual_is_never_the_one_time_class ... ok
+test day12::an_exact_series_is_true_without_a_new_label_and_the_label_names_its_context ... ok
+test day12::ruling_six_red_arms_on_the_committed_bytes ... ok
+test day11::target_card_receipts_replayed_as_series_classify_without_promotion ... ok
+test day12::both_card_classes_day11_series_satisfy_ruling_six_offline_and_nothing_shorter_does ... ok
+
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/storage/mod.rs (target/debug/deps/storage-1825ca21bf643b79)
+
+running 53 tests
+test day2::charged_pool_pins_backing_once_until_last_slice_returns ... ok
+test bounded_reader_partial_acceptance_and_short_read_visibility ... ok
+test cancel_late_completion_keeps_source_and_slot_until_io_retires ... ok
+test day2::direct_alignment_and_short_eof_fail_closed ... ok
+test day2::revision_v11_pinned_lease ... ok
+test day2::revision_v11_pinned_quarantine ... ok
+test corruption_header_payload_padding_truncation_and_future_version_refused ... ok
+test day2::frozen_transfer_cancel_schedule_real_cpu_adapter ... ok
+test day3::aligned_extent_io_rejects_misalignment_and_truncation ... ok
+test day2::corrupt_backing_does_not_trap_explicit_charge_release ... ok
+test corrupt_or_missing_chunk_blocks_commit_and_read ... ok
+test day2::root_metadata_requires_canonical_v1_and_distinct_digest_domains ... ok
+test day2::host_take_once_stale_triples_and_consumer_retirement ... ok
+test day2::partial_acceptance_retains_rejected_device_and_refuses_batch_publication ... ok
+test day2::revision_v11_object_publish_release ... ok
+test day2::mixed_epoch_batch_returns_all_owned_inputs_and_missing_chunk_refuses_publish ... ok
+test day2::revision_v11_transfer_complete_cancel ... ok
+test day2::frozen_object_schedule_real_files_and_transaction_owner ... ok
+test day3::background_bytes_progress_without_drive_and_retire_after_consumer ... ok
+test day3::background_cancel_corrupt_and_failed_siblings_never_publish ... ok
+test day4::catalog_gc_reference_count_charges_tombstone_crash_replay ... ok
+test day3::background_runs_frozen_cancellation_and_post_completion_schedule ... ok
+test day3::common_governor_preserves_mandatory_pool_and_object_headroom ... ok
+test day3::direct_mode_is_explicit_and_never_silently_falls_back ... ok
+test day2::persistent_restart_ignores_partial_pending_root_and_chunks ... ok
+test day3::extent_lease_is_bounded_lazy_charged_and_rechecks_corruption ... ok
+test day2::bench_real_roundtrip_reopen_restore_uncached_and_red_modes ... ok
+test day4::catalog_gc_process_exit_between_tombstone_and_unlink ... ok
+test day4::review_gc_live_cross_process_transaction_commits_byte_exact ... ok
+test day4::review_gc_staged_transaction_process_exit_and_bounded_recovery ... ok
+test exact_pread_eintr_partial_eof_overflow ... ok
+test fake_pool_reserves_demand_headroom_and_charges_padding ... ok
+test day4::catalog_gc_unknown_completion_retains_lock_and_charge ... ok
+test day4::catalog_install_quota_failure_cleans_only_owned_files ... ok
+test jsonl_escapes_strings_and_unknown_times_are_null ... ok
+test day4::legacy_gc_unknown_shutdown_retains_shared_ownership ... ok
+test day4::legacy_gc_replays_crash_after_tombstone_and_before_unlink ... ok
+test day4::review_gc_verification_failure_does_not_revoke_visibility ... ok
+test retirement::cancelled_transfer_needs_disk_dma_consumer_and_graph_retirement ... ok
+test retirement::lost_transfer_completion_is_quarantined_on_drop ... ok
+test incomplete_enospc_short_write_and_interrupted_commit_never_publish ... ok
+test unknown_completion_quarantines_not_reuses ... ok
+test day4::sharded_catalog_lazy_payload_corruption_missing_sibling_and_index_binding ... ok
+test day4::review_gc_cancel_removes_staging_and_corrupt_staging_is_noop ... ok
+test day4::review_catalog_recovers_pending_with_and_without_published_root ... ok
+test day4::review_gc_preserves_uncommitted_transaction_chunks ... ok
+test root_collision_identity_and_immutable_conflicts_fail_closed ... ok
+test day4::legacy_gc_dedup_other_store_and_live_lease_fences ... ok
+test real_filesystem_reopen_and_conflict_do_not_clobber ... ok
+test publication_is_last_and_streams_object_larger_than_pool ... ok
+test header_valid_vs_padded_and_full_integrity ... ok
+test day4::sharded_catalog_200gb_metadata_only_constant_touch_cost ... ok
+test telemetry::telemetry_join_schema_cumulative_bytes_unknowns_and_bounded_intervals ... ok
+
+test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.48s
+
+   Doc-tests memra_gguf
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests memra_kv
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests memra_tier
+
+running 4 tests
+test crates/memra-tier/src/contracts.rs - contracts::UniformLease (line 1786) - compile fail ... ok
+test crates/memra-tier/src/bank/adapters.rs - bank::adapters::with_uniform_experts (line 150) - compile fail ... ok
+test crates/memra-tier/src/contracts.rs - contracts::ContiguousCopy (line 1342) - compile fail ... ok
+test crates/memra-tier/src/contracts.rs - contracts::ChargedLease (line 868) - compile fail ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+

@@ -1,0 +1,44 @@
+{
+ "object": "chat.completion",
+ "model": "gate",
+ "choices": [
+  {
+   "index": 0,
+   "message": {
+    "role": "assistant",
+    "content": null,
+    "reasoning": "The user is asking me to open notes/tide-gauges.md and tell them what the first section says. Let me read the file.\n",
+    "reasoning_details": [
+     {
+      "type": "reasoning.text",
+      "text": "The user is asking me to open notes/tide-gauges.md and tell them what the first section says. Let me read the file.\n"
+     }
+    ],
+    "tool_calls": [
+     {
+      "id": "call_374a23caaf94ff31",
+      "type": "function",
+      "function": {
+       "name": "read_file",
+       "arguments": "{\"path\":\"notes/tide-gauges.md\"}"
+      }
+     }
+    ]
+   },
+   "finish_reason": "tool_calls"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 452,
+  "completion_tokens": 63,
+  "total_tokens": 515,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 0.938960707
+ },
+ "id": "chatcmpl-6c30323b806c27cd5daf65cb7c2f6eda",
+ "created": 1790328614,
+ "system_fingerprint": "memra-0.138.0-7675f6ce8cc2",
+ "_gate_wall_ms": 954.7952439170331
+}

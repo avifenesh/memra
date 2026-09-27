@@ -1,0 +1,149 @@
+== binary and card
+  source 5f8d327e25df2567673b4a61b16e4874dfc56fde
+  binary sha256 3d5386e6c2e1c3d4809390e5661dc050144a6dd4e31eb53682633381558ec674
+  card NVIDIA RTX PRO 6000 Blackwell Server Edition, 600.00 W, 600.00 W, 580.178.04
+  ok: card at its 600 W limit
+  ok: build exit 0
+  cells: bevict-off, bevict-on, bnewest-off, bnewest-on, hostgate-failure-off-default, hostgate-failure-on-default, hostgate-identity-off-default, hostgate-identity-off-plain, hostgate-identity-on-default, hostgate-identity-on-plain, smoke-off, smoke-on, tenant-off, tenant-on
+  ok: fourteen cells captured  14
+  captured on a retry (rig lock busy on the earlier attempts): hostgate-identity-off-default-retry2
+  ok: bevict-off: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: bevict-off: ran the day-15 binary
+  ok: bevict-off: collector --validate exit 0
+  ok: bevict-on: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: bevict-on: ran the day-15 binary
+  ok: bevict-on: collector --validate exit 0
+  ok: bnewest-off: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: bnewest-off: ran the day-15 binary
+  ok: bnewest-off: collector --validate exit 0
+  ok: bnewest-on: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: bnewest-on: ran the day-15 binary
+  ok: bnewest-on: collector --validate exit 0
+  ok: hostgate-failure-off-default: collector captured the cell at 600 W  status=failed exit=1
+  ok: hostgate-failure-off-default: ran the day-15 binary
+  ok: hostgate-failure-off-default: collector --validate exit 0
+  ok: hostgate-failure-on-default: collector captured the cell at 600 W  status=failed exit=1
+  ok: hostgate-failure-on-default: ran the day-15 binary
+  ok: hostgate-failure-on-default: collector --validate exit 0
+  ok: hostgate-identity-off-default: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: hostgate-identity-off-default: ran the day-15 binary
+  ok: hostgate-identity-off-default: collector --validate exit 0
+  ok: hostgate-identity-off-plain: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: hostgate-identity-off-plain: ran the day-15 binary
+  ok: hostgate-identity-off-plain: collector --validate exit 0
+  ok: hostgate-identity-on-default: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: hostgate-identity-on-default: ran the day-15 binary
+  ok: hostgate-identity-on-default: collector --validate exit 0
+  ok: hostgate-identity-on-plain: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: hostgate-identity-on-plain: ran the day-15 binary
+  ok: hostgate-identity-on-plain: collector --validate exit 0
+  ok: smoke-off: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: smoke-off: ran the day-15 binary
+  ok: smoke-off: collector --validate exit 0
+  ok: smoke-on: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: smoke-on: ran the day-15 binary
+  ok: smoke-on: collector --validate exit 0
+  ok: tenant-off: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: tenant-off: ran the day-15 binary
+  ok: tenant-off: collector --validate exit 0
+  ok: tenant-on: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: tenant-on: ran the day-15 binary
+  ok: tenant-on: collector --validate exit 0
+== kv-host-spill-identity-gate, DEFAULT spec environment (draft-bearing entries over Option B's D2H), door OFF vs ON
+  ok: [default] verdict lines identical  13 lines
+  ok: [default] both arms ALL GREEN
+  ok: [default] [prefix-host] demote: byte counts equal  demote: 89 tokens, 160.7MB (host resident 160.7MB / 8590MB, model gate) | demote: 86 tokens, 160.6MB (host resident 321.3MB / 8590MB, model gate)
+  ok: [default] ON: verify ok on every promote, every other verify ok is the named device-side skip  promotes=1 verify_ok=1 skips=0
+  ok: [default] promote, verify and skip counts equal across arms
+  ok: [default] prefix-cache and prefix-host event sequence identical across arms (timings stripped, door lines excluded)  16 events
+  ok: [default] OFF: no contract receipt line (the route is door-only)
+  ok: [default] ON: door ON line names Option B and the in-flight bound
+  ok: [default] ON: no host-tier refusal line of any kind
+  ok: [default] the device cache's typed lines are the same in both arms (lane B's refusal is not a door effect)
+  ok: [default] ON: every receipt line parses  lines=2 parsed=2
+  ok: [default] ON: one receipt per demote  receipts=2 demotes=2
+  ok: [default] ON: each receipt precedes its demote line
+  ok: [default] ON: receipt seq 1: epochs 0/1/1, items = 2 x planes, complete = items, draft plane present  items=34 planes=16 draft=True complete=34
+  ok: [default] ON: receipt seq 2: epochs 0/1/1, items = 2 x planes, complete = items, draft plane present  items=34 planes=16 draft=True complete=34
+  ok: [default] ON: ticket sequence strictly increasing, one issuer
+  ok: [default] ON: one checksum digest per distinct entry (a re-demoted entry repeats its digest)  2 digests over 2 demotes
+  ok: [default] ON: no receipt mismatch refusal
+  ok: [default] OFF twin boots print no [prefix-host] line in either arm
+  ok: [default] off: r3 served a strict-prefix hit (0 < cached < prompt)  cached=89 prompt=102
+  ok: [default] on: r3 served a strict-prefix hit (0 < cached < prompt)  cached=89 prompt=102
+  ok: [default] r1 and r3 texts identical across door arms
+  ok: [default] both arms: the demoted entries were spec-boundary (draft-bearing) inserts
+== kv-host-spill-identity-gate, MEMRA_SERVE_SPEC=0 (the day-13 plain surface, regression), door OFF vs ON
+  ok: [plain] verdict lines identical  13 lines
+  ok: [plain] both arms ALL GREEN
+  ok: [plain] [prefix-host] demote: byte counts equal  demote: 89 tokens, 160.5MB (host resident 160.5MB / 8590MB, model gate) | demote: 86 tokens, 160.4MB (host resident 321.0MB / 8590MB, model gate)
+  ok: [plain] ON: verify ok on every promote, every other verify ok is the named device-side skip  promotes=1 verify_ok=1 skips=0
+  ok: [plain] promote, verify and skip counts equal across arms
+  ok: [plain] prefix-cache and prefix-host event sequence identical across arms (timings stripped, door lines excluded)  15 events
+  ok: [plain] OFF: no contract receipt line (the route is door-only)
+  ok: [plain] ON: door ON line names Option B and the in-flight bound
+  ok: [plain] ON: no host-tier refusal line of any kind
+  ok: [plain] the device cache's typed lines are the same in both arms (lane B's refusal is not a door effect)
+  ok: [plain] ON: every receipt line parses  lines=2 parsed=2
+  ok: [plain] ON: one receipt per demote  receipts=2 demotes=2
+  ok: [plain] ON: each receipt precedes its demote line
+  ok: [plain] ON: receipt seq 1: epochs 0/1/1, items = 2 x planes, complete = items, draft plane absent  items=32 planes=16 draft=False complete=32
+  ok: [plain] ON: receipt seq 2: epochs 0/1/1, items = 2 x planes, complete = items, draft plane absent  items=32 planes=16 draft=False complete=32
+  ok: [plain] ON: ticket sequence strictly increasing, one issuer
+  ok: [plain] ON: one checksum digest per distinct entry (a re-demoted entry repeats its digest)  2 digests over 2 demotes
+  ok: [plain] ON: no receipt mismatch refusal
+  ok: [plain] OFF twin boots print no [prefix-host] line in either arm
+  ok: [plain] off: r3 served a strict-prefix hit (0 < cached < prompt)  cached=89 prompt=102
+  ok: [plain] on: r3 served a strict-prefix hit (0 < cached < prompt)  cached=89 prompt=102
+  ok: [plain] r1 and r3 texts identical across door arms
+== kv-host-spill-failure-gate, DEFAULT spec environment, door OFF vs ON
+  ok: [default] verdict lines identical  15 lines
+  ok: [default] both arms: exactly one FAIL, the pre-existing pool-full LOUD-and-named assertion
+  ok: [default] poolfull cell: tier event lines identical (timings stripped, door lines excluded)  2 lines
+  ok: [default] digest cell: tier event lines identical (timings stripped, door lines excluded)  5 lines
+  ok: [default] alloc cell: tier event lines identical (timings stripped, door lines excluded)  2 lines
+  ok: [default] digest cell: the flipped byte is caught at promote in both arms
+  ok: [default] digest cell ON: the receipt precedes the flip and the bind names the injected difference, no refusal
+  ok: [default] alloc cell: the tier latches off in both arms
+  ok: [default] alloc cell ON: the fault fires before any plane leaves the entry (no receipt, no quarantine)
+  ok: [default] pool-full: the tenant share cap evaporates before the D2H in both arms (pre-existing)
+  ok: [default] ON: no door refusal line in any cell (the alloc cell's latch and the pool-full evaporation are the OFF shape)
+== lane A kv-host-tenant-reclaim-gate (fix arm), door OFF vs ON
+  ok: verdict lines identical  29 lines
+  ok: both arms PASS
+  ok: [prefix-host] demote: byte counts equal  demote: 83 tokens, 160.5MB (host resident 160.5MB / 1074MB, model gate, ns "t:beta\u{1f}s1") | demote: 89 tokens, 160.7MB (host resident 321.2MB / 1074MB, model gate, ns "t:acme\u{1f}s1") | demote: 86 tokens, 160.6MB (host resident 481.9MB / 1074MB, model gate, ns "t:acme\u{1f}s1") | demote: 93 tokens, 160.8MB (host resident 482.0MB / 1074MB, model gate, ns "t:acme\u{1f}s1") | demote: 93 tokens, 160.8MB (host resident 482.2MB / 1074MB, model gate, ns "t:acme\u{1f}s1") | demote: 95 tokens, 160.9MB (host resident 482.3MB / 1074MB, model gate, ns "t:acme\u{1f}s1") | demote: 96 tokens, 160.9MB (host resident 643.2MB / 1074MB, model gate, ns "t:beta\u{1f}s1") | demote: 83 tokens, 160.5MB (host resident 643.2MB / 1074MB, model gate, ns "t:beta\u{1f}s1")
+  ok: demote, reclaim-evict and promote sequence identical across arms  13 events
+  ok: ON: reclaim evictions run after the transfer (a receipt precedes every tenant-share evict line's demote)
+  ok: ON: no host-tier refusal line of any kind
+  ok: tenant ON: every receipt line parses  lines=8 parsed=8
+  ok: tenant ON: one receipt per demote  receipts=8 demotes=8
+  ok: tenant ON: each receipt precedes its demote line
+  ok: tenant ON: receipt seq 1: epochs 0/1/1, items = 2 x planes, complete = items, draft plane present  items=34 planes=16 draft=True complete=34
+  ok: tenant ON: receipt seq 2: epochs 0/1/1, items = 2 x planes, complete = items, draft plane present  items=34 planes=16 draft=True complete=34
+  ok: tenant ON: receipt seq 3: epochs 0/1/1, items = 2 x planes, complete = items, draft plane present  items=34 planes=16 draft=True complete=34
+  ok: tenant ON: receipt seq 4: epochs 0/1/1, items = 2 x planes, complete = items, draft plane present  items=34 planes=16 draft=True complete=34
+  ok: tenant ON: receipt seq 5: epochs 0/1/1, items = 2 x planes, complete = items, draft plane present  items=34 planes=16 draft=True complete=34
+  ok: tenant ON: receipt seq 6: epochs 0/1/1, items = 2 x planes, complete = items, draft plane present  items=34 planes=16 draft=True complete=34
+  ok: tenant ON: receipt seq 7: epochs 0/1/1, items = 2 x planes, complete = items, draft plane present  items=34 planes=16 draft=True complete=34
+  ok: tenant ON: receipt seq 8: epochs 0/1/1, items = 2 x planes, complete = items, draft plane present  items=34 planes=16 draft=True complete=34
+  ok: tenant ON: ticket sequence strictly increasing, one issuer
+  ok: tenant ON: one checksum digest per distinct entry (a re-demoted entry repeats its digest)  7 digests over 8 demotes
+  ok: tenant ON: no receipt mismatch refusal
+== serve-smoke (plain + cache-metering arms), door OFF vs ON
+  ok: verdict lines identical  33 lines
+  ok: both arms `serve-smoke: 0 failed`
+  ok: both arms carry the cache-metering PASS line
+  ok: OFF server log has no [prefix-host] or door line
+  ok: ON server log: no host tier, one door line under its own tag, no [prefix-host] line
+== lane B evict gate, door OFF vs ON
+  ok: evict: verdict lines identical  1 lines
+  ok: evict: verdict line present  PREFIX-EVICT-RECLAIM: entry_bytes=1592160256 reclaim_credit_bytes=1751000000 driver_free_delta_bytes=1610612736 trim_released_bytes=1610612736 pool_retained_bytes=140549120 p2=admit-same-tick busy_overlap_s=21.659 identity=aa6cc3291b981646 V1=ok V2=ok V3=ok V4=ok -> PASS
+  ok: evict: no [prefix-host] line in either arm (no host tier on these boots)
+  ok: evict: ON boots announce the door with nothing to route
+== lane B newest gate, door OFF vs ON
+  ok: newest: verdict lines identical  1 lines
+  ok: newest: verdict line present  PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=737943552 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 protected_evictions=2 refused_or_skipped=0 effective_free_ok=8/8 V1=ok V2=ok V3=ok V4=ok -> PASS
+  ok: newest: no [prefix-host] line in either arm (no host tier on these boots)
+  ok: newest: ON boots announce the door with nothing to route
+
+DAY15 REPLAY: PASS

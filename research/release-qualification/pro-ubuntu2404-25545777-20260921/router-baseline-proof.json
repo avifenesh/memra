@@ -1,0 +1,49 @@
+{
+  "schema": "memra-router-baseline-proof-v1",
+  "head": "2554577794c0b57b0630c7cf7e0e7b15b8793735",
+  "source_digest": "fd1b549a56413ae3b95d848c974ddbab047f079652233d4be60a4d60a8dbd41f",
+  "raw_log": {
+    "path": "cells/1-kernel.log",
+    "sha256": "abf1be97b2ae418e5c7aa229f44d0cbfdee12c00c6b155b55340dda38996da36"
+  },
+  "positive_lines": [
+    {
+      "line": 515,
+      "text": "router batch-twin bit-identity (real q35 router, 32 m-points 1..2048): mism=0 OK",
+      "occurrences": 1
+    },
+    {
+      "line": 516,
+      "text": "router batch-twin m-invariance (rows vs plain m=2048 prefix): mism=0 OK",
+      "occurrences": 1
+    }
+  ],
+  "router_verdict": {
+    "cell": "fast-router-batch",
+    "m_points": 32,
+    "m_range": [
+      1,
+      2048
+    ],
+    "bit_mismatches": 0,
+    "m_invariance_mismatches": 0
+  },
+  "kernel_ELF": {
+    "bytes": 43882864,
+    "format": "ELF-x86_64",
+    "sha256": "bd7ea18ecb65ff839fa08c6ea971b7d9c6bbee28220ede2745ec5717ccd43a4b"
+  },
+  "build_sha256": "27fd493e4e352d5f13b9935a0cbb59c2e09809fb420fe2eb5e11e73a3b7b12e9",
+  "model_path": "/data/models/kernel-oracles/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf",
+  "model_before_after": {
+    "bytes": 17730509792,
+    "sha256": "649d7508507b84638732c4f52c24c8b15843c6dca2f3ff793ae07c14a67ebbb3"
+  },
+  "completed_lease_sha256": "43ad9705eb06039438a027aa8d7753c94d018ffdb9a5e4dbb3b4dc1cd8f46bfa",
+  "wrapper_pid": 1275711,
+  "child_pid": 1275716,
+  "wrapper_exit": 0,
+  "child_exit": 0,
+  "separate_router_GPU_run": false,
+  "claim_scope": "Actual generic kernel raw: real 35B router, 32 m-points 1..2048 bit identity and m-invariance; no broader serving claim"
+}

@@ -52,7 +52,8 @@
 //!           of budget (worker.rs prefill_tick bound_rem) and the second call RESUMES at the
 //!           unaligned position L. Any LCP in [64, win=512] reproduced the FA-prefix defect
 //!           on an interactive request. Rows print as `sp<L>`.
-//!   primepath <model> primepath --prompt-a <txt|@file> [--suffix <txt|@file>] [--hist K]
+//!   primepath <model> primepath --prompt-a <txt|@file> [--suffix <txt|@file>] [--hist K] [--rewind] [--prompt-tokens N]
+//!                               [--suffix-tokens N]
 //!                               [--splits L1,L2,...] [--steps N] [--chat]
 //!           PRIME-PATH DIVERGENCE PROFILER (lane/spec-longctx-20260821 — the GATES-SMOKE
 //!           B3 class, with B1 folded in per FRSPEC-FIX §3.2): the same token sequence
@@ -76,6 +77,25 @@
 //!           --hist K (needs --suffix): sequence = prompt-a ++ K greedy tokens ++ suffix;
 //!           the hist arm keeps the live prime(A)+decode(K) cache and primes the suffix on
 //!           top (restored-conversation shape); mono re-renders the same bytes cold.
+//!           --rewind (needs --hist; WP-B day 41): the grid-checkpoint rewind arm: prime(A)
+//!           stopped and snapshotted at the grid boundary b, the same K tokens decoded, a
+//!           rollback to b, then the sequence from b primed; expected EXACT against mono.
+//!           Each of hist and rewind prints a `cost` line (suffix rows, wall ms).
+//!   callcost <model> callcost --prompt-a <txt|@file> --prompt-tokens L [--rows 32,64,288] [--reps 5]
+//!                             [--gap-ms 50]
+//!           WP-B day 50 stage 0 (research/spill-b-20260919/DAY50.md 1.2): the wall of ONE prime call of R
+//!           rows at context L, the settle and resume shape. Primes [0, L) once, snapshots, then per R and
+//!           rep restores the snapshot, sleeps --gap-ms (so a kernel trace separates the calls by an idle
+//!           gap), and times prime_cache([L, L+R)) between two stream synchronizes. One untimed warm-up
+//!           call per R; the same idle gap also precedes each restore. Prints `callcost L=.. R=.. N=.. wall_ms
+//!           p50=.. min=.. max=.. all=[..]`.
+//!   tickshape <model> tickshape --ids-a <json> --ids-b <json> --ids-c <json> [--tick 1024]
+//!                               [--steps 32] [--join 4] [--arms ref,ref2,tick,bp,bps,wave]
+//!                               [--canary]
+//!           memra#641 serving-shape replay: peer B primed in fresh then carried [A, B, C]
+//!           tick batches, in solo tick calls, and through a [B, C] decode wave, each arm
+//!           teacher-forced and compared bitwise (logits, hidden rows, cache digests, every
+//!           decode step) against prime_cache(B) in one call. Gate: tools/prime-tick-exact-gate.sh.
 
 use memra_engine::Engine;
 use memra_engine::cache::Cache;
@@ -1579,6 +1599,77 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // PRIME-PATH DIVERGENCE PROFILER — see the module doc. The GATES-SMOKE-20260821 B3
         // shapes at engine level: monolithic vs boundary-stopped vs decode-history prime
         // programs over ONE token sequence, with the near-tie-vs-defect discriminators.
+        "callcost" => {
+            // WP-B day 50 stage 0 (DAY50 1.2): one prime call of R rows at context L, timed.
+            let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
+            let l: usize = arg(&rest, "--prompt-tokens")
+                .and_then(|v| v.parse().ok())
+                .expect("--prompt-tokens L");
+            let rows: Vec<usize> = arg(&rest, "--rows")
+                .unwrap_or_else(|| "32,64,288".into())
+                .split(',')
+                .filter_map(|v| v.trim().parse().ok())
+                .collect();
+            let reps: usize = arg(&rest, "--reps")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(5);
+            let gap_ms: u64 = arg(&rest, "--gap-ms")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(50);
+            let min_t = memra_engine::hybrid_forward::PRIME_MIN_T;
+            let r_max = rows.iter().copied().max().expect("--rows");
+            assert!(
+                rows.iter().all(|&r| r >= min_t),
+                "every R must be >= PRIME_MIN_T={min_t}"
+            );
+            let mut ta = encode_prompt(&cx.tok, &pa, chat);
+            let need = l + r_max;
+            while ta.len() < need {
+                let more = ta.clone();
+                ta.extend_from_slice(&more);
+            }
+            ta.truncate(need);
+            let mut c = Cache::new(&cx.e, &cx.model.cfg, cx.ctx_len.max(need + 8))?;
+            let t0 = std::time::Instant::now();
+            let _ = cx.model.prime_cache(&cx.e, &ta[..l], &mut c, 0)?;
+            cx.e.stream().synchronize()?;
+            println!(
+                "callcost setup: L={l} primed in {:.1} ms",
+                t0.elapsed().as_secs_f64() * 1e3
+            );
+            let snap = c.snapshot(&cx.e)?;
+            for &r in &rows {
+                let mut walls: Vec<f64> = Vec::with_capacity(reps);
+                for rep in 0..=reps {
+                    // An idle gap before the restore and before the call, so a kernel trace reads
+                    // setup, restore, call, restore, call ... as separate clusters.
+                    std::thread::sleep(std::time::Duration::from_millis(gap_ms));
+                    memra_engine::pp::restore_cache_checkpoint(
+                        &cx.e, &cx.model, None, &mut c, &snap,
+                    )?;
+                    cx.e.stream().synchronize()?;
+                    assert_eq!(c.pos, l, "the restore landed off the snapshot");
+                    std::thread::sleep(std::time::Duration::from_millis(gap_ms));
+                    let t0 = std::time::Instant::now();
+                    let _ = cx.model.prime_cache(&cx.e, &ta[l..l + r], &mut c, 0)?;
+                    cx.e.stream().synchronize()?;
+                    let w = t0.elapsed().as_secs_f64() * 1e3;
+                    if rep > 0 {
+                        walls.push(w);
+                    }
+                }
+                let mut sorted = walls.clone();
+                sorted.sort_by(|a, b| a.total_cmp(b));
+                let all: Vec<String> = walls.iter().map(|w| format!("{w:.2}")).collect();
+                println!(
+                    "callcost L={l} R={r} N={reps} wall_ms p50={:.2} min={:.2} max={:.2} all=[{}]",
+                    sorted[sorted.len() / 2],
+                    sorted[0],
+                    sorted[sorted.len() - 1],
+                    all.join(",")
+                );
+            }
+        }
         "primepath" => {
             let pa = text_arg(&rest, "--prompt-a").expect("--prompt-a");
             let steps: usize = arg(&rest, "--steps")
@@ -1593,13 +1684,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0);
             let suffix = text_arg(&rest, "--suffix");
+            // WP-B day 41: the grid-checkpoint rewind arm beside `hist` (needs --hist).
+            let rewind = rest.iter().any(|a| a == "--rewind");
             let structured_row: f32 = arg(&rest, "--structured-row")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0.5);
             let structured_margin: f32 = arg(&rest, "--structured-margin")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(0.5);
-            let ta = encode_prompt(&cx.tok, &pa, chat);
+            let mut ta = encode_prompt(&cx.tok, &pa, chat);
+            // WP-B day 41: an exact prompt length in tokens (the grid cells' L).
+            if let Some(n) = arg(&rest, "--prompt-tokens").and_then(|v| v.parse::<usize>().ok()) {
+                assert!(
+                    ta.len() >= n,
+                    "prompt has {} tokens, fewer than --prompt-tokens {n}",
+                    ta.len()
+                );
+                ta.truncate(n);
+            }
             let n_embd = cx.model.cfg.n_embd as usize;
             let min_t = memra_engine::hybrid_forward::PRIME_MIN_T;
             let cap = |t: usize| cx.ctx_len.max(t + steps + hist_k + 8);
@@ -1607,6 +1709,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // The token sequence under test. --hist K: prompt-a ++ the model's OWN K greedy
             // tokens (decoded on what becomes the hist arm's live cache) ++ suffix.
             let mut hist_live: Option<Cache> = None;
+            let mut hist_tokens: Vec<u32> = Vec::new();
             let mut seq = ta.clone();
             if hist_k > 0 {
                 let sb = suffix
@@ -1621,13 +1724,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     tk = argmax(&l) as u32;
                     d.push(tk);
                 }
-                let tb = cx.tok.encode(sb, false);
+                let mut tb = cx.tok.encode(sb, false);
+                if let Some(n) = arg(&rest, "--suffix-tokens").and_then(|v| v.parse::<usize>().ok())
+                {
+                    assert!(
+                        tb.len() >= n,
+                        "suffix has {} tokens, fewer than --suffix-tokens {n}",
+                        tb.len()
+                    );
+                    tb.truncate(n);
+                }
                 assert!(
                     tb.len() >= min_t,
                     "suffix must be >= PRIME_MIN_T={min_t} tokens"
                 );
                 seq.extend_from_slice(&d);
                 seq.extend_from_slice(&tb);
+                hist_tokens = d;
                 hist_live = Some(c);
             }
             let t = seq.len();
@@ -1813,8 +1926,54 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if let Some(c) = hist_live.take() {
                 let fed = c.pos;
+                let t0 = std::time::Instant::now();
                 let (h, lg, s, m, sl) = run_program(&[t - fed], Some(c))?;
+                let wall = t0.elapsed().as_secs_f64() * 1e3;
                 report("hist", &h, &lg, &s, &m, &sl, false);
+                println!(
+                    "cost hist: suffix_rows {} wall_ms {wall:.1} (prime + {steps} greedy steps)",
+                    t - fed
+                );
+            }
+            // REWIND (WP-B day 41, DAY41 1.2): turn 1 primed with a stop and a snapshot at the grid
+            // boundary b (the serving checkpoint's raw-prompt rule: the grid at or below the prompt
+            // end less PLAIN_CKPT_RAW_GUARD, with at least PRIME_MIN_T rows after it), primed on to
+            // its end, the same hist tokens decoded, a rollback to b, then seq[b..] primed. By the
+            // grid law the arm is the split-at-b program, which the monolithic reference must equal.
+            if rewind && hist_k > 0 {
+                let grid = memra_engine::Engine::gdn_chunk_size().max(1);
+                let mut b = ta.len().saturating_sub(16) / grid * grid;
+                while b > 0 && ta.len() - b < min_t {
+                    b -= grid;
+                }
+                assert!(b >= min_t, "prompt too short for a grid checkpoint (b={b})");
+                let mut c = Cache::new(&cx.e, &cx.model.cfg, cap(t))?;
+                // Turn 1 as serving primes it: its own prompt only (the queued rows are turn 1's).
+                let _ = cx
+                    .model
+                    .prime_cache(&cx.e, &ta[..b], &mut c, ta.len() - b)?;
+                let snap = c.snapshot(&cx.e)?;
+                let (l0, _, _) = cx.model.prime_cache(&cx.e, &ta[b..], &mut c, 0)?;
+                assert_eq!(
+                    argmax(&l0) as u32,
+                    hist_tokens[0],
+                    "turn 1's first token moved"
+                );
+                for &tk in &hist_tokens[..hist_tokens.len() - 1] {
+                    let _ = cx.model.decode_step_h(&cx.e, tk, &mut c)?;
+                }
+                memra_engine::pp::restore_cache_checkpoint(&cx.e, &cx.model, None, &mut c, &snap)?;
+                assert_eq!(c.pos, b, "the rollback landed off the checkpoint");
+                let t0 = std::time::Instant::now();
+                let (h, lg, s, m, sl) = run_program(&[t - b], Some(c))?;
+                let wall = t0.elapsed().as_secs_f64() * 1e3;
+                report("rewind", &h, &lg, &s, &m, &sl, false);
+                println!(
+                    "cost rewind: checkpoint {b} suffix_rows {} (re-primed {} over hist) wall_ms {wall:.1} \
+                     (prime + {steps} greedy steps)",
+                    t - b,
+                    ta.len() + hist_k - b
+                );
             }
         }
 
@@ -2628,6 +2787,381 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                  (T={t}, chunks={chunks_s}, {steps} decode steps, \
                  {soak} pipelined primes per chunk)"
             );
+        }
+
+        "tickshape" => {
+            // memra#641 (lane/decode-exact-641-20260923): the serving-shape replay of the one
+            // divergent prime-fairness gate run. Peer B's prompt is primed the way the
+            // non-yielding tick primed it: two `--tick`-row concat batches [A, B, C] (the
+            // first fresh, the second carried), then C's remaining rows in solo tick calls,
+            // then B decodes B=1 until `--join` and in a [B, C] wave from there. Every arm is
+            // teacher-forced on the solo reference's greedy tokens, so each step's logits are
+            // compared bitwise against the same input. Arms (`--arms`, comma list):
+            //   ref   prime_cache(B) in one call, decode B=1: the solo plain program
+            //   ref2  ref again: the per-program determinism pin, must be EXACT
+            //   tick  prime_cache(B) in `--tick`-row calls, decode B=1
+            //   bp    the concat batches [A, B, C], then B decodes B=1 throughout
+            //   bps   bp, C's solo tick calls, B=1 until --join, then the [B, C] wave
+            //   wave  ref's prime, C primed in one solo call, B=1 until --join, then [B, C]
+            // Prompts are token-id JSON arrays (`--ids-a/-b/-c`), the gate's exact ids.
+            // `--canary` changes the world, not the label: B's first token inside the bp/bps
+            // batches is replaced, so a comparator that still reports those arms EXACT is blind.
+            let canary = rest.iter().any(|a| a == "--canary");
+            let read_ids = |key: &str| -> Result<Vec<u32>, Box<dyn std::error::Error>> {
+                let path = arg(&rest, key).ok_or_else(|| format!("{key} <ids.json>"))?;
+                let text = std::fs::read_to_string(&path)?;
+                let body = text.trim().trim_start_matches('[').trim_end_matches(']');
+                let ids = body
+                    .split(',')
+                    .map(|v| v.trim().parse::<u32>())
+                    .collect::<Result<Vec<u32>, _>>()?;
+                Ok(ids)
+            };
+            let ta = read_ids("--ids-a")?;
+            let tb = read_ids("--ids-b")?;
+            let tc = read_ids("--ids-c")?;
+            let tick: usize = arg(&rest, "--tick")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1024);
+            let steps: usize = arg(&rest, "--steps")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(32);
+            let join: usize = arg(&rest, "--join")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(4);
+            let arms: Vec<String> = arg(&rest, "--arms")
+                .unwrap_or_else(|| "ref,ref2,tick,bp,bps,wave".into())
+                .split(',')
+                .map(|a| a.trim().to_string())
+                .filter(|a| !a.is_empty())
+                .collect();
+            assert!(
+                ta.len() == tb.len() && tb.len() % tick == 0 && tc.len() % tick == 0,
+                "tickshape replays equal-length A/B prompts on whole ticks"
+            );
+            assert!(tc.len() > tb.len(), "C must outlast B's prime, as in #641");
+            let ctx = tc.len() + steps + 64;
+            let n_embd = cx.model.cfg.n_embd as usize;
+            let e = &cx.e;
+            let model = &cx.model;
+            println!(
+                "tickshape: T_a={} T_b={} T_c={} tick={tick} steps={steps} join={join} ctx={ctx} \
+                 arms={arms:?} canary={canary}",
+                ta.len(),
+                tb.len(),
+                tc.len()
+            );
+
+            fn fnv(bytes: &[u8]) -> u64 {
+                let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+                for &b in bytes {
+                    h ^= b as u64;
+                    h = h.wrapping_mul(0x0100_0000_01b3);
+                }
+                h
+            }
+            fn f32_bytes(v: &[f32]) -> Vec<u8> {
+                v.iter().flat_map(|x| x.to_bits().to_le_bytes()).collect()
+            }
+            fn bitcmp(a: &[f32], b: &[f32]) -> (usize, f32) {
+                if a.len() != b.len() {
+                    return (usize::MAX, f32::NAN);
+                }
+                let mut n = 0usize;
+                let mut m = 0f32;
+                for (x, y) in a.iter().zip(b) {
+                    if x.to_bits() != y.to_bits() {
+                        n += 1;
+                        m = m.max((x - y).abs());
+                    }
+                }
+                (n, m)
+            }
+            // Per-layer digest of the prime's cache side effects: the quantized K/V rows
+            // present and the GDN conv ring and recurrent state.
+            let digest = |c: &Cache| -> Result<Vec<(String, u64)>, Box<dyn std::error::Error>> {
+                let mut out = Vec::new();
+                for (il, kv) in c.kv.iter().enumerate() {
+                    if let Some(kvl) = kv {
+                        let kb = e.dtoh_u8_view(&e.view_u8(&kvl.k, kvl.len * kvl.k_tok_bytes))?;
+                        let vb = e.dtoh_u8_view(&e.view_u8(&kvl.v, kvl.len * kvl.v_tok_bytes))?;
+                        out.push((format!("L{il}.k"), fnv(&kb)));
+                        out.push((format!("L{il}.v"), fnv(&vb)));
+                    }
+                }
+                for (il, r) in c.recur.iter().enumerate() {
+                    if let Some(rl) = r {
+                        out.push((
+                            format!("L{il}.conv"),
+                            fnv(&f32_bytes(&e.dtoh(&rl.conv_state)?)),
+                        ));
+                        out.push((
+                            format!("L{il}.ssm"),
+                            fnv(&f32_bytes(&e.dtoh(&rl.ssm_state)?)),
+                        ));
+                    }
+                }
+                Ok(out)
+            };
+            struct PrimeObs {
+                logits: Vec<f32>,
+                h_seed: Vec<f32>,
+                hidden: Vec<f32>,
+                digest: Vec<(String, u64)>,
+            }
+            let decode1 = |t: u32, c: &mut Cache| -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+                let mut refs = [c];
+                Ok(model.decode_step_batch(e, &[t], &mut refs)?.remove(0))
+            };
+
+            // ---- ref: the solo plain program ----
+            let run_ref =
+                || -> Result<(PrimeObs, Vec<u32>, Vec<Vec<f32>>), Box<dyn std::error::Error>> {
+                    let mut c = Cache::new(e, &model.cfg, ctx)?;
+                    let (l, hs, hid) = model.prime_cache(e, &tb, &mut c, 0)?;
+                    let obs = PrimeObs {
+                        logits: l,
+                        h_seed: e.dtoh(&hs)?,
+                        hidden: e.dtoh(&hid)?,
+                        digest: digest(&c)?,
+                    };
+                    let mut toks = vec![argmax(&obs.logits) as u32];
+                    let mut logits = Vec::with_capacity(steps);
+                    for s in 1..=steps {
+                        let l = decode1(toks[s - 1], &mut c)?;
+                        toks.push(argmax(&l) as u32);
+                        logits.push(l);
+                    }
+                    Ok((obs, toks, logits))
+                };
+            let (ref_prime, ref_toks, ref_logits) = run_ref()?;
+            println!(
+                "ref: hidden rows={} first tok={} text={:?}",
+                ref_prime.hidden.len() / n_embd,
+                ref_toks[0],
+                cx.tok.decode(&ref_toks)
+            );
+
+            let mut all_exact = true;
+            let report = |name: &str, prime: &PrimeObs, dec: &[Vec<f32>]| -> bool {
+                let (lb, lm) = bitcmp(&ref_prime.logits, &prime.logits);
+                let (sb, _) = bitcmp(&ref_prime.h_seed, &prime.h_seed);
+                let (hb, hm) = bitcmp(&ref_prime.hidden, &prime.hidden);
+                let first_row = if hb == 0 || hb == usize::MAX {
+                    None
+                } else {
+                    (0..ref_prime.hidden.len() / n_embd).find(|&r| {
+                        ref_prime.hidden[r * n_embd..(r + 1) * n_embd]
+                            .iter()
+                            .zip(&prime.hidden[r * n_embd..(r + 1) * n_embd])
+                            .any(|(x, y)| x.to_bits() != y.to_bits())
+                    })
+                };
+                let diff_names: Vec<&str> = ref_prime
+                    .digest
+                    .iter()
+                    .zip(&prime.digest)
+                    .filter(|(x, y)| x.1 != y.1)
+                    .map(|(x, _)| x.0.as_str())
+                    .collect();
+                println!(
+                    "arm {name} prime: logits bitdiff={lb} maxabs={lm:.6e} argmax ref={} arm={} | \
+                     h_seed bitdiff={sb} | hidden bitdiff={hb} maxabs={hm:.6e} first_row={first_row:?} | \
+                     cache digests differ {}/{} first={:?}",
+                    argmax(&ref_prime.logits),
+                    argmax(&prime.logits),
+                    diff_names.len(),
+                    ref_prime.digest.len(),
+                    &diff_names[..diff_names.len().min(6)]
+                );
+                let mut first_bit: Option<usize> = None;
+                let mut first_flip: Option<usize> = None;
+                let mut per_step = Vec::new();
+                for (i, l) in dec.iter().enumerate() {
+                    let s = i + 1;
+                    let (b, m) = bitcmp(&ref_logits[i], l);
+                    per_step.push(format!("{s}:{b}"));
+                    if b > 0 && first_bit.is_none() {
+                        first_bit = Some(s);
+                        println!(
+                            "  first bit-different decode step {s}: bitdiff={b} maxabs={m:.6e}"
+                        );
+                    }
+                    if first_flip.is_none() && argmax(l) as u32 != ref_toks[s] {
+                        first_flip = Some(s);
+                        let (r1, rv1, r2, rv2) = top2(&ref_logits[i]);
+                        let (a1, av1, a2, av2) = top2(l);
+                        println!(
+                            "  first argmax flip at decode step {s}: ref tok={r1} (2nd {r2}, margin {:.6}) \
+                             arm tok={a1} (2nd {a2}, margin {:.6}); ref text to here {:?}",
+                            rv1 - rv2,
+                            av1 - av2,
+                            cx.tok.decode(&ref_toks[..=s])
+                        );
+                    }
+                }
+                println!("  per-step logits bitdiff: {}", per_step.join(" "));
+                let prime_flip = argmax(&prime.logits) as u32 != ref_toks[0];
+                let exact =
+                    lb == 0 && sb == 0 && hb == 0 && diff_names.is_empty() && first_bit.is_none();
+                println!(
+                    "arm {name} verdict: {}{}",
+                    if exact { "EXACT" } else { "DIFFERS" },
+                    if prime_flip || first_flip.is_some() {
+                        format!(
+                            " (greedy text diverges at token {})",
+                            if prime_flip { 0 } else { first_flip.unwrap() }
+                        )
+                    } else if !exact {
+                        " (greedy text unchanged for these steps)".to_string()
+                    } else {
+                        String::new()
+                    }
+                );
+                exact
+            };
+
+            for arm in &arms {
+                match arm.as_str() {
+                    "ref" => {
+                        all_exact &= report("ref", &ref_prime, &ref_logits);
+                    }
+                    "ref2" => {
+                        let (p, _t, l) = run_ref()?;
+                        all_exact &= report("ref2", &p, &l);
+                    }
+                    "tick" => {
+                        let mut c = Cache::new(e, &model.cfg, ctx)?;
+                        let mut hidden = Vec::new();
+                        let mut last = None;
+                        for chunk in tb.chunks(tick) {
+                            let (l, hs, hid) = model.prime_cache(e, chunk, &mut c, 0)?;
+                            hidden.extend(e.dtoh(&hid)?);
+                            last = Some((l, e.dtoh(&hs)?));
+                        }
+                        let (logits, h_seed) = last.unwrap();
+                        let p = PrimeObs {
+                            logits,
+                            h_seed,
+                            hidden,
+                            digest: digest(&c)?,
+                        };
+                        let mut dec = Vec::with_capacity(steps);
+                        for s in 1..=steps {
+                            dec.push(decode1(ref_toks[s - 1], &mut c)?);
+                        }
+                        all_exact &= report("tick", &p, &dec);
+                    }
+                    "bp" | "bps" => {
+                        let mut ca = Cache::new(e, &model.cfg, ctx)?;
+                        let mut cb = Cache::new(e, &model.cfg, ctx)?;
+                        let mut cc = Cache::new(e, &model.cfg, ctx)?;
+                        let mut hidden = Vec::new();
+                        let mut last = None;
+                        let mut tb_arm = tb.clone();
+                        if canary {
+                            tb_arm[0] = if tb_arm[0] == 0 { 1 } else { tb_arm[0] - 1 };
+                        }
+                        for k in 0..tb.len() / tick {
+                            let r = k * tick..(k + 1) * tick;
+                            let prompts: [&[u32]; 3] = [&ta[r.clone()], &tb_arm[r.clone()], &tc[r]];
+                            let mut refs: Vec<&mut Cache> = vec![&mut ca, &mut cb, &mut cc];
+                            let mut outs = model.prime_cache_batch(e, &prompts, &mut refs)?;
+                            drop(outs.remove(2));
+                            let (lb_, hs, hid) = outs.remove(1);
+                            hidden.extend(e.dtoh(&hid)?);
+                            last = Some((lb_, e.dtoh(&hs)?));
+                        }
+                        drop(ca);
+                        let (logits, h_seed) = last.unwrap();
+                        let p = PrimeObs {
+                            logits,
+                            h_seed,
+                            hidden,
+                            digest: digest(&cb)?,
+                        };
+                        let mut dec = Vec::with_capacity(steps);
+                        if arm == "bp" {
+                            for s in 1..=steps {
+                                dec.push(decode1(ref_toks[s - 1], &mut cb)?);
+                            }
+                        } else {
+                            // C's remaining rows land one solo tick call per scheduler tick,
+                            // interleaved with B's B=1 decode exactly as the #641 trace shows:
+                            // the last C chunk completes in the tick of B's step `join`.
+                            let c_rest: Vec<&[u32]> = tc[tb.len()..].chunks(tick).collect();
+                            let mut c_next: Option<u32> = None;
+                            let mut c_i = 0usize;
+                            for s in 1..=steps {
+                                let ticks_left = join.saturating_sub(s);
+                                if c_i < c_rest.len() && c_rest.len() - c_i > ticks_left {
+                                    let (l, _, _) =
+                                        model.prime_cache(e, c_rest[c_i], &mut cc, 0)?;
+                                    c_i += 1;
+                                    if c_i == c_rest.len() {
+                                        c_next = Some(argmax(&l) as u32);
+                                    }
+                                }
+                                if s < join || c_next.is_none() {
+                                    dec.push(decode1(ref_toks[s - 1], &mut cb)?);
+                                } else {
+                                    let ct = c_next.unwrap();
+                                    let mut refs = [&mut cb, &mut cc];
+                                    let mut rows = model.decode_step_batch(
+                                        e,
+                                        &[ref_toks[s - 1], ct],
+                                        &mut refs,
+                                    )?;
+                                    c_next = Some(argmax(&rows[1]) as u32);
+                                    dec.push(rows.remove(0));
+                                }
+                            }
+                        }
+                        all_exact &= report(arm, &p, &dec);
+                    }
+                    "wave" => {
+                        let mut cb = Cache::new(e, &model.cfg, ctx)?;
+                        let (l, hs, hid) = model.prime_cache(e, &tb, &mut cb, 0)?;
+                        let p = PrimeObs {
+                            logits: l,
+                            h_seed: e.dtoh(&hs)?,
+                            hidden: e.dtoh(&hid)?,
+                            digest: digest(&cb)?,
+                        };
+                        let mut cc = Cache::new(e, &model.cfg, ctx)?;
+                        let (lc, _, _) = model.prime_cache(e, &tc, &mut cc, 0)?;
+                        let mut c_next = argmax(&lc) as u32;
+                        let mut dec = Vec::with_capacity(steps);
+                        for s in 1..=steps {
+                            if s < join {
+                                dec.push(decode1(ref_toks[s - 1], &mut cb)?);
+                            } else {
+                                let mut refs = [&mut cb, &mut cc];
+                                let mut rows = model.decode_step_batch(
+                                    e,
+                                    &[ref_toks[s - 1], c_next],
+                                    &mut refs,
+                                )?;
+                                c_next = argmax(&rows[1]) as u32;
+                                dec.push(rows.remove(0));
+                            }
+                        }
+                        all_exact &= report("wave", &p, &dec);
+                    }
+                    other => return Err(format!("tickshape: unknown arm {other}").into()),
+                }
+            }
+            println!(
+                "tickshape verdict: {}",
+                if all_exact {
+                    "ALL ARMS EXACT"
+                } else {
+                    "AT LEAST ONE ARM DIFFERS"
+                }
+            );
+            if !all_exact {
+                std::process::exit(1);
+            }
         }
 
         m => return Err(format!("unknown mode {m}").into()),

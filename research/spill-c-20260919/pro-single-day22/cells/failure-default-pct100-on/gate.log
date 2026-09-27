@@ -1,0 +1,19 @@
+== cell 1: POOL-FULL (MEMRA_KV_HOST_MB=1, no real entry fits) ==
+  ok: device budget forced an eviction (the failure path's trigger)
+  pool-full refusal arm: whole host budget (MEMRA_KV_HOST_TENANT_PCT=100 disarms the share cap; insert-path skip demote after the copy)
+  ok: pool-full refusal is LOUD and named (skip demote: entry X MB > host budget B MB)
+  ok: nothing entered the tier
+  ok: r3 still serves (cold re-prime, zero cached)
+== cell 2: DIGEST MISMATCH (verify on + MEMRA_KV_HOST_FAULT=flip-demote) ==
+  ok: the fault door announced the injected corruption
+  ok: the corrupted entry DEMOTED (the mismatch needs a resident entry)
+  ok: the promote caught it: VERIFY FAILED, loud and named
+  ok: no successful promote happened
+  ok: metrics: zero promotions after the refusal
+  ok: r3 served the COLD path with reference bytes (corruption never reached a customer)
+== cell 3: PINNED-ALLOC REFUSAL (MEMRA_KV_HOST_FAULT=alloc-fail) ==
+  ok: the tier LATCHED OFF loudly on the first alloc failure
+  ok: the refusal counted
+  ok: no silent pageable fallback: zero demotions completed
+  ok: r3 served the cold path with reference bytes
+KV-HOST-SPILL FAILURE GATE: ALL GREEN

@@ -127,7 +127,7 @@ impl ReadyPrompt<'_> {
         };
         let ep_before = self.gpu.ep_calls();
         let recent_before = self.gpu.c4_recent_gather_calls();
-        let sink_before = self.gpu.sink_tiled_calls();
+        let sink_before = self.gpu.sink_st_calls();
         let start_ms = unix_ms();
         println!(
             "START prompt={} mode={mode} arm={arm} sampler_order={sampler_order} vt={vt_label} recent_rows={recent_rows} ordinal={ordinal} warmup={warmup} start_unix_ms={start_ms}",
@@ -238,10 +238,10 @@ impl ReadyPrompt<'_> {
             recent_rows > 0,
             "cache-aware gather engagement"
         );
-        let sink_calls = self.gpu.sink_tiled_calls() - sink_before;
+        let sink_calls = self.gpu.sink_st_calls() - sink_before;
         assert!(
             ep_calls > 0 && sink_calls > 0,
-            "required EP/tiled scorer not engaged"
+            "required EP/two-launch sink attention not engaged"
         );
         assert!(!spec || rounds > 0, "DSpark did not engage");
         assert_eq!(tokens.len(), commits.len());
@@ -342,7 +342,6 @@ fn main() {
         ("MEMRA_DSV4_DENSE_ARM", "fp8"),
         ("MEMRA_DSV4_EP", "pair"),
         ("MEMRA_DSV4_GROUPED_ROUTE", "device"),
-        ("MEMRA_DSV4_SINK_SCORE", "tiled"),
     ] {
         assert_eq!(
             std::env::var(name).as_deref(),

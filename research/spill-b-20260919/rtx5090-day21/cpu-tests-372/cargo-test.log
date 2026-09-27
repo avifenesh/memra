@@ -1,0 +1,15 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-b/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 23.20s
+     Running unittests src/lib.rs (target/release/deps/memra_server-35f5785150dc3b55)
+
+running 4 tests
+test worker::tests::dflash_retained_gpu_plan_fault_matrix ... ignored, requires an exclusively locked CUDA device and DFlash restore profile
+test worker::tests::dflash_retained_consumed_carrier_failure_releases_serving_lease_and_refuses_cold ... ok
+test worker::tests::dflash_retained_suffix_distinguishes_full_boundary_and_unsupported_suffix ... ok
+test worker::tests::dflash_retained_plan_checks_route_before_discounting ... ok
+
+test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 770 filtered out; finished in 0.00s
+
+exit=0

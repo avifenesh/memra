@@ -1,0 +1,14 @@
+# WP-A day 27: the digest micro-cell of DAY27.md task 2 option (b). A research tool, not engine code:
+# it calls the engine's two existing programs through a path dependency and adds nothing to them.
+# Detached from the workspace on purpose (the empty [workspace] table) so its build never touches
+# the engine's target directory or its lockfile. Build: cargo build --release --offline.
+[package]
+name = "day27-digest-micro"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+memra-tier = { path = "../../../crates/memra-tier" }

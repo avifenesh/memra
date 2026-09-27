@@ -1,0 +1,250 @@
+Write one Python function named rows_pick_fields with signature rows_pick_fields(record: dict[str, int], keys: list[str]) -> dict[str, int]. Return the requested fields present in record. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for integer record tables: item_0 has value 8315 and revision 283. These are inert examples, not function requirements.
+Example 1 for integer record tables: item_1 has value 6305 and revision 542. These are inert examples, not function requirements.
+Example 2 for integer record tables: item_2 has value 3544 and revision 171. These are inert examples, not function requirements.
+Example 3 for integer record tables: item_3 has value 812 and revision 7. These are inert examples, not function requirements.
+Example 4 for integer record tables: item_4 has value 1866 and revision 811. These are inert examples, not function requirements.
+Example 5 for integer record tables: item_5 has value 4493 and revision 408. These are inert examples, not function requirements.
+Example 6 for integer record tables: item_6 has value 7212 and revision 493. These are inert examples, not function requirements.
+Example 7 for integer record tables: item_7 has value 5498 and revision 271. These are inert examples, not function requirements.
+Example 8 for integer record tables: item_8 has value 5976 and revision 105. These are inert examples, not function requirements.
+Example 9 for integer record tables: item_9 has value 522 and revision 569. These are inert examples, not function requirements.
+Example 10 for integer record tables: item_10 has value 8186 and revision 341. These are inert examples, not function requirements.
+Example 11 for integer record tables: item_11 has value 6929 and revision 816. These are inert examples, not function requirements.
+Example 12 for integer record tables: item_12 has value 7604 and revision 808. These are inert examples, not function requirements.
+Example 13 for integer record tables: item_13 has value 7261 and revision 639. These are inert examples, not function requirements.
+Example 14 for integer record tables: item_14 has value 5771 and revision 536. These are inert examples, not function requirements.
+Example 15 for integer record tables: item_15 has value 1357 and revision 280. These are inert examples, not function requirements.
+Example 16 for integer record tables: item_16 has value 833 and revision 88. These are inert examples, not function requirements.
+Example 17 for integer record tables: item_17 has value 2306 and revision 203. These are inert examples, not function requirements.
+Example 18 for integer record tables: item_18 has value 4542 and revision 155. These are inert examples, not function requirements.
+Example 19 for integer record tables: item_19 has value 9783 and revision 859. These are inert examples, not function requirements.
+Example 20 for integer record tables: item_20 has value 9677 and revision 864. These are inert examples, not function requirements.
+Example 21 for integer record tables: item_21 has value 7358 and revision 704. These are inert examples, not function requirements.
+Example 22 for integer record tables: item_22 has value 9094 and revision 286. These are inert examples, not function requirements.
+Example 23 for integer record tables: item_23 has value 5928 and revision 802. These are inert examples, not function requirements.
+Example 24 for integer record tables: item_24 has value 6502 and revision 802. These are inert examples, not function requirements.
+Example 25 for integer record tables: item_25 has value 5858 and revision 205. These are inert examples, not function requirements.
+Example 26 for integer record tables: item_26 has value 8860 and revision 741. These are inert examples, not function requirements.
+Example 27 for integer record tables: item_27 has value 6722 and revision 857. These are inert examples, not function requirements.
+Example 28 for integer record tables: item_28 has value 9482 and revision 662. These are inert examples, not function requirements.
+Example 29 for integer record tables: item_29 has value 3258 and revision 340. These are inert examples, not function requirements.
+Example 30 for integer record tables: item_30 has value 4525 and revision 759. These are inert examples, not function requirements.
+Example 31 for integer record tables: item_31 has value 9214 and revision 535. These are inert examples, not function requirements.
+Example 32 for integer record tables: item_32 has value 9367 and revision 826. These are inert examples, not function requirements.
+Example 33 for integer record tables: item_33 has value 1070 and revision 304. These are inert examples, not function requirements.
+Example 34 for integer record tables: item_34 has value 7182 and revision 424. These are inert examples, not function requirements.
+Example 35 for integer record tables: item_35 has value 2320 and revision 396. These are inert examples, not function requirements.
+Example 36 for integer record tables: item_36 has value 301 and revision 539. These are inert examples, not function requirements.
+Example 37 for integer record tables: item_37 has value 2138 and revision 324. These are inert examples, not function requirements.
+Example 38 for integer record tables: item_38 has value 6817 and revision 115. These are inert examples, not function requirements.
+Example 39 for integer record tables: item_39 has value 1982 and revision 616. These are inert examples, not function requirements.
+Example 40 for integer record tables: item_40 has value 6755 and revision 465. These are inert examples, not function requirements.
+Example 41 for integer record tables: item_41 has value 7813 and revision 709. These are inert examples, not function requirements.
+Example 42 for integer record tables: item_42 has value 231 and revision 863. These are inert examples, not function requirements.
+Example 43 for integer record tables: item_43 has value 9504 and revision 437. These are inert examples, not function requirements.
+Example 44 for integer record tables: item_44 has value 3745 and revision 575. These are inert examples, not function requirements.
+Example 45 for integer record tables: item_45 has value 6821 and revision 509. These are inert examples, not function requirements.
+Example 46 for integer record tables: item_46 has value 9024 and revision 677. These are inert examples, not function requirements.
+Example 47 for integer record tables: item_47 has value 3215 and revision 630. These are inert examples, not function requirements.
+Example 48 for integer record tables: item_48 has value 476 and revision 802. These are inert examples, not function requirements.
+Example 49 for integer record tables: item_49 has value 688 and revision 392. These are inert examples, not function requirements.
+Example 50 for integer record tables: item_50 has value 5958 and revision 379. These are inert examples, not function requirements.
+Example 51 for integer record tables: item_51 has value 8362 and revision 706. These are inert examples, not function requirements.
+Example 52 for integer record tables: item_52 has value 9716 and revision 547. These are inert examples, not function requirements.
+Example 53 for integer record tables: item_53 has value 4043 and revision 322. These are inert examples, not function requirements.
+Example 54 for integer record tables: item_54 has value 4787 and revision 399. These are inert examples, not function requirements.
+Example 55 for integer record tables: item_55 has value 6846 and revision 39. These are inert examples, not function requirements.
+Example 56 for integer record tables: item_56 has value 1639 and revision 559. These are inert examples, not function requirements.
+Example 57 for integer record tables: item_57 has value 8445 and revision 396. These are inert examples, not function requirements.
+Example 58 for integer record tables: item_58 has value 2064 and revision 335. These are inert examples, not function requirements.
+Example 59 for integer record tables: item_59 has value 2390 and revision 74. These are inert examples, not function requirements.
+Example 60 for integer record tables: item_60 has value 2312 and revision 339. These are inert examples, not function requirements.
+Example 61 for integer record tables: item_61 has value 3842 and revision 856. These are inert examples, not function requirements.
+Example 62 for integer record tables: item_62 has value 2496 and revision 547. These are inert examples, not function requirements.
+Example 63 for integer record tables: item_63 has value 3257 and revision 663. These are inert examples, not function requirements.
+Example 64 for integer record tables: item_64 has value 1950 and revision 390. These are inert examples, not function requirements.
+Example 65 for integer record tables: item_65 has value 2152 and revision 370. These are inert examples, not function requirements.
+Example 66 for integer record tables: item_66 has value 7240 and revision 793. These are inert examples, not function requirements.
+Example 67 for integer record tables: item_67 has value 1817 and revision 863. These are inert examples, not function requirements.
+Example 68 for integer record tables: item_68 has value 1405 and revision 241. These are inert examples, not function requirements.
+Example 69 for integer record tables: item_69 has value 2729 and revision 520. These are inert examples, not function requirements.
+Example 70 for integer record tables: item_70 has value 8548 and revision 486. These are inert examples, not function requirements.
+Example 71 for integer record tables: item_71 has value 886 and revision 650. These are inert examples, not function requirements.
+Example 72 for integer record tables: item_72 has value 6692 and revision 644. These are inert examples, not function requirements.
+Example 73 for integer record tables: item_73 has value 6112 and revision 76. These are inert examples, not function requirements.
+Example 74 for integer record tables: item_74 has value 9983 and revision 683. These are inert examples, not function requirements.
+Example 75 for integer record tables: item_75 has value 4072 and revision 113. These are inert examples, not function requirements.
+Example 76 for integer record tables: item_76 has value 8209 and revision 481. These are inert examples, not function requirements.
+Example 77 for integer record tables: item_77 has value 6838 and revision 263. These are inert examples, not function requirements.
+Example 78 for integer record tables: item_78 has value 4813 and revision 302. These are inert examples, not function requirements.
+Example 79 for integer record tables: item_79 has value 2637 and revision 241. These are inert examples, not function requirements.
+Example 80 for integer record tables: item_80 has value 4254 and revision 194. These are inert examples, not function requirements.
+Example 81 for integer record tables: item_81 has value 232 and revision 527. These are inert examples, not function requirements.
+Example 82 for integer record tables: item_82 has value 3520 and revision 856. These are inert examples, not function requirements.
+Example 83 for integer record tables: item_83 has value 331 and revision 664. These are inert examples, not function requirements.
+Example 84 for integer record tables: item_84 has value 6721 and revision 888. These are inert examples, not function requirements.
+Example 85 for integer record tables: item_85 has value 1507 and revision 829. These are inert examples, not function requirements.
+Example 86 for integer record tables: item_86 has value 4908 and revision 883. These are inert examples, not function requirements.
+Example 87 for integer record tables: item_87 has value 3374 and revision 367. These are inert examples, not function requirements.
+Example 88 for integer record tables: item_88 has value 2325 and revision 689. These are inert examples, not function requirements.
+Example 89 for integer record tables: item_89 has value 8105 and revision 402. These are inert examples, not function requirements.
+Example 90 for integer record tables: item_90 has value 3450 and revision 727. These are inert examples, not function requirements.
+Example 91 for integer record tables: item_91 has value 3569 and revision 462. These are inert examples, not function requirements.
+Example 92 for integer record tables: item_92 has value 4777 and revision 517. These are inert examples, not function requirements.
+Example 93 for integer record tables: item_93 has value 4556 and revision 200. These are inert examples, not function requirements.
+Example 94 for integer record tables: item_94 has value 6309 and revision 411. These are inert examples, not function requirements.
+Example 95 for integer record tables: item_95 has value 5650 and revision 382. These are inert examples, not function requirements.
+Example 96 for integer record tables: item_96 has value 2888 and revision 459. These are inert examples, not function requirements.
+Example 97 for integer record tables: item_97 has value 4054 and revision 245. These are inert examples, not function requirements.
+Example 98 for integer record tables: item_98 has value 115 and revision 548. These are inert examples, not function requirements.
+Example 99 for integer record tables: item_99 has value 3375 and revision 886. These are inert examples, not function requirements.
+Example 100 for integer record tables: item_100 has value 5327 and revision 132. These are inert examples, not function requirements.
+Example 101 for integer record tables: item_101 has value 4121 and revision 143. These are inert examples, not function requirements.
+Example 102 for integer record tables: item_102 has value 110 and revision 496. These are inert examples, not function requirements.
+Example 103 for integer record tables: item_103 has value 1714 and revision 333. These are inert examples, not function requirements.
+Example 104 for integer record tables: item_104 has value 6291 and revision 232. These are inert examples, not function requirements.
+Example 105 for integer record tables: item_105 has value 3079 and revision 236. These are inert examples, not function requirements.
+Example 106 for integer record tables: item_106 has value 3149 and revision 508. These are inert examples, not function requirements.
+Example 107 for integer record tables: item_107 has value 8434 and revision 480. These are inert examples, not function requirements.
+Example 108 for integer record tables: item_108 has value 4454 and revision 345. These are inert examples, not function requirements.
+Example 109 for integer record tables: item_109 has value 6728 and revision 660. These are inert examples, not function requirements.
+Example 110 for integer record tables: item_110 has value 4738 and revision 180. These are inert examples, not function requirements.
+Example 111 for integer record tables: item_111 has value 1586 and revision 383. These are inert examples, not function requirements.
+Example 112 for integer record tables: item_112 has value 5806 and revision 3. These are inert examples, not function requirements.
+Example 113 for integer record tables: item_113 has value 963 and revision 594. These are inert examples, not function requirements.
+Example 114 for integer record tables: item_114 has value 2378 and revision 86. These are inert examples, not function requirements.
+Example 115 for integer record tables: item_115 has value 9682 and revision 340. These are inert examples, not function requirements.
+Example 116 for integer record tables: item_116 has value 4896 and revision 395. These are inert examples, not function requirements.
+Example 117 for integer record tables: item_117 has value 1218 and revision 32. These are inert examples, not function requirements.
+Example 118 for integer record tables: item_118 has value 5234 and revision 850. These are inert examples, not function requirements.
+Example 119 for integer record tables: item_119 has value 963 and revision 441. These are inert examples, not function requirements.
+Example 120 for integer record tables: item_120 has value 4456 and revision 104. These are inert examples, not function requirements.
+Example 121 for integer record tables: item_121 has value 7365 and revision 100. These are inert examples, not function requirements.
+Example 122 for integer record tables: item_122 has value 1660 and revision 380. These are inert examples, not function requirements.
+Example 123 for integer record tables: item_123 has value 6147 and revision 473. These are inert examples, not function requirements.
+Example 124 
+</reference>
+---TURN---
+Write one Python function named rows_where_equal with signature rows_where_equal(rows: list[dict[str, int]], key: str, value: int) -> list[dict[str, int]]. Keep rows whose present key equals value, preserving order. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for integer record tables: item_0 has value 8315 and revision 283. These are inert examples, not function requirements.
+Example 1 for integer record tables: item_1 has value 6305 and revision 542. These are inert examples, not function requiremen
+</reference>
+---TURN---
+Write one Python function named rows_sort_key with signature rows_sort_key(rows: list[dict[str, int]], key: str) -> list[dict[str, int]]. Return rows sorted ascending by a key present in every row. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for integer record tables: item_0 has value 8315 and revision 283. These are inert examples, not function requirements.
+Example 1 for integer record tables: item_1 has value 6305 and revision 542. These are inert examples, not function requirements.
+Example 2 for integer record tables: item_2 has value 3544 and revision 171. These are inert examples, not function requirements.
+Example 3 for integer record tables: item_3 has value 812 and revision 7. These are inert examples, not function requirements.
+Example 4 for integer record tables: item_4 has value 1866 and revision 811. These are inert examples, not function requirements.
+Example 5 for integer record tables: item_5 has value 4493 and revision 408. These are inert examples, not function requirements.
+Example 6 for integer record tables: item_6 has value 7212 and revision 493. These are inert examples, not function requirements.
+Example 7 for integer record tables: item_7 has value 5498 and revision 271. These are inert examples, not function r
+</reference>
+---TURN---
+Write one Python function named rows_unique_key with signature rows_unique_key(rows: list[dict[str, int]], key: str) -> list[dict[str, int]]. Keep the first row for each key value, preserving first-seen order. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for integer record tables: item_0 has value 8315 and revision 283. These are inert examples, not function requirements.
+Example 1 for integer record tables: item_1 has value 6305 and revision 542. These are inert examples, not function requirements.
+Example 2 for integer record tables: item_2 has value 3544 and revision 171. These are inert examples, not function requirements.
+Example 3 for integer record tables: item_3 has value 812 and revision 7. These are inert examples, not function requirements.
+Example 4 for integer record tables: item_4 has value 1866 and revision 811. These are inert examples, not function requirements.
+Example 5 for integer record tables: item_5 has value 4493 and revision 408. These are inert examples, not function requirements.
+Example 6 for integer record tables: item_6 has value 7212 and revision 493. These are inert examples, not function requirements.
+Example 7 for integer record tables: item_7 has value 5498 and revision 271. These are inert examples, not function requirements.
+Example 8 for integer record tables: item_8 has value 5976 and revision 105. These are inert examples, not function requirements.
+Example 9 for integer record tables: item_9 has value 522 and revision 569. These are inert examples, not function requirements.
+Example 10 for integer record tables: item_10 has value 8186 and revision 341. These are inert examples, not function requirements.
+Example 11 for integer record tables: item_11 has value 6929 and revision 816. These are inert examples, not function requirements.
+Example 12 for integer record tables: item_12 has value 7604 and revision 808. These are inert examples, not function requirements.
+Example 13 for integer record tables: item_13 has value 7261 and revision 639. These are inert examples, not function requirements.
+Example 14 for integer record tables: item_14 has value 5771 and revision 536. These are inert examples, not function requirements.
+Example 15 for integer record tables: item_15 has value 1357 and revision 280. These are inert examples, not function requirements.
+Example 16 for integer record tables: item_16 has value 833 and revision 88. These are inert examples, not function requirements.
+Example 17 for integer record tables: item_17 has value 2306 and revision 203. These are inert examples, not function requirements.
+Example 18 for integer record tables: item_18 has value 4542 and revision 155. These are inert examples, not function requirements.
+Example 19 for integer record tables: item_19 has value 9783 and revision 859. These are inert examples, not function requirements.
+Example 20 for integer record tables: item_20 has value 9677 and revision 864. These are inert examples, not function requirements.
+Example 21 for integer record tables: item_21 has value 7358 and revision 704. These are inert examples, not function requirements.
+Example 22 for integer record tables: item_22 has value 9094 and revision 286. These are inert examples, not function requirements.
+Example 23 for integer record tables: item_23 has value 5928 and revision 802. These are inert examples, not function requirements.
+Example 24 for integer record tables: item_24 has value 6502 and revision 802. These are inert examples, not function requirements.
+Example 25 for integer record tables: item_25 has value 5858 and revision 205. These are inert examples, not function requirements.
+Example 26 for integer record tables: item_26 has value 8860 and revision 741. These are inert examples, not function requirements.
+Example 27 for integer record tables: item_27 has value 6722 and revision 857. These are inert examples, not function requirements.
+Example 28 for integer record tables: item_28 has value 9482 and revision 662. These are inert examples, not function requirements.
+Example 29 for integer record tables: item_29 has value 3258 and revision 340. These are inert examples, not function requirements.
+Example 30 for integer record tables: item_30 has value 4525 and revision 759. These are inert examples, not function requirements.
+Example 31 for integer record 
+</reference>
+---TURN---
+Write one Python function named rows_sum_key with signature rows_sum_key(rows: list[dict[str, int]], key: str) -> int. Sum the key across rows, treating a missing key as zero. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for integer record tables: item_0 has value 8315 and revision 283. These are inert examples, not function requirements.
+Example 1 for integer record tables: item_1 has value 6305 and revision 542. These are inert examples, not function requiremen
+</reference>
+---TURN---
+Write one Python function named rows_index_key with signature rows_index_key(rows: list[dict[str, int]], key: str) -> dict[int, dict[str, int]]. Index rows by unique integer values of a key present in every row. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for integer record tables: item_0 has value 8315 and revision 283. These are inert examples, not function requirements.
+Example 1 for integer record tables: item_1 has value 6305 and revision 542. These are inert examples, not function requirements.
+Example 2 for integer record tables: item_2 has value 3544 and revision 171. These are inert examples, not function requirements.
+Example 3 for integer record tables: item_3 has value 812 and revision 7. These are inert examples, not function requirements.
+Example 4 for integer record tables: item_4 has value 1866 and revision 811. These are inert examples, not function requirements.
+Example 5 for integer record tables: item_5 has value 4493 and revision 408. These are inert examples, not function requirements.
+Example 6 for integer record tables: item_6 has value 7212 and revision 493. These are inert examples, not function requirements.
+Example 7 for integer record tables: item_7 has value 5498 and revision 271. These are inert examples, not function r
+</reference>
+---TURN---
+Write one Python function named rows_rename_field with signature rows_rename_field(record: dict[str, int], old: str, new: str) -> dict[str, int]. Return a copy with old field renamed to new when present. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for integer record tables: item_0 has value 8315 and revision 283. These are inert examples, not function requirements.
+Example 1 for integer record tables: item_1 has value 6305 and revision 542. These are inert examples, not function requirements.
+Example 2 for integer record tables: item_2 has value 3544 and revision 171. These are inert examples, not function requirements.
+Example 3 for integer record tables: item_3 has value 812 and revision 7. These are inert examples, not function requirements.
+Example 4 for integer record tables: item_4 has value 1866 and revision 811. These are inert examples, not function requirements.
+Example 5 for integer record tables: item_5 has value 4493 and revision 408. These are inert examples, not function requirements.
+Example 6 for integer record tables: item_6 has value 7212 and revision 493. These are inert examples, not function requirements.
+Example 7 for integer record tables: item_7 has value 5498 and revision 271. These are inert examples, not function requirements.
+Example 8 for integer record tables: item_8 has value 5976 and revision 105. These are inert examples, not function requirements.
+Example 9 for integer record tables: item_9 has value 522 and revision 569. These are inert examples, not function requirements.
+Example 10 for integer record tables: item_10 has value 8186 and revision 341. These are inert examples, not function requirements.
+Example 11 for integer record tables: item_11 has value 6929 and revision 816. These are inert examples, not function requirements.
+Example 12 for integer record tables: item_12 has value 7604 and revision 808. These are inert examples, not function requirements.
+Example 13 for integer record tables: item_13 has value 7261 and revision 639. These are inert examples, not function requirements.
+Example 14 for integer record tables: item_14 has value 5771 and revision 536. These are inert examples, not function requirements.
+Example 15 for integer record tables: item_15 has value 1357 and revision 280. These are inert examples, not function requirements.
+Example 16 for integer record tables: item_16 has value 833 and revision 88. These are inert examples, not function requirements.
+Example 17 for integer record tables: item_17 has value 2306 and revision 203. These are inert examples, not function requirements.
+Example 18 for integer record tables: item_18 has value 4542 and revision 155. These are inert examples, not function requirements.
+Example 19 for integer record tables: item_19 has value 9783 and revision 859. These are inert examples, not function requirements.
+Example 20 for integer record tables: item_20 has value 9677 and revision 864. These are inert examples, not function requirements.
+Example 21 for integer record tables: item_21 has value 7358 and revision 704. These are inert examples, not function requirements.
+Example 22 for integer record tables: item_22 has value 9094 and revision 286. These are inert examples, not function requirements.
+Example 23 for integer record tables: item_23 has value 5928 and revision 802. These are inert examples, not function requirements.
+Example 24 for integer record tables: item_24 has value 6502 and revision 802. These are inert examples, not function requirements.
+Example 25 for integer record tables: item_25 has value 5858 and revision 205. These are inert examples, not function requirements.
+Example 26 for integer record tables: item_26 has value 8860 and revision 741. These are inert examples, not function requirements.
+Example 27 for integer record tables: item_27 has value 6722 and revision 857. These are inert examples, not function requirements.
+Example 28 for integer record tables: item_28 has value 9482 and revision 662. These are inert examples, not function requirements.
+Example 29 for integer record tables: item_29 has value 3258 and revision 340. These are inert examples, not function requirements.
+Example 30 for integer record tables: item_30 has value 4525 and revision 759. These are inert examples, not function requirements.
+Example 31 for integer record 
+</reference>
+---TURN---
+Write one Python function named rows_merge with signature rows_merge(left: dict[str, int], right: dict[str, int]) -> dict[str, int]. Return a new merged record, with right values winning collisions. Use type hints and a straightforward implementation. Return only one fenced Python code block, without a prose explanation. If an input is outside the stated domain, raise ValueError. Earlier turns are context, not a request to repeat earlier functions.
+
+<reference>
+Example 0 for integer record tables: item_0 has value 8315 and revision 283. These are inert examples, not function requirements.
+Example 1 for integer record tables: item_1 has value 6305 and revision 542. These are inert examples, not function requiremen
+</reference>

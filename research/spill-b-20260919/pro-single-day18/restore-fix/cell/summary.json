@@ -1,0 +1,729 @@
+{
+  "verdict": "PREFIX-RESTORE-IDENTITY: target=12650 points=5 identical=5/5 grid_ok=5/5 grid=32 12288(seed12288,restored12288,off0,suffix362):yes 12320(seed12320,restored12320,off0,suffix330):yes 12200(seed12160,restored12160,off0,suffix490):yes 12250(seed12224,restored12224,off0,suffix426):yes 12300(seed12256,restored12256,off0,suffix394):yes V1=ok V2=ok -> PASS",
+  "pass": true,
+  "plan": {
+    "rig": "NVIDIA RTX PRO 6000 Blackwell Server Edition, 97887 MiB, 600.00 W, 600.00 W, 580.178.04",
+    "binary_sha256": "3ea188e7be820dcffe723730777b55659e19761e7dc684f636150246df8e3ef9",
+    "binary": "/root/spill-receipts/b-day18/bins/fix/memra-server",
+    "model": "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "budget_mib": 1024,
+    "turns": 12,
+    "start_tokens": 11000,
+    "grow_tokens": 150,
+    "target_tokens": 12650,
+    "target_ids_sha256": "3f181c880f69688b3d93beb3b5f8deea57df3eb7b2b306e54ab629cd532bdd37",
+    "points": [
+      12288,
+      12320,
+      12200,
+      12250,
+      12300
+    ],
+    "grid": 32,
+    "max_tokens": 8,
+    "expected_capture": {
+      "12288": 12288,
+      "12320": 12320,
+      "12200": 12160,
+      "12250": 12224,
+      "12300": 12256
+    }
+  },
+  "boot_line": "[prefix-cache] on: budget 1074MB (1073741824 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)",
+  "cold": {
+    "status": 200,
+    "elapsed_s": 3.724,
+    "prompt_tokens": 12650,
+    "completion_tokens": 8,
+    "cached_tokens": 0,
+    "finish_reason": "length",
+    "text": ".Range referenced ReserveMoneySCRIPT/productchoices",
+    "text_sha256": "a60e5ad8da5b048489a577e0fc53a3c126bc1b7fb5fb85d9e5c1a8dce6afe496",
+    "error": null,
+    "lines": [
+      "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12650 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+      "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=12650 budget=8192 seed_at=None",
+      "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=4458 budget=1024 seed_at=None",
+      "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=3434 budget=1024 seed_at=None",
+      "[primeseg] call start=10240 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2410 budget=1024 seed_at=None",
+      "[primeseg] call start=11264 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1386 budget=1024 seed_at=None",
+      "[primeseg] call start=12288 take=362 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=362 budget=1024 seed_at=None"
+    ],
+    "inserts": [],
+    "hits": [],
+    "primeseg": [
+      {
+        "start": 0,
+        "take": 8192,
+        "grid_off": 0
+      },
+      {
+        "start": 8192,
+        "take": 1024,
+        "grid_off": 0
+      },
+      {
+        "start": 9216,
+        "take": 1024,
+        "grid_off": 0
+      },
+      {
+        "start": 10240,
+        "take": 1024,
+        "grid_off": 0
+      },
+      {
+        "start": 11264,
+        "take": 1024,
+        "grid_off": 0
+      },
+      {
+        "start": 12288,
+        "take": 362,
+        "grid_off": 0
+      }
+    ],
+    "refused": []
+  },
+  "points": [
+    {
+      "point": 12288,
+      "salt": "rp-12288",
+      "expected_capture": 12288,
+      "published": 12288,
+      "seed_inserts": 1,
+      "restored": 12288,
+      "hit_line": 12288,
+      "suffix": 362,
+      "restored_grid_off": 0,
+      "hit_calls": 2,
+      "off_grid_calls": 0,
+      "seed": {
+        "status": 200,
+        "elapsed_s": 3.588,
+        "prompt_tokens": 12288,
+        "completion_tokens": 8,
+        "cached_tokens": 0,
+        "finish_reason": "length",
+        "text": "_\t\t\"\t\t\"\t",
+        "text_sha256": "22f023976ebc22fd5bfc9a699ff63056fb08186f1faec8429537e154a5e07f85",
+        "error": null,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"rp-12288\" K=0 source=eligibility-fallback prompt=12288 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=Some(12288) ckpt_at=None snapshot_at=None q=12288 budget=8192 seed_at=Some(12288)",
+          "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=Some(4096) ckpt_at=None snapshot_at=None q=4096 budget=1024 seed_at=Some(12288)",
+          "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=Some(3072) ckpt_at=None snapshot_at=None q=3072 budget=1024 seed_at=Some(12288)",
+          "[primeseg] call start=10240 take=1024 grid_off=0 bound_rem=Some(2048) ckpt_at=None snapshot_at=None q=2048 budget=1024 seed_at=Some(12288)",
+          "[primeseg] call start=11264 take=1024 grid_off=0 bound_rem=Some(1024) ckpt_at=None snapshot_at=None q=1024 budget=1024 seed_at=Some(12288)",
+          "[prefix-cache] insert (seed): 12288 tokens, 521.8MB (resident 521.8MB / 1074MB, model gate, ns \"rp-12288\")"
+        ],
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 12288,
+            "mb": 521.8
+          }
+        ],
+        "hits": [],
+        "primeseg": [
+          {
+            "start": 0,
+            "take": 8192,
+            "grid_off": 0
+          },
+          {
+            "start": 8192,
+            "take": 1024,
+            "grid_off": 0
+          },
+          {
+            "start": 9216,
+            "take": 1024,
+            "grid_off": 0
+          },
+          {
+            "start": 10240,
+            "take": 1024,
+            "grid_off": 0
+          },
+          {
+            "start": 11264,
+            "take": 1024,
+            "grid_off": 0
+          }
+        ],
+        "refused": []
+      },
+      "hit": {
+        "status": 200,
+        "elapsed_s": 0.344,
+        "prompt_tokens": 12650,
+        "completion_tokens": 8,
+        "cached_tokens": 12288,
+        "finish_reason": "length",
+        "text": ".Range referenced ReserveMoneySCRIPT/productchoices",
+        "text_sha256": "a60e5ad8da5b048489a577e0fc53a3c126bc1b7fb5fb85d9e5c1a8dce6afe496",
+        "error": null,
+        "lines": [
+          "[prefix-cache] hit: 12288 of 12650 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"rp-12288\" K=0 source=eligibility-fallback prompt=12650 cached=12288 lcp=12288 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 12288 tokens, model gate)",
+          "[primeseg] call start=12288 take=320 grid_off=0 bound_rem=Some(320) ckpt_at=None snapshot_at=None q=362 budget=1024 seed_at=Some(12608)",
+          "[prefix-cache] insert (seed): 12608 tokens, 531.3MB (resident 1053.1MB / 1074MB, model gate, ns \"rp-12288\")",
+          "[primeseg] call start=12608 take=42 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=42 budget=1024 seed_at=None"
+        ],
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 12608,
+            "mb": 531.3
+          }
+        ],
+        "hits": [
+          {
+            "hit": 12288,
+            "prompt": 12650
+          }
+        ],
+        "primeseg": [
+          {
+            "start": 12288,
+            "take": 320,
+            "grid_off": 0
+          },
+          {
+            "start": 12608,
+            "take": 42,
+            "grid_off": 0
+          }
+        ],
+        "refused": []
+      },
+      "identical_to_cold": true,
+      "first_diff_char": null,
+      "refused": [],
+      "grid_ok": true
+    },
+    {
+      "point": 12320,
+      "salt": "rp-12320",
+      "expected_capture": 12320,
+      "published": 12320,
+      "seed_inserts": 1,
+      "restored": 12320,
+      "hit_line": 12320,
+      "suffix": 330,
+      "restored_grid_off": 0,
+      "hit_calls": 2,
+      "off_grid_calls": 0,
+      "seed": {
+        "status": 200,
+        "elapsed_s": 3.585,
+        "prompt_tokens": 12320,
+        "completion_tokens": 5,
+        "cached_tokens": 0,
+        "finish_reason": "stop",
+        "text": "sight_\n",
+        "text_sha256": "6d04a5476c0054bdd29c0c35282f1b8cab35b6f3e6650367964aec23b7dfd50f",
+        "error": null,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"rp-12320\" K=0 source=eligibility-fallback prompt=12320 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=Some(12320) ckpt_at=None snapshot_at=None q=12320 budget=8192 seed_at=Some(12320)",
+          "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=Some(4128) ckpt_at=None snapshot_at=None q=4128 budget=1024 seed_at=Some(12320)",
+          "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=Some(3104) ckpt_at=None snapshot_at=None q=3104 budget=1024 seed_at=Some(12320)",
+          "[primeseg] call start=10240 take=1024 grid_off=0 bound_rem=Some(2080) ckpt_at=None snapshot_at=None q=2080 budget=1024 seed_at=Some(12320)",
+          "[primeseg] call start=11264 take=1024 grid_off=0 bound_rem=Some(1056) ckpt_at=None snapshot_at=None q=1056 budget=1024 seed_at=Some(12320)",
+          "[primeseg] call start=12288 take=32 grid_off=0 bound_rem=Some(32) ckpt_at=None snapshot_at=None q=32 budget=1024 seed_at=Some(12320)",
+          "[prefix-cache] evict (snapshot preflight, LRU): 12288 tokens, 521.8MB (model gate, ns \"rp-12288\")",
+          "[prefix-cache] insert (seed): 12320 tokens, 522.7MB (resident 1054.0MB / 1074MB, model gate, ns \"rp-12320\")"
+        ],
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 12320,
+            "mb": 522.7
+          }
+        ],
+        "hits": [],
+        "primeseg": [
+          {
+            "start": 0,
+            "take": 8192,
+            "grid_off": 0
+          },
+          {
+            "start": 8192,
+            "take": 1024,
+            "grid_off": 0
+          },
+          {
+            "start": 9216,
+            "take": 1024,
+            "grid_off": 0
+          },
+          {
+            "start": 10240,
+            "take": 1024,
+            "grid_off": 0
+          },
+          {
+            "start": 11264,
+            "take": 1024,
+            "grid_off": 0
+          },
+          {
+            "start": 12288,
+            "take": 32,
+            "grid_off": 0
+          }
+        ],
+        "refused": []
+      },
+      "hit": {
+        "status": 200,
+        "elapsed_s": 0.341,
+        "prompt_tokens": 12650,
+        "completion_tokens": 8,
+        "cached_tokens": 12320,
+        "finish_reason": "length",
+        "text": ".Range referenced ReserveMoneySCRIPT/productchoices",
+        "text_sha256": "a60e5ad8da5b048489a577e0fc53a3c126bc1b7fb5fb85d9e5c1a8dce6afe496",
+        "error": null,
+        "lines": [
+          "[prefix-cache] hit: 12320 of 12650 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"rp-12320\" K=0 source=eligibility-fallback prompt=12650 cached=12320 lcp=12320 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 12320 tokens, model gate)",
+          "[primeseg] call start=12320 take=288 grid_off=0 bound_rem=Some(288) ckpt_at=None snapshot_at=None q=330 budget=1024 seed_at=Some(12608)",
+          "[prefix-cache] evict (snapshot preflight, LRU): 12608 tokens, 531.3MB (model gate, ns \"rp-12288\")",
+          "[prefix-cache] insert (seed): 12608 tokens, 531.3MB (resident 1054.0MB / 1074MB, model gate, ns \"rp-12320\")",
+          "[primeseg] call start=12608 take=42 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=42 budget=1024 seed_at=None"
+        ],
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 12608,
+            "mb": 531.3
+          }
+        ],
+        "hits": [
+          {
+            "hit": 12320,
+            "prompt": 12650
+          }
+        ],
+        "primeseg": [
+          {
+            "start": 12320,
+            "take": 288,
+            "grid_off": 0
+          },
+          {
+            "start": 12608,
+            "take": 42,
+            "grid_off": 0
+          }
+        ],
+        "refused": []
+      },
+      "identical_to_cold": true,
+      "first_diff_char": null,
+      "refused": [],
+      "grid_ok": true
+    },
+    {
+      "point": 12200,
+      "salt": "rp-12200",
+      "expected_capture": 12160,
+      "published": 12160,
+      "seed_inserts": 1,
+      "restored": 12160,
+      "hit_line": 12160,
+      "suffix": 490,
+      "restored_grid_off": 0,
+      "hit_calls": 2,
+      "off_grid_calls": 0,
+      "seed": {
+        "status": 200,
+        "elapsed_s": 3.611,
+        "prompt_tokens": 12200,
+        "completion_tokens": 8,
+        "cached_tokens": 0,
+        "finish_reason": "length",
+        "text": "_\t\t\"\t\t\"\t",
+        "text_sha256": "22f023976ebc22fd5bfc9a699ff63056fb08186f1faec8429537e154a5e07f85",
+        "error": null,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"rp-12200\" K=0 source=eligibility-fallback prompt=12200 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=Some(12160) ckpt_at=None snapshot_at=None q=12200 budget=8192 seed_at=Some(12160)",
+          "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=Some(3968) ckpt_at=None snapshot_at=None q=4008 budget=1024 seed_at=Some(12160)",
+          "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=Some(2944) ckpt_at=None snapshot_at=None q=2984 budget=1024 seed_at=Some(12160)",
+          "[primeseg] call start=10240 take=1024 grid_off=0 bound_rem=Some(1920) ckpt_at=None snapshot_at=None q=1960 budget=1024 seed_at=Some(12160)",
+          "[primeseg] call start=11264 take=896 grid_off=0 bound_rem=Some(896) ckpt_at=None snapshot_at=None q=936 budget=1024 seed_at=Some(12160)",
+          "[prefix-cache] evict (snapshot preflight, LRU): 12320 tokens, 522.7MB (model gate, ns \"rp-12320\")",
+          "[prefix-cache] insert (seed): 12160 tokens, 518.0MB (resident 1049.3MB / 1074MB, model gate, ns \"rp-12200\")",
+          "[primeseg] call start=12160 take=40 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=40 budget=1024 seed_at=None"
+        ],
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 12160,
+            "mb": 518.0
+          }
+        ],
+        "hits": [],
+        "primeseg": [
+          {
+            "start": 0,
+            "take": 8192,
+            "grid_off": 0
+          },
+          {
+            "start": 8192,
+            "take": 1024,
+            "grid_off": 0
+          },
+          {
+            "start": 9216,
+            "take": 1024,
+            "grid_off": 0
+          },
+          {
+            "start": 10240,
+            "take": 1024,
+            "grid_off": 0
+          },
+          {
+            "start": 11264,
+            "take": 896,
+            "grid_off": 0
+          },
+          {
+            "start": 12160,
+            "take": 40,
+            "grid_off": 0
+          }
+        ],
+        "refused": []
+      },
+      "hit": {
+        "status": 200,
+        "elapsed_s": 0.357,
+        "prompt_tokens": 12650,
+        "completion_tokens": 8,
+        "cached_tokens": 12160,
+        "finish_reason": "length",
+        "text": ".Range referenced ReserveMoneySCRIPT/productchoices",
+        "text_sha256": "a60e5ad8da5b048489a577e0fc53a3c126bc1b7fb5fb85d9e5c1a8dce6afe496",
+        "error": null,
+        "lines": [
+          "[prefix-cache] hit: 12160 of 12650 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"rp-12200\" K=0 source=eligibility-fallback prompt=12650 cached=12160 lcp=12160 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 12160 tokens, model gate)",
+          "[primeseg] call start=12160 take=448 grid_off=0 bound_rem=Some(448) ckpt_at=None snapshot_at=None q=490 budget=1024 seed_at=Some(12608)",
+          "[prefix-cache] evict (snapshot preflight, LRU): 12608 tokens, 531.3MB (model gate, ns \"rp-12320\")",
+          "[prefix-cache] insert (seed): 12608 tokens, 531.3MB (resident 1049.3MB / 1074MB, model gate, ns \"rp-12200\")",
+          "[primeseg] call start=12608 take=42 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=42 budget=1024 seed_at=None"
+        ],
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 12608,
+            "mb": 531.3
+          }
+        ],
+        "hits": [
+          {
+            "hit": 12160,
+            "prompt": 12650
+          }
+        ],
+        "primeseg": [
+          {
+            "start": 12160,
+            "take": 448,
+            "grid_off": 0
+          },
+          {
+            "start": 12608,
+            "take": 42,
+            "grid_off": 0
+          }
+        ],
+        "refused": []
+      },
+      "identical_to_cold": true,
+      "first_diff_char": null,
+      "refused": [],
+      "grid_ok": true
+    },
+    {
+      "point": 12250,
+      "salt": "rp-12250",
+      "expected_capture": 12224,
+      "published": 12224,
+      "seed_inserts": 1,
+      "restored": 12224,
+      "hit_line": 12224,
+      "suffix": 426,
+      "restored_grid_off": 0,
+      "hit_calls": 2,
+      "off_grid_calls": 0,
+      "seed": {
+        "status": 200,
+        "elapsed_s": 3.625,
+        "prompt_tokens": 12250,
+        "completion_tokens": 8,
+        "cached_tokens": 0,
+        "finish_reason": "length",
+        "text": "_1000000",
+        "text_sha256": "3ca9a6e466c2dfb81b503a84c9ebd1055dbb1d148e56922d5ae3a4d8ef55b231",
+        "error": null,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"rp-12250\" K=0 source=eligibility-fallback prompt=12250 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=Some(12224) ckpt_at=None snapshot_at=None q=12250 budget=8192 seed_at=Some(12224)",
+          "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=Some(4032) ckpt_at=None snapshot_at=None q=4058 budget=1024 seed_at=Some(12224)",
+          "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=Some(3008) ckpt_at=None snapshot_at=None q=3034 budget=1024 seed_at=Some(12224)",
+          "[primeseg] call start=10240 take=1024 grid_off=0 bound_rem=Some(1984) ckpt_at=None snapshot_at=None q=2010 budget=1024 seed_at=Some(12224)",
+          "[primeseg] call start=11264 take=960 grid_off=0 bound_rem=Some(960) ckpt_at=None snapshot_at=None q=986 budget=1024 seed_at=Some(12224)",
+          "[prefix-cache] evict (snapshot preflight, LRU): 12160 tokens, 518.0MB (model gate, ns \"rp-12200\")",
+          "[prefix-cache] insert (seed): 12224 tokens, 519.9MB (resident 1051.2MB / 1074MB, model gate, ns \"rp-12250\")",
+          "[primeseg] call start=12224 take=26 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=26 budget=1024 seed_at=None"
+        ],
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 12224,
+            "mb": 519.9
+          }
+        ],
+        "hits": [],
+        "primeseg": [
+          {
+            "start": 0,
+            "take": 8192,
+            "grid_off": 0
+          },
+          {
+            "start": 8192,
+            "take": 1024,
+            "grid_off": 0
+          },
+          {
+            "start": 9216,
+            "take": 1024,
+            "grid_off": 0
+          },
+          {
+            "start": 10240,
+            "take": 1024,
+            "grid_off": 0
+          },
+          {
+            "start": 11264,
+            "take": 960,
+            "grid_off": 0
+          },
+          {
+            "start": 12224,
+            "take": 26,
+            "grid_off": 0
+          }
+        ],
+        "refused": []
+      },
+      "hit": {
+        "status": 200,
+        "elapsed_s": 0.347,
+        "prompt_tokens": 12650,
+        "completion_tokens": 8,
+        "cached_tokens": 12224,
+        "finish_reason": "length",
+        "text": ".Range referenced ReserveMoneySCRIPT/productchoices",
+        "text_sha256": "a60e5ad8da5b048489a577e0fc53a3c126bc1b7fb5fb85d9e5c1a8dce6afe496",
+        "error": null,
+        "lines": [
+          "[prefix-cache] hit: 12224 of 12650 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"rp-12250\" K=0 source=eligibility-fallback prompt=12650 cached=12224 lcp=12224 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 12224 tokens, model gate)",
+          "[primeseg] call start=12224 take=384 grid_off=0 bound_rem=Some(384) ckpt_at=None snapshot_at=None q=426 budget=1024 seed_at=Some(12608)",
+          "[prefix-cache] evict (snapshot preflight, LRU): 12608 tokens, 531.3MB (model gate, ns \"rp-12200\")",
+          "[prefix-cache] insert (seed): 12608 tokens, 531.3MB (resident 1051.2MB / 1074MB, model gate, ns \"rp-12250\")",
+          "[primeseg] call start=12608 take=42 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=42 budget=1024 seed_at=None"
+        ],
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 12608,
+            "mb": 531.3
+          }
+        ],
+        "hits": [
+          {
+            "hit": 12224,
+            "prompt": 12650
+          }
+        ],
+        "primeseg": [
+          {
+            "start": 12224,
+            "take": 384,
+            "grid_off": 0
+          },
+          {
+            "start": 12608,
+            "take": 42,
+            "grid_off": 0
+          }
+        ],
+        "refused": []
+      },
+      "identical_to_cold": true,
+      "first_diff_char": null,
+      "refused": [],
+      "grid_ok": true
+    },
+    {
+      "point": 12300,
+      "salt": "rp-12300",
+      "expected_capture": 12256,
+      "published": 12256,
+      "seed_inserts": 1,
+      "restored": 12256,
+      "hit_line": 12256,
+      "suffix": 394,
+      "restored_grid_off": 0,
+      "hit_calls": 2,
+      "off_grid_calls": 0,
+      "seed": {
+        "status": 200,
+        "elapsed_s": 3.638,
+        "prompt_tokens": 12300,
+        "completion_tokens": 8,
+        "cached_tokens": 0,
+        "finish_reason": "length",
+        "text": "_\t\t\"\t\t\"\t",
+        "text_sha256": "22f023976ebc22fd5bfc9a699ff63056fb08186f1faec8429537e154a5e07f85",
+        "error": null,
+        "lines": [
+          "[spec-k] model=\"gate\" tenant=\"rp-12300\" K=0 source=eligibility-fallback prompt=12300 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+          "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=Some(12256) ckpt_at=None snapshot_at=None q=12300 budget=8192 seed_at=Some(12256)",
+          "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=Some(4064) ckpt_at=None snapshot_at=None q=4108 budget=1024 seed_at=Some(12256)",
+          "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=Some(3040) ckpt_at=None snapshot_at=None q=3084 budget=1024 seed_at=Some(12256)",
+          "[primeseg] call start=10240 take=1024 grid_off=0 bound_rem=Some(2016) ckpt_at=None snapshot_at=None q=2060 budget=1024 seed_at=Some(12256)",
+          "[primeseg] call start=11264 take=992 grid_off=0 bound_rem=Some(992) ckpt_at=None snapshot_at=None q=1036 budget=1024 seed_at=Some(12256)",
+          "[prefix-cache] evict (snapshot preflight, LRU): 12224 tokens, 519.9MB (model gate, ns \"rp-12250\")",
+          "[prefix-cache] insert (seed): 12256 tokens, 520.8MB (resident 1052.1MB / 1074MB, model gate, ns \"rp-12300\")",
+          "[primeseg] call start=12256 take=44 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=44 budget=1024 seed_at=None"
+        ],
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 12256,
+            "mb": 520.8
+          }
+        ],
+        "hits": [],
+        "primeseg": [
+          {
+            "start": 0,
+            "take": 8192,
+            "grid_off": 0
+          },
+          {
+            "start": 8192,
+            "take": 1024,
+            "grid_off": 0
+          },
+          {
+            "start": 9216,
+            "take": 1024,
+            "grid_off": 0
+          },
+          {
+            "start": 10240,
+            "take": 1024,
+            "grid_off": 0
+          },
+          {
+            "start": 11264,
+            "take": 992,
+            "grid_off": 0
+          },
+          {
+            "start": 12256,
+            "take": 44,
+            "grid_off": 0
+          }
+        ],
+        "refused": []
+      },
+      "hit": {
+        "status": 200,
+        "elapsed_s": 0.344,
+        "prompt_tokens": 12650,
+        "completion_tokens": 8,
+        "cached_tokens": 12256,
+        "finish_reason": "length",
+        "text": ".Range referenced ReserveMoneySCRIPT/productchoices",
+        "text_sha256": "a60e5ad8da5b048489a577e0fc53a3c126bc1b7fb5fb85d9e5c1a8dce6afe496",
+        "error": null,
+        "lines": [
+          "[prefix-cache] hit: 12256 of 12650 prompt tokens from cache (model gate)",
+          "[spec-k] model=\"gate\" tenant=\"rp-12300\" K=0 source=eligibility-fallback prompt=12650 cached=12256 lcp=12256 active=1 wave=1 placement=single-or-non-pp2",
+          "[prefix-cache] source lease released after restore fence (entry 12256 tokens, model gate)",
+          "[primeseg] call start=12256 take=352 grid_off=0 bound_rem=Some(352) ckpt_at=None snapshot_at=None q=394 budget=1024 seed_at=Some(12608)",
+          "[prefix-cache] evict (snapshot preflight, LRU): 12608 tokens, 531.3MB (model gate, ns \"rp-12250\")",
+          "[prefix-cache] insert (seed): 12608 tokens, 531.3MB (resident 1052.1MB / 1074MB, model gate, ns \"rp-12300\")",
+          "[primeseg] call start=12608 take=42 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=42 budget=1024 seed_at=None"
+        ],
+        "inserts": [
+          {
+            "why": "seed",
+            "tokens": 12608,
+            "mb": 531.3
+          }
+        ],
+        "hits": [
+          {
+            "hit": 12256,
+            "prompt": 12650
+          }
+        ],
+        "primeseg": [
+          {
+            "start": 12256,
+            "take": 352,
+            "grid_off": 0
+          },
+          {
+            "start": 12608,
+            "take": 42,
+            "grid_off": 0
+          }
+        ],
+        "refused": []
+      },
+      "identical_to_cold": true,
+      "first_diff_char": null,
+      "refused": [],
+      "grid_ok": true
+    }
+  ],
+  "final_metrics": {
+    "cuda_driver_free_bytes": 74373005312,
+    "cuda_pool_reserved_bytes": 27011317760,
+    "cuda_pool_used_bytes": 25399009160,
+    "cuda_pool_cached_bytes": 1612308600,
+    "prefix_cache_bytes": 1052147712,
+    "prefix_cache_entries": 2,
+    "prefix_cache_evictions": 8,
+    "prefix_cache_skips_budget": 0,
+    "prefix_cache_skips_pinned": 0,
+    "active_sessions": 0,
+    "queued_requests": 0
+  },
+  "assertions": {
+    "V1_identity": true,
+    "V2_grid": true
+  }
+}

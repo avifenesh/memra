@@ -1,0 +1,405 @@
+{
+  "family": "gemma",
+  "planned_sets": 10,
+  "observed_sets": 10,
+  "complete_planned_matrix": true,
+  "audited_runs": 50,
+  "audited_turns": 800,
+  "initial_prompt_tokens_by_workload": {
+    "97e78022c8774896faee9fef10bfaa083c08fa12acd82fe208c6ed5e9390516a": 4060,
+    "32f6b6e74434fe112445f22c480a8f5d824b0e6cb05ffd61ad74cf6bd4677e9e": 4221
+  },
+  "hardware": "name, uuid, driver_version, power.limit [W], power.max_limit [W]\nNVIDIA GeForce RTX 5090, GPU-8c08f8f6-d719-cfc8-95e8-93932686c9cb, 595.91.07, 525.00 W, 575.00 W\n",
+  "binary_sha256": "8934480a1c4d43dda90e886305ffbd02763046ba3d01f00b66c8b405427c7a98",
+  "workload_sha256": [
+    "32f6b6e74434fe112445f22c480a8f5d824b0e6cb05ffd61ad74cf6bd4677e9e",
+    "97e78022c8774896faee9fef10bfaa083c08fa12acd82fe208c6ed5e9390516a"
+  ],
+  "pooled_e2e_tok_s": {
+    "fixed": 189.36813708006503,
+    "native": 199.4578928223895,
+    "measured": 199.30914202535962,
+    "calibrated": 206.31107995448758,
+    "learned": 199.6861431680406
+  },
+  "comparisons": {
+    "fixed": {
+      "pooled_change_percent": 5.448649517850557,
+      "median_pair_percent": 5.681573216585445,
+      "wins": 10,
+      "pairs": [
+        {
+          "seed": 20264000,
+          "control_tok_s": 190.194394282,
+          "learned_tok_s": 201.243841899,
+          "change_percent": 5.809554828738572
+        },
+        {
+          "seed": 20264001,
+          "control_tok_s": 187.516462522,
+          "learned_tok_s": 198.01591311,
+          "change_percent": 5.599215368500343
+        },
+        {
+          "seed": 20264002,
+          "control_tok_s": 187.575706506,
+          "learned_tok_s": 202.565113177,
+          "change_percent": 7.99112366425796
+        },
+        {
+          "seed": 20264003,
+          "control_tok_s": 191.002291685,
+          "learned_tok_s": 197.080615046,
+          "change_percent": 3.1823300691199874
+        },
+        {
+          "seed": 20264004,
+          "control_tok_s": 190.491250903,
+          "learned_tok_s": 204.014505361,
+          "change_percent": 7.099147280462859
+        },
+        {
+          "seed": 20264005,
+          "control_tok_s": 189.309027987,
+          "learned_tok_s": 197.576056848,
+          "change_percent": 4.366949082622562
+        },
+        {
+          "seed": 20264006,
+          "control_tok_s": 188.911418437,
+          "learned_tok_s": 199.800142369,
+          "change_percent": 5.763931064670547
+        },
+        {
+          "seed": 20264007,
+          "control_tok_s": 187.621965791,
+          "learned_tok_s": 199.238418228,
+          "change_percent": 6.191413882711383
+        },
+        {
+          "seed": 20264008,
+          "control_tok_s": 190.800894503,
+          "learned_tok_s": 200.765295508,
+          "change_percent": 5.2224079090170905
+        },
+        {
+          "seed": 20264009,
+          "control_tok_s": 190.35341311,
+          "learned_tok_s": 196.872264251,
+          "change_percent": 3.424604284470023
+        }
+      ]
+    },
+    "native": {
+      "pooled_change_percent": 0.11443535395929683,
+      "median_pair_percent": 0.29762412029367136,
+      "wins": 6,
+      "pairs": [
+        {
+          "seed": 20264000,
+          "control_tok_s": 202.46748498,
+          "learned_tok_s": 201.243841899,
+          "change_percent": -0.6043652298643787
+        },
+        {
+          "seed": 20264001,
+          "control_tok_s": 197.649661397,
+          "learned_tok_s": 198.01591311,
+          "change_percent": 0.18530348618426284
+        },
+        {
+          "seed": 20264002,
+          "control_tok_s": 200.6509556,
+          "learned_tok_s": 202.565113177,
+          "change_percent": 0.9539738155126987
+        },
+        {
+          "seed": 20264003,
+          "control_tok_s": 196.275991913,
+          "learned_tok_s": 197.080615046,
+          "change_percent": 0.40994475440307987
+        },
+        {
+          "seed": 20264004,
+          "control_tok_s": 199.07404833,
+          "learned_tok_s": 204.014505361,
+          "change_percent": 2.4817182713892993
+        },
+        {
+          "seed": 20264005,
+          "control_tok_s": 200.228520734,
+          "learned_tok_s": 197.576056848,
+          "change_percent": -1.3247183149915687
+        },
+        {
+          "seed": 20264006,
+          "control_tok_s": 202.840065026,
+          "learned_tok_s": 199.800142369,
+          "change_percent": -1.4986795910415074
+        },
+        {
+          "seed": 20264007,
+          "control_tok_s": 200.587292202,
+          "learned_tok_s": 199.238418228,
+          "change_percent": -0.6724623275943142
+        },
+        {
+          "seed": 20264008,
+          "control_tok_s": 199.56293548,
+          "learned_tok_s": 200.765295508,
+          "change_percent": 0.602496663575347
+        },
+        {
+          "seed": 20264009,
+          "control_tok_s": 195.492427814,
+          "learned_tok_s": 196.872264251,
+          "change_percent": 0.70582602734508
+        }
+      ]
+    },
+    "measured": {
+      "pooled_change_percent": 0.1891539639626849,
+      "median_pair_percent": 0.3617288130798757,
+      "wins": 6,
+      "pairs": [
+        {
+          "seed": 20264000,
+          "control_tok_s": 202.404971718,
+          "learned_tok_s": 201.243841899,
+          "change_percent": -0.5736666491659936
+        },
+        {
+          "seed": 20264001,
+          "control_tok_s": 197.5582912,
+          "learned_tok_s": 198.01591311,
+          "change_percent": 0.23163892905750938
+        },
+        {
+          "seed": 20264002,
+          "control_tok_s": 200.459576228,
+          "learned_tok_s": 202.565113177,
+          "change_percent": 1.0503548838221466
+        },
+        {
+          "seed": 20264003,
+          "control_tok_s": 196.116079499,
+          "learned_tok_s": 197.080615046,
+          "change_percent": 0.491818697102242
+        },
+        {
+          "seed": 20264004,
+          "control_tok_s": 198.900524186,
+          "learned_tok_s": 204.014505361,
+          "change_percent": 2.5711250364617966
+        },
+        {
+          "seed": 20264005,
+          "control_tok_s": 200.244480178,
+          "learned_tok_s": 197.576056848,
+          "change_percent": -1.3325827147035452
+        },
+        {
+          "seed": 20264006,
+          "control_tok_s": 202.601616356,
+          "learned_tok_s": 199.800142369,
+          "change_percent": -1.3827500675401283
+        },
+        {
+          "seed": 20264007,
+          "control_tok_s": 200.48345365,
+          "learned_tok_s": 199.238418228,
+          "change_percent": -0.621016547417208
+        },
+        {
+          "seed": 20264008,
+          "control_tok_s": 199.356542157,
+          "learned_tok_s": 200.765295508,
+          "change_percent": 0.7066501734819264
+        },
+        {
+          "seed": 20264009,
+          "control_tok_s": 195.221102397,
+          "learned_tok_s": 196.872264251,
+          "change_percent": 0.8457906618323463
+        }
+      ]
+    },
+    "calibrated": {
+      "pooled_change_percent": -3.2111395994381176,
+      "median_pair_percent": -3.6479146884521363,
+      "wins": 0,
+      "pairs": [
+        {
+          "seed": 20264000,
+          "control_tok_s": 209.491051348,
+          "learned_tok_s": 201.243841899,
+          "change_percent": -3.936783645856079
+        },
+        {
+          "seed": 20264001,
+          "control_tok_s": 206.531164744,
+          "learned_tok_s": 198.01591311,
+          "change_percent": -4.122986303086429
+        },
+        {
+          "seed": 20264002,
+          "control_tok_s": 207.681712423,
+          "learned_tok_s": 202.565113177,
+          "change_percent": -2.4636734675890226
+        },
+        {
+          "seed": 20264003,
+          "control_tok_s": 206.245687091,
+          "learned_tok_s": 197.080615046,
+          "change_percent": -4.443764218427604
+        },
+        {
+          "seed": 20264004,
+          "control_tok_s": 205.933541332,
+          "learned_tok_s": 204.014505361,
+          "change_percent": -0.931871495331682
+        },
+        {
+          "seed": 20264005,
+          "control_tok_s": 202.924378501,
+          "learned_tok_s": 197.576056848,
+          "change_percent": -2.6356230298734906
+        },
+        {
+          "seed": 20264006,
+          "control_tok_s": 206.744794565,
+          "learned_tok_s": 199.800142369,
+          "change_percent": -3.3590457310481936
+        },
+        {
+          "seed": 20264007,
+          "control_tok_s": 207.713071221,
+          "learned_tok_s": 199.238418228,
+          "change_percent": -4.079980592065513
+        },
+        {
+          "seed": 20264008,
+          "control_tok_s": 203.159131514,
+          "learned_tok_s": 200.765295508,
+          "change_percent": -1.1783058867009477
+        },
+        {
+          "seed": 20264009,
+          "control_tok_s": 206.870664217,
+          "learned_tok_s": 196.872264251,
+          "change_percent": -4.8331647234003405
+        }
+      ]
+    }
+  },
+  "rounds": {
+    "fixed": {
+      "rounds": 48940,
+      "depth_histogram": {
+        "5": 48940
+      },
+      "mean_depth": 5.0,
+      "round_seconds": 729.780264415,
+      "mean_round_ms": 14.911734050163465,
+      "emitted_in_rounds": 162500,
+      "emitted_per_round": 3.320392317123008,
+      "round_tokens_per_second": 222.6697650288773
+    },
+    "native": null,
+    "measured": {
+      "rounds": 61905,
+      "depth_histogram": {
+        "1": 14338,
+        "2": 19021,
+        "3": 13908,
+        "4": 7740,
+        "5": 6898
+      },
+      "mean_depth": 2.5774008561505535,
+      "round_seconds": 686.86954366,
+      "mean_round_ms": 11.095542260883613,
+      "emitted_in_rounds": 162479,
+      "emitted_per_round": 2.624650674420483,
+      "round_tokens_per_second": 236.55001375403393
+    },
+    "calibrated": {
+      "rounds": 57793,
+      "depth_histogram": {
+        "3": 57793
+      },
+      "mean_depth": 3.0,
+      "round_seconds": 661.769298146,
+      "mean_round_ms": 11.450682576540412,
+      "emitted_in_rounds": 162789,
+      "emitted_per_round": 2.8167598152025333,
+      "round_tokens_per_second": 245.99055963470428
+    },
+    "learned": {
+      "rounds": 60085,
+      "depth_histogram": {
+        "1": 2517,
+        "2": 22728,
+        "3": 17627,
+        "4": 12734,
+        "5": 4479
+      },
+      "mean_depth": 2.8989764500291253,
+      "round_seconds": 687.565583339,
+      "mean_round_ms": 11.443215167496048,
+      "emitted_in_rounds": 162850,
+      "emitted_per_round": 2.7103270366980112,
+      "round_tokens_per_second": 236.8501332035228
+    }
+  },
+  "learned_phases": {
+    "initial_exploration": {
+      "rounds": 1600,
+      "depth_histogram": {
+        "1": 320,
+        "2": 320,
+        "3": 320,
+        "4": 320,
+        "5": 320
+      },
+      "mean_depth": 3.0,
+      "round_seconds": 17.607288511,
+      "mean_round_ms": 11.004555319375001,
+      "emitted_in_rounds": 4102,
+      "emitted_per_round": 2.56375,
+      "round_tokens_per_second": 232.97170358952835
+    },
+    "periodic_probe": {
+      "rounds": 6356,
+      "depth_histogram": {
+        "1": 1330,
+        "2": 1303,
+        "3": 1282,
+        "4": 1265,
+        "5": 1176
+      },
+      "mean_depth": 2.945563247325362,
+      "round_seconds": 74.341529911,
+      "mean_round_ms": 11.69627594572058,
+      "emitted_in_rounds": 16847,
+      "emitted_per_round": 2.6505663939584645,
+      "round_tokens_per_second": 226.61626711434172
+    },
+    "exploitation": {
+      "rounds": 52129,
+      "depth_histogram": {
+        "1": 867,
+        "2": 21105,
+        "3": 16025,
+        "4": 11149,
+        "5": 2983
+      },
+      "mean_depth": 2.8901954766061118,
+      "round_seconds": 595.616764917,
+      "mean_round_ms": 11.425823724165053,
+      "emitted_in_rounds": 141901,
+      "emitted_per_round": 2.7221124518022597,
+      "round_tokens_per_second": 238.24211868813683
+    }
+  },
+  "phase_note": "Scheduling phases replayed and checked from eligible rounds. Phase rates are descriptive, not counterfactual no-probe speedups."
+}

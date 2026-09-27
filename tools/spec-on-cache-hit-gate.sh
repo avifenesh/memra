@@ -57,6 +57,45 @@
 #     its whole spec route is greedy-only upstream of any cache question (worker.rs
 #     gspec_k). Sampled gemma hits serving plain is the documented route, not this lane.
 #
+# THE CAPTURE LAW (memra#602, 2026-09-21, research/spill-b-20260919/DAY18.md and DAY19.md): every
+# entry the prefix cache publishes lands on the 32-token GDN prime grid, the spec session's
+# `insert (spec-boundary)` included. A prompt of P tokens publishes capture_len(P) tokens (P when P
+# is a multiple of 32, else the largest multiple below P leaving at least PRIME_MIN_T=16 tokens,
+# never under the 64-token entry floor), a hit restores exactly that many and cold-primes the rest
+# from the grid, and `cached_tokens` reports the restored length. On this gate's 106-token PROMPT
+# that is 64 of 106 for the s/sp/np hits and 64 of 119 for r3/g2/sx1 (the day-18 blocker: with the
+# plain seed aligned and the spec capture still at the prompt end, r3 and g2 read 106 on spec-on
+# against 64 on spec-off and the identity law went red). A restored spec session republishes at
+# the render-stable boundary ahead of what it restored (the raw-completion guard window, grid-
+# aligned: 96 of 119 for g2), so g3 and g4 restore 96, never g2's whole 119. The identity law
+# (spec-on text == spec-off text) is unchanged and is the assertion; only the accounting numbers
+# moved, and the FULL-COVER shape (an empty suffix, the `restore-full-cover` boundary draw) is now
+# exercised by its own ON-GRID prompt: PROMPT padded with " ok" words until /v1/tokenize counts a
+# multiple of 32 (the `fc` cells), because an off-grid prompt can no longer be a full-cover hit.
+#
+# THE HOST TIER CONTRACTS DOOR ARM (lane/spill-c-20260919 day 27). The door's gate batteries run this
+# gate twice, once with MEMRA_KV_HOST_CONTRACTS unset (door OFF) and once with MEMRA_KV_HOST_CONTRACTS=1
+# (door ON). Until day 27 the ON arm booted with no MEMRA_KV_HOST_MB, so the server built no program
+# identity (`[kv-host-contracts] ... nothing to route`), `hpx.armed()` was false before any entry-class
+# check, and the ON arm was the OFF arm under another name: every "hit gate ALL GREEN OFF and ON" read
+# from it covered the tick program only (research/spill-c-20260919/DAY26.md, HOSTPREFIX-DOOR.md item 11).
+# Under the door this gate now arms the host tier on BOTH boots (spec-on and the spec-off twin) with
+# the identity gate's host budget, MEMRA_KV_HOST_MB=8192 (kv-host-spill-identity-gate.sh's
+# MEMRA_HOSTGATE_HOST_MB default; an exported MEMRA_KV_HOST_MB is respected), and ASSERTS that the door
+# engaged: each boot's log carries the tier's arming line (`[prefix-host] on: budget`) and the door's
+# (`[prefix-host] contracts door ON`), no latch (`TIER DISABLED`, `CAPTURE OFF-TICK DISABLED`, `RESTORE
+# OFF-TICK DISABLED`), and the two boots together carry at least one route submission (`capture`,
+# `restore`, `demote` or `promote submitted off the tick`; the spec-off twin's `insert (seed)` entries
+# take the capture route by construction, the contract fault gate's `1 + 2 capture ticket(s)`
+# accounting on both cards). An ON arm that ran with the tier off can no longer read ALL GREEN. The
+# OFF arm is unchanged. The identity clause (spec-on text == spec-off text) is unchanged in both arms:
+# a red identity under the armed tier is a finding against the door, never a clause to move. Both
+# arms print the entry-class census per boot (draft-bearing `insert (spec-boundary)` against plain
+# `insert (seed)`, and the class of the identity clause's own namespaces) so a review can read which
+# class each side of the clause hit. The door arm is defined for the qwen arm only (a gemma tower is
+# a boot refusal under the door). No new MEMRA_* read: MEMRA_KV_HOST_CONTRACTS and MEMRA_KV_HOST_MB are
+# docs/FLAGS.md rows.
+#
 # usage:
 #   spec-on-cache-hit-gate.sh qwen  <model.gguf>              <server_bin> <evidence_dir>
 #   spec-on-cache-hit-gate.sh gemma <model.gguf> <draft.gguf> <server_bin> <evidence_dir>
@@ -74,8 +113,62 @@
 # Boots its own servers one arm at a time (flock ${MEMRA_GPU_LOCK:-/tmp/memra-5090.lock}).
 # Exit 0 = every assertion held. Evidence: <evidence_dir>/{arm}-{on,off}-r{1,2,3}.json,
 # <evidence_dir>/qwen-on-s*.json and logs.
+#
+# LOCK ARMS (C day 28, research/spill-c-20260919/DAY28.md; the kv-host-spill-identity-gate.sh shape).
+#   default                  every boot runs under this gate's own `flock -w 300` on the canonical lock.
+#   --external-lock FD       the collector (tools/tier-battery.py --external-lock) already holds the
+#                            canonical lock on the inherited FD: this gate takes NO lock of its own,
+#                            verifies the FD with tools/tier-lock-proof.py (owner `collector`) and
+#                            writes <evidence_dir>/LOCK.json before any boot. Never wrapped twice.
+#   --lock-self-test FILE    GPU-less teeth for the two arms above: boots nothing, runs the arm's launch
+#                            wrapper around a probe that asks whether FILE is locked while the wrapper
+#                            runs, prints one `LOCK-SELF-TEST ... probe=held|free` line and exits 0.
+#                            The default arm must read `held` (the wrapper holds the lock), the
+#                            external arm `free` (the gate touched no lock). FILE is a private temp
+#                            file, never a rig lock; tools/test_spec_on_cache_hit_gate_lock.sh runs it.
 set -euo pipefail
-ARM=$1
+LOCK_FD=""
+LOCK_OWNER=internal-canonical
+SELF_TEST_LOCK=""
+while [[ ${1:-} == --* ]]; do
+    case $1 in
+    --external-lock)
+        [[ ${2:-} =~ ^[0-9]+$ ]] || { echo "REFUSED: inherited lock FD required" >&2; exit 2; }
+        LOCK_FD=$2
+        LOCK_OWNER=collector
+        shift 2
+        ;;
+    --lock-self-test)
+        [[ -n ${2:-} ]] || { echo "REFUSED: --lock-self-test needs a lock file path" >&2; exit 2; }
+        SELF_TEST_LOCK=$2
+        shift 2
+        ;;
+    *)
+        echo "usage: $0 [--external-lock FD] [--lock-self-test FILE] qwen|gemma ..." >&2
+        exit 2
+        ;;
+    esac
+done
+GPU_LOCK=${MEMRA_GPU_LOCK:-/tmp/memra-5090.lock}
+# The launch wrapper is the lock arm: the default arm's per-boot `flock -w 300`, nothing under the
+# collector's hold (its FD carries the exclusion for the whole gate; a second flock on the same
+# inode would deadlock behind the collector, and a `-w` timeout would boot unlocked).
+LAUNCH=()
+[[ $LOCK_OWNER == internal-canonical ]] && LAUNCH=(flock -w 300 "$GPU_LOCK")
+if [[ -n $SELF_TEST_LOCK ]]; then
+    GPU_LOCK=$SELF_TEST_LOCK
+    LAUNCH=()
+    [[ $LOCK_OWNER == internal-canonical ]] && LAUNCH=(flock -w 300 "$GPU_LOCK")
+    : >>"$GPU_LOCK"
+    before=$(stat -c '%i:%Y' "$GPU_LOCK")
+    # Inside the wrapper (or, external arm, with no wrapper at all) a non-blocking flock on the same
+    # file says whether anything holds it right now: only this gate's own wrapper can.
+    probe=$("${LAUNCH[@]}" bash -c 'flock -n "$1" true && echo free || echo held' _ "$GPU_LOCK")
+    after=$(stat -c '%i:%Y' "$GPU_LOCK")
+    echo "LOCK-SELF-TEST owner=$LOCK_OWNER fd=${LOCK_FD:-none} lock=$GPU_LOCK wrapper=${LAUNCH[*]:-none} probe=$probe inode_mtime_before=$before inode_mtime_after=$after"
+    exit 0
+fi
+ARM=${1:-}
 case "$ARM" in
 qwen)
     MODEL=$2
@@ -94,7 +187,6 @@ gemma)
     exit 2
     ;;
 esac
-GPU_LOCK=${MEMRA_GPU_LOCK:-/tmp/memra-5090.lock}
 PORT=${MEMRA_GATE_PORT:-18099}
 HERE=$(cd "$(dirname "$0")" && pwd)
 # Port occupancy guard (GATE-INTEGRITY-20260819 A-16, deferred to this file's merge because
@@ -117,6 +209,13 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 # embedded head.
 MTP_DRAFT=${MEMRA_GATE_MTP_DRAFT:-}
 mkdir -p "$EV"
+if [[ $LOCK_OWNER == collector ]]; then
+    # Verified before any boot: the inherited FD must own the canonical inode's flock (the proof
+    # helper accepts the two rig locks only). REFUSED (exit 2) otherwise; nothing has started.
+    LOCK_PROOF=$(python3 "$HERE/tier-lock-proof.py" --fd "$LOCK_FD" --lock "$GPU_LOCK" --owner collector) || exit 2
+    printf '%s\n' "$LOCK_PROOF" >"$EV/LOCK.json"
+    echo "lock: collector's inherited FD $LOCK_FD on $GPU_LOCK (no flock of this gate's own)"
+fi
 SERVER_PID=""
 DRAFT_FAILS=0
 # Assert the SPEC-ON boot really loaded the drafter it was handed. Called only on spec-on
@@ -147,7 +246,7 @@ boot() { # $1 extra-env-string  $2 log
     # turn its "hit" row into a miss, i.e. a FAIL that says nothing about the code.
     local mtp=()
     [ -n "$MTP_DRAFT" ] && mtp=("MEMRA_MTP_DRAFT=$MTP_DRAFT")
-    flock -w 300 "$GPU_LOCK" env CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} \
+    "${LAUNCH[@]}" env CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} \
         MEMRA_COMPAT=openai "MEMRA_MODELS=gate=$MODEL" \
         "MEMRA_ADDR=127.0.0.1:$PORT" MEMRA_CTX=8192 MEMRA_MAX_SESSIONS=4 \
         "MEMRA_PREFIX_CACHE_MB=${MEMRA_HITGATE_CACHE_MB:-2048}" \
@@ -169,8 +268,20 @@ boot() { # $1 extra-env-string  $2 log
 }
 stop() {
     # kill the SERVER, not the flock wrapper (the spec-cache-gate.sh lesson: killing the
-    # wrapper orphans the server and the next boot silently reuses it on the same port).
-    pkill -x memra-server 2>/dev/null || true
+    # wrapper orphans the server and the next boot silently reuses it on the same port), and
+    # ONLY THIS GATE'S server: the child of its own flock wrapper (`flock` forks, the child execs
+    # `env` which execs the binary, so the server's parent pid is $SERVER_PID). Until day 27 this
+    # was a blanket `pkill -x memra-server`, and the EXIT trap runs it after the last boot's flock
+    # has been released, so on a shared rig it could kill a server another lane had just booted
+    # under the lock (C day 27, research/spill-c-20260919/DAY27.md). With no boot of ours
+    # outstanding there is nothing to stop. Under --external-lock there is no wrapper: `env` execs
+    # the binary in place, so $SERVER_PID is the server itself, addressed only while its comm says
+    # memra-server (C day 28).
+    [ -n "$SERVER_PID" ] || return 0
+    local pids
+    pids=$(gate_server_pids)
+    # shellcheck disable=SC2086
+    [ -n "$pids" ] && kill -TERM $pids 2>/dev/null || true
     for _ in $(seq 1 30); do
         curl -s --max-time 1 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1 || {
             SERVER_PID=""
@@ -179,9 +290,20 @@ stop() {
         }
         sleep 1
     done
-    pkill -9 -x memra-server 2>/dev/null || true
+    pids=$(gate_server_pids)
+    # shellcheck disable=SC2086
+    [ -n "$pids" ] && kill -KILL $pids 2>/dev/null || true
     SERVER_PID=""
     sleep 3
+}
+gate_server_pids() { # the pid(s) this gate may signal: its own server, nothing else
+    [ -n "$SERVER_PID" ] || return 0
+    if [[ $LOCK_OWNER == collector ]]; then
+        [ "$(cat "/proc/$SERVER_PID/comm" 2>/dev/null)" = memra-server ] && echo "$SERVER_PID"
+    else
+        pgrep -x -P "$SERVER_PID" memra-server
+    fi
+    return 0
 }
 trap stop EXIT
 
@@ -225,6 +347,36 @@ json.dump(resp, open(out, "w"), indent=1)
 PY
 }
 
+# /v1/tokenize count of a prompt (the model's default add_special mirrors /v1/completions).
+tokcount() { # $1 prompt
+    python3 - "$PORT" "$1" <<'PYT'
+import json, sys, urllib.request
+port, prompt = sys.argv[1], sys.argv[2]
+r = urllib.request.urlopen(urllib.request.Request(
+    f"http://127.0.0.1:{port}/v1/tokenize", data=json.dumps({"model": "gate", "prompt": prompt}).encode(),
+    headers={"Content-Type": "application/json"}), timeout=60)
+print(json.load(r)["count"])
+PYT
+}
+# The ON-GRID prompt for the full-cover cells: PROMPT plus " ok" words until the count is a
+# multiple of 32 (each " ok" is one token on the BPE tokenizers here; the loop re-reads the count
+# and corrects once or twice, and REFUSES rather than run a full-cover cell off the grid).
+ONGRID_PROMPT=""
+ongrid_prompt() {
+    local base=$1 count pad p tries
+    count=$(tokcount "$base")
+    pad=$(( (32 - count % 32) % 32 ))
+    for tries in 1 2 3; do
+        p=$base
+        [ "$pad" -gt 0 ] && p="$base$(printf ' ok%.0s' $(seq 1 "$pad"))"
+        count=$(tokcount "$p")
+        if [ $((count % 32)) = 0 ]; then ONGRID_PROMPT=$p; echo "  on-grid prompt: $count tokens ($pad filler words)"; return 0; fi
+        pad=$(( pad + (32 - count % 32) % 32 ))
+    done
+    echo "REFUSED: could not build an on-grid prompt (last count $count)" >&2
+    return 2
+}
+
 FAILS=0
 check() { # $1 name  $2 python-bool-expr over r1/r2/r3 (loaded json)
     local name=$1 expr=$2 arm=$3
@@ -254,6 +406,18 @@ PY
 }
 
 TEETH=${MEMRA_HITGATE_TEETH:-0}
+# The contracts door arm (header): with MEMRA_KV_HOST_CONTRACTS=1 in the environment both boots arm
+# the host tier with the identity gate's budget, and the door's engagement is asserted below.
+DOOR=${MEMRA_KV_HOST_CONTRACTS:-0}
+DOOR_ENV=""
+if [ "$DOOR" = 1 ]; then
+    if [ "$ARM" != qwen ]; then
+        echo "REFUSED: the contracts door arm (MEMRA_KV_HOST_CONTRACTS=1) is defined for the qwen arm only" >&2
+        exit 2
+    fi
+    DOOR_HOST_MB=${MEMRA_KV_HOST_MB:-8192}
+    DOOR_ENV="MEMRA_KV_HOST_MB=$DOOR_HOST_MB"
+fi
 SAMPLED_TEMP=${MEMRA_HITGATE_TEMP:-0.8}
 SAMPLED_SEEDS=${MEMRA_HITGATE_SEEDS:-"7 1234 99991"}
 # ---- BOUNDARY-PROBE TEMPERATURE: 4.0, and here is the arithmetic that fixes it there. ----
@@ -331,12 +495,42 @@ def ok(name, cond):
         fails += 1
 
 
+# THE CAPTURE LAW's arithmetic (memra#602): the published length of a P-token prompt, and the
+# render-stable republish boundary of a raw completion (the 16-token guard window, grid-aligned).
+GRID, FLOOR, MIN, GUARD = 32, 16, 64, 16
+def cap(P):
+    if P % GRID == 0:
+        return P
+    b = P // GRID * GRID
+    while b >= GRID and P - b < FLOOR:
+        b -= GRID
+    return b if b >= MIN else None
+def stable(P):
+    if P <= MIN // 4 + GUARD:
+        return None
+    b = (P - GUARD) // GRID * GRID
+    while b >= GRID and P - b < FLOOR:
+        b -= GRID
+    return b if b > 16 else None
+def republish(P, restored):
+    st = stable(P)
+    if st is not None and st > restored:
+        return st
+    c = cap(P)
+    return c if c is not None and c > restored and c - restored >= FLOOR else None
+def ptoks(r):
+    return r["usage"]["prompt_tokens"]
+
+
 for s in seeds:
     cold, hit = load(f"qwen-on-s{s}-cold"), load(f"qwen-on-s{s}-hit")
     ok(f"s{s} sampled cold engages spec, zero cached",
        spec(cold) is not None and spec(cold)["drafted"] > 0 and cached(cold) == 0)
-    ok(f"s{s} sampled hit is a FULL-COVER cache hit",
-       cached(hit) > 0 and cached(hit) == hit["usage"]["prompt_tokens"])
+    # CAPTURE LAW: the leader published cap(P) (64 of 106 here), so the identical repeat restores
+    # exactly that and cold-primes the rest from the grid; it was a whole-prompt FULL-COVER hit
+    # until 2026-09-21. The full-cover shape has its own on-grid cells below (fc).
+    ok(f"s{s} sampled hit restores the whole published entry (cached == cap(prompt) == {cap(ptoks(hit))})",
+       cached(hit) > 0 and cached(hit) == cap(ptoks(hit)))
     if teeth:
         # ROLLBACK posture: the door must hold sampled hits on the plain path.
         ok(f"s{s} sampled hit stays PLAIN under MEMRA_SPEC_RESTORE_SAMPLED=0",
@@ -379,8 +573,8 @@ if teeth:
     ok("sp penalized sampled hit stays PLAIN under the burst-local window door",
        spec(phit) is None and cached(phit) > 0)
 else:
-    ok("sp penalized sampled hit is a FULL-COVER hit",
-       cached(phit) > 0 and cached(phit) == phit["usage"]["prompt_tokens"])
+    ok(f"sp penalized sampled hit restores the whole published entry (cached == cap(prompt) == {cap(ptoks(phit))})",
+       cached(phit) > 0 and cached(phit) == cap(ptoks(phit)))
     ok("sp penalized sampled hit SPEC ENGAGED (accepted > 0)",
        spec(phit) is not None and spec(phit)["accepted"] > 0)
     ok("sp penalized sampled hit bytes == cold leader bytes (same seed)",
@@ -400,6 +594,22 @@ ok("np greedy+penalized leader serves PLAIN (publishes a plane-less entry)",
    spec(nlead) is None and cached(nlead) == 0)
 ok("np sampled hit on a plane-less entry stays PLAIN (refusal is real)",
    spec(nhit) is None and cached(nhit) > 0)
+
+# --- FULL-COVER on the grid (memra#602, day 19): the same sampled prompt twice, its token count a
+# multiple of 32, so the repeat is a true full-cover hit (empty suffix) and the engine draws the
+# first token from the ENTRY's boundary logits at the `restore-full-cover` site. This is the
+# shape the s cells had before the capture law moved their entries under the prompt end.
+flead, fhit = load("qwen-on-fc-lead"), load("qwen-on-fc-hit")
+ok("fc on-grid prompt (tokens a multiple of 32)", ptoks(flead) % GRID == 0 and ptoks(fhit) == ptoks(flead))
+ok("fc sampled leader engages spec, zero cached", spec(flead) is not None and cached(flead) == 0)
+ok("fc sampled hit is a FULL-COVER cache hit (cached == prompt_tokens)", cached(fhit) > 0 and cached(fhit) == ptoks(fhit))
+if teeth:
+    ok("fc sampled full-cover hit stays PLAIN under MEMRA_SPEC_RESTORE_SAMPLED=0", spec(fhit) is None)
+else:
+    ok("fc sampled full-cover hit SPEC ENGAGED (accepted > 0)", spec(fhit) is not None and spec(fhit)["accepted"] > 0)
+    ok("fc sampled full-cover hit bytes == cold leader bytes (same seed)", text(fhit) == text(flead))
+    ok("fc sampled full-cover hit acceptance == cold acceptance exactly",
+       spec(fhit) is not None and (spec(fhit)["accepted"], spec(fhit)["drafted"]) == (spec(flead)["accepted"], spec(flead)["drafted"]))
 
 # --- ITEM 1, the CUSTOMER-VISIBLE probe. Pre-lane every sampled request's FIRST token was
 # `argmax(prime_logits)` — the same token the greedy request emits from the same row, for
@@ -472,7 +682,39 @@ def ok(name, cond):
         fails += 1
 
 
+# THE CAPTURE LAW's arithmetic (memra#602): the published length of a P-token prompt, and the
+# render-stable republish boundary of a raw completion (the 16-token guard window, grid-aligned).
+GRID, FLOOR, MIN, GUARD = 32, 16, 64, 16
+def cap(P):
+    if P % GRID == 0:
+        return P
+    b = P // GRID * GRID
+    while b >= GRID and P - b < FLOOR:
+        b -= GRID
+    return b if b >= MIN else None
+def stable(P):
+    if P <= MIN // 4 + GUARD:
+        return None
+    b = (P - GUARD) // GRID * GRID
+    while b >= GRID and P - b < FLOOR:
+        b -= GRID
+    return b if b > 16 else None
+def republish(P, restored):
+    st = stable(P)
+    if st is not None and st > restored:
+        return st
+    c = cap(P)
+    return c if c is not None and c > restored and c - restored >= FLOOR else None
+def ptoks(r):
+    return r["usage"]["prompt_tokens"]
+
+
 g1, g2, g3, g4 = (load(f"qwen-on-g{i}") for i in (1, 2, 3, 4))
+# CAPTURE LAW: g1 published cap(P1) (64 of 106); g2 restores it and republishes at the render-stable
+# boundary ahead of it (stable(P2) = 96 of 119, the grid-aligned guard window), or at cap(P2) when
+# no stable boundary lies ahead; g3 and g4 restore that republished length, never g2's whole prompt.
+REP = republish(ptoks(g2), cap(ptoks(g1)))
+ok(f"g2 restores g1's published entry (cached == cap(P1) == {cap(ptoks(g1))})", cached(g2) == cap(ptoks(g1)))
 ok("g1 turn 1 is cold and engages spec",
    cached(g1) == 0 and spec(g1) is not None and spec(g1)["drafted"] > 0)
 ok("g2 turn 2 restores turn 1's boundary (suffix-fed hit)",
@@ -489,10 +731,11 @@ else:
     # THE Item 3 assertion.
     ok("g3 turn 3 hits a STRICTLY LONGER prefix than turn 2 did",
        cached(g3) > cached(g2))
-    # ENTRY ACCOUNTING: the republished boundary is turn 2's own prompt END — whole-entry
-    # semantics, never mid-entry (the rolled-back partial-restore hazard stays closed).
-    ok("g3's restored prefix == turn 2's whole prompt (whole-entry boundary)",
-       cached(g3) == prompt_toks(g2))
+    # ENTRY ACCOUNTING: the republished boundary is turn 2's render-stable grid boundary (memra#602;
+    # it was turn 2's own prompt END until 2026-09-21), whole-entry semantics, never mid-entry (the
+    # rolled-back partial-restore hazard stays closed).
+    ok(f"g3's restored prefix == turn 2's republished boundary ({REP} of {prompt_toks(g2)})",
+       REP is not None and cached(g3) == REP)
     # STATE CORRECTNESS, and why it is THIS comparison. A republished entry is a snapshot of
     # g2's own live boundary state, so restoring it must reproduce g2's own continuation
     # byte-for-byte: both sides continue from the same boundary through the same program, so a
@@ -501,8 +744,10 @@ else:
     # publish an extended entry at all, so it restores a SHORTER boundary and primes a longer
     # suffix; comparing against it measures prefill segmentation (the banked r3 two-programs
     # class), not this mechanism. See SAMPLED-QUALITY.md for the measured consequence.
-    ok("g4 (full-cover hit on the REPUBLISHED entry) is a full-cover hit",
-       cached(g4) == prompt_toks(g4) and cached(g4) == prompt_toks(g2))
+    # g4 repeats turn 2 exactly and restores the whole REPUBLISHED entry (96 of 119), then cold-primes
+    # the rest from the grid; it was a whole-prompt full-cover hit until the capture law.
+    ok(f"g4 (repeat of turn 2) restores the whole REPUBLISHED entry (cached == {REP})",
+       REP is not None and cached(g4) == REP and cached(g4) == cached(g3))
     ok("g4 SPEC ENGAGED on the republished entry",
        spec(g4) is not None and spec(g4)["accepted"] > 0)
     ok("g4 reproduces its publisher's continuation byte-for-byte (snapshot round-trip)",
@@ -515,6 +760,71 @@ sys.exit(1 if fails else 0)
 PY
 }
 
+# Entry-class and door-route census of one server log. Printed in BOTH arms so the review can read
+# which class each side of the identity clause hit; asserted on only under the door (door_assert).
+# The identity clause's rows live in the default namespace (r1..r3, no `ns`) and in ns "grow"
+# (g1..g4); the class of every entry published there is the class the clause's hits restored on
+# that side (a hit restores an entry of its own namespace only).
+DOOR_ROUTE_RE='(capture|restore|demote|promote) submitted off the tick'
+DOOR_LATCH_RE='TIER DISABLED|CAPTURE OFF-TICK DISABLED|RESTORE OFF-TICK DISABLED'
+door_census() { # $1 label  $2 server log
+    local log=$2 sb seed other idl idsb idseed cls
+    sb=$(grep -c "\[prefix-cache\] insert (spec-boundary)" "$log" || true)
+    seed=$(grep -c "\[prefix-cache\] insert (seed)" "$log" || true)
+    other=$(grep -E "\[prefix-cache\] insert \(" "$log" | grep -vcE "insert \((spec-boundary|seed)\)" || true)
+    echo "  census $1: entries published: $sb draft-bearing (insert (spec-boundary)), $seed plain (insert (seed)), $other other"
+    grep -oE "\[prefix-cache\] hit: [0-9]+ of [0-9]+ prompt tokens" "$log" | sort | uniq -c \
+        | sed -E 's/^ *([0-9]+) \[prefix-cache\] /    hits x\1: /' || true
+    idl=$(grep -E "\[prefix-cache\] insert \(" "$log" | grep -E 'model [^,)]+\)$|ns "grow"\)$' || true)
+    idsb=$(printf '%s\n' "$idl" | grep -c "insert (spec-boundary)" || true)
+    idseed=$(printf '%s\n' "$idl" | grep -c "insert (seed)" || true)
+    if [ "$idsb" -gt 0 ] && [ "$idseed" = 0 ]; then cls=draft-bearing
+    elif [ "$idseed" -gt 0 ] && [ "$idsb" = 0 ]; then cls=plain
+    elif [ "$idsb" = 0 ] && [ "$idseed" = 0 ]; then cls=none
+    else cls=mixed; fi
+    echo "    identity clause namespaces (default, \"grow\") on the $1 side: $idsb draft-bearing, $idseed plain -> its hits restored $cls entries"
+    echo "    door lines: armed=$(grep -c '\[prefix-host\] on: budget' "$log" || true)" \
+        "door_on=$(grep -c '\[prefix-host\] contracts door ON' "$log" || true)" \
+        "capture_submitted=$(grep -c 'capture submitted off the tick' "$log" || true)" \
+        "capture_published=$(grep -c 'capture published off the tick' "$log" || true)" \
+        "restore_submitted=$(grep -c 'restore submitted off the tick' "$log" || true)" \
+        "restore_landed=$(grep -c 'restore landed off the tick' "$log" || true)" \
+        "demote_submitted=$(grep -c 'demote submitted off the tick' "$log" || true)" \
+        "promote_submitted=$(grep -c 'promote submitted off the tick' "$log" || true)" \
+        "refused_contracts_door=$(grep -c 'refused (contracts door)' "$log" || true)" \
+        "restore_refused=$(grep -c 'restore refused' "$log" || true)" \
+        "latched=$(grep -cE "$DOOR_LATCH_RE" "$log" || true)"
+}
+# The door arm's engagement assertions for one boot (header). Quotes the arming line and the first
+# route line verbatim so a receipt reads them without opening the log.
+door_assert() { # $1 label  $2 server log
+    local log=$2 line
+    if line=$(grep -m1 '\[prefix-host\] on: budget' "$log"); then
+        echo "  ok: door arm: the host tier is armed on the $1 boot"
+        echo "     $line"
+    else
+        echo "  FAIL: door arm: no '[prefix-host] on: budget' line on the $1 boot (MEMRA_KV_HOST_MB not in force: the tier is off before any class check)"
+        FAILS=$((FAILS + 1))
+    fi
+    if line=$(grep -m1 '\[prefix-host\] contracts door ON' "$log"); then
+        echo "  ok: door arm: the contracts door is ON on the $1 boot"
+        echo "     ${line:0:200}"
+    else
+        echo "  FAIL: door arm: no '[prefix-host] contracts door ON' line on the $1 boot"
+        FAILS=$((FAILS + 1))
+    fi
+    if grep -qE "$DOOR_LATCH_RE" "$log"; then
+        echo "  FAIL: door arm: the tier or a route latched off on the $1 boot:"
+        grep -E "$DOOR_LATCH_RE" "$log" | head -3 | sed 's/^/     /'
+        FAILS=$((FAILS + 1))
+    else
+        echo "  ok: door arm: no latch line on the $1 boot"
+    fi
+    if line=$(grep -m1 -E "$DOOR_ROUTE_RE" "$log"); then
+        echo "     first route line on the $1 boot: $line"
+    fi
+}
+
 if [ "$ARM" = qwen ]; then
     # MEMRA_SPEC_BOUNDARY_TRACE=1 is diagnostics-only (one stderr line per boundary draw) and
     # is what makes Item 1's assertions — and the MEASURED boundary rate — observable instead
@@ -523,11 +833,11 @@ if [ "$ARM" = qwen ]; then
         echo "== qwen arm: spec-on boot, TEETH/ROLLBACK posture (every door shut) =="
         boot "MEMRA_SPEC_BOUNDARY_TRACE=1 MEMRA_SPEC_RESTORE_SAMPLED=0 \
               MEMRA_SPEC_SAMPLED_BOUNDARY=0 MEMRA_SPEC_PEN_SESSION=0 \
-              MEMRA_SPEC_RESTORE_REPUBLISH=0" "$EV/qwen-on-server.log"
+              MEMRA_SPEC_RESTORE_REPUBLISH=0 $DOOR_ENV" "$EV/qwen-on-server.log"
         assert_mtp_drafter "$EV/qwen-on-server.log"
     else
-        echo "== qwen arm: spec-on boot =="
-        boot "MEMRA_SPEC_BOUNDARY_TRACE=1" "$EV/qwen-on-server.log"
+        echo "== qwen arm: spec-on boot${DOOR_ENV:+ (contracts door ON, $DOOR_ENV)} =="
+        boot "MEMRA_SPEC_BOUNDARY_TRACE=1 $DOOR_ENV" "$EV/qwen-on-server.log"
         assert_mtp_drafter "$EV/qwen-on-server.log"
     fi
     req "$PROMPT" 0 "$EV/qwen-on-r1.json"      # cold: spec engages, publishes seed entry
@@ -549,6 +859,10 @@ if [ "$ARM" = qwen ]; then
     # draft plane and the sampled repeat must refuse BY NAME (the live refusal cell).
     req "$PROMPT" 0 "$EV/qwen-on-np-lead.json" 7 samp-noplane 0.5
     req "$PROMPT" "$SAMPLED_TEMP" "$EV/qwen-on-np-hit.json" 7 samp-noplane
+    # fc cells: the ON-GRID full-cover pair (see the header; built through /v1/tokenize).
+    ongrid_prompt "$PROMPT" || exit 2
+    req "$ONGRID_PROMPT" "$SAMPLED_TEMP" "$EV/qwen-on-fc-lead.json" 7 samp-fullcover
+    req "$ONGRID_PROMPT" "$SAMPLED_TEMP" "$EV/qwen-on-fc-hit.json" 7 samp-fullcover
     # ONE-TOKEN boundary cells (Item 1's customer-visible probe): the response text IS the
     # boundary token. Own namespace per cell so none of them can hit another's entry.
     req "$PROMPT" 0 "$EV/qwen-on-bg.json" 7 bnd-g 0 1
@@ -566,6 +880,11 @@ if [ "$ARM" = qwen ]; then
     # continuation byte-for-byte. Same program on both sides — no prefill-segmentation confound.
     req "$PROMPT$EXT" 0 "$EV/qwen-on-g4.json" 7 grow
     stop
+    door_census spec-on "$EV/qwen-on-server.log"
+    if [ "$DOOR" = 1 ]; then
+        echo "-- contracts door arm (MEMRA_KV_HOST_CONTRACTS=1, $DOOR_ENV): engagement on the spec-on boot --"
+        door_assert spec-on "$EV/qwen-on-server.log"
+    fi
     if grep -q "\[prefix-cache\] spec restore:" "$EV/qwen-on-server.log"; then
         echo "  ok: server log shows spec restore"
     else
@@ -604,6 +923,12 @@ if [ "$ARM" = qwen ]; then
         # silently: the cold prime's first token, a continuation burst's stashed token
         # (max_tokens 48 > MEMRA_SPEC_BURST 32, so every sampled cell crosses one boundary),
         # and a converted full-cover hit's seed.
+        # The converted SUFFIX hits (s/sp/sx since the capture law moved their entries under the
+        # prompt end) draw their first token in the prime path (`cold-prime`): the deferred
+        # restore primes the carried suffix through the walker, and `restore-suffix-feed` is the
+        # legacy non-deferred shape's site, unreachable from these cells. Day 19 asserted it for
+        # one run and removed the assertion the same day (its own addition, never a shipped
+        # check); the fc cells keep the full-cover site lit.
         for SITE in cold-prime burst-tail-commit restore-full-cover; do
             if grep -q "\[spec-boundary\] site=$SITE " "$EV/qwen-on-server.log"; then
                 echo "  ok: boundary site $SITE fired"
@@ -673,8 +998,8 @@ if [ "$ARM" = qwen ]; then
         fi
     fi
 
-    echo "== qwen arm: spec-off twin boot (identity reference) =="
-    boot "MEMRA_SERVE_SPEC=0" "$EV/qwen-off-server.log"
+    echo "== qwen arm: spec-off twin boot (identity reference${DOOR_ENV:+; contracts door ON, $DOOR_ENV}) =="
+    boot "MEMRA_SERVE_SPEC=0 $DOOR_ENV" "$EV/qwen-off-server.log"
     req "$PROMPT" 0 "$EV/qwen-off-r1.json"
     req "$PROMPT" 0 "$EV/qwen-off-r2.json"
     req "$PROMPT$EXT" 0 "$EV/qwen-off-r3.json"
@@ -688,6 +1013,18 @@ if [ "$ARM" = qwen ]; then
     req "$PROMPT" 0 "$EV/qwen-off-g1.json" 7 grow
     req "$PROMPT$EXT" 0 "$EV/qwen-off-g2.json" 7 grow
     stop
+    door_census spec-off "$EV/qwen-off-server.log"
+    if [ "$DOOR" = 1 ]; then
+        echo "-- contracts door arm: engagement on the spec-off twin boot --"
+        door_assert spec-off "$EV/qwen-off-server.log"
+        ROUTES=$(cat "$EV/qwen-on-server.log" "$EV/qwen-off-server.log" | grep -cE "$DOOR_ROUTE_RE" || true)
+        if [ "$ROUTES" -gt 0 ]; then
+            echo "  ok: door arm: $ROUTES route submission(s) across the two boots (capture, restore, demote or promote off the tick)"
+        else
+            echo "  FAIL: door arm: zero route submissions across the two boots; the door routed nothing this gate hit or published"
+            FAILS=$((FAILS + 1))
+        fi
+    fi
     check "off-boot rows carry no spec" \
         "spec(r1) is None and spec(r2) is None and spec(r3) is None" qwen-off
     for n in r1 r2 r3 g1 g2; do
@@ -709,6 +1046,7 @@ else
     req "$PROMPT$EXT" 0 "$EV/gemma-on-r2.json" # greedy extended: gspec restored carrier
     req "$PROMPT" 0 "$EV/gemma-on-r3.json"     # greedy full-cover: PLAIN by design
     stop
+    door_census spec-on "$EV/gemma-on-server.log"
     check "r1 sampled leader is plain + cold" "spec(r1) is None and cached(r1) == 0" gemma-on
     check "r2 hit has cached tokens" "cached(r2) > 0" gemma-on
     check "r2 hit SPEC ENGAGED (accepted > 0)" \
@@ -722,6 +1060,7 @@ else
     req "$PROMPT$EXT" 0 "$EV/gemma-off-r2.json"
     req "$PROMPT" 0 "$EV/gemma-off-r3.json"
     stop
+    door_census spec-off "$EV/gemma-off-server.log"
     for n in 2 3; do
         if python3 -c "
 import json,sys

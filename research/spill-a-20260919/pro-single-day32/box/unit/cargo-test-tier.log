@@ -1,0 +1,14 @@
+   Compiling memra-tier v0.138.0 (/root/wt-a/crates/memra-tier)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.81s
+     Running tests/contracts/mod.rs (target/debug/deps/contracts-7e738aecefe88b56)
+
+running 6 tests
+test h2d_span_bindings::h2d_span_enqueue_failure_quarantines_the_ticket ... ok
+test d2h_span_bindings::d2h_span_enqueue_failure_quarantines_the_ticket ... ok
+test d2h_span_bindings::d2h_span_batch_lands_with_its_ticket_and_comes_back_once ... ok
+test h2d_span_bindings::h2d_span_batch_lands_with_its_ticket_and_is_read_behind_the_wait ... ok
+test d2h_span_bindings::d2h_span_red_arm_a_take_on_the_items_landing_fails ... ok
+test h2d_span_bindings::h2d_span_red_arm_an_owner_read_before_the_wait_fails ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 87 filtered out; finished in 0.00s
+

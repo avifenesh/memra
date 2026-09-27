@@ -1,0 +1,55 @@
+{
+  "status": 200,
+  "elapsed_s": 9.259,
+  "prompt_tokens": 12650,
+  "completion_tokens": 8,
+  "cached_tokens": 0,
+  "finish_reason": "length",
+  "text": ".Range referenced ReserveMoneySCRIPT/productchoices",
+  "text_sha256": "a60e5ad8da5b048489a577e0fc53a3c126bc1b7fb5fb85d9e5c1a8dce6afe496",
+  "error": null,
+  "lines": [
+    "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12650 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+    "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=12650 budget=8192",
+    "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=4458 budget=1024",
+    "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=3434 budget=1024",
+    "[primeseg] call start=10240 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2410 budget=1024",
+    "[primeseg] call start=11264 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1386 budget=1024",
+    "[primeseg] call start=12288 take=362 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=362 budget=1024"
+  ],
+  "inserts": [],
+  "hits": [],
+  "primeseg": [
+    {
+      "start": 0,
+      "take": 8192,
+      "grid_off": 0
+    },
+    {
+      "start": 8192,
+      "take": 1024,
+      "grid_off": 0
+    },
+    {
+      "start": 9216,
+      "take": 1024,
+      "grid_off": 0
+    },
+    {
+      "start": 10240,
+      "take": 1024,
+      "grid_off": 0
+    },
+    {
+      "start": 11264,
+      "take": 1024,
+      "grid_off": 0
+    },
+    {
+      "start": 12288,
+      "take": 362,
+      "grid_off": 0
+    }
+  ],
+  "refused": []
+}

@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "python3",
+    "research/spill-b-20260919/day17-probe.py",
+    "--external-lock",
+    "3",
+    "--model",
+    "/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "--bin",
+    "/home/avifenesh/projects/wt-spill-b/target/release/memra-server",
+    "--out",
+    "/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day17/probe-d-tokenwise/cell",
+    "--gpu-lock",
+    "/tmp/memra-5090.lock",
+    "--label",
+    "tokenwise",
+    "--turns",
+    "10",
+    "--start-tokens",
+    "11000",
+    "--grow-tokens",
+    "150",
+    "--cold-turns",
+    "10",
+    "--no-cohort",
+    "--request-timeout-s",
+    "900",
+    "--env",
+    "MEMRA_PREFILL_TICK=8",
+    "--env",
+    "MEMRA_DEBUG_PRIMESEG=1",
+    "--env",
+    "MEMRA_TTFT_TRACE=1"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "[N/A]",
+      "power.max_limit": "175.00 W"
+    }
+  ],
+  "started_monotonic_ns": 92637066815312,
+  "ended_monotonic_ns": 93200783776160,
+  "started_utc": "2026-09-21T11:00:17.117274+00:00",
+  "ended_utc": "2026-09-21T11:09:40.834235+00:00",
+  "elapsed_seconds": 563.716960848,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 16212,
+    "sha256": "3bb9412060cd9c3e2b86ada6a961d85cc88f534615631816c0fc255f159730bc"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 237776,
+      "sha256": "27847c26e782b3949dffe439bce3957cee3ad6aa176dc2a041eb3734db41bfbd"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 176,
+    "sha256": "dcb17b61c672c6c1abd4bc4e9c6a9c7ff69efc7ddf1d5cd8f9847e59430d9842"
+  }
+}

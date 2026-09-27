@@ -1,0 +1,52 @@
+== binary and card
+  source 4467131f6c09f803f5efaa9f4f5cdc0c4fe1e68b
+  binary sha256 b5ea1c25f35fb5adb7b3cf4c2119b3bcd178ec9e290aa8c796533c1dd6aecbcc
+  card NVIDIA RTX PRO 6000 Blackwell Server Edition, 600.00 W, 600.00 W, 580.178.04
+  ok: card at its 600 W limit
+  ok: build exit 0
+  cells: faultgate, gputests, hostgate-identity-off-default, hostgate-identity-on-default
+  ok: four cells captured  4
+  ok: faultgate: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: faultgate: ran the review tree
+  ok: faultgate: collector --validate exit 0
+  ok: gputests: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: gputests: ran the review tree
+  ok: gputests: collector --validate exit 0
+  ok: hostgate-identity-off-default: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: hostgate-identity-off-default: ran the review tree
+  ok: hostgate-identity-off-default: collector --validate exit 0
+  ok: hostgate-identity-on-default: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: hostgate-identity-on-default: ran the review tree
+  ok: hostgate-identity-on-default: collector --validate exit 0
+== GPU unit cells of both routes (eight)
+  ok: gputests: option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on ok
+  ok: gputests: option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on ok
+  ok: gputests: option_c_promote_routes_every_contract_plane_and_keeps_the_host_twin ok
+  ok: gputests: option_c_presubmit_refusal_releases_every_destination_and_keeps_the_host_twin ok
+  ok: gputests: option_c_postpublish_refusal_retires_the_ticket_and_keeps_the_host_twin ok
+  ok: gputests: option_c_receipt_mismatch_cancels_before_publication_and_recovers_the_source ok
+  ok: gputests: option_c_partial_acceptance_unwinds_refused_with_every_destination_released ok
+  ok: gputests: option_c_first_ready_view_failure_unwinds_through_the_published_arm ok
+  ok: gputests: test result 8 passed, 0 failed
+== kv-host-contract-fault-gate, six cells
+  ok: faultgate: ALL GREEN  63 lines
+  ok: faultgate: no FAIL line
+  ok: faultgate promote-presubmit: one typed injected refusal, then an H2D receipt and a promote line, no latch, no drop, no leak, no quarantine  refusal@57 h2d=[69] promote=[74]
+  ok: faultgate promote-presubmit: the aborted ticket's sequence is consumed (0 skipped: retired and acknowledged, nothing leaked)  seqs=[1, 2, 3, 4] skipped=[]
+  ok: faultgate promote-postpublish: one typed injected refusal, then an H2D receipt and a promote line, no latch, no drop, no leak, no quarantine  refusal@57 h2d=[69] promote=[74]
+  ok: faultgate promote-postpublish: the aborted ticket's sequence is consumed (1 skipped: retired and acknowledged, nothing leaked)  seqs=[1, 3, 4, 5] skipped=[2]
+  ok: faultgate promote-reject: one typed injected refusal, then an H2D receipt and a promote line, no latch, no drop, no leak, no quarantine  refusal@57 h2d=[69] promote=[74]
+  ok: faultgate promote-reject: the aborted ticket's sequence is consumed (1 skipped: retired and acknowledged, nothing leaked)  seqs=[1, 3, 4, 5] skipped=[2]
+  ok: faultgate promote-readyview: one typed injected refusal, then an H2D receipt and a promote line, no latch, no drop, no leak, no quarantine  refusal@57 h2d=[69] promote=[74]
+  ok: faultgate promote-readyview: the aborted ticket's sequence is consumed (1 skipped: retired and acknowledged, nothing leaked)  seqs=[1, 3, 4, 5] skipped=[2]
+== kv-host-spill-identity-gate, DEFAULT spec env, door OFF vs ON on the review binary
+  ok: verdict lines identical  13 lines
+  ok: both arms ALL GREEN
+  ok: [prefix-host] demote: byte counts equal  demote: 89 tokens, 160.7MB (host resident 160.7MB / 8590MB, model gate) | demote: 86 tokens, 160.6MB (host resident 321.3MB / 8590MB, model gate)
+  ok: prefix event sequence identical (timings stripped, door lines excluded)  16 events
+  ok: ON: verify ok on every promote  promotes=1
+  ok: ON: one H2D receipt per promote, each digest equal to a D2H digest of the same log
+  ok: ON: no host-tier refusal line
+  ok: OFF: no contracts door line
+
+DAY16 REVIEW REPLAY: PASS

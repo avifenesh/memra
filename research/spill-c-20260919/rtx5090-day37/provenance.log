@@ -1,0 +1,10 @@
+# command: for f in research/spill-c-20260919/rtx5090-day37/stall/ev/p*/pass*/*/server.log; do grep -m1 -o 'git: [0-9a-f]*' "$f"; done, counted per program (uniq -c)
+      6 p1-base git: 091a931c023a
+      6 p2-opta git: 8b889dcdf53e
+      6 p3-opta git: 8b889dcdf53e
+      6 p4-base git: 091a931c023a
+# command: git diff --stat 8b889dcdf a50922b27 -- crates/ | wc -l
+0
+# command: grep -c 'STALL REPLAY: PASS' research/spill-c-20260919/rtx5090-day37/stall/ev/replays.log; grep -ci fail research/spill-c-20260919/rtx5090-day37/stall/ev/replays.log
+40
+0

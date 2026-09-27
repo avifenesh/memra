@@ -1,0 +1,22 @@
+ok: barrier
+ok: barrier has barrier: primaries complete, alternates held: inflight_signed=3 expected=3
+ok: barrier has extra projection admitted=0 expected=0
+ok: barrier has barrier: drained after the retry landed: inflight_signed=0 expected=0
+ok: barrier has BARRIER_OK
+ok: failure
+ok: failure has failure: alternate half failed with EIO, sentinel read entered: inflight_signed=1 expected=1
+ok: failure has failure: drained after the retry landed: inflight_signed=0 expected=0
+ok: failure has FAILURE_PATH_OK
+ok: parity
+ok: parity has parity: three single-job reads held: inflight_signed=3 expected=3
+ok: parity has parity: drained: inflight_signed=0 expected=0
+ok: parity has PARITY_OK
+ok: submit-throw
+ok: submit-throw has submit-throw: after the failed call: inflight_signed=0 expected=0
+ok: submit-throw has submit-throw: after the retry landed: inflight_signed=0 expected=0
+ok: submit-throw has submit-throw: PASS
+ok: submit-throw-claim
+ok: submit-throw-claim has submit-throw-claim: after the failed call: inflight_signed=0 expected=0
+ok: submit-throw-claim has submit-throw-claim: key claimable after the failed call=1 expected=1
+ok: submit-throw-claim has submit-throw-claim: PASS
+cpu expert prefetch accounting tests: ALL GREEN

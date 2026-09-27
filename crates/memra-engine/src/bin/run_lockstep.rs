@@ -130,14 +130,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut next: Vec<u32> = last_logits.iter().map(|l| argmax(l)).collect();
     let mut outputs: Vec<Vec<u32>> = (0..m).map(|_| Vec::with_capacity(n_new)).collect();
 
+    // MEMRA_LOCKSTEP_LOGITS_DUMP (memra#577): stream 0's full logits row after the prime and
+    // after every lockstep step, raw little-endian f32, so two runs (M=1 against M=k with the
+    // same stream-0 prompt) can be diffed bit-for-bit offline instead of only by their argmax.
+    // The per-step top-2 margin is printed alongside: a flip needs a near-tie to land on.
+    let mut logits_dump = match std::env::var("MEMRA_LOCKSTEP_LOGITS_DUMP") {
+        Ok(path) if !path.is_empty() => {
+            Some(std::io::BufWriter::new(std::fs::File::create(&path)?))
+        }
+        _ => None,
+    };
+    let top2_margin = |v: &[f32]| -> (u32, f32) {
+        let mut best = (0usize, f32::NEG_INFINITY);
+        let mut second = f32::NEG_INFINITY;
+        for (i, &x) in v.iter().enumerate() {
+            if x > best.1 {
+                second = best.1;
+                best = (i, x);
+            } else if x > second {
+                second = x;
+            }
+        }
+        (best.0 as u32, best.1 - second)
+    };
+    let mut dump_row = |step: usize, row: &[f32]| -> Result<(), Box<dyn std::error::Error>> {
+        let (id, margin) = top2_margin(row);
+        println!("stream0 step {step}: argmax {id} top2-margin {margin:.6e}");
+        if let Some(w) = logits_dump.as_mut() {
+            use std::io::Write as _;
+            for x in row {
+                w.write_all(&x.to_le_bytes())?;
+            }
+        }
+        Ok(())
+    };
+    dump_row(0, &last_logits[0])?;
+
     let cpu_before = e.cpu_expert_stats();
     let t0 = std::time::Instant::now();
-    for _ in 0..n_new {
+    for step in 0..n_new {
         for (s, &t) in next.iter().enumerate() {
             outputs[s].push(t);
         }
         let logits = model.decode_step_lockstep(&e, &next, &mut caches)?;
+        dump_row(step + 1, &logits[0])?;
         next = logits.iter().map(|l| argmax(l)).collect();
+    }
+    if let Some(w) = logits_dump.as_mut() {
+        use std::io::Write as _;
+        w.flush()?;
     }
     e.stream().synchronize()?;
     let dt = t0.elapsed().as_secs_f64();

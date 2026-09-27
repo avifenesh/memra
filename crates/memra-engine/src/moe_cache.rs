@@ -34,10 +34,11 @@
 //! it was quoted as the live default in a placement plan.
 
 use crate::Engine;
+use crate::banked_residency::SLOT_TAIL_PAD_BYTES;
 use crate::model::{ExpertKeepalive, ExpertSource};
 use crate::spill_pread::{PreadPool, PreadStats, ReadTicket, SpillIoMode};
 use cudarc::driver::{CudaEvent, CudaSlice, CudaStream, HostSlice, SyncOnDrop};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 /// Which projection of an expert (gate/up/down are three distinct GGUF blocks per expert).
@@ -52,6 +53,46 @@ pub struct BlockId {
     pub proj: u8,
     pub ex: u16,
 }
+
+/// DAY58 (I8f): the `(id, bytes)` pairs the bank proxy accepted, a dense table indexed by layer,
+/// projection and expert (`0` = not validated), grown on the first insertion that needs it and
+/// never shrunk while the cache lives. Replaces a SipHash map whose lookup was most of the
+/// `validate` stage on every admission.
+#[derive(Default)]
+pub(crate) struct ValidatedMemo(Vec<Vec<Vec<usize>>>);
+impl ValidatedMemo {
+    /// True iff the proxy accepted exactly this pair; a zero byte count is never held.
+    #[inline]
+    pub(crate) fn holds(&self, id: BlockId, bytes: usize) -> bool {
+        bytes != 0
+            && self
+                .0
+                .get(usize::from(id.layer))
+                .and_then(|p| p.get(usize::from(id.proj)))
+                .and_then(|e| e.get(usize::from(id.ex)))
+                == Some(&bytes)
+    }
+    /// Record a pair the proxy accepted (the caller's guard: only after `bank.validate`).
+    pub(crate) fn insert(&mut self, id: BlockId, bytes: usize) {
+        let (l, p, x) = (
+            usize::from(id.layer),
+            usize::from(id.proj),
+            usize::from(id.ex),
+        );
+        if self.0.len() <= l {
+            self.0.resize_with(l + 1, Vec::new);
+        }
+        let projs = &mut self.0[l];
+        if projs.len() <= p {
+            projs.resize_with(p + 1, Vec::new);
+        }
+        let experts = &mut projs[p];
+        if experts.len() <= x {
+            experts.resize(x + 1, 0);
+        }
+        experts[x] = bytes;
+    }
+}
 impl BlockId {
     #[inline]
     pub fn new(layer: u16, proj: u8, ex: u16) -> Self {
@@ -59,11 +100,89 @@ impl BlockId {
     }
 }
 
-/// Where a dispatched block landed (always a retained resident slot since the first-miss-admit
-/// policy, 2026-07-08 — the transient staging tier went with the ghost filter).
+/// Where a dispatched block landed. `dispatch_source` and `dispatch` always return a retained
+/// resident slot (first-miss admit, 2026-07-08). Only `dispatch_source_once` can return the two
+/// OWED 17 cold-bypass forms (`MEMRA_MOE_COLD_BYPASS`), and its caller owes `consumed`.
 #[derive(Clone, Copy, Debug)]
 pub enum DispatchSlot {
     Resident(usize),
+    /// `staged`: the block sits in the cache's one bypass scratch buffer, never published.
+    Scratch,
+    /// `mapped`: the kernel reads pinned read-pool buffer `index` in place through its device alias.
+    Mapped(usize),
+}
+
+/// OWED 17 (`M1-PREREG.md` section F): `MEMRA_MOE_COLD_BYPASS`, default `off`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ColdBypass {
+    Off,
+    Staged,
+    Mapped,
+}
+
+impl ColdBypass {
+    pub(crate) fn parse(v: Option<&str>) -> Result<ColdBypass, String> {
+        match v.unwrap_or("") {
+            "" | "off" | "0" => Ok(ColdBypass::Off),
+            "staged" => Ok(ColdBypass::Staged),
+            "mapped" => Ok(ColdBypass::Mapped),
+            other => Err(format!(
+                "MEMRA_MOE_COLD_BYPASS={other:?}: expected off, staged or mapped"
+            )),
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            ColdBypass::Off => "off",
+            ColdBypass::Staged => "staged",
+            ColdBypass::Mapped => "mapped",
+        }
+    }
+}
+
+/// OWED 17 doorkeeper: ids whose first miss was bypassed, in a bounded FIFO. A generation tag
+/// keeps a re-inserted id from being dropped by its own stale FIFO entry.
+#[derive(Debug, Default)]
+pub(crate) struct ColdGhost {
+    cap: usize,
+    next: u64,
+    live: HashMap<BlockId, u64>,
+    fifo: VecDeque<(BlockId, u64)>,
+}
+
+impl ColdGhost {
+    pub(crate) fn new(cap: usize) -> ColdGhost {
+        ColdGhost {
+            cap: cap.max(1),
+            ..ColdGhost::default()
+        }
+    }
+
+    /// `true` when `id` missed before (it leaves the list and admits); otherwise records it.
+    pub(crate) fn seen_before(&mut self, id: BlockId) -> bool {
+        if self.live.remove(&id).is_some() {
+            return true;
+        }
+        self.next += 1;
+        self.live.insert(id, self.next);
+        self.fifo.push_back((id, self.next));
+        // The list remembers the last `cap` first misses: the FIFO itself is bounded (an entry
+        // whose id admitted since is stale and simply ages out), so `live` never exceeds `cap`.
+        while self.fifo.len() > self.cap {
+            let Some((old, tag)) = self.fifo.pop_front() else {
+                break;
+            };
+            if self.live.get(&old) == Some(&tag) {
+                self.live.remove(&old);
+            }
+        }
+        false
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.live.len()
+    }
 }
 
 /// Intrusive-list constants: `NIL` terminates a list; `seg` tags which segment holds a slot.
@@ -252,7 +371,30 @@ impl SlotClass {
 pub struct MoeSlotCache {
     // Typed qualification door, default OFF. Owner-only service is never stored here.
     banked: Option<memra_tier::bank::ExpertBankProxy>,
-    banked_pending: Option<memra_tier::bank::ExpertLeaseToken>,
+    banked_pending: Option<BankedLease>,
+    /// DAY46: leases whose H2D is enqueued, each with the event recorded after its copy (DAY64:
+    /// a prefetched group's after its last copy), oldest first. A lease is finished only once its
+    /// event has completed (or after a whole-stream drain at teardown); at most `BANKED_INFLIGHT`
+    /// leases are open, counted in `banked_inflight_leases` and `banked_prefetched`.
+    banked_inflight: VecDeque<(BankedLease, Arc<CudaEvent>)>,
+    banked_inflight_leases: usize,
+    /// DAY50/DAY64: leases held by prefetched groups not yet in flight (a group counts every
+    /// record it leased until its last staged member is consumed).
+    banked_prefetched: usize,
+    /// DAY64 (I15): each prefetched expert's group while a member is pending, by group number.
+    banked_groups: std::collections::HashMap<u64, LeaseGroup>,
+    next_group: u64,
+    /// `--expert-bank-stages` only: timing events around each banked H2D, read once landed.
+    bank_copy_timings: VecDeque<(CudaEvent, CudaEvent)>,
+    /// DAY48: `(id, bytes)` pairs the bank's `validate` accepted. The catalog is immutable for
+    /// the door's life, so a pair that validated once always does; any other pair (a new id, or
+    /// a known id with another byte count) still goes to the proxy, and a refusal is never kept.
+    banked_validated: ValidatedMemo,
+    /// DAY60: `--moe-dispatch-clock` only.
+    dispatch_clock: Option<DispatchClock>,
+    /// `--expert-bank-stages` only (DAY40): the CUDA-thread half of the door's log-only stage
+    /// clock. `None` without the door and without the flag, so no legacy statement reads it.
+    bank_clock: Option<BankAdmitClock>,
     slots: Vec<CudaSlice<u8>>, // fixed GPU buffers; capacities live in `classes`
     slot_class: Vec<usize>,    // slot index -> size-class index
     classes: Vec<SlotClass>,
@@ -333,12 +475,157 @@ pub struct MoeSlotCache {
     pub hits: u64,
     pub misses: u64,
     pub staged_bytes: u64, // total H2D bytes the cache caused (admit + first-miss transient)
+
+    // --- OWED 17 cold read-once bypass (`MEMRA_MOE_COLD_BYPASS`) ---
+    cold_bypass: ColdBypass,
+    /// Set only for the duration of `dispatch_source_once`: other call sites keep first-miss admit.
+    bypass_allowed: bool,
+    cold_ghost: ColdGhost,
+    bypass_scratch: Option<CudaSlice<u8>>,
+    bypassed: u64,
+    ghost_admits: u64,
+}
+
+/// DAY60 (`--moe-dispatch-clock`, log only): the slot cache's dispatch and prefetch entry points
+/// bracketed for BOTH programs (the legacy cache and the door), with each dispatch's outcome, and
+/// the prefetch path's parts. The door's own stage clock (`BankAdmitClock`) stays as it is.
+#[derive(Default)]
+pub(crate) struct DispatchClock {
+    dispatch_calls: u64,
+    dispatch_ns: u64,
+    dispatch_hits: u64,
+    dispatch_pending: u64,
+    dispatch_sync: u64,
+    prefetch_calls: u64,
+    prefetch_ns: u64,
+    prefetch_issued: u64,
+    pf_reserve_ns: u64,
+    pf_stage_ns: u64,
+    pf_retire_ns: u64,
+    pf_resident_ns: u64,
+    pf_demand_ns: u64,
+}
+impl DispatchClock {
+    fn line(&self) -> String {
+        format!(
+            "dispatch_calls={} dispatch_ns={} dispatch_hits={} dispatch_pending={} dispatch_sync={} prefetch_calls={} prefetch_ns={} prefetch_issued={} pf_reserve_ns={} pf_stage_ns={} pf_retire_ns={} pf_resident_ns={} pf_demand_ns={}",
+            self.dispatch_calls,
+            self.dispatch_ns,
+            self.dispatch_hits,
+            self.dispatch_pending,
+            self.dispatch_sync,
+            self.prefetch_calls,
+            self.prefetch_ns,
+            self.prefetch_issued,
+            self.pf_reserve_ns,
+            self.pf_stage_ns,
+            self.pf_retire_ns,
+            self.pf_resident_ns,
+            self.pf_demand_ns
+        )
+    }
+}
+
+/// CUDA-thread half of the door's stage clock (`research/spill-c-20260919/DAY40.md` section
+/// 2): host wall nanoseconds per bracket of `admit_banked` and the banked branch of
+/// `admit_native`, plus the GPU time of each H2D read from two timing events on the compute
+/// stream. Log-only: it reads `Instant` and events and changes no decision.
+#[derive(Clone, Copy, Debug, Default)]
+struct BankAdmitClock {
+    admits: u64,
+    gpu_hits: u64,
+    gpu_misses: u64,
+    validate_ns: u64,
+    demand_ns: u64,
+    reserve_ns: u64,
+    enqueue_ns: u64,
+    copy_gpu_ns: u64,
+    copy_events: u64,
+    event_errors: u64,
+    drain_ns: u64,
+    sync2_ns: u64,
+    finish_ns: u64,
+    miss_total_ns: u64,
+    /// DAY46: front-of-queue retirement (event checks and `finish`), and the full-queue wait.
+    retire_ns: u64,
+    wait_ns: u64,
+    /// DAY50: leases a prefetch took, and misses served from a pending prefetch.
+    prefetches: u64,
+    prefetch_hits: u64,
+}
+impl BankAdmitClock {
+    fn line(&self) -> String {
+        format!(
+            "admits={} gpu_hits={} gpu_misses={} validate_ns={} demand_ns={} reserve_ns={} enqueue_ns={} copy_gpu_ns={} copy_events={} event_errors={} drain_ns={} sync2_ns={} finish_ns={} miss_total_ns={} retire_ns={} wait_ns={} prefetches={} prefetch_hits={}",
+            self.admits,
+            self.gpu_hits,
+            self.gpu_misses,
+            self.validate_ns,
+            self.demand_ns,
+            self.reserve_ns,
+            self.enqueue_ns,
+            self.copy_gpu_ns,
+            self.copy_events,
+            self.event_errors,
+            self.drain_ns,
+            self.sync2_ns,
+            self.finish_ns,
+            self.miss_total_ns,
+            self.retire_ns,
+            self.wait_ns,
+            self.prefetches,
+            self.prefetch_hits
+        )
+    }
+}
+
+/// DAY46: leases the door keeps in flight on the compute stream before it waits on the oldest.
+pub(crate) const BANKED_INFLIGHT: usize = 32;
+
+fn clock_ns(started: std::time::Instant) -> u64 {
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
 struct PendingBlock {
     slot: usize,
     ready: Arc<CudaEvent>,
     keepalive: Option<ExpertKeepalive>,
+    /// DAY50/DAY64: the door prefetch's group this block belongs to; its lease is finished with
+    /// the group's, only after every staged member is consumed and the last copy completes.
+    group: Option<u64>,
+}
+
+/// DAY64 (I15, `research/spill-c-20260919/DAY64.md`): a lease the door holds, one record's (the
+/// miss path) or one prefetched expert's group of up to three records under one ticket.
+enum BankedLease {
+    One(memra_tier::bank::ExpertLeaseToken),
+    Group(memra_tier::bank::ExpertGroupToken),
+}
+impl BankedLease {
+    fn leases(&self) -> usize {
+        match self {
+            BankedLease::One(_) => 1,
+            BankedLease::Group(token) => token.records().len(),
+        }
+    }
+    fn finish(
+        &self,
+        bank: &memra_tier::bank::ExpertBankProxy,
+    ) -> memra_tier::contracts::Result<()> {
+        match self {
+            BankedLease::One(token) => bank.finish(token),
+            BankedLease::Group(token) => bank.finish_group(token),
+        }
+    }
+}
+
+/// DAY64 (I15): a prefetched expert's group while any staged member is still pending. The copies
+/// run on one stream in block order, so the last staged member's event completing proves every
+/// earlier member's copy landed.
+struct LeaseGroup {
+    token: memra_tier::bank::ExpertGroupToken,
+    unconsumed: usize,
+    last_ready: Arc<CudaEvent>,
 }
 
 #[derive(Clone, Copy)]
@@ -444,7 +731,7 @@ fn size_class_plan(block_bytes: &[usize], budget_bytes: usize) -> Vec<(usize, us
     }
     let total_bytes: u128 = counts
         .iter()
-        .map(|(&bytes, &count)| (bytes as u128 + 8) * count as u128)
+        .map(|(&bytes, &count)| (bytes as u128 + SLOT_TAIL_PAD_BYTES as u128) * count as u128)
         .sum();
     let budget = budget_bytes as u128;
     let mut plan: Vec<(usize, usize, u128)> = counts
@@ -460,7 +747,7 @@ fn size_class_plan(block_bytes: &[usize], budget_bytes: usize) -> Vec<(usize, us
         .collect();
     let mut used: u128 = plan
         .iter()
-        .map(|(bytes, count, _)| (*bytes as u128 + 8) * *count as u128)
+        .map(|(bytes, count, _)| (*bytes as u128 + SLOT_TAIL_PAD_BYTES as u128) * *count as u128)
         .sum();
 
     // Hamilton-style remainder pass keeps class proportions close after flooring. There are only
@@ -470,7 +757,7 @@ fn size_class_plan(block_bytes: &[usize], budget_bytes: usize) -> Vec<(usize, us
     for index in order {
         let (bytes, count, _) = plan[index];
         let available = counts[&bytes];
-        let required = bytes as u128 + 8;
+        let required = bytes as u128 + SLOT_TAIL_PAD_BYTES as u128;
         if count < available && used + required <= budget {
             plan[index].1 += 1;
             used += required;
@@ -518,7 +805,7 @@ impl MoeSlotCache {
                 .and_then(|s| s.parse::<usize>().ok()),
         };
         let requested_bytes = if let Some(n) = forced_slots {
-            n.saturating_mul(max_block_bytes + 8)
+            n.saturating_mul(max_block_bytes + SLOT_TAIL_PAD_BYTES)
         } else {
             // auto: fill MEMRA_MOE_VRAM_FRAC of free VRAM with slots (default 85%).
             // DEFAULT 0.85 (2026-07-06 local sweep: 0.40=25.0, 0.60=28.0, 0.85=28.5 tok/s on the
@@ -557,7 +844,7 @@ impl MoeSlotCache {
             }
             class_plan = vec![(max_block_bytes, n)];
         } else if class_plan.iter().map(|(_, count)| count).sum::<usize>() < 8 {
-            let n = (budget_bytes / (max_block_bytes + 8)).max(8);
+            let n = (budget_bytes / (max_block_bytes + SLOT_TAIL_PAD_BYTES)).max(8);
             class_plan = vec![(max_block_bytes, n)];
         }
         let n: usize = class_plan.iter().map(|(_, count)| count).sum();
@@ -569,8 +856,8 @@ impl MoeSlotCache {
         for (class_index, &(capacity, count)) in class_plan.iter().enumerate() {
             let start = slots.len();
             for _ in 0..count {
-                // +8 tail pad: wide expert dots may issue an aligned read past the final block.
-                slots.push(e.alloc_u8(capacity + 8)?);
+                // Tail pad: wide expert dots may issue an aligned read past the final block.
+                slots.push(e.alloc_u8(capacity + SLOT_TAIL_PAD_BYTES)?);
                 slot_class.push(class_index);
                 occupant.push(None);
             }
@@ -587,7 +874,7 @@ impl MoeSlotCache {
         if size_aware {
             let allocated: usize = class_plan
                 .iter()
-                .map(|(bytes, count)| (bytes + 8) * count)
+                .map(|(bytes, count)| (bytes + SLOT_TAIL_PAD_BYTES) * count)
                 .sum();
             eprintln!(
                 "[moe-cache] size-aware fixed slots: {n} slots in {} classes, {:.2} GB / {:.2} GB budget",
@@ -598,7 +885,17 @@ impl MoeSlotCache {
         }
         let pread_mode = crate::spill_pread::configured_mode();
         let pread_requested = pread_mode != SpillIoMode::Mmap;
-        let pread = if pread_requested {
+        let cold_bypass =
+            ColdBypass::parse(std::env::var("MEMRA_MOE_COLD_BYPASS").ok().as_deref())?;
+        if cold_bypass != ColdBypass::Off && !pread_requested {
+            return Err(format!(
+                "MEMRA_MOE_COLD_BYPASS={} needs the positioned-read spill path \
+                 (MEMRA_SPILL_IO=pread, worker or direct)",
+                cold_bypass.name()
+            )
+            .into());
+        }
+        let mut pread = if pread_requested {
             match PreadPool::try_new(e, max_block_bytes, pread_mode) {
                 Ok(pool) => Some(pool),
                 Err(err) => {
@@ -611,10 +908,46 @@ impl MoeSlotCache {
         } else {
             None
         };
+        let bypass_scratch = match cold_bypass {
+            ColdBypass::Off => None,
+            _ if pread.is_none() => {
+                return Err(format!(
+                    "MEMRA_MOE_COLD_BYPASS={}: the pinned read pool did not initialize",
+                    cold_bypass.name()
+                )
+                .into());
+            }
+            ColdBypass::Staged => Some(e.alloc_u8(max_block_bytes + SLOT_TAIL_PAD_BYTES)?),
+            ColdBypass::Mapped => {
+                pread
+                    .as_mut()
+                    .unwrap()
+                    .enable_mapped()
+                    .map_err(|err| format!("MEMRA_MOE_COLD_BYPASS=mapped refused: {err}"))?;
+                None
+            }
+        };
+        if cold_bypass != ColdBypass::Off {
+            eprintln!(
+                "[moe-bypass] enabled: mode={} ghost_cap={} (first miss served without admission \
+                 on the batch-1 decode expert GEMMs; a repeat miss admits)",
+                cold_bypass.name(),
+                (4 * n).max(64)
+            );
+        }
 
         Ok(MoeSlotCache {
             banked: None,
             banked_pending: None,
+            banked_inflight: VecDeque::new(),
+            banked_inflight_leases: 0,
+            banked_prefetched: 0,
+            banked_groups: std::collections::HashMap::new(),
+            next_group: 0,
+            bank_copy_timings: VecDeque::new(),
+            banked_validated: ValidatedMemo::default(),
+            dispatch_clock: e.moe_dispatch_clock().then(DispatchClock::default),
+            bank_clock: None,
             slots,
             slot_class,
             classes,
@@ -650,6 +983,12 @@ impl MoeSlotCache {
             hits: 0,
             misses: 0,
             staged_bytes: 0,
+            cold_bypass,
+            bypass_allowed: false,
+            cold_ghost: ColdGhost::new((4 * n).max(64)),
+            bypass_scratch,
+            bypassed: 0,
+            ghost_admits: 0,
         })
     }
 
@@ -942,6 +1281,7 @@ impl MoeSlotCache {
     pub(crate) fn install_banked(
         &mut self,
         bank: memra_tier::bank::ExpertBankProxy,
+        stage_clock: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         if self.banked.is_some()
             || !self.table.is_empty()
@@ -955,7 +1295,22 @@ impl MoeSlotCache {
             return Err("banked experts require an untouched default-SLRU cache".into());
         }
         self.banked = Some(bank);
+        self.bank_clock = stage_clock.then(BankAdmitClock::default);
         Ok(())
+    }
+
+    /// The door's stage line (DAY40): this cache's clock, then the owner's report through
+    /// the proxy (owner thread only, like every bank call). `Ok(None)` without the door or
+    /// without `--expert-bank-stages`.
+    pub(crate) fn bank_stage_line(&mut self) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        self.settle_copy_timings();
+        let (Some(clock), Some(bank)) = (&self.bank_clock, &self.banked) else {
+            return Ok(None);
+        };
+        let owner = bank
+            .stage_report()?
+            .unwrap_or_else(|| "| owner absent".to_owned());
+        Ok(Some(format!("{} {owner}", clock.line())))
     }
 
     fn admit_banked(
@@ -969,24 +1324,513 @@ impl MoeSlotCache {
         }
         let bank = self.banked.as_ref().ok_or("bank proxy absent")?.clone();
         let local = (id.layer, id.proj, id.ex);
-        bank.validate(local, bytes)?;
+        let clocked = self.bank_clock.is_some();
+        let entered = clocked.then(std::time::Instant::now);
+        if !self.banked_validated.holds(id, bytes) {
+            bank.validate(local, bytes)?;
+            self.banked_validated.insert(id, bytes);
+        }
+        if let (Some(started), Some(clock)) = (entered, self.bank_clock.as_mut()) {
+            clock.admits += 1;
+            clock.validate_ns += clock_ns(started);
+        }
         if let Some(slot) = self.table.get(&id).copied() {
             self.hits += 1;
+            if let Some(clock) = self.bank_clock.as_mut() {
+                clock.gpu_hits += 1;
+            }
             self.on_hit(slot);
             return Ok(slot);
         }
         self.misses += 1;
+        // DAY50: a block a door prefetch staged is consumed only after the compute stream waits
+        // on its copy event; its lease then retires on that event like any in-flight lease.
+        if let Some(pending) = self.pending.remove(&id) {
+            if let Err(err) = e.compute_wait(pending.ready.as_ref()) {
+                self.pending.insert(id, pending);
+                return Err(err);
+            }
+            if let Some(group) = pending.group {
+                self.consume_group_member(group);
+            }
+            if let Some(clock) = self.bank_clock.as_mut() {
+                clock.gpu_misses += 1;
+                clock.prefetch_hits += 1;
+            }
+            self.publish(id, pending.slot);
+            return Ok(pending.slot);
+        }
+        // DAY61 (I12): finished leases retire where a lease is taken (here and in the prefetch),
+        // not on every admission; a GPU hit and a prefetched block's consumption take none, and
+        // the in-flight bound is waited on here, before this demand, as before.
+        self.retire_banked(&bank, 1)?;
+        let demanded = clocked.then(std::time::Instant::now);
         let token = bank.demand(local, bytes)?;
-        self.banked_pending = Some(token);
-        // Move only the identity out while borrowing payload on the owner. Put it
-        // back before observing completion, including any failed enqueue.
-        let token = self.banked_pending.take().unwrap();
-        let result = bank.with_bytes(&token, |payload| self.admit_native(id, payload, e));
-        self.banked_pending = Some(token);
-        e.stream().synchronize()?;
-        bank.finish(self.banked_pending.as_ref().unwrap())?;
-        self.banked_pending = None;
-        result?
+        if let (Some(started), Some(clock)) = (demanded, self.bank_clock.as_mut()) {
+            clock.gpu_misses += 1;
+            clock.demand_ns += clock_ns(started);
+        }
+        if token.record() != local {
+            // The proxy refuses a mismatched lease before minting a token; this is the
+            // consumer's own assertion at the seam. Retire the lease if it ever fires so no
+            // host use leaks, and copy nothing.
+            bank.finish(&token)?;
+            return Err("banked lease names another expert than the one demanded".into());
+        }
+        // DAY46: borrow the payload on the owner and enqueue its H2D with a completion event;
+        // no stream drain. The lease is finished only once that event completes.
+        let staged = bank.with_bytes(&token, |payload| self.stage_banked(id, payload, e));
+        let finishing = clocked.then(std::time::Instant::now);
+        let outcome = match staged {
+            Ok(Ok((slot, Some(done)))) => {
+                self.banked_inflight
+                    .push_back((BankedLease::One(token), Arc::new(done)));
+                self.banked_inflight_leases += 1;
+                Ok(slot)
+            }
+            // The copy's completion was proven by a stream drain (its event could not be
+            // recorded): finish now.
+            Ok(Ok((slot, None))) => match bank.finish(&token) {
+                Ok(()) => Ok(slot),
+                Err(err) => {
+                    self.banked_pending = Some(BankedLease::One(token));
+                    Err(err.into())
+                }
+            },
+            // The enqueue failed. A proven drain released the slot and nothing reads the
+            // lease; an unknown stream keeps the lease open (never finished) with the slot
+            // outside every table.
+            Ok(Err(err)) => {
+                if self.compute_stream_unknown {
+                    self.banked_pending = Some(BankedLease::One(token));
+                } else if let Err(finish_err) = bank.finish(&token) {
+                    self.banked_pending = Some(BankedLease::One(token));
+                    return Err(finish_err.into());
+                }
+                Err(err)
+            }
+            // The registry refused the borrow: the lease stays open and further admissions
+            // refuse (fail closed).
+            Err(err) => {
+                self.banked_pending = Some(BankedLease::One(token));
+                Err(err.into())
+            }
+        };
+        if let (Some(started), Some(clock)) = (finishing, self.bank_clock.as_mut()) {
+            clock.finish_ns += clock_ns(started);
+            if let Some(entered) = entered {
+                clock.miss_total_ns += clock_ns(entered);
+            }
+        }
+        outcome
+    }
+
+    /// DAY46: retire, oldest first, every in-flight lease whose copy event has completed; when the
+    /// open leases plus the `need` about to be taken would pass `BANKED_INFLIGHT`, wait on the
+    /// oldest event (never the stream) first. A `finish` the registry refuses keeps its lease open
+    /// and fails closed. DAY64 (I15): an entry is one record's lease or one prefetched group's.
+    fn retire_banked(
+        &mut self,
+        bank: &memra_tier::bank::ExpertBankProxy,
+        need: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let started = self.bank_clock.is_some().then(std::time::Instant::now);
+        while let Some((_, done)) = self.banked_inflight.front() {
+            if !done.is_complete() {
+                if self.banked_inflight_leases + self.banked_prefetched + need <= BANKED_INFLIGHT {
+                    break;
+                }
+                let waiting = self.bank_clock.is_some().then(std::time::Instant::now);
+                done.synchronize()?;
+                if let (Some(waited), Some(clock)) = (waiting, self.bank_clock.as_mut()) {
+                    clock.wait_ns += clock_ns(waited);
+                }
+            }
+            let (lease, _done) = self.banked_inflight.pop_front().expect("front checked");
+            self.banked_inflight_leases -= lease.leases();
+            if let Err(err) = lease.finish(bank) {
+                self.banked_pending = Some(lease);
+                return Err(err.into());
+            }
+        }
+        self.settle_copy_timings();
+        if let (Some(started), Some(clock)) = (started, self.bank_clock.as_mut()) {
+            clock.retire_ns += clock_ns(started);
+        }
+        Ok(())
+    }
+
+    /// DAY64 (I15): a prefetched block of `group` was consumed; once every staged member is, the
+    /// group's ticket goes in flight on its last copy's event. A group a failure path took out of
+    /// the table (its lease held by `banked_pending`) has nothing left to do here.
+    fn consume_group_member(&mut self, group: u64) {
+        let Some(entry) = self.banked_groups.get_mut(&group) else {
+            return;
+        };
+        entry.unconsumed -= 1;
+        if entry.unconsumed > 0 {
+            return;
+        }
+        let entry = self.banked_groups.remove(&group).expect("present above");
+        let leases = entry.token.records().len();
+        self.banked_prefetched -= leases;
+        self.banked_inflight_leases += leases;
+        self.banked_inflight
+            .push_back((BankedLease::Group(entry.token), entry.last_ready));
+    }
+
+    /// DAY46: every in-flight lease finished after one stream drain (teardown and the gate's
+    /// close). A failed drain keeps every lease open. DAY64: every prefetched group finished once,
+    /// its unconsumed members' slots returned first.
+    pub(crate) fn retire_all_banked(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if self.banked_inflight.is_empty() && self.banked_groups.is_empty() {
+            return Ok(());
+        }
+        let bank = self.banked.as_ref().ok_or("bank proxy absent")?.clone();
+        self.compute_stream.synchronize()?;
+        if !self.banked_groups.is_empty() {
+            // DAY50: unconsumed prefetches' copies ran on the copy stream.
+            self.copy_stream.synchronize()?;
+        }
+        while let Some((lease, _done)) = self.banked_inflight.pop_front() {
+            self.banked_inflight_leases -= lease.leases();
+            if let Err(err) = lease.finish(&bank) {
+                self.banked_pending = Some(lease);
+                return Err(err.into());
+            }
+        }
+        let members: Vec<BlockId> = self
+            .pending
+            .iter()
+            .filter(|(_, p)| p.group.is_some())
+            .map(|(id, _)| *id)
+            .collect();
+        for id in members {
+            let pending = self.pending.remove(&id).expect("listed above");
+            // The slot's copy landed (both streams drained) but it was never published: return
+            // it to its class's free list.
+            self.occupant[pending.slot] = None;
+            self.release_reserved_slot(pending.slot);
+        }
+        let groups: Vec<u64> = self.banked_groups.keys().copied().collect();
+        for group in groups {
+            let entry = self.banked_groups.remove(&group).expect("listed above");
+            self.banked_prefetched -= entry.token.records().len();
+            let lease = BankedLease::Group(entry.token);
+            if let Err(err) = lease.finish(&bank) {
+                self.banked_pending = Some(lease);
+                return Err(err.into());
+            }
+        }
+        self.settle_copy_timings();
+        Ok(())
+    }
+
+    /// DAY50/DAY64 (I15, `research/spill-c-20260919/DAY64.md`): the door's prefetch of one
+    /// expert's blocks through the owner, under one ticket. Per block, in the order given, the
+    /// table and pending skips, the validate memo, the host residency check and a GPU slot outside
+    /// `keep` (the same reservations, in the same order, as one call per block made); then one
+    /// owner call leases every block that passed; then each lease's bytes go to its slot on the
+    /// copy stream after an event that orders the slot's earlier compute-stream readers, in block
+    /// order. Returns how many blocks were staged; a block not taken stays with the demand path.
+    fn prefetch_banked_group(
+        &mut self,
+        blocks: &[(BlockId, usize)],
+        keep: &[BlockId],
+        e: &Engine,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        if self.banked_pending.is_some() || self.frozen {
+            return Ok(0);
+        }
+        let mut wanted = [(BlockId::new(0, 0, 0), 0usize); memra_tier::bank::MAX_GROUP];
+        let mut count = 0;
+        for &(id, bytes) in blocks {
+            if count == wanted.len()
+                || self.table.contains_key(&id)
+                || self.pending.contains_key(&id)
+            {
+                continue;
+            }
+            wanted[count] = (id, bytes);
+            count += 1;
+        }
+        if count == 0 {
+            return Ok(0);
+        }
+        let bank = self.banked.as_ref().ok_or("bank proxy absent")?.clone();
+        let retiring = self.dispatch_clock.is_some().then(std::time::Instant::now);
+        self.retire_banked(&bank, count)?;
+        self.dispatch_clock_mark(retiring, |c, ns| c.pf_retire_ns += ns);
+        // The prefix that fits the in-flight bound (one call per block took blocks while it did).
+        let room =
+            BANKED_INFLIGHT.saturating_sub(self.banked_inflight_leases + self.banked_prefetched);
+        let wanted = &wanted[..count.min(room)];
+        let mut chosen = [(BlockId::new(0, 0, 0), 0usize, 0usize); memra_tier::bank::MAX_GROUP];
+        let mut locals = [((0u16, 0u8, 0u16), 0usize); memra_tier::bank::MAX_GROUP];
+        let mut taken = 0;
+        let mut asked = [(0u16, 0u8, 0u16); memra_tier::bank::MAX_GROUP];
+        for (n, &(id, bytes)) in wanted.iter().enumerate() {
+            let local = (id.layer, id.proj, id.ex);
+            if !self.banked_validated.holds(id, bytes) {
+                bank.validate(local, bytes)?;
+                self.banked_validated.insert(id, bytes);
+            }
+            asked[n] = local;
+        }
+        // DAY77 (I17): the group's host residency in one registry entry; reserving a GPU slot
+        // touches no host state, so the answers are the ones one query per member gave.
+        let asking = self.dispatch_clock.is_some().then(std::time::Instant::now);
+        let resident = bank.host_resident_many(&asked[..wanted.len()]);
+        let mut reserving = self.dispatch_clock_mark(asking, |c, ns| c.pf_resident_ns += ns);
+        let resident = resident?;
+        for (n, &(id, bytes)) in wanted.iter().enumerate() {
+            let local = asked[n];
+            if !resident[n] {
+                continue;
+            }
+            let reserved = self.reserve_prefetch_slot(bytes, keep);
+            reserving = self
+                .dispatch_clock_mark(reserving, |c, ns| c.pf_reserve_ns += ns)
+                .or(reserving);
+            let Some(slot) = reserved else {
+                continue;
+            };
+            chosen[taken] = (id, bytes, slot);
+            locals[taken] = (local, bytes);
+            taken += 1;
+        }
+        if taken == 0 {
+            return Ok(0);
+        }
+        let chosen = &chosen[..taken];
+        let demanding = self.dispatch_clock.is_some().then(std::time::Instant::now);
+        let demanded = bank.demand_many(&locals[..taken]);
+        let staging = self.dispatch_clock_mark(demanding, |c, ns| c.pf_demand_ns += ns);
+        let token = match demanded {
+            Ok(token) => token,
+            Err(err) => {
+                self.release_chosen(chosen);
+                return Err(err.into());
+            }
+        };
+        if token.records().len() != taken
+            || token
+                .records()
+                .iter()
+                .zip(&locals[..taken])
+                .any(|(got, (want, _))| got != want)
+        {
+            self.release_chosen(chosen);
+            bank.finish_group(&token)?;
+            return Err("banked group names other experts than the ones demanded".into());
+        }
+        let group = self.next_group;
+        self.next_group += 1;
+        let mut last_ready: Option<Arc<CudaEvent>> = None;
+        let mut staged = 0;
+        // DAY77 (I17): every member staged in one registry entry, in order; each member's copy and
+        // record exactly as one `with_bytes_at` per member did.
+        let mut entered = 0;
+        let walked = bank.with_bytes_each(&token, |index, payload| {
+            entered = index + 1;
+            let (id, bytes, slot) = chosen[index];
+            match stage_on_copy_stream(e, payload, &mut self.slots[slot]) {
+                Ok(ready) => {
+                    self.occupant[slot] = Some(id);
+                    self.pending.insert(
+                        id,
+                        PendingBlock {
+                            slot,
+                            ready: ready.clone(),
+                            keepalive: None,
+                            group: Some(group),
+                        },
+                    );
+                    last_ready = Some(ready);
+                    staged += 1;
+                    self.staged_bytes += bytes as u64;
+                    if let Some(clock) = self.bank_clock.as_mut() {
+                        clock.prefetches += 1;
+                    }
+                    Ok(())
+                }
+                Err(failed) => Err((index, failed)),
+            }
+        });
+        match walked {
+            Ok(Ok(())) => {}
+            Ok(Err((index, (err, reusable)))) => {
+                let slot = chosen[index].2;
+                // The members after this one were never staged: their slots go back.
+                self.release_chosen(&chosen[index + 1..]);
+                if reusable {
+                    // The copy stream drained: this slot is free and every staged member's
+                    // copy landed.
+                    self.release_reserved_slot(slot);
+                    match last_ready {
+                        Some(last_ready) => self.keep_group(group, token, staged, last_ready),
+                        None => bank.finish_group(&token)?,
+                    }
+                } else {
+                    // Unknown copy completion: this slot stays outside every table and the
+                    // whole group's lease stays open; the copy stream is marked for Drop's
+                    // drain.
+                    self.copy_stream_unknown = true;
+                    self.banked_pending = Some(BankedLease::Group(token));
+                }
+                self.dispatch_clock_mark(staging, |c, ns| c.pf_stage_ns += ns);
+                return Err(err);
+            }
+            Err(err) => {
+                // The registry refused the borrow (before member `entered` was lent): the lease
+                // stays open and further admissions refuse (fail closed).
+                self.release_chosen(&chosen[entered..]);
+                self.banked_pending = Some(BankedLease::Group(token));
+                self.dispatch_clock_mark(staging, |c, ns| c.pf_stage_ns += ns);
+                return Err(err.into());
+            }
+        }
+        self.dispatch_clock_mark(staging, |c, ns| c.pf_stage_ns += ns);
+        self.keep_group(
+            group,
+            token,
+            staged,
+            last_ready.expect("every chosen member staged"),
+        );
+        Ok(staged)
+    }
+
+    /// DAY64 (I15): the reserved GPU slots of blocks that were chosen but never staged.
+    fn release_chosen(&mut self, chosen: &[(BlockId, usize, usize)]) {
+        for &(_, _, slot) in chosen {
+            self.release_reserved_slot(slot);
+        }
+    }
+
+    /// DAY64 (I15): record a group whose `staged` members are pending on the copy stream.
+    fn keep_group(
+        &mut self,
+        group: u64,
+        token: memra_tier::bank::ExpertGroupToken,
+        staged: usize,
+        last_ready: Arc<CudaEvent>,
+    ) {
+        self.banked_prefetched += token.records().len();
+        self.banked_groups.insert(
+            group,
+            LeaseGroup {
+                token,
+                unconsumed: staged,
+                last_ready,
+            },
+        );
+    }
+
+    /// DAY60: add the time since `started` to one dispatch-clock counter and return a fresh start
+    /// for the next part; `None` in and out without the clock.
+    fn dispatch_clock_mark(
+        &mut self,
+        started: Option<std::time::Instant>,
+        add: impl FnOnce(&mut DispatchClock, u64),
+    ) -> Option<std::time::Instant> {
+        let (Some(started), Some(clock)) = (started, self.dispatch_clock.as_mut()) else {
+            return None;
+        };
+        add(clock, clock_ns(started));
+        Some(std::time::Instant::now())
+    }
+
+    /// The stage clock's copy timing events whose copy has landed (`--expert-bank-stages` only).
+    fn settle_copy_timings(&mut self) {
+        let Some(clock) = self.bank_clock.as_mut() else {
+            return;
+        };
+        while let Some((_, after)) = self.bank_copy_timings.front() {
+            if !after.is_complete() {
+                break;
+            }
+            let (before, after) = self.bank_copy_timings.pop_front().expect("front checked");
+            match before.elapsed_ms(&after) {
+                Ok(ms) => {
+                    clock.copy_gpu_ns += (f64::from(ms) * 1.0e6) as u64;
+                    clock.copy_events += 1;
+                }
+                Err(_) => clock.event_errors += 1,
+            }
+        }
+    }
+
+    /// DAY46: the door's copy of one lease into a GPU slot. Reserve the slot, enqueue the H2D on
+    /// the compute stream, record the completion event after it, publish. No drain: every
+    /// consumer is on the same stream. A failed enqueue drains to decide the slot (released on a
+    /// proven drain, left outside every table on an unknown one); a failed event record drains
+    /// and, proven, publishes with `None` (the copy is complete).
+    fn stage_banked(
+        &mut self,
+        id: BlockId,
+        host_bytes: &[u8],
+        e: &Engine,
+    ) -> Result<(usize, Option<CudaEvent>), Box<dyn std::error::Error>> {
+        let reserving = self.bank_clock.is_some().then(std::time::Instant::now);
+        let slot = self.reserve_slot(host_bytes.len()).ok_or_else(|| {
+            std::io::Error::other(format!(
+                "no MoE cache slot can hold {} bytes (max class {})",
+                host_bytes.len(),
+                self.classes.last().map(|class| class.capacity).unwrap_or(0)
+            ))
+        })?;
+        if let (Some(started), Some(clock)) = (reserving, self.bank_clock.as_mut()) {
+            clock.reserve_ns += clock_ns(started);
+        }
+        let timed = Some(cudarc::driver::sys::CUevent_flags::CU_EVENT_DEFAULT);
+        let copy_before = self
+            .bank_clock
+            .as_ref()
+            .map(|_| e.stream().record_event(timed));
+        let enqueuing = self.bank_clock.is_some().then(std::time::Instant::now);
+        let staged = e.stage_expert(host_bytes, &mut self.slots[slot], 0);
+        let enqueue_ns = enqueuing.map(clock_ns);
+        let copy_after = copy_before.as_ref().map(|_| e.stream().record_event(timed));
+        if let Err(err) = staged {
+            return match e.stream().synchronize() {
+                Ok(()) => {
+                    self.release_reserved_slot(slot);
+                    Err(err)
+                }
+                Err(sync_err) => {
+                    // Keep the slot outside free/table/SLRU. Drop retries the stream drain and
+                    // leaks every slot if CUDA never provides a completion proof.
+                    self.compute_stream_unknown = true;
+                    Err(std::io::Error::other(format!(
+                        "compute-stream H2D setup failed ({err}); stream drain also failed ({sync_err})"
+                    )).into())
+                }
+            };
+        }
+        if let Some(clock) = self.bank_clock.as_mut() {
+            clock.enqueue_ns += enqueue_ns.unwrap_or(0);
+            match (copy_before, copy_after) {
+                (Some(Ok(before)), Some(Ok(after))) => {
+                    self.bank_copy_timings.push_back((before, after));
+                }
+                (None, None) => {}
+                _ => clock.event_errors += 1,
+            }
+        }
+        let done = match e.stream().record_event(None) {
+            Ok(done) => Some(done),
+            Err(_) => {
+                // No completion event: prove the copy with a drain before publishing.
+                if let Err(err) = e.stream().synchronize() {
+                    self.compute_stream_unknown = true;
+                    return Err(err.into());
+                }
+                None
+            }
+        };
+        self.staged_bytes += host_bytes.len() as u64;
+        self.publish(id, slot);
+        Ok((slot, done))
     }
 
     fn admit_native(
@@ -1019,16 +1863,6 @@ impl MoeSlotCache {
                     )).into())
                 }
             };
-        }
-        // The bank door must not publish a native-cache slot before its explicit
-        // copy completion is known. On an unknown result, leave it outside every
-        // cache table/queue so a later resident fast path cannot bypass the token
-        // refusal; Drop retries the drain and leaks slots if CUDA stays unknown.
-        if self.banked.is_some()
-            && let Err(err) = e.stream().synchronize()
-        {
-            self.compute_stream_unknown = true;
-            return Err(err.into());
         }
         self.staged_bytes += host_bytes.len() as u64;
         self.publish(id, slot);
@@ -1113,14 +1947,15 @@ impl MoeSlotCache {
         }
 
         let pending = self.worker_reads.remove(&id);
-        let pool = self.pread.as_mut().unwrap();
-        let read = if pool.is_worker() {
+        let is_worker = self.pread.as_ref().unwrap().is_worker();
+        let read = if is_worker {
             let ticket = match pending {
-                Some(read) => Ok(Some(read.ticket)),
-                None => pool.submit_worker(file.clone(), offset, len),
+                Some(read) => Ok(read.ticket),
+                None => self.submit_demand_read(id, file, offset, len),
             };
+            let pool = self.pread.as_mut().unwrap();
             match ticket {
-                Ok(Some(ticket)) => match pool.wait_worker(ticket) {
+                Ok(ticket) => match pool.wait_worker(ticket) {
                     Ok(index) => Ok(index),
                     Err(err) => {
                         // Read errors normally release in wait_worker. A worker/channel failure may
@@ -1129,12 +1964,14 @@ impl MoeSlotCache {
                         Err(err)
                     }
                 },
-                Ok(None) => Err(std::io::Error::other("worker read ring is busy").into()),
                 Err(err) => Err(err),
             }
         } else {
             debug_assert!(pending.is_none());
-            pool.read(file.as_ref(), offset, len)
+            self.pread
+                .as_mut()
+                .unwrap()
+                .read(file.as_ref(), offset, len)
         };
         let index = match read {
             Ok(index) => index,
@@ -1143,6 +1980,15 @@ impl MoeSlotCache {
                 return Ok(DispatchSlot::Resident(self.admit(id, fallback, e)?));
             }
         };
+
+        // OWED 17: a cold block's first miss is served without admission.
+        if self.bypass_allowed && self.cold_bypass != ColdBypass::Off && !self.frozen {
+            if self.cold_ghost.seen_before(id) {
+                self.ghost_admits += 1;
+            } else {
+                return self.serve_cold_bypass(index, len, e, id, fallback);
+            }
+        }
 
         // The blocking read happens before eviction, so an I/O failure leaves cache residency
         // untouched and can safely use the mmap oracle.
@@ -1194,6 +2040,149 @@ impl MoeSlotCache {
         Ok(DispatchSlot::Resident(slot))
     }
 
+    /// OWED 26 (M1-PREREG G2): a demand read in worker mode. The pool waits for a buffer itself;
+    /// it returns `None` only when every busy buffer is a completed or failed prefetch this cache
+    /// owns, so cancel one prefetch ticket (never the requested block's) and submit again. The
+    /// ring being busy is never a reason to read through mmap; only an error is.
+    fn submit_demand_read(
+        &mut self,
+        id: BlockId,
+        file: &Arc<std::fs::File>,
+        offset: u64,
+        len: usize,
+    ) -> Result<ReadTicket, Box<dyn std::error::Error>> {
+        loop {
+            if let Some(ticket) =
+                self.pread
+                    .as_mut()
+                    .unwrap()
+                    .submit_worker(file.clone(), offset, len)?
+            {
+                return Ok(ticket);
+            }
+            // Deterministic victim: the lowest (layer, projection, expert) prefetch.
+            let victim = self
+                .worker_reads
+                .keys()
+                .filter(|key| **key != id)
+                .min_by_key(|key| (key.layer, key.proj, key.ex))
+                .copied();
+            let Some(victim) = victim else {
+                return Err(std::io::Error::other(
+                    "every pinned buffer holds a completed read but no prefetch ticket owns one",
+                )
+                .into());
+            };
+            let read = self
+                .worker_reads
+                .remove(&victim)
+                .expect("victim came from the map");
+            let pool = self.pread.as_mut().unwrap();
+            pool.cancel_worker(read.ticket);
+            pool.note_prefetch_cancel();
+        }
+    }
+
+    /// OWED 17: serve a first-miss block from pinned buffer `index` without admitting it.
+    fn serve_cold_bypass(
+        &mut self,
+        index: usize,
+        len: usize,
+        e: &Engine,
+        id: BlockId,
+        fallback: &[u8],
+    ) -> Result<DispatchSlot, Box<dyn std::error::Error>> {
+        self.bypassed += 1;
+        match self.cold_bypass {
+            ColdBypass::Mapped => {
+                let pool = self.pread.as_mut().unwrap();
+                if pool.mapped_view(index).is_none() {
+                    pool.abort_read(index);
+                    return Err("mapped bypass: pinned buffer has no device alias".into());
+                }
+                pool.mark_mapped(index);
+                Ok(DispatchSlot::Mapped(index))
+            }
+            ColdBypass::Staged => {
+                let ready = {
+                    let bytes = match self.pread.as_ref().unwrap().bytes(index, len) {
+                        Ok(bytes) => bytes,
+                        Err(err) => {
+                            self.pread.as_mut().unwrap().abort_read(index);
+                            self.note_pread_fallback(err.as_ref());
+                            return Ok(DispatchSlot::Resident(self.admit(id, fallback, e)?));
+                        }
+                    };
+                    let scratch = self.bypass_scratch.as_mut().expect("staged bypass scratch");
+                    stage_pread_on_compute_stream(e, bytes, scratch)
+                };
+                match ready {
+                    Ok(ready) => {
+                        // The scratch is reused only by a later copy on the same compute stream,
+                        // so stream order fences it; the event returns the pinned buffer.
+                        self.pread.as_mut().unwrap().mark_h2d(index, ready);
+                        self.staged_bytes += len as u64;
+                        Ok(DispatchSlot::Scratch)
+                    }
+                    Err(err) => {
+                        self.pread.as_mut().unwrap().mark_unknown_h2d(index);
+                        Err(format!("staged bypass H2D failed: {err}").into())
+                    }
+                }
+            }
+            ColdBypass::Off => unreachable!("bypass branch with the door off"),
+        }
+    }
+
+    /// OWED 17: `dispatch_source` that may serve a cold first miss without admission
+    /// (`MEMRA_MOE_COLD_BYPASS`). The caller must enqueue its kernel on the compute stream, then
+    /// call `consumed` with the returned slot before any other dispatch.
+    pub(crate) fn dispatch_source_once(
+        &mut self,
+        id: BlockId,
+        source: ExpertSource<'_>,
+        e: &Engine,
+    ) -> Result<DispatchSlot, Box<dyn std::error::Error>> {
+        self.bypass_allowed = true;
+        let result = self.dispatch_source(id, source, e);
+        self.bypass_allowed = false;
+        result
+    }
+
+    /// OWED 17: the kernel reading `slot` is enqueued. A mapped buffer gets the event recorded
+    /// after it and returns to the pool once that fires. If the event cannot be recorded the
+    /// buffer stays owned until a whole-stream drain (never reused early).
+    pub(crate) fn consumed(
+        &mut self,
+        slot: DispatchSlot,
+        e: &Engine,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if let DispatchSlot::Mapped(index) = slot {
+            let ready = Arc::new(e.ctx().new_event(None)?);
+            ready.record(&e.stream())?;
+            self.pread
+                .as_mut()
+                .unwrap()
+                .set_consumer_event(index, ready);
+        }
+        Ok(())
+    }
+
+    /// The device bytes of a dispatched block and the range holding its `len` payload bytes.
+    pub fn payload(&self, d: DispatchSlot, len: usize) -> (&CudaSlice<u8>, std::ops::Range<usize>) {
+        match d {
+            DispatchSlot::Mapped(index) => {
+                let (view, head) = self
+                    .pread
+                    .as_ref()
+                    .and_then(|pool| pool.mapped_view(index))
+                    .expect("mapped dispatch without a mapped pinned buffer");
+                (view, head..head + len)
+            }
+            other => (self.buf(other), 0..len),
+        }
+    }
+
     /// The dispatch decision for one (BlockId, host_bytes). Returns where the block landed; resolve
     /// the device buffer with `buf()`. On the bit-identity-critical path the buffer holds EXACTLY
     /// `host_bytes` either way (a HIT skipped the copy; the prior stage wrote the same bytes).
@@ -1217,7 +2206,45 @@ impl MoeSlotCache {
         )
     }
 
+    /// DAY60: the dispatch clock's cumulative line, `None` without the clock.
+    pub(crate) fn dispatch_clock_line(&self) -> Option<String> {
+        self.dispatch_clock.as_ref().map(DispatchClock::line)
+    }
+
     pub(crate) fn dispatch_source(
+        &mut self,
+        id: BlockId,
+        source: ExpertSource<'_>,
+        e: &Engine,
+    ) -> Result<DispatchSlot, Box<dyn std::error::Error>> {
+        if self.dispatch_clock.is_none() {
+            return self.dispatch_source_unclocked(id, source, e);
+        }
+        // DAY60: the whole dispatch, both programs, and its outcome.
+        let (started, hits, was_pending) = (
+            std::time::Instant::now(),
+            self.hits,
+            self.pending.contains_key(&id),
+        );
+        let result = self.dispatch_source_unclocked(id, source, e);
+        let hit = self.hits > hits;
+        if let Some(clock) = self.dispatch_clock.as_mut() {
+            clock.dispatch_calls += 1;
+            clock.dispatch_ns += clock_ns(started);
+            if result.is_ok() {
+                if hit {
+                    clock.dispatch_hits += 1;
+                } else if was_pending {
+                    clock.dispatch_pending += 1;
+                } else {
+                    clock.dispatch_sync += 1;
+                }
+            }
+        }
+        result
+    }
+
+    fn dispatch_source_unclocked(
         &mut self,
         id: BlockId,
         source: ExpertSource<'_>,
@@ -1329,10 +2356,15 @@ impl MoeSlotCache {
         keep: &[BlockId],
         e: &Engine,
     ) -> Result<bool, Box<dyn std::error::Error>> {
-        let Some(slot) = self.reserve_prefetch_slot(host_bytes.len(), keep) else {
+        let reserving = self.dispatch_clock.is_some().then(std::time::Instant::now);
+        let reserved = self.reserve_prefetch_slot(host_bytes.len(), keep);
+        let staging = self.dispatch_clock_mark(reserving, |c, ns| c.pf_reserve_ns += ns);
+        let Some(slot) = reserved else {
             return Ok(false);
         };
-        let ready = match stage_on_copy_stream(e, host_bytes, &mut self.slots[slot]) {
+        let staged = stage_on_copy_stream(e, host_bytes, &mut self.slots[slot]);
+        self.dispatch_clock_mark(staging, |c, ns| c.pf_stage_ns += ns);
+        let ready = match staged {
             Ok(ready) => ready,
             Err((err, reusable)) => {
                 if reusable {
@@ -1358,6 +2390,7 @@ impl MoeSlotCache {
                 slot,
                 ready,
                 keepalive,
+                group: None,
             },
         );
         self.staged_bytes += host_bytes.len() as u64;
@@ -1371,9 +2404,77 @@ impl MoeSlotCache {
         keep: &[BlockId],
         e: &Engine,
     ) -> Result<bool, Box<dyn std::error::Error>> {
+        if self.dispatch_clock.is_none() {
+            return self.prefetch_source_unclocked(id, source, keep, e);
+        }
+        // DAY60: the whole prefetch, both programs.
+        let started = std::time::Instant::now();
+        let result = self.prefetch_source_unclocked(id, source, keep, e);
+        if let Some(clock) = self.dispatch_clock.as_mut() {
+            clock.prefetch_calls += 1;
+            clock.prefetch_ns += clock_ns(started);
+            if matches!(result, Ok(true)) {
+                clock.prefetch_issued += 1;
+            }
+        }
+        result
+    }
+
+    /// DAY64 (I15, `research/spill-c-20260919/DAY64.md`): one routed expert's three blocks. The
+    /// legacy cache (REF) takes them one `prefetch_source` call per block, its program unchanged;
+    /// under the door they are leased together (`prefetch_banked_group`), one ticket per expert.
+    pub(crate) fn prefetch_expert(
+        &mut self,
+        blocks: [(BlockId, ExpertSource<'_>); 3],
+        keep: &[BlockId],
+        e: &Engine,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if self.banked.is_none() {
+            for (id, source) in blocks {
+                let _ = self.prefetch_source(id, source, keep, e)?;
+            }
+            return Ok(());
+        }
+        let sized = blocks.map(|(id, source)| {
+            let bytes = match &source {
+                ExpertSource::Memory { bytes, .. } => bytes.len(),
+                ExpertSource::Disk { len, .. } => *len,
+            };
+            (id, bytes)
+        });
+        if self.dispatch_clock.is_none() {
+            return self.prefetch_banked_group(&sized, keep, e).map(|_| ());
+        }
+        // DAY60's clock, the door's grouped form: one prefetch call per block considered.
+        let started = std::time::Instant::now();
+        let result = self.prefetch_banked_group(&sized, keep, e);
+        if let Some(clock) = self.dispatch_clock.as_mut() {
+            clock.prefetch_calls += sized.len() as u64;
+            clock.prefetch_ns += clock_ns(started);
+            if let Ok(staged) = result {
+                clock.prefetch_issued += staged as u64;
+            }
+        }
+        result.map(|_| ())
+    }
+
+    fn prefetch_source_unclocked(
+        &mut self,
+        id: BlockId,
+        source: ExpertSource<'_>,
+        keep: &[BlockId],
+        e: &Engine,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
         if self.banked.is_some() {
-            // No detached legacy prefetch may bypass the owner service.
-            return Ok(false);
+            // No detached legacy prefetch may bypass the owner service: under the door a
+            // prefetch takes its lease through the owner (DAY50).
+            let bytes = match &source {
+                ExpertSource::Memory { bytes, .. } => bytes.len(),
+                ExpertSource::Disk { len, .. } => *len,
+            };
+            return self
+                .prefetch_banked_group(&[(id, bytes)], keep, e)
+                .map(|staged| staged > 0);
         }
         self.reap_copy_sources();
         if self.table.contains_key(&id)
@@ -1604,6 +2705,19 @@ impl MoeSlotCache {
     pub fn buf(&self, d: DispatchSlot) -> &CudaSlice<u8> {
         match d {
             DispatchSlot::Resident(s) => &self.slots[s],
+            DispatchSlot::Scratch => self.bypass_scratch.as_ref().expect("staged bypass scratch"),
+            DispatchSlot::Mapped(index) => {
+                let (view, head) = self
+                    .pread
+                    .as_ref()
+                    .and_then(|pool| pool.mapped_view(index))
+                    .expect("mapped dispatch without a mapped pinned buffer");
+                assert_eq!(
+                    head, 0,
+                    "a direct-window mapped payload must be read through payload()"
+                );
+                view
+            }
         }
     }
 
@@ -1701,7 +2815,7 @@ pub(crate) fn hard_slot_bytes(free: usize, max_block_bytes: usize) -> usize {
     // Keep two blocks of slack after the machine-specific hard ceiling. The default remains
     // 80%; tightly provisioned spill rigs may raise it only after an OOM-gated local sweep.
     let hard_frac = cache_hard_vram_frac();
-    ((free as f64 * hard_frac) as usize).saturating_sub(2 * (max_block_bytes + 8))
+    ((free as f64 * hard_frac) as usize).saturating_sub(2 * (max_block_bytes + SLOT_TAIL_PAD_BYTES))
 }
 
 fn cache_hard_vram_frac() -> f64 {
@@ -1968,8 +3082,8 @@ mod slru_intrusive_tests {
 #[cfg(test)]
 mod vram_fraction_tests {
     use super::{
-        parse_cache_hard_vram_frac, parse_cache_lfu_decay, parse_cache_lfu_mtp_weight,
-        size_class_plan,
+        SLOT_TAIL_PAD_BYTES, parse_cache_hard_vram_frac, parse_cache_lfu_decay,
+        parse_cache_lfu_mtp_weight, size_class_plan,
     };
 
     #[test]
@@ -2016,7 +3130,7 @@ mod vram_fraction_tests {
         assert!(plan.iter().all(|(_, count)| *count > 0));
         assert!(
             plan.iter()
-                .map(|(bytes, count)| (bytes + 8) * count)
+                .map(|(bytes, count)| (bytes + SLOT_TAIL_PAD_BYTES) * count)
                 .sum::<usize>()
                 <= budget
         );
@@ -2028,10 +3142,59 @@ mod vram_fraction_tests {
     #[test]
     fn size_class_plan_returns_full_inventory_when_it_fits() {
         let blocks = [100usize, 100, 200, 400];
-        let budget: usize = blocks.iter().map(|bytes| bytes + 8).sum();
+        let budget: usize = blocks.iter().map(|bytes| bytes + SLOT_TAIL_PAD_BYTES).sum();
         assert_eq!(
             size_class_plan(&blocks, budget),
             vec![(100, 2), (200, 1), (400, 1)]
+        );
+    }
+
+    #[test]
+    fn cold_ghost_first_miss_bypasses_second_admits() {
+        let mut g = super::ColdGhost::new(4);
+        let a = super::BlockId::new(1, 0, 7);
+        assert!(!g.seen_before(a), "first miss is cold");
+        assert!(g.seen_before(a), "second miss admits");
+        assert!(!g.seen_before(a), "after admitting, the id starts over");
+        assert_eq!(g.len(), 1);
+    }
+
+    #[test]
+    fn cold_ghost_remembers_only_the_last_cap_first_misses() {
+        let mut g = super::ColdGhost::new(3);
+        let ids: Vec<super::BlockId> = (0..5).map(|x| super::BlockId::new(0, 1, x)).collect();
+        for &id in &ids {
+            assert!(!g.seen_before(id));
+        }
+        assert_eq!(g.len(), 3);
+        assert!(!g.seen_before(ids[0]), "aged out of the list, cold again");
+        assert!(g.seen_before(ids[4]), "still remembered");
+        // Stale entries age out without growing the list past cap.
+        for round in 0..100u16 {
+            let id = super::BlockId::new(2, 0, round);
+            assert!(!g.seen_before(id));
+            assert!(g.seen_before(id));
+            assert!(g.fifo.len() <= 3 && g.len() <= 3);
+        }
+    }
+
+    #[test]
+    fn cold_bypass_parse_refuses_unknown_values() {
+        use super::ColdBypass;
+        assert_eq!(ColdBypass::parse(None).unwrap(), ColdBypass::Off);
+        assert_eq!(ColdBypass::parse(Some("off")).unwrap(), ColdBypass::Off);
+        assert_eq!(
+            ColdBypass::parse(Some("staged")).unwrap(),
+            ColdBypass::Staged
+        );
+        assert_eq!(
+            ColdBypass::parse(Some("mapped")).unwrap(),
+            ColdBypass::Mapped
+        );
+        assert!(
+            ColdBypass::parse(Some("zero-copy"))
+                .unwrap_err()
+                .contains("expected off, staged or mapped")
         );
     }
 
@@ -2044,15 +3207,46 @@ mod vram_fraction_tests {
 
 impl Drop for MoeSlotCache {
     fn drop(&mut self) {
+        if self.cold_bypass != ColdBypass::Off {
+            eprintln!(
+                "[moe-bypass] mode={} bypassed={} ghost_admits={} ghost_live={}",
+                self.cold_bypass.name(),
+                self.bypassed,
+                self.ghost_admits,
+                self.cold_ghost.len()
+            );
+        }
         // Event tracking is intentionally disabled in Engine. Drain explicit copy-stream handoffs
         // before either the destination slots or pinned read buffers begin field destruction.
         let mut safe_to_drop_slots = true;
-        if let Some(token) = &self.banked_pending {
+        if !self.banked_inflight.is_empty() || !self.banked_groups.is_empty() {
+            // DAY46/DAY50: one drain of each stream proves every in-flight and prefetched copy; a
+            // failed drain keeps them all open.
+            if self.compute_stream.synchronize().is_err() || self.copy_stream.synchronize().is_err()
+            {
+                safe_to_drop_slots = false;
+            } else if let Some(bank) = &self.banked {
+                while let Some((lease, _done)) = self.banked_inflight.pop_front() {
+                    // Wrong-thread teardown refuses; the owner registry retains backing.
+                    let _ = lease.finish(bank);
+                }
+                self.banked_inflight_leases = 0;
+                // DAY64: every prefetched group once, whatever its members' state.
+                for (_, entry) in self.banked_groups.drain() {
+                    let _ = BankedLease::Group(entry.token).finish(bank);
+                }
+                for pending in self.pending.values_mut() {
+                    pending.group = None;
+                }
+                self.banked_prefetched = 0;
+            }
+        }
+        if let Some(lease) = &self.banked_pending {
             if self.compute_stream.synchronize().is_err() {
                 safe_to_drop_slots = false;
             } else if let Some(bank) = &self.banked {
                 // Wrong-thread teardown refuses; owner registry retains backing.
-                if bank.finish(token).is_ok() {
+                if lease.finish(bank).is_ok() {
                     self.banked_pending = None;
                 }
             }

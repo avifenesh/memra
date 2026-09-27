@@ -1,0 +1,115 @@
+9ed0249500d24bb128d59dcc8ddd2c1df08790b81af30c36cb06a7069448a88f  /root/spill-receipts/c-day13/bins/memra-server
+== cell 1: POOL-FULL (MEMRA_KV_HOST_MB=1, no real entry fits) ==
+  ok: device budget forced an eviction (the failure path's trigger)
+  FAIL: pool-full refusal is LOUD and named
+  ok: nothing entered the tier
+  ok: r3 still serves (cold re-prime, zero cached)
+== cell 2: DIGEST MISMATCH (verify on + MEMRA_KV_HOST_FAULT=flip-demote) ==
+  ok: the fault door announced the injected corruption
+  ok: the corrupted entry DEMOTED (the mismatch needs a resident entry)
+  ok: the promote caught it: VERIFY FAILED, loud and named
+  ok: no successful promote happened
+  ok: metrics: zero promotions after the refusal
+  ok: r3 served the COLD path with reference bytes (corruption never reached a customer)
+== cell 3: PINNED-ALLOC REFUSAL (MEMRA_KV_HOST_FAULT=alloc-fail) ==
+  ok: the tier LATCHED OFF loudly on the first alloc failure
+  ok: the refusal counted
+  ok: no silent pageable fallback: zero demotions completed
+  ok: r3 served the cold path with reference bytes
+KV-HOST-SPILL FAILURE GATE: 1 FAILURE(S)
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "/root/spill-receipts/c-day13/hostgate-cell.sh",
+    "failure",
+    "on",
+    "plain",
+    "3",
+    "256"
+  ],
+  "exit_code": 1,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "failed",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 41285943202545,
+  "ended_monotonic_ns": 41339335377217,
+  "started_utc": "2026-09-21T02:20:00.937060+00:00",
+  "ended_utc": "2026-09-21T02:20:54.329237+00:00",
+  "elapsed_seconds": 53.392174672,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 1116,
+    "sha256": "5252cdd1202d596e05545170a70c7b3cb0d091000415f60eda68ae5e0ce73601"
+  },
+  "failure_quote": "died, cause unknown \u2014 repro needed",
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 23223,
+      "sha256": "a7c4677ba1524e878a110e7f7ffca46884cab22ffeb2dce66f274493812b1c09"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "failure": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.failure.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}

@@ -750,6 +750,14 @@ def evaluate_content(policy: Policy, rel: str, data: bytes) -> Optional[Violatio
         )
     if bypass:
         return None
+    if not raw_bytes_prefilter(data, policy.secret_sources):
+        # Same gate the checkout scan applies through `git grep --text -P` before it decodes
+        # anything: a rule must match the RAW bytes. Without it the commit and ref scans judged
+        # a blob the checkout scan never looked at, and `decode(errors="ignore")` glued the
+        # neighbours of undecodable bytes into a provider name no reader sees (2026-09-20: two
+        # gzipped trace logs refused by the pre-push hook at "line 1810" of the deflate stream,
+        # then called stale pins by `check` and `verify-allowlist`). One candidate set, both scans.
+        return None
     hits = scan_secret_bytes(
         data, policy.secret_union, policy.secret_groups, policy.secret_patterns
     )
@@ -760,12 +768,31 @@ def evaluate_content(policy: Policy, rel: str, data: bytes) -> Optional[Violatio
     )
 
 
-def evaluate(policy: Policy, pinned_paths: Iterable[str] = ()) -> List[Violation]:
+_RAW_RULES: Dict[str, Optional[re.Pattern[bytes]]] = {}
+
+
+def raw_bytes_prefilter(data: bytes, sources: Dict[str, str]) -> bool:
+    """True when any rule source matches the raw bytes, as `git grep --text -P` would.
+
+    The checkout scan prefilters candidates with git's PCRE walker over bytes; this is the same
+    question asked of a loose blob. A source that does not compile as a bytes pattern keeps the
+    blob a candidate (fail open into the text scan, never silently out of it).
+    """
+    for name, source in sources.items():
+        if name not in _RAW_RULES:
+            try:
+                _RAW_RULES[name] = re.compile(source.encode("utf-8"))
+            except (re.error, UnicodeEncodeError):
+                _RAW_RULES[name] = None
+        pattern = _RAW_RULES[name]
+        if pattern is None or pattern.search(data) is not None:
+            return True
+    return False
+
+
+def evaluate(policy: Policy) -> List[Violation]:
     violations: List[Violation] = []
-    # A byte-level prefilter can miss strings formed when the full matcher drops
-    # invalid UTF-8 (notably in compressed evidence). Pins must be rechecked with
-    # the full matcher, for every rule, just as commit/ref scans check their blobs.
-    secret_candidates = secret_candidate_files(policy.secret_sources) | set(pinned_paths)
+    secret_candidates = secret_candidate_files(policy.secret_sources)
     for rel in tracked_files():
         full = ROOT / rel
         # Do not ask is_file() to follow a symlink. Python 3.12 raises PermissionError when an
@@ -917,7 +944,7 @@ def cmd_check(
             f"of {stats.get('candidates', 0)} prefiltered."
         )
     elif commits is None:
-        violations = evaluate(policy, (path for path, _digest in allowlist))
+        violations = evaluate(policy)
     else:
         violations = evaluate_commits(policy, commits)
     unmatched: List[Violation] = []
@@ -1119,7 +1146,7 @@ def cmd_seed(policy: Policy, force: bool) -> int:
 def cmd_verify(policy: Policy, prune: bool) -> int:
     allowlist = load_allowlist(ALLOWLIST_PATH)
     enforce_expiry_metadata(allowlist, policy)
-    live_violations = evaluate(policy, (path for path, _digest in allowlist))
+    live_violations = evaluate(policy)
     drifted = stale_entries(allowlist, live_violations)
     if not drifted:
         print(

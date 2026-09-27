@@ -49,6 +49,10 @@ name = "bw-roofline"
 path = "src/bin/bw_roofline.rs"
 
 [[bin]]
+name = "vmm-call-cost"
+path = "src/bin/vmm_call_cost.rs"
+
+[[bin]]
 name = "tp-ar-bench"
 path = "src/bin/tp_ar_bench.rs"
 
@@ -203,6 +207,10 @@ path = "src/bin/dspark_export_shared.rs"
 [[bin]]
 name = "run-gen"
 path = "src/bin/run_gen.rs"
+
+[[bin]]
+name = "hash-micro"
+path = "src/bin/hash_micro.rs"
 
 [[bin]]
 name = "run-spec"
@@ -454,6 +462,10 @@ path = "src/bin/qwen_a4_tail_gate.rs"
 [[bin]]
 name = "qwen-a4-continuation-gate"
 path = "src/bin/qwen_a4_continuation_gate.rs"
+
+[[bin]]
+name = "qwen-a4-width-walk"
+path = "src/bin/qwen_a4_width_walk.rs"
 
 [[bin]]
 name = "qwen-a4-oracle"

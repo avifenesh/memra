@@ -3530,15 +3530,8 @@ impl MtpHead {
         main_cfg: &ModelConfig,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let src = GgufSource(g);
-        let dcfg = src.try_config().map_err(std::io::Error::other)?;
-        let draft_plan = match memra_gguf::model_packs::for_config(&dcfg) {
-            Some(pack) => pack.compile_plan(&dcfg)?,
-            None => memra_gguf::model_plan::ModelPlan::compile(&dcfg)?,
-        };
-        let main_plan = match memra_gguf::model_packs::for_config(main_cfg) {
-            Some(pack) => pack.compile_plan(main_cfg)?,
-            None => memra_gguf::model_plan::ModelPlan::compile(main_cfg)?,
-        };
+        let (dcfg, draft_plan) = memra_gguf::model_packs::compile_for_source(&src)?;
+        let main_plan = memra_gguf::model_packs::compile_for_load(main_cfg)?;
         // NextN block index INSIDE THE DRAFT FILE (its block_count includes the trunk numbering).
         // Graceful error, not assert: the server's `+draft` attach path surfaces this to the
         // user (a gemma-assistant draft or any non-NextN GGUF lands here; a panic killed the
@@ -4246,11 +4239,18 @@ impl HybridModel {
                 load_prev = now;
             }
         };
-        let cfg = src.try_config().map_err(std::io::Error::other)?;
-        let plan = match memra_gguf::model_packs::for_config(&cfg) {
-            Some(pack) => pack.compile_plan(&cfg)?,
-            None => memra_gguf::model_plan::ModelPlan::compile(&cfg)?,
-        };
+        // Preflight may consume checkpoint RoPE factors; include those reads in the audit.
+        let recording = memra_gguf::checkpoint_binding::RecordingSource::new(src);
+        let src: &dyn TensorSource = &recording;
+        let (cfg, plan) = memra_gguf::model_packs::compile_for_source(src)?;
+        // memra#541: the canonical tensor contract is bound against the checkpoint census HERE,
+        // before any tensor upload. Missing, unexpected, duplicate, ambiguous, wrong-shape and
+        // wrong-quant tensors and an undeclared tied head refuse the load with the pack and
+        // dialect named. Every read below goes through a recording source so the bound tensors
+        // the loader never consumed are named at the end (`settle_consumption`).
+        let binding = memra_gguf::checkpoint_binding::bind_source(src, &cfg, &plan)
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        eprintln!("{}", memra_gguf::checkpoint_binding::describe(&binding));
         let auto_parallel = prepare_auto_parallel(src, &cfg, &plan)?;
         let batch_program = crate::plan_backend::decode_batch_program(&plan);
         let gemma_program = batch_program == crate::plan_backend::DecodeBatchProgram::Gemma;
@@ -4558,12 +4558,15 @@ impl HybridModel {
         // this is the primary engine, byte-identical to the M1 loader).
         let e_head = crate::pp::layer_engine(e, n_trunk, n_trunk - 1)?;
         let output_norm = load_t(e_head, src, "output_norm.weight")?;
-        // tied embeddings: fall back to tok_embd if output.weight absent.
-        let mut output = if src.has("output.weight") {
-            load_t(e_head, src, "output.weight")?
-        } else {
-            load_t(e_head, src, "token_embd.weight")?
-        };
+        // Output-head ownership is the binding's verdict (memra#541): the bound `OutputProjection`,
+        // or the token embedding only when the pack declares a tied head for this family.
+        let mut output = load_t(
+            e_head,
+            src,
+            &binding
+                .output_head_ggml_name()
+                .map_err(std::io::Error::other)?,
+        )?;
         load_mark("output-head", 0);
         let mut resident = ResidentPlan::pp(e, src, &cfg, n_trunk)?;
         resident.exclude_distributed_expert_layers(
@@ -5767,16 +5770,15 @@ impl HybridModel {
             None
         };
         // step35: rope_freqs.weight [n_rot_full/2] — FULL-attn layers only (SWA passes null).
-        // Loaded by tensor presence, not required: the key is absent on a sibling without
-        // llama3-style scaling, and `None` is the correct "no factors" signal for rope_neox2.
+        // GGUF carries the factor tensor; HF carries normalized factors in Step35Config.
+        // Preflight requires one when llama3 scaling is declared. Unscaled siblings keep None.
         let step35_aux = if sliding_gated_moe_program {
-            let rope_freqs = match src.find("rope_freqs.weight") {
-                Some(t) => {
-                    let host = memra_gguf::dequant::dequantize(
-                        t.ggml_type,
-                        &t.bytes,
-                        t.ne.iter().product::<u64>() as usize,
-                    );
+            let host = cfg
+                .step35
+                .as_ref()
+                .and_then(|step| step.rope_freq_factors.as_ref());
+            let rope_freqs = match host {
+                Some(host) => {
                     let mut copies = Vec::new();
                     if let Some(fence) = crate::pp::pp_cuts(n_trunk) {
                         #[allow(clippy::needless_range_loop)]
@@ -5785,11 +5787,11 @@ impl HybridModel {
                             let owner = crate::pp::layer_engine(e, n_trunk, fence[s])?;
                             let dev = owner.ctx().ordinal();
                             if copies.iter().all(|(d, _)| *d != dev) {
-                                copies.push((dev, owner.htod(&host)?));
+                                copies.push((dev, owner.htod(host)?));
                             }
                         }
                     } else {
-                        copies.push((e.ctx().ordinal(), e.htod(&host)?));
+                        copies.push((e.ctx().ordinal(), e.htod(host)?));
                     }
                     Some(copies)
                 }
@@ -6365,6 +6367,23 @@ impl HybridModel {
                 }
             }
         }
+        // memra#541: every bound tensor the loader never read is named; the pack's
+        // `tensor_consumption` decides whether that is a report or a refusal. Vision towers load
+        // through their own owner, and an MTP block the caller did not ask for stays unread.
+        // MTP blocks are skipped by what was actually loaded: none on the no-MTP entry points,
+        // after MEMRA_MTP_SKIP, with an external MEMRA_MTP_DRAFT, or past a MEMRA_MTP_HEADS cap.
+        let loaded_mtp_blocks = if load_mtp { embedded_head_count } else { 0 };
+        let unconsumed = binding.audit_consumption(&recording.requested(), &cfg, |id, tensor| {
+            memra_gguf::checkpoint_binding::unread_by_design(id)
+                || memra_gguf::checkpoint_binding::owned_by_vision(tensor)
+                || memra_gguf::checkpoint_binding::unloaded_mtp(
+                    tensor,
+                    n_trunk as u32,
+                    loaded_mtp_blocks,
+                )
+        });
+        memra_gguf::checkpoint_binding::settle_consumption(&binding, &unconsumed)
+            .map_err(std::io::Error::other)?;
         let model = HybridModel {
             cfg,
             plan,

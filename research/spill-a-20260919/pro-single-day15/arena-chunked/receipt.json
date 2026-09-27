@@ -1,0 +1,823 @@
+{
+ "kind": "pinned-host-reserve-bench",
+ "issue": "memra#385",
+ "cell": "arena-chunked",
+ "arms": [
+  "single",
+  "chunked"
+ ],
+ "bytes": 56916705280,
+ "basis": "admissible",
+ "fraction": null,
+ "margin_bytes": 34359738368,
+ "chunks": 8,
+ "pairs_per_order": 5,
+ "floor": 1.1,
+ "hugepage_min_fraction": 0.9,
+ "mem_total": 94879371264,
+ "mem_available_at_start": 91276705792,
+ "mem_free_at_start": 30041198592,
+ "anon_huge_at_start": 0,
+ "hugepages_total": 0,
+ "thp_mode": "always [madvise] never",
+ "cpus": 30,
+ "gpu_at_start": "32, 35.65 W, 600.00 W, 180 MHz",
+ "loadavg_at_start": [
+  "0.09",
+  "0.46",
+  "0.35"
+ ],
+ "rows": [
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 9261.328859996866,
+   "free_ms": 3570.913898991421,
+   "free_rc": [
+    0
+   ],
+   "order": "AB",
+   "pair": 0,
+   "arm": "single",
+   "mem_available_before": 91412553728,
+   "mem_free_before": 60422262784,
+   "utc": "2026-09-21T16:50:37Z"
+  },
+  {
+   "ok": true,
+   "rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "alloc_ms": 9144.350767004653,
+   "chunk_bytes": 7113539584,
+   "chunk_alloc_ms": [
+    1222.911,
+    2370.128,
+    3489.054,
+    4603.118,
+    5709.827,
+    6804.724,
+    7904.399,
+    9143.225
+   ],
+   "free_ms": 4237.720349003212,
+   "free_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "order": "AB",
+   "pair": 0,
+   "arm": "chunked",
+   "mem_available_before": 91276279808,
+   "mem_free_before": 61249380352,
+   "utc": "2026-09-21T16:50:50Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8877.996085007908,
+   "free_ms": 3532.390492007835,
+   "free_rc": [
+    0
+   ],
+   "order": "AB",
+   "pair": 1,
+   "arm": "single",
+   "mem_available_before": 91439144960,
+   "mem_free_before": 62618787840,
+   "utc": "2026-09-21T16:51:03Z"
+  },
+  {
+   "ok": true,
+   "rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "alloc_ms": 8831.016638010624,
+   "chunk_bytes": 7113539584,
+   "chunk_alloc_ms": [
+    1204.913,
+    2306.308,
+    3389.372,
+    4482.847,
+    5565.496,
+    6648.755,
+    7739.63,
+    8829.943
+   ],
+   "free_ms": 3535.8063460007543,
+   "free_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "order": "AB",
+   "pair": 1,
+   "arm": "chunked",
+   "mem_available_before": 91446288384,
+   "mem_free_before": 62625492992,
+   "utc": "2026-09-21T16:51:15Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8786.79709500284,
+   "free_ms": 3582.572409999557,
+   "free_rc": [
+    0
+   ],
+   "order": "AB",
+   "pair": 2,
+   "arm": "single",
+   "mem_available_before": 91398787072,
+   "mem_free_before": 62577987584,
+   "utc": "2026-09-21T16:51:27Z"
+  },
+  {
+   "ok": true,
+   "rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "alloc_ms": 8826.381199993193,
+   "chunk_bytes": 7113539584,
+   "chunk_alloc_ms": [
+    1206.296,
+    2310.533,
+    3392.897,
+    4471.736,
+    5551.242,
+    6636.524,
+    7733.751,
+    8825.611
+   ],
+   "free_ms": 3557.1169210015796,
+   "free_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "order": "AB",
+   "pair": 2,
+   "arm": "chunked",
+   "mem_available_before": 91085680640,
+   "mem_free_before": 62264492032,
+   "utc": "2026-09-21T16:51:40Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8847.078995997435,
+   "free_ms": 3618.880125999567,
+   "free_rc": [
+    0
+   ],
+   "order": "AB",
+   "pair": 3,
+   "arm": "single",
+   "mem_available_before": 91367743488,
+   "mem_free_before": 62546223104,
+   "utc": "2026-09-21T16:51:52Z"
+  },
+  {
+   "ok": true,
+   "rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "alloc_ms": 9025.954708995414,
+   "chunk_bytes": 7113539584,
+   "chunk_alloc_ms": [
+    1217.949,
+    2367.245,
+    3492.893,
+    4609.541,
+    5717.529,
+    6825.982,
+    7925.041,
+    9024.721
+   ],
+   "free_ms": 3660.227863001637,
+   "free_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "order": "AB",
+   "pair": 3,
+   "arm": "chunked",
+   "mem_available_before": 91138306048,
+   "mem_free_before": 62316773376,
+   "utc": "2026-09-21T16:52:05Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8828.417286989861,
+   "free_ms": 3540.3208390052896,
+   "free_rc": [
+    0
+   ],
+   "order": "AB",
+   "pair": 4,
+   "arm": "single",
+   "mem_available_before": 91337920512,
+   "mem_free_before": 62515798016,
+   "utc": "2026-09-21T16:52:17Z"
+  },
+  {
+   "ok": true,
+   "rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "alloc_ms": 8831.741109010181,
+   "chunk_bytes": 7113539584,
+   "chunk_alloc_ms": [
+    1207.008,
+    2311.612,
+    3397.787,
+    4483.456,
+    5570.904,
+    6658.938,
+    7747.819,
+    8830.888
+   ],
+   "free_ms": 3572.776891000103,
+   "free_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "order": "AB",
+   "pair": 4,
+   "arm": "chunked",
+   "mem_available_before": 91341451264,
+   "mem_free_before": 62519922688,
+   "utc": "2026-09-21T16:52:30Z"
+  },
+  {
+   "ok": true,
+   "rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "alloc_ms": 8839.646146006999,
+   "chunk_bytes": 7113539584,
+   "chunk_alloc_ms": [
+    1205.481,
+    2310.304,
+    3393.482,
+    4481.789,
+    5575.543,
+    6663.272,
+    7751.593,
+    8838.82
+   ],
+   "free_ms": 3588.1257399887545,
+   "free_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "order": "BA",
+   "pair": 0,
+   "arm": "chunked",
+   "mem_available_before": 91340406784,
+   "mem_free_before": 62519185408,
+   "utc": "2026-09-21T16:52:42Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8862.752647008165,
+   "free_ms": 3531.641605994082,
+   "free_rc": [
+    0
+   ],
+   "order": "BA",
+   "pair": 0,
+   "arm": "single",
+   "mem_available_before": 91361681408,
+   "mem_free_before": 62540029952,
+   "utc": "2026-09-21T16:52:54Z"
+  },
+  {
+   "ok": true,
+   "rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "alloc_ms": 8835.070892004296,
+   "chunk_bytes": 7113539584,
+   "chunk_alloc_ms": [
+    1201.845,
+    2305.763,
+    3380.42,
+    4468.173,
+    5555.907,
+    6645.307,
+    7751.472,
+    8834.23
+   ],
+   "free_ms": 3556.276028000866,
+   "free_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "order": "BA",
+   "pair": 1,
+   "arm": "chunked",
+   "mem_available_before": 91363065856,
+   "mem_free_before": 62541553664,
+   "utc": "2026-09-21T16:53:07Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8888.178794004489,
+   "free_ms": 3537.652747007087,
+   "free_rc": [
+    0
+   ],
+   "order": "BA",
+   "pair": 1,
+   "arm": "single",
+   "mem_available_before": 91353743360,
+   "mem_free_before": 62532009984,
+   "utc": "2026-09-21T16:53:19Z"
+  },
+  {
+   "ok": true,
+   "rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "alloc_ms": 8824.03103800607,
+   "chunk_bytes": 7113539584,
+   "chunk_alloc_ms": [
+    1209.15,
+    2309.035,
+    3391.926,
+    4473.647,
+    5552.921,
+    6635.874,
+    7726.652,
+    8823.208
+   ],
+   "free_ms": 3567.9201669991016,
+   "free_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "order": "BA",
+   "pair": 2,
+   "arm": "chunked",
+   "mem_available_before": 91363082240,
+   "mem_free_before": 62541508608,
+   "utc": "2026-09-21T16:53:32Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8859.375872998498,
+   "free_ms": 3584.1882659879047,
+   "free_rc": [
+    0
+   ],
+   "order": "BA",
+   "pair": 2,
+   "arm": "single",
+   "mem_available_before": 91336937472,
+   "mem_free_before": 62515732480,
+   "utc": "2026-09-21T16:53:44Z"
+  },
+  {
+   "ok": true,
+   "rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "alloc_ms": 8830.77231500647,
+   "chunk_bytes": 7113539584,
+   "chunk_alloc_ms": [
+    1212.985,
+    2321.76,
+    3412.171,
+    4493.791,
+    5577.129,
+    6661.421,
+    7743.132,
+    8829.488
+   ],
+   "free_ms": 3599.1081340034725,
+   "free_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "order": "BA",
+   "pair": 3,
+   "arm": "chunked",
+   "mem_available_before": 91280494592,
+   "mem_free_before": 62459121664,
+   "utc": "2026-09-21T16:53:57Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8878.074457999901,
+   "free_ms": 3582.463856000686,
+   "free_rc": [
+    0
+   ],
+   "order": "BA",
+   "pair": 3,
+   "arm": "single",
+   "mem_available_before": 91303972864,
+   "mem_free_before": 62482210816,
+   "utc": "2026-09-21T16:54:09Z"
+  },
+  {
+   "ok": true,
+   "rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "alloc_ms": 8804.635136999423,
+   "chunk_bytes": 7113539584,
+   "chunk_alloc_ms": [
+    1209.293,
+    2313.578,
+    3395.17,
+    4480.712,
+    5561.477,
+    6645.139,
+    7721.565,
+    8803.544
+   ],
+   "free_ms": 3569.2511620000005,
+   "free_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "order": "BA",
+   "pair": 4,
+   "arm": "chunked",
+   "mem_available_before": 91322355712,
+   "mem_free_before": 62501011456,
+   "utc": "2026-09-21T16:54:21Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 8899.597166004241,
+   "free_ms": 3551.9831229903502,
+   "free_rc": [
+    0
+   ],
+   "order": "BA",
+   "pair": 4,
+   "arm": "single",
+   "mem_available_before": 91303571456,
+   "mem_free_before": 62482092032,
+   "utc": "2026-09-21T16:54:34Z"
+  }
+ ],
+ "roundtrips": [
+  {
+   "arm": "single",
+   "reserve": {
+    "ok": true,
+    "rc": 0,
+    "alloc_ms": 9437.146033989848
+   },
+   "ok": true,
+   "driver_flags": [
+    {
+     "rc": 0,
+     "flags": 3
+    }
+   ],
+   "wc_bit_absent": true,
+   "flags_read_ok": true,
+   "portable_bit_set": true,
+   "blocks": 27140,
+   "mismatched_blocks": 0,
+   "byte_exact": true,
+   "h2d_rc": [
+    0
+   ],
+   "d2h_rc": [
+    0
+   ],
+   "device_free_rc": 0,
+   "release_rc": [
+    0
+   ],
+   "fill_ms": 1246.2208829965675,
+   "h2d_ms": 985.4627180029638,
+   "wipe_ms": 787.0631609985139,
+   "d2h_ms": 1008.6075099970913,
+   "compare_ms": 2314.3975179991685,
+   "h2d_gib_per_s": 53.78976954848187,
+   "d2h_gib_per_s": 52.55544101605278,
+   "mem_available_before": 91439902720,
+   "utc": "2026-09-21T16:50:05Z"
+  },
+  {
+   "arm": "chunked",
+   "reserve": {
+    "ok": true,
+    "rc": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    "alloc_ms": 9525.075483994442,
+    "chunk_bytes": 7113539584,
+    "chunk_alloc_ms": [
+     1141.761,
+     2228.82,
+     3317.51,
+     4401.987,
+     5483.057,
+     6572.615,
+     7969.114,
+     8458.865
+    ]
+   },
+   "ok": true,
+   "driver_flags": [
+    {
+     "rc": 0,
+     "flags": 3
+    },
+    {
+     "rc": 0,
+     "flags": 3
+    },
+    {
+     "rc": 0,
+     "flags": 3
+    },
+    {
+     "rc": 0,
+     "flags": 3
+    },
+    {
+     "rc": 0,
+     "flags": 3
+    },
+    {
+     "rc": 0,
+     "flags": 3
+    },
+    {
+     "rc": 0,
+     "flags": 3
+    },
+    {
+     "rc": 0,
+     "flags": 3
+    }
+   ],
+   "wc_bit_absent": true,
+   "flags_read_ok": true,
+   "portable_bit_set": true,
+   "blocks": 27136,
+   "mismatched_blocks": 0,
+   "byte_exact": true,
+   "h2d_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "d2h_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "device_free_rc": 0,
+   "release_rc": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "fill_ms": 1039.4188270001905,
+   "h2d_ms": 983.8311489875196,
+   "wipe_ms": 711.6099080012646,
+   "d2h_ms": 1006.6138929978479,
+   "compare_ms": 2288.913920012419,
+   "h2d_gib_per_s": 53.8710327016413,
+   "d2h_gib_per_s": 52.65176684792022,
+   "mem_available_before": 91412553728,
+   "utc": "2026-09-21T16:50:24Z"
+  }
+ ],
+ "gpu_at_end": "36, 89.76 W, 600.00 W, 2347 MHz",
+ "loadavg_at_end": [
+  "1.09",
+  "0.86",
+  "0.57"
+ ],
+ "mem_available_at_end": 91306360832,
+ "mem_free_at_end": 62485098496,
+ "anon_huge_at_end": 0,
+ "summary": {
+  "single": {
+   "n": 10,
+   "alloc_ms_median": 8870.374366008036,
+   "alloc_ms_min": 8786.79709500284,
+   "alloc_ms_max": 9261.328859996866,
+   "free_ms_median": 3561.4485109908856,
+   "alloc_gib_per_s_median": 5.9758302691084575,
+   "alloc_ms_median_AB": 8847.078995997435,
+   "alloc_ms_median_BA": 8878.074457999901
+  },
+  "chunked": {
+   "n": 10,
+   "alloc_ms_median": 8831.378873510403,
+   "alloc_ms_min": 8804.635136999423,
+   "alloc_ms_max": 9144.350767004653,
+   "free_ms_median": 3571.014026500052,
+   "alloc_gib_per_s_median": 6.002212491208554,
+   "alloc_ms_median_AB": 8831.741109010181,
+   "alloc_ms_median_BA": 8830.77231500647
+  }
+ },
+ "status": "executed-not-qualified",
+ "rule": {
+  "cell": "arena-chunked",
+  "candidate": "chunked",
+  "bytes": 56916705280,
+  "n_per_order": 5,
+  "pooled": 10,
+  "alloc_ok": true,
+  "roundtrip_exact": {
+   "single": true,
+   "chunked": true
+  },
+  "wc_bit_absent": true,
+  "flags_read_ok": true,
+  "portable_bit_set": true,
+  "hugepage_min_fraction_seen": null,
+  "hugepage_ok": null,
+  "cand_below_single_pairs": "7/10",
+  "medians_both_orders": true,
+  "median_AB": {
+   "single": 8847.078995997435,
+   "chunked": 8831.741109010181
+  },
+  "median_BA": {
+   "single": 8878.074457999901,
+   "chunked": 8830.77231500647
+  },
+  "pooled_median_ms": {
+   "single": 8870.374366008036,
+   "chunked": 8831.378873510403
+  },
+  "ratio_single_over_candidate": 1.0044155610416172,
+  "floor": 1.1,
+  "materiality": false,
+  "integrity": true,
+  "speed": false,
+  "candidate_arm": "inconclusive"
+ },
+ "rule_line": "ARENA-RESERVE rule cell=arena-chunked candidate=chunked bytes=56916705280 n_per_order=5 pooled=10 alloc_ok=true roundtrip_exact_single=true roundtrip_exact_candidate=true wc_bit_absent=true flags_read_ok=true portable_bit_set=true hugepage_fraction=na hugepage_ok=na cand_below_single_pairs=7/10 medians_both_orders=true pooled_single_ms=8870.374 pooled_candidate_ms=8831.379 ratio=1.0044 floor=1.10 materiality=false candidate_arm=inconclusive"
+}

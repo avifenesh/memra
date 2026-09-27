@@ -1,14 +1,12 @@
-# Session D day 10 handoff
-- Lane `lane/spill-d-20260919`; integ5 merged/pushed `9f849978bac72cf2a4b608873a49341eafb7ab56`.
-- **No D job running on BOX3**; tmux G2/smoke sessions closed; no D lock held.
-- G2 finished exit0; raw+summary pushed `7bcc27ba1`: 200 samples, N10/arm (5AB+5BA), all >=497ms, 37–41C/600W.
-- Smoke finished exit0; pushed `ac5a8badc`: loopback PASS both host-bounce flag positions; not cross-card staging.
-- Native receipts `/root/spill-receipts/d-day10/` copied under `rented-pro6000-20260920/` here; G2/smoke 140+21 hashes match.
-- Own remote clone `/root/wt-d` remains clean for integration; never modify reference `/root/memra-spill`.
-- Profile/schema fix+tests `527373c3a`; tool lock/match/memory/stub/wrapper were correct.
-- Bootstrap status successful, 31 steps: 30 exit0 + allowed initial pkg-config absence; not 31 all-green.
-- Final local checks: `day10/checks-final/`, all14 exit0, 85 tests PASS; first Darwin killpg failure retained (cause unknown).
-- D archive `--validate`: cells2, failed0, refused0; global BOX3 still refuses an incomplete peer journal.
-- Next lead step: rerun `python3 tools/tier-battery.py --validate /root/spill-receipts` after all peer collectors close.
-- Full report/table: DAY10-VERIFICATION.md / G2-RESULTS.md. No further D GPU work required.
-- About 0.9 agent-hours this session; active lane awaits integration, not main/release/serving qualification.
+# Session D day 14 handoff
+- Lane `lane/spill-d-20260919`: merged `origin/main` at `34ed99dfc` (#590) as `dc106da6c`, pushed; census `020224db5`; fold `a9320b9fb`; records and receipts follow (see `git log`); #601 (integ18) review fix on top (stdlib walker, DAY14.md section 7). Lead hotfix PR #600 (removes #590's duplicate job, adds the `test_gpu_ci.py` floor step to the surviving job) merged as main `9ef2f04d6`; merged into the lane as `ff5db4c38` (clean: one `portable-suites` job, one `test_gpu_ci.py` step), rechecks green, pushed. The lead integrates day 14 as integ18.
+- Main at `34ed99dfc` was invalid as a workflow: two `portable-suites` jobs (#592 line 401, #590 line 206), GitHub ran zero jobs (run 35585228365, "workflow file issue"); PyYAML `safe_load` keeps the last key silently.
+- One entry point: `tools/portable-suites.sh` (census budget 0, floor 300, `--offline --locked --no-fail-fast`, banked raw log); `tools/ci-portable.sh` only forwards to it; ci.yml has one `portable-suites` job (`needs: changes`) and `local-ci.sh` one call (`CARGO_BUILD_JOBS=8 RUST_TEST_THREADS=8`); #590's gpu-ci controls run at the end of that job via `tools/unittest-floor.sh tools test_gpu_ci.py 9`; `gpu-ci.yml` untouched (it runs no CPU suite).
+- Teeth: `tools/test_portable_suites.sh` 22 arms (arm 3 now asserts one job key, no live `cargo test` on the three crates outside the wrapper, a forward that runs no cargo, no caller of `ci-portable.sh`); `tools/test_gpu_ci.py` 11 (wiring arm: one live floored line, none bare).
+- Workflow-file census: `tools/check-workflow-keys.py` (STANDARD LIBRARY ONLY after the #601 review, a line-based walker over block-style YAML; refuses duplicate mapping keys at any depth, empty dir, missing `jobs:`; exit 2 "cannot answer" for flow mappings, complex/merge keys, plain anchors/aliases/tags, tabs), teeth `tools/test_workflow_keys.sh` (30 ok: fifteen verdicts as-is and under a fake `yaml` that raises ImportError, the `safe_load` control, the shadow proof), wired in `tools/hooks/pre-push` (unconditional, no skip switch, after the docs-registry census) and the ci.yml `gates` job. Proven on main's own ci.yml at `34ed99dfc`: `duplicate mapping key 'portable-suites' at line 401 column 3 (first at line 206)`.
+- Battery (CPU, quota scope), all exit 0: fmt; wrapper `335 passed ... across 14 binaries`; teeth `22 ok, 0 FAIL`; pytest 87; lock-held unittest floor 80 ran 87 (bwrap private /tmp); test_gpu_ci 11 (floor 9); workflow-keys 5 files OK, teeth 9 ok; change-class 14 arms; unittest-floor teeth 5 ok; action pins; check-flags; docs-registry census (rows 903); diff-check; shellcheck.
+- Docs: `docs/CI.md` first section names the one entry point and the census; `docs/TESTING.md` "Standing execution" shows `--locked` and a "One entry point (day 14)" paragraph; `research/INDEX.md` day14 row.
+- Findings for the lead in `DAY14.md` §5: the merge-ref class needs the branch-protection setting; gpu-ci prerequisites live in draft #566; day-13 finding 1 (`research/**` test-time reads vs the docs-only classifier) stands; `pro-single-day11/build/` is an untracked leftover.
+- Comments: #545 (closed) and #590 (merged) note the fold.
+- Scratch `/tmp/spill-d-day14/` removed at close; receipts under `research/spill-d-20260919/day14/`.
+- About 3.5 agent-hours against the 4-hour budget.

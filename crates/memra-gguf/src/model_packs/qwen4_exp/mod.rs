@@ -30,6 +30,8 @@ use crate::tensor_contract::{
 
 pub static PACK: ModelPack = ModelPack {
     family: "qwen4_exp",
+    output_head: OutputHeadContract::SeparateHead,
+    tensor_consumption: TensorConsumption::Report,
     aliases: &["qwen4_exp", "qwen4exp", "qwen4_exp_text"],
     config_layout: ConfigLayout::FlatOrTextConfig,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],

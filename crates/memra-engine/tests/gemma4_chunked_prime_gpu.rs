@@ -103,6 +103,19 @@ impl TensorSource for FixtureSource {
             ne: t.ne.clone(),
         })
     }
+    fn tensor_census(&self) -> Result<memra_gguf::source::TensorCensus, String> {
+        // memra#541: the loader binds the contract against this census before any upload.
+        Ok(memra_gguf::source::census_from_views(
+            self.tensors.iter().map(|(name, t)| {
+                (
+                    name.as_str(),
+                    GgmlType::F32,
+                    t.ne.as_slice(),
+                    t.bytes.len() as u64,
+                )
+            }),
+        ))
+    }
 }
 
 fn fixture_source(

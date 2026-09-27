@@ -2386,8 +2386,13 @@ private:
                         PrefetchAnnex::instance().complete_read(
                             job.projection->cache_key, job.projection->weight_owner);
                     }
+                    // The in-flight charge is per PROJECTION (one fetch_add at submit), so it
+                    // is released exactly once, with the projection's final half, success or
+                    // failure. A mirrored projection is two jobs; releasing per job drove the
+                    // signed counter negative and let the admission cap admit excess work
+                    // (memra#586, tools/test_cpu_expert_prefetch.sh).
+                    prefetch_inflight().fetch_sub(1, std::memory_order_relaxed);
                 }
-                prefetch_inflight().fetch_sub(1, std::memory_order_relaxed);
                 if (state->outstanding.fetch_sub(1, std::memory_order_acq_rel) == 1) {
                     delete state;
                 }
@@ -2833,20 +2838,28 @@ extern "C" int memra_cpu_moe_token_v2(
 
 // Lane-3 M3: one EXPERT evaluated for m_r activation rows in a single call. The weight
 // bytes stream through the caches once and each weight-row's decode is amortized across all
-// rows (dot_row_multi). Outputs are per-row down-projections scaled by that row's route
-// weight; the caller owns cross-expert accumulation order. Cache/read behavior matches the
-// single-row path (same prepare_projection, same pipelined-or-serial read policy).
-extern "C" std::int32_t memra_cpu_expert_rows_v2(
+// rows (dot_row_multi). `scaled` outputs are per-row down-projections times the expert's down
+// scale times that row's route weight (memra_cpu_expert_rows_v2); raw outputs are the bare
+// down-projection rows (memra_cpu_expert_rows_raw_v2), so the caller can reproduce the
+// single-token program's cross-expert accumulation exactly: memra_cpu_moe_token_v2 folds each
+// expert as `sum = fma(y, route_weight * down.scale, sum)` in job order from zero, and the
+// scaled twin's `y * down.scale * w` rounds differently unless the weights are powers of two.
+// The caller owns cross-expert accumulation order. Cache/read behavior matches the single-row
+// path (same prepare_projection, same pipelined-or-serial read policy).
+namespace {
+
+std::int32_t expert_rows_impl(
         const memra_cpu_expert_v2 * expert,
         const float * inputs,
         std::int32_t m_r,
         const float * route_weights,
+        bool scaled,
         float * outputs,
         std::int32_t threads,
         char * error,
         std::size_t error_capacity) try {
     if (expert == nullptr || inputs == nullptr || outputs == nullptr
-        || route_weights == nullptr || m_r <= 0 || m_r > 64 || threads <= 0) {
+        || (scaled && route_weights == nullptr) || m_r <= 0 || m_r > 64 || threads <= 0) {
         throw std::runtime_error("invalid CPU expert rows invocation (m_r must be 1..=64)");
     }
     for (const auto * projection : { &expert->gate, &expert->up, &expert->down }) {
@@ -2948,9 +2961,9 @@ extern "C" std::int32_t memra_cpu_expert_rows_v2(
         for (int index = 0; index < static_cast<int>(rows) * n_embd; ++index) {
             const std::size_t r = static_cast<std::size_t>(index) / n_embd;
             const int column = index % n_embd;
+            const float y = down_out[r * static_cast<std::size_t>(n_embd) + column];
             outputs[r * static_cast<std::size_t>(n_embd) + column] =
-                down_out[r * static_cast<std::size_t>(n_embd) + column]
-                    * expert->down.scale * route_weights[r];
+                scaled ? y * expert->down.scale * route_weights[r] : y;
         }
     }
     if (std::find(act_finite.begin(), act_finite.end(), 0) != act_finite.end()) {
@@ -2966,6 +2979,34 @@ extern "C" std::int32_t memra_cpu_expert_rows_v2(
 } catch (...) {
     copy_error(error, error_capacity, "unknown CPU expert rows failure");
     return 1;
+}
+
+} // namespace
+
+extern "C" std::int32_t memra_cpu_expert_rows_v2(
+        const memra_cpu_expert_v2 * expert,
+        const float * inputs,
+        std::int32_t m_r,
+        const float * route_weights,
+        float * outputs,
+        std::int32_t threads,
+        char * error,
+        std::size_t error_capacity) {
+    return expert_rows_impl(expert, inputs, m_r, route_weights, true, outputs, threads,
+                            error, error_capacity);
+}
+
+// Raw twin: bare down-projection rows, no down scale, no route weight (see above).
+extern "C" std::int32_t memra_cpu_expert_rows_raw_v2(
+        const memra_cpu_expert_v2 * expert,
+        const float * inputs,
+        std::int32_t m_r,
+        float * outputs,
+        std::int32_t threads,
+        char * error,
+        std::size_t error_capacity) {
+    return expert_rows_impl(expert, inputs, m_r, nullptr, false, outputs, threads,
+                            error, error_capacity);
 }
 
 // Detached speculative prefetch: reads the given projections into the RAM cache as cold
@@ -3001,6 +3042,28 @@ extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
     state->projection_failed = std::make_unique<std::atomic<bool>[]>(n);
     std::vector<IoJob> jobs;
     std::int32_t submitted = 0;
+    // Submit-side symmetry (memra#586, review rounds on #612): a projection's stat, resize or
+    // O_DIRECT/mirror resolve can throw after the annex claim was taken (begin_read) and after
+    // earlier projections took their charge, all before pool.submit; nothing would ever release
+    // them, the cap would count phantom work and the key would read as speculated for the life
+    // of the process. `claimed` records every claim the moment it is taken (a runtime is pushed
+    // only later, so state->runtimes cannot drive this). The guard releases exactly what this
+    // call took and is disarmed once the jobs are handed to the pool, from where the completion
+    // path owns every release (tools/test_cpu_expert_prefetch.sh, cells submit-throw and
+    // submit-throw-claim).
+    std::vector<CacheKey> claimed;
+    claimed.reserve(n);
+    struct SubmitGuard {
+        PrefetchAnnex & annex;
+        const std::vector<CacheKey> & claimed;
+        const std::int32_t & submitted;
+        bool armed = true;
+        ~SubmitGuard() {
+            if (!armed) return;
+            if (submitted > 0) prefetch_inflight().fetch_sub(submitted, std::memory_order_relaxed);
+            for (const auto & key : claimed) annex.abort_read(key);
+        }
+    } submit_guard { annex, claimed, submitted };
     auto & profile = cpu_profile();
     for (std::size_t index = 0; index < state->descs.size(); ++index) {
         const auto & desc = state->descs[index];
@@ -3011,6 +3074,7 @@ extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
         const CacheKey key { source, desc.file_offset, desc.byte_len };
         if (weight_cache().contains(key)) continue;
         if (!annex.begin_read(key)) continue;  // already speculated or in flight (dedup)
+        claimed.push_back(key);
         ProjectionRuntime runtime;
         runtime.desc = &state->descs[index];
         runtime.cache_key = key;
@@ -3053,6 +3117,7 @@ extern "C" std::int32_t memra_cpu_expert_prefetch_v2(
     state->outstanding.store(static_cast<int>(jobs.size()), std::memory_order_relaxed);
     auto & pool = IoPool::instance();
     pool.ensure_started(io_thread_count(8));
+    submit_guard.armed = false;  // the pool and the completion path own every release from here
     pool.submit(std::move(jobs));
     state.release();  // owned by the completion path from here
     if (error != nullptr && error_capacity != 0) error[0] = '\0';
@@ -3116,6 +3181,9 @@ extern "C" void memra_cpu_expert_prefetch_stats_v2(
         *submitted = cpu_profile().prefetch_projections.load(std::memory_order_relaxed);
     }
     if (inflight != nullptr) {
+        // The unsigned ABI field cannot carry a negative count; the clamp keeps the legacy
+        // signature and is NOT the balancing oracle. tools/test_cpu_expert_prefetch.sh reads
+        // the signed counter inside this translation unit (memra#586).
         *inflight = static_cast<std::uint64_t>(
             std::max(0, prefetch_inflight().load(std::memory_order_relaxed)));
     }

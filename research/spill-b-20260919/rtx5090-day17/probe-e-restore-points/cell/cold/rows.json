@@ -1,0 +1,25 @@
+[
+  {
+    "status": 200,
+    "elapsed_s": 8.806,
+    "prompt_tokens": 12350,
+    "completion_tokens": 3,
+    "cached_tokens": 0,
+    "finish_reason": "stop",
+    "text": "_\n",
+    "text_sha256": "4415b7e361fc6f6ba2492adef1f27cfb00d0105e4588177470cecc4214b35284",
+    "error": null,
+    "lines": [
+      "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12350 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+      "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=12350 budget=8192",
+      "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=4158 budget=1024",
+      "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=3134 budget=1024",
+      "[primeseg] call start=10240 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2110 budget=1024",
+      "[primeseg] call start=11264 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1086 budget=1024",
+      "[primeseg] call start=12288 take=62 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=62 budget=1024",
+      "[ttft] id=cmpl-334081352316c69b2a77705982277950 model=\"gate\" path=\"/v1/completions\" prompt_tokens=12350 outcome=ended_without_sse request_parse_ms=0.312 admission_ms=0.037 queue_wait_ms=0.149 tokenize_ms=0.008 prime_wait_ms=5.305 prime_ms=8754.589 decode_wait_ms=0.224 sse_handoff_ms=na request_parse_end_ms=0.312 admission_end_ms=0.349 tokenize_start_ms=0.498 tokenize_end_ms=0.506 prime_start_ms=5.811 prime_end_ms=8760.400 first_decode_ms=8760.624 first_sse_byte_ms=na total_ms=8760.624"
+    ],
+    "turn": 10,
+    "prompt_ids": 12350
+  }
+]

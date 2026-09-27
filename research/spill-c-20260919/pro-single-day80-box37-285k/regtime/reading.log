@@ -1,0 +1,11 @@
+DAY80 host demand sequence d sha256 4bdc2610c3534e42
+DAY80 host demand sequence dr sha256 4bdc2610c3534e42
+DAY80 REGTIME CHECKS rig=box37-285k runs=30 integrity=ok
+DAY80 ADMISSIBILITY rig=box37-285k ceiling=0.005 max_iqr_gen=0.0012 max_iqr_window=0.0013 failing=[] -> admissible
+DAY80 gen-only decode medians (N=10 each): ref=0.311 d=0.315 dr=0.315
+DAY80 STEP dr_vs_d gen-only decode: pooled=+0.0000 o1=+0.0000 o2=-0.0010 noise=0.0012 -> flat
+DAY80 DOOR dr_vs_ref gen-only decode: pooled=+0.0035 o1=+0.0040 o2=+0.0030 noise=0.0010 -> loses
+DAY80 steady window medians (N=10 each): ref=0.286 d=0.286 dr=0.286
+DAY80 STEP dr_vs_d steady window: pooled=+0.0000 o1=+0.0010 o2=-0.0010 noise=0.0013 -> flat
+DAY80 DOOR dr_vs_ref steady window: pooled=+0.0005 o1=+0.0010 o2=+0.0000 noise=0.0010 -> matches
+DAY80 REGTIME VERDICT rig=box37-285k integrity=ok dr=flat vs_ref=loses (window: dr=flat vs_ref=matches)

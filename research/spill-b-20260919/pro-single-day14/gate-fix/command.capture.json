@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "python3",
+    "tools/prefix-newest-turn-fits-gate.py",
+    "--external-lock",
+    "3",
+    "--model",
+    "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "--bin",
+    "/root/spill-receipts/b-day14/bins/fix/memra-server",
+    "--out",
+    "/root/spill-receipts/b-day14/gate-fix/cell",
+    "--budget-mib",
+    "1024",
+    "--cohort-tokens",
+    "2800,3000,3200",
+    "--turns",
+    "8",
+    "--start-tokens",
+    "9200",
+    "--grow-tokens",
+    "300"
+  ],
+  "exit_code": 1,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "failed",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 57281553297966,
+  "ended_monotonic_ns": 57306159122117,
+  "started_utc": "2026-09-21T06:46:36.547155+00:00",
+  "ended_utc": "2026-09-21T06:47:01.152981+00:00",
+  "elapsed_seconds": 24.605824151,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 6135,
+    "sha256": "ad1117878856bbab4cba763a08c05982f23fcfd12ccc89766f082f41f40fb942"
+  },
+  "failure_quote": "| turn | prompt_tokens | cached_tokens | prev prompt_tokens | route cold/restored | hit line | insert | evict (segment) | refused/skipped | effective free consumed | prefix bytes grew | V3 error | elapsed s | text sha256[:16] |",
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 10906,
+      "sha256": "15086da82d8589aa65d86021b904d693cc7d69f802308a159da954ccbc5d71fa"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "failure": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.failure.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}

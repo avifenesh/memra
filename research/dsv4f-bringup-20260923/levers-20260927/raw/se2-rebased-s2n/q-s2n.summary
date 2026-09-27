@@ -1,0 +1,7 @@
+build mft3 3cb9872eb SERVER_EXIT=0 ENGINE_EXIT=0 
+component rc=0 EXACT fused partition rows=3 rank=0 contribution word=0 EXACT fused partition rows=3 rank=1 contribution word=0 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 639 filtered out; finished in 2.34s 
+long-304 rc=0 PASS: 304 PROGRAM_SHA256 fbce1a0492d69635  replay_ms_per_token=11.381 replay_ms_per_token=11.320 replay_ms_per_token=11.327 
+rows tp_ep rc=0 PASS: replayed, then 8 B-row steps beside a peer while armed, then replayed again: bit-identical to solo steps PASS: B-row graph steps bit-identical to solo steps across join, leave and row moves (5 captures, 28 graph steps) PASS: sampled B-row graph draws equal the eager B-row draws (24 steps x 4 rows) 
+split rc=0 PASS: position-split C4 store bit-identical to the replicated program 
+dspark-tpep cc6082ddea76827e 373e6557e6d118f1 373e6557e6d118f1  | verdict (c) batched==sequential: 14 cells, 77 logit rows, 3206 cache-class comparisons — ALL BIT-IDENTICAL verdict (d) accepted-position ring writes: 3 ring classes compared, 0 mismatching GATE_DONE rc=1 utc=2026-09-27T01:19:12Z 
+S2N_DONE 3cb9872eb8d48bd7b5ec3f7dda96a2e11632c4c8

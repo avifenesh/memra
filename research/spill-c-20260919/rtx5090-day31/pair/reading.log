@@ -1,0 +1,88 @@
+DAY31 PAIR reading: evidence /home/avifenesh/projects/wt-spill-c/research/spill-c-20260919/rtx5090-day31/pair/wc-pair/ev, collector capture wc-pair
+  CELL.txt: tree=934a6da3a79aef9b4fa0579a9514e4c21a8f06e9 | model=Qwen3.5-9B-NVFP4-MTP-GGUF.gguf | gpu=NVIDIA GeForce RTX 5090 Laptop GPU, [N/A] | cache_mb=64 host_mb=8192 port=18131 | orders=2 n_per_arm_per_order=5 boots=4 requests_per_boot=7 | status=executed-not-qualified
+  binary.sha256: efa7119b0973feef2172142be24d576043b0d956300ba7b3aaeca9c56840bcaa  /home/avifenesh/projects/wt-spill-c/target/release/memra-server
+  LOCK.json: {"owner": "collector", "lock": "/tmp/memra-5090.lock", "mechanism": "inherited-flock-same-open-description", "device": 48, "inode": 166260, "qualification": false}
+  pinned arm on this card: PINNED-DEFAULT device="NVIDIA GeForce RTX 5090 Laptop GPU" kind=write-combined flags=4
+  PINNED-DEFAULT roundtrip bytes=4096 kind=write-combined driver_flags=6
+  PINNED-DEFAULT roundtrip bytes=65536 kind=write-combined driver_flags=6
+  PINNED-DEFAULT roundtrip bytes=1048576 kind=write-combined driver_flags=6
+  PINNED-DEFAULT roundtrip bytes=16777216 kind=write-combined driver_flags=6
+  PINNED-DEFAULT roundtrip bytes=67108864 kind=write-combined driver_flags=6
+  PINNED-DEFAULT roundtrip bytes=268435456 kind=write-combined driver_flags=6
+
+o1-off: 6 demotes, 5 promotes, receipts D2H=0 H2D=0, parked=0, restore_submitted=0, refused=0, disabled=0, dropped=0, door_on_line=0
+  raw demote in-ms (r2..r7):  [23.1, 23.8, 21.8, 5.1, 4.8, 5.3]
+  raw promote in-ms (r3..r7): [27.6, 25.3, 8.6, 8.7, 8.8]  inline demote ms: [23.8, 21.8, 5.1, 4.8, 5.3]
+  demote  (r2..r6): median 21.8 (N=5, min 4.8, max 23.8, IQR 18.5)
+  promote (r3..r7): median 8.8 (N=5, min 8.6, max 27.6, IQR 17.8)
+  promote minus inline demote: median 3.5 (N=5, min 3.5, max 3.9, IQR 0.4)
+  entries: 64 tok/54.8 MB
+
+o1-on: 6 demotes, 5 promotes, receipts D2H=6 H2D=5, parked=10, restore_submitted=5, refused=0, disabled=0, dropped=0, door_on_line=1
+  raw demote in-ms (r2..r7):  [57.8, 60.4, 58.9, 39.7, 39.5, 39.7]
+  raw promote in-ms (r3..r7): [42.4, 38.4, 21.5, 20.5, 20.1]  inline demote ms: [57.8, 60.4, 58.9, 39.7, 39.5]
+  demote  (r2..r6): median 57.8 (N=5, min 39.5, max 60.4, IQR 20.0)
+  promote (r3..r7): median 21.5 (N=5, min 20.1, max 42.4, IQR 20.1)
+  promote minus inline demote: median -19.4 (N=5, min -37.4, max -15.4, IQR 12.4)
+  door demote submission-to-completion: median 26.5 (N=6, min 18.0, max 37.4, IQR 19.2)  raw [34.8, 37.4, 37.2, 18.3, 18.0, 18.1]
+  door promote submission-to-completion: median 15.5 (N=5, min 14.9, max 15.9, IQR 0.8)  raw [15.9, 15.5, 15.5, 15.0, 14.9]
+  entries: 64 tok/54.8 MB
+
+o2-on: 6 demotes, 5 promotes, receipts D2H=6 H2D=5, parked=10, restore_submitted=5, refused=0, disabled=0, dropped=0, door_on_line=1
+  raw demote in-ms (r2..r7):  [57.7, 58.8, 56.9, 39.4, 38.5, 38.7]
+  raw promote in-ms (r3..r7): [40.2, 38.1, 20.6, 20.4, 20.1]  inline demote ms: [57.7, 58.8, 56.9, 39.4, 38.5]
+  demote  (r2..r6): median 56.9 (N=5, min 38.5, max 58.8, IQR 19.3)
+  promote (r3..r7): median 20.6 (N=5, min 20.1, max 40.2, IQR 18.9)
+  promote minus inline demote: median -19.0 (N=5, min -36.3, max -17.5, IQR 10.5)
+  door demote submission-to-completion: median 26.7 (N=6, min 17.3, max 36.3, IQR 18.3)  raw [35.3, 36.3, 35.5, 18.1, 17.3, 17.5]
+  door promote submission-to-completion: median 14.8 (N=5, min 14.6, max 15.4, IQR 0.6)  raw [14.8, 14.6, 14.6, 15.4, 14.9]
+  entries: 64 tok/54.8 MB
+
+o2-off: 6 demotes, 5 promotes, receipts D2H=0 H2D=0, parked=0, restore_submitted=0, refused=0, disabled=0, dropped=0, door_on_line=0
+  raw demote in-ms (r2..r7):  [18.2, 24.1, 22.6, 5.4, 6.5, 17.6]
+  raw promote in-ms (r3..r7): [27.7, 26.0, 9.5, 9.9, 21.3]  inline demote ms: [24.1, 22.6, 5.4, 6.5, 17.6]
+  demote  (r2..r6): median 18.2 (N=5, min 5.4, max 24.1, IQR 17.4)
+  promote (r3..r7): median 21.3 (N=5, min 9.5, max 27.7, IQR 17.2)
+  promote minus inline demote: median 3.6 (N=5, min 3.4, max 4.1, IQR 0.5)
+  entries: 64 tok/54.8 MB
+
+pooled OFF (o1-off + o2-off):
+  demote:  median 20.0 (N=10, min 4.8, max 24.1, IQR 18.0)
+  promote: median 15.6 (N=10, min 8.6, max 27.7, IQR 17.6)
+  promote minus inline demote: median 3.5 (N=10, min 3.4, max 4.1, IQR 0.4)
+
+pooled ON (o1-on + o2-on):
+  demote:  median 57.3 (N=10, min 38.5, max 60.4, IQR 19.3)
+  promote: median 21.1 (N=10, min 20.1, max 42.4, IQR 18.5)
+  promote minus inline demote: median -19.3 (N=10, min -37.4, max -15.4, IQR 7.4)
+  door demote submission-to-completion: median 26.5 (N=12, min 17.3, max 37.4, IQR 18.1)
+  door promote submission-to-completion: median 14.9 (N=10, min 14.6, max 15.9, IQR 0.7)
+
+collector 250 ms: 192 samples; temperature 54..74 C; power 9.5..169.9 W; memory.used 15..9753 MiB; SM clock 180..2227 MHz
+cell 1 s: 36 samples; temperature 55..74 C; power 27.7..169.3 W; memory.used 15..9753 MiB; SM clock 1590..2190 MHz
+card.before: name, memory.total [MiB], memory.used [MiB], memory.free [MiB], temperature.gpu, power.draw [W], pstate | NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, 15 MiB, 23970 MiB, 54, 9.48 W, P8
+card.after: name, memory.total [MiB], memory.used [MiB], memory.free [MiB], temperature.gpu, power.draw [W], pstate | NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, 15 MiB, 23970 MiB, 62, 30.62 W, P0
+  ok: o1-off: 6 demotes and 5 promotes
+  ok: o1-off: receipts absent as the arm requires
+  ok: o1-off: the door boot line absent
+  ok: o1-off: every promote had an inline demote in its window
+  ok: o1-off: zero refused, DISABLED or dropped lines
+  ok: o1-on: 6 demotes and 5 promotes
+  ok: o1-on: receipts present as the arm requires
+  ok: o1-on: the door boot line present
+  ok: o1-on: every promote had an inline demote in its window
+  ok: o1-on: zero refused, DISABLED or dropped lines
+  ok: o1-on: 6 demote and 5 promote completion lines
+  ok: o2-on: 6 demotes and 5 promotes
+  ok: o2-on: receipts present as the arm requires
+  ok: o2-on: the door boot line present
+  ok: o2-on: every promote had an inline demote in its window
+  ok: o2-on: zero refused, DISABLED or dropped lines
+  ok: o2-on: 6 demote and 5 promote completion lines
+  ok: o2-off: 6 demotes and 5 promotes
+  ok: o2-off: receipts absent as the arm requires
+  ok: o2-off: the door boot line absent
+  ok: o2-off: every promote had an inline demote in its window
+  ok: o2-off: zero refused, DISABLED or dropped lines
+  ok: pinned arm on this card printed as write-combined
+DAY31 PAIR VERDICT: demote off 20.0 (N=10) on 57.3 (N=10) on_minus_off +37.3 unc 26.4 isolated; promote off 15.6 (N=10) on 21.1 (N=10) on_minus_off +5.4 unc 25.6 under_resolution; promote_minus_inline off 3.5 (N=10) on -19.3 (N=10) on_minus_off -22.9 unc 7.4 isolated; parked per boot [0, 10, 10, 0]; pinned=write-combined; admissible=True

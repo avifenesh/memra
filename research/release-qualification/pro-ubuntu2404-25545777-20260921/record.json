@@ -1,0 +1,71 @@
+{
+  "build": {
+    "path": "build.json",
+    "sha256": "27fd493e4e352d5f13b9935a0cbb59c2e09809fb420fe2eb5e11e73a3b7b12e9"
+  },
+  "identity_sha256": "a7a23f5d2b6992f5a69895595845281f20315caaaae8a0d7cf4daef94fa6feca",
+  "lease": {
+    "path": "lease.json",
+    "sha256": "43ad9705eb06039438a027aa8d7753c94d018ffdb9a5e4dbb3b4dc1cd8f46bfa"
+  },
+  "payloads": {
+    "battery.log": "f8b405f35083a3a1e50042e164a05a8f597f089b3822edf074a7355a669e6aa8",
+    "build.json": "27fd493e4e352d5f13b9935a0cbb59c2e09809fb420fe2eb5e11e73a3b7b12e9",
+    "build.log": "8bcd12c9b42d137c5b6931367a3232be533e42e3a1db9ba4c84d14255afe0aad",
+    "cells/1-kernel.log": "abf1be97b2ae418e5c7aa229f44d0cbfdee12c00c6b155b55340dda38996da36",
+    "cells/2-argmax.log": "d26cafa4e84fcd1a007a6b9030e941ebefeb5591e67316df513dff5b6484befd",
+    "cells/3-spec.log": "a599ddd447b65987fc872b38c1e90ea9dbbe26155afb32869126cf73e177cf9a",
+    "cells/4-argmax.log": "62c47b00e0137ee13dfee2aff8b0407e1de239f620be9df4c2ca7ce59bc5d951",
+    "cells/5-spec.log": "5ea28afe741d63a15e5443469e6fd3b031c8380eb5396b893c605a4278202738",
+    "cells/argmax-1/gate-Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp-board-2048.log": "ba6071d918624a43f49762219d59830b1b099740bfdbe6fae694b374989f1475",
+    "cells/argmax-3/gate-Qwen3.8-27B-NVFP4-Q5K-mtp-board-2048.log": "c52f86984c901efa8b3780f3b5d11dc0f34ffb730445af43f7485b1ad7aa2a04",
+    "cells/runs.tsv": "6945ded6f8ebdec59e0516dc512b6067376d2c9e6ac96a98883243c8395e25ad",
+    "fetch.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "kernel-check-27b.cells": "4c8382370a988e24bc09f73fac484b2657d73a872116071cacb3e9d486cd74ea",
+    "kernel-check-step35.cells": "1fdf361e60da2d2bb14cea997e12fa2462e4b722c8c86967c5064698c7338951",
+    "lease.json": "43ad9705eb06039438a027aa8d7753c94d018ffdb9a5e4dbb3b4dc1cd8f46bfa",
+    "roster.tsv": "703be08e63494bed7a6a035d780c4cc2b352d5f0a8c56d665137302dc8e7ff8f",
+    "router-baseline-proof.json": "20d4bebc79d5b65bed11e477f303a249d683df235380bd4aa6383c05480753e7",
+    "run.json": "2f9f38514553cd9b7378786236511e57ff756e7b890b7d09fb87403df5f33a44",
+    "source.json": "acd93befd06d80b7456da0061bc2c4bac2329ff3654a1ba54a3cec410d3e824a",
+    "telemetry.csv": "ba400dbe8a658b7c9362f7f8cfda6b16d9c8d4f62355059f2d71788e0c5e6b38",
+    "topology.txt": "a1117b42cb126fc0d35437d2c615f8bcfd214bdfc0e6b13a91a6845ab714ef0e"
+  },
+  "run": {
+    "path": "run.json",
+    "sha256": "2f9f38514553cd9b7378786236511e57ff756e7b890b7d09fb87403df5f33a44"
+  },
+  "schema": "memra-release-qualification-v1",
+  "source": {
+    "path": "source.json",
+    "sha256": "acd93befd06d80b7456da0061bc2c4bac2329ff3654a1ba54a3cec410d3e824a"
+  },
+  "status": "qualified",
+  "verdicts": [
+    {
+      "kind": "kernel",
+      "model": "kernel",
+      "verdict": "ALL GREEN (110 cells, 103 executed, 10 required, 7 skipped; budget 11)\nSKIP dtype5-Q3_K (missing Q3_K tensor in model /data/models/kernel-oracles/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf; pinned blk.40.ffn_gate_exps.weight absent)\nSKIP f16g-kq-direct-ornith (missing model ornith-1.0-35b-Q4_K_M.gguf under MEMRA_KC_MODELS_DIR=/data/models/kernel-oracles)\nSKIP iq4xs-mmq-real (missing model Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf or Step-3.7-flash-IQ4_XS-00001-of-00003.gguf under MEMRA_KC_MODELS_DIR=/data/models/kernel-oracles)\nSKIP nvfp4-27b-shape (missing model Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf under MEMRA_KC_MODELS_DIR=/data/models/kernel-oracles)\nSKIP q4_0-mmq (missing model gemma-4-12b-it-qat-q4_0.gguf under MEMRA_KC_MODELS_DIR=/data/models/kernel-oracles)\nSKIP q4_0-sk-arm (missing model gemma-4-26B_q4_0-it.gguf under MEMRA_KC_MODELS_DIR=/data/models/kernel-oracles)\nSKIP sigrouter-served-replay (MEMRA_SIG_ROUTER_REPLAY is not set to a run-gen capture)"
+    },
+    {
+      "kind": "argmax",
+      "model": "ornith-ai/ornith-1.5-35b-a3b",
+      "verdict": "calibrated argmax PASS"
+    },
+    {
+      "kind": "spec",
+      "model": "ornith-ai/ornith-1.5-35b-a3b",
+      "verdict": "K=1..8 self-consistency, identical to plain target (8/8)"
+    },
+    {
+      "kind": "argmax",
+      "model": "qwen/qwen3.8-27b",
+      "verdict": "calibrated argmax PASS"
+    },
+    {
+      "kind": "spec",
+      "model": "qwen/qwen3.8-27b",
+      "verdict": "K=1..8 self-consistency, identical to plain target (8/8)"
+    }
+  ]
+}

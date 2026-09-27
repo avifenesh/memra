@@ -1,0 +1,94 @@
+SKIP sigrouter-served-replay (MEMRA_SIG_ROUTER_REPLAY is not set to a run-gen capture)
+SKIP f16g-kq-direct-ornith (missing model ornith-1.0-35b-Q4_K_M.gguf under MEMRA_KC_MODELS_DIR=/root/spill-receipts/b-day23/models)
+SKIP iq4xs-mmq-real (missing model Kwaipilot_KAT-Coder-V2.5-Dev-IQ4_XS.gguf or Step-3.7-flash-IQ4_XS-00001-of-00003.gguf under MEMRA_KC_MODELS_DIR=/root/spill-receipts/b-day23/models)
+SKIP q4_0-mmq (missing model gemma-4-12b-it-qat-q4_0.gguf under MEMRA_KC_MODELS_DIR=/root/spill-receipts/b-day23/models)
+SKIP nvfp4-27b-shape (missing model Qwen3.6-27B-NVFP4-Q4_K_M-mtp.gguf under MEMRA_KC_MODELS_DIR=/root/spill-receipts/b-day23/models)
+SKIP q4_0-sk-arm (missing model gemma-4-26B_q4_0-it.gguf under MEMRA_KC_MODELS_DIR=/root/spill-receipts/b-day23/models)
+ALL GREEN (109 cells, 6 skipped)
+exit=0
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "-c",
+    "set -uo pipefail; K=\"$1\"; O=\"$2\"; MD=\"$3\"; shift 3; mkdir -p \"$O\"\nMEMRA_KC_MODELS_DIR=\"$MD\" \"$K\" \"$@\" > \"$O/kernel-check.log\" 2>&1\necho \"exit=$?\" >> \"$O/kernel-check.log\"; grep \"^SKIP \\|^ALL GREEN\\|^FAIL\\|MISSING\\|required cell\\|exit=\" \"$O/kernel-check.log\"",
+    "kc",
+    "/root/wt-b/target/release/kernel-check",
+    "/root/spill-receipts/b-day23/kc-full/cell",
+    "/root/spill-receipts/b-day23/models",
+    "--require-manifest",
+    "tools/kernel-check-27b.cells",
+    "--require-manifest",
+    "tools/kernel-check-step35.cells"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 104348770381036,
+  "ended_monotonic_ns": 104433484144381,
+  "started_utc": "2026-09-21T19:51:03.764238+00:00",
+  "ended_utc": "2026-09-21T19:52:28.478004+00:00",
+  "elapsed_seconds": 84.713763345,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 817,
+    "sha256": "556780a398ddcdc5aa1bf7b750e015c02d3ac59707565bc754ee199e45b7150b"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 36089,
+      "sha256": "8512f70d4694da085989e9f592cc30a0bde43e3b246dce937282dbe3b8e7f284"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}

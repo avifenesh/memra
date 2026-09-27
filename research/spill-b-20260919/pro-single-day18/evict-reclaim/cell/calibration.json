@@ -1,0 +1,49 @@
+{
+  "f0_effective_free_bytes": 81930532908,
+  "f1_after_p1_effective_free_bytes": 80339679276,
+  "f2_before_p2_effective_free_bytes": 79858790936,
+  "busy_peer_footprint_bytes": 480888340,
+  "e0_busy_peer_entry_bytes": 0,
+  "e1_prefix_bytes": 1590853632,
+  "p1_prompt_tokens": 48332,
+  "p2_prompt_tokens": 48266,
+  "cost_p1_mb": 4701,
+  "cost_p2_mb": 4701,
+  "static_reserve_bytes": 1610612736,
+  "required_p1_bytes": 6311612736,
+  "required_p2_bytes": 6311612736,
+  "ballast_window_bytes": [
+    73547178200,
+    75138031832
+  ],
+  "ballast_target_bytes": 74342605016,
+  "inserts": [
+    {
+      "why": "seed",
+      "tokens": 48288,
+      "mb": 1590.9
+    },
+    {
+      "why": "seed",
+      "tokens": 48224,
+      "mb": 1589.0
+    }
+  ],
+  "costs": [
+    {
+      "ctx": 48404,
+      "path": "plain",
+      "mb": 4306
+    },
+    {
+      "ctx": 535,
+      "path": "plain",
+      "mb": 448
+    },
+    {
+      "ctx": 48338,
+      "path": "plain",
+      "mb": 4701
+    }
+  ]
+}

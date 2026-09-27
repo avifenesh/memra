@@ -1,0 +1,18 @@
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); batch=3
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+canary: seq 0 token 0 55 -> 54 inside the batched prime only
+seq 0 (T=24): prefill argmax batched=13 individual=11 MISMATCH
+seq 0: exact logits diff 248320/248320 h_seed diff 4096/4096 hidden diff 98304/98304
+seq 1 (T=41): prefill argmax batched=269 individual=269 MATCH
+seq 1: exact logits diff 0/248320 h_seed diff 0/4096 hidden diff 0/167936
+seq 2 (T=58): prefill argmax batched=903 individual=903 MATCH
+seq 2: exact logits diff 0/248320 h_seed diff 0/4096 hidden diff 0/237568
+seq 0: decode-16 stream DIVERGED
+seq 0: teacher-forced decode logit diff 3973116
+seq 1: decode-16 stream MATCH
+seq 1: teacher-forced decode logit diff 0
+seq 2: decode-16 stream MATCH
+seq 2: teacher-forced decode logit diff 0
+Error: "prime-batch-gate: 4 FAIL(s)"

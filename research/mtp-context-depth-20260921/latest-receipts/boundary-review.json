@@ -1,0 +1,155 @@
+{
+  "reviewed_utc": "2026-09-22T03:05:03.779096+00:00",
+  "runtime_archive_sha256": "943d165b80f268ffacc63e78191c669ed4bda562b3151d45758876321e3f6dc8",
+  "scanner_sha256": "0000058db5d59a35421999679372f43e760bdf7e72fde72b1748e74a396518aa",
+  "policy_sha256": "ef9eebfc074f4b9db708682ec0ac99b3533fe6f4c4433490c3e1cb7fd7f8bd32",
+  "source_rule_pins": [
+    {
+      "file": "crates/memra-server/src/auth.rs",
+      "sha256": "1443d4222b483c154298289169251bd673e9fd0791c492b1d8b0e2c88949ca0f",
+      "rules": [
+        "minted_api_key",
+        "api_key_prefix"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "crates/memra-tokenizer/tests/fixtures/nfc/fixtures.json",
+      "sha256": "5aff55b286b60cbcf6f7ab470a6d0c3e53d2e7c1e5e5bf1e2705144735a2fe9b",
+      "rules": [
+        "runpod_pod_id_bare"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/apikeys-gate.sh",
+      "sha256": "19865f2b3ad5e94f0e22e61860ba3ed79fa28f34487a1ac0c93932e780d58536",
+      "rules": [
+        "apikeys_gate"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/cache-meter-gate.py",
+      "sha256": "9be02e7a3f6ed7f0092f95f7ac82a53115443596eb49dec8db910a1349597de1",
+      "rules": [
+        "cache_meter_gate"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/fleet-meter.sh",
+      "sha256": "a033456066c9822614887e95b17daad678441bfe9e1d036e96eb053b1e290fcf",
+      "rules": [
+        "fleet_meter"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/fleet-replay.py",
+      "sha256": "51cf211369b9a6288e6761595686186d132638754ba3a15e7ee5922580ee36f4",
+      "rules": [
+        "fleet_replay"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/fleet-report.py",
+      "sha256": "7da139fe0801258ab3ea572a071d1f214c5067964608899144b8a6d3df02da9f",
+      "rules": [
+        "fleet_report"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/load-serve.py",
+      "sha256": "11af715650c5ee04c8f9fd02cdfe4d5d2e905b28d19d77e3b95ada9a02a73cd4",
+      "rules": [
+        "load_serve"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/serve-fleet.sh",
+      "sha256": "22951572072736db9628b0c713ab9efb591fbb7a172191b1dcc2670515b6091d",
+      "rules": [
+        "serve_fleet"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/serve-proxy.py",
+      "sha256": "2a4755af6a919b189fe1a39eecf17b7bfc68e381b36c4253ef8ea950b1f3a397",
+      "rules": [
+        "serve_proxy"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/test_fleet_replay.py",
+      "sha256": "679a817d35791cd715dd683088806ed4e32719def9d38bf4a3774949170d0c56",
+      "rules": [
+        "fleet_replay_test"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/test_fleet_report.py",
+      "sha256": "d3f1c286ac2ec9d908f0a72a59b432e568f67312055b566cae0555e1f936ceb2",
+      "rules": [
+        "fleet_report_test"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    }
+  ],
+  "record_rule_pins": [
+    {
+      "archive": "gemma-records.tar.gz",
+      "file": "experiment/gemma-pair-0-2-latest-native/20306500-native/token-bytes.tsv",
+      "sha256": "b5dde5737ba339402165a2a297d338016d963b75b3216a1f2cd7307e24ba4d0f",
+      "rules": [
+        "runpod_pod_id_bare"
+      ],
+      "reason": "The only matching row is token 40328, whose hexadecimal bytes encode seven hyphens. This is tokenizer data; the complete matching row was inspected."
+    },
+    {
+      "archive": "gemma-records.tar.gz",
+      "file": "experiment/gemma-pair-0-3-old-native/20306500-native/token-bytes.tsv",
+      "sha256": "b5dde5737ba339402165a2a297d338016d963b75b3216a1f2cd7307e24ba4d0f",
+      "rules": [
+        "runpod_pod_id_bare"
+      ],
+      "reason": "The only matching row is token 40328, whose hexadecimal bytes encode seven hyphens. This is tokenizer data; the complete matching row was inspected."
+    }
+  ],
+  "archive_inventory": [
+    {
+      "file": "qwen-records.tar.gz",
+      "sha256": "05aec54a534319f4beb1148efe6fcb5af0e7add7b3d085513fa2c406c68eaf76",
+      "files": 1531,
+      "compressed_rules": [
+        "provider_name_aws"
+      ]
+    },
+    {
+      "file": "gemma-records.tar.gz",
+      "sha256": "8bf4093409ea4afea853be4c02530b3cc37196674d55e1a6a2d09925f17f1805",
+      "files": 1211,
+      "compressed_rules": []
+    },
+    {
+      "file": "common-records.tar.gz",
+      "sha256": "457cad1547228b070c8d77234bedf09ff0b1de2e265c1c77b1eff75fb3256140",
+      "files": 66,
+      "compressed_rules": []
+    },
+    {
+      "file": "runtime-source.tar.gz",
+      "sha256": "943d165b80f268ffacc63e78191c669ed4bda562b3151d45758876321e3f6dc8",
+      "files": 1307,
+      "compressed_rules": [
+        "provider_name_aws"
+      ]
+    }
+  ]
+}

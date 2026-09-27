@@ -1,0 +1,18 @@
+perf board is up to date
+pre-push: flags census OK — runtime literal reads=865
+pre-push: releasability censuses OK — publish list, stub ABI, arch matrix
+pre-push: docs-registry census OK
+    KERNELS.md file references=122, all resolve
+    MODELS.md support-state tokens=5, all in the three-state vocabulary
+    ROUTER.md lines=46 (cap 60)
+    check-flags --list answered with 865 runtime names (coverage enforced by check-flags.sh itself)
+    flags-table-census: docs/FLAGS.md tables=58 rows=901, every row matches its header
+pre-push: workflow-file census OK
+    5 workflow files, no duplicate mapping keys (stdlib walker)
+pre-push: engine files touched after the last perf-ci battery.
+  base (merge-base with refs/remotes/origin/lane/spill-b-20260919): 3e261c1c26670bc080abf3379f6dca91fc2a207f
+  engine files this branch changes:
+      crates/memra-engine/src/spec.rs
+Run: tools/local-ci.sh --perf   (or --perf-quick for the 31B subset)
+Override knowingly with MEMRA_SKIP_PERF_CI=1.
+error: failed to push some refs to 'github.com:avifenesh/memra.git'

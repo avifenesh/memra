@@ -1,0 +1,59 @@
+{
+  "model": "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf",
+  "bin": "target/release/memra-server",
+  "long": 131072,
+  "peer": 2048,
+  "seed_tokens": 4096,
+  "prompt_tokens": {
+    "seed": 4111,
+    "long": 135470,
+    "peer-a": 2071,
+    "peer-b": 2140
+  },
+  "min_tokens": 16,
+  "max_tokens": 32,
+  "arms": [
+    "0",
+    "1"
+  ],
+  "reps": 3,
+  "shas": {
+    "long": [
+      "a26fc4e8fab0d671"
+    ],
+    "peer-cold-a": [
+      "a26fc4e8fab0d671"
+    ],
+    "peer-cold-b": [
+      "a26fc4e8fab0d671"
+    ],
+    "peer-hit": [
+      "a26fc4e8fab0d671"
+    ]
+  },
+  "peer_p95_s": {
+    "0": 55.01671320400783,
+    "1": 1.4345058589824475
+  },
+  "peer_max_s": {
+    "0": 55.01671320400783,
+    "1": 1.4345058589824475
+  },
+  "tick_max_ms": {
+    "0": 56479,
+    "1": 2458
+  },
+  "long_ttft_s": {
+    "0": 55.82161612799973,
+    "1": 55.94346203401801
+  },
+  "yields_on": 426,
+  "verdicts": {
+    "bytes": true,
+    "peers": true,
+    "tick": true,
+    "completion": true,
+    "engaged": true
+  },
+  "verdict": "PASS"
+}

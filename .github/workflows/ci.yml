@@ -72,11 +72,50 @@ jobs:
       - name: Change-class teeth (the docs-only skip fails closed in every arm)
         run: tools/test_ci_change_class.sh
 
-      - name: Cache qualification harness regressions
-        run: python3 -m unittest discover -s tools -p test_cache_qualification.py
+      # Duplicate mapping keys: GitHub refuses the whole workflow file and runs ZERO jobs (main at
+      # 34ed99dfc, 2026-09-21: two portable-suites jobs from #592 and #590). This step can only
+      # protect the OTHER workflow files (a ci.yml that does not parse never reaches it); ci.yml
+      # itself is protected by the same census in tools/hooks/pre-push and by a PR run on a
+      # current merge ref. PyYAML's safe_load keeps the last key silently; the checker is a
+      # standard-library walker, so it needs no install line and cannot fail for a dependency.
+      - name: Workflow files carry no duplicate mapping key (stdlib walker; safe_load would pass)
+        run: |
+          tools/check-workflow-keys.py
+          tools/test_workflow_keys.sh
+
+      # A hand-resolved merge left a diff3 base marker in research/INDEX.md on main twice on
+      # 2026-09-21 (#604, #614) and once in research/tune-data/perf-ci.jsonl; a union resolve
+      # then dropped the neighbouring INDEX row. git diff --check sees a marker only inside a
+      # diff; this census sees the tracked tree.
+      - name: Tracked source, docs and data carry no merge-conflict marker line
+        run: |
+          tools/check-conflict-markers.sh
+          tools/test_conflict_markers.sh
+
+      - name: Content-bound release qualification controls (CPU-only)
+        run: |
+          python3 tools/test_release_qualification.py
+          python3 tools/test_release_inputs.py
+          python3 -m unittest tools.test_check_hardware_gate
+          python3 -m unittest tools.test_request_fault_gate
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: "1.97.1"
+      - name: Prepare compiler input isolation
+        run: bash tools/install-release-sandbox-ci.sh
+      - name: Compiler input view and filesystem boundary (CPU-only)
+        run: |
+          python3 tools/test_release_input_view.py
+
+      - name: Cache qualification harness regressions (unittest floor 15; 16 measured 2026-09-21)
+        run: tools/unittest-floor.sh tools test_cache_qualification.py 15
 
       - name: CPU-only artifact path safety tests
         run: python3 tools/test_nvme_builder_safety.py
+
+      - name: Chain-launched kernels open with the PDL entry
+        run: python3 tools/check-pdl-chain.py
 
       - name: Per-card native qualification runner controls
         run: python3 tools/test_qualify_model_device_memory.py
@@ -123,11 +162,14 @@ jobs:
       - name: Argmax-margin input and verdict controls
         run: python3 tools/test_argmax_margin_gate.py
       - name: Push-range fixture (round 1)
-        run: tools/test_push_range.sh
+        run: |
+          python3 tools/test_push_range_setup.py
+          tools/test_push_range.sh
       - name: Gate-template teeth fixture (round 3)
         run: |
           tools/test_gate_template_integrity.sh
           python3 -m unittest tools.test_generate_arch_gates
+          tools/test_spec_on_cache_hit_gate_lock.sh
 
       # Release-guard teeth (2026-08-23). Three tag races in one week shipped GitHub releases
       # whose binaries self-report a different version than the tag; tools/release-guard.sh
@@ -177,9 +219,6 @@ jobs:
       # suite does: adding memra-reference took the pass count to 417, so a floor left at 130
       # would have let all ~68 of that crate's speech tests disappear behind a green check.
       # 400 leaves slack for the declared skips and for honest single-test removals only.
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
-        with:
-          toolchain: "1.97.1"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: ci-gates
@@ -191,6 +230,11 @@ jobs:
           MEMRA_GGUF_SKIP_BUDGET=12 python3 tools/skip-census.py run \
             --budget-var MEMRA_GGUF_SKIP_BUDGET --min-passed 400 \
             -- cargo test -p memra-gguf -p memra-reference -p memra-tokenizer -p memra-validate -p memra-sampling --lib
+      - name: Canonical config and shared JSON feature-unification contracts
+        run: |
+          cargo test -p memra-gguf --test canonical_config
+          cargo test -p memra-gguf --features serde_json/preserve_order --test canonical_config
+          cargo test -p memra-gguf --features serde_json/preserve_order --lib strict_json::tests
       - name: Indexed MLA and KDA memory fixture contracts (CPU-only)
         run: tools/test-model-memory-fixture.sh
 
@@ -364,6 +408,56 @@ jobs:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"
 
+  # ── tier, KV and onboarding-CLI suites (memra #545) ─────────────────────────────────────────
+  # Until 2026-09-21 these suites were COMPILED here (build, clippy) and EXECUTED by nobody:
+  # memra-tier's six integration suites (contracts, storage, bank, peer, placement, reclaim) and
+  # its compile-fail doctests, memra-kv's lib and contracts_v12 suites, memra-cli's onboarding
+  # receipts; 325 tests on 2026-09-21, among them the retirement, cancellation and ownership
+  # rules whose red arms nothing in CI had ever run. CPU only and GPU-less by construction
+  # (memra-tier has no CUDA dependency; memra-kv links cudarc dynamic-loading and no test opens
+  # the driver; memra-cli depends on gguf/reference/tokenizer), so no CUDA install. One wrapper,
+  # tools/portable-suites.sh, the same text tools/local-ci.sh runs, through the skip census at
+  # budget 0 (a test that skips for a missing artifact is printed and counted; today none
+  # exists in the three crates). tools/test_portable_suites.sh is the teeth: a planted failing
+  # tier/KV/CLI test in a copy of the tree must red the same wrapper, so build and clippy alone
+  # can never satisfy this job. The last step holds BOTH rig lock paths for the whole collector
+  # test suite (lead ruling 12, 2026-09-21): a serving job on a rig must never redden a CPU
+  # suite, so its tests take the two lock names under a private directory
+  # (MEMRA_TIER_BATTERY_LOCK_DIR, docs/TESTING.md). NOT GPU qualification: nothing here promotes
+  # a model, a numeric program, a default or a support state, and the step names say so.
+  portable-suites:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: "1.97.1"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: ci-portable-suites
+      - name: Warm the registry (the suites run --offline against the committed lockfile)
+        run: cargo fetch --locked
+      - name: Tier, KV and onboarding-CLI suites (CPU execution through the skip census; NOT GPU qualification)
+        run: tools/portable-suites.sh
+      - name: Portable-suites teeth (planted tier/KV/CLI failures and an undeclared skip must red the same wrapper)
+        run: tools/test_portable_suites.sh
+      - name: Collector test suite with BOTH rig lock paths held (ruling 12; CPU tests, not qualification)
+        run: |
+          exec 8>/tmp/memra-5090.lock 7>/tmp/memra-gpu.lock
+          flock -n 8 && flock -n 7
+          echo "holding /tmp/memra-5090.lock and /tmp/memra-gpu.lock for the whole suite"
+          # Non-vacuity floor (revuto on #592): discovery over a non-package dir exits 0 (or 5 on
+          # Python 3.12+) on zero tests. 87 measured 2026-09-21; a stated minimum, raise it as the
+          # suite grows, never lower it to pass.
+          tools/unittest-floor.sh crates/memra-tier/tests/battery 'test_*.py' 80
+      - name: unittest-floor teeth (empty discovery, a failing test and a floor above the count must all red)
+        run: tools/test_unittest_floor.sh
+      - name: GPU CI orchestration failure controls (CPU only; from #590, unittest floor 9, 10 measured 2026-09-21)
+        run: tools/unittest-floor.sh tools test_gpu_ci.py 9
+
   # ── memra-engine: the CPU expert backend and the whole engine lib suite ────────────────────
   # memra#18 (2026-09-01): vision::tests and every other memra-engine lib test ran NOWHERE.
   # The only engine test CI ran was `cargo test -p memra-engine cpu_experts --lib`, a NAME
@@ -396,6 +490,13 @@ jobs:
         env:
           MEMRA_NVCC: /usr/local/cuda-13.1/bin/nvcc
           MEMRA_CUDA_ARCH: "120a"
+      # ── CPU expert companion: prefetch accounting (memra#586) ──────────────────────────────
+      # Process-level cells over the production translation unit: a mirrored projection is two
+      # I/O jobs and ONE in-flight charge, released once with its final half. The mirror sits on
+      # a second filesystem (/dev/shm) and both are read O_DIRECT; the script refuses to run
+      # where either is unavailable rather than skipping (docs/TESTING.md, Fixtures).
+      - name: CPU expert companion prefetch accounting cells
+        run: tools/test_cpu_expert_prefetch.sh "$RUNNER_TEMP/cpu-prefetch-logs"
       # ── DSV4F door reach (memra #454, #458) ──────────────────────────────────────────────
       # Named so a failure reads as what it is: a door's declared default or served-path reach
       # stopped matching the admission code. The unfiltered suite below runs it too; this step

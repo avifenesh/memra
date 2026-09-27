@@ -1,0 +1,344 @@
+{
+  "arm": "before",
+  "bin": "/home/avifenesh/projects/darklanes/wt-budget-journal-order-20260922/serving/target/release/memra-server",
+  "bin_sha256": "7aa417abfa264c7ab60d73f6dbd6f0bacbe53460ee829e477c2b4ae7488888bb",
+  "model": "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf",
+  "n": 16,
+  "max_tokens": 48,
+  "seed_micro": 1000000000,
+  "credit_micro": 1000,
+  "executed_not_qualified": true,
+  "card_before_boot": "pid, process_name, used_gpu_memory [MiB]\nNVIDIA GeForce RTX 5090 Laptop GPU, 15 MiB, 24463 MiB\n",
+  "server_pid": 528889,
+  "boot_s": 4.0,
+  "card_after_boot": "pid, process_name, used_gpu_memory [MiB]\n528889, /home/avifenesh/projects/darklanes/wt-budget-journal-order-20260922/serving/target/release/memra-server, 8452 MiB\nNVIDIA GeForce RTX 5090 Laptop GPU, 8475 MiB, 24463 MiB\n",
+  "balance_before": {
+    "status": 200,
+    "body": {
+      "limited": true,
+      "tenant": "cell-tenant",
+      "currency": "USD",
+      "balance_micro": 1000000000,
+      "admission_mode": "prepaid",
+      "budget_source_reload_failed": 0,
+      "budget_source_reload_consecutive": 0,
+      "budget_source_available": true,
+      "boot_unix_ms": 1790054762208
+    }
+  },
+  "load_s": 1.9,
+  "requests": [
+    {
+      "i": 0,
+      "status": 200,
+      "elapsed_s": 1.795,
+      "usage": {
+        "prompt_tokens": 23,
+        "completion_tokens": 48,
+        "total_tokens": 71,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 1.792817157
+      },
+      "request_id": "chatcmpl-e81fe23629bcc666e37e7a009b267ef3",
+      "error": null
+    },
+    {
+      "i": 1,
+      "status": 200,
+      "elapsed_s": 1.828,
+      "usage": {
+        "prompt_tokens": 22,
+        "completion_tokens": 48,
+        "total_tokens": 70,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 1.7813110349999999
+      },
+      "request_id": "chatcmpl-b36d38dfa6601c7c31892b385421fdd8",
+      "error": null
+    },
+    {
+      "i": 2,
+      "status": 200,
+      "elapsed_s": 1.829,
+      "usage": {
+        "prompt_tokens": 22,
+        "completion_tokens": 48,
+        "total_tokens": 70,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 1.780954452
+      },
+      "request_id": "chatcmpl-78fb936b1ba5d650f82405947aa9ca85",
+      "error": null
+    },
+    {
+      "i": 3,
+      "status": 200,
+      "elapsed_s": 1.828,
+      "usage": {
+        "prompt_tokens": 23,
+        "completion_tokens": 48,
+        "total_tokens": 71,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 1.779862074
+      },
+      "request_id": "chatcmpl-413aa6b13b0e1986587fa0989ce3f85a",
+      "error": null
+    },
+    {
+      "i": 4,
+      "status": 200,
+      "elapsed_s": 1.827,
+      "usage": {
+        "prompt_tokens": 20,
+        "completion_tokens": 48,
+        "total_tokens": 68,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 1.780595796
+      },
+      "request_id": "chatcmpl-a8b9f4ff1dc121dd2b4ee17d03cc5cc3",
+      "error": null
+    },
+    {
+      "i": 5,
+      "status": 200,
+      "elapsed_s": 1.829,
+      "usage": {
+        "prompt_tokens": 22,
+        "completion_tokens": 48,
+        "total_tokens": 70,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 1.778481003
+      },
+      "request_id": "chatcmpl-21f57d8f4b77710b65ac228075583f21",
+      "error": null
+    },
+    {
+      "i": 6,
+      "status": 200,
+      "elapsed_s": 1.827,
+      "usage": {
+        "prompt_tokens": 19,
+        "completion_tokens": 48,
+        "total_tokens": 67,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 1.780238545
+      },
+      "request_id": "chatcmpl-ce1a689251b9cbf272528d49faf767a1",
+      "error": null
+    },
+    {
+      "i": 7,
+      "status": 200,
+      "elapsed_s": 1.827,
+      "usage": {
+        "prompt_tokens": 18,
+        "completion_tokens": 48,
+        "total_tokens": 66,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 1.7781100589999999
+      },
+      "request_id": "chatcmpl-4bc2335d2b5dcf9c9b88652ff80e270b",
+      "error": null
+    },
+    {
+      "i": 8,
+      "status": 200,
+      "elapsed_s": 1.829,
+      "usage": {
+        "prompt_tokens": 26,
+        "completion_tokens": 48,
+        "total_tokens": 74,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 1.779512115
+      },
+      "request_id": "chatcmpl-df2b564b7fd1c47de5fcfbce0c022bd3",
+      "error": null
+    },
+    {
+      "i": 9,
+      "status": 200,
+      "elapsed_s": 1.937,
+      "usage": {
+        "prompt_tokens": 15,
+        "completion_tokens": 48,
+        "total_tokens": 63,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 1.8906747959999999
+      },
+      "request_id": "chatcmpl-4fa51b5f520886de5bbbac78338cf79d",
+      "error": null
+    },
+    {
+      "i": 10,
+      "status": 200,
+      "elapsed_s": 1.828,
+      "usage": {
+        "prompt_tokens": 19,
+        "completion_tokens": 48,
+        "total_tokens": 67,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 1.7788331290000001
+      },
+      "request_id": "chatcmpl-ccf9d1c1fc423e88e0fb01ba8b92fed9",
+      "error": null
+    },
+    {
+      "i": 11,
+      "status": 200,
+      "elapsed_s": 1.827,
+      "usage": {
+        "prompt_tokens": 21,
+        "completion_tokens": 48,
+        "total_tokens": 69,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 1.777414398
+      },
+      "request_id": "chatcmpl-451bab21c81b8fe149c1b835e8e90cd9",
+      "error": null
+    },
+    {
+      "i": 12,
+      "status": 200,
+      "elapsed_s": 1.825,
+      "usage": {
+        "prompt_tokens": 21,
+        "completion_tokens": 48,
+        "total_tokens": 69,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 1.777753244
+      },
+      "request_id": "chatcmpl-d30875223f00b4416868ffb521034f52",
+      "error": null
+    },
+    {
+      "i": 13,
+      "status": 200,
+      "elapsed_s": 1.825,
+      "usage": {
+        "prompt_tokens": 22,
+        "completion_tokens": 48,
+        "total_tokens": 70,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 1.7767247689999999
+      },
+      "request_id": "chatcmpl-9d076a90dd7aa060e8b7ab5816870168",
+      "error": null
+    },
+    {
+      "i": 14,
+      "status": 200,
+      "elapsed_s": 1.826,
+      "usage": {
+        "prompt_tokens": 19,
+        "completion_tokens": 48,
+        "total_tokens": 67,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 1.777068718
+      },
+      "request_id": "chatcmpl-896c746eb080f4d7b035d8ac6c737ed7",
+      "error": null
+    },
+    {
+      "i": 15,
+      "status": 200,
+      "elapsed_s": 1.826,
+      "usage": {
+        "prompt_tokens": 19,
+        "completion_tokens": 48,
+        "total_tokens": 67,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 1.7763885990000001
+      },
+      "request_id": "chatcmpl-50effdf3080ca89800a6a92111a362f7",
+      "error": null
+    }
+  ],
+  "credit": {
+    "status": 200,
+    "body": {
+      "tenant": "cell-tenant",
+      "currency": "USD",
+      "amount_micro": 1000,
+      "balance_micro": 999999767,
+      "idempotency_key": "cell-credit-1"
+    }
+  },
+  "balance_after": {
+    "status": 200,
+    "body": {
+      "limited": true,
+      "tenant": "cell-tenant",
+      "currency": "USD",
+      "balance_micro": 999999767,
+      "admission_mode": "prepaid",
+      "budget_source_reload_failed": 0,
+      "budget_source_reload_consecutive": 0,
+      "budget_source_available": true,
+      "boot_unix_ms": 1790054762208
+    }
+  },
+  "journal_segments": 0,
+  "rows": 17,
+  "ok_requests": 16,
+  "chain_violations": [
+    "CHAIN n=0 kind=credit amount=1000 prev=1000000000 stamp=999999767 expected=1000001000 delta=-1233",
+    "CHAIN n=1 kind=debit amount=78 prev=999999767 stamp=999999767 expected=999999689 delta=78",
+    "CHAIN n=2 kind=debit amount=78 prev=999999767 stamp=999999767 expected=999999689 delta=78",
+    "CHAIN n=3 kind=debit amount=77 prev=999999767 stamp=999999767 expected=999999690 delta=77",
+    "CHAIN n=4 kind=debit amount=77 prev=999999767 stamp=999999767 expected=999999690 delta=77",
+    "CHAIN n=5 kind=debit amount=77 prev=999999767 stamp=999999767 expected=999999690 delta=77",
+    "CHAIN n=6 kind=debit amount=77 prev=999999767 stamp=999999767 expected=999999690 delta=77",
+    "CHAIN n=7 kind=debit amount=77 prev=999999767 stamp=999999767 expected=999999690 delta=77",
+    "CHAIN n=8 kind=debit amount=78 prev=999999767 stamp=999999767 expected=999999689 delta=78",
+    "CHAIN n=9 kind=debit amount=77 prev=999999767 stamp=999999767 expected=999999690 delta=77",
+    "CHAIN n=10 kind=debit amount=76 prev=999999767 stamp=999999767 expected=999999691 delta=76",
+    "CHAIN n=11 kind=debit amount=77 prev=999999767 stamp=999999767 expected=999999690 delta=77",
+    "CHAIN n=12 kind=debit amount=77 prev=999999767 stamp=999999767 expected=999999690 delta=77",
+    "CHAIN n=13 kind=debit amount=77 prev=999999767 stamp=999999767 expected=999999690 delta=77",
+    "CHAIN n=14 kind=debit amount=77 prev=999999767 stamp=999999767 expected=999999690 delta=77",
+    "CHAIN n=15 kind=debit amount=77 prev=999999767 stamp=999999767 expected=999999690 delta=77",
+    "CHAIN n=16 kind=debit amount=76 prev=999999767 stamp=999999767 expected=999999691 delta=76"
+  ],
+  "order_violations": [],
+  "conservation": {
+    "seed_plus_sum": 999999767,
+    "admin_balance_micro": 999999767,
+    "last_stamp": 999999767,
+    "verdict": "ok"
+  },
+  "cancel_sum": 0,
+  "verdict_line": "JOURNAL-ORDER CELL arm=before N=16 rows=17 chain_violations=17 order_violations=0 conservation=ok cancel_sum=0 -> FAIL",
+  "card_after_stop": "pid, process_name, used_gpu_memory [MiB]\nNVIDIA GeForce RTX 5090 Laptop GPU, 15 MiB, 24463 MiB\n"
+}

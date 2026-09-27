@@ -1,0 +1,25 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-b/crates/memra-server)
+error: manual implementation of `.is_multiple_of()`
+    --> crates/memra-server/src/worker.rs:3583:8
+     |
+3583 |     if prompt_len % c == 0 {
+     |        ^^^^^^^^^^^^^^^^^^^ help: replace with: `prompt_len.is_multiple_of(c)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_is_multiple_of
+     = note: `-D clippy::manual-is-multiple-of` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::manual_is_multiple_of)]`
+
+error: could not compile `memra-server` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: manual implementation of `.is_multiple_of()`
+     --> crates/memra-server/src/worker.rs:35845:31
+      |
+35845 |             c >= 2 * floor && min % c == 0,
+      |                               ^^^^^^^^^^^^ help: replace with: `min.is_multiple_of(c)`
+      |
+      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.97.0/index.html#manual_is_multiple_of
+
+error: could not compile `memra-server` (lib test) due to 2 previous errors
+exit=101

@@ -142,6 +142,13 @@ provider_machine_id = "(?i)(vast|runpod|machine|instance)[^\\n]{0,20}\\bmachine\
 # matched nothing. Keyword-anchored on the provider so a bare 8-digit number stays prose.
 # Measured cost: 0 tracked files.
 provider_contract_id = "(?i)(vast|runpod)[^\\n]{0,30}\\bcontract\\s*#?\\s*[0-9]{6,10}\\b"
+# The same fact written as the provider's name followed by the bare number ("vast <8 digits>"),
+# the form the provider's console and every lane receipt actually use; neither keyword rule above
+# saw it, and it sat in two registry docs, a release table and an engine doc comment (found by
+# WP-C day 32, 2026-09-22). Measured cost at add time: 12 tracked files; the 4 live surfaces
+# (docs/FLAGS.md, docs/KERNELS.md, docs/RELEASING.md, crates/memra-engine/src/lib.rs) were
+# scrubbed in the same commit, the 9 dated research receipts grandfathered with per-file reasons.
+provider_bare_id = "(?i)\\b(vast|runpod)\\s+#?[0-9]{6,10}\\b"
 
 # CREDENTIAL MATERIAL (added 2026-08-19). Every rule above this describes an identifier —
 # an endpoint, a rented address, an account id, a wallet, a provider machine. None of them
@@ -272,6 +279,7 @@ serve_prefix = 3
 serve_data_root = 3
 provider_machine_id = 3
 provider_contract_id = 3
+provider_bare_id = 3
 runpod_pod_id = 3
 # Same fact as the keyword-anchored rule above, just written without the keyword, so it ranks
 # identically. Added by the v0.94.0 merge: the bare-id rule (hermes lane) and the mandatory

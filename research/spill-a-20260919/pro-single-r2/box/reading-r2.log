@@ -1,0 +1,9 @@
+R2 (a) gates {'contract-fault-plain': '0', 'contract-fault': '0', 'failure-off': '0', 'failure-on': '0', 'hitgate-off': '0', 'hitgate-on': '0', 'identity-default-off': '0', 'identity-default-on': '0', 'identity-plain-off': '0', 'identity-plain-on': '0', 'pause-demote': '0'}
+R2 (a) quarantined lines in r2 boots: 0
+R2 READING order=o1 mode=prime base hold=86.78 ms (N=45) | r2 deferral=0.002 ms (N=45), r2 retire settles=0 | stall base=281.79 r2=282.02 (+0.23) | e2e base=1455.8 r2=1456.3 ms
+R2 READING order=o1 mode=retire-seam base hold=86.88 ms (N=45) | r2 deferral=0.002 ms (N=45), r2 retire settles=0 | stall base=281.71 r2=281.94 (+0.23) | e2e base=1787.2 r2=1806.6 ms
+R2 READING order=o2 mode=prime base hold=86.84 ms (N=45) | r2 deferral=0.002 ms (N=45), r2 retire settles=0 | stall base=282.29 r2=282.28 (-0.01) | e2e base=1457.2 r2=1457.1 ms
+R2 READING order=o2 mode=retire-seam base hold=86.92 ms (N=45) | r2 deferral=0.002 ms (N=45), r2 retire settles=0 | stall base=282.02 r2=282.12 (+0.10) | e2e base=1786.9 r2=1807.7 ms
+R2 (b) PASS [True, True, True, True]
+R2 (c) FAIL [True, False, True, False]
+R2 VERDICT -> REVERT ((a) passed; failed c): recorded as read, reverted in one commit

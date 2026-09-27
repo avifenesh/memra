@@ -1,0 +1,34 @@
+{
+ "runner_sha256": "7386e77e4e637697d5fac8716a54218b5d1aa44f1c750c4c1d5c3ca2a89e58be",
+ "cache_regime_sha256": "8e438a5d62a4a06ed5c56187df0d6d57db71b37aec4f1cb1ed7faa942a677fc8",
+ "sampler_sha256": "4bda8586d7e7e8a75af71cc44a6bdce4f5a0b450d517e18e76b5451b8d1b1ee0",
+ "arms_lock_sha256": "ca3061b6ab60c898f8e4a51a448ea2fde05cb90906c7cb7594a30cb061e5ed6a",
+ "binary_sha256": "c6e04932eb5d9978273853523d78afe255b2c3cf95cc37064179d5ec05e4eda6",
+ "artifact_bytes": 18209036576,
+ "proof_sha256": "5bb8d4c0f6beec60ab2e76064ab1ce6aaa56e24762216bb5080122e98efe34b9",
+ "proof_tool_sha256": "d59851b624339e16d2290b21b94567a593645266eb0e5dd83d4490decbb78864",
+ "regime": "cold",
+ "rounds": 10,
+ "arms": [
+  "worker16",
+  "mmap-random",
+  "mmap-normal",
+  "pread16",
+  "worker2",
+  "direct16"
+ ],
+ "lock": {
+  "owner": "collector",
+  "lock": "/tmp/memra-5090.lock",
+  "mechanism": "inherited-flock-same-open-description",
+  "device": 48,
+  "inode": 10633,
+  "qualification": false
+ },
+ "leaves": [
+  "nvme1n1"
+ ],
+ "top": "dm-0",
+ "qualified": false,
+ "artifact_sha256": "df27a780435b7b45c2597536112ea3cb091f8544c3d0c3318d9f4258b31f7adf"
+}

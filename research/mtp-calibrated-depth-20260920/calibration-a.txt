@@ -1,0 +1,296 @@
+Review the following real Rust implementation. Explain its data flow, state ownership and correctness invariants. Identify concrete defects or risks, and propose changes with tests. Ground the analysis in the supplied excerpts.
+
+File: crates/memra-sampling/src/lib.rs, lines 1..140
+```rust
+//! Host-side sampler chain (BASE-2, MEMRA-BUILD-MAP §BASE-2). Ports llama.cpp CPU sampler
+//! semantics (llama-sampler.cpp): repetition/freq/presence penalties -> temperature -> top-k ->
+//! top-p -> min-p -> categorical draw. Greedy (temp<=0) = argmax, the bit-exact reference.
+//!
+//! Runs on the host over the full [n_vocab] f32 logit vector already brought back by the per-step
+//! D2H sync (decode.rs) — at B=2-4 this is single-µs, no GPU kernel needed (the GPU-fused sampler
+//! is a deferred PERF item, only needed once CUDA-graph removes the D2H barrier).
+
+use std::collections::HashMap;
+
+/// Sampler configuration. Defaults = greedy (temp 0). Order of application matches llama.cpp.
+#[derive(Clone, Debug)]
+pub struct SamplerConfig {
+    pub temperature: f32,      // <= 0.0 => greedy argmax (penalties/top-k/p ignored)
+    pub top_k: usize,          // 0 => disabled (keep all)
+    pub top_p: f32,            // 1.0 => disabled
+    pub min_p: f32,            // 0.0 => disabled
+    pub penalty_last_n: usize, // window of recent tokens for penalties (0 => disabled)
+    pub penalty_repeat: f32,   // 1.0 => disabled (llama default 1.0)
+    pub penalty_freq: f32,     // 0.0 => disabled
+    pub penalty_present: f32,  // 0.0 => disabled
+    pub seed: u64,
+}
+
+impl Default for SamplerConfig {
+    fn default() -> Self {
+        SamplerConfig {
+            temperature: 0.0,
+            top_k: 0,
+            top_p: 1.0,
+            min_p: 0.0,
+            penalty_last_n: 0,
+            penalty_repeat: 1.0,
+            penalty_freq: 0.0,
+            penalty_present: 0.0,
+            seed: 0,
+        }
+    }
+}
+
+/// SESSION-RESUME SAMPLER IDENTITY (lane/session-resume-sampler-predicate-20260820; receipts
+/// `research/spec-cache-20260818/SESSION-RESUME-PREDICATE.md`).
+///
+/// The canonical form of a request's sampler, for exactly one question: **may this request resume
+/// a parked whole session that some OTHER request's sampler shaped?** The spec pool's resume probe
+/// compared prompts and never samplers — that omission is how a filtered request inherited a draft
+/// graph captured unfiltered (`memra-engine` `SampledGraphKey`, lane/graph-s-key-exactness-
+/// 20260819). Keying the graph closed the exactness hole; it did not make cross-sampler resume
+/// SOUND, and the house posture in that situation is refuse-on-ambiguity with the refusal naming
+/// itself. This type is that predicate.
+///
+/// CANONICALIZATION, and why each rule is safe. Two encodings that name the same program must
+/// compare equal, or the predicate refuses resumes that cost nothing to allow:
+/// - `temperature <= 0.0` is GREEDY — `-1.0` and `0.0` are one program, so `temp_bits` is pinned
+///   to `0.0` in that regime and `greedy` carries the distinction. The greedy/sampled flip is
+///   itself a refusal: the two arms consume a parked `next_pred`/`pending_tok` differently and
+///   engage different captured draft graphs.
+/// - `top_k == 0`, `top_p >= 1.0`, `min_p <= 0.0` are each the OFF sentinel (matching
+///   `is_spec_sampling` and `SampledGraphKey::pure_temp`), canonicalized so `top_p 1.5` and
+///   `top_p 1.0` do not look like a change.
+/// - Penalties are OFF as a group iff `penalty_last_n == 0` or all three coefficients are neutral
+///   — the same `pen_on` predicate `spec.rs` computes. Off canonicalizes to the whole disabled
+///   tuple, so `penalty_last_n 64` with neutral coefficients equals penalties absent.
+///
+/// Float fields compare by BITS after canonicalization (no NaN/`-0.0` surprise), the same
+/// discipline `SampledGraphKey` uses.
+///
+/// `seed` IS carried and DELIBERATELY NOT COMPARED — see [`SamplerIdentity::mismatch`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct SamplerIdentity {
+    greedy: bool,
+    temp_bits: u32,
+    /// Carried for the record and for callers that want to log it; NOT part of `mismatch`.
+    seed: u64,
+    top_k: usize,
+    top_p_bits: u32,
+    min_p_bits: u32,
+    penalty_last_n: usize,
+    penalty_repeat_bits: u32,
+    penalty_freq_bits: u32,
+    penalty_present_bits: u32,
+}
+
+impl SamplerIdentity {
+    /// Canonical identity of a sampler configuration.
+    pub fn of(cfg: &SamplerConfig) -> Self {
+        let greedy = cfg.temperature <= 0.0;
+        let pen_on = cfg.penalty_last_n > 0
+            && (cfg.penalty_repeat != 1.0 || cfg.penalty_freq != 0.0 || cfg.penalty_present != 0.0);
+        SamplerIdentity {
+            greedy,
+            temp_bits: if greedy { 0.0f32 } else { cfg.temperature }.to_bits(),
+            seed: cfg.seed,
+            top_k: cfg.top_k,
+            top_p_bits: if cfg.top_p >= 1.0 { 1.0f32 } else { cfg.top_p }.to_bits(),
+            min_p_bits: if cfg.min_p <= 0.0 { 0.0f32 } else { cfg.min_p }.to_bits(),
+            penalty_last_n: if pen_on { cfg.penalty_last_n } else { 0 },
+            penalty_repeat_bits: if pen_on { cfg.penalty_repeat } else { 1.0f32 }.to_bits(),
+            penalty_freq_bits: if pen_on { cfg.penalty_freq } else { 0.0f32 }.to_bits(),
+            penalty_present_bits: if pen_on { cfg.penalty_present } else { 0.0f32 }.to_bits(),
+        }
+    }
+
+    /// The seed this identity was built from (logging/receipts only — never compared).
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    /// The FIRST field on which `self` (an incoming request) differs from `parked` (the sampler
+    /// that shaped a parked session), as a stable name for the refusal line — `None` when the two
+    /// samplers are equivalent and the resume is legal. A refusal that does not say why is
+    /// indistinguishable from an unwired mechanism, so the name is the deliverable, not a nicety.
+    ///
+    /// Order is fixed and coarsest-first (`regime` before the field that only exists inside one
+    /// regime), so the reported name is the most informative one rather than an artifact of struct
+    /// layout.
+    ///
+    /// **`seed` IS NOT COMPARED, deliberately.** It is the one sampler field a resume may change,
+    /// for two reasons that are both mechanical:
+    /// - The only parked state that BAKES the seed is the sampled draft graph, and
+    ///   `SampledGraphKey` already carries `seed`: a seed change drops the parked graph and
+    ///   recaptures. (`memra-engine` `spec.rs`; pinned by `seed_alone_still_rekeys_the_draft_graph`
+    ///   in that crate's `sampled_graph_key` tests.)
+    /// - The session's persisted Philox counters (`SpecSession::sctr/uctr`) are counter-based:
+    ///   `philox(seed', ctr)` continued from another seed's counter position is an independent
+    ///   stream, not a repeated one. Reproducibility is already scoped per `(seed, session)`
+    ///   rather than per seed (`memra-server` `worker.rs`, the spec-burst sampling note), so a
+    ///   changed seed costs nothing that same-seed resume was not already costing.
+    ///
+    /// Comparing it would refuse essentially ALL sampled traffic: omitting `seed` on a serve
+    /// request draws fresh per-request entropy, so every turn of every seed-omitting conversation
+    /// would carry a "changed" seed. That is a cost with no soundness gain, which is exactly the
+    /// trade this predicate exists to make explicitly rather than by accident.
+    pub fn mismatch(&self, parked: &Self) -> Option<&'static str> {
+        if self.greedy != parked.greedy {
+            return Some("regime");
+        }
+        if self.temp_bits != parked.temp_bits {
+            return Some("temperature");
+        }
+
+```
+
+File: crates/memra-runtime/src/lib.rs, lines 1..130
+```rust
+//! memra inference runtime. Correctness-first: every GPU op is validated against a
+//! CPU reference before any sm_120 fast-path replaces it.
+
+use cudarc::cublaslt::{CudaBlasLT, Matmul, MatmulConfig};
+use cudarc::driver::{CudaContext, CudaStream, sys as cu};
+use std::sync::Arc;
+
+pub use memra_gguf;
+
+/// CPU reference matmul for a linear layer y = x @ W^T.
+/// Conventions (ggml/GGUF): a weight tensor with ne=[in, out] is stored row-major as
+/// `out` rows of `in` contiguous elements — i.e. W[o*in + i]. A linear layer computes
+/// y[o] = sum_i x[i] * W[o*in + i], for each of `out` outputs. Batched over `m` tokens:
+///   x: [m, in] row-major (x[t*in + i]); w: [out, in] row-major (w[o*in + i]); y: [m, out].
+#[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
+pub fn cpu_linear(x: &[f32], w: &[f32], m: usize, in_f: usize, out_f: usize) -> Vec<f32> {
+    assert_eq!(x.len(), m * in_f);
+    assert_eq!(w.len(), out_f * in_f);
+    let mut y = vec![0f32; m * out_f];
+    for t in 0..m {
+        for o in 0..out_f {
+            let mut acc = 0f32;
+            let xr = &x[t * in_f..t * in_f + in_f];
+            let wr = &w[o * in_f..o * in_f + in_f];
+            for i in 0..in_f {
+                acc += xr[i] * wr[i];
+            }
+            y[t * out_f + o] = acc;
+        }
+    }
+    y
+}
+
+/// GPU runtime handle: a context + stream + cuBLASLt.
+pub struct Gpu {
+    pub ctx: Arc<CudaContext>,
+    /// The MAIN compute stream. PRIVATE since M1 increment 2: every launch site reads
+    /// `stream()` so the pp2 per-stage stream override (below) is a single seam. Naked
+    /// paths (no override pushed) get exactly this stream back — behavior unchanged.
+    stream: Arc<CudaStream>,
+    blas: Arc<CudaBlasLT>,
+    /// TOKEN-PIPELINE phase streams (step37 chain): two extra stream/cuBLASLt pairs so
+    /// alternate tokens' host-issue rides disjoint streams. Lazily built (first
+    /// enter_main under an active decode phase); None everywhere else — zero cost.
+    #[allow(clippy::type_complexity)]
+    // allow: one-shot composite type; naming it would hide the shape that matters at the call site
+    phase: std::sync::Mutex<Option<[(Arc<CudaStream>, Arc<CudaBlasLT>); 2]>>,
+}
+
+// ---------------------------------------------------------------------------------------
+// M1-PP2 increment 2: AMBIENT STREAM OVERRIDE (per-stage CUDA streams).
+//
+// The engine's entire launch surface reads `Gpu::stream()`. A pipeline stage redirects it
+// by pushing a per-stage stream onto this thread-local stack for the stage's host-issue
+// scope (RAII guard pops it). Decode is single-threaded host-issue, so thread-local is the
+// natural scope; cost when the stack is empty (every naked path) is one TLS lookup + a
+// branch + one Arc clone per launch — nanoseconds against a kernel launch.
+//
+// SAFETY CONTRACT (the multi-stream law): cudarc's per-arg event tracking stays DISABLED
+// (see memra-engine Engine::new) — cross-stream ordering is the OVERRIDER's job, via
+// explicit CudaEvents (pp2's boundary TX/RX choreography). The async mem pool is configured
+// below with opportunistic reuse OFF + internal dependencies ON, so a block freed on stream
+// A and re-allocated on stream B carries a driver-inserted dependency — alloc reuse cannot
+// race across stages. Buffers that one stream writes and another reads must be evented by
+// the caller; pp2 routes ALL cross-stage bytes through its persistent boundary slots.
+// ---------------------------------------------------------------------------------------
+struct StreamBinding {
+    stream: Arc<CudaStream>,
+    blas: Arc<CudaBlasLT>,
+}
+
+thread_local! {
+    static STREAM_OVERRIDE: std::cell::RefCell<Vec<StreamBinding>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+thread_local! {
+    static DECODE_PHASE: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+thread_local! {
+    /// RANK0 STREAM MERGE (step37): while set to a (ctx, stream, blas) binding, enter_main
+    /// on the MATCHING context binds THIS stream instead of the gpu's own main stream —
+    /// the same-device rank's work then rides the model engine's stream and every
+    /// e<->rank0 event hop becomes same-stream program order.
+    #[allow(clippy::type_complexity)] // allow: one-shot composite type; naming it would hide the shape that matters at the call site
+    static RANK0_REDIRECT: std::cell::RefCell<Option<(usize, Arc<CudaStream>, Arc<CudaBlasLT>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Install/clear the rank0 redirect (ctx ordinal + stream/blas of the model engine).
+pub fn set_rank0_redirect(binding: Option<(usize, Arc<CudaStream>, Arc<CudaBlasLT>)>) {
+    RANK0_REDIRECT.with(|c| *c.borrow_mut() = binding);
+}
+
+/// RAII scope for the rank0 redirect: clears on drop (panic-safe).
+pub struct Rank0RedirectGuard(());
+pub fn rank0_redirect_scope(
+    ordinal: usize,
+    stream: Arc<CudaStream>,
+    blas: Arc<CudaBlasLT>,
+) -> Rank0RedirectGuard {
+    set_rank0_redirect(Some((ordinal, stream, blas)));
+    Rank0RedirectGuard(())
+}
+impl Drop for Rank0RedirectGuard {
+    fn drop(&mut self) {
+        set_rank0_redirect(None);
+    }
+}
+fn rank0_redirect_for(ordinal: usize) -> Option<(Arc<CudaStream>, Arc<CudaBlasLT>)> {
+    RANK0_REDIRECT.with(|c| {
+        c.borrow()
+            .as_ref()
+            .filter(|(o, ..)| *o == ordinal)
+            .map(|(_, s, b)| (s.clone(), b.clone()))
+    })
+}
+
+/// TOKEN-PIPELINE phase (step37 chain): while `Some(p)`, `enter_main` binds each gpu's
+/// phase-p stream instead of its main stream, so alternate tokens' rank-local work rides
+/// disjoint streams. Cross-stream ordering is the SETTER's job (the multi-stream law
+/// above): the chain wires per-layer KV events between phases.
+pub fn set_decode_phase(p: Option<usize>) {
+    DECODE_PHASE.with(|c| c.set(p));
+}
+pub fn decode_phase() -> Option<usize> {
+    DECODE_PHASE.with(|c| c.get())
+}
+
+
+```
+
+---TURN---
+Develop concrete failure cases for this code. Show the state before and after each failure and specify recovery behavior.
+---TURN---
+Propose a focused patch plan. Include Rust-like pseudocode, interfaces and ownership rules tied to the supplied source.
+---TURN---
+Now examine concurrency and cancellation. Give adversarial interleavings and show how the proposed changes handle them.
+---TURN---
+Design tests for the invariants discussed so far. Include boundaries, malformed inputs, repeated calls and cleanup.
+---TURN---
+Review your proposed changes for performance costs. Identify useful measurements and avoid claiming gains without evidence.
+---TURN---
+Consider a production incident involving this component. Write a debugging plan with concrete observations that distinguish plausible causes.
+---TURN---
+Consolidate the conversation into a detailed implementation and validation plan. Resolve contradictions in your earlier proposals.

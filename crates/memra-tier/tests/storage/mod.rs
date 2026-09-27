@@ -444,9 +444,82 @@ fn cancel_late_completion_keeps_source_and_slot_until_io_retires() {
     drop(completion);
     assert_eq!(pool.accounting().free_slots, 1);
 }
-struct OwnedDirectory(std::path::PathBuf);
+/// One process runs every test in this binary, and four of them spawn a child.
+/// Between `clone` and `execve` the child holds a copy of the whole descriptor
+/// table, so every `flock` this process holds stays held for that window even
+/// after its owner closed the descriptor, and a sibling test that re-locks a
+/// lifetime, catalog-owner or GC-gate file on a fresh descriptor reads `Busy`
+/// (`research/spill-a-20260919/DAY10.md`). Directory-owning tests share this
+/// fence; a test that spawns a child holds it exclusively for its whole body.
+/// The fence is the completion signal: no sleep, no retry, no relaxed assert.
+static PROCESS_FENCE: std::sync::RwLock<()> = std::sync::RwLock::new(());
+thread_local! {
+    static SHARED_HELD: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static SHARED_GUARD: std::cell::RefCell<Option<std::sync::RwLockReadGuard<'static, ()>>> =
+        const { std::cell::RefCell::new(None) };
+    static EXCLUSIVE_GUARD: std::cell::RefCell<Option<std::sync::RwLockWriteGuard<'static, ()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+/// A handle on the process fence; the guards themselves live in thread-locals.
+enum Fence {
+    /// Re-entrant per thread: the read guard is taken by the first shared
+    /// handle on a thread and released by the last, whatever the drop order.
+    Shared,
+    Exclusive,
+}
+impl Fence {
+    fn shared() -> Self {
+        assert!(
+            EXCLUSIVE_GUARD.with_borrow(Option::is_none),
+            "a test holding the process fence exclusively must not open a shared directory"
+        );
+        if SHARED_HELD.replace(SHARED_HELD.get() + 1) == 0 {
+            let guard = PROCESS_FENCE
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            SHARED_GUARD.set(Some(guard));
+        }
+        Fence::Shared
+    }
+    fn exclusive() -> Self {
+        assert!(
+            SHARED_HELD.get() == 0 && EXCLUSIVE_GUARD.with_borrow(Option::is_none),
+            "take the process fence exclusively once, before opening any shared directory"
+        );
+        let guard = PROCESS_FENCE
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        EXCLUSIVE_GUARD.set(Some(guard));
+        Fence::Exclusive
+    }
+}
+impl Drop for Fence {
+    fn drop(&mut self) {
+        match self {
+            Fence::Shared => {
+                if SHARED_HELD.replace(SHARED_HELD.get() - 1) == 1 {
+                    SHARED_GUARD.take();
+                }
+            }
+            Fence::Exclusive => {
+                EXCLUSIVE_GUARD.take();
+            }
+        }
+    }
+}
+// The fence is held for its Drop only; it is released after the directory is
+// removed, so no sibling fork can inherit a descriptor of this directory.
+struct OwnedDirectory(std::path::PathBuf, #[allow(dead_code)] Fence);
 impl OwnedDirectory {
     fn new() -> Self {
+        Self::with_fence(Fence::shared())
+    }
+    /// For a test that spawns a child process: excludes every directory-owning
+    /// sibling for the test's lifetime, so no fork can inherit their locks.
+    fn spawning() -> Self {
+        Self::with_fence(Fence::exclusive())
+    }
+    fn with_fence(fence: Fence) -> Self {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let p = std::env::temp_dir().join(format!(
             "memra-spill-a-test-{}-{}",
@@ -454,7 +527,7 @@ impl OwnedDirectory {
             NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         std::fs::create_dir(&p).unwrap();
-        Self(p)
+        Self(p, fence)
     }
 }
 impl Drop for OwnedDirectory {

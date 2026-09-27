@@ -1,0 +1,132 @@
+{
+  "seed": {
+    "status": 200,
+    "text": " 5210: Plant word is \"sunlight\". Advice: Utilize the morning sunlight to grow sun-loving plants like tomatoes or herbs.\n\nCase",
+    "finish": "length",
+    "error": null,
+    "ttft_s": 1.004043075023219,
+    "first_token_s": 1.0040437880088575,
+    "total_s": 1.2396235420019366,
+    "usage": {
+      "prompt_tokens": 4135,
+      "completion_tokens": 32,
+      "total_tokens": 4167,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "elapsed_s": 1.233854603,
+      "spec": {
+        "rounds": 14,
+        "drafted": 42,
+        "accepted": 16,
+        "acceptance_rate": 0.38095238095238093
+      }
+    },
+    "sha": "27ee4563a4df5e65"
+  },
+  "cell_s": 59.587573650991544,
+  "requests": {
+    "peer-cold-a": {
+      "status": 200,
+      "text": " 5211, plant word is \"greenhouse\", advice: Utilize the volunteers to plant seeds in the two raised beds using the compost and water",
+      "finish": "length",
+      "error": null,
+      "ttft_s": 1.5023167910112534,
+      "first_token_s": 1.5023174549860414,
+      "total_s": 54.70838120699045,
+      "usage": {
+        "prompt_tokens": 2095,
+        "completion_tokens": 32,
+        "total_tokens": 2127,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 53.723434698
+      },
+      "sha": "c2744b504ee53742"
+    },
+    "peer-cold-b": {
+      "status": 200,
+      "text": " 5212, plant word: sunlight. Advice: Utilize the morning sunlight to grow sun-loving crops like tomatoes and peppers.\n\nCase 5",
+      "finish": "length",
+      "error": null,
+      "ttft_s": 1.1988762099936139,
+      "first_token_s": 1.198877023998648,
+      "total_s": 51.95078886998817,
+      "usage": {
+        "prompt_tokens": 2165,
+        "completion_tokens": 32,
+        "total_tokens": 2197,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 51.312688739
+      },
+      "sha": "1c281f2c37c9ea42"
+    },
+    "peer-hit": {
+      "status": 200,
+      "text": " 5210: Plant word is \"sunlight\". Advice: Utilize the morning sunlight to grow sun-loving plants like tomatoes or herbs.\n\nCase",
+      "finish": "length",
+      "error": null,
+      "ttft_s": 0.6286983239988331,
+      "first_token_s": 0.6286991960078012,
+      "total_s": 49.02282930200454,
+      "usage": {
+        "prompt_tokens": 4135,
+        "completion_tokens": 32,
+        "total_tokens": 4167,
+        "prompt_tokens_details": {
+          "cached_tokens": 4096
+        },
+        "elapsed_s": 48.470064978
+      },
+      "sha": "27ee4563a4df5e65"
+    },
+    "long": {
+      "status": 200,
+      "text": " 521: plant word is \"vineyard\". Advice: Start with a few hardy grape varieties suited to your local climate and ensure consistent morning watering",
+      "finish": "length",
+      "error": null,
+      "ttft_s": 57.71600243099965,
+      "first_token_s": 57.71600308199413,
+      "total_s": 58.585161930997856,
+      "usage": {
+        "prompt_tokens": 135494,
+        "completion_tokens": 32,
+        "total_tokens": 135526,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 58.439089861,
+        "spec": {
+          "rounds": 17,
+          "drafted": 51,
+          "accepted": 15,
+          "acceptance_rate": 0.29411764705882354
+        }
+      },
+      "sha": "4eae62d66e60374c"
+    }
+  },
+  "tick_max_ms": 2416,
+  "generation": 0,
+  "prompt_tokens": {
+    "seed": 4135,
+    "long": 135494,
+    "peer-a": 2095,
+    "peer-b": 2165
+  },
+  "arm": "1",
+  "rep": 0,
+  "log": {
+    "prime_walk": [
+      "[prime-walk] model=\"gate\" route=mtp supported=true yield_door=true [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]"
+    ],
+    "supported": true,
+    "yield_door_on": true,
+    "yield_lines": 142,
+    "chunk_lines": 153,
+    "worker_panic": false
+  }
+}

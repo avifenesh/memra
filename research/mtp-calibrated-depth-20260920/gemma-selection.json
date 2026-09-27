@@ -1,0 +1,144 @@
+{
+  "family": "gemma",
+  "selected_k": 3,
+  "pooled_calibration_tok_s": {
+    "1": 174.8033565464214,
+    "2": 203.70932219277958,
+    "3": 214.01695154078064,
+    "4": 210.00726849081377,
+    "5": 194.254090191366
+  },
+  "selected_at_utc": "2026-09-20T20:17:40.669884+00:00",
+  "rule": "Highest pooled output tokens / request E2E seconds; exact ties select smaller K",
+  "calibration": [
+    {
+      "cycle": 0,
+      "seed": 20263000,
+      "receipt_dir": "gemma-mtp-followup-calibration-0",
+      "records": [
+        {
+          "seed": 20263000,
+          "arm": "k1",
+          "tokens": 16384,
+          "elapsed_s": 95.738514261,
+          "e2e_tok_s": 171.132799861,
+          "turns": 16,
+          "conversations": 2,
+          "turns_per_conversation": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20263000,
+          "arm": "k2",
+          "tokens": 16257,
+          "elapsed_s": 82.238766439,
+          "e2e_tok_s": 197.680494297,
+          "turns": 16,
+          "conversations": 2,
+          "turns_per_conversation": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20263000,
+          "arm": "k3",
+          "tokens": 16303,
+          "elapsed_s": 78.373791321,
+          "e2e_tok_s": 208.015967139,
+          "turns": 16,
+          "conversations": 2,
+          "turns_per_conversation": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20263000,
+          "arm": "k4",
+          "tokens": 16211,
+          "elapsed_s": 78.498231802,
+          "e2e_tok_s": 206.514205834,
+          "turns": 16,
+          "conversations": 2,
+          "turns_per_conversation": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20263000,
+          "arm": "k5",
+          "tokens": 16333,
+          "elapsed_s": 85.741093775,
+          "e2e_tok_s": 190.492088226,
+          "turns": 16,
+          "conversations": 2,
+          "turns_per_conversation": 8,
+          "correctness_only": false
+        }
+      ]
+    },
+    {
+      "cycle": 1,
+      "seed": 20263001,
+      "receipt_dir": "gemma-mtp-followup-calibration-1",
+      "records": [
+        {
+          "seed": 20263001,
+          "arm": "k5",
+          "tokens": 16219,
+          "elapsed_s": 81.833241303,
+          "e2e_tok_s": 198.195742241,
+          "turns": 16,
+          "conversations": 2,
+          "turns_per_conversation": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20263001,
+          "arm": "k4",
+          "tokens": 16304,
+          "elapsed_s": 76.329742647,
+          "e2e_tok_s": 213.59956728,
+          "turns": 16,
+          "conversations": 2,
+          "turns_per_conversation": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20263001,
+          "arm": "k3",
+          "tokens": 16198,
+          "elapsed_s": 73.488011055,
+          "e2e_tok_s": 220.416905662,
+          "turns": 16,
+          "conversations": 2,
+          "turns_per_conversation": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20263001,
+          "arm": "k2",
+          "tokens": 16229,
+          "elapsed_s": 77.23356232,
+          "e2e_tok_s": 210.128854769,
+          "turns": 16,
+          "conversations": 2,
+          "turns_per_conversation": 8,
+          "correctness_only": false
+        },
+        {
+          "seed": 20263001,
+          "arm": "k1",
+          "tokens": 16384,
+          "elapsed_s": 91.717840396,
+          "e2e_tok_s": 178.634820982,
+          "turns": 16,
+          "conversations": 2,
+          "turns_per_conversation": 8,
+          "correctness_only": false
+        }
+      ]
+    }
+  ],
+  "calibration_runs_sha256": {
+    "gemma-mtp-followup-calibration-0": "ddc0b488e5065be66cb1e1af6b1c002d270fabcda2723fc8899ad15556f6f5b5",
+    "gemma-mtp-followup-calibration-1": "0e95e168de10ecb249bbf42c9fef026a7adb5333599c3089192b365137a7adf2"
+  },
+  "workloads_lock_sha256": "fd3a9d32c967c7abdb2325ba5da4c3367d0efa22213852f6a49c597afd4cec8e"
+}

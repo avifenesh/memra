@@ -25,8 +25,9 @@ runtime-blob reconstruction from the public base. The combined ten-test output i
 in `receipts/metadata/publication-tests.log`. The request-position diagnostics run
 the full audit first and reconcile their segment totals with the overall metrics.
 
-The full public-boundary unit suite passes 53 tests, including two new regressions
-for pinned binary data skipped by the fast prefilter. Both tests failed on the old
-implementation. Content and drift verification now use the full matcher for pinned
-paths; policy patterns and raw archive bytes are unchanged. Output is recorded in
-`receipts/metadata/boundary-regression-tests.log`.
+The banked public-boundary log records 53 tests against the publication-time
+scanner, including two checks for pinned binary paths. Current main instead
+uses one raw-byte prefilter for checkout, commit, and ref scans. The five
+historical decoded-only archive findings need no current allowlist entries.
+The original policy patterns and archive bytes are unchanged. The historical
+test output remains in `receipts/metadata/boundary-regression-tests.log`.

@@ -1,0 +1,132 @@
+{
+  "candidate_manifest_sha256": "2c6558fbc158ff936ea1d47c54c66659fd884982ea6afd7222a41cb8a842352d",
+  "scanner_sha256": "0000058db5d59a35421999679372f43e760bdf7e72fde72b1748e74a396518aa",
+  "policy_sha256": "ef9eebfc074f4b9db708682ec0ac99b3533fe6f4c4433490c3e1cb7fd7f8bd32",
+  "prior_source_review_sha256": "fa73974c0e08eb58921f7095029fff636188ee06e3cd899a2f11a6653ea26ee6",
+  "prior_source_review": "research/mtp-context-depth-20260921/latest-receipts/boundary-review.json",
+  "source_rule_pins": [
+    {
+      "file": "crates/memra-server/src/auth.rs",
+      "sha256": "1443d4222b483c154298289169251bd673e9fd0791c492b1d8b0e2c88949ca0f",
+      "rules": [
+        "minted_api_key",
+        "api_key_prefix"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "crates/memra-tokenizer/tests/fixtures/nfc/fixtures.json",
+      "sha256": "5aff55b286b60cbcf6f7ab470a6d0c3e53d2e7c1e5e5bf1e2705144735a2fe9b",
+      "rules": [
+        "runpod_pod_id_bare"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/apikeys-gate.sh",
+      "sha256": "19865f2b3ad5e94f0e22e61860ba3ed79fa28f34487a1ac0c93932e780d58536",
+      "rules": [
+        "apikeys_gate"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/cache-meter-gate.py",
+      "sha256": "9be02e7a3f6ed7f0092f95f7ac82a53115443596eb49dec8db910a1349597de1",
+      "rules": [
+        "cache_meter_gate"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/fleet-meter.sh",
+      "sha256": "a033456066c9822614887e95b17daad678441bfe9e1d036e96eb053b1e290fcf",
+      "rules": [
+        "fleet_meter"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/fleet-replay.py",
+      "sha256": "51cf211369b9a6288e6761595686186d132638754ba3a15e7ee5922580ee36f4",
+      "rules": [
+        "fleet_replay"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/fleet-report.py",
+      "sha256": "7da139fe0801258ab3ea572a071d1f214c5067964608899144b8a6d3df02da9f",
+      "rules": [
+        "fleet_report"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/load-serve.py",
+      "sha256": "11af715650c5ee04c8f9fd02cdfe4d5d2e905b28d19d77e3b95ada9a02a73cd4",
+      "rules": [
+        "load_serve"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/serve-fleet.sh",
+      "sha256": "22951572072736db9628b0c713ab9efb591fbb7a172191b1dcc2670515b6091d",
+      "rules": [
+        "serve_fleet"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/serve-proxy.py",
+      "sha256": "2a4755af6a919b189fe1a39eecf17b7bfc68e381b36c4253ef8ea950b1f3a397",
+      "rules": [
+        "serve_proxy"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/test_fleet_replay.py",
+      "sha256": "679a817d35791cd715dd683088806ed4e32719def9d38bf4a3774949170d0c56",
+      "rules": [
+        "fleet_replay_test"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    },
+    {
+      "file": "tools/test_fleet_report.py",
+      "sha256": "d3f1c286ac2ec9d908f0a72a59b432e568f67312055b566cae0555e1f936ceb2",
+      "rules": [
+        "fleet_report_test"
+      ],
+      "reason": "Exact archived source blob and rule set match its checked-in source approval."
+    }
+  ],
+  "record_rule_pins": [
+    {
+      "archive": "native-data.tar.gz",
+      "file": "@compressed",
+      "sha256": "01e652ea2ea4bf57ecb8991c44c5d0cc5d7c2baff3243af90dd6bade341fee14",
+      "rules": [
+        "provider_name_aws"
+      ],
+      "reason": "Provider-name byte coincidence in the compressed stream. The complete expanded inventory has no new secret/data matches; source findings match the previously reviewed exact source hashes."
+    },
+    {
+      "archive": "runtime-source.tar.gz",
+      "file": "@compressed",
+      "sha256": "863dc131a061930e3ea8b2a5b01653cd2dc9b82ba89bac426ea0953723ae0251",
+      "rules": [
+        "provider_name_aws"
+      ],
+      "reason": "Provider-name byte coincidence in the compressed stream. The complete expanded inventory has no new secret/data matches; source findings match the previously reviewed exact source hashes."
+    }
+  ],
+  "verification": {
+    "status": "passed",
+    "scanner_report_sha256": "04e7521b912b97acaa5ef71aedc0d8579e226d96dba486c3cb2011df8166bf95",
+    "report_sha256": "4a0f1ef2e582d1ea93159dbbec2a2ba485dc52bc295581287e721a5c6ef98df4",
+    "result_json_sha256": "4f3ec393353ffec47ba470f7c32b7e478f1e54bb9172fd6501e1e29e450e758d"
+  }
+}

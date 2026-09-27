@@ -1,0 +1,118 @@
+test worker::tests::option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_span_refusal_returns_every_plane_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_spans_ride_the_ticket_and_land_bitwise ... ok
+test worker::tests::option_c_first_ready_view_failure_unwinds_through_the_published_arm ... ok
+test worker::tests::option_c_partial_acceptance_unwinds_refused_with_every_destination_released ... ok
+test worker::tests::option_c_postpublish_refusal_retires_the_ticket_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_presubmit_refusal_releases_every_destination_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_promote_routes_every_contract_plane_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_receipt_mismatch_cancels_before_publication_and_recovers_the_source ... ok
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 841 filtered out; finished in 0.30s
+test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ok
+test tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt ... ok
+test tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle ... ok
+test tier_transfer::tests::d2d_receipt_digest_price_against_the_copy ... D2D-RECEIPT PRICE order=copy-first bytes=165675008 n_per_arm=5 copy_ms=[0.15632, 0.155168, 0.155104, 0.15712, 0.155072] copy_median=0.155 digest_ms=[0.17088, 0.167584, 0.16944, 0.166848, 0.173376] digest_median=0.169 pair_median=0.339 pair_over_copy=2.18
+test tier_transfer::tests::d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait ... ok
+test tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 557 filtered out; finished in 3.67s
+test worker::tests::hash_fault_door_values_are_the_helpers_and_never_the_contract_routes ... ok
+test worker::tests::the_d2h_spans_ride_the_ticket_in_the_stated_order ... ok
+test worker::tests::every_path_that_meets_a_demoting_entry_settles_it_first ... ok
+test worker::tests::hash_helper_gone_is_a_typed_refusal_that_latches_under_poll_and_under_block ... ok
+test worker::tests::the_run_loop_waits_boundedly_when_the_queue_is_only_requests_parked_on_a_promote ... ok
+test worker::tests::every_path_that_meets_a_hashing_demote_meets_it_through_the_same_settle ... ok
+test worker::tests::hashing_hit_parks_the_request_once_per_id_and_a_miss_does_not ... ok
+test worker::tests::hashing_demote_keeps_its_state_until_the_digests_land_then_reaches_publication ... ok
+test worker::tests::hash_digests_never_landing_latch_at_the_deadline_under_poll_and_under_block ... ok
+test worker::tests::hash_helper_digests_equal_the_owner_thread_digests_bitwise ... ok
+test worker::tests::hash_reply_that_does_not_describe_the_image_is_a_typed_refusal_that_latches ... ok
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 840 filtered out; finished in 0.36s
+test d2h_span_bindings::d2h_span_enqueue_failure_quarantines_the_ticket ... ok
+test d2h_span_bindings::d2h_span_batch_lands_with_its_ticket_and_comes_back_once ... ok
+test d2h_span_bindings::d2h_span_red_arm_a_take_on_the_items_landing_fails ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 87 filtered out; finished in 0.00s
+unit-cells rc=0 engine-rc=0 hash-rc=0 tier-rc=0
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "research/spill-a-20260919/pro-single-day30/unit-cells.sh",
+    "3"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 192710647595780,
+  "ended_monotonic_ns": 192906655988259,
+  "started_utc": "2026-09-22T20:23:45.641454+00:00",
+  "ended_utc": "2026-09-22T20:27:01.649848+00:00",
+  "elapsed_seconds": 196.008392479,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 3493,
+    "sha256": "c59a4f7af93ddedee5a4cc545e258a314371bd52d386ae1d50a5f3bbcafdb8e1"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 79335,
+      "sha256": "abacd23044706a1e351810e0981ca88777f594fa561adb5c93e4758df124bfb4"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}

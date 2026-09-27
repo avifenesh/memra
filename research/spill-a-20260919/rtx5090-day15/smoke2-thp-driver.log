@@ -1,0 +1,125 @@
+{"kind": "pinned-host-reserve-bench", "issue": "memra#385", "cell": "smoke2-thp", "arms": ["single", "thp"], "bytes": 1073741824, "basis": "bytes", "fraction": null, "margin_bytes": null, "chunks": null, "pairs_per_order": 1, "floor": 1.1, "hugepage_min_fraction": 0.9, "mem_total": 65390514176, "mem_available_at_start": 56130543616, "mem_free_at_start": 4030107648, "anon_huge_at_start": 0, "hugepages_total": 0, "thp_mode": "always [madvise] never", "cpus": 24, "gpu_at_start": "54, 28.58 W, [N/A], 1590 MHz", "loadavg_at_start": ["2.49", "3.96", "3.17"]}
+{"roundtrip": {"arm": "single", "reserve": {"ok": true, "rc": 0, "alloc_ms": 236.86939700564835}, "ok": true, "driver_flags": [{"rc": 0, "flags": 3}], "wc_bit_absent": true, "flags_read_ok": true, "portable_bit_set": true, "blocks": 512, "mismatched_blocks": 0, "byte_exact": true, "h2d_rc": [0], "d2h_rc": [0], "device_free_rc": 0, "release_rc": [0], "fill_ms": 69.27775399526581, "h2d_ms": 37.469382004928775, "wipe_ms": 16.329181991750374, "d2h_ms": 46.892837999621406, "compare_ms": 305.53449400758836, "h2d_gib_per_s": 26.688457254738246, "d2h_gib_per_s": 21.325218149690013, "mem_available_before": 56030351360, "utc": "2026-09-21T16:46:59Z"}}
+{"roundtrip": {"arm": "thp", "reserve": {"ok": true, "rc": 0, "alloc_ms": 879.8808910069056, "mmap_ms": 0.024988999939523637, "madvise_ms": 0.006690999725833535, "madvise_rc": 0, "madvise_errno": 0, "register_ms": 879.8492110072402, "anon_huge_bytes": 991952896, "anon_huge_fraction": 0.923828125}, "ok": true, "driver_flags": [{"rc": 0, "flags": 3}], "wc_bit_absent": true, "flags_read_ok": true, "blocks": 512, "mismatched_blocks": 0, "byte_exact": true, "h2d_rc": [0], "d2h_rc": [0], "device_free_rc": 0, "release_rc": [0, 0], "fill_ms": 68.39212100021541, "h2d_ms": 37.47973400459159, "wipe_ms": 16.177105004317127, "d2h_ms": 38.08933499385603, "compare_ms": 306.3408449961571, "h2d_gib_per_s": 26.681085833679912, "d2h_gib_per_s": 26.254068236195362, "mem_available_before": 56214048768, "utc": "2026-09-21T16:47:01Z"}}
+{"ok": true, "rc": 0, "alloc_ms": 210.44711400463711, "free_ms": 53.53183900297154, "free_rc": [0], "order": "AB", "pair": 0, "arm": "single", "mem_available_before": 56214048768, "mem_free_before": 5179084800, "utc": "2026-09-21T16:47:01Z"}
+{"ok": true, "rc": 0, "alloc_ms": 112.89064498851076, "mmap_ms": 0.023782995413057506, "madvise_ms": 0.00523999915458262, "madvise_rc": 0, "madvise_errno": 0, "register_ms": 112.86162199394312, "anon_huge_bytes": 1073741824, "anon_huge_fraction": 1.0, "free_ms": 12.32237099611666, "free_rc": [0, 0], "order": "AB", "pair": 0, "arm": "thp", "mem_available_before": 56206983168, "mem_free_before": 5172015104, "utc": "2026-09-21T16:47:01Z"}
+{"ok": true, "rc": 0, "alloc_ms": 95.72995601047296, "mmap_ms": 0.01441400672774762, "madvise_ms": 0.003731998731382191, "madvise_rc": 0, "madvise_errno": 0, "register_ms": 95.71181000501383, "anon_huge_bytes": 1073741824, "anon_huge_fraction": 1.0, "free_ms": 11.71689000329934, "free_rc": [0, 0], "order": "BA", "pair": 0, "arm": "thp", "mem_available_before": 56616206336, "mem_free_before": 5790724096, "utc": "2026-09-21T16:47:01Z"}
+{"ok": true, "rc": 0, "alloc_ms": 225.19902299973182, "free_ms": 61.25103699741885, "free_rc": [0], "order": "BA", "pair": 0, "arm": "single", "mem_available_before": 56614432768, "mem_free_before": 5994987520, "utc": "2026-09-21T16:47:01Z"}
+{
+ "summary": {
+  "single": {
+   "n": 2,
+   "alloc_ms_median": 217.82306850218447,
+   "alloc_ms_min": 210.44711400463711,
+   "alloc_ms_max": 225.19902299973182,
+   "free_ms_median": 57.391438000195194,
+   "alloc_gib_per_s_median": 4.5961521315484735,
+   "alloc_ms_median_AB": 210.44711400463711,
+   "alloc_ms_median_BA": 225.19902299973182
+  },
+  "thp": {
+   "n": 2,
+   "alloc_ms_median": 104.31030049949186,
+   "alloc_ms_min": 95.72995601047296,
+   "alloc_ms_max": 112.89064498851076,
+   "free_ms_median": 12.019630499708,
+   "alloc_gib_per_s_median": 9.652090445559711,
+   "register_ms_median": 104.28671599947847,
+   "anon_huge_fraction_min": 1.0,
+   "alloc_ms_median_AB": 112.89064498851076,
+   "alloc_ms_median_BA": 95.72995601047296
+  }
+ },
+ "status": "executed-not-qualified"
+}
+ARENA-RESERVE rule cell=smoke2-thp candidate=thp bytes=1073741824 n_per_order=1 pooled=2 alloc_ok=true roundtrip_exact_single=true roundtrip_exact_candidate=true wc_bit_absent=true flags_read_ok=true portable_bit_set=true hugepage_fraction=0.9238 hugepage_ok=true cand_below_single_pairs=2/2 medians_both_orders=true pooled_single_ms=217.823 pooled_candidate_ms=104.310 ratio=2.0882 floor=1.10 materiality=true candidate_arm=wins-on-this-card
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "python3",
+    "/home/avifenesh/projects/wt-spill-a/tools/pinned-host-reserve-bench.py",
+    "--bytes",
+    "1073741824",
+    "--arms",
+    "single,thp",
+    "--chunks",
+    "8",
+    "--pairs-per-order",
+    "1",
+    "--roundtrip",
+    "--cell",
+    "smoke2-thp",
+    "--out",
+    "/home/avifenesh/projects/wt-spill-a/research/spill-a-20260919/rtx5090-day15/smoke2-thp/receipt.json"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "[N/A]",
+      "power.max_limit": "175.00 W"
+    }
+  ],
+  "started_monotonic_ns": 113438692316235,
+  "ended_monotonic_ns": 113442345948773,
+  "started_utc": "2026-09-21T16:46:58.742775+00:00",
+  "ended_utc": "2026-09-21T16:47:02.396408+00:00",
+  "elapsed_seconds": 3.653632538,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 4624,
+    "sha256": "4f8c203f688b40ff627c38635867c598c232c10816d9c1ae1be260b68005afe0"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 1669,
+      "sha256": "9b9710f41cd0c5ec0f00e4459603d81c4f3602070e256c4ac7103064169c8fb2"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}

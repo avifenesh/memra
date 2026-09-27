@@ -1,0 +1,35 @@
+== fmt: cargo fmt --all -- --check
+== fmt rc=0 elapsed=3s
+== wrapper: tools/portable-suites.sh
+== wrapper rc=0 elapsed=16s
+== teeth: tools/test_portable_suites.sh
+== teeth rc=0 elapsed=18s
+== gpu-ci-tests: python3 tools/test_gpu_ci.py
+== gpu-ci-tests rc=0 elapsed=0s
+== gpu-ci-floor: tools/unittest-floor.sh tools test_gpu_ci.py 9
+== gpu-ci-floor rc=0 elapsed=0s
+== pytest: python3 -m pytest -q crates/memra-tier/tests/battery/
+== pytest rc=0 elapsed=18s
+== check-flags: bash tools/check-flags.sh
+== check-flags rc=0 elapsed=1s
+== docs-census: bash tools/docs-registry-census.sh
+== docs-census rc=0 elapsed=0s
+== diff-check: git diff --check
+== diff-check rc=0 elapsed=0s
+== yaml-load: python3 -c import yaml; yaml.safe_load(open('.github/workflows/ci.yml')); yaml.safe_load(open('.github/workflows/gpu-ci.yml')); print('safe_load ok')
+== yaml-load rc=0 elapsed=0s
+== workflow-keys: python3 tools/check-workflow-keys.py
+== workflow-keys rc=0 elapsed=0s
+== workflow-keys-teeth: tools/test_workflow_keys.sh
+== workflow-keys-teeth rc=0 elapsed=1s
+== change-class-teeth: tools/test_ci_change_class.sh
+== change-class-teeth rc=0 elapsed=0s
+== unittest-floor-teeth: tools/test_unittest_floor.sh
+== unittest-floor-teeth rc=0 elapsed=0s
+== action-pins: tools/check-action-pins.sh
+== action-pins rc=0 elapsed=0s
+== shellcheck: shellcheck -S warning tools/portable-suites.sh tools/ci-portable.sh tools/test_portable_suites.sh tools/test_workflow_keys.sh tools/hooks/pre-push
+== shellcheck rc=0 elapsed=0s
+== hook-parse: bash -n tools/hooks/pre-push
+== hook-parse rc=0 elapsed=0s
+== battery done

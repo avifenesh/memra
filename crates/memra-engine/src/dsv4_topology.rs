@@ -97,8 +97,26 @@ impl Dsv4TopologyPlan {
     }
 }
 
-/// Gate-only process switch.  No environment variable or serving request can
-/// select the topology after load.
+/// Where a two-card load places the model. The server passes it to `Dsv4Gpu::load_placed`
+/// (memra #710: TP/EP with attention TP2 is the served default, PP-2 the rollback); gates
+/// arm it through the process switches below and call `Dsv4Gpu::load`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Dsv4Placement {
+    /// Two pipeline stages over a layer split, optionally with whole-expert EP.
+    Pp,
+    /// Every trunk layer on both ranks with the expert-ID EP pair; attention is split by head
+    /// (exact attention TP2) when `attention_tp`, replicated otherwise.
+    TpEp { attention_tp: bool },
+}
+
+impl Dsv4Placement {
+    pub const fn is_tp_ep(self) -> bool {
+        matches!(self, Self::TpEp { .. })
+    }
+}
+
+/// Gate-only process switch, read by `Dsv4Gpu::load`. A serving process passes its placement
+/// to `Dsv4Gpu::load_placed` instead, and no request can change it after load.
 pub fn set_tp_ep_for_gate(enabled: bool) -> bool {
     TP_EP_FOR_GATE.swap(enabled, Ordering::SeqCst)
 }

@@ -1,0 +1,129 @@
+2026-09-21T23:57:13Z lock held by the collector (external)
+ii-L2-r0 | ii | 5706 | 96 | 0 | spec | 31552 | 5866 | 5810 | 183317120 | 183064704 | 1.00 | 2975 | 53063843840 | 53063843840 | 45699656140 | 36473641032 | 2484 | own
+ii-L2-r1 | ii | 5702 | 96 | 0 | spec | 31552 | 5862 | 5806 | 183190912 | 182938496 | 1.00 | 2975 | 53063843840 | 53063843840 | 36473641032 | 27903976776 | 2404 | own
+ii-L2-r2 | ii | 5695 | 96 | 0 | spec | 31552 | 5855 | 5799 | 182970048 | 182717632 | 1.00 | 2975 | 53063843840 | 53063843840 | 27903976776 | 19337207880 | 2445 | own
+ii-L2-r3 | ii | 5692 | 96 | 0 | spec | 31552 | 5852 | 5796 | 182875392 | 182622976 | 1.00 | 2975 | 53063843840 | 53063843840 | 19337207880 | 19336840392 | 2464 | own
+ii-L2-r4 | ii | 5689 | 96 | 0 | spec | 31552 | 5849 | 5793 | 182780736 | 182528320 | 1.00 | 2975 | 53063843840 | 53063843840 | 19336840392 | 19336506312 | 2545 | own
+== per-arm allocated over used (verbatim per row, then N, min, median, max)
+arm=i L0 N=5 P=[1481, 1481, 1484, 1484, 1483] G=[591, 369, 589, 457, 545] cached=[0, 0, 0, 0, 0] ratios=[126.52, 141.7, 126.46, 135.06, 129.26] min=126.46 median=129.26 max=141.70 alloc_B=8271167488 used_B_median=63987456 booked_MB=[9291, 9777, 9779, 9779, 9778] inherited=0
+arm=i L1 N=5 P=[3138, 3138, 3139, 3138, 3136] G=[478, 954, 673, 508, 494] cached=[0, 0, 0, 0, 0] ratios=[72.5, 64.06, 68.77, 71.9, 72.22] min=64.06 median=71.90 max=72.50 alloc_B=8271167488 used_B_median=115038592 booked_MB=[10571, 10571, 10572, 10571, 10571] inherited=0
+arm=i L2 N=5 P=[5797, 5803, 5802, 5805, 5803] G=[629, 497, 505, 443, 354] cached=[0, 0, 0, 0, 0] ratios=[40.79, 41.61, 41.56, 41.96, 42.58] min=40.79 median=41.61 max=42.58 alloc_B=8271167488 used_B_median=198777600 booked_MB=[11065, 11066, 11066, 11066, 11066] inherited=0
+arm=ii L0 N=5 P=[1715, 1714, 1713, 1713, 1710] G=[96, 96, 96, 96, 96] cached=[0, 0, 0, 0, 0] ratios=[1.0, 1.0, 1.0, 1.0, 1.0] min=1.00 median=1.00 max=1.00 alloc_B=57393088 used_B_median=57077568 booked_MB=[1675, 1675, 1674, 1674, 1673] inherited=1
+arm=ii L1 N=5 P=[3000, 3003, 2999, 2992, 2991] G=[96, 96, 96, 96, 96] cached=[0, 0, 0, 0, 0] ratios=[1.0, 1.0, 1.0, 1.0, 1.0] min=1.00 median=1.00 max=1.00 alloc_B=97937408 used_B_median=97653440 booked_MB=[2332, 2333, 2331, 2328, 2327] inherited=0
+arm=ii L2 N=5 P=[5706, 5702, 5695, 5692, 5689] G=[96, 96, 96, 96, 96] cached=[0, 0, 0, 0, 0] ratios=[1.0, 1.0, 1.0, 1.0, 1.0] min=1.00 median=1.00 max=1.00 alloc_B=183317120 used_B_median=182717632 booked_MB=[2975, 2975, 2975, 2975, 2975] inherited=0
+arm=iii L0 N=5 P=[1572, 1565, 1595, 1563, 1580] G=[384, 239, 227, 484, 561] cached=[1440, 1440, 1440, 1440, 1440] ratios=[134.02, 145.31, 143.88, 128.06, 122.44] min=122.44 median=134.02 max=145.31 alloc_B=8271167488 used_B_median=61715712 booked_MB=[9821, 9818, 9832, 9817, 9825] inherited=0
+arm=iii L1 N=5 P=[3236, 3220, 3228, 3234, 3223] G=[564, 621, 407, 319, 211] cached=[3104, 3104, 3104, 3104, 3104] ratios=[68.99, 68.25, 72.12, 73.78, 76.34] min=68.25 median=72.12 max=76.34 alloc_B=8271167488 used_B_median=114691520 booked_MB=[10618, 10611, 10615, 10617, 10612] inherited=0
+arm=iii L2 N=5 P=[5887, 5884, 5884, 5868, 5885] G=[345, 487, 576, 354, 539] cached=[5760, 5760, 5760, 5760, 5760] ratios=[42.06, 41.15, 40.58, 42.13, 40.81] min=40.58 median=41.15 max=42.13 alloc_B=8271167488 used_B_median=201017792 booked_MB=[11067, 11067, 11067, 11067, 11067] inherited=0
+== driver free (bytes) across the run
+samples=665 driver_free first=0 min=0 last=53063843840; pool_used first=0 max=45779546572 last=19336305864
+== concurrency arithmetic at the served context (idle free at ready divided by the booked cost; not an admission run)
+idle driver free before the first request (max of 8 nonzero samples; the ready-time gauges read 0 until the first tick): 82759516160
+L0: P~1483 open booked_MB=9778 -> 8 sessions; bounded booked_MB=1674 -> 49 sessions (free_ready=82759516160)
+L1: P~3138 open booked_MB=10571 -> 7 sessions; bounded booked_MB=2331 -> 35 sessions (free_ready=82759516160)
+L2: P~5803 open booked_MB=11066 -> 7 sessions; bounded booked_MB=2975 -> 27 sessions (free_ready=82759516160)
+== prefix-cache and park lines (census by kind, verbatim first of each)
+   45  [prefix-cache] insert (spec-boundary)  first: [prefix-cache] insert (spec-boundary): 1440 tokens, 202.3MB (resident 202.3MB / 800MB, model q38)
+   43  [prefix-cache] evict (LRU)  first: [prefix-cache] evict (LRU): 1536 tokens, 205.4MB (model q38)
+   15  [prefix-cache] hit  first: [prefix-cache] hit: 1440 of 1572 prompt tokens from cache (model q38)
+   15  [prefix-cache] spec  first: [prefix-cache] spec restore: 1440 of 1572 prompt tokens + draft plane from cache [suffix queued] (model q38)
+    1  [prefix-cache] on  first: [prefix-cache] on: budget 800MB (800325632 B, derived: 2 x 400162816 B max entry for model "q38" at MEMRA_CTX=8192, requested 800325632 B; boot driver free 86519709696 B, post-reserve clamp 8490909696
+prefix-cache hit lines: 15
+== admit-predict lines (verbatim, first 6 and last 3)
+[admit-predict] id=chatcmpl-75b09f220d5fd54f1a90c6bd403ac08a tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=132 predicted_completion=32 kv_hat=117222160 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-b2eed4e0f9ee87f8385ee5bbd527bd72 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1481 predicted_completion=32 kv_hat=1114477480 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-d61780e8f31f34467fa6bcaa7a8ea80d tenant="" model="q38" verdict=admit reason=global-p95 prompt=1572 predicted_completion=591 kv_hat=1722460056 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-8d291568abe54db2bdc7657aea7433ad tenant="" model="q38" verdict=admit reason=global-p95 prompt=1481 predicted_completion=591 kv_hat=1675999192 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-388a30b9ae1b88477c9a9b1bac69e4cd tenant="" model="q38" verdict=admit reason=global-p95 prompt=1565 predicted_completion=591 kv_hat=1718905048 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-a6022291fb122b8f7470f9522c4556a4 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1484 predicted_completion=591 kv_hat=1677531544 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-2ef28c0457af7bada9e5fe43a1f92026 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5695 predicted_completion=96 kv_hat=3079280280 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-51dd35c8475a5cc87895e74850fb327e tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5692 predicted_completion=96 kv_hat=3079124184 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-98c973f9d2127db619bcdc5693d47026 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5689 predicted_completion=96 kv_hat=3078968088 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+requests_ok=45 non200=0
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "env",
+    "WT=/root/wt-b",
+    "RIGDIR=/root/spill-receipts/b-day26/cells",
+    "MODEL=/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "MODEL_KEY=q38",
+    "LOCK=none",
+    "NO_SCOPE=1",
+    "PORT=18526",
+    "WARM_IMMEDIATE=1",
+    "bash",
+    "research/spill-b-20260919/run-day26-cell.sh",
+    "warm",
+    "AB"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 119118392977101,
+  "ended_monotonic_ns": 119301761509163,
+  "started_utc": "2026-09-21T23:57:13.386835+00:00",
+  "ended_utc": "2026-09-22T00:00:16.755368+00:00",
+  "elapsed_seconds": 183.368532062,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 7701,
+    "sha256": "6970e67e67b4eeb40088f0ee4e3a33d1efb3ffcfdf8fafd9a1519e66ed2b10bc"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 80304,
+      "sha256": "a06c6b4d598f48bce02911e2ee800d1e668fbc93622f66e1f3eaeb91c3374558"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}

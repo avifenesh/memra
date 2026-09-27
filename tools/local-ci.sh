@@ -164,6 +164,22 @@ cpu_chain() {
     else
         echo "local-ci: gguf skip census SKIPPED (MEMRA_CI_GGUF=0)" >&2
     fi
+    # TIER, KV AND ONBOARDING-CLI SUITES (memra #545, lane/spill-d day 13, 2026-09-21). Until
+    # this line no standing gate EXECUTED them: build and clippy compiled them, and the 325
+    # tests (memra-tier's six integration suites and compile-fail doctests, memra-kv, the
+    # memra-cli onboarding receipts) ran only when a lane ran them by hand. One wrapper,
+    # tools/portable-suites.sh, the same text ci.yml's portable-suites job runs, through the
+    # skip census at budget 0; its teeth (tools/test_portable_suites.sh) run in CI. CPU
+    # execution, never GPU qualification. CARGO_BUILD_JOBS and RUST_TEST_THREADS are cargo's
+    # and libtest's own knobs, set to the rig cap like the -j8 above (the test-thread cap came
+    # from #590's second caller, folded here on day 14; the wrapper is the ONE entry point, so
+    # the three crates build and run once per local-ci). No skip door: the suites are CPU-only
+    # and about 25 s warm (the first run after a clean pays a debug build of
+    # gguf/reference/tokenizer/tier/kv/cli).
+    echo "== local-ci: tier, KV and onboarding-CLI suites (tools/portable-suites.sh) =="
+    if ! CARGO_BUILD_JOBS=8 RUST_TEST_THREADS=8 tools/portable-suites.sh; then
+        echo "local-ci: tier/KV/CLI suites FAILED (tools/portable-suites.sh)"; return 1
+    fi
 }
 # OVERLAP (ci-diet lane 2026-09-02). The three steps above are CPU-bound and touch no GPU;
 # every gate below the lock is GPU-bound and leaves most cores idle. Serial, the correctness
@@ -181,7 +197,7 @@ CPU_PID=""
 trap 'if [ -n "${CPU_PID:-}" ] && kill -0 "$CPU_PID" 2>/dev/null; then pkill -TERM -P "$CPU_PID" 2>/dev/null || true; kill "$CPU_PID" 2>/dev/null || true; echo "local-ci: CPU chain killed on exit; its log is kept at $CPU_LOG" >&2; fi' EXIT
 if [ "$MODE" = "--correctness" ] && [ "${MEMRA_CI_OVERLAP:-1}" = "1" ]; then
     CPU_LOG=$(mktemp "${TMPDIR:-/tmp}/local-ci-cpu-chain.XXXXXX")
-    echo "local-ci: CPU chain (clippy, memra-server suite, memra-engine lib suite) running alongside the GPU gates; log $CPU_LOG"
+    echo "local-ci: CPU chain (clippy, memra-server suite, memra-engine lib suite, gguf census, tier/KV/CLI suites) running alongside the GPU gates; log $CPU_LOG"
     cpu_chain > "$CPU_LOG" 2>&1 &
     CPU_PID=$!
 else
@@ -393,6 +409,29 @@ else
     echo "prime-gate: SKIP (no q35 model at $Q35)"
 fi
 
+# CONTINUATION GATE (memra#427): a restored suffix prime must equal the one-call prime at every
+# grid-aligned split, INCLUDING a final segment of exactly PRIME_MIN_T (16) rows. That shape was
+# the one prime call that rode the batched decode/verify mmvq tier (`2..=16`) instead of the
+# prefill program; the tier now ends at PRIME_MIN_T-1 outside the verify scope, and this arm is
+# what keeps it there. Tails 16/48/80 over a 9,296-token repo-text prompt on the 9B NVFP4 GDN
+# hybrid (the served class); about 40 s. MEMRA_CI_CONTGATE=0 skips; MEMRA_CI_CONT_MODEL overrides.
+CONT_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
+if [ "${MEMRA_CI_CONTGATE:-1}" = "1" ] && [ -f "$CONT_MODEL" ]; then
+    echo "== local-ci: prime continuation gate (one call vs head + tail; tails 16/48/80) =="
+    [ -x target/release/qwen-a4-continuation-gate ] \
+        || cargo build --release -p memra-engine --bin qwen-a4-continuation-gate >/dev/null 2>&1
+    CONT_PROMPT=$(mktemp "${TMPDIR:-/tmp}/local-ci-cont-prompt.XXXXXX")
+    cat docs/FLAGS.md docs/TESTING.md > "$CONT_PROMPT"
+    out=$(NVIDIA_TF32_OVERRIDE=0 target/release/qwen-a4-continuation-gate "$CONT_MODEL" "$CONT_PROMPT" 9296 16 48 80 2>&1 || true)
+    rm -f "$CONT_PROMPT"
+    echo "$out" | grep -E '^  [0-9]+ \+ [0-9]+:' || true
+    echo "$out" | grep -q "CONTINUATION GATE: PASS" \
+        || { echo "$out" | tail -12; echo "prime continuation gate FAIL (a split differs from the one-call prime)"; exit 1; }
+    echo "prime continuation gate: PASS (16/48/80-row tails bitwise with the one-call prime)"
+else
+    echo "prime continuation gate: SKIP (no 9B NVFP4 model at $CONT_MODEL or MEMRA_CI_CONTGATE=0)"
+fi
+
 # The standing MTP exactness gate. A naked run-spec invocation sweeps K=1..8; explicitly clear
 # single-K and alternate-mode env so a caller cannot silently narrow or change the gate.
 # The Gemma-4 31B target below uses a separate assistant-drafter API, so its independent
@@ -460,14 +499,18 @@ if [ -f "$G31" ]; then
     tools/argmax-margin-gate.sh "$G31" || { echo "argmax-margin-gate FAIL (31B)"; exit 1; }
     echo "argmax-margin-gate: PASS (31B, calibrated)"
     # shellcheck disable=SC2046
-    out=$(MEMRA_VERIFY_GATE=7 target/release/gemma-gate "$G31" $(cat "$DEPTH") 2>&1)
+    # `|| true` inside every gate capture below: under `set -e` a failing gate made the
+    # `out=$(...)` assignment exit the battery before its own verdict line printed (seen
+    # 2026-09-21: a decode-batch-gate red left only "LOCAL_CI_RC=1" after the 12B SKIP line).
+    # The grep that follows each capture is the verdict; the tail it prints is the evidence.
+    out=$(MEMRA_VERIFY_GATE=7 target/release/gemma-gate "$G31" $(cat "$DEPTH") 2>&1 || true)
     echo "$out" | grep -q "VERIFY-GATE K=7: PASS" || { echo "VERIFY-GATE FAIL (31B depth)"; exit 1; }
     echo "VERIFY-GATE K=7 depth: PASS (31B)"
     D31="$MODELS/gemma4-31b-tooluse-gguf/gemma-4-31B-it-Q4_0-MTP.gguf"
     if [ -f "$D31" ]; then
         # shellcheck disable=SC2046
         out=$(MEMRA_SPEC=6 MEMRA_DRAFT="$D31" MEMRA_NGEN=64 target/release/gemma-gate "$G31" \
-            $(cat research/gemma4-bringup/e4b-chat-watercycle-ids.txt) 2>&1)
+            $(cat research/gemma4-bringup/e4b-chat-watercycle-ids.txt) 2>&1 || true)
         echo "$out" | grep -qE "stream agreement 64/64" || { echo "spec self-consistency FAIL (31B)"; exit 1; }
         echo "spec self-consistency 64/64: PASS (31B)"
     fi
@@ -479,11 +522,11 @@ fi
 G12="${MEMRA_G12_MODEL:-/data/ai-ml/models/gemma-4-12b-it-qat/gemma-4-12b-it-qat-q4_0.gguf}"
 if [ -f "$G12" ]; then
     # shellcheck disable=SC2046
-    out=$(MEMRA_NGEN=8 target/release/run-gen "$G12" $(cat "$DEPTH") 2>&1)
+    out=$(MEMRA_NGEN=8 target/release/run-gen "$G12" $(cat "$DEPTH") 2>&1 || true)
     echo "$out" | grep -q "MATCH" || { echo "run-gen argmax FAIL (12B depth)"; exit 1; }
     echo "run-gen argmax depth: MATCH (12B)"
     # shellcheck disable=SC2046
-    out=$(MEMRA_VERIFY_GATE=7 target/release/gemma-gate "$G12" $(cat "$DEPTH") 2>&1)
+    out=$(MEMRA_VERIFY_GATE=7 target/release/gemma-gate "$G12" $(cat "$DEPTH") 2>&1 || true)
     echo "$out" | grep -q "VERIFY-GATE K=7: PASS" || { echo "VERIFY-GATE FAIL (12B depth)"; exit 1; }
     echo "VERIFY-GATE K=7 depth: PASS (12B)"
 else
@@ -513,14 +556,14 @@ DBG_Q8="${MEMRA_CI_DBG_Q8:-$MODELS/ornith-1.0-9b-gguf/ornith-1.0-9b-Q8_0.gguf}"
 [ -x target/release/decode-batch-gate ] \
     || cargo build --release -p memra-engine --bin decode-batch-gate >/dev/null 2>&1
 if [ -f "$DBG_NVFP4" ]; then
-    out=$(target/release/decode-batch-gate "$DBG_NVFP4" --steps 32 --batch 8 --mode config 2>&1)
+    out=$(target/release/decode-batch-gate "$DBG_NVFP4" --steps 32 --batch 8 --mode config 2>&1 || true)
     echo "$out" | grep -q "ALL GREEN" \
         || { echo "$out" | tail -20; echo "decode-batch-gate FAIL (NVFP4 config B=8)"; exit 1; }
     echo "$out" | grep -Eq "global setting = OFF; effective .* = OFF" \
         || { echo "$out" | tail -20; echo "decode-batch-gate default B1 policy FAIL (NVFP4)"; exit 1; }
     echo "decode-batch-gate config B=8: ALL GREEN (9B NVFP4)"
     out=$(MEMRA_SERVE_B1FAST=1 MEMRA_MMVQ=0 MEMRA_NO_FUSE_NORMQ=1 target/release/decode-batch-gate \
-        "$DBG_NVFP4" --steps 32 --batch 4 --mode strict 2>&1)
+        "$DBG_NVFP4" --steps 32 --batch 4 --mode strict 2>&1 || true)
     echo "$out" | grep -q "ALL GREEN" \
         || { echo "$out" | tail -20; echo "decode-batch-gate FAIL (NVFP4 strict B=4)"; exit 1; }
     echo "decode-batch-gate strict B=4 equalized: ALL GREEN (9B NVFP4)"
@@ -532,14 +575,14 @@ else
 fi
 if [ -f "$DBG_Q8" ]; then
     out=$(MEMRA_Q8RP=1 target/release/decode-batch-gate "$DBG_Q8" \
-        --steps 32 --batch 8 --mode config 2>&1)
+        --steps 32 --batch 8 --mode config 2>&1 || true)
     echo "$out" | grep -q "ALL GREEN" \
         || { echo "$out" | tail -20; echo "decode-batch-gate FAIL (Q8_0 config B=8)"; exit 1; }
     echo "$out" | grep -Eq "global setting = OFF; effective .* = OFF" \
         || { echo "$out" | tail -20; echo "decode-batch-gate default B1 policy FAIL (Q8_0)"; exit 1; }
     echo "decode-batch-gate config B=8: ALL GREEN (9B Q8_0)"
     out=$(MEMRA_Q8RP=1 MEMRA_SERVE_B1FAST=1 MEMRA_MMVQ=0 MEMRA_NO_FUSE_NORMQ=1 target/release/decode-batch-gate \
-        "$DBG_Q8" --steps 32 --batch 4 --mode strict 2>&1)
+        "$DBG_Q8" --steps 32 --batch 4 --mode strict 2>&1 || true)
     echo "$out" | grep -q "ALL GREEN" \
         || { echo "$out" | tail -20; echo "decode-batch-gate FAIL (Q8_0 strict B=4)"; exit 1; }
     echo "decode-batch-gate strict B=4 equalized: ALL GREEN (9B Q8_0)"
@@ -547,6 +590,28 @@ elif [ -n "${MEMRA_CI_DBG_Q8:-}" ]; then
     echo "decode-batch-gate: MEMRA_CI_DBG_Q8 set but not a file: $DBG_Q8"; exit 1
 else
     echo "decode-batch-gate Q8_0: SKIP (no model at $DBG_Q8)"
+fi
+# PRIME EXACTNESS ON THE 9B (memra#641, research/decode-exact-641-20260923/): one numeric
+# program per request across the prime shapes. prime-batch-exact-gate runs prime-batch-gate
+# --exact (prime_cache_batch vs prime_cache bitwise per sequence, b3-p24, b4-p1100, carried
+# b3-p600) plus its canary; prime-tick-exact-gate replays the scheduler's #641 trace (fresh then
+# carried [A, B, C] 1024-row batches, solo ticks, a [B, C] wave) plus its canary. The exact gate
+# existed but no battery ran it on the 9B, and it was red there on 9c07b398b for as long as the
+# fresh varlen FA arm lived. Bins are built EXPLICITLY (the graph-lane precedent below). About
+# 1 min on the 9B NVFP4. MEMRA_CI_PRIME_EXACT=0 skips.
+PEX_MODEL="${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}"
+if [ "${MEMRA_CI_PRIME_EXACT:-1}" = "1" ] && [ -f "$PEX_MODEL" ]; then
+    echo "== local-ci: prime exactness on the 9B (memra#641) =="
+    cargo build --release -p memra-engine --bin prime-batch-gate --bin concat-prime-probe \
+        || { echo "prime-exact bins BUILD FAIL: refusing to gate on stale binaries"; exit 1; }
+    tools/prime-batch-exact-gate.sh "$PEX_MODEL" || { echo "prime-batch-exact-gate FAIL"; exit 1; }
+    tools/prime-batch-exact-gate.sh "$PEX_MODEL" --canary \
+        || { echo "prime-batch-exact-gate CANARY FAIL"; exit 1; }
+    tools/prime-tick-exact-gate.sh "$PEX_MODEL" || { echo "prime-tick-exact-gate FAIL"; exit 1; }
+    tools/prime-tick-exact-gate.sh "$PEX_MODEL" --canary \
+        || { echo "prime-tick-exact-gate CANARY FAIL"; exit 1; }
+else
+    echo "prime exactness: SKIP (no 9B NVFP4 model at $PEX_MODEL or MEMRA_CI_PRIME_EXACT=0)"
 fi
 # GRAPH-WARMUP STRESS (lane/graph-warmups, 2026-08-05): the pool-growth adversarial gate
 # behind the MEMRA_GRAPH_WARMUPS=1 default. Large<->small session cycles + overlap arm force
@@ -572,15 +637,15 @@ if [ "${MEMRA_CI_GRAPH:-1}" = "1" ]; then
         cargo build --release -p memra-engine \
             --bin decode-dc-gate --bin graph-decode-gate --bin graph-session-gate \
             || { echo "graph-lane bins BUILD FAIL — refusing to gate on stale binaries"; exit 1; }
-        out=$(target/release/decode-dc-gate "$GRAPH_MODEL" 2>&1)
+        out=$(target/release/decode-dc-gate "$GRAPH_MODEL" 2>&1 || true)
         echo "$out" | tail -1 | grep -q "PASS" \
             || { echo "$out" | tail -5; echo "decode-dc-gate FAIL"; exit 1; }
         echo "decode-dc-gate: PASS"
-        out=$(target/release/graph-decode-gate "$GRAPH_MODEL" 2>&1)
+        out=$(target/release/graph-decode-gate "$GRAPH_MODEL" 2>&1 || true)
         echo "$out" | tail -1 | grep -q "PASS" \
             || { echo "$out" | tail -5; echo "graph-decode-gate FAIL"; exit 1; }
         echo "graph-decode-gate: PASS"
-        out=$(target/release/graph-session-gate "$GRAPH_MODEL" 2>&1)
+        out=$(target/release/graph-session-gate "$GRAPH_MODEL" 2>&1 || true)
         echo "$out" | tail -1 | grep -q "ALL GREEN" \
             || { echo "$out" | tail -5; echo "graph-session-gate FAIL"; exit 1; }
         echo "graph-session-gate: ALL GREEN"
@@ -598,6 +663,22 @@ if [ "${MEMRA_CI_SERVE:-1}" = "1" ] && [ -x tools/serve-smoke.sh ]; then
     tools/serve-smoke.sh || { echo "serve-smoke FAIL"; exit 1; }
 fi
 
+# HEALTH, READINESS AND LIFECYCLE FAULT GATE (memra#524, the fault/lifecycle half of #526;
+# lane/spill-b-20260919 day 25). Boots the real server on the default smoke model seven times
+# (about 2 min on the 9B) and asserts HTTP codes plus body fields on /readyz, /health and the
+# request path: readiness before and after the boot calibration probe (phase=warming on the
+# respawn window), the three probe-skipped boots recorded as documented behaviour, a worker
+# panic through MEMRA_PANIC_AFTER (503 with the quoted payload, respawn, generation 1), a
+# gpu-watch fault that stays latched after the shadowed nvidia-smi answers again, and SIGTERM
+# with a stream open (readiness flips first, the stream reaches [DONE], exit 0). Wired because
+# two consecutive runs on the local RTX 5090 read identically (run1, run2 under
+# research/spill-b-20260919/rtx5090-day25/); its arms are boots and injected faults with
+# fixed doors, not timings, so nothing in them depends on the rig's load. In-battery per the
+# H100 lane law: gates outside the battery rot silently. MEMRA_CI_HEALTH_FAULT=0 skips.
+if [ "${MEMRA_CI_HEALTH_FAULT:-1}" = "1" ] && [ -x tools/health-fault-gate.sh ]; then
+    tools/health-fault-gate.sh || { echo "health-fault-gate FAIL"; exit 1; }
+fi
+
 # c=64 CONCURRENCY STRESS (lane/admit-oom, 2026-08-06): 64 staggered streaming clients on a
 # 24GB card — the cell that was RED until the admission cost model charged the spec transient
 # reserve and step-OOM learned to park instead of kill. In-battery per the H100 lane law
@@ -607,6 +688,102 @@ fi
 # the RED returns — run that whenever the admission math moves. MEMRA_CI_STRESS=0 skips.
 if [ "${MEMRA_CI_STRESS:-1}" = "1" ] && [ -x tools/serve-stress-gate.sh ]; then
     tools/serve-stress-gate.sh || { echo "serve-stress FAIL"; exit 1; }
+fi
+
+# REQUEST-FAULT BOUNDARY (memra#525): one of four concurrent streams panics inside its guarded
+# step (MEMRA_FAULT_INJECT_CACHE_SALT door); it must fail typed (code worker_fault), its three
+# peers must finish byte-identical to the same streams without it, request_faults_total reads 1
+# and no respawn happens. Before this boundary a per-request panic truncated every peer after a
+# 200 and respawned the worker. About 60 s on the 9B NVFP4. MEMRA_CI_FAULTGATE=0 skips.
+FAULT_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
+if [ "${MEMRA_CI_FAULTGATE:-1}" = "1" ] && [ -f "$FAULT_MODEL" ]; then
+    echo "== local-ci: request-fault boundary gate (memra#525) =="
+    FAULT_OUT=$(mktemp -d -u "${TMPDIR:-/tmp}/local-ci-faultgate.XXXXXX")
+    if python3 tools/request-fault-gate.py --model "$FAULT_MODEL" --bin target/release/memra-server \
+        --out "$FAULT_OUT" --port 18525; then
+        rm -rf "$FAULT_OUT"
+    else
+        echo "request-fault gate FAIL (receipt kept at $FAULT_OUT)"; exit 1
+    fi
+else
+    echo "request-fault gate: SKIP (no 9B NVFP4 model at $FAULT_MODEL or MEMRA_CI_FAULTGATE=0)"
+fi
+
+# SPECULATIVE CONTEXT EDGE (memra#659): open requests driven to their cap back to back under the
+# default spec route, door ON (open output 64: four open requests and a bounded control) and door
+# OFF (MEMRA_CTX=384: three runaways), plus a plain boot whose message must equal the spec one.
+# Before the fix the last speculative round of a request whose budget spans its cap wrote past the
+# session cache: every such request took the #87 NaN trap and a later admission panicked the
+# worker (`mtp_kv_fill: scratch overflow`). Wired after two consecutive green runs on the local
+# RTX 5090 (research/spec-ctx-edge-20260923/). About 20 s on the 9B NVFP4.
+# MEMRA_CI_SPEC_CTX_EDGE=0 skips.
+EDGE_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
+if [ "${MEMRA_CI_SPEC_CTX_EDGE:-1}" = "1" ] && [ -f "$EDGE_MODEL" ]; then
+    echo "== local-ci: speculative context-edge gate (memra#659) =="
+    EDGE_OUT=$(mktemp -d -u "${TMPDIR:-/tmp}/local-ci-spec-ctx-edge.XXXXXX")
+    if tools/spec-ctx-edge-gate.sh "$EDGE_MODEL" target/release/memra-server "$EDGE_OUT"; then
+        rm -rf "$EDGE_OUT"
+    else
+        echo "spec-ctx-edge gate FAIL (receipt kept at $EDGE_OUT)"; exit 1
+    fi
+else
+    echo "spec-ctx-edge gate: SKIP (no 9B NVFP4 model at $EDGE_MODEL or MEMRA_CI_SPEC_CTX_EDGE=0)"
+fi
+
+# MEMORY-ADMISSION BURST (memra#680): the door armed (MEMRA_ADMIT_BY_MEMORY=1, open output 8192), 64
+# open requests released on one barrier. Before the fix the VRAM gate compared each arrival with
+# one live reading, which cannot see the prefill workspace the sessions admitted earlier in the
+# burst still owe, and 34 of 64 died in prefill with CUDA OOM as 503s. Now every request is served
+# or refused with a typed 429, every admission fits the booked reading, and the boot survives.
+# Wired after a red run on the unfixed tree and two consecutive green runs on the local RTX 5090
+# (research/spill-b-20260919/DAY33.md). About 7 minutes on the 9B NVFP4.
+# MEMRA_CI_ADMIT_MEM_BURST=0 skips.
+AMB_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
+if [ "${MEMRA_CI_ADMIT_MEM_BURST:-1}" = "1" ] && [ -f "$AMB_MODEL" ]; then
+    echo "== local-ci: memory-admission burst gate (memra#680) =="
+    AMB_OUT=$(mktemp -d -u "${TMPDIR:-/tmp}/local-ci-admit-mem-burst.XXXXXX")
+    if tools/admit-mem-burst-gate.sh "$AMB_MODEL" target/release/memra-server "$AMB_OUT"; then
+        rm -rf "$AMB_OUT"
+    else
+        echo "admit-mem-burst gate FAIL (receipt kept at $AMB_OUT)"; exit 1
+    fi
+else
+    echo "admit-mem-burst gate: SKIP (no 9B NVFP4 model at $AMB_MODEL or MEMRA_CI_ADMIT_MEM_BURST=0)"
+fi
+
+# PRIME FAIRNESS (memra#521): one 131k cold prime beside three peers, both MEMRA_PRIME_YIELD
+# arms on the 9B's default spec route; bytes identical across arms, peers' first token bounded on
+# the yielding arm, tick_max_ms bounded, walker engaged. About 4 minutes. MEMRA_CI_FAIRGATE=0 skips.
+FAIR_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
+if [ "${MEMRA_CI_FAIRGATE:-1}" = "1" ] && [ -f "$FAIR_MODEL" ]; then
+    echo "== local-ci: prime fairness gate (memra#521) =="
+    FAIR_OUT=$(mktemp -d -u "${TMPDIR:-/tmp}/local-ci-fairgate.XXXXXX")
+    if python3 tools/prime-fairness-gate.py --model "$FAIR_MODEL" --bin target/release/memra-server \
+        --out "$FAIR_OUT" --port 18521; then
+        rm -rf "$FAIR_OUT"
+    else
+        echo "prime fairness gate FAIL (receipt kept at $FAIR_OUT)"; exit 1
+    fi
+else
+    echo "prime fairness gate: SKIP (no 9B NVFP4 model at $FAIR_MODEL or MEMRA_CI_FAIRGATE=0)"
+fi
+
+# GPU PROBE RECOVERY (memra#516): a fake nvidia-smi on PATH hangs the canary for a scripted
+# number of probes; /health must degrade (200) below the miss bound, recover on an answer, latch
+# (503) at the bound, and never clear a fatal ECC latch. Three boots of the 9B on the plain route,
+# about 3 minutes. MEMRA_CI_GPUPROBEGATE=0 skips.
+PROBE_MODEL=${MEMRA_CI_CONT_MODEL:-$MODELS/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf}
+if [ "${MEMRA_CI_GPUPROBEGATE:-1}" = "1" ] && [ -f "$PROBE_MODEL" ]; then
+    echo "== local-ci: GPU probe recovery gate (memra#516) =="
+    PROBE_OUT=$(mktemp -d -u "${TMPDIR:-/tmp}/local-ci-gpuprobegate.XXXXXX")
+    if python3 tools/gpu-probe-recovery-gate.py --model "$PROBE_MODEL" --bin target/release/memra-server \
+        --out "$PROBE_OUT" --port 18516; then
+        rm -rf "$PROBE_OUT"
+    else
+        echo "GPU probe recovery gate FAIL (receipt kept at $PROBE_OUT)"; exit 1
+    fi
+else
+    echo "GPU probe recovery gate: SKIP (no 9B NVFP4 model at $PROBE_MODEL or MEMRA_CI_GPUPROBEGATE=0)"
 fi
 
 # SERVED-SPEC ACCEPTANCE + LONG-TEXT ASSERTION (lane/accept-gate, 2026-08-06): the arm that
@@ -730,7 +907,31 @@ fi
 # names that condition in its own ignore reason). Serial runs have CPU_PID empty; join is a no-op.
 join_cpu_chain
 echo "== local-ci: memra-engine lib suite (GPU-only #[ignore] tests) =="
-if ! cargo test --release -p memra-engine --lib -j8 -- --ignored; then
+# Pair-only tests (the exclusively locked development pair) print `SKIP-PAIR <test> ...` and
+# return on a rig with one CUDA device; `--show-output` surfaces those lines from passing
+# tests so the skip is counted here, never silent (#484: account for every skip).
+LIB_LOG=$(mktemp -t memra-lib-gpu.XXXXXX)
+# `set -e` would exit on the failing pipeline before the accounting and the FAILED line below
+# (revuto finding on #583); the exit code is read from PIPESTATUS with errexit paused.
+# Serial on purpose (--test-threads=1): these tests set process-global gate doors
+# (`set_moe_f16g_*_for_gate`; `GateRestore`'s Drop clears all five) and share one device and
+# its stream-capture state, so the default parallel harness let one test's teardown land inside
+# another's chain. Measured 2026-09-21 on the local 5090 with the pair-only tests skipped:
+# parallel 6 green of 7 with a different victim each time (`cuda_half2_chain_identity`,
+# `cuda_capture_runs_once_and_restores_scope_after_failure`, `cuda_recent_c4_preserves_hits_
+# misses_wrap_and_rollback`), serial 7 of 7 green, 4.2 s instead of 1.1 s
+# (research/local-ci-one-card-20260921).
+set +e
+cargo test --release -p memra-engine --lib -j8 -- --ignored --test-threads=1 --show-output 2>&1 | tee "$LIB_LOG"
+LIB_RC=${PIPESTATUS[0]}
+set -e
+PAIR_SKIPS=$(grep -c '^SKIP-PAIR ' "$LIB_LOG" || true)
+if [ "$PAIR_SKIPS" -gt 0 ]; then
+    echo "local-ci: SKIP $PAIR_SKIPS pair-only GPU test(s) on this rig (need 2 CUDA devices):"
+    grep '^SKIP-PAIR ' "$LIB_LOG" | sed 's/^/    /'
+fi
+rm -f "$LIB_LOG"
+if [ "$LIB_RC" -ne 0 ]; then
     echo "local-ci: memra-engine GPU-only lib tests FAILED"; exit 1
 fi
 [ "$MODE" = "--correctness" ] && exit 0
@@ -756,8 +957,19 @@ run_cell() {
     local id="$1" model="$2" mode="$3" prompt="$4" ngen="$5" k="$6" draft="$7" ranks="$8"
     local mp="$MODELS/$model"
     [ -f "$mp" ] || { echo "  $id: SKIP (no model)"; return 0; }
+    # A spec cell needs its drafter (and its ranks file when the manifest names one) as much
+    # as its model; a missing drafter used to surface as "FAIL (no reading)" with the
+    # gemma-gate stderr discarded, which reads as a regression and blocks the row append
+    # (2026-09-20: 26b-spec-d1736 on a rig without the 26B MTP drafter). Explicit SKIP, same
+    # vocabulary as the model check; the rig still owes the cell once the file is staged.
+    if [ "$mode" = "spec" ]; then
+        [ -f "$MODELS/$draft" ] || { echo "  $id: SKIP (no draft at $MODELS/$draft)"; return 0; }
+        if [ -n "$ranks" ] && [ "$ranks" != "null" ] && [ ! -f "$ranks" ]; then
+            echo "  $id: SKIP (no ranks file at $ranks)"; return 0
+        fi
+    fi
     local pfile; pfile=$(jq -r ".prompts[\"$prompt\"]" $MANIFEST)
-    local best_toks="0" accept="" tokround="" cell_try
+    local best_toks="0" accept="" tokround="" cell_try last_out=""
     for cell_try in 1 2; do
     best_toks="0"; accept=""; tokround=""
     for _rep in 1 2; do
@@ -785,6 +997,7 @@ run_cell() {
             accept=$(echo "$out" | grep -oE "accept-rate=[0-9.]+" | grep -oE "[0-9.]+" | tail -1 || true)
             tokround=$(echo "$out" | grep -oE "tok/round=[0-9.]+" | grep -oE "[0-9.]+" | tail -1 || true)
         fi
+        last_out="$out"
         awk -v a="$toks" -v b="$best_toks" 'BEGIN{exit !(a>b)}' && best_toks="$toks"
     done
     if window_free_now; then break; fi
@@ -820,7 +1033,12 @@ run_cell() {
         WINDOW_CLEAN=false
     fi
     done
-    [ "$best_toks" = "0" ] && { echo "  $id: FAIL (no reading)"; FAILS=$((FAILS+1)); return 0; }
+    if [ "$best_toks" = "0" ]; then
+        # Quote the cause, never infer it: the last rep's final lines travel with the verdict.
+        echo "  $id: FAIL (no reading); last output:"
+        printf '%s\n' "$last_out" | tail -6 | sed 's/^/      | /'
+        FAILS=$((FAILS+1)); return 0
+    fi
 
     # Rolling-median verdict from prior rows of this cell.
     #

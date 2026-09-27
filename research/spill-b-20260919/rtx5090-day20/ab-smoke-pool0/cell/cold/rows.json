@@ -1,0 +1,2074 @@
+[
+  {
+    "idx": 0,
+    "role": "seed1",
+    "tenant": 1,
+    "salt": "cohort-1",
+    "turn": null,
+    "prompt_ids": 1248,
+    "prompt_tokens": 1248,
+    "cached_tokens": 0,
+    "computed_tokens": 1248,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 1.085,
+    "text_sha256": "c1e188654046e89293922a4ec59067e77524bd9de532d6be175431d4bf95c575",
+    "ttft_first_decode_ms": 887.445,
+    "prime_ms": 874.55,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1248 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 1248,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1248 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-4bc3b48a41e2115841ea94a392c474c7",
+        "prompt_tokens": 1248,
+        "outcome": "ended_without_sse",
+        "prime_ms": 874.55,
+        "first_decode_ms": 887.445,
+        "total_ms": 887.445
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 0,
+      "cuda_pool_cached_bytes": 0,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 7674855424,
+      "cuda_pool_cached_bytes": 980605184,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 1,
+    "role": "seed2",
+    "tenant": 1,
+    "salt": "cohort-1",
+    "turn": null,
+    "prompt_ids": 1248,
+    "prompt_tokens": 1248,
+    "cached_tokens": 0,
+    "computed_tokens": 1248,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 1.004,
+    "text_sha256": "c1e188654046e89293922a4ec59067e77524bd9de532d6be175431d4bf95c575",
+    "ttft_first_decode_ms": 804.626,
+    "prime_ms": 799.312,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1248 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 1248,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1248 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-3613f07e0fccb9f2059ca78280b80e2b",
+        "prompt_tokens": 1248,
+        "outcome": "ended_without_sse",
+        "prime_ms": 799.312,
+        "first_decode_ms": 804.626,
+        "total_ms": 804.626
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 7674855424,
+      "cuda_pool_cached_bytes": 980605184,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 7674855424,
+      "cuda_pool_cached_bytes": 980605184,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 2,
+    "role": "seed1",
+    "tenant": 2,
+    "salt": "cohort-2",
+    "turn": null,
+    "prompt_ids": 1344,
+    "prompt_tokens": 1344,
+    "cached_tokens": 0,
+    "computed_tokens": 1344,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 1.198,
+    "text_sha256": "3ca9a6e466c2dfb81b503a84c9ebd1055dbb1d148e56922d5ae3a4d8ef55b231",
+    "ttft_first_decode_ms": 979.474,
+    "prime_ms": 974.316,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1344 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 1344,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1344 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-1fab25f859066eeb0196b8bf7d402871",
+        "prompt_tokens": 1344,
+        "outcome": "ended_without_sse",
+        "prime_ms": 974.316,
+        "first_decode_ms": 979.474,
+        "total_ms": 979.474
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 7674855424,
+      "cuda_pool_cached_bytes": 980605184,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 7540637696,
+      "cuda_pool_cached_bytes": 1077656320,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 3,
+    "role": "seed2",
+    "tenant": 2,
+    "salt": "cohort-2",
+    "turn": null,
+    "prompt_ids": 1344,
+    "prompt_tokens": 1344,
+    "cached_tokens": 0,
+    "computed_tokens": 1344,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 1.234,
+    "text_sha256": "3ca9a6e466c2dfb81b503a84c9ebd1055dbb1d148e56922d5ae3a4d8ef55b231",
+    "ttft_first_decode_ms": 1043.217,
+    "prime_ms": 1037.554,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1344 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 1344,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1344 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-5a505353268cde4497decc47077fd2d3",
+        "prompt_tokens": 1344,
+        "outcome": "ended_without_sse",
+        "prime_ms": 1037.554,
+        "first_decode_ms": 1043.217,
+        "total_ms": 1043.217
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 7540637696,
+      "cuda_pool_cached_bytes": 1077656320,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 7507083264,
+      "cuda_pool_cached_bytes": 1111210752,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 4,
+    "role": "seed1",
+    "tenant": 3,
+    "salt": "cohort-3",
+    "turn": null,
+    "prompt_ids": 1440,
+    "prompt_tokens": 1440,
+    "cached_tokens": 0,
+    "computed_tokens": 1440,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 1.256,
+    "text_sha256": "1e5e661ff29ee077913228733faca5acc78fb12748ce4c6c1db10ffd18a77b56",
+    "ttft_first_decode_ms": 1080.371,
+    "prime_ms": 1075.314,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1440 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 1440,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1440 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-2e5cc6350ec9cc39290d934ea3506829",
+        "prompt_tokens": 1440,
+        "outcome": "ended_without_sse",
+        "prime_ms": 1075.314,
+        "first_decode_ms": 1080.371,
+        "total_ms": 1080.371
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 7507083264,
+      "cuda_pool_cached_bytes": 1111210752,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 7406419968,
+      "cuda_pool_cached_bytes": 1175698176,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 5,
+    "role": "seed2",
+    "tenant": 3,
+    "salt": "cohort-3",
+    "turn": null,
+    "prompt_ids": 1440,
+    "prompt_tokens": 1440,
+    "cached_tokens": 0,
+    "computed_tokens": 1440,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 1.213,
+    "text_sha256": "1e5e661ff29ee077913228733faca5acc78fb12748ce4c6c1db10ffd18a77b56",
+    "ttft_first_decode_ms": 1035.411,
+    "prime_ms": 1030.46,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1440 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 1440,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1440 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-64c259df295884817705da94c1009bfb",
+        "prompt_tokens": 1440,
+        "outcome": "ended_without_sse",
+        "prime_ms": 1030.46,
+        "first_decode_ms": 1035.411,
+        "total_ms": 1035.411
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 7406419968,
+      "cuda_pool_cached_bytes": 1175698176,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 7406419968,
+      "cuda_pool_cached_bytes": 1175698176,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 6,
+    "role": "seed1",
+    "tenant": 4,
+    "salt": "cohort-4",
+    "turn": null,
+    "prompt_ids": 1536,
+    "prompt_tokens": 1536,
+    "cached_tokens": 0,
+    "computed_tokens": 1536,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 1.204,
+    "text_sha256": "57541e978a9b2efb50155dd35bc6a990040c0e5255a2f048705124f070d971af",
+    "ttft_first_decode_ms": 1029.334,
+    "prime_ms": 1024.179,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1536 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 1536,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1536 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-3d0ea03e93061a68ce72d8f6b0b4a876",
+        "prompt_tokens": 1536,
+        "outcome": "ended_without_sse",
+        "prime_ms": 1024.179,
+        "first_decode_ms": 1029.334,
+        "total_ms": 1029.334
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 7406419968,
+      "cuda_pool_cached_bytes": 1175698176,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 7339311104,
+      "cuda_pool_cached_bytes": 1206631168,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 7,
+    "role": "seed2",
+    "tenant": 4,
+    "salt": "cohort-4",
+    "turn": null,
+    "prompt_ids": 1536,
+    "prompt_tokens": 1536,
+    "cached_tokens": 0,
+    "computed_tokens": 1536,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 1.198,
+    "text_sha256": "57541e978a9b2efb50155dd35bc6a990040c0e5255a2f048705124f070d971af",
+    "ttft_first_decode_ms": 1014.053,
+    "prime_ms": 1008.933,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1536 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 1536,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1536 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-6fa9cfd3c496c7e11da279eefd9fd244",
+        "prompt_tokens": 1536,
+        "outcome": "ended_without_sse",
+        "prime_ms": 1008.933,
+        "first_decode_ms": 1014.053,
+        "total_ms": 1014.053
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 7339311104,
+      "cuda_pool_cached_bytes": 1206631168,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 7339311104,
+      "cuda_pool_cached_bytes": 1206631168,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 8,
+    "role": "loop",
+    "tenant": 0,
+    "salt": "grow",
+    "turn": 1,
+    "prompt_ids": 10912,
+    "prompt_tokens": 10912,
+    "cached_tokens": 0,
+    "computed_tokens": 10912,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 8.033,
+    "text_sha256": "006fdb36c6ff0391b4d337026b2abb75e3eff56a2194340f80cacbebbf1eb4dc",
+    "ttft_first_decode_ms": 7848.333,
+    "prime_ms": 7842.504,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=10912 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 10912,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=10912 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-fb585e5783650ee84711baa91e33db1d",
+        "prompt_tokens": 10912,
+        "outcome": "ended_without_sse",
+        "prime_ms": 7842.504,
+        "first_decode_ms": 7848.333,
+        "total_ms": 7848.333
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 7339311104,
+      "cuda_pool_cached_bytes": 1206631168,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4755619840,
+      "cuda_pool_cached_bytes": 2793478848,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 9,
+    "role": "loop",
+    "tenant": 0,
+    "salt": "grow",
+    "turn": 2,
+    "prompt_ids": 11072,
+    "prompt_tokens": 11072,
+    "cached_tokens": 0,
+    "computed_tokens": 11072,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 8.915,
+    "text_sha256": "70efa8d085a5531aef77ae42952f3188a2319b83b6b66b48b47d5329201ddddb",
+    "ttft_first_decode_ms": 8730.796,
+    "prime_ms": 8725.126,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11072 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 11072,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11072 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-27580629707766d17a7afb4af694d60d",
+        "prompt_tokens": 11072,
+        "outcome": "ended_without_sse",
+        "prime_ms": 8725.126,
+        "first_decode_ms": 8730.796,
+        "total_ms": 8730.796
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4755619840,
+      "cuda_pool_cached_bytes": 2793478848,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4722065408,
+      "cuda_pool_cached_bytes": 2817907264,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 10,
+    "role": "loop",
+    "tenant": 0,
+    "salt": "grow",
+    "turn": 3,
+    "prompt_ids": 11232,
+    "prompt_tokens": 11232,
+    "cached_tokens": 0,
+    "computed_tokens": 11232,
+    "completion_tokens": 3,
+    "finish_reason": "stop",
+    "elapsed_s": 8.603,
+    "text_sha256": "4b3ad3a092aaa00fb3f57db445445d38b2085adf2fb98b73015b5a160fd31775",
+    "ttft_first_decode_ms": 8555.99,
+    "prime_ms": 8550.643,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11232 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 11232,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11232 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-70a559d140b0448948d39781242a8ec1",
+        "prompt_tokens": 11232,
+        "outcome": "ended_without_sse",
+        "prime_ms": 8550.643,
+        "first_decode_ms": 8555.99,
+        "total_ms": 8555.99
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4722065408,
+      "cuda_pool_cached_bytes": 2817907264,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4621402112,
+      "cuda_pool_cached_bytes": 2917915200,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 11,
+    "role": "return",
+    "tenant": 1,
+    "salt": "cohort-1",
+    "turn": 3,
+    "prompt_ids": 1408,
+    "prompt_tokens": 1408,
+    "cached_tokens": 0,
+    "computed_tokens": 1408,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 1.134,
+    "text_sha256": "f1a33345e94b7e622e18e50b2f8246a65d0e5f31da437a0176de15e7778c67b1",
+    "ttft_first_decode_ms": 963.833,
+    "prime_ms": 958.729,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1408 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 1408,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1408 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-8895af0a124b5b4a259e028eb45328e7",
+        "prompt_tokens": 1408,
+        "outcome": "ended_without_sse",
+        "prime_ms": 958.729,
+        "first_decode_ms": 963.833,
+        "total_ms": 963.833
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4621402112,
+      "cuda_pool_cached_bytes": 2917915200,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4621402112,
+      "cuda_pool_cached_bytes": 2917915200,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 12,
+    "role": "loop",
+    "tenant": 0,
+    "salt": "grow",
+    "turn": 4,
+    "prompt_ids": 11392,
+    "prompt_tokens": 11392,
+    "cached_tokens": 0,
+    "computed_tokens": 11392,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 8.714,
+    "text_sha256": "24a97a2867768b2d1338cb591f7749f093767b6f3af95921b636b2c730e4e1bc",
+    "ttft_first_decode_ms": 8535.84,
+    "prime_ms": 8530.479,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11392 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 11392,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11392 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-a4bd3965b6bab8a058caabcfb2283fad",
+        "prompt_tokens": 11392,
+        "outcome": "ended_without_sse",
+        "prime_ms": 8530.479,
+        "first_decode_ms": 8535.84,
+        "total_ms": 8535.84
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4621402112,
+      "cuda_pool_cached_bytes": 2917915200,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4520738816,
+      "cuda_pool_cached_bytes": 3017923136,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 13,
+    "role": "loop",
+    "tenant": 0,
+    "salt": "grow",
+    "turn": 5,
+    "prompt_ids": 11552,
+    "prompt_tokens": 11552,
+    "cached_tokens": 0,
+    "computed_tokens": 11552,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 8.987,
+    "text_sha256": "22f023976ebc22fd5bfc9a699ff63056fb08186f1faec8429537e154a5e07f85",
+    "ttft_first_decode_ms": 8802.55,
+    "prime_ms": 8797.375,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11552 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 11552,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11552 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-9a46a9321922a75e0bb82b3dea74ac7e",
+        "prompt_tokens": 11552,
+        "outcome": "ended_without_sse",
+        "prime_ms": 8797.375,
+        "first_decode_ms": 8802.55,
+        "total_ms": 8802.55
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4520738816,
+      "cuda_pool_cached_bytes": 3017923136,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4520738816,
+      "cuda_pool_cached_bytes": 3017267776,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 14,
+    "role": "loop",
+    "tenant": 0,
+    "salt": "grow",
+    "turn": 6,
+    "prompt_ids": 11712,
+    "prompt_tokens": 11712,
+    "cached_tokens": 0,
+    "computed_tokens": 11712,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 9.341,
+    "text_sha256": "24a97a2867768b2d1338cb591f7749f093767b6f3af95921b636b2c730e4e1bc",
+    "ttft_first_decode_ms": 9154.788,
+    "prime_ms": 9149.464,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11712 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 11712,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11712 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-19d7a65d0ac1454103ddab0b9fd164a5",
+        "prompt_tokens": 11712,
+        "outcome": "ended_without_sse",
+        "prime_ms": 9149.464,
+        "first_decode_ms": 9154.788,
+        "total_ms": 9154.788
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4520738816,
+      "cuda_pool_cached_bytes": 3017267776,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4520738816,
+      "cuda_pool_cached_bytes": 3016612416,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 15,
+    "role": "return",
+    "tenant": 2,
+    "salt": "cohort-2",
+    "turn": 6,
+    "prompt_ids": 1504,
+    "prompt_tokens": 1504,
+    "cached_tokens": 0,
+    "computed_tokens": 1504,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 1.245,
+    "text_sha256": "fa08252a46f691945ee7413a6fe1abeb3f6b2d3ad7d68f2d14b33b439ef04357",
+    "ttft_first_decode_ms": 1071.87,
+    "prime_ms": 1066.698,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1504 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 1504,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1504 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-0359fc0c2b5d0c5e4e448d0fad748424",
+        "prompt_tokens": 1504,
+        "outcome": "ended_without_sse",
+        "prime_ms": 1066.698,
+        "first_decode_ms": 1071.87,
+        "total_ms": 1071.87
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4520738816,
+      "cuda_pool_cached_bytes": 3016612416,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4520738816,
+      "cuda_pool_cached_bytes": 3016612416,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 16,
+    "role": "loop",
+    "tenant": 0,
+    "salt": "grow",
+    "turn": 7,
+    "prompt_ids": 11872,
+    "prompt_tokens": 11872,
+    "cached_tokens": 0,
+    "computed_tokens": 11872,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 9.678,
+    "text_sha256": "8d11831c91ef4dc9d14addd5fd5540b4849aae6db55ac059d6bb3fc534e072e6",
+    "ttft_first_decode_ms": 9481.451,
+    "prime_ms": 9475.513,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11872 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 11872,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=11872 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-77cd0df4a0200bdad8955b7b38fdbd71",
+        "prompt_tokens": 11872,
+        "outcome": "ended_without_sse",
+        "prime_ms": 9475.513,
+        "first_decode_ms": 9481.451,
+        "total_ms": 9481.451
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4520738816,
+      "cuda_pool_cached_bytes": 3016612416,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4520738816,
+      "cuda_pool_cached_bytes": 3015957056,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 17,
+    "role": "loop",
+    "tenant": 0,
+    "salt": "grow",
+    "turn": 8,
+    "prompt_ids": 12032,
+    "prompt_tokens": 12032,
+    "cached_tokens": 0,
+    "computed_tokens": 12032,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 10.343,
+    "text_sha256": "24a97a2867768b2d1338cb591f7749f093767b6f3af95921b636b2c730e4e1bc",
+    "ttft_first_decode_ms": 10147.341,
+    "prime_ms": 10141.511,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12032 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 12032,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12032 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-67933cfc1fc5dc4297f87cb03fdc88e2",
+        "prompt_tokens": 12032,
+        "outcome": "ended_without_sse",
+        "prime_ms": 10141.511,
+        "first_decode_ms": 10147.341,
+        "total_ms": 10147.341
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4520738816,
+      "cuda_pool_cached_bytes": 3015957056,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4520738816,
+      "cuda_pool_cached_bytes": 3015301696,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 18,
+    "role": "loop",
+    "tenant": 0,
+    "salt": "grow",
+    "turn": 9,
+    "prompt_ids": 12192,
+    "prompt_tokens": 12192,
+    "cached_tokens": 0,
+    "computed_tokens": 12192,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 10.065,
+    "text_sha256": "c95fce823d87df23662e9f0040daa0394452a65b99415102dcad063ef4410b9e",
+    "ttft_first_decode_ms": 9873.714,
+    "prime_ms": 9868.387,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12192 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 12192,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12192 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-97df04c441206295a3a406fa26427bec",
+        "prompt_tokens": 12192,
+        "outcome": "ended_without_sse",
+        "prime_ms": 9868.387,
+        "first_decode_ms": 9873.714,
+        "total_ms": 9873.714
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4520738816,
+      "cuda_pool_cached_bytes": 3015301696,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4487184384,
+      "cuda_pool_cached_bytes": 3048200768,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 19,
+    "role": "return",
+    "tenant": 3,
+    "salt": "cohort-3",
+    "turn": 9,
+    "prompt_ids": 1600,
+    "prompt_tokens": 1600,
+    "cached_tokens": 0,
+    "computed_tokens": 1600,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 1.358,
+    "text_sha256": "7e744a72e7b79cb18a6584374bbe50d65299a2601025ff50db2bf798cd8e9527",
+    "ttft_first_decode_ms": 1179.937,
+    "prime_ms": 1174.745,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1600 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 1600,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1600 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-67a4ebc9f2b0dc1bcc442682c5fa4653",
+        "prompt_tokens": 1600,
+        "outcome": "ended_without_sse",
+        "prime_ms": 1174.745,
+        "first_decode_ms": 1179.937,
+        "total_ms": 1179.937
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4487184384,
+      "cuda_pool_cached_bytes": 3048200768,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4487184384,
+      "cuda_pool_cached_bytes": 3048200768,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 20,
+    "role": "loop",
+    "tenant": 0,
+    "salt": "grow",
+    "turn": 10,
+    "prompt_ids": 12352,
+    "prompt_tokens": 12352,
+    "cached_tokens": 0,
+    "computed_tokens": 12352,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 10.452,
+    "text_sha256": "9022af0570f69478c29d489ec5a012ba025b0767507ddd75f905fb5ca3e69c12",
+    "ttft_first_decode_ms": 10261.573,
+    "prime_ms": 10256.022,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12352 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 12352,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12352 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-ebde05077c84aa4fdf9dd68304dfdaf2",
+        "prompt_tokens": 12352,
+        "outcome": "ended_without_sse",
+        "prime_ms": 10256.022,
+        "first_decode_ms": 10261.573,
+        "total_ms": 10261.573
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4487184384,
+      "cuda_pool_cached_bytes": 3048200768,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4487184384,
+      "cuda_pool_cached_bytes": 3047545408,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 21,
+    "role": "loop",
+    "tenant": 0,
+    "salt": "grow",
+    "turn": 11,
+    "prompt_ids": 12512,
+    "prompt_tokens": 12512,
+    "cached_tokens": 0,
+    "computed_tokens": 12512,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 10.361,
+    "text_sha256": "b6b5b760960efe974f6a0d6bd1682894aa206a747d7499239ec7cc7bfcbd506a",
+    "ttft_first_decode_ms": 10171.965,
+    "prime_ms": 10166.167,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12512 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 12512,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12512 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-83d9a4df7d2b4a235e5aeeb8fa65a92b",
+        "prompt_tokens": 12512,
+        "outcome": "ended_without_sse",
+        "prime_ms": 10166.167,
+        "first_decode_ms": 10171.965,
+        "total_ms": 10171.965
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4487184384,
+      "cuda_pool_cached_bytes": 3047545408,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4453629952,
+      "cuda_pool_cached_bytes": 3080444480,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 22,
+    "role": "loop",
+    "tenant": 0,
+    "salt": "grow",
+    "turn": 12,
+    "prompt_ids": 12672,
+    "prompt_tokens": 12672,
+    "cached_tokens": 0,
+    "computed_tokens": 12672,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 10.512,
+    "text_sha256": "d5b3015fc5c4f9f71c03796a1c4fee0fe6fc12194c5288b8996c887561464ec3",
+    "ttft_first_decode_ms": 10320.165,
+    "prime_ms": 10314.778,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12672 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 12672,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12672 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-c0e5831f6a11c31902dcfdaab09cad53",
+        "prompt_tokens": 12672,
+        "outcome": "ended_without_sse",
+        "prime_ms": 10314.778,
+        "first_decode_ms": 10320.165,
+        "total_ms": 10320.165
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4453629952,
+      "cuda_pool_cached_bytes": 3080444480,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4453629952,
+      "cuda_pool_cached_bytes": 3079789120,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 23,
+    "role": "return",
+    "tenant": 4,
+    "salt": "cohort-4",
+    "turn": 12,
+    "prompt_ids": 1696,
+    "prompt_tokens": 1696,
+    "cached_tokens": 0,
+    "computed_tokens": 1696,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 1.435,
+    "text_sha256": "66333786858cc554abd78c4277d39990cb16b50f0c4920a73c212ab0c2cd607a",
+    "ttft_first_decode_ms": 1259.73,
+    "prime_ms": 1254.507,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1696 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 1696,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1696 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-6dafe8900ba98d2f0170a960c844c732",
+        "prompt_tokens": 1696,
+        "outcome": "ended_without_sse",
+        "prime_ms": 1254.507,
+        "first_decode_ms": 1259.73,
+        "total_ms": 1259.73
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4453629952,
+      "cuda_pool_cached_bytes": 3079789120,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4453629952,
+      "cuda_pool_cached_bytes": 3079789120,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 24,
+    "role": "final",
+    "tenant": 1,
+    "salt": "cohort-1",
+    "turn": 12,
+    "prompt_ids": 1568,
+    "prompt_tokens": 1568,
+    "cached_tokens": 0,
+    "computed_tokens": 1568,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 1.333,
+    "text_sha256": "f1a33345e94b7e622e18e50b2f8246a65d0e5f31da437a0176de15e7778c67b1",
+    "ttft_first_decode_ms": 1162.932,
+    "prime_ms": 1157.645,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1568 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 1568,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1568 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-a95735af149ae15ee145044b7424fbec",
+        "prompt_tokens": 1568,
+        "outcome": "ended_without_sse",
+        "prime_ms": 1157.645,
+        "first_decode_ms": 1162.932,
+        "total_ms": 1162.932
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4453629952,
+      "cuda_pool_cached_bytes": 3079789120,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4453629952,
+      "cuda_pool_cached_bytes": 3079789120,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 25,
+    "role": "final",
+    "tenant": 2,
+    "salt": "cohort-2",
+    "turn": 12,
+    "prompt_ids": 1664,
+    "prompt_tokens": 1664,
+    "cached_tokens": 0,
+    "computed_tokens": 1664,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 1.331,
+    "text_sha256": "777b8b408b746f8fb0ecfb1ce45d337ba406b80d834f26759cf2ebcb2cecb138",
+    "ttft_first_decode_ms": 1161.043,
+    "prime_ms": 1155.976,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1664 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 1664,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1664 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-ac7bfd45d7be0b3b62eb5e70e580a988",
+        "prompt_tokens": 1664,
+        "outcome": "ended_without_sse",
+        "prime_ms": 1155.976,
+        "first_decode_ms": 1161.043,
+        "total_ms": 1161.043
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4453629952,
+      "cuda_pool_cached_bytes": 3079789120,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4453629952,
+      "cuda_pool_cached_bytes": 3079789120,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 26,
+    "role": "final",
+    "tenant": 3,
+    "salt": "cohort-3",
+    "turn": 12,
+    "prompt_ids": 1760,
+    "prompt_tokens": 1760,
+    "cached_tokens": 0,
+    "computed_tokens": 1760,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 1.378,
+    "text_sha256": "4b23c43d6dad79322a1b4b395d98564a4b34ac818043255e851903ed91455306",
+    "ttft_first_decode_ms": 1210.919,
+    "prime_ms": 1205.703,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1760 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 1760,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1760 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-00f3d3128a70188105f759005f8541ea",
+        "prompt_tokens": 1760,
+        "outcome": "ended_without_sse",
+        "prime_ms": 1205.703,
+        "first_decode_ms": 1210.919,
+        "total_ms": 1210.919
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4453629952,
+      "cuda_pool_cached_bytes": 3079789120,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4453629952,
+      "cuda_pool_cached_bytes": 3079789120,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  },
+  {
+    "idx": 27,
+    "role": "final",
+    "tenant": 4,
+    "salt": "cohort-4",
+    "turn": 12,
+    "prompt_ids": 1856,
+    "prompt_tokens": 1856,
+    "cached_tokens": 0,
+    "computed_tokens": 1856,
+    "completion_tokens": 8,
+    "finish_reason": "length",
+    "elapsed_s": 1.461,
+    "text_sha256": "d130dbcf85337f3dcd94726f66b74f379d009f907576b1c66347fcefc5223e87",
+    "ttft_first_decode_ms": 1293.926,
+    "prime_ms": 1288.813,
+    "window": {
+      "inserts": [],
+      "hits": [],
+      "evicts": [],
+      "refused": [],
+      "skipped": [],
+      "demotes": 0,
+      "lines": [
+        "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1856 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+      ],
+      "route": [
+        {
+          "prompt": 1856,
+          "cached": 0,
+          "lcp": 0,
+          "line": "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1856 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2"
+        }
+      ],
+      "ttft": {
+        "id": "cmpl-34051ad396b39192995f0bfd4c55da51",
+        "prompt_tokens": 1856,
+        "outcome": "ended_without_sse",
+        "prime_ms": 1288.813,
+        "first_decode_ms": 1293.926,
+        "total_ms": 1293.926
+      }
+    },
+    "metrics_before": {
+      "cuda_driver_free_bytes": 4453629952,
+      "cuda_pool_cached_bytes": 3079789120,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    },
+    "metrics_after": {
+      "cuda_driver_free_bytes": 4453629952,
+      "cuda_pool_cached_bytes": 3079789120,
+      "prefix_cache_bytes": 0,
+      "prefix_cache_entries": 0,
+      "prefix_cache_evictions": 0,
+      "prefix_cache_hits": 0,
+      "prefix_cache_misses": 0,
+      "prefix_cache_inserts": 0,
+      "prefix_cache_hit_tokens": 0,
+      "prefix_cache_skips_budget": 0,
+      "prefix_cache_skips_pinned": 0,
+      "active_sessions": 0,
+      "queued_requests": 0
+    }
+  }
+]

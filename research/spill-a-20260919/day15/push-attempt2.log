@@ -1,0 +1,16 @@
+perf board is up to date
+pre-push: flags census OK — runtime literal reads=865
+pre-push: releasability censuses OK — publish list, stub ABI, arch matrix
+pre-push: docs-registry census OK
+    KERNELS.md file references=122, all resolve
+    MODELS.md support-state tokens=5, all in the three-state vocabulary
+    ROUTER.md lines=47 (cap 60)
+    check-flags --list answered with 865 runtime names (coverage enforced by check-flags.sh itself)
+    flags-table-census: docs/FLAGS.md tables=58 rows=905, every row matches its header
+pre-push: workflow-file census OK
+    5 workflow files, no duplicate mapping keys (stdlib walker)
+UNQUALIFIED DEVELOPMENT: refs/heads/lane/spill-a-20260919 at ad11f2a702ebe9af7caa51e3ba21083b0ebe2208; no GPU qualification claimed
+pre-push: skip recorded in /home/avifenesh/projects/memra/.git/memra-gate-skips.log
+public-boundary: 0 matches (0 grandfathered, 0 new).
+To github.com:avifenesh/memra.git
+   261241786..ad11f2a70  lane/spill-a-20260919 -> lane/spill-a-20260919

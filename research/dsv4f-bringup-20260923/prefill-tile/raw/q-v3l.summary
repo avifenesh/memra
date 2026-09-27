@@ -1,0 +1,9 @@
+build pgemm 7e15b241d SERVER_EXIT=0 ENGINE_EXIT=0  server 05d5c187022f520c
+build main9 a8d0121d9 SERVER_EXIT=0 ENGINE_EXIT=0  server 94893599e0735060
+ttft r1 L rc=0 CELL greedy-8k c=1 ok=2/2 agg=2.66 tok/s decode_p50=48.93 tok/s ttft_p50=22792 ms tpot_p50=20.44 ms errs=[] CELL greedy-32k c=1 ok=1/1 agg=0.67 tok/s decode_p50=45.31 tok/s ttft_p50=94309 ms tpot_p50=22.07 ms errs=[] 
+ttft r2 B rc=0 CELL greedy-8k c=1 ok=2/2 agg=2.14 tok/s decode_p50=48.03 tok/s ttft_p50=28635 ms tpot_p50=20.82 ms errs=[] CELL greedy-32k c=1 ok=1/1 agg=0.54 tok/s decode_p50=46.28 tok/s ttft_p50=117534 ms tpot_p50=21.61 ms errs=[] 
+ttft r3 B rc=0 CELL greedy-8k c=1 ok=2/2 agg=2.15 tok/s decode_p50=49.14 tok/s ttft_p50=28481 ms tpot_p50=20.35 ms errs=[] CELL greedy-32k c=1 ok=1/1 agg=0.54 tok/s decode_p50=46.85 tok/s ttft_p50=117410 ms tpot_p50=21.35 ms errs=[] 
+ttft r4 L rc=0 CELL greedy-8k c=1 ok=2/2 agg=2.64 tok/s decode_p50=48.33 tok/s ttft_p50=22913 ms tpot_p50=20.69 ms errs=[] CELL greedy-32k c=1 ok=1/1 agg=0.67 tok/s decode_p50=46.74 tok/s ttft_p50=94284 ms tpot_p50=21.40 ms errs=[] 
+ttft r5 L rc=0 CELL greedy-8k c=1 ok=2/2 agg=2.64 tok/s decode_p50=48.07 tok/s ttft_p50=22934 ms tpot_p50=20.80 ms errs=[] CELL greedy-32k c=1 ok=1/1 agg=0.67 tok/s decode_p50=46.71 tok/s ttft_p50=94294 ms tpot_p50=21.41 ms errs=[] 
+ttft r6 B rc=0 CELL greedy-8k c=1 ok=2/2 agg=2.15 tok/s decode_p50=48.84 tok/s ttft_p50=28534 ms tpot_p50=20.47 ms errs=[] CELL greedy-32k c=1 ok=1/1 agg=0.54 tok/s decode_p50=46.85 tok/s ttft_p50=117450 ms tpot_p50=21.34 ms errs=[] 
+V3L_DONE

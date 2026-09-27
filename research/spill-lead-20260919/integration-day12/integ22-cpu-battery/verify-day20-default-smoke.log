@@ -1,0 +1,17 @@
+DAY20 REPLAY OK
+source a843686ce (= 9466b8912 + picks fe28c5c07, 74ee484bc, a843686ce) binary bd1423b0016e1a54 MEMRA_REUSE_POOL=default: PREFIX-POLICY-AB: budget_bytes=1073741824 cohort_tenants=4 cohort_bytes=792920064 turns=12 start_tokens=10912 grow=160 return_every=3 pairs_per_order=1 runs=4 requests_per_run=28 digests_identical=28/28 computed_tokens slru_median=31776 lru_median=29600 (N=2 each) pairs_slru_better=0/2 pairs_lru_better=2/2 ties=0/2 return_cached slru_median=0 lru_median=1696 loop_cold_after_1 slru_max=0 lru_max=0 refusals slru=0 lru=0 temp_c=67.0..74.0 power_limit_w=None -> SMOKE
+  pair AB-0: slru 31776 vs lru 29600 computed tokens (diff +2176, lru); return cached slru 0 lru 1696
+  pair BA-0: slru 31776 vs lru 29600 computed tokens (diff +2176, lru); return cached slru 0 lru 1696
+slru: N=2 computed median 31776 (min 31776, max 31776); return cached median 0; loop cold after turn 1 max 0; policy evictions [9, 9]
+lru: N=2 computed median 29600 (min 29600, max 29600); return cached median 1696; loop cold after turn 1 max 0; policy evictions [7, 7]
+digests identical to the cache-off boot on 28/28 requests across 4 runs; identical across runs of the same arm on 28/28
+grid: every prompt, every published entry and every restored length a multiple of 32; restored == previous prompt on every loop hit; 62 hit lines checked
+  AB-0 slru: policy evict lines 9, admission reclaim events 11 evicting 12 prefix entries, admit-trim lines 3, plain-affinity declined 19, non-cache headroom 3233..8307 MB; digest mismatches vs cold []
+  AB-0 lru: policy evict lines 7, admission reclaim events 11 evicting 12 prefix entries, admit-trim lines 3, plain-affinity declined 19, non-cache headroom 3233..8307 MB; digest mismatches vs cold []
+  BA-0 lru: policy evict lines 7, admission reclaim events 11 evicting 12 prefix entries, admit-trim lines 3, plain-affinity declined 19, non-cache headroom 3233..8307 MB; digest mismatches vs cold []
+  BA-0 slru: policy evict lines 9, admission reclaim events 11 evicting 12 prefix entries, admit-trim lines 3, plain-affinity declined 19, non-cache headroom 3233..8307 MB; digest mismatches vs cold []
+reclaim events: 44 across the runs, 5 in the cache-off boot (MEMRA_REUSE_POOL=default)
+shape: cohort 0.738, turn 1 0.447, turn 12 0.495 of the 1073741824 B budget; fit 29583 B/token + 157070000 B
+rig: NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, [N/A], 175.00 W, 595.84; temperature 67.0..74.0 C at run boundaries; power limit None (nvidia-smi reports no limit on this laptop GPU)
+prediction (day20-predict.py): slru 31776 lru 29600; per-request cached_tokens matched slru 56/56 lru 56/56
+replayed rule on the primary: WINNER=lru; harness outcome: SMOKE; collector executed-not-qualified exit 0; no cross-box timing compared.

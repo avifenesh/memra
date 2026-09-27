@@ -1,0 +1,95 @@
+[server] build: memra-0.138.0-a00d7a4e1951 (id: source-tree, git: 1c0900e0e887)
+[auth] keyring loaded: 1 key(s) from /tmp/spill-b-day30/cell-after/keys.toml
+[server] OpenRouter metadata loaded: 1 model(s), sha256 354ad0f313ea808388cd3723c6d65ed7ecd54685d970db592f4f210c5b2f8cf7 from /tmp/spill-b-day30/cell-after/metadata.toml
+[budget] loaded 1 tenant(s) from /tmp/spill-b-day30/cell-after/budgets.toml; recovered 0 debit(s)
+[ledger] durable request-cost ledger enabled: /tmp/spill-b-day30/cell-after/requests.jsonl
+[server] starting; models config = [("journal9", "/data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf", None)]
+[gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "journal9" <- /data/ai-ml/hf-models/qwen35-9b-nvfp4-gguf/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+[q8rp] split-plane decode mirrors built: 92 tensors
+[worker]   loaded "journal9": 33 layers, eos=248046, stop=[248046]
+[worker] journal9: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=false gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] journal9: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 349MB (348651520 B, derived: 2 x 174325760 B max entry for model "journal9" at MEMRA_CTX=8192, requested 348651520 B; boot driver free 18244501504 B, post-reserve clamp 16633888768 B), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "journal9": plain 14848 B/token, spec 16704 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="journal9" route=mtp supported=true yield_door=false [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[fa-pool] grow #0 dev=0 o_len 0 -> 266240 ml_len 0 -> 1040 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): qmatvec_q8_0_mmvq
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 266240 -> 532480 ml_len 1040 -> 2080 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 41MB (max of parked delta 41MB and capture-time pool peak 9MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 532480 -> 1064960 ml_len 2080 -> 4160 (retired kept, zero=false)
+[admit-cal] post-probe pool trim: released 1376MB cached back to the driver
+[admit-cal] boot calibration done: model="journal9" route=mtp transient floor 1536MB (static was 1536MB; measured 1266MB; probe kv charge 67MB, draft-state 41MB, drafted 48 accepted 47; [dev0 peak-mapped 9536MB rest-mapped 8160MB charged 109MB -> 1266MB]; 1.1s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["journal9"]
+[admin] listening on http://127.0.0.1:8192
+[server] listening on http://127.0.0.1:8191
+[meter] admit id=chatcmpl-b1a544556269bcc0eca248779d1b50ca tenant=cell-tenant lane=interactive model="journal9"
+[meter] admit id=chatcmpl-1a844bc3fdd6f7d2d46da7788194d664 tenant=cell-tenant lane=interactive model="journal9"
+[admission] per-session draft-state charge: model="journal9" +44MB (measured capture high-water)
+[admission] request cost: model="journal9" ctx=135 path=spec = 16704 B/token x ctx + 8MB prefill-workspace + 0MB fixed = 11MB
+[meter] admit id=chatcmpl-e08e08f44a3207860a7bde05a589d21b tenant=cell-tenant lane=interactive model="journal9"
+[meter] admit id=chatcmpl-bc793ab53396a09433d90e304ec55bb2 tenant=cell-tenant lane=interactive model="journal9"
+[meter] admit id=chatcmpl-6ba88b1af1211b5a2e809df79dfaea9e tenant=cell-tenant lane=interactive model="journal9"
+[meter] admit id=chatcmpl-a53e8345d22c3d7e4649c6f9e9e095d6 tenant=cell-tenant lane=interactive model="journal9"
+[meter] admit id=chatcmpl-572bfbb69da549360afa7726308b1285 tenant=cell-tenant lane=interactive model="journal9"
+[meter] admit id=chatcmpl-074f55442bd5d5e0542f6ba35fef9e40 tenant=cell-tenant lane=interactive model="journal9"
+[meter] admit id=chatcmpl-a7b6ae1de627067f3079d48d0bfbb34f tenant=cell-tenant lane=interactive model="journal9"
+[meter] admit id=chatcmpl-b756d7a1ad78f4fb84808228d6283c24 tenant=cell-tenant lane=interactive model="journal9"
+[meter] admit id=chatcmpl-4aa0b3f1a3b42d93625159154abe56e8 tenant=cell-tenant lane=interactive model="journal9"
+[meter] admit id=chatcmpl-3b319a4779c88f00fe7cd0fc1cd1f290 tenant=cell-tenant lane=interactive model="journal9"
+[meter] admit id=chatcmpl-90982598ed47f9e125ee25cf2d4fcf31 tenant=cell-tenant lane=interactive model="journal9"
+[meter] admit id=chatcmpl-110f6eec67f966968fcd23ec3d190d7c tenant=cell-tenant lane=interactive model="journal9"
+[meter] admit id=chatcmpl-ac20efbdd56cfd882dcdde3d81f5d80f tenant=cell-tenant lane=interactive model="journal9"
+[spec-k] model="journal9" tenant="t:cell-tenant" K=1 source=resume-floor(k=0->1) prompt=23 cached=0 lcp=0 active=1 wave=15 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="journal9" 103MB (observed 104MB at ctx 79 path=spec)
+[meter] admit id=chatcmpl-1a86ad647cc3515894e90826ce1f2360 tenant=cell-tenant lane=interactive model="journal9"
+[admission] request cost: model="journal9" ctx=134 path=plain = 14848 B/token x ctx + 8MB prefill-workspace + 103MB fixed = 113MB
+[spec-k] model="journal9" tenant="t:cell-tenant" K=0 source=concurrency prompt=22 cached=0 lcp=0 active=2 wave=16 placement=single-or-non-pp2
+[admission] request cost: model="journal9" ctx=132 path=plain = 14848 B/token x ctx + 7MB prefill-workspace + 103MB fixed = 112MB
+[spec-k] model="journal9" tenant="t:cell-tenant" K=0 source=concurrency prompt=20 cached=0 lcp=0 active=3 wave=16 placement=single-or-non-pp2
+[admission] request cost: model="journal9" ctx=134 path=plain = 14848 B/token x ctx + 8MB prefill-workspace + 103MB fixed = 113MB
+[spec-k] model="journal9" tenant="t:cell-tenant" K=0 source=concurrency prompt=22 cached=0 lcp=0 active=4 wave=16 placement=single-or-non-pp2
+[admission] request cost: model="journal9" ctx=135 path=plain = 14848 B/token x ctx + 8MB prefill-workspace + 103MB fixed = 113MB
+[spec-k] model="journal9" tenant="t:cell-tenant" K=0 source=concurrency prompt=23 cached=0 lcp=0 active=5 wave=16 placement=single-or-non-pp2
+[admission] request cost: model="journal9" ctx=134 path=plain = 14848 B/token x ctx + 8MB prefill-workspace + 103MB fixed = 113MB
+[spec-k] model="journal9" tenant="t:cell-tenant" K=0 source=concurrency prompt=22 cached=0 lcp=0 active=6 wave=16 placement=single-or-non-pp2
+[admission] request cost: model="journal9" ctx=131 path=plain = 14848 B/token x ctx + 7MB prefill-workspace + 103MB fixed = 112MB
+[spec-k] model="journal9" tenant="t:cell-tenant" K=0 source=concurrency prompt=19 cached=0 lcp=0 active=7 wave=16 placement=single-or-non-pp2
+[admission] request cost: model="journal9" ctx=130 path=plain = 14848 B/token x ctx + 6MB prefill-workspace + 103MB fixed = 112MB
+[spec-k] model="journal9" tenant="t:cell-tenant" K=0 source=concurrency prompt=18 cached=0 lcp=0 active=8 wave=16 placement=single-or-non-pp2
+[admission] request cost: model="journal9" ctx=127 path=plain = 14848 B/token x ctx + 5MB prefill-workspace + 103MB fixed = 110MB
+[spec-k] model="journal9" tenant="t:cell-tenant" K=0 source=concurrency prompt=15 cached=0 lcp=0 active=9 wave=16 placement=single-or-non-pp2
+[admission] request cost: model="journal9" ctx=133 path=plain = 14848 B/token x ctx + 8MB prefill-workspace + 103MB fixed = 113MB
+[spec-k] model="journal9" tenant="t:cell-tenant" K=0 source=concurrency prompt=21 cached=0 lcp=0 active=10 wave=16 placement=single-or-non-pp2
+[admission] request cost: model="journal9" ctx=131 path=plain = 14848 B/token x ctx + 7MB prefill-workspace + 103MB fixed = 112MB
+[spec-k] model="journal9" tenant="t:cell-tenant" K=0 source=concurrency prompt=19 cached=0 lcp=0 active=11 wave=16 placement=single-or-non-pp2
+[admission] request cost: model="journal9" ctx=138 path=plain = 14848 B/token x ctx + 9MB prefill-workspace + 103MB fixed = 115MB
+[spec-k] model="journal9" tenant="t:cell-tenant" K=0 source=concurrency prompt=26 cached=0 lcp=0 active=12 wave=16 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="journal9" 103MB (observed 104MB at ctx 82 path=plain)
+[admission] request cost: model="journal9" ctx=131 path=plain = 14848 B/token x ctx + 7MB prefill-workspace + 103MB fixed = 112MB
+[spec-k] model="journal9" tenant="t:cell-tenant" K=0 source=concurrency prompt=19 cached=0 lcp=0 active=13 wave=16 placement=single-or-non-pp2
+[admission] request cost: model="journal9" ctx=134 path=plain = 14848 B/token x ctx + 8MB prefill-workspace + 103MB fixed = 113MB
+[spec-k] model="journal9" tenant="t:cell-tenant" K=0 source=concurrency prompt=22 cached=0 lcp=0 active=14 wave=16 placement=single-or-non-pp2
+[admission] request cost: model="journal9" ctx=133 path=plain = 14848 B/token x ctx + 8MB prefill-workspace + 103MB fixed = 113MB
+[spec-k] model="journal9" tenant="t:cell-tenant" K=0 source=concurrency prompt=21 cached=0 lcp=0 active=15 wave=16 placement=single-or-non-pp2
+[admission] request cost: model="journal9" ctx=131 path=plain = 14848 B/token x ctx + 7MB prefill-workspace + 103MB fixed = 112MB
+[spec-k] model="journal9" tenant="t:cell-tenant" K=0 source=concurrency prompt=19 cached=0 lcp=0 active=16 wave=16 placement=single-or-non-pp2
+[spec-gate] demoted session to batched decode: 16 active >= HIGH=4 (model journal9, committed 24, generated 1)
+[prime-batch] B=6 tokens=128 carried=0 partial=0 in 54.6ms
+[prime-batch] B=6 tokens=125 carried=0 partial=0 in 55.5ms
+[prime-batch] B=2 tokens=40 carried=0 partial=0 in 36.8ms
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

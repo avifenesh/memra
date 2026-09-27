@@ -1,0 +1,18 @@
+# release-roster.tsv — the models the release gate MUST run, and where they live.
+#
+# WHY THIS FILE EXISTS. docs/RELEASING.md used to say `run-gen <each affected model>`,
+# and "affected" was left to the releaser's judgment. On 2026-08-28 that judgment
+# skipped ornith-1.5-35b-a3b for v0.118.0 — the reasoning was defensible (a
+# JSON-emission change touches no kernel) but the model is OURS, self-published, the
+# one nobody else serves, and it was skipped because its GGUF simply was not on the
+# rig. A gate you can satisfy by not having the file is not a gate.
+#
+# OWNER RULING 2026-08-28: "the main models that need to be tested are my models."
+# An `own` model is REQUIRED — release-battery.sh refuses a release when one is
+# missing rather than reporting it skipped. A `vendor` model is required when present
+# and reported absent when not: we do not publish other people's checkpoints, so a
+# missing vendor file is a rig-provisioning fact, not a custody failure.
+#
+# class	id	path	notes
+own	ornith-ai/ornith-1.5-35b-a3b	/data/ai-ml/hf-models/ornith15-gguf/Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf	self-published NVFP4+MTP (HF Avifenesh/Ornith-1.5-35B-A3B-NVFP4-MTP-GGUF); the only endpoint serving it anywhere
+vendor	qwen/qwen3.8-27b	/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf	primary billing model on box10 /data/q38

@@ -1,0 +1,105 @@
+405466cf745f36e24350c2692ebb443e02f7b3ce
+               total        used        free      shared  buff/cache   available
+Mem:     94879371264  4189995008 31382941696     5423104 60286259200 90689376256
+Swap:              0           0           0
+MemAvailable:   88562080 kB
+AnonHugePages:         0 kB
+HugePages_Total:       0
+Hugepagesize:       2048 kB
+always [madvise] never
+30
+3.14 1.87 0.93 2/518 70033
+usage: pinned-host-reserve-bench.py [-h] [--bytes BYTES | --fraction FRACTION]
+                                    [--chunks CHUNKS]
+                                    [--pairs-per-order PAIRS_PER_ORDER]
+                                    [--device DEVICE] [--out OUT]
+pinned-host-reserve-bench.py: error: unrecognized arguments: --basis free
+               total        used        free      shared  buff/cache   available
+Mem:     94879371264  4202541056 31370391552     5423104 60286271488 90676830208
+Swap:              0           0           0
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "/root/spill-receipts/a-day12/arena-cell.sh"
+  ],
+  "exit_code": 2,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "failed",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 58262480866304,
+  "ended_monotonic_ns": 58262826572153,
+  "started_utc": "2026-09-21T07:02:57.474723+00:00",
+  "ended_utc": "2026-09-21T07:02:57.820431+00:00",
+  "elapsed_seconds": 0.345705849,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 962,
+    "sha256": "18a37d1fb216a64e76e9edaaf56c9de9bd149360c0c3e2fab7a59d34a50a71fe"
+  },
+  "failure_quote": "pinned-host-reserve-bench.py: error: unrecognized arguments: --basis free",
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 342,
+      "sha256": "e0bd3a94765345679fad66df68157b612d78017a92fd9d5ae0357b444b3d81ae"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "failure": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.failure.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}

@@ -1,0 +1,21 @@
+server bin /tmp/de641/server-base sha c0c573080301ed94
+-- Y0-3 (cell yield=0) start 2026-09-23T08:42:18+03:00
+server pid 2289230
+server pid 2289230 exit 0
+REPRO641 Y0-3: kind=cell yield=0 on_shape=True peer-b sha=85dbe38937836437 != R finish=length text='s \t</div>\n</body>\n</html>\n```\n\n## File: src/test/resources/10000000' shas={'long': '089d70f819696ba2', 'peer-cold-a': 'e3b0c44298fc1c14', 'peer-cold-b': '85dbe38937836437', 'peer-hit': '2c51dd24d89131a3'}
+   Y0-3 rc=0 end 2026-09-23T08:43:12+03:00 apps=[]
+-- Y1-3 (cell yield=1) start 2026-09-23T08:43:12+03:00
+server pid 2291776
+server pid 2291776 exit 0
+REPRO641 Y1-3: kind=cell yield=1 on_shape=False peer-b sha=06bfb5126effdd4c == R finish=length text='s \t</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</div>\n</' shas={'peer-cold-a': 'e3b0c44298fc1c14', 'peer-cold-b': '06bfb5126effdd4c', 'peer-hit': '2c51dd24d89131a3', 'long': '089d70f819696ba2'}
+   Y1-3 rc=0 end 2026-09-23T08:44:09+03:00 apps=[]
+-- Y0-4 (cell yield=0) start 2026-09-23T08:44:09+03:00
+server pid 2294015
+server pid 2294015 exit 0
+REPRO641 Y0-4: kind=cell yield=0 on_shape=True peer-b sha=85dbe38937836437 != R finish=length text='s \t</div>\n</body>\n</html>\n```\n\n## File: src/test/resources/10000000' shas={'long': '089d70f819696ba2', 'peer-cold-a': 'e3b0c44298fc1c14', 'peer-cold-b': '85dbe38937836437', 'peer-hit': '2c51dd24d89131a3'}
+   Y0-4 rc=0 end 2026-09-23T08:45:06+03:00 apps=[]
+-- Y0-5 (cell yield=0) start 2026-09-23T08:45:06+03:00
+server pid 2300499
+server pid 2300499 exit 0
+REPRO641 Y0-5: kind=cell yield=0 on_shape=True peer-b sha=85dbe38937836437 != R finish=length text='s \t</div>\n</body>\n</html>\n```\n\n## File: src/test/resources/10000000' shas={'long': '089d70f819696ba2', 'peer-cold-a': 'e3b0c44298fc1c14', 'peer-cold-b': '85dbe38937836437', 'peer-hit': '2c51dd24d89131a3'}
+   Y0-5 rc=0 end 2026-09-23T08:46:05+03:00 apps=[]

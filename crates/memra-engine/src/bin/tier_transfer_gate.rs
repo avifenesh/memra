@@ -45,11 +45,29 @@ fn setup() -> (CudaTransfers, Arc<CudaStream>, SharedBudget) {
     let gov: SharedBudget = Rc::new(RefCell::new(
         Governor::new(cap, TierBudget::zero(1), 64, 0, Arc::new(|| 0)).unwrap(),
     ));
-    (
-        CudaTransfers::new(stream.clone(), gov.clone()).unwrap(),
-        stream,
-        gov,
-    )
+    let t = CudaTransfers::new(stream.clone(), gov.clone()).unwrap();
+    // The per-device pinned destination default this card resolves to (WP-A day 14, lead ruling
+    // 22): the arm `alloc_host` takes in every case below, printed once per process so each
+    // card's receipt names it.
+    println!(
+        "PINNED-DEFAULT device=\"{}\" kind={} flags={}",
+        ctx.name().unwrap(),
+        t.pinned_default().name(),
+        t.pinned_default().host_alloc_flags()
+    );
+    (t, stream, gov)
+}
+/// `cuMemHostGetFlags` on a lease: the driver's own record of the arm it was allocated under.
+fn driver_flags(host: &CudaPinnedLease) -> u32 {
+    let mut flags: std::ffi::c_uint = u32::MAX;
+    // SAFETY: the pointer is a live cuMemHostAlloc allocation owned by `host` for the duration of
+    // the call; the query writes only `flags`.
+    unsafe {
+        sys::cuMemHostGetFlags(&mut flags, host.bytes().unwrap().as_ptr() as *mut _)
+            .result()
+            .unwrap()
+    };
+    flags
 }
 fn expected(bytes: &[u8]) -> Vec<Vec<SegmentExpectation>> {
     vec![vec![SegmentExpectation {
@@ -76,8 +94,14 @@ fn h2d(t: &mut CudaTransfers, bytes: &[u8]) -> (CopyOp<CudaPinnedLease>, DeviceL
         keep,
     )
 }
-fn clean(t: &mut CudaTransfers, ticket: &TransferTicket, device: &DeviceLease) {
+/// Drain a cancelled H2D ticket. Day-11 rule 1: the cancelled restore holds its untouched
+/// source for the caller, so retirement waits until every accepted item's source is recovered.
+fn clean(t: &mut CudaTransfers, ticket: &TransferTicket, items: &[u32], device: &DeviceLease) {
     t.synchronize(ticket).unwrap();
+    assert_eq!(t.retire(ticket, None), Err(Error::Busy));
+    for item in items {
+        drop(t.recover_source(ticket, *item).unwrap());
+    }
     t.retire(ticket, None).unwrap();
     t.acknowledge(ticket).unwrap();
     t.release_device(device).unwrap();
@@ -89,6 +113,12 @@ fn conformance() {
     let ticket = t.h2d(op).unwrap();
     v1::transfer_cancel(&mut t, ticket, |t, ticket| {
         t.synchronize(ticket).unwrap();
+        // Day-11 rule 1: the frozen schedule is unchanged; its completion hook recovers the
+        // source before the ticket may retire.
+        assert_eq!(t.retire(ticket, None), Err(Error::Busy));
+        let host = t.recover_source(ticket, 0).unwrap();
+        assert_eq!(host.bytes().unwrap(), &bytes[..]);
+        drop(host);
         t.retire(ticket, None).unwrap();
     });
     t.release_device(&keep).unwrap();
@@ -99,7 +129,7 @@ fn conformance() {
     v1::transfer_complete_cancel(&mut t, ticket, &expected(&bytes), |t, ticket| {
         t.synchronize(ticket).unwrap()
     });
-    clean(&mut t, &ticket, &keep);
+    clean(&mut t, &ticket, &[0], &keep);
     println!("PASS v1.1 transfer_complete_cancel native CUDA");
 
     let (op, keep) = h2d(&mut t, &bytes);
@@ -120,6 +150,9 @@ fn conformance() {
             }
             v1::LifetimeStep::Graph => {
                 drop(graph.take());
+                // Day-11 rule 1: idle and revoked, the source is still held for the caller.
+                assert_eq!(t.retire(ticket, None), Err(Error::Busy));
+                drop(t.recover_source(ticket, 0).unwrap());
                 t.retire(ticket, None).unwrap();
             }
         },
@@ -167,7 +200,12 @@ fn conformance() {
         Err(Error::Rejected)
     ));
     t.cancel(&batch.ticket).unwrap();
-    clean(&mut t, &batch.ticket, &keep_a);
+    // The rejected sibling was returned at submission; it has no source to recover.
+    assert!(matches!(
+        t.recover_source(&batch.ticket, 1),
+        Err(Error::Rejected)
+    ));
+    clean(&mut t, &batch.ticket, &[0, 2], &keep_a);
     t.release_device(&keep_b).unwrap();
     drop(batch);
     t.release_device(&keep_c).unwrap();
@@ -262,8 +300,65 @@ fn conformance() {
     canonical_source_retirement(&mut t, &stream);
     canonical_hand_back(&mut t, &stream);
     destination_drop_retention(&mut t, &stream);
+    cancelled_restore_recovers_source(&mut t, &stream);
+    cancel_refused_after_source_consumed(&mut t);
     assert_eq!(gov.borrow().used(), TierBudget::zero(1));
     println!("PASS native governor zero after controlled drain");
+}
+
+// Day-11 rule 1 (lead ruling 9), recoverable outcome: the producer is held pending by a native
+// host function, a source graph pin and a real source consumer event are live; every advance is
+// an observed CUDA event or a released pin, never a flag. The frozen schedules are unchanged.
+fn cancelled_restore_recovers_source(t: &mut CudaTransfers, stream: &Arc<CudaStream>) {
+    let bytes = vec![47u8; 4096];
+    let (op, keep) = h2d(t, &bytes);
+    let hold = ProducerHold::new(stream);
+    let ticket = t.h2d(op).unwrap();
+    assert!(!t.poll(&ticket).unwrap().producer_done);
+    let mut source_graph = Some(t.pin_source_graph(&ticket).unwrap());
+    let charged = t.used();
+    let host = v1::transfer_cancel_recovers_source(
+        t,
+        ticket,
+        |t, ticket, step| match step {
+            v1::RecoverStep::Unknown => t.quarantine_observation(ticket).unwrap(),
+            v1::RecoverStep::Producer => {
+                hold.release();
+                stream.synchronize().unwrap();
+            }
+            v1::RecoverStep::Recover => t.synchronize(ticket).unwrap(),
+            v1::RecoverStep::SourceConsumer => {
+                t.record_source_consumer(ticket).unwrap();
+                stream.synchronize().unwrap();
+            }
+            v1::RecoverStep::SourceGraph => drop(source_graph.take()),
+        },
+        |t| {
+            assert_eq!(t.used(), charged);
+            assert_eq!(t.device_registry_len(), 1);
+        },
+    );
+    // The untouched source is the caller's again and carries its own pinned charge.
+    assert_eq!(host.bytes().unwrap(), bytes);
+    assert_eq!(t.used().pinned, bytes.len() as u64);
+    assert_eq!(t.used().inflight, 0);
+    drop(host);
+    t.release_device(&keep).unwrap();
+    assert_eq!(t.used(), TierBudget::zero(1));
+    println!("PASS rule cancelled-restore-recovers-source native CUDA");
+}
+// Day-11 rule 1, forbidden order: once the source left through per-side retirement, cancel is
+// refused and no recovery is offered.
+fn cancel_refused_after_source_consumed(t: &mut CudaTransfers) {
+    let bytes = vec![53u8; 4096];
+    let (op, keep) = h2d(t, &bytes);
+    let ticket = t.h2d(op).unwrap();
+    v1::transfer_cancel_refused_after_source_consumed(t, ticket, |t, ticket| {
+        t.synchronize(ticket).unwrap()
+    });
+    t.release_device(&keep).unwrap();
+    assert_eq!(t.used(), TierBudget::zero(1));
+    println!("PASS rule cancel-refused-after-source-consumed native CUDA");
 }
 // A native stream callback holds production pending without launching a
 // spin kernel or synthesizing completion. It never calls a CUDA API. RAII opens
@@ -554,6 +649,13 @@ fn roundtrip() {
             .unwrap();
         let producer = t.record_producer(epochs().src_gen).unwrap();
         let host = t.alloc_host(n, request()).unwrap();
+        // The default lease's arm as the driver recorded it (a UVA driver adds DEVICEMAP, 2: 6 for
+        // write-combined, 2 for cached), beside the byte-exactness line of the same roundtrip.
+        println!(
+            "PINNED-DEFAULT roundtrip bytes={n} kind={} driver_flags={}",
+            host.pinned_kind().unwrap().name(),
+            driver_flags(&host)
+        );
         let source_copy = t.retain_device(&source).unwrap();
         let down = t
             .d2h(CopyOp {
@@ -652,13 +754,371 @@ fn roundtrip() {
         );
     }
 }
+/// One timed D2H then H2D roundtrip of the contract under one pinned arm (WP-A day 13,
+/// `research/spill-a-20260919/PINNED-FLAGS.md` section 6). The phases are the engine's own calls in
+/// the order the door runs them: allocation (page-lock plus the zero fill), the D2H (submit to the
+/// owner stream's synchronize: the DMA, no host read), the engine's completion hash
+/// (`synchronize(&ticket)` on an already complete copy is `progress`'s SHA-256 over the
+/// destination), the bind hash (`checksum(host.bytes())` over the taken destination, the read
+/// `bind_tier_image` does), the byte compare, the H2D (submit to stream synchronize) and the
+/// H2D-source hash (Option C's completion read). Byte exactness covers both legs.
+struct PinnedSample {
+    arm: memra_engine::tier_transfer::PinnedKind,
+    driver_flags: u32,
+    alloc_ms: f64,
+    d2h_ms: f64,
+    engine_hash_ms: f64,
+    bind_hash_ms: f64,
+    compare_ms: f64,
+    h2d_ms: f64,
+    source_hash_ms: f64,
+    byte_exact: bool,
+}
+fn pinned_roundtrip(
+    t: &mut CudaTransfers,
+    stream: &Arc<CudaStream>,
+    gov: &SharedBudget,
+    pattern: &[u8],
+    want: Digest,
+    arm: memra_engine::tier_transfer::PinnedKind,
+) -> PinnedSample {
+    use std::time::Instant;
+    let ms = |t0: Instant| t0.elapsed().as_secs_f64() * 1000.0;
+    let n = pattern.len();
+    // The device source is staged outside every timed phase.
+    let source = stream.clone_htod(pattern).unwrap();
+    stream.synchronize().unwrap();
+    let source = t
+        .register_device(source, epochs().src_gen, request())
+        .unwrap();
+    let producer = t.record_producer(epochs().src_gen).unwrap();
+    let t0 = Instant::now();
+    let host = t.alloc_host_kind(n, request(), arm).unwrap();
+    let alloc_ms = ms(t0);
+    assert_eq!(host.pinned_kind(), Some(arm));
+    let driver_flags = driver_flags(&host);
+    let source_copy = t.retain_device(&source).unwrap();
+    let t0 = Instant::now();
+    let down = t
+        .d2h(CopyOp {
+            host,
+            device: source_copy,
+            bytes: n as u64,
+            epochs: epochs(),
+            producer_fence: Some(producer),
+        })
+        .unwrap();
+    stream.synchronize().unwrap();
+    let d2h_ms = ms(t0);
+    let t0 = Instant::now();
+    t.synchronize(&down).unwrap();
+    let engine_hash_ms = ms(t0);
+    let Destination::Host(host) = t.take_destination(&down, 0, epochs()).unwrap() else {
+        panic!("D2H destination is not host")
+    };
+    let t0 = Instant::now();
+    let got = checksum(host.bytes().unwrap());
+    let bind_hash_ms = ms(t0);
+    let t0 = Instant::now();
+    let d2h_exact = got == want && host.bytes().unwrap() == pattern;
+    let compare_ms = ms(t0);
+    t.retire_source(&down).unwrap();
+    t.release_device(&source).unwrap();
+    let target = t.alloc_device(n, epochs().dst_gen, request()).unwrap();
+    let keep = t.retain_device(&target).unwrap();
+    let t0 = Instant::now();
+    let up = t
+        .h2d(CopyOp {
+            host,
+            device: target,
+            bytes: n as u64,
+            epochs: epochs(),
+            producer_fence: None,
+        })
+        .unwrap();
+    stream.synchronize().unwrap();
+    let h2d_ms = ms(t0);
+    let t0 = Instant::now();
+    t.synchronize(&up).unwrap();
+    let source_hash_ms = ms(t0);
+    let restored = t
+        .with_destination(&up, 0, epochs(), |device, stream| {
+            stream
+                .clone_dtoh(&device.slice(..n))
+                .map_err(|_| Error::Quarantined)
+        })
+        .unwrap();
+    let h2d_exact = restored == pattern && checksum(&restored) == want;
+    let Destination::Device(destination) = t.take_destination(&up, 0, epochs()).unwrap() else {
+        panic!("H2D destination is not device")
+    };
+    t.retire_source(&up).unwrap();
+    let down_done = t.record_consumer(&down).unwrap();
+    stream.synchronize().unwrap();
+    t.retire(&down, Some(down_done)).unwrap();
+    t.acknowledge(&down).unwrap();
+    let up_done = t.record_consumer(&up).unwrap();
+    stream.synchronize().unwrap();
+    t.retire(&up, Some(up_done)).unwrap();
+    t.acknowledge(&up).unwrap();
+    drop(keep);
+    drop(t.take_device(&destination).unwrap());
+    t.release_producer(producer).unwrap();
+    assert_eq!(gov.borrow().used(), TierBudget::zero(1));
+    PinnedSample {
+        arm,
+        driver_flags,
+        alloc_ms,
+        d2h_ms,
+        engine_hash_ms,
+        bind_hash_ms,
+        compare_ms,
+        h2d_ms,
+        source_hash_ms,
+        byte_exact: d2h_exact && h2d_exact,
+    }
+}
+/// One timed phase of a `PinnedSample`, in milliseconds.
+type Phase = fn(&PinnedSample) -> f64;
+fn median(values: &[f64]) -> f64 {
+    let mut v = values.to_vec();
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let n = v.len();
+    if n == 0 {
+        f64::NAN
+    } else if n % 2 == 1 {
+        v[n / 2]
+    } else {
+        (v[n / 2 - 1] + v[n / 2]) / 2.0
+    }
+}
+/// `tier-transfer-gate pinned-ab [--bytes N] [--pairs N]`: the write-combined arm (A, today's
+/// default) against the cached arm (B) in one process, one CUDA context and one collector lock
+/// hold: one untimed warm-up roundtrip per arm, then A B A B (order 1, `pairs` pairs) and B A B A
+/// (order 2), one line per roundtrip, medians per arm per order and pooled, and the pre-registered
+/// rule of `research/spill-a-20260919/DAY13.md` evaluated for this card. The collector reads the
+/// one `RESULT` line. Run ONLY through tier-battery (the rig lock and the 250 ms telemetry).
+fn pinned_ab(bytes: usize, pairs: usize) {
+    use memra_engine::tier_transfer::PinnedKind;
+    assert!(bytes >= 4096 && pairs >= 1, "bytes >= 4096, pairs >= 1");
+    let (mut t, stream, gov) = setup();
+    let pattern: Vec<u8> = (0..bytes)
+        .map(|i| ((i.wrapping_mul(37) ^ (i >> 8) ^ (i >> 17)) & 255) as u8)
+        .collect();
+    let want = checksum(&pattern);
+    let (a, b) = (PinnedKind::WriteCombined, PinnedKind::Cached);
+    let line = |tag: &str, order: usize, pair: usize, s: &PinnedSample| {
+        println!(
+            "PINNED-AB {tag} order={order} pair={pair} arm={} bytes={bytes} driver_flags={} alloc_ms={:.3} d2h_ms={:.3} engine_hash_ms={:.3} bind_hash_ms={:.3} compare_ms={:.3} h2d_ms={:.3} source_hash_ms={:.3} byte_exact={}",
+            s.arm.name(),
+            s.driver_flags,
+            s.alloc_ms,
+            s.d2h_ms,
+            s.engine_hash_ms,
+            s.bind_hash_ms,
+            s.compare_ms,
+            s.h2d_ms,
+            s.source_hash_ms,
+            s.byte_exact
+        );
+    };
+    let mut warm_exact = true;
+    for arm in [a, b] {
+        let s = pinned_roundtrip(&mut t, &stream, &gov, &pattern, want, arm);
+        warm_exact &= s.byte_exact;
+        line("warmup", 0, 0, &s);
+    }
+    // samples[order][pair] = (first arm's sample, second arm's sample); order 1 is A then B.
+    let mut samples: Vec<Vec<(PinnedSample, PinnedSample)>> = vec![];
+    for (order, (first, second)) in [(a, b), (b, a)].into_iter().enumerate() {
+        let mut rows = vec![];
+        for pair in 1..=pairs {
+            let x = pinned_roundtrip(&mut t, &stream, &gov, &pattern, want, first);
+            line("timed", order + 1, pair, &x);
+            let y = pinned_roundtrip(&mut t, &stream, &gov, &pattern, want, second);
+            line("timed", order + 1, pair, &y);
+            rows.push((x, y));
+        }
+        samples.push(rows);
+    }
+    let pick = |order: usize, arm: PinnedKind, f: Phase| -> Vec<f64> {
+        samples[order]
+            .iter()
+            .map(|(x, y)| if x.arm == arm { f(x) } else { f(y) })
+            .collect()
+    };
+    let phases: [(&str, Phase); 7] = [
+        ("alloc_ms", |s| s.alloc_ms),
+        ("d2h_ms", |s| s.d2h_ms),
+        ("engine_hash_ms", |s| s.engine_hash_ms),
+        ("bind_hash_ms", |s| s.bind_hash_ms),
+        ("compare_ms", |s| s.compare_ms),
+        ("h2d_ms", |s| s.h2d_ms),
+        ("source_hash_ms", |s| s.source_hash_ms),
+    ];
+    let mut medians: Vec<String> = vec![];
+    for (name, f) in phases {
+        for arm in [a, b] {
+            let o1 = pick(0, arm, f);
+            let o2 = pick(1, arm, f);
+            let pooled: Vec<f64> = o1.iter().chain(o2.iter()).copied().collect();
+            println!(
+                "PINNED-AB median {name} arm={} order1={:.3} (N={}) order2={:.3} (N={}) pooled={:.3} (N={}) min={:.3} max={:.3}",
+                arm.name(),
+                median(&o1),
+                o1.len(),
+                median(&o2),
+                o2.len(),
+                median(&pooled),
+                pooled.len(),
+                pooled.iter().cloned().fold(f64::INFINITY, f64::min),
+                pooled.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+            );
+            medians.push(format!(
+                "\"{name}.{}\":{{\"order1\":{:.3},\"order2\":{:.3},\"pooled\":{:.3},\"n_per_order\":{},\"n_pooled\":{}}}",
+                arm.name(),
+                median(&o1),
+                median(&o2),
+                median(&pooled),
+                o1.len(),
+                pooled.len()
+            ));
+        }
+    }
+    // The pre-registered rule (DAY13.md): the cached arm wins on this card iff byte exactness
+    // holds in every cell, its bind-hash wall is below the write-combined arm's at every pair of
+    // both orders and in both orders' medians, and its D2H wall is not above the write-combined
+    // arm's at any pair (the DMA is predicted flag-independent; a regression there is a loss).
+    // The strict D2H reading (cached strictly below at every pair) is reported beside it.
+    let all_exact = warm_exact
+        && samples
+            .iter()
+            .flatten()
+            .all(|(x, y)| x.byte_exact && y.byte_exact);
+    // The driver's record carries the arm's bit and, on a UVA platform, `DEVICEMAP` for every
+    // pinned allocation (6 for write-combined, 2 for cached on the target card, first sitting);
+    // the raw value stays in every line, the check is the write-combined bit.
+    let honoured = |s: &PinnedSample| {
+        s.driver_flags & sys::CU_MEMHOSTALLOC_WRITECOMBINED == s.arm.host_alloc_flags()
+    };
+    let flags_ok = samples
+        .iter()
+        .flatten()
+        .all(|(x, y)| honoured(x) && honoured(y));
+    let per_pair = |f: Phase, cmp: fn(f64, f64) -> bool| -> (usize, usize) {
+        let mut hits = 0;
+        let mut total = 0;
+        for (x, y) in samples.iter().flatten() {
+            let (wc, cached) = if x.arm == a { (x, y) } else { (y, x) };
+            total += 1;
+            if cmp(f(cached), f(wc)) {
+                hits += 1;
+            }
+        }
+        (hits, total)
+    };
+    let bind = per_pair(|s| s.bind_hash_ms, |c, w| c < w);
+    let engine = per_pair(|s| s.engine_hash_ms, |c, w| c < w);
+    let d2h_no_regression = per_pair(|s| s.d2h_ms, |c, w| c <= w);
+    let d2h_strict = per_pair(|s| s.d2h_ms, |c, w| c < w);
+    let h2d_no_regression = per_pair(|s| s.h2d_ms, |c, w| c <= w);
+    let medians_win = (0..2).all(|o| {
+        median(&pick(o, b, |s| s.bind_hash_ms)) < median(&pick(o, a, |s| s.bind_hash_ms))
+            && median(&pick(o, b, |s| s.d2h_ms)) <= median(&pick(o, a, |s| s.d2h_ms))
+    });
+    let cached_wins = all_exact
+        && flags_ok
+        && bind.0 == bind.1
+        && d2h_no_regression.0 == d2h_no_regression.1
+        && medians_win;
+    let cached_wins_strict_d2h = cached_wins && d2h_strict.0 == d2h_strict.1;
+    let verdict = |win: bool| {
+        if win {
+            "wins-on-this-card"
+        } else {
+            "inconclusive"
+        }
+    };
+    println!(
+        "PINNED-AB rule byte_exact_all={all_exact} driver_flags_honoured={flags_ok} bind_hash_cached_below_wc={}/{} engine_hash_cached_below_wc={}/{} d2h_cached_not_above_wc={}/{} d2h_cached_strictly_below_wc={}/{} h2d_cached_not_above_wc={}/{} medians_both_orders={medians_win} cached_arm={} cached_arm_strict_d2h_reading={}",
+        bind.0,
+        bind.1,
+        engine.0,
+        engine.1,
+        d2h_no_regression.0,
+        d2h_no_regression.1,
+        d2h_strict.0,
+        d2h_strict.1,
+        h2d_no_regression.0,
+        h2d_no_regression.1,
+        verdict(cached_wins),
+        verdict(cached_wins_strict_d2h),
+    );
+    let pair = |(hits, total): (usize, usize)| format!("[{hits},{total}]");
+    let rows: Vec<String> = samples
+        .iter()
+        .enumerate()
+        .flat_map(|(o, rows)| {
+            rows.iter().enumerate().flat_map(move |(p, (x, y))| {
+                [x, y].into_iter().map(move |s| {
+                    format!(
+                        "{{\"order\":{},\"pair\":{},\"arm\":\"{}\",\"driver_flags\":{},\"alloc_ms\":{:.3},\"d2h_ms\":{:.3},\"engine_hash_ms\":{:.3},\"bind_hash_ms\":{:.3},\"compare_ms\":{:.3},\"h2d_ms\":{:.3},\"source_hash_ms\":{:.3},\"byte_exact\":{}}}",
+                        o + 1,
+                        p + 1,
+                        s.arm.name(),
+                        s.driver_flags,
+                        s.alloc_ms,
+                        s.d2h_ms,
+                        s.engine_hash_ms,
+                        s.bind_hash_ms,
+                        s.compare_ms,
+                        s.h2d_ms,
+                        s.source_hash_ms,
+                        s.byte_exact
+                    )
+                })
+            })
+        })
+        .collect();
+    println!(
+        "RESULT {{\"cell\":\"pinned-ab\",\"bytes\":{bytes},\"pairs_per_order\":{pairs},\"arms\":{{\"A\":\"{}\",\"B\":\"{}\"}},\"orders\":[\"A B\",\"B A\"],\"warmup_per_arm\":1,\"byte_exact_all\":{all_exact},\"driver_flags_honoured\":{flags_ok},\"per_pair\":{{\"bind_hash_cached_below_wc\":{},\"engine_hash_cached_below_wc\":{},\"d2h_cached_not_above_wc\":{},\"d2h_cached_strictly_below_wc\":{},\"h2d_cached_not_above_wc\":{}}},\"medians_both_orders\":{medians_win},\"cached_arm\":\"{}\",\"cached_arm_strict_d2h_reading\":\"{}\",\"medians_ms\":{{{}}},\"samples\":[{}],\"qualification\":false,\"scope\":\"one card, one window, executed-not-qualified; one card class's cell of the per-device pinned destination default (docs/decisions/PINNED-DESTINATIONS.md), never by itself a default change\"}}",
+        a.name(),
+        b.name(),
+        pair(bind),
+        pair(engine),
+        pair(d2h_no_regression),
+        pair(d2h_strict),
+        pair(h2d_no_regression),
+        verdict(cached_wins),
+        verdict(cached_wins_strict_d2h),
+        medians.join(","),
+        rows.join(",")
+    );
+    assert!(all_exact, "byte exactness failed in at least one cell");
+    assert!(flags_ok, "the driver did not record an arm's flag bits");
+}
 fn main() {
-    let case = std::env::args()
-        .nth(1)
-        .expect("case: conformance|roundtrip");
+    let args: Vec<String> = std::env::args().collect();
+    let case = args
+        .get(1)
+        .expect("case: conformance|roundtrip|pinned-ab [--bytes N] [--pairs N]");
     match case.as_str() {
         "conformance" => conformance(),
         "roundtrip" => roundtrip(),
+        "pinned-ab" => {
+            let mut bytes = 160usize << 20;
+            let mut pairs = 5usize;
+            let mut rest = args[2..].iter();
+            while let Some(key) = rest.next() {
+                let value = rest.next().expect("missing value");
+                match key.as_str() {
+                    "--bytes" => bytes = value.parse().expect("--bytes N"),
+                    "--pairs" => pairs = value.parse().expect("--pairs N"),
+                    _ => panic!("unknown argument {key}"),
+                }
+            }
+            pinned_ab(bytes, pairs)
+        }
         _ => panic!("unknown case"),
     }
 }

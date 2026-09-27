@@ -1,0 +1,47 @@
+tree f9bcdffe9b7a4cf9efde50137bfe8347bf0aa5ab started 2026-09-21T09:48:01Z host avifenesh rustc rustc 1.97.1 (8bab26f4f 2026-07-14)
+== fmt: cargo fmt --all -- --check
+   rc=0 (4s)
+== portable-suites: bash tools/portable-suites.sh
+   rc=0 (22s)
+   | skip-census: output banked at /home/avifenesh/projects/wt-spill-integ17/target/portable-suites.log
+   | skip-census: 335 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 14 binaries
+   | portable-suites: PASS (tier, KV and onboarding CLI suites executed on CPU; skips 0 of budget 0; NOT GPU qualification)
+== test-server: cargo test -p memra-server --offline --no-fail-fast
+   rc=0 (44s)
+   | 
+   | test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   | 
+== clippy: env DOCS_RS=1 cargo clippy -p memra-engine -p memra-server -p memra-tier -p memra-kv -p memra-gguf -p memra-cli --offline --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
+   rc=0 (32s)
+   |     Checking hyper-util v0.1.20
+   |     Checking axum v0.7.9
+   |     Finished `dev` profile [unoptimized + debuginfo] target(s) in 31.35s
+== check-flags: bash tools/check-flags.sh
+   rc=0 (1s)
+   | check-flags: runtime literal reads=867
+   | check-flags: no uncovered runtime names
+   | check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)
+== publish-census: bash tools/workspace-publish-census.sh
+   rc=0 (0s)
+   | publish-census: OK — 12 publishable members, 12 listed, order topological, unpublishable: memra-probe
+== docs-registry: bash tools/docs-registry-census.sh
+   rc=0 (1s)
+   | docs-registry-census: ROUTER.md lines=44 (cap 60)
+   | docs-registry-census: check-flags --list answered with 867 runtime names (coverage enforced by check-flags.sh itself)
+   | docs-registry-census: flags-table-census: docs/FLAGS.md tables=58 rows=903, every row matches its header
+== pytest-battery: python3 -m pytest -q crates/memra-tier/tests/battery/
+   rc=0 (19s)
+   | .................................................. [ 57%]
+   | .....................................                          [100%]
+   | 87 passed, 32 subtests passed in 19.52s
+== verify-c15: python3 research/spill-c-20260919/verify-day15.py
+   rc=0 (0s)
+   |   ok: newest: ON boots announce the door with nothing to route
+   | 
+   | DAY15 REPLAY: PASS
+== perf-board: python3 tools/update-perf-board.py --check
+   rc=0 (0s)
+   | perf board is up to date
+== diff-check: git diff --check
+   rc=0 (0s)
+finished 2026-09-21T09:50:04Z

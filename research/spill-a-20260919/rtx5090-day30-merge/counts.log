@@ -1,0 +1,42 @@
+## completion lines (A3): copy-complete batch totals, D2H receipt KV items, receipt span suffixes
+     16 items=64 (16 KV, 48 f32 spans)
+     18 items=66 (18 KV, 48 f32 spans)
+     16 items=16 (8 KV planes)
+     18 items=18 (8 KV planes, draft)
+     34 ; 48 f32 spans landed under the ticket and taken back before the retire
+## demote submissions (tokens, MB, items)
+     17 demote submitted off the tick: 64 tokens, 54.6MB, 16 items
+     19 demote submitted off the tick: 64 tokens, 54.8MB, 18 items
+## logs where submissions exceed copy completions
+rtx5090-day30-merge/fault-default-held/ev/postpublish-server.log submitted=2 copy_complete=1
+rtx5090-day30-merge/fault-plain-held/ev/postpublish-server.log submitted=2 copy_complete=1
+## demote failures, verbatim
+      2 [prefix-host] demote failed (tier D2H producer fence refused: injected failure (MEMRA_KV_HOST_FAULT=contract-presubmit)); nothing demoted
+      2 [prefix-host] demote failed (tier D2H receipt refused: injected failure (MEMRA_KV_HOST_FAULT=contract-postpublish)); nothing demoted
+      1 [prefix-host] demote failed (tier hash digests never landed: ticket seq=2 waited 10.0s past the hand-off, deadline 10s (50 payloads, 53.7MB, 2886 poll(s), settled synchronously by a second demote)); nothing published; the tier latches off
+      1 [prefix-host] demote failed (tier hash digests never landed: ticket seq=3 waited 10.0s past the hand-off, deadline 10s (50 payloads, 53.7MB, 2 poll(s), settled synchronously by a second demote)); nothing published; the tier latches off
+      1 [prefix-host] demote failed (tier hash helper gone: the reply channel closed before the digests of ticket seq=2 landed (50 payloads, 53.7MB, 1 poll(s), tick-top poll)); nothing published; the tier latches off
+      1 [prefix-host] demote failed (tier hash helper gone: the reply channel closed before the digests of ticket seq=3 landed (50 payloads, 53.7MB, 3 poll(s), tick-top poll)); nothing published; the tier latches off
+## span refusals (the typed refusal line)
+0
+## demote ledger lines per top-level cell dir: pre-submit, helper, owner in-completion (A2 reads the double-park steady set only)
+rtx5090-day30-merge/fault-default-held: N=14 pre-submit median=3.50 min=0.42 max=17.76; helper median=30.10 min=28.40 max=30.90; owner in-completion median=12.82 min=9.77 max=27.17
+rtx5090-day30-merge/fault-plain-held: N=14 pre-submit median=1.93 min=0.37 max=21.31; helper median=30.30 min=29.60 max=30.90; owner in-completion median=10.31 min=8.55 max=29.52
+rtx5090-day30-merge/identity-default-on-held: N=2 pre-submit median=42.20 min=33.46 max=50.94; helper median=30.15 min=30.10 max=30.20; owner in-completion median=51.42 min=42.61 max=60.24
+## hits parked on a Hashing entry, per server log
+rtx5090-day30-merge/fault-default-held/ev/promote-postpublish-server.log:2
+rtx5090-day30-merge/fault-default-held/ev/promote-presubmit-server.log:2
+rtx5090-day30-merge/fault-default-held/ev/promote-readyview-server.log:2
+rtx5090-day30-merge/fault-default-held/ev/promote-reject-server.log:2
+rtx5090-day30-merge/identity-default-on-held/ev/host-on-server.log:1
+## verdict lines per gate log
+rtx5090-day30-merge/battery.log: ok=0 | 2026-09-22T21:09:21Z done hit-on-held rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+rtx5090-day30-merge/fault-default-held/gate.log: ok=123 | KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+rtx5090-day30-merge/fault-plain-held/gate.log: ok=123 | KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+rtx5090-day30-merge/hit-off-held/gate.log: ok=61 | SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+rtx5090-day30-merge/hit-on-held/gate.log: ok=68 | SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+rtx5090-day30-merge/identity-default-on-held/gate.log: ok=12 | KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+rtx5090-day30-merge/launcher-held.log: ok=0 | 2026-09-22T21:09:21Z done hit-on-held rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+## GPU telemetry per collector cell (command.gpu.csv)
+## collector cells (CELL.jsonl status, qualification, exit_code of the closing row)
+## lock retries: 0 file(s)

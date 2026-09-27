@@ -1,0 +1,13 @@
+2026-09-22T03:37:36Z lock held by the collector (external)
+S8b-1 P=2233 L=96 C=2393 path=plain bpt=29696 kv_hat=1489551704 cost_exact=1491214680 cost~=1491000000 bracket=1662976 residual(exact)=0 W~=1070000000 A~=350000000 D~=0
+S8b-4 P=2520 L=96 C=2680 path=plain bpt=29696 kv_hat=1635614040 cost_exact=1637277016 cost~=1637000000 bracket=1662976 residual(exact)=0 W~=1208000000 A~=350000000 D~=0
+S8b-6 P=2700 L=96 C=2860 path=plain bpt=29696 kv_hat=1727221080 cost_exact=1728884056 cost~=1729000000 bracket=1662976 residual(exact)=0 W~=1294000000 A~=350000000 D~=0
+S8b-7 P=2801 L=96 C=2961 path=plain bpt=29696 kv_hat=1778622808 cost_exact=1780285784 cost~=1780000000 bracket=1662976 residual(exact)=0 W~=1342000000 A~=350000000 D~=0
+S8b-5 P=2605 L=96 C=2765 path=plain bpt=29696 kv_hat=1678872920 cost_exact=1680535896 cost~=1681000000 bracket=1662976 residual(exact)=0 W~=1248000000 A~=350000000 D~=0
+S8b-3 P=2430 L=96 C=2590 path=plain bpt=29696 kv_hat=1589810520 cost_exact=None cost~=1591000000 bracket=1662976 residual(line~)=-473496 W~=1165000000 A~=350000000 D~=0
+G3: exact rows max |residual| = 0 (tolerance 0); line~ rows max |residual| = 804952 (tolerance 2e6 at the 1 MB grain)
+G1: growth(end) = 38638080 (G_fa after ready 38638080 + delta_D 0) <= 10% floor = 230057574: PASS
+G2: while inflight > 0, max_underbook_real = 7443968680 <= floor = 2300575744: FAIL
+G4: Overloaded/OOM lines = 0: PASS
+== path per request (from the request-cost line in its block): L-0=spec S1-0=spec S2-0=spec S2-1=spec S4-0=plain S4-1=plain S4-2=plain S4-3=plain S8-0=plain S8-1=plain S8-2=plain S8-3=plain S8-4=plain S8-5=plain S8-6=plain S8-7=plain S8b-0=plain S8b-1=plain S8b-2=plain S8b-3=plain S8b-4=plain S8b-5=plain S8b-6=plain S8b-7=plain warm=spec
+requests=25 non-200=0 admits=25 ready_ms=1790048270607

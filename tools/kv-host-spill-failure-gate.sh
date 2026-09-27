@@ -2,15 +2,35 @@
 # kv-host-spill-failure-gate.sh: the prefix-cache HOST TIER's failure paths must be LOUD and
 # harmless (lane/kv-host-spill-20260830). Every failure path here is EXECUTED, not asserted
 # in prose (the loud-failures-fail-quietly law), via the MEMRA_KV_HOST_FAULT diagnostic door
-# (docs/FLAGS.md section 4). Three cells, each its own boot:
+# (docs/FLAGS.md section 4). Six cells, each its own boot:
 #
 #   pool-full      MEMRA_KV_HOST_MB=1: a real entry cannot fit the 1 MiB tier, so the demote
-#                  must refuse BY NAME ("skip demote: entry ... > host budget"), keep zero
-#                  host entries, and leave serving untouched.
+#                  must refuse BY NAME, keep zero host entries, and leave serving untouched.
+#                  Which named refusal fires depends on MEMRA_KV_HOST_TENANT_PCT (server
+#                  default 50, `49d1d6f65`): below 100 the per-tenant share cap is checked
+#                  BEFORE the D2H copy and the image alone exceeds the share, so the line is
+#                  "demote evaporated at the tenant share cap before the D2H copy: N tokens,
+#                  X MB (P% of B MB, ...); reclaim refused: the image alone exceeds the share
+#                  (X MB > S MB); nothing evicted" (the reclaim suffix from `405466cf7`,
+#                  memra#384) and prefix_host_tenant_rejects counts it; at exactly 100 the cap
+#                  is disarmed and the insert-path whole-budget line fires after the copy:
+#                  "skip demote: entry X MB > host budget B MB". The gate asserts the one the
+#                  effective cap produces, with its bytes and budget, and prints which. Until
+#                  day 21 of lane/spill-c-20260919 it matched only the insert-path line, which
+#                  was green only with MEMRA_KV_HOST_TENANT_PCT=100 set out of band
+#                  (research/spill-d-20260919/DAY8-CELLS.md).
 #   digest-mismatch MEMRA_KV_HOST_VERIFY=1 MEMRA_KV_HOST_FAULT=flip-demote: one demoted K
 #                  byte is flipped AFTER the demote digest is recorded, so the promote must
 #                  print "[prefix-host] VERIFY FAILED", drop the host entry, and serve the
 #                  request cold with the SAME bytes as the reference cell.
+#   digest-draft, digest-hidden, digest-logits (lane/spill-c-20260919 day 53, verify digest
+#                  v3): MEMRA_KV_HOST_FAULT=flip-demote-{draft,hidden,logits} flips one byte of
+#                  the host copy's draft K plane, boundary hidden row or logits after the demote
+#                  digest, and the promote must print VERIFY FAILED as in digest-mismatch; with
+#                  MEMRA_SERVE_SPEC=0 (plain entries: no draft plane, no hidden row) the draft
+#                  and hidden cells must flip nothing and promote with verify ok; with
+#                  MEMRA_KV_HOST_CONTRACTS=1 (the door's receipts attest these planes; the
+#                  values apply on the legacy copy path only) all three must.
 #   alloc-refusal  MEMRA_KV_HOST_FAULT=alloc-fail: every pinned alloc reports failure, so the
 #                  first demote must print "[prefix-host] TIER DISABLED" (latched off, no
 #                  pageable fallback), count prefix_host_rejected_allocs, complete zero
@@ -24,6 +44,7 @@
 # env:   MEMRA_HOSTGATE_CACHE_MB (default 1024)  device prefix budget; must hold ONE seed
 #                                                entry but not two, or no demote ever fires
 #        MEMRA_HOSTGATE_HOST_MB  (default 8192)  host budget for the fault cells
+#        MEMRA_KV_HOST_TENANT_PCT (server default 50) selects the pool-full refusal arm asserted
 # Boots its own servers one cell at a time (flock ${MEMRA_GPU_LOCK:-/tmp/memra-5090.lock}).
 # Exit 0 = every assertion held. Evidence: <evidence_dir>/<cell>-r{1..3}.json + logs.
 set -euo pipefail
@@ -65,6 +86,9 @@ printf '%s\n' "$LOCK_PROOF" > "$EV/LOCK.json"
 SERVER_PID=""
 CACHE_MB=${MEMRA_HOSTGATE_CACHE_MB:-1024}
 HOST_MB=${MEMRA_HOSTGATE_HOST_MB:-8192}
+# The effective per-tenant share cap, mirroring the server's parse (integer 1..=100, else 50 loudly).
+TENANT_PCT=${MEMRA_KV_HOST_TENANT_PCT:-50}
+[[ $TENANT_PCT =~ ^[0-9]+$ ]] && [ "$TENANT_PCT" -ge 1 ] && [ "$TENANT_PCT" -le 100 ] || TENANT_PCT=50
 
 boot() { # $1 extra-env-string  $2 log
     memra_port_guard kv-host-spill-failure-gate "$PORT" MEMRA_GATE_PORT || return 1
@@ -155,6 +179,13 @@ chk() { # NAME CMD...: run CMD under `if` so set -e never fires on an asserted f
     fi
 }
 absent() { ! grep -q "$1" "$2"; }
+# The two named pool-full refusals, each with its bytes and its budget (see the header).
+poolfull_refusal_whole_budget() { # $1 log
+    grep -qE '\[prefix-host\] skip demote: entry [0-9]+\.[0-9]MB > host budget [0-9]+MB$' "$1"
+}
+poolfull_refusal_share_cap() { # $1 log
+    grep -qE '\[prefix-host\] demote evaporated at the tenant share cap before the D2H copy: [0-9]+ tokens, [0-9]+\.[0-9]MB \([0-9]+% of [0-9]+MB, MEMRA_KV_HOST_TENANT_PCT; model gate\); reclaim refused: the image alone exceeds the share \([0-9]+\.[0-9]MB > [0-9]+MB\); nothing evicted$' "$1"
+}
 jqpy() { # $1 file $2 python-expr over loaded json `r`
     python3 -c "
 import json, sys
@@ -181,8 +212,17 @@ run_cell poolfull
 stop
 chk "device budget forced an eviction (the failure path's trigger)" \
     grep -q "\[prefix-cache\] evict" "$EV/poolfull-server.log"
-chk "pool-full refusal is LOUD and named" \
-    grep -q "\[prefix-host\] skip demote: entry" "$EV/poolfull-server.log"
+if [ "$TENANT_PCT" -ge 100 ]; then
+    echo "  pool-full refusal arm: whole host budget (MEMRA_KV_HOST_TENANT_PCT=100 disarms the share cap; insert-path skip demote after the copy)"
+    chk "pool-full refusal is LOUD and named (skip demote: entry X MB > host budget B MB)" \
+        poolfull_refusal_whole_budget "$EV/poolfull-server.log"
+else
+    echo "  pool-full refusal arm: tenant share cap ${TENANT_PCT}% (server default 50; pre-copy evaporation, the image alone exceeds the share)"
+    chk "pool-full refusal is LOUD and named (demote evaporated at the tenant share cap before the D2H copy: N tokens, X MB (P% of B MB); the image alone exceeds the share (X MB > S MB))" \
+        poolfull_refusal_share_cap "$EV/poolfull-server.log"
+    chk "the refusal counted (prefix_host_tenant_rejects >= 1)" \
+        jqpy "$EV/poolfull-metrics.json" "r['prefix_host_tenant_rejects'] >= 1"
+fi
 chk "nothing entered the tier" \
     jqpy "$EV/poolfull-metrics.json" \
     "r['prefix_host_entries'] == 0 and r['prefix_host_demotions'] == 0 and r['prefix_host_promotions'] == 0"
@@ -207,6 +247,54 @@ chk "metrics: zero promotions after the refusal" \
     jqpy "$EV/digest-metrics.json" "r['prefix_host_promotions'] == 0"
 chk "r3 served the COLD path with reference bytes (corruption never reached a customer)" \
     text_eq "$EV/digest-r3.json" "$EV/poolfull-r3.json"
+
+# Verify digest v3 (lane/spill-c-20260919 day 53, DAY53.md): the verify digest covers every plane
+# a round trip carries, not only the trunk. One boot per plane, each flipping one byte of the host
+# copy after the demote digest was recorded. Spec-served entries (the default boot publishes
+# `insert (spec-boundary)` entries carrying a draft plane and a hidden row) must fail the promote
+# like cell 2; plain-published entries (MEMRA_SERVE_SPEC=0) carry neither, so the draft and hidden
+# faults must flip nothing: no FAULT line, `verify ok`, a real promote.
+# Under MEMRA_KV_HOST_CONTRACTS=1 the door's receipts attest these planes and the three values
+# apply only on the legacy copy path, so the door-ON arm asserts the no-flip outcome: no FAULT
+# line, `verify ok` (the v3 digest across the door's round trip), a real promote.
+SPEC_MODE=1
+[ "${MEMRA_SERVE_SPEC:-}" = 0 ] && SPEC_MODE=0
+DOOR_ON=0
+[ "${MEMRA_KV_HOST_CONTRACTS:-}" = 1 ] && DOOR_ON=1
+for plane in draft hidden logits; do
+    case $plane in draft) what="draft K" ;; *) what=$plane ;; esac
+    echo "== cell digest-$plane: verify on + MEMRA_KV_HOST_FAULT=flip-demote-$plane (spec mode $SPEC_MODE, door $DOOR_ON) =="
+    boot "MEMRA_KV_HOST_MB=$HOST_MB MEMRA_KV_HOST_VERIFY=1 MEMRA_KV_HOST_FAULT=flip-demote-$plane" \
+        "$EV/digest-$plane-server.log"
+    run_cell "digest-$plane"
+    stop
+    log=$EV/digest-$plane-server.log
+    chk "digest-$plane: the entry DEMOTED" grep -q "\[prefix-host\] demote:" "$log"
+    if [ "$SPEC_MODE" = 1 ]; then
+        chk "digest-$plane: the default boot published spec entries (the plane exists)" \
+            grep -q "\[prefix-cache\] insert (spec-boundary)" "$log"
+    fi
+    if [ "$DOOR_ON" = 0 ] && { [ "$SPEC_MODE" = 1 ] || [ "$plane" = logits ]; }; then
+        chk "digest-$plane: the fault door announced the injected corruption" \
+            grep -q "\[prefix-host\] FAULT: flipped one demoted $what byte" "$log"
+        chk "digest-$plane: the promote caught it: VERIFY FAILED, loud and named" \
+            grep -q "\[prefix-host\] VERIFY FAILED: promoted digest" "$log"
+        chk "digest-$plane: no successful promote happened" \
+            absent "\[prefix-host\] promote:" "$log"
+        chk "digest-$plane: metrics: zero promotions after the refusal" \
+            jqpy "$EV/digest-$plane-metrics.json" "r['prefix_host_promotions'] == 0"
+    else
+        if [ "$DOOR_ON" = 1 ]; then why="door ON: the receipts attest the $what plane"; else why="plain entries carry no $what plane"; fi
+        chk "digest-$plane: $why: nothing flipped" \
+            absent "\[prefix-host\] FAULT:" "$log"
+        chk "digest-$plane: $why: verify ok, the fault touched nothing else" \
+            grep -q "\[prefix-host\] verify ok" "$log"
+        chk "digest-$plane: $why: a real promote" \
+            grep -q "\[prefix-host\] promote:" "$log"
+    fi
+    chk "digest-$plane: r3 served reference bytes" \
+        text_eq "$EV/digest-$plane-r3.json" "$EV/poolfull-r3.json"
+done
 
 echo "== cell 3: PINNED-ALLOC REFUSAL (MEMRA_KV_HOST_FAULT=alloc-fail) =="
 boot "MEMRA_KV_HOST_MB=$HOST_MB MEMRA_KV_HOST_FAULT=alloc-fail" "$EV/alloc-server.log"

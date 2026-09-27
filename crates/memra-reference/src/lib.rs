@@ -29,7 +29,7 @@ pub struct ReferenceTensor {
 
 impl ReferenceTensor {
     pub fn new(shape: Vec<usize>, data: Vec<f32>) -> Result<Self, ReferenceError> {
-        let expected = shape.iter().product();
+        let expected: usize = shape.iter().product();
         if data.len() != expected {
             return Err(ReferenceError::TensorShape {
                 id: None,
@@ -45,7 +45,7 @@ impl ReferenceTensor {
     }
 
     pub fn new_i64(shape: Vec<usize>, ints: Vec<i64>) -> Result<Self, ReferenceError> {
-        let expected = shape.iter().product();
+        let expected: usize = shape.iter().product();
         if ints.len() != expected {
             return Err(ReferenceError::TensorShape {
                 id: None,

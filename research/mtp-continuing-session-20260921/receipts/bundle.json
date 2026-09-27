@@ -1,0 +1,45 @@
+{
+  "archives": [
+    {
+      "file": "qwen-records.tar.gz",
+      "sha256": "9a512da19e035d38f5a19263ec00961de0441f35f8e78dc4b548efcf39f54f19",
+      "bytes": 22408883,
+      "files": 4140,
+      "file_manifest_sha256": "9ffd2caeea775d64912d0c53e3f2c57e243ca6f198bf09e566fc00ad47b2db11"
+    },
+    {
+      "file": "gemma-records.tar.gz",
+      "sha256": "bb5e398a2ed2c0b58e6ef791de65898978345ef6f3f49b9fb613f25561db94ce",
+      "bytes": 15139644,
+      "files": 2493,
+      "file_manifest_sha256": "c6289df1e6f586046b600d0b242170cd446e7681a18b954abff87fc976a4d518"
+    },
+    {
+      "file": "common-records.tar.gz",
+      "sha256": "26c3684d1151ce951e147b28160514cfc71c8e3e6d6dbc5f895dcb18054ab8d2",
+      "bytes": 142363,
+      "files": 30,
+      "file_manifest_sha256": "c54d98ab75a2de607508d72e1b57e8074265f05a71af104295cff51cb27ee8cc"
+    }
+  ],
+  "shared": [],
+  "runtime_source": {
+    "source_commit": "b0703b0a2bcbfe9e17e8166a79acc73057b4dffb",
+    "runtime_archive_sha256": "93a7d4131d0fbe9e503a8152f560d55e4a83fcce152d73032bc773188837b002",
+    "archive_bytes": 8040248,
+    "compile_time_fixtures": [
+      "research/ep-placement-map-20260831/example-map-coactivation.json",
+      "research/reasoning-schema-20260823/goldens",
+      "research/reasoning-schema-20260823/ornith15.chat_template.jinja",
+      "research/reasoning-schema-20260823/qwen38-27b.chat_template.jinja",
+      "research/spill-b-20260919/fixtures/recompute-load.csv",
+      "research/spill-c-20260919/fixtures/ple-ngram-synthetic.json",
+      "research/spill-c-20260919/fixtures/slru-synthetic.json"
+    ]
+  },
+  "scope": "Generic source, artifacts, token tapes, timing, controls and audits.",
+  "reproduction": {
+    "file": "REPRODUCTION.json",
+    "sha256": "fd368d0ce6378db02423410edd9808feae42a3f1db3cb90788ca655ed6b8b54b"
+  }
+}

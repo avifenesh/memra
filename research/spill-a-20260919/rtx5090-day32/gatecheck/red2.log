@@ -1,0 +1,7 @@
+[prefix-host] tier span staging: 2 fresh pinned buffer(s), 8 bytes charged to the governor's pinned ledger; the set holds 8 bytes charged
+[prefix-host] tier span staging: 96 fresh pinned buffer(s), 156893184 bytes charged to the governor's pinned ledger; the set holds 156893184 bytes charged
+[prefix-host] promote staging fill off the tick: 64 tokens, 96 f32 planes (157.9MB) handed to the hash helper (fill seq=1); the request waits for the fill
+[prefix-host] promote refused (contracts door): tier H2D spans refused: injected failure (MEMRA_KV_HOST_FAULT=contract-promote-spans) (96 f32 spans handed back); serving without the host entry
+[prefix-host] promote staging fill off the tick: 64 tokens, 96 f32 planes (157.9MB) handed to the hash helper (fill seq=2); the request waits for the fill
+[prefix-host] promote submitted off the tick: 64 tokens, 159.8MB, ticket seq=5, 32 items on the contracts door's copy stream, 96 f32 spans from the staging fill (fill seq=2, 157.9MB filled by the hash helper in 12.0ms, landed at poll 2); owner segment 0.95ms (probe 0.10, fill polls 0.05, submit 0.80; wall 20.0ms from t0); request parked
+[prefix-host] contracts door H2D receipt: ticket issuer=1 seq=5 epochs=0/1/1 items=32 (16 KV planes) complete=32 require=ok checksums_sha256=ab published retired acknowledged; 96 f32 spans landed under the ticket and taken back before the retire

@@ -1,0 +1,29 @@
+{
+ "object": "text_completion",
+ "model": "gate",
+ "choices": [
+  {
+   "index": 0,
+   "text": " ok ok ok\n\n<think>\nThe user wants me to catalog 12 monthly inspection tasks for a small observatory. Let me parse the requirements:\n\nComponents to inspect each month:\n1. Primary mirror cell\n2. Guidance system",
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 128,
+  "completion_tokens": 48,
+  "total_tokens": 176,
+  "prompt_tokens_details": {
+   "cached_tokens": 128
+  },
+  "elapsed_s": 0.290844399,
+  "spec": {
+   "rounds": 15,
+   "drafted": 45,
+   "accepted": 34,
+   "acceptance_rate": 0.7555555555555555
+  }
+ },
+ "id": "cmpl-1bce6b112ff39f1eb4bb4aa467fa59c2",
+ "created": 1790353166,
+ "system_fingerprint": "memra-0.138.0-6f47eb35001a"
+}

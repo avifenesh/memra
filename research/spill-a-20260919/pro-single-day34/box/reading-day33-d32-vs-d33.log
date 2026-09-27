@@ -1,0 +1,6 @@
+DAY33 B2 before (day-32 H2D binary) steady owner-segment N=90 median=0.76 min=0.70 max=0.82 boots_on=10
+DAY33 B2 after (day-33 binary) steady owner-segment N=90 median=0.76 min=0.70 max=0.82 boots_on=10 submissions=100 filled=100 rule N>=20 median<=1.5 max<=3.0 every-submission-filled -> PASS
+DAY33 D after steady owner-segment N=90 median=0.76 min=0.70 max=0.82 rule median<=0.90 max<=1.50 -> PASS (the census half: day33_the_promote_submits_its_filled_spans_in_the_probes_tick)
+DAY33 READING submission-to-completion steady before ms N=90 median=14.70 min=14.60 max=14.90 polls [2] (counts [90]); after ms N=90 median=27.30 min=27.20 max=27.40 polls [2] (counts [90])
+DAY33 READING promote in-ms steady before in N=90 median=28.40 min=28.40 max=29.90; after in N=90 median=28.40 min=28.30 max=30.00; after-minus-before median +0.00
+DAY33 READING first of a boot: owner before ms N=10 median=0.69 min=0.67 max=0.70, after ms N=10 median=0.87 min=0.85 max=0.90; promote in before ms N=10 median=29.75 min=29.60 max=29.80, after ms N=10 median=29.90 min=29.80 max=30.00

@@ -7,12 +7,44 @@ model/cell ran, qualify a numeric program, or replace step-pro and the standard 
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shlex
 import sys
 
-LOCKS = {"rtx5090": "/tmp/memra-5090.lock", "pro-single": "/tmp/memra-gpu.lock", "pro-pair": "/tmp/memra-gpu.lock", "pro-four": "/tmp/memra-gpu.lock", "cpu": None}
+CANONICAL_LOCKS = {"rtx5090": "/tmp/memra-5090.lock", "pro-single": "/tmp/memra-gpu.lock", "pro-pair": "/tmp/memra-gpu.lock", "pro-four": "/tmp/memra-gpu.lock", "cpu": None}
+# Test seam (lead ruling 12, 2026-09-21): the battery's CPU tests must never contend a serving
+# job's rig lock. MEMRA_TIER_BATTERY_LOCK_DIR re-roots the two canonical NAMES under a private
+# directory (`<dir>/memra-5090.lock`, `<dir>/memra-gpu.lock`); the names and the rig->name table
+# are unchanged and a receipt written under the seam records the private path, so it never
+# validates against the canonical table in a process without the seam. Unset (the default and
+# every production launcher), the table is the two rig locks. It is a test seam, not a third name.
+LOCK_DIR_SEAM = "MEMRA_TIER_BATTERY_LOCK_DIR"
+# The seam alone never moves a campaign: an inherited export must not make `--execute` or
+# `--dry-run` flock `<private>/memra-gpu.lock` beside a serving job holding the canonical file.
+# Those modes refuse under the seam unless this flag is also passed (the battery's tests pass
+# it; nothing else does), the process announces the seam on stderr, and every lock.json and
+# dry-run manifest written under it carries `"seam": "<dir>"`, which `--validate` refuses in any
+# process whose own seam differs (review of memra #545 / PR #592, 2026-09-21).
+PRIVATE_LOCK_FLAG = "--private-lock-dir-for-tests"
+
+
+def active_seam():
+    """The private lock directory in force for THIS process, or None. Read at call time."""
+    return os.environ.get(LOCK_DIR_SEAM) or None
+
+
+def lock_table(private_dir=None):
+    if private_dir is None:
+        return dict(CANONICAL_LOCKS)
+    if not Path(private_dir).is_dir():
+        raise ValueError(f"{LOCK_DIR_SEAM}={private_dir!r} is not an existing directory")
+    return {rig: None if path is None else str(Path(private_dir) / Path(path).name)
+            for rig, path in CANONICAL_LOCKS.items()}
+
+
+LOCKS = lock_table(active_seam())
 ROUTES = {"local", "pcie-p2p", "host-bounce", "host", "nvme"}
 IDENTITY = ("runtime_commit", "binary_sha256", "artifact_sha256", "plan_sha256", "layout_sha256", "prompt_sha256", "numeric_class", "context_tokens", "requests", "rig", "kind")
 CASES = {
@@ -114,7 +146,6 @@ import csv
 import datetime
 import fcntl
 import math
-import os
 import signal
 import shutil
 import statistics
@@ -401,6 +432,39 @@ def descriptor(root, path):
 
 
 UNPROVEN_STORAGE = "overlay/unproven — not NVMe, not spill speed"
+M1_PROVEN_STORAGE = "M1 proof: physical local NVMe (nvme-local-direct); not measured spill speed"
+M1_PROOF_TOOL = Path(__file__).resolve().parent.parent / "research/spill-f-20260919/m1-nvme-proof.py"
+M1_PROOF_SCHEMA = "m1-nvme-proof-v1"
+
+
+def m1_proof_binding(proof_path, root, out):
+    """Admit NVMe only through a passing M1 proof whose identity is this filesystem's.
+
+    The receipt is `m1-nvme-proof.py`'s public or private JSON. It must be a PASS of class
+    nvme-local-direct with no reasons, produced by the exact proof tool in this checkout, and its
+    identity triple (device, mount id, filesystem id or its hash) must equal the live identity of
+    the storage root. The receipt is copied into the capture so validation can hash it.
+    """
+    raw = Path(proof_path).read_bytes()
+    proof = json.loads(raw)
+    require(proof.get("schema") == M1_PROOF_SCHEMA, "storage proof is not an M1 proof receipt")
+    require(proof.get("verdict") == "PASS" and proof.get("class") == "nvme-local-direct"
+            and proof.get("reasons") == [], "storage proof did not PASS")
+    tool = hashlib.sha256(M1_PROOF_TOOL.read_bytes()).hexdigest()
+    require(proof.get("tool_sha256") == tool, "storage proof was produced by a different proof tool")
+    want = proof.get("A8_identity") or {}
+    live = filesystem_identity(root)
+    require(type(want.get("device")) is int and want.get("device") == live["device"]
+            and want.get("mount_id") == live.get("mount_id"), "storage proof identity is not this mount")
+    if "filesystem_id" in want:
+        require(want["filesystem_id"] == live["filesystem_id"], "storage proof filesystem id differs")
+    else:
+        live_hash = hashlib.sha256(str(live["filesystem_id"]).encode()).hexdigest()[:16]
+        require(want.get("filesystem_id_sha256_16") == live_hash, "storage proof filesystem id differs")
+    copy = out / "STORAGE-PROOF.json"
+    copy.write_bytes(raw)
+    return {"receipt": descriptor(out, copy), "tool_sha256": tool, "identity": live,
+            "proof_utc": proof.get("utc")}
 
 
 def storage_command(command):
@@ -473,8 +537,13 @@ def verify_storage_binding(storage):
     require(actual == binding, "storage object filesystem changed during execution")
 
 
-def capture_storage(path, root, allow_unproven=False, object_path=None):
-    """Read-only ancestry, retaining failed commands verbatim; no hidden fallback."""
+def capture_storage(path, root, allow_unproven=False, object_path=None, proof_path=None):
+    """Read-only ancestry, retaining failed commands verbatim; no hidden fallback.
+
+    NVMe is admitted only through `proof_path` (an M1 proof receipt bound to this mount). An
+    `nvmeXnY` name in lsblk is recorded as a hint, never as proof: an emulated or fabric NVMe has
+    the same name, and a bind mount's findmnt source carries a `[subdir]` suffix lsblk refuses.
+    """
     require(path.is_dir(), "storage root must exist")
     path = path.resolve()
     binding = storage_binding(path, object_path) if object_path is not None else None
@@ -492,19 +561,33 @@ def capture_storage(path, root, allow_unproven=False, object_path=None):
         return raw.read_text(errors="replace") if code == 0 and not expired else ""
     for name, command in commands:
         text = capture(name, command)
-    device = text.strip()
+    device = re.sub(r"\[.*\]$", "", text.strip())
     ancestry = capture("storage-ancestry", ["lsblk", "-s", "-r", "-n", "-o", "KNAME", device])
-    proven = device.startswith("/dev/") and any(re.fullmatch(
+    name_hint = device.startswith("/dev/") and any(re.fullmatch(
         r"nvme[0-9]+n[0-9]+(?:p[0-9]+)?", line.strip()) for line in ancestry.splitlines())
-    record = {"class": "nvme-ancestry" if proven else "overlay-unproven", "nvme_proven": proven,
-              "label": "NVMe ancestry only; not measured spill speed" if proven else UNPROVEN_STORAGE,
+    m1, refusal = None, None
+    if proof_path is not None:
+        try:
+            m1 = m1_proof_binding(proof_path, path, root)
+        except (OSError, ValueError) as error:  # JSONDecodeError is a ValueError
+            refusal = str(error)
+    proven = m1 is not None
+    record = {"class": "nvme-local-direct" if proven else "m1-proof-refused" if refusal
+              else "nvme-name-only-unproven" if name_hint else "overlay-unproven",
+              "nvme_proven": proven, "nvme_name_hint": name_hint,
+              "label": M1_PROVEN_STORAGE if proven else UNPROVEN_STORAGE,
               "allow_unproven_storage": allow_unproven, "root": str(path),
               "commands": captures, "qualification": False}
+    if m1 is not None:
+        record["m1_proof"] = m1
+    if refusal is not None:
+        record["m1_proof_refusal"] = refusal
     if binding is not None:
         record["object_binding"] = binding
         record["object_argument"] = str(object_path)
     (root / "STORAGE.json").write_text(json.dumps(record, indent=2) + "\n")
-    require(proven or allow_unproven, "NVMe ancestry unproven; retained STORAGE.json; --allow-unproven-storage is development only")
+    require(refusal is None, f"storage proof refused ({refusal}); retained STORAGE.json; a failing proof never downgrades to unproven")
+    require(proven or allow_unproven, "NVMe ancestry unproven (no M1 proof); retained STORAGE.json; --allow-unproven-storage is development only")
     return record
 
 
@@ -535,6 +618,8 @@ def validate_capture(record, root):
         require(utc_timestamp(record["ended_utc"]) >= utc_timestamp(record["started_utc"]), "capture UTC regressed")
     if "lock_proof" in record:
         proof = json.loads(evidence(root, record["lock_proof"]).read_text())
+        require(proof.get("seam") == active_seam(),
+                f"lock proof seam={proof.get('seam')!r} is not this process's {LOCK_DIR_SEAM}={active_seam()!r}: a private-lock test capture never validates as a rig-locked cell")
         require(proof["rig"] in LOCKS and proof["rig"] != "cpu" and proof["lock"] == LOCKS[proof["rig"]]
                 and proof["acquired"] is True and proof["owner"] == "collector"
                 and proof["mechanism"] == "inherited-flock-same-open-description"
@@ -560,26 +645,39 @@ def validate_capture(record, root):
         evidence(root, snapshot["raw_log"], allow_empty=True)
     storage = record.get("storage")
     if storage is not None:
-        require(storage["qualification"] is False, "storage ancestry is not qualification")
-        if not storage["nvme_proven"]:
-            require(storage["allow_unproven_storage"] is True and storage["label"] == UNPROVEN_STORAGE,
-                    "unproven storage lacks explicit opt-in/label")
-        if "object_binding" in storage:
-            binding = storage["object_binding"]
-            command = storage_command(record["command"])
-            require(command is not None and command[2] == storage["object_argument"],
-                    "storage binding command mismatch")
-            obj, parent = Path(binding["object"]), Path(storage["root"])
-            require(obj.is_absolute() and parent.is_absolute()
-                    and obj.is_relative_to(parent) and binding["root"] == storage["root"],
-                    "storage binding path mismatch")
-            require(binding["root_filesystem"] == binding["object_filesystem"]
-                    and {"device", "filesystem_id"} <= binding["root_filesystem"].keys()
-                    and all(type(v) is int for v in binding["root_filesystem"].values()),
-                    "storage binding filesystem mismatch")
-        for capture in storage["commands"]:
-            evidence(root, capture["raw_log"], allow_empty=True)
+        validate_storage_record(storage, root, record["command"])
     return record
+
+
+def validate_storage_record(storage, root, command):
+    """Offline integrity of a capture's storage section; NVMe only with its M1 proof binding."""
+    require(storage["qualification"] is False, "storage ancestry is not qualification")
+    if not storage["nvme_proven"]:
+        require(storage["allow_unproven_storage"] is True and storage["label"] == UNPROVEN_STORAGE,
+                "unproven storage lacks explicit opt-in/label")
+    else:
+        m1 = storage.get("m1_proof")
+        require(storage["class"] == "nvme-local-direct" and storage["label"] == M1_PROVEN_STORAGE
+                and isinstance(m1, dict), "NVMe label without an M1 proof binding")
+        evidence(root, m1["receipt"])
+        proof = json.loads((root / m1["receipt"]["path"]).read_text())
+        require(proof.get("verdict") == "PASS" and proof.get("tool_sha256") == m1["tool_sha256"],
+                "archived M1 proof does not match its binding")
+    if "object_binding" in storage:
+        binding = storage["object_binding"]
+        command = storage_command(command)
+        require(command is not None and command[2] == storage["object_argument"],
+                "storage binding command mismatch")
+        obj, parent = Path(binding["object"]), Path(storage["root"])
+        require(obj.is_absolute() and parent.is_absolute()
+                and obj.is_relative_to(parent) and binding["root"] == storage["root"],
+                "storage binding path mismatch")
+        require(binding["root_filesystem"] == binding["object_filesystem"]
+                and {"device", "filesystem_id"} <= binding["root_filesystem"].keys()
+                and all(type(v) is int for v in binding["root_filesystem"].values()),
+                "storage binding filesystem mismatch")
+    for capture in storage["commands"]:
+        evidence(root, capture["raw_log"], allow_empty=True)
 
 
 def validate_cell(path):
@@ -608,6 +706,8 @@ def validate_cell(path):
         require(end["started_utc"] == capture["started_utc"] and end["ended_utc"] == capture["ended_utc"], "CELL capture UTC mismatch")
         require(start.get("storage") == end.get("storage") == capture.get("storage"), "CELL storage mismatch")
     lock = json.loads((root / "lock.json").read_text())
+    require(lock.get("seam") == active_seam(),
+            f"lock.json seam={lock.get('seam')!r} is not this process's {LOCK_DIR_SEAM}={active_seam()!r}: a private-lock test capture never validates as a rig-locked cell")
     require(lock["rig"] in LOCKS and lock["rig"] != "cpu" and lock["lock"] == LOCKS[lock["rig"]]
             and lock["acquired"] is True, "missing/noncanonical collector lock")
     return {"kind": "capture-integrity", "status": capture["status"],
@@ -665,7 +765,7 @@ def run_dry_campaign(out, n=5, rig="pro-pair", thermal="synthetic-no-thermal-mea
                 "numeric_class": "opaque-fixture-no-executor", "context_tokens": 3, "requests": 1, "rig": "cpu", "kind": "cpu-fixture"}
     records, runs, failures = [], [], []
     with campaign_lock(rig) as lock:
-        (out / "manifest.json").write_text(json.dumps({"schema_version":1,"kind":"cpu-fixture","status":"dry-run-not-qualification","source":revision,"runner_sha256":digest(runner),"collector_sha256":digest(Path(__file__)),"lock":lock,"lock_acquired":True,"rig_label_for_lock_only":rig,"thermal_regime":thermal,"AB_pairs":n,"BA_pairs":n,"sampler_interval_ms":250,"clock":"virtual-monotonic","telemetry_unknowns":"No measured GPU clocks/power/temperature or physical SSD bytes","started_utc":datetime.datetime.now(datetime.timezone.utc).isoformat()},indent=2)+"\n")
+        (out / "manifest.json").write_text(json.dumps({"schema_version":1,"kind":"cpu-fixture","status":"dry-run-not-qualification","source":revision,"runner_sha256":digest(runner),"collector_sha256":digest(Path(__file__)),"lock":lock,"lock_acquired":True,"seam":active_seam(),"rig_label_for_lock_only":rig,"thermal_regime":thermal,"AB_pairs":n,"BA_pairs":n,"sampler_interval_ms":250,"clock":"virtual-monotonic","telemetry_unknowns":"No measured GPU clocks/power/temperature or physical SSD bytes","started_utc":datetime.datetime.now(datetime.timezone.utc).isoformat()},indent=2)+"\n")
         def run(arm, pair, phase, order, fail=False):
             rid = f"{phase}-{pair}-{arm}"
             run_dir = out / rid; run_dir.mkdir()
@@ -728,6 +828,8 @@ def validate_campaign(root):
     """Check retained order, controls, telemetry hashes/window and published synthetic N."""
     manifest = json.loads((root / "manifest.json").read_text())
     require(manifest["kind"] == "cpu-fixture" and manifest["status"] == "dry-run-not-qualification", "live qualification needs native runner bindings")
+    require(manifest.get("seam") == active_seam(),
+            f"manifest seam={manifest.get('seam')!r} is not this process's {LOCK_DIR_SEAM}={active_seam()!r}: a private-lock dry run never validates as a rig-locked campaign")
     require(manifest["lock"] == LOCKS[manifest["rig_label_for_lock_only"]] and manifest["lock_acquired"] is True, "campaign lock metadata")
     n = manifest["AB_pairs"]
     require(n == manifest["BA_pairs"], "unbalanced order counts")
@@ -891,9 +993,11 @@ def main():
     modes.add_argument("--validate-campaign", type=Path, metavar="BUNDLE")
     parser.add_argument("--out", type=Path)
     parser.add_argument("--external-lock", action="store_true", help="inherit canonical lock FD; replace exactly one @COLLECTOR_LOCK_FD@ child argument (explicit opt-in only)")
+    parser.add_argument(PRIVATE_LOCK_FLAG, action="store_true", help=f"required with {LOCK_DIR_SEAM} for --execute and --dry-run: a test's explicit statement that the private lock directory is intended; an inherited environment variable alone never moves a campaign off the canonical rig lock")
     parser.add_argument("--schema", choices=["auto", "runs", "telemetry", "storage-cell"], default="auto")
     parser.add_argument("--storage-root", type=Path, help="actual filesystem path for this storage cell; ancestry captured before execution")
     parser.add_argument("--allow-unproven-storage", action="store_true", help="explicit overlay/unproven development mode; never NVMe/spill-speed evidence")
+    parser.add_argument("--storage-proof", type=Path, help="M1 proof receipt (m1-nvme-proof.py PASS) bound to --storage-root; the only way a root is labelled NVMe")
     parser.add_argument("--storage-samples", type=Path, help="run-id wrapped canonical StorageSample JSONL")
     parser.add_argument("--resume", action="store_true", help="read last CELL receipt; rerun in a new attempt")
     parser.add_argument("--run-id", help="stable cell identity (defaults to output directory name)")
@@ -908,6 +1012,13 @@ def main():
     args = parser.parse_args(argv if execute is None else argv[:execute + 1])
     if execute is not None:
         args.execute = argv[execute + 1:]
+    seam = active_seam()
+    if seam is not None:
+        print(f"tier-battery: {LOCK_DIR_SEAM}={seam}: PRIVATE lock directory (test seam); the rig lock is NOT held by this process", file=sys.stderr)
+    require(not args.private_lock_dir_for_tests or seam is not None,
+            f"{PRIVATE_LOCK_FLAG} without {LOCK_DIR_SEAM}: the flag only accompanies the test seam")
+    require(seam is None or args.private_lock_dir_for_tests or (args.execute is None and not args.dry_run),
+            f"{LOCK_DIR_SEAM} is set but {PRIVATE_LOCK_FLAG} was not passed: an inherited environment variable alone never moves a campaign off the canonical rig lock; unset it, or pass the flag from a test")
     if args.execute is not None:
         require(args.execute and args.out is not None and args.timeout > 0, "--execute requires argv, new --out and positive timeout")
         if args.hourly_cost is not None:
@@ -921,12 +1032,15 @@ def main():
             args.out = args.out / "attempts" / datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         require(not args.allow_unproven_storage or args.storage_root is not None,
                 "--allow-unproven-storage requires --storage-root")
+        require(args.storage_proof is None or args.storage_root is not None,
+                "--storage-proof requires --storage-root")
         storage_argv = storage_command(args.execute)
         require(storage_argv is None or args.storage_root is not None,
                 "storage-bench requires --storage-root; overlay needs --allow-unproven-storage")
         args.out.mkdir(parents=True, exist_ok=False)
         storage = capture_storage(args.storage_root, args.out, args.allow_unproven_storage,
-                                  Path(storage_argv[2]) if storage_argv else None) if args.storage_root else None
+                                  Path(storage_argv[2]) if storage_argv else None,
+                                  args.storage_proof) if args.storage_root else None
         token = "@COLLECTOR_LOCK_FD@"
         require(not args.external_lock or args.execute.count(token) == 1,
                 "--external-lock requires exactly one @COLLECTOR_LOCK_FD@ argument")
@@ -934,6 +1048,8 @@ def main():
                 "external-lock FD argv is ephemeral; use a fresh cell instead of --resume")
         with campaign_lock(args.rig, inherit=args.external_lock) as lock:
             proof = {"rig": args.rig, "lock": LOCKS[args.rig], "acquired": True}
+            if seam is not None:
+                proof["seam"] = seam
             pass_fds = ()
             if args.external_lock:
                 pass_fds = (lock.fileno(),)

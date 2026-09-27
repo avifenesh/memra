@@ -1,0 +1,86 @@
+{
+ "arm": "fix",
+ "binary_sha256": "d331909a7ef094f1aef88653d77884dc61cad066ab98f796c9f43f720ce9e5ae",
+ "requests": {
+  "r1": {
+   "http": 200,
+   "prompt_tokens": 83,
+   "cached_tokens": 0,
+   "text_sha256": "a96b991b3784cb6af9bfb3dcc7e0ee04eef0ae2b926c28857f20409238e3b5ea"
+  },
+  "r2": {
+   "http": 200,
+   "prompt_tokens": 89,
+   "cached_tokens": 0,
+   "text_sha256": "03e32d390cd621c81e9e8fed9609934510733c1a252825d0c2569b78bbc8679b"
+  },
+  "r3": {
+   "http": 200,
+   "prompt_tokens": 86,
+   "cached_tokens": 0,
+   "text_sha256": "6e07888e40be7099f0e6b7c694a6cf0b0f22cb920c4c046509ae613dd9b26225"
+  },
+  "r4": {
+   "http": 200,
+   "prompt_tokens": 93,
+   "cached_tokens": 0,
+   "text_sha256": "ca3489cebd033875a21d2f45def75d4e54575619f4a7d45e6c0a4e05d78659a7"
+  },
+  "r5": {
+   "http": 200,
+   "prompt_tokens": 93,
+   "cached_tokens": 0,
+   "text_sha256": "382382fb133b3d81f7c2e35f5b6d595868e6bf4df0a19c0e7fded2e67d93a34e"
+  },
+  "r6": {
+   "http": 200,
+   "prompt_tokens": 95,
+   "cached_tokens": 0,
+   "text_sha256": "4008ec3cf1ac548ba50bc047d416da626dc53caa3d08665d5c84d9a7b659e73a"
+  },
+  "r7": {
+   "http": 200,
+   "prompt_tokens": 96,
+   "cached_tokens": 83,
+   "text_sha256": "8d931196244a0bce22709f9750d2ee1a0b6c5a673484377705a9dc49ecc4d85d"
+  },
+  "r8": {
+   "http": 200,
+   "prompt_tokens": 108,
+   "cached_tokens": 95,
+   "text_sha256": "29c20f2637aadd8be8494b474872222dff40b2b80da773db543a6c06241e7e9e"
+  }
+ },
+ "demotes": [
+  "[prefix-host] demote: 83 tokens, 160.5MB (host resident 160.5MB / 1074MB, model gate, ns \"t:beta\\u{1f}s1\")",
+  "[prefix-host] demote: 89 tokens, 160.7MB (host resident 321.2MB / 1074MB, model gate, ns \"t:acme\\u{1f}s1\")",
+  "[prefix-host] demote: 86 tokens, 160.6MB (host resident 481.9MB / 1074MB, model gate, ns \"t:acme\\u{1f}s1\")",
+  "[prefix-host] demote: 93 tokens, 160.8MB (host resident 482.0MB / 1074MB, model gate, ns \"t:acme\\u{1f}s1\")",
+  "[prefix-host] demote: 93 tokens, 160.8MB (host resident 482.2MB / 1074MB, model gate, ns \"t:acme\\u{1f}s1\")",
+  "[prefix-host] demote: 95 tokens, 160.9MB (host resident 482.3MB / 1074MB, model gate, ns \"t:acme\\u{1f}s1\")",
+  "[prefix-host] demote: 96 tokens, 160.9MB (host resident 643.2MB / 1074MB, model gate, ns \"t:beta\\u{1f}s1\")",
+  "[prefix-host] demote: 108 tokens, 161.3MB (host resident 643.7MB / 1074MB, model gate, ns \"t:acme\\u{1f}s1\")"
+ ],
+ "evaporations": [],
+ "reclaims": [
+  "[prefix-host] evict (tenant share): 89 tokens, 160.7MB of tenant \"t:acme\"'s own entries for its 160.8MB demotion (row now 160.6MB / 408MB share = 38% of 1074MB, model gate, ns \"t:acme\\u{1f}s1\")",
+  "[prefix-host] evict (tenant share): 86 tokens, 160.6MB of tenant \"t:acme\"'s own entries for its 160.8MB demotion (row now 160.8MB / 408MB share = 38% of 1074MB, model gate, ns \"t:acme\\u{1f}s1\")",
+  "[prefix-host] evict (tenant share): 93 tokens, 160.8MB of tenant \"t:acme\"'s own entries for its 160.9MB demotion (row now 160.8MB / 408MB share = 38% of 1074MB, model gate, ns \"t:acme\\u{1f}s1\")",
+  "[prefix-host] evict (tenant share): 93 tokens, 160.8MB of tenant \"t:acme\"'s own entries for its 161.3MB demotion (row now 160.9MB / 408MB share = 38% of 1074MB, model gate, ns \"t:acme\\u{1f}s1\")"
+ ],
+ "promotes": [
+  "[prefix-host] promote: 83 tokens, 159.5MB (model gate, ns \"t:beta\\u{1f}s1\")",
+  "[prefix-host] promote: 95 tokens, 159.9MB (model gate, ns \"t:acme\\u{1f}s1\")"
+ ],
+ "lru_evictions": [],
+ "device_promote_skips": [],
+ "metrics": {
+  "prefix_host_entries": 4,
+  "prefix_host_bytes": 643682168,
+  "prefix_host_demotions": 8,
+  "prefix_host_promotions": 2,
+  "prefix_host_tenant_rejects": 0,
+  "prefix_host_tenant_reclaims": 4,
+  "prefix_host_rejected_allocs": 0
+ }
+}

@@ -1,0 +1,159 @@
+# command: python3 research/spill-c-20260919/day37-stall-reading.py /tmp/c37-dry (p1-base and p4-base symlinked to rtx5090-day35/stall/ev, no opta programs; the base-tree check: the per-pass lines must equal DAY35 STALL VERDICT)
+STALL rule cell=stall-prime-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.2 idle_max=11.4 arm_runs=10 arm_p50=7.3 arm_p95=9.8 arm_p99=16.9 arm_max=238.5 stall_median=10.5 stall_min=6.5 stall_max=230.5 server_demote_ms=[] server_promote_ms=[] intruder_prompt_tokens=[5123, 5122, 5123, None, None, None, None, None, None, None] tenant_text_identical=True errors=7
+  p1-base/pass1/prime/prime: replay=PASS admissible=False (errors=7; intruder outside the tenant's window in 7 of 10 runs); tenant_tokens=[400] tenant_max_tokens=400 landed=3/10 intruder_wall_ms=[1114.7, 1117.6, 1128.9, nan, nan, nan, nan, nan, nan, nan] tenant_wall_ms_median=3031
+STALL rule cell=stall-demote-off arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p95=7.9 idle_p99=8.1 idle_max=11.5 arm_runs=10 arm_p50=7.4 arm_p95=7.9 arm_p99=8.5 arm_max=72.3 stall_median=63.7 stall_min=40.3 stall_max=64.8 server_demote_ms=[18.3, 25.3, 24.4, 26.6, 25.6, 26.9, 26.5, 26.4, 25.7] server_promote_ms=[] intruder_prompt_tokens=[95, 99, 97, 98, 97, 99, 97, 97, 97, 97] tenant_text_identical=True errors=0
+  p1-base/pass1/off/demote: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[105.7, 121.2, 128.1, 128.7, 129.7, 129.6, 129.9, 130.1, 129.8, 129.9] tenant_wall_ms_median=3082
+STALL rule cell=stall-promote-off arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.5 idle_p95=8.0 idle_p99=8.4 idle_max=10.3 arm_runs=10 arm_p50=7.5 arm_p95=8.0 arm_p99=8.4 arm_max=73.8 stall_median=47.7 stall_min=46.4 stall_max=66.3 server_demote_ms=[27.1, 26.1, 5.9, 5.5, 5.6, 5.5, 5.4, 5.7, 5.6, 5.4] server_promote_ms=[31.6, 30.5, 10.3, 9.9, 9.9, 9.7, 9.7, 10.1, 10.0, 9.8] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+  p1-base/pass1/off/promote: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[83.5, 80.5, 63.4, 66.0, 65.0, 74.9, 64.7, 64.6, 64.6, 64.6] tenant_wall_ms_median=3091
+STALL rule cell=stall-demote-on arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.5 idle_p95=8.0 idle_p99=9.0 idle_max=16.5 arm_runs=10 arm_p50=7.5 arm_p95=8.0 arm_p99=8.8 arm_max=77.4 stall_median=67.0 stall_min=38.4 stall_max=69.9 server_demote_ms=[59.1, 65.7, 70.2, 66.2, 68.2, 70.0, 67.7, 67.1, 67.4] server_promote_ms=[] intruder_prompt_tokens=[95, 99, 97, 98, 97, 99, 97, 97, 97, 97] tenant_text_identical=True errors=0
+  p1-base/pass1/on/demote: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[106.4, 153.7, 160.8, 165.2, 161.4, 164.1, 165.4, 176.9, 165.0, 164.4] tenant_wall_ms_median=3127
+STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.5 idle_p95=7.9 idle_p99=8.1 idle_max=37.1 arm_runs=10 arm_p50=7.5 arm_p95=8.0 arm_p99=8.3 arm_max=75.1 stall_median=49.3 stall_min=48.9 stall_max=67.6 server_demote_ms=[98.5, 98.2, 98.2, 80.5, 82.2, 80.0, 83.0, 80.3, 79.8, 78.3] server_promote_ms=[45.6, 41.6, 25.2, 25.0, 25.4, 25.6, 25.5, 26.2, 25.2, 25.7] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+  p1-base/pass1/on/promote: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[126.5, 127.0, 127.0, 108.8, 110.0, 108.2, 111.9, 109.1, 108.0, 106.7] tenant_wall_ms_median=3101
+STALL rule cell=stall-demote-on arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.8 idle_p99=8.0 idle_max=10.2 arm_runs=10 arm_p50=7.3 arm_p95=7.9 arm_p99=8.5 arm_max=72.3 stall_median=63.2 stall_min=38.0 stall_max=65.0 server_demote_ms=[54.6, 61.1, 64.4, 63.2, 64.9, 64.2, 62.9, 61.8, 62.3] server_promote_ms=[] intruder_prompt_tokens=[95, 99, 97, 98, 97, 99, 97, 97, 97, 97] tenant_text_identical=True errors=0
+  p1-base/pass2/on/demote: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[104.4, 148.3, 155.2, 157.6, 157.0, 159.5, 158.7, 157.0, 157.3, 156.3] tenant_wall_ms_median=3030
+STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.1 idle_max=10.0 arm_runs=10 arm_p50=7.3 arm_p95=7.8 arm_p99=8.1 arm_max=75.0 stall_median=50.1 stall_min=48.7 stall_max=67.7 server_demote_ms=[97.3, 98.5, 80.3, 79.5, 80.1, 81.2, 83.1, 81.2, 81.9, 81.4] server_promote_ms=[43.5, 45.0, 24.7, 25.8, 25.3, 25.5, 25.0, 26.1, 25.3, 25.6] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+  p1-base/pass2/on/promote: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[125.4, 126.0, 108.2, 107.8, 107.6, 109.6, 111.3, 110.0, 109.9, 109.8] tenant_wall_ms_median=3040
+STALL rule cell=stall-demote-off arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.8 idle_p99=8.0 idle_max=11.0 arm_runs=10 arm_p50=7.3 arm_p95=7.8 arm_p99=8.3 arm_max=71.3 stall_median=63.0 stall_min=39.8 stall_max=64.0 server_demote_ms=[17.1, 26.4, 26.0, 25.1, 25.3, 25.2, 25.6, 24.7, 23.2] server_promote_ms=[] intruder_prompt_tokens=[95, 99, 97, 98, 97, 99, 97, 97, 97, 97] tenant_text_identical=True errors=0
+  p1-base/pass2/off/demote: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[105.3, 119.9, 128.5, 128.2, 127.0, 133.1, 130.4, 132.1, 129.9, 136.9] tenant_wall_ms_median=3033
+STALL rule cell=stall-promote-off arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.7 idle_max=10.2 arm_runs=10 arm_p50=7.3 arm_p95=7.9 arm_p99=8.1 arm_max=72.5 stall_median=47.5 stall_min=45.6 stall_max=65.2 server_demote_ms=[24.4, 23.6, 6.6, 4.7, 5.2, 4.8, 4.7, 5.1, 4.6, 5.6] server_promote_ms=[28.6, 27.2, 10.2, 8.2, 9.6, 8.6, 8.2, 8.8, 8.4, 10.0] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+  p1-base/pass2/off/promote: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[82.2, 80.0, 65.3, 63.4, 64.2, 63.2, 62.6, 63.5, 65.8, 65.0] tenant_wall_ms_median=3039
+STALL rule cell=stall-prime-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.8 idle_p99=8.0 idle_max=9.6 arm_runs=10 arm_p50=7.3 arm_p95=8.2 arm_p99=247.7 arm_max=292.6 stall_median=278.4 stall_min=261.9 stall_max=285.3 server_demote_ms=[] server_promote_ms=[] intruder_prompt_tokens=[5123, 5122, 5123, 5121, 5123, 5122, 5123, 5120, 5122, 5122] tenant_text_identical=True errors=0
+  p1-base/pass2/prime/prime: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[1303.2, 1311.4, 1340.4, 1308.7, 1351.2, 1357.0, 1322.9, 1305.2, 1390.7, 1318.5] tenant_wall_ms_median=3618
+  p2-opta/pass1/prime/prime: NO RECEIPT (inadmissible)
+  p2-opta/pass1/off/demote: NO RECEIPT (inadmissible)
+  p2-opta/pass1/off/promote: NO RECEIPT (inadmissible)
+  p2-opta/pass1/on/demote: NO RECEIPT (inadmissible)
+  p2-opta/pass1/on/promote: NO RECEIPT (inadmissible)
+  p2-opta/pass2/on/demote: NO RECEIPT (inadmissible)
+  p2-opta/pass2/on/promote: NO RECEIPT (inadmissible)
+  p2-opta/pass2/off/demote: NO RECEIPT (inadmissible)
+  p2-opta/pass2/off/promote: NO RECEIPT (inadmissible)
+  p2-opta/pass2/prime/prime: NO RECEIPT (inadmissible)
+  p3-opta/pass1/prime/prime: NO RECEIPT (inadmissible)
+  p3-opta/pass1/off/demote: NO RECEIPT (inadmissible)
+  p3-opta/pass1/off/promote: NO RECEIPT (inadmissible)
+  p3-opta/pass1/on/demote: NO RECEIPT (inadmissible)
+  p3-opta/pass1/on/promote: NO RECEIPT (inadmissible)
+  p3-opta/pass2/on/demote: NO RECEIPT (inadmissible)
+  p3-opta/pass2/on/promote: NO RECEIPT (inadmissible)
+  p3-opta/pass2/off/demote: NO RECEIPT (inadmissible)
+  p3-opta/pass2/off/promote: NO RECEIPT (inadmissible)
+  p3-opta/pass2/prime/prime: NO RECEIPT (inadmissible)
+STALL rule cell=stall-prime-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.2 idle_max=11.4 arm_runs=10 arm_p50=7.3 arm_p95=9.8 arm_p99=16.9 arm_max=238.5 stall_median=10.5 stall_min=6.5 stall_max=230.5 server_demote_ms=[] server_promote_ms=[] intruder_prompt_tokens=[5123, 5122, 5123, None, None, None, None, None, None, None] tenant_text_identical=True errors=7
+  p4-base/pass1/prime/prime: replay=PASS admissible=False (errors=7; intruder outside the tenant's window in 7 of 10 runs); tenant_tokens=[400] tenant_max_tokens=400 landed=3/10 intruder_wall_ms=[1114.7, 1117.6, 1128.9, nan, nan, nan, nan, nan, nan, nan] tenant_wall_ms_median=3031
+STALL rule cell=stall-demote-off arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.4 idle_p95=7.9 idle_p99=8.1 idle_max=11.5 arm_runs=10 arm_p50=7.4 arm_p95=7.9 arm_p99=8.5 arm_max=72.3 stall_median=63.7 stall_min=40.3 stall_max=64.8 server_demote_ms=[18.3, 25.3, 24.4, 26.6, 25.6, 26.9, 26.5, 26.4, 25.7] server_promote_ms=[] intruder_prompt_tokens=[95, 99, 97, 98, 97, 99, 97, 97, 97, 97] tenant_text_identical=True errors=0
+  p4-base/pass1/off/demote: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[105.7, 121.2, 128.1, 128.7, 129.7, 129.6, 129.9, 130.1, 129.8, 129.9] tenant_wall_ms_median=3082
+STALL rule cell=stall-promote-off arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.5 idle_p95=8.0 idle_p99=8.4 idle_max=10.3 arm_runs=10 arm_p50=7.5 arm_p95=8.0 arm_p99=8.4 arm_max=73.8 stall_median=47.7 stall_min=46.4 stall_max=66.3 server_demote_ms=[27.1, 26.1, 5.9, 5.5, 5.6, 5.5, 5.4, 5.7, 5.6, 5.4] server_promote_ms=[31.6, 30.5, 10.3, 9.9, 9.9, 9.7, 9.7, 10.1, 10.0, 9.8] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+  p4-base/pass1/off/promote: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[83.5, 80.5, 63.4, 66.0, 65.0, 74.9, 64.7, 64.6, 64.6, 64.6] tenant_wall_ms_median=3091
+STALL rule cell=stall-demote-on arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.5 idle_p95=8.0 idle_p99=9.0 idle_max=16.5 arm_runs=10 arm_p50=7.5 arm_p95=8.0 arm_p99=8.8 arm_max=77.4 stall_median=67.0 stall_min=38.4 stall_max=69.9 server_demote_ms=[59.1, 65.7, 70.2, 66.2, 68.2, 70.0, 67.7, 67.1, 67.4] server_promote_ms=[] intruder_prompt_tokens=[95, 99, 97, 98, 97, 99, 97, 97, 97, 97] tenant_text_identical=True errors=0
+  p4-base/pass1/on/demote: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[106.4, 153.7, 160.8, 165.2, 161.4, 164.1, 165.4, 176.9, 165.0, 164.4] tenant_wall_ms_median=3127
+STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.5 idle_p95=7.9 idle_p99=8.1 idle_max=37.1 arm_runs=10 arm_p50=7.5 arm_p95=8.0 arm_p99=8.3 arm_max=75.1 stall_median=49.3 stall_min=48.9 stall_max=67.6 server_demote_ms=[98.5, 98.2, 98.2, 80.5, 82.2, 80.0, 83.0, 80.3, 79.8, 78.3] server_promote_ms=[45.6, 41.6, 25.2, 25.0, 25.4, 25.6, 25.5, 26.2, 25.2, 25.7] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+  p4-base/pass1/on/promote: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[126.5, 127.0, 127.0, 108.8, 110.0, 108.2, 111.9, 109.1, 108.0, 106.7] tenant_wall_ms_median=3101
+STALL rule cell=stall-demote-on arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.8 idle_p99=8.0 idle_max=10.2 arm_runs=10 arm_p50=7.3 arm_p95=7.9 arm_p99=8.5 arm_max=72.3 stall_median=63.2 stall_min=38.0 stall_max=65.0 server_demote_ms=[54.6, 61.1, 64.4, 63.2, 64.9, 64.2, 62.9, 61.8, 62.3] server_promote_ms=[] intruder_prompt_tokens=[95, 99, 97, 98, 97, 99, 97, 97, 97, 97] tenant_text_identical=True errors=0
+  p4-base/pass2/on/demote: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[104.4, 148.3, 155.2, 157.6, 157.0, 159.5, 158.7, 157.0, 157.3, 156.3] tenant_wall_ms_median=3030
+STALL rule cell=stall-promote-on arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.1 idle_max=10.0 arm_runs=10 arm_p50=7.3 arm_p95=7.8 arm_p99=8.1 arm_max=75.0 stall_median=50.1 stall_min=48.7 stall_max=67.7 server_demote_ms=[97.3, 98.5, 80.3, 79.5, 80.1, 81.2, 83.1, 81.2, 81.9, 81.4] server_promote_ms=[43.5, 45.0, 24.7, 25.8, 25.3, 25.5, 25.0, 26.1, 25.3, 25.6] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+  p4-base/pass2/on/promote: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[125.4, 126.0, 108.2, 107.8, 107.6, 109.6, 111.3, 110.0, 109.9, 109.8] tenant_wall_ms_median=3040
+STALL rule cell=stall-demote-off arm=demote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.8 idle_p99=8.0 idle_max=11.0 arm_runs=10 arm_p50=7.3 arm_p95=7.8 arm_p99=8.3 arm_max=71.3 stall_median=63.0 stall_min=39.8 stall_max=64.0 server_demote_ms=[17.1, 26.4, 26.0, 25.1, 25.3, 25.2, 25.6, 24.7, 23.2] server_promote_ms=[] intruder_prompt_tokens=[95, 99, 97, 98, 97, 99, 97, 97, 97, 97] tenant_text_identical=True errors=0
+  p4-base/pass2/off/demote: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[105.3, 119.9, 128.5, 128.2, 127.0, 133.1, 130.4, 132.1, 129.9, 136.9] tenant_wall_ms_median=3033
+STALL rule cell=stall-promote-off arm=promote n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.9 idle_p99=8.7 idle_max=10.2 arm_runs=10 arm_p50=7.3 arm_p95=7.9 arm_p99=8.1 arm_max=72.5 stall_median=47.5 stall_min=45.6 stall_max=65.2 server_demote_ms=[24.4, 23.6, 6.6, 4.7, 5.2, 4.8, 4.7, 5.1, 4.6, 5.6] server_promote_ms=[28.6, 27.2, 10.2, 8.2, 9.6, 8.6, 8.2, 8.8, 8.4, 10.0] intruder_prompt_tokens=[89, 86, 89, 86, 89, 86, 89, 86, 89, 86] tenant_text_identical=True errors=0
+  p4-base/pass2/off/promote: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[82.2, 80.0, 65.3, 63.4, 64.2, 63.2, 62.6, 63.5, 65.8, 65.0] tenant_wall_ms_median=3039
+STALL rule cell=stall-prime-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=7.3 idle_p95=7.8 idle_p99=8.0 idle_max=9.6 arm_runs=10 arm_p50=7.3 arm_p95=8.2 arm_p99=247.7 arm_max=292.6 stall_median=278.4 stall_min=261.9 stall_max=285.3 server_demote_ms=[] server_promote_ms=[] intruder_prompt_tokens=[5123, 5122, 5123, 5121, 5123, 5122, 5123, 5120, 5122, 5122] tenant_text_identical=True errors=0
+  p4-base/pass2/prime/prime: replay=PASS admissible=True (errors=0, tenant text identical, every intruder inside the window, the server lines as pre-registered); tenant_tokens=[400] tenant_max_tokens=400 landed=10/10 intruder_wall_ms=[1303.2, 1311.4, 1340.4, 1308.7, 1351.2, 1357.0, 1322.9, 1305.2, 1390.7, 1318.5] tenant_wall_ms_median=3618
+DAY37 STALL prog=p1-base tree=base pass=1 class=prime stall_median=10.5 iqr=174.2 n_per_order=5 pooled=10 -> inadmissible
+DAY37 STALL prog=p1-base tree=base pass=1 class=demote arm=off stall_median=63.7 iqr=2.0 idle_p50=7.4 arm_p99=8.5 arm_max=72.3 -> admissible
+DAY37 STALL prog=p1-base tree=base pass=1 class=demote arm=on stall_median=67.0 iqr=2.6 idle_p50=7.5 arm_p99=8.8 arm_max=77.4 -> admissible
+DAY37 STALL prog=p1-base tree=base pass=1 class=demote on_minus_off=+3.3 unc=3.3 -> under_resolution
+DAY37 STALL prog=p1-base tree=base pass=1 class=promote arm=off stall_median=47.7 iqr=0.9 idle_p50=7.5 arm_p99=8.4 arm_max=73.8 -> admissible
+DAY37 STALL prog=p1-base tree=base pass=1 class=promote arm=on stall_median=49.3 iqr=12.5 idle_p50=7.5 arm_p99=8.3 arm_max=75.1 -> admissible
+DAY37 STALL prog=p1-base tree=base pass=1 class=promote on_minus_off=+1.6 unc=12.5 -> under_resolution
+DAY37 STALL prog=p1-base tree=base pass=2 class=prime stall_median=278.4 iqr=6.6 n_per_order=5 pooled=10 -> admissible
+DAY37 STALL prog=p1-base tree=base pass=2 class=demote arm=off stall_median=63.0 iqr=2.3 idle_p50=7.3 arm_p99=8.3 arm_max=71.3 -> admissible
+DAY37 STALL prog=p1-base tree=base pass=2 class=demote arm=on stall_median=63.2 iqr=1.5 idle_p50=7.3 arm_p99=8.5 arm_max=72.3 -> admissible
+DAY37 STALL prog=p1-base tree=base pass=2 class=demote on_minus_off=+0.3 unc=2.7 -> under_resolution
+DAY37 STALL prog=p1-base tree=base pass=2 class=promote arm=off stall_median=47.5 iqr=2.4 idle_p50=7.3 arm_p99=8.1 arm_max=72.5 -> admissible
+DAY37 STALL prog=p1-base tree=base pass=2 class=promote arm=on stall_median=50.1 iqr=1.3 idle_p50=7.3 arm_p99=8.1 arm_max=75.0 -> admissible
+DAY37 STALL prog=p1-base tree=base pass=2 class=promote on_minus_off=+2.6 unc=2.7 -> under_resolution
+DAY37 STALL prog=p4-base tree=base pass=1 class=prime stall_median=10.5 iqr=174.2 n_per_order=5 pooled=10 -> inadmissible
+DAY37 STALL prog=p4-base tree=base pass=1 class=demote arm=off stall_median=63.7 iqr=2.0 idle_p50=7.4 arm_p99=8.5 arm_max=72.3 -> admissible
+DAY37 STALL prog=p4-base tree=base pass=1 class=demote arm=on stall_median=67.0 iqr=2.6 idle_p50=7.5 arm_p99=8.8 arm_max=77.4 -> admissible
+DAY37 STALL prog=p4-base tree=base pass=1 class=demote on_minus_off=+3.3 unc=3.3 -> under_resolution
+DAY37 STALL prog=p4-base tree=base pass=1 class=promote arm=off stall_median=47.7 iqr=0.9 idle_p50=7.5 arm_p99=8.4 arm_max=73.8 -> admissible
+DAY37 STALL prog=p4-base tree=base pass=1 class=promote arm=on stall_median=49.3 iqr=12.5 idle_p50=7.5 arm_p99=8.3 arm_max=75.1 -> admissible
+DAY37 STALL prog=p4-base tree=base pass=1 class=promote on_minus_off=+1.6 unc=12.5 -> under_resolution
+DAY37 STALL prog=p4-base tree=base pass=2 class=prime stall_median=278.4 iqr=6.6 n_per_order=5 pooled=10 -> admissible
+DAY37 STALL prog=p4-base tree=base pass=2 class=demote arm=off stall_median=63.0 iqr=2.3 idle_p50=7.3 arm_p99=8.3 arm_max=71.3 -> admissible
+DAY37 STALL prog=p4-base tree=base pass=2 class=demote arm=on stall_median=63.2 iqr=1.5 idle_p50=7.3 arm_p99=8.5 arm_max=72.3 -> admissible
+DAY37 STALL prog=p4-base tree=base pass=2 class=demote on_minus_off=+0.3 unc=2.7 -> under_resolution
+DAY37 STALL prog=p4-base tree=base pass=2 class=promote arm=off stall_median=47.5 iqr=2.4 idle_p50=7.3 arm_p99=8.1 arm_max=72.5 -> admissible
+DAY37 STALL prog=p4-base tree=base pass=2 class=promote arm=on stall_median=50.1 iqr=1.3 idle_p50=7.3 arm_p99=8.1 arm_max=75.0 -> admissible
+DAY37 STALL prog=p4-base tree=base pass=2 class=promote on_minus_off=+2.6 unc=2.7 -> under_resolution
+DAY37 BINARY q=stall tree=base arm=prime N=40 median=246.2 iqr=266.7 receipts=4/4 -> inadmissible
+DAY37 BINARY q=stall tree=base arm=demote-off N=40 median=63.5 iqr=2.0 receipts=4/4 -> admissible
+DAY37 BINARY q=stall tree=base arm=demote-on N=40 median=64.2 iqr=4.1 receipts=4/4 -> admissible
+DAY37 BINARY q=stall tree=base arm=promote-off N=40 median=47.7 iqr=1.6 receipts=4/4 -> admissible
+DAY37 BINARY q=stall tree=base arm=promote-on N=40 median=49.6 iqr=5.3 receipts=4/4 -> admissible
+DAY37 BINARY q=stall tree=base class=demote on_minus_off=+0.8 unc=4.5 -> under_resolution
+DAY37 BINARY q=stall tree=base class=promote on_minus_off=+2.0 unc=5.5 -> under_resolution
+DAY37 BINARY q=stall tree=opta arm=prime N=0 -> inadmissible
+DAY37 BINARY q=stall tree=opta arm=demote-off N=0 -> inadmissible
+DAY37 BINARY q=stall tree=opta arm=demote-on N=0 -> inadmissible
+DAY37 BINARY q=stall tree=opta arm=promote-off N=0 -> inadmissible
+DAY37 BINARY q=stall tree=opta arm=promote-on N=0 -> inadmissible
+DAY37 OPTA-BASE q=stall arm=prime block=o1 (p2-opta against p1-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=stall arm=prime block=o2 (p3-opta against p4-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=stall arm=demote-off block=o1 (p2-opta against p1-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=stall arm=demote-off block=o2 (p3-opta against p4-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=stall arm=demote-on block=o1 (p2-opta against p1-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=stall arm=demote-on block=o2 (p3-opta against p4-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=stall arm=promote-off block=o1 (p2-opta against p1-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=stall arm=promote-off block=o2 (p3-opta against p4-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=stall arm=promote-on block=o1 (p2-opta against p1-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=stall arm=promote-on block=o2 (p3-opta against p4-base): no receipts -> inadmissible
+DAY37 DID q=stall class=demote block=o1: missing arm -> inadmissible
+DAY37 DID q=stall class=demote block=o2: missing arm -> inadmissible
+DAY37 DID q=stall class=promote block=o1: missing arm -> inadmissible
+DAY37 DID q=stall class=promote block=o2: missing arm -> inadmissible
+DAY37 VERDICT q=stall: prime o1=+0.0/0.0 o2=+0.0/0.0 inadmissible; demote-off o1=+0.0/0.0 o2=+0.0/0.0 inadmissible; demote-on o1=+0.0/0.0 o2=+0.0/0.0 inadmissible; promote-off o1=+0.0/0.0 o2=+0.0/0.0 inadmissible; promote-on o1=+0.0/0.0 o2=+0.0/0.0 inadmissible; did-demote o1=+0.0/0.0 o2=+0.0/0.0 inadmissible; did-promote o1=+0.0/0.0 o2=+0.0/0.0 inadmissible
+DAY37 BINARY q=top1_plus_top2 tree=base arm=prime N=40 median=496.9 iqr=515.5 receipts=4/4 -> inadmissible
+DAY37 BINARY q=top1_plus_top2 tree=base arm=demote-off N=40 median=112.7 iqr=2.1 receipts=4/4 -> admissible
+DAY37 BINARY q=top1_plus_top2 tree=base arm=demote-on N=40 median=141.4 iqr=7.6 receipts=4/4 -> admissible
+DAY37 BINARY q=top1_plus_top2 tree=base arm=promote-off N=40 median=65.2 iqr=4.1 receipts=4/4 -> admissible
+DAY37 BINARY q=top1_plus_top2 tree=base arm=promote-on N=40 median=97.6 iqr=6.6 receipts=4/4 -> admissible
+DAY37 BINARY q=top1_plus_top2 tree=base class=demote on_minus_off=+28.6 unc=7.9 -> isolated
+DAY37 BINARY q=top1_plus_top2 tree=base class=promote on_minus_off=+32.5 unc=7.8 -> isolated
+DAY37 BINARY q=top1_plus_top2 tree=opta arm=prime N=0 -> inadmissible
+DAY37 BINARY q=top1_plus_top2 tree=opta arm=demote-off N=0 -> inadmissible
+DAY37 BINARY q=top1_plus_top2 tree=opta arm=demote-on N=0 -> inadmissible
+DAY37 BINARY q=top1_plus_top2 tree=opta arm=promote-off N=0 -> inadmissible
+DAY37 BINARY q=top1_plus_top2 tree=opta arm=promote-on N=0 -> inadmissible
+DAY37 OPTA-BASE q=top1_plus_top2 arm=prime block=o1 (p2-opta against p1-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=top1_plus_top2 arm=prime block=o2 (p3-opta against p4-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=top1_plus_top2 arm=demote-off block=o1 (p2-opta against p1-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=top1_plus_top2 arm=demote-off block=o2 (p3-opta against p4-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=top1_plus_top2 arm=demote-on block=o1 (p2-opta against p1-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=top1_plus_top2 arm=demote-on block=o2 (p3-opta against p4-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=top1_plus_top2 arm=promote-off block=o1 (p2-opta against p1-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=top1_plus_top2 arm=promote-off block=o2 (p3-opta against p4-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=top1_plus_top2 arm=promote-on block=o1 (p2-opta against p1-base): no receipts -> inadmissible
+DAY37 OPTA-BASE q=top1_plus_top2 arm=promote-on block=o2 (p3-opta against p4-base): no receipts -> inadmissible
+DAY37 DID q=top1_plus_top2 class=demote block=o1: missing arm -> inadmissible
+DAY37 DID q=top1_plus_top2 class=demote block=o2: missing arm -> inadmissible
+DAY37 DID q=top1_plus_top2 class=promote block=o1: missing arm -> inadmissible
+DAY37 DID q=top1_plus_top2 class=promote block=o2: missing arm -> inadmissible
+DAY37 VERDICT q=top1_plus_top2: prime o1=+0.0/0.0 o2=+0.0/0.0 inadmissible; demote-off o1=+0.0/0.0 o2=+0.0/0.0 inadmissible; demote-on o1=+0.0/0.0 o2=+0.0/0.0 inadmissible; promote-off o1=+0.0/0.0 o2=+0.0/0.0 inadmissible; promote-on o1=+0.0/0.0 o2=+0.0/0.0 inadmissible; did-demote o1=+0.0/0.0 o2=+0.0/0.0 inadmissible; did-promote o1=+0.0/0.0 o2=+0.0/0.0 inadmissible
+DAY37 LEDGER-BOOT prog=p1-base tree=base pass=1 on-boot: digests_landed_lines=0 demote_published_lines=21 hit_parked_lines=0 hash_helper_detached_lines=0
+DAY37 LEDGER-BOOT prog=p1-base tree=base pass=2 on-boot: digests_landed_lines=0 demote_published_lines=21 hit_parked_lines=0 hash_helper_detached_lines=0
+DAY37 LEDGER-BOOT prog=p2-opta tree=opta pass=1 on-boot: digests_landed_lines=0 demote_published_lines=0 hit_parked_lines=0 hash_helper_detached_lines=0
+DAY37 LEDGER-BOOT prog=p2-opta tree=opta pass=2 on-boot: digests_landed_lines=0 demote_published_lines=0 hit_parked_lines=0 hash_helper_detached_lines=0
+DAY37 LEDGER-BOOT prog=p3-opta tree=opta pass=1 on-boot: digests_landed_lines=0 demote_published_lines=0 hit_parked_lines=0 hash_helper_detached_lines=0
+DAY37 LEDGER-BOOT prog=p3-opta tree=opta pass=2 on-boot: digests_landed_lines=0 demote_published_lines=0 hit_parked_lines=0 hash_helper_detached_lines=0
+DAY37 LEDGER-BOOT prog=p4-base tree=base pass=1 on-boot: digests_landed_lines=0 demote_published_lines=21 hit_parked_lines=0 hash_helper_detached_lines=0
+DAY37 LEDGER-BOOT prog=p4-base tree=base pass=2 on-boot: digests_landed_lines=0 demote_published_lines=21 hit_parked_lines=0 hash_helper_detached_lines=0
+DAY37 LEDGER part=first3 N=0
+DAY37 LEDGER part=4th_on N=0
+DAY37 ATTRIBUTION prog=p1-base tree=base pass=1 ON demote: demote_in median=67.4 (N=9) completion median=44.0 (N=9) in_minus_completion median=23.8 (N=9); OFF demote_in median=25.7 (N=9)
+DAY37 ATTRIBUTION prog=p1-base tree=base pass=2 ON demote: demote_in median=62.9 (N=9) completion median=41.0 (N=9) in_minus_completion median=21.6 (N=9); OFF demote_in median=25.2 (N=9)
+DAY37 ATTRIBUTION prog=p4-base tree=base pass=1 ON demote: demote_in median=67.4 (N=9) completion median=44.0 (N=9) in_minus_completion median=23.8 (N=9); OFF demote_in median=25.7 (N=9)
+DAY37 ATTRIBUTION prog=p4-base tree=base pass=2 ON demote: demote_in median=62.9 (N=9) completion median=41.0 (N=9) in_minus_completion median=21.6 (N=9); OFF demote_in median=25.2 (N=9)
+DAY37 ADMISSIBLE: 18 of 40 receipts; all=False
+rc=0

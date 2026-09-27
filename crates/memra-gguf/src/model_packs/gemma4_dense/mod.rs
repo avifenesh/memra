@@ -7,6 +7,8 @@ use crate::tensor_contract::{
 
 pub static PACK: ModelPack = ModelPack {
     family: "gemma4_dense",
+    output_head: OutputHeadContract::TiedHeadAllowed,
+    tensor_consumption: TensorConsumption::Report,
     aliases: &[
         "gemma4",
         "gemma4_text",

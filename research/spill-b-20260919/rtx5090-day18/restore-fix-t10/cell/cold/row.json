@@ -1,0 +1,55 @@
+{
+  "status": 200,
+  "elapsed_s": 9.025,
+  "prompt_tokens": 12350,
+  "completion_tokens": 3,
+  "cached_tokens": 0,
+  "finish_reason": "stop",
+  "text": "_\n",
+  "text_sha256": "4415b7e361fc6f6ba2492adef1f27cfb00d0105e4588177470cecc4214b35284",
+  "error": null,
+  "lines": [
+    "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12350 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+    "[primeseg] call start=0 take=8192 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=12350 budget=8192 seed_at=None",
+    "[primeseg] call start=8192 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=4158 budget=1024 seed_at=None",
+    "[primeseg] call start=9216 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=3134 budget=1024 seed_at=None",
+    "[primeseg] call start=10240 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=2110 budget=1024 seed_at=None",
+    "[primeseg] call start=11264 take=1024 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1086 budget=1024 seed_at=None",
+    "[primeseg] call start=12288 take=62 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=62 budget=1024 seed_at=None"
+  ],
+  "inserts": [],
+  "hits": [],
+  "primeseg": [
+    {
+      "start": 0,
+      "take": 8192,
+      "grid_off": 0
+    },
+    {
+      "start": 8192,
+      "take": 1024,
+      "grid_off": 0
+    },
+    {
+      "start": 9216,
+      "take": 1024,
+      "grid_off": 0
+    },
+    {
+      "start": 10240,
+      "take": 1024,
+      "grid_off": 0
+    },
+    {
+      "start": 11264,
+      "take": 1024,
+      "grid_off": 0
+    },
+    {
+      "start": 12288,
+      "take": 62,
+      "grid_off": 0
+    }
+  ],
+  "refused": []
+}

@@ -1,0 +1,11 @@
+{"kind": "pinned-host-reserve-bench", "issue": "memra#385", "cell": "smoke-chunked", "arms": ["single", "chunked"], "bytes": 1073741824, "basis": "bytes", "fraction": null, "margin_bytes": null, "chunks": 8, "pairs_per_order": 1, "floor": 1.1, "hugepage_min_fraction": 0.9, "mem_total": 65390514176, "mem_available_at_start": 56812109824, "mem_free_at_start": 5399658496, "anon_huge_at_start": 0, "hugepages_total": 0, "thp_mode": "always [madvise] never", "cpus": 24, "gpu_at_start": "53, 30.72 W, [N/A], 217 MHz", "loadavg_at_start": ["3.25", "4.27", "3.24"]}
+Traceback (most recent call last):
+  File "/home/avifenesh/projects/wt-spill-a/tools/pinned-host-reserve-bench.py", line 515, in <module>
+    main()
+    ~~~~^^
+  File "/home/avifenesh/projects/wt-spill-a/tools/pinned-host-reserve-bench.py", line 449, in main
+    rt = roundtrip(cuda, arm, nbytes, args.chunks)
+  File "/home/avifenesh/projects/wt-spill-a/tools/pinned-host-reserve-bench.py", line 297, in roundtrip
+    ctypes.memset(p + off, (7 * block + 13) & 0xFF, min(ALIGN, n - off))
+                  ~~^~~~~
+TypeError: unsupported operand type(s) for +: 'c_void_p' and 'int'

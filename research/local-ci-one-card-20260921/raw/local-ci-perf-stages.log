@@ -1,0 +1,40 @@
+GPU quiet at 23:24:14; starting battery
+== local-ci: clippy gate (-D warnings) ==
+== local-ci: memra-server HTTP-surface unit suite ==
+== local-ci: memra-engine lib suite (CPU-safe part) ==
+== local-ci: memra-gguf artifact-present skip census ==
+DRAFTER-ATTACH WIRING GATE: ALL GREEN
+  ok: fixture lists exactly the pair-only fns
+  ok: real tree lists 3 pair-only tests, all reasoned as such
+test_pair_only_tests: ALL GREEN
+test_local_ci_lock: ALL GREEN
+== local-ci: correctness stage ==
+kernel-check: ALL GREEN (109 cells, 10 skipped)
+decode-batch-gate config B=8: ALL GREEN (9B NVFP4)
+decode-batch-gate strict B=4 equalized: ALL GREEN (9B NVFP4)
+decode-batch-gate config B=8: ALL GREEN (9B Q8_0)
+decode-batch-gate strict B=4 equalized: ALL GREEN (9B Q8_0)
+ALL GREEN: graph-warmup-stress (10 cycles x 4 arms + overlap, bit-identical, no fault)
+ALL GREEN: graph-warmup-stress gate (10 cycles + canary)
+decode-dc-gate: PASS
+graph-decode-gate: PASS
+graph-session-gate: ALL GREEN
+serve-stress-gate: ALL GREEN (c=64 complete, streams well-formed, worker alive, log clean)
+SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+== local-ci: memra-engine lib suite (GPU-only #[ignore] tests) ==
+local-ci: 1 native CUDA device(s); SKIP 3 pair-only #[ignore] test(s): replay_rust_partial_submission_and_capture_cleanup glm_peer_admission_materialization_trim_and_refill glm_indexed_mla_kda_state_materialization
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 518 filtered out; finished in 4.30s
+== local-ci: perf stage (--perf) ==
+  31b-plain-short: SKIP (no model)
+  31b-plain-d1736: SKIP (no model)
+  31b-spec-short: SKIP (no model)
+  31b-spec-d1736: SKIP (no model)
+  26b-plain-short: 208.15 tok/s [OK]
+  26b-spec-d1736: FAIL (no reading)
+  e4b-plain-short: SKIP (no model)
+  e4b-spec-short: SKIP (no model)
+  qwen9b-plain-short: 138.88 tok/s [OK]
+  ^ A tok/s FAIL above is a DRIFT TRIPWIRE against a cross-day median, NOT a proven
+    (power/thermal/profile) or a contended window, not at the diff. An ACCEPTANCE FAIL is
+LOCAL_CI_RC=1

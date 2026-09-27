@@ -1,0 +1,18 @@
+# DAY82 reader dry check on make-synthetic.py's cell (DAY79's BOX34 runs relabelled; meaningless)
+DAY82 host demand sequence i15 sha256 4bdc2610c3534e42 lines=[22077]
+DAY82 host demand sequence i18 sha256 4bdc2610c3534e42 lines=[22077]
+DAY82 host demand sequence i20 sha256 4bdc2610c3534e42 lines=[22077]
+DAY82 host demand sequence i20c sha256 4bdc2610c3534e42 lines=[22077]
+DAY82 I20 CHECKS rig=synthetic runs=50 integrity=ok
+DAY82 ADMISSIBILITY rig=synthetic ceiling=0.005 max_iqr_gen=0.0010 max_iqr_window=0.0010 failing=[] -> admissible
+DAY82 gen-only decode medians (N=10 each): ref=0.311 i15=0.315 i18=0.315 i20=0.315 i20c=0.315
+DAY82 STEP i20_vs_i18 gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0010 -> flat
+DAY82 steady window medians (N=10 each): ref=0.286 i15=0.286 i18=0.286 i20=0.286 i20c=0.286
+DAY82 STEP i20_vs_i18 steady window: pooled=+0.0000 o1=+0.0000 o2=-0.0010 noise=0.0010 -> flat
+DAY82 BESIDE i20_vs_i15 gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0010 -> flat (deciding nothing)
+DAY82 BESIDE i20_vs_i15 steady window: pooled=+0.0000 o1=+0.0000 o2=-0.0010 noise=0.0010 -> flat (deciding nothing)
+DAY82 DOOR i20_vs_ref gen-only decode: pooled=+0.0040 o1=+0.0040 o2=+0.0040 noise=0.0010 -> loses
+DAY82 DOOR i20_vs_ref steady window: pooled=+0.0000 o1=+0.0010 o2=+0.0000 noise=0.0010 -> matches
+DAY82 I20C brackets per window token (ms, medians): dispatch_ns=0.0814 prefetch_ns=0.5024 pf_demand_ns=0.1495 pf_resident_ns=0.0428 pf_retire_ns=0.0246 pf_stage_ns=0.2274
+DAY82 B i20_minus_ref per window token (ms, medians of two; deciding nothing): gpu_busy=+0.0076 gpu_idle=+0.1955 h2d_exposed=+0.0612 kernel_sum=+0.0076
+DAY82 VERDICT rig=synthetic integrity=ok i20=flat door=i20 vs_ref=loses (window: i20=flat vs_ref=matches)

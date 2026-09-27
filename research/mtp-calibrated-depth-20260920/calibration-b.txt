@@ -1,0 +1,306 @@
+Review the following real Rust implementation. Explain its data flow, state ownership and correctness invariants. Identify concrete defects or risks, and propose changes with tests. Ground the analysis in the supplied excerpts.
+
+File: crates/memra-gguf/src/execution_manifest.rs, lines 1..170
+```rust
+//! Static operation-level manifests for tuned execution programs.
+//!
+//! These tables describe implemented kernel programs, not model families. A new model can use a
+//! program when every operation in its compiled `ModelPlan` is present. Missing operations fail
+//! closed and remain visible as capability blockers.
+
+use crate::model_plan::{ModelPlan, OperationKind, OperationSupport, PlanCapabilities};
+use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
+use std::fmt::Write as _;
+use std::path::Path;
+
+#[derive(Clone, Copy)]
+pub struct KernelManifest {
+    pub name: &'static str,
+    support: fn(OperationKind) -> OperationSupport,
+}
+
+impl KernelManifest {
+    pub const fn new(name: &'static str, support: fn(OperationKind) -> OperationSupport) -> Self {
+        Self { name, support }
+    }
+
+    pub fn support(self, operation: OperationKind) -> OperationSupport {
+        (self.support)(operation)
+    }
+
+    pub fn capabilities(self, plan: &ModelPlan) -> PlanCapabilities {
+        plan.derive_capabilities(|operation| self.support(operation))
+    }
+
+    pub fn trunk_capabilities(self, plan: &ModelPlan) -> PlanCapabilities {
+        plan.derive_trunk_capabilities(|operation| self.support(operation))
+    }
+
+    pub fn multimodal_prefill_capabilities(self, plan: &ModelPlan) -> PlanCapabilities {
+        plan.derive_multimodal_prefill_capabilities(|operation| self.support(operation))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RewriteSurface {
+    CarriedPrime,
+    DecodeEager,
+    DecodeBatch,
+    DecodeGraph,
+    MtpSpec,
+    /// glm5_next T-parallel speculative loop (embedded MLA-mixer MTP draft + one-walk
+    /// verify over the HyperConnections trunk). A DISTINCT program from `MtpSpec` — the
+    /// two manifests' operation tables are disjoint on the mixer/residual classes, so no
+    /// plan is ever eligible for both.
+    Glm5Spec,
+    Pipeline,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RewriteQualifications {
+    pub plan_sha256: String,
+    passed: BTreeSet<RewriteSurface>,
+}
+
+impl RewriteQualifications {
+    pub fn load(bundle: &Path, plan: &ModelPlan) -> Result<Self, String> {
+        let expected = execution_rewrites(plan);
+        let artifact_lock = std::fs::read(bundle.join("artifact.lock"))
+            .map_err(|error| format!("read artifact.lock: {error}"))?;
+        let artifact_lock_sha256 = hex_sha256(&artifact_lock);
+        let index = std::fs::read_to_string(bundle.join("rewrite-receipts.tsv"))
+            .map_err(|error| format!("read rewrite receipt index: {error}"))?;
+        let mut passed = BTreeSet::new();
+        for line in index.lines().skip(1) {
+            let columns: Vec<_> = line.split('\t').collect();
+            if columns.len() != 4 || columns[3] != "passed" {
+                return Err(format!("malformed rewrite receipt index row {line:?}"));
+            }
+            let rewrite = expected
+                .iter()
+                .find(|rewrite| rewrite.id == columns[0])
+                .ok_or_else(|| format!("receipt names unknown rewrite {}", columns[0]))?;
+            if !rewrite.eligible() || columns[1] != rewrite.plan_sha256 {
+                return Err(format!(
+                    "receipt {} is not eligible for plan {}",
+                    rewrite.id, rewrite.plan_sha256
+                ));
+            }
+            let receipt_path = bundle
+                .join("rewrite-receipts")
+                .join(format!("{}.tsv", rewrite.id));
+            let receipt = std::fs::read(&receipt_path)
+                .map_err(|error| format!("read {}: {error}", receipt_path.display()))?;
+            if hex_sha256(&receipt) != columns[2] {
+                return Err(format!("rewrite receipt hash mismatch for {}", rewrite.id));
+            }
+            let text = std::str::from_utf8(&receipt)
+                .map_err(|error| format!("rewrite receipt is not UTF-8: {error}"))?;
+            for (key, value) in [
+                ("status", "passed"),
+                ("rewrite", rewrite.id),
+                ("surface", rewrite.surface.as_str()),
+                ("implementation", rewrite.implementation),
+                ("plan_sha256", rewrite.plan_sha256.as_str()),
+                ("artifact_lock_sha256", artifact_lock_sha256.as_str()),
+                ("first_violation", "none"),
+            ] {
+                if !text.lines().any(|line| line == format!("{key}\t{value}")) {
+                    return Err(format!(
+                        "rewrite receipt {} does not bind {key}={value}",
+                        rewrite.id
+                    ));
+                }
+            }
+            passed.insert(rewrite.surface);
+        }
+        Ok(Self {
+            plan_sha256: plan_sha256(plan),
+            passed,
+        })
+    }
+
+    pub fn allows(&self, surface: RewriteSurface) -> bool {
+        self.passed.contains(&surface)
+    }
+
+    pub fn all_eligible(&self, plan: &ModelPlan) -> bool {
+        execution_rewrites(plan)
+            .into_iter()
+            .filter(ExecutionRewrite::eligible)
+            .all(|rewrite| self.allows(rewrite.surface))
+    }
+}
+
+impl RewriteSurface {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::CarriedPrime => "carried-prime",
+            Self::DecodeEager => "decode-eager",
+            Self::DecodeBatch => "decode-batch",
+            Self::DecodeGraph => "decode-graph",
+            Self::MtpSpec => "mtp-spec",
+            Self::Glm5Spec => "glm5-spec",
+            Self::Pipeline => "pipeline",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutionRewrite {
+    pub id: &'static str,
+    pub surface: RewriteSurface,
+    pub implementation: &'static str,
+    pub plan_sha256: String,
+    pub canonical_operations: Vec<OperationKind>,
+    pub blockers: Vec<OperationKind>,
+}
+
+impl ExecutionRewrite {
+    pub fn eligible(&self) -> bool {
+        self.blockers.is_empty()
+    }
+
+    pub fn verify_logits(
+        &self,
+        implementation_sha256: &str,
+        reference: &[f32],
+        candidate: &[f32],
+        policy: RewriteParityPolicy,
+    ) -> Result<RewriteParityReceipt, String> {
+        if !self.eligible() {
+            return Err(format!(
+                "rewrite {} is blocked by {:?}",
+
+```
+
+File: crates/memra-gguf/src/tensor_contract.rs, lines 1..110
+```rust
+//! Strict checkpoint-to-semantic tensor binding.
+//!
+//! Contracts are built from `ModelPlan`, then bound against a cheap tensor census before any
+//! tensor bytes are uploaded. Every physical tensor must bind exactly once; missing, extra, and
+//! ambiguous names are compile errors.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::config::{Arch, AttentionGateKind};
+use crate::model_plan::{
+    AttentionPlan, LayerPlan, MlaAttentionPlan, MlpPlan, ModelPlan, MoeMlpPlan, ResidualTopology,
+    RopeFactors, RouterPlan, SparseIndexPlan, TensorPresence, ValueProjection, WeightTransform,
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckpointDialect {
+    Gguf,
+    HfSafetensors,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputHead {
+    Separate,
+    TiedToEmbedding,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ContractOptions {
+    pub output_head: OutputHead,
+}
+
+impl Default for ContractOptions {
+    fn default() -> Self {
+        Self {
+            output_head: OutputHead::Separate,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TensorId {
+    TokenEmbedding,
+    RopeFactors,
+    HyperHeadBase,
+    HyperHeadFunction,
+    HyperHeadScale,
+    OutputNorm,
+    OutputProjection,
+    Layer {
+        index: u32,
+        tensor: LayerTensor,
+    },
+    Expert {
+        layer: u32,
+        expert: u32,
+        tensor: ExpertTensor,
+    },
+    Mtp {
+        depth: u32,
+        tensor: MtpTensor,
+    },
+    Dspark(DsparkTensor),
+    Vision {
+        layer: Option<u32>,
+        tensor: VisionTensor,
+    },
+    QuantAux {
+        tensor: Box<TensorId>,
+        kind: QuantAuxTensor,
+    },
+    Family {
+        family: &'static str,
+        key: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum QuantAuxTensor {
+    WeightScale,
+    InputScale,
+    /// AWQ per-input-channel scale, `[in_features]`. The stored weight is `W / s`; the layer
+    /// must multiply its INPUT by `s` before the matmul, or it computes a different function.
+    /// HF-dialect only — no GGUF spelling writes this.
+    PreQuantScale,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ExpertTensor {
+    Gate,
+    Up,
+    Down,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum VisionTensor {
+    PatchProjection,
+    PositionEmbedding,
+    StandardizeBias,
+    StandardizeScale,
+    OutputProjection,
+    InputNorm,
+    PostAttentionNorm,
+    PreMlpNorm,
+    PostMlpNorm,
+    Query,
+    Key,
+    Value,
+    AttentionOutput,
+    QueryNorm,
+    KeyNorm,
+
+```
+
+---TURN---
+Develop concrete failure cases for this code. Show the state before and after each failure and specify recovery behavior.
+---TURN---
+Propose a focused patch plan. Include Rust-like pseudocode, interfaces and ownership rules tied to the supplied source.
+---TURN---
+Now examine concurrency and cancellation. Give adversarial interleavings and show how the proposed changes handle them.
+---TURN---
+Design tests for the invariants discussed so far. Include boundaries, malformed inputs, repeated calls and cleanup.
+---TURN---
+Review your proposed changes for performance costs. Identify useful measurements and avoid claiming gains without evidence.
+---TURN---
+Consider a production incident involving this component. Write a debugging plan with concrete observations that distinguish plausible causes.
+---TURN---
+Consolidate the conversation into a detailed implementation and validation plan. Resolve contradictions in your earlier proposals.

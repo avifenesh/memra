@@ -1,0 +1,251 @@
+f08b78b868eddb939976fa63226042b0eca29d6a3bc6105eb9e37867fba46951  /root/wt-c/target/release/memra-server
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 452, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 401, in main
+    ext, tried_k = calibrate(a.port, lambda m, k=k: f"{base} {A.words(m, salt + k)}", a.base_tokens + a.deepen, a.deepen)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 103, in calibrate
+    raise RuntimeError(f"calibration did not converge: {tried}")
+RuntimeError: calibration did not converge: [(64, 5200), (48, 5178), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181)]
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 452, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 401, in main
+    ext, tried_k = calibrate(a.port, lambda m, k=k: f"{base} {A.words(m, salt + k)}", a.base_tokens + a.deepen, a.deepen)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 103, in calibrate
+    raise RuntimeError(f"calibration did not converge: {tried}")
+RuntimeError: calibration did not converge: [(64, 5200), (48, 5181), (51, 5186), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183)]
+== off1/plain
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 452, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 383, in main
+    rec = json.load(open(a.replay))
+                    ^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/root/spill-receipts/day25/retire/ev/off1/plain/receipt.json'
+== off1/coincide
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 452, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 383, in main
+    rec = json.load(open(a.replay))
+                    ^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/root/spill-receipts/day25/retire/ev/off1/coincide/receipt.json'
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 452, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 401, in main
+    ext, tried_k = calibrate(a.port, lambda m, k=k: f"{base} {A.words(m, salt + k)}", a.base_tokens + a.deepen, a.deepen)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 103, in calibrate
+    raise RuntimeError(f"calibration did not converge: {tried}")
+RuntimeError: calibration did not converge: [(64, 5200), (48, 5178), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181)]
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 452, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 401, in main
+    ext, tried_k = calibrate(a.port, lambda m, k=k: f"{base} {A.words(m, salt + k)}", a.base_tokens + a.deepen, a.deepen)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 103, in calibrate
+    raise RuntimeError(f"calibration did not converge: {tried}")
+RuntimeError: calibration did not converge: [(64, 5200), (48, 5181), (51, 5186), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183)]
+== on1/plain
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 452, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 383, in main
+    rec = json.load(open(a.replay))
+                    ^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/root/spill-receipts/day25/retire/ev/on1/plain/receipt.json'
+== on1/coincide
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 452, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 383, in main
+    rec = json.load(open(a.replay))
+                    ^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/root/spill-receipts/day25/retire/ev/on1/coincide/receipt.json'
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 452, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 401, in main
+    ext, tried_k = calibrate(a.port, lambda m, k=k: f"{base} {A.words(m, salt + k)}", a.base_tokens + a.deepen, a.deepen)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 103, in calibrate
+    raise RuntimeError(f"calibration did not converge: {tried}")
+RuntimeError: calibration did not converge: [(64, 5200), (48, 5178), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181)]
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 452, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 401, in main
+    ext, tried_k = calibrate(a.port, lambda m, k=k: f"{base} {A.words(m, salt + k)}", a.base_tokens + a.deepen, a.deepen)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 103, in calibrate
+    raise RuntimeError(f"calibration did not converge: {tried}")
+RuntimeError: calibration did not converge: [(64, 5200), (48, 5181), (51, 5186), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183)]
+== on2/plain
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 452, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 383, in main
+    rec = json.load(open(a.replay))
+                    ^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/root/spill-receipts/day25/retire/ev/on2/plain/receipt.json'
+== on2/coincide
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 452, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 383, in main
+    rec = json.load(open(a.replay))
+                    ^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/root/spill-receipts/day25/retire/ev/on2/coincide/receipt.json'
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 452, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 401, in main
+    ext, tried_k = calibrate(a.port, lambda m, k=k: f"{base} {A.words(m, salt + k)}", a.base_tokens + a.deepen, a.deepen)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 103, in calibrate
+    raise RuntimeError(f"calibration did not converge: {tried}")
+RuntimeError: calibration did not converge: [(64, 5200), (48, 5178), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181), (54, 5187), (51, 5181)]
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 452, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 401, in main
+    ext, tried_k = calibrate(a.port, lambda m, k=k: f"{base} {A.words(m, salt + k)}", a.base_tokens + a.deepen, a.deepen)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 103, in calibrate
+    raise RuntimeError(f"calibration did not converge: {tried}")
+RuntimeError: calibration did not converge: [(64, 5200), (48, 5181), (51, 5186), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183), (50, 5185), (49, 5183)]
+== off2/plain
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 452, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 383, in main
+    rec = json.load(open(a.replay))
+                    ^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/root/spill-receipts/day25/retire/ev/off2/plain/receipt.json'
+== off2/coincide
+Traceback (most recent call last):
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 452, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/root/wt-c/research/spill-c-20260919/day25-retire-cell.py", line 383, in main
+    rec = json.load(open(a.replay))
+                    ^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/root/spill-receipts/day25/retire/ev/off2/coincide/receipt.json'
+DAY25 RETIRE VERDICT: not read (a boot or a run failed, rc=1)
+retire rc=1
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "research/spill-c-20260919/day25-retire-cell.sh",
+    "3",
+    "/root/wt-c",
+    "/root/spill-receipts/day25",
+    "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "/root/wt-c/target/release/memra-server"
+  ],
+  "exit_code": 1,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "failed",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 144878457055492,
+  "ended_monotonic_ns": 144926601127062,
+  "started_utc": "2026-09-22T07:06:33.450913+00:00",
+  "ended_utc": "2026-09-22T07:07:21.594986+00:00",
+  "elapsed_seconds": 48.14407157,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 10955,
+    "sha256": "843099028a4b6f163e4dac0b7d9e48b8a02363ed2cb4e3181ea37fb582fc51a8"
+  },
+  "failure_quote": "    raise RuntimeError(f\"calibration did not converge: {tried}\")",
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 20851,
+      "sha256": "53cd8bf3efc2dbca43c246106af7e5d12f96358cef5b5f48a92fe38eda838998"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "failure": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.failure.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}

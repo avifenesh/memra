@@ -742,7 +742,9 @@ impl TierBudget {
             ..Self::default()
         }
     }
-    fn values(&self) -> Vec<u64> {
+    /// Every dimension in a fixed order (devices, peers, replicas, then the scalars). Day 63 (I13 change 1): an
+    /// iterator, not a collected vector.
+    fn values(&self) -> impl Iterator<Item = u64> + '_ {
         self.device
             .iter()
             .chain(&self.peer)
@@ -756,7 +758,6 @@ impl TierBudget {
                 self.nvme,
                 self.inflight,
             ])
-            .collect()
     }
     pub fn fits(&self, used: &Self, capacity: &Self) -> Result<bool> {
         self.validate()?;
@@ -767,10 +768,47 @@ impl TierBudget {
         }
         Ok(self
             .values()
-            .iter()
             .zip(used.values())
             .zip(capacity.values())
-            .all(|((n, u), c)| u <= c && *n <= c - u))
+            .all(|((n, u), c)| u <= c && n <= c - u))
+    }
+    /// Day 63 (I13 change 1, `research/spill-c-20260919/DAY63.md`): `checked_add` (`add`) or `checked_sub` in place.
+    /// The same validation and the same errors as the allocating form; on an error nothing changes.
+    pub fn combine_in_place(&mut self, rhs: &Self, add: bool) -> Result<()> {
+        self.check_combine(rhs, add)?;
+        let op = |a: u64, b: u64| if add { a + b } else { a - b };
+        for (a, &b) in self.device.iter_mut().zip(&rhs.device) {
+            *a = op(*a, b);
+        }
+        for (a, &b) in self.peer.iter_mut().zip(&rhs.peer) {
+            *a = op(*a, b);
+        }
+        for (a, &b) in self.replicas.iter_mut().zip(&rhs.replicas) {
+            *a = op(*a, b);
+        }
+        self.pinned = op(self.pinned, rhs.pinned);
+        self.pageable = op(self.pageable, rhs.pageable);
+        self.staging = op(self.staging, rhs.staging);
+        self.loaders = op(self.loaders, rhs.loaders);
+        self.nvme = op(self.nvme, rhs.nvme);
+        self.inflight = op(self.inflight, rhs.inflight);
+        Ok(())
+    }
+    /// The checks of `combine` alone, in its order: both validations, the device count, then every component.
+    pub fn check_combine(&self, rhs: &Self, add: bool) -> Result<()> {
+        self.validate()?;
+        rhs.validate()?;
+        if self.device.len() != rhs.device.len() {
+            return Err(Error::InvalidLayout);
+        }
+        let ok = self.values().zip(rhs.values()).all(|(a, b)| {
+            if add {
+                a.checked_add(b).is_some()
+            } else {
+                a.checked_sub(b).is_some()
+            }
+        });
+        if ok { Ok(()) } else { Err(Error::Overflow) }
     }
     pub fn checked_add(&self, rhs: &Self) -> Result<Self> {
         self.combine(rhs, true)
@@ -1297,6 +1335,10 @@ pub struct CopyOp<H> {
 pub enum CopyDirection {
     HostToDevice,
     DeviceToHost,
+    /// Day-20 (WP-A, memra#536 Move 2 slice 1): a same-device copy of the capture class, issued
+    /// off the owner stream into an owned registered destination from a borrowed live source.
+    /// Never a `CopyOp` (that pairs a host lease with a device lease): `validate` refuses it.
+    DeviceToDevice,
 }
 impl<H: PinnedLease> CopyOp<H> {
     pub fn validate(&self, direction: CopyDirection, current: Epochs) -> Result<()> {
@@ -1310,6 +1352,7 @@ impl<H: PinnedLease> CopyOp<H> {
         let generation = match direction {
             CopyDirection::HostToDevice => current.dst_gen,
             CopyDirection::DeviceToHost => current.src_gen,
+            CopyDirection::DeviceToDevice => return Err(Error::Unsupported),
         };
         if self.device.generation() != generation {
             return Err(Error::StaleEpoch);
@@ -1318,6 +1361,7 @@ impl<H: PinnedLease> CopyOp<H> {
             CopyDirection::HostToDevice => {
                 self.host.bytes()?;
             }
+            CopyDirection::DeviceToDevice => return Err(Error::Unsupported),
             CopyDirection::DeviceToHost => {
                 let f = self.producer_fence.ok_or(Error::NotReady)?;
                 if f.issuer != self.device.allocation.issuer
@@ -1499,6 +1543,22 @@ pub trait TransferEngine {
     fn retire_source(&mut self, _ticket: &TransferTicket) -> Result<()> {
         Err(Error::Unsupported)
     }
+    /// Day-11 rule (lead ruling 9), additive and optional: a cancelled restore recovers its
+    /// source. An H2D whose publication `cancel` revoked hands its untouched host source back
+    /// to the caller exactly once, as this typed lease, after the copy's producer has been
+    /// observed complete and no source consumer or source graph pin remains; until then it
+    /// refuses `Busy` or `Quarantined` and retains ownership and charge. A ticket whose
+    /// publication was not revoked keeps its source (`NotReady`); a published ticket consumed
+    /// it (`AlreadyReleased`); a second recovery is `AlreadyReleased`. A cancelled ticket never
+    /// drains its source: `retire` and `retire_source` wait (`Busy`) until the caller has
+    /// recovered it, and `cancel` refuses (`AlreadyReleased`) once a source has left the
+    /// ticket, so consuming the source and then cancelling cannot happen. A backend without
+    /// this seam keeps the default refusal and must then refuse `cancel` on an unpublished
+    /// H2D (`Unsupported`) while the source is intact, never revoke and drain it.
+    /// `conformance::transfer_cancel_recovers_source` is the schedule.
+    fn recover_source(&mut self, _ticket: &TransferTicket, _item: u32) -> Result<Self::Host> {
+        Err(Error::Unsupported)
+    }
     fn retire(&mut self, ticket: &TransferTicket, consumer_done: Option<FenceId>) -> Result<()>;
     fn retired(&mut self, ticket: &TransferTicket) -> Result<bool>;
     fn acknowledge(&mut self, ticket: &TransferTicket) -> Result<()>;
@@ -1677,20 +1737,24 @@ impl std::fmt::Debug for BankPublication {
             .finish_non_exhaustive()
     }
 }
-type RetainedBankBacking = Rc<RefCell<Option<(Box<dyn std::any::Any>, LeasePin)>>>;
+type RetainedBankBacking = RefCell<Option<(Box<dyn std::any::Any>, LeasePin)>>;
+/// A published record. Day 63 (I13 change 2, `research/spill-c-20260919/DAY63.md`): every clone shares one body, so a
+/// clone is a count increment; the body's fields and their drop order (the charge, then the backing with its pin) are
+/// what the separate fields were, dropped with the last clone as before.
 #[derive(Clone)]
-pub struct BankLease {
+pub struct BankLease(Rc<BankLeaseBody>);
+struct BankLeaseBody {
     id: BankId,
     layout: RecordLayout,
     class: LayoutClass,
-    charge: Arc<ChargedLease>,
+    charge: ChargedLease,
     backing: RetainedBankBacking,
 }
 impl std::fmt::Debug for BankLease {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BankLease")
-            .field("id", &self.id)
-            .field("class", &self.class)
+            .field("id", &self.0.id)
+            .field("class", &self.0.class)
             .finish_non_exhaustive()
     }
 }
@@ -1721,13 +1785,13 @@ impl BankLease {
             charge.pin()
         };
         match validate() {
-            Ok(pin) => Ok(Self {
+            Ok(pin) => Ok(Self(Rc::new(BankLeaseBody {
                 id,
                 layout,
                 class,
-                charge: Arc::new(charge),
-                backing: Rc::new(RefCell::new(Some((backing, pin)))),
-            }),
+                charge,
+                backing: RefCell::new(Some((backing, pin))),
+            }))),
             Err(error) => Err(Rejected {
                 op: BankPublication {
                     id,
@@ -1741,16 +1805,20 @@ impl BankLease {
         }
     }
     pub fn id(&self) -> &BankId {
-        &self.id
+        &self.0.id
     }
     pub fn layout(&self) -> &RecordLayout {
-        &self.layout
+        &self.0.layout
     }
     pub fn charge(&self) -> &ChargedLease {
-        &self.charge
+        &self.0.charge
+    }
+    /// Day 63: whether two leases are clones of one publication (one body).
+    pub fn same_publication(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
     }
     pub fn resource<T: 'static>(&self) -> Result<Ref<'_, T>> {
-        Ref::filter_map(self.backing.try_borrow().map_err(|_| Error::Busy)?, |r| {
+        Ref::filter_map(self.0.backing.try_borrow().map_err(|_| Error::Busy)?, |r| {
             r.as_ref()?.0.downcast_ref()
         })
         .map_err(|_| Error::AlreadyReleased)
@@ -1758,7 +1826,8 @@ impl BankLease {
     /// Backend-only lifecycle boundary: call after ALL aliased consumers retire.
     /// Invalidate every clone before crediting quota; a borrowed view refuses Busy.
     pub fn retire_backing(&self) -> Result<()> {
-        self.backing
+        self.0
+            .backing
             .try_borrow_mut()
             .map_err(|_| Error::Busy)?
             .take()
@@ -1779,10 +1848,9 @@ impl UniformLease {
     pub fn try_new(leases: Vec<BankLease>) -> std::result::Result<Self, Rejected<Vec<BankLease>>> {
         let error = if leases.is_empty() {
             Some(Error::EmptyBatch)
-        } else if leases
-            .iter()
-            .any(|l| l.class != LayoutClass::Uniform || !l.layout.same_program(&leases[0].layout))
-        {
+        } else if leases.iter().any(|l| {
+            l.0.class != LayoutClass::Uniform || !l.0.layout.same_program(&leases[0].0.layout)
+        }) {
             Some(Error::MixedLayout)
         } else {
             None

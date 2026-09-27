@@ -1,0 +1,27 @@
+2026-09-21T21:23:31Z waiting for /tmp/memra-5090.lock (flock -w 1800)
+2026-09-21T21:23:31Z lock acquired
+warm P=66 cost_exact=None cost_used=71000000 kv_hat=69999504 real/shadow=1.01x
+a0 P=6006 cost_exact=1702520120 cost_used=1702520120 kv_hat=1701213496 real/shadow=1.00x
+a1 P=6295 cost_exact=1722630196 cost_used=1722630196 kv_hat=1721323572 real/shadow=1.00x
+a2 P=6564 cost_exact=1731567988 cost_used=1731567988 kv_hat=1730261364 real/shadow=1.00x
+a3 P=6837 cost_exact=None cost_used=1741000000 kv_hat=1739286964 real/shadow=1.00x
+b0 P=13362 cost_exact=None cost_used=2014000000 kv_hat=2012955268 real/shadow=1.00x
+c0 P=6006 cost_exact=1727256888 cost_used=1727256888 kv_hat=1726425400 real/shadow=1.00x
+c1 P=6295 cost_exact=1736282936 cost_used=1736282936 kv_hat=1735451448 real/shadow=1.00x
+c2 P=6564 cost_exact=1744684344 cost_used=1744684344 kv_hat=1743852856 real/shadow=1.00x
+c3 P=6837 cost_exact=None cost_used=1753000000 kv_hat=1752379192 real/shadow=1.00x
+== A: per request (tag, P, L, C, kv_hat, cost~, gap~, bracket=bpt*(C-(P+L+8)), residual~ = gap - bracket, W~+D~ from line)
+warm P=66 L=64 C=194 path=spec bpt=16704 kv_hat=69999504 cost~=71000000 gap~=1000496 bracket=935424 residual~=65072 W~=24000000 A~=0 D~=44000000 flat_geometry=True
+a0 P=6006 L=64 C=6166 path=plain bpt=14848 kv_hat=1701213496 cost~=1703000000 gap~=1786504 bracket=1306624 residual~=479880 W~=1508000000 A~=103000000 D~=0 flat_geometry=True
+a1 P=6295 L=64 C=6455 path=plain bpt=14848 kv_hat=1721323572 cost~=1723000000 gap~=1676428 bracket=1306624 residual~=369804 W~=1512000000 A~=114000000 D~=0 flat_geometry=True
+a2 P=6564 L=64 C=6724 path=plain bpt=14848 kv_hat=1730261364 cost~=1732000000 gap~=1738636 bracket=1306624 residual~=432012 W~=1517000000 A~=115000000 D~=0 flat_geometry=True
+a3 P=6837 L=64 C=6997 path=plain bpt=14848 kv_hat=1739286964 cost~=1741000000 gap~=1713036 bracket=1306624 residual~=406412 W~=1521000000 A~=115000000 D~=0 flat_geometry=True
+b0 P=13362 L=96 C=13522 path=spec bpt=16704 kv_hat=2012955268 cost~=2014000000 gap~=1044732 bracket=935424 residual~=109308 W~=1628000000 A~=116000000 D~=44000000 flat_geometry=True
+c0 P=6006 L=96 C=6166 path=plain bpt=14848 kv_hat=1726425400 cost~=1727000000 gap~=574600 bracket=831488 residual~=-256888 W~=1508000000 A~=128000000 D~=0 flat_geometry=True
+c1 P=6295 L=96 C=6455 path=plain bpt=14848 kv_hat=1735451448 cost~=1736000000 gap~=548552 bracket=831488 residual~=-282936 W~=1512000000 A~=128000000 D~=0 flat_geometry=True
+c2 P=6564 L=96 C=6724 path=plain bpt=14848 kv_hat=1743852856 cost~=1745000000 gap~=1147144 bracket=831488 residual~=315656 W~=1517000000 A~=128000000 D~=0 flat_geometry=True
+c3 P=6837 L=96 C=6997 path=plain bpt=14848 kv_hat=1752379192 cost~=1753000000 gap~=620808 bracket=831488 residual~=-210680 W~=1521000000 A~=128000000 D~=0 flat_geometry=True
+A: max |residual~| = 479880 bytes (tolerance 0 at the line's 1 MB grain, so |residual~| <= 2e6 passes)
+B: max_underbook_real=2550136832 <= floor=1610612736: FAIL
+C: Overloaded/OOM lines = 0: PASS
+requests=10 non-200=0 admits=10 ready_ms=1790025823280

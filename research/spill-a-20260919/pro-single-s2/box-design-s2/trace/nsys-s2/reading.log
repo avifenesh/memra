@@ -1,0 +1,9 @@
+TRACE copy_stream=15 demotes=7 span_receipt_digests_on_copy=28 copy_memcpys=1174
+TRACE demote=1 copies n=112 sum_ms=3.05 wall_ms=24.22 | source n=0 sum_ms=0.00 wall_ms=0.00 | landed n=2 sum_ms=2.93 wall_ms=2.93 seal_delay_ms=11.60 | receipt_after_copies_ms=14.53 | side_work_span_ms=40.85
+TRACE demote=2 copies n=112 sum_ms=3.06 wall_ms=3.41 | source n=0 sum_ms=0.00 wall_ms=0.00 | landed n=2 sum_ms=2.96 wall_ms=2.96 seal_delay_ms=8.28 | receipt_after_copies_ms=11.24 | side_work_span_ms=17.46
+TRACE demote=3 copies n=112 sum_ms=3.05 wall_ms=3.38 | source n=0 sum_ms=0.00 wall_ms=0.00 | landed n=2 sum_ms=2.97 wall_ms=2.97 seal_delay_ms=8.35 | receipt_after_copies_ms=11.32 | side_work_span_ms=17.52
+TRACE demote=4 copies n=112 sum_ms=3.10 wall_ms=3.43 | source n=0 sum_ms=0.00 wall_ms=0.00 | landed n=2 sum_ms=2.97 wall_ms=2.97 seal_delay_ms=8.25 | receipt_after_copies_ms=11.22 | side_work_span_ms=17.48
+TRACE demote=5 copies n=112 sum_ms=3.12 wall_ms=3.48 | source n=0 sum_ms=0.00 wall_ms=0.00 | landed n=2 sum_ms=2.98 wall_ms=2.98 seal_delay_ms=8.62 | receipt_after_copies_ms=11.61 | side_work_span_ms=17.75
+TRACE demote=6 copies n=112 sum_ms=3.05 wall_ms=3.35 | source n=0 sum_ms=0.00 wall_ms=0.00 | landed n=2 sum_ms=2.98 wall_ms=2.98 seal_delay_ms=8.47 | receipt_after_copies_ms=11.45 | side_work_span_ms=17.58
+TRACE demote=7 copies n=112 sum_ms=3.06 wall_ms=3.40 | source n=0 sum_ms=0.00 wall_ms=0.00 | landed n=2 sum_ms=3.14 wall_ms=3.14 seal_delay_ms=8.42 | receipt_after_copies_ms=11.56 | side_work_span_ms=17.76
+TRACE steady N=6 copies_wall_ms=3.41 source_wall_ms=0.00 landed_wall_ms=2.97 landed_sum_ms=2.97 seal_delay_ms=8.39 receipt_after_copies_ms=11.39 side_work_span_ms=17.55

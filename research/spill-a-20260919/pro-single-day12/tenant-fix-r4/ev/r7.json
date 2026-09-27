@@ -1,0 +1,30 @@
+{
+ "object": "text_completion",
+ "model": "gate",
+ "choices": [
+  {
+   "index": 0,
+   "text": "\n\n<think>\nThe user wants me to prepare an audit worksheet for a regional seed bank's cold rooms. Let me break down what's needed:\n\n1. Six rooms, in numbering order (Room 1 through Room 6)\n",
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 96,
+  "completion_tokens": 48,
+  "total_tokens": 144,
+  "prompt_tokens_details": {
+   "cached_tokens": 83
+  },
+  "elapsed_s": 0.501935408,
+  "spec": {
+   "rounds": 15,
+   "drafted": 45,
+   "accepted": 35,
+   "acceptance_rate": 0.7777777777777778
+  }
+ },
+ "id": "cmpl-b41c0edcc1a47f8b5cd03186509d66d1",
+ "created": 1789976757,
+ "system_fingerprint": "memra-0.138.0-55e4cfac77be",
+ "_http_status": 200
+}

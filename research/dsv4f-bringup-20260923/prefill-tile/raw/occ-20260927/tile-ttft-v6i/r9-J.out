@@ -1,0 +1,7 @@
+START utc=2026-09-27T06:01:25Z bin=/root/lane/bin-tsrvJ/memra-server env=MEMRA_ENV_AUDIT=on
+READY after=287s port=48627
+CELL warmup c=1 ok=1/1 agg=41.36 tok/s decode_p50=77.91 tok/s ttft_p50=375 ms tpot_p50=12.83 ms errs=[]
+CELL greedy-8k c=1 ok=2/2 agg=4.21 tok/s decode_p50=72.36 tok/s ttft_p50=14343 ms tpot_p50=13.82 ms errs=[]
+CELL greedy-32k c=1 ok=1/1 agg=1.03 tok/s decode_p50=69.78 tok/s ttft_p50=60995 ms tpot_p50=14.33 ms errs=[]
+CELLS_DONE utc=2026-09-27T06:07:46Z
+TERMINAL rc=0 utc=2026-09-27T06:07:51Z

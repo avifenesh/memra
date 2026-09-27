@@ -1,0 +1,37 @@
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-b/crates/memra-engine)
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-b/crates/memra-server)
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 34s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-e53347545693156a)
+
+running 14 tests
+test admit_predict::tests::kv_hat_ring_below_at_above_ring_rows ... ok
+test admit_predict::tests::kv_hat_ring_refuses_zero_ring_rows_with_positive_ring_bpt - should panic ... ok
+test admit_predict::tests::kv_hat_ring_refuses_ring_bpt_greater_than_total - should panic ... ok
+test admit_predict::tests::kv_hat_ring_saturation_on_overflow ... ok
+test admit_predict::tests::request_charge_follows_the_restore_and_eager_adjusted_cost ... ok
+test admit_predict::tests::request_charge_books_every_physical_term_once ... FAILED
+test admit_predict::tests::request_charge_without_workspace_or_draft_is_the_legacy_kv_hat ... ok
+test admit_predict::tests::request_charge_saturates_instead_of_wrapping ... ok
+test admit_predict::tests::verdict_line_locks_fields ... ok
+test admit_predict::tests::kv_hat_ring_flat_model_equivalence ... ok
+test worker::tests::admission_cost_scales_with_each_requests_context ... ok
+test worker::tests::predictive_charge_books_the_physical_cost_terms_on_every_path ... ok
+test worker::tests::retained_restore_cost_keeps_context_draft_residual_and_reserve_paid ... ok
+test worker::tests::admit_predict_shadow_wiring ... ok
+
+failures:
+
+---- admit_predict::tests::request_charge_books_every_physical_term_once stdout ----
+
+thread 'admit_predict::tests::request_charge_books_every_physical_term_once' (2762423) panicked at crates/memra-server/src/admit_predict.rs:1017:20:
+attempt to subtract with overflow
+
+
+failures:
+    admit_predict::tests::request_charge_books_every_physical_term_once
+
+test result: FAILED. 13 passed; 1 failed; 0 ignored; 0 measured; 766 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `-p memra-server --lib`

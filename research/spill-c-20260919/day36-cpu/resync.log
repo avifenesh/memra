@@ -1,0 +1,29 @@
+# command: git reflog -6 --format='%h %gs' (worktree wt-spill-c)
+f7c4fff4d commit: docs(spill-c): HOSTPREFIX-DOOR section E day 36: option (a) and 2a lande
+bac9545a4 commit: docs(spill-c): day 36 packet with option (a) landed: item 2 carries A da
+aeefd9233 merge origin/lane/spill-integ45-20260922: Merge made by the 'ort' strategy.
+23b4062a2 merge lane/spill-integ45-20260922: Merge made by the 'ort' strategy.
+295e9475e merge lane/spill-integ45-20260922: Merge made by the 'ort' strategy.
+b677ea313 merge origin/main: Merge made by the 'ort' strategy.
+# command: git branch -r --contains 23b4062a2
+  origin/lane/spill-c-20260919
+# command: git rev-parse aeefd9233^{tree} 96d96e1c2^{tree}
+07a96ec94cdf16d77e456e7a0efc980a7f8f38c5
+07a96ec94cdf16d77e456e7a0efc980a7f8f38c5
+# command: git diff --stat 96d96e1c2 aeefd9233 | wc -l
+0
+# command: git -C /home/avifenesh/projects/memra status --short (the main checkout; not this lane's edits, not touched)
+ M research/.upstream-sweep-since
+ M research/upstream-sweeps.md
+# command: for p in /proc/[0-9]*; do readlink "$p/cwd"; done | grep -c wt-spill-c (run with cwd in wt-spill-c)
+1
+# the one match is the scanning shell itself; the same scan run from /tmp, listing pid and cmdline:
+# command: cd /tmp && for p in /proc/[0-9]*; do c=$(readlink "$p/cwd"); case "$c" in *wt-spill-c*) echo "$p $c";; esac; done | wc -l
+0
+# command: nvidia-smi --query-compute-apps=pid,process_name --format=csv,noheader | wc -l
+0
+# command: git log -1 --format=%p <merge> (the four merges since day 35's close)
+b677ea313 parents: 48250588c ca5a90e2a
+295e9475e parents: b677ea313 ebf94591d
+23b4062a2 parents: 295e9475e 1c540e050
+aeefd9233 parents: 23b4062a2 96d96e1c2

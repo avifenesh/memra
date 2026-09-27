@@ -1,0 +1,36 @@
+== parallel+skips run 1
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 518 filtered out; finished in 3.49s
+== parallel+skips run 2
+test dsv4_graph::tests::cuda_capture_runs_once_and_restores_scope_after_failure ... FAILED
+test result: FAILED. 20 passed; 1 failed; 0 ignored; 0 measured; 518 filtered out; finished in 1.16s
+== parallel+skips run 3
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 518 filtered out; finished in 1.06s
+== parallel+skips run 4
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 518 filtered out; finished in 1.17s
+== parallel+skips run 5
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 518 filtered out; finished in 1.13s
+== parallel+skips run 6
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 518 filtered out; finished in 1.11s
+== parallel, battery-exact (no skips) run 1
+test dsv4_graph::tests::replay_rust_partial_submission_and_capture_cleanup ... FAILED
+test model_memory::native_tests::glm_peer_admission_materialization_trim_and_refill ... FAILED
+test model_memory::native_tests::glm_indexed_mla_kda_state_materialization ... FAILED
+test result: FAILED. 21 passed; 3 failed; 0 ignored; 0 measured; 515 filtered out; finished in 1.20s
+== parallel, battery-exact (no skips) run 2
+test dsv4_graph::tests::replay_rust_partial_submission_and_capture_cleanup ... FAILED
+test model_memory::native_tests::glm_indexed_mla_kda_state_materialization ... FAILED
+test model_memory::native_tests::glm_same_ordinal_owners_are_not_lost ... FAILED
+test dsv4_c4::tests::cuda_recent_c4_preserves_hits_misses_wrap_and_rollback ... FAILED
+test model_memory::native_tests::glm_peer_admission_materialization_trim_and_refill ... FAILED
+test result: FAILED. 19 passed; 5 failed; 0 ignored; 0 measured; 515 filtered out; finished in 1.05s
+== parallel, battery-exact (no skips) run 3
+test dsv4_graph::tests::replay_rust_partial_submission_and_capture_cleanup ... FAILED
+test model_memory::native_tests::glm_indexed_mla_kda_state_materialization ... FAILED
+test model_memory::native_tests::glm_peer_admission_materialization_trim_and_refill ... FAILED
+test result: FAILED. 21 passed; 3 failed; 0 ignored; 0 measured; 515 filtered out; finished in 1.28s
+== parallel, battery-exact (no skips) run 4
+test dsv4_graph::tests::replay_rust_partial_submission_and_capture_cleanup ... FAILED
+test model_memory::native_tests::glm_peer_admission_materialization_trim_and_refill ... FAILED
+test model_memory::native_tests::glm_indexed_mla_kda_state_materialization ... FAILED
+test result: FAILED. 21 passed; 3 failed; 0 ignored; 0 measured; 515 filtered out; finished in 1.10s
+FLAKE_LOOP_DONE

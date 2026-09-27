@@ -1,0 +1,101 @@
+4488d83fe5784c0289644e3eb500af6206dceafe
+1360288006606f29b85e5ce145678ba46364a74c9d95f1a53d8292569feae889  /home/avifenesh/projects/wt-spill-a/research/spill-a-20260919/rtx5090-day14/bins/tier-transfer-gate
+PINNED-DEFAULT device="NVIDIA GeForce RTX 5090 Laptop GPU" kind=write-combined flags=4
+PASS v1 transfer_cancel native CUDA
+PASS v1.1 transfer_complete_cancel native CUDA
+PASS v1.1 transfer_lifetime native events + injected observation loss + graph retention
+PASS v1.1 transfer_zero_accept Unsupported NVMe preserves owned input
+PASS v1.1 acceptance exhaustive native mixed batch; rejected sibling blocks publication
+PASS v1.2 transfer_completion_bytes native CUDA; stale epochs, ready publication, take once, authentic consumer fence
+PASS additive source retirement Busy while source consumer bound; host destination survives source release
+PASS v1.3 transfer_source_retirement native CUDA
+PINNED-DEFAULT device="NVIDIA GeForce RTX 5090 Laptop GPU" kind=write-combined flags=4
+PASS v1.3 device_hand_back native CUDA
+PASS additive dropped destination retains backing and charge until graph retirement and acknowledgement
+PASS rule cancelled-restore-recovers-source native CUDA
+PASS rule cancel-refused-after-source-consumed native CUDA
+PASS native governor zero after controlled drain
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "/home/avifenesh/projects/wt-spill-a/research/spill-a-20260919/rtx5090-day14/gate-cell.sh",
+    "3",
+    "conformance"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "[N/A]",
+      "power.max_limit": "175.00 W"
+    }
+  ],
+  "started_monotonic_ns": 106482016996721,
+  "ended_monotonic_ns": 106482613294525,
+  "started_utc": "2026-09-21T14:51:02.067455+00:00",
+  "ended_utc": "2026-09-21T14:51:02.663753+00:00",
+  "elapsed_seconds": 0.596297804,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 1291,
+    "sha256": "aa9c7e1c910eb34cedbdcfb352c580ee19207e849fe6a10da79cb056011d2f77"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 440,
+      "sha256": "5b649d8c60715d18e13ccc1e40d8e198e326ff8e897cd06447192848d56d25d4"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 176,
+    "sha256": "dcb17b61c672c6c1abd4bc4e9c6a9c7ff69efc7ddf1d5cd8f9847e59430d9842"
+  }
+}

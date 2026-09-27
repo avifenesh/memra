@@ -1,0 +1,41 @@
+2026-09-21T23:44:26Z lock held by the collector (external)
+i-L2-r4 | i | 5803 | 354 | 0 | spec | 31552 | 262208 | 262208 | 8273186816 | 194265664 | 42.59 | 11066 | 52929626112 | 52896071680 | 36483147336 | 45866063820 | 4563 | own
+iii-L0-r0 | iii | 1572 | 384 | 0 | spec | 31552 | 262208 | 262208 | 8273186816 | 61715712 | 134.05 | 9821 | 52896071680 | 52896071680 | 36483155528 | 36483155528 | 3037 | own
+iii-L0-r1 | iii | 1565 | 239 | 0 | spec | 31552 | 262208 | 262208 | 8273186816 | 56919808 | 145.35 | 9818 | 52896071680 | 52896071680 | 36483155528 | 36349879880 | 2399 | own
+iii-L0-r2 | iii | 1595 | 227 | 0 | spec | 31552 | 262208 | 262208 | 8273186816 | 57487744 | 143.91 | 9832 | 52896071680 | 52896071680 | 36349879880 | 45648986060 | 2199 | own
+iii-L0-r3 | iii | 1563 | 484 | 0 | spec | 31552 | 262208 | 262208 | 8273186816 | 64586944 | 128.09 | 9817 | 52896071680 | 52896071680 | 45648986060 | 36422970952 | 3905 | own
+iii-L0-r4 | iii | 1580 | 561 | 0 | spec | 31552 | 262208 | 262208 | 8273186816 | 67552832 | 122.47 | 9825 | 52896071680 | 52896071680 | 36422970952 | 45648986060 | 4361 | own
+iii-L1-r0 | iii | 3236 | 564 | 0 | spec | 31552 | 262208 | 262208 | 8273186816 | 119897600 | 69.00 | 10618 | 52896071680 | 52896071680 | 45648986060 | 36422970952 | 5185 | own
+iii-L1-r1 | iii | 3220 | 621 | 0 | spec | 31552 | 262208 | 262208 | 8273186816 | 121191232 | 68.27 | 10611 | 52896071680 | 52896071680 | 36422970952 | 45752981452 | 5406 | own
+iii-L1-r2 | iii | 3228 | 407 | 0 | spec | 31552 | 262208 | 262208 | 8273186816 | 114691520 | 72.13 | 10615 | 52896071680 | 52896071680 | 45752981452 | 36526966344 | 4099 | own
+iii-L1-r3 | iii | 3234 | 319 | 0 | spec | 31552 | 262208 | 262208 | 8273186816 | 112104256 | 73.80 | 10617 | 52896071680 | 52896071680 | 36526966344 | 45805483980 | 3435 | own
+iii-L1-r4 | iii | 3223 | 211 | 0 | spec | 31552 | 262208 | 262208 | 8273186816 | 108349568 | 76.36 | 10612 | 52896071680 | 52896071680 | 45805483980 | 36579468872 | 2773 | own
+iii-L2-r0 | iii | 5887 | 345 | 0 | spec | 31552 | 262208 | 262208 | 8273186816 | 196632064 | 42.07 | 11067 | 52896071680 | 52896071680 | 36579468872 | 36579468872 | 4771 | own
+iii-L2-r1 | iii | 5884 | 487 | 0 | spec | 31552 | 262208 | 262208 | 8273186816 | 201017792 | 41.16 | 11067 | 52896071680 | 52896071680 | 36579468872 | 45715564492 | 5323 | own
+iii-L2-r2 | iii | 5884 | 576 | 0 | spec | 31552 | 262208 | 262208 | 8273186816 | 203825920 | 40.59 | 11067 | 52896071680 | 52896071680 | 45715564492 | 36489549384 | 6210 | inherited
+iii-L2-r3 | iii | 5868 | 354 | 0 | spec | 31552 | 262208 | 262208 | 8273186816 | 196316544 | 42.14 | 11067 | 52896071680 | 52896071680 | 36489549384 | 36489549384 | 4458 | own
+iii-L2-r4 | iii | 5885 | 539 | 0 | spec | 31552 | 262208 | 262208 | 8273186816 | 202690048 | 40.82 | 11067 | 52896071680 | 52896071680 | 36489549384 | 45871448012 | 5837 | own
+== per-arm allocated over used (verbatim per row, then N, min, median, max)
+arm=i L0 N=5 P=[1481, 1481, 1484, 1484, 1483] G=[591, 369, 589, 457, 545] cached=[0, 0, 0, 0, 0] ratios=[126.55, 141.73, 126.49, 135.09, 129.29] min=126.49 median=129.29 max=141.73 alloc_B=8273186816 used_B_median=63987456 booked_MB=[9294, 9777, 9779, 9779, 9778] inherited=1
+arm=i L1 N=5 P=[3138, 3138, 3139, 3138, 3136] G=[478, 954, 673, 508, 494] cached=[0, 0, 0, 0, 0] ratios=[72.51, 64.08, 68.78, 71.92, 72.23] min=64.08 median=71.92 max=72.51 alloc_B=8273186816 used_B_median=115038592 booked_MB=[10571, 10571, 10572, 10571, 10570] inherited=1
+arm=i L2 N=5 P=[5797, 5803, 5802, 5805, 5803] G=[629, 497, 505, 443, 354] cached=[0, 0, 0, 0, 0] ratios=[40.8, 41.62, 41.57, 41.97, 42.59] min=40.80 median=41.62 max=42.59 alloc_B=8273186816 used_B_median=198777600 booked_MB=[11065, 11066, 11065, 11066, 11066] inherited=0
+arm=ii L0 N=5 P=[1715, 1714, 1713, 1713, 1710] G=[96, 96, 96, 96, 96] cached=[0, 0, 0, 0, 0] ratios=[1.0, 1.0, 1.0, 1.0, 1.0] min=1.00 median=1.00 max=1.00 alloc_B=57393088 used_B_median=57077568 booked_MB=[1189, 1192, 1191, 1191, 1190] inherited=1
+arm=ii L1 N=5 P=[3000, 3003, 2999, 2992, 2991] G=[96, 96, 96, 96, 96] cached=[0, 0, 0, 0, 0] ratios=[1.0, 1.0, 1.0, 1.0, 1.0] min=1.00 median=1.00 max=1.00 alloc_B=97937408 used_B_median=97653440 booked_MB=[2332, 2333, 2331, 2328, 2327] inherited=0
+arm=ii L2 N=5 P=[5706, 5702, 5695, 5692, 5689] G=[96, 96, 96, 96, 96] cached=[0, 0, 0, 0, 0] ratios=[1.0, 1.0, 1.0, 1.0, 1.0] min=1.00 median=1.00 max=1.00 alloc_B=183317120 used_B_median=182717632 booked_MB=[2975, 2975, 2975, 2975, 2975] inherited=0
+arm=iii L0 N=5 P=[1572, 1565, 1595, 1563, 1580] G=[384, 239, 227, 484, 561] cached=[0, 0, 0, 0, 0] ratios=[134.05, 145.35, 143.91, 128.09, 122.47] min=122.47 median=134.05 max=145.35 alloc_B=8273186816 used_B_median=61715712 booked_MB=[9821, 9818, 9832, 9817, 9825] inherited=0
+arm=iii L1 N=5 P=[3236, 3220, 3228, 3234, 3223] G=[564, 621, 407, 319, 211] cached=[0, 0, 0, 0, 0] ratios=[69.0, 68.27, 72.13, 73.8, 76.36] min=68.27 median=72.13 max=76.36 alloc_B=8273186816 used_B_median=114691520 booked_MB=[10618, 10611, 10615, 10617, 10612] inherited=0
+arm=iii L2 N=5 P=[5887, 5884, 5884, 5868, 5885] G=[345, 487, 576, 354, 539] cached=[0, 0, 0, 0, 0] ratios=[42.07, 41.16, 40.59, 42.14, 40.82] min=40.59 median=41.16 max=42.14 alloc_B=8273186816 used_B_median=201017792 booked_MB=[11067, 11067, 11067, 11067, 11067] inherited=1
+== driver free (bytes) across the run
+samples=711 driver_free first=0 min=0 last=52896071680; pool_used first=0 max=45871448012 last=36488539720
+== concurrency arithmetic at the served context (idle free at ready divided by the booked cost; not an admission run)
+== admit-predict lines (verbatim, first 6 and last 3)
+[admit-predict] id=chatcmpl-ce3b2d0d56eee75b65d18bc2994d18e8 tenant="" model="q38" verdict=admit reason=maxtok-fallback prompt=132 predicted_completion=32 kv_hat=117222160 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-caaae6fe8bfa19e16ddafcf52cb9063c tenant="" model="q38" verdict=admit reason=global-p95 prompt=1715 predicted_completion=32 kv_hat=1234000936 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-02d3a9759b981d2e641244a1a4c1227b tenant="" model="q38" verdict=admit reason=global-p95 prompt=1714 predicted_completion=96 kv_hat=1238566312 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-7ac66ba1080c8708d895217385031a55 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1713 predicted_completion=96 kv_hat=1238055528 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-7b59f3f2e1a488c8b8e86176c7534842 tenant="" model="q38" verdict=admit reason=global-p95 prompt=1713 predicted_completion=96 kv_hat=1238055528 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-496a50f5acd5541cab3f39ad943ff35f tenant="" model="q38" verdict=admit reason=global-p95 prompt=1710 predicted_completion=96 kv_hat=1236523176 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-5f0625ce15593e98d4171b8d1dfae13d tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5884 predicted_completion=629 kv_hat=3105911064 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-4832db5049a0a84095c2efb2d81125cd tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5868 predicted_completion=629 kv_hat=3105078552 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+[admit-predict] id=chatcmpl-f8fbbf1e990147e4b7b8dc3fce2ae196 tenant="" model="q38" verdict=admit reason=tenant-p95 prompt=5885 predicted_completion=629 kv_hat=3105963096 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=80963874512 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+requests_ok=45 non200=0

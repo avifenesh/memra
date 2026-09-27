@@ -7,13 +7,13 @@ use memra_kv::{Cache, KvLayer, KvPlane};
 use memra_tier::{bank::SharedBudget, contracts::*, tier::governor::Governor};
 use std::{cell::RefCell, fs, io::Write, path::Path, rc::Rc, sync::Arc};
 
-type Transfers = Rc<RefCell<CudaTransfers>>;
-const EPOCHS: Epochs = Epochs {
+pub(super) type Transfers = Rc<RefCell<CudaTransfers>>;
+pub(super) const EPOCHS: Epochs = Epochs {
     state: 1,
     src_gen: 1,
     dst_gen: 1,
 };
-fn request() -> BudgetRequest {
+pub(super) fn request() -> BudgetRequest {
     BudgetRequest {
         bytes: TierBudget::zero(1),
         priority: Priority::Demand,
@@ -84,8 +84,23 @@ impl KvMaterializer for NativeMaterializer {
     }
 }
 
-struct HostPlane {
-    host: CudaPinnedLease,
+pub(super) struct HostPlane {
+    pub(super) host: CudaPinnedLease,
+    pub(super) ticket: TransferTicket,
+    pub(super) bundle: StateBundle,
+    pub(super) capacity: usize,
+    source_owners_before_release: usize,
+    source_owners_after_release: usize,
+    vmm: Option<KvPlane>,
+    released_bytes: usize,
+    granularity: usize,
+}
+/// A demoted plane whose host copy is out with the caller. Rule 1 (lane A, day 11): the
+/// `cancel-restore` arm submits the H2D itself, cancels it before publication and takes the
+/// untouched source back through `TransferEngine::recover_source`; `reattach` makes it the same
+/// demoted plane again so the roundtrip's own `restore` runs over it. Every field but the source
+/// is carried unchanged; nothing is copied.
+pub(super) struct DetachedPlane {
     ticket: TransferTicket,
     bundle: StateBundle,
     capacity: usize,
@@ -95,7 +110,70 @@ struct HostPlane {
     released_bytes: usize,
     granularity: usize,
 }
-fn bundle(
+impl HostPlane {
+    pub(super) fn detach_source(self) -> (CudaPinnedLease, DetachedPlane) {
+        let HostPlane {
+            host,
+            ticket,
+            bundle,
+            capacity,
+            source_owners_before_release,
+            source_owners_after_release,
+            vmm,
+            released_bytes,
+            granularity,
+        } = self;
+        (
+            host,
+            DetachedPlane {
+                ticket,
+                bundle,
+                capacity,
+                source_owners_before_release,
+                source_owners_after_release,
+                vmm,
+                released_bytes,
+                granularity,
+            },
+        )
+    }
+}
+impl DetachedPlane {
+    /// The D2H ticket that produced the copy (its destination twin is take-once).
+    pub(super) fn ticket(&self) -> &TransferTicket {
+        &self.ticket
+    }
+    pub(super) fn bundle(&self) -> &StateBundle {
+        &self.bundle
+    }
+    pub(super) fn capacity(&self) -> usize {
+        self.capacity
+    }
+    pub(super) fn reattach(self, host: CudaPinnedLease) -> HostPlane {
+        let DetachedPlane {
+            ticket,
+            bundle,
+            capacity,
+            source_owners_before_release,
+            source_owners_after_release,
+            vmm,
+            released_bytes,
+            granularity,
+        } = self;
+        HostPlane {
+            host,
+            ticket,
+            bundle,
+            capacity,
+            source_owners_before_release,
+            source_owners_after_release,
+            vmm,
+            released_bytes,
+            granularity,
+        }
+    }
+}
+pub(super) fn bundle(
     program: &ProgramIdentity,
     group: u32,
     role: Role,
@@ -162,7 +240,12 @@ fn bundle(
     Ok(b)
 }
 
-fn demote(e: &Engine, t: &Transfers, backing: KvPlane, b: StateBundle) -> super::Result<HostPlane> {
+pub(super) fn demote(
+    e: &Engine,
+    t: &Transfers,
+    backing: KvPlane,
+    b: StateBundle,
+) -> super::Result<HostPlane> {
     let capacity = backing.len();
     let is_vmm = backing.is_vmm();
     let bytes = b.layout.storage_bytes()? as usize;
@@ -217,7 +300,14 @@ fn demote(e: &Engine, t: &Transfers, backing: KvPlane, b: StateBundle) -> super:
         granularity,
     })
 }
-fn restore(e: &Engine, transfers: &Transfers, plane: HostPlane) -> super::Result<KvPlane> {
+/// The contract's own integrity check guards the device: `StateBundle::verify` refuses a
+/// demoted copy whose bytes no longer match the sealed checksum (`Error::Corrupt`) before any
+/// device allocation, H2D submission or publication happens.
+pub(super) fn restore(
+    e: &Engine,
+    transfers: &Transfers,
+    plane: HostPlane,
+) -> super::Result<KvPlane> {
     let HostPlane {
         host,
         ticket: d2h,
@@ -227,9 +317,7 @@ fn restore(e: &Engine, transfers: &Transfers, plane: HostPlane) -> super::Result
         released_bytes,
         ..
     } = plane;
-    if checksum(host.bytes()?) != bundle.checksums[0] {
-        return Err("host residency checksum mismatch".into());
-    }
+    bundle.verify(&[host.bytes()?.to_vec()])?;
     let bytes = host.valid_bytes();
     let (ticket, keep) = {
         let mut t = transfers.borrow_mut();
@@ -293,6 +381,113 @@ fn restore(e: &Engine, transfers: &Transfers, plane: HostPlane) -> super::Result
     Ok(t.take_plane(&keep)?) // No D2D; original native operand type/accounting returns to Cache.
 }
 
+/// Pinned bytes the whole committed K/V state needs on the host tier: every nonempty full
+/// history plane at the committed position, the same extent `roundtrip` demotes.
+pub(super) fn whole_state_bytes(cache: &Cache) -> super::Result<usize> {
+    let mut total = 0usize;
+    for layer in cache.kv.iter().flatten().filter(|kv| kv.len != 0) {
+        for row in [layer.k_tok_bytes, layer.v_tok_bytes] {
+            let valid = cache.pos.checked_mul(row).ok_or("active extent overflow")?;
+            total = total.checked_add(valid).ok_or("whole-state sum overflow")?;
+        }
+    }
+    Ok(total)
+}
+
+/// Whole-state admission through the governor's own `reserve` (the `TierStore::admit` rule:
+/// reserve before moving bytes). The probe lease is released at once; the per-plane
+/// `alloc_host` charges then follow under the same governor. `Err(Capacity)` means the host
+/// tier cannot hold the demoted bytes, so no layer is taken and no byte moves.
+pub(super) fn admit_whole_state(governor: &SharedBudget, pinned: usize) -> Result<()> {
+    let mut probe = request();
+    probe.bytes.pinned = pinned as u64;
+    let lease = governor.borrow_mut().reserve(&probe)?;
+    governor.borrow_mut().release(&lease)
+}
+
+/// What one demote/restore roundtrip observed, exactly as written to `active-reclaim.txt`.
+/// `reclaimed` is the unchanged G1 line (criteria (a)-(d) plus tightening (e)).
+pub struct Roundtrip {
+    pub reclaimed: bool,
+    pub cycle: super::reclaim_contract::Cycle,
+    pub granularity: usize,
+    pub residual: i128,
+    pub reclaim_observed: bool,
+    pub exact: bool,
+    pub residual_class: &'static str,
+    pub g1_reclaim_qualified: String,
+}
+
+/// Day 11 series receipt (`--reclaim-cycles N`): one row per cycle, the class from
+/// `reclaim_contract::classify_cycles`, and the series verdict from
+/// `reclaim_contract::series_verdict` (lead ruling 6, day 12). The per-cycle
+/// `g1_reclaim_qualified` column keeps tightening (e); only the series field and the printed
+/// label may lift it, and only for the classified one-time class on N >= 5 cycles with (a) to
+/// (c) in every cycle, drift 0 and a bit-identical restore in every cycle.
+pub fn write_cycles(
+    out: &Path,
+    rows: &[(Roundtrip, String)],
+    prefix_hash: &str,
+    context: usize,
+) -> super::Result<super::reclaim_contract::SeriesVerdict> {
+    let cycles: Vec<_> = rows.iter().map(|(r, _)| r.cycle).collect();
+    let granularity = rows.iter().map(|(r, _)| r.granularity).max().unwrap_or(0);
+    let identical: Vec<bool> = rows
+        .iter()
+        .map(|(_, restored)| restored == prefix_hash)
+        .collect();
+    let verdict =
+        super::reclaim_contract::series_verdict(&cycles, granularity, &identical, context);
+    let class = verdict.class;
+    let first = cycles.first().map_or(0, |c| c.free_before) as i128;
+    let mut table = String::from(
+        "cycle\tfree_before_bytes\tfree_after_demote_bytes\tfree_after_restore_bytes\tvmm_released_chunk_bytes\treclaimed_bytes\treacquired_bytes\tresidual_bytes\trestore_residual_bytes\tfree_before_drift_bytes\treclaim_observed\treclaim_exact_equal\tresidual_class\tg1_reclaim_qualified\trestored_prefix_state_manifest_sha256\n",
+    );
+    for (index, (r, restored)) in rows.iter().enumerate() {
+        let c = r.cycle;
+        table.push_str(&format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{restored}\n",
+            index + 1,
+            c.free_before,
+            c.free_after_demote,
+            c.free_after_restore,
+            c.released,
+            c.free_after_demote as i128 - c.free_before as i128,
+            c.free_after_demote as i128 - c.free_after_restore as i128,
+            r.residual,
+            c.free_before as i128 - c.free_after_restore as i128,
+            c.free_before as i128 - first,
+            r.reclaim_observed,
+            r.exact,
+            r.residual_class,
+            r.g1_reclaim_qualified,
+        ));
+    }
+    fs::write(out.join("reclaim-cycles.tsv"), table)?;
+    let residuals: Vec<String> = rows.iter().map(|(r, _)| r.residual.to_string()).collect();
+    let g1_reclaim_qualified = verdict.g1_reclaim_qualified;
+    let all_identical = identical.iter().all(|&same| same);
+    let series_label = verdict.label.as_deref().unwrap_or("not-printed");
+    let summary = format!(
+        "cycles={}\nvmm_granularity_bytes={granularity}\nresidual_series_class={class}\nresidual_series_bytes={}\nresidual_first_cycle_bytes={}\nresidual_last_cycle_bytes={}\nfree_before_drift_last_bytes={}\nall_cycles_reclaim_observed={}\nall_cycles_restored_bit_identical={all_identical}\ng1_reclaim_qualified={g1_reclaim_qualified}\nseries_min_cycles={}\nseries_label={series_label}\n",
+        rows.len(),
+        residuals.join(","),
+        residuals.first().map_or("", String::as_str),
+        residuals.last().map_or("", String::as_str),
+        cycles.last().map_or(0, |c| c.free_before as i128 - first),
+        rows.iter().all(|(r, _)| r.reclaim_observed),
+        super::reclaim_contract::SERIES_MIN_CYCLES,
+    );
+    fs::write(out.join("reclaim-cycles.txt"), summary)?;
+    eprintln!(
+        "RECLAIM-CYCLES: class={class} cycles={} granule={granularity} residual_first={} residual_last={} g1_reclaim_qualified={g1_reclaim_qualified}",
+        rows.len(),
+        residuals.first().map_or("", String::as_str),
+        residuals.last().map_or("", String::as_str),
+    );
+    Ok(verdict)
+}
+
 /// Returns only after all cache slots have been restored, or aborts the gate.
 /// This gate is the exclusive scheduler: it cannot decode with a suspended cache.
 pub fn roundtrip(
@@ -301,7 +496,7 @@ pub fn roundtrip(
     program: ProgramIdentity,
     out: &Path,
     diagnostic: bool,
-) -> super::Result<bool> {
+) -> super::Result<Roundtrip> {
     let mut capacity = TierBudget::zero(1);
     capacity.device[0] = 2 << 30;
     capacity.pinned = 2 << 30;
@@ -313,7 +508,17 @@ pub fn roundtrip(
         0,
         Arc::new(|| 0),
     )?));
-    let transfers = Rc::new(RefCell::new(CudaTransfers::new(e.stream(), governor)?));
+    let transfers = Rc::new(RefCell::new(CudaTransfers::new(
+        e.stream(),
+        governor.clone(),
+    )?));
+    let whole_state = whole_state_bytes(cache)?;
+    if let Err(error) = admit_whole_state(&governor, whole_state) {
+        return Err(format!(
+            "REFUSED: host tier budget below demoted bytes ({whole_state}); demotion refused before any copy: {error}"
+        )
+        .into());
+    }
     e.stream().synchronize()?;
     e.pool_trim_to_zero(); // Equal trim before/after isolates newly freed source allocations.
     let free_before_spare_reserve = e.ctx().mem_get_info()?.0;
@@ -567,8 +772,9 @@ pub fn roundtrip(
     } else {
         after > before && restored == before
     };
-    // A classification on this card alone is not the required two-card evidence.
-    // The earlier card has no classified nonzero residual; keep every such arm non-PASS.
+    // The per-cycle G1 line: criteria (a) to (d) plus tightening (e). A classified nonzero
+    // residual stays `false` here; the only lift is the series verdict in `write_cycles`
+    // (lead ruling 6, day 12), never a single roundtrip.
     let reclaimed = vmm_granularity != 0 && reclaim_observed && observation.residual == 0;
     let g1_reclaim_qualified = if vmm_granularity == 0 {
         "not-applicable-pooled".to_string()
@@ -612,7 +818,21 @@ pub fn roundtrip(
         observation.exact,
     )?;
     metrics.sync_all()?;
-    Ok(reclaimed)
+    Ok(Roundtrip {
+        reclaimed,
+        cycle: super::reclaim_contract::Cycle {
+            free_before: before,
+            free_after_demote: after,
+            free_after_restore: restored,
+            released: vmm_released_bytes,
+        },
+        granularity: vmm_granularity,
+        residual: observation.residual,
+        reclaim_observed,
+        exact: observation.exact,
+        residual_class,
+        g1_reclaim_qualified,
+    })
 }
 
 /// Unlike the engine's best-effort trim, a failed diagnostic API is an error.

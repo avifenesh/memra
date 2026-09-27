@@ -1,0 +1,70 @@
+== binary and card
+  source b81881dade2cb7409362f6862ce59dc93630f404
+  binary sha256 9ed0249500d24bb128d59dcc8ddd2c1df08790b81af30c36cb06a7069448a88f
+  card NVIDIA RTX PRO 6000 Blackwell Server Edition, 600.00 W, 600.00 W, 580.178.04
+  ok: card at its 600 W limit
+  ok: hostgate-failure-off-default: collector captured the cell at 600 W  status=failed exit=1
+  ok: hostgate-failure-off-default: ran the pass-2 binary
+  ok: hostgate-failure-off-plain: collector captured the cell at 600 W  status=failed exit=1
+  ok: hostgate-failure-off-plain: ran the pass-2 binary
+  ok: hostgate-failure-on-default: collector captured the cell at 600 W  status=failed exit=1
+  ok: hostgate-failure-on-default: ran the pass-2 binary
+  ok: hostgate-failure-on-plain: collector captured the cell at 600 W  status=failed exit=1
+  ok: hostgate-failure-on-plain: ran the pass-2 binary
+  ok: hostgate-identity-off-default: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: hostgate-identity-off-default: ran the pass-2 binary
+  ok: hostgate-identity-off-plain: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: hostgate-identity-off-plain: ran the pass-2 binary
+  ok: hostgate-identity-on-default: collector captured the cell at 600 W  status=failed exit=1
+  ok: hostgate-identity-on-default: ran the pass-2 binary
+  ok: hostgate-identity-on-plain: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: hostgate-identity-on-plain: ran the pass-2 binary
+  ok: reclaim-off: collector captured the cell at 600 W  status=failed exit=1
+  ok: reclaim-off: ran the pass-2 binary
+  ok: reclaim-on: collector captured the cell at 600 W  status=failed exit=1
+  ok: reclaim-on: ran the pass-2 binary
+  ok: smoke-off: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: smoke-off: ran the pass-2 binary
+  ok: smoke-on: collector captured the cell at 600 W  status=executed-not-qualified exit=0
+  ok: smoke-on: ran the pass-2 binary
+== serve-smoke (plain + cache-metering arms), door OFF vs ON
+  ok: verdict lines identical  33 lines
+  ok: both arms `serve-smoke: 0 failed`
+  ok: both arms carry the cache-metering PASS line
+  ok: OFF server log has no [prefix-host] or door line
+  ok: ON server log: no host tier, one door line under its own tag, no [prefix-host] line
+== kv-host-spill-identity-gate, MEMRA_SERVE_SPEC=0 (the contract-routed surface), door OFF vs ON
+  ok: verdict lines identical  13 lines
+  ok: both arms ALL GREEN
+  ok: [prefix-host] demote: byte counts equal  demote: 89 tokens, 160.5MB (host resident 160.5MB / 8590MB, model gate) | demote: 86 tokens, 160.4MB (host resident 321.0MB / 8590MB, model gate)
+  ok: ON: verify ok on every promote  promotes=1
+  ok: ON: door announced with the program identity
+  ok: ON: no refusal line of any kind
+  ok: OFF twin boots print no [prefix-host] line in either arm
+  ok: off: r3 served a strict-prefix hit (0 < cached < prompt)  cached=89 prompt=102 r1_prompt=89
+  ok: on: r3 served a strict-prefix hit (0 < cached < prompt)  cached=89 prompt=102 r1_prompt=89
+  ok: r1 and r3 texts identical across door arms
+== kv-host-spill-identity-gate, spec serving (gate default env), door OFF vs ON
+  ok: OFF arm ALL GREEN
+  ok: ON arm differs: every entry was a spec-boundary insert refused by name  refused=2 off_demotes=4
+  ok: ON arm: 5 named FAILs, r1/r3 byte identity still holds
+== kv-host-spill-failure-gate, MEMRA_SERVE_SPEC=0, door OFF vs ON
+  ok: verdict lines identical  15 lines
+  ok: both arms: exactly one FAIL, the pool-full LOUD-and-named assertion
+  ok: poolfull cell: tier event lines identical (timings stripped)  2 lines
+  ok: digest cell: tier event lines identical (timings stripped)  5 lines
+  ok: alloc cell: tier event lines identical (timings stripped)  2 lines
+  ok: pool-full: the tenant share cap evaporates before the D2H in both arms (pre-existing, not a door effect)
+== kv-host-spill-failure-gate, spec serving, door OFF vs ON
+  ok: OFF arm: the same single pool-full FAIL as the plain arm
+  ok: ON arm differs by the surface refusal only (spec-boundary entries refused by name)  refused=4
+== prefix-evict-reclaim-gate (lane B), door OFF vs ON
+  ok: verdict line identical  PREFIX-EVICT-RECLAIM: entry_bytes=1592160256 reclaim_credit_bytes=0 driver_free_delta_bytes=none trim_released_bytes=none pool_retained_bytes=none p2=admit-same-tick busy_overlap_s=21.654 identity=aa6cc3291b981646 V1=FAIL V2=ok V3=FAIL V4=ok -> FAIL
+  ok: V4 identity digest equal across arms
+  ok: both arms red on this tree (V1/V3 FAIL: lane B's fix is not on this branch), same digest
+  ok: ON: no host tier in this gate, door line under its own tag, no [prefix-host] line
+== attempt 1 (MEMRA_HOSTGATE_CACHE_MB=128, binary e7e23dcf4): the tuning pass, kept as evidence
+  ok: every host gate cell failed its feed assertion in BOTH arms (no entry fit 128 MB)
+  ok: attempt 1 exposed the OFF-twin line the b81881dad fix removed
+
+DAY13 REPLAY: PASS

@@ -982,7 +982,12 @@ identity (new-flags law: the default is a written decision, and this one is "no 
 
 **Reading it without a GPU.** `memra-server --version` (also `-V`) prints the identity and
 exits before any engine, GPU, or model work, so a deployed artifact can be identified on any
-box and in the release container that produced it:
+box and in the release container that produced it. That flag and the key-lifecycle commands
+under "API keys" are the whole command line of the stock binary: any other argument is refused
+at boot with the token named and exit 2, before any environment read or device work (memra#617;
+the unknown token used to be ignored). The refusal lives in the stock `serve_main`; a
+deployment-owned binary that calls `serve_with` owns its own command line and may call
+`memra_server::argv::validate` for the stock set:
 
 ```
 $ memra-server --version
@@ -1398,7 +1403,8 @@ The remaining gateway controls are battery-gated (`research/serve-tail-20260804/
   Health below) and `/readyz` to **503**, new completion requests get `503 + Retry-After`,
   in-flight requests — streams included — run to `[DONE]` within the `MEMRA_DRAIN_S`
   deadline (default 30s), then the process exits 0. Live receipt: a 1024-token stream
-  completed mid-drain.
+  completed mid-drain. Re-runnable gate: `tools/health-fault-gate.sh` arm f (memra#524,
+  #526; receipts `research/spill-b-20260919/rtx5090-day25/`).
 
 ## Health, readiness, and fault handling (serve-hardening lane, 2026-08-06)
 
@@ -1458,6 +1464,7 @@ every iteration, plus a phase:
 | worker phase | `/health` | why |
 |---|---|---|
 | `loading` | 503 | weights are not resident; the process answers nothing yet. On a FIRST load the port is not bound yet (bind follows the load), so a probe sees connection-refused — the same verdict for k8s and `serve-fleet.sh`. This state is reached over HTTP during a **respawn**, which is the case that matters |
+| `warming` | 503 | weights resident, the boot calibration probe in flight (memra#524, 2026-09-22): the one warmup the server itself runs, one spec-shaped generation through the real serving route, so the first request does not pay it. Entered only when a probe actually runs; the probe-skipped boots (`MEMRA_ADMIT_CALIBRATE=0`, `MEMRA_SERVE_SPEC=0`, `MEMRA_ADMIT_RESERVE_MB`) go from `loading` straight to `idle` and are ready with a cold route. Like `loading`, observable over HTTP during a respawn; on a first boot the bind follows it. Gate: `tools/health-fault-gate.sh` arms a, a2 and c |
 | `idle` | 200 at any beat age | the worker blocks in `rx.recv()` — an idle server legitimately stamps nothing for hours, and a naive age check would call every quiet server dead |
 | `busy` | 200 while FORWARD PROGRESS advances, 503 past `MEMRA_HEALTH_STALL_S` (120s) | work in flight must make progress. Two signals attest it and the verdict takes the fresher: the scheduler heartbeat (one loop pass) and the engine's prime odometer (one completed prime chunk, stamped where the chunk's logits are already host-side). A long monolithic prefill therefore reads BUSY-and-healthy while it is genuinely progressing; a wedged worker advances neither signal and still 503s within the bound (memra#50, 2026-09-03; `MEMRA_HEALTH_PROGRESS=0` restores beat-age-only semantics). What it does NOT catch: a hang inside ONE chunk (same detection time as before), a livelock that keeps completing chunks without finishing requests, and per-session starvation (the odometer is process-global) |
 | `dead` / fault latched | 503 immediately | worker panic or fatal Xid — a latch, not a timeout, so the flip is instant |
@@ -1506,6 +1513,37 @@ exited 70 and the port went refused. A request that arrived during the dead wind
 **served by the respawn** — the supervisor owns the command channel across restarts, so
 queued work survives a worker death.
 
+**Per-request faults stay per-request (memra#525).** The ladder above is for the card and the
+process, not for one request's bug. Before memra#525 the single `catch_unwind` around the scheduler
+loop was the only boundary, so a Rust panic in ONE request's step (a bad index, an unwrap on a
+request-shaped edge) unwound the whole loop: every in-flight `Session` was dropped, every peer
+stream ended truncated after a 200, health flipped dead, and the worker respawned (or exited 70)
+for a fault that was never the card's. Now each per-session decode step, spec step, prefill call,
+constraint-mask staging, prefix-fanout leader prime, batched prime call (interactive and dark)
+and batched decode call runs under `request_fault_guard` (worker.rs). The classification happens
+at the catch site, once, from two facts: does the panic payload quote a driver or library error
+(`DriverError`, `CUDA_ERROR_*`, `CUBLAS_STATUS_*`, an OOM string), and does the CUDA context still
+answer a synchronize, a 16-float allocation and a readback right after the panic. Both clean is a
+**request fault**: one `[fault] request=<id> route=lane<n>/<model> site=<site> panic=<msg>` line,
+`request_faults_total` += 1, and exactly that request ends with `code: worker_fault` (500 before
+the first byte; the stream's error object after it, then close). The faulted session is marked aborted, so the retire sweep never parks its KV into the shared
+reuse pools where a later prefix match would resume from the residue, and it is not a completion
+for the admission history. The worker continues the same
+tick with its peers untouched. Either fact dirty is a **worker fault**: the panic is re-raised
+into the ladder above unchanged (a CUDA error is sticky per process, so the respawn is the right
+answer there and only there). A batched prime or decode call is guarded as one unit: a panic inside it
+is one request fault line naming every id in the wave and retires the wave; peers outside the
+wave are untouched. `request_faults_total` counts guarded calls that panicked, so a wave counts once while every request in
+it fails typed. `worker_respawns_total` counts the ladder; a rising `request_faults_total` with a
+flat `worker_respawns_total` is the signature of a request-shaped bug that needs a repro, not a
+card that needs a restart. `MEMRA_PANIC_AFTER` still panics at retire time, outside every guard,
+so it still exercises the worker ladder. The gate is `tools/request-fault-gate.py`
+(`MEMRA_FAULT_INJECT_CACHE_SALT`, receipts `research/request-fault-20260922/`). What the boundary
+does not promise: a panic while a `std::Mutex` is held poisons that mutex, and the next `lock()`
+on it panics outside the guard and takes the ladder; a panic that leaves a shared structure (the
+prefix cache, a parked pool) half-updated is caught, but its residue is whatever the unwound
+frames left behind.
+
 **GPU faults (`MEMRA_GPU_WATCH`).** A watcher thread tails Xid lines (`/dev/kmsg`, falling
 back to `journalctl -k -f`) and latches unhealthy on the fatal classes
 (48/64/79/94/95/119/120), counting the rest as warnings. It also probes `nvidia-smi` for
@@ -1516,8 +1554,91 @@ the instrumentation rather than a free knob). The design constraint: Blackwell's
 so the probe runs as a killed-on-deadline child and its own timeout
 (`MEMRA_GPU_PROBE_TIMEOUT_S`) is the alarm. Health reads only atomics, so a hung
 `nvidia-smi` can never block a health answer. A GPU fault survives a worker respawn: a new
-thread on a wedged card is not recovery.
-At startup only, the canary retries up to six consecutive timed-out probes (about 60 seconds with the default 10-second deadline) to allow VRAM teardown after a redeploy; an answer resumes the usual rich or minimal query path, while six hangs latch a fault and a single steady-state hang still latches immediately.
+thread on a wedged card is not recovery. Since memra#516 (2026-09-22) one steady-state probe past
+the deadline is a miss, not a wedge: the process is DEGRADED and stays live, `/health` publishes
+`worker.gpu_probe.{degraded, miss_streak, last_ok_age_ms, degraded_reason, latched_reason}`, and
+the fatal fault latches when the miss streak reaches `MEMRA_GPU_PROBE_MISSES` (default 3). An
+answering probe clears timeout-only degradation; it never clears a latched fault, and fatal Xid,
+ECC and row-remap findings latch on first sight regardless of the streak. Before #516 a single
+hang latched for the process's life: the 2026-09-13 B200 box answered 503 for 28 minutes while
+`nvidia-smi` answered in 40 ms from a shell, because NVML stalls past 10 s under graph capture
+and large allocations. A guard reading `/health` should restart on `latched_reason`, not on
+`degraded`.
+At startup only, the canary retries up to six consecutive timed-out probes (about 60 seconds with the default 10-second deadline) to allow VRAM teardown after a redeploy; an answer resumes the usual rich or minimal query path, six hangs latch a fault, and in steady state a hang is one miss of the `MEMRA_GPU_PROBE_MISSES` streak (degraded, still live) until the bound latches.
+
+**Serve routes are registered policy contracts (memra#504).** The process has two serve routes:
+the central worker (`worker.rs` run loop) and the DSv4 thread (`dsv4_serve.rs`). The
+`Cmd::Generate -> Event` contract is shared and correct on both. Every policy that instead reads a
+side channel (`worker::Metrics`, the health beat and the prime odometer, memory admission, the
+rewrite bundle, prime fairness, the lane-cap mirror) has one writer, and a second route is not it;
+each such surface became a silent no-op on DSv4 and was found by accident, weeks apart (#449,
+#500, #501, #502, #503). Since 2026-09-22 every route registers a `RouteContract`
+(`route_contract.rs`) declaring each of the nine policy surfaces as implemented (with a call-site
+token a unit test greps in the route's source) or refused by name with the owning issue; the
+registry is checked before `ready_tx` fires, so an undeclared surface is `FATAL: worker init
+failed`, and a policy the operator armed that NO route in the process honors
+(`MEMRA_REWRITE_BUNDLE` in a DSv4-only process) refuses at boot with the refusing route named
+instead of no-oping; a mixed process keeps booting, the bundle governs the hybrid route and the
+DSv4 line names its refusal. The armed check runs before any weight loads (a DSv4 checkpoint is
+known from its path) and the full registry again before the ready handoff. Each boot prints one
+`[route-contract] model= route= capacity= implemented=[..] refused=[..]` line per route; the
+DSv4 line today refuses rewrite-qualification (#449) and prime-fairness (#535), each with its
+issue, and implements occupancy, progress and service-metrics (#500, #501) and memory-cost (#503)
+as below. `RouteRegistry::capacity_for(model)` is the number the admission cap mirror reads (#501).
+
+**A dedicated route owns its health, its admission and its memory door (#500, #501, #503,
+2026-09-22).** The DSv4 thread is the only dedicated route today. These are the code halves with
+CPU and fake-route teeth; the two-card receipt is pending, and the DSv4 serving bring-up stays
+paused (`docs/models/deepseek-v4-flash.md`).
+
+- **Health (#500, `health.rs::RouteHealth`).** Each route registers its own record beside the
+  central worker's, judged with the same stall bound and never mixed into its signals. Phase is
+  `loading` from registration to the thread's first idle, `idle` on `recv`, `busy` from dequeue
+  to the end of the request, `dead` once the thread exits. Forward progress is the thread's own
+  prime odometer (`ProgressSinkScope`, completed prime rows) plus a stamp per decode step or
+  speculative round. A busy route whose freshest signal is older than `MEMRA_HEALTH_STALL_S` is
+  stalled and `/health` goes red naming it; `/readyz` stays not-ready while any route is
+  `loading`. The top-level `phase` is the process aggregate (busy while any route serves),
+  `scheduler_phase` is the central worker's own, `routes` lists each route's record, and
+  `idle_for_ms` is set only when every thread is idle with nothing waiting. A caught
+  per-request panic counts `request_faults`; the thread keeps serving.
+- **Admission and telemetry (#501, `route_telemetry.rs`).** A model a dedicated route serves is
+  admitted against the route's own book, not the hybrid lane's 64 sessions. The queue bound is
+  `max_queue_depth(route capacity)` per lane over the route's reserved-not-dequeued count; the
+  wait estimate is one request's decode on the route (mean rounds per completed request times
+  the round p50; the service p50 before any round, the `MEMRA_RL_RESET_S` fallback before any
+  completion) times the waves ahead. Prime time is left out: one 24k-token prime once priced
+  every short request behind it at 68 s and shed eight that finished in under 9 s
+  (`research/dsv4-route-receipt-20260926/`). `X-RateLimit-Limit` reads the route's capacity,
+  its lane count (4 on the TP/EP default). The
+  reservation is a ticket that rides the request and releases at the route's dequeue. `/metrics`
+  folds route-served requests into the process totals and adds a `routes` array (`capacity`,
+  `waiting`, `inflight`, `running`, `admitted`, `completed`, `failed`, `cancelled`, `refused`,
+  token counters, `service_p50/p99_ms`, `round_p50/p99_ms`).
+- **Memory cost (#503, `dsv4_admit.rs`).** Before a parked prefix is consumed or any state is
+  allocated, the route charges each owning card for the session: the planned cache
+  (`plan_session_cache_bytes`), plus a fixed per-session term (the batched decode transaction,
+  chunked-prefill transients at the default chunk `min(512, ctx)`, the speculative verify state
+  and DSpark taps) measured once at boot as occupied-memory deltas at a 1024-token calibration
+  session, plus the lazily grown C4 gathers for widths 1, chunk and the verify width when the
+  host C4 tier is on. Stages on one card sum. The host tier charges the active host-C4 history
+  against `MemAvailable` plus what evicting parked entries returns. The decision is the shared
+  rule (`admit_memory::decide`): device first on every card, then the host tier with LRU
+  eviction of parked entries (never the entry the request would restore from, never for a
+  device shortfall), then a defer that re-reads every 50 ms. The budget is
+  `MEMRA_ADMIT_DEFER_BUDGET_MS`, read on this route whatever `MEMRA_ADMIT_BY_MEMORY` says,
+  clamped to half the stall bound. Past it the request is refused 429 `rate_limit_exceeded` with
+  `Retry-After: 5` and the shared memory refusal sentence. A session above what a card offers
+  with the route idle answers 400 `context_length_exceeded` naming the card, the bytes and the
+  largest session that fits; a host-C4 budget excess is the same 400 (it was a 503). A client
+  that leaves mid-defer is dropped and counted `cancelled`. Every decision prints
+  `[admit-mem] id= model= route=dsv4-thread verdict= capacity= spec= need= ceiling= host_need=
+  short= waited_ms= reclaimed= retry_after_s=`, and boot prints the calibrated `fixed_plain`,
+  `fixed_spec`, `ceiling` and `defer_budget_ms`. Limits: forward-time scratch and the
+  monolithic-prime scratch (chunk 0, or a prompt within one chunk) are not charged, so a driver
+  OOM there still answers 503 `overloaded`; the ceiling is effective free at boot, so a co-tenant
+  that arrives later reads as a defer rather than a never-fits; the gather terms are summed across
+  widths, an upper bound.
 
 **The supervision contract (`deploy/systemd/memra-server.service`) has three couplings you can
 break silently.** The unit is an example to copy, but these are not stylistic choices — each is
@@ -1527,7 +1648,7 @@ correct and misbehaves only during a failure:
 | directive | value | the coupling |
 |---|---|---|
 | `WatchdogSec` | 180 | MUST exceed `MEMRA_HEALTH_STALL_S` (default 120). The heartbeat that feeds `/health` also feeds systemd, so a watchdog under the legitimate-stall bound restarts a *healthy* server mid-prefill. Raise both together if you raise `MEMRA_MAX_SESSIONS` or the context |
-| `TimeoutStopSec` | 60 | MUST exceed `MEMRA_DRAIN_S` (default 30), or systemd SIGKILLs a drain that is finishing streams correctly. The server also sends `EXTEND_TIMEOUT_USEC`; the static floor covers a build that does not |
+| `TimeoutStopSec` | 60 | MUST exceed `MEMRA_DRAIN_S` (default 30), or systemd SIGKILLs a drain that is finishing streams correctly. The server also sends `EXTEND_TIMEOUT_USEC` under `Type=notify`, sized to two `MEMRA_DRAIN_S` deadlines plus 5 s (the HTTP drain, then the DSv4 serving lanes' wait, memra #739); the static floor covers a build that does not send it, and such a build has no lane wait. A unit without `Type=notify` needs this above twice `MEMRA_DRAIN_S` |
 | `TimeoutStartSec` | 600 | MUST exceed the slowest cold load (~120 s measured for a 27B NVFP4 from page cache; cold NVMe on a large bank is slower). Startup silence is a load, not a hang |
 | `StartLimitIntervalSec` / `StartLimitBurst` | 3600 / 4 | systemd's defaults (10 s / 5) are sized for millisecond daemons and **cannot trip at all** here — 5 starts do not fit in 10 s when each start takes ~120 s, so a crash loop restarts forever instead of failing the unit for a human. 4 starts per hour ≈ "if it cannot survive four full loads, page someone" |
 | `RestartSec` / `RestartSteps` / `RestartMaxDelaySec` | 10 / 4 / 160 | a card that just threw an Xid needs the driver to settle; a tight loop makes recovery less likely. The ramp needs systemd ≥ 254 — on older systemd delete the last two lines and keep the flat 10 s |
@@ -1743,9 +1864,9 @@ Two caching tiers serve prompt tokens without recomputing them:
    exact-extension only — a new session that merely shares a system prompt always missed.
 2. **Cross-request prefix cache** (`MEMRA_PREFIX_CACHE_MB`, 0 = off): compact device snapshots
    of primed state at token boundaries, keyed by the exact token-id prefix within each model and
-   cache namespace. All entries share one worker-global byte budget, with byte-budgeted segmented
-   LRU (SLRU) eviction by default and plain global LRU under
-   `MEMRA_PREFIX_CACHE_POLICY=lru`. With no override, the budget holds two full-`MEMRA_CTX`
+   cache namespace. All entries share one worker-global byte budget with plain global LRU
+   eviction (the oldest unleased entry first; the segmented policy was retired 2026-09-21,
+   `docs/decisions/PREFIX-CACHE-POLICY.md`). With no override, the budget holds two full-`MEMRA_CTX`
    entries of the largest loaded model, clamped to post-load driver-free VRAM minus the
    serving-transient reserve; an explicit value remains authoritative. Entries are REUSABLE — a hit
    deep-copies the entry into the new session's cache, so one marketplace system prompt serves
@@ -1774,21 +1895,26 @@ captures. A request shed to plain at higher load probes and consumes that unchan
 the normal restore path. DFlash does not add an LCP or message-boundary capture arm, and disabling
 the prefix-cache budget disables its capture too. Legacy round-robin mode
 (`MEMRA_SERVE_BATCH=0`) bypasses the prefix cache.
-The segmentation rules below describe the default `MEMRA_PREFIX_CACHE_POLICY=slru` path;
-`MEMRA_PREFIX_CACHE_POLICY=lru` forces the protected share to 100% and restores plain global LRU.
-New entries enter PROBATION and earn PROTECTED residency only on a successful reuse. The global
-byte budget defaults to an 80% protected target and 20% probation target
-(`MEMRA_PREFIX_CACHE_PROTECTED_PCT`); probation can borrow unused protected bytes, so a cold cache
-uses the full budget and a large individually fitting entry is not refused merely because it is
-larger than the nominal probation share. Protected overflow demotes protected LRU back to
-probation, and capacity pressure evicts probation LRU before protected LRU. Thus one-hit scan
-traffic cycles through probation instead of displacing entries that have demonstrated reuse.
-If a pinned fanout snapshot cannot fit from probation plus the protected bytes its own promotion
-would demote, that snapshot is not retained; participants continue from their private session
-copies instead of evicting below the protected byte share.
+**Eviction (plain global LRU, memra#523 item 2, 2026-09-21).** Capacity pressure evicts the
+oldest UNLEASED entry first, whatever its history; a hit refreshes the entry's recency and leases
+it for the restore, and the lease ends at the restore fence, before the request publishes its own
+entry. Every unleased byte is reclaimable for a publication that fits the budget, so the newest
+turn of a growing conversation always fits beside other tenants' entries (the newest-turn-fits
+rule, memra#523 item 1: an entry is never its own victim, because it is the global newest while
+any older unleased entry remains). A publication is refused in exactly two cases, both printed in
+bytes, never silently: `[prefix-cache] insert refused: entry N exceeds budget M (...)` and
+`[prefix-cache] insert refused: entry N cannot fit beside L leased bytes (budget M, ...)`. A pinned
+fanout snapshot that cannot fit beside the current leases is not retained; participants continue
+from their private session copies. The segmented policy (probation/protected shares, promotion on
+first reuse, `MEMRA_PREFIX_CACHE_POLICY`, `MEMRA_PREFIX_CACHE_PROTECTED_PCT`) is gone: on the
+incident's shape it cost the growing conversation 300 tokens after every other tenant's turn and
+protected a dead promoted entry over a fresh one, at every pair of a ten-pair interleaved A/B on
+one RTX PRO 6000 Blackwell (`research/spill-b-20260919/DAY15.md`,
+`docs/decisions/PREFIX-CACHE-POLICY.md`); the earlier hot-set receipt it rested on
+(`research/slrucache-20260813/`) is recorded there as the trade.
 Sessions always win over unpinned cache residency: a failed session-cache allocation evicts every
-unpinned entry across both segments and retries before erroring. Entries leased by live hit/fanout
-requests remain pinned until the last participant retires, then re-enter their current segment at
+unleased entry from the single LRU index and retries before erroring. Entries leased by live
+hit/fanout requests remain pinned until the last participant retires, then re-enter the LRU at
 current recency. The `(model, cache_salt)` visibility boundary, global byte ceiling, and refusal
 of an entry larger than the entire budget are unchanged.
 
@@ -1889,13 +2015,26 @@ Raw-salt (no-keyring) namespaces carry no tenant and never match. Receipts:
 **Per-tenant host-pool share cap (`MEMRA_KV_HOST_TENANT_PCT`, default 50;
 lane/kv-tenancy-compaction-20260831):** one tenant's maximum share of the
 `MEMRA_KV_HOST_MB` budget, keyed on the same tenant row identity as the `tenants`
-receipt. A demotion that would push the tenant past its share evaporates (checked before
-the D2H copy, so it also skips the PCIe trip) instead of demoting, so one tenant can
-never squeeze the others out of the pool; `100` disarms the check for single-tenant
-deployments (the global byte-LRU then governs, exactly as before the flag). Receipt:
-`prefix_host_tenant_rejects`, the boot line's `tenant share cap` clause, and the
-per-evaporation `[prefix-host] demote evaporated at the tenant share cap` log line (the
-exact production text; a gate greps this line, not a paraphrase). Full trade discussion
+receipt. A demotion that would push the tenant past its share first reclaims that
+tenant's own unleased host entries, oldest first, until it fits (memra#384; another
+tenant's row is never read, a leased entry is skipped, the exact-key twin is spared), so
+a tenant at its cap turns over its own row and one tenant still can never squeeze the
+others out of the pool. Only when the image alone exceeds the share, or the row's
+unleased bytes cannot cover the shortfall, does the demotion evaporate (checked before
+the D2H copy, so it also skips the PCIe trip), with nothing evicted for it. On the
+pageable tier the reclaim runs once the image is built and ready to insert, so a copy,
+digest or charge failure costs the row nothing; on the fixed arena
+(`MEMRA_GLM5_TP_KV_HOST=1`) it runs at reservation, before the copy, because the planes'
+backing must exist first, and a copy failure there is booked as
+`prefix_host_tenant_reclaims_wasted`. `100` disarms the check for single-tenant deployments (the global
+byte-LRU then governs, exactly as before the flag). Receipts: `prefix_host_tenant_reclaims`
+(reclaims moving while `prefix_host_tenant_rejects` stays flat means the cap is being
+served, not refused), `prefix_host_tenant_reclaims_wasted` (a reclaim whose insert still
+failed; nonzero is a regression to read), `prefix_host_tenant_rejects`, the boot line's
+`tenant share cap` clause, the per-eviction `[prefix-host] evict (tenant share):` log line
+and the per-evaporation `[prefix-host] demote evaporated at the tenant share cap` log
+line with the reclaim's refusal appended (the exact production text; a gate greps these
+lines, not a paraphrase: `tools/kv-host-tenant-reclaim-gate.sh`). Full trade discussion
 in the [flag catalog](FLAGS.md) row.
 
 **Continuation-pool park compaction (`MEMRA_KV_PARK_COMPACT`, default 0 = off;
@@ -1941,6 +2080,8 @@ finding). Gates assert on the log lines; metrics deltas are recorded fields.
 | `prefix_host_entries/bytes/demotions/promotions/demote_ms/promote_ms/rejected_allocs` | pinned-host spill tier (`MEMRA_KV_HOST_MB`, lane/kv-host-spill-20260830): current gauges, tier round-trips, cumulative copy wall-time (the tick-stall receipt: ms per demotion = `demote_ms / demotions`), and alloc/copy failures; operator scope only |
 | `prefix_host_purges/purged_entries/purged_bytes` | tenant lifecycle purges (`PurgeHandle`, lane/kv-tenancy-compaction-20260831): cumulative invocation count and host-tier entries/bytes removed, the receipt that a revocation/deletion actually cleared resident state; operator scope only |
 | `prefix_host_tenant_rejects` | demotions evaporated at the per-tenant share cap (`MEMRA_KV_HOST_TENANT_PCT`, lane/kv-tenancy-compaction-20260831); a nonzero rate with low pool occupancy is the whale-tenant signature the cap bounds; operator scope only |
+| `prefix_host_tenant_reclaims` | host entries evicted from a tenant's OWN row to admit that tenant's demotion at its share cap (memra#384, lane/spill-a-20260919); a subset of the tier's evictions. Reclaims moving while `prefix_host_tenant_rejects` stays flat means the cap is being served by turnover, not refused; operator scope only |
+| `prefix_host_tenant_reclaims_wasted` | the subset of `prefix_host_tenant_reclaims` whose demotion then failed to insert (the reclaim runs once the image is built, so only `insert`'s own refusals, or a fixed-arena copy failure, can reach here); nonzero is a regression to read, not a rate to tune; operator scope only |
 | `lcp_histogram` | global `{edges, counts}`: one sample per prefix-cache probe — served entry length on a hit, best LCP on a miss. Lower-edge buckets `[0,1,16,32,64,128,256,512,1024,2048,4096]`, last unbounded; `[64,512)` (buckets 4..=6) is the tick-seg segmentation window; operator scope only |
 | `tenants` | per-tenant `{prompt_tokens_in, cached_tokens_in, cache_hit_token_ratio}` rows — absent until the first admit |
 | `adsd_suspect_total` | per-tenant detection-only acceptance-collapse incident counters; absent until the first incident |
@@ -2450,6 +2591,20 @@ when one fails. The stage-split modes (`--mode pp`, `--mode ppspec`) SKIP gate1/
 they are single-device jurisdiction — and neither PP mode was ever wired into `validate-h100.sh`; PP
 exactness has its own invocations (see [TESTING.md](TESTING.md)).
 
+**Prefill fairness (memra#521, decided 2026-09-22).** One long cold prime never holds the worker
+tick for its whole prompt on a walker route: the owned `PrimeWalker` (`MEMRA_PRIME_YIELD`, default
+ON) advances one frozen chunk per tick, the worker drains arrivals and gives each admitted peer one
+bounded quantum (a prime chunk, a committed spec round or a plain decode step), then resumes. Both
+arms execute the same frozen range program, so a yield changes interleaving, never bytes; `=0` is
+the rollback seam. The quantum is `MEMRA_PRIME_CHUNK` (4096 default; 1024 halves the peers' wait
+again at the long prime's expense). What this covers: the GDN MTP prime (`[prime-walk]
+supported=true` at boot), DFlash, GLM plain and spec. The serial plain-trunk prime is bounded per
+tick by `MEMRA_PREFILL_TICK` (1024) except the sole-request widening to 8192; E4B and dsv4 still
+prime monolithically and belong to memra#535 P3/P4. The serving-shape gate is
+`tools/prime-fairness-gate.py` (one 131k-token cold prime beside three peers, both arms, bytes identical,
+peers' first token bounded, `/health` `tick_max_ms` bounded); receipts and the 2026-09-05 incident
+shape are in `research/prime-fairness-default-20260922/` and `research/prefill-fairness-20260908/`.
+
 ## First-token cross-config drift (batched prime) — stated honestly
 
 Serving primes prompts BATCHED (`prime_cache`, prefill GEMMs) while the historical oracle
@@ -2606,22 +2761,68 @@ darklanes):
 
 What changed because of it: **serve rounds every boundary it CHOOSES down to the grid**
 (`grid_align_boundary`, worker.rs — the plain/spec checkpoint stop, the prefix-cache
-LCP-split capture, the message-boundary seed capture; `MEMRA_PRIME_GRID_ALIGN=0` is the
-rollback seam), so the boundary-stopped prime, the checkpoint resume and the whole-entry
+LCP-split capture, the message-boundary seed capture; the `MEMRA_PRIME_GRID_ALIGN` seam was
+stripped 2026-09-05), so the boundary-stopped prime, the checkpoint resume and the whole-entry
 restore reproduce the cold monolithic bytes, at a cost of at most `gdn_chunk_size()-1`
 re-primed suffix tokens per resume. Gated in both directions: `primegrid` / `primegridc`
 (tools/prime-grid-gate.sh — aligned splits must be EXACT, off-grid divergence must be
 CONFINED to the split row with near-tie-only flips; canary coarsens the grid with
-`MEMRA_GDN_CHUNK=64` and must break). What this deliberately does NOT promise:
-cross-prime-path byte-identity is **not a valid gate** where the paths are not
-grid-equivalent — prompt-END seed entries (exact-repeat class, position unroundable by
-design) still serve extension hits through an off-grid suffix prime, and
+`MEMRA_GDN_CHUNK=64` and must break).
+
+**The prompt-end seed obeys the same law since 2026-09-21 (memra#602).** Until then the
+prompt-end seed (`insert (seed)`, the entry a growing `prompt_ids` conversation restores on its
+next turn) was the one capture left where the prompt ended, "unroundable by design", and its
+extension hits primed the suffix from an off-grid start: on the local RTX 5090 a twelve-turn
+chain of 11,000 + 150-id turns flipped a greedy near-tie at turn 10 (restored 12,200 + 150,
+`[primeseg] call start=12200 take=150 grid_off=8`; restored `"_\t\t\"\t\t\"\t"` versus
+cold `"_\n"`, generated token 2), the same prompt restored from on-grid entries was identical
+and from off-grid entries flipped, and under the sequential scan the chain was identical 12/12
+(`research/spill-b-20260919/DAY17.md`). The fix is at the capture, not at the prime
+(`seed_capture_boundary`, worker.rs): the seed publishes at the largest grid-aligned length
+not exceeding the prompt end that leaves at least `PRIME_MIN_T` prompt tokens behind it,
+through the prefill tick's boundary stop, and the remainder primes as one call from a grid
+start. Operator-visible consequences, stated plainly:
+
+- A published entry's length is `capture_len(P)` for a prompt of `P` tokens: `P` when `P` is a
+  multiple of `gdn_chunk_size()` (32), otherwise the largest multiple of 32 below `P` whose
+  remainder is at least 16 (a 1..15 remainder steps one grid unit further down). A hit against
+  it reports `cached_tokens == capture_len(P_previous)`, never `P_previous`: the bill and the
+  `/metrics` hit mass count what was restored. An exact re-send of an off-grid prompt is a hit
+  of `capture_len(P)` plus a suffix prime of 16..47 tokens from a grid start, not a whole-entry
+  restore.
+- A prompt between the 64-token entry floor and the floor plus 16 has no grid-aligned entry
+  above the floor and publishes nothing, loudly: `[prefix-cache] seed REFUSED (grid): ...`,
+  counted in `/metrics` `prefix_cache_seed_grid_refusals` (operator-only). A prime path that
+  does not stop on the armed boundary refuses the off-grid prompt-end state with the same line
+  rather than publishing it.
+- A cold session whose seed boundary lies inside the prompt primes alone (the concat prime
+  cannot honor a per-session stop, the same rule the LCP split has); the in-batch fanout is
+  unchanged (its participants never seed).
+- The spec session's publications obey the same law since 2026-09-21 as well (day 19, lead
+  ruling: one capture law for every site the server captures at). A cold spec session's
+  `capture_at` is the seed's grid boundary and a prime stop of its own beside the affinity
+  boundary (`insert (spec-boundary): 64 tokens` for a 106-token prompt); a restored spec
+  session republishes at the render-stable boundary ahead of what it restored, or at the
+  seed's grid boundary when none lies ahead, and the engine's prompt-end republish fires only
+  when the prompt end is itself on the grid. Consequence the `#379` gate now states in its own
+  numbers: an identical sampled repeat of an off-grid prompt restores `capture_len(P)` and
+  cold-primes the rest from the grid, so the whole-prompt "full-cover" hit exists only for
+  on-grid prompts (the gate builds one through `/v1/tokenize`); spec-on and spec-off restore
+  the same entry and prime the same suffix from the same grid start, which is what makes their
+  byte identity hold. Still by inspection only: `prefix_fanout_groups` takes the raw in-batch
+  LCP as its capture length.
+
+Gates: `tools/prefix-newest-turn-fits-gate.py` (V5 identity and V6 grid are verdict clauses)
+and `tools/prefix-restore-identity-gate.py` (the five restore points), red on the pre-fix
+binary and green on the fix on the local RTX 5090, green on the fix on one RTX PRO 6000
+Blackwell (`research/spill-b-20260919/DAY18.md`, the plain seed; `DAY19.md`, both capture
+sites, with `tools/spec-on-cache-hit-gate.sh qwen` ALL GREEN on the fix and red on the
+pre-fix binary's accounting). What the grid law still does NOT promise:
 verbatim-extension continuation resumes keep decode-computed rows whose arithmetic a cold
-prefill never reproduces (`primepath --hist` measures that arm: bounded logit
-perturbation, flips only at near-ties). Those paths carry the documented
-cached-hit-vs-fresh-prime near-tie contract above; the valid assertions everywhere are
-per-program determinism, grid-aligned byte-identity, and confinement + near-tie-only
-flips across programs.
+prefill never reproduces (`primepath --hist` measures that arm: bounded logit perturbation,
+flips only at near-ties). That path carries the documented cached-hit-vs-fresh-prime near-tie
+contract above; the valid assertions everywhere are per-program determinism, grid-aligned
+byte-identity, and confinement + near-tie-only flips across programs.
 
 
 ## Serving-contract guarantees, and the receipt for each

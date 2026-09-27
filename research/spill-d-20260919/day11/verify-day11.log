@@ -1,0 +1,189 @@
+{
+  "kind": "day11-fault-arms-replay",
+  "arms": 7,
+  "source": "10607f08d4216eb63f162dfdae432994f441cb5f",
+  "binary_sha256": "644d2baa29435c4db3cb0a2931384bd75b459a92db1126ee87b672e03268fe59",
+  "build_receipt": "build-2",
+  "build_attempts": [
+    {
+      "dir": "build",
+      "exits": {
+        "exit": "0",
+        "clippy.exit": "101",
+        "tests.exit": "0"
+      },
+      "green": false
+    },
+    {
+      "dir": "build-2",
+      "exits": {
+        "exit": "0",
+        "clippy.exit": "0",
+        "tests.exit": "0"
+      },
+      "green": true
+    }
+  ],
+  "frozen_bundle_source": "8ef562b12f16fd3378f866939be347df3a6d3d96",
+  "telemetry": {
+    "samples": 3680,
+    "gpu_temperature_c": [
+      32,
+      50
+    ],
+    "power_draw_w": [
+      33.03,
+      362.11
+    ],
+    "power_limit_w": 600
+  },
+  "qualification": false,
+  "table": [
+    {
+      "arm": "cancel-demote",
+      "injection": "TransferEngine::cancel after D2H synchronize, before take_destination",
+      "expected": "PASS, intact-resident, continuation matches the frozen bundle",
+      "printed": "FAULT-ARM PASS cancel-demote committed=8192 generated=128",
+      "checks": 8,
+      "failed": [],
+      "faulted_layer": "3",
+      "faulted_valid_bytes": "8773632",
+      "observations": {
+        "whole_state_pinned_bytes": "239468544",
+        "governor_pinned_capacity_bytes": "2147483648",
+        "governor_device_capacity_bytes": "2147483648",
+        "suspended_layers": "16",
+        "pinned_charged_after_demote_bytes": "230694912",
+        "device_charged_after_demote_bytes": "0",
+        "device_registry_after_drain": "0"
+      },
+      "receipt": "spill-d-20260919/pro-single-day11/cancel-demote"
+    },
+    {
+      "arm": "cancel-restore",
+      "injection": "TransferEngine::cancel after H2D synchronize, before ready_view",
+      "expected": "typed refusal (missing seam)",
+      "printed": "REFUSED: cancel-restore revoked publication, but the transfer contract has no seam to recover the H2D source after cancellation; no tokens, budget drained",
+      "checks": 8,
+      "failed": [],
+      "faulted_layer": "3",
+      "faulted_valid_bytes": "8773632",
+      "observations": {
+        "whole_state_pinned_bytes": "239468544",
+        "governor_pinned_capacity_bytes": "2147483648",
+        "governor_device_capacity_bytes": "2147483648",
+        "suspended_layers": "16",
+        "pinned_charged_after_demote_bytes": "239468544",
+        "device_charged_after_demote_bytes": "0",
+        "pinned_before_h2d_retire_bytes": "239468544",
+        "pinned_after_h2d_retire_bytes": "239468544",
+        "pinned_after_d2h_acknowledge_bytes": "230694912",
+        "h2d_source_bytes": "8773632",
+        "device_registry_after_drain": "0"
+      },
+      "receipt": "spill-d-20260919/pro-single-day11/cancel-restore"
+    },
+    {
+      "arm": "corrupt-host",
+      "injection": "CudaPinnedLease::write (Busy under the live D2H ticket; Ok after its drain), then restore",
+      "expected": "PASS, no publish, no token",
+      "printed": "FAULT-ARM PASS corrupt-host committed=8064 generated=0",
+      "checks": 5,
+      "failed": [],
+      "faulted_layer": "3",
+      "faulted_valid_bytes": "8773632",
+      "observations": {
+        "whole_state_pinned_bytes": "239468544",
+        "governor_pinned_capacity_bytes": "2147483648",
+        "governor_device_capacity_bytes": "2147483648",
+        "corrupt_byte_index": "4386816",
+        "suspended_layers": "16",
+        "pinned_charged_after_demote_bytes": "239468544",
+        "device_charged_after_demote_bytes": "0",
+        "device_registry_after_drain": "0"
+      },
+      "receipt": "spill-d-20260919/pro-single-day11/corrupt-host"
+    },
+    {
+      "arm": "missing-host",
+      "injection": "untaken D2H ticket retired and acknowledged; take_destination at restore",
+      "expected": "PASS, no publish, no token",
+      "printed": "FAULT-ARM PASS missing-host committed=8064 generated=0",
+      "checks": 5,
+      "failed": [],
+      "faulted_layer": "3",
+      "faulted_valid_bytes": "8773632",
+      "observations": {
+        "whole_state_pinned_bytes": "239468544",
+        "governor_pinned_capacity_bytes": "2147483648",
+        "governor_device_capacity_bytes": "2147483648",
+        "suspended_layers": "16",
+        "pinned_charged_after_demote_bytes": "230694912",
+        "device_charged_after_demote_bytes": "0",
+        "device_registry_after_drain": "0"
+      },
+      "receipt": "spill-d-20260919/pro-single-day11/missing-host"
+    },
+    {
+      "arm": "host-budget-short",
+      "injection": "governor pinned capacity = whole demoted bytes minus 1; admit_whole_state",
+      "expected": "PASS, intact-resident, continuation matches the frozen bundle",
+      "printed": "FAULT-ARM PASS host-budget-short committed=8192 generated=128",
+      "checks": 5,
+      "failed": [],
+      "faulted_layer": "none",
+      "faulted_valid_bytes": "0",
+      "observations": {
+        "whole_state_pinned_bytes": "239468544",
+        "governor_pinned_capacity_bytes": "239468543",
+        "governor_device_capacity_bytes": "2147483648"
+      },
+      "receipt": "spill-d-20260919/pro-single-day11/host-budget-short"
+    },
+    {
+      "arm": "device-short",
+      "injection": "competing tenant reserves the governor device dimension; restore alloc_device",
+      "expected": "PASS, intact-resident, continuation matches the frozen bundle",
+      "printed": "FAULT-ARM PASS device-short committed=8192 generated=128",
+      "checks": 5,
+      "failed": [],
+      "faulted_layer": "3",
+      "faulted_valid_bytes": "8773632",
+      "observations": {
+        "whole_state_pinned_bytes": "239468544",
+        "governor_pinned_capacity_bytes": "2147483648",
+        "governor_device_capacity_bytes": "2147483648",
+        "suspended_layers": "16",
+        "pinned_charged_after_demote_bytes": "239468544",
+        "device_charged_after_demote_bytes": "0",
+        "competitor_device_bytes": "2138570745",
+        "device_headroom_bytes": "8912903",
+        "restore_device_bytes": "8912904",
+        "device_registry_after_drain": "0"
+      },
+      "receipt": "spill-d-20260919/pro-single-day11/device-short"
+    },
+    {
+      "arm": "require-resident",
+      "injection": "Cache::ensure_usable asked while every full-history plane is demoted",
+      "expected": "typed refusal (missing seam)",
+      "printed": "REFUSED: require-resident has no contract today: Cache::ensure_usable accepts a suspended cache, decode_step_h unwraps a suspended layer, and tier RestoreDecision::RequireState is a load-versus-recompute rule",
+      "checks": 2,
+      "failed": [],
+      "faulted_layer": "3",
+      "faulted_valid_bytes": "8773632",
+      "observations": {
+        "whole_state_pinned_bytes": "239468544",
+        "governor_pinned_capacity_bytes": "2147483648",
+        "governor_device_capacity_bytes": "2147483648",
+        "suspended_layers": "16",
+        "pinned_charged_after_demote_bytes": "239468544",
+        "device_charged_after_demote_bytes": "0",
+        "continuation_gate_on_suspended_cache": "Ok(())",
+        "device_registry_after_drain": "0"
+      },
+      "receipt": "spill-d-20260919/pro-single-day11/require-resident"
+    }
+  ]
+}
+DAY11 FAULT-ARM REPLAY MATCH: 7 arms; 5 PASS, 2 typed refusals; N=1 each; NOT qualification

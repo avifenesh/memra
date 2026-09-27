@@ -1,0 +1,27 @@
+test worker::tests::option_b_postpublish_refusal_retires_the_ticket_and_keeps_the_tier_on ... ok
+test worker::tests::option_b_presubmit_refusal_returns_every_plane_and_keeps_the_tier_on ... ok
+test worker::tests::option_c_first_ready_view_failure_unwinds_through_the_published_arm ... ok
+test worker::tests::option_c_partial_acceptance_unwinds_refused_with_every_destination_released ... ok
+test worker::tests::option_c_postpublish_refusal_retires_the_ticket_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_presubmit_refusal_releases_every_destination_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_promote_routes_every_contract_plane_and_keeps_the_host_twin ... ok
+test worker::tests::option_c_receipt_mismatch_cancels_before_publication_and_recovers_the_source ... ok
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 832 filtered out; finished in 0.28s
+test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ok
+test tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt ... ok
+test tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle ... ok
+test tier_transfer::tests::d2d_receipt_digest_price_against_the_copy ... D2D-RECEIPT PRICE order=copy-first bytes=165675008 n_per_arm=5 copy_ms=[0.157248, 0.15616, 0.157312, 0.155328, 0.157024] copy_median=0.157 digest_ms=[0.16672, 0.167456, 0.167488, 0.167584, 0.16896] digest_median=0.167 pair_median=0.335 pair_over_copy=2.13
+test tier_transfer::tests::d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 556 filtered out; finished in 3.27s
+test worker::tests::hash_fault_door_values_are_the_helpers_and_never_the_contract_routes ... ok
+test worker::tests::hash_helper_gone_is_a_typed_refusal_that_latches_under_poll_and_under_block ... ok
+test worker::tests::every_path_that_meets_a_demoting_entry_settles_it_first ... ok
+test worker::tests::the_run_loop_waits_boundedly_when_the_queue_is_only_requests_parked_on_a_promote ... ok
+test worker::tests::every_path_that_meets_a_hashing_demote_meets_it_through_the_same_settle ... ok
+test worker::tests::hashing_hit_parks_the_request_once_per_id_and_a_miss_does_not ... ok
+test worker::tests::hashing_demote_keeps_its_state_until_the_digests_land_then_reaches_publication ... ok
+test worker::tests::hash_digests_never_landing_latch_at_the_deadline_under_poll_and_under_block ... ok
+test worker::tests::hash_helper_digests_equal_the_owner_thread_digests_bitwise ... ok
+test worker::tests::hash_reply_that_does_not_describe_the_image_is_a_typed_refusal_that_latches ... ok
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 830 filtered out; finished in 0.36s
+unit-cells rc=0 engine-rc=0 hash-rc=0

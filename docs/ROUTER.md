@@ -22,6 +22,8 @@ content, only addresses; read the target before acting. Paths are relative to th
 
 ## Gates, releases, performance
 
+- CPU CI, exact-commit GPU dispatch, build transfer and input manifest -> docs/CI.md
+
 - Generic spill contracts, CPU schedules and native qualification boundaries -> docs/TESTING.md (Generic spill / tiered KV); docs/decisions/GENERIC-SPILL-INTERFACE-V1.md; research/spill-lead-20260919/
 - Where the tiered-KV / spill gates live (kv-tier-gate, tier-transfer-gate, run-gen/run-spec --experts-via-tier, h2d-probe --copies, the tools/tier-battery.py collector and its executed-not-qualified vocabulary) and the G1 reclaim status -> docs/TESTING.md (Generic spill / tiered KV, gate subsections); docs/decisions/KV-PHYSICAL-RECLAIM.md
 - Which gate to run, fast-gate vs full battery, hardware-gate receipts -> docs/TESTING.md
@@ -41,4 +43,5 @@ content, only addresses; read the target before acting. Paths are relative to th
 - Tuning knees, measurement laws, model quirk cards, serving lessons, gate craft -> ../darklanes/agent-knowledge/gpu/ (index: ../darklanes/agent-knowledge/gpu/README.md; grep-first ID lines: `rg '^LAW:|^TRAP:|^GATE:|^VERDICT:|^KNEE:|^QUIRK:'`)
 - Lane-to-verdict map of past research lanes -> ../darklanes/research/INDEX.md
 
+- Content-bound GPU release evidence and unqualified development: [RELEASE-QUALIFICATION.md](RELEASE-QUALIFICATION.md).
 - Tokenizer normalization, added-token ordering and explicit HF-to-GGUF input programs -> docs/TOKENIZER-PROGRAM.md

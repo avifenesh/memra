@@ -1,0 +1,35 @@
+== arm baseline
+/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9296 tokens: logits_sha=14ab5f8b365dbd71
+  9280 + 16: logits_sha=35bd15f063bfd5ba DIFFERS (known: a 16-row final segment is not bitwise on either artifact)
+  9248 + 48: logits_sha=14ab5f8b365dbd71 ok
+A4 CONTINUATION GATE: PASS
+exit=0
+== arm MEMRA_GDN_CHUNKED=0
+/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9296 tokens: logits_sha=4749ef60887102ee
+  9280 + 16: logits_sha=8c785e5d8fb582da DIFFERS (known: a 16-row final segment is not bitwise on either artifact)
+  9248 + 48: logits_sha=4749ef60887102ee ok
+A4 CONTINUATION GATE: PASS
+exit=0
+== arm MEMRA_F16OUT=0
+/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9296 tokens: logits_sha=14ab5f8b365dbd71
+  9280 + 16: logits_sha=35bd15f063bfd5ba DIFFERS (known: a 16-row final segment is not bitwise on either artifact)
+  9248 + 48: logits_sha=14ab5f8b365dbd71 ok
+A4 CONTINUATION GATE: PASS
+exit=0
+== arm MEMRA_NOFA=1
+/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9296 tokens: logits_sha=e7665c166592a6bc
+  9280 + 16: logits_sha=26eb8171bff49fa2 DIFFERS (known: a 16-row final segment is not bitwise on either artifact)
+  9248 + 48: logits_sha=e7665c166592a6bc ok
+A4 CONTINUATION GATE: PASS
+exit=0
+== arm MEMRA_MMQ_W4A8=0
+/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9296 tokens: logits_sha=aedf3b22adde5278
+  9280 + 16: logits_sha=bef04e7ce1485ee4 DIFFERS (known: a 16-row final segment is not bitwise on either artifact)
+  9248 + 48: logits_sha=aedf3b22adde5278 ok
+A4 CONTINUATION GATE: PASS
+exit=0

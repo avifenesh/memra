@@ -1,0 +1,150 @@
+{
+  "seed": {
+    "status": 200,
+    "text": " 5210: Plant word is \"sunlight\". Advice: Utilize the morning sunlight to grow sun-loving plants like tomatoes or herbs.\n\nCase",
+    "finish": "length",
+    "error": null,
+    "ttft_s": 0.9495056759915315,
+    "first_token_s": 0.9495063970098272,
+    "total_s": 1.189720030000899,
+    "usage": {
+      "prompt_tokens": 4135,
+      "completion_tokens": 32,
+      "total_tokens": 4167,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "elapsed_s": 1.184384035,
+      "spec": {
+        "rounds": 15,
+        "drafted": 45,
+        "accepted": 16,
+        "acceptance_rate": 0.35555555555555557
+      }
+    },
+    "sha": "27ee4563a4df5e65"
+  },
+  "cell_s": 58.899375129985856,
+  "requests": {
+    "peer-cold-a": {
+      "status": 200,
+      "text": " 5211, plant word is \"greenhouse\", advice: Utilize the volunteers to plant seeds in the two raised beds using the compost and water",
+      "finish": "length",
+      "error": null,
+      "ttft_s": 52.87728643298033,
+      "first_token_s": 52.87728719698498,
+      "total_s": 53.094236909004394,
+      "usage": {
+        "prompt_tokens": 2095,
+        "completion_tokens": 32,
+        "total_tokens": 2127,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 0.709007113,
+        "spec": {
+          "rounds": 14,
+          "drafted": 42,
+          "accepted": 17,
+          "acceptance_rate": 0.40476190476190477
+        }
+      },
+      "sha": "c2744b504ee53742"
+    },
+    "peer-cold-b": {
+      "status": 200,
+      "text": " 5212, plant word: sunlight. Advice: Utilize the morning sunlight to grow sun-loving crops like tomatoes and peppers.\n\nCase 5",
+      "finish": "length",
+      "error": null,
+      "ttft_s": 50.610961029015016,
+      "first_token_s": 50.610962014005054,
+      "total_s": 50.82520356099121,
+      "usage": {
+        "prompt_tokens": 2165,
+        "completion_tokens": 32,
+        "total_tokens": 2197,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 1.438109195,
+        "spec": {
+          "rounds": 14,
+          "drafted": 42,
+          "accepted": 17,
+          "acceptance_rate": 0.40476190476190477
+        }
+      },
+      "sha": "1c281f2c37c9ea42"
+    },
+    "peer-hit": {
+      "status": 200,
+      "text": " 5210: Plant word is \"sunlight\". Advice: Utilize the morning sunlight to grow sun-loving plants like tomatoes or herbs.\n\nCase",
+      "finish": "length",
+      "error": null,
+      "ttft_s": 48.788078964018496,
+      "first_token_s": 48.788079752004705,
+      "total_s": 49.027253060019575,
+      "usage": {
+        "prompt_tokens": 4135,
+        "completion_tokens": 32,
+        "total_tokens": 4167,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 2.636557998,
+        "spec": {
+          "rounds": 15,
+          "drafted": 45,
+          "accepted": 16,
+          "acceptance_rate": 0.35555555555555557
+        }
+      },
+      "sha": "27ee4563a4df5e65"
+    },
+    "long": {
+      "status": 200,
+      "text": " 521: plant word is \"vineyard\". Advice: Start with a few hardy grape varieties suited to your local climate and ensure consistent morning watering",
+      "finish": "length",
+      "error": null,
+      "ttft_s": 54.38223856600234,
+      "first_token_s": 54.3822394029994,
+      "total_s": 57.897331318003125,
+      "usage": {
+        "prompt_tokens": 135494,
+        "completion_tokens": 32,
+        "total_tokens": 135526,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "elapsed_s": 57.758701488,
+        "spec": {
+          "rounds": 17,
+          "drafted": 51,
+          "accepted": 15,
+          "acceptance_rate": 0.29411764705882354
+        }
+      },
+      "sha": "4eae62d66e60374c"
+    }
+  },
+  "tick_max_ms": 54375,
+  "generation": 0,
+  "prompt_tokens": {
+    "seed": 4135,
+    "long": 135494,
+    "peer-a": 2095,
+    "peer-b": 2165
+  },
+  "arm": "0",
+  "rep": 2,
+  "log": {
+    "prime_walk": [
+      "[prime-walk] model=\"gate\" route=mtp supported=true yield_door=false [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]"
+    ],
+    "supported": true,
+    "yield_door_on": false,
+    "yield_lines": 0,
+    "chunk_lines": 156,
+    "worker_panic": false
+  }
+}

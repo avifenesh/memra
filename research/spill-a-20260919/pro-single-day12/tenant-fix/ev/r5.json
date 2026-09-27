@@ -1,0 +1,30 @@
+{
+ "object": "text_completion",
+ "model": "gate",
+ "choices": [
+  {
+   "index": 0,
+   "text": "\n\n<think>\nThe user wants me to compose an inspection sheet for a small harbor's mooring field with ten mooring blocks. For each block, I need to note:\n1. Block mass in kilograms\n2. Chain grade\n",
+   "finish_reason": "length"
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 93,
+  "completion_tokens": 48,
+  "total_tokens": 141,
+  "prompt_tokens_details": {
+   "cached_tokens": 0
+  },
+  "elapsed_s": 0.38637779,
+  "spec": {
+   "rounds": 15,
+   "drafted": 45,
+   "accepted": 33,
+   "acceptance_rate": 0.7333333333333333
+  }
+ },
+ "id": "cmpl-22935000be9765c0ae82151b62f30065",
+ "created": 1789974174,
+ "system_fingerprint": "memra-0.138.0-0ee6b2feddd2",
+ "_http_status": 200
+}

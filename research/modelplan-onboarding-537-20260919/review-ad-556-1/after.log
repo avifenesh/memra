@@ -1,0 +1,18 @@
+    Blocking waiting for file lock on build directory
+   Compiling memra-gguf v0.138.0 (/Users/avifen/.codex/worktrees/b6ce/memra/crates/memra-gguf)
+warning: unused import: `std::os::fd::AsRawFd`
+  --> crates/memra-gguf/src/source.rs:20:5
+   |
+20 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-gguf` (lib test) generated 1 warning (run `cargo fix --lib -p memra-gguf --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.33s
+     Running unittests src/lib.rs (target/debug/deps/memra_gguf-e80b7f4edcbfcfe8)
+
+running 1 test
+test model_plan::semantics_tests::step_rope_source_shapes_bind_consistently_before_and_after_preflight ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 290 filtered out; finished in 0.05s

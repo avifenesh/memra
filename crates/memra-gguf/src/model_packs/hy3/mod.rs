@@ -5,6 +5,8 @@ use crate::tensor_contract::{LayerTensor, QuantConstraint, TensorId};
 
 pub static PACK: ModelPack = ModelPack {
     family: "hy3",
+    output_head: OutputHeadContract::SeparateHead,
+    tensor_consumption: TensorConsumption::Report,
     aliases: &["hy_v3", "hunyuan3", "hunyuan-3"],
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[
@@ -35,6 +37,8 @@ pub static PACK: ModelPack = ModelPack {
 
 pub static NVFP4_PACK: ModelPack = ModelPack {
     family: "hy3_nvfp4",
+    output_head: OutputHeadContract::SeparateHead,
+    tensor_consumption: TensorConsumption::Report,
     aliases: &["hy3-nvfp4", "hy_v3_nvfp4"],
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],

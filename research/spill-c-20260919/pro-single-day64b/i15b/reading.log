@@ -1,0 +1,16 @@
+DAY64 host demand sequence sha256 4bdc2610c3534e42 lines=[22077]
+DAY64 I15 CHECKS rig=pro-single runs=50 integrity=ok
+DAY64 gen-only decode medians (N=10 each): ref=0.255 i13=0.264 i14=0.263 i15=0.264 i15s=0.266
+DAY64 STEP i14_vs_i13 gen-only decode: pooled=-0.0015 o1=-0.0020 o2=-0.0010 noise=0.0010 -> flat
+DAY64 STEP i15_vs_i14 gen-only decode: pooled=+0.0015 o1=+0.0020 o2=+0.0010 noise=0.0010 -> flat
+DAY64 steady window medians (N=10 each): ref=0.226 i13=0.232 i14=0.231 i15=0.232 i15s=0.233
+DAY64 STEP i14_vs_i13 steady window: pooled=-0.0010 o1=-0.0010 o2=-0.0010 noise=0.0010 -> flat
+DAY64 STEP i15_vs_i14 steady window: pooled=+0.0010 o1=+0.0010 o2=+0.0010 noise=0.0010 -> flat
+DAY64 ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0010 max_iqr_window=0.0010 failing=[] -> admissible
+DAY64 DOOR i15_vs_ref gen-only decode: pooled=+0.0090 o1=+0.0090 o2=+0.0090 noise=0.0002 -> loses
+DAY64 DOOR i15_vs_ref steady window: pooled=+0.0060 o1=+0.0060 o2=+0.0060 noise=0.0010 -> loses
+DAY64 SPLIT cache per window token (N=10 runs): admits=471.0 copy_events=3.8 copy_gpu_ns=0.0712ms demand_ns=0.0135ms drain_ns=0.0000ms enqueue_ns=0.0069ms event_errors=0.0 finish_ns=0.0002ms gpu_hits=378.7 gpu_misses=92.3 miss_total_ns=0.0382ms prefetch_hits=88.6 prefetches=88.6 reserve_ns=0.0003ms retire_ns=0.0391ms sync2_ns=0.0000ms validate_ns=0.0130ms wait_ns=0.0000ms
+DAY64 SPLIT owner per window token (N=10 runs): host_hits=92.3 host_misses=0.0 inner_demand_ns=0.1188ms pread_ns=0.0000ms reads=0.0 trace_ns=0.0057ms
+DAY64 SPLIT fill per window token (N=10 runs): fill_admitted=0.0 fill_dropped=0.0 fill_errors=0.0 fill_ns=0.0009ms fill_read_errors=0.0 fill_reads=0.0 fill_refused=0.0
+DAY64 SPLIT bank per window token (N=10 runs): ack_ns=0.0147ms ack_release_ns=0.0050ms alloc_ns=0.0000ms collect_ns=0.0006ms host_use_ns=0.0014ms publish_ns=0.0155ms publish_output_ns=0.0027ms publish_policy_ns=0.0108ms retire_ns=0.0165ms retire_only_ns=0.0004ms stage_cache_ns=0.0481ms stage_charge_ns=0.0124ms stage_lookup_ns=0.0038ms stage_ns=0.0737ms stages=33.3 step_ns=0.0000ms steps=0.0 verified=0.0 verify_ns=0.0000ms
+DAY64 VERDICT rig=pro-single integrity=ok i14=flat i15=flat door=i15 vs_ref=loses (window: i14=flat i15=flat vs_ref=loses)

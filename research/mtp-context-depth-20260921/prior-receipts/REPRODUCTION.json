@@ -1,0 +1,191 @@
+{
+  "status": "passed",
+  "development_reports_reproduced_exactly": true,
+  "turns": 160,
+  "reports": {
+    "qwen": {
+      "complete_planned_matrix": true,
+      "sets": 2,
+      "runs": 10,
+      "turns": 80,
+      "pooled_request_e2e_tok_s": {
+        "calibrated": 118.97588825418987,
+        "native": 113.09614343245238,
+        "context": 119.34233822084568,
+        "learned": 116.68057486442571,
+        "measured": 112.96103116862847
+      },
+      "comparisons": {
+        "context": {
+          "calibrated": {
+            "pooled_change_percent": 0.30800355604228,
+            "paired_percent": [
+              2.542635200621146,
+              -2.518849132789236
+            ],
+            "wins": 1,
+            "median_pair_percent": 0.011893033915955087
+          },
+          "native": {
+            "pooled_change_percent": 5.522906969965691,
+            "paired_percent": [
+              5.259228651171832,
+              5.785811639093841
+            ],
+            "wins": 2,
+            "median_pair_percent": 5.5225201451328365
+          },
+          "learned": {
+            "pooled_change_percent": 2.2812394946740255,
+            "paired_percent": [
+              3.4847942833275525,
+              1.0812160182881891
+            ],
+            "wins": 2,
+            "median_pair_percent": 2.283005150807871
+          },
+          "measured": {
+            "pooled_change_percent": 5.6491225214571505,
+            "paired_percent": [
+              5.366224233556771,
+              5.9311907665088315
+            ],
+            "wins": 2,
+            "median_pair_percent": 5.648707500032801
+          }
+        },
+        "learned": {
+          "calibrated": {
+            "pooled_change_percent": -1.9292256804675167,
+            "paired_percent": [
+              -0.9104323869330022,
+              -3.561557026011719
+            ],
+            "wins": 0,
+            "median_pair_percent": -2.2359947064723604
+          },
+          "native": {
+            "pooled_change_percent": 3.1693666319525304,
+            "paired_percent": [
+              1.714681253543504,
+              4.654272876925503
+            ],
+            "wins": 2,
+            "median_pair_percent": 3.1844770652345034
+          },
+          "context": {
+            "pooled_change_percent": -2.2303596494768763,
+            "paired_percent": [
+              -3.3674457271342217,
+              -1.069650782686049
+            ],
+            "wins": 0,
+            "median_pair_percent": -2.2185482549101354
+          },
+          "measured": {
+            "pooled_change_percent": 3.292767122712159,
+            "paired_percent": [
+              1.818073817761201,
+              4.798096955366216
+            ],
+            "wins": 2,
+            "median_pair_percent": 3.3080853865637083
+          }
+        }
+      },
+      "metric": "returned output tokens / complete native request seconds"
+    },
+    "gemma": {
+      "complete_planned_matrix": true,
+      "sets": 2,
+      "runs": 10,
+      "turns": 80,
+      "pooled_request_e2e_tok_s": {
+        "calibrated": 185.37070957807867,
+        "native": 195.11361694159717,
+        "context": 194.05584485531298,
+        "learned": 192.28972077525398,
+        "measured": 195.0848785347555
+      },
+      "comparisons": {
+        "context": {
+          "calibrated": {
+            "pooled_change_percent": 4.685279188390923,
+            "paired_percent": [
+              4.324528329151822,
+              5.2126129025960255
+            ],
+            "wins": 2,
+            "median_pair_percent": 4.768570615873924
+          },
+          "native": {
+            "pooled_change_percent": -0.5421313503715219,
+            "paired_percent": [
+              0.009432635001171974,
+              -1.07103142412599
+            ],
+            "wins": 1,
+            "median_pair_percent": -0.530799394562409
+          },
+          "learned": {
+            "pooled_change_percent": 0.9184703544934836,
+            "paired_percent": [
+              -0.02297808091643594,
+              2.0292648096377874
+            ],
+            "wins": 1,
+            "median_pair_percent": 1.0031433643606757
+          },
+          "measured": {
+            "pooled_change_percent": -0.5274799805968455,
+            "paired_percent": [
+              -0.0010943901117665966,
+              -1.0321729186205109
+            ],
+            "wins": 0,
+            "median_pair_percent": -0.5166336543661387
+          }
+        },
+        "learned": {
+          "calibrated": {
+            "pooled_change_percent": 3.7325266828419856,
+            "paired_percent": [
+              4.348505613206721,
+              3.1200343341663883
+            ],
+            "wins": 2,
+            "median_pair_percent": 3.7342699736865548
+          },
+          "native": {
+            "pooled_change_percent": -1.4473086043955918,
+            "paired_percent": [
+              0.032418164989800324,
+              -3.0386342972755775
+            ],
+            "wins": 1,
+            "median_pair_percent": -1.5031080661428886
+          },
+          "context": {
+            "pooled_change_percent": -0.9101112524468435,
+            "paired_percent": [
+              0.02298336205197593,
+              -1.9889046671304644
+            ],
+            "wins": 1,
+            "median_pair_percent": -0.9829606525392443
+          },
+          "measured": {
+            "pooled_change_percent": -1.4327905783858785,
+            "paired_percent": [
+              0.021888720412555074,
+              -3.0005486503996703
+            ],
+            "wins": 1,
+            "median_pair_percent": -1.4893299649935576
+          }
+        }
+      },
+      "metric": "returned output tokens / complete native request seconds"
+    }
+  }
+}

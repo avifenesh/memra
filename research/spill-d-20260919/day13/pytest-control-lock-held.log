@@ -1,0 +1,548 @@
+holding /tmp/memra-5090.lock and /tmp/memra-gpu.lock in a private /tmp (bwrap)
+F.F......FF..FF..FF.FF...FF....F.F................ [ 58%]
+.F.FFF....F......FF................                            [100%]
+=================================== FAILURES ===================================
+__________ CollectorTests.test_canonical_lock_exclusion_no_third_name __________
+
+self = <test_collector.CollectorTests testMethod=test_canonical_lock_exclusion_no_third_name>
+
+    def test_canonical_lock_exclusion_no_third_name(self):
+>       with B.campaign_lock('pro-pair') as lock:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+crates/memra-tier/tests/battery/test_collector.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rig = 'pro-pair', inherit = False
+
+    @contextlib.contextmanager
+    def campaign_lock(rig, inherit=False):
+        require(rig in LOCKS and LOCKS[rig] is not None, "GPU-shaped campaign requires canonical rig lock")
+        # Never unlink a shared lock inode: waiters and other campaigns must see the same file.
+        with open(LOCKS[rig], "a") as handle:
+>           fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+E           BlockingIOError: [Errno 11] Resource temporarily unavailable
+
+tools/tier-battery.py:184: BlockingIOError
+____ CollectorTests.test_dry_runner_full_campaign_raw_hashes_failure_and_n _____
+
+self = <test_collector.CollectorTests testMethod=test_dry_runner_full_campaign_raw_hashes_failure_and_n>
+
+    def test_dry_runner_full_campaign_raw_hashes_failure_and_n(self):
+        with tempfile.TemporaryDirectory(prefix='tier-collector-') as tmp:
+            out=Path(tmp)/'bundle'
+>           summary=B.run_dry_campaign(out,echo=False)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+crates/memra-tier/tests/battery/test_collector.py:36: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tools/tier-battery.py:667: in run_dry_campaign
+    with campaign_lock(rig) as lock:
+         ^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rig = 'pro-pair', inherit = False
+
+    @contextlib.contextmanager
+    def campaign_lock(rig, inherit=False):
+        require(rig in LOCKS and LOCKS[rig] is not None, "GPU-shaped campaign requires canonical rig lock")
+        # Never unlink a shared lock inode: waiters and other campaigns must see the same file.
+        with open(LOCKS[rig], "a") as handle:
+>           fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+E           BlockingIOError: [Errno 11] Resource temporarily unavailable
+
+tools/tier-battery.py:184: BlockingIOError
+_________ ProSingleTests.test_bootstrap_stub_memory_match_and_wrapper __________
+
+self = <test_day10.ProSingleTests testMethod=test_bootstrap_stub_memory_match_and_wrapper>
+
+    def test_bootstrap_stub_memory_match_and_wrapper(self):
+        source = (ROOT/'tools/tier-rig-bootstrap.sh').read_text()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = self.bootstrap(root/'good', source)
+>           self.assertEqual(result.returncode, 0, result.stderr)
+E           AssertionError: 2 != 0 : BLOCKED: [Errno 11] Resource temporarily unavailable
+
+crates/memra-tier/tests/battery/test_day10.py:58: AssertionError
+_ ProSingleTests.test_collector_acquires_canonical_lock_and_refuses_contention _
+
+self = <test_day10.ProSingleTests testMethod=test_collector_acquires_canonical_lock_and_refuses_contention>
+
+    def test_collector_acquires_canonical_lock_and_refuses_contention(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with open(LOCK, 'a') as handle:
+>               fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+E               BlockingIOError: [Errno 11] Resource temporarily unavailable
+
+crates/memra-tier/tests/battery/test_day10.py:32: BlockingIOError
+____ Day4Tests.test_cell_start_survives_unexpected_interruption_and_resume _____
+
+self = <test_day4.Day4Tests testMethod=test_cell_start_survives_unexpected_interruption_and_resume>
+
+    def test_cell_start_survives_unexpected_interruption_and_resume(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); out = root/'cell'
+            command = [sys.executable, '-c', "print('baseline')"]
+            argv = [sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090', '--out', str(out)]
+            env = {**os.environ, 'PATH': str(root/'missing')}
+            first = subprocess.run([*argv, '--execute', *command], env=env, capture_output=True)
+>           self.assertEqual(first.returncode, 0, first.stderr)
+E           AssertionError: 2 != 0 : b'REFUSED: [Errno 11] Resource temporarily unavailable\n'
+
+crates/memra-tier/tests/battery/test_day4.py:139: AssertionError
+________ Day4Tests.test_container_power_refusal_records_and_accepts_max ________
+
+self = <test_day4.Day4Tests testMethod=test_container_power_refusal_records_and_accepts_max>
+
+    def test_container_power_refusal_records_and_accepts_max(self):
+        source = (ROOT/'tools/tier-rig-bootstrap.sh').read_text()
+        source = source.replace('32607, 600.00, 600.00', '32607, 575.00, 600.00')
+        source = source.replace('code = 0', "code = 4 if label == 'set-power' else 0")
+        source = source.replace("'600.00, 600.00\\n'", "'575.00, 600.00\\n'")
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)/'out'
+            proc = self.bootstrap(out, ('--set-power', '--provider', 'runpod'), source)
+>           self.assertEqual(proc.returncode, 0, proc.stderr)
+E           AssertionError: 2 != 0 : BLOCKED: [Errno 11] Resource temporarily unavailable
+
+crates/memra-tier/tests/battery/test_day4.py:34: AssertionError
+_________ Day4Tests.test_resume_revalidates_and_preserves_old_failure __________
+
+self = <test_day4.Day4Tests testMethod=test_resume_revalidates_and_preserves_old_failure>
+
+    def test_resume_revalidates_and_preserves_old_failure(self):
+        source = (ROOT/'tools/tier-rig-bootstrap.sh').read_text()
+        bad = source.replace('code = 0', "code = 9 if label == 'build-1' else 0")
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)/'out'
+            self.assertEqual(self.bootstrap(out, source=bad).returncode, 2)
+            old = (out/'BOOTSTRAP.json').read_bytes()
+            events = [json.loads(x) for x in (out/'BOOTSTRAP.jsonl').read_text().splitlines()]
+            self.assertTrue(any(x['event'] == 'cell-start' for x in events))
+>           self.assertTrue((out/'build-1.log').exists())
+E           AssertionError: False is not true
+
+crates/memra-tier/tests/battery/test_day4.py:51: AssertionError
+________ Day4Tests.test_sigkill_keeps_active_bootstrap_log_and_journal _________
+
+self = <test_day4.Day4Tests testMethod=test_sigkill_keeps_active_bootstrap_log_and_journal>
+
+    def test_sigkill_keeps_active_bootstrap_log_and_journal(self):
+        source = (ROOT/'tools/tier-rig-bootstrap.sh').read_text()
+        source = source.replace('code = 0', "time.sleep(20) if label == 'build-1' else None; code = 0")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); out = root/'out'; script = root/'kill.sh'
+            script.write_text(source)
+            proc = subprocess.Popen(['bash', str(script), '--dry-run', '--out', str(out)],
+                                    cwd=ROOT, env={**os.environ, 'BRANCH': 'lane/spill-d-test'},
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    start_new_session=True)
+            reached = False
+            try:
+                for _ in range(500):
+                    receipt = out/'BOOTSTRAP.json'
+                    if receipt.exists():
+                        r = json.loads(receipt.read_text())
+                        if r.get('active_step', {}).get('name') == 'build-1' and (out/'build-1.log').exists():
+                            reached = True
+                            break
+                    time.sleep(.01)
+>               self.assertTrue(reached, 'did not reach interruption point')
+E               AssertionError: False is not true : did not reach interruption point
+
+crates/memra-tier/tests/battery/test_day4.py:78: AssertionError
+_______ Day4Tests.test_vast_requires_persistence_and_nvme_is_not_assumed _______
+
+self = <test_day4.Day4Tests testMethod=test_vast_requires_persistence_and_nvme_is_not_assumed>
+
+    def test_vast_requires_persistence_and_nvme_is_not_assumed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertNotEqual(self.bootstrap(root/'bad', ('--provider', 'vast')).returncode, 0)
+            proc = self.bootstrap(root/'good', ('--provider', 'vast', '--persistent-root', '/workspace', '--nvme-root', '/scratch'))
+>           self.assertEqual(proc.returncode, 0, proc.stderr)
+E           AssertionError: 2 != 0 : BLOCKED: [Errno 11] Resource temporarily unavailable
+
+crates/memra-tier/tests/battery/test_day4.py:96: AssertionError
+____ Day5Tests.test_bootstrap_overlay_default_refuses_opt_in_preserves_raw _____
+
+self = <test_day5.Day5Tests testMethod=test_bootstrap_overlay_default_refuses_opt_in_preserves_raw>
+
+    def test_bootstrap_overlay_default_refuses_opt_in_preserves_raw(self):
+        source = (ROOT/'tools/tier-rig-bootstrap.sh').read_text()
+        source = source.replace("'/dev/nvme0n1\\n'", "'overlay\\n'")
+        source = source.replace("'nvme0n1\\n'", "'lsblk: overlay: not a block device\\n'")
+        source = source.replace('code = 0', "code = 32 if label == 'nvme-ancestry' else 0")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for mode, extra, code in [('default', (), 2), ('allowed', ('--allow-unproven-storage',), 0)]:
+                out = root/mode
+                proc = self.bootstrap(out, ('--nvme-root', str(root), *extra), source)
+>               self.assertEqual(proc.returncode, code, proc.stderr)
+E               AssertionError: 2 != 0 : BLOCKED: [Errno 11] Resource temporarily unavailable
+
+crates/memra-tier/tests/battery/test_day5.py:58: AssertionError
+_______ Day5Tests.test_nvcc_base_arch_and_real_compile_are_both_required _______
+
+self = <test_day5.Day5Tests testMethod=test_nvcc_base_arch_and_real_compile_are_both_required>
+
+    def test_nvcc_base_arch_and_real_compile_are_both_required(self):
+        original = (ROOT/'tools/tier-rig-bootstrap.sh').read_text()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+>           self.assertEqual(self.bootstrap(root/'base').returncode, 0)
+E           AssertionError: 2 != 0
+
+crates/memra-tier/tests/battery/test_day5.py:38: AssertionError
+____ Day5Tests.test_pidfile_status_no_self_match_stale_pid_or_new_directory ____
+
+self = <test_day5.Day5Tests testMethod=test_pidfile_status_no_self_match_stale_pid_or_new_directory>
+
+    def test_pidfile_status_no_self_match_stale_pid_or_new_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); pidfile = root/'bootstrap.pid'
+            argv = ['bash', str(ROOT/'tools/tier-rig-bootstrap.sh'), '--status', '--pidfile', str(pidfile)]
+            # The shell command contains the script name twice, as an SSH launcher does.
+            def status():
+                return subprocess.run(['bash', '-c', '"$@" # tier-rig-bootstrap.sh', '_', *argv],
+                                      capture_output=True, text=True)
+            self.assertEqual(status().returncode, 1)
+            self.assertFalse(pidfile.exists())
+            pidfile.write_text(json.dumps({'pid': os.getpid()}))
+            self.assertEqual(status().returncode, 1)  # live but unlocked/recycled PID
+            with pidfile.open('r+') as handle:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.assertEqual(status().returncode, 0)
+                duplicate = self.bootstrap(root/'duplicate', ('--pidfile', str(pidfile)))
+                self.assertNotEqual(duplicate.returncode, 0)
+                self.assertFalse((root/'duplicate').exists())
+                self.assertIn('already running', duplicate.stderr)
+            self.assertEqual(status().returncode, 1)
+            proc = self.bootstrap(root/'new', ('--pidfile', str(pidfile)))
+>           self.assertEqual(proc.returncode, 0, proc.stderr)
+E           AssertionError: 2 != 0 : BLOCKED: [Errno 11] Resource temporarily unavailable
+
+crates/memra-tier/tests/battery/test_day5.py:90: AssertionError
+___ Day5Tests.test_storage_cli_default_refuses_then_explicit_mode_is_labeled ___
+
+self = <test_day5.Day5Tests testMethod=test_storage_cli_default_refuses_then_explicit_mode_is_labeled>
+
+    def test_storage_cli_default_refuses_then_explicit_mode_is_labeled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake = root/'storage-bench'
+            fake.write_text('#!' + sys.executable + '\nprint("CPU stub, no storage performance")\n')
+            fake.chmod(0o755)
+            argv = [sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090']
+            env = {**os.environ, 'PATH': str(root/'no-tools')}
+            for mode, options, expected in [
+                    ('unspecified', [], 2),
+                    ('unproven', ['--storage-root', str(root)], 2),
+                    ('development', ['--storage-root', str(root), '--allow-unproven-storage'], 0)]:
+                out = root/mode
+                proc = subprocess.run([*argv, '--out', str(out), *options, '--execute', str(fake),
+                                      'roundtrip', str(root/'object'), '264', 'buffered'],
+                                      env=env, text=True, capture_output=True, timeout=10)
+>               self.assertEqual(proc.returncode, expected, proc.stderr)
+E               AssertionError: 2 != 0 : REFUSED: [Errno 11] Resource temporarily unavailable
+
+crates/memra-tier/tests/battery/test_day5.py:156: AssertionError
+__ CollectorTests.test_execute_preserves_literal_separator_and_child_options ___
+
+self = <test_day6.CollectorTests testMethod=test_execute_preserves_literal_separator_and_child_options>
+
+    def test_execute_preserves_literal_separator_and_child_options(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); out = root/'out'
+            child = [sys.executable, '-c', 'import json,sys; print(json.dumps(sys.argv[1:]))',
+                     '--', '--ignored', '--exact', '--nocapture', '--execute', 'a b']
+            proc = subprocess.run([sys.executable, str(ROOT/'tools/tier-battery.py'),
+                '--rig', 'rtx5090', '--out', str(out), '--execute', *child],
+                env={**os.environ, 'PATH': str(root/'absent')}, capture_output=True, timeout=10)
+>           self.assertEqual(proc.returncode, 0, proc.stderr)
+E           AssertionError: 2 != 0 : b'REFUSED: [Errno 11] Resource temporarily unavailable\n'
+
+crates/memra-tier/tests/battery/test_day6.py:27: AssertionError
+_ ExternalLockTests.test_collector_inheritance_integrity_and_foreign_launch_exclusion _
+
+self = <test_external_lock.ExternalLockTests testMethod=test_collector_inheritance_integrity_and_foreign_launch_exclusion>
+
+    def test_collector_inheritance_integrity_and_foreign_launch_exclusion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            child = [sys.executable, str(PROOF), '--fd', '@COLLECTOR_LOCK_FD@',
+                     '--lock', B.LOCKS['rtx5090']]
+>           with B.campaign_lock('rtx5090'):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+crates/memra-tier/tests/battery/test_external_lock.py:76: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rig = 'rtx5090', inherit = False
+
+    @contextlib.contextmanager
+    def campaign_lock(rig, inherit=False):
+        require(rig in LOCKS and LOCKS[rig] is not None, "GPU-shaped campaign requires canonical rig lock")
+        # Never unlink a shared lock inode: waiters and other campaigns must see the same file.
+        with open(LOCKS[rig], "a") as handle:
+>           fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+E           BlockingIOError: [Errno 11] Resource temporarily unavailable
+
+tools/tier-battery.py:184: BlockingIOError
+_ ExternalLockTests.test_failure_success_and_timeout_kill_only_command_group (mode='success') _
+
+self = <test_external_lock.ExternalLockTests testMethod=test_failure_success_and_timeout_kill_only_command_group>
+
+    def test_failure_success_and_timeout_kill_only_command_group(self):
+        # The descendant closes stdout; it must not evade teardown by letting the
+        # ordinary raw-log drain finish. No process-name/global pkill is involved.
+        for mode in ('success', 'failure', 'timeout'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp); marker = root/'survived'
+                child_program = 'import time; from pathlib import Path; time.sleep(3); Path('+repr(str(marker))+').write_text("bad")'
+                script = ('import subprocess,sys,time\n'
+                    'fd=int(sys.argv[1])\n'
+                    'subprocess.Popen([sys.executable,"-c",'+repr(child_program)+'], '
+                    'stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,pass_fds=(fd,))\n'
+                    + ('time.sleep(20)\n' if mode == 'timeout' else '')
+                    + ('sys.exit(7)\n' if mode == 'failure' else ''))
+                sentinel = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(20)'])
+                try:
+                    result = self.collect(root, [sys.executable, '-c', script, '@COLLECTOR_LOCK_FD@'], timeout=1)
+>                   self.assertEqual(result.returncode, {'success':0,'failure':7,'timeout':2}[mode], result.stderr)
+E                   AssertionError: 2 != 0 : REFUSED: [Errno 11] Resource temporarily unavailable
+
+crates/memra-tier/tests/battery/test_external_lock.py:152: AssertionError
+_ ExternalLockTests.test_failure_success_and_timeout_kill_only_command_group (mode='failure') _
+
+self = <test_external_lock.ExternalLockTests testMethod=test_failure_success_and_timeout_kill_only_command_group>
+
+    def test_failure_success_and_timeout_kill_only_command_group(self):
+        # The descendant closes stdout; it must not evade teardown by letting the
+        # ordinary raw-log drain finish. No process-name/global pkill is involved.
+        for mode in ('success', 'failure', 'timeout'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp); marker = root/'survived'
+                child_program = 'import time; from pathlib import Path; time.sleep(3); Path('+repr(str(marker))+').write_text("bad")'
+                script = ('import subprocess,sys,time\n'
+                    'fd=int(sys.argv[1])\n'
+                    'subprocess.Popen([sys.executable,"-c",'+repr(child_program)+'], '
+                    'stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,pass_fds=(fd,))\n'
+                    + ('time.sleep(20)\n' if mode == 'timeout' else '')
+                    + ('sys.exit(7)\n' if mode == 'failure' else ''))
+                sentinel = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(20)'])
+                try:
+                    result = self.collect(root, [sys.executable, '-c', script, '@COLLECTOR_LOCK_FD@'], timeout=1)
+>                   self.assertEqual(result.returncode, {'success':0,'failure':7,'timeout':2}[mode], result.stderr)
+E                   AssertionError: 2 != 7 : REFUSED: [Errno 11] Resource temporarily unavailable
+
+crates/memra-tier/tests/battery/test_external_lock.py:152: AssertionError
+_ ExternalLockTests.test_failure_success_and_timeout_kill_only_command_group (mode='timeout') _
+
+self = <test_external_lock.ExternalLockTests testMethod=test_failure_success_and_timeout_kill_only_command_group>
+
+    def test_failure_success_and_timeout_kill_only_command_group(self):
+        # The descendant closes stdout; it must not evade teardown by letting the
+        # ordinary raw-log drain finish. No process-name/global pkill is involved.
+        for mode in ('success', 'failure', 'timeout'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp); marker = root/'survived'
+                child_program = 'import time; from pathlib import Path; time.sleep(3); Path('+repr(str(marker))+').write_text("bad")'
+                script = ('import subprocess,sys,time\n'
+                    'fd=int(sys.argv[1])\n'
+                    'subprocess.Popen([sys.executable,"-c",'+repr(child_program)+'], '
+                    'stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,pass_fds=(fd,))\n'
+                    + ('time.sleep(20)\n' if mode == 'timeout' else '')
+                    + ('sys.exit(7)\n' if mode == 'failure' else ''))
+                sentinel = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(20)'])
+                try:
+                    result = self.collect(root, [sys.executable, '-c', script, '@COLLECTOR_LOCK_FD@'], timeout=1)
+                    self.assertEqual(result.returncode, {'success':0,'failure':7,'timeout':2}[mode], result.stderr)
+                    self.assertIsNone(sentinel.poll())
+                    # Killed descendants may retain an FD until the kernel schedules
+                    # final release; bounded retries test eventual inode release.
+                    acquired = False
+                    for _ in range(50):
+                        try:
+                            with B.campaign_lock('rtx5090'): acquired = True
+                            break
+                        except BlockingIOError: time.sleep(.02)
+>                   self.assertTrue(acquired)
+E                   AssertionError: False is not true
+
+crates/memra-tier/tests/battery/test_external_lock.py:162: AssertionError
+_ ExternalLockTests.test_legacy_fragment_applies_preserves_assertions_and_internal_external_proofs _
+
+self = <test_external_lock.ExternalLockTests testMethod=test_legacy_fragment_applies_preserves_assertions_and_internal_external_proofs>
+
+    def test_legacy_fragment_applies_preserves_assertions_and_internal_external_proofs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); tools = root/'tools'; tools.mkdir()
+            names = ['kv-host-spill-identity-gate.sh', 'kv-host-spill-failure-gate.sh']
+            for name in [*names, 'tier-lock-proof.py', 'port-guard.sh']:
+                shutil.copy(ROOT/'tools'/name, tools/name)
+            patch = ROOT/'research/spill-d-20260919/LEGACY-EXTERNAL-LOCK.diff'
+            # The authorized fragment is now applied in-tree. Reverse/reapply in
+            # the disposable tree to keep its historical assertion-preservation teeth.
+            subprocess.run(['git', 'apply', '--reverse', str(patch)], cwd=root, check=True, capture_output=True)
+            originals = {name: (tools/name).read_text() for name in names}
+            subprocess.run(['git', 'apply', str(patch)], cwd=root, check=True, capture_output=True)
+            for i, name in enumerate(names):
+                script = tools/name
+                source = script.read_text()
+                marker = '# Two DISJOINT' if i == 0 else '# Same fixtures'
+                original = originals[name]
+                self.assertEqual(source[source.index(marker):], original[original.index(marker):])
+                self.assertNotIn('pkill', source)
+                self.assertNotIn('flock -w', source)
+                subprocess.run(['bash', '-n', str(script)], check=True, capture_output=True)
+                if shutil.which('shellcheck'):
+                    checked = subprocess.run(['shellcheck', '-x', str(script)], cwd=tools, text=True, capture_output=True)
+                    self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+                # Exercise exact patched prologue; no server or model command runs.
+                script.write_text(source[:source.index('SERVER_PID=""')]+'echo "LOCK PROOF ACCEPTED"\n')
+                internal = root/(str(i)+'-internal')
+                result = subprocess.run(['bash', str(script), 'unused-model', 'unused-binary', str(internal)],
+                                        capture_output=True, text=True, timeout=5)
+>               self.assertEqual(result.returncode, 0, result.stderr)
+E               AssertionError: 2 != 0 : REFUSED: canonical GPU lock busy
+
+crates/memra-tier/tests/battery/test_external_lock.py:117: AssertionError
+_ ExternalLockTests.test_owning_fd_only_not_same_inode_foreign_closed_missing_or_unlocked _
+
+self = <test_external_lock.ExternalLockTests testMethod=test_owning_fd_only_not_same_inode_foreign_closed_missing_or_unlocked>
+
+    def test_owning_fd_only_not_same_inode_foreign_closed_missing_or_unlocked(self):
+>       with B.campaign_lock('rtx5090', inherit=True) as owner:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+crates/memra-tier/tests/battery/test_external_lock.py:26: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rig = 'rtx5090', inherit = True
+
+    @contextlib.contextmanager
+    def campaign_lock(rig, inherit=False):
+        require(rig in LOCKS and LOCKS[rig] is not None, "GPU-shaped campaign requires canonical rig lock")
+        # Never unlink a shared lock inode: waiters and other campaigns must see the same file.
+        with open(LOCKS[rig], "a") as handle:
+>           fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+E           BlockingIOError: [Errno 11] Resource temporarily unavailable
+
+tools/tier-battery.py:184: BlockingIOError
+_____ ExternalLockTests.test_parent_close_does_not_unlock_live_descendant ______
+
+self = <test_external_lock.ExternalLockTests testMethod=test_parent_close_does_not_unlock_live_descendant>
+
+    def test_parent_close_does_not_unlock_live_descendant(self):
+        child = None
+        try:
+>           with B.campaign_lock('rtx5090', inherit=True) as owner:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+crates/memra-tier/tests/battery/test_external_lock.py:51: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.14/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rig = 'rtx5090', inherit = True
+
+    @contextlib.contextmanager
+    def campaign_lock(rig, inherit=False):
+        require(rig in LOCKS and LOCKS[rig] is not None, "GPU-shaped campaign requires canonical rig lock")
+        # Never unlink a shared lock inode: waiters and other campaigns must see the same file.
+        with open(LOCKS[rig], "a") as handle:
+>           fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+E           BlockingIOError: [Errno 11] Resource temporarily unavailable
+
+tools/tier-battery.py:184: BlockingIOError
+____________ NativeRunnerTests.test_cli_exit_status_and_raw_receipt ____________
+
+self = <test_native_runner.NativeRunnerTests testMethod=test_cli_exit_status_and_raw_receipt>
+
+    def test_cli_exit_status_and_raw_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out = root/'capture'
+            proc = subprocess.run(
+                [sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090',
+                 '--timeout', '5', '--out', str(out), '--execute', sys.executable,
+                 '-c', "import sys; print('ERROR: deliberate native refusal'); sys.exit(9)"],
+                env={**os.environ, 'PATH': str(root/'no-tools')}, capture_output=True, timeout=10)
+>           self.assertEqual(proc.returncode, 9, proc.stderr)
+E           AssertionError: 2 != 9 : b'REFUSED: [Errno 11] Resource temporarily unavailable\n'
+
+crates/memra-tier/tests/battery/test_native_runner.py:86: AssertionError
+_ BootstrapTests.test_acceptance_failure_retains_source_and_occupied_gpu_refuses _
+
+self = <test_native_runner.BootstrapTests testMethod=test_acceptance_failure_retains_source_and_occupied_gpu_refuses>
+
+    def test_acceptance_failure_retains_source_and_occupied_gpu_refuses(self):
+        original = (ROOT/'tools/tier-rig-bootstrap.sh').read_text()
+        for label in ('accept-1', 'accept-2'):
+            script = original.replace('code = 0', f"code = 9 if label == '{label}' else 0")
+            with tempfile.TemporaryDirectory() as tmp:
+                proc, out = self.run_script(Path(tmp), script=script)
+                self.assertEqual(proc.returncode, 2)
+                self.assertTrue((out/'accept.cu').is_file())
+>               self.assertTrue((out/'compute-after.log').is_file())
+E               AssertionError: False is not true
+
+crates/memra-tier/tests/battery/test_native_runner.py:176: AssertionError
+________ BootstrapTests.test_every_stage_stubbed_and_no_hardware_claim _________
+
+self = <test_native_runner.BootstrapTests testMethod=test_every_stage_stubbed_and_no_hardware_claim>
+
+    def test_every_stage_stubbed_and_no_hardware_claim(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proc,out = self.run_script(Path(tmp))
+>           self.assertEqual(proc.returncode,0,proc.stderr)
+E           AssertionError: 2 != 0 : BLOCKED: [Errno 11] Resource temporarily unavailable
+
+crates/memra-tier/tests/battery/test_native_runner.py:126: AssertionError
+=========================== short test summary info ============================
+FAILED crates/memra-tier/tests/battery/test_collector.py::CollectorTests::test_canonical_lock_exclusion_no_third_name
+FAILED crates/memra-tier/tests/battery/test_collector.py::CollectorTests::test_dry_runner_full_campaign_raw_hashes_failure_and_n
+FAILED crates/memra-tier/tests/battery/test_day10.py::ProSingleTests::test_bootstrap_stub_memory_match_and_wrapper
+FAILED crates/memra-tier/tests/battery/test_day10.py::ProSingleTests::test_collector_acquires_canonical_lock_and_refuses_contention
+FAILED crates/memra-tier/tests/battery/test_day4.py::Day4Tests::test_cell_start_survives_unexpected_interruption_and_resume
+FAILED crates/memra-tier/tests/battery/test_day4.py::Day4Tests::test_container_power_refusal_records_and_accepts_max
+FAILED crates/memra-tier/tests/battery/test_day4.py::Day4Tests::test_resume_revalidates_and_preserves_old_failure
+FAILED crates/memra-tier/tests/battery/test_day4.py::Day4Tests::test_sigkill_keeps_active_bootstrap_log_and_journal
+FAILED crates/memra-tier/tests/battery/test_day4.py::Day4Tests::test_vast_requires_persistence_and_nvme_is_not_assumed
+FAILED crates/memra-tier/tests/battery/test_day5.py::Day5Tests::test_bootstrap_overlay_default_refuses_opt_in_preserves_raw
+FAILED crates/memra-tier/tests/battery/test_day5.py::Day5Tests::test_nvcc_base_arch_and_real_compile_are_both_required
+FAILED crates/memra-tier/tests/battery/test_day5.py::Day5Tests::test_pidfile_status_no_self_match_stale_pid_or_new_directory
+FAILED crates/memra-tier/tests/battery/test_day5.py::Day5Tests::test_storage_cli_default_refuses_then_explicit_mode_is_labeled
+FAILED crates/memra-tier/tests/battery/test_day6.py::CollectorTests::test_execute_preserves_literal_separator_and_child_options
+FAILED crates/memra-tier/tests/battery/test_external_lock.py::ExternalLockTests::test_collector_inheritance_integrity_and_foreign_launch_exclusion
+SUBFAILED(mode='success') crates/memra-tier/tests/battery/test_external_lock.py::ExternalLockTests::test_failure_success_and_timeout_kill_only_command_group
+SUBFAILED(mode='failure') crates/memra-tier/tests/battery/test_external_lock.py::ExternalLockTests::test_failure_success_and_timeout_kill_only_command_group
+SUBFAILED(mode='timeout') crates/memra-tier/tests/battery/test_external_lock.py::ExternalLockTests::test_failure_success_and_timeout_kill_only_command_group
+FAILED crates/memra-tier/tests/battery/test_external_lock.py::ExternalLockTests::test_legacy_fragment_applies_preserves_assertions_and_internal_external_proofs
+FAILED crates/memra-tier/tests/battery/test_external_lock.py::ExternalLockTests::test_owning_fd_only_not_same_inode_foreign_closed_missing_or_unlocked
+FAILED crates/memra-tier/tests/battery/test_external_lock.py::ExternalLockTests::test_parent_close_does_not_unlock_live_descendant
+FAILED crates/memra-tier/tests/battery/test_native_runner.py::NativeRunnerTests::test_cli_exit_status_and_raw_receipt
+FAILED crates/memra-tier/tests/battery/test_native_runner.py::BootstrapTests::test_acceptance_failure_retains_source_and_occupied_gpu_refuses
+FAILED crates/memra-tier/tests/battery/test_native_runner.py::BootstrapTests::test_every_stage_stubbed_and_no_hardware_claim
+24 failed, 64 passed, 29 subtests passed in 18.90s
+rc=1 elapsed=19s

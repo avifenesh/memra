@@ -1,0 +1,37 @@
+[server] build: memra-0.138.0-fa729a2df4ca (id: source-tree, git: 49d79b946cbc)
+[server] starting; models config = [("gate", "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: /dev/kmsg
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[worker]   loaded "gate": 65 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-cache] on: budget 6442MB (6442450944 B, configured by MEMRA_PREFIX_CACHE_MB), policy plain-LRU (global oldest unleased entry first; leases untouchable), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18113
+[meter] admit id=chatcmpl-bc519a3659ca45952a32cc85530e77c6 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=48404 path=plain = 29696 B/token x ctx + 2869MB prefill-workspace + 0MB fixed = 4306MB
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=48332 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 398MB (observed 1833MB at ctx 48348 path=plain)
+[prefix-cache] insert (seed): 48288 tokens, 1590.9MB (resident 1590.9MB / 6442MB, model gate)
+[fa-pool] grow #0 dev=0 o_len 0 -> 2322432 ml_len 0 -> 9072 (retired kept, zero=false)
+[meter] admit id=chatcmpl-769969f6d755674327bace6a32a0b7fe tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=535 path=plain = 29696 B/token x ctx + 34MB prefill-workspace + 398MB fixed = 448MB
+[worker] plain-affinity: declined (history diverged at 45 of checkpoint 48288; 1 parked, 71 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=71 cached=0 lcp=45 active=1 wave=1 placement=single-or-non-pp2
+[prefix-cache] seed REFUSED (grid): prompt 71 tokens is off the 32-token prime grid and its aligned boundary 32 is under the 64 token entry floor; no entry published (model gate)
+[meter] admit id=chatcmpl-d5bad583dd178833e369a440601de1b8 tenant=default lane=interactive model="gate"
+[admission] request cost: model="gate" ctx=48338 path=plain = 29696 B/token x ctx + 2868MB prefill-workspace + 398MB fixed = 4701MB
+[worker] plain-affinity: declined (history diverged at 46 of checkpoint 48288; 1 parked, 48266 prompt tokens; model gate)
+[spec-k] model="gate" tenant="" K=0 source=eligibility-fallback prompt=48266 cached=0 lcp=46 active=2 wave=2 placement=single-or-non-pp2
+[prefix-cache] insert (seed): 48224 tokens, 1589.0MB (resident 3179.8MB / 6442MB, model gate)
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

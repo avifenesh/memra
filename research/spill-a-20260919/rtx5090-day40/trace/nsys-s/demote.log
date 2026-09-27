@@ -1,0 +1,17 @@
+  run  1 order 1 idle     tokens=160 p50=7.5 max=8.6 stall=1.2 demote=[] promote=[] intruder=None
+  run  2 order 1 demote   tokens=160 p50=7.4 max=47.3 stall=39.9 demote=[] promote=[] intruder=116.67692504124716
+  run  3 order 1 idle     tokens=160 p50=7.4 max=8.2 stall=0.8 demote=[] promote=[] intruder=None
+  run  4 order 1 demote   tokens=160 p50=7.5 max=60.1 stall=52.7 demote=[71.2] promote=[] intruder=123.13261796953157
+  run  5 order 1 idle     tokens=160 p50=7.4 max=8.3 stall=0.8 demote=[] promote=[] intruder=None
+  run  6 order 1 demote   tokens=160 p50=7.5 max=44.1 stall=36.6 demote=[52.6] promote=[] intruder=103.89581799972802
+  run  7 order 1 idle     tokens=160 p50=7.4 max=8.2 stall=0.7 demote=[] promote=[] intruder=None
+  run  8 order 1 demote   tokens=160 p50=7.5 max=45.8 stall=38.4 demote=[53.7] promote=[] intruder=105.29934195801616
+  run  9 order 2 demote   tokens=160 p50=7.5 max=44.1 stall=36.7 demote=[52.6] promote=[] intruder=103.8921739673242
+  run 10 order 2 idle     tokens=160 p50=7.5 max=8.2 stall=0.7 demote=[] promote=[] intruder=None
+  run 11 order 2 demote   tokens=160 p50=7.4 max=45.9 stall=38.5 demote=[54.3] promote=[] intruder=105.7717590010725
+  run 12 order 2 idle     tokens=160 p50=7.5 max=8.2 stall=0.7 demote=[] promote=[] intruder=None
+  run 13 order 2 demote   tokens=160 p50=7.5 max=44.3 stall=36.8 demote=[52.9] promote=[] intruder=104.32437498820946
+  run 14 order 2 idle     tokens=160 p50=7.5 max=8.1 stall=0.6 demote=[] promote=[] intruder=None
+  run 15 order 2 demote   tokens=160 p50=7.5 max=45.9 stall=38.4 demote=[54.2] promote=[] intruder=105.93131999485195
+  run 16 order 2 idle     tokens=160 p50=7.5 max=8.1 stall=0.6 demote=[] promote=[] intruder=None
+STALL rule cell=trace-s arm=demote n_per_order=4 pooled=8 idle_runs=8 idle_p50=7.5 idle_p95=8.0 idle_p99=8.2 idle_max=8.6 arm_runs=8 arm_p50=7.5 arm_p95=8.1 arm_p99=42.6 arm_max=60.1 stall_median=38.4 stall_min=36.6 stall_max=52.7 server_demote_ms=[71.2, 52.6, 53.7, 52.6, 54.3, 52.9, 54.2] server_promote_ms=[] intruder_prompt_tokens=[95, 99, 97, 98, 95, 99, 97, 97] tenant_text_identical=True errors=0

@@ -11,9 +11,7 @@ use memra_gguf::source::{
     Hy3RepackSource, TensorCensusRecord, TensorSource, census_from_gguf,
     census_from_safetensors_headers,
 };
-use memra_gguf::tensor_contract::{
-    BoundTensorContract, CheckpointDialect, ContractOptions, OutputHead, TensorId, TensorOwner,
-};
+use memra_gguf::tensor_contract::{BoundTensorContract, CheckpointDialect, TensorId, TensorOwner};
 use memra_reference::{deterministic_fixture, execute, execute_multimodal, execute_vision};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -940,16 +938,12 @@ pub fn inspect_model(
         .ok_or_else(|| format!("unknown model pack {:?}", request.against))?;
     let source = load_source(&request.source)?;
     let plan = pack.compile_plan(&source.config)?;
-    let output_head = if source
-        .tensors
-        .iter()
-        .any(|row| row.entry.name == "lm_head.weight" || row.entry.name == "output.weight")
-    {
-        OutputHead::Separate
-    } else {
-        OutputHead::TiedToEmbedding
+    // Head ownership and the bind are the loader's own boundary (memra#541): what inspection
+    // refuses here, `memra-server` refuses before upload with the same text.
+    let source_census = memra_gguf::source::TensorCensus {
+        dialect: source.dialect,
+        tensors: source.tensors.clone(),
     };
-    let entries: Vec<_> = source.tensors.iter().map(|row| row.entry.clone()).collect();
     std::fs::create_dir_all(&request.out_dir)?;
     // A reused inspection directory must never retain a valid-looking placement from an older
     // checkpoint/plan when the current tensor contract cannot bind or has fewer legal stages.
@@ -988,16 +982,13 @@ pub fn inspect_model(
         &request.out_dir.join("execution-rewrites.tsv"),
         rewrite_manifest.as_bytes(),
     )?;
-    let (binding, binding_error) = match pack.compile_tensor_contract(
+    let (binding, binding_error) = match memra_gguf::checkpoint_binding::bind_census(
+        Some(pack),
         &source.config,
         &plan,
-        source.dialect,
-        ContractOptions { output_head },
+        &source_census,
     ) {
-        Ok(contract) => match contract.bind(&entries) {
-            Ok(binding) => (Some(binding), None),
-            Err(error) => (None, Some(error.to_string())),
-        },
+        Ok(binding) => (Some(binding.bound), None),
         Err(error) => (None, Some(error.to_string())),
     };
     if let Some(binding) = binding.as_ref() {
@@ -1116,14 +1107,14 @@ fn load_config_only(source: &str) -> Result<ModelConfig, Box<dyn std::error::Err
     }
     if path.is_dir() {
         let bytes = std::fs::read(path.join("config.json"))?;
-        return Ok(ModelConfig::from_hf(&HfConfig::parse(std::str::from_utf8(
-            &bytes,
-        )?)));
+        return Ok(ModelConfig::from_hf(&HfConfig::try_parse(
+            std::str::from_utf8(&bytes)?,
+        )?));
     }
     let (repo, revision) = parse_pinned_hf_source(source)?;
     let url = format!("https://huggingface.co/{repo}/resolve/{revision}/config.json");
     let config = http_text(&url)?.ok_or("pinned model has no config.json")?;
-    Ok(ModelConfig::from_hf(&HfConfig::parse(&config)))
+    Ok(ModelConfig::from_hf(&HfConfig::try_parse(&config)?))
 }
 
 fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
@@ -1167,7 +1158,7 @@ fn load_local(path: &Path) -> Result<SourceData, Box<dyn std::error::Error>> {
 
     let config_bytes = std::fs::read(path.join("config.json"))?;
     let config_text = std::str::from_utf8(&config_bytes)?;
-    let config = ModelConfig::from_hf(&HfConfig::parse(config_text));
+    let config = ModelConfig::from_hf(&HfConfig::try_parse(config_text)?);
     let tokenizer = inspect_hf_tokenizer_dir(path);
     let model = StModel::open(path)?;
     let shards = local_shards(path)?;
@@ -1196,7 +1187,7 @@ fn load_remote(repo: &str, revision: &str) -> Result<SourceData, Box<dyn std::er
     let config_bytes = http_text(&format!("{base}/config.json"))?
         .ok_or("pinned model has no config.json")?
         .into_bytes();
-    let config = ModelConfig::from_hf(&HfConfig::parse(std::str::from_utf8(&config_bytes)?));
+    let config = ModelConfig::from_hf(&HfConfig::try_parse(std::str::from_utf8(&config_bytes)?)?);
     let tokenizer = inspect_remote_hf_tokenizer(&base);
     let index = http_text(&format!("{base}/model.safetensors.index.json"))?;
     let shards: Vec<String> = if let Some(index) = index {
@@ -1361,10 +1352,14 @@ fn template_contract_error(pack: &ModelPack, artifact_has_template: bool) -> Opt
 
 fn local_hf_template(path: &Path) -> Result<Option<String>, String> {
     let config_path = path.join("tokenizer_config.json");
-    if let Ok(config) = std::fs::read_to_string(&config_path)
-        && let Some(template) = template_from_tokenizer_config(&config)
-    {
-        return nonempty_template(template).map(Some);
+    match std::fs::read_to_string(&config_path) {
+        Ok(config) => {
+            if let Some(template) = template_from_tokenizer_config(&config)? {
+                return Ok(Some(template));
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("read {}: {error}", config_path.display())),
     }
     let template_path = path.join("chat_template.jinja");
     match std::fs::read_to_string(&template_path) {
@@ -1382,14 +1377,17 @@ fn inspect_remote_hf_tokenizer(base: &str) -> Result<TokenizerEvidence, String> 
         http_text(&format!("{base}/tokenizer_config.json")).map_err(|error| error.to_string())?;
     let template = config
         .as_deref()
-        .and_then(template_from_tokenizer_config)
-        .or_else(|| {
-            http_text(&format!("{base}/chat_template.jinja"))
-                .ok()
-                .flatten()
-        })
-        .map(nonempty_template)
-        .transpose()?;
+        .map(template_from_tokenizer_config)
+        .transpose()?
+        .flatten();
+    let template = if template.is_some() {
+        template
+    } else {
+        http_text(&format!("{base}/chat_template.jinja"))
+            .map_err(|error| error.to_string())?
+            .map(nonempty_template)
+            .transpose()?
+    };
     Ok(TokenizerEvidence {
         source: TokenizerSource::TokenizerJson,
         tokenizer_sha256: hex_sha256(tokenizer.as_bytes()),
@@ -1400,11 +1398,16 @@ fn inspect_remote_hf_tokenizer(base: &str) -> Result<TokenizerEvidence, String> 
     })
 }
 
-fn template_from_tokenizer_config(config: &str) -> Option<String> {
-    let config = memra_gguf::config::JsonObj::parse(config);
-    config
-        .string("chat_template")
-        .filter(|value| !value.trim().is_empty())
+fn template_from_tokenizer_config(config: &str) -> Result<Option<String>, String> {
+    let config = memra_tokenizer::json::parse(config)
+        .map_err(|error| format!("tokenizer_config.json: {error}"))?;
+    match config.get("chat_template") {
+        None | Some(memra_tokenizer::json::Value::Null) => Ok(None),
+        Some(memra_tokenizer::json::Value::Str(template)) => {
+            nonempty_template(template.clone()).map(Some)
+        }
+        Some(_) => Err("tokenizer_config.json chat_template must be a string or null".into()),
+    }
 }
 
 fn nonempty_template(template: String) -> Result<String, String> {
@@ -2133,6 +2136,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn hf_template_lock_uses_decoded_json_and_refuses_malformed_sidecars() {
+        let encoded = r#"{"chat_template":"<|im_start|>user\n\u05e9\""}"#;
+        let template = template_from_tokenizer_config(encoded).unwrap().unwrap();
+        assert_eq!(template, "<|im_start|>user\nש\"");
+        assert_eq!(
+            template_from_tokenizer_config(r#"{"chat_template":null}"#).unwrap(),
+            None
+        );
+        assert!(template_from_tokenizer_config(r#"{"chat_template":"   "}"#).is_err());
+        assert!(template_from_tokenizer_config(r#"{"chat_template":[]}"#).is_err());
+        assert!(template_from_tokenizer_config(r#"{"chat_template":"valid"} trailing"#).is_err());
+    }
+
+    #[test]
     fn gguf_tokenizer_identity_binds_validated_input_program() {
         use memra_gguf::MetaValue;
         use memra_tokenizer::{GGUF_INPUT_PROGRAM_KEY, Tokenizer};
@@ -2338,7 +2355,7 @@ mod tests {
 
     #[test]
     fn local_repack_inspect_routes_metadata_census_into_placement() {
-        use memra_gguf::tensor_contract::TensorMatch;
+        use memra_gguf::tensor_contract::{ContractOptions, OutputHead, TensorMatch};
 
         let root =
             std::env::temp_dir().join(format!("memra-cli-repack-inspect-{}", std::process::id()));

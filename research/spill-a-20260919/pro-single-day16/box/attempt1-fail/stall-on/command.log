@@ -1,0 +1,16 @@
+usage: tier-lock-proof.py [-h] --fd FD --lock
+                          {/tmp/memra-5090.lock,/tmp/memra-gpu.lock}
+                          [--owner {collector,internal-canonical}]
+tier-lock-proof.py: error: argument --fd: invalid int value: '@COLLECTOR_LOCK_FD@'
+a447fec492389682d00f9f326a4556d6ea8d766ca74b4041b33142f82db1b49a  /root/spill-receipts/a-day16/bins/memra-server
+Traceback (most recent call last):
+  File "/root/wt-a/research/spill-a-20260919/stall_cell.py", line 35, in <module>
+    assert len(WORDS) == 64
+           ^^^^^^^^^^^^^^^^
+AssertionError
+Traceback (most recent call last):
+  File "/root/wt-a/research/spill-a-20260919/stall_cell.py", line 35, in <module>
+    assert len(WORDS) == 64
+           ^^^^^^^^^^^^^^^^
+AssertionError
+stall-on rc=1

@@ -1,0 +1,9 @@
+DAY56 ARM off rig=rtx5090 exit=1 verdict='missing' checks=0 demotes=[('89', '164.2'), ('86', '164.0')] tails=[] restores=1 refusals=0
+DAY56 ARM on rig=rtx5090 exit=1 verdict='missing' checks=0 demotes=[('89', '164.2')] tails=[(5, 10, 3645440)] restores=1 refusals=0
+DAY56 TERM all_green_both -> FAIL
+DAY56 TERM same_verdict_lines -> PASS
+DAY56 TERM equal_demote_bytes -> FAIL
+DAY56 TERM tail_receipt_2L -> PASS
+DAY56 TERM restore_both_same_text -> PASS
+DAY56 TERM no_refusal_on -> PASS
+DAY56 DFLASH TAIL rig=rtx5090 -> FAIL

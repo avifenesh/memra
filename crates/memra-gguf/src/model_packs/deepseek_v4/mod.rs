@@ -8,6 +8,8 @@ use crate::tensor_contract::{
 
 pub static PACK: ModelPack = ModelPack {
     family: "deepseek_v4",
+    output_head: OutputHeadContract::SeparateHead,
+    tensor_consumption: TensorConsumption::Report,
     aliases: &["deepseek_v4", "deepseek-v4", "deepseek_v4_preview"],
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
@@ -35,6 +37,8 @@ pub static PACK: ModelPack = ModelPack {
 
 pub static DSPARK_PACK: ModelPack = ModelPack {
     family: "deepseek_v4_dspark",
+    output_head: OutputHeadContract::SeparateHead,
+    tensor_consumption: TensorConsumption::Report,
     aliases: &["deepseek_v4_dspark", "deepseek-v4-dspark"],
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
@@ -525,6 +529,30 @@ mod tests {
             "rope_scaling":{"factor":4,"beta_fast":32,"beta_slow":1,
             "original_max_position_embeddings":1024}}"#,
         ))
+    }
+
+    #[test]
+    fn explicit_yarn_type_preserves_the_compressed_rope_program() {
+        use crate::model_plan::{AttentionPlan, MlaAttentionPlan, RopeFactors};
+        let mut config = config();
+        let expected = PACK.compile_plan(&config).unwrap();
+        config.rope_scaling_hint = Some("yarn".into());
+        let plan = super::super::compile_for_load(&config).unwrap();
+        assert_eq!(plan, expected);
+        let AttentionPlan::Mla(MlaAttentionPlan::CompressedKv { rope, .. }) =
+            &plan.layers[1].attention
+        else {
+            panic!("expected compressed attention")
+        };
+        assert_eq!(
+            rope.factors,
+            RopeFactors::Yarn {
+                factor: 4.0,
+                original_context: 1024,
+                beta_fast: 32.0,
+                beta_slow: 1.0,
+            }
+        );
     }
 
     #[test]

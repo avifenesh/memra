@@ -558,7 +558,7 @@ impl FileBackend {
         }
         // Open/admission and every GC conversion take the gate FIRST. The gate
         // stays locked until shared lifetime ownership is established/restored.
-        let _gate = lock_gc_gate(directory)?;
+        let gate = lock_gc_gate(directory)?;
         let ownership = OpenOptions::new()
             .read(true)
             .write(true)
@@ -566,6 +566,7 @@ impl FileBackend {
             .truncate(false)
             .open(directory.join(".ownership"))?;
         ownership.lock_shared()?;
+        gate.release()?;
         Ok(Self {
             ownership: std::sync::Arc::new(ownership),
             transactions: HashMap::new(),
@@ -800,14 +801,14 @@ impl FileBackend {
         let result = self.evict_exclusive(id, permit);
         result.and(self.restore_shared(gate))
     }
-    fn restore_shared(&self, gate: fs::File) -> Result<()> {
+    fn restore_shared(&self, gate: GcGate) -> Result<()> {
         if let Err(error) = self.ownership.lock_shared() {
             // Failure to restore a lifetime fence is unknown ownership. Keep the
             // gate locked until process exit rather than admit unsafe collection.
             std::mem::forget(gate);
             return Err(error.into());
         }
-        Ok(())
+        gate.release()
     }
     fn sync_directory(&self) -> Result<()> {
         if self.persistent {
@@ -915,7 +916,43 @@ fn parse_chunk_name(name: &str) -> Result<Digest> {
     }
     Ok(digest)
 }
-fn lock_gc_gate(directory: &Path) -> Result<fs::File> {
+/// A critical-section lock, unlike the store's shared lifetime ownership. Merely
+/// closing this descriptor is insufficient: an unrelated child between fork and
+/// exec can retain a copied open-file description and prolong the lock. Explicit
+/// unlock ends this scope even while that copy survives.
+struct GcGate(Option<fs::File>);
+
+impl GcGate {
+    fn unlock(file: fs::File) -> Result<()> {
+        if let Err(error) = file.unlock() {
+            // Unknown release must retain the fence, not close our last handle.
+            std::mem::forget(file);
+            return Err(error.into());
+        }
+        Ok(())
+    }
+
+    fn release(mut self) -> Result<()> {
+        Self::unlock(self.0.take().expect("GC gate released once"))
+    }
+
+    #[cfg(test)]
+    fn try_clone(&self) -> std::io::Result<fs::File> {
+        self.0.as_ref().expect("live GC gate").try_clone()
+    }
+}
+
+impl Drop for GcGate {
+    fn drop(&mut self) {
+        if let Some(file) = self.0.take()
+            && let Err(error) = Self::unlock(file)
+        {
+            eprintln!("[tier-gc] retaining gate after failed unlock: {error:?}");
+        }
+    }
+}
+
+fn lock_gc_gate(directory: &Path) -> Result<GcGate> {
     let gate = OpenOptions::new()
         .read(true)
         .write(true)
@@ -923,7 +960,7 @@ fn lock_gc_gate(directory: &Path) -> Result<fs::File> {
         .truncate(false)
         .open(directory.join(".ownership-gc"))?;
     gate.try_lock().map_err(|_| Error::Busy)?;
-    Ok(gate)
+    Ok(GcGate(Some(gate)))
 }
 fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();

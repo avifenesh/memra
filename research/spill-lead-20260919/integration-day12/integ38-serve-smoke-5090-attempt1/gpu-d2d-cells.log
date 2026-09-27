@@ -1,0 +1,45 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling serde_core v1.0.228
+   Compiling memchr v2.8.2
+   Compiling serde_json v1.0.150
+   Compiling smallvec v1.15.2
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling unicode-normalization-alignments v0.1.12
+   Compiling aho-corasick v1.1.4
+   Compiling syn v2.0.118
+   Compiling serde_derive v1.0.228
+   Compiling memra-tokenizer v0.138.0 (/home/avifenesh/projects/wt-spill-integ38/crates/memra-tokenizer)
+   Compiling serde v1.0.228
+   Compiling memra-tier v0.138.0 (/home/avifenesh/projects/wt-spill-integ38/crates/memra-tier)
+   Compiling memra-reference v0.138.0 (/home/avifenesh/projects/wt-spill-integ38/crates/memra-reference)
+   Compiling memra-kv v0.138.0 (/home/avifenesh/projects/wt-spill-integ38/crates/memra-kv)
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-integ38/crates/memra-engine)
+    Finished `release` profile [optimized] target(s) in 24.73s
+     Running unittests src/lib.rs (target/release/deps/memra_engine-f0322ac70f8275b7)
+
+running 5 tests
+test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ok
+test tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt ... ok
+test tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle ... FAILED
+test tier_transfer::tests::d2d_receipt_digest_price_against_the_copy ... ok
+test tier_transfer::tests::d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait ... ok
+
+failures:
+
+---- tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle stdout ----
+
+thread 'tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle' (1559164) panicked at crates/memra-engine/src/tier_transfer.rs:2818:13:
+assertion `left == right` failed: n=8388608: the device digest is the oracle's
+  left: [240, 119, 112, 104, 69, 239, 93, 192, 86, 59, 169, 74, 29, 162, 159, 97, 127, 132, 223, 231, 215, 80, 25, 114, 52, 59, 227, 46, 112, 164, 146, 248]
+ right: [65, 95, 129, 106, 119, 197, 88, 249, 14, 38, 34, 103, 135, 90, 219, 173, 186, 143, 247, 82, 79, 95, 11, 120, 137, 141, 3, 88, 41, 90, 211, 232]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 555 filtered out; finished in 5.29s
+
+error: test failed, to rerun pass `-p memra-engine --lib`

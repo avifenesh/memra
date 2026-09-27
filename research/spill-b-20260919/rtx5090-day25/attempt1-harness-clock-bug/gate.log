@@ -1,0 +1,35 @@
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-b/crates/memra-engine)
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-b/crates/memra-server)
+    Finished `release` profile [optimized] target(s) in 2m 54s
+== health-fault-gate: arms=a,b,c,d,e,f port=8186 out=/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day25/run1/gate ==
+--- arm a/b: armed boot (default doors: the calibration probe runs before ready) ---
+  [ab] FATAL: not ready within 420s
+HFG (a) readiness-before-probe: boot failed -> FAIL
+HFG (b) ready-then-first-request: boot failed -> FAIL
+  [ab] exit 143
+--- arm c: the probe-skipped boots (documented behaviour, not a pass) ---
+  [c-calibrate0] FATAL: not ready within 420s
+HFG (c) probe-skipped c-calibrate0 [MEMRA_ADMIT_CALIBRATE=0]: boot failed -> FAIL
+  [c-calibrate0] exit 143
+  [c-spec0] FATAL: not ready within 420s
+HFG (c) probe-skipped c-spec0 [MEMRA_SERVE_SPEC=0]: boot failed -> FAIL
+  [c-spec0] exit 143
+  [c-reserve] FATAL: not ready within 420s
+HFG (c) probe-skipped c-reserve [MEMRA_ADMIT_RESERVE_MB=1536]: boot failed -> FAIL
+  [c-reserve] exit 143
+--- arm d: a request panics the worker (MEMRA_PANIC_AFTER=1), the respawn rule (MEMRA_WORKER_RESPAWN=1) ---
+  [d] FATAL: not ready within 420s
+HFG (d) panic-respawn-truthful-health: boot failed -> FAIL
+HFG (a2) warming-phase-on-respawn: boot failed -> FAIL
+  [d] exit 143
+--- arm e: a hung nvidia-smi probe latches the gpu fault; answering again does not clear it ---
+  [e] FATAL: not ready within 420s
+HFG (e) fatal-fault-not-cleared-by-timeout: boot failed -> FAIL
+  [e] exit 143
+--- arm f: SIGTERM with a stream open flips readiness first and drains ---
+  [f] FATAL: not ready within 420s
+HFG (f) sigterm-drains-and-flips-readiness-first: boot failed -> FAIL
+  [f] exit 143
+health-fault-gate: arms=a,b,c,d,e,f pass=0 documented=0 fail=9 receipts=/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day25/run1/gate

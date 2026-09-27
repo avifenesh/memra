@@ -1,0 +1,17 @@
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 2m 20s
+  Executable unittests src/lib.rs (target/release/deps/memra_engine-f0322ac70f8275b7)
+TESTBIN_OK
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running unittests src/lib.rs (target/release/deps/memra_engine-f0322ac70f8275b7)
+
+running 1 test
+[dsv4-prefill-f16g] GU_FUSE ENGAGED: rows=1 live_slots=6 hidden=4096 inter=2048 ModelOpt NVFP4 f16-MMA class
+PASS GU/down half2 complete-chain identity: h_bits=12288 contribution_bits=24576 gu_half2_dispatches=1 down_m1_half2_dispatches=1
+test dsv4_grouped::half2_chain_identity_tests::cuda_half2_chain_identity ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 538 filtered out; finished in 4.04s
+
+HALF2_RUN_DONE

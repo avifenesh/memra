@@ -1,0 +1,32 @@
+2026-09-22T19:54:48Z wait 1 before identity-default-on: free=16312MiB apps=[3835275, /home/avifenesh/projects/wt-c37-base/target/release/memra-server, 7650 MiB]
+2026-09-22T19:56:48Z wait 2 before identity-default-on: free=16344MiB apps=[3842151, /home/avifenesh/projects/wt-c37-base/target/release/memra-server, 7618 MiB]
+2026-09-22T19:58:48Z wait 3 before identity-default-on: free=14232MiB apps=[3854050, /home/avifenesh/projects/wt-spill-c/target/release/memra-server, 9730 MiB]
+2026-09-22T20:00:48Z wait 4 before identity-default-on: free=16344MiB apps=[3856817, /home/avifenesh/projects/wt-spill-c/target/release/memra-server, 7618 MiB]
+2026-09-22T20:02:48Z wait 5 before identity-default-on: free=16312MiB apps=[3864666, /home/avifenesh/projects/wt-spill-c/target/release/memra-server, 7650 MiB]
+2026-09-22T20:04:48Z wait 6 before identity-default-on: free=16312MiB apps=[3870955, /home/avifenesh/projects/wt-spill-c/target/release/memra-server, 7650 MiB]
+2026-09-22T20:06:48Z wait 7 before identity-default-on: free=16344MiB apps=[3876231, /home/avifenesh/projects/wt-spill-c/target/release/memra-server, 7618 MiB]
+2026-09-22T20:08:48Z wait 8 before identity-default-on: free=14232MiB apps=[3881809, /home/avifenesh/projects/wt-spill-c/target/release/memra-server, 9730 MiB]
+2026-09-22T20:10:48Z wait 9 before identity-default-on: free=16344MiB apps=[3889869, /home/avifenesh/projects/wt-spill-c/target/release/memra-server, 7618 MiB]
+2026-09-22T20:12:48Z wait 10 before identity-default-on: free=16728MiB apps=[3897463, /home/avifenesh/projects/wt-spill-c/target/release/memra-server, 7234 MiB]
+2026-09-22T20:14:48Z wait 11 before identity-default-on: free=16312MiB apps=[3897463, /home/avifenesh/projects/wt-spill-c/target/release/memra-server, 7650 MiB]
+2026-09-22T20:16:48Z wait 12 before identity-default-on: free=16312MiB apps=[3903616, /home/avifenesh/projects/wt-spill-c/target/release/memra-server, 7650 MiB]
+2026-09-22T20:18:48Z wait 13 before identity-default-on: free=16344MiB apps=[3911025, /home/avifenesh/projects/wt-spill-c/target/release/memra-server, 7618 MiB]
+2026-09-22T20:20:48Z wait 14 before identity-default-on: free=14232MiB apps=[3921653, /home/avifenesh/projects/wt-c37-base/target/release/memra-server, 9730 MiB]
+2026-09-22T20:22:48Z wait 15 before identity-default-on: free=16344MiB apps=[3925270, /home/avifenesh/projects/wt-c37-base/target/release/memra-server, 7618 MiB]
+2026-09-22T20:24:48Z identity-default-on NOT RUN: the card never freed in 15 waits
+2026-09-22T20:24:48Z wait 1 before fault-default: free=16312MiB apps=[3933669, /home/avifenesh/projects/wt-c37-base/target/release/memra-server, 7650 MiB]
+2026-09-22T20:26:49Z wait 2 before fault-default: free=16312MiB apps=[3941930, /home/avifenesh/projects/wt-c37-base/target/release/memra-server, 7650 MiB]
+2026-09-22T20:28:49Z wait 3 before fault-default: free=16344MiB apps=[3946756, /home/avifenesh/projects/wt-c37-base/target/release/memra-server, 7618 MiB]
+2026-09-22T20:30:49Z wait 4 before fault-default: free=14232MiB apps=[3953105, /home/avifenesh/projects/wt-c37-base/target/release/memra-server, 9730 MiB]
+2026-09-22T20:32:49Z start fault-default tree=a8d6b1df5bf57e89bbceed4b1cbf3dbd66641b77 env=[MEMRA_HOSTGATE_CACHE_MB=64]
+2026-09-22T20:34:18Z done fault-default rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-22T20:34:18Z start fault-plain tree=a8d6b1df5bf57e89bbceed4b1cbf3dbd66641b77 env=[MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_SERVE_SPEC=0]
+2026-09-22T20:35:35Z done fault-plain rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN
+2026-09-22T20:35:35Z start hit-off tree=a8d6b1df5bf57e89bbceed4b1cbf3dbd66641b77 env=[]
+2026-09-22T20:35:57Z done hit-off rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-22T20:35:57Z start hit-on tree=a8d6b1df5bf57e89bbceed4b1cbf3dbd66641b77 env=[MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-22T20:36:23Z done hit-on rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen)
+2026-09-22T20:36:23Z LOCAL-BATTERY-DONE
+2026-09-22T20:37:36Z start identity-default-on-rerun tree=39378d6e4b98ab060bfd0864811eb7d0130c2c27 env=[MEMRA_HOSTGATE_CACHE_MB=64 MEMRA_KV_HOST_CONTRACTS=1]
+2026-09-22T20:37:51Z done identity-default-on-rerun rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+2026-09-22T20:37:51Z LOCAL-RERUN-DONE

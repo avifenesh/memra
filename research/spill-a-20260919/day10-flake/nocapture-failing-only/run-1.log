@@ -1,0 +1,12 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running tests/storage/mod.rs (target/debug/deps/storage-1825ca21bf643b79)
+
+running 5 tests
+test day4::legacy_gc_replays_crash_after_tombstone_and_before_unlink ... ok
+test day4::catalog_gc_reference_count_charges_tombstone_crash_replay ... ok
+test day4::review_catalog_recovers_pending_with_and_without_published_root ... ok
+test day4::review_gc_cancel_removes_staging_and_corrupt_staging_is_noop ... ok
+test day4::legacy_gc_dedup_other_store_and_live_lease_fences ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 48 filtered out; finished in 0.01s
+

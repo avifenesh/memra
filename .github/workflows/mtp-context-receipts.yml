@@ -1,0 +1,54 @@
+name: Contextual MTP receipts
+
+on:
+  pull_request:
+    paths:
+      - research/mtp-context-depth-20260921/**
+      - .github/workflows/mtp-context-receipts.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mtp-context-receipts-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Archive-reader regressions
+        run: |
+          tools/unittest-floor.sh research/mtp-context-depth-20260921/publication 'test_*.py' 16
+
+      - name: Reproduce both iterations and their expanded boundary reviews
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          lane = Path("research/mtp-context-depth-20260921")
+          tools = lane / "publication"
+          for folder, program in [
+              ("prior-receipts", "reproduce_development.py"),
+              ("receipts", "reproduce.py"),
+              ("latest-receipts", "reproduce_latest.py"),
+          ]:
+              receipts = lane / folder
+              pin = (receipts / "manifest.sha256").read_text().split()[0]
+              subprocess.run([
+                  sys.executable, str(tools / program), "--receipts", str(receipts),
+                  "--manifest-sha256", pin,
+              ], check=True)
+              subprocess.run([
+                  sys.executable, str(tools / "verify_boundary.py"),
+                  "--receipts", str(receipts),
+                  "--review", str(receipts / "boundary-review.json"),
+                  "--prefix", receipts.as_posix(), "--check",
+              ], check=True)
+          PY

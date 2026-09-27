@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "/root/spill-receipts/a-day13/probe-cell.sh",
+    "3",
+    "167772160",
+    "3"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 81796781648011,
+  "ended_monotonic_ns": 81815666279762,
+  "started_utc": "2026-09-21T13:35:11.775505+00:00",
+  "ended_utc": "2026-09-21T13:35:30.660139+00:00",
+  "elapsed_seconds": 18.884631751,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 3168,
+    "sha256": "b64e49d0304ff02b8f49bba1b19c8d772419576137bde5446054676eeeb8aee2"
+  },
+  "failure_quote": null,
+  "result": {
+    "cell": "pinned-read-probe",
+    "bytes": 167772160,
+    "pairs_per_order": 3,
+    "python_sha256": true,
+    "summary": {
+      "write-combined": {
+        "n": 6,
+        "sha256_ms_median": 1360.984055994777,
+        "copy_ms_median": 789.1724040018744,
+        "alloc_ms_median": 24.9977824933012,
+        "sha256_MBps": 123.27268586359095,
+        "driver_flags": [
+          6
+        ],
+        "exact_all": true
+      },
+      "cached": {
+        "n": 6,
+        "sha256_ms_median": 77.74361399788177,
+        "copy_ms_median": 44.66999149735784,
+        "alloc_ms_median": 28.46189399861032,
+        "sha256_MBps": 2158.0185351888995,
+        "driver_flags": [
+          2
+        ],
+        "exact_all": true
+      }
+    },
+    "qualification": false
+  },
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 8184,
+      "sha256": "f774eaacf5d1d102605a36411f14e99e35c1b3c85d20b19793b7fc9c5fd3f248"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}

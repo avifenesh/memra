@@ -1,0 +1,117 @@
+box start 2026-09-25T00:49:17Z tree 4417bbd1b3a82c3d1fa961f8bd25eb24fbaa3745
+name, driver_version, memory.total [MiB], power.limit [W], clocks.max.sm [MHz]
+NVIDIA RTX PRO 6000 Blackwell Workstation Edition, 595.71.05, 97887 MiB, 600.00 W, 3090 MHz
+
+==============NVSMI LOG==============
+
+Timestamp                                              : Fri Sep 25 00:49:17 2026
+Driver Version                                         : 595.71.05
+CUDA Version                                           : 13.2
+
+Attached GPUs                                          : 1
+GPU 00000000:02:00.0
+    Performance State                                  : P8
+    Clocks Event Reasons
+        Idle                                           : Not Active
+        Applications Clocks Setting                    : Not Active
+        SW Power Cap                                   : Not Active
+        HW Slowdown                                    : Not Active
+            HW Thermal Slowdown                        : Not Active
+            HW Power Brake Slowdown                    : Not Active
+        Sync Boost                                     : Not Active
+        SW Thermal Slowdown                            : Not Active
+        Display Clock Setting                          : Not Active
+    Clocks Event Reasons Counters
+        SW Power Capping                               : 127891288861 us
+        Sync Boost                                     : 0 us
+        SW Thermal Slowdown                            : 0 us
+        HW Thermal Slowdown                            : 0 us
+        HW Power Braking                               : 0 us
+    Sparse Operation Mode                              : N/A
+
+24
+CPU(s):                                  24
+Model name:                              Intel(R) Core(TM) Ultra 9 285K
+Thread(s) per core:                      1
+Socket(s):                               1
+CPU(s) scaling MHz:                      35%
+MemTotal:       197542692 kB
+MemAvailable:   176733228 kB
+SwapTotal:       8388604 kB
+Filesystem      Size  Used Avail Use% Mounted on
+overlay         350G   46G  305G  13% /
+overlay         350G   46G  305G  13% /
+/root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf: OK
+/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: OK
+label=tip sha=7ea765687 start=2026-09-25T00:49:26Z
+head=7ea76568775798b122f4a23934563acb22df9c87
+Cuda compilation tools, release 13.1, V13.1.115
+Build cuda_13.1.r13.1/compiler.37061995_0
+cargo 1.97.1 (c980f4866 2026-06-30)
+   Compiling memra-kv v0.138.0 (/root/wt-c-build/crates/memra-kv)
+   Compiling memra-reference v0.138.0 (/root/wt-c-build/crates/memra-reference)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 2m 27s
+binary=run-gen-tip tree=7ea76568775798b122f4a23934563acb22df9c87 sha256=ba9522aad047548aad303651ea0246aa4dd0ab85d8b4199c88dccded763538a0
+end=2026-09-25T00:51:57Z
+rc=0
+binary=run-gen-tip tree=7ea76568775798b122f4a23934563acb22df9c87 sha256=ba9522aad047548aad303651ea0246aa4dd0ab85d8b4199c88dccded763538a0
+label=nomemo sha=7ea765687 start=2026-09-25T00:51:57Z
+head=7ea76568775798b122f4a23934563acb22df9c87
+patch=day58-nomemo.patch sha256=e1b11ea5e167fe2c93f4d2d12a2dbe798720d120c7eb48f21d4681cd30539372
+Cuda compilation tools, release 13.1, V13.1.115
+Build cuda_13.1.r13.1/compiler.37061995_0
+cargo 1.97.1 (c980f4866 2026-06-30)
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-engine` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 30.09s
+binary=run-gen-nomemo tree=7ea76568775798b122f4a23934563acb22df9c87 sha256=eb569fa044834b55404f5b6059bc4d4baa8d8939bb56b671cb3444ef42dacbc1
+end=2026-09-25T00:52:27Z
+rc=0
+binary=run-gen-nomemo tree=7ea76568775798b122f4a23934563acb22df9c87 sha256=eb569fa044834b55404f5b6059bc4d4baa8d8939bb56b671cb3444ef42dacbc1
+label=unbuf sha=7ea765687 start=2026-09-25T00:52:27Z
+head=7ea76568775798b122f4a23934563acb22df9c87
+patch=day58-unbuf.patch sha256=cd63c34c6af73b43be9f06451a78e0a22deaea1fef58a6de72ccec057ea2f458
+Cuda compilation tools, release 13.1, V13.1.115
+Build cuda_13.1.r13.1/compiler.37061995_0
+cargo 1.97.1 (c980f4866 2026-06-30)
+1204 | fn push_decimal(out: &mut String, mut n: u64) {
+     |    ^^^^^^^^^^^^
+
+warning: `memra-engine` (lib) generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 30.13s
+binary=run-gen-unbuf tree=7ea76568775798b122f4a23934563acb22df9c87 sha256=9dbc13c21530a9f22476b55ff2783654fc3d064f9b98649b69ff6fcf98319790
+end=2026-09-25T00:52:58Z
+rc=0
+binary=run-gen-unbuf tree=7ea76568775798b122f4a23934563acb22df9c87 sha256=9dbc13c21530a9f22476b55ff2783654fc3d064f9b98649b69ff6fcf98319790
+BUILDS-DONE 2026-09-25T00:52:58Z
+cpu cap: taskset -c 0-11 (no systemd scope on this box)
+attrib already done
+ladder already done
+ladder-b rc=0 2026-09-25T01:11:41Z
+ladder-b validate rc=0
+ladder-b reader rc=0
+unit-server rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 939 filtered out; finished in 0.26s
+c6 unit-server rc=0 2026-09-25T01:14:18Z
+failure-default-off rc=0 KV-HOST-SPILL FAILURE GATE: ALL GREEN
+c6 failure-default-off rc=0 2026-09-25T01:15:23Z
+failure-plain-off rc=0 KV-HOST-SPILL FAILURE GATE: ALL GREEN
+c6 failure-plain-off rc=0 2026-09-25T01:16:21Z
+failure-default-on rc=0 KV-HOST-SPILL FAILURE GATE: ALL GREEN
+c6 failure-default-on rc=0 2026-09-25T01:17:49Z
+identity-default-off rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+c6 identity-default-off rc=0 2026-09-25T01:18:11Z
+identity-default-on rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)
+c6 identity-default-on rc=0 2026-09-25T01:18:37Z
+873e3556509b0da06e29654ba00d4944888d4b5e8a33afde25f7eb27d321e980  /root/artifacts/q38-dflash2/config.json
+67fc76d68dc5a9415511a4f394ef744d67510cd20e93b37cc2cc7d28e4bab65c  /root/artifacts/q38-dflash2/model.safetensors
+identity-dspark-off rc=1 
+c5 identity-dspark-off rc=1 2026-09-25T01:18:55Z
+identity-dspark-on rc=1 
+c5 identity-dspark-on rc=1 2026-09-25T01:19:17Z
+c5 reader rc=1
+final not built: DAY51's hashlock, spec and decide not run (add final=<DAY51 section 2 commit> to D52_BUILDS and rerun)
+box done 2026-09-25T01:19:17Z

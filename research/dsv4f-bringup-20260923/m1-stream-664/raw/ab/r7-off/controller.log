@@ -1,0 +1,6 @@
+START utc=2026-09-23T04:38:04Z bin=/root/lane/target-m1/release/memra-server env=MEMRA_DSV4_MOE_M1_STREAM=0 MEMRA_ENV_AUDIT=warn
+READY after=120s port=57883
+CELL warmup c=1 ok=1/1 agg=30.43 tok/s decode_p50=38.41 tok/s ttft_p50=244 ms tpot_p50=26.04 ms errs=[]
+CELL greedy-c1 c=1 ok=8/8 agg=37.83 tok/s decode_p50=38.77 tok/s ttft_p50=205 ms tpot_p50=25.79 ms errs=[]
+CELLS_DONE utc=2026-09-23T04:40:59Z
+TERMINAL rc=0 utc=2026-09-23T04:41:01Z

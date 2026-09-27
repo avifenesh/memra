@@ -1,0 +1,269 @@
+{
+ "kind": "pinned-host-reserve-bench",
+ "issue": "memra#385",
+ "cell": "smoke2-thp",
+ "arms": [
+  "single",
+  "thp"
+ ],
+ "bytes": 1073741824,
+ "basis": "bytes",
+ "fraction": null,
+ "margin_bytes": null,
+ "chunks": null,
+ "pairs_per_order": 1,
+ "floor": 1.1,
+ "hugepage_min_fraction": 0.9,
+ "mem_total": 65390514176,
+ "mem_available_at_start": 56130543616,
+ "mem_free_at_start": 4030107648,
+ "anon_huge_at_start": 0,
+ "hugepages_total": 0,
+ "thp_mode": "always [madvise] never",
+ "cpus": 24,
+ "gpu_at_start": "54, 28.58 W, [N/A], 1590 MHz",
+ "loadavg_at_start": [
+  "2.49",
+  "3.96",
+  "3.17"
+ ],
+ "rows": [
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 210.44711400463711,
+   "free_ms": 53.53183900297154,
+   "free_rc": [
+    0
+   ],
+   "order": "AB",
+   "pair": 0,
+   "arm": "single",
+   "mem_available_before": 56214048768,
+   "mem_free_before": 5179084800,
+   "utc": "2026-09-21T16:47:01Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 112.89064498851076,
+   "mmap_ms": 0.023782995413057506,
+   "madvise_ms": 0.00523999915458262,
+   "madvise_rc": 0,
+   "madvise_errno": 0,
+   "register_ms": 112.86162199394312,
+   "anon_huge_bytes": 1073741824,
+   "anon_huge_fraction": 1.0,
+   "free_ms": 12.32237099611666,
+   "free_rc": [
+    0,
+    0
+   ],
+   "order": "AB",
+   "pair": 0,
+   "arm": "thp",
+   "mem_available_before": 56206983168,
+   "mem_free_before": 5172015104,
+   "utc": "2026-09-21T16:47:01Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 95.72995601047296,
+   "mmap_ms": 0.01441400672774762,
+   "madvise_ms": 0.003731998731382191,
+   "madvise_rc": 0,
+   "madvise_errno": 0,
+   "register_ms": 95.71181000501383,
+   "anon_huge_bytes": 1073741824,
+   "anon_huge_fraction": 1.0,
+   "free_ms": 11.71689000329934,
+   "free_rc": [
+    0,
+    0
+   ],
+   "order": "BA",
+   "pair": 0,
+   "arm": "thp",
+   "mem_available_before": 56616206336,
+   "mem_free_before": 5790724096,
+   "utc": "2026-09-21T16:47:01Z"
+  },
+  {
+   "ok": true,
+   "rc": 0,
+   "alloc_ms": 225.19902299973182,
+   "free_ms": 61.25103699741885,
+   "free_rc": [
+    0
+   ],
+   "order": "BA",
+   "pair": 0,
+   "arm": "single",
+   "mem_available_before": 56614432768,
+   "mem_free_before": 5994987520,
+   "utc": "2026-09-21T16:47:01Z"
+  }
+ ],
+ "roundtrips": [
+  {
+   "arm": "single",
+   "reserve": {
+    "ok": true,
+    "rc": 0,
+    "alloc_ms": 236.86939700564835
+   },
+   "ok": true,
+   "driver_flags": [
+    {
+     "rc": 0,
+     "flags": 3
+    }
+   ],
+   "wc_bit_absent": true,
+   "flags_read_ok": true,
+   "portable_bit_set": true,
+   "blocks": 512,
+   "mismatched_blocks": 0,
+   "byte_exact": true,
+   "h2d_rc": [
+    0
+   ],
+   "d2h_rc": [
+    0
+   ],
+   "device_free_rc": 0,
+   "release_rc": [
+    0
+   ],
+   "fill_ms": 69.27775399526581,
+   "h2d_ms": 37.469382004928775,
+   "wipe_ms": 16.329181991750374,
+   "d2h_ms": 46.892837999621406,
+   "compare_ms": 305.53449400758836,
+   "h2d_gib_per_s": 26.688457254738246,
+   "d2h_gib_per_s": 21.325218149690013,
+   "mem_available_before": 56030351360,
+   "utc": "2026-09-21T16:46:59Z"
+  },
+  {
+   "arm": "thp",
+   "reserve": {
+    "ok": true,
+    "rc": 0,
+    "alloc_ms": 879.8808910069056,
+    "mmap_ms": 0.024988999939523637,
+    "madvise_ms": 0.006690999725833535,
+    "madvise_rc": 0,
+    "madvise_errno": 0,
+    "register_ms": 879.8492110072402,
+    "anon_huge_bytes": 991952896,
+    "anon_huge_fraction": 0.923828125
+   },
+   "ok": true,
+   "driver_flags": [
+    {
+     "rc": 0,
+     "flags": 3
+    }
+   ],
+   "wc_bit_absent": true,
+   "flags_read_ok": true,
+   "blocks": 512,
+   "mismatched_blocks": 0,
+   "byte_exact": true,
+   "h2d_rc": [
+    0
+   ],
+   "d2h_rc": [
+    0
+   ],
+   "device_free_rc": 0,
+   "release_rc": [
+    0,
+    0
+   ],
+   "fill_ms": 68.39212100021541,
+   "h2d_ms": 37.47973400459159,
+   "wipe_ms": 16.177105004317127,
+   "d2h_ms": 38.08933499385603,
+   "compare_ms": 306.3408449961571,
+   "h2d_gib_per_s": 26.681085833679912,
+   "d2h_gib_per_s": 26.254068236195362,
+   "mem_available_before": 56214048768,
+   "utc": "2026-09-21T16:47:01Z"
+  }
+ ],
+ "gpu_at_end": "55, 28.93 W, [N/A], 1590 MHz",
+ "loadavg_at_end": [
+  "2.49",
+  "3.96",
+  "3.17"
+ ],
+ "mem_available_at_end": 56258879488,
+ "mem_free_at_end": 5640396800,
+ "anon_huge_at_end": 0,
+ "summary": {
+  "single": {
+   "n": 2,
+   "alloc_ms_median": 217.82306850218447,
+   "alloc_ms_min": 210.44711400463711,
+   "alloc_ms_max": 225.19902299973182,
+   "free_ms_median": 57.391438000195194,
+   "alloc_gib_per_s_median": 4.5961521315484735,
+   "alloc_ms_median_AB": 210.44711400463711,
+   "alloc_ms_median_BA": 225.19902299973182
+  },
+  "thp": {
+   "n": 2,
+   "alloc_ms_median": 104.31030049949186,
+   "alloc_ms_min": 95.72995601047296,
+   "alloc_ms_max": 112.89064498851076,
+   "free_ms_median": 12.019630499708,
+   "alloc_gib_per_s_median": 9.652090445559711,
+   "register_ms_median": 104.28671599947847,
+   "anon_huge_fraction_min": 1.0,
+   "alloc_ms_median_AB": 112.89064498851076,
+   "alloc_ms_median_BA": 95.72995601047296
+  }
+ },
+ "status": "executed-not-qualified",
+ "rule": {
+  "cell": "smoke2-thp",
+  "candidate": "thp",
+  "bytes": 1073741824,
+  "n_per_order": 1,
+  "pooled": 2,
+  "alloc_ok": true,
+  "roundtrip_exact": {
+   "single": true,
+   "thp": true
+  },
+  "wc_bit_absent": true,
+  "flags_read_ok": true,
+  "portable_bit_set": true,
+  "hugepage_min_fraction_seen": 0.923828125,
+  "hugepage_ok": true,
+  "cand_below_single_pairs": "2/2",
+  "medians_both_orders": true,
+  "median_AB": {
+   "single": 210.44711400463711,
+   "thp": 112.89064498851076
+  },
+  "median_BA": {
+   "single": 225.19902299973182,
+   "thp": 95.72995601047296
+  },
+  "pooled_median_ms": {
+   "single": 217.82306850218447,
+   "thp": 104.31030049949186
+  },
+  "ratio_single_over_candidate": 2.088222040001175,
+  "floor": 1.1,
+  "materiality": true,
+  "integrity": true,
+  "speed": true,
+  "candidate_arm": "wins-on-this-card"
+ },
+ "rule_line": "ARENA-RESERVE rule cell=smoke2-thp candidate=thp bytes=1073741824 n_per_order=1 pooled=2 alloc_ok=true roundtrip_exact_single=true roundtrip_exact_candidate=true wc_bit_absent=true flags_read_ok=true portable_bit_set=true hugepage_fraction=0.9238 hugepage_ok=true cand_below_single_pairs=2/2 medians_both_orders=true pooled_single_ms=217.823 pooled_candidate_ms=104.310 ratio=2.0882 floor=1.10 materiality=true candidate_arm=wins-on-this-card"
+}

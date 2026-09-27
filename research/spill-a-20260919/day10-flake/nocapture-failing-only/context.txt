@@ -1,0 +1,5 @@
+label=nocapture-failing-only count=1 args=--nocapture legacy_gc_dedup_other_store_and_live_lease_fences catalog_gc_reference_count_charges_tombstone_crash_replay legacy_gc_replays_crash_after_tombstone_and_before_unlink review_catalog_recovers_pending_with_and_without_published_root review_gc_cancel_removes_staging_and_corrupt_staging_is_noop
+head=ce423a158d99bd3bdc21fafbda8c469724ba0123
+tmpdir=/tmp fstype=tmpfs kernel=7.0.0-31-generic
+rustc=rustc 1.97.1 (8bab26f4f 2026-07-14)
+nproc=24

@@ -1,0 +1,7 @@
+DAY52 VIEW day=50 reader=day50-prefetch.py arms=off<-off,i7<-i7,i4<-i4 rc=0
+DAY50 PREFETCH CHECKS rig=pro-single runs=30 integrity=ok
+DAY50 ARM i7 window_door_ms_per_token=0.50 gen_door_ms_per_token=5.19 window_s median=0.267 iqr=0.000 | per window token: gpu_misses=92.3 host_hits=92.3 prefetches=0.0 prefetch_hits=0.0 demand=0.563 enqueue=0.173 copy_gpu=1.586 wait=0.000 retire=0.054 miss_total=1.085
+DAY50 ARM i4 window_door_ms_per_token=-0.27 gen_door_ms_per_token=4.05 window_s median=0.242 iqr=0.001 | per window token: gpu_misses=92.3 host_hits=92.3 prefetches=88.6 prefetch_hits=88.6 demand=0.024 enqueue=0.007 copy_gpu=0.066 wait=0.000 retire=0.055 miss_total=0.046
+DAY50 CLAUSE (i) i4_minus_i7 window o1=-0.025 o2=-0.024 noise=0.001 rule < -noise both orders -> PASS
+DAY50 CLAUSE (ii) i4 prefetch_hits/gpu_misses per window token median=0.959 rule >=0.5 -> PASS
+DAY50 PREFETCH rig=pro-single integrity=ok clause_i=PASS clause_ii=PASS

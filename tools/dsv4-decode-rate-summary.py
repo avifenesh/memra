@@ -53,7 +53,8 @@ def main():
     assert "PASS sampled plain/DSpark decode timing and output identity; HTTP and concurrency remain separate" in model
     assert "REFUSED" not in controller and "REFUSED" not in processes
     assert "sample_T=1 top_p=1 top_k=0 seed=20260906 EOS=respected loops=excluded" in model
-    assert "source_sha256=f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded" in model
+    # Pinned tape or its clean rebuild (tools/dsv4-source-tape.py, memra #657).
+    assert re.search(r"source_sha256=(f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded|11e4bd80352f4a24504ffdee519b33bbc527b3b9bcfeb531815e5731b190cb8c)", model)
     pids = set(re.findall(r"^(\d+), ", processes, re.M))
     assert len(pids) == 1, f"GPU process identities: {pids}"
     owners = set(re.findall(r"owned=(\d+)$", processes, re.M))

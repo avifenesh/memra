@@ -257,6 +257,19 @@ impl TensorSource for FixtureSource {
             ne: t.ne.clone(),
         })
     }
+    fn tensor_census(&self) -> Result<memra_gguf::source::TensorCensus, String> {
+        // memra#541: the loader binds the contract against this census before any upload.
+        Ok(memra_gguf::source::census_from_views(
+            self.tensors.iter().map(|(name, t)| {
+                (
+                    name.as_str(),
+                    t.ggml_type,
+                    t.ne.as_slice(),
+                    t.bytes.len() as u64,
+                )
+            }),
+        ))
+    }
 }
 
 /// `transpose_eh_proj` is the red-arm instrument: serve the fusion projection's bytes
@@ -280,7 +293,7 @@ fn fixture_source(
         plan,
         CheckpointDialect::Gguf,
         ContractOptions {
-            output_head: OutputHead::TiedToEmbedding,
+            output_head: OutputHead::Separate,
         },
     )
     .expect("contract for the mini glm5_next plan");
@@ -306,6 +319,13 @@ fn fixture_source(
         }
         let tensor = weights
             .get(&req.id)
+            // memra#541: the family declares a separate head; the fixture serves the embedding rows
+            // under `output.weight` (the reference reads the same numbers either way).
+            .or_else(|| {
+                (req.id == memra_gguf::tensor_contract::TensorId::OutputProjection)
+                    .then(|| weights.get(&memra_gguf::tensor_contract::TensorId::TokenEmbedding))
+                    .flatten()
+            })
             .unwrap_or_else(|| panic!("reference fixture is missing {:?}", req.id));
         let logical_shape = tensor.shape.clone();
         let elements: usize = req.shape.iter().map(|&d| d as usize).product();

@@ -275,6 +275,14 @@ impl<'a> PrimeCacheStages<'a> {
                     pos,
                     max_ctx,
                     tainted: false,
+                    // Day-11 rule 2: a layer the parent has out on a tier is still out on its
+                    // stage, so the stage's continuation gate refuses like the parent's would.
+                    suspended: parent
+                        .suspended
+                        .layers()
+                        .into_iter()
+                        .filter(|&layer| prime_cache_stage_for_layer(fence, layer) == stage)
+                        .collect(),
                     last_logits_dev: None,
                     dflash_taps: None,
                     hc_taps: None,
@@ -1615,6 +1623,12 @@ pub struct PrimeWorkspaceShape {
 }
 
 impl PrimeWorkspaceShape {
+    /// The rows one prime call carries for a `prompt_rows` prime under the deployment's chunking
+    /// (WP-B day 39: the admission door books one call's workspace once, not once per session).
+    pub fn call_rows(&self, prompt_rows: usize) -> usize {
+        prompt_rows.min(prime_chunk_tokens(prompt_rows, self.n_layers).max(1))
+    }
+
     /// The charge for `prompt_rows` with an explicit per-call row count (pure arithmetic,
     /// what the tests pin).
     pub fn admission_bytes_with_call_rows(&self, prompt_rows: usize, call_rows: usize) -> usize {
@@ -2379,7 +2393,7 @@ impl HybridModel {
         }
         let mut hiddens = e.uninit(t * n_embd)?;
         let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
-        for &(start, end) in &ranges {
+        for (chunk_idx, &(start, end)) in ranges.iter().enumerate() {
             self.glm5_taps_range_begin(cache, start);
             let (l, hs, x) =
                 self.prime_chunk_hyper(e, &tokens[start..end], cache, seq_end, start, overlay)?;
@@ -2390,6 +2404,8 @@ impl HybridModel {
             // so the device finished it. Stamp the odometer /health reads, so a BUSY
             // worker mid-long-prefill is never mistaken for a wedged one.
             crate::progress::note_prime_rows(end - start);
+            // CANCELLATION POINT (memra#536): see progress.rs; fires only between chunks.
+            crate::progress::prime_cancel_point(chunk_idx, end, t)?;
         }
         let (logits, h_seed) = last.expect("hyper_prime_ranges never returns an empty schedule");
         Ok((logits, h_seed, hiddens))
@@ -5684,6 +5700,7 @@ impl HybridModel {
             let mut hiddens = e.uninit(t * n_embd)?;
             let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
             let mut start = 0usize;
+            let mut chunk_idx = 0usize;
             while start < t {
                 // A trailing chunk below the walk floor folds into the previous one; every chunk
                 // this entry sees must clear PRIME_MIN_T on its own.
@@ -5712,6 +5729,10 @@ impl HybridModel {
                 // so the device finished it. Stamp the odometer /health reads, so a BUSY
                 // worker mid-long-prefill is never mistaken for a wedged one.
                 crate::progress::note_prime_rows(end - start);
+                // CANCELLATION POINT (memra#536): a gone client stops the walk here, at a
+                // completed chunk, before the next one starts; never after the last chunk.
+                crate::progress::prime_cancel_point(chunk_idx, end, t)?;
+                chunk_idx += 1;
                 start = end;
             }
             let (logits, h_seed) = last.expect("prime produced no chunk");
@@ -5910,7 +5931,7 @@ impl HybridModel {
         }
         let mut hiddens = e.uninit(t * n_embd)?;
         let mut last: Option<(Vec<f32>, CudaSlice<f32>)> = None;
-        for &(start, end) in &ranges {
+        for (chunk_idx, &(start, end)) in ranges.iter().enumerate() {
             // chunked prime writes tap rows at the chunk's absolute offset. `origin` is the
             // sink's own write base (0 for every single-call prime): a boundary-split dspark
             // prime carries ONE whole-prompt buffer across two calls and sets it to the split
@@ -5926,6 +5947,8 @@ impl HybridModel {
             // so the device finished it. Stamp the odometer /health reads, so a BUSY
             // worker mid-long-prefill is never mistaken for a wedged one.
             crate::progress::note_prime_rows(end - start);
+            // CANCELLATION POINT (memra#536): see progress.rs; fires only between chunks.
+            crate::progress::prime_cancel_point(chunk_idx, end, t)?;
         }
         let (logits, h_seed) = last.unwrap();
         Ok((logits, h_seed, hiddens))
@@ -6532,6 +6555,28 @@ impl HybridModel {
     /// its OWN slabs on its own device (a dev0 slab dereferenced by a dev1 kernel would be
     /// a peer read per GEMM operand, the exact class Lever B removes). Single-device rigs
     /// see one entry, byte-identical behavior.
+    /// WP-B day 39 (`research/spill-b-20260919/DAY39.md` 1.2): the prime slab set's allocated bytes
+    /// on `e`'s device, 0 before the first prime. The slab is retained and grow-only, and every prime
+    /// call on the device uses it in turn, so the admission door books only its owed growth.
+    pub fn prime_slab_bytes(&self, e: &Engine) -> usize {
+        let dev = e.ctx().ordinal();
+        let slabs = self.prime_slabs.lock().unwrap_or_else(|p| p.into_inner());
+        slabs.get(&dev).map_or(0, |sl| {
+            let s = sl.lock().unwrap_or_else(|p| p.into_inner());
+            let f32s = s.h.len()
+                + s.x1.len()
+                + s.z.len()
+                + s.act.len()
+                + s.xa.len()
+                + s.xb.len()
+                + s.gate.len()
+                + s.up.len()
+                + s.ffn_out.len()
+                + s.mixed.len();
+            f32s * 4 + s.h16.len() + s.z16.len()
+        })
+    }
+
     pub fn prime_slabs_get(
         &self,
         e: &Engine,
@@ -6627,6 +6672,10 @@ impl HybridModel {
             seq_end >= base + t,
             "prime_chunk: seq_end must cover this chunk"
         );
+        // GRID CAPTURE (WP-B day 44, `grid_capture`): a capture at this call's start is the live
+        // state; one inside it rides the layer walk below; one at its end is taken after it.
+        crate::grid_capture::note_boundary(e, cache);
+        crate::grid_capture::begin_call(base, t);
         let pos: Vec<i32> = (base as i32..(base + t) as i32).collect();
         let pos_d = e.htod_i32(&pos)?;
 
@@ -6679,7 +6728,9 @@ impl HybridModel {
             cache.qwen_prime_graph = None;
             e.trim_device_graph_mem()?;
         }
-        self.prime_chunk_epilogue(e, x, t, cache)
+        let out = self.prime_chunk_epilogue(e, x, t, cache)?;
+        crate::grid_capture::note_boundary(e, cache);
+        Ok(out)
     }
 
     /// PRIME RANGE SUBGRAPH (lane/pp-leverb, 2026-08-08): layers `[lo, hi)` of the chunked
@@ -8219,8 +8270,10 @@ impl HybridModel {
     /// batch the projections/FFN/lm_head exactly like fresh; the mixer cores take the
     /// per-seq CONTINUATION arms (Full: core_inner with carried pos_d + fa_prefill_view
     /// over the quantized past; Linear: the stateful pad_view twin — the same state
-    /// carry the chunked single-seq prime rides). The fresh-only favl/gdn-vl fast paths
-    /// stay byte-identical (gated on !carried). gemma4 models have no continuation
+    /// carry the chunked single-seq prime rides). The fresh-only gdn-vl fast path stays
+    /// byte-identical to the solo scan. Full attention runs the per-seq core for every
+    /// batch, fresh or carried (memra#641: the fresh varlen FA arm was a second program
+    /// and is deleted). gemma4 models have no continuation
     /// prime (v0 monolithic fresh) — carried gemma4 batches return Err (caller falls
     /// back to single-chunk serving).
     /// NUMERIC CONFIG: a concat GEMM tiles K differently than per-seq GEMMs — same class
@@ -8307,7 +8360,6 @@ impl HybridModel {
         let b = prompts.len();
         assert!(b >= 1 && b == caches.len());
         let pos0s: Vec<usize> = caches.iter().map(|c| c.pos).collect();
-        let carried = pos0s.iter().any(|&p| p > 0);
         // gemma4: refuse UNCONDITIONALLY (2026-08-07, lane/gemma4-serve-gaps). The old guard
         // covered only `carried` — two concurrent FRESH gemma4 prompts batched into the
         // generic concat attn core below (uniform geometry, no per-layer swa window, no
@@ -8415,267 +8467,50 @@ impl HybridModel {
                         Some(&hx16),
                         total,
                     )?;
-                    // task #18 (attn side): the WHOLE attn core is varlen for fresh gated
-                    // batches — split/QK-norm/RoPE/append (attn_pre_vl8, view inputs: the
-                    // q/k/v split copies vanish) + ONE varlen FA. Per-block math identical
-                    // everywhere (bit-gateable); MEMRA_FA_VL=0 or a non-bf16kv config falls
-                    // back to the per-seq dispatch.
-                    let geometry = self.cfg.full_attention_geometry_at(il as u32);
-                    let (n_head, n_head_kv, head_dim) = (
-                        geometry.n_head as usize,
-                        geometry.n_head_kv as usize,
-                        geometry.head_dim_k as usize,
-                    );
-                    let fa_scale = geometry.attention_scale();
-                    let use_favl = !carried
-                        && (2..=8).contains(&b)
-                        && (head_dim == 256 || head_dim == 128)
-                        && geometry.attention_gate == memra_gguf::config::AttentionGateKind::FusedQ
-                        && std::env::var("MEMRA_NOFA").is_err()
-                        && std::env::var("MEMRA_FA_FLOOR").is_err()
-                        && std::env::var("MEMRA_FA_PP_W2").as_deref() != Ok("1")
-                        && std::env::var("MEMRA_FA_BF16KV").as_deref() != Ok("0")
-                        && std::env::var("MEMRA_FA_VL").as_deref() != Ok("0");
-                    if use_favl {
-                        let (qf_w, kf_w, vf_w) = (
-                            fa.wq.out_features(),
-                            fa.wk.out_features(),
-                            fa.wv.out_features(),
-                        );
-                        // Same bounds contract as `Engine::q_gate_split`, applied to the varlen
-                        // twin's PER-TOKEN stride. `attn_pre_vl8` takes raw device pointers so it
-                        // cannot check its own extents; `qf_w` is the wq out-features that set
-                        // them, and `q_gate_split_vl` reads 2*head_dim per head out of it.
-                        memra_gguf::config::check_fused_q_gate_extent(qf_w, head_dim, n_head, 1)?;
-                        struct APre {
-                            q: CudaSlice<f32>,
-                            gate: Option<CudaSlice<f32>>,
-                            qn: CudaSlice<f32>,
-                            kn: CudaSlice<f32>,
+                    // memra#641: every batch, fresh or carried, runs the per-sequence attention
+                    // core, the same program as the solo prime (quantize-then-attend through the
+                    // cache view). The fresh varlen arm (task #18, MEMRA_FA_VL) attended bf16
+                    // copies of the pre-quantization K/V instead, so a request primed inside a
+                    // fresh batch got different logits than the same request primed alone
+                    // (research/decode-exact-641-20260923). The arm and its kernels are deleted.
+                    let mut parts: Vec<Vec<CudaSlice<f32>>> = (0..b).map(|_| Vec::new()).collect();
+                    for (w, y) in [&fa.wq, &fa.wk, &fa.wv].iter().zip(g3) {
+                        for (s, ys) in split(e, &y, w.out_features())?.into_iter().enumerate() {
+                            parts[s].push(ys);
                         }
-                        let mut aps = Vec::with_capacity(b);
-                        for &t in ts.iter().take(b) {
-                            aps.push(APre {
-                                q: e.uninit(t * n_head * head_dim)?,
-                                gate: Some(e.uninit(t * n_head * head_dim)?),
-                                qn: e.uninit(t * n_head * head_dim)?,
-                                kn: e.uninit(t * n_head_kv * head_dim)?,
-                            });
-                        }
-                        let (kv_dim_k, kv_dim_v, ktb, vtb) = {
-                            let kvl = caches[0].kv[il].as_ref().unwrap();
-                            (kvl.kv_dim_k, kvl.kv_dim_v, kvl.k_tok_bytes, kvl.v_tok_bytes)
-                        };
-                        let pargs: Vec<crate::AttnPreVl> = (0..b)
-                            .map(|s| {
-                                let (o, t) = (offs[s], ts[s]);
-                                let kvl = caches[s].kv[il].as_ref().unwrap();
-                                assert!(
-                                    kvl.len == 0 && kvl.len + t <= caches[s].max_ctx,
-                                    "prime_cache_batch attn vl: fresh + capacity"
-                                );
-                                crate::AttnPreVl {
-                                    qf: e.addr_f32v(&g3[0].slice(o * qf_w..(o + t) * qf_w)),
-                                    kf: e.addr_f32v(&g3[1].slice(o * kf_w..(o + t) * kf_w)),
-                                    vf: e.addr_f32v(&g3[2].slice(o * vf_w..(o + t) * vf_w)),
-                                    q: e.addr_f32(&aps[s].q),
-                                    gate: e.addr_f32(aps[s].gate.as_ref().unwrap()),
-                                    qn: e.addr_f32(&aps[s].qn),
-                                    kn: e.addr_f32(&aps[s].kn),
-                                    kc: e.addr_u8(&kvl.k),
-                                    vc: e.addr_u8(&kvl.v),
-                                    t: t as i32,
-                                    pad: 0,
-                                }
-                            })
-                            .collect();
-                        e.attn_pre_vl8(
-                            &pargs,
-                            fa.q_norm_w(),
-                            fa.k_norm_w(),
-                            head_dim,
-                            geometry.n_rot as usize,
-                            n_head,
-                            n_head_kv,
-                            self.cfg.rms_eps,
-                            geometry.rope_base,
-                            1.0,
-                            kv_dim_k,
-                            kv_dim_v,
-                            ktb,
-                            vtb,
+                    }
+                    for (s, g3s) in parts.into_iter().enumerate() {
+                        // task #16 gather removal: wo writes into `mixed` at offs[s] directly.
+                        let (attn_g, ag16) = self.full_attn_prime_core_inner(
+                            e, fa, g3s, &pos_ds[s], ts[s], caches[s], il,
                         )?;
-                        for s in 0..b {
-                            let kvl = caches[s].kv[il].as_mut().unwrap();
-                            kvl.len += ts[s];
-                            let new_len = kvl.len as i32;
-                            e.set_i32_one(&mut kvl.len_d, new_len)?;
-                        }
-                        let mut attns = Vec::with_capacity(b);
-                        let mut mirrors = Vec::with_capacity(b);
-                        for &t in ts.iter().take(b) {
-                            attns.push(e.uninit(t * n_head * head_dim)?);
-                            let n = t * n_head_kv * head_dim;
-                            mirrors.push((e.alloc_u8_uninit(n * 2)?, e.alloc_u8_uninit(n * 2)?));
-                        }
-                        // FA3 batched twin (round 31): TMA-swizzled wgmma vl when the
-                        // promoted single-seq config is on; else the mma favl.
-                        let fa3_on = match std::env::var("MEMRA_FA3").as_deref() {
-                            Ok("0") => false,
-                            // Same refusal as the single-seq twin (lib.rs fa_prefill): the
-                            // batched bf16 stage reaches func("f32_to_bf16_bulk"), absent on a
-                            // portable build.
-                            Ok("1") => {
-                                crate::refuse_portable_force(
-                                    "MEMRA_FA3=1",
-                                    "the sm_90a fa3/bf16 kernels",
-                                );
-                                true
-                            }
-                            _ => cfg!(memra_hopper_mma),
-                        };
-                        if fa3_on {
-                            let mut q16s = Vec::with_capacity(b);
-                            let mut v16s = Vec::with_capacity(b);
-                            for s in 0..b {
-                                let t = ts[s];
-                                let mut q16 = e.alloc_u8_uninit(t * n_head * head_dim * 2)?;
-                                e.f32_to_bf16_into(&aps[s].qn, &mut q16, t * n_head * head_dim)?;
-                                let mut k16 = e.alloc_u8_uninit(t * n_head_kv * head_dim * 2)?;
-                                e.f32_to_bf16_into(&aps[s].kn, &mut k16, t * n_head_kv * head_dim)?;
-                                let mut v16 = e.alloc_u8_uninit(t * n_head_kv * head_dim * 2)?;
-                                e.f32_to_bf16_v(
-                                    &g3[2].slice(offs[s] * vf_w..(offs[s] + t) * vf_w),
-                                    &mut v16,
-                                    t * n_head_kv * head_dim,
-                                )?;
-                                q16s.push(q16);
-                                v16s.push((k16, v16));
-                            }
-                            let mut qp = [core::ptr::null::<core::ffi::c_void>(); 8];
-                            let mut kp = qp;
-                            let mut vp = qp;
-                            let mut op = [core::ptr::null_mut::<f32>(); 8];
-                            let mut tsv = [0i32; 8];
-                            for s in 0..b {
-                                qp[s] = e.addr_u8(&q16s[s]) as *const core::ffi::c_void;
-                                kp[s] = e.addr_u8(&v16s[s].0) as *const core::ffi::c_void;
-                                vp[s] = e.addr_u8(&v16s[s].1) as *const core::ffi::c_void;
-                                op[s] = e.addr_f32(&attns[s]) as *mut f32;
-                                tsv[s] = ts[s] as i32;
-                            }
-                            let rc = unsafe {
-                                crate::fa3_vl_raw(
-                                    qp.as_ptr(),
-                                    kp.as_ptr(),
-                                    vp.as_ptr(),
-                                    op.as_ptr(),
-                                    tsv.as_ptr(),
-                                    b as i32,
-                                    n_head as i32,
-                                    n_head_kv as i32,
-                                    head_dim as i32,
-                                    fa_scale,
-                                    e.stream().cu_stream() as *mut core::ffi::c_void,
-                                )
-                            };
-                            if rc != 0 {
-                                return Err(format!("memra_fa3_vl rc={rc}").into());
-                            }
-                        } else {
-                            let fargs: Vec<crate::FaSeqVl> = (0..b)
-                                .map(|s| crate::FaSeqVl {
-                                    q: e.addr_f32(&aps[s].qn),
-                                    k16: e.addr_u8(&mirrors[s].0),
-                                    v16: e.addr_u8(&mirrors[s].1),
-                                    o: e.addr_f32(&attns[s]),
-                                    kf: e.addr_f32(&aps[s].kn),
-                                    vf: e.addr_f32v(
-                                        &g3[2].slice(offs[s] * vf_w..(offs[s] + ts[s]) * vf_w),
-                                    ),
-                                    t: ts[s] as i32,
-                                    pad: 0,
-                                })
-                                .collect();
-                            e.fa_prefill_vl8(&fargs, head_dim, n_head, n_head_kv, fa_scale)?;
-                        }
-                        for (s, attn) in attns.into_iter().enumerate() {
-                            let (attn_g, ag16) = self.full_attn_prime_post_fa(
-                                e,
-                                attn,
-                                &aps[s].gate,
+                        let mut done = false;
+                        // AWQ (memra#253), as the solo `full_attn_prime_core`: the f16 epilogue
+                        // never applied o_proj's input scale, so a scaled artifact takes the
+                        // general path here too (one program per request, memra#641).
+                        if let Some(xh) = &ag16
+                            && fa.wo_pqs.is_none()
+                        {
+                            done = e.try_f16_gemm_pre_into_off_prefill(
+                                &fa.wo,
+                                xh,
                                 ts[s],
-                                n_head,
-                                head_dim,
+                                &mut mixed,
+                                offs[s] * n_embd,
                             )?;
-                            let mut done = false;
-                            if let Some(xh) = &ag16 {
-                                done = e.try_f16_gemm_pre_into_off_prefill(
-                                    &fa.wo,
-                                    xh,
-                                    ts[s],
-                                    &mut mixed,
-                                    offs[s] * n_embd,
-                                )?;
-                            }
-                            if !done {
-                                let m = {
-                                    // AWQ (memra#253): o_proj carries its own per-input-channel scale.
-                                    let __wpqs = e.pre_quant_scaled(
-                                        &attn_g,
-                                        fa.wo_pqs.as_ref(),
-                                        fa.wo.in_features(),
-                                        ts[s],
-                                    )?;
-                                    e.matmul_prefill(
-                                        &fa.wo,
-                                        __wpqs.as_ref().unwrap_or(&attn_g),
-                                        ts[s],
-                                    )
-                                }?;
-                                e.copy_into(&mut mixed, offs[s] * n_embd, &m, ts[s] * n_embd)?;
-                            }
                         }
-                    } else {
-                        let mut parts: Vec<Vec<CudaSlice<f32>>> =
-                            (0..b).map(|_| Vec::new()).collect();
-                        for (w, y) in [&fa.wq, &fa.wk, &fa.wv].iter().zip(g3) {
-                            for (s, ys) in split(e, &y, w.out_features())?.into_iter().enumerate() {
-                                parts[s].push(ys);
-                            }
-                        }
-                        for (s, g3s) in parts.into_iter().enumerate() {
-                            // task #16 gather removal: wo writes into `mixed` at offs[s] directly.
-                            let (attn_g, ag16) = self.full_attn_prime_core_inner(
-                                e, fa, g3s, &pos_ds[s], ts[s], caches[s], il,
-                            )?;
-                            let mut done = false;
-                            if let Some(xh) = &ag16 {
-                                done = e.try_f16_gemm_pre_into_off_prefill(
-                                    &fa.wo,
-                                    xh,
+                        if !done {
+                            let m = {
+                                // AWQ (memra#253): o_proj carries its own per-input-channel scale.
+                                let __wpqs = e.pre_quant_scaled(
+                                    &attn_g,
+                                    fa.wo_pqs.as_ref(),
+                                    fa.wo.in_features(),
                                     ts[s],
-                                    &mut mixed,
-                                    offs[s] * n_embd,
                                 )?;
-                            }
-                            if !done {
-                                let m = {
-                                    // AWQ (memra#253): o_proj carries its own per-input-channel scale.
-                                    let __wpqs = e.pre_quant_scaled(
-                                        &attn_g,
-                                        fa.wo_pqs.as_ref(),
-                                        fa.wo.in_features(),
-                                        ts[s],
-                                    )?;
-                                    e.matmul_prefill(
-                                        &fa.wo,
-                                        __wpqs.as_ref().unwrap_or(&attn_g),
-                                        ts[s],
-                                    )
-                                }?;
-                                e.copy_into(&mut mixed, offs[s] * n_embd, &m, ts[s] * n_embd)?;
-                            }
+                                e.matmul_prefill(&fa.wo, __wpqs.as_ref().unwrap_or(&attn_g), ts[s])
+                            }?;
+                            e.copy_into(&mut mixed, offs[s] * n_embd, &m, ts[s] * n_embd)?;
                         }
                     }
                 }
@@ -9330,6 +9165,14 @@ impl HybridModel {
             hk,
             pad_len,
         )?;
+        // GRID CAPTURE (WP-B day 44, `grid_capture`): the ring at the capture point inside this
+        // call, from this call's own input rows. Unpadded per-sequence primes only.
+        if pad_len.is_none()
+            && let Some(rows) = crate::grid_capture::layer_rel()
+        {
+            let ring = e.ssm_conv_ring_capture(qkv_mixed, conv_dim, rows, d_conv)?;
+            crate::grid_capture::put_conv(il, ring);
+        }
         let mut q_l2 = e.uninit(d_state * hk * t)?;
         // mirror-fold (round 35): q's bf16 twin (wgmma K45/K2 A-operand) in-epilogue too.
         // Emitted only where a consumer exists (the wgmma config) — on other arches the
@@ -9633,13 +9476,21 @@ impl HybridModel {
         // verify keep the sequential kernel).
         let mut o = e.uninit(d_state * num_v * t)?;
         let rl = cache.recur[il].as_mut().unwrap();
+        // GRID CAPTURE (WP-B day 44, `grid_capture`): the scan also writes the state at the
+        // capture point inside this call. Unpadded per-sequence primes only.
+        let capture_rows = if pad_len.is_none() {
+            crate::grid_capture::layer_rel()
+        } else {
+            None
+        };
+        let mut captured: Option<CudaSlice<f32>> = None;
         {
             let crate::cache::RecurLayer {
                 ssm_state,
                 ssm_state_alt,
                 ..
             } = rl;
-            e.gdn_scan_prefill(
+            e.gdn_scan_prefill_capture(
                 &prep.q_l2,
                 &prep.k_l2,
                 &prep.v_g,
@@ -9654,7 +9505,11 @@ impl HybridModel {
                 t,
                 scale,
                 prep.hk,
+                capture_rows.map(|rows| (rows, &mut captured)),
             )?;
+        }
+        if let Some(state) = captured {
+            crate::grid_capture::put_ssm(il, state);
         }
         std::mem::swap(&mut rl.ssm_state, &mut rl.ssm_state_alt);
 
@@ -14885,9 +14740,11 @@ impl HybridModel {
                     }
                 } else if cache_dispatch
                     && !cpu_hybrid
-                    && moe_prefetch_enabled()
+                    && (moe_prefetch_enabled() || e.expert_bank_prefetch())
                     && j + 1 < sel.len()
                 {
+                    // DAY50: under the MoE slot cache door the prefetch takes its lease through
+                    // the owner; without the door `expert_bank_prefetch` is false.
                     let next = sel[j + 1] as usize;
                     Self::moe_prefetch_expert(e, il, next, m, max_block, &keep)?;
                 }
@@ -19028,8 +18885,12 @@ impl HybridModel {
                     (PROJ_DOWN, &m.down_exps),
                 ] {
                     let id = BlockId::new(il, proj, ex as u16);
-                    let DispatchSlot::Resident(_) =
-                        c.dispatch_source(id, exps.expert_source(ex_usize), eng)?;
+                    if !matches!(
+                        c.dispatch_source(id, exps.expert_source(ex_usize), eng)?,
+                        DispatchSlot::Resident(_)
+                    ) {
+                        return Err("dispatch_source returned a bypass slot".into());
+                    }
                 }
             }
             // PASS 2 — take the fixed slot addresses, with nothing left to admit.
@@ -19944,7 +19805,7 @@ impl HybridModel {
         aq: &CudaSlice<i8>,
         ad: &CudaSlice<f32>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        use crate::moe_cache::{BlockId, DispatchSlot, PROJ_GATE, PROJ_UP};
+        use crate::moe_cache::{BlockId, PROJ_GATE, PROJ_UP};
         let exps = match proj {
             PROJ_GATE => &m.gate_exps,
             PROJ_UP => &m.up_exps,
@@ -19954,20 +19815,25 @@ impl HybridModel {
         let id = BlockId::new(il, proj, ex as u16);
         let source = exps.expert_source(ex);
         e.with_moe_cache(max_block, |c, eng| {
-            let slot = c.dispatch_source(id, source, eng)?;
-            let DispatchSlot::Resident(sl) = slot;
-            let buf = c.slot(sl);
-            eng.qmatvec_expert_q8(
-                buf,
-                0..layout.len,
-                aq,
-                ad,
-                1,
-                exps.in_f,
-                exps.out_f,
-                layout.qtype,
-                layout.row_bytes,
-            )
+            // OWED 17: the kernel is enqueued inside this scope, so a cold first miss may be
+            // served without admission (`MEMRA_MOE_COLD_BYPASS`); `consumed` follows the launch.
+            let slot = c.dispatch_source_once(id, source, eng)?;
+            let out = {
+                let (buf, range) = c.payload(slot, layout.len);
+                eng.qmatvec_expert_q8(
+                    buf,
+                    range,
+                    aq,
+                    ad,
+                    1,
+                    exps.in_f,
+                    exps.out_f,
+                    layout.qtype,
+                    layout.row_bytes,
+                )
+            };
+            c.consumed(slot, eng)?;
+            out
         })
     }
 
@@ -19980,7 +19846,7 @@ impl HybridModel {
         max_block: usize,
         x: &cudarc::driver::CudaView<f32>,
     ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
-        use crate::moe_cache::{BlockId, DispatchSlot, PROJ_GATE, PROJ_UP};
+        use crate::moe_cache::{BlockId, PROJ_GATE, PROJ_UP};
         let exps = match proj {
             PROJ_GATE => &m.gate_exps,
             PROJ_UP => &m.up_exps,
@@ -19991,22 +19857,25 @@ impl HybridModel {
         let source = exps.expert_source(ex);
         // dispatch under the lock (lookup/admit/memcpy-issue), then resolve the slot and GEMM.
         e.with_moe_cache(max_block, |c, eng| {
-            let slot = c.dispatch_source(id, source, eng)?;
-            // resolve the device buffer for this slot; the GEMM is enqueued on the compute stream
-            // (the same stream the memcpy was issued on, so ordering holds without extra sync).
-            let DispatchSlot::Resident(sl) = slot;
-            let buf = c.slot(sl);
-            m.qmatvec_view(
-                eng,
-                buf,
-                0..layout.len,
-                x,
-                1,
-                exps.in_f,
-                exps.out_f,
-                layout.qtype,
-                layout.row_bytes,
-            )
+            // OWED 17: see moe_cached_gemm_q8; the GEMM is enqueued on the compute stream (the
+            // same stream as any copy), then `consumed` fences a mapped buffer after it.
+            let slot = c.dispatch_source_once(id, source, eng)?;
+            let out = {
+                let (buf, range) = c.payload(slot, layout.len);
+                m.qmatvec_view(
+                    eng,
+                    buf,
+                    range,
+                    x,
+                    1,
+                    exps.in_f,
+                    exps.out_f,
+                    layout.qtype,
+                    layout.row_bytes,
+                )
+            };
+            c.consumed(slot, eng)?;
+            out
         })
     }
 
@@ -20102,16 +19971,27 @@ impl HybridModel {
         keep: &[crate::moe_cache::BlockId],
     ) -> Result<(), Box<dyn std::error::Error>> {
         use crate::moe_cache::{BlockId, PROJ_DOWN, PROJ_GATE, PROJ_UP};
+        // DAY64 (I15): the expert's three blocks in one cache call; the legacy cache takes them
+        // one per block as before, the door under one ticket.
         e.with_moe_cache(max_block, |c, eng| {
-            for (proj, exps) in [
-                (PROJ_GATE, &m.gate_exps),
-                (PROJ_UP, &m.up_exps),
-                (PROJ_DOWN, &m.down_exps),
-            ] {
-                let id = BlockId::new(il, proj, ex as u16);
-                let _ = c.prefetch_source(id, exps.expert_source(ex), keep, eng)?;
-            }
-            Ok(())
+            c.prefetch_expert(
+                [
+                    (
+                        BlockId::new(il, PROJ_GATE, ex as u16),
+                        m.gate_exps.expert_source(ex),
+                    ),
+                    (
+                        BlockId::new(il, PROJ_UP, ex as u16),
+                        m.up_exps.expert_source(ex),
+                    ),
+                    (
+                        BlockId::new(il, PROJ_DOWN, ex as u16),
+                        m.down_exps.expert_source(ex),
+                    ),
+                ],
+                keep,
+                eng,
+            )
         })
     }
 
@@ -21784,6 +21664,21 @@ impl HybridModel {
         Ok(moe_out)
     }
 
+    /// `MEMRA_LOCKSTEP_CPU_ROWS=1` opts the lockstep CPU experts into the companion's multi-row
+    /// program: one raw rows call per CPU expert over every stream that routed to it (decode
+    /// amortized across streams), each row then re-accumulated EXACTLY as the one-job program
+    /// does (`cpu_experts::accumulate_expert_exact`: `fma(y, w * down_scale, sum)` in selection
+    /// order from zero). Bit-identical to M=1 either way (proof: `cpu-native-check` "raw + exact
+    /// accumulate" arm; Hy3 box receipt in research/lockstep-cpu-rows-exact-20260921). Default
+    /// OFF because the default question is not settled: the arm read +2.5% aggregate at M=4 on a
+    /// Ryzen 9950X host (single run, the pre-exact arithmetic) and lost about a quarter on an
+    /// EPYC 9B14 host (N=5 interleaved, both orders, same window). Missing gate for a default
+    /// flip: the same N>=5 A/B on a 9950X-class host. The one-job-per-row program stays the
+    /// default; it is the M=1 program itself.
+    fn lockstep_cpu_rows_on() -> bool {
+        std::env::var("MEMRA_LOCKSTEP_CPU_ROWS").as_deref() == Ok("1")
+    }
+
     /// Lane-3 M2: cross-stream MoE for lockstep decode. Routes all m stream rows in one
     /// batch, executes fully-HBM-resident experts through the grouped gather/GEMM/scatter
     /// machinery at m_e>1 (weight reads amortized across streams), and assigns any expert
@@ -21809,8 +21704,15 @@ impl HybridModel {
         // step35 per-layer SwiGLU clamp; None on every other arch / unclamped layer.
         let lim_exp = cfg.clamp_exp_at(il as u32);
         let lim_shexp = cfg.clamp_shexp_at(il as u32);
+        Self::trace_moe_input(e, il, mrows, n_embd, zbatch)?;
 
-        let logits = e.matmul(&m.gate_inp, zbatch, mrows)?;
+        // Router: lockstep's cuBLAS matmul reduced all stream rows at once, so its `m =
+        // stream_count` made one session's expert selection depend on how many peers shared the
+        // decode batch. Keep lockstep on the fixed per-row reduction program instead. The serial
+        // trunk's `moe_router_logits` and Gemma's `gemma4_moe` already use this m-invariant
+        // `router_gemv` selector; it preserves each row's logits shape for the sigmoid-router
+        // trace and every downstream routing/dispatch step.
+        let logits = Self::moe_router_logits(e, m, zbatch, mrows, cfg)?;
         if let Some(sig) = cfg.sigmoid_router() {
             Self::trace_sigmoid_router_logits(e, il, mrows, n_expert, n_used, &logits, m, sig)?;
         }
@@ -21869,183 +21771,224 @@ impl HybridModel {
             }
         }
 
-        // CPU tickets first: reads/compute overlap the GPU grouped work below. Experts routed
-        // by >=2 streams go through the multi-row ABI (weight decode amortized across rows);
-        // each row's remaining experts stay one ordinary per-row call. Contribution FP-sum
-        // order per row differs from the sequential single-call chunk — part of the
-        // documented lockstep numeric class.
+        // CPU tickets first: reads/compute overlap the GPU grouped work below. Default
+        // program: one companion job per row, the M=1 program itself. Opt-in
+        // (`MEMRA_LOCKSTEP_CPU_ROWS=1`): one raw rows job per CPU expert over every row that
+        // routed to it (weight decode amortized across streams), then each row re-accumulated
+        // in its own selection order with the one-job program's exact arithmetic
+        // (`accumulate_expert_exact`). Either way a stream's bytes do not depend on its peers
+        // (memra#577); the default is a throughput question, see `lockstep_cpu_rows_on`.
         let host_rows = e.dtoh(zbatch)?;
-        let rows_ok = crate::cpu_experts::rows_supported();
+        // The rows kernel serves quantized experts only; a layer with an F32/BF16 CPU expert
+        // takes the one-job program for every row (both programs are exact, the choice is
+        // per layer and changes no bit).
+        let rows_exact = crate::cpu_experts::rows_raw_supported()
+            && Self::lockstep_cpu_rows_on()
+            && cpu_by_expert
+                .keys()
+                .all(|&ex| crate::cpu_experts::rows_raw_admits(m, ex));
         enum CpuPart {
             Single { row: usize },
-            Rows { rows: Vec<usize> },
+            Raw { expert: usize, rows: Vec<usize> },
         }
-        let mut tickets: Vec<(CpuPart, crate::cpu_experts::CpuExpertTicket)> = Vec::new();
-        let mut rows_served: std::collections::HashSet<(usize, usize)> = Default::default();
-        if rows_ok {
-            let mut shared: Vec<(usize, Vec<(usize, f32)>)> = cpu_by_expert
+        // Prepare every job here (borrows `m` and the host rows), submit from a helper thread
+        // below: the executor queue is bounded (one slot per executor, default one), so
+        // submitting inline would park this thread behind the CPU work instead of letting it
+        // launch the GPU groups (revuto finding on the first measurement of this arm).
+        let mut jobs: Vec<(CpuPart, crate::cpu_experts::CpuJob)> = Vec::new();
+        if rows_exact {
+            let mut by_expert: Vec<(usize, Vec<usize>)> = cpu_by_expert
                 .into_iter()
-                .filter(|(_, rows)| rows.len() >= 2)
+                .map(|(ex, rows)| {
+                    let mut rows: Vec<usize> = rows.into_iter().map(|(row, _)| row).collect();
+                    rows.sort_unstable();
+                    (ex, rows)
+                })
                 .collect();
-            shared.sort_by_key(|(ex, _)| *ex);
-            for (ex, mut row_weights) in shared {
-                row_weights.sort_by_key(|(row, _)| *row);
-                let inputs: Vec<(&[f32], f32)> = row_weights
+            by_expert.sort_by_key(|(ex, _)| *ex);
+            for (ex, rows) in by_expert {
+                let inputs: Vec<&[f32]> = rows
                     .iter()
-                    .map(|&(row, w)| (&host_rows[row * n_embd..(row + 1) * n_embd], w))
+                    .map(|&row| &host_rows[row * n_embd..(row + 1) * n_embd])
                     .collect();
-                let job = crate::cpu_experts::prepare_rows_job(m, ex, &inputs)
+                let job = crate::cpu_experts::prepare_rows_raw_job(m, ex, &inputs)
                     .map_err(std::io::Error::other)?;
-                for &(row, _) in &row_weights {
-                    rows_served.insert((row, ex));
+                jobs.push((
+                    CpuPart::Raw { expert: ex, rows },
+                    crate::cpu_experts::CpuJob::Rows(job),
+                ));
+            }
+        } else {
+            for (row, selected) in cpu_rows.iter().enumerate() {
+                if selected.is_empty() {
+                    continue;
                 }
-                tickets.push((
-                    CpuPart::Rows {
-                        rows: row_weights.iter().map(|&(row, _)| row).collect(),
-                    },
-                    crate::cpu_experts::submit_rows(job).map_err(std::io::Error::other)?,
+                let host_row = &host_rows[row * n_embd..(row + 1) * n_embd];
+                let job = crate::cpu_experts::prepare_job(m, il, selected, host_row)
+                    .map_err(std::io::Error::other)?;
+                jobs.push((
+                    CpuPart::Single { row },
+                    crate::cpu_experts::CpuJob::Token(job),
                 ));
             }
         }
-        for (row, selected) in cpu_rows.iter().enumerate() {
-            let leftover: Vec<(usize, f32)> = selected
-                .iter()
-                .copied()
-                .filter(|&(ex, _)| !rows_served.contains(&(row, ex)))
-                .collect();
-            if leftover.is_empty() {
-                continue;
-            }
-            let host_row = &host_rows[row * n_embd..(row + 1) * n_embd];
-            let job = crate::cpu_experts::prepare_job(m, il, &leftover, host_row)
-                .map_err(std::io::Error::other)?;
-            tickets.push((
-                CpuPart::Single { row },
-                crate::cpu_experts::submit(job).map_err(std::io::Error::other)?,
-            ));
-        }
 
-        let mut slot_buf = e.zeros(mrows * n_used * n_embd)?;
-        let mut wbuf = e.zeros(mrows * n_used)?;
-        let mut order: Vec<usize> = groups.keys().copied().collect();
-        order.sort_by(|&a, &b| {
-            groups[&b]
-                .rows
-                .len()
-                .cmp(&groups[&a].rows.len())
-                .then(a.cmp(&b))
-        });
-        for &ex in &order {
-            let group = &groups[&ex];
-            let m_e = group.rows.len();
-            let gl = m.gate_exps.expert_layout(ex);
-            let ul = m.up_exps.expert_layout(ex);
-            let dl = m.down_exps.expert_layout(ex);
-            let row_idx_d = e.htod_i32(&group.rows)?;
-            let slot_idx_d = e.htod_i32(&group.slots)?;
-            let dmac = m.down_exps.macro_scale(ex);
-            let weight_d = if dmac == 1.0 {
-                e.htod(&group.weights)?
-            } else {
-                let scaled: Vec<f32> = group.weights.iter().map(|&w| w * dmac).collect();
-                e.htod(&scaled)?
-            };
-            let mut gathered = e.zeros(m_e * n_embd)?;
-            e.gather_rows(zbatch, &row_idx_d, &mut gathered, n_embd, m_e)?;
-            let gv = gathered.slice(0..m_e * n_embd);
-            let gate = e.with_moe_cache(max_block, |c, eng| {
-                let slot = c
-                    .resident(BlockId::new(il, PROJ_GATE, ex as u16))
-                    .ok_or("lockstep resident expert vanished (cache not frozen?)")?;
-                m.qmatvec_view(
-                    eng,
-                    c.buf(crate::moe_cache::DispatchSlot::Resident(slot)),
-                    0..gl.len,
-                    &gv,
-                    m_e,
-                    m.gate_exps.in_f,
-                    m.gate_exps.out_f,
-                    gl.qtype,
-                    gl.row_bytes,
-                )
-            })?;
-            let up = e.with_moe_cache(max_block, |c, eng| {
-                let slot = c
-                    .resident(BlockId::new(il, PROJ_UP, ex as u16))
-                    .ok_or("lockstep resident expert vanished (cache not frozen?)")?;
-                m.qmatvec_view(
-                    eng,
-                    c.buf(crate::moe_cache::DispatchSlot::Resident(slot)),
-                    0..ul.len,
-                    &gv,
-                    m_e,
-                    m.up_exps.in_f,
-                    m.up_exps.out_f,
-                    ul.qtype,
-                    ul.row_bytes,
-                )
-            })?;
-            let mut act = e.zeros(m_e * n_ff_exp)?;
-            Self::ffn_act_lim(
-                e,
-                cfg,
-                &gate,
-                &up,
-                m.gate_exps.macro_scale(ex),
-                m.up_exps.macro_scale(ex),
-                lim_exp,
-                &mut act,
-                m_e * n_ff_exp,
-            )?;
-            let actv = act.slice(0..m_e * n_ff_exp);
-            let y = e.with_moe_cache(max_block, |c, eng| {
-                let slot = c
-                    .resident(BlockId::new(il, PROJ_DOWN, ex as u16))
-                    .ok_or("lockstep resident expert vanished (cache not frozen?)")?;
-                m.qmatvec_view(
-                    eng,
-                    c.buf(crate::moe_cache::DispatchSlot::Resident(slot)),
-                    0..dl.len,
-                    &actv,
-                    m_e,
-                    m.down_exps.in_f,
-                    m.down_exps.out_f,
-                    dl.qtype,
-                    dl.row_bytes,
-                )
-            })?;
-            e.scatter_slot(
-                &y,
-                &row_idx_d,
-                &slot_idx_d,
-                &weight_d,
-                &mut slot_buf,
-                &mut wbuf,
-                n_embd,
-                n_used,
-                m_e,
-            )?;
-        }
-        let mut moe_out = e.zeros(mrows * n_embd)?;
-        e.reduce_slots(&slot_buf, &wbuf, &mut moe_out, n_embd, n_used, mrows)?;
+        type Tickets = Vec<(CpuPart, crate::cpu_experts::CpuExpertTicket)>;
+        let (tickets, mut moe_out) = std::thread::scope(
+            |sc| -> Result<(Tickets, CudaSlice<f32>), Box<dyn std::error::Error>> {
+                let submitter = sc.spawn(move || -> Result<Tickets, String> {
+                    let mut out = Vec::with_capacity(jobs.len());
+                    for (part, job) in jobs {
+                        out.push((part, crate::cpu_experts::submit_job(job)?));
+                    }
+                    Ok(out)
+                });
+                let mut slot_buf = e.zeros(mrows * n_used * n_embd)?;
+                let mut wbuf = e.zeros(mrows * n_used)?;
+                let mut order: Vec<usize> = groups.keys().copied().collect();
+                order.sort_by(|&a, &b| {
+                    groups[&b]
+                        .rows
+                        .len()
+                        .cmp(&groups[&a].rows.len())
+                        .then(a.cmp(&b))
+                });
+                // The gathered `m_e`-row expert call is per-row exact: forcing every group to
+                // `m_e = 1` changed no bit of the M=4 mixed run (memra#577 probe, 2026-09-21).
+                for &ex in &order {
+                    let group = &groups[&ex];
+                    let (rows, slots, weights) = (&group.rows, &group.slots, &group.weights);
+                    let m_e = rows.len();
+                    let gl = m.gate_exps.expert_layout(ex);
+                    let ul = m.up_exps.expert_layout(ex);
+                    let dl = m.down_exps.expert_layout(ex);
+                    let row_idx_d = e.htod_i32(rows)?;
+                    let slot_idx_d = e.htod_i32(slots)?;
+                    let dmac = m.down_exps.macro_scale(ex);
+                    let weight_d = if dmac == 1.0 {
+                        e.htod(weights)?
+                    } else {
+                        let scaled: Vec<f32> = weights.iter().map(|&w| w * dmac).collect();
+                        e.htod(&scaled)?
+                    };
+                    let mut gathered = e.zeros(m_e * n_embd)?;
+                    e.gather_rows(zbatch, &row_idx_d, &mut gathered, n_embd, m_e)?;
+                    let gv = gathered.slice(0..m_e * n_embd);
+                    let gate = e.with_moe_cache(max_block, |c, eng| {
+                        let slot = c
+                            .resident(BlockId::new(il, PROJ_GATE, ex as u16))
+                            .ok_or("lockstep resident expert vanished (cache not frozen?)")?;
+                        m.qmatvec_view(
+                            eng,
+                            c.buf(crate::moe_cache::DispatchSlot::Resident(slot)),
+                            0..gl.len,
+                            &gv,
+                            m_e,
+                            m.gate_exps.in_f,
+                            m.gate_exps.out_f,
+                            gl.qtype,
+                            gl.row_bytes,
+                        )
+                    })?;
+                    let up = e.with_moe_cache(max_block, |c, eng| {
+                        let slot = c
+                            .resident(BlockId::new(il, PROJ_UP, ex as u16))
+                            .ok_or("lockstep resident expert vanished (cache not frozen?)")?;
+                        m.qmatvec_view(
+                            eng,
+                            c.buf(crate::moe_cache::DispatchSlot::Resident(slot)),
+                            0..ul.len,
+                            &gv,
+                            m_e,
+                            m.up_exps.in_f,
+                            m.up_exps.out_f,
+                            ul.qtype,
+                            ul.row_bytes,
+                        )
+                    })?;
+                    let mut act = e.zeros(m_e * n_ff_exp)?;
+                    Self::ffn_act_lim(
+                        e,
+                        cfg,
+                        &gate,
+                        &up,
+                        m.gate_exps.macro_scale(ex),
+                        m.up_exps.macro_scale(ex),
+                        lim_exp,
+                        &mut act,
+                        m_e * n_ff_exp,
+                    )?;
+                    let actv = act.slice(0..m_e * n_ff_exp);
+                    let y = e.with_moe_cache(max_block, |c, eng| {
+                        let slot = c
+                            .resident(BlockId::new(il, PROJ_DOWN, ex as u16))
+                            .ok_or("lockstep resident expert vanished (cache not frozen?)")?;
+                        m.qmatvec_view(
+                            eng,
+                            c.buf(crate::moe_cache::DispatchSlot::Resident(slot)),
+                            0..dl.len,
+                            &actv,
+                            m_e,
+                            m.down_exps.in_f,
+                            m.down_exps.out_f,
+                            dl.qtype,
+                            dl.row_bytes,
+                        )
+                    })?;
+                    e.scatter_slot(
+                        &y,
+                        &row_idx_d,
+                        &slot_idx_d,
+                        &weight_d,
+                        &mut slot_buf,
+                        &mut wbuf,
+                        n_embd,
+                        n_used,
+                        m_e,
+                    )?;
+                }
+                let mut moe_out = e.zeros(mrows * n_embd)?;
+                e.reduce_slots(&slot_buf, &wbuf, &mut moe_out, n_embd, n_used, mrows)?;
+                let tickets = submitter
+                    .join()
+                    .map_err(|_| "lockstep CPU submit thread panicked")?
+                    .map_err(std::io::Error::other)?;
+                Ok((tickets, moe_out))
+            },
+        )?;
 
         // CPU contributions join BEFORE the shared expert (the sequential path's placement).
         let mut row_sums: Vec<Option<Vec<f32>>> = vec![None; mrows];
+        let mut raw_rows: std::collections::HashMap<(usize, usize), Vec<f32>> = Default::default();
         for (part, ticket) in tickets {
             let cpu_output = ticket.wait().map_err(std::io::Error::other)?;
-            let mut add_row = |row: usize, chunk: &[f32]| {
-                let sum = row_sums[row].get_or_insert_with(|| vec![0.0f32; n_embd]);
-                for (accumulator, value) in sum.iter_mut().zip(chunk) {
-                    *accumulator += value;
-                }
-            };
             match part {
-                CpuPart::Single { row } => add_row(row, &cpu_output),
-                CpuPart::Rows { rows } => {
+                CpuPart::Single { row } => row_sums[row] = Some(cpu_output),
+                CpuPart::Raw { expert, rows } => {
                     for (slot, row) in rows.into_iter().enumerate() {
-                        add_row(row, &cpu_output[slot * n_embd..(slot + 1) * n_embd]);
+                        raw_rows.insert(
+                            (row, expert),
+                            cpu_output[slot * n_embd..(slot + 1) * n_embd].to_vec(),
+                        );
                     }
                 }
+            }
+        }
+        if rows_exact {
+            for (row, selected) in cpu_rows.iter().enumerate() {
+                if selected.is_empty() {
+                    continue;
+                }
+                let mut sum = vec![0.0f32; n_embd];
+                for &(ex, w) in selected {
+                    let y = raw_rows
+                        .get(&(row, ex))
+                        .ok_or("lockstep raw CPU expert row missing after wait")?;
+                    let ds =
+                        crate::cpu_experts::down_scale(m, ex).map_err(std::io::Error::other)?;
+                    crate::cpu_experts::accumulate_expert_exact(&mut sum, y, w, ds);
+                }
+                row_sums[row] = Some(sum);
             }
         }
         for (row, sum) in row_sums.into_iter().enumerate() {
@@ -22059,21 +22002,38 @@ impl HybridModel {
             (&m.gate_shexp, &m.up_shexp, &m.down_shexp)
         {
             let n_ff_sh = gate_shexp.out_features();
-            let sg_gate = e.matmul(gate_shexp, zbatch, mrows)?;
-            let sg_up = e.matmul(up_shexp, zbatch, mrows)?;
-            let mut sa = e.zeros(mrows * n_ff_sh)?;
-            Self::ffn_act_lim(
-                e,
-                cfg,
-                &sg_gate,
-                &sg_up,
-                1.0,
-                1.0,
-                lim_shexp,
-                &mut sa,
-                mrows * n_ff_sh,
-            )?;
-            let sh = e.matmul(down_shexp, &sa, mrows)?;
+            // Shared expert per ROW, `m = 1` each (memra#577). One `mrows`-wide matmul over
+            // the stream batch changes the reduction program with the row count (M=2 stays
+            // bit-identical to M=1, M=3 and M=4 do not, same prompt or mixed), so a
+            // stream's bytes depended on how many peers shared the step. `m = 1` per row is
+            // the single-sequence decode chain's own call, exact by construction; lockstep
+            // rows are few (`1..=16`), so the extra launches are not a cost that matters.
+            let mut sh = e.zeros(mrows * n_embd)?;
+            for row in 0..mrows {
+                let mut zrow = e.uninit(n_embd)?;
+                e.copy_view_into(
+                    &mut zrow,
+                    0,
+                    &zbatch.slice(row * n_embd..(row + 1) * n_embd),
+                    n_embd,
+                )?;
+                let sg_gate = e.matmul(gate_shexp, &zrow, 1)?;
+                let sg_up = e.matmul(up_shexp, &zrow, 1)?;
+                let mut sa_row = e.zeros(n_ff_sh)?;
+                Self::ffn_act_lim(
+                    e,
+                    cfg,
+                    &sg_gate,
+                    &sg_up,
+                    1.0,
+                    1.0,
+                    lim_shexp,
+                    &mut sa_row,
+                    n_ff_sh,
+                )?;
+                let sh_row = e.matmul(down_shexp, &sa_row, 1)?;
+                e.copy_into(&mut sh, row * n_embd, &sh_row, n_embd)?;
+            }
             // lockstep rows ARE decode tokens: fused sigmoid-dot per row so batched serving
             // decode matches the single-sequence decode chain bit-for-bit.
             match &m.gate_inp_shexp {

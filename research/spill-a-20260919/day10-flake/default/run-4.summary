@@ -1,0 +1,8 @@
+exit=101
+test day4::legacy_gc_dedup_other_store_and_live_lease_fences ... FAILED
+test day4::review_catalog_recovers_pending_with_and_without_published_root ... FAILED
+failures:
+thread 'day4::legacy_gc_dedup_other_store_and_live_lease_fences' (2423150) panicked at crates/memra-tier/tests/storage/day4.rs:209:25:
+thread 'day4::review_catalog_recovers_pending_with_and_without_published_root' (2423153) panicked at crates/memra-tier/tests/storage/day4.rs:309:79:
+failures:
+test result: FAILED. 51 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s

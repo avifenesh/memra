@@ -270,7 +270,8 @@ fn catalog_gc_process_exit_between_tombstone_and_unlink() {
         store.tombstone(&head).unwrap();
         std::process::exit(73);
     }
-    let d = OwnedDirectory::new();
+    // Spawns a child: hold the process fence exclusively (see `OwnedDirectory`).
+    let d = OwnedDirectory::spawning();
     let status = std::process::Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
@@ -379,7 +380,8 @@ fn review_gc_staged_transaction_process_exit_and_bounded_recovery() {
         store.put(&mut pending, &payload(265)).unwrap();
         std::process::exit(73);
     }
-    let d = OwnedDirectory::new();
+    // Spawns a child: hold the process fence exclusively (see `OwnedDirectory`).
+    let d = OwnedDirectory::spawning();
     let mut store = new_store(FileBackend::open(&d.0).unwrap());
     let mut txn = store.begin(key(), 264, Durability::Ephemeral).unwrap();
     store.put(&mut txn, &payload(264)).unwrap();
@@ -493,7 +495,8 @@ fn review_gc_live_cross_process_transaction_commits_byte_exact() {
         assert_eq!(read_manifest(&mut store, &head, 0).unwrap(), payload(264));
         return;
     }
-    let d = OwnedDirectory::new();
+    // Spawns a child: hold the process fence exclusively (see `OwnedDirectory`).
+    let d = OwnedDirectory::spawning();
     let mut store = new_store(FileBackend::open(&d.0).unwrap());
     let mut txn = store.begin(key(), 264, Durability::Ephemeral).unwrap();
     store.put(&mut txn, &payload(264)).unwrap();

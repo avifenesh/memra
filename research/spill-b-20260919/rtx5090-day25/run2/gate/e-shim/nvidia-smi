@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# health-fault-gate arm e: shadows nvidia-smi for the server under test only. While the flag
+# file exists the probe hangs (exec, so the deadline kill lands on the sleep itself).
+[ -e "/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day25/run2/gate/e-shim/hang" ] && exec sleep 600
+exec "/usr/bin/nvidia-smi" "$@"

@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "-c",
+    "set -uo pipefail; K=\"$1\"; O=\"$2\"; mkdir -p \"$O\"\n\"$K\" --require-manifest tools/kernel-check-27b.cells --require-manifest tools/kernel-check-step35.cells > \"$O/kernel-check.log\" 2>&1\necho \"exit=$?\" >> \"$O/kernel-check.log\"; grep \"^SKIP \\|^ALL GREEN\\|^FAIL\\|exit=\" \"$O/kernel-check.log\"",
+    "kc",
+    "/home/avifenesh/projects/wt-spill-b/target/release/kernel-check",
+    "/home/avifenesh/projects/wt-spill-b/research/spill-b-20260919/rtx5090-day23/kc/cell"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "[N/A]",
+      "power.max_limit": "175.00 W"
+    }
+  ],
+  "started_monotonic_ns": 125487391743480,
+  "ended_monotonic_ns": 125707371526044,
+  "started_utc": "2026-09-21T20:07:47.442202+00:00",
+  "ended_utc": "2026-09-21T20:11:27.421985+00:00",
+  "elapsed_seconds": 219.979782564,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 1136,
+    "sha256": "12cc9252a703d03d33eb5f4587acf076f599221613d8672cb0c81a4c98047ff8"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 90468,
+      "sha256": "9a70cf3bcdb57541b728939b879e8a99576ad7b2053c838754deecb9531d3ebc"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}

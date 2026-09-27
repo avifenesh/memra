@@ -1,0 +1,7 @@
+DAY28 CLAUSE 1a stall order=o1 N_boots_on=5 N_boots_off=5 on_cell_median=81.8 off_cell_median=85.2 rule on<=off+2.0 -> PASS
+DAY28 CLAUSE 1b e2e order=o1 N_runs_on=50 N_runs_off=50 on=132.3 off=115.4 on_minus_off=+16.9 rule <=+20.0 -> PASS
+DAY28 CLAUSE 1a stall order=o2 N_boots_on=5 N_boots_off=5 on_cell_median=81.9 off_cell_median=85.2 rule on<=off+2.0 -> PASS
+DAY28 CLAUSE 1b e2e order=o2 N_runs_on=50 N_runs_off=50 on=132.2 off=115.4 on_minus_off=+16.9 rule <=+20.0 -> PASS
+DAY28 CLAUSE 1c owner in-completion N=100 median=7.40 min=7.17 max=45.01 runs_with_demote_without_ledger=0 rule <=12.0 -> PASS
+DAY28 REPORTED wall in-completion median=86.5 (N=100); demote_completion median=97.5; helper hashed_in_ms median=73.2 min=73.0 max=73.4; payloads=[98] mb=[157.9]; hash_polls median=6 max=6; settle modes={'tick-top poll': 100}; tenant top gaps: largest median=95.3 second median=19.0
+DAY28 VERDICT clauses_failed=0 -> ALL PASS

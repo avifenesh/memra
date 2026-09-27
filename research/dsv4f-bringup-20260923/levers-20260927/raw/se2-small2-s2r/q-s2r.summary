@@ -1,0 +1,9 @@
+build small2 d35fd8dad SERVER_EXIT=0 ENGINE_EXIT=0 
+long-304 S2 rc=0 PASS: 304 PROGRAM_SHA256 fbce1a0492d69635 
+rows tp_ep rc=0 PASS: replayed, then 8 B-row steps beside a peer while armed, then replayed again: bit-identical to solo steps PASS: B-row graph steps bit-identical to solo steps across join, leave and row moves (5 captures, 28 graph steps) PASS: sampled B-row graph draws equal the eager B-row draws (24 steps x 4 rows) 
+dspark-tpep S2 cc6082ddea76827e 373e6557e6d118f1 373e6557e6d118f1  | GPU DSPARK GATE [PASS] GATE_DONE rc=0 utc=2026-09-27T04:43:20Z 
+long t1 S rc=0 PROGRAM_SHA256 fbce1a0492d69635 replay_ms_per_token=11.012 replay_ms_per_token=10.924 replay_ms_per_token=10.911 
+long t2 T rc=0 PROGRAM_SHA256 fbce1a0492d69635 replay_ms_per_token=10.941 replay_ms_per_token=10.876 replay_ms_per_token=10.875 
+long t3 T rc=0 PROGRAM_SHA256 fbce1a0492d69635 replay_ms_per_token=10.985 replay_ms_per_token=10.918 replay_ms_per_token=10.864 
+long t4 S rc=0 PROGRAM_SHA256 fbce1a0492d69635 replay_ms_per_token=10.966 replay_ms_per_token=10.909 replay_ms_per_token=10.938 
+S2R_DONE d35fd8dad5adcbe67317750a34ce0a701833b1d8

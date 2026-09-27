@@ -1,0 +1,8 @@
+cell=unit-engine gate=cargo test -p memra-engine --lib -- --ignored --test-threads=1 d2d_capture_
+env=
+lock=/tmp/memra-5090.lock owner=driver-flock
+tree=dd91c494944c68d31f6347f6ce220d8533959c05
+binary_sha256=e0c8b09fb99825311f71339475643734ffc6b93c60fb195d3126b1cf337c93be
+model=none (unit cell: the test binary opens its own device context)
+gpu=NVIDIA GeForce RTX 5090 Laptop GPU, [N/A]
+status=executed-not-qualified

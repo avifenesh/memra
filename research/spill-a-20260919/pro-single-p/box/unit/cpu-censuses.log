@@ -1,0 +1,48 @@
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.1 at /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-4cd9b829515be66d)
+
+running 39 tests
+test toolcall::tests::pause_tail_predicate_matches_all_three_close_dialects_and_nothing_else ... ok
+test worker::tests::arm_pause_candidate_refreshes_twins_and_caps_the_list ... ok
+test worker::tests::day47_the_demote_shell_reinstates_only_unpublished_shells ... ok
+test worker::tests::day51_a_reserve_hit_is_the_staged_bytes_bitwise ... ok
+test worker::tests::day51_the_reserve_charge_the_cap_and_the_shape_change ... ok
+test worker::tests::day51_the_refill_yields_to_a_waiting_job ... ok
+test worker::tests::hash_fault_door_values_are_the_helpers_and_never_the_contract_routes ... ok
+test worker::tests::idle_recv_wait_prefers_the_nearest_pause_deadline ... ok
+test worker::tests::option_c_off_tick_checksums_ride_the_hash_helper_and_a_corrupt_lease_is_refused ... ignored, requires one CUDA device; run on the target card under the rig lock
+test worker::tests::kv_pause_demote_ms_parse_falls_back_loudly_on_junk ... ok
+test worker::tests::pause_demote_second_guard_pinned_entry_stays_resident ... ok
+test worker::tests::pause_park_index_matches_the_exact_fed_tape_only ... ok
+test worker::tests::pause_px_decision_demotes_deepest_untouched_and_loses_to_pins_and_touches ... ok
+test worker::tests::pause_tail_window_strips_trailing_stop_ids_only ... ok
+test worker::tests::pause_tail_arms_on_the_battery_eos_after_close_tape ... ok
+test worker::tests::day38_the_device_receipt_faults_are_armed_before_the_submission ... ok
+test worker::tests::day31_the_copy_complete_line_tallies_the_payload_bytes_by_class ... ok
+test worker::tests::day34_the_promote_checksums_ride_the_hash_helper_in_the_stated_order ... ok
+test worker::tests::day36_the_restore_recurrent_copy_is_timed_without_a_wait ... ok
+test worker::tests::day41_the_sources_faults_key_on_the_first_sources_job ... ok
+test worker::tests::day47_the_pause_sweep_demotes_off_the_tick ... ok
+test worker::tests::day42_the_span_receipt_is_required_before_the_publication ... ok
+test worker::tests::day31_the_staging_goes_back_on_every_exit_and_is_charged_once ... ok
+test worker::tests::the_d2h_spans_ride_the_ticket_in_the_stated_order ... ok
+test worker::tests::hash_helper_gone_is_a_typed_refusal_that_latches_under_poll_and_under_block ... ok
+test worker::tests::pause_demote_wiring_arms_fires_waits_and_publishes ... ok
+test worker::tests::day35_the_demote_rehash_rides_the_hash_helper_in_the_stated_order ... ok
+test worker::tests::every_path_that_meets_a_demoting_entry_settles_it_first ... ok
+test worker::tests::every_path_that_meets_a_hashing_demote_meets_it_through_the_same_settle ... ok
+test worker::tests::day33_the_promote_submits_its_filled_spans_in_the_probes_tick ... ok
+test worker::tests::every_path_that_meets_a_promoting_entry_settles_it_first ... ok
+test worker::tests::the_run_loop_waits_boundedly_when_the_queue_is_only_requests_parked_on_a_promote ... ok
+test worker::tests::day49_the_split_lines_are_log_only ... ok
+test worker::tests::day51_the_payload_reserve_is_the_copy_program ... ok
+test worker::tests::hashing_hit_parks_the_request_once_per_id_and_a_miss_does_not ... ok
+test worker::tests::hashing_demote_keeps_its_state_until_the_digests_land_then_reaches_publication ... ok
+test worker::tests::hash_digests_never_landing_latch_at_the_deadline_under_poll_and_under_block ... ok
+test worker::tests::hash_helper_digests_equal_the_owner_thread_digests_bitwise ... ok
+test worker::tests::hash_reply_that_does_not_describe_the_image_is_a_typed_refusal_that_latches ... ok
+
+test result: ok. 38 passed; 0 failed; 1 ignored; 0 measured; 911 filtered out; finished in 0.30s
+

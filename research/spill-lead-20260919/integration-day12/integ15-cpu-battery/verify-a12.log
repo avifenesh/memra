@@ -1,0 +1,141 @@
+== build and card
+  base: source be07f2d36b66c89071433fb6d7d5a1fed3954f8b exit 0 binary sha256 b30ac09d04f4de309f6cb509054a2c87eb2d9252ab540e2c78604a0c802aaa0f
+  ok: base build exit 0
+  ok: base tree clean at build
+  fix: source 405466cf745f36e24350c2692ebb443e02f7b3ce exit 0 binary sha256 d331909a7ef094f1aef88653d77884dc61cad066ab98f796c9f43f720ce9e5ae
+  ok: fix build exit 0
+  ok: fix tree clean at build
+  ok: base is origin/main be07f2d36
+  card NVIDIA RTX PRO 6000 Blackwell Server Edition, 600.00 W, 600.00 W, 580.178.04
+  ok: card at its 600 W limit
+== gate cells
+  ok: tenant-base status executed-not-qualified, exit 0  status=executed-not-qualified exit=0
+  ok: tenant-base power limits 600 W
+  ok: tenant-base collector lock is the canonical rig lock
+  ok: tenant-base SUMMARY names its arm and binary
+  ok: tenant-base gate PASS line present and no FAIL line
+      ok: r1 HTTP 200
+      ok: r2 HTTP 200
+      ok: r3 HTTP 200
+      ok: r4 HTTP 200
+      ok: r5 HTTP 200
+      ok: r6 HTTP 200
+      ok: r7 HTTP 200
+      ok: r8 HTTP 200
+      ok: /metrics scraped with the operator token (200, process-wide counters present)
+      ok: no device-tier promote-insert skip (the device budget holds a promote beside a protected entry)
+      ok: the tier is on with the configured share cap
+      ok: the pool never filled: no LRU eviction
+      ok: no allocation refusal
+      ok: no host-tier refusal or failure line
+      ok: beta's first demote landed
+      ok: acme's first two demotes landed (r3, r4)
+      ok: beta's entry promotes at r7 in this arm: acme's cap did not touch beta's row
+      ok: the r7 promote line names beta
+      ok: no tenant-share eviction ever names beta
+      ok: every tenant-share eviction names acme, in both the row and the namespace
+      ok: base: acme's third demotion EVAPORATED at the cap (the pre-#384 line)
+      ok: base: nothing of acme's own was evicted
+      ok: base: r8 is cold (the evaporated entry is gone)
+      ok: base: /metrics counts the rejects
+      ok: base: /metrics has no reclaims
+    GATE: kv-host-tenant-reclaim (base arm) PASS
+  ok: tenant-fix status executed-not-qualified, exit 0  status=executed-not-qualified exit=0
+  ok: tenant-fix power limits 600 W
+  ok: tenant-fix collector lock is the canonical rig lock
+  ok: tenant-fix SUMMARY names its arm and binary
+  ok: tenant-fix gate PASS line present and no FAIL line
+      ok: r1 HTTP 200
+      ok: r2 HTTP 200
+      ok: r3 HTTP 200
+      ok: r4 HTTP 200
+      ok: r5 HTTP 200
+      ok: r6 HTTP 200
+      ok: r7 HTTP 200
+      ok: r8 HTTP 200
+      ok: /metrics scraped with the operator token (200, process-wide counters present)
+      ok: no device-tier promote-insert skip (the device budget holds a promote beside a protected entry)
+      ok: the tier is on with the configured share cap
+      ok: the pool never filled: no LRU eviction
+      ok: no allocation refusal
+      ok: no host-tier refusal or failure line
+      ok: beta's first demote landed
+      ok: acme's first two demotes landed (r3, r4)
+      ok: beta's entry promotes at r7 in this arm: acme's cap did not touch beta's row
+      ok: the r7 promote line names beta
+      ok: no tenant-share eviction ever names beta
+      ok: every tenant-share eviction names acme, in both the row and the namespace
+      ok: fix: no evaporation line
+      ok: fix: acme's own oldest entry was evicted at the cap
+      ok: fix: every tenant-share eviction is followed by acme's own demote landing (D2H after the reclaim)
+      ok: fix: r8 promotes the reclaimed admission (cached_tokens == r6 prompt_tokens)
+      ok: fix: the r8 promote line names acme
+      ok: fix: /metrics counts the reclaims and no rejects
+    GATE: kv-host-tenant-reclaim (fix arm) PASS
+== base arm: the pre-#384 behavior
+  ok: base printed the evaporation line
+    [prefix-host] demote evaporated at the tenant share cap before the D2H copy: 93 tokens, 160.8MB (38% of 1074MB, MEMRA_KV_HOST_TENANT_PCT; model gate, ns "t:acme\u{1f}s1")
+    [prefix-host] demote evaporated at the tenant share cap before the D2H copy: 93 tokens, 160.8MB (38% of 1074MB, MEMRA_KV_HOST_TENANT_PCT; model gate, ns "t:acme\u{1f}s1")
+    [prefix-host] demote evaporated at the tenant share cap before the D2H copy: 95 tokens, 160.9MB (38% of 1074MB, MEMRA_KV_HOST_TENANT_PCT; model gate, ns "t:acme\u{1f}s1")
+  ok: base evaporation names acme's row
+  ok: base evicted nothing of acme's own
+  ok: base r8 cold: the evaporated entry is gone
+  ok: base metrics: rejects >= 1, no reclaims
+== fix arm: the reclaim
+  ok: fix printed no evaporation line
+  ok: fix evicted acme's own entries at the cap
+    [prefix-host] evict (tenant share): 89 tokens, 160.7MB of tenant "t:acme"'s own entries for its 160.8MB demotion (row now 160.6MB / 408MB share = 38% of 1074MB, model gate, ns "t:acme\u{1f}s1")
+    [prefix-host] evict (tenant share): 86 tokens, 160.6MB of tenant "t:acme"'s own entries for its 160.8MB demotion (row now 160.8MB / 408MB share = 38% of 1074MB, model gate, ns "t:acme\u{1f}s1")
+    [prefix-host] evict (tenant share): 93 tokens, 160.8MB of tenant "t:acme"'s own entries for its 160.9MB demotion (row now 160.8MB / 408MB share = 38% of 1074MB, model gate, ns "t:acme\u{1f}s1")
+    [prefix-host] evict (tenant share): 93 tokens, 160.8MB of tenant "t:acme"'s own entries for its 161.3MB demotion (row now 160.9MB / 408MB share = 38% of 1074MB, model gate, ns "t:acme\u{1f}s1")
+  ok: every fix reclaim names acme in the row and the namespace, never beta
+  ok: fix r8 promotes the reclaimed admission
+  ok: no device-tier promote-insert skip in either arm
+  ok: fix metrics: reclaims >= 1, rejects == 0
+  ok: fix ends with the pool no fuller than base (the cap held)
+== across arms: same bytes, same texts, other tenant untouched
+  ok: beta 83-token demote bytes equal across arms  {'base': '160.5', 'fix': '160.5'}
+  ok: acme 86-token demote bytes equal across arms  {'base': '160.6', 'fix': '160.6'}
+  ok: acme 89-token demote bytes equal across arms  {'base': '160.7', 'fix': '160.7'}
+  ok: beta 96-token demote bytes equal across arms  {'base': '160.9', 'fix': '160.9'}
+  ok: every image base evaporated, fix demoted at the same byte count (equal D2H payload)  evaporated=[(93, '160.8'), (95, '160.9')] fix acme demotes=[(86, '160.6'), (89, '160.7'), (93, '160.8'), (95, '160.9'), (108, '161.3')]
+  ok: r1 HTTP 200 in both arms
+  ok: r1 text byte-identical across arms
+  ok: r1 prompt_tokens equal across arms
+  ok: r2 HTTP 200 in both arms
+  ok: r2 text byte-identical across arms
+  ok: r2 prompt_tokens equal across arms
+  ok: r3 HTTP 200 in both arms
+  ok: r3 text byte-identical across arms
+  ok: r3 prompt_tokens equal across arms
+  ok: r4 HTTP 200 in both arms
+  ok: r4 text byte-identical across arms
+  ok: r4 prompt_tokens equal across arms
+  ok: r5 HTTP 200 in both arms
+  ok: r5 text byte-identical across arms
+  ok: r5 prompt_tokens equal across arms
+  ok: r6 HTTP 200 in both arms
+  ok: r6 text byte-identical across arms
+  ok: r6 prompt_tokens equal across arms
+  ok: r7 HTTP 200 in both arms
+  ok: r7 text byte-identical across arms
+  ok: r7 prompt_tokens equal across arms
+  ok: r8 HTTP 200 in both arms
+  ok: r8 text byte-identical across arms
+  ok: r8 prompt_tokens equal across arms
+  ok: r1 (beta) cached_tokens equal across arms
+  ok: r7 (beta) cached_tokens equal across arms
+  ok: beta's r7 promote in both arms
+  ok: beta's promote lines equal across arms
+  ok: no LRU eviction in either arm (the pool never filled)
+== arena harness cell (memra#385, harness receipt only)
+  ok: arena status executed-not-qualified, exit 0  status=executed-not-qualified exit=0
+  ok: arena receipt status executed-not-qualified
+  ok: arena: every row ok (allocated and freed)
+  ok: arena: 5 pairs per order, both orders, two arms
+  ok: arena: size is 75 percent of its basis (rounded to 2 MiB) and below MemAvailable at start  basis=free 31317016576 bytes=23486005248
+    single: n=10 median 3598.8 ms (AB 3578.2, BA 3609.7) min 3569.9 max 3626.5 free median 1389.7 ms, 6.08 GiB/s
+    chunked: n=10 median 3583.8 ms (AB 3582.8, BA 3584.8) min 3571.0 max 3595.1 free median 1421.0 ms, 6.10 GiB/s
+    bytes 23486005248 chunks 8 gpu start [40, 95.96 W, 600.00 W, 2355 MHz] end [36, 89.19 W, 600.00 W, 2355 MHz] loadavg start ['0.33', '0.35', '0.52'] end ['0.88', '0.54', '0.57']
+
+DAY12 PASS: base evaporates, fix reclaims the tenant's own entry and demotes the same bytes; texts identical; beta untouched; arena harness ran

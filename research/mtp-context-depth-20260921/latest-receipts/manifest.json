@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "kind": "interleaved-engine-followup",
+  "archives": [
+    {
+      "file": "qwen-records.tar.gz",
+      "bytes": 6324687,
+      "sha256": "05aec54a534319f4beb1148efe6fcb5af0e7add7b3d085513fa2c406c68eaf76",
+      "files": 1531,
+      "file_manifest_sha256": "20058245cc57e301ead8177a80c534195da54e73e2e1baa9e6f3bd01ab5426b5"
+    },
+    {
+      "file": "gemma-records.tar.gz",
+      "bytes": 3894620,
+      "sha256": "8bf4093409ea4afea853be4c02530b3cc37196674d55e1a6a2d09925f17f1805",
+      "files": 1211,
+      "file_manifest_sha256": "427cf63a360b7d394f7596c0cea571106415937bc97868b9f8f7a654fafe1ec8"
+    },
+    {
+      "file": "common-records.tar.gz",
+      "bytes": 106314,
+      "sha256": "457cad1547228b070c8d77234bedf09ff0b1de2e265c1c77b1eff75fb3256140",
+      "files": 66,
+      "file_manifest_sha256": "3c87b38f1eb741684869a469ba2c12175ce5176f2d9f09e7425f2c88af6551f4"
+    }
+  ],
+  "runtime_source": {
+    "source_commit": "5450580fe2e5eb5c34cd17452f472ed368034f41",
+    "runtime_archive_sha256": "943d165b80f268ffacc63e78191c669ed4bda562b3151d45758876321e3f6dc8",
+    "archive_bytes": 8768836,
+    "compile_time_fixtures": [
+      "research/ep-placement-map-20260831/example-map-coactivation.json",
+      "research/reasoning-schema-20260823/goldens",
+      "research/reasoning-schema-20260823/ornith15.chat_template.jinja",
+      "research/reasoning-schema-20260823/qwen38-27b.chat_template.jinja",
+      "research/spill-b-20260919/fixtures/recompute-load.csv",
+      "research/spill-c-20260919/fixtures/ple-ngram-synthetic.json",
+      "research/spill-c-20260919/fixtures/slru-synthetic.json"
+    ],
+    "upstream_commit": "dc192cd9543f9f4ba8bd45d489d12e2e871f7b54",
+    "comparison_source": "cb2f1783a0818705c5528f5b11cae0b0bc176deb",
+    "build_time_registries": [
+      "docs/FLAGS.md"
+    ]
+  },
+  "original_source": "cb2f1783a0818705c5528f5b11cae0b0bc176deb",
+  "recorded_runs": 32,
+  "recorded_turns": 256
+}

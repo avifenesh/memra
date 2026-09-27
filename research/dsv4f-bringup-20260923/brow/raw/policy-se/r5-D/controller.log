@@ -1,0 +1,12 @@
+START utc=2026-09-24T04:26:31Z bin=/root/lane/target-rows/release/memra-server env=MEMRA_DSV4_SESSIONS=4 MEMRA_DSV4_ROWS=2
+READY after=114s port=60487
+CELL warmup c=1 ok=1/1 agg=36.93 tok/s decode_p50=51.96 tok/s ttft_p50=270 ms tpot_p50=19.25 ms errs=[]
+CELL greedy-c1 c=1 ok=8/8 agg=49.59 tok/s decode_p50=51.75 tok/s ttft_p50=233 ms tpot_p50=19.32 ms errs=[]
+CELL greedy-c2 c=2 ok=8/8 agg=78.68 tok/s decode_p50=40.77 tok/s ttft_p50=240 ms tpot_p50=24.53 ms errs=[]
+CELL greedy-c4 c=4 ok=8/8 agg=84.12 tok/s decode_p50=22.43 tok/s ttft_p50=509 ms tpot_p50=44.59 ms errs=[]
+CELL sampled-c2 c=2 ok=8/8 agg=71.48 tok/s decode_p50=36.88 tok/s ttft_p50=240 ms tpot_p50=27.12 ms errs=[]
+CELL sampled-c4 c=4 ok=8/8 agg=71.88 tok/s decode_p50=18.57 tok/s ttft_p50=514 ms tpot_p50=53.86 ms errs=[]
+CELL greedy-c8 c=8 ok=16/16 agg=83.71 tok/s decode_p50=21.10 tok/s ttft_p50=12237 ms tpot_p50=47.40 ms errs=[]
+CELL sampled-c8 c=8 ok=16/16 agg=71.89 tok/s decode_p50=18.62 tok/s ttft_p50=14677 ms tpot_p50=53.69 ms errs=[]
+CELLS_DONE utc=2026-09-24T04:32:42Z
+TERMINAL rc=0 utc=2026-09-24T04:32:46Z

@@ -1,0 +1,32 @@
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+    Finished `release` profile [optimized] target(s) in 0.06s
+== health-fault-gate: arms=a,b,c,d,e,f port=8186 out=/root/spill-receipts/b-day25/gate ==
+--- arm a/b: armed boot (default doors: the calibration probe runs before ready) ---
+  [ab] ready after 1829 ms (pid 112461)
+HFG (a) readiness-before-probe: probe_done_line=30 listening_line=33 pre_ready_samples=17 pre_ready_codes={000:17,503:0} ready_samples_not_ready=0 ready_while_warming=0 first_ready_phase=idle -> PASS
+HFG (b) ready-then-first-request: readyz_before=200/ready request_http=200 finish_reason=length completion_tokens=32 request_ms=143 ready_to_completion_ms=229 readyz_after=200/ready (N=1, not a timing claim) -> PASS
+  [ab] exit 0
+--- arm c: the probe-skipped boots (documented behaviour, not a pass) ---
+  [c-calibrate0] ready after 1095 ms (pid 112670)
+HFG (c) probe-skipped c-calibrate0 [MEMRA_ADMIT_CALIBRATE=0]: skip_line=16 probe_done_line=0 warming_samples=0 ready_ms=1095 first_request_http=200 first_request_ms=166 (N=1) -> DOCUMENTED (ready without warmup; the first request pays the cold route)
+  [c-calibrate0] exit 0
+  [c-spec0] ready after 1102 ms (pid 112807)
+HFG (c) probe-skipped c-spec0 [MEMRA_SERVE_SPEC=0]: skip_line=16 probe_done_line=0 warming_samples=0 ready_ms=1102 first_request_http=200 first_request_ms=232 (N=1) -> DOCUMENTED (ready without warmup; the first request pays the cold route)
+  [c-spec0] exit 0
+  [c-reserve] ready after 1102 ms (pid 112944)
+HFG (c) probe-skipped c-reserve [MEMRA_ADMIT_RESERVE_MB=1536]: skip_line=17 probe_done_line=0 warming_samples=0 ready_ms=1102 first_request_http=200 first_request_ms=166 (N=1) -> DOCUMENTED (ready without warmup; the first request pays the cold route)
+  [c-reserve] exit 0
+--- arm d: a request panics the worker (MEMRA_PANIC_AFTER=1), the respawn rule (MEMRA_WORKER_RESPAWN=1) ---
+  [d] ready after 1719 ms (pid 113081)
+HFG (d) panic-respawn-truthful-health: trigger_http=200 health_503_quoted_after_ms=192 readyz_while_dead=503/not_ready/dead untruthful_samples=0 recovered_after_ms=3469 generation_after=1 request_after_http=200 health_after=200/ok log_panic_line=44 log_respawn_line=45 -> PASS
+HFG (a2) warming-phase-on-respawn: not_ready_phase_sequence=dead>loading>warming loading_samples=5 warming_samples=4 loading_then_warming=true -> PASS
+  [d] exit 0
+--- arm e: a hung nvidia-smi probe latches the gpu fault; answering again does not clear it ---
+  [e] ready after 1720 ms (pid 113568)
+HFG (e) fatal-fault-not-cleared-by-timeout: watch_on_line=5 control_200_samples=3/3 latched_after_ms=2727 shim_answering_again_for_ms=8157 health_after=503/unhealthy readyz_after=503/not_ready health_200_after_clear=0 critical_lines=1 request_http_while_latched=200 (observed, bounded, not asserted) -> PASS
+  [e] exit 0
+--- arm f: SIGTERM with a stream open flips readiness first and drains ---
+  [f] ready after 1716 ms (pid 113933)
+HFG (f) sigterm-drains-and-flips-readiness-first: stream_frames_at_sigterm=5 readyz_during_drain=503/not_ready retry_after_s=60 health_during_drain=200/draining new_request_http=503 new_request_code=draining new_request_retry_after_s=60 stream_curl_rc=0 stream_frames=258 stream_done=1 stream_finish_reason=length stream_finished_after_sigterm_ms=886 exit_code=0 exit_after_sigterm_ms=1074 drain_complete_line=48 deadline_hit_line=0 -> PASS
+health-fault-gate: arms=a,b,c,d,e,f pass=6 documented=3 fail=0 receipts=/root/spill-receipts/b-day25/gate

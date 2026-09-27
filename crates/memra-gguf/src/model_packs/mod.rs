@@ -16,8 +16,10 @@ pub mod glm5_next;
 pub mod glm_dsa;
 pub mod hy3;
 pub mod llama_dense;
+pub mod minimax_m3;
 /// Speech packs use their own config normalization until the CLI accepts audio artifacts.
 pub mod nemotron_rnnt;
+pub mod olmoe;
 pub mod qwen3;
 pub mod qwen35;
 pub mod qwen35_moe;
@@ -88,8 +90,36 @@ pub struct CheckpointParityGate {
     pub require_argmax: bool,
 }
 
+/// Who owns the output projection when the checkpoint carries no `output.weight` /
+/// `lm_head.weight` (memra#541). The loaders used to fall back to the token embedding for every
+/// family; now a family says so explicitly, and a checkpoint that omits the head under a
+/// `SeparateHead` pack is refused before any upload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputHeadContract {
+    /// The family always ships a separate output projection; its absence is a broken checkpoint.
+    SeparateHead,
+    /// At least one published size of the family ties the head to the token embedding; an absent
+    /// head tensor (or `tie_word_embeddings: true`) selects the embedding as the head.
+    TiedHeadAllowed,
+}
+
+/// What the loader does when a tensor the bound contract declares was never read by the time
+/// the model is built (memra#541). `Refuse` is a per-family qualification state: it needs a
+/// receipt that the family's every load path goes through the recorded source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TensorConsumption {
+    /// Print the unconsumed ids once; the load succeeds.
+    Report,
+    /// An unconsumed bound tensor fails the load.
+    Refuse,
+}
+
 pub struct ModelPack {
     pub family: &'static str,
+    /// Output-head ownership when the head tensor is absent.
+    pub output_head: OutputHeadContract,
+    /// Loader policy for bound tensors that were never consumed.
+    pub tensor_consumption: TensorConsumption,
     pub aliases: &'static [&'static str],
     pub config_layout: ConfigLayout,
     pub tokenizer_sources: &'static [TokenizerSource],
@@ -156,6 +186,8 @@ pub const PACKS: &[&ModelPack] = &[
     &qwen4_exp::PACK,
     &step35::PACK,
     &hy3::PACK,
+    &olmoe::PACK,
+    &minimax_m3::PACK,
     // Last: the plainest dense stack, so a family with its own pack is always matched first.
     &llama_dense::PACK,
 ];
@@ -177,6 +209,40 @@ pub fn for_config(config: &ModelConfig) -> Option<&'static ModelPack> {
         .iter()
         .copied()
         .find(|pack| pack.matches_config(config))
+}
+
+/// Shared load-time entry point. Pack refusal is final; the canonical compiler is not
+/// a compatibility fallback. Call this before reading or allocating model tensors.
+pub fn compile_for_load(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {
+    config.validate_plan_semantics()?;
+    for_config(config)
+        .ok_or_else(|| PlanCompileError::NoMatchingModelPack {
+            arch: format!("{:?}", config.arch),
+        })?
+        .compile_plan(config)
+}
+
+/// Source-backed preflight shared by the eager loaders, before model-weight allocation.
+/// Source RoPE factors must have a planned consumer, and required factors must exist even
+/// when automatic placement (and its census) is disabled. HF Step factors are already
+/// derived during normalization.
+pub fn compile_for_source(
+    source: &dyn crate::source::TensorSource,
+) -> Result<(ModelConfig, ModelPlan), Box<dyn std::error::Error>> {
+    let mut config = source.try_config().map_err(std::io::Error::other)?;
+    let plan = compile_for_load(&config)?;
+    if crate::tensor_contract::rope_factor_width(&plan).unwrap_or(0) == 0
+        && source.find("rope_freqs.weight").is_some()
+    {
+        return Err(PlanCompileError::UnsupportedSemantics {
+            field: "rope_freqs.weight",
+            value: "source declares checkpoint factors that the compiled plan does not consume"
+                .into(),
+        }
+        .into());
+    }
+    step35::prepare_rope_factors(&mut config, &plan, source)?;
+    Ok((config, plan))
 }
 
 pub(super) fn canonical_plan(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {

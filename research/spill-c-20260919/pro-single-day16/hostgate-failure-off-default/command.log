@@ -1,0 +1,19 @@
+cd8e9c11493ff7538c2251af4d7dc2d1be153c95e427d77cf131f09aee808aa8  /root/spill-receipts/c-day16/bins/memra-server
+== cell 1: POOL-FULL (MEMRA_KV_HOST_MB=1, no real entry fits) ==
+  ok: device budget forced an eviction (the failure path's trigger)
+  FAIL: pool-full refusal is LOUD and named
+  ok: nothing entered the tier
+  ok: r3 still serves (cold re-prime, zero cached)
+== cell 2: DIGEST MISMATCH (verify on + MEMRA_KV_HOST_FAULT=flip-demote) ==
+  ok: the fault door announced the injected corruption
+  ok: the corrupted entry DEMOTED (the mismatch needs a resident entry)
+  ok: the promote caught it: VERIFY FAILED, loud and named
+  ok: no successful promote happened
+  ok: metrics: zero promotions after the refusal
+  ok: r3 served the COLD path with reference bytes (corruption never reached a customer)
+== cell 3: PINNED-ALLOC REFUSAL (MEMRA_KV_HOST_FAULT=alloc-fail) ==
+  ok: the tier LATCHED OFF loudly on the first alloc failure
+  ok: the refusal counted
+  ok: no silent pageable fallback: zero demotions completed
+  ok: r3 served the cold path with reference bytes
+KV-HOST-SPILL FAILURE GATE: 1 FAILURE(S)

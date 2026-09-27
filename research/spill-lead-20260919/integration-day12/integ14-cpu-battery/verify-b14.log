@@ -1,0 +1,12 @@
+DAY14 REPLAY OK
+base be07f2d36 binary 9c38a4c20e413299: PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=737943552 turns=8 cold_turns_after_1=7 cached_ok=0/7 lines_ok=0/8 evictions=0 protected_evictions=0 refused_or_skipped=1 effective_free_ok=8/8 V1=FAIL V2=FAIL V3=ok V4=FAIL -> FAIL
+fix  d520f745f binary a3ea4bc927a13f03: PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=737943552 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 protected_evictions=2 refused_or_skipped=0 effective_free_ok=8/8 V1=ok V2=ok V3=ok V4=ok -> PASS
+base cold turns after turn 1: 7 (server receipts saying so: 7)
+identical completion digests across binaries on turns [1, 2, 3, 4, 5, 6, 7, 8]; differing on turns []; cohort identical: True
+measured completions identical to the cache-off boot's cold completion: base 8/8, fix 8/8
+cache-off footprint per turn (both binaries): [962571604, 610359380, 20160000, 20160000, 20160000, 20160000, 20160000, 28878336]
+V3 state error per turn: base [0, 0, 0, 0, 0, 0, 0, 0], fix [0, 0, 0, 0, 0, 0, 0, 0] (slack 67108864)
+round 1 (V3 as consumed == grew, no footprint control) on disk: base FAIL, fix FAIL with V3 error == base cache-free consumption on every evicting turn
+round 2 (V3 as per-turn delta minus calibration consumed) on disk: fix FAIL on turn 1 only, 149,094,400 B of cohort-phase misalignment; the state identity held exactly on every turn
+rig: NVIDIA RTX PRO 6000 Blackwell Server Edition, 97887 MiB, 600.00 W, 600.00 W, 580.178.04
+N=1 per arm; executed-not-qualified; no timing compared.

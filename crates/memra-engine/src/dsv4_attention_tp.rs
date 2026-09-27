@@ -1,11 +1,14 @@
-//! Gate-only geometry for DSV4 head-parallel attention and a rank-order output sum.
+//! Gate-only geometry for DSV4 head-parallel attention with an exact output join.
 //!
-//! KV latent, compressor and indexer state stay replicated. The output projection's
-//! input split changes the accumulation program; it is not a full-width identity claim.
+//! KV latent, compressor and indexer state stay replicated. Each rank owns whole heads and
+//! whole wo_a groups, so its Q_b rows, attention and wo_a group outputs are the one-card
+//! program's rows. The wo_a outputs are gathered to both ranks, each rank runs wo_b for half
+//! of the output rows over the full input, and the two halves are gathered. Every value is
+//! written by the one-card per-row program; no sum crosses ranks.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-pub const ATTENTION_TP_NUMERIC_CLASS: &str = "dsv4_attention_wo_b_input_split_f32_rank_reduce";
+pub const ATTENTION_TP_NUMERIC_CLASS: &str = "dsv4_attention_head_split_row_gather_exact";
 
 static ENABLED_FOR_GATE: AtomicBool = AtomicBool::new(false);
 
@@ -32,6 +35,8 @@ pub struct AttentionTpGeometry {
     pub group_width: usize,
     pub full_output_width: usize,
     pub local_output_width: usize,
+    /// wo_b output rows per rank.
+    pub local_hidden: usize,
 }
 
 /// Actual final-layer device partials and their native GPU rank sums, read only by gates.
@@ -67,11 +72,17 @@ impl AttentionTpGeometry {
         let full_q_rows = product(heads, head_dim)?;
         let group_width = product(heads / groups, head_dim)?;
         let full_output_width = product(groups, o_lora)?;
+        if !hidden.is_multiple_of(2) {
+            return Err(format!(
+                "attention TP2 requires an even hidden width: {hidden}"
+            ));
+        }
         for value in [
             head_dim,
             q_lora,
             o_lora,
             hidden,
+            hidden / 2,
             full_q_rows / 2,
             group_width,
             full_output_width / 2,
@@ -94,6 +105,7 @@ impl AttentionTpGeometry {
             group_width,
             full_output_width,
             local_output_width: full_output_width / 2,
+            local_hidden: hidden / 2,
         })
     }
 
@@ -114,6 +126,7 @@ mod tests {
         let plan = AttentionTpGeometry::new(64, 512, 1024, 8, 1024, 4096).unwrap();
         assert_eq!((plan.local_heads, plan.local_groups), (32, 4));
         assert_eq!((plan.group_width, plan.local_output_width), (4096, 4096));
+        assert_eq!(plan.local_hidden, 2048);
         assert_eq!(plan.head_start(0).unwrap(), 0);
         assert_eq!(plan.head_start(1).unwrap(), 32);
         assert!(plan.head_start(2).is_err());

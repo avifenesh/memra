@@ -1,0 +1,60 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running tests/storage/mod.rs (target/debug/deps/storage-1825ca21bf643b79)
+
+running 53 tests
+test day2::direct_alignment_and_short_eof_fail_closed ... ok
+test day2::charged_pool_pins_backing_once_until_last_slice_returns ... ok
+test bounded_reader_partial_acceptance_and_short_read_visibility ... ok
+test cancel_late_completion_keeps_source_and_slot_until_io_retires ... ok
+test day2::revision_v11_pinned_lease ... ok
+test day2::revision_v11_pinned_quarantine ... ok
+test corruption_header_payload_padding_truncation_and_future_version_refused ... ok
+test day2::frozen_transfer_cancel_schedule_real_cpu_adapter ... ok
+test day3::aligned_extent_io_rejects_misalignment_and_truncation ... ok
+test day2::corrupt_backing_does_not_trap_explicit_charge_release ... ok
+test corrupt_or_missing_chunk_blocks_commit_and_read ... ok
+test day2::root_metadata_requires_canonical_v1_and_distinct_digest_domains ... ok
+test day2::partial_acceptance_retains_rejected_device_and_refuses_batch_publication ... ok
+test day2::mixed_epoch_batch_returns_all_owned_inputs_and_missing_chunk_refuses_publish ... ok
+test day2::host_take_once_stale_triples_and_consumer_retirement ... ok
+test day2::revision_v11_object_publish_release ... ok
+test day2::revision_v11_transfer_complete_cancel ... ok
+test day2::frozen_object_schedule_real_files_and_transaction_owner ... ok
+test day3::background_bytes_progress_without_drive_and_retire_after_consumer ... ok
+test day4::catalog_gc_unknown_completion_retains_lock_and_charge ... ok
+test day4::catalog_install_quota_failure_cleans_only_owned_files ... ok
+test day4::catalog_gc_reference_count_charges_tombstone_crash_replay ... ok
+test day3::background_runs_frozen_cancellation_and_post_completion_schedule ... ok
+test day3::background_cancel_corrupt_and_failed_siblings_never_publish ... ok
+test day4::legacy_gc_replays_crash_after_tombstone_and_before_unlink ... ok
+test day4::catalog_gc_process_exit_between_tombstone_and_unlink ... ok
+test day3::direct_mode_is_explicit_and_never_silently_falls_back ... ok
+test day3::common_governor_preserves_mandatory_pool_and_object_headroom ... ok
+test day4::legacy_gc_unknown_shutdown_retains_shared_ownership ... ok
+test day2::persistent_restart_ignores_partial_pending_root_and_chunks ... ok
+test exact_pread_eintr_partial_eof_overflow ... ok
+test fake_pool_reserves_demand_headroom_and_charges_padding ... ok
+test day4::review_catalog_recovers_pending_with_and_without_published_root ... ok
+test day4::review_gc_cancel_removes_staging_and_corrupt_staging_is_noop ... ok
+test jsonl_escapes_strings_and_unknown_times_are_null ... ok
+test day4::legacy_gc_dedup_other_store_and_live_lease_fences ... ok
+test day4::review_gc_verification_failure_does_not_revoke_visibility ... ok
+test retirement::cancelled_transfer_needs_disk_dma_consumer_and_graph_retirement ... ok
+test retirement::lost_transfer_completion_is_quarantined_on_drop ... ok
+test day4::sharded_catalog_lazy_payload_corruption_missing_sibling_and_index_binding ... ok
+test day4::review_gc_preserves_uncommitted_transaction_chunks ... ok
+test unknown_completion_quarantines_not_reuses ... ok
+test day3::extent_lease_is_bounded_lazy_charged_and_rechecks_corruption ... ok
+test incomplete_enospc_short_write_and_interrupted_commit_never_publish ... ok
+test day4::review_gc_staged_transaction_process_exit_and_bounded_recovery ... ok
+test day4::review_gc_live_cross_process_transaction_commits_byte_exact ... ok
+test root_collision_identity_and_immutable_conflicts_fail_closed ... ok
+test real_filesystem_reopen_and_conflict_do_not_clobber ... ok
+test telemetry::telemetry_join_schema_cumulative_bytes_unknowns_and_bounded_intervals ... ok
+test publication_is_last_and_streams_object_larger_than_pool ... ok
+test header_valid_vs_padded_and_full_integrity ... ok
+test day2::bench_real_roundtrip_reopen_restore_uncached_and_red_modes ... ok
+test day4::sharded_catalog_200gb_metadata_only_constant_touch_cost ... ok
+
+test result: ok. 53 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s
+

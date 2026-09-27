@@ -264,23 +264,24 @@ pub(crate) async fn admit_translated(
     };
     // Take the HTTP slot BEFORE vision decode. A rate-limited request must not expand a canvas,
     // while the separate preprocessing permit above keeps GIF/base64 planning bounded.
-    let (guard, rl) = match crate::acquire_request_slot(st, lane, tenant, env) {
-        Ok(slot) => slot,
-        Err(resp) => {
-            return Err(crate::ledger_rejected(
-                receipt,
-                resp,
-                "rate_limit_exceeded",
-                &env.id,
-            ));
-        }
-    };
+    let (guard, rl) =
+        match crate::acquire_request_slot(st, lane, Some(&plan.request.model), tenant, env) {
+            Ok(slot) => slot,
+            Err(resp) => {
+                return Err(crate::ledger_rejected(
+                    receipt,
+                    resp,
+                    "rate_limit_exceeded",
+                    &env.id,
+                ));
+            }
+        };
     if let Some(admission) = body_admission {
         admission.release();
     }
     // BACKPRESSURE (lane/deadline-billing): shed at submission — never after — when the
     // queue is at its bound or the estimated wait cannot fit the request's deadline.
-    let pending_admit =
+    let mut pending_admit =
         match crate::reserve_pending_admit(st, lane, &rl, deadline.preheader(stream)) {
             Ok(guard) => guard,
             Err((resp, outcome)) => {
@@ -316,6 +317,7 @@ pub(crate) async fn admit_translated(
     crate::meter_admit(env, tenant, &model, lane);
     let stop_strings = plan.request.stop_strings.clone();
     let parser = plan.parser;
+    pending_admit.bind(&mut plan.request);
     if st
         .cmd_tx
         .send(Cmd::Generate(Box::new(plan.request)))

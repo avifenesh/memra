@@ -1,0 +1,291 @@
+Review the following real Rust implementation. Explain its data flow, state ownership and correctness invariants. Identify concrete defects or risks, and propose changes with tests. Ground the analysis in the supplied excerpts.
+
+File: crates/memra-tokenizer/src/chat.rs, lines 1..270
+```rust
+//! Minimal chat-template renderer for the Qwen3.5 / ChatML format.
+//!
+//! The model's GGUF `tokenizer.chat_template` is a large jinja template covering
+//! tools, vision, and multi-step reasoning. We do NOT ship a jinja engine; instead
+//! we reproduce the text-only system/user/assistant path of that template exactly,
+//! which is the path memra's text-in/text-out CLI uses. The reproduced behavior
+//! (verified against the dumped template):
+//!
+//!   - a leading `system` turn renders `<|im_start|>system\n{content}<|im_end|>\n`
+//!   - `user`      -> `<|im_start|>user\n{content}<|im_end|>\n`
+//!   - `assistant` -> `<|im_start|>assistant\n{content}<|im_end|>\n`
+//!   - with `add_generation_prompt`, Qwen3.5 appends `<|im_start|>assistant\n<think>\n`
+//!     (its default, since `enable_thinking` is undefined => the else-branch fires).
+//!
+//! `content` is trimmed (the template applies `|trim`). If the GGUF has no template
+//! we fall back to plain ChatML (no `<think>` tail).
+//!
+//! Non-qwen dialects each get their own arm, dispatched by a marker substring in the raw
+//! template: Tencent Hy3 (`hy_User`), gemma4 (`<|turn>`), and StepFun Step-3.7-Flash /
+//! arch `step35` (`render_message_content`). The step35 check must come BEFORE the qwen
+//! `<think>`-tail detection — its template contains every qwen marker, so the qwen arm would
+//! render the right generation tail on the wrong turn bodies.
+
+/// A serde-free JSON value tree, built by the server (which owns serde_json) and handed to
+/// the gemma4 tools arm. The compact gemma dialect needs argument/schema TYPE fidelity that a
+/// pre-rendered string cannot carry — a string `"21"` and a number `21` render differently
+/// (`<|"|>21<|"|>` vs `21`), a bool is `true`/`false`, a null is `None`, and mappings/sequences
+/// recurse. `Num` keeps the exact numeric text (serde_json `Number::to_string()`) so the
+/// rendered bytes match jinja's `{{ number }}` (Python `str()`), which this crate cannot
+/// reproduce from an f64 alone. qwen/step arms ignore this; they use `ToolCall::params`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Val {
+    Null,
+    Bool(bool),
+    Num(String),
+    Str(String),
+    Arr(Vec<Val>),
+    /// Insertion-ordered object; the gemma dialect `dictsort`s keys (case-insensitive, stable)
+    /// at render time, so ties keep this insertion order — matching jinja's `| dictsort`.
+    Obj(Vec<(String, Val)>),
+}
+
+/// One tool call attached to a prior assistant turn.
+/// `params` values are pre-rendered strings for the qwen/step/HY3 arms (string arguments raw,
+/// everything else JSON-rendered by the caller). `args`/`id` carry the gemma4 arm's typed
+/// arguments and the OpenAI `tool_calls[].id` used to resolve tool-response names.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ToolCall {
+    pub name: String,
+    pub params: Vec<(String, String)>,
+    /// gemma4: typed arguments, dictsorted and dialect-rendered by the gemma arm.
+    pub args: Vec<(String, Val)>,
+    /// gemma4: the call id, matched against a following tool turn's `tool_call_id`.
+    pub id: Option<String>,
+}
+
+/// One chat turn for the tools-capable renderer (`apply_chat_template_tools`).
+/// Reasoning replay is template-specific: Qwen3.8's preserving template consumes
+/// `reasoning` separately from `content`, as do the other reasoning-aware renderers.
+/// Do not place raw think-open generation in `content`, including a length-stopped
+/// reasoning segment. `tool_call_id`/`tool_name`/`tool_responses` are gemma4-only.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Turn {
+    pub role: String,
+    pub content: String,
+    pub tool_calls: Vec<ToolCall>,
+    /// Assistant reasoning, separate from visible answer content. Qwen3.8 replays it
+    /// inside `<think>` under its preserving default. Gemma4 replays a thought channel
+    /// only for a tool-carrying assistant after the last user message.
+    pub reasoning: Option<String>,
+    /// gemma4: on a role:"tool" turn, the OpenAI `tool_call_id` used to resolve the response
+    /// name against the preceding assistant's `tool_calls[].id`.
+    pub tool_call_id: Option<String>,
+    /// gemma4: on a role:"tool" turn, the message's own `name` field (fallback when the id
+    /// does not resolve).
+    pub tool_name: Option<String>,
+    /// gemma4 native (Google) responses embedded on an assistant turn: (name, response value).
+    /// OpenAI histories leave this empty and use role:"tool" turns instead.
+    pub tool_responses: Vec<(String, Val)>,
+    /// deepseek-v4 quick-instruction task token (`action`/`query`/`authority`/`domain`/
+    /// `title`/`read_url`, encoding_dsv4 DS_TASK_SP_TOKENS). Set only by the dsv4 fixture
+    /// harness (the internal-classification heads); the OpenAI serve surface has no `task`
+    /// field, so every serve request leaves this None and every other dialect ignores it.
+    pub task: Option<String>,
+    /// deepseek-v4 per-turn tool `function` objects (encoding_dsv4 renders the tool
+    /// declaration on the message carrying them — system on the serve surface, or a developer
+    /// message in the search-pipeline fixtures). The serve path also passes request-level
+    /// tools via `tools_struct`, which the dsv4 arm folds onto the leading system turn.
+    /// Every other dialect ignores this.
+    pub tools: Vec<Val>,
+}
+
+/// Thinking control (owner directive 2026-08-07: every supported model is a thinking model,
+/// one serve surface maps to each arch's native mechanism).
+///
+/// - `Default` = the template's OWN default, byte-identical to the pre-surface render:
+///   qwen class opens `<think>\n` (thinking ON), gemma4 renders the CLOSED thought channel
+///   (its `enable_thinking | default(false)`), hy3 renders `reasoning_effort:no_think`.
+/// - `NoThink` = thinking OFF via the arch's native off-switch: qwen
+///   `enable_thinking=false` (closed `<think>\n\n</think>\n\n`), gemma4 closed thought
+///   channel, hy3 `no_think`. On step35 — whose `<think>` tail is unconditional — it clamps
+///   to the lowest effort level instead (`Reasoning: low`).
+/// - `Think` = thinking explicitly ON: qwen open `<think>\n` (same bytes as its default),
+///   gemma4 `<|think|>\n` injected into the system turn + an OPEN generation turn, hy3
+///   an open `<think:opensource>` channel at the requested effort.
+///
+/// On templates with no switch at all the non-native direction is a graceful no-op.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThinkMode {
+    Default,
+    NoThink,
+    Think,
+}
+
+/// Which `encoding_dsv4.py` revision governs the deepseek-v4 REASONING-EFFORT ladder
+/// (0731 re-gate, 2026-08-18 — research/dsv4-template-20260818/ENCODING-DIFF.md).
+///
+/// The two shipped encodings differ ONLY here; every other rendering law (roles, tool
+/// blocks, transitions, special tokens, think-mode prefixes, parsing) is byte-identical:
+///
+/// | `reasoning_effort` | `Preview` (base repo @ 60d8d707)     | `V0731` (0731 @ 7872f01b)          |
+/// |--------------------|--------------------------------------|-------------------------------------|
+/// | None               | no prefix                            | no prefix (None == "low" default)   |
+/// | "low"              | INVALID upstream (assert) — renders as no prefix here | no prefix          |
+/// | "high"             | documented NO-OP (== None)           | `DS_EFFORT_ABSOLUTE_MAX` prefix     |
+/// | "max"              | `DS_EFFORT_ABSOLUTE_MAX` prefix      | `DS_EFFORT_BEYOND_MAX` prefix       |
+///
+/// The prefix (when non-empty) is injected once, before the first rendered message, in
+/// thinking mode only; chat mode never renders a prefix under either encoding.
+///
+/// DETECTION IS CONFIG-KEYED, never filename-keyed: the 0731 checkpoint added exactly four
+/// `dspark_*` keys to config.json in the same revision that remapped the ladder
+/// (`dspark_block_size`, `dspark_markov_rank`, `dspark_noise_token_id`,
+/// `dspark_target_layer_ids`); tokenizer/template files are byte-identical across the two
+/// checkpoints, so config.json is the artifact's only encoding marker. `Tokenizer::from_hf_dir`
+/// performs the census (all four -> `V0731`, none -> `Preview`, a partial set refuses to load).
+/// Callers that cannot know the revision pass `None`; rendering then REFUSES exactly the
+/// (thinking, "high"/"max") requests whose bytes differ between revisions and stays
+/// infallible everywhere the two encodings agree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dsv4Encoding {
+    /// deepseek-ai/DeepSeek-V4-Flash (preview) law: {None,"high"} no-op, "max" -> absolute.
+    Preview,
+    /// DeepSeek-V4-Flash-0731 law: None/"low" no prefix, "high" -> absolute, "max" -> beyond.
+    V0731,
+}
+
+/// Render messages into the prompt string.
+///
+/// `template` is the raw GGUF chat_template (used only to decide qwen3.5-vs-plain
+/// chatml behavior — we detect the `<think>` generation tail by substring). When
+/// `None`, plain ChatML is produced.
+/// ds4f rung-3 serve finding (2026-08-22): the REAL dsv4 artifacts ship their chat
+/// dialect as CODE (`encoding/encoding_dsv4.py`) — tokenizer_config.json carries NO
+/// `chat_template` string and no chat_template.jinja exists. Every template-STRING
+/// keyed dispatch therefore never fires on the artifact we serve, and the serve-st
+/// honesty gate 400s a model whose dialect is fully defined. The artifact-level truth
+/// is the config `dspark_*` census (`Dsv4Encoding`, already detected at tokenizer
+/// load): when it is present, the dsv4 renderer IS the model's template. This entry is
+/// the plain-path dispatch on that truth; `apply_chat_template_str` keeps its exact
+/// legacy bytes for every other family.
+pub fn apply_chat_template_enc(
+    template: Option<&str>,
+    messages: &[(&str, &str)],
+    add_generation_prompt: bool,
+    dsv4_encoding: Option<Dsv4Encoding>,
+) -> Result<String, String> {
+    if dsv4_encoding.is_some() && !template.is_some_and(template_is_dsv4) {
+        let msgs: Vec<Turn> = messages
+            .iter()
+            .map(|(r, c)| Turn {
+                role: r.to_string(),
+                content: c.to_string(),
+                ..Default::default()
+            })
+            .collect();
+        return apply_dsv4_template(
+            &msgs,
+            add_generation_prompt,
+            &[],
+            ThinkMode::Default,
+            None,
+            dsv4_encoding,
+        );
+    }
+    Ok(apply_chat_template_str(
+        template,
+        messages,
+        add_generation_prompt,
+    ))
+}
+
+pub fn apply_chat_template_str(
+    template: Option<&str>,
+    messages: &[(&str, &str)],
+    add_generation_prompt: bool,
+) -> String {
+    // Tencent Hy3 (`hy_v3`): a completely different special-token dialect (no ChatML).
+    // Detected by its `hy_User` token literal; rendered by the dedicated arm below.
+    // Legacy path = the template's own default ("no_think") — byte-identical to history.
+    if template.is_some_and(|t| t.contains("hy_User")) {
+        return apply_hy3_template(messages, add_generation_prompt, "no_think");
+    }
+    // StepFun Step-3.7-Flash (arch `step35`): a ChatML *dialect* — same `<|im_start|>` framing,
+    // different everything else (see `apply_step35_template`). Detected by its
+    // `render_message_content` macro, which no other committed template defines. This check MUST
+    // precede the qwen `<think>`-tail detection below: the step35 template contains both markers,
+    // so the qwen arm would produce the right generation tail with the wrong turn bodies.
+    if template.is_some_and(|t| t.contains("render_message_content")) {
+        let turns: Vec<Turn> = messages
+            .iter()
+            .map(|(r, c)| Turn {
+                role: r.to_string(),
+                content: c.to_string(),
+                tool_calls: Vec::new(),
+                ..Default::default()
+            })
+            .collect();
+        return apply_step35_template(&turns, add_generation_prompt, &[], None);
+    }
+    // deepseek-v4 (`encoding_dsv4`): `<｜User｜>`/`<｜Assistant｜>` turn dialect with three
+    // think modes + DSML tool calls. Detected by its two structural markers (`<｜Assistant｜>`
+    // AND `｜DSML｜`). MUST precede the qwen `<think>`-tail check: a faithful dsv4 template
+    // mentions `<think>` in its tools block, and the qwen detector would otherwise fire.
+    // Legacy path = the model's own default thinking mode (thinking; see ThinkMode docs); BOS
+    // IS emitted here (encoding_dsv4 owns the BOS — tokenizer_config add_bos_token is false).
+    if template.is_some_and(template_is_dsv4) {
+        let msgs: Vec<Turn> = messages
+            .iter()
+            .map(|(r, c)| Turn {
+                role: r.to_string(),
+                content: c.to_string(),
+                ..Default::default()
+            })
+            .collect();
+        return apply_dsv4_template(
+            &msgs,
+            add_generation_prompt,
+            &[],
+            ThinkMode::Default,
+            None,
+            None,
+        )
+        .expect("dsv4 render without reasoning_effort is encoding-independent");
+    }
+    // GLM-5.3-Flash (`glm5_next`): `[gMASK]<sop>` + `<|user|>`/`<|assistant|>`/`<|observation|>`
+    // turn dialect with an always-open `<think>` tail and an always-rendered reasoning-effort
+    // system line. Detected by its two structural markers. MUST precede the qwen `<think>`-tail
+    // check below: this template contains BOTH `<think>` and `add_generation_prompt`, so the
+    // qwen detector fires on it and used to render every GLM prompt as ChatML.
+    // Legacy path = the template's own effort default (`max`) — the only default it has.
+    if template.is_some_and(template_is_glm5) {
+        let turns: Vec<Turn> = messages
+            .iter()
+            .map(|(r, c)| Turn {
+                role: r.to_string(),
+                content: c.to_string(),
+                ..Default::default()
+            })
+            .collect();
+        return apply_glm5_template(&turns, add_generation_prompt, &[], None)
+            .expect("glm5 render without reasoning_effort takes the template's own default");
+    }
+    // gemma4: `<|turn>role\n{content}<turn|>\n` dialect; generation prompt appends
+    // `<|turn>model\n` + the CLOSED thought channel (`<|channel>thought\n<channel|>` — the
+    // template's enable_thinking-false default). bos comes from encode(add_special) — the
+    // template's `{{ bos_token }}` is NOT re-emitted here (double-BOS trap).
+    // Legacy path = thinking OFF (the template's `default(false)`) — byte-identical to history.
+    if template.is_some_and(|t| t.contains("<|turn>")) {
+        return apply_gemma4_template(messages, add_generation_prompt, false);
+
+```
+
+---TURN---
+Develop concrete failure cases for this code. Show the state before and after each failure and specify recovery behavior.
+---TURN---
+Propose a focused patch plan. Include Rust-like pseudocode, interfaces and ownership rules tied to the supplied source.
+---TURN---
+Now examine concurrency and cancellation. Give adversarial interleavings and show how the proposed changes handle them.
+---TURN---
+Design tests for the invariants discussed so far. Include boundaries, malformed inputs, repeated calls and cleanup.
+---TURN---
+Review your proposed changes for performance costs. Identify useful measurements and avoid claiming gains without evidence.
+---TURN---
+Consider a production incident involving this component. Write a debugging plan with concrete observations that distinguish plausible causes.
+---TURN---
+Consolidate the conversation into a detailed implementation and validation plan. Resolve contradictions in your earlier proposals.

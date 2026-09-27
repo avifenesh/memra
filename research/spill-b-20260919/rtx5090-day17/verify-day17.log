@@ -1,0 +1,17 @@
+binary 5191591ba8b9f494 built at ee208a4df (exit 0, clean)
+cell A (default shape): PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=737943552 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 V1=ok V2=ok V3=ok V4=ok -> PASS; identical to cold 8/8; reclaim lines 0
+cell B (day-16 lru shape): PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=793870336 turns=12 cold_turns_after_1=0 cached_ok=11/11 lines_ok=12/12 evictions=10 cohort_evictions=4 self_evictions=0 refused_or_skipped=0 effective_free_ok=12/12 V1=ok V2=ok V3=ok V4=ok -> PASS; identical to cold 11/12; divergent turn 10 carries day 16's digests; reclaim lines 8
+cell B: all 12 loop digests identical to day 16's lru run (binary 4a55ad8e at 9466b8912), including the divergent turn 10
+probe C (batched): RESTORE-VS-COLD: arm=batched turns=12 compared=12 identical=11/12 first_divergent_turn=10 prompt=12350 restored=12200 suffix=150 first_diff_char=1 -> DIVERGENT; restored "_\t\t\"\t\t\"\t" (8 tokens, length) vs cold "_\n" (3 tokens, stop)
+probe C turn 10 prime receipts: cold calls [(0, 8192), (8192, 1024), (9216, 1024), (10240, 1024), (11264, 1024), (12288, 62)] all grid_off=0; restored call [(12200, 150, 8)] (12200 % 32 = 8)
+probe-e-restore-points: RESTORE-POINTS: arm=restore-points target=12350 points=5 identical=3/5 12288(off0,suffix62):yes 12320(off0,suffix30):yes 12200(off8,suffix150):yes 12250(off26,suffix100):NO 12300(off12,suffix50):NO -> DIVERGENT
+  point 12288 grid_off 0 suffix 62: identical "_\n"
+  point 12320 grid_off 0 suffix 30: identical "_\n"
+  point 12200 grid_off 8 suffix 150: identical "_\n"
+  point 12250 grid_off 26 suffix 100: DIVERGENT at char 1 "_\t\t\"\t\t\"\t"
+  point 12300 grid_off 12 suffix 50: DIVERGENT at char 1 "_\t\t\"\t\t\"\t"
+probe-f-gdn-sequential: sequential-scan COLD digests equal the chunked arm's on 10/12 turns and differ at turns [6, 10] (11,750 and 12,350: the day-16 slru and lru flip prompts)
+probe-f-gdn-sequential: RESTORE-VS-COLD: arm=gdn-sequential turns=12 compared=12 identical=12/12 first_divergent_turn=none -> IDENTICAL
+probe-d-tokenwise: no prime-branch call in either boot; 12,350 tokenwise receipts cold, 11,000 + 9 x 150 chain; turn 10 restored 12200 == cold
+probe-d-tokenwise: RESTORE-VS-COLD: arm=tokenwise turns=10 compared=1 identical=1/1 first_divergent_turn=none -> IDENTICAL
+DAY17 REPLAY OK: receipts consistent, every statement above re-derived from the rows

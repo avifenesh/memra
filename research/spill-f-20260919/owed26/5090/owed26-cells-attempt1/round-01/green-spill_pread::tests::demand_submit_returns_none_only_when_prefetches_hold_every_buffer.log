@@ -1,0 +1,9 @@
+
+running 1 test
+[spill-worker] WARNING: effective depth 2 < 6; grouped current+next overlap is degraded; continuing with projection concurrency and mmap fallback
+[spill-pread] enabled: depth=2 buffer_bytes=1024 payload_capacity=1024 total_pinned_bytes=2048 (bounded worker prefetch, caller-thread compute-stream H2D, mmap error fallback)
+[spill-pread] reads=3 bytes=96 errors=0 short_reads=0 fallbacks=0 buffer_waits=1 ring_full=1 overread_bytes=0 worker_read_ns=39276 demand_read_ns=0 wait_ns=37201 h2d_submits=0 mapped_serves=0 demand_waits=1 demand_wait_ns=31165 prefetch_cancels=0 demand_wait_timeouts=0
+test spill_pread::tests::demand_submit_returns_none_only_when_prefetches_hold_every_buffer ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 625 filtered out; finished in 0.16s
+

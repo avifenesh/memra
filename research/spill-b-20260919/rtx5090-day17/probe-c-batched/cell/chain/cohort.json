@@ -1,0 +1,162 @@
+[
+  {
+    "status": 200,
+    "elapsed_s": 1.088,
+    "prompt_tokens": 1250,
+    "completion_tokens": 8,
+    "cached_tokens": 0,
+    "finish_reason": "length",
+    "text": "odic_\n\n<|fim_suffix|",
+    "text_sha256": "2db32b69a8bd794a1ab38cf55746e43dd7b255f5999b14c8aab5f395dfb272f3",
+    "error": null,
+    "lines": [
+      "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1250 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+      "[primeseg] call start=0 take=1250 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1250 budget=1250",
+      "[prefix-cache] insert (seed): 1250 tokens, 194.0MB (resident 194.0MB / 1074MB, model gate, ns \"cohort-1\")",
+      "[ttft] id=cmpl-5a742accb743802028fded7cf3f80f5e model=\"gate\" path=\"/v1/completions\" prompt_tokens=1250 outcome=ended_without_sse request_parse_ms=0.064 admission_ms=0.043 queue_wait_ms=0.155 tokenize_ms=0.002 prime_wait_ms=5.148 prime_ms=883.096 decode_wait_ms=0.232 sse_handoff_ms=na request_parse_end_ms=0.064 admission_end_ms=0.107 tokenize_start_ms=0.262 tokenize_end_ms=0.264 prime_start_ms=5.412 prime_end_ms=888.508 first_decode_ms=888.740 first_sse_byte_ms=na total_ms=888.740"
+    ],
+    "role": "seed1",
+    "tenant": 1,
+    "prompt_ids": 1250
+  },
+  {
+    "status": 200,
+    "elapsed_s": 0.197,
+    "prompt_tokens": 1250,
+    "completion_tokens": 8,
+    "cached_tokens": 1250,
+    "finish_reason": "length",
+    "text": "odic_\n\n<|fim_suffix|",
+    "text_sha256": "2db32b69a8bd794a1ab38cf55746e43dd7b255f5999b14c8aab5f395dfb272f3",
+    "error": null,
+    "lines": [
+      "[prefix-cache] hit: 1250 of 1250 prompt tokens from cache (model gate)",
+      "[spec-k] model=\"gate\" tenant=\"cohort-1\" K=0 source=eligibility-fallback prompt=1250 cached=1250 lcp=1250 active=1 wave=1 placement=single-or-non-pp2",
+      "[prefix-cache] source lease released after restore fence (entry 1250 tokens, model gate)",
+      "[ttft] id=cmpl-f7f097757fb8d1067ea9779da0fbcee4 model=\"gate\" path=\"/v1/completions\" prompt_tokens=1250 outcome=ended_without_sse request_parse_ms=0.058 admission_ms=0.035 queue_wait_ms=0.149 tokenize_ms=0.002 prime_wait_ms=1.526 prime_ms=0.000 decode_wait_ms=0.000 sse_handoff_ms=na request_parse_end_ms=0.058 admission_end_ms=0.093 tokenize_start_ms=0.242 tokenize_end_ms=0.244 prime_start_ms=1.770 prime_end_ms=1.770 first_decode_ms=1.770 first_sse_byte_ms=na total_ms=1.770"
+    ],
+    "role": "seed2",
+    "tenant": 1,
+    "prompt_ids": 1250
+  },
+  {
+    "status": 200,
+    "elapsed_s": 1.123,
+    "prompt_tokens": 1350,
+    "completion_tokens": 8,
+    "cached_tokens": 0,
+    "finish_reason": "length",
+    "text": ".\n\n<|fim_suffix|>",
+    "text_sha256": "7be531be16c2bfb477a6cf31262cdd7a5b7a3017751c0057a90a60544f24fbd0",
+    "error": null,
+    "lines": [
+      "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1350 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+      "[primeseg] call start=0 take=1350 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1350 budget=1350",
+      "[prefix-cache] insert (seed): 1350 tokens, 197.0MB (resident 391.0MB / 1074MB, model gate, ns \"cohort-2\")",
+      "[ttft] id=cmpl-c4cfa89fdb80088f641289da958ea923 model=\"gate\" path=\"/v1/completions\" prompt_tokens=1350 outcome=ended_without_sse request_parse_ms=0.057 admission_ms=0.028 queue_wait_ms=0.127 tokenize_ms=0.001 prime_wait_ms=4.877 prime_ms=935.211 decode_wait_ms=0.234 sse_handoff_ms=na request_parse_end_ms=0.057 admission_end_ms=0.085 tokenize_start_ms=0.212 tokenize_end_ms=0.213 prime_start_ms=5.090 prime_end_ms=940.301 first_decode_ms=940.535 first_sse_byte_ms=na total_ms=940.535"
+    ],
+    "role": "seed1",
+    "tenant": 2,
+    "prompt_ids": 1350
+  },
+  {
+    "status": 200,
+    "elapsed_s": 0.2,
+    "prompt_tokens": 1350,
+    "completion_tokens": 8,
+    "cached_tokens": 1350,
+    "finish_reason": "length",
+    "text": ".\n\n<|fim_suffix|>",
+    "text_sha256": "7be531be16c2bfb477a6cf31262cdd7a5b7a3017751c0057a90a60544f24fbd0",
+    "error": null,
+    "lines": [
+      "[prefix-cache] hit: 1350 of 1350 prompt tokens from cache (model gate)",
+      "[spec-k] model=\"gate\" tenant=\"cohort-2\" K=0 source=eligibility-fallback prompt=1350 cached=1350 lcp=1350 active=1 wave=1 placement=single-or-non-pp2",
+      "[prefix-cache] source lease released after restore fence (entry 1350 tokens, model gate)",
+      "[ttft] id=cmpl-6f4cdfc103c00fd1ef6547e45e87a373 model=\"gate\" path=\"/v1/completions\" prompt_tokens=1350 outcome=ended_without_sse request_parse_ms=0.079 admission_ms=0.030 queue_wait_ms=0.155 tokenize_ms=0.002 prime_wait_ms=1.378 prime_ms=0.000 decode_wait_ms=0.000 sse_handoff_ms=na request_parse_end_ms=0.079 admission_end_ms=0.109 tokenize_start_ms=0.264 tokenize_end_ms=0.266 prime_start_ms=1.644 prime_end_ms=1.644 first_decode_ms=1.644 first_sse_byte_ms=na total_ms=1.644"
+    ],
+    "role": "seed2",
+    "tenant": 2,
+    "prompt_ids": 1350
+  },
+  {
+    "status": 200,
+    "elapsed_s": 1.186,
+    "prompt_tokens": 1450,
+    "completion_tokens": 8,
+    "cached_tokens": 0,
+    "finish_reason": "length",
+    "text": "_\n\n================================================================\nEnd of Codebase",
+    "text_sha256": "a51f91c3a96eb42b3ee46fe5ba52b897f3838121733f6469b336f5623e462e4f",
+    "error": null,
+    "lines": [
+      "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1450 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+      "[primeseg] call start=0 take=1450 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1450 budget=1450",
+      "[prefix-cache] insert (seed): 1450 tokens, 200.0MB (resident 590.9MB / 1074MB, model gate, ns \"cohort-3\")",
+      "[ttft] id=cmpl-58d704bcaca726c9ef561a0ae2e893df model=\"gate\" path=\"/v1/completions\" prompt_tokens=1450 outcome=ended_without_sse request_parse_ms=0.061 admission_ms=0.030 queue_wait_ms=0.142 tokenize_ms=0.002 prime_wait_ms=4.879 prime_ms=1005.954 decode_wait_ms=0.226 sse_handoff_ms=na request_parse_end_ms=0.061 admission_end_ms=0.091 tokenize_start_ms=0.233 tokenize_end_ms=0.235 prime_start_ms=5.114 prime_end_ms=1011.068 first_decode_ms=1011.294 first_sse_byte_ms=na total_ms=1011.294"
+    ],
+    "role": "seed1",
+    "tenant": 3,
+    "prompt_ids": 1450
+  },
+  {
+    "status": 200,
+    "elapsed_s": 0.2,
+    "prompt_tokens": 1450,
+    "completion_tokens": 8,
+    "cached_tokens": 1450,
+    "finish_reason": "length",
+    "text": "_\n\n================================================================\nEnd of Codebase",
+    "text_sha256": "a51f91c3a96eb42b3ee46fe5ba52b897f3838121733f6469b336f5623e462e4f",
+    "error": null,
+    "lines": [
+      "[prefix-cache] hit: 1450 of 1450 prompt tokens from cache (model gate)",
+      "[spec-k] model=\"gate\" tenant=\"cohort-3\" K=0 source=eligibility-fallback prompt=1450 cached=1450 lcp=1450 active=1 wave=1 placement=single-or-non-pp2",
+      "[prefix-cache] source lease released after restore fence (entry 1450 tokens, model gate)",
+      "[ttft] id=cmpl-d7f473c93ff0854d303f774a24832067 model=\"gate\" path=\"/v1/completions\" prompt_tokens=1450 outcome=ended_without_sse request_parse_ms=0.075 admission_ms=0.040 queue_wait_ms=0.128 tokenize_ms=0.002 prime_wait_ms=1.625 prime_ms=0.001 decode_wait_ms=0.000 sse_handoff_ms=na request_parse_end_ms=0.075 admission_end_ms=0.115 tokenize_start_ms=0.243 tokenize_end_ms=0.245 prime_start_ms=1.870 prime_end_ms=1.871 first_decode_ms=1.871 first_sse_byte_ms=na total_ms=1.871"
+    ],
+    "role": "seed2",
+    "tenant": 3,
+    "prompt_ids": 1450
+  },
+  {
+    "status": 200,
+    "elapsed_s": 1.278,
+    "prompt_tokens": 1550,
+    "completion_tokens": 8,
+    "cached_tokens": 0,
+    "finish_reason": "length",
+    "text": "_\n\n<|fim_suffix|>",
+    "text_sha256": "e679c6f125a60a919948f819c1948c2533ce7d5d5408f79d01eea70e86931503",
+    "error": null,
+    "lines": [
+      "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1550 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+      "[primeseg] call start=0 take=1550 grid_off=0 bound_rem=None ckpt_at=None snapshot_at=None q=1550 budget=1550",
+      "[prefix-cache] insert (seed): 1550 tokens, 202.9MB (resident 793.9MB / 1074MB, model gate, ns \"cohort-4\")",
+      "[ttft] id=cmpl-de95fc4e01060fa9777dae206a1690a7 model=\"gate\" path=\"/v1/completions\" prompt_tokens=1550 outcome=ended_without_sse request_parse_ms=0.066 admission_ms=0.038 queue_wait_ms=0.133 tokenize_ms=0.002 prime_wait_ms=4.864 prime_ms=1105.452 decode_wait_ms=0.230 sse_handoff_ms=na request_parse_end_ms=0.066 admission_end_ms=0.104 tokenize_start_ms=0.237 tokenize_end_ms=0.239 prime_start_ms=5.103 prime_end_ms=1110.555 first_decode_ms=1110.785 first_sse_byte_ms=na total_ms=1110.785"
+    ],
+    "role": "seed1",
+    "tenant": 4,
+    "prompt_ids": 1550
+  },
+  {
+    "status": 200,
+    "elapsed_s": 0.196,
+    "prompt_tokens": 1550,
+    "completion_tokens": 8,
+    "cached_tokens": 1550,
+    "finish_reason": "length",
+    "text": "_\n\n<|fim_suffix|>",
+    "text_sha256": "e679c6f125a60a919948f819c1948c2533ce7d5d5408f79d01eea70e86931503",
+    "error": null,
+    "lines": [
+      "[prefix-cache] hit: 1550 of 1550 prompt tokens from cache (model gate)",
+      "[spec-k] model=\"gate\" tenant=\"cohort-4\" K=0 source=eligibility-fallback prompt=1550 cached=1550 lcp=1550 active=1 wave=1 placement=single-or-non-pp2",
+      "[prefix-cache] source lease released after restore fence (entry 1550 tokens, model gate)",
+      "[ttft] id=cmpl-bd5786fcb7ac7423b45e1acc60230bed model=\"gate\" path=\"/v1/completions\" prompt_tokens=1550 outcome=ended_without_sse request_parse_ms=0.066 admission_ms=0.031 queue_wait_ms=0.155 tokenize_ms=0.002 prime_wait_ms=1.600 prime_ms=0.000 decode_wait_ms=0.000 sse_handoff_ms=na request_parse_end_ms=0.066 admission_end_ms=0.097 tokenize_start_ms=0.252 tokenize_end_ms=0.254 prime_start_ms=1.854 prime_end_ms=1.854 first_decode_ms=1.854 first_sse_byte_ms=na total_ms=1.854"
+    ],
+    "role": "seed2",
+    "tenant": 4,
+    "prompt_ids": 1550
+  }
+]

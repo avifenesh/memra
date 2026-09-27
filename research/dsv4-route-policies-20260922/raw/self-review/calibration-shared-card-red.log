@@ -1,0 +1,26 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-dsv4/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.00s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-e53347545693156a)
+
+running 1 test
+test dsv4_serve::calibration_tests::co_located_stages_share_one_card_delta ... FAILED
+
+failures:
+
+---- dsv4_serve::calibration_tests::co_located_stages_share_one_card_delta stdout ----
+
+thread 'dsv4_serve::calibration_tests::co_located_stages_share_one_card_delta' (86621) panicked at crates/memra-server/src/dsv4_serve.rs:2090:9:
+assertion `left == right` failed
+  left: [200, 250, 20]
+ right: [150, 0, 20]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    dsv4_serve::calibration_tests::co_located_stages_share_one_card_delta
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 883 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p memra-server --lib`

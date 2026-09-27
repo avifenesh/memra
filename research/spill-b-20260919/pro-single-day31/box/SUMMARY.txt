@@ -1,0 +1,57 @@
+== card pro6000 served_ctx=262144 model_ctx=262144
+DAY31 V-BOOT boot=O1-off arm=off door_line=present -> PASS
+DAY31 V-BOOT boot=O1-on2048 arm=on2048 door_line=present -> PASS
+DAY31 V-BOOT boot=O1-on8192 arm=on8192 door_line=present -> PASS
+DAY31 V-BOOT boot=O1-on32768 arm=on32768 door_line=present -> PASS
+DAY31 V-BOOT boot=O2-on32768 arm=on32768 door_line=present -> PASS
+DAY31 V-BOOT boot=O2-on8192 arm=on8192 door_line=present -> PASS
+DAY31 V-BOOT boot=O2-on2048 arm=on2048 door_line=present -> PASS
+DAY31 V-BOOT boot=O2-off arm=off door_line=present -> PASS
+== V-ALLOC
+DAY31 V-ALLOC card=pro6000 boot=O1-off arm=off judged=45 match=45 mismatch=0 -> PASS
+DAY31 V-ALLOC card=pro6000 boot=O1-on2048 arm=on2048 judged=44 match=44 mismatch=0 -> PASS
+DAY31 V-ALLOC card=pro6000 boot=O1-on8192 arm=on8192 judged=46 match=46 mismatch=0 -> PASS
+DAY31 V-ALLOC card=pro6000 boot=O1-on32768 arm=on32768 judged=46 match=46 mismatch=0 -> PASS
+DAY31 V-ALLOC card=pro6000 boot=O2-on32768 arm=on32768 judged=46 match=46 mismatch=0 -> PASS
+DAY31 V-ALLOC card=pro6000 boot=O2-on8192 arm=on8192 judged=46 match=46 mismatch=0 -> PASS
+DAY31 V-ALLOC card=pro6000 boot=O2-on2048 arm=on2048 judged=44 match=44 mismatch=0 -> PASS
+DAY31 V-ALLOC card=pro6000 boot=O2-off arm=off judged=45 match=45 mismatch=0 -> PASS
+== V-ID / V-TRUNC
+DAY31 V-ID card=pro6000 order=O1 arm=on2048 vs=off eligible=46 equal=46 differ=0 slack_equal=0 slack_differ=0 -> PASS
+DAY31 V-TRUNC card=pro6000 order=O1 arm=on2048 truncated_with_twin=0 length_without_twin=0 length_both=0 deadline_cut=0 truncated_G_outside_[v,v+8]=0
+DAY31 V-ID card=pro6000 order=O1 arm=on8192 vs=off eligible=46 equal=46 differ=0 slack_equal=0 slack_differ=0 -> PASS
+DAY31 V-TRUNC card=pro6000 order=O1 arm=on8192 truncated_with_twin=4 length_without_twin=0 length_both=0 deadline_cut=0 truncated_G_outside_[v,v+8]=0
+DAY31 V-ID card=pro6000 order=O1 arm=on32768 vs=off eligible=47 equal=47 differ=0 slack_equal=0 slack_differ=0 -> PASS
+DAY31 V-TRUNC card=pro6000 order=O1 arm=on32768 truncated_with_twin=2 length_without_twin=0 length_both=0 deadline_cut=0 truncated_G_outside_[v,v+8]=0
+DAY31 V-ID card=pro6000 order=O2 arm=on32768 vs=off eligible=47 equal=47 differ=0 slack_equal=0 slack_differ=0 -> PASS
+DAY31 V-TRUNC card=pro6000 order=O2 arm=on32768 truncated_with_twin=2 length_without_twin=0 length_both=0 deadline_cut=0 truncated_G_outside_[v,v+8]=0
+DAY31 V-ID card=pro6000 order=O2 arm=on8192 vs=off eligible=46 equal=46 differ=0 slack_equal=0 slack_differ=0 -> PASS
+DAY31 V-TRUNC card=pro6000 order=O2 arm=on8192 truncated_with_twin=3 length_without_twin=0 length_both=0 deadline_cut=0 truncated_G_outside_[v,v+8]=0
+DAY31 V-ID card=pro6000 order=O2 arm=on2048 vs=off eligible=46 equal=46 differ=0 slack_equal=0 slack_differ=0 -> PASS
+DAY31 V-TRUNC card=pro6000 order=O2 arm=on2048 truncated_with_twin=0 length_without_twin=0 length_both=0 deadline_cut=0 truncated_G_outside_[v,v+8]=0
+== G-NATURAL (door OFF, open classes, both orders)
+DAY31 G-NATURAL card=pro6000 class=i n=30 min=354 p50=505 p90=673 p99=954 max=954 over2048=0 over8192=0 over32768=0
+DAY31 G-NATURAL card=pro6000 class=iii n=30 min=211 p50=407 p90=576 p99=621 max=621 over2048=0 over8192=0 over32768=0
+DAY31 G-NATURAL card=pro6000 class=iv-a n=4 min=102441 p50=134383 p90=134383 p99=134383 max=134383 over2048=4 over8192=4 over32768=4
+DAY31 G-NATURAL card=pro6000 class=iv-b n=6 min=18443 p50=58001 p90=193178 p99=193178 max=193178 over2048=6 over8192=6 over32768=4
+DAY31 G-NATURAL card=pro6000 class=all-open n=70 min=211 p50=505 p90=58001 p99=193178 max=193178 over2048=10 over8192=10 over32768=8 finish={'stop': 70}
+== V-CONC / V-RETRY
+DAY31 V-CONC card=pro6000 order=O1 arm=off window_ms=167951 B=64 status={200: 64} finish={'stop': 64} retry_after={} active_sessions_max=9.0 admission_booked_bytes_max=83743021720.0 samples=672 shadow_budget_bytes=65881157328 burst_cost_lines=114939 burst_cost_total_mb_median=9239 arith_sessions=7
+DAY31 V-RETRY card=pro6000 order=O1 arm=off r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY31 V-CONC card=pro6000 order=O1 arm=on2048 window_ms=129140 B=64 status={200: 64} finish={'stop': 61, 'length': 3} retry_after={} active_sessions_max=64.0 admission_booked_bytes_max=69424286208.0 samples=517 shadow_budget_bytes=65881157328 burst_cost_lines=63 burst_cost_total_mb_median=1084 arith_sessions=60
+DAY31 V-RETRY card=pro6000 order=O1 arm=on2048 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY31 V-CONC card=pro6000 order=O1 arm=on8192 window_ms=20 B=64 status={None: 64} finish={} retry_after={None: 64} active_sessions_max=None admission_booked_bytes_max=None samples=0 shadow_budget_bytes=65881157328 burst_cost_lines=0 burst_cost_total_mb_median=None arith_sessions=None
+DAY31 V-RETRY card=pro6000 order=O1 arm=on8192 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=64 -> PASS
+DAY31 V-CONC card=pro6000 order=O1 arm=on32768 window_ms=96283 B=64 status={429: 17, 200: 47} finish={'stop': 47} retry_after={'60': 17} active_sessions_max=47.0 admission_booked_bytes_max=96260417960.0 samples=385 shadow_budget_bytes=65881157328 burst_cost_lines=74 burst_cost_total_mb_median=2046.0 arith_sessions=32
+DAY31 V-RETRY card=pro6000 order=O1 arm=on32768 r429=17 refuse_lines=17 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY31 V-CONC card=pro6000 order=O2 arm=on32768 window_ms=108450 B=64 status={429: 17, 200: 47} finish={'stop': 47} retry_after={'60': 17} active_sessions_max=47.0 admission_booked_bytes_max=96267554088.0 samples=434 shadow_budget_bytes=65881157328 burst_cost_lines=77 burst_cost_total_mb_median=2046 arith_sessions=32
+DAY31 V-RETRY card=pro6000 order=O2 arm=on32768 r429=17 refuse_lines=17 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY31 V-CONC card=pro6000 order=O2 arm=on8192 window_ms=21 B=64 status={None: 64} finish={} retry_after={None: 64} active_sessions_max=None admission_booked_bytes_max=None samples=0 shadow_budget_bytes=65881157328 burst_cost_lines=0 burst_cost_total_mb_median=None arith_sessions=None
+DAY31 V-RETRY card=pro6000 order=O2 arm=on8192 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=64 -> PASS
+DAY31 V-CONC card=pro6000 order=O2 arm=on2048 window_ms=129111 B=64 status={200: 64} finish={'stop': 61, 'length': 3} retry_after={} active_sessions_max=64.0 admission_booked_bytes_max=69424286208.0 samples=516 shadow_budget_bytes=65881157328 burst_cost_lines=60 burst_cost_total_mb_median=1084.5 arith_sessions=60
+DAY31 V-RETRY card=pro6000 order=O2 arm=on2048 r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+DAY31 V-CONC card=pro6000 order=O2 arm=off window_ms=180369 B=64 status={200: 64} finish={'stop': 64} retry_after={} active_sessions_max=9.0 admission_booked_bytes_max=83744459416.0 samples=721 shadow_budget_bytes=65881157328 burst_cost_lines=109189 burst_cost_total_mb_median=9239 arith_sessions=7
+DAY31 V-RETRY card=pro6000 order=O2 arm=off r429=0 refuse_lines=0 retry_after_in_1_60=True other_non200=0 -> PASS
+== SELECT (stated, not chosen)
+DAY31 SELECT card=pro6000 R1_smallest_zero_truncation=2048 R2_smallest_v_ge_max_natural_G=none of [2048, 8192, 32768] (max_natural_G=193178) R3_registry=32768 R4_survey=context
+DAY31 V-DOOR card=pro6000 boots=8 excluded=0 v_id_all=True v_alloc_all=True v_trunc_g_all=True v_retry_all=True -> PASS

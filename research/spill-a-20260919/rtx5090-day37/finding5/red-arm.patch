@@ -1,0 +1,20 @@
+diff --git a/crates/memra-engine/src/tier_transfer.rs b/crates/memra-engine/src/tier_transfer.rs
+index 288fa8710..4da4383b1 100644
+--- a/crates/memra-engine/src/tier_transfer.rs
++++ b/crates/memra-engine/src/tier_transfer.rs
+@@ -4193,7 +4193,6 @@ mod tests {
+         assert!(t.poll(&ticket).is_ok());
+         // Hold the spans behind a 300 ms spin on the copy stream (after the KV item's copy).
+         let hold_at = clock.hold();
+-        clock.time("delay", || t.delay_on(&copy, 300_000_000).unwrap());
+         let set = spans(false);
+         clock.time("submit", || t.submit_d2h_spans(&ticket, set).unwrap());
+         let set = spans(false);
+@@ -4458,7 +4457,6 @@ mod tests {
+         }
+         // Hold the spans behind a 300 ms spin on the copy stream (after the KV item's copy).
+         let hold_at = clock.hold();
+-        clock.time("delay", || t.delay_on(&copy, 300_000_000).unwrap());
+         let set = spans(0);
+         clock.time("submit", || t.submit_h2d_spans(&ticket, set).unwrap());
+         let set = spans(0);

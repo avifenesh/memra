@@ -1,5 +1,6 @@
 //! Plain-only, sampled ABBA over a frozen prompt snapshot. No speculative timing rows.
 use memra_engine::dsv4_gpu::{Dsv4Gpu, Dsv4HostDecodeState, Dsv4SampleCfg, dsv4_sample_row};
+use memra_engine::dsv4_source_tape::SourceTape;
 use memra_gguf::dsv4_forward::ActQuantVariant;
 use memra_tokenizer::Tokenizer;
 use sha2::{Digest, Sha256};
@@ -274,8 +275,6 @@ fn main() {
         ("MEMRA_DSV4_GROUPED_ROUTE", "device"),
         ("MEMRA_DSV4_VERIFY_TOPK", "device"),
         ("MEMRA_DSV4_SAMPLE_SORT", "radix"),
-        ("MEMRA_DSV4_INDEXER_SCORE", "tiled"),
-        ("MEMRA_DSV4_SINK_SCORE", "tiled"),
         ("MEMRA_DSV4_PREFILL_MOE", "reference"),
     ] {
         assert_eq!(
@@ -285,18 +284,9 @@ fn main() {
         );
     }
     let dir = Path::new(&args[1]);
-    let source = std::fs::read_to_string(&args[2]).expect("source");
-    assert_eq!(
-        format!("{:x}", Sha256::digest(source.as_bytes())),
-        "f6e175a6f2588953568746fec0cd43fcd046405f74b5c71ce071fe7f37238ded",
-        "pinned source"
-    );
+    let tape = SourceTape::read(&args[2]).expect("source tape");
     let tokenizer = Tokenizer::from_hf_dir(dir).expect("tokenizer");
-    let input = tokenizer.encode(
-        &format!("Review this inference engine source:\n\n{source}"),
-        true,
-    );
-    assert!(input.len() >= 8192);
+    let input = tape.prompt(&tokenizer, "Review this inference engine source:\n\n", 8192);
     let rows_per_arm = 2 * REPEATS;
     let mode_names: Vec<_> = modes.iter().map(|mode| mode.name()).collect();
     println!(

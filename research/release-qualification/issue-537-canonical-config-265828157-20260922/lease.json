@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "wrapper_pid": 54137,
+  "child_pid": 54216,
+  "requested_uuids": [
+    "GPU-9c18c8af-0aa5-0157-3722-ef6957a4c9a6"
+  ],
+  "lock_order": [
+    "GPU-9c18c8af-0aa5-0157-3722-ef6957a4c9a6"
+  ],
+  "lock_files": {
+    "GPU-9c18c8af-0aa5-0157-3722-ef6957a4c9a6": "/tmp/memra-gpu-locks/GPU-9c18c8af-0aa5-0157-3722-ef6957a4c9a6.lock"
+  },
+  "lock_inodes": {
+    "GPU-9c18c8af-0aa5-0157-3722-ef6957a4c9a6": {
+      "inode": 262773,
+      "device_major": 253,
+      "device_minor": 1
+    }
+  },
+  "devices": [
+    {
+      "index": 0,
+      "uuid": "GPU-9c18c8af-0aa5-0157-3722-ef6957a4c9a6",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:05:00.0"
+    }
+  ],
+  "all_devices": [
+    {
+      "index": 0,
+      "uuid": "GPU-9c18c8af-0aa5-0157-3722-ef6957a4c9a6",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:05:00.0"
+    },
+    {
+      "index": 1,
+      "uuid": "GPU-0c25782b-cc2a-7b19-9196-81ee0467adcd",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:06:00.0"
+    },
+    {
+      "index": 2,
+      "uuid": "GPU-7902d4d3-a795-bda4-1744-828e41a1cc1c",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:07:00.0"
+    },
+    {
+      "index": 3,
+      "uuid": "GPU-b882e26c-4e15-95e3-7e94-18fc10c53122",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:08:00.0"
+    },
+    {
+      "index": 4,
+      "uuid": "GPU-cf92343f-4679-4a83-e92b-9221e9a1ba3c",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:09:00.0"
+    },
+    {
+      "index": 5,
+      "uuid": "GPU-f2f1aa68-575c-ee87-187d-7e2c28beb99c",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:0A:00.0"
+    },
+    {
+      "index": 6,
+      "uuid": "GPU-810a50f6-4dcf-7915-d61c-e95e5206ed02",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:0B:00.0"
+    },
+    {
+      "index": 7,
+      "uuid": "GPU-10a98510-6b71-761a-0ecd-e9fa824d9588",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:0C:00.0"
+    }
+  ],
+  "command": [
+    "python3",
+    "/data/receipts/issue-537-265828157-cpu-attempt-1/controls/native/instrumented.py",
+    "--out",
+    "/data/receipts/issue-537-265828157-cpu-attempt-1/native/telemetry/generic-release-a1",
+    "--",
+    "python3",
+    "/data/owners/issue-537/src-265828157/tools/qualify-release.py",
+    "capture",
+    "--repo",
+    "/data/owners/issue-537/src-265828157",
+    "--out",
+    "/data/receipts/issue-537-265828157-cpu-attempt-1/native/phases/generic-release-a1",
+    "--build",
+    "/data/receipts/issue-537-265828157-cpu-attempt-1/canonical-build",
+    "--expected-head",
+    "265828157c89509e36ff9627824fda35380af013",
+    "--oracles",
+    "/data/models/kernel-oracles"
+  ],
+  "started_unix": 1790099537.4023771,
+  "state": "finished",
+  "exit_code": 0,
+  "child_exit_code": 0,
+  "finished_unix": 1790099778.5048463,
+  "timed_out": false,
+  "interrupted_signal": null,
+  "lingering_compute": []
+}

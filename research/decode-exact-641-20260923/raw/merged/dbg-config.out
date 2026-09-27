@@ -1,0 +1,11 @@
+[tensor-contract] bound 668 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[q8rp] split-plane decode mirrors built: 92 tensors
+loaded qwen35 (32 layers); steps=32 batch=8
+gate1 (B=1 vs decode_step_h): N/A for the live default; B=1 uses the batched numeric class and gate2 checks B=1 vs B=8
+gate2/gate3 B=1 reference arm: batched body (B=1 fast path pinned OFF; global setting = OFF; effective for this architecture = OFF)
+[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+gate2 (B=8 vs isolated batched-B=1, bit-checked, 32 steps): PASS
+[device-penalty] sparse sampled rows=4 unique-counts=4 execution=one-ragged-launch raw-logits=preserved
+gate3d penalty-dispatch tooth: raw=64 cpu-penalized=268 device=268 raw-pristine=true PASS
+gate3 (device sampling: greedy==host-argmax + sampled B=8 vs isolated + lean-logits identity + penalty dispatch + filtered top-k/p/min_p isolation+admission): PASS
+ALL GREEN: decode_step_batch exactness battery

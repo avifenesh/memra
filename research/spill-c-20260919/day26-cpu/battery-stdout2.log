@@ -1,0 +1,54 @@
+2026-09-22T07:41:46Z wait 1 before fault-default: free=22358MiB apps=[1204026, target/release/kernel-check, 1604 MiB]
+2026-09-22T07:43:46Z wait 2 before fault-default: free=22358MiB apps=[1204026, target/release/kernel-check, 1604 MiB]
+2026-09-22T07:45:46Z wait 3 before fault-default: free=23672MiB apps=[1229405, target/release/graph-warmup-stress, 290 MiB]
+2026-09-22T07:47:47Z wait 4 before fault-default: free=19832MiB apps=[1237083, target/release/memra-server, 4066 MiB]
+2026-09-22T07:49:47Z wait 5 before fault-default: free=13014MiB apps=[1247862, target/release/memra-server, 10948 MiB]
+2026-09-22T07:51:47Z start fault-default tree=b74269af57cd762afb8198f6467ef5c4820fa1af
+fault-default rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN restore_route_lines=0
+2026-09-22T07:52:38Z done fault-default rc=0
+2026-09-22T07:52:38Z start fault-plain tree=b74269af57cd762afb8198f6467ef5c4820fa1af
+fault-plain rc=0 KV-HOST-CONTRACT-FAULT GATE: ALL GREEN restore_route_lines=8
+2026-09-22T07:53:24Z done fault-plain rc=0
+2026-09-22T07:53:24Z start failure-default-off tree=b74269af57cd762afb8198f6467ef5c4820fa1af
+failure-default-off rc=0 KV-HOST-SPILL FAILURE GATE: ALL GREEN restore_route_lines=0
+2026-09-22T07:53:44Z done failure-default-off rc=0
+2026-09-22T07:53:44Z start failure-default-on tree=b74269af57cd762afb8198f6467ef5c4820fa1af
+failure-default-on rc=0 KV-HOST-SPILL FAILURE GATE: ALL GREEN restore_route_lines=0
+2026-09-22T07:54:09Z done failure-default-on rc=0
+2026-09-22T07:54:09Z start failure-plain-off tree=b74269af57cd762afb8198f6467ef5c4820fa1af
+failure-plain-off rc=0 KV-HOST-SPILL FAILURE GATE: ALL GREEN restore_route_lines=0
+2026-09-22T07:54:29Z done failure-plain-off rc=0
+2026-09-22T07:54:29Z start failure-plain-on tree=b74269af57cd762afb8198f6467ef5c4820fa1af
+failure-plain-on rc=0 KV-HOST-SPILL FAILURE GATE: ALL GREEN restore_route_lines=0
+2026-09-22T07:54:55Z done failure-plain-on rc=0
+2026-09-22T07:54:55Z start identity-default-off tree=b74269af57cd762afb8198f6467ef5c4820fa1af
+identity-default-off rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0) restore_route_lines=0
+2026-09-22T07:55:08Z done identity-default-off rc=0
+2026-09-22T07:55:08Z start identity-default-on tree=b74269af57cd762afb8198f6467ef5c4820fa1af
+identity-default-on rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0) restore_route_lines=0
+2026-09-22T07:55:24Z done identity-default-on rc=0
+2026-09-22T07:55:24Z start identity-plain-off tree=b74269af57cd762afb8198f6467ef5c4820fa1af
+identity-plain-off rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0) restore_route_lines=0
+2026-09-22T07:55:38Z done identity-plain-off rc=0
+2026-09-22T07:55:38Z start identity-plain-on tree=b74269af57cd762afb8198f6467ef5c4820fa1af
+identity-plain-on rc=0 KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0) restore_route_lines=4
+2026-09-22T07:55:54Z done identity-plain-on rc=0
+2026-09-22T07:55:54Z start hit-off tree=b74269af57cd762afb8198f6467ef5c4820fa1af
+hit-off rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen) restore_route_lines=0
+2026-09-22T07:56:20Z done hit-off rc=0
+2026-09-22T07:56:20Z start hit-on tree=b74269af57cd762afb8198f6467ef5c4820fa1af
+hit-on rc=0 SPEC-ON-CACHE-HIT GATE: ALL GREEN (qwen) restore_route_lines=0
+2026-09-22T07:56:46Z done hit-on rc=0
+2026-09-22T07:56:46Z start twin27-off tree=b74269af57cd762afb8198f6467ef5c4820fa1af
+twin27-off rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS restore_route_lines=0
+2026-09-22T07:59:02Z done twin27-off rc=0
+2026-09-22T07:59:02Z start twin27-on tree=b74269af57cd762afb8198f6467ef5c4820fa1af
+twin27-on rc=0 PREFIX-NEWEST-TURN-FITS: budget_bytes=1073741824 cohort_bytes=736755712 turns=8 cold_turns_after_1=0 cached_ok=7/7 lines_ok=8/8 evictions=9 cohort_evictions=3 self_evictions=0 refused_or_skipped=0 effective_free_ok=8/8 identity_ok=8/8 grid_ok=21/21 grid=32 off_grid_calls=0 V1=ok V2=ok V3=ok V4=ok V5=ok V6=ok -> PASS restore_route_lines=0
+2026-09-22T08:01:14Z done twin27-on rc=0
+2026-09-22T08:01:14Z start unit-server tree=b74269af57cd762afb8198f6467ef5c4820fa1af
+unit-server rc=0 test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 809 filtered out; finished in 0.29s restore_route_lines=0
+2026-09-22T08:01:19Z done unit-server rc=0
+2026-09-22T08:01:20Z start unit-engine tree=b74269af57cd762afb8198f6467ef5c4820fa1af
+unit-engine rc=0 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 554 filtered out; finished in 0.55s restore_route_lines=0
+2026-09-22T08:01:21Z done unit-engine rc=0
+LOCAL-BATTERY-DONE

@@ -1,0 +1,17 @@
+#!/bin/bash
+# Fake nvidia-smi for tools/gpu-probe-recovery-gate.py (memra#516). Scripted answers for the
+# canary's own query; every other invocation goes to the real tool.
+DIR="$(cd "$(dirname "$0")" && pwd)"
+case "$*" in
+  *ecc.errors*|*memory.used*)
+    n=$(cat "$DIR/calls" 2>/dev/null || echo 0); echo $((n+1)) > "$DIR/calls"
+    step=$(sed -n "$((n+1))p" "$DIR/script"); [ -z "$step" ] && step=ok
+    echo "$(date +%T) call=$((n+1)) step=$step" >> "$DIR/trace"
+    case "$step" in
+      hang) sleep 30; exit 0 ;;
+      ecc)  echo "2026/09/22 00:00:00.000, 5, No, No"; exit 0 ;;
+      *)    echo "2026/09/22 00:00:00.000, 0, No, No"; exit 0 ;;
+    esac ;;
+  *)
+    REAL="$(cat "$DIR/real")"; [ -x "$REAL" ] && exec "$REAL" "$@"; exit 1 ;;
+esac

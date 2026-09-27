@@ -1,0 +1,26 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.46
+   Compiling memchr v2.8.2
+   Compiling serde_core v1.0.228
+   Compiling serde_json v1.0.150
+   Compiling smallvec v1.15.2
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling unicode-normalization-alignments v0.1.12
+   Compiling aho-corasick v1.1.4
+   Compiling syn v2.0.118
+   Compiling memra-tokenizer v0.138.0 (/root/wt-a/crates/memra-tokenizer)
+   Compiling memra-reference v0.138.0 (/root/wt-a/crates/memra-reference)
+   Compiling serde_derive v1.0.228
+   Compiling serde v1.0.228
+   Compiling memra-tier v0.138.0 (/root/wt-a/crates/memra-tier)
+   Compiling memra-kv v0.138.0 (/root/wt-a/crates/memra-kv)
+   Compiling memra-engine v0.138.0 (/root/wt-a/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 20.65s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-bedcf781fb9cea32)
+
+running 1 test
+test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 553 filtered out; finished in 0.33s
+

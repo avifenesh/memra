@@ -1,0 +1,42 @@
+capture span 8350.1 ms over 510 steps = 16.37 ms/step
+dev0: kernels 297049 (582/step) kernel-sum 5.60 ms/step busy-union 5.83 ms/step memcpys 271/step
+dev1: kernels 374238 (734/step) kernel-sum 6.90 ms/step busy-union 7.21 ms/step memcpys 308/step
+--- dev0 top kernels (ms/step, count/step, share)
+    2.056     20  36.7%  moe_kq_mrow_stream_kernel
+    1.830    105  32.7%  dsv4_gemv_fp8_m_kernel
+    0.258     26   4.6%  dsv4_dots_f32acc_mrow_kernel
+    0.174      0   3.1%  moe_kq_sktail_kernel
+    0.144     14   2.6%  dsv4_small_hc_f32_fixed_order_kernel
+    0.141      7   2.5%  dsv4_sink_scores_mq_f32acc_kernel
+    0.131     19   2.3%  dsv4_indexer_score_f32acc_kernel
+    0.104      7   1.9%  dsv4_sink_out_mq_f32acc_kernel
+    0.069     14   1.2%  dsv4_fp8_gather_half_kernel
+--- dev1 top kernels (ms/step, count/step, share)
+    1.618     91  23.5%  dsv4_gemv_fp8_m_kernel
+    1.606     17  23.3%  moe_kq_mrow_stream_kernel
+    0.661     25   9.6%  dsv4_dots_f32acc_mrow_kernel
+    0.527      6   7.6%  dsv4_dots_f32_kernel
+    0.477     44   6.9%  dsv4_fp4_gemm_kernel
+    0.217      1   3.1%  dsv4_sink_attn_kernel
+    0.210     14   3.0%  Kernel2
+    0.138      0   2.0%  moe_kq_sktail_kernel
+    0.127     12   1.8%  dsv4_small_hc_f32_fixed_order_kernel
+    0.121      6   1.8%  dsv4_sink_scores_mq_f32acc_kernel
+    0.119     17   1.7%  dsv4_indexer_score_f32acc_kernel
+    0.091      6   1.3%  dsv4_sink_out_mq_f32acc_kernel
+memcpy kind: count/step bytes/step ms/step {1: (54.56078431372549, 51132, 0.019), 8: (517.4392156862746, 8362828, 0.441), 10: (0.2980392156862745, 121562, 0.002), 2: (6.698039215686275, 82498, 0.021)}
+--- runtime API (count/step, ms/step)
+      1289    7.650  cudaLaunchKernel_v7000
+         7    4.171  cuMemcpyDtoHAsync_v2
+       517    2.728  cuMemcpyDtoDAsync_v2
+       101    0.204  cuMemsetD8Async
+        55    0.111  cuMemcpyHtoDAsync_v2
+      1289    0.102  cuKernelGetName
+       101    0.071  cuMemAllocAsync
+       101    0.047  cuMemFreeAsync
+        13    0.034  cudaLaunchKernelExC_v11060
+        14    0.033  cuLaunchKernel
+         8    0.016  cuStreamSynchronize
+         0    0.010  cuMemHostAlloc
+         0    0.005  cuMemFreeHost
+        14    0.004  cuKernelGetFunction

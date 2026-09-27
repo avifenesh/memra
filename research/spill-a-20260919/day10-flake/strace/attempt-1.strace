@@ -1,0 +1,1652 @@
+2436064 01:03:45.662470 execve("target/debug/deps/storage-1825ca21bf643b79", ["target/debug/deps/storage-1825ca"..., "--nocapture"], 0x7fffc566c6d8 /* 86 vars */) = 0
+2436064 01:03:45.662847 close(3</etc/ld.so.cache>) = 0
+2436064 01:03:45.662971 close(3</usr/lib/x86_64-linux-gnu/libgcc_s.so.1>) = 0
+2436064 01:03:45.663090 close(3</usr/lib/x86_64-linux-gnu/libc.so.6>) = 0
+2436064 01:03:45.663514 close(3</proc/2436064/maps>) = 0
+2436064 01:03:45.663837 close(3</usr/share/terminfo/s/screen-256color>) = 0
+2436064 01:03:45.663897 close(3</proc/2436064/cgroup>) = 0
+2436064 01:03:45.663969 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p2436062-i2423580.scope/cpu.max>) = 0
+2436064 01:03:45.664023 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/cpu.max>) = 0
+2436064 01:03:45.664075 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/cpu.max>) = 0
+2436064 01:03:45.664127 close(3</sys/fs/cgroup/user.slice/user-1000.slice/cpu.max>) = 0
+2436064 01:03:45.664178 close(3</sys/fs/cgroup/user.slice/cpu.max>) = 0
+2436064 01:03:45.664278 close(3</proc/2436064/cgroup>) = 0
+2436064 01:03:45.664339 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p2436062-i2423580.scope/cpu.max>) = 0
+2436064 01:03:45.664390 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/cpu.max>) = 0
+2436064 01:03:45.664441 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/cpu.max>) = 0
+2436064 01:03:45.664492 close(3</sys/fs/cgroup/user.slice/user-1000.slice/cpu.max>) = 0
+2436064 01:03:45.664543 close(3</sys/fs/cgroup/user.slice/cpu.max>) = 0
+2436064 01:03:45.664625 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f09ffce8, parent_tid=0x7b73f09ff990, exit_signal=0, stack=0x7b73f07ff000, stack_size=0x1ffec0, tls=0x7b73f09ff6c0} => {parent_tid=[2436065]}, 88) = 2436065
+2436064 01:03:45.664700 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f07fece8, parent_tid=0x7b73f07fe990, exit_signal=0, stack=0x7b73f05fe000, stack_size=0x1ffec0, tls=0x7b73f07fe6c0} => {parent_tid=[2436066]}, 88) = 2436066
+2436064 01:03:45.664764 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f05fdce8, parent_tid=0x7b73f05fd990, exit_signal=0, stack=0x7b73f03fd000, stack_size=0x1ffec0, tls=0x7b73f05fd6c0} => {parent_tid=[2436067]}, 88) = 2436067
+2436064 01:03:45.664875 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f03fcce8, parent_tid=0x7b73f03fc990, exit_signal=0, stack=0x7b73f01fc000, stack_size=0x1ffec0, tls=0x7b73f03fc6c0} => {parent_tid=[2436068]}, 88) = 2436068
+2436064 01:03:45.665120 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f01fbce8, parent_tid=0x7b73f01fb990, exit_signal=0, stack=0x7b73efffb000, stack_size=0x1ffec0, tls=0x7b73f01fb6c0} => {parent_tid=[2436069]}, 88) = 2436069
+2436064 01:03:45.665212 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73effface8, parent_tid=0x7b73efffa990, exit_signal=0, stack=0x7b73efdfa000, stack_size=0x1ffec0, tls=0x7b73efffa6c0} => {parent_tid=[2436070]}, 88) = 2436070
+2436064 01:03:45.665509 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73efdf9ce8, parent_tid=0x7b73efdf9990, exit_signal=0, stack=0x7b73efbf9000, stack_size=0x1ffec0, tls=0x7b73efdf96c0} => {parent_tid=[2436071]}, 88) = 2436071
+2436064 01:03:45.665709 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef9f7ce8, parent_tid=0x7b73ef9f7990, exit_signal=0, stack=0x7b73ef7f7000, stack_size=0x1ffec0, tls=0x7b73ef9f76c0} <unfinished ...>
+2436065 01:03:45.665736 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73efbf8ce8, parent_tid=0x7b73efbf8990, exit_signal=0, stack=0x7b73ef9f8000, stack_size=0x1ffec0, tls=0x7b73efbf86c0} <unfinished ...>
+2436064 01:03:45.665748 <... clone3 resumed> => {parent_tid=[2436072]}, 88) = 2436072
+2436065 01:03:45.665776 <... clone3 resumed> => {parent_tid=[2436073]}, 88) = 2436073
+2436064 01:03:45.665804 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef7f6ce8, parent_tid=0x7b73ef7f6990, exit_signal=0, stack=0x7b73ef5f6000, stack_size=0x1ffec0, tls=0x7b73ef7f66c0} => {parent_tid=[2436074]}, 88) = 2436074
+2436064 01:03:45.665887 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef5f5ce8, parent_tid=0x7b73ef5f5990, exit_signal=0, stack=0x7b73ef3f5000, stack_size=0x1ffec0, tls=0x7b73ef5f56c0} => {parent_tid=[2436075]}, 88) = 2436075
+2436074 01:03:45.665928 close(3</sys/devices/system/cpu/online>) = 0
+2436064 01:03:45.665982 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef3f4ce8, parent_tid=0x7b73ef3f4990, exit_signal=0, stack=0x7b73ef1f4000, stack_size=0x1ffec0, tls=0x7b73ef3f46c0} => {parent_tid=[2436076]}, 88) = 2436076
+2436064 01:03:45.666322 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef1f3ce8, parent_tid=0x7b73ef1f3990, exit_signal=0, stack=0x7b73eeff3000, stack_size=0x1ffec0, tls=0x7b73ef1f36c0} <unfinished ...>
+2436072 01:03:45.666335 close(3</tmp/memra-spill-a-test-2436064-1/aligned>) = 0
+2436064 01:03:45.666363 <... clone3 resumed> => {parent_tid=[2436077]}, 88) = 2436077
+2436069 01:03:45.666399 close(4</tmp/memra-spill-a-test-2436064-0>) = 0
+2436066 01:03:45.666433 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73eeff2ce8, parent_tid=0x7b73eeff2990, exit_signal=0, stack=0x7b73eedf2000, stack_size=0x1ffec0, tls=0x7b73eeff26c0} <unfinished ...>
+2436069 01:03:45.666441 flock(4</tmp/memra-spill-a-test-2436064-0/objects/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436066 01:03:45.666481 <... clone3 resumed> => {parent_tid=[2436078]}, 88) = 2436078
+2436072 01:03:45.666493 close(3</tmp/memra-spill-a-test-2436064-1/aligned> <unfinished ...>
+2436069 01:03:45.666497 flock(5</tmp/memra-spill-a-test-2436064-0/objects/.ownership>, LOCK_SH <unfinished ...>
+2436072 01:03:45.666508 <... close resumed>) = 0
+2436069 01:03:45.666511 <... flock resumed>) = 0
+2436069 01:03:45.666568 close(4</tmp/memra-spill-a-test-2436064-0/objects/.ownership-gc>) = 0
+2436072 01:03:45.666749 close(3</tmp/memra-spill-a-test-2436064-1>) = 0
+2436069 01:03:45.666766 flock(4</tmp/memra-spill-a-test-2436064-0/objects/.txn-2436064-6/.owner>, LOCK_EX|LOCK_NB) = 0
+2436069 01:03:45.667359 close(3</tmp/memra-spill-a-test-2436064-0/objects>) = 0
+2436064 01:03:45.667798 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f03fcce8, parent_tid=0x7b73f03fc990, exit_signal=0, stack=0x7b73f01fc000, stack_size=0x1ffec0, tls=0x7b73f03fc6c0} => {parent_tid=[2436079]}, 88) = 2436079
+2436064 01:03:45.668217 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef9f7ce8, parent_tid=0x7b73ef9f7990, exit_signal=0, stack=0x7b73ef7f7000, stack_size=0x1ffec0, tls=0x7b73ef9f76c0} => {parent_tid=[2436080]}, 88) = 2436080
+2436064 01:03:45.669008 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f07fece8, parent_tid=0x7b73f07fe990, exit_signal=0, stack=0x7b73f05fe000, stack_size=0x1ffec0, tls=0x7b73f07fe6c0} => {parent_tid=[2436081]}, 88) = 2436081
+2436080 01:03:45.669615 flock(3</tmp/memra-spill-a-test-2436064-3/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436080 01:03:45.669661 flock(6</tmp/memra-spill-a-test-2436064-3/.ownership>, LOCK_SH) = 0
+2436081 01:03:45.669708 flock(7</tmp/memra-spill-a-test-2436064-4/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436080 01:03:45.669724 close(3</tmp/memra-spill-a-test-2436064-3/.ownership-gc>) = 0
+2436081 01:03:45.669962 flock(3</tmp/memra-spill-a-test-2436064-4/.ownership>, LOCK_SH) = 0
+2436080 01:03:45.670012 flock(8</tmp/memra-spill-a-test-2436064-3/.txn-2436064-8/.owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436081 01:03:45.670019 close(7</tmp/memra-spill-a-test-2436064-4/.ownership-gc> <unfinished ...>
+2436080 01:03:45.670028 <... flock resumed>) = 0
+2436081 01:03:45.670030 <... close resumed>) = 0
+2436074 01:03:45.670047 flock(7</tmp/memra-spill-a-test-2436064-2/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436080 01:03:45.670080 close(9</tmp/memra-spill-a-test-2436064-3>) = 0
+2436074 01:03:45.670093 flock(10</tmp/memra-spill-a-test-2436064-2/.ownership>, LOCK_SH <unfinished ...>
+2436081 01:03:45.670104 flock(9</tmp/memra-spill-a-test-2436064-4/.txn-2436064-9/.owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436074 01:03:45.670110 <... flock resumed>) = 0
+2436081 01:03:45.670113 <... flock resumed>) = 0
+2436074 01:03:45.670640 close(7</tmp/memra-spill-a-test-2436064-2/.ownership-gc> <unfinished ...>
+2436081 01:03:45.670679 close(11</tmp/memra-spill-a-test-2436064-4> <unfinished ...>
+2436074 01:03:45.670703 <... close resumed>) = 0
+2436081 01:03:45.670707 <... close resumed>) = 0
+2436080 01:03:45.670730 close(12</tmp/memra-spill-a-test-2436064-3/.pending-2436064-0>) = 0
+2436074 01:03:45.671184 flock(11</tmp/memra-spill-a-test-2436064-2/.txn-2436064-11/.owner>, LOCK_EX|LOCK_NB) = 0
+2436080 01:03:45.671213 close(7</tmp/memra-spill-a-test-2436064-3>) = 0
+2436081 01:03:45.671261 close(12</tmp/memra-spill-a-test-2436064-4/.pending-2436064-1> <unfinished ...>
+2436074 01:03:45.671277 close(7</tmp/memra-spill-a-test-2436064-2> <unfinished ...>
+2436081 01:03:45.671283 <... close resumed>) = 0
+2436074 01:03:45.671288 <... close resumed>) = 0
+2436080 01:03:45.671298 close(13</tmp/memra-spill-a-test-2436064-3>) = 0
+2436081 01:03:45.671337 close(7</tmp/memra-spill-a-test-2436064-4>) = 0
+2436080 01:03:45.671365 close(12</tmp/memra-spill-a-test-2436064-3/.txn-2436064-8>) = 0
+2436081 01:03:45.671388 close(7</tmp/memra-spill-a-test-2436064-4>) = 0
+2436081 01:03:45.671455 close(7</tmp/memra-spill-a-test-2436064-4/.txn-2436064-9>) = 0
+2436080 01:03:45.671546 close(12</tmp/memra-spill-a-test-2436064-3/chunk-6f01e9d49c1c9da30e6de7fd1c76e7a6bdca223307d85cc56debd16a90d91f37>) = 0
+2436074 01:03:45.671603 close(13</tmp/memra-spill-a-test-2436064-2/.pending-2436064-2> <unfinished ...>
+2436064 01:03:45.671610 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f09ffce8, parent_tid=0x7b73f09ff990, exit_signal=0, stack=0x7b73f07ff000, stack_size=0x1ffec0, tls=0x7b73f09ff6c0} <unfinished ...>
+2436074 01:03:45.671618 <... close resumed>) = 0
+2436081 01:03:45.671629 close(7</tmp/memra-spill-a-test-2436064-4/chunk-08e54c0c66f7407080e4ce04876740d7ab4d0eb4c746ae1a2a2f5df95afa0b72>) = 0
+2436064 01:03:45.671640 <... clone3 resumed> => {parent_tid=[2436082]}, 88) = 2436082
+2436074 01:03:45.671826 close(7</tmp/memra-spill-a-test-2436064-2>) = 0
+2436064 01:03:45.671858 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f05fdce8, parent_tid=0x7b73f05fd990, exit_signal=0, stack=0x7b73f03fd000, stack_size=0x1ffec0, tls=0x7b73f05fd6c0} => {parent_tid=[2436083]}, 88) = 2436083
+2436074 01:03:45.671914 close(7</tmp/memra-spill-a-test-2436064-2>) = 0
+2436064 01:03:45.672311 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73efdf9ce8, parent_tid=0x7b73efdf9990, exit_signal=0, stack=0x7b73efbf9000, stack_size=0x1ffec0, tls=0x7b73efdf96c0} => {parent_tid=[2436084]}, 88) = 2436084
+2436074 01:03:45.672358 close(7</tmp/memra-spill-a-test-2436064-2/.txn-2436064-11> <unfinished ...>
+2436080 01:03:45.672371 close(13</tmp/memra-spill-a-test-2436064-3/.pending-simulated-crash> <unfinished ...>
+2436074 01:03:45.672376 <... close resumed>) = 0
+2436080 01:03:45.672385 <... close resumed>) = 0
+2436064 01:03:45.672451 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73effface8, parent_tid=0x7b73efffa990, exit_signal=0, stack=0x7b73efdfa000, stack_size=0x1ffec0, tls=0x7b73efffa6c0} <unfinished ...>
+2436080 01:03:45.672470 close(13</tmp/memra-spill-a-test-2436064-3/.pending-simulated-crash>) = 0
+2436064 01:03:45.672503 <... clone3 resumed> => {parent_tid=[2436085]}, 88) = 2436085
+2436080 01:03:45.672507 close(8</tmp/memra-spill-a-test-2436064-3/.txn-2436064-8/.owner>) = 0
+2436081 01:03:45.672555 close(12</tmp/memra-spill-a-test-2436064-4/chunk-08e54c0c66f7407080e4ce04876740d7ab4d0eb4c746ae1a2a2f5df95afa0b72> <unfinished ...>
+2436080 01:03:45.672559 close(6</tmp/memra-spill-a-test-2436064-3/.ownership> <unfinished ...>
+2436081 01:03:45.672568 <... close resumed>) = 0
+2436080 01:03:45.672574 <... close resumed>) = 0
+2436064 01:03:45.672597 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef3f4ce8, parent_tid=0x7b73ef3f4990, exit_signal=0, stack=0x7b73ef1f4000, stack_size=0x1ffec0, tls=0x7b73ef3f46c0} <unfinished ...>
+2436080 01:03:45.672614 flock(6</tmp/memra-spill-a-test-2436064-3/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436064 01:03:45.672626 <... clone3 resumed> => {parent_tid=[2436086]}, 88) = 2436086
+2436080 01:03:45.672646 flock(8</tmp/memra-spill-a-test-2436064-3/.ownership>, LOCK_SH <unfinished ...>
+2436074 01:03:45.672649 close(7</tmp/memra-spill-a-test-2436064-2/chunk-08e54c0c66f7407080e4ce04876740d7ab4d0eb4c746ae1a2a2f5df95afa0b72> <unfinished ...>
+2436080 01:03:45.672656 <... flock resumed>) = 0
+2436074 01:03:45.672662 <... close resumed>) = 0
+2436080 01:03:45.672677 close(6</tmp/memra-spill-a-test-2436064-3/.ownership-gc>) = 0
+2436064 01:03:45.672700 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef1f3ce8, parent_tid=0x7b73ef1f3990, exit_signal=0, stack=0x7b73eeff3000, stack_size=0x1ffec0, tls=0x7b73ef1f36c0} => {parent_tid=[2436087]}, 88) = 2436087
+2436064 01:03:45.672795 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef5f5ce8, parent_tid=0x7b73ef5f5990, exit_signal=0, stack=0x7b73ef3f5000, stack_size=0x1ffec0, tls=0x7b73ef5f56c0} <unfinished ...>
+2436080 01:03:45.672802 flock(6</tmp/memra-spill-a-test-2436064-3/.txn-2436064-14/.owner>, LOCK_EX|LOCK_NB) = 0
+2436064 01:03:45.672821 <... clone3 resumed> => {parent_tid=[2436088]}, 88) = 2436088
+2436080 01:03:45.672863 close(12</tmp/memra-spill-a-test-2436064-3>) = 0
+2436064 01:03:45.672881 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f09ffce8, parent_tid=0x7b73f09ff990, exit_signal=0, stack=0x7b73f07ff000, stack_size=0x1ffec0, tls=0x7b73f09ff6c0} => {parent_tid=[2436089]}, 88) = 2436089
+2436064 01:03:45.672979 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f05fdce8, parent_tid=0x7b73f05fd990, exit_signal=0, stack=0x7b73f03fd000, stack_size=0x1ffec0, tls=0x7b73f05fd6c0} <unfinished ...>
+2436087 01:03:45.673001 flock(12</tmp/memra-spill-a-test-2436064-6/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436064 01:03:45.673026 <... clone3 resumed> => {parent_tid=[2436090]}, 88) = 2436090
+2436088 01:03:45.673059 flock(15</tmp/memra-spill-a-test-2436064-7/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436087 01:03:45.673067 flock(14</tmp/memra-spill-a-test-2436064-6/.ownership>, LOCK_SH <unfinished ...>
+2436088 01:03:45.673076 <... flock resumed>) = 0
+2436087 01:03:45.673083 <... flock resumed>) = 0
+2436088 01:03:45.673097 flock(16</tmp/memra-spill-a-test-2436064-7/.ownership>, LOCK_SH) = 0
+2436087 01:03:45.673109 close(12</tmp/memra-spill-a-test-2436064-6/.ownership-gc>) = 0
+2436088 01:03:45.673129 close(15</tmp/memra-spill-a-test-2436064-7/.ownership-gc>) = 0
+2436074 01:03:45.673156 close(13</tmp/memra-spill-a-test-2436064-2/.txn-2436064-11>) = 0
+2436081 01:03:45.673188 close(12</tmp/memra-spill-a-test-2436064-4/.pending-2436064-3> <unfinished ...>
+2436087 01:03:45.673197 flock(13</tmp/memra-spill-a-test-2436064-6/.txn-2436064-15/.owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436081 01:03:45.673203 <... close resumed>) = 0
+2436087 01:03:45.673210 <... flock resumed>) = 0
+2436089 01:03:45.673215 flock(12</tmp/memra-spill-a-test-2436064-8/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436088 01:03:45.673229 flock(17</tmp/memra-spill-a-test-2436064-7/.txn-2436064-16/.owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436089 01:03:45.673235 <... flock resumed>) = 0
+2436088 01:03:45.673241 <... flock resumed>) = 0
+2436089 01:03:45.673258 flock(18</tmp/memra-spill-a-test-2436064-8/.ownership>, LOCK_SH) = 0
+2436074 01:03:45.673270 close(15</tmp/memra-spill-a-test-2436064-2>) = 0
+2436086 01:03:45.673286 close(7</tmp/memra-spill-a-test-2436064-5/extent> <unfinished ...>
+2436089 01:03:45.673295 close(12</tmp/memra-spill-a-test-2436064-8/.ownership-gc> <unfinished ...>
+2436086 01:03:45.673303 <... close resumed>) = 0
+2436081 01:03:45.673305 close(19</tmp/memra-spill-a-test-2436064-4> <unfinished ...>
+2436089 01:03:45.673313 <... close resumed>) = 0
+2436081 01:03:45.673319 <... close resumed>) = 0
+2436074 01:03:45.673325 close(11</tmp/memra-spill-a-test-2436064-2/.txn-2436064-11/.owner>(deleted)) = 0
+2436089 01:03:45.673391 flock(15</tmp/memra-spill-a-test-2436064-8/.txn-2436064-18/.owner>, LOCK_EX|LOCK_NB) = 0
+2436081 01:03:45.673409 close(12</tmp/memra-spill-a-test-2436064-4>) = 0
+2436080 01:03:45.673427 close(11</tmp/memra-spill-a-test-2436064-3/.pending-2436064-4>) = 0
+2436064 01:03:45.673436 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f03fcce8, parent_tid=0x7b73f03fc990, exit_signal=0, stack=0x7b73f01fc000, stack_size=0x1ffec0, tls=0x7b73f03fc6c0} => {parent_tid=[2436091]}, 88) = 2436091
+2436074 01:03:45.673486 flock(20</tmp/memra-spill-a-test-2436064-2/.txn-2436064-19/.owner>, LOCK_EX|LOCK_NB) = 0
+2436074 01:03:45.673555 close(21</tmp/memra-spill-a-test-2436064-2> <unfinished ...>
+2436087 01:03:45.673571 close(22</tmp/memra-spill-a-test-2436064-6/.pending-2436064-5> <unfinished ...>
+2436086 01:03:45.673576 close(12</tmp/memra-spill-a-test-2436064-5/extent> <unfinished ...>
+2436074 01:03:45.673581 <... close resumed>) = 0
+2436087 01:03:45.673587 <... close resumed>) = 0
+2436086 01:03:45.673589 <... close resumed>) = 0
+2436088 01:03:45.673639 close(12</tmp/memra-spill-a-test-2436064-7/.pending-2436064-6> <unfinished ...>
+2436086 01:03:45.673644 close(21</tmp/memra-spill-a-test-2436064-5/extent> <unfinished ...>
+2436088 01:03:45.673652 <... close resumed>) = 0
+2436086 01:03:45.673655 <... close resumed>) = 0
+2436086 01:03:45.673693 close(7</tmp/memra-spill-a-test-2436064-5/extent> <unfinished ...>
+2436091 01:03:45.673697 flock(21</tmp/memra-spill-a-test-2436064-9/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436086 01:03:45.673711 <... close resumed>) = 0
+2436091 01:03:45.673715 <... flock resumed>) = 0
+2436081 01:03:45.673718 close(11</tmp/memra-spill-a-test-2436064-4/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436080 01:03:45.673722 close(19</tmp/memra-spill-a-test-2436064-3/chunk-6f01e9d49c1c9da30e6de7fd1c76e7a6bdca223307d85cc56debd16a90d91f37> <unfinished ...>
+2436081 01:03:45.673733 <... close resumed>) = 0
+2436080 01:03:45.673736 <... close resumed>) = 0
+2436091 01:03:45.673746 flock(7</tmp/memra-spill-a-test-2436064-9/.ownership>, LOCK_SH) = 0
+2436089 01:03:45.673796 close(11</tmp/memra-spill-a-test-2436064-8/.pending-2436064-7> <unfinished ...>
+2436080 01:03:45.673803 close(22</tmp/memra-spill-a-test-2436064-3/chunk-6f01e9d49c1c9da30e6de7fd1c76e7a6bdca223307d85cc56debd16a90d91f37> <unfinished ...>
+2436091 01:03:45.673809 close(21</tmp/memra-spill-a-test-2436064-9/.ownership-gc> <unfinished ...>
+2436089 01:03:45.673813 <... close resumed>) = 0
+2436091 01:03:45.673821 <... close resumed>) = 0
+2436080 01:03:45.673824 <... close resumed>) = 0
+2436080 01:03:45.673877 close(11</tmp/memra-spill-a-test-2436064-3> <unfinished ...>
+2436087 01:03:45.673885 close(12</tmp/memra-spill-a-test-2436064-6/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436080 01:03:45.673889 <... close resumed>) = 0
+2436091 01:03:45.673895 flock(22</tmp/memra-spill-a-test-2436064-9/.txn-2436064-20/.owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436087 01:03:45.673901 <... close resumed>) = 0
+2436091 01:03:45.673906 <... flock resumed>) = 0
+2436074 01:03:45.673910 close(21</tmp/memra-spill-a-test-2436064-2/.pending-2436064-8>) = 0
+2436088 01:03:45.673936 close(19</tmp/memra-spill-a-test-2436064-7/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436080 01:03:45.673961 close(12</tmp/memra-spill-a-test-2436064-3>) = 0
+2436080 01:03:45.674031 close(12</tmp/memra-spill-a-test-2436064-3/.txn-2436064-14>) = 0
+2436089 01:03:45.674057 close(11</tmp/memra-spill-a-test-2436064-8/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436081 01:03:45.674110 close(21</tmp/memra-spill-a-test-2436064-4/.txn-2436064-9> <unfinished ...>
+2436074 01:03:45.674116 close(19</tmp/memra-spill-a-test-2436064-2/chunk-08e54c0c66f7407080e4ce04876740d7ab4d0eb4c746ae1a2a2f5df95afa0b72> <unfinished ...>
+2436081 01:03:45.674123 <... close resumed>) = 0
+2436074 01:03:45.674126 <... close resumed>) = 0
+2436074 01:03:45.674172 close(11</tmp/memra-spill-a-test-2436064-2/chunk-08e54c0c66f7407080e4ce04876740d7ab4d0eb4c746ae1a2a2f5df95afa0b72> <unfinished ...>
+2436081 01:03:45.674178 close(19</tmp/memra-spill-a-test-2436064-4> <unfinished ...>
+2436074 01:03:45.674183 <... close resumed>) = 0
+2436081 01:03:45.674186 <... close resumed>) = 0
+2436081 01:03:45.674202 close(9</tmp/memra-spill-a-test-2436064-4/.txn-2436064-9/.owner>(deleted) <unfinished ...>
+2436080 01:03:45.674213 close(12</tmp/memra-spill-a-test-2436064-3/chunk-6f01e9d49c1c9da30e6de7fd1c76e7a6bdca223307d85cc56debd16a90d91f37> <unfinished ...>
+2436081 01:03:45.674219 <... close resumed>) = 0
+2436080 01:03:45.674222 <... close resumed>) = 0
+2436074 01:03:45.674225 close(11</tmp/memra-spill-a-test-2436064-2>) = 0
+2436074 01:03:45.674292 close(11</tmp/memra-spill-a-test-2436064-2>) = 0
+2436086 01:03:45.674330 close(23</tmp/memra-spill-a-test-2436064-5>) = 0
+2436074 01:03:45.674379 close(11</tmp/memra-spill-a-test-2436064-2/.txn-2436064-19> <unfinished ...>
+2436087 01:03:45.674386 close(9</tmp/memra-spill-a-test-2436064-6/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436074 01:03:45.674392 <... close resumed>) = 0
+2436087 01:03:45.674397 <... close resumed>) = 0
+2436088 01:03:45.674426 close(19</tmp/memra-spill-a-test-2436064-7/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436081 01:03:45.674459 close(12</tmp/memra-spill-a-test-2436064-4/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436074 01:03:45.674573 close(9</tmp/memra-spill-a-test-2436064-2/chunk-08e54c0c66f7407080e4ce04876740d7ab4d0eb4c746ae1a2a2f5df95afa0b72>) = 0
+2436089 01:03:45.674608 close(11</tmp/memra-spill-a-test-2436064-8/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436091 01:03:45.674613 close(12</tmp/memra-spill-a-test-2436064-9/.pending-2436064-9> <unfinished ...>
+2436089 01:03:45.674619 <... close resumed>) = 0
+2436091 01:03:45.674623 <... close resumed>) = 0
+2436091 01:03:45.674792 close(11</tmp/memra-spill-a-test-2436064-9/chunk-32fffb11e74027c27063d615b149ba3b38941138dc0f62be98717c5d7d2ed8e1>) = 0
+2436091 01:03:45.674818 close(9</tmp/memra-spill-a-test-2436064-9/chunk-32fffb11e74027c27063d615b149ba3b38941138dc0f62be98717c5d7d2ed8e1>) = 0
+2436087 01:03:45.674949 close(12</tmp/memra-spill-a-test-2436064-6/.pending-2436064-10>) = 0
+2436081 01:03:45.674960 close(11</tmp/memra-spill-a-test-2436064-4/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436064 01:03:45.674966 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef3f4ce8, parent_tid=0x7b73ef3f4990, exit_signal=0, stack=0x7b73ef1f4000, stack_size=0x1ffec0, tls=0x7b73ef3f46c0} <unfinished ...>
+2436081 01:03:45.674973 <... close resumed>) = 0
+2436064 01:03:45.674993 <... clone3 resumed> => {parent_tid=[2436092]}, 88) = 2436092
+2436088 01:03:45.675015 close(11</tmp/memra-spill-a-test-2436064-7/.pending-2436064-11>) = 0
+2436074 01:03:45.675055 close(9</tmp/memra-spill-a-test-2436064-2/chunk-08e54c0c66f7407080e4ce04876740d7ab4d0eb4c746ae1a2a2f5df95afa0b72>) = 0
+2436064 01:03:45.675066 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73effface8, parent_tid=0x7b73efffa990, exit_signal=0, stack=0x7b73efdfa000, stack_size=0x1ffec0, tls=0x7b73efffa6c0} => {parent_tid=[2436093]}, 88) = 2436093
+2436087 01:03:45.675177 close(11</tmp/memra-spill-a-test-2436064-6/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436080 01:03:45.675182 close(12</tmp/memra-spill-a-test-2436064-3/.pending-2436064-12> <unfinished ...>
+2436087 01:03:45.675187 <... close resumed>) = 0
+2436080 01:03:45.675191 <... close resumed>) = 0
+2436088 01:03:45.675208 close(9</tmp/memra-spill-a-test-2436064-7/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436089 01:03:45.675287 close(11</tmp/memra-spill-a-test-2436064-8/.pending-2436064-13>) = 0
+2436080 01:03:45.675355 close(9</tmp/memra-spill-a-test-2436064-3/chunk-6f01e9d49c1c9da30e6de7fd1c76e7a6bdca223307d85cc56debd16a90d91f37>) = 0
+2436080 01:03:45.675408 close(11</tmp/memra-spill-a-test-2436064-3/chunk-6f01e9d49c1c9da30e6de7fd1c76e7a6bdca223307d85cc56debd16a90d91f37>) = 0
+2436081 01:03:45.675443 close(12</tmp/memra-spill-a-test-2436064-4/chunk-08e54c0c66f7407080e4ce04876740d7ab4d0eb4c746ae1a2a2f5df95afa0b72>) = 0
+2436080 01:03:45.675478 close(11</tmp/memra-spill-a-test-2436064-3>) = 0
+2436089 01:03:45.675550 close(9</tmp/memra-spill-a-test-2436064-8/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436087 01:03:45.675584 close(19</tmp/memra-spill-a-test-2436064-6/.txn-2436064-15> <unfinished ...>
+2436080 01:03:45.675589 close(23</tmp/memra-spill-a-test-2436064-3> <unfinished ...>
+2436074 01:03:45.675594 close(21</tmp/memra-spill-a-test-2436064-2/.pending-2436064-14> <unfinished ...>
+2436087 01:03:45.675602 <... close resumed>) = 0
+2436080 01:03:45.675606 <... close resumed>) = 0
+2436074 01:03:45.675608 <... close resumed>) = 0
+2436088 01:03:45.675636 close(12</tmp/memra-spill-a-test-2436064-7/.txn-2436064-16> <unfinished ...>
+2436091 01:03:45.675645 close(9</tmp/memra-spill-a-test-2436064-9/chunk-32fffb11e74027c27063d615b149ba3b38941138dc0f62be98717c5d7d2ed8e1> <unfinished ...>
+2436088 01:03:45.675649 <... close resumed>) = 0
+2436091 01:03:45.675658 <... close resumed>) = 0
+2436087 01:03:45.675671 close(13</tmp/memra-spill-a-test-2436064-6/.txn-2436064-15/.owner>(deleted)) = 0
+2436091 01:03:45.675695 close(11</tmp/memra-spill-a-test-2436064-9/chunk-32fffb11e74027c27063d615b149ba3b38941138dc0f62be98717c5d7d2ed8e1>) = 0
+2436088 01:03:45.675707 close(17</tmp/memra-spill-a-test-2436064-7/.txn-2436064-16/.owner>(deleted) <unfinished ...>
+2436080 01:03:45.675713 close(12</tmp/memra-spill-a-test-2436064-3/.txn-2436064-14> <unfinished ...>
+2436088 01:03:45.675722 <... close resumed>) = 0
+2436080 01:03:45.675724 <... close resumed>) = 0
+2436087 01:03:45.675734 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73efdf9ce8, parent_tid=0x7b73efdf9990, exit_signal=0, stack=0x7b73efbf9000, stack_size=0x1ffec0, tls=0x7b73efdf96c0} <unfinished ...>
+2436064 01:03:45.675761 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73eeff2ce8, parent_tid=0x7b73eeff2990, exit_signal=0, stack=0x7b73eedf2000, stack_size=0x1ffec0, tls=0x7b73eeff26c0} <unfinished ...>
+2436088 01:03:45.675765 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73efbf8ce8, parent_tid=0x7b73efbf8990, exit_signal=0, stack=0x7b73ef9f8000, stack_size=0x1ffec0, tls=0x7b73efbf86c0} <unfinished ...>
+2436087 01:03:45.675774 <... clone3 resumed> => {parent_tid=[2436094]}, 88) = 2436094
+2436074 01:03:45.675779 close(9</tmp/memra-spill-a-test-2436064-2> <unfinished ...>
+2436064 01:03:45.675795 <... clone3 resumed> => {parent_tid=[2436095]}, 88) = 2436095
+2436074 01:03:45.675803 <... close resumed>) = 0
+2436088 01:03:45.675812 <... clone3 resumed> => {parent_tid=[2436096]}, 88) = 2436096
+2436093 01:03:45.675880 clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7b73f0cfe000, stack_size=0x9000}, 88 <unfinished ...>
+2436074 01:03:45.675917 close(9</tmp/memra-spill-a-test-2436064-2>) = 0
+2436089 01:03:45.675998 close(13</tmp/memra-spill-a-test-2436064-8/.txn-2436064-18>) = 0
+2436089 01:03:45.676042 close(15</tmp/memra-spill-a-test-2436064-8/.txn-2436064-18/.owner>(deleted)) = 0
+2436095 01:03:45.676067 flock(15</tmp/memra-spill-a-test-2436064-11/.catalog-owner>, LOCK_EX|LOCK_NB) = 0
+2436088 01:03:45.676118 close(9</tmp/memra-spill-a-test-2436064-7/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436089 01:03:45.676122 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73eecf0ce8, parent_tid=0x7b73eecf0990, exit_signal=0, stack=0x7b73eeaf0000, stack_size=0x1ffec0, tls=0x7b73eecf06c0} <unfinished ...>
+2436088 01:03:45.676128 <... close resumed>) = 0
+2436089 01:03:45.676153 <... clone3 resumed> => {parent_tid=[2436098]}, 88) = 2436098
+2436081 01:03:45.676198 close(17</tmp/memra-spill-a-test-2436064-4/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436074 01:03:45.676216 close(13</tmp/memra-spill-a-test-2436064-2/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436089 01:03:45.676418 close(9</tmp/memra-spill-a-test-2436064-8/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436097 01:03:45.676493 execve("/home/avifenesh/projects/wt-spill-a/target/debug/deps/storage-1825ca21bf643b79", ["/home/avifenesh/projects/wt-spil"..., "--exact", "day4::catalog_gc_process_exit_be"...], 0x7b73e0005c50 /* 87 vars */ <unfinished ...>
+2436095 01:03:45.676506 close(9</tmp/memra-spill-a-test-2436064-11>) = 0
+2436088 01:03:45.676597 close(13</tmp/memra-spill-a-test-2436064-7/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436074 01:03:45.676616 close(17</tmp/memra-spill-a-test-2436064-2/.txn-2436064-19> <unfinished ...>
+2436093 01:03:45.676630 <... clone3 resumed>) = 2436097
+2436074 01:03:45.676635 <... close resumed>) = 0
+2436095 01:03:45.676683 close(13</tmp/memra-spill-a-test-2436064-11> <unfinished ...>
+2436093 01:03:45.676690 close(12</dev/null> <unfinished ...>
+2436095 01:03:45.676705 <... close resumed>) = 0
+2436093 01:03:45.676708 <... close resumed>) = 0
+2436097 01:03:45.676718 <... execve resumed>) = 0
+2436080 01:03:45.676731 close(11</tmp/memra-spill-a-test-2436064-3/chunk-6f01e9d49c1c9da30e6de7fd1c76e7a6bdca223307d85cc56debd16a90d91f37> <unfinished ...>
+2436091 01:03:45.676739 close(17</tmp/memra-spill-a-test-2436064-9/.pending-2436064-15> <unfinished ...>
+2436080 01:03:45.676750 <... close resumed>) = 0
+2436091 01:03:45.676752 <... close resumed>) = 0
+2436074 01:03:45.676756 close(23</tmp/memra-spill-a-test-2436064-2>) = 0
+2436074 01:03:45.676789 close(20</tmp/memra-spill-a-test-2436064-2/.txn-2436064-19/.owner>(deleted) <unfinished ...>
+2436081 01:03:45.676799 close(19</tmp/memra-spill-a-test-2436064-4/chunk-08e54c0c66f7407080e4ce04876740d7ab4d0eb4c746ae1a2a2f5df95afa0b72> <unfinished ...>
+2436074 01:03:45.676808 <... close resumed>) = 0
+2436081 01:03:45.676815 <... close resumed>) = 0
+2436087 01:03:45.676830 close(9</tmp/memra-spill-a-test-2436064-6/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436095 01:03:45.676942 close(19</tmp/memra-spill-a-test-2436064-11> <unfinished ...>
+2436097 01:03:45.676948 close(3</etc/ld.so.cache> <unfinished ...>
+2436091 01:03:45.676955 close(20</tmp/memra-spill-a-test-2436064-9/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436097 01:03:45.676965 <... close resumed>) = 0
+2436095 01:03:45.676967 <... close resumed>) = 0
+2436091 01:03:45.676969 <... close resumed>) = 0
+2436089 01:03:45.676989 close(11</tmp/memra-spill-a-test-2436064-8/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436091 01:03:45.676999 close(12</tmp/memra-spill-a-test-2436064-9/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436089 01:03:45.677003 <... close resumed>) = 0
+2436091 01:03:45.677010 <... close resumed>) = 0
+2436095 01:03:45.677035 close(11</tmp/memra-spill-a-test-2436064-11>) = 0
+2436095 01:03:45.677061 close(9</tmp/memra-spill-a-test-2436064-11/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.pending>(deleted) <unfinished ...>
+2436074 01:03:45.677069 close(13</tmp/memra-spill-a-test-2436064-2/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436095 01:03:45.677075 <... close resumed>) = 0
+2436074 01:03:45.677080 <... close resumed>) = 0
+2436097 01:03:45.677096 close(3</usr/lib/x86_64-linux-gnu/libgcc_s.so.1> <unfinished ...>
+2436095 01:03:45.677101 close(21</tmp/memra-spill-a-test-2436064-11/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index> <unfinished ...>
+2436097 01:03:45.677107 <... close resumed>) = 0
+2436095 01:03:45.677111 <... close resumed>) = 0
+2436097 01:03:45.677235 close(3</usr/lib/x86_64-linux-gnu/libc.so.6>) = 0
+2436081 01:03:45.677252 close(3</tmp/memra-spill-a-test-2436064-4/.ownership>) = 0
+2436087 01:03:45.677279 close(9</tmp/memra-spill-a-test-2436064-6/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436095 01:03:45.677319 close(11</tmp/memra-spill-a-test-2436064-11/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root>) = 0
+2436096 01:03:45.677377 close(17</tmp/memra-spill-a-test-2436064-7/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436088 01:03:45.677470 close(17</tmp/memra-spill-a-test-2436064-7/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436081 01:03:45.677493 close(3</tmp/memra-spill-a-test-2436064-4> <unfinished ...>
+2436091 01:03:45.677504 close(12</tmp/memra-spill-a-test-2436064-9/.txn-2436064-20> <unfinished ...>
+2436081 01:03:45.677509 <... close resumed>) = 0
+2436091 01:03:45.677518 <... close resumed>) = 0
+2436088 01:03:45.677539 close(17</tmp/memra-spill-a-test-2436064-7/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436091 01:03:45.677575 close(22</tmp/memra-spill-a-test-2436064-9/.txn-2436064-20/.owner>(deleted)) = 0
+2436074 01:03:45.677603 close(9</tmp/memra-spill-a-test-2436064-2/chunk-08e54c0c66f7407080e4ce04876740d7ab4d0eb4c746ae1a2a2f5df95afa0b72>) = 0
+2436080 01:03:45.677625 close(11</tmp/memra-spill-a-test-2436064-3/chunk-6f01e9d49c1c9da30e6de7fd1c76e7a6bdca223307d85cc56debd16a90d91f37>) = 0
+2436095 01:03:45.677717 close(11</tmp/memra-spill-a-test-2436064-11/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index>) = 0
+2436091 01:03:45.677786 close(11</tmp/memra-spill-a-test-2436064-9/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436064 01:03:45.677806 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f07fece8, parent_tid=0x7b73f07fe990, exit_signal=0, stack=0x7b73f05fe000, stack_size=0x1ffec0, tls=0x7b73f07fe6c0} <unfinished ...>
+2436091 01:03:45.677826 close(12</tmp/memra-spill-a-test-2436064-9/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436064 01:03:45.677848 <... clone3 resumed> => {parent_tid=[2436099]}, 88) = 2436099
+2436098 01:03:45.677861 close(13</tmp/memra-spill-a-test-2436064-8/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436088 01:03:45.677898 close(9</tmp/memra-spill-a-test-2436064-7/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436097 01:03:45.677907 close(3</proc/2436097/maps> <unfinished ...>
+2436088 01:03:45.677913 <... close resumed>) = 0
+2436097 01:03:45.677920 <... close resumed>) = 0
+2436064 01:03:45.677943 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f05fdce8, parent_tid=0x7b73f05fd990, exit_signal=0, stack=0x7b73f03fd000, stack_size=0x1ffec0, tls=0x7b73f05fd6c0} => {parent_tid=[2436100]}, 88) = 2436100
+2436094 01:03:45.678134 close(3</tmp/memra-spill-a-test-2436064-6/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436099 01:03:45.678161 flock(19</tmp/memra-spill-a-test-2436064-12/.catalog-owner>, LOCK_EX|LOCK_NB) = 0
+2436089 01:03:45.678201 close(9</tmp/memra-spill-a-test-2436064-8/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436087 01:03:45.678205 close(14</tmp/memra-spill-a-test-2436064-6/.ownership> <unfinished ...>
+2436089 01:03:45.678217 <... close resumed>) = 0
+2436087 01:03:45.678219 <... close resumed>) = 0
+2436095 01:03:45.678236 close(3</tmp/memra-spill-a-test-2436064-11>) = 0
+2436095 01:03:45.678285 close(11</tmp/memra-spill-a-test-2436064-11/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.pending-extent>(deleted)) = 0
+2436100 01:03:45.678309 flock(14</tmp/memra-spill-a-test-2436064-13/.catalog-owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436091 01:03:45.678317 close(3</tmp/memra-spill-a-test-2436064-9/chunk-32fffb11e74027c27063d615b149ba3b38941138dc0f62be98717c5d7d2ed8e1> <unfinished ...>
+2436100 01:03:45.678326 <... flock resumed>) = 0
+2436091 01:03:45.678330 <... close resumed>) = 0
+2436091 01:03:45.678357 close(17</tmp/memra-spill-a-test-2436064-9/chunk-32fffb11e74027c27063d615b149ba3b38941138dc0f62be98717c5d7d2ed8e1>) = 0
+2436074 01:03:45.678371 close(12</tmp/memra-spill-a-test-2436064-2/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436080 01:03:45.678382 close(13</tmp/memra-spill-a-test-2436064-3/chunk-6f01e9d49c1c9da30e6de7fd1c76e7a6bdca223307d85cc56debd16a90d91f37> <unfinished ...>
+2436074 01:03:45.678386 <... close resumed>) = 0
+2436080 01:03:45.678393 <... close resumed>) = 0
+2436088 01:03:45.678476 close(9</tmp/memra-spill-a-test-2436064-7/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436097 01:03:45.678510 close(3</usr/share/terminfo/s/screen-256color>) = 0
+2436095 01:03:45.678536 close(3</tmp/memra-spill-a-test-2436064-11/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root>) = 0
+2436097 01:03:45.678597 close(3</proc/2436097/cgroup> <unfinished ...>
+2436087 01:03:45.678602 close(11</tmp/memra-spill-a-test-2436064-6> <unfinished ...>
+2436097 01:03:45.678610 <... close resumed>) = 0
+2436087 01:03:45.678613 <... close resumed>) = 0
+2436099 01:03:45.678678 close(11</tmp/memra-spill-a-test-2436064-12>) = 0
+2436097 01:03:45.678715 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p2436062-i2423580.scope/cpu.max>) = 0
+2436089 01:03:45.678757 close(3</tmp/memra-spill-a-test-2436064-8/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436100 01:03:45.678783 close(11</tmp/memra-spill-a-test-2436064-13>) = 0
+2436097 01:03:45.678823 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/cpu.max>) = 0
+2436064 01:03:45.678842 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef1f3ce8, parent_tid=0x7b73ef1f3990, exit_signal=0, stack=0x7b73eeff3000, stack_size=0x1ffec0, tls=0x7b73ef1f36c0} <unfinished ...>
+2436074 01:03:45.678850 close(9</tmp/memra-spill-a-test-2436064-2/chunk-08e54c0c66f7407080e4ce04876740d7ab4d0eb4c746ae1a2a2f5df95afa0b72> <unfinished ...>
+2436099 01:03:45.678859 close(11</tmp/memra-spill-a-test-2436064-12> <unfinished ...>
+2436074 01:03:45.678867 <... close resumed>) = 0
+2436099 01:03:45.678875 <... close resumed>) = 0
+2436064 01:03:45.678883 <... clone3 resumed> => {parent_tid=[2436101]}, 88) = 2436101
+2436095 01:03:45.678889 close(13</tmp/memra-spill-a-test-2436064-11/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index>) = 0
+2436100 01:03:45.678905 close(17</tmp/memra-spill-a-test-2436064-13/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index>) = 0
+2436097 01:03:45.678944 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/cpu.max>) = 0
+2436100 01:03:45.679022 close(9</tmp/memra-spill-a-test-2436064-13>) = 0
+2436097 01:03:45.679047 close(3</sys/fs/cgroup/user.slice/user-1000.slice/cpu.max> <unfinished ...>
+2436096 01:03:45.679051 close(3</tmp/memra-spill-a-test-2436064-7/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436097 01:03:45.679063 <... close resumed>) = 0
+2436096 01:03:45.679065 <... close resumed>) = 0
+2436088 01:03:45.679080 close(20</tmp/memra-spill-a-test-2436064-7/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436080 01:03:45.679096 close(11</tmp/memra-spill-a-test-2436064-3/.pending-2436064-16>) = 0
+2436101 01:03:45.679122 flock(9</tmp/memra-spill-a-test-2436064-14/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436101 01:03:45.679163 flock(20</tmp/memra-spill-a-test-2436064-14/.ownership>, LOCK_SH <unfinished ...>
+2436099 01:03:45.679168 close(11</tmp/memra-spill-a-test-2436064-12> <unfinished ...>
+2436101 01:03:45.679181 <... flock resumed>) = 0
+2436099 01:03:45.679184 <... close resumed>) = 0
+2436097 01:03:45.679196 close(3</sys/fs/cgroup/user.slice/cpu.max>) = 0
+2436080 01:03:45.679228 close(22</tmp/memra-spill-a-test-2436064-3>) = 0
+2436101 01:03:45.679251 close(9</tmp/memra-spill-a-test-2436064-14/.ownership-gc>) = 0
+2436099 01:03:45.679271 close(11</tmp/memra-spill-a-test-2436064-12> <unfinished ...>
+2436095 01:03:45.679275 close(17</tmp/memra-spill-a-test-2436064-11/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root> <unfinished ...>
+2436099 01:03:45.679286 <... close resumed>) = 0
+2436095 01:03:45.679289 <... close resumed>) = 0
+2436099 01:03:45.679320 close(13</tmp/memra-spill-a-test-2436064-12/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.pending>(deleted) <unfinished ...>
+2436091 01:03:45.679331 close(9</tmp/memra-spill-a-test-2436064-9/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436099 01:03:45.679344 <... close resumed>) = 0
+2436091 01:03:45.679349 <... close resumed>) = 0
+2436080 01:03:45.679372 close(11</tmp/memra-spill-a-test-2436064-3>) = 0
+2436101 01:03:45.679391 flock(9</tmp/memra-spill-a-test-2436064-14/.txn-2436064-22/.owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436099 01:03:45.679396 close(12</tmp/memra-spill-a-test-2436064-12/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index> <unfinished ...>
+2436091 01:03:45.679402 close(21</tmp/memra-spill-a-test-2436064-9/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436101 01:03:45.679411 <... flock resumed>) = 0
+2436099 01:03:45.679414 <... close resumed>) = 0
+2436091 01:03:45.679417 <... close resumed>) = 0
+2436088 01:03:45.679420 close(16</tmp/memra-spill-a-test-2436064-7/.ownership>) = 0
+2436097 01:03:45.679464 close(3</proc/2436097/cgroup>) = 0
+2436101 01:03:45.679501 close(11</tmp/memra-spill-a-test-2436064-14>) = 0
+2436098 01:03:45.679553 close(3</tmp/memra-spill-a-test-2436064-8/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436089 01:03:45.679589 close(18</tmp/memra-spill-a-test-2436064-8/.ownership>) = 0
+2436100 01:03:45.679612 close(13</tmp/memra-spill-a-test-2436064-13>) = 0
+2436097 01:03:45.679639 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p2436062-i2423580.scope/cpu.max>) = 0
+2436074 01:03:45.679665 close(17</tmp/memra-spill-a-test-2436064-2/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436095 01:03:45.679686 close(3</tmp/memra-spill-a-test-2436064-11/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index>) = 0
+2436097 01:03:45.679754 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/cpu.max> <unfinished ...>
+2436099 01:03:45.679763 close(11</tmp/memra-spill-a-test-2436064-12/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root> <unfinished ...>
+2436097 01:03:45.679768 <... close resumed>) = 0
+2436099 01:03:45.679778 <... close resumed>) = 0
+2436100 01:03:45.679787 close(3</tmp/memra-spill-a-test-2436064-13> <unfinished ...>
+2436080 01:03:45.679796 close(12</tmp/memra-spill-a-test-2436064-3/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436100 01:03:45.679803 <... close resumed>) = 0
+2436080 01:03:45.679809 <... close resumed>) = 0
+2436091 01:03:45.679829 close(11</tmp/memra-spill-a-test-2436064-9/chunk-32fffb11e74027c27063d615b149ba3b38941138dc0f62be98717c5d7d2ed8e1>) = 0
+2436097 01:03:45.679859 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/cpu.max> <unfinished ...>
+2436091 01:03:45.679863 close(16</tmp/memra-spill-a-test-2436064-9/chunk-32fffb11e74027c27063d615b149ba3b38941138dc0f62be98717c5d7d2ed8e1> <unfinished ...>
+2436097 01:03:45.679872 <... close resumed>) = 0
+2436091 01:03:45.679875 <... close resumed>) = 0
+2436088 01:03:45.679887 close(13</tmp/memra-spill-a-test-2436064-7>) = 0
+2436101 01:03:45.679908 close(11</tmp/memra-spill-a-test-2436064-14/.pending-2436064-17> <unfinished ...>
+2436074 01:03:45.679913 close(10</tmp/memra-spill-a-test-2436064-2/.ownership> <unfinished ...>
+2436101 01:03:45.679921 <... close resumed>) = 0
+2436074 01:03:45.679925 <... close resumed>) = 0
+2436097 01:03:45.679975 close(3</sys/fs/cgroup/user.slice/user-1000.slice/cpu.max>) = 0
+2436101 01:03:45.680002 close(11</tmp/memra-spill-a-test-2436064-14> <unfinished ...>
+2436089 01:03:45.680008 close(3</tmp/memra-spill-a-test-2436064-8> <unfinished ...>
+2436101 01:03:45.680015 <... close resumed>) = 0
+2436089 01:03:45.680020 <... close resumed>) = 0
+2436100 01:03:45.680070 close(11</tmp/memra-spill-a-test-2436064-13>) = 0
+2436099 01:03:45.680111 close(3</tmp/memra-spill-a-test-2436064-12/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index> <unfinished ...>
+2436097 01:03:45.680117 close(3</sys/fs/cgroup/user.slice/cpu.max> <unfinished ...>
+2436101 01:03:45.680127 close(16</tmp/memra-spill-a-test-2436064-14> <unfinished ...>
+2436099 01:03:45.680133 <... close resumed>) = 0
+2436097 01:03:45.680136 <... close resumed>) = 0
+2436101 01:03:45.680147 <... close resumed>) = 0
+2436095 01:03:45.680168 close(12</tmp/memra-spill-a-test-2436064-11/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root>) = 0
+2436064 01:03:45.680187 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef5f5ce8, parent_tid=0x7b73ef5f5990, exit_signal=0, stack=0x7b73ef3f5000, stack_size=0x1ffec0, tls=0x7b73ef5f56c0} <unfinished ...>
+2436100 01:03:45.680199 close(3</tmp/memra-spill-a-test-2436064-13>) = 0
+2436074 01:03:45.680225 close(13</tmp/memra-spill-a-test-2436064-2> <unfinished ...>
+2436064 01:03:45.680232 <... clone3 resumed> => {parent_tid=[2436103]}, 88) = 2436103
+2436099 01:03:45.680239 flock(3</tmp/memra-spill-a-test-2436064-12/.catalog-owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436074 01:03:45.680245 <... close resumed>) = 0
+2436099 01:03:45.680254 <... flock resumed>) = -1 EAGAIN (Resource temporarily unavailable)
+2436100 01:03:45.680290 close(10</tmp/memra-spill-a-test-2436064-13/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.pending>(deleted) <unfinished ...>
+2436101 01:03:45.680305 close(12</tmp/memra-spill-a-test-2436064-14/.txn-2436064-22> <unfinished ...>
+2436100 01:03:45.680311 <... close resumed>) = 0
+2436101 01:03:45.680319 <... close resumed>) = 0
+2436099 01:03:45.680322 close(3</tmp/memra-spill-a-test-2436064-12/.catalog-owner>) = 0
+2436100 01:03:45.680344 close(17</tmp/memra-spill-a-test-2436064-13/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index>) = 0
+2436080 01:03:45.680359 close(11</tmp/memra-spill-a-test-2436064-3/.txn-2436064-14>) = 0
+2436097 01:03:45.680386 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7df8a27ffce8, parent_tid=0x7df8a27ff990, exit_signal=0, stack=0x7df8a25ff000, stack_size=0x1ffec0, tls=0x7df8a27ff6c0} <unfinished ...>
+2436064 01:03:45.680394 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f09ffce8, parent_tid=0x7b73f09ff990, exit_signal=0, stack=0x7b73f07ff000, stack_size=0x1ffec0, tls=0x7b73f09ff6c0} <unfinished ...>
+2436097 01:03:45.680424 <... clone3 resumed> => {parent_tid=[2436104]}, 88) = 2436104
+2436064 01:03:45.680433 <... clone3 resumed> => {parent_tid=[2436105]}, 88) = 2436105
+2436080 01:03:45.680498 close(11</tmp/memra-spill-a-test-2436064-3>) = 0
+2436080 01:03:45.680561 close(6</tmp/memra-spill-a-test-2436064-3/.txn-2436064-14/.owner>(deleted) <unfinished ...>
+2436095 01:03:45.680576 close(12</tmp/memra-spill-a-test-2436064-11>) = 0
+2436080 01:03:45.680593 <... close resumed>) = 0
+2436091 01:03:45.680605 close(13</tmp/memra-spill-a-test-2436064-9>) = 0
+2436099 01:03:45.680631 close(10</tmp/memra-spill-a-test-2436064-12> <unfinished ...>
+2436064 01:03:45.680643 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef7f6ce8, parent_tid=0x7b73ef7f6990, exit_signal=0, stack=0x7b73ef5f6000, stack_size=0x1ffec0, tls=0x7b73ef7f66c0} <unfinished ...>
+2436103 01:03:45.680648 flock(6</tmp/memra-spill-a-test-2436064-15/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436099 01:03:45.680657 <... close resumed>) = 0
+2436080 01:03:45.680661 close(8</tmp/memra-spill-a-test-2436064-3/.ownership> <unfinished ...>
+2436103 01:03:45.680671 <... flock resumed>) = 0
+2436091 01:03:45.680677 close(7</tmp/memra-spill-a-test-2436064-9/.ownership> <unfinished ...>
+2436080 01:03:45.680681 <... close resumed>) = 0
+2436064 01:03:45.680688 <... clone3 resumed> => {parent_tid=[2436106]}, 88) = 2436106
+2436091 01:03:45.680699 <... close resumed>) = 0
+2436101 01:03:45.680711 close(3</tmp/memra-spill-a-test-2436064-14/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436103 01:03:45.680728 flock(7</tmp/memra-spill-a-test-2436064-15/.ownership>, LOCK_SH <unfinished ...>
+2436101 01:03:45.680735 <... close resumed>) = 0
+2436103 01:03:45.680748 <... flock resumed>) = 0
+2436080 01:03:45.680765 flock(3</tmp/memra-spill-a-test-2436064-3/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436095 01:03:45.680788 close(15</tmp/memra-spill-a-test-2436064-11/.catalog-owner>) = 0
+2436080 01:03:45.680817 flock(10</tmp/memra-spill-a-test-2436064-3/.ownership>, LOCK_SH) = 0
+2436103 01:03:45.680839 close(6</tmp/memra-spill-a-test-2436064-15/.ownership-gc> <unfinished ...>
+2436095 01:03:45.680844 flock(12</tmp/memra-spill-a-test-2436064-11/.catalog-owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436103 01:03:45.680860 <... close resumed>) = 0
+2436095 01:03:45.680863 <... flock resumed>) = 0
+2436080 01:03:45.680874 close(3</tmp/memra-spill-a-test-2436064-3/.ownership-gc> <unfinished ...>
+2436100 01:03:45.680883 close(11</tmp/memra-spill-a-test-2436064-13/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root> <unfinished ...>
+2436080 01:03:45.680889 <... close resumed>) = 0
+2436100 01:03:45.680898 <... close resumed>) = 0
+2436105 01:03:45.680913 flock(3</tmp/memra-spill-a-test-2436064-16/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436064 01:03:45.680949 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f07fece8, parent_tid=0x7b73f07fe990, exit_signal=0, stack=0x7b73f05fe000, stack_size=0x1ffec0, tls=0x7b73f07fe6c0} <unfinished ...>
+2436105 01:03:45.680961 flock(6</tmp/memra-spill-a-test-2436064-16/.ownership>, LOCK_SH) = 0
+2436103 01:03:45.680981 flock(11</tmp/memra-spill-a-test-2436064-15/.txn-2436064-23/.owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436064 01:03:45.680993 <... clone3 resumed> => {parent_tid=[2436107]}, 88) = 2436107
+2436104 01:03:45.680999 flock(3</tmp/memra-spill-a-test-2436064-10/.catalog-owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436103 01:03:45.681006 <... flock resumed>) = 0
+2436104 01:03:45.681017 <... flock resumed>) = 0
+2436105 01:03:45.681028 close(3</tmp/memra-spill-a-test-2436064-16/.ownership-gc>) = 0
+2436091 01:03:45.681045 close(8</tmp/memra-spill-a-test-2436064-9>) = 0
+2436106 01:03:45.681083 flock(3</tmp/memra-spill-a-test-2436064-17/.catalog-owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436103 01:03:45.681091 close(15</tmp/memra-spill-a-test-2436064-15> <unfinished ...>
+2436106 01:03:45.681103 <... flock resumed>) = 0
+2436103 01:03:45.681106 <... close resumed>) = 0
+2436105 01:03:45.681138 flock(15</tmp/memra-spill-a-test-2436064-16/.txn-2436064-24/.owner>, LOCK_EX|LOCK_NB) = 0
+2436100 01:03:45.681212 close(17</tmp/memra-spill-a-test-2436064-13>) = 0
+2436095 01:03:45.681250 close(16</tmp/memra-spill-a-test-2436064-11/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.tomb> <unfinished ...>
+2436080 01:03:45.681256 close(13</tmp/memra-spill-a-test-2436064-3/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436095 01:03:45.681265 <... close resumed>) = 0
+2436080 01:03:45.681272 <... close resumed>) = 0
+2436107 01:03:45.681277 flock(13</tmp/memra-spill-a-test-2436064-18/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436064 01:03:45.681302 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f03fcce8, parent_tid=0x7b73f03fc990, exit_signal=0, stack=0x7b73f01fc000, stack_size=0x1ffec0, tls=0x7b73f03fc6c0} <unfinished ...>
+2436107 01:03:45.681312 flock(17</tmp/memra-spill-a-test-2436064-18/.ownership>, LOCK_SH) = 0
+2436101 01:03:45.681328 close(8</tmp/memra-spill-a-test-2436064-14/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436064 01:03:45.681335 <... clone3 resumed> => {parent_tid=[2436108]}, 88) = 2436108
+2436101 01:03:45.681348 <... close resumed>) = 0
+2436107 01:03:45.681386 close(13</tmp/memra-spill-a-test-2436064-18/.ownership-gc>) = 0
+2436104 01:03:45.681464 close(4</tmp/memra-spill-a-test-2436064-10> <unfinished ...>
+2436107 01:03:45.681478 flock(13</tmp/memra-spill-a-test-2436064-18/.txn-2436064-25/.owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436104 01:03:45.681483 <... close resumed>) = 0
+2436107 01:03:45.681491 <... flock resumed>) = 0
+2436100 01:03:45.681503 close(16</tmp/memra-spill-a-test-2436064-13/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.tomb> <unfinished ...>
+2436103 01:03:45.681512 close(8</tmp/memra-spill-a-test-2436064-15/.pending-2436064-18> <unfinished ...>
+2436100 01:03:45.681523 <... close resumed>) = 0
+2436103 01:03:45.681527 <... close resumed>) = 0
+2436105 01:03:45.681539 close(18</tmp/memra-spill-a-test-2436064-16/.pending-2436064-19>) = 0
+2436106 01:03:45.681562 close(16</tmp/memra-spill-a-test-2436064-17>) = 0
+2436108 01:03:45.681579 flock(18</tmp/memra-spill-a-test-2436064-19/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436108 01:03:45.681619 flock(21</tmp/memra-spill-a-test-2436064-19/.ownership>, LOCK_SH <unfinished ...>
+2436103 01:03:45.681626 close(16</tmp/memra-spill-a-test-2436064-15> <unfinished ...>
+2436108 01:03:45.681636 <... flock resumed>) = 0
+2436103 01:03:45.681640 <... close resumed>) = 0
+2436104 01:03:45.681665 close(5</tmp/memra-spill-a-test-2436064-10>) = 0
+2436095 01:03:45.681680 close(22</tmp/memra-spill-a-test-2436064-11>) = 0
+2436108 01:03:45.681704 close(18</tmp/memra-spill-a-test-2436064-19/.ownership-gc>) = 0
+2436103 01:03:45.681725 close(24</tmp/memra-spill-a-test-2436064-15>) = 0
+2436106 01:03:45.681750 close(22</tmp/memra-spill-a-test-2436064-17>) = 0
+2436095 01:03:45.681780 close(18</tmp/memra-spill-a-test-2436064-11>) = 0
+2436108 01:03:45.681797 flock(24</tmp/memra-spill-a-test-2436064-19/.txn-2436064-26/.owner>, LOCK_EX|LOCK_NB) = 0
+2436080 01:03:45.681821 close(8</tmp/memra-spill-a-test-2436064-3/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436103 01:03:45.681825 close(22</tmp/memra-spill-a-test-2436064-15/.txn-2436064-23>) = 0
+2436080 01:03:45.681838 <... close resumed>) = 0
+2436107 01:03:45.681862 close(18</tmp/memra-spill-a-test-2436064-18/.pending-2436064-20>) = 0
+2436105 01:03:45.681880 close(16</tmp/memra-spill-a-test-2436064-16/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436100 01:03:45.681922 close(18</tmp/memra-spill-a-test-2436064-13>) = 0
+2436095 01:03:45.681941 close(12</tmp/memra-spill-a-test-2436064-11/.catalog-owner> <unfinished ...>
+2436104 01:03:45.681950 close(6</tmp/memra-spill-a-test-2436064-10> <unfinished ...>
+2436095 01:03:45.681957 <... close resumed>) = 0
+2436104 01:03:45.681963 <... close resumed>) = 0
+2436101 01:03:45.681988 close(22</tmp/memra-spill-a-test-2436064-14/.pending-2436064-21>) = 0
+2436106 01:03:45.682014 close(18</tmp/memra-spill-a-test-2436064-17>) = 0
+2436100 01:03:45.682037 close(25</tmp/memra-spill-a-test-2436064-13> <unfinished ...>
+2436104 01:03:45.682046 close(6</tmp/memra-spill-a-test-2436064-10> <unfinished ...>
+2436100 01:03:45.682051 <... close resumed>) = 0
+2436104 01:03:45.682058 <... close resumed>) = 0
+2436104 01:03:45.682086 close(5</tmp/memra-spill-a-test-2436064-10/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.pending>(deleted) <unfinished ...>
+2436103 01:03:45.682093 close(8</tmp/memra-spill-a-test-2436064-15/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436100 01:03:45.682097 close(14</tmp/memra-spill-a-test-2436064-13/.catalog-owner> <unfinished ...>
+2436104 01:03:45.682109 <... close resumed>) = 0
+2436103 01:03:45.682111 <... close resumed>) = 0
+2436101 01:03:45.682114 close(18</tmp/memra-spill-a-test-2436064-14> <unfinished ...>
+2436100 01:03:45.682119 <... close resumed>) = 0
+2436101 01:03:45.682129 <... close resumed>) = 0
+2436106 01:03:45.682138 close(25</tmp/memra-spill-a-test-2436064-17>) = 0
+2436104 01:03:45.682153 close(4</tmp/memra-spill-a-test-2436064-10/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index> <unfinished ...>
+2436095 01:03:45.682158 close(22</tmp/memra-spill-a-test-2436064-11> <unfinished ...>
+2436104 01:03:45.682167 <... close resumed>) = 0
+2436095 01:03:45.682172 <... close resumed>) = 0
+2436106 01:03:45.682188 close(16</tmp/memra-spill-a-test-2436064-17/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.pending>(deleted)) = 0
+2436108 01:03:45.682210 close(8</tmp/memra-spill-a-test-2436064-19/.pending-2436064-22>) = 0
+2436106 01:03:45.682238 close(23</tmp/memra-spill-a-test-2436064-17/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index> <unfinished ...>
+2436101 01:03:45.682244 close(18</tmp/memra-spill-a-test-2436064-14> <unfinished ...>
+2436107 01:03:45.682256 close(12</tmp/memra-spill-a-test-2436064-18/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436106 01:03:45.682261 <... close resumed>) = 0
+2436101 01:03:45.682264 <... close resumed>) = 0
+2436107 01:03:45.682273 <... close resumed>) = 0
+2436100 01:03:45.682323 close(14</tmp/memra-spill-a-test-2436064-13>) = 0
+2436106 01:03:45.682385 close(3</tmp/memra-spill-a-test-2436064-17/.catalog-owner>) = 0
+2436080 01:03:45.682402 close(26</tmp/memra-spill-a-test-2436064-3/chunk-6f01e9d49c1c9da30e6de7fd1c76e7a6bdca223307d85cc56debd16a90d91f37>) = 0
+2436106 01:03:45.682427 flock(3</tmp/memra-spill-a-test-2436064-17/.catalog-owner>, LOCK_EX|LOCK_NB) = 0
+2436064 01:03:45.682468 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73eeff2ce8, parent_tid=0x7b73eeff2990, exit_signal=0, stack=0x7b73eedf2000, stack_size=0x1ffec0, tls=0x7b73eeff26c0} <unfinished ...>
+2436105 01:03:45.682506 close(8</tmp/memra-spill-a-test-2436064-16/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436064 01:03:45.682512 <... clone3 resumed> => {parent_tid=[2436109]}, 88) = 2436109
+2436105 01:03:45.682523 <... close resumed>) = 0
+2436104 01:03:45.682525 close(4</tmp/memra-spill-a-test-2436064-10/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root>) = 0
+2436108 01:03:45.682564 close(16</tmp/memra-spill-a-test-2436064-19/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436101 01:03:45.682570 close(12</tmp/memra-spill-a-test-2436064-14/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436108 01:03:45.682576 <... close resumed>) = 0
+2436101 01:03:45.682580 <... close resumed>) = 0
+2436064 01:03:45.682590 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f05fdce8, parent_tid=0x7b73f05fd990, exit_signal=0, stack=0x7b73f03fd000, stack_size=0x1ffec0, tls=0x7b73f05fd6c0} => {parent_tid=[2436110]}, 88) = 2436110
+2436103 01:03:45.682675 close(14</tmp/memra-spill-a-test-2436064-15/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436109 01:03:45.682703 flock(12</tmp/memra-spill-a-test-2436064-20/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436109 01:03:45.682732 flock(14</tmp/memra-spill-a-test-2436064-20/.ownership>, LOCK_SH) = 0
+2436109 01:03:45.682779 close(12</tmp/memra-spill-a-test-2436064-20/.ownership-gc>) = 0
+2436107 01:03:45.682796 close(8</tmp/memra-spill-a-test-2436064-18/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436106 01:03:45.682848 close(8</tmp/memra-spill-a-test-2436064-17> <unfinished ...>
+2436109 01:03:45.682857 flock(16</tmp/memra-spill-a-test-2436064-20/.txn-2436064-27/.owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436106 01:03:45.682864 <... close resumed>) = 0
+2436109 01:03:45.682868 <... flock resumed>) = 0
+2436104 01:03:45.682874 close(4</tmp/memra-spill-a-test-2436064-10/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index>) = 0
+2436101 01:03:45.682931 close(18</tmp/memra-spill-a-test-2436064-14/.txn-2436064-22>) = 0
+2436106 01:03:45.682982 close(18</tmp/memra-spill-a-test-2436064-17>) = 0
+2436101 01:03:45.682996 close(23</tmp/memra-spill-a-test-2436064-14> <unfinished ...>
+2436080 01:03:45.683004 close(12</tmp/memra-spill-a-test-2436064-3/chunk-6f01e9d49c1c9da30e6de7fd1c76e7a6bdca223307d85cc56debd16a90d91f37> <unfinished ...>
+2436101 01:03:45.683010 <... close resumed>) = 0
+2436080 01:03:45.683014 <... close resumed>) = 0
+2436101 01:03:45.683027 close(9</tmp/memra-spill-a-test-2436064-14/.txn-2436064-22/.owner>(deleted)) = 0
+2436108 01:03:45.683072 close(22</tmp/memra-spill-a-test-2436064-19/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436105 01:03:45.683089 close(9</tmp/memra-spill-a-test-2436064-16/.pending-2436064-23> <unfinished ...>
+2436101 01:03:45.683093 flock(12</tmp/memra-spill-a-test-2436064-14/.txn-2436064-28/.owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436105 01:03:45.683098 <... close resumed>) = 0
+2436101 01:03:45.683101 <... flock resumed>) = 0
+2436101 01:03:45.683137 close(9</tmp/memra-spill-a-test-2436064-14>) = 0
+2436106 01:03:45.683190 close(9</tmp/memra-spill-a-test-2436064-17>) = 0
+2436109 01:03:45.683219 close(23</tmp/memra-spill-a-test-2436064-20/.pending-2436064-24>) = 0
+2436103 01:03:45.683256 close(9</tmp/memra-spill-a-test-2436064-15/.pending-2436064-25> <unfinished ...>
+2436106 01:03:45.683263 close(23</tmp/memra-spill-a-test-2436064-17> <unfinished ...>
+2436103 01:03:45.683269 <... close resumed>) = 0
+2436106 01:03:45.683274 <... close resumed>) = 0
+2436106 01:03:45.683294 close(18</tmp/memra-spill-a-test-2436064-17/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.pending>(deleted) <unfinished ...>
+2436104 01:03:45.683301 close(5</tmp/memra-spill-a-test-2436064-10> <unfinished ...>
+2436106 01:03:45.683309 <... close resumed>) = 0
+2436104 01:03:45.683312 <... close resumed>) = 0
+2436106 01:03:45.683336 close(8</tmp/memra-spill-a-test-2436064-17/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index> <unfinished ...>
+2436104 01:03:45.683341 close(4</tmp/memra-spill-a-test-2436064-10/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.pending-extent>(deleted) <unfinished ...>
+2436106 01:03:45.683353 <... close resumed>) = 0
+2436104 01:03:45.683356 <... close resumed>) = 0
+2436105 01:03:45.683366 close(22</tmp/memra-spill-a-test-2436064-16/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436103 01:03:45.683383 close(18</tmp/memra-spill-a-test-2436064-15>) = 0
+2436107 01:03:45.683402 close(23</tmp/memra-spill-a-test-2436064-18/.pending-2436064-26>) = 0
+2436103 01:03:45.683481 close(8</tmp/memra-spill-a-test-2436064-15>) = 0
+2436109 01:03:45.683509 close(9</tmp/memra-spill-a-test-2436064-20/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436101 01:03:45.683524 close(18</tmp/memra-spill-a-test-2436064-14/.pending-2436064-27>) = 0
+2436110 01:03:45.683605 flock(25</tmp/memra-spill-a-test-2436064-21/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436110 01:03:45.683657 flock(27</tmp/memra-spill-a-test-2436064-21/.ownership>, LOCK_SH) = 0
+2436108 01:03:45.683674 close(26</tmp/memra-spill-a-test-2436064-19/.pending-2436064-28>) = 0
+2436104 01:03:45.683738 close(4</tmp/memra-spill-a-test-2436064-10/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root>) = 0
+2436110 01:03:45.683758 close(25</tmp/memra-spill-a-test-2436064-21/.ownership-gc> <unfinished ...>
+2436106 01:03:45.683762 close(22</tmp/memra-spill-a-test-2436064-17/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root> <unfinished ...>
+2436110 01:03:45.683773 <... close resumed>) = 0
+2436107 01:03:45.683776 close(8</tmp/memra-spill-a-test-2436064-18/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436106 01:03:45.683780 <... close resumed>) = 0
+2436107 01:03:45.683790 <... close resumed>) = 0
+2436103 01:03:45.683816 close(9</tmp/memra-spill-a-test-2436064-15/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436105 01:03:45.683833 close(28</tmp/memra-spill-a-test-2436064-16/.txn-2436064-24>) = 0
+2436080 01:03:45.683852 close(18</tmp/memra-spill-a-test-2436064-3/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436110 01:03:45.683861 flock(8</tmp/memra-spill-a-test-2436064-21/.txn-2436064-29/.owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436101 01:03:45.683866 close(23</tmp/memra-spill-a-test-2436064-14/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436110 01:03:45.683873 <... flock resumed>) = 0
+2436101 01:03:45.683878 <... close resumed>) = 0
+2436080 01:03:45.683880 <... close resumed>) = 0
+2436105 01:03:45.683891 close(15</tmp/memra-spill-a-test-2436064-16/.txn-2436064-24/.owner>(deleted)) = 0
+2436101 01:03:45.683951 close(18</tmp/memra-spill-a-test-2436064-14/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436108 01:03:45.683996 close(22</tmp/memra-spill-a-test-2436064-19/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436101 01:03:45.684008 close(18</tmp/memra-spill-a-test-2436064-14>) = 0
+2436104 01:03:45.684049 close(4</tmp/memra-spill-a-test-2436064-10>) = 0
+2436109 01:03:45.684071 close(9</tmp/memra-spill-a-test-2436064-20/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436106 01:03:45.684084 close(18</tmp/memra-spill-a-test-2436064-17>) = 0
+2436101 01:03:45.684097 close(23</tmp/memra-spill-a-test-2436064-14>) = 0
+2436104 01:03:45.684114 exit_group(73)  = ?
+2436105 01:03:45.684156 close(15</tmp/memra-spill-a-test-2436064-16/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436107 01:03:45.684181 close(22</tmp/memra-spill-a-test-2436064-18/.txn-2436064-25>) = 0
+2436101 01:03:45.684202 close(23</tmp/memra-spill-a-test-2436064-14/.txn-2436064-28>) = 0
+2436103 01:03:45.684232 close(9</tmp/memra-spill-a-test-2436064-15/.txn-2436064-23>) = 0
+2436110 01:03:45.684255 close(15</tmp/memra-spill-a-test-2436064-21/.pending-2436064-29> <unfinished ...>
+2436107 01:03:45.684260 close(13</tmp/memra-spill-a-test-2436064-18/.txn-2436064-25/.owner>(deleted) <unfinished ...>
+2436110 01:03:45.684273 <... close resumed>) = 0
+2436107 01:03:45.684277 <... close resumed>) = 0
+2436103 01:03:45.684348 close(15</tmp/memra-spill-a-test-2436064-15> <unfinished ...>
+2436107 01:03:45.684361 flock(22</tmp/memra-spill-a-test-2436064-18/.txn-2436064-30/.owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436103 01:03:45.684366 <... close resumed>) = 0
+2436107 01:03:45.684376 <... flock resumed>) = 0
+2436080 01:03:45.684391 close(18</tmp/memra-spill-a-test-2436064-3/chunk-6f01e9d49c1c9da30e6de7fd1c76e7a6bdca223307d85cc56debd16a90d91f37> <unfinished ...>
+2436103 01:03:45.684402 close(11</tmp/memra-spill-a-test-2436064-15/.txn-2436064-23/.owner>(deleted) <unfinished ...>
+2436080 01:03:45.684409 <... close resumed>) = 0
+2436103 01:03:45.684416 <... close resumed>) = 0
+2436106 01:03:45.684424 close(25</tmp/memra-spill-a-test-2436064-17/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.tomb> <unfinished ...>
+2436093 01:03:45.684429 flock(11</tmp/memra-spill-a-test-2436064-10/.catalog-owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436106 01:03:45.684438 <... close resumed>) = 0
+2436093 01:03:45.684442 <... flock resumed>) = 0
+2436108 01:03:45.684453 close(13</tmp/memra-spill-a-test-2436064-19/.txn-2436064-26>) = 0
+2436064 01:03:45.684488 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef3f4ce8, parent_tid=0x7b73ef3f4990, exit_signal=0, stack=0x7b73ef1f4000, stack_size=0x1ffec0, tls=0x7b73ef3f46c0} <unfinished ...>
+2436108 01:03:45.684508 close(24</tmp/memra-spill-a-test-2436064-19/.txn-2436064-26/.owner>(deleted)) = 0
+2436101 01:03:45.684526 close(9</tmp/memra-spill-a-test-2436064-14/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436064 01:03:45.684533 <... clone3 resumed> => {parent_tid=[2436111]}, 88) = 2436111
+2436101 01:03:45.684542 <... close resumed>) = 0
+2436103 01:03:45.684558 close(13</tmp/memra-spill-a-test-2436064-15>) = 0
+2436103 01:03:45.684599 close(7</tmp/memra-spill-a-test-2436064-15/.ownership>) = 0
+2436110 01:03:45.684625 close(23</tmp/memra-spill-a-test-2436064-21/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436103 01:03:45.684659 flock(23</tmp/memra-spill-a-test-2436064-15/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436109 01:03:45.684668 close(7</tmp/memra-spill-a-test-2436064-20/.pending-2436064-30> <unfinished ...>
+2436103 01:03:45.684676 <... flock resumed>) = 0
+2436109 01:03:45.684682 <... close resumed>) = 0
+2436105 01:03:45.684706 close(15</tmp/memra-spill-a-test-2436064-16/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436103 01:03:45.684710 flock(26</tmp/memra-spill-a-test-2436064-15/.ownership>, LOCK_SH <unfinished ...>
+2436105 01:03:45.684722 <... close resumed>) = 0
+2436103 01:03:45.684724 <... flock resumed>) = 0
+2436108 01:03:45.684746 clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7b73f0cfe000, stack_size=0x9000}, 88 <unfinished ...>
+2436107 01:03:45.684750 close(7</tmp/memra-spill-a-test-2436064-18/.pending-2436064-31> <unfinished ...>
+2436103 01:03:45.684756 close(23</tmp/memra-spill-a-test-2436064-15/.ownership-gc> <unfinished ...>
+2436107 01:03:45.684765 <... close resumed>) = 0
+2436103 01:03:45.684769 <... close resumed>) = 0
+2436106 01:03:45.684807 close(7</tmp/memra-spill-a-test-2436064-17>) = 0
+2436111 01:03:45.684824 flock(28</tmp/memra-spill-a-test-2436064-22/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436093 01:03:45.684833 close(9</tmp/memra-spill-a-test-2436064-10/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.tomb> <unfinished ...>
+2436111 01:03:45.684841 <... flock resumed>) = 0
+2436093 01:03:45.684846 <... close resumed>) = 0
+2436111 01:03:45.684866 flock(7</tmp/memra-spill-a-test-2436064-22/.ownership>, LOCK_SH) = 0
+2436112 01:03:45.684888 execve("/home/avifenesh/projects/wt-spill-a/target/debug/deps/storage-1825ca21bf643b79", ["/home/avifenesh/projects/wt-spil"..., "--exact", "day4::review_gc_live_cross_proce"..., "--nocapture"], 0x7b73c40057e0 /* 87 vars */ <unfinished ...>
+2436103 01:03:45.684917 flock(31</tmp/memra-spill-a-test-2436064-15/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436106 01:03:45.684928 close(29</tmp/memra-spill-a-test-2436064-17> <unfinished ...>
+2436103 01:03:45.684933 <... flock resumed>) = -1 EAGAIN (Resource temporarily unavailable)
+2436106 01:03:45.684943 <... close resumed>) = 0
+2436103 01:03:45.684962 close(31</tmp/memra-spill-a-test-2436064-15/.ownership-gc>) = 0
+2436108 01:03:45.684976 <... clone3 resumed>) = 2436112
+2436111 01:03:45.684983 close(28</tmp/memra-spill-a-test-2436064-22/.ownership-gc>) = 0
+2436109 01:03:45.685024 close(15</tmp/memra-spill-a-test-2436064-20/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436112 01:03:45.685037 <... execve resumed>) = 0
+2436109 01:03:45.685040 <... close resumed>) = 0
+2436108 01:03:45.685043 close(13<pipe:[11215897]>) = 0
+2436108 01:03:45.685067 close(25<pipe:[11215898]>) = 0
+2436107 01:03:45.685091 close(23</tmp/memra-spill-a-test-2436064-18/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436111 01:03:45.685102 flock(13</tmp/memra-spill-a-test-2436064-22/.txn-2436064-31/.owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436107 01:03:45.685108 <... close resumed>) = 0
+2436105 01:03:45.685110 flock(15</tmp/memra-spill-a-test-2436064-16/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436111 01:03:45.685121 <... flock resumed>) = 0
+2436105 01:03:45.685125 <... flock resumed>) = 0
+2436105 01:03:45.685149 flock(23</tmp/memra-spill-a-test-2436064-16/.ownership>, LOCK_SH <unfinished ...>
+2436080 01:03:45.685165 close(9</tmp/memra-spill-a-test-2436064-3/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436105 01:03:45.685174 <... flock resumed>) = 0
+2436080 01:03:45.685179 <... close resumed>) = 0
+2436101 01:03:45.685195 close(30</tmp/memra-spill-a-test-2436064-14/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436105 01:03:45.685207 close(15</tmp/memra-spill-a-test-2436064-16/.ownership-gc> <unfinished ...>
+2436101 01:03:45.685211 <... close resumed>) = 0
+2436105 01:03:45.685218 <... close resumed>) = 0
+2436093 01:03:45.685244 close(28</tmp/memra-spill-a-test-2436064-10>) = 0
+2436110 01:03:45.685258 close(29</tmp/memra-spill-a-test-2436064-21/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436105 01:03:45.685286 flock(15</tmp/memra-spill-a-test-2436064-16/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436105 01:03:45.685305 flock(23</tmp/memra-spill-a-test-2436064-16/.ownership>, LOCK_UN) = 0
+2436105 01:03:45.685325 flock(23</tmp/memra-spill-a-test-2436064-16/.ownership>, LOCK_EX|LOCK_NB) = -1 EAGAIN (Resource temporarily unavailable)
+2436112 01:03:45.685341 close(3</etc/ld.so.cache> <unfinished ...>
+2436105 01:03:45.685349 flock(23</tmp/memra-spill-a-test-2436064-16/.ownership>, LOCK_SH <unfinished ...>
+2436112 01:03:45.685357 <... close resumed>) = 0
+2436105 01:03:45.685361 <... flock resumed>) = 0
+2436093 01:03:45.685364 close(29</tmp/memra-spill-a-test-2436064-10>) = 0
+2436105 01:03:45.685396 close(15</tmp/memra-spill-a-test-2436064-16/.ownership-gc> <unfinished ...>
+2436106 01:03:45.685408 close(30</tmp/memra-spill-a-test-2436064-17> <unfinished ...>
+2436105 01:03:45.685412 <... close resumed>) = 0
+2436106 01:03:45.685422 <... close resumed>) = 0
+2436107 01:03:45.685438 close(9</tmp/memra-spill-a-test-2436064-18/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436109 01:03:45.685475 close(28</tmp/memra-spill-a-test-2436064-20/.txn-2436064-27> <unfinished ...>
+2436093 01:03:45.685481 close(29</tmp/memra-spill-a-test-2436064-10> <unfinished ...>
+2436109 01:03:45.685489 <... close resumed>) = 0
+2436103 01:03:45.685493 close(25</proc/2436064/maps> <unfinished ...>
+2436093 01:03:45.685497 <... close resumed>) = 0
+2436111 01:03:45.685504 close(30</tmp/memra-spill-a-test-2436064-22/.pending-2436064-32> <unfinished ...>
+2436103 01:03:45.685511 <... close resumed>) = 0
+2436111 01:03:45.685519 <... close resumed>) = 0
+2436093 01:03:45.685534 close(11</tmp/memra-spill-a-test-2436064-10/.catalog-owner>) = 0
+2436109 01:03:45.685552 close(16</tmp/memra-spill-a-test-2436064-20/.txn-2436064-27/.owner>(deleted) <unfinished ...>
+2436112 01:03:45.685560 close(3</usr/lib/x86_64-linux-gnu/libgcc_s.so.1>) = 0
+2436109 01:03:45.685571 <... close resumed>) = 0
+2436103 01:03:45.685601 close(25</home/avifenesh/projects/wt-spill-a/target/debug/deps/storage-1825ca21bf643b79>) = 0
+2436106 01:03:45.685623 close(11</tmp/memra-spill-a-test-2436064-17>) = 0
+2436109 01:03:45.685650 flock(11</tmp/memra-spill-a-test-2436064-20/.txn-2436064-32/.owner>, LOCK_EX|LOCK_NB) = 0
+2436080 01:03:45.685691 close(15</tmp/memra-spill-a-test-2436064-3/chunk-6f01e9d49c1c9da30e6de7fd1c76e7a6bdca223307d85cc56debd16a90d91f37>) = 0
+2436093 01:03:45.685710 close(16</tmp/memra-spill-a-test-2436064-10>) = 0
+2436105 01:03:45.685728 close(9</tmp/memra-spill-a-test-2436064-16/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436112 01:03:45.685773 close(3</usr/lib/x86_64-linux-gnu/libc.so.6>) = 0
+2436101 01:03:45.685799 close(15</tmp/memra-spill-a-test-2436064-14/.pending-2436064-33> <unfinished ...>
+2436103 01:03:45.685810 close(16</proc/sys/vm/overcommit_memory> <unfinished ...>
+2436101 01:03:45.685814 <... close resumed>) = 0
+2436111 01:03:45.685819 close(28</tmp/memra-spill-a-test-2436064-22/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436103 01:03:45.685826 <... close resumed>) = 0
+2436111 01:03:45.685832 <... close resumed>) = 0
+2436107 01:03:45.685849 close(25</tmp/memra-spill-a-test-2436064-18>) = 0
+2436110 01:03:45.685865 close(29</tmp/memra-spill-a-test-2436064-21/.pending-2436064-34>) = 0
+2436106 01:03:45.685892 close(15</tmp/memra-spill-a-test-2436064-17>) = 0
+2436101 01:03:45.685909 close(16</tmp/memra-spill-a-test-2436064-14>) = 0
+2436107 01:03:45.685927 close(15</tmp/memra-spill-a-test-2436064-18/.txn-2436064-30/unknown-reference>) = 0
+2436064 01:03:45.685955 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73effface8, parent_tid=0x7b73efffa990, exit_signal=0, stack=0x7b73efdfa000, stack_size=0x1ffec0, tls=0x7b73efffa6c0} <unfinished ...>
+2436106 01:03:45.685965 close(16</tmp/memra-spill-a-test-2436064-17>) = 0
+2436064 01:03:45.685985 <... clone3 resumed> => {parent_tid=[2436113]}, 88) = 2436113
+2436105 01:03:45.686001 close(23</tmp/memra-spill-a-test-2436064-16/.ownership> <unfinished ...>
+2436101 01:03:45.686005 close(15</tmp/memra-spill-a-test-2436064-14> <unfinished ...>
+2436107 01:03:45.686015 flock(16</tmp/memra-spill-a-test-2436064-18/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436106 01:03:45.686019 close(9</tmp/memra-spill-a-test-2436064-17/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.pending>(deleted) <unfinished ...>
+2436105 01:03:45.686025 <... close resumed>) = 0
+2436101 01:03:45.686028 <... close resumed>) = 0
+2436107 01:03:45.686035 <... flock resumed>) = 0
+2436106 01:03:45.686038 <... close resumed>) = 0
+2436109 01:03:45.686047 close(28</tmp/memra-spill-a-test-2436064-20/.pending-2436064-35> <unfinished ...>
+2436107 01:03:45.686051 flock(17</tmp/memra-spill-a-test-2436064-18/.ownership>, LOCK_UN <unfinished ...>
+2436109 01:03:45.686063 <... close resumed>) = 0
+2436107 01:03:45.686066 <... flock resumed>) = 0
+2436107 01:03:45.686078 flock(17</tmp/memra-spill-a-test-2436064-18/.ownership>, LOCK_EX|LOCK_NB <unfinished ...>
+2436106 01:03:45.686081 close(31</tmp/memra-spill-a-test-2436064-17/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index> <unfinished ...>
+2436107 01:03:45.686094 <... flock resumed>) = 0
+2436106 01:03:45.686096 <... close resumed>) = 0
+2436106 01:03:45.686142 close(3</tmp/memra-spill-a-test-2436064-17/.catalog-owner>) = 0
+2436110 01:03:45.686273 close(25</tmp/memra-spill-a-test-2436064-21/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436105 01:03:45.686326 close(9</tmp/memra-spill-a-test-2436064-16>) = 0
+2436101 01:03:45.686391 close(23</tmp/memra-spill-a-test-2436064-14/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b>) = 0
+2436106 01:03:45.686416 close(30</tmp/memra-spill-a-test-2436064-17> <unfinished ...>
+2436080 01:03:45.686421 close(15</tmp/memra-spill-a-test-2436064-3/chunk-6f01e9d49c1c9da30e6de7fd1c76e7a6bdca223307d85cc56debd16a90d91f37> <unfinished ...>
+2436109 01:03:45.686430 close(28</tmp/memra-spill-a-test-2436064-20/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436106 01:03:45.686435 <... close resumed>) = 0
+2436080 01:03:45.686438 <... close resumed>) = 0
+2436109 01:03:45.686445 <... close resumed>) = 0
+2436107 01:03:45.686461 close(3</tmp/memra-spill-a-test-2436064-18/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436111 01:03:45.686487 close(29</tmp/memra-spill-a-test-2436064-22/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436112 01:03:45.686500 close(3</proc/2436112/maps> <unfinished ...>
+2436113 01:03:45.686511 flock(3</tmp/memra-spill-a-test-2436064-23/.catalog-owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436112 01:03:45.686518 <... close resumed>) = 0
+2436113 01:03:45.686523 <... flock resumed>) = 0
+2436106 01:03:45.686538 flock(15</tmp/memra-spill-a-test-2436064-27/.catalog-owner>, LOCK_EX|LOCK_NB) = 0
+2436113 01:03:45.686548 flock(23</tmp/memra-spill-a-test-2436064-24/.catalog-owner>, LOCK_EX|LOCK_NB) = 0
+2436113 01:03:45.686579 flock(28</tmp/memra-spill-a-test-2436064-25/.catalog-owner>, LOCK_EX|LOCK_NB) = 0
+2436113 01:03:45.686608 flock(29</tmp/memra-spill-a-test-2436064-26/.catalog-owner>, LOCK_EX|LOCK_NB) = 0
+2436110 01:03:45.686647 close(25</tmp/memra-spill-a-test-2436064-21/.txn-2436064-29>) = 0
+2436110 01:03:45.686682 close(8</tmp/memra-spill-a-test-2436064-21/.txn-2436064-29/.owner>(deleted)) = 0
+2436109 01:03:45.686699 close(9</tmp/memra-spill-a-test-2436064-20/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436101 01:03:45.686744 close(25</tmp/memra-spill-a-test-2436064-14/.txn-2436064-28>) = 0
+2436107 01:03:45.686778 flock(25</tmp/memra-spill-a-test-2436064-18/.txn-2436064-30/.owner>, LOCK_EX|LOCK_NB) = -1 EAGAIN (Resource temporarily unavailable)
+2436101 01:03:45.686799 close(30</tmp/memra-spill-a-test-2436064-14>) = 0
+2436101 01:03:45.686816 close(12</tmp/memra-spill-a-test-2436064-14/.txn-2436064-28/.owner>(deleted) <unfinished ...>
+2436107 01:03:45.686827 close(31</tmp/memra-spill-a-test-2436064-18/.txn-2436064-30> <unfinished ...>
+2436101 01:03:45.686833 <... close resumed>) = 0
+2436107 01:03:45.686837 <... close resumed>) = 0
+2436107 01:03:45.686854 close(25</tmp/memra-spill-a-test-2436064-18/.txn-2436064-30/.owner>) = 0
+2436107 01:03:45.686867 close(8</tmp/memra-spill-a-test-2436064-18>) = 0
+2436107 01:03:45.686882 flock(17</tmp/memra-spill-a-test-2436064-18/.ownership>, LOCK_SH <unfinished ...>
+2436112 01:03:45.686889 close(3</usr/share/terminfo/s/screen-256color> <unfinished ...>
+2436107 01:03:45.686894 <... flock resumed>) = 0
+2436112 01:03:45.686899 <... close resumed>) = 0
+2436107 01:03:45.686913 close(16</tmp/memra-spill-a-test-2436064-18/.ownership-gc>) = 0
+2436106 01:03:45.686939 close(12</tmp/memra-spill-a-test-2436064-27>) = 0
+2436112 01:03:45.686955 close(3</proc/2436112/cgroup>) = 0
+2436110 01:03:45.687060 clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7b73f0ccd000, stack_size=0x9000}, 88 <unfinished ...>
+2436111 01:03:45.687075 close(30</tmp/memra-spill-a-test-2436064-22/.pending-2436064-36> <unfinished ...>
+2436101 01:03:45.687081 close(8</tmp/memra-spill-a-test-2436064-14/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436111 01:03:45.687094 <... close resumed>) = 0
+2436101 01:03:45.687099 <... close resumed>) = 0
+2436112 01:03:45.687107 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p2436062-i2423580.scope/cpu.max> <unfinished ...>
+2436109 01:03:45.687112 flock(8</tmp/memra-spill-a-test-2436064-20/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436112 01:03:45.687125 <... close resumed>) = 0
+2436109 01:03:45.687128 <... flock resumed>) = 0
+2436109 01:03:45.687139 flock(14</tmp/memra-spill-a-test-2436064-20/.ownership>, LOCK_UN) = 0
+2436109 01:03:45.687162 flock(14</tmp/memra-spill-a-test-2436064-20/.ownership>, LOCK_EX|LOCK_NB <unfinished ...>
+2436106 01:03:45.687167 close(30</tmp/memra-spill-a-test-2436064-27> <unfinished ...>
+2436064 01:03:45.687176 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f09ffce8, parent_tid=0x7b73f09ff990, exit_signal=0, stack=0x7b73f07ff000, stack_size=0x1ffec0, tls=0x7b73f09ff6c0} <unfinished ...>
+2436109 01:03:45.687181 <... flock resumed>) = 0
+2436106 01:03:45.687184 <... close resumed>) = 0
+2436064 01:03:45.687209 <... clone3 resumed> => {parent_tid=[2436115]}, 88) = 2436115
+2436114 01:03:45.687214 execve("/home/avifenesh/projects/wt-spill-a/target/debug/deps/storage-1825ca21bf643b79", ["/home/avifenesh/projects/wt-spil"..., "--exact", "day4::review_gc_staged_transacti"...], 0x7b73b0005720 /* 87 vars */ <unfinished ...>
+2436080 01:03:45.687251 close(12</tmp/memra-spill-a-test-2436064-3/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436112 01:03:45.687259 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/cpu.max> <unfinished ...>
+2436080 01:03:45.687265 <... close resumed>) = 0
+2436112 01:03:45.687271 <... close resumed>) = 0
+2436107 01:03:45.687275 close(16</tmp/memra-spill-a-test-2436064-18/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436110 01:03:45.687292 <... clone3 resumed>) = 2436114
+2436110 01:03:45.687340 close(9</dev/null> <unfinished ...>
+2436114 01:03:45.687360 <... execve resumed>) = 0
+2436110 01:03:45.687366 <... close resumed>) = 0
+2436112 01:03:45.687383 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/cpu.max>) = 0
+2436111 01:03:45.687453 close(30</tmp/memra-spill-a-test-2436064-22/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436106 01:03:45.687467 close(16</tmp/memra-spill-a-test-2436064-27>) = 0
+2436112 01:03:45.687495 close(3</sys/fs/cgroup/user.slice/user-1000.slice/cpu.max> <unfinished ...>
+2436109 01:03:45.687499 close(31</tmp/memra-spill-a-test-2436064-20/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436112 01:03:45.687511 <... close resumed>) = 0
+2436109 01:03:45.687513 <... close resumed>) = 0
+2436106 01:03:45.687563 close(30</tmp/memra-spill-a-test-2436064-27>) = 0
+2436115 01:03:45.687599 flock(30</tmp/memra-spill-a-test-2436064-28/.catalog-owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436106 01:03:45.687606 close(12</tmp/memra-spill-a-test-2436064-27/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.pending>(deleted) <unfinished ...>
+2436115 01:03:45.687617 <... flock resumed>) = 0
+2436112 01:03:45.687620 close(3</sys/fs/cgroup/user.slice/cpu.max> <unfinished ...>
+2436106 01:03:45.687624 <... close resumed>) = 0
+2436112 01:03:45.687633 <... close resumed>) = 0
+2436101 01:03:45.687638 close(9</tmp/memra-spill-a-test-2436064-14/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436115 01:03:45.687655 flock(12</tmp/memra-spill-a-test-2436064-29/.catalog-owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436106 01:03:45.687661 close(25</tmp/memra-spill-a-test-2436064-27/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index> <unfinished ...>
+2436115 01:03:45.687669 <... flock resumed>) = 0
+2436106 01:03:45.687673 <... close resumed>) = 0
+2436114 01:03:45.687680 close(3</etc/ld.so.cache>) = 0
+2436115 01:03:45.687703 flock(9</tmp/memra-spill-a-test-2436064-30/.catalog-owner>, LOCK_EX|LOCK_NB) = 0
+2436080 01:03:45.687761 close(16</tmp/memra-spill-a-test-2436064-3/chunk-6f01e9d49c1c9da30e6de7fd1c76e7a6bdca223307d85cc56debd16a90d91f37> <unfinished ...>
+2436106 01:03:45.687773 close(15</tmp/memra-spill-a-test-2436064-27/.catalog-owner> <unfinished ...>
+2436080 01:03:45.687778 <... close resumed>) = 0
+2436106 01:03:45.687786 <... close resumed>) = 0
+2436112 01:03:45.687813 close(3</proc/2436112/cgroup> <unfinished ...>
+2436106 01:03:45.687819 flock(15</tmp/memra-spill-a-test-2436064-27/.catalog-owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436112 01:03:45.687826 <... close resumed>) = 0
+2436106 01:03:45.687832 <... flock resumed>) = 0
+2436107 01:03:45.687839 close(31</tmp/memra-spill-a-test-2436064-18/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436109 01:03:45.687846 flock(32</tmp/memra-spill-a-test-2436064-20/.txn-2436064-32/.owner>, LOCK_EX|LOCK_NB <unfinished ...>
+2436107 01:03:45.687854 <... close resumed>) = 0
+2436114 01:03:45.687858 close(3</usr/lib/x86_64-linux-gnu/libgcc_s.so.1> <unfinished ...>
+2436111 01:03:45.687862 close(25</tmp/memra-spill-a-test-2436064-22/.txn-2436064-31> <unfinished ...>
+2436109 01:03:45.687866 <... flock resumed>) = -1 EAGAIN (Resource temporarily unavailable)
+2436114 01:03:45.687871 <... close resumed>) = 0
+2436111 01:03:45.687874 <... close resumed>) = 0
+2436111 01:03:45.687910 close(13</tmp/memra-spill-a-test-2436064-22/.txn-2436064-31/.owner>(deleted) <unfinished ...>
+2436112 01:03:45.687924 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p2436062-i2423580.scope/cpu.max> <unfinished ...>
+2436111 01:03:45.687928 <... close resumed>) = 0
+2436112 01:03:45.687934 <... close resumed>) = 0
+2436109 01:03:45.687946 close(25</tmp/memra-spill-a-test-2436064-20/.txn-2436064-32>) = 0
+2436109 01:03:45.687975 close(32</tmp/memra-spill-a-test-2436064-20/.txn-2436064-32/.owner> <unfinished ...>
+2436111 01:03:45.687980 close(31</tmp/memra-spill-a-test-2436064-22/root-6363636363636363636363636363636363636363636363636363636363636363> <unfinished ...>
+2436109 01:03:45.687990 <... close resumed>) = 0
+2436111 01:03:45.687994 <... close resumed>) = 0
+2436109 01:03:45.688015 close(16</tmp/memra-spill-a-test-2436064-20>) = 0
+2436112 01:03:45.688028 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/cpu.max>) = 0
+2436111 01:03:45.688055 flock(16</tmp/memra-spill-a-test-2436064-22/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436114 01:03:45.688061 close(3</usr/lib/x86_64-linux-gnu/libc.so.6>) = 0
+2436111 01:03:45.688071 <... flock resumed>) = 0
+2436111 01:03:45.688079 flock(7</tmp/memra-spill-a-test-2436064-22/.ownership>, LOCK_UN <unfinished ...>
+2436109 01:03:45.688083 flock(14</tmp/memra-spill-a-test-2436064-20/.ownership>, LOCK_SH <unfinished ...>
+2436111 01:03:45.688092 <... flock resumed>) = 0
+2436109 01:03:45.688095 <... flock resumed>) = 0
+2436111 01:03:45.688104 flock(7</tmp/memra-spill-a-test-2436064-22/.ownership>, LOCK_EX|LOCK_NB) = 0
+2436109 01:03:45.688126 close(8</tmp/memra-spill-a-test-2436064-20/.ownership-gc>) = 0
+2436112 01:03:45.688158 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/cpu.max>) = 0
+2436101 01:03:45.688176 close(13</tmp/memra-spill-a-test-2436064-14/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436115 01:03:45.688212 close(8</tmp/memra-spill-a-test-2436064-28>) = 0
+2436080 01:03:45.688261 close(13</tmp/memra-spill-a-test-2436064-3/.pending-simulated-crash> <unfinished ...>
+2436106 01:03:45.688272 close(33</tmp/memra-spill-a-test-2436064-27> <unfinished ...>
+2436080 01:03:45.688277 <... close resumed>) = 0
+2436106 01:03:45.688286 <... close resumed>) = 0
+2436112 01:03:45.688291 close(3</sys/fs/cgroup/user.slice/user-1000.slice/cpu.max> <unfinished ...>
+2436115 01:03:45.688300 close(8</tmp/memra-spill-a-test-2436064-29> <unfinished ...>
+2436112 01:03:45.688304 <... close resumed>) = 0
+2436115 01:03:45.688311 <... close resumed>) = 0
+2436107 01:03:45.688371 close(25</tmp/memra-spill-a-test-2436064-18/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436115 01:03:45.688381 close(8</tmp/memra-spill-a-test-2436064-30> <unfinished ...>
+2436107 01:03:45.688387 <... close resumed>) = 0
+2436115 01:03:45.688395 <... close resumed>) = 0
+2436112 01:03:45.688414 close(3</sys/fs/cgroup/user.slice/cpu.max>) = 0
+2436111 01:03:45.688426 close(32</tmp/memra-spill-a-test-2436064-22/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436109 01:03:45.688430 close(31</tmp/memra-spill-a-test-2436064-20/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436111 01:03:45.688441 <... close resumed>) = 0
+2436109 01:03:45.688443 <... close resumed>) = 0
+2436112 01:03:45.688538 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x78fb425ffce8, parent_tid=0x78fb425ff990, exit_signal=0, stack=0x78fb423ff000, stack_size=0x1ffec0, tls=0x78fb425ff6c0} <unfinished ...>
+2436080 01:03:45.688567 close(13</tmp/memra-spill-a-test-2436064-3/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436106 01:03:45.688577 close(25</tmp/memra-spill-a-test-2436064-27/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root> <unfinished ...>
+2436101 01:03:45.688582 flock(33</tmp/memra-spill-a-test-2436064-14/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436080 01:03:45.688586 <... close resumed>) = 0
+2436112 01:03:45.688593 <... clone3 resumed> => {parent_tid=[2436116]}, 88) = 2436116
+2436106 01:03:45.688597 <... close resumed>) = 0
+2436101 01:03:45.688600 <... flock resumed>) = 0
+2436101 01:03:45.688624 flock(13</tmp/memra-spill-a-test-2436064-14/.ownership>, LOCK_SH) = 0
+2436101 01:03:45.688646 close(33</tmp/memra-spill-a-test-2436064-14/.ownership-gc>) = 0
+2436115 01:03:45.688656 close(25</tmp/memra-spill-a-test-2436064-28>) = 0
+2436115 01:03:45.688699 close(25</tmp/memra-spill-a-test-2436064-29>) = 0
+2436114 01:03:45.688708 close(3</proc/2436114/maps> <unfinished ...>
+2436101 01:03:45.688718 flock(33</tmp/memra-spill-a-test-2436064-14/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436114 01:03:45.688725 <... close resumed>) = 0
+2436101 01:03:45.688729 <... flock resumed>) = 0
+2436101 01:03:45.688736 flock(20</tmp/memra-spill-a-test-2436064-14/.ownership>, LOCK_UN) = 0
+2436101 01:03:45.688753 flock(20</tmp/memra-spill-a-test-2436064-14/.ownership>, LOCK_EX|LOCK_NB) = -1 EAGAIN (Resource temporarily unavailable)
+2436115 01:03:45.688766 close(34</tmp/memra-spill-a-test-2436064-30> <unfinished ...>
+2436101 01:03:45.688773 flock(20</tmp/memra-spill-a-test-2436064-14/.ownership>, LOCK_SH <unfinished ...>
+2436115 01:03:45.688779 <... close resumed>) = 0
+2436101 01:03:45.688783 <... flock resumed>) = 0
+2436101 01:03:45.688805 close(33</tmp/memra-spill-a-test-2436064-14/.ownership-gc> <unfinished ...>
+2436080 01:03:45.688809 close(10</tmp/memra-spill-a-test-2436064-3/.ownership> <unfinished ...>
+2436101 01:03:45.688819 <... close resumed>) = 0
+2436080 01:03:45.688822 <... close resumed>) = 0
+2436116 01:03:45.688833 flock(3</tmp/memra-spill-a-test-2436064-19/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436111 01:03:45.688839 close(35</tmp/memra-spill-a-test-2436064-22/root-6363636363636363636363636363636363636363636363636363636363636363> <unfinished ...>
+2436116 01:03:45.688848 <... flock resumed>) = 0
+2436111 01:03:45.688851 <... close resumed>) = 0
+2436101 01:03:45.688853 close(13</tmp/memra-spill-a-test-2436064-14/.ownership> <unfinished ...>
+2436111 01:03:45.688861 close(25</tmp/memra-spill-a-test-2436064-22> <unfinished ...>
+2436101 01:03:45.688867 <... close resumed>) = 0
+2436111 01:03:45.688874 <... close resumed>) = 0
+2436116 01:03:45.688882 flock(4</tmp/memra-spill-a-test-2436064-19/.ownership>, LOCK_SH <unfinished ...>
+2436111 01:03:45.688887 flock(7</tmp/memra-spill-a-test-2436064-22/.ownership>, LOCK_SH <unfinished ...>
+2436116 01:03:45.688895 <... flock resumed>) = 0
+2436111 01:03:45.688898 <... flock resumed>) = 0
+2436111 01:03:45.688932 close(16</tmp/memra-spill-a-test-2436064-22/.ownership-gc> <unfinished ...>
+2436101 01:03:45.688938 flock(33</tmp/memra-spill-a-test-2436064-14/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436111 01:03:45.688947 <... close resumed>) = 0
+2436101 01:03:45.688952 <... flock resumed>) = 0
+2436101 01:03:45.688963 flock(20</tmp/memra-spill-a-test-2436064-14/.ownership>, LOCK_UN) = 0
+2436101 01:03:45.688985 flock(20</tmp/memra-spill-a-test-2436064-14/.ownership>, LOCK_EX|LOCK_NB) = 0
+2436116 01:03:45.689005 close(3</tmp/memra-spill-a-test-2436064-19/.ownership-gc>) = 0
+2436109 01:03:45.689043 close(34</tmp/memra-spill-a-test-2436064-20/.pending-2436064-37>) = 0
+2436115 01:03:45.689079 close(36</tmp/memra-spill-a-test-2436064-28>) = 0
+2436116 01:03:45.689127 flock(3</tmp/memra-spill-a-test-2436064-19/.txn-2436112-1/.owner>, LOCK_EX|LOCK_NB) = 0
+2436115 01:03:45.689175 close(37</tmp/memra-spill-a-test-2436064-29>) = 0
+2436107 01:03:45.689192 close(13</tmp/memra-spill-a-test-2436064-18/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436106 01:03:45.689242 close(16</tmp/memra-spill-a-test-2436064-27/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root>) = 0
+2436115 01:03:45.689261 close(13</tmp/memra-spill-a-test-2436064-30>) = 0
+2436080 01:03:45.689295 close(36</tmp/memra-spill-a-test-2436064-3/.txn-2436064-8> <unfinished ...>
+2436111 01:03:45.689303 close(35</tmp/memra-spill-a-test-2436064-22/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436080 01:03:45.689316 <... close resumed>) = 0
+2436101 01:03:45.689334 close(34</tmp/memra-spill-a-test-2436064-14/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436115 01:03:45.689348 close(13</tmp/memra-spill-a-test-2436064-28>) = 0
+2436114 01:03:45.689360 close(3</usr/share/terminfo/s/screen-256color>) = 0
+2436109 01:03:45.689385 close(38</tmp/memra-spill-a-test-2436064-20/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b>) = 0
+2436080 01:03:45.689400 close(10</tmp/memra-spill-a-test-2436064-3>) = 0
+2436115 01:03:45.689411 close(13</tmp/memra-spill-a-test-2436064-29>) = 0
+2436114 01:03:45.689461 close(3</proc/2436114/cgroup> <unfinished ...>
+2436115 01:03:45.689470 close(10</tmp/memra-spill-a-test-2436064-30> <unfinished ...>
+2436114 01:03:45.689474 <... close resumed>) = 0
+2436115 01:03:45.689482 <... close resumed>) = 0
+2436116 01:03:45.689502 close(5</tmp/memra-spill-a-test-2436064-19/.pending-2436112-0> <unfinished ...>
+2436115 01:03:45.689506 close(25</tmp/memra-spill-a-test-2436064-28/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.pending>(deleted) <unfinished ...>
+2436116 01:03:45.689520 <... close resumed>) = 0
+2436115 01:03:45.689522 <... close resumed>) = 0
+2436115 01:03:45.689545 close(8</tmp/memra-spill-a-test-2436064-28/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index>) = 0
+2436106 01:03:45.689567 close(10</tmp/memra-spill-a-test-2436064-27>) = 0
+2436115 01:03:45.689600 close(31</tmp/memra-spill-a-test-2436064-29/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-1.index>) = 0
+2436114 01:03:45.689622 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p2436062-i2423580.scope/cpu.max>) = 0
+2436115 01:03:45.689645 close(32</tmp/memra-spill-a-test-2436064-30/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-2.index>) = 0
+2436064 01:03:45.689689 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef9f7ce8, parent_tid=0x7b73ef9f7990, exit_signal=0, stack=0x7b73ef7f7000, stack_size=0x1ffec0, tls=0x7b73ef9f76c0} => {parent_tid=[2436117]}, 88) = 2436117
+2436107 01:03:45.689735 close(13</tmp/memra-spill-a-test-2436064-18/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436114 01:03:45.689771 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/cpu.max>) = 0
+2436109 01:03:45.689846 close(16</tmp/memra-spill-a-test-2436064-20/.txn-2436064-32> <unfinished ...>
+2436116 01:03:45.689856 close(5</tmp/memra-spill-a-test-2436064-19/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436109 01:03:45.689862 <... close resumed>) = 0
+2436116 01:03:45.689869 <... close resumed>) = 0
+2436111 01:03:45.689892 close(8</tmp/memra-spill-a-test-2436064-22/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436114 01:03:45.689905 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/cpu.max> <unfinished ...>
+2436111 01:03:45.689909 <... close resumed>) = 0
+2436114 01:03:45.689919 <... close resumed>) = 0
+2436109 01:03:45.689922 close(11</tmp/memra-spill-a-test-2436064-20/.txn-2436064-32/.owner>(deleted)) = 0
+2436106 01:03:45.689944 close(25</tmp/memra-spill-a-test-2436064-27/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.tomb>) = 0
+2436101 01:03:45.689957 close(31</tmp/memra-spill-a-test-2436064-14/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b>) = 0
+2436115 01:03:45.690006 close(13</tmp/memra-spill-a-test-2436064-28/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root>) = 0
+2436114 01:03:45.690018 close(3</sys/fs/cgroup/user.slice/user-1000.slice/cpu.max>) = 0
+2436114 01:03:45.690096 close(3</sys/fs/cgroup/user.slice/cpu.max> <unfinished ...>
+2436064 01:03:45.690103 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef9f7ce8, parent_tid=0x7b73ef9f7990, exit_signal=0, stack=0x7b73ef7f7000, stack_size=0x1ffec0, tls=0x7b73ef9f76c0} <unfinished ...>
+2436114 01:03:45.690110 <... close resumed>) = 0
+2436116 01:03:45.690119 close(5</tmp/memra-spill-a-test-2436064-19/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436064 01:03:45.690131 <... clone3 resumed> => {parent_tid=[2436118]}, 88) = 2436118
+2436116 01:03:45.690137 <... close resumed>) = 0
+2436109 01:03:45.690169 close(8</tmp/memra-spill-a-test-2436064-20/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b>) = 0
+2436101 01:03:45.690218 close(10</tmp/memra-spill-a-test-2436064-14>) = 0
+2436114 01:03:45.690273 close(3</proc/2436114/cgroup>) = 0
+2436106 01:03:45.690298 close(10</tmp/memra-spill-a-test-2436064-27>) = 0
+2436101 01:03:45.690318 close(13</tmp/memra-spill-a-test-2436064-14>) = 0
+2436107 01:03:45.690338 close(8</tmp/memra-spill-a-test-2436064-18/.txn-2436064-30> <unfinished ...>
+2436115 01:03:45.690348 close(16</tmp/memra-spill-a-test-2436064-30/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-2.index> <unfinished ...>
+2436107 01:03:45.690353 <... close resumed>) = 0
+2436115 01:03:45.690360 <... close resumed>) = 0
+2436111 01:03:45.690377 close(11</tmp/memra-spill-a-test-2436064-22/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436107 01:03:45.690395 close(22</tmp/memra-spill-a-test-2436064-18/.txn-2436064-30/.owner>(deleted) <unfinished ...>
+2436101 01:03:45.690402 close(8</tmp/memra-spill-a-test-2436064-14> <unfinished ...>
+2436107 01:03:45.690412 <... close resumed>) = 0
+2436106 01:03:45.690414 close(10</tmp/memra-spill-a-test-2436064-27> <unfinished ...>
+2436101 01:03:45.690418 <... close resumed>) = 0
+2436114 01:03:45.690425 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p2436062-i2423580.scope/cpu.max> <unfinished ...>
+2436106 01:03:45.690430 <... close resumed>) = 0
+2436114 01:03:45.690436 <... close resumed>) = 0
+2436101 01:03:45.690493 close(10</tmp/memra-spill-a-test-2436064-14> <unfinished ...>
+2436107 01:03:45.690501 flock(11</tmp/memra-spill-a-test-2436064-18/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436101 01:03:45.690506 <... close resumed>) = 0
+2436107 01:03:45.690514 <... flock resumed>) = 0
+2436101 01:03:45.690517 flock(20</tmp/memra-spill-a-test-2436064-14/.ownership>, LOCK_SH <unfinished ...>
+2436107 01:03:45.690524 flock(17</tmp/memra-spill-a-test-2436064-18/.ownership>, LOCK_UN <unfinished ...>
+2436101 01:03:45.690528 <... flock resumed>) = 0
+2436114 01:03:45.690533 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/cpu.max> <unfinished ...>
+2436107 01:03:45.690538 <... flock resumed>) = 0
+2436114 01:03:45.690546 <... close resumed>) = 0
+2436107 01:03:45.690549 flock(17</tmp/memra-spill-a-test-2436064-18/.ownership>, LOCK_EX|LOCK_NB <unfinished ...>
+2436108 01:03:45.690558 flock(10</tmp/memra-spill-a-test-2436064-19/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436107 01:03:45.690563 <... flock resumed>) = 0
+2436101 01:03:45.690566 close(33</tmp/memra-spill-a-test-2436064-14/.ownership-gc> <unfinished ...>
+2436108 01:03:45.690574 <... flock resumed>) = 0
+2436101 01:03:45.690576 <... close resumed>) = 0
+2436108 01:03:45.690583 flock(21</tmp/memra-spill-a-test-2436064-19/.ownership>, LOCK_UN) = 0
+2436108 01:03:45.690601 flock(21</tmp/memra-spill-a-test-2436064-19/.ownership>, LOCK_EX|LOCK_NB <unfinished ...>
+2436064 01:03:45.690610 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef9f7ce8, parent_tid=0x7b73ef9f7990, exit_signal=0, stack=0x7b73ef7f7000, stack_size=0x1ffec0, tls=0x7b73ef9f76c0} <unfinished ...>
+2436108 01:03:45.690623 <... flock resumed>) = -1 EAGAIN (Resource temporarily unavailable)
+2436108 01:03:45.690633 flock(21</tmp/memra-spill-a-test-2436064-19/.ownership>, LOCK_SH) = 0
+2436064 01:03:45.690656 <... clone3 resumed> => {parent_tid=[2436119]}, 88) = 2436119
+2436114 01:03:45.690680 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/cpu.max> <unfinished ...>
+2436109 01:03:45.690684 close(8</tmp/memra-spill-a-test-2436064-20/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436108 01:03:45.690688 close(10</tmp/memra-spill-a-test-2436064-19/.ownership-gc> <unfinished ...>
+2436114 01:03:45.690701 <... close resumed>) = 0
+2436109 01:03:45.690705 <... close resumed>) = 0
+2436108 01:03:45.690707 <... close resumed>) = 0
+2436108 01:03:45.690758 close(18<pipe:[11215897]>) = 0
+2436114 01:03:45.690822 close(3</sys/fs/cgroup/user.slice/user-1000.slice/cpu.max> <unfinished ...>
+2436115 01:03:45.690834 close(10</tmp/memra-spill-a-test-2436064-28> <unfinished ...>
+2436114 01:03:45.690838 <... close resumed>) = 0
+2436115 01:03:45.690849 <... close resumed>) = 0
+2436107 01:03:45.690913 close(16</tmp/memra-spill-a-test-2436064-18/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436106 01:03:45.690917 close(10</tmp/memra-spill-a-test-2436064-27> <unfinished ...>
+2436115 01:03:45.690925 close(18</tmp/memra-spill-a-test-2436064-29> <unfinished ...>
+2436107 01:03:45.690932 <... close resumed>) = 0
+2436106 01:03:45.690934 <... close resumed>) = 0
+2436115 01:03:45.690941 <... close resumed>) = 0
+2436114 01:03:45.690958 close(3</sys/fs/cgroup/user.slice/cpu.max>) = 0
+2436101 01:03:45.690986 close(8</tmp/memra-spill-a-test-2436064-14/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b>) = 0
+2436115 01:03:45.691001 close(10</tmp/memra-spill-a-test-2436064-30>) = 0
+2436116 01:03:45.691024 close(5</tmp/memra-spill-a-test-2436064-19/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436115 01:03:45.691034 close(13</tmp/memra-spill-a-test-2436064-30/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-2.pending-extent>(deleted)) = 0
+2436106 01:03:45.691083 close(8</tmp/memra-spill-a-test-2436064-27>) = 0
+2436114 01:03:45.691103 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x70848fbffce8, parent_tid=0x70848fbff990, exit_signal=0, stack=0x70848f9ff000, stack_size=0x1ffec0, tls=0x70848fbff6c0} <unfinished ...>
+2436111 01:03:45.691108 close(22</tmp/memra-spill-a-test-2436064-22/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436114 01:03:45.691136 <... clone3 resumed> => {parent_tid=[2436120]}, 88) = 2436120
+2436115 01:03:45.691245 close(8</tmp/memra-spill-a-test-2436064-28/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root>) = 0
+2436107 01:03:45.691258 close(10</tmp/memra-spill-a-test-2436064-18>) = 0
+2436106 01:03:45.691336 close(10</tmp/memra-spill-a-test-2436064-27> <unfinished ...>
+2436107 01:03:45.691344 flock(17</tmp/memra-spill-a-test-2436064-18/.ownership>, LOCK_SH <unfinished ...>
+2436106 01:03:45.691348 <... close resumed>) = 0
+2436107 01:03:45.691356 <... flock resumed>) = 0
+2436120 01:03:45.691379 flock(3</tmp/memra-spill-a-test-2436064-21/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436107 01:03:45.691388 close(11</tmp/memra-spill-a-test-2436064-18/.ownership-gc> <unfinished ...>
+2436120 01:03:45.691397 <... flock resumed>) = 0
+2436109 01:03:45.691400 close(13</tmp/memra-spill-a-test-2436064-20/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b> <unfinished ...>
+2436107 01:03:45.691406 <... close resumed>) = 0
+2436109 01:03:45.691414 <... close resumed>) = 0
+2436120 01:03:45.691429 flock(4</tmp/memra-spill-a-test-2436064-21/.ownership>, LOCK_SH) = 0
+2436106 01:03:45.691442 close(22</tmp/memra-spill-a-test-2436064-27>) = 0
+2436107 01:03:45.691463 close(17</tmp/memra-spill-a-test-2436064-18/.ownership>) = 0
+2436106 01:03:45.691483 close(18</tmp/memra-spill-a-test-2436064-27/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.pending>(deleted) <unfinished ...>
+2436101 01:03:45.691490 close(8</tmp/memra-spill-a-test-2436064-14/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b> <unfinished ...>
+2436106 01:03:45.691499 <... close resumed>) = 0
+2436101 01:03:45.691503 <... close resumed>) = 0
+2436106 01:03:45.691528 close(16</tmp/memra-spill-a-test-2436064-27/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index> <unfinished ...>
+2436120 01:03:45.691537 close(3</tmp/memra-spill-a-test-2436064-21/.ownership-gc> <unfinished ...>
+2436106 01:03:45.691546 <... close resumed>) = 0
+2436120 01:03:45.691551 <... close resumed>) = 0
+2436115 01:03:45.691561 close(8</tmp/memra-spill-a-test-2436064-30/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-2.index>) = 0
+2436106 01:03:45.691582 close(15</tmp/memra-spill-a-test-2436064-27/.catalog-owner>) = 0
+2436116 01:03:45.691610 close(5</tmp/memra-spill-a-test-2436064-19/.pending-2436112-1>) = 0
+2436111 01:03:45.691621 close(10</tmp/memra-spill-a-test-2436064-22/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436120 01:03:45.691650 flock(3</tmp/memra-spill-a-test-2436064-21/.txn-2436114-1/.owner>, LOCK_EX|LOCK_NB) = 0
+2436107 01:03:45.691672 close(11</tmp/memra-spill-a-test-2436064-18>) = 0
+2436106 01:03:45.691801 close(10</tmp/memra-spill-a-test-2436064-27>) = 0
+2436115 01:03:45.691853 close(8</tmp/memra-spill-a-test-2436064-30/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-2.extent>) = 0
+2436109 01:03:45.691882 close(13</tmp/memra-spill-a-test-2436064-20/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436116 01:03:45.691916 close(5</tmp/memra-spill-a-test-2436064-19/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b>) = 0
+2436064 01:03:45.691932 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f07fece8, parent_tid=0x7b73f07fe990, exit_signal=0, stack=0x7b73f05fe000, stack_size=0x1ffec0, tls=0x7b73f07fe6c0} <unfinished ...>
+2436101 01:03:45.691951 close(11</tmp/memra-spill-a-test-2436064-14/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436064 01:03:45.691960 <... clone3 resumed> => {parent_tid=[2436121]}, 88) = 2436121
+2436101 01:03:45.691964 <... close resumed>) = 0
+2436120 01:03:45.692031 close(5</tmp/memra-spill-a-test-2436064-21/.pending-2436114-0>) = 0
+2436064 01:03:45.692049 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef7f6ce8, parent_tid=0x7b73ef7f6990, exit_signal=0, stack=0x7b73ef5f6000, stack_size=0x1ffec0, tls=0x7b73ef7f66c0} <unfinished ...>
+2436111 01:03:45.692058 close(7</tmp/memra-spill-a-test-2436064-22/.ownership>) = 0
+2436064 01:03:45.692079 <... clone3 resumed> => {parent_tid=[2436122]}, 88) = 2436122
+2436111 01:03:45.692279 close(7</tmp/memra-spill-a-test-2436064-22> <unfinished ...>
+2436109 01:03:45.692284 flock(10</tmp/memra-spill-a-test-2436064-20/.ownership-gc>, LOCK_EX|LOCK_NB <unfinished ...>
+2436111 01:03:45.692297 <... close resumed>) = 0
+2436109 01:03:45.692299 <... flock resumed>) = 0
+2436116 01:03:45.692306 close(5</tmp/memra-spill-a-test-2436064-19/.txn-2436112-1> <unfinished ...>
+2436109 01:03:45.692312 flock(14</tmp/memra-spill-a-test-2436064-20/.ownership>, LOCK_UN <unfinished ...>
+2436120 01:03:45.692320 close(5</tmp/memra-spill-a-test-2436064-21/chunk-f2f89c4e2261fe007f996405d1ba28fa90aaea6de777db7766d9df32f48bcefb> <unfinished ...>
+2436116 01:03:45.692324 <... close resumed>) = 0
+2436109 01:03:45.692327 <... flock resumed>) = 0
+2436120 01:03:45.692334 <... close resumed>) = 0
+2436115 01:03:45.692338 close(8</tmp/memra-spill-a-test-2436064-30/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-2.extent> <unfinished ...>
+2436109 01:03:45.692342 flock(14</tmp/memra-spill-a-test-2436064-20/.ownership>, LOCK_EX|LOCK_NB <unfinished ...>
+2436115 01:03:45.692351 <... close resumed>) = 0
+2436109 01:03:45.692354 <... flock resumed>) = 0
+2436116 01:03:45.692367 close(3</tmp/memra-spill-a-test-2436064-19/.txn-2436112-1/.owner>(deleted)) = 0
+2436115 01:03:45.692428 close(7</tmp/memra-spill-a-test-2436064-30/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-2.extent>) = 0
+2436064 01:03:45.692474 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef7f6ce8, parent_tid=0x7b73ef7f6990, exit_signal=0, stack=0x7b73ef5f6000, stack_size=0x1ffec0, tls=0x7b73ef7f66c0} => {parent_tid=[2436123]}, 88) = 2436123
+2436064 01:03:45.692619 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef3f4ce8, parent_tid=0x7b73ef3f4990, exit_signal=0, stack=0x7b73ef1f4000, stack_size=0x1ffec0, tls=0x7b73ef3f46c0} <unfinished ...>
+2436109 01:03:45.692633 close(8</tmp/memra-spill-a-test-2436064-20/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b>) = 0
+2436064 01:03:45.692654 <... clone3 resumed> => {parent_tid=[2436124]}, 88) = 2436124
+2436116 01:03:45.692677 close(3</tmp/memra-spill-a-test-2436064-19/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b>) = 0
+2436115 01:03:45.692711 close(11</tmp/memra-spill-a-test-2436064-30/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-2.extent> <unfinished ...>
+2436101 01:03:45.692716 close(7</tmp/memra-spill-a-test-2436064-14/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b> <unfinished ...>
+2436115 01:03:45.692739 <... close resumed>) = 0
+2436101 01:03:45.692742 <... close resumed>) = 0
+2436120 01:03:45.692748 exit_group(73)  = ?
+2436124 01:03:45.692923 flock(8</tmp/memra-spill-a-test-2436064-31/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436124 01:03:45.692984 flock(11</tmp/memra-spill-a-test-2436064-31/.ownership>, LOCK_SH <unfinished ...>
+2436109 01:03:45.693000 close(7</tmp/memra-spill-a-test-2436064-20> <unfinished ...>
+2436124 01:03:45.693015 <... flock resumed>) = 0
+2436109 01:03:45.693023 <... close resumed>) = 0
+2436124 01:03:45.693108 close(8</tmp/memra-spill-a-test-2436064-31/.ownership-gc>) = 0
+2436109 01:03:45.693143 flock(14</tmp/memra-spill-a-test-2436064-20/.ownership>, LOCK_SH) = 0
+2436109 01:03:45.693210 close(10</tmp/memra-spill-a-test-2436064-20/.ownership-gc>) = 0
+2436124 01:03:45.693260 flock(8</tmp/memra-spill-a-test-2436064-31/.txn-2436064-36/.owner>, LOCK_EX|LOCK_NB) = 0
+2436109 01:03:45.693287 close(14</tmp/memra-spill-a-test-2436064-20/.ownership>) = 0
+2436116 01:03:45.693318 close(3</tmp/memra-spill-a-test-2436064-19/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436115 01:03:45.693335 close(7</tmp/memra-spill-a-test-2436064-28/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root>) = 0
+2436101 01:03:45.693361 close(13</tmp/memra-spill-a-test-2436064-14/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436109 01:03:45.693425 close(10</tmp/memra-spill-a-test-2436064-20>) = 0
+2436064 01:03:45.693601 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73eeff2ce8, parent_tid=0x7b73eeff2990, exit_signal=0, stack=0x7b73eedf2000, stack_size=0x1ffec0, tls=0x7b73eeff26c0} => {parent_tid=[2436125]}, 88) = 2436125
+2436115 01:03:45.693651 close(7</tmp/memra-spill-a-test-2436064-29/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-1.index> <unfinished ...>
+2436124 01:03:45.693664 close(10</tmp/memra-spill-a-test-2436064-31/.pending-2436064-38> <unfinished ...>
+2436115 01:03:45.693669 <... close resumed>) = 0
+2436124 01:03:45.693674 <... close resumed>) = 0
+2436101 01:03:45.693788 flock(10</tmp/memra-spill-a-test-2436064-14/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436101 01:03:45.693810 flock(20</tmp/memra-spill-a-test-2436064-14/.ownership>, LOCK_UN) = 0
+2436101 01:03:45.693827 flock(20</tmp/memra-spill-a-test-2436064-14/.ownership>, LOCK_EX|LOCK_NB) = 0
+2436124 01:03:45.693899 close(7</tmp/memra-spill-a-test-2436064-31/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436115 01:03:45.693915 close(14</tmp/memra-spill-a-test-2436064-29/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-1.index>) = 0
+2436115 01:03:45.693936 close(13</tmp/memra-spill-a-test-2436064-28/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index>) = 0
+2436110 01:03:45.693972 close(15</tmp/memra-spill-a-test-2436064-21>) = 0
+2436116 01:03:45.694034 close(3</tmp/memra-spill-a-test-2436064-19/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b>) = 0
+2436110 01:03:45.694051 flock(13</tmp/memra-spill-a-test-2436064-21/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436064 01:03:45.694072 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73eeff2ce8, parent_tid=0x7b73eeff2990, exit_signal=0, stack=0x7b73eedf2000, stack_size=0x1ffec0, tls=0x7b73eeff26c0} <unfinished ...>
+2436110 01:03:45.694079 flock(27</tmp/memra-spill-a-test-2436064-21/.ownership>, LOCK_UN) = 0
+2436064 01:03:45.694105 <... clone3 resumed> => {parent_tid=[2436126]}, 88) = 2436126
+2436110 01:03:45.694109 flock(27</tmp/memra-spill-a-test-2436064-21/.ownership>, LOCK_EX|LOCK_NB) = 0
+2436101 01:03:45.694161 close(16</tmp/memra-spill-a-test-2436064-14/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b>) = 0
+2436064 01:03:45.694194 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73f07fece8, parent_tid=0x7b73f07fe990, exit_signal=0, stack=0x7b73f05fe000, stack_size=0x1ffec0, tls=0x7b73f07fe6c0} => {parent_tid=[2436127]}, 88) = 2436127
+2436115 01:03:45.694250 close(7</tmp/memra-spill-a-test-2436064-28/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root>) = 0
+2436110 01:03:45.694401 close(14</tmp/memra-spill-a-test-2436064-21/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436124 01:03:45.694461 close(7</tmp/memra-spill-a-test-2436064-31/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436116 01:03:45.694498 close(3</tmp/memra-spill-a-test-2436064-19/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436124 01:03:45.694505 <... close resumed>) = 0
+2436116 01:03:45.694507 <... close resumed>) = 0
+2436101 01:03:45.694512 close(14</tmp/memra-spill-a-test-2436064-14> <unfinished ...>
+2436064 01:03:45.694517 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73eeff2ce8, parent_tid=0x7b73eeff2990, exit_signal=0, stack=0x7b73eedf2000, stack_size=0x1ffec0, tls=0x7b73eeff26c0} <unfinished ...>
+2436101 01:03:45.694523 <... close resumed>) = 0
+2436064 01:03:45.694544 <... clone3 resumed> => {parent_tid=[2436128]}, 88) = 2436128
+2436115 01:03:45.694575 close(7</tmp/memra-spill-a-test-2436064-29/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-1.index>) = 0
+2436101 01:03:45.694593 close(14</tmp/memra-spill-a-test-2436064-14>) = 0
+2436101 01:03:45.694660 close(7</tmp/memra-spill-a-test-2436064-14>) = 0
+2436101 01:03:45.694720 close(15</tmp/memra-spill-a-test-2436064-14>) = 0
+2436101 01:03:45.694734 flock(20</tmp/memra-spill-a-test-2436064-14/.ownership>, LOCK_SH) = 0
+2436101 01:03:45.694769 close(10</tmp/memra-spill-a-test-2436064-14/.ownership-gc>) = 0
+2436110 01:03:45.694799 close(15</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-39>) = 0
+2436101 01:03:45.694818 close(20</tmp/memra-spill-a-test-2436064-14/.ownership> <unfinished ...>
+2436115 01:03:45.694822 close(14</tmp/memra-spill-a-test-2436064-28/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root> <unfinished ...>
+2436101 01:03:45.694827 <... close resumed>) = 0
+2436115 01:03:45.694830 <... close resumed>) = 0
+2436116 01:03:45.694873 close(4</tmp/memra-spill-a-test-2436064-19/.ownership>) = 0
+2436110 01:03:45.694883 close(10</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-38>) = 0
+2436110 01:03:45.694965 close(18</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-37> <unfinished ...>
+2436101 01:03:45.694970 close(14</tmp/memra-spill-a-test-2436064-14> <unfinished ...>
+2436110 01:03:45.694976 <... close resumed>) = 0
+2436101 01:03:45.694982 <... close resumed>) = 0
+2436128 01:03:45.694986 clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7b73f0c88000, stack_size=0x9000}, 88 <unfinished ...>
+2436110 01:03:45.695079 close(14</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-36> <unfinished ...>
+2436124 01:03:45.695085 close(18</tmp/memra-spill-a-test-2436064-31/.pending-2436064-39> <unfinished ...>
+2436110 01:03:45.695096 <... close resumed>) = 0
+2436124 01:03:45.695098 <... close resumed>) = 0
+2436129 01:03:45.695106 execve("<path-entry>/python3", ["python3", "/home/avifenesh/projects/wt-spil"...], 0x7ffd76f6fd30 /* 86 vars */) = -1 ENOENT (No such file or directory)
+2436129 01:03:45.695133 execve("<path-entry>/python3", ["python3", "/home/avifenesh/projects/wt-spil"...], 0x7ffd76f6fd30 /* 86 vars */ <unfinished ...>
+2436115 01:03:45.695140 close(20</tmp/memra-spill-a-test-2436064-28> <unfinished ...>
+2436129 01:03:45.695151 <... execve resumed>) = -1 ENOENT (No such file or directory)
+2436115 01:03:45.695154 <... close resumed>) = 0
+2436129 01:03:45.695161 execve("<path-entry>/python3", ["python3", "/home/avifenesh/projects/wt-spil"...], 0x7ffd76f6fd30 /* 86 vars */) = -1 ENOENT (No such file or directory)
+2436129 01:03:45.695179 execve("<path-entry>/python3", ["python3", "/home/avifenesh/projects/wt-spil"...], 0x7ffd76f6fd30 /* 86 vars */) = -1 ENOENT (No such file or directory)
+2436129 01:03:45.695215 execve("<path-entry>/python3", ["python3", "/home/avifenesh/projects/wt-spil"...], 0x7ffd76f6fd30 /* 86 vars */) = -1 ENOENT (No such file or directory)
+2436110 01:03:45.695234 close(14</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-35> <unfinished ...>
+2436129 01:03:45.695239 execve("<path-entry>/python3", ["python3", "/home/avifenesh/projects/wt-spil"...], 0x7ffd76f6fd30 /* 86 vars */ <unfinished ...>
+2436115 01:03:45.695244 close(18</tmp/memra-spill-a-test-2436064-29> <unfinished ...>
+2436129 01:03:45.695251 <... execve resumed>) = -1 ENOENT (No such file or directory)
+2436110 01:03:45.695255 <... close resumed>) = 0
+2436129 01:03:45.695259 execve("<path-entry>/python3", ["python3", "/home/avifenesh/projects/wt-spil"...], 0x7ffd76f6fd30 /* 86 vars */ <unfinished ...>
+2436115 01:03:45.695264 <... close resumed>) = 0
+2436112 01:03:45.695270 exit_group(0 <unfinished ...>
+2436129 01:03:45.695276 <... execve resumed>) = -1 ENOENT (No such file or directory)
+2436064 01:03:45.695284 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7b73ef1f3ce8, parent_tid=0x7b73ef1f3990, exit_signal=0, stack=0x7b73eeff3000, stack_size=0x1ffec0, tls=0x7b73ef1f36c0} <unfinished ...>
+2436129 01:03:45.695287 execve("<path-entry>/python3", ["python3", "/home/avifenesh/projects/wt-spil"...], 0x7ffd76f6fd30 /* 86 vars */ <unfinished ...>
+2436112 01:03:45.695291 <... exit_group resumed>) = ?
+2436129 01:03:45.695297 <... execve resumed>) = -1 ENOENT (No such file or directory)
+2436129 01:03:45.695309 execve("<path-entry>/python3", ["python3", "/home/avifenesh/projects/wt-spil"...], 0x7ffd76f6fd30 /* 86 vars */ <unfinished ...>
+2436064 01:03:45.695315 <... clone3 resumed> => {parent_tid=[2436130]}, 88) = 2436130
+2436129 01:03:45.695324 <... execve resumed>) = -1 ENOENT (No such file or directory)
+2436129 01:03:45.695333 execve("<path-entry>/python3", ["python3", "/home/avifenesh/projects/wt-spil"...], 0x7ffd76f6fd30 /* 86 vars */) = -1 ENOENT (No such file or directory)
+2436129 01:03:45.695354 execve("<path-entry>/python3", ["python3", "/home/avifenesh/projects/wt-spil"...], 0x7ffd76f6fd30 /* 86 vars */) = -1 ENOENT (No such file or directory)
+2436129 01:03:45.695372 execve("<path-entry>/python3", ["python3", "/home/avifenesh/projects/wt-spil"...], 0x7ffd76f6fd30 /* 86 vars */) = -1 ENOENT (No such file or directory)
+2436110 01:03:45.695388 close(18</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-34> <unfinished ...>
+2436129 01:03:45.695394 execve("<path-entry>/python3", ["python3", "/home/avifenesh/projects/wt-spil"...], 0x7ffd76f6fd30 /* 86 vars */ <unfinished ...>
+2436110 01:03:45.695401 <... close resumed>) = 0
+2436129 01:03:45.695407 <... execve resumed>) = -1 ENOENT (No such file or directory)
+2436129 01:03:45.695415 execve("<path-entry>/python3", ["python3", "/home/avifenesh/projects/wt-spil"...], 0x7ffd76f6fd30 /* 86 vars */) = -1 ENOENT (No such file or directory)
+2436129 01:03:45.695433 execve("<path-entry>/python3", ["python3", "/home/avifenesh/projects/wt-spil"...], 0x7ffd76f6fd30 /* 86 vars */) = -1 ENOENT (No such file or directory)
+2436129 01:03:45.695453 execve("<path-entry>/python3", ["python3", "/home/avifenesh/projects/wt-spil"...], 0x7ffd76f6fd30 /* 86 vars */) = -1 ENOENT (No such file or directory)
+2436124 01:03:45.695466 close(20</tmp/memra-spill-a-test-2436064-31/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01> <unfinished ...>
+2436129 01:03:45.695474 execve("<path-entry>/python3", ["python3", "/home/avifenesh/projects/wt-spil"...], 0x7ffd76f6fd30 /* 86 vars */ <unfinished ...>
+2436124 01:03:45.695478 <... close resumed>) = 0
+2436108 01:03:45.695483 flock(22</tmp/memra-spill-a-test-2436064-19/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436108 01:03:45.695498 flock(21</tmp/memra-spill-a-test-2436064-19/.ownership>, LOCK_UN <unfinished ...>
+2436110 01:03:45.695501 close(18</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-33> <unfinished ...>
+2436108 01:03:45.695505 <... flock resumed>) = 0
+2436110 01:03:45.695509 <... close resumed>) = 0
+2436108 01:03:45.695512 flock(21</tmp/memra-spill-a-test-2436064-19/.ownership>, LOCK_EX|LOCK_NB) = 0
+2436128 01:03:45.695569 <... clone3 resumed>) = 2436129
+2436110 01:03:45.695584 close(18</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-32>) = 0
+2436128 01:03:45.695613 close(15<pipe:[11206434]>) = 0
+2436128 01:03:45.695638 close(17<pipe:[11206435]> <unfinished ...>
+2436129 01:03:45.695649 <... execve resumed>) = 0
+2436128 01:03:45.695650 <... close resumed>) = 0
+2436110 01:03:45.695686 close(15</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-31>) = 0
+2436128 01:03:45.695716 close(16<pipe:[11206434]>) = 0
+2436108 01:03:45.695760 close(20</tmp/memra-spill-a-test-2436064-19/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436110 01:03:45.695777 close(15</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-30>) = 0
+2436124 01:03:45.695829 close(16</tmp/memra-spill-a-test-2436064-31/.txn-2436064-36>) = 0
+2436115 01:03:45.695840 close(14</tmp/memra-spill-a-test-2436064-30>) = 0
+2436129 01:03:45.695856 close(3</etc/ld.so.cache>) = 0
+2436124 01:03:45.695877 close(8</tmp/memra-spill-a-test-2436064-31/.txn-2436064-36/.owner>(deleted) <unfinished ...>
+2436110 01:03:45.695883 close(15</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-29>) = 0
+2436124 01:03:45.695894 <... close resumed>) = 0
+2436124 01:03:45.695917 close(11</tmp/memra-spill-a-test-2436064-31/.ownership>) = 0
+2436124 01:03:45.695961 flock(11</tmp/memra-spill-a-test-2436064-31/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436110 01:03:45.695974 close(14</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-28>) = 0
+2436124 01:03:45.695990 flock(14</tmp/memra-spill-a-test-2436064-31/.ownership>, LOCK_SH <unfinished ...>
+2436129 01:03:45.695999 close(3</usr/lib/x86_64-linux-gnu/libm.so.6> <unfinished ...>
+2436124 01:03:45.696002 <... flock resumed>) = 0
+2436129 01:03:45.696006 <... close resumed>) = 0
+2436124 01:03:45.696024 close(11</tmp/memra-spill-a-test-2436064-31/.ownership-gc>) = 0
+2436110 01:03:45.696075 close(15</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-27> <unfinished ...>
+2436115 01:03:45.696082 close(8</tmp/memra-spill-a-test-2436064-28/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.tomb> <unfinished ...>
+2436110 01:03:45.696090 <... close resumed>) = 0
+2436115 01:03:45.696092 <... close resumed>) = 0
+2436129 01:03:45.696142 close(3</usr/lib/x86_64-linux-gnu/libz.so.1.3.1>) = 0
+2436110 01:03:45.696172 close(16</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-26>) = 0
+2436110 01:03:45.696249 close(16</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-25>) = 0
+2436124 01:03:45.696257 close(15</tmp/memra-spill-a-test-2436064-31/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436129 01:03:45.696278 close(3</usr/lib/x86_64-linux-gnu/libexpat.so.1.11.2>) = 0
+2436108 01:03:45.696290 close(8</tmp/memra-spill-a-test-2436064-19/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b>) = 0
+2436110 01:03:45.696325 close(15</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-24>) = 0
+2436110 01:03:45.696386 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-23>) = 0
+2436129 01:03:45.696412 close(3</usr/lib/x86_64-linux-gnu/libc.so.6>) = 0
+2436110 01:03:45.696451 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-22>) = 0
+2436115 01:03:45.696512 close(15</tmp/memra-spill-a-test-2436064-28>) = 0
+2436110 01:03:45.696521 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-21>) = 0
+2436108 01:03:45.696560 close(11</tmp/memra-spill-a-test-2436064-19> <unfinished ...>
+2436115 01:03:45.696567 close(8</tmp/memra-spill-a-test-2436064-29> <unfinished ...>
+2436108 01:03:45.696574 <... close resumed>) = 0
+2436115 01:03:45.696579 <... close resumed>) = 0
+2436115 01:03:45.696622 close(8</tmp/memra-spill-a-test-2436064-30>) = 0
+2436110 01:03:45.696631 close(16</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-20> <unfinished ...>
+2436108 01:03:45.696636 flock(21</tmp/memra-spill-a-test-2436064-19/.ownership>, LOCK_SH <unfinished ...>
+2436110 01:03:45.696641 <... close resumed>) = 0
+2436108 01:03:45.696644 <... flock resumed>) = 0
+2436108 01:03:45.696670 close(22</tmp/memra-spill-a-test-2436064-19/.ownership-gc>) = 0
+2436124 01:03:45.696695 close(15</tmp/memra-spill-a-test-2436064-31/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436115 01:03:45.696711 close(11</tmp/memra-spill-a-test-2436064-28>) = 0
+2436110 01:03:45.696727 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-19>) = 0
+2436115 01:03:45.696759 close(15</tmp/memra-spill-a-test-2436064-29>) = 0
+2436110 01:03:45.696806 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-18> <unfinished ...>
+2436115 01:03:45.696812 close(15</tmp/memra-spill-a-test-2436064-30> <unfinished ...>
+2436110 01:03:45.696815 <... close resumed>) = 0
+2436115 01:03:45.696819 <... close resumed>) = 0
+2436129 01:03:45.696837 close(3</proc/sys/vm/overcommit_memory>) = 0
+2436110 01:03:45.696881 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-17>) = 0
+2436115 01:03:45.696903 close(30</tmp/memra-spill-a-test-2436064-28/.catalog-owner> <unfinished ...>
+2436108 01:03:45.696907 close(11</tmp/memra-spill-a-test-2436064-19/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b> <unfinished ...>
+2436115 01:03:45.696913 <... close resumed>) = 0
+2436108 01:03:45.696919 <... close resumed>) = 0
+2436115 01:03:45.696937 close(12</tmp/memra-spill-a-test-2436064-29/.catalog-owner>) = 0
+2436129 01:03:45.696951 close(3</usr/lib/locale/locale-archive>) = 0
+2436115 01:03:45.696968 close(9</tmp/memra-spill-a-test-2436064-30/.catalog-owner>) = 0
+2436110 01:03:45.696981 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-16>) = 0
+2436129 01:03:45.697028 close(3</usr/lib/x86_64-linux-gnu/gconv/gconv-modules.cache>) = 0
+2436110 01:03:45.697063 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-15>) = 0
+2436115 01:03:45.697087 close(8</tmp/memra-spill-a-test-2436064-28> <unfinished ...>
+2436124 01:03:45.697093 close(11</tmp/memra-spill-a-test-2436064-31/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436115 01:03:45.697099 <... close resumed>) = 0
+2436124 01:03:45.697101 <... close resumed>) = 0
+2436110 01:03:45.697144 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-14>) = 0
+2436115 01:03:45.697196 close(9</tmp/memra-spill-a-test-2436064-29>) = 0
+2436110 01:03:45.697212 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-13>) = 0
+2436110 01:03:45.697286 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-12>) = 0
+2436115 01:03:45.697310 close(8</tmp/memra-spill-a-test-2436064-30>) = 0
+2436110 01:03:45.697367 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-11> <unfinished ...>
+2436108 01:03:45.697370 close(11</tmp/memra-spill-a-test-2436064-19/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b> <unfinished ...>
+2436110 01:03:45.697376 <... close resumed>) = 0
+2436108 01:03:45.697381 <... close resumed>) = 0
+2436129 01:03:45.697421 close(3</proc/2436129/maps>) = 0
+2436110 01:03:45.697463 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-10>) = 0
+2436110 01:03:45.697531 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-9>) = 0
+2436110 01:03:45.697587 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-8>) = 0
+2436110 01:03:45.697648 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-7>) = 0
+2436110 01:03:45.697715 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-6>) = 0
+2436124 01:03:45.697739 close(9</tmp/memra-spill-a-test-2436064-31/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436110 01:03:45.697792 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-5> <unfinished ...>
+2436108 01:03:45.697795 close(11</tmp/memra-spill-a-test-2436064-19/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96> <unfinished ...>
+2436110 01:03:45.697799 <... close resumed>) = 0
+2436108 01:03:45.697802 <... close resumed>) = 0
+2436110 01:03:45.697848 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-4>) = 0
+2436110 01:03:45.697904 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-3>) = 0
+2436110 01:03:45.697953 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-2>) = 0
+2436110 01:03:45.698018 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-1>) = 0
+2436110 01:03:45.698079 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-0>) = 0
+2436124 01:03:45.698095 close(8</tmp/memra-spill-a-test-2436064-31/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436110 01:03:45.698111 flock(8</tmp/memra-spill-a-test-2436064-21/.txn-2436114-1/.owner>, LOCK_EX|LOCK_NB) = 0
+2436110 01:03:45.698158 close(9</tmp/memra-spill-a-test-2436064-21/.txn-2436114-1>) = 0
+2436110 01:03:45.698180 close(8</tmp/memra-spill-a-test-2436064-21/.txn-2436114-1/.owner>) = 0
+2436110 01:03:45.698200 close(7</tmp/memra-spill-a-test-2436064-21>) = 0
+2436110 01:03:45.698304 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-39>) = 0
+2436110 01:03:45.698390 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-38>) = 0
+2436108 01:03:45.698417 close(8</tmp/memra-spill-a-test-2436064-19/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b>) = 0
+2436110 01:03:45.698489 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-37>) = 0
+2436124 01:03:45.698499 flock(8</tmp/memra-spill-a-test-2436064-31/.txn-2436064-40/.owner>, LOCK_EX|LOCK_NB) = 0
+2436110 01:03:45.698585 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-36>) = 0
+2436110 01:03:45.698656 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-35>) = 0
+2436110 01:03:45.698736 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-34>) = 0
+2436108 01:03:45.698798 close(7</tmp/memra-spill-a-test-2436064-19/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436124 01:03:45.698824 close(11</tmp/memra-spill-a-test-2436064-31/.pending-2436064-40> <unfinished ...>
+2436110 01:03:45.698827 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-33> <unfinished ...>
+2436124 01:03:45.698830 <... close resumed>) = 0
+2436110 01:03:45.698834 <... close resumed>) = 0
+2436110 01:03:45.698909 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-32>) = 0
+2436124 01:03:45.698986 close(9</tmp/memra-spill-a-test-2436064-31/chunk-344f08695c0da361f175de65cecd2a67b811983c6df2053d27cac75cf5144894>) = 0
+2436110 01:03:45.698999 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-31>) = 0
+2436110 01:03:45.699074 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-30>) = 0
+2436110 01:03:45.699149 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-29>) = 0
+2436108 01:03:45.699180 flock(7</tmp/memra-spill-a-test-2436064-19/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436108 01:03:45.699197 flock(21</tmp/memra-spill-a-test-2436064-19/.ownership>, LOCK_UN) = 0
+2436108 01:03:45.699210 flock(21</tmp/memra-spill-a-test-2436064-19/.ownership>, LOCK_EX|LOCK_NB) = 0
+2436110 01:03:45.699243 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-28>) = 0
+2436110 01:03:45.699325 close(11</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-27>) = 0
+2436108 01:03:45.699384 close(9</tmp/memra-spill-a-test-2436064-19/root-6c86a00f3dd9e19a8d2c4dc134c05d717b155a90af435e4f37739eae8af63f6b>) = 0
+2436110 01:03:45.699440 close(11</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-26>) = 0
+2436110 01:03:45.699528 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-25>) = 0
+2436124 01:03:45.699549 close(12</tmp/memra-spill-a-test-2436064-31/chunk-344f08695c0da361f175de65cecd2a67b811983c6df2053d27cac75cf5144894>) = 0
+2436110 01:03:45.699604 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-24>) = 0
+2436110 01:03:45.699680 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-23>) = 0
+2436108 01:03:45.699692 close(11</tmp/memra-spill-a-test-2436064-19>) = 0
+2436108 01:03:45.699748 flock(21</tmp/memra-spill-a-test-2436064-19/.ownership>, LOCK_SH) = 0
+2436110 01:03:45.699763 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-22>) = 0
+2436108 01:03:45.699771 close(7</tmp/memra-spill-a-test-2436064-19/.ownership-gc>) = 0
+2436108 01:03:45.699795 close(24<pipe:[11215898]>) = 0
+2436108 01:03:45.699821 close(21</tmp/memra-spill-a-test-2436064-19/.ownership>) = 0
+2436110 01:03:45.699838 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-21>) = 0
+2436108 01:03:45.699915 close(7</tmp/memra-spill-a-test-2436064-19> <unfinished ...>
+2436110 01:03:45.699918 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-20> <unfinished ...>
+2436108 01:03:45.699922 <... close resumed>) = 0
+2436110 01:03:45.699925 <... close resumed>) = 0
+2436110 01:03:45.700001 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-19>) = 0
+2436124 01:03:45.700103 close(9</tmp/memra-spill-a-test-2436064-31/.pending-2436064-41>) = 0
+2436110 01:03:45.700110 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-18>) = 0
+2436110 01:03:45.700195 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-17>) = 0
+2436124 01:03:45.700237 close(7</tmp/memra-spill-a-test-2436064-31/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436110 01:03:45.700284 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-16>) = 0
+2436110 01:03:45.700373 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-15>) = 0
+2436124 01:03:45.700403 close(7</tmp/memra-spill-a-test-2436064-31/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436110 01:03:45.700463 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-14>) = 0
+2436110 01:03:45.700543 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-13> <unfinished ...>
+2436129 01:03:45.700547 close(3</usr/share/zoneinfo/Asia/Jerusalem> <unfinished ...>
+2436110 01:03:45.700550 <... close resumed>) = 0
+2436129 01:03:45.700553 <... close resumed>) = 0
+2436110 01:03:45.700614 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-12>) = 0
+2436110 01:03:45.700698 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-11>) = 0
+2436124 01:03:45.700767 close(9</tmp/memra-spill-a-test-2436064-31/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436110 01:03:45.700797 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-10>) = 0
+2436110 01:03:45.700871 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-9>) = 0
+2436129 01:03:45.700907 close(3</usr/lib/python3.14>) = 0
+2436110 01:03:45.700956 close(7</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-8>) = 0
+2436110 01:03:45.700995 flock(27</tmp/memra-spill-a-test-2436064-21/.ownership>, LOCK_SH) = 0
+2436110 01:03:45.701016 close(13</tmp/memra-spill-a-test-2436064-21/.ownership-gc>) = 0
+2436110 01:03:45.701066 close(7</tmp/memra-spill-a-test-2436064-21>) = 0
+2436110 01:03:45.701124 flock(7</tmp/memra-spill-a-test-2436064-21/.txn-2436064-41/.owner>, LOCK_EX|LOCK_NB) = 0
+2436129 01:03:45.701137 close(3</usr/lib/python3.14/encodings/__pycache__/__init__.cpython-314.pyc>) = 0
+2436124 01:03:45.701360 close(9</tmp/memra-spill-a-test-2436064-31/root-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01>) = 0
+2436110 01:03:45.701450 close(9</tmp/memra-spill-a-test-2436064-21/.pending-2436064-42>) = 0
+2436110 01:03:45.701626 close(9</tmp/memra-spill-a-test-2436064-21/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436124 01:03:45.701716 close(11</tmp/memra-spill-a-test-2436064-31/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436129 01:03:45.701792 close(3</usr/lib/python3.14/encodings>) = 0
+2436129 01:03:45.701927 close(3</usr/lib/python3.14/encodings/__pycache__/aliases.cpython-314.pyc>) = 0
+2436110 01:03:45.702071 close(9</tmp/memra-spill-a-test-2436064-21/chunk-36c45b57f73652853318973511ea7f92e57855c1ac60c2d1bf92e3156963bf96>) = 0
+2436124 01:03:45.702102 close(11</tmp/memra-spill-a-test-2436064-31>) = 0
+2436124 01:03:45.702120 close(8</tmp/memra-spill-a-test-2436064-31/.txn-2436064-40/.owner>) = 0
+2436124 01:03:45.702140 close(14</tmp/memra-spill-a-test-2436064-31/.ownership>) = 0
+2436129 01:03:45.702185 close(3</usr/lib/python3.14/encodings/__pycache__/utf_8.cpython-314.pyc>) = 0
+2436124 01:03:45.702287 close(9</tmp/memra-spill-a-test-2436064-31/.txn-2436064-40>) = 0
+2436124 01:03:45.702355 close(8</tmp/memra-spill-a-test-2436064-31>) = 0
+2436110 01:03:45.702608 close(8</tmp/memra-spill-a-test-2436064-21/.pending-2436064-43>) = 0
+2436110 01:03:45.702777 close(8</tmp/memra-spill-a-test-2436064-21/root-ccc352a3fcfed782b88ba215cefe4c1b56c86bcca0a612adc9bd1e056fcbe241>) = 0
+2436110 01:03:45.703085 close(8</tmp/memra-spill-a-test-2436064-21/.txn-2436064-41>) = 0
+2436110 01:03:45.703113 close(7</tmp/memra-spill-a-test-2436064-21/.txn-2436064-41/.owner>(deleted)) = 0
+2436110 01:03:45.703164 flock(7</tmp/memra-spill-a-test-2436064-21/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436110 01:03:45.703176 flock(27</tmp/memra-spill-a-test-2436064-21/.ownership>, LOCK_UN) = 0
+2436110 01:03:45.703186 flock(27</tmp/memra-spill-a-test-2436064-21/.ownership>, LOCK_EX|LOCK_NB) = 0
+2436110 01:03:45.703301 close(8</tmp/memra-spill-a-test-2436064-21/root-ccc352a3fcfed782b88ba215cefe4c1b56c86bcca0a612adc9bd1e056fcbe241>) = 0
+2436110 01:03:45.703668 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-7>) = 0
+2436110 01:03:45.703716 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-6>) = 0
+2436110 01:03:45.703763 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-5>) = 0
+2436110 01:03:45.703808 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-4>) = 0
+2436110 01:03:45.703854 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-3>) = 0
+2436110 01:03:45.703901 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-2>) = 0
+2436110 01:03:45.703948 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-1>) = 0
+2436110 01:03:45.703995 close(9</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-0>) = 0
+2436110 01:03:45.704017 flock(9</tmp/memra-spill-a-test-2436064-21/.txn-2436114-1/.owner>, LOCK_EX|LOCK_NB) = 0
+2436110 01:03:45.704062 close(11</tmp/memra-spill-a-test-2436064-21/.txn-2436114-1>) = 0
+2436110 01:03:45.704079 close(8</tmp/memra-spill-a-test-2436064-21>) = 0
+2436110 01:03:45.704188 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-7>) = 0
+2436110 01:03:45.704259 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-6>) = 0
+2436110 01:03:45.704325 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-5>) = 0
+2436110 01:03:45.704393 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-4>) = 0
+2436110 01:03:45.704461 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-3>) = 0
+2436110 01:03:45.704534 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-2>) = 0
+2436110 01:03:45.704606 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-1>) = 0
+2436110 01:03:45.704675 close(8</tmp/memra-spill-a-test-2436064-21/.txn-abandoned-0>) = 0
+2436129 01:03:45.704710 close(3</home/avifenesh/.local/lib/python3.14/site-packages>) = 0
+2436110 01:03:45.704771 close(8</tmp/memra-spill-a-test-2436064-21/.txn-2436114-1>) = 0
+2436129 01:03:45.704792 close(3</usr/local/lib/python3.14/dist-packages>) = 0
+2436110 01:03:45.704799 close(9</tmp/memra-spill-a-test-2436064-21/.txn-2436114-1/.owner>(deleted)) = 0
+2436110 01:03:45.704828 flock(27</tmp/memra-spill-a-test-2436064-21/.ownership>, LOCK_SH) = 0
+2436110 01:03:45.704847 close(7</tmp/memra-spill-a-test-2436064-21/.ownership-gc>) = 0
+2436110 01:03:45.704891 close(7</tmp/memra-spill-a-test-2436064-21>) = 0
+2436129 01:03:45.704944 close(3</usr/lib/python3/dist-packages>) = 0
+2436110 01:03:45.704961 close(27</tmp/memra-spill-a-test-2436064-21/.ownership>) = 0
+2436129 01:03:45.705042 close(3</usr/lib/python3/dist-packages/distutils-precedence.pth>) = 0
+2436110 01:03:45.705058 close(7</tmp/memra-spill-a-test-2436064-21>) = 0
+2436129 01:03:45.705190 close(3</usr/lib/python3.14/encodings/__pycache__/utf_8_sig.cpython-314.pyc>) = 0
+2436129 01:03:45.705569 close(3</usr/lib/python3.14/lib-dynload>) = 0
+2436129 01:03:45.705676 close(3</home/avifenesh/.local/lib/python3.14/site-packages>) = 0
+2436129 01:03:45.705752 close(3</usr/local/lib/python3.14/dist-packages>) = 0
+2436129 01:03:45.705902 close(3</usr/lib/python3/dist-packages>) = 0
+2436129 01:03:45.706056 close(3</usr/lib/python3/dist-packages/_distutils_hack/__pycache__/__init__.cpython-314.pyc>) = 0
+2436129 01:03:45.706219 close(3</usr/lib/python3.14/dist-packages>) = 0
+2436129 01:03:45.706357 close(3</usr/lib/python3.14/__pycache__/sitecustomize.cpython-314.pyc>) = 0
+2436129 01:03:45.706546 close(3</usr/lib/python3/dist-packages/__pycache__/apport_python_hook.cpython-314.pyc>) = 0
+2436129 01:03:45.706706 close(3</usr/lib/python3.14/__pycache__/types.cpython-314.pyc>) = 0
+2436129 01:03:45.706971 close(3</usr/lib/python3.14/dist-packages>) = 0
+2436129 01:03:45.707141 close(3</home/avifenesh/projects/wt-spill-a/crates/memra-tier/tests/storage/check_telemetry.py>) = 0
+2436129 01:03:45.707672 close(3</home/avifenesh/projects/wt-spill-a/crates/memra-tier/tests/storage/check_telemetry.py>) = 0
+2436129 01:03:45.708009 close(3</home/avifenesh/projects/wt-spill-a/crates/memra-tier/tests/storage>) = 0
+2436129 01:03:45.708172 close(3</usr/lib/python3.14/json/__pycache__/__init__.cpython-314.pyc>) = 0
+2436129 01:03:45.708303 close(3</usr/lib/python3.14/json>) = 0
+2436129 01:03:45.708387 close(3</usr/lib/python3.14/json/__pycache__/decoder.cpython-314.pyc>) = 0
+2436129 01:03:45.708581 close(3</usr/lib/python3.14/re/__pycache__/__init__.cpython-314.pyc>) = 0
+2436129 01:03:45.708788 close(3</usr/lib/python3.14/__pycache__/enum.cpython-314.pyc>) = 0
+2436129 01:03:45.709613 close(3</usr/lib/python3.14/re>) = 0
+2436129 01:03:45.709719 close(3</usr/lib/python3.14/re/__pycache__/_compiler.cpython-314.pyc>) = 0
+2436129 01:03:45.709971 close(3</usr/lib/python3.14/re/__pycache__/_parser.cpython-314.pyc>) = 0
+2436129 01:03:45.710207 close(3</usr/lib/python3.14/re/__pycache__/_constants.cpython-314.pyc>) = 0
+2436129 01:03:45.710481 close(3</usr/lib/python3.14/re/__pycache__/_casefix.cpython-314.pyc>) = 0
+2436129 01:03:45.710662 close(3</usr/lib/python3.14/__pycache__/functools.cpython-314.pyc>) = 0
+2436129 01:03:45.710988 close(3</usr/lib/python3.14/collections/__pycache__/__init__.cpython-314.pyc>) = 0
+2436129 01:03:45.711354 close(3</usr/lib/python3.14/__pycache__/keyword.cpython-314.pyc>) = 0
+2436103 01:03:45.711487 close(7</usr/lib/x86_64-linux-gnu/libc.so.6>) = 0
+2436129 01:03:45.711498 close(3</usr/lib/python3.14/__pycache__/operator.cpython-314.pyc>) = 0
+2436129 01:03:45.711754 close(3</usr/lib/python3.14/__pycache__/reprlib.cpython-314.pyc>) = 0
+2436129 01:03:45.712503 close(3</usr/lib/python3.14/__pycache__/copyreg.cpython-314.pyc>) = 0
+2436129 01:03:45.712689 close(3</usr/lib/python3.14/json/__pycache__/scanner.cpython-314.pyc>) = 0
+2436129 01:03:45.713184 close(3</usr/lib/python3.14/json/__pycache__/encoder.cpython-314.pyc>) = 0
+2436129 01:03:45.713564 close(3</usr/lib/python3.14/pathlib/__pycache__/__init__.cpython-314.pyc>) = 0
+2436129 01:03:45.714075 close(3</usr/lib/python3.14/__pycache__/glob.cpython-314.pyc>) = 0
+2436129 01:03:45.714378 close(3</usr/lib/python3.14/__pycache__/contextlib.cpython-314.pyc>) = 0
+2436129 01:03:45.714767 close(3</usr/lib/python3.14/__pycache__/fnmatch.cpython-314.pyc>) = 0
+2436129 01:03:45.715097 close(3</usr/lib/python3.14/pathlib>) = 0
+2436129 01:03:45.715194 close(3</usr/lib/python3.14/pathlib/__pycache__/_os.cpython-314.pyc>) = 0
+2436129 01:03:45.716522 close(3</home/avifenesh/projects/wt-spill-a/research/spill-d-20260919/telemetry.schema.json>) = 0
+2436129 01:03:45.718952 exit_group(0)   = ?
+2436128 01:03:45.719159 close(10<pipe:[11206435]>) = 0
+2436103 01:03:45.719491 close(7</usr/lib/debug/.build-id/06/6527e430a32768d82741e00b81eebb1a872294.debug>) = 0
+2436069 01:03:45.721393 close(7</tmp/memra-spill-a-test-2436064-0/objects/.pending-2436064-44>) = 0
+2436069 01:03:45.721445 close(7</tmp/memra-spill-a-test-2436064-0/objects>) = 0
+2436069 01:03:45.721484 close(7</tmp/memra-spill-a-test-2436064-0/objects>) = 0
+2436069 01:03:45.721529 close(7</tmp/memra-spill-a-test-2436064-0/objects/.txn-2436064-6>) = 0
+2436069 01:03:45.724848 close(8</tmp/memra-spill-a-test-2436064-0/objects/chunk-091572991a50d163994b6eadb610c51990f54db04d7163d10438a12b91087080>) = 0
+2436069 01:03:45.724914 close(7</tmp/memra-spill-a-test-2436064-0/objects/chunk-091572991a50d163994b6eadb610c51990f54db04d7163d10438a12b91087080>) = 0
+2436113 01:03:45.750892 close(7</tmp/memra-spill-a-test-2436064-23>) = 0
+2436113 01:03:45.750953 close(7</tmp/memra-spill-a-test-2436064-24>) = 0
+2436113 01:03:45.750980 close(7</tmp/memra-spill-a-test-2436064-25>) = 0
+2436113 01:03:45.751005 close(7</tmp/memra-spill-a-test-2436064-26>) = 0
+2436069 01:03:45.770301 close(11</tmp/memra-spill-a-test-2436064-0/objects/.pending-2436064-45>) = 0
+2436069 01:03:45.770373 close(11</tmp/memra-spill-a-test-2436064-0/objects>) = 0
+2436069 01:03:45.770425 close(11</tmp/memra-spill-a-test-2436064-0/objects>) = 0
+2436069 01:03:45.770484 close(11</tmp/memra-spill-a-test-2436064-0/objects/.txn-2436064-6>) = 0
+2436069 01:03:45.770587 close(12</tmp/memra-spill-a-test-2436064-0/objects/chunk-9b88feb7cac73662dbe973ecf42498417767ab7900670a64daf0a14824915d11>) = 0
+2436069 01:03:45.770609 close(11</tmp/memra-spill-a-test-2436064-0/objects/chunk-9b88feb7cac73662dbe973ecf42498417767ab7900670a64daf0a14824915d11>) = 0
+2436069 01:03:45.774040 close(12</tmp/memra-spill-a-test-2436064-0/objects/chunk-091572991a50d163994b6eadb610c51990f54db04d7163d10438a12b91087080>) = 0
+2436069 01:03:45.774064 close(11</tmp/memra-spill-a-test-2436064-0/objects/chunk-091572991a50d163994b6eadb610c51990f54db04d7163d10438a12b91087080>) = 0
+2436103 01:03:45.788810 close(26</tmp/memra-spill-a-test-2436064-15/.ownership>) = 0
+2436103 01:03:45.788926 close(11</tmp/memra-spill-a-test-2436064-15>) = 0
+2436069 01:03:45.817600 close(12</tmp/memra-spill-a-test-2436064-0/objects/chunk-9b88feb7cac73662dbe973ecf42498417767ab7900670a64daf0a14824915d11>) = 0
+2436069 01:03:45.817625 close(11</tmp/memra-spill-a-test-2436064-0/objects/chunk-9b88feb7cac73662dbe973ecf42498417767ab7900670a64daf0a14824915d11>) = 0
+2436069 01:03:45.818110 close(11</tmp/memra-spill-a-test-2436064-0/objects/.pending-2436064-46>) = 0
+2436069 01:03:45.818155 close(11</tmp/memra-spill-a-test-2436064-0/objects>) = 0
+2436069 01:03:45.818196 close(11</tmp/memra-spill-a-test-2436064-0/objects>) = 0
+2436069 01:03:45.818308 close(12</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:45.818326 close(11</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:45.818632 close(11</tmp/memra-spill-a-test-2436064-0/objects/.txn-2436064-6>) = 0
+2436069 01:03:45.818672 close(11</tmp/memra-spill-a-test-2436064-0/objects>) = 0
+2436069 01:03:45.818691 close(4</tmp/memra-spill-a-test-2436064-0/objects/.txn-2436064-6/.owner>(deleted)) = 0
+2436069 01:03:45.818812 close(11</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:45.818832 close(4</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:45.819135 close(11</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:45.819153 close(4</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:45.822036 close(11</tmp/memra-spill-a-test-2436064-0/objects/chunk-091572991a50d163994b6eadb610c51990f54db04d7163d10438a12b91087080>) = 0
+2436069 01:03:45.822058 close(4</tmp/memra-spill-a-test-2436064-0/objects/chunk-091572991a50d163994b6eadb610c51990f54db04d7163d10438a12b91087080>) = 0
+2436069 01:03:45.865763 close(11</tmp/memra-spill-a-test-2436064-0/objects/chunk-9b88feb7cac73662dbe973ecf42498417767ab7900670a64daf0a14824915d11>) = 0
+2436069 01:03:45.865802 close(4</tmp/memra-spill-a-test-2436064-0/objects/chunk-9b88feb7cac73662dbe973ecf42498417767ab7900670a64daf0a14824915d11>) = 0
+2436069 01:03:45.866347 close(11</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:45.866364 close(4</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:45.870123 close(11</tmp/memra-spill-a-test-2436064-0/objects/chunk-091572991a50d163994b6eadb610c51990f54db04d7163d10438a12b91087080>) = 0
+2436069 01:03:45.870144 close(4</tmp/memra-spill-a-test-2436064-0/objects/chunk-091572991a50d163994b6eadb610c51990f54db04d7163d10438a12b91087080>) = 0
+2436069 01:03:45.935573 close(11</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:45.935637 close(4</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:45.935991 close(11</tmp/memra-spill-a-test-2436064-0/objects/chunk-9b88feb7cac73662dbe973ecf42498417767ab7900670a64daf0a14824915d11>) = 0
+2436069 01:03:45.936014 close(4</tmp/memra-spill-a-test-2436064-0/objects/chunk-9b88feb7cac73662dbe973ecf42498417767ab7900670a64daf0a14824915d11>) = 0
+2436069 01:03:45.936336 close(5</tmp/memra-spill-a-test-2436064-0/objects/.ownership>) = 0
+2436069 01:03:45.936408 close(4</tmp/memra-spill-a-test-2436064-0/objects>) = 0
+2436069 01:03:45.936470 flock(4</tmp/memra-spill-a-test-2436064-0/objects/.ownership-gc>, LOCK_EX|LOCK_NB) = 0
+2436069 01:03:45.936497 flock(5</tmp/memra-spill-a-test-2436064-0/objects/.ownership>, LOCK_SH) = 0
+2436069 01:03:45.936521 close(4</tmp/memra-spill-a-test-2436064-0/objects/.ownership-gc>) = 0
+2436069 01:03:45.936657 close(11</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:45.936678 close(4</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:45.936997 close(11</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:45.937020 close(4</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:45.940498 close(11</tmp/memra-spill-a-test-2436064-0/objects/chunk-091572991a50d163994b6eadb610c51990f54db04d7163d10438a12b91087080>) = 0
+2436069 01:03:45.940526 close(4</tmp/memra-spill-a-test-2436064-0/objects/chunk-091572991a50d163994b6eadb610c51990f54db04d7163d10438a12b91087080>) = 0
+2436069 01:03:45.983888 close(11</tmp/memra-spill-a-test-2436064-0/objects/chunk-9b88feb7cac73662dbe973ecf42498417767ab7900670a64daf0a14824915d11>) = 0
+2436069 01:03:45.983952 close(4</tmp/memra-spill-a-test-2436064-0/objects/chunk-9b88feb7cac73662dbe973ecf42498417767ab7900670a64daf0a14824915d11>) = 0
+2436069 01:03:45.984499 close(11</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:45.984524 close(4</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:45.988143 close(11</tmp/memra-spill-a-test-2436064-0/objects/chunk-091572991a50d163994b6eadb610c51990f54db04d7163d10438a12b91087080>) = 0
+2436069 01:03:45.988167 close(4</tmp/memra-spill-a-test-2436064-0/objects/chunk-091572991a50d163994b6eadb610c51990f54db04d7163d10438a12b91087080>) = 0
+2436069 01:03:46.053338 close(11</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:46.053388 close(4</tmp/memra-spill-a-test-2436064-0/objects/root-8fee30017b93e5896e16e0f1c63e149a56a5a3d4de55c8d4862b055f4d418b63>) = 0
+2436069 01:03:46.053726 close(11</tmp/memra-spill-a-test-2436064-0/objects/chunk-9b88feb7cac73662dbe973ecf42498417767ab7900670a64daf0a14824915d11>) = 0
+2436069 01:03:46.053750 close(4</tmp/memra-spill-a-test-2436064-0/objects/chunk-9b88feb7cac73662dbe973ecf42498417767ab7900670a64daf0a14824915d11>) = 0
+2436069 01:03:46.054070 close(5</tmp/memra-spill-a-test-2436064-0/objects/.ownership>) = 0
+2436069 01:03:46.054355 close(5</tmp/memra-spill-a-test-2436064-0/objects>) = 0
+2436069 01:03:46.054390 close(4</tmp/memra-spill-a-test-2436064-0>) = 0
+2436113 01:03:48.500529 close(4</tmp/memra-spill-a-test-2436064-23>) = 0
+2436113 01:03:48.500608 close(4</tmp/memra-spill-a-test-2436064-24>) = 0
+2436113 01:03:48.500636 close(4</tmp/memra-spill-a-test-2436064-25>) = 0
+2436113 01:03:48.500661 close(4</tmp/memra-spill-a-test-2436064-26>) = 0
+2436113 01:03:48.501292 close(5</tmp/memra-spill-a-test-2436064-23>) = 0
+2436113 01:03:48.501332 close(5</tmp/memra-spill-a-test-2436064-24>) = 0
+2436113 01:03:48.501363 close(5</tmp/memra-spill-a-test-2436064-25>) = 0
+2436113 01:03:48.501393 close(5</tmp/memra-spill-a-test-2436064-26>) = 0
+2436113 01:03:48.501431 close(5</tmp/memra-spill-a-test-2436064-23>) = 0
+2436113 01:03:48.501460 close(5</tmp/memra-spill-a-test-2436064-24>) = 0
+2436113 01:03:48.501490 close(5</tmp/memra-spill-a-test-2436064-25>) = 0
+2436113 01:03:48.501517 close(5</tmp/memra-spill-a-test-2436064-26>) = 0
+2436113 01:03:48.501532 close(4</tmp/memra-spill-a-test-2436064-23/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.pending>(deleted)) = 0
+2436113 01:03:48.501554 close(7</tmp/memra-spill-a-test-2436064-23/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index>) = 0
+2436113 01:03:48.501572 close(8</tmp/memra-spill-a-test-2436064-24/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-1.index>) = 0
+2436113 01:03:48.501591 close(9</tmp/memra-spill-a-test-2436064-25/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-2.index>) = 0
+2436113 01:03:48.501611 close(10</tmp/memra-spill-a-test-2436064-26/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-3.index>) = 0
+2436113 01:03:48.501780 close(4</tmp/memra-spill-a-test-2436064-23/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root>) = 0
+2436113 01:03:48.502126 close(4</tmp/memra-spill-a-test-2436064-23/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root>) = 0
+2436113 01:03:48.502403 close(4</tmp/memra-spill-a-test-2436064-23/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index>) = 0
+2436113 01:03:48.502571 close(4</tmp/memra-spill-a-test-2436064-23/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root>) = 0
+2436113 01:03:48.502842 close(4</tmp/memra-spill-a-test-2436064-24/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-1.index>) = 0
+2436113 01:03:48.502998 close(4</tmp/memra-spill-a-test-2436064-23/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root>) = 0
+2436113 01:03:48.503267 close(4</tmp/memra-spill-a-test-2436064-23/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-0.index>) = 0
+2436113 01:03:48.503414 close(4</tmp/memra-spill-a-test-2436064-23/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01.root>) = 0
+2436113 01:03:48.503686 close(4</tmp/memra-spill-a-test-2436064-26/catalog-2a25bb372fdb5e83222511640efd297dfec870252e9b6030dd5ee697be8eef01-3.index>) = 0
+2436113 01:03:48.503773 close(4</tmp/memra-spill-a-test-2436064-23>) = 0
+2436113 01:03:48.503818 close(4</tmp/memra-spill-a-test-2436064-24>) = 0
+2436113 01:03:48.503864 close(4</tmp/memra-spill-a-test-2436064-25>) = 0
+2436113 01:03:48.503911 close(4</tmp/memra-spill-a-test-2436064-26>) = 0
+2436113 01:03:48.503970 close(3</tmp/memra-spill-a-test-2436064-23/.catalog-owner>) = 0
+2436113 01:03:48.503989 close(23</tmp/memra-spill-a-test-2436064-24/.catalog-owner>) = 0
+2436113 01:03:48.504006 close(28</tmp/memra-spill-a-test-2436064-25/.catalog-owner>) = 0
+2436113 01:03:48.504023 close(29</tmp/memra-spill-a-test-2436064-26/.catalog-owner>) = 0
+2436113 01:03:48.504901 close(3</tmp/memra-spill-a-test-2436064-23>) = 0
+2436113 01:03:48.505680 close(3</tmp/memra-spill-a-test-2436064-24>) = 0
+2436113 01:03:48.506114 close(3</tmp/memra-spill-a-test-2436064-25>) = 0
+2436113 01:03:48.506602 close(3</tmp/memra-spill-a-test-2436064-26>) = 0
+2436064 01:03:48.507048 exit_group(101) = ?

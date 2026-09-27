@@ -1,0 +1,18 @@
+loaded qwen35 (64 trunk layers; optional MTP skipped)
+prompt text: "The storage-to-compute pipeline moves expert weights from NVMe through pinned host buffers over PCIe into device memory, where quantized matvec kernels consume them. Each stage is measured together with the others, because a faster kernel can hide a data-movement regression. Describe, step by step, how a mixture-of-experts decoder selects and executes its experts for a single token, and explain which stage dominates latency when the expert bank exceeds device memory.\n"
+prompt tokens: [760, 5638, 4534, 11147, 8232, 14855, 10480, 6009, 13914, 494, 23683, 7575, 1472, 46120, 3357, 26502, 888, 87567, 1083, 3545, 4779, 11, 1332, 9966, 1452, 5344, 3947, 61369, 23304, 1070, 13, 8618, 6228, 369, 16384, 3658, 440, 279, 3672, 11, 1521, 264, 10281, 9705, 628, 9959, 264, 795, 1395, 14043, 29551, 13, 58737, 11, 2923, 539, 2923, 11, 1204, 264, 20340, 8404, 17830, 15089, 23776, 47493, 321, 49703, 1141, 11312, 364, 264, 3074, 3817, 11, 321, 10033, 864, 6228, 80018, 37972, 948, 279, 6009, 5883, 34105, 3545, 4779, 13, 198]
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+prefill argmax=15666  decode argmax=15666  logit maxdiff=5.047e-1  MATCH
+batched-prime argmax=15666  tokenwise argmax=15666  logit maxdiff=3.523e-1  MATCH
+prefill 90 tok in 0.0774s = 1163.0 tok/s (pp90)
+[fa-pool] grow #1 dev=0 o_len 6144 -> 36864 ml_len 24 -> 144 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 36864 -> 73728 ml_len 144 -> 288 (retired kept, zero=false)
+generated 8 tokens in 0.116s = 68.84 tok/s (Stage-B int8 dp4a decode, gen-only; prime 0.078s) [stop: MaxNew]
+tokens: [15666, 279, 3296, 3294, 13, 271, 248068, 198]
+OUTPUT TEXT: "Answer the question above.\n\n<think>\n"
+--- generated text ---
+Answer the question above.
+
+<think>
+
+exit=0

@@ -233,6 +233,19 @@ impl TensorSource for FixtureSource {
             ne: t.ne.clone(),
         })
     }
+    fn tensor_census(&self) -> Result<memra_gguf::source::TensorCensus, String> {
+        // memra#541: the loader binds the contract against this census before any upload.
+        Ok(memra_gguf::source::census_from_views(
+            self.tensors.iter().map(|(name, t)| {
+                (
+                    name.as_str(),
+                    t.ggml_type,
+                    t.ne.as_slice(),
+                    t.bytes.len() as u64,
+                )
+            }),
+        ))
+    }
 }
 
 fn is_expert_bank(id: &TensorId) -> bool {
@@ -253,7 +266,7 @@ fn fixture_source(config: &ModelConfig, plan: &ModelPlan) -> FixtureSource {
         plan,
         CheckpointDialect::Gguf,
         ContractOptions {
-            output_head: OutputHead::TiedToEmbedding,
+            output_head: OutputHead::Separate,
         },
     )
     .expect("contract for the mini glm5_next hc+mtp plan");
@@ -265,6 +278,13 @@ fn fixture_source(config: &ModelConfig, plan: &ModelPlan) -> FixtureSource {
     {
         let tensor = weights
             .get(&req.id)
+            // memra#541: the family declares a separate head; the fixture serves the embedding rows
+            // under `output.weight` (the reference reads the same numbers either way).
+            .or_else(|| {
+                (req.id == memra_gguf::tensor_contract::TensorId::OutputProjection)
+                    .then(|| weights.get(&memra_gguf::tensor_contract::TensorId::TokenEmbedding))
+                    .flatten()
+            })
             .unwrap_or_else(|| panic!("reference fixture is missing {:?}", req.id));
         let elements: usize = req.shape.iter().map(|&d| d as usize).product();
         assert_eq!(

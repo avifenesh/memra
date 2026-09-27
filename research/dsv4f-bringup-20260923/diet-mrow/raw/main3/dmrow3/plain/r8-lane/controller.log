@@ -1,0 +1,8 @@
+START utc=2026-09-23T16:33:38Z bin=/root/lane/target-dmrow3/release/memra-server env=
+READY after=119s port=48945
+CELL warmup c=1 ok=1/1 agg=44.29 tok/s decode_p50=63.96 tok/s ttft_p50=237 ms tpot_p50=15.63 ms errs=[]
+CELL greedy-c1 c=1 ok=8/8 agg=60.71 tok/s decode_p50=63.42 tok/s ttft_p50=192 ms tpot_p50=15.77 ms errs=[]
+CELL sampled-c1 c=1 ok=8/8 agg=55.34 tok/s decode_p50=57.53 tok/s ttft_p50=193 ms tpot_p50=17.38 ms errs=[]
+CELL greedy-c1-ignore-eos c=1 ok=4/4 agg=60.66 tok/s decode_p50=63.38 tok/s ttft_p50=192 ms tpot_p50=15.78 ms errs=[]
+CELLS_DONE utc=2026-09-23T16:37:05Z
+TERMINAL rc=0 utc=2026-09-23T16:37:07Z

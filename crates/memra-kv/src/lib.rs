@@ -8,7 +8,12 @@
 //! call sites are unchanged.
 
 pub mod plane;
-pub use plane::{KvAllocator, KvPlane, KvWrite};
+pub use plane::{
+    GrowEvent, KvAllocator, KvPlane, KvWrite, VmmFaults, VmmGrowPlacement, note_on_demand_plane,
+    on_demand_initial_rows, on_demand_pays, vmm_counters, vmm_granularity_for, vmm_graveyard_bytes,
+    vmm_grow_placement, vmm_quarantined_bytes, vmm_reap_graveyard, vmm_reap_graveyard_blocking,
+    vmm_set_faults, vmm_set_grow_placement, with_on_demand_kv,
+};
 pub mod record;
 pub mod tiered;
 
@@ -432,6 +437,19 @@ pub trait KvDev {
     ) -> Result<KvPlane, Box<dyn std::error::Error>> {
         allocator.allocate(|| self.alloc_u8(n).map(Into::into), || self.alloc_vmm_u8(n))
     }
+    /// The backend's VMM allocation granularity (WP-B day 37 addendum C), `None` without VMM.
+    fn kv_vmm_granularity(&self) -> Option<usize> {
+        None
+    }
+    /// On-demand VMM plane (WP-B day 37): `capacity` bytes of reserved range, `[0, initial)`
+    /// backed. Explicit backend capability; never a pooled substitute.
+    fn alloc_vmm_on_demand_u8(
+        &self,
+        _capacity: usize,
+        _initial: usize,
+    ) -> Result<KvPlane, Box<dyn std::error::Error>> {
+        Err("REFUSED: backend does not implement on-demand VMM allocation".into())
+    }
     fn htod_i32(&self, v: &[i32]) -> Result<CudaSlice<i32>, Box<dyn std::error::Error>>;
     fn clone_dtod(
         &self,
@@ -503,6 +521,86 @@ impl KvLayer {
             Some(ring) => ring.physical_range(start, end),
             None => Ok(start..end),
         }
+    }
+
+    /// WP-B day 37: how many of this layer's two planes are on-demand VMM planes.
+    pub fn on_demand_planes(&self) -> usize {
+        usize::from(self.k.is_on_demand()) + usize::from(self.v.is_on_demand())
+    }
+
+    /// Back rows `[0, rows)` of both planes (the tail pad included, whole granules). Returns
+    /// one `(plane, event)` per grow, `'k'` or `'v'`. A no-op on pooled planes.
+    pub fn ensure_rows(
+        &mut self,
+        rows: usize,
+    ) -> Result<Vec<(char, GrowEvent)>, Box<dyn std::error::Error>> {
+        let mut out = Vec::new();
+        for (tag, plane, tok) in [
+            ('k', &mut self.k, self.k_tok_bytes),
+            ('v', &mut self.v, self.v_tok_bytes),
+        ] {
+            if let Some(ev) = plane.ensure_mapped(kv_plane_allocation_bytes(rows, tok))? {
+                out.push((tag, ev));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Schedule the release of every extent wholly past row `rows` (tail pad included) behind a
+    /// fence each plane records under its own lock. Returns the bytes scheduled.
+    pub fn release_beyond_rows(&mut self, rows: usize) -> usize {
+        self.k
+            .release_beyond(kv_plane_allocation_bytes(rows, self.k_tok_bytes))
+            + self
+                .v
+                .release_beyond(kv_plane_allocation_bytes(rows, self.v_tok_bytes))
+    }
+
+    /// Unmap the released tails whose events completed. Returns the bytes released; a failure is
+    /// quarantined inside the plane (DAY37 addendum E3).
+    pub fn reap(&mut self) -> usize {
+        self.k.reap() + self.v.reap()
+    }
+
+    /// Bytes of this layer's on-demand planes scheduled for release and not yet reaped.
+    pub fn pending_release_bytes(&self) -> usize {
+        self.k.pending_release_bytes() + self.v.pending_release_bytes()
+    }
+
+    /// Backed bytes of this layer's on-demand planes (0 for pooled planes).
+    pub fn on_demand_physical_bytes(&self) -> usize {
+        [&self.k, &self.v]
+            .iter()
+            .filter(|p| p.is_on_demand())
+            .map(|p| p.physical_bytes())
+            .sum()
+    }
+
+    /// Reserved bytes of this layer's on-demand planes (0 for pooled planes).
+    pub fn on_demand_reserved_bytes(&self) -> usize {
+        [&self.k, &self.v]
+            .iter()
+            .filter(|p| p.is_on_demand())
+            .map(|p| p.reserved_bytes())
+            .sum()
+    }
+
+    /// On-demand planes only: (bytes the `len` rows occupy, bytes `rows` rows of slack occupy),
+    /// summed over the layer's on-demand planes (0 for pooled planes). The retire receipt's
+    /// `used` and `slack` terms (DAY37 A4).
+    pub fn on_demand_used_and_slack(&self, rows: usize) -> (usize, usize) {
+        [(&self.k, self.k_tok_bytes), (&self.v, self.v_tok_bytes)]
+            .iter()
+            .filter(|(p, _)| p.is_on_demand())
+            .fold((0, 0), |(u, s), (_, tok)| {
+                (u + self.len * tok, s + rows * tok)
+            })
+    }
+
+    /// The rows consumers may touch on both planes (capacity rows for pooled planes).
+    pub fn mapped_rows(&self) -> usize {
+        let rows = |p: &KvPlane, tok: usize| p.mapped_bytes().saturating_sub(8) / tok.max(1);
+        rows(&self.k, self.k_tok_bytes).min(rows(&self.v, self.v_tok_bytes))
     }
 }
 
@@ -2067,6 +2165,74 @@ impl ResidentTpKvCache {
     }
 }
 
+/// Day-11 rule 2 (lead ruling 9): the register of layers whose K/V planes are out on a tier.
+/// Entries move only through [`Cache::suspend_layer`] and [`Cache::resume_layer`];
+/// [`Cache::ensure_usable`] refuses every continuation while the register is non-empty. It is
+/// not a taint: a restored layer clears its entry. A raw `kv[il].take()` is outside the
+/// contract and leaves the gate blind, exactly the observed finding.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct SuspendedLayers(std::collections::BTreeSet<usize>);
+impl SuspendedLayers {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+    pub fn contains(&self, layer: usize) -> bool {
+        self.0.contains(&layer)
+    }
+    /// Ascending layer ids.
+    pub fn layers(&self) -> Vec<usize> {
+        self.0.iter().copied().collect()
+    }
+}
+impl FromIterator<usize> for SuspendedLayers {
+    fn from_iter<I: IntoIterator<Item = usize>>(iter: I) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+/// The typed refusal of [`Cache::ensure_usable`] under rule 2: a continuation (decode or prime)
+/// was asked over suspended layers. Callers downcast the boxed error to read the layers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContinuationRefused {
+    pub path: String,
+    /// Ascending layer ids whose state is out on a tier.
+    pub layers: Vec<usize>,
+}
+impl std::fmt::Display for ContinuationRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}: continuation refused: layers {:?} are suspended on a tier and must be restored first",
+            self.path, self.layers
+        )
+    }
+}
+impl std::error::Error for ContinuationRefused {}
+/// Typed refusals of the suspend/resume seam.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SuspendError {
+    /// The slot holds no resident full-attention layer (a non-attention layer, an out-of-range
+    /// id, or a layer already taken).
+    NotResident {
+        layer: usize,
+    },
+    AlreadySuspended {
+        layer: usize,
+    },
+    NotSuspended {
+        layer: usize,
+    },
+    /// The slot was refilled behind the register's back.
+    Occupied {
+        layer: usize,
+    },
+}
+impl std::fmt::Display for SuspendError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+impl std::error::Error for SuspendError {}
+
 pub struct Cache {
     /// Drop first: its engine-owned destructor fences replay before any session
     /// KV or recurrent allocation is released, including cancellation/error paths.
@@ -2099,6 +2265,9 @@ pub struct Cache {
     /// A failed multi-stage wave may have advanced only a prefix of layers/rows. Such state is
     /// not a legal rollback point and must never be retried or returned to a reuse pool.
     pub tainted: bool,
+    /// Day-11 rule 2: layers whose K/V planes are out on a tier. `ensure_usable` refuses while
+    /// non-empty; `suspend_layer`/`resume_layer` are the only movers. See [`SuspendedLayers`].
+    pub suspended: SuspendedLayers,
     /// BATCHED-TICK increment 2 component 3 (lean logits, 2026-08-01): device-side park of
     /// this session's LAST logits row. Device-sampled rows in the batched serving tick skip
     /// the [n_vocab] logits D2H entirely; the tick instead dtod-copies the row here (device
@@ -2216,6 +2385,10 @@ fn full_attention_kv_layout(
     };
     (kv_dim_k, kv_dim_v, kbb_l, vbb_l)
 }
+
+/// WP-B day 37: the rows an on-demand cache must have backed past its position before any
+/// decode or prime entry (`Cache::ensure_usable`); the serving engine's speculative slack.
+pub const ON_DEMAND_MIN_AHEAD_ROWS: usize = 64;
 
 fn kv_plane_allocation_bytes(rows: usize, token_bytes: usize) -> usize {
     rows * token_bytes + 8
@@ -2580,6 +2753,9 @@ pub struct CacheSnapshot {
 }
 
 impl Cache {
+    /// The continuation gate. Every decode and prime entry asks it first. Refuses a tainted
+    /// cache (one-way) and, under day-11 rule 2, a cache with any suspended layer, with the
+    /// typed [`ContinuationRefused`] naming the layers, until the caller restores them.
     pub fn ensure_usable(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         if self.tainted {
             return Err(format!(
@@ -2587,6 +2763,145 @@ impl Cache {
             )
             .into());
         }
+        if !self.suspended.is_empty() {
+            return Err(Box::new(ContinuationRefused {
+                path: path.to_owned(),
+                layers: self.suspended.layers(),
+            }));
+        }
+        // WP-B day 37 backstop: an on-demand cache must be backed past its position by the
+        // speculative slack before any entry runs. The serving tick maps the whole call's
+        // bound first (`ensure_kv_rows`); a missed ensure point refuses here as a request
+        // error instead of a kernel touching an unmapped address.
+        let need = (self.pos + ON_DEMAND_MIN_AHEAD_ROWS).min(self.max_ctx);
+        if let Some(mapped) = self.kv_mapped_rows().filter(|&mapped| mapped < need) {
+            return Err(format!(
+                "{path}: vmm: on-demand KV rows not backed (mapped {mapped} rows, position {}, \
+                 need {need})",
+                self.pos
+            )
+            .into());
+        }
+        Ok(())
+    }
+
+    /// WP-B day 37: on-demand VMM planes in this cache (0 for a pooled cache).
+    pub fn on_demand_planes(&self) -> usize {
+        self.kv
+            .iter()
+            .flatten()
+            .map(KvLayer::on_demand_planes)
+            .sum()
+    }
+
+    /// The fewest rows any on-demand layer has backed, or `None` for a pooled cache.
+    pub fn kv_mapped_rows(&self) -> Option<usize> {
+        self.kv
+            .iter()
+            .flatten()
+            .filter(|l| l.on_demand_planes() > 0)
+            .map(KvLayer::mapped_rows)
+            .min()
+    }
+
+    /// Back rows `[0, rows)` of every on-demand K/V plane (capped at `max_ctx`). Returns one
+    /// `(label, event)` per grow, label `k<layer>` or `v<layer>`.
+    pub fn ensure_kv_rows(
+        &mut self,
+        rows: usize,
+    ) -> Result<Vec<(String, GrowEvent)>, Box<dyn std::error::Error>> {
+        let rows = rows.min(self.max_ctx);
+        let mut out = Vec::new();
+        for (il, layer) in self.kv.iter_mut().enumerate() {
+            let Some(layer) = layer.as_mut().filter(|l| l.on_demand_planes() > 0) else {
+                continue;
+            };
+            for (tag, ev) in layer.ensure_rows(rows)? {
+                out.push((format!("{tag}{il}"), ev));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Schedule the release of every on-demand extent wholly past row `rows` (each plane records
+    /// its own fence under its lock).
+    /// Returns the bytes scheduled.
+    pub fn release_kv_beyond_rows(&mut self, rows: usize) -> usize {
+        self.kv
+            .iter_mut()
+            .flatten()
+            .map(|l| l.release_beyond_rows(rows))
+            .sum()
+    }
+
+    /// Unmap every released tail whose event completed. Returns the bytes released.
+    pub fn reap_kv(&mut self) -> usize {
+        self.kv.iter_mut().flatten().map(KvLayer::reap).sum()
+    }
+
+    /// Bytes of this cache's on-demand planes scheduled for release and not yet reaped.
+    pub fn kv_pending_release_bytes(&self) -> usize {
+        self.kv
+            .iter()
+            .flatten()
+            .map(KvLayer::pending_release_bytes)
+            .sum()
+    }
+
+    /// Used and slack bytes of this cache's on-demand planes (`KvLayer::on_demand_used_and_slack`).
+    pub fn kv_on_demand_used_and_slack(&self, rows: usize) -> (usize, usize) {
+        self.kv.iter().flatten().fold((0, 0), |(u, s), l| {
+            let (lu, ls) = l.on_demand_used_and_slack(rows);
+            (u + lu, s + ls)
+        })
+    }
+
+    /// Backed and reserved bytes of this cache's on-demand planes.
+    pub fn kv_on_demand_bytes(&self) -> (usize, usize) {
+        self.kv.iter().flatten().fold((0, 0), |(m, r), l| {
+            (
+                m + l.on_demand_physical_bytes(),
+                r + l.on_demand_reserved_bytes(),
+            )
+        })
+    }
+
+    /// Day-11 rule 2: take layer `il`'s K/V out for demotion and register the suspension, so
+    /// `ensure_usable` refuses every continuation until `resume_layer` returns it. Captured
+    /// decode/prime graphs bake this cache's plane pointers and the restored plane may land
+    /// elsewhere, so they are dropped here (the cache's own rule for any seam that replaces a
+    /// state buffer). No numeric program changes: the layer's bytes are untouched.
+    pub fn suspend_layer(&mut self, il: usize) -> Result<KvLayer, SuspendError> {
+        if self.suspended.contains(il) {
+            return Err(SuspendError::AlreadySuspended { layer: il });
+        }
+        let layer = self
+            .kv
+            .get_mut(il)
+            .and_then(Option::take)
+            .ok_or(SuspendError::NotResident { layer: il })?;
+        self.suspended.0.insert(il);
+        self.glm5_decode_graph = None;
+        self.glm5_tp_sym_graph = None;
+        self.qwen_prime_graph = None;
+        Ok(layer)
+    }
+
+    /// Day-11 rule 2: return a suspended layer's K/V and clear its register entry. Only a layer
+    /// taken through `suspend_layer` can come back this way.
+    pub fn resume_layer(&mut self, il: usize, layer: KvLayer) -> Result<(), SuspendError> {
+        if !self.suspended.contains(il) {
+            return Err(SuspendError::NotSuspended { layer: il });
+        }
+        let slot = self
+            .kv
+            .get_mut(il)
+            .ok_or(SuspendError::NotSuspended { layer: il })?;
+        if slot.is_some() {
+            return Err(SuspendError::Occupied { layer: il });
+        }
+        *slot = Some(layer);
+        self.suspended.0.remove(&il);
         Ok(())
     }
 
@@ -2771,18 +3086,37 @@ impl Cache {
                         None
                     };
                     let alloc_rows = ring.as_ref().map(KvRing::rows).unwrap_or(max_ctx);
+                    // WP-B day 37: inside `with_on_demand_kv` a flat plane requested with the
+                    // default allocator is an on-demand VMM plane backing the scope's initial
+                    // rows. Ring planes (bounded by their window) and explicit allocators keep
+                    // their program.
+                    let on_demand = (allocator == KvAllocator::Pooled && ring.is_none())
+                        .then(on_demand_initial_rows)
+                        .flatten();
+                    let alloc = |tok_bytes: usize| -> Result<KvPlane, Box<dyn std::error::Error>> {
+                        let capacity = kv_plane_allocation_bytes(alloc_rows, tok_bytes);
+                        let initial = on_demand.map(|rows| {
+                            kv_plane_allocation_bytes(rows.min(alloc_rows), tok_bytes).min(capacity)
+                        });
+                        // Addendum C: on demand only where a whole granule stays unbacked.
+                        match initial.filter(|&initial| {
+                            e.kv_vmm_granularity()
+                                .is_some_and(|g| on_demand_pays(capacity, initial, g))
+                        }) {
+                            Some(initial) => {
+                                let plane = e.alloc_vmm_on_demand_u8(capacity, initial)?;
+                                note_on_demand_plane();
+                                Ok(plane)
+                            }
+                            None => e.alloc_kv_plane(capacity, allocator),
+                        }
+                    };
                     kv.push(Some(KvLayer {
                         // +8B tail pad: the v4 stage's aligned funnelshift window reads up to
                         // 4B past the final block (PR #3's finding, adopted pad-style — the
                         // expert-dot precedent; zero hot-loop branches, values discarded).
-                        k: e.alloc_kv_plane(
-                            kv_plane_allocation_bytes(alloc_rows, k_tok_bytes),
-                            allocator,
-                        )?,
-                        v: e.alloc_kv_plane(
-                            kv_plane_allocation_bytes(alloc_rows, v_tok_bytes),
-                            allocator,
-                        )?,
+                        k: alloc(k_tok_bytes)?,
+                        v: alloc(v_tok_bytes)?,
                         kv_dim_k,
                         kv_dim_v,
                         k_tok_bytes,
@@ -2867,6 +3201,7 @@ impl Cache {
             pos: 0,
             max_ctx,
             tainted: false,
+            suspended: SuspendedLayers::default(),
             dflash_taps: None,
             hc_taps: None,
             glm5_decode_graph: None,
@@ -3440,6 +3775,7 @@ mod tp_transaction_tests {
             pos: 0,
             max_ctx: 10_000,
             tainted: false,
+            suspended: super::SuspendedLayers::default(),
             dflash_taps: None,
             hc_taps: None,
             glm5_decode_graph: None,
@@ -3652,5 +3988,115 @@ mod swa_ring_tests {
 
         // A checkpoint from before the rebase is gone: refuse, never slice.
         assert!(ring.restore_plan(400).is_err());
+    }
+}
+
+#[cfg(test)]
+mod continuation_gate_tests {
+    //! Day-11 rule 2 (lead ruling 9) on the real `Cache`: `ensure_usable` is the gate, the
+    //! register is the state, `ContinuationRefused` is the typed answer. CPU-built cache, no
+    //! device: a `KvLayer` cannot be constructed here, so the positive `suspend_layer` /
+    //! `resume_layer` roundtrip is native (kv-tier-gate); its refusals are exercised below.
+    use super::{Cache, ContinuationRefused, SuspendError, SuspendedLayers};
+    use memra_tier::conformance::{ContinuationGateFixture, required_resident_continuation};
+
+    fn cache(layers: usize) -> Cache {
+        Cache {
+            kv: (0..layers).map(|_| None).collect(),
+            recur: (0..layers).map(|_| None).collect(),
+            latent: (0..layers).map(|_| None).collect(),
+            tp_kv: (0..layers).map(|_| None).collect(),
+            glm5_tp_recur: (0..layers).map(|_| None).collect(),
+            glm5_tp_latent_peer: (0..layers).map(|_| None).collect(),
+            pos: 0,
+            max_ctx: 8192,
+            tainted: false,
+            suspended: SuspendedLayers::default(),
+            dflash_taps: None,
+            hc_taps: None,
+            glm5_decode_graph: None,
+            glm5_tp_sym_graph: None,
+            qwen_prime_graph: None,
+            last_logits_dev: None,
+        }
+    }
+
+    /// The real gate under the shared schedule. Suspension is registered directly (the plane
+    /// that would leave cannot exist without a device); the answer is the real typed error.
+    struct Gate(Cache);
+    impl ContinuationGateFixture for Gate {
+        fn suspend(&mut self, layer: u32) {
+            assert!(self.0.suspended.0.insert(layer as usize));
+        }
+        fn restore(&mut self, layer: u32) {
+            assert!(self.0.suspended.0.remove(&(layer as usize)));
+        }
+        fn continuation(&mut self) -> Result<(), Vec<u32>> {
+            match self.0.ensure_usable("decode_step_h") {
+                Ok(()) => Ok(()),
+                Err(error) => {
+                    let refused = error
+                        .downcast_ref::<ContinuationRefused>()
+                        .unwrap_or_else(|| panic!("untyped refusal: {error}"));
+                    assert_eq!(refused.path, "decode_step_h");
+                    Err(refused.layers.iter().map(|&l| l as u32).collect())
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn day11_ensure_usable_refuses_a_suspended_cache_until_restored() {
+        required_resident_continuation(&mut Gate(cache(16)), &[3, 0, 15]);
+    }
+
+    #[test]
+    fn day11_refusal_is_typed_and_names_the_layers() {
+        let mut c = cache(4);
+        c.suspended.0.extend([2, 1]);
+        let error = c.ensure_usable("prime_cache").unwrap_err();
+        let refused = error.downcast_ref::<ContinuationRefused>().unwrap();
+        assert_eq!(refused.layers, [1, 2]);
+        assert_eq!(
+            error.to_string(),
+            "prime_cache: continuation refused: layers [1, 2] are suspended on a tier and must be restored first"
+        );
+        // Taint keeps its precedence and its wording; it is a different, one-way condition.
+        c.mark_tainted();
+        assert!(
+            !c.ensure_usable("prime_cache")
+                .unwrap_err()
+                .to_string()
+                .contains("suspended")
+        );
+    }
+
+    #[test]
+    fn day11_seam_refusals_on_a_cache_without_resident_planes() {
+        let mut c = cache(2);
+        assert_eq!(
+            c.suspend_layer(0).err(),
+            Some(SuspendError::NotResident { layer: 0 })
+        );
+        assert_eq!(
+            c.suspend_layer(9).err(),
+            Some(SuspendError::NotResident { layer: 9 })
+        );
+        assert!(c.suspended.is_empty());
+        c.ensure_usable("decode_step_h").unwrap();
+        c.suspended.0.insert(1);
+        assert_eq!(
+            c.suspend_layer(1).err(),
+            Some(SuspendError::AlreadySuspended { layer: 1 })
+        );
+        assert_eq!(c.suspended.layers(), [1]);
+        assert!(c.suspended.contains(1));
+        let stage: SuspendedLayers = c
+            .suspended
+            .layers()
+            .into_iter()
+            .filter(|&l| l == 1)
+            .collect();
+        assert_eq!(stage, c.suspended);
     }
 }

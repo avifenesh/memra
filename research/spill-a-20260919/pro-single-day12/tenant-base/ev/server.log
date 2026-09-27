@@ -1,0 +1,111 @@
+[server] build: memra-0.138.0-872000a096cb (id: source-tree, git: be07f2d36b66)
+[auth] keyring loaded: 2 inline key(s)
+[server] starting; models config = [("gate", "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+[gpu-watch] Xid source: /dev/kmsg
+[worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+[gpu-watch] on: every 60s, probe deadline 10s, fatal Xid [48, 64, 79, 94, 95, 119, 120]
+[worker] Engine ready (device=0, MEMRA_FAST=true)
+[spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+[spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+[worker] loading model "gate" <- /root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+[worker]   loaded "gate": 65 layers, eos=248046, stop=[248046]
+[worker] gate: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+[worker] gate: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+[prefix-host] on: budget 1074MB pinned cacheable host RAM (MEMRA_KV_HOST_MB, startup budget policy), plain byte-LRU, demote on device capacity eviction, promote on exact-prefix probe; verify=off (MEMRA_KV_HOST_VERIFY); tenant share cap 38% = 408MB (MEMRA_KV_HOST_TENANT_PCT)
+[prefix-cache] on: budget 268MB (268435456 B, configured by MEMRA_PREFIX_CACHE_MB), policy byte-SLRU protected/probation 80%/20% (MEMRA_PREFIX_CACHE_PROTECTED_PCT), min prefix 64 tokens, immediate partial restore=off (rollback) (transformer-only; hybrid mid-entry + routed-MoE N/A)
+[admission] "gate": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+[prime-walk] model="gate" route=mtp supported=true yield_door=false [gdn_dspark_compatible=true mtp_head_loaded=true no_hyper_connections=true no_pipeline_cuts=true]
+[fa-pool] grow #0 dev=0 o_len 0 -> 399360 ml_len 0 -> 1560 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): embed_gather_u32
+[func] CAPTURE-TIME kernel lookup (not warmed): inc_i32
+[fa-pool] grow #1 dev=0 o_len 399360 -> 798720 ml_len 1560 -> 3120 (retired kept, zero=false)
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_vec_q_v4_deep_dc
+[func] CAPTURE-TIME kernel lookup (not warmed): fa_decode_combine_f32
+[func] CAPTURE-TIME kernel lookup (not warmed): memra_sctr_inc
+[func] CAPTURE-TIME kernel lookup (not warmed): gumbel_perturb_filtered_ctr_f32
+[spec] draft-session state high-water: 46MB (max of parked delta 46MB and capture-time pool peak 12MB; charged per spec admission and gating future captures)
+[fa-pool] grow #2 dev=0 o_len 798720 -> 1597440 ml_len 3120 -> 6240 (retired kept, zero=false)
+[device-trim] reason=calibration-complete {"device":0,"reclaimed_bytes":2483027968,"still_owned_bytes":17283255616,"pool_reserved_bytes":17414750208,"pool_cached_bytes":131494592,"driver_free_bytes":83933921280,"synchronization_errors":[]}
+[admit-cal] post-probe pool trim: released 2368MB cached back to the driver
+[admit-cal] boot calibration done: model="gate" route=mtp transient floor 2194MB (static was 1536MB; measured 2194MB; probe kv charge 127MB, draft-state 46MB, drafted 63 accepted 42; [dev0 peak-mapped 18976MB rest-mapped 16608MB charged 173MB -> 2194MB]; 1.6s)
+[admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+[server] worker ready; serving models: ["gate"]
+[server] listening on http://127.0.0.1:18129
+[meter] admit id=cmpl-b078e6ab8b7c902e14014526eb5d9c67 tenant=beta lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +49MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=195 path=spec = 31552 B/token x ctx + 40MB prefill-workspace + 0MB fixed = 46MB
+[spec-k] model="gate" tenant="t:beta" K=3 source=cold-short prompt=83 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 313MB at ctx 139 path=spec)
+[spec-acc] ctx=83 burst=23/30 cum=23/30=0.767
+[prefix-cache] insert probation (spec-boundary): 83 tokens, 159.5MB (resident 159.5MB / 268MB, model gate, ns "t:beta\u{1f}s1")
+[spec-acc] ctx=117 burst=12/12 cum=35/42=0.833
+[meter] admit id=cmpl-46447b6678118312a14ed6c2f7983106 tenant=acme lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +49MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=201 path=spec = 31552 B/token x ctx + 43MB prefill-workspace + 308MB fixed = 357MB
+[spec-k] model="gate" tenant="t:acme" K=3 source=cold-short prompt=89 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 313MB at ctx 145 path=spec)
+[spec-acc] ctx=89 burst=21/36 cum=21/36=0.583
+[prefix-cache] insert probation (spec-boundary): 89 tokens, 159.7MB (resident 319.3MB / 268MB, model gate, ns "t:acme\u{1f}s1")
+[prefix-cache] evict (Probation LRU): 83 tokens, 159.5MB (model gate, ns "t:beta\u{1f}s1")
+[prefix-host] demote: 83 tokens, 160.5MB in 40.4ms (host resident 160.5MB / 1074MB, model gate, ns "t:beta\u{1f}s1")
+[spec-acc] ctx=123 burst=10/12 cum=31/48=0.646
+[meter] admit id=cmpl-20b492f5ac68efe66890b181956f783b tenant=acme lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +49MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=198 path=spec = 31552 B/token x ctx + 41MB prefill-workspace + 308MB fixed = 356MB
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 89; 1 parked, 86 prompt tokens; model gate)
+[spec-k] model="gate" tenant="t:acme" K=3 source=cold-short prompt=86 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=86 burst=21/30 cum=21/30=0.700
+[prefix-cache] insert probation (spec-boundary): 86 tokens, 159.6MB (resident 319.3MB / 268MB, model gate, ns "t:acme\u{1f}s1")
+[prefix-cache] evict (Probation LRU): 89 tokens, 159.7MB (model gate, ns "t:acme\u{1f}s1")
+[prefix-host] demote: 89 tokens, 160.7MB in 42.7ms (host resident 321.2MB / 1074MB, model gate, ns "t:acme\u{1f}s1")
+[spec-acc] ctx=118 burst=12/21 cum=33/51=0.647
+[meter] admit id=cmpl-db7ed82aec34d908a0514d6f42252629 tenant=acme lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +49MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=205 path=spec = 31552 B/token x ctx + 45MB prefill-workspace + 308MB fixed = 359MB
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 89; 2 parked, 93 prompt tokens; model gate)
+[spec-k] model="gate" tenant="t:acme" K=3 source=cold-short prompt=93 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 313MB at ctx 149 path=spec)
+[spec-acc] ctx=93 burst=19/39 cum=19/39=0.487
+[prefix-cache] insert probation (spec-boundary): 93 tokens, 159.8MB (resident 319.5MB / 268MB, model gate, ns "t:acme\u{1f}s1")
+[prefix-cache] evict (Probation LRU): 86 tokens, 159.6MB (model gate, ns "t:acme\u{1f}s1")
+[prefix-host] demote: 86 tokens, 160.6MB in 42.8ms (host resident 481.9MB / 1074MB, model gate, ns "t:acme\u{1f}s1")
+[spec-acc] ctx=126 burst=9/21 cum=28/60=0.467
+[meter] admit id=cmpl-cfc3164068e46ad9cdc68b5bde1a494c tenant=acme lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +49MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=205 path=spec = 31552 B/token x ctx + 45MB prefill-workspace + 308MB fixed = 359MB
+[worker] spec-affinity: declined (history diverged at 0 of checkpoint 86; 2 parked, 93 prompt tokens; model gate)
+[spec-k] model="gate" tenant="t:acme" K=3 source=cold-short prompt=93 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=93 burst=23/33 cum=23/33=0.697
+[prefix-cache] insert probation (spec-boundary): 93 tokens, 159.8MB (resident 319.7MB / 268MB, model gate, ns "t:acme\u{1f}s1")
+[prefix-cache] evict (Probation LRU): 93 tokens, 159.8MB (model gate, ns "t:acme\u{1f}s1")
+[prefix-host] demote evaporated at the tenant share cap before the D2H copy: 93 tokens, 160.8MB (38% of 1074MB, MEMRA_KV_HOST_TENANT_PCT; model gate, ns "t:acme\u{1f}s1")
+[spec-acc] ctx=128 burst=10/12 cum=33/45=0.733
+[meter] admit id=cmpl-0bfb5468d83997320bac5a93eea0899f tenant=beta lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +49MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=208 path=spec = 31552 B/token x ctx + 46MB prefill-workspace + 308MB fixed = 361MB
+[prefix-cache] insert probation (host-promote): 83 tokens, 159.5MB (resident 319.4MB / 268MB, model gate, ns "t:beta\u{1f}s1")
+[prefix-cache] evict (Probation LRU): 93 tokens, 159.8MB (model gate, ns "t:acme\u{1f}s1")
+[prefix-host] demote evaporated at the tenant share cap before the D2H copy: 93 tokens, 160.8MB (38% of 1074MB, MEMRA_KV_HOST_TENANT_PCT; model gate, ns "t:acme\u{1f}s1")
+[prefix-host] promote: 83 tokens, 159.5MB in 4.7ms (model gate, ns "t:beta\u{1f}s1")
+[prefix-cache] hit: 83 of 96 prompt tokens from cache (model gate)
+[prefix-cache] spec restore: 83 of 96 prompt tokens + draft plane from cache [suffix queued] (model gate)
+[spec-k] model="gate" tenant="t:beta" K=3 source=cold-short prompt=96 cached=83 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[spec-acc] ctx=13 burst=22/30 cum=22/30=0.733
+[prefix-cache] insert probation (spec-boundary): 96 tokens, 159.9MB (resident 319.5MB / 268MB, model gate, ns "t:beta\u{1f}s1")
+[prefix-cache] evict (Probation LRU): 96 tokens, 159.9MB (model gate, ns "t:beta\u{1f}s1")
+[prefix-host] demote: 96 tokens, 160.9MB in 42.2ms (host resident 642.8MB / 1074MB, model gate, ns "t:beta\u{1f}s1")
+[spec-acc] ctx=46 burst=13/15 cum=35/45=0.778
+[meter] admit id=cmpl-f30818a4e56778d79017e9a82394c231 tenant=acme lane=interactive model="gate"
+[admission] per-session draft-state charge: model="gate" +49MB (measured capture high-water)
+[admission] request cost: model="gate" ctx=218 path=spec = 31552 B/token x ctx + 51MB prefill-workspace + 308MB fixed = 366MB
+[worker] spec-affinity: declined (identity did not nominate; 2 parked, 106 prompt tokens; model gate)
+[spec-k] model="gate" tenant="t:acme" K=3 source=cold-short prompt=106 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+[admission] fixed residual high-water: model="gate" 308MB (observed 313MB at ctx 162 path=spec)
+[spec-acc] ctx=106 burst=19/36 cum=19/36=0.528
+[prefix-cache] insert probation (spec-boundary): 106 tokens, 160.3MB (resident 319.8MB / 268MB, model gate, ns "t:acme\u{1f}s1")
+[prefix-cache] evict (Probation LRU): 106 tokens, 160.3MB (model gate, ns "t:acme\u{1f}s1")
+[prefix-host] demote evaporated at the tenant share cap before the D2H copy: 106 tokens, 161.3MB (38% of 1074MB, MEMRA_KV_HOST_TENANT_PCT; model gate, ns "t:acme\u{1f}s1")
+[spec-acc] ctx=138 burst=11/18 cum=30/54=0.556
+[server] SIGTERM: draining (0 in flight, deadline 30s)
+[server] drain complete in 0.0s; exiting
+[server] GPU worker shutdown complete

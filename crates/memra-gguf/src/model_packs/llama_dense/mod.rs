@@ -11,6 +11,8 @@ use crate::config::HfConfig;
 /// vocab 131072, rope_theta 1e6, no sliding window, untied embeddings.
 pub static PACK: ModelPack = ModelPack {
     family: "llama_dense",
+    output_head: OutputHeadContract::TiedHeadAllowed,
+    tensor_consumption: TensorConsumption::Report,
     aliases: &["llama", "mistral"],
     config_layout: ConfigLayout::FlatOrTextConfig,
     tokenizer_sources: &[
@@ -57,6 +59,7 @@ pub static PACK: ModelPack = ModelPack {
                 .rope_scaling_hint
                 .as_deref()
                 .is_none_or(|kind| kind == "default")
+            && config.hidden_act.as_deref().is_none_or(|kind| kind == "silu")
     },
     plan_builder: canonical_plan,
     tensor_schema: canonical_tensor_schema,

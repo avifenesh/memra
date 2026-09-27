@@ -1,0 +1,11 @@
+[memra-cpu] RAM headroom cap: requested=0.00 GiB available=84.82 GiB reserve=0.00 GiB effective=0.00 GiB
+[memra-cpu] normal-RAM expert cache: 0.00 GiB policy=lru io=direct
+[memra-cpu] mirrored direct I/O: 1 inode mappings
+[memra-cpu-cache] hits=0 misses=0 hit_rate=0.00% read_GB=0.000 resident_GB=0.000
+[memra-cpu-profile] calls=0 prepare=0.000000s io=0.000000s insert=0.000000s compute=0.000000s read_projections=0 read_GB=0.000 stage_entry=0.000000s stage_cached=0.000000s stage_missing=0.000000s stage_accum=0.000000s prefetch_projections=3 prefetch_GB=0.000
+failure: primary half complete, alternate half held: inflight_signed=1 expected=1
+failure: sentinel queued behind the held half: inflight_signed=2 expected=2
+failure: alternate half failed with EIO, sentinel read entered: inflight_signed=1 expected=1
+failure: drained after the sentinel landed: inflight_signed=0 expected=0
+failure: drained after the retry landed: inflight_signed=0 expected=0
+FAILURE_PATH_OK

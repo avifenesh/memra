@@ -1,39 +1,39 @@
-# WP-A day 9 resumable state
+# WP-A resumable state (2026-09-27: integ69 fixes `4f297e7bd` (DAY69 P) and `a57f85897` (DAY70 Q) pushed; P2 ADOPTED for the next integ (`409be61f8`); F REVERTED; the DAY68 5090 chain running)
 
-- Lane: `lane/spill-a-20260919`; worktree `/Users/avifen/tiyuvta/wt-spill-a`.
-- Integration replay merged/pushed: `12122467a014502bfcd050ec0e120932068ff3fb`.
-- Final native build/source: `1adf2be3d9f8ea82596dbc5917407e35d597c939`.
-- Native binary SHA-256: `3eae930dab5504c89bc5f7f18473c9d5762b4f4bceed87a5d7dd139ef4782be4`.
-- **PASS v1.3 device_hand_back native CUDA**.
-- **PASS v1.3 transfer_source_retirement native CUDA**.
-- Both unchanged canonical schedules are directly invoked with real pending
-  CUDA producers; source/destination graphs and host lifetime are independent.
-- Existing native schedules, early-drop/mutable-reuse regression, six exact
-  4 KiB–256 MiB roundtrips and zero-governor drain: PASS.
-- Final receipts: `day9/native/final/attempt-00/`; source/binary identity in its
-  parent. Two failed development attempts retained alongside, not relabelled.
-- Final collector exit 0; canonical `/tmp/memra-gpu.lock`, `--rig pro-single`,
-  250 ms telemetry (56 samples), 600/600 W, empty compute snapshots before/after.
-- All 86 remote raw-file hashes matched; final offline replay and six tamper
-  controls PASS. `day9/replay.json`, `day9/hash-audit.json`.
-- CPU tier tests: 196 PASS; Mac/Linux-target tier+KV checks, CPU clippy
-  `-D warnings`, fmt, diff and flags census PASS. Linux-target docs-stub
-  engine/gate check PASS. Broader Mac engine check remains blocked by existing
-  Linux-only libc APIs in `cpu_experts.rs`/`spill_pread.rs` (raw log retained).
-- No A native process/tmux remains. Remote source checkout `/root/wt-a` is clean.
-  Final receipt root `/root/spill-receipts/a-day9-final/`; earlier attempt roots
-  retained. Temporary git bundles and replay scratch were removed.
-- Native results are development correctness only: collector `qualification:false`.
-  No serving/default promotion, actual CUDA graph-execution qualification, or
-  physical context-loss recovery claim.
-- `V13-BINDING.md` maps every frozen step. No frozen-contract gap remains for
-  these two bindings. `day9/RESULTS.md` records the full evidence and failures.
-- `IO-BASELINE.md` includes numeric +5% screening targets, but io_uring remains
-  DEFERRED: fresh five-AB/five-BA same-box control and composed pipeline/tail gates
-  still needed. No NVMe ancestry/spill-speed claim.
-- Next for lead: integrate the full lane and rerun affected composed/native tier
-  callers. Immutable pre-ack H2D reuse is preserved, but the earlier D2H ticket
-  retains the host charge until its acknowledgement; D's old comment that H2D
-  source retirement alone destroys that host is now stale.
-- Access remains lead-owned existing `~/.ssh/cm/box3` socket; check first, never
-  create a fresh connection. Retain this active lane for lead integration.
+- Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ67 takes B1 (`e522a9417`, adopted on both cards) and the
+  grid refusal (`231fba087`, cherry-picked as 95f275859).
+- Closed: items 10 (B1), 11 (reading), 12 (W reverted, DAY61 section 5), 13 (R1 ADOPTED, `04554e99f`; R2 reverted),
+  21 to 25; DAY66 (the fanout split's scope).
+- **Items 14 and 19 (DAY63) closed: L' ADOPTED** (section 6, `348d2e8f3`, with the gate change `217ace3fd`); L' and R1
+  go to integ69.
+- **Item 18 (DAY64).** The split selected the fill (8.63 ms of 12.9), not D1 (section 5). Design F (the fill on its
+  own stream in chunks) is built (`568f33c7b`), with its sitting `pro-single-f/` (`build.sh <tip> 0a835a75b`, then
+  `driver.sh`). **F read REVERT ((a) passed with the worker step; (b), (c) failed) and is reverted (`ef8cd47d8`,
+  DAY64 section 8).** Item 18 stays open; F2 (pinned resident payloads) is due next, registration first.
+- **Item 20 (DAY65).** T-H read REVERT (b) and was reverted (`06b2d31db`). T-H' is registered (section 6: (b')
+  measured at long entries, from DAY65's own text), awaiting the lead's and the owner's acceptance before any code.
+- **Item 17 (DAY67).** P2 on L': the first sitting was stopped as a diagnostic (T-H was in both arms). The corrected
+  pair P2L2 read (b) to (g) PASS and (a)'s repeated unit step read all green on `a2419d3e1`: **P2 ADOPTED** (DAY67
+  section 5). For the next integ: `lane/spill-a-p2-20260926` (`409be61f8`, P2 on integ69's fix tip `a57f85897`). P2's 5090 half
+  is owed after the DAY68 chain.
+- **integ69** took `6c60d798f` (L' + R1 + the gate change + the two test-only cell fixes); revuto found the purge
+  retention defect (DAY69): **design P, `4f297e7bd` on `lane/spill-a-integ69-20260926`**, is the fix (the pool
+  drained with an epoch, the staging set zeroed, at every purge); CPU battery green, both red arms caught; its two GPU
+  cells run in the lead's battery. On this lane it is `59376ebeb`. Worktree `wt-spill-a-i69` holds that branch until
+  integ69 merges; remove it then. Revuto round 2: **design Q, `a57f85897`** (DAY70: a lease charged its length,
+  the pool its idle backings and the leases' tails within its cap), CPU battery green, red arm caught; GPU cells
+  named for BOX43 in DAY70 section 4. Owed after the fixes: the GLM-5 arena's purge scrub and the pooled-lease read guard
+  (DAY69 sections 1 and 2).
+- **The owed 5090 cells (DAY68), registered and built:** R1's half and L''s half (section 1, the target sittings' own
+  pairs and scripts, derived by `rtx5090-derive.py`), item 16 (section 3, DAY45's cell from `7b849a817`), then S4's and
+  V's halves (section 4). All run from frozen copies under `/home/avifenesh/spill-a-cells/`, chained by
+  `rtx5090-chain-day68.sh` (run as the copy `spill-a-cells/chain-day68.sh`), each in its own bounded hold after every
+  build has finished. Receipts go to `rtx5090-{r1,l2,s4,v}/cell/` and `rtx5090-day45/cell/`; then `rtx5090-half*.sh
+  clean` and the i16 worktree removal.
+- Local cells run their scripts from a frozen copy of the tree, never from this worktree (DAY61 section 5's
+  lesson). No build of this lane runs while one of its own timed cells holds the 5090.
+- The local 5090 is shared: lanes B, C and F queue on it, and another project's process sometimes lands on it. The
+  idle rule stays.
+- Scratch to remove when the lane closes: the four lines added to the shared
+  `/home/avifenesh/projects/memra/.git/info/exclude`, and `/home/avifenesh/spill-a-cells/` (the DAY68 trees, target
+  dirs and binaries while the halves run).

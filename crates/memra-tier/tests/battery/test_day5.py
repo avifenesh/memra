@@ -22,11 +22,13 @@ def load(name):
 B = load('tier-battery')
 T = load('tier-topology')
 REAL = ROOT / 'research/spill-lead-20260919/rented-5090-20260919/receipts'
+import private_lock
 
 
-class Day5Tests(unittest.TestCase):
+class Day5Tests(private_lock.PrivateLockMixin, unittest.TestCase):
+    BATTERY = B
     def bootstrap(self, out, extra=(), source=None):
-        return subprocess.run(['bash', '-s', '--', '--dry-run', '--out', str(out), *extra],
+        return subprocess.run(['bash', '-s', '--', '--dry-run', private_lock.FLAG, '--out', str(out), *extra],
                               input=source or (ROOT/'tools/tier-rig-bootstrap.sh').read_text(),
                               text=True, cwd=ROOT, capture_output=True,
                               env={**os.environ, 'BRANCH': 'lane/spill-d-test'}, timeout=30)
@@ -128,7 +130,9 @@ class Day5Tests(unittest.TestCase):
             self.assertEqual(record['elapsed_seconds'], rows[1]['duration_ns']/1e9)
             self.assertEqual(rows[1]['ended_utc'], record['ended_utc'])
             self.assertEqual(rows[0]['started_utc'], record['started_utc'])
-            (out/'lock.json').write_text(json.dumps({'rig':'rtx5090','lock':B.LOCKS['rtx5090'],'acquired':True}))
+            # A lock.json as the collector writes it under the seam: the seam field is part of it.
+            (out/'lock.json').write_text(json.dumps({'rig':'rtx5090','lock':B.LOCKS['rtx5090'],'acquired':True,
+                                                     'seam': str(self.lock_dir)}))
             result = B.validate_cell(out/'CELL.jsonl')
             self.assertEqual(result['status'], 'failed')
             self.assertFalse(result['qualification'])
@@ -143,7 +147,7 @@ class Day5Tests(unittest.TestCase):
             fake = root/'storage-bench'
             fake.write_text('#!' + sys.executable + '\nprint("CPU stub, no storage performance")\n')
             fake.chmod(0o755)
-            argv = [sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090']
+            argv = [sys.executable, str(ROOT/'tools/tier-battery.py'), '--rig', 'rtx5090', private_lock.FLAG]
             env = {**os.environ, 'PATH': str(root/'no-tools')}
             for mode, options, expected in [
                     ('unspecified', [], 2),
@@ -165,18 +169,23 @@ class Day5Tests(unittest.TestCase):
     def test_real_first_hour_integrity_keeps_failed_cell_and_empty_telemetry(self):
         cells = sorted(REAL.rglob('CELL.jsonl'))
         self.assertEqual(len(cells), 9)
-        results = [B.validate_cell(p) for p in cells]
-        self.assertEqual(sum(r['status'] == 'failed' for r in results), 1)
-        self.assertTrue(all(r['legacy_timing'] and not r['qualification'] for r in results))
-        proc = subprocess.run([sys.executable, str(ROOT/'tools/tier-battery.py'), '--validate', str(REAL)],
-                              text=True, capture_output=True)
-        self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertEqual(json.loads(proc.stdout)['failed_commands'], 1)
-        explicit = subprocess.run([sys.executable, str(ROOT/'tools/tier-battery.py'), '--schema', 'runs', '--validate', str(cells[0])], capture_output=True)
-        self.assertNotEqual(explicit.returncode, 0)
-        # The strict byte gate must still refuse these capture rows.
-        rows = [json.loads(s) for s in cells[0].read_text().splitlines()]
-        with self.assertRaises(ValueError): B.validate_rows(rows, cells[0].parent)
+        # Committed receipts record the canonical rig lock: validate them against the canonical
+        # table, in-process and in the child (the seam is for locks this suite TAKES).
+        with self.canonical_locks():
+            results = [B.validate_cell(p) for p in cells]
+            self.assertEqual(sum(r['status'] == 'failed' for r in results), 1)
+            self.assertTrue(all(r['legacy_timing'] and not r['qualification'] for r in results))
+            proc = subprocess.run([sys.executable, str(ROOT/'tools/tier-battery.py'), '--validate', str(REAL)],
+                                  text=True, capture_output=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(json.loads(proc.stdout)['failed_commands'], 1)
+            explicit = subprocess.run([sys.executable, str(ROOT/'tools/tier-battery.py'), '--schema', 'runs', '--validate', str(cells[0])], capture_output=True)
+            self.assertNotEqual(explicit.returncode, 0)
+            # The strict byte gate must still refuse these capture rows.
+            rows = [json.loads(s) for s in cells[0].read_text().splitlines()]
+            with self.assertRaises(ValueError): B.validate_rows(rows, cells[0].parent)
+        # And under the seam the same committed receipts refuse: the private table is not theirs.
+        with self.assertRaises(ValueError): B.validate_cell(cells[0])
 
     def test_capture_validation_rejects_corruption_and_missing_end(self):
         with tempfile.TemporaryDirectory() as tmp:

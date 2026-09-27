@@ -67,7 +67,7 @@ pub(super) fn run(
         let host = enqueues();
         let before = gpu.full_token_ar_epochs_for_gate().unwrap();
         let actual = gpu
-            .decode_sample_full_token_for_gate(carry, &mut selected.state)
+            .decode_sample_full_token(carry, &mut selected.state)
             .expect("environment replay");
         assert_eq!(actual, next, "default/eager sampled identity step={step}");
         selected.check_enqueues(host, capture);
@@ -135,7 +135,7 @@ pub(super) fn run(
             assert_ne!(carry, tokenizer.eos_id(), "sanity early EOS");
             tokens.push(carry);
             carry = gpu
-                .decode_sample_full_token_for_gate(carry, &mut active.state)
+                .decode_sample_full_token(carry, &mut active.state)
                 .expect("default sanity replay");
         }
         drain(gpu);

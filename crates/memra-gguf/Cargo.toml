@@ -16,6 +16,9 @@ memmap2 = "0.9"
 # fixture-integrity hashing for the dsv4-forward gate (already in the workspace lockfile
 # via memra-server; no new transitive deps)
 sha2 = "0.10"
+# Manifest declarations require one JSON string decoder for keys, values and duplicate checks.
+serde = "1"
+serde_json = { version = "1", features = ["raw_value", "arbitrary_precision"] }
 
 [[bin]]
 name = "gguf-inspect"

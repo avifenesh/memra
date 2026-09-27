@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "archives": [
+    {
+      "file": "qwen-records.tar.gz",
+      "bytes": 26336708,
+      "sha256": "2c46dfe80292b0578f23f1ecdea346181b72832dbf10c63b1dcedf76504ff570",
+      "files": 6799,
+      "file_manifest_sha256": "f411ab383b95290a55abb831767b6b741f7bd35341edefa19bc78cedcfc68272"
+    },
+    {
+      "file": "gemma-records.tar.gz",
+      "bytes": 15840381,
+      "sha256": "79f41950624081fc1ca743cfa889dda26b4042336c59bf4008da5443dcb4a43d",
+      "files": 4832,
+      "file_manifest_sha256": "1b1305b844221247a0d480a801ced42776c45154a624e4831ee99b4a74243407"
+    },
+    {
+      "file": "common-records.tar.gz",
+      "bytes": 118138,
+      "sha256": "23a632d655a5b8107119ca78bebee1c624980c6ac9202efd47a200f086d40003",
+      "files": 80,
+      "file_manifest_sha256": "5abee0c16a5dfc30fd22606748913954d16007cc4c4f02cccc2d72fbac930925"
+    }
+  ],
+  "runtime_source": {
+    "source_commit": "cb2f1783a0818705c5528f5b11cae0b0bc176deb",
+    "runtime_archive_sha256": "7f5a5d5446e3af717085d0258a6993743e892a32badc79af94366523a6144328",
+    "archive_bytes": 8167749,
+    "compile_time_fixtures": [
+      "research/ep-placement-map-20260831/example-map-coactivation.json",
+      "research/reasoning-schema-20260823/goldens",
+      "research/reasoning-schema-20260823/ornith15.chat_template.jinja",
+      "research/reasoning-schema-20260823/qwen38-27b.chat_template.jinja",
+      "research/spill-b-20260919/fixtures/recompute-load.csv",
+      "research/spill-c-20260919/fixtures/ple-ngram-synthetic.json",
+      "research/spill-c-20260919/fixtures/slru-synthetic.json"
+    ]
+  },
+  "scope": "all completed qualification, calibration, development and held-out receipts for the corrected source",
+  "earlier_unscored_attempt": "initial controller, excluded calibration and unused partial held-out data are banked separately as iteration-1",
+  "performance_verdict_eligible": true,
+  "recorded_runs": 100,
+  "scored_runs": 95,
+  "scored_timed_turns": 760,
+  "matched_set_exclusions": {
+    "qwen": {},
+    "gemma": {
+      "4": [
+        {
+          "arm": "calibrated",
+          "turn": 8,
+          "end_token": 1024,
+          "period": 3,
+          "repeated_tokens": 258
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,31 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-a/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.54s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-e53347545693156a)
+
+running 5 tests
+[prefix-host] skip demote: tenant "t:acme" at its share cap (0.0MB resident + 0.0MB entry > 0MB = 50% of 0MB); entry evaporates
+[prefix-host] skip demote: tenant "t:acme" at its share cap (0.0MB resident + 0.0MB entry > 0MB = 50% of 0MB); entry evaporates
+[prefix-host] skip demote: tenant "t:gamma" at its share cap (0.0MB resident + 0.0MB entry > 0MB = 50% of 0MB); entry evaporates
+test worker::tests::host_cache_tenant_share_cap_evaporates_one_tenant_and_still_demotes_the_other ... ok
+[prefix-host] evict (tenant share): 64 tokens, 0.0MB of tenant "t:acme"'s own entries for its 0.0MB demotion (row now 0.0MB / 0MB share = 50% of 0MB, model m, ns "t:acme\u{1f}s1")
+[prefix-host] evict (tenant share): 64 tokens, 0.0MB of tenant "t:acme"'s own entries for its 0.0MB demotion (row now 0.0MB / 0MB share = 50% of 0MB, model m, ns "t:acme\u{1f}s1")
+[prefix-host] evict (tenant share): 64 tokens, 0.0MB of tenant "t:acme"'s own entries for its 0.0MB demotion (row now 0.0MB / 0MB share = 50% of 0MB, model m, ns "t:acme\u{1f}s2")
+[prefix-host] evict (tenant share): 64 tokens, 0.0MB of tenant "t:acme"'s own entries for its 0.0MB demotion (row now 0.0MB / 0MB share = 50% of 0MB, model m, ns "t:acme\u{1f}s1")
+test worker::tests::host_cache_tenant_share_reclaim_spares_the_twin_and_refuses_an_image_above_the_share ... ok
+test worker::tests::host_cache_tenant_share_reclaim_evicts_the_tenants_own_oldest_entries_only ... ok
+[prefix-host] evict (tenant share): 64 tokens, 0.0MB of tenant "t:acme"'s own entries for its 0.0MB demotion (row now 0.0MB / 0MB share = 50% of 0MB, model m, ns "t:acme\u{1f}s1")
+[prefix-host] evict (tenant share): 64 tokens, 0.0MB of tenant "t:acme"'s own entries for its 0.0MB demotion (row now 0.0MB / 0MB share = 50% of 0MB, model m, ns "t:acme\u{1f}s1")
+test worker::tests::host_cache_tenant_share_reclaim_skips_leased_entries_and_refuses_when_only_leased_remain ... ok
+test worker::tests::tenant_share_reclaim_is_wired_into_the_demote_hook_and_the_metrics ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 749 filtered out; finished in 0.02s
+
+     Running unittests src/main.rs (target/debug/deps/memra_server-808f3804baa4de41)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+exit=0

@@ -1,0 +1,173 @@
+warning: memra-engine@0.138.0: nvcc from MEMRA_NVCC: /usr/local/cuda/bin/nvcc
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running unittests src/lib.rs (/root/lane/target-hm/release/deps/memra_engine-c8ff6b35b7df7707)
+
+running 5 tests
+test dsv4_ep::tests::cuda_tp_ep_local_only_clears_reused_contribution_and_rank_sums ... PASS TP/EP local contribution clear+rank-order identity hidden=4096 inter=2048 global=8 rows=1 topk=6
+ok
+test dsv4_grouped::tests::cuda_deferred_partition_faults_match_the_synchronous_checks ... EXACT deferred partition MoE checks part=0 rows=1 live=3 launch=6 word=0
+EXACT deferred partition MoE checks part=1 rows=1 live=3 launch=6 word=0
+EXACT deferred partition MoE checks part=0 rows=2 live=6 launch=12 word=0
+EXACT deferred partition MoE checks part=1 rows=2 live=6 launch=12 word=0
+EXACT deferred partition MoE checks part=0 rows=5 live=15 launch=30 word=0
+EXACT deferred partition MoE checks part=1 rows=5 live=15 launch=30 word=0
+EXACT deferred partition MoE checks part=0 rows=16 live=48 launch=96 word=0
+EXACT deferred partition MoE checks part=1 rows=16 live=48 launch=96 word=0
+RED deferred partition MoE Route part=0 rows=1 word=0x1 sync="grouped route contains an invalid expert id"
+RED deferred partition MoE Route part=0 rows=5 word=0x1 sync="grouped route contains an invalid expert id"
+RED deferred partition MoE Route part=1 rows=1 word=0x1 sync="grouped route contains an invalid expert id"
+RED deferred partition MoE Route part=1 rows=5 word=0x1 sync="grouped route contains an invalid expert id"
+RED deferred partition MoE Input part=0 rows=1 word=0x2 sync="FP8-QAT half mirror is not lossless at gathered row 0, cols=4096"
+RED deferred partition MoE Input part=0 rows=5 word=0x2 sync="FP8-QAT half mirror is not lossless at gathered row 0, cols=4096"
+RED deferred partition MoE Input part=1 rows=1 word=0x2 sync="FP8-QAT half mirror is not lossless at gathered row 0, cols=4096"
+RED deferred partition MoE Input part=1 rows=5 word=0x2 sync="FP8-QAT half mirror is not lossless at gathered row 2, cols=4096"
+RED deferred partition MoE Intermediate part=0 rows=1 word=0x4 sync="FP8-QAT half mirror is not lossless at gathered row 0, cols=2048"
+RED deferred partition MoE Intermediate part=0 rows=5 word=0x4 sync="FP8-QAT half mirror is not lossless at gathered row 0, cols=2048"
+RED deferred partition MoE Intermediate part=1 rows=1 word=0x4 sync="FP8-QAT half mirror is not lossless at gathered row 0, cols=2048"
+RED deferred partition MoE Intermediate part=1 rows=5 word=0x4 sync="FP8-QAT half mirror is not lossless at gathered row 0, cols=2048"
+ok
+test dsv4_grouped::tests::cuda_fused_one_token_moe_is_the_grouped_chain_bit_for_bit ... EXACT fused MoE case=0 sel=[3, 11, 0, 7, 15, 9] order=[0, 1, 2, 3, 4, 5] H/contribution/y word=0
+RED fused MoE Route case=0 fused=0x1 chain=0x1
+RED fused MoE Input case=0 fused=0x2 chain=0x2
+RED fused MoE Intermediate case=0 fused=0x4 chain=0x4
+EXACT fused MoE case=1 sel=[14, 2, 8, 5, 1, 12] order=[3, 0, 5, 1, 4, 2] H/contribution/y word=0
+RED fused MoE Route case=1 fused=0x1 chain=0x1
+RED fused MoE Input case=1 fused=0x2 chain=0x2
+RED fused MoE Intermediate case=1 fused=0x4 chain=0x4
+EXACT fused MoE case=2 sel=[0, 1, 2, 3, 4, 5] order=[5, 4, 3, 2, 1, 0] H/contribution/y word=0
+RED fused MoE Route case=2 fused=0x1 chain=0x1
+RED fused MoE Input case=2 fused=0x2 chain=0x2
+RED fused MoE Intermediate case=2 fused=0x4 chain=0x4
+EXACT fused MoE case=3 sel=[9, 4, 13, 6, 10, 15] order=[2, 5, 0, 3, 1, 4] H/contribution/y word=0
+RED fused MoE Route case=3 fused=0x1 chain=0x1
+RED fused MoE Input case=3 fused=0x2 chain=0x2
+RED fused MoE Intermediate case=3 fused=0x4 chain=0x4
+ok
+test dsv4_grouped::tests::cuda_fused_partition_moe_is_the_tp_ep_chain_bit_for_bit ... EXACT fused partition case=0 rank=0 sel=[3, 11, 0, 7, 15, 9] own_slots=3 contribution word=0
+RED fused partition Route case=0 rank=0 fused=0x1 chain=0x1
+RED fused partition Input case=0 rank=0 fused=0x2 chain=0x2
+RED fused partition Intermediate case=0 rank=0 fused=0x4 chain=0x4
+EXACT fused partition case=0 rank=1 sel=[3, 11, 0, 7, 15, 9] own_slots=3 contribution word=0
+RED fused partition Route case=0 rank=1 fused=0x1 chain=0x1
+RED fused partition Input case=0 rank=1 fused=0x2 chain=0x2
+RED fused partition Intermediate case=0 rank=1 fused=0x4 chain=0x4
+EXACT fused partition case=1 rank=0 sel=[14, 10, 8, 13, 9, 12] own_slots=0 contribution word=0
+RED fused partition Route case=1 rank=0 fused=0x1 chain=0x1
+EXACT fused partition case=1 rank=1 sel=[14, 10, 8, 13, 9, 12] own_slots=6 contribution word=0
+RED fused partition Route case=1 rank=1 fused=0x1 chain=0x1
+RED fused partition Input case=1 rank=1 fused=0x2 chain=0x2
+RED fused partition Intermediate case=1 rank=1 fused=0x4 chain=0x4
+EXACT fused partition case=2 rank=0 sel=[5, 5, 2, 12, 12, 12] own_slots=3 contribution word=0
+RED fused partition Route case=2 rank=0 fused=0x1 chain=0x1
+RED fused partition Input case=2 rank=0 fused=0x2 chain=0x2
+RED fused partition Intermediate case=2 rank=0 fused=0x4 chain=0x4
+EXACT fused partition case=2 rank=1 sel=[5, 5, 2, 12, 12, 12] own_slots=3 contribution word=0
+RED fused partition Route case=2 rank=1 fused=0x1 chain=0x1
+RED fused partition Input case=2 rank=1 fused=0x2 chain=0x2
+RED fused partition Intermediate case=2 rank=1 fused=0x4 chain=0x4
+EXACT fused partition case=3 rank=0 sel=[9, 4, 13, 6, 10, 15] own_slots=2 contribution word=0
+RED fused partition Route case=3 rank=0 fused=0x1 chain=0x1
+RED fused partition Input case=3 rank=0 fused=0x2 chain=0x2
+RED fused partition Intermediate case=3 rank=0 fused=0x4 chain=0x4
+EXACT fused partition case=3 rank=1 sel=[9, 4, 13, 6, 10, 15] own_slots=4 contribution word=0
+RED fused partition Route case=3 rank=1 fused=0x1 chain=0x1
+RED fused partition Input case=3 rank=1 fused=0x2 chain=0x2
+RED fused partition Intermediate case=3 rank=1 fused=0x4 chain=0x4
+EXACT fused partition rows=3 rank=0 contribution word=0
+EXACT fused partition rows=3 rank=1 contribution word=0
+ok
+test dsv4_grouped::tests::cuda_mrow_stream_matches_sktail_bit_for_bit ... [moe-sk-form] dev=0 qt=108 sms=188 occ128=1 occ32=7 occt=3 cross=2147483647 xcross=2147483647 bdb=0 in_f=4096 out_f=2048 n_active=16 max_m=12
+EXACT mrow stream rows=2 first=0 kind=0 count=16 live=12 widest_group=1
+EXACT mrow stream rows=2 first=0 kind=0 count=8 live=6 widest_group=1
+EXACT mrow stream rows=2 first=8 kind=0 count=8 live=6 widest_group=1
+EXACT mrow stream rows=2 first=0 kind=1 count=16 live=12 widest_group=2
+EXACT mrow stream rows=2 first=0 kind=1 count=8 live=12 widest_group=2
+EXACT mrow stream rows=2 first=8 kind=1 count=8 live=0 widest_group=0
+EXACT mrow stream rows=2 first=0 kind=2 count=16 live=12 widest_group=2
+EXACT mrow stream rows=2 first=0 kind=2 count=8 live=0 widest_group=0
+EXACT mrow stream rows=2 first=8 kind=2 count=8 live=12 widest_group=2
+EXACT mrow stream rows=2 first=0 kind=3 count=16 live=12 widest_group=10
+EXACT mrow stream rows=2 first=0 kind=3 count=8 live=12 widest_group=10
+EXACT mrow stream rows=2 first=8 kind=3 count=8 live=0 widest_group=0
+EXACT mrow stream rows=2 first=0 kind=4 count=16 live=12 widest_group=2
+EXACT mrow stream rows=2 first=0 kind=4 count=8 live=4 widest_group=1
+EXACT mrow stream rows=2 first=8 kind=4 count=8 live=8 widest_group=2
+EXACT mrow stream rows=3 first=0 kind=0 count=16 live=18 widest_group=2
+EXACT mrow stream rows=3 first=0 kind=0 count=8 live=9 widest_group=2
+EXACT mrow stream rows=3 first=8 kind=0 count=8 live=9 widest_group=2
+EXACT mrow stream rows=3 first=0 kind=1 count=16 live=18 widest_group=3
+EXACT mrow stream rows=3 first=0 kind=1 count=8 live=18 widest_group=3
+EXACT mrow stream rows=3 first=8 kind=1 count=8 live=0 widest_group=0
+EXACT mrow stream rows=3 first=0 kind=2 count=16 live=18 widest_group=3
+EXACT mrow stream rows=3 first=0 kind=2 count=8 live=0 widest_group=0
+EXACT mrow stream rows=3 first=8 kind=2 count=8 live=18 widest_group=3
+EXACT mrow stream rows=3 first=0 kind=3 count=16 live=18 widest_group=15
+EXACT mrow stream rows=3 first=0 kind=3 count=8 live=17 widest_group=15
+EXACT mrow stream rows=3 first=8 kind=3 count=8 live=1 widest_group=1
+EXACT mrow stream rows=3 first=0 kind=4 count=16 live=18 widest_group=3
+EXACT mrow stream rows=3 first=0 kind=4 count=8 live=5 widest_group=2
+EXACT mrow stream rows=3 first=8 kind=4 count=8 live=13 widest_group=3
+EXACT mrow stream rows=5 first=0 kind=0 count=16 live=30 widest_group=3
+EXACT mrow stream rows=5 first=0 kind=0 count=8 live=15 widest_group=3
+EXACT mrow stream rows=5 first=8 kind=0 count=8 live=15 widest_group=2
+EXACT mrow stream rows=5 first=0 kind=1 count=16 live=30 widest_group=5
+EXACT mrow stream rows=5 first=0 kind=1 count=8 live=30 widest_group=5
+EXACT mrow stream rows=5 first=8 kind=1 count=8 live=0 widest_group=0
+EXACT mrow stream rows=5 first=0 kind=2 count=16 live=30 widest_group=5
+EXACT mrow stream rows=5 first=0 kind=2 count=8 live=0 widest_group=0
+EXACT mrow stream rows=5 first=8 kind=2 count=8 live=30 widest_group=5
+EXACT mrow stream rows=5 first=0 kind=3 count=16 live=30 widest_group=26
+EXACT mrow stream rows=5 first=0 kind=3 count=8 live=28 widest_group=26
+EXACT mrow stream rows=5 first=8 kind=3 count=8 live=2 widest_group=1
+EXACT mrow stream rows=5 first=0 kind=4 count=16 live=30 widest_group=5
+EXACT mrow stream rows=5 first=0 kind=4 count=8 live=15 widest_group=3
+EXACT mrow stream rows=5 first=8 kind=4 count=8 live=15 widest_group=5
+EXACT mrow stream rows=8 first=0 kind=0 count=16 live=48 widest_group=4
+EXACT mrow stream rows=8 first=0 kind=0 count=8 live=23 widest_group=4
+EXACT mrow stream rows=8 first=8 kind=0 count=8 live=25 widest_group=4
+EXACT mrow stream rows=8 first=0 kind=1 count=16 live=48 widest_group=8
+EXACT mrow stream rows=8 first=0 kind=1 count=8 live=48 widest_group=8
+EXACT mrow stream rows=8 first=8 kind=1 count=8 live=0 widest_group=0
+EXACT mrow stream rows=8 first=0 kind=2 count=16 live=48 widest_group=8
+EXACT mrow stream rows=8 first=0 kind=2 count=8 live=0 widest_group=0
+EXACT mrow stream rows=8 first=8 kind=2 count=8 live=48 widest_group=8
+EXACT mrow stream rows=8 first=0 kind=3 count=16 live=48 widest_group=41
+EXACT mrow stream rows=8 first=0 kind=3 count=8 live=45 widest_group=41
+EXACT mrow stream rows=8 first=8 kind=3 count=8 live=3 widest_group=1
+EXACT mrow stream rows=8 first=0 kind=4 count=16 live=48 widest_group=5
+EXACT mrow stream rows=8 first=0 kind=4 count=8 live=20 widest_group=4
+EXACT mrow stream rows=8 first=8 kind=4 count=8 live=28 widest_group=5
+EXACT mrow stream rows=16 first=0 kind=0 count=16 live=96 widest_group=6
+EXACT mrow stream rows=16 first=0 kind=0 count=8 live=48 widest_group=6
+EXACT mrow stream rows=16 first=8 kind=0 count=8 live=48 widest_group=6
+EXACT mrow stream rows=16 first=0 kind=1 count=16 live=96 widest_group=16
+EXACT mrow stream rows=16 first=0 kind=1 count=8 live=96 widest_group=16
+EXACT mrow stream rows=16 first=8 kind=1 count=8 live=0 widest_group=0
+EXACT mrow stream rows=16 first=0 kind=2 count=16 live=96 widest_group=16
+EXACT mrow stream rows=16 first=0 kind=2 count=8 live=0 widest_group=0
+EXACT mrow stream rows=16 first=8 kind=2 count=8 live=96 widest_group=16
+EXACT mrow stream rows=16 first=0 kind=3 count=16 live=96 widest_group=81
+EXACT mrow stream rows=16 first=0 kind=3 count=8 live=88 widest_group=81
+EXACT mrow stream rows=16 first=8 kind=3 count=8 live=8 widest_group=1
+EXACT mrow stream rows=16 first=0 kind=4 count=16 live=96 widest_group=8
+EXACT mrow stream rows=16 first=0 kind=4 count=8 live=56 widest_group=8
+EXACT mrow stream rows=16 first=8 kind=4 count=8 live=40 widest_group=8
+EXACT mrow stream rows=17 first=0 kind=0 count=16 live=102 widest_group=7
+EXACT mrow stream rows=17 first=0 kind=0 count=8 live=51 widest_group=7
+EXACT mrow stream rows=17 first=8 kind=0 count=8 live=51 widest_group=7
+EXACT mrow stream rows=17 first=0 kind=1 count=16 live=102 widest_group=17
+EXACT mrow stream rows=17 first=0 kind=1 count=8 live=102 widest_group=17
+EXACT mrow stream rows=17 first=8 kind=1 count=8 live=0 widest_group=0
+EXACT mrow stream rows=17 first=0 kind=2 count=16 live=102 widest_group=17
+EXACT mrow stream rows=17 first=0 kind=2 count=8 live=0 widest_group=0
+EXACT mrow stream rows=17 first=8 kind=2 count=8 live=102 widest_group=17
+EXACT mrow stream rows=17 first=0 kind=3 count=16 live=102 widest_group=86
+EXACT mrow stream rows=17 first=0 kind=3 count=8 live=94 widest_group=86
+EXACT mrow stream rows=17 first=8 kind=3 count=8 live=8 widest_group=1
+EXACT mrow stream rows=17 first=0 kind=4 count=16 live=102 widest_group=10
+EXACT mrow stream rows=17 first=0 kind=4 count=8 live=58 widest_group=9
+EXACT mrow stream rows=17 first=8 kind=4 count=8 live=44 widest_group=10
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 643 filtered out; finished in 2.32s
+

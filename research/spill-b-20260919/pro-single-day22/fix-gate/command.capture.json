@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "-c",
+    "set -uo pipefail; G=\"$1\"; M=\"$2\"; P=\"$3\"; O=\"$4\"; mkdir -p \"$O\"\narm() { name=\"$1\"; shift; total=\"$1\"; shift; tails=\"$1\"; shift\n  echo \"== arm $name total=$total tails=$tails env: $*\"\n  env MEMRA_PRIME_ROW_RECEIPT=1 \"$@\" \"$G\" \"$M\" \"$P\" \"$total\" $tails > \"$O/arm-$name.log\" 2>&1\n  echo \"exit=$?\" >> \"$O/arm-$name.log\"; grep -v \"^\\[prime-row\\]\" \"$O/arm-$name.log\"; }\narm F-9296 9296 \"16 48 80 112 144 176 208\"\narm F-9297 9297 \"17 49\"\narm F-9311 9311 \"31 63\"\narm F-9312 9312 \"32 64 96\"\narm F-9296-chunk32 9296 \"16 48\" MEMRA_PRIME_CHUNK=32\narm F-9296-chunk16 9296 \"16 48\" MEMRA_PRIME_CHUNK=16\narm F-9296-nobatched 9296 \"16 48\" MEMRA_NO_BATCHED=1",
+    "fixgate",
+    "/root/wt-b/target/release/qwen-a4-continuation-gate",
+    "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "/root/wt-b/docs/SERVING.md",
+    "/root/spill-receipts/b-day22/fix-gate/cell"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 102243734780301,
+  "ended_monotonic_ns": 102535576016241,
+  "started_utc": "2026-09-21T19:15:58.728637+00:00",
+  "ended_utc": "2026-09-21T19:20:50.569875+00:00",
+  "elapsed_seconds": 291.84123594,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 2432,
+    "sha256": "db451419275a9e1db3624c89690b9147ec64f28da5e7e35b24515fe1c03c271f"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 128097,
+      "sha256": "d4d40a3ddf5772b94d4cdb825d987d83cfbba4888632772e95a12c99e5f12f4d"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}

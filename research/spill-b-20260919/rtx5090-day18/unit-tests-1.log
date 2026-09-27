@@ -1,0 +1,27 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-b/crates/memra-server)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.34s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-e53347545693156a)
+
+running 4 tests
+test worker::tests::hit_lcp_split_drops_the_sub_floor_fed_gap ... ok
+test worker::tests::seed_boundary_inside_prompt_is_a_stop_only_below_the_prompt_end ... ok
+test worker::tests::seed_capture_boundary_lands_on_the_grid_or_refuses ... ok
+test tests::tenant_metrics_hide_capacity_and_aggregate_spec ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 758 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/memra_server-808f3804baa4de41)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests memra_server
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+exit=0

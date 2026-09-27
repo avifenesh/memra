@@ -1,0 +1,8 @@
+tree=422a0d470adb8cb15d26ac239f9ec0c9c3552586
+harness_sha256=9c9b38782db8798d16fc9189bdeda9c4fe4742251584abedd55a261615ae0ccc
+a_harness_sha256=13867e77da40a9b570b19b0c0006a38355a081d4b12352697a81504d2ff91fad
+model=Qwen3.5-9B-NVFP4-MTP-GGUF.gguf
+gpu=NVIDIA GeForce RTX 5090 Laptop GPU, [N/A]
+cache_mb=64 host_mb=8192 port=18131 tenant_max_tokens=400 fire_at=24
+warmup=prime(n=1) passes=2 boots_per_pass=3 n_per_arm_per_order=5 pass1=prime,off,on pass2=on,off,prime guard=apps0,used<=2048MiB,15x60s
+status=executed-not-qualified

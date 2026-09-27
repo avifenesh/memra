@@ -14,8 +14,11 @@
 //! nothing about the artifact -- 8 of 10 unaligned splits differ, for the served mint exactly as
 //! much as for a calibrated one. The gate refuses an unaligned head rather than reporting it.
 //!
-//! A final segment of exactly PRIME_MIN_T (16) rows is a known non-bitwise shape on both
-//! artifacts and is reported as KNOWN rather than counted as a failure.
+//! A final segment of exactly PRIME_MIN_T (16) rows used to be a known non-bitwise shape on
+//! both artifacts (memra#427): the general matmul entries routed m=16 through the batched
+//! decode/verify mmvq tier while every longer prime rode the generic path. The tier now stops
+//! at PRIME_MIN_T-1 outside the verify scope, and this gate counts the 16-row tail like any
+//! other split.
 //!
 //! usage: qwen-a4-continuation-gate <model.gguf> <prompt.txt> [total] [splits...]
 use memra_engine::Engine;
@@ -91,16 +94,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         model.prime_cache(&e, &ids[..head], &mut split_cache, 0)?;
         let (rest, _, _) = model.prime_cache(&e, &ids[head..], &mut split_cache, 0)?;
         let got = digest(&rest);
-        let known_tail = tail == memra_engine::hybrid_forward::PRIME_MIN_T;
-        let verdict = match (got == reference, known_tail) {
-            (true, _) => "ok",
-            (false, true) => {
-                "DIFFERS (known: a 16-row final segment is not bitwise on either artifact)"
-            }
-            (false, false) => "DIFFERS",
-        };
+        let verdict = if got == reference { "ok" } else { "DIFFERS" };
         println!("  {head} + {tail}: logits_sha={got:016x} {verdict}");
-        if got != reference && !known_tail {
+        if got != reference {
             failures += 1;
         }
     }

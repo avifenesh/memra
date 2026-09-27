@@ -1,0 +1,133 @@
+9887b1c0d7861acc2bf1f7d0de29a386a86f365d
+d331909a7ef094f1aef88653d77884dc61cad066ab98f796c9f43f720ce9e5ae  /root/spill-receipts/a-day12/bins/memra-server-fix
+== fix arm boot (host 1024 MiB, tenant share 38%, device 384 MiB, two keyring tenants) ==
+d331909a7ef094f1aef88653d77884dc61cad066ab98f796c9f43f720ce9e5ae  /root/spill-receipts/a-day12/bins/memra-server-fix
+== both arms: shape ==
+  ok: r1 HTTP 200
+  ok: r2 HTTP 200
+  ok: r3 HTTP 200
+  ok: r4 HTTP 200
+  ok: r5 HTTP 200
+  ok: r6 HTTP 200
+  ok: r7 HTTP 200
+  ok: r8 HTTP 200
+  ok: /metrics scraped with the operator token (200, process-wide counters present)
+  ok: no device-tier promote-insert skip (the device budget holds a promote beside a protected entry)
+  ok: the tier is on with the configured share cap
+grep: Invalid range end
+  ok: the pool never filled: no LRU eviction
+  ok: no allocation refusal
+grep: Invalid range end
+  ok: no host-tier refusal or failure line
+grep: Invalid range end
+  FAIL: beta's first demote landed
+  ok: acme's first two demotes landed (r3, r4)
+  ok: beta's entry promotes at r7 in this arm: acme's cap did not touch beta's row
+grep: Invalid range end
+  FAIL: the r7 promote line names beta
+  ok: no tenant-share eviction ever names beta
+  ok: every tenant-share eviction names acme, in both the row and the namespace
+== fix arm: the verdict lines ==
+  ok: fix: no evaporation line
+grep: Invalid range end
+  FAIL: fix: acme's own oldest entry was evicted at the cap
+  ok: fix: every tenant-share eviction is followed by acme's own demote landing (D2H after the reclaim)
+  ok: fix: r8 promotes the reclaimed admission (cached_tokens == r6 prompt_tokens)
+grep: Invalid range end
+  FAIL: fix: the r8 promote line names acme
+  ok: fix: /metrics counts the reclaims and no rejects
+GATE: kv-host-tenant-reclaim (fix arm) FAIL (4 assertions)
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "/root/spill-receipts/a-day12/tenant-cell.sh",
+    "fix",
+    "3",
+    "tenant-fix-r2"
+  ],
+  "exit_code": 1,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "failed",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 58824315727953,
+  "ended_monotonic_ns": 58838162939400,
+  "started_utc": "2026-09-21T07:12:19.309585+00:00",
+  "ended_utc": "2026-09-21T07:12:33.156798+00:00",
+  "elapsed_seconds": 13.847211447,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 1829,
+    "sha256": "a4cdaccf342965cabe9cc3cab91644aa05f9e263717683edb1bf5383e2729a9f"
+  },
+  "failure_quote": "died, cause unknown \u2014 repro needed",
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 6205,
+      "sha256": "67186688304046d7542a99c7b458eee09f191fafc3fe02d0f35246e89bf1af21"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "failure": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.failure.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "status": 200,
+    "elapsed_s": 272.626,
+    "prompt_tokens": 12350,
+    "completion_tokens": 3,
+    "cached_tokens": 0,
+    "finish_reason": "stop",
+    "text": "_\n",
+    "text_sha256": "4415b7e361fc6f6ba2492adef1f27cfb00d0105e4588177470cecc4214b35284",
+    "error": null,
+    "lines": [
+      "[spec-k] model=\"gate\" tenant=\"grow\" K=0 source=eligibility-fallback prompt=12350 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2",
+      "[primeseg] TOKENWISE prompt token at fed=0 (bound_rem=None q=12350 budget=8) \u2014 W1 two-programs door, NOT the prime path",
+      "[primeseg] TOKENWISE x12350 prompt tokens (collapsed; first and last kept)",
+      "[primeseg] TOKENWISE prompt token at fed=12349 (bound_rem=None q=1 budget=8) \u2014 W1 two-programs door, NOT the prime path",
+      "[ttft] id=cmpl-5d43e864bc450d353bd57da4924410fb model=\"gate\" path=\"/v1/completions\" prompt_tokens=12350 outcome=ended_without_sse request_parse_ms=0.300 admission_ms=0.034 queue_wait_ms=0.148 tokenize_ms=0.009 prime_wait_ms=1.292 prime_ms=272576.548 decode_wait_ms=0.265 sse_handoff_ms=na request_parse_end_ms=0.300 admission_end_ms=0.334 tokenize_start_ms=0.482 tokenize_end_ms=0.491 prime_start_ms=1.783 prime_end_ms=272578.331 first_decode_ms=272578.596 first_sse_byte_ms=na total_ms=272578.596"
+    ],
+    "turn": 10,
+    "prompt_ids": 12350
+  }
+]

@@ -1,0 +1,24 @@
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-integ30/crates/memra-server)
+warning: unused import: `memra_engine::cache::tiered::TransferEngine`
+     --> crates/memra-server/src/worker.rs:11564:25
+      |
+11564 |                     use memra_engine::cache::tiered::TransferEngine;
+      |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      |
+      = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-server` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.92s
+     Running unittests src/lib.rs (target/debug/deps/memra_server-e53347545693156a)
+
+running 6 tests
+test worker::tests::demoting_entry_is_a_miss_and_a_pending_poll_publishes_nothing ... ok
+test worker::tests::completion_reaches_publication_exactly_once_and_only_after_done ... ok
+test worker::tests::a_pending_demote_missing_its_shell_or_ticket_fails_closed ... ok
+test worker::tests::a_failing_copy_never_publishes_and_keeps_the_day15_typed_outcomes ... ok
+test worker::tests::a_tier_latched_off_under_a_demoting_entry_drops_it_unpublished ... ok
+test worker::tests::every_path_that_meets_a_demoting_entry_settles_it_first ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 788 filtered out; finished in 0.02s

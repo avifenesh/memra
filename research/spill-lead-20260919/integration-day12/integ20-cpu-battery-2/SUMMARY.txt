@@ -1,0 +1,60 @@
+tree 09d50e0427f056664048385df59424165af76cfb started 2026-09-21T13:44:54Z (B days 17 to 19 plus A day 13)
+== fmt: cargo fmt --all -- --check
+   rc=0 (3s)
+== portable-suites: bash tools/portable-suites.sh
+   rc=0 (15s)
+   | skip-census: output banked at /home/avifenesh/projects/wt-spill-integ20/target/portable-suites.log
+   | skip-census: 335 passed, 0 skipped (budget 0), 0 failed, 0 filtered out across 14 binaries
+   | portable-suites: PASS (tier, KV and onboarding CLI suites executed on CPU; skips 0 of budget 0; NOT GPU qualification)
+== test-server: cargo test -p memra-server --offline --no-fail-fast
+   rc=0 (34s)
+   | 
+   | test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   | 
+== test-engine-cpu: cargo test -p memra-engine --offline --no-fail-fast --lib
+   rc=0 (26s)
+   | 
+   | test result: ok. 517 passed; 0 failed; 25 ignored; 0 measured; 0 filtered out; finished in 9.15s
+   | 
+== clippy: env DOCS_RS=1 cargo clippy -p memra-engine -p memra-server -p memra-tier -p memra-kv -p memra-gguf -p memra-cli --offline --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
+   rc=0 (22s)
+   |    Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-spill-integ20/crates/memra-engine)
+   |    Compiling memra-server v0.138.0 (/home/avifenesh/projects/wt-spill-integ20/crates/memra-server)
+   |     Finished `dev` profile [unoptimized + debuginfo] target(s) in 22.49s
+== check-flags: bash tools/check-flags.sh
+   rc=0 (2s)
+   | check-flags: runtime literal reads=865
+   | check-flags: no uncovered runtime names
+   | check-flags: every runtime MEMRA_* name resolves against 'docs/FLAGS.md' (no grandfather list)
+== publish-census: bash tools/workspace-publish-census.sh
+   rc=0 (0s)
+   | publish-census: OK — 12 publishable members, 12 listed, order topological, unpublishable: memra-probe
+== docs-registry: bash tools/docs-registry-census.sh
+   rc=0 (0s)
+   | docs-registry-census: ROUTER.md lines=46 (cap 60)
+   | docs-registry-census: check-flags --list answered with 865 runtime names (coverage enforced by check-flags.sh itself)
+   | docs-registry-census: flags-table-census: docs/FLAGS.md tables=58 rows=901, every row matches its header
+== pytest-battery: python3 -m pytest -q crates/memra-tier/tests/battery/
+   rc=0 (18s)
+   | .................................................. [ 57%]
+   | .....................................                          [100%]
+   | 87 passed, 32 subtests passed in 17.97s
+== verify-b19: python3 research/spill-b-20260919/verify-day19.py
+   rc=0 (0s)
+   | DAY19 REPLAY OK
+== verify-a13: python3 research/spill-a-20260919/wc-ab.py --replay research/spill-a-20260919/pro-single-day13/pinned-ab-160m-s2
+   rc=0 (0s)
+   | ok   collector status executed-not-qualified, exit 0: executed-not-qualified exit 0
+   | telemetry: 282 samples at 250 ms; temperature 35 to 36 C; power draw 87 to 91 W (limit 600.00 W); SM clock 2347 to 2362 MHz
+   | WC AB REPLAY: PASS (15 checks, 0 failed)
+== perf-board: python3 tools/update-perf-board.py --check
+   rc=0 (0s)
+   | perf board is up to date
+== diff-check: git diff --check
+   rc=0 (0s)
+finished 2026-09-21T13:46:54Z
+== verify-a13 (decision cell replay): python3 research/spill-a-20260919/wc-ab.py research/spill-a-20260919/pro-single-day13/pinned-ab-160m-s2
+   rc=0
+   | ok   collector status executed-not-qualified, exit 0: executed-not-qualified exit 0
+   | telemetry: 282 samples at 250 ms; temperature 35 to 36 C; power draw 87 to 91 W (limit 600.00 W); SM clock 2347 to 2362 MHz
+   | WC AB REPLAY: PASS (15 checks, 0 failed)

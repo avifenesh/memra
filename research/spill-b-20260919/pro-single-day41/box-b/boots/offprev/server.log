@@ -1,0 +1,287 @@
+1790399302206 [server] build: memra-0.138.0-59b2d85efc0c (id: source-tree, git: 23c296b583d0)
+1790399302206 [server] starting; models config = [("q38", "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf", None)]
+1790399302207 [gpu-watch] Xid source: journalctl -k -f (/dev/kmsg unreadable — kernel.dmesg_restrict)
+1790399302207 [worker-affinity] off (MEMRA_WORKER_CPUSET / MEMRA_WORKER_AFFINITY unset or =0)
+1790399302407 [gpu-watch] on: every 60s, probe deadline 10s, fatal after 3 consecutive misses (MEMRA_GPU_PROBE_MISSES), fatal Xid [48, 64, 79, 94, 95, 119, 120]
+1790399302476 [worker] Engine ready (device=0, MEMRA_FAST=true)
+1790399302476 [spec-gate] policy placement=single-or-non-pp2 LOW=2 HIGH=4 source=placement-default spec-admission=on
+1790399302476 [spec-k] automatic table: prompt<1024 -> K=3; cold-long -> K=3; prompt>= 1024 and cached>= 1024 -> K=2 (K=5 when the loaded MTP head is rank-trimmed)
+1790399302476 [worker] loading model "q38" <- /root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf
+1790399302514 [tensor-contract] bound 866 semantic tensors (pack qwen35, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+1790399307559 [worker]   loaded "q38": 65 layers, eos=248046, stop=[248046]
+1790399307559 [worker] q38: template caps tools=true think=true think_switch=true chat_ok=true effort_levels=false qwen_effort=true gemma_think=false dsv4=false glm5=false ctx=262144 tok="qwen35" instruct=Some("chatml") chat_defaults=None/None
+1790399307559 [route-contract] model="q38" route=hybrid-worker capacity=64 sessions implemented=[capacity,occupancy,progress,fault-ownership,shutdown-ownership,memory-cost,rewrite-qualification,prime-fairness,service-metrics] refused=[]
+1790399307560 [worker] q38: decode wave cap 16; scheduler tick cap 16 (exact-16 tier)
+1790399307560 [admission] "q38": plain 29696 B/token, spec 31552 B/token; fixed residual learns from effective-free deltas
+1790399307560 [admit-cal] boot calibration skipped: spec serving disabled (static floor; the plain transient class is chunk-bounded)
+1790399307560 [admit-predict] shadow armed: budget_bytes=84917874688 budget_src=derived(effective_free_bytes=86528487424 - prefix_cache_budget_bytes=0 - admission_reserve_bytes=1610612736) exempt_tenants=0 enforce=false (logging only, nothing is rejected; enforcement is a separate flip)
+1790399307560 [admit-mem] door=OFF open_output_tokens=8192 defer_budget_ms=8000 (admission charges prompt+output, the reclaim flush demotes to the host tier before dropping, and a memory defer past the budget refuses 429 instead of queueing past the client's deadline)
+1790399307560 [kv-vmm] door=OFF (MEMRA_KV_ALLOCATOR unset or pooled: pooled K/V planes)
+1790399307560 [server] worker ready; serving models: ["q38"]
+1790399307560 [server] listening on http://127.0.0.1:18526
+1790399307904 [meter] admit id=cmpl-5028c7be4e34e37d3ef3986d5701b514 tenant=default lane=interactive model="q38"
+1790399307904 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 0MB fixed = 2248MB
+1790399307904 [admit-predict] id=cmpl-5028c7be4e34e37d3ef3986d5701b514 tenant="rx-6144-32-0" model="q38" verdict=admit reason=maxtok-fallback prompt=6144 predicted_completion=32 kv_hat=2188517376 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399307907 [spec-k] model="q38" tenant="rx-6144-32-0" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399307907 [admission] fixed residual high-water: model="q38" 323MB (observed 566MB at ctx 8192 path=plain)
+1790399309541 [fa-pool] grow #0 dev=0 o_len 0 -> 595968 ml_len 0 -> 2328 (retired kept, zero=false)
+1790399309927 [meter] admit id=cmpl-e9641b1a69f5609e8fd1cdd366b104a0 tenant=default lane=interactive model="q38"
+1790399309927 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2573MB
+1790399309927 [admit-predict] id=cmpl-e9641b1a69f5609e8fd1cdd366b104a0 tenant="rx-6144-32-0" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2516427092 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399309928 [worker] kv-reuse: 6176 of 6240 prompt tokens resumed (model q38)
+1790399309928 [spec-k] model="q38" tenant="rx-6144-32-0" K=0 source=eligibility-fallback prompt=6240 cached=6176 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399309996 [fa-pool] grow #1 dev=0 o_len 595968 -> 1191936 ml_len 2328 -> 4656 (retired kept, zero=false)
+1790399310382 [meter] admit id=cmpl-de29355d994fdc5b0516c19eb158d01f tenant=default lane=interactive model="q38"
+1790399310382 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2575MB
+1790399310382 [admit-predict] id=cmpl-de29355d994fdc5b0516c19eb158d01f tenant="rx-6144-32-0" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2521243988 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399310382 [worker] kv-reuse: 6272 of 6336 prompt tokens resumed (model q38)
+1790399310382 [spec-k] model="q38" tenant="rx-6144-32-0" K=0 source=eligibility-fallback prompt=6336 cached=6272 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399310837 [meter] admit id=cmpl-8d85f539c3fb7694cca245537bbaf742 tenant=default lane=interactive model="q38"
+1790399310837 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399310837 [admit-predict] id=cmpl-8d85f539c3fb7694cca245537bbaf742 tenant="rxc-6144-32-0-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2511610196 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399310838 [spec-k] model="q38" tenant="rxc-6144-32-0-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399312794 [meter] admit id=cmpl-02761b213073a9e32044338749822659 tenant=default lane=interactive model="q38"
+1790399312794 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2573MB
+1790399312794 [admit-predict] id=cmpl-02761b213073a9e32044338749822659 tenant="rxc-6144-32-0-2" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2516427092 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399312795 [spec-k] model="q38" tenant="rxc-6144-32-0-2" K=0 source=eligibility-fallback prompt=6240 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399314785 [meter] admit id=cmpl-83c8a72c0d4da70500aece606aa74181 tenant=default lane=interactive model="q38"
+1790399314785 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2575MB
+1790399314785 [admit-predict] id=cmpl-83c8a72c0d4da70500aece606aa74181 tenant="rxc-6144-32-0-3" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2521243988 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399314786 [spec-k] model="q38" tenant="rxc-6144-32-0-3" K=0 source=eligibility-fallback prompt=6336 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399316805 [meter] admit id=cmpl-074bec05abdd6c22dfdcc6ac2f256b0a tenant=default lane=interactive model="q38"
+1790399316805 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399316805 [admit-predict] id=cmpl-074bec05abdd6c22dfdcc6ac2f256b0a tenant="rx-6144-32-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2511610196 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399316806 [spec-k] model="q38" tenant="rx-6144-32-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399318772 [meter] admit id=cmpl-532e74ec66243b5233a9128dfa85a0ae tenant=default lane=interactive model="q38"
+1790399318772 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2573MB
+1790399318772 [admit-predict] id=cmpl-532e74ec66243b5233a9128dfa85a0ae tenant="rx-6144-32-1" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2516427092 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399318772 [worker] kv-reuse: 6176 of 6240 prompt tokens resumed (model q38)
+1790399318772 [spec-k] model="q38" tenant="rx-6144-32-1" K=0 source=eligibility-fallback prompt=6240 cached=6176 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399319226 [meter] admit id=cmpl-85b813d2d30ae6705fd21aacb05a509a tenant=default lane=interactive model="q38"
+1790399319226 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2575MB
+1790399319226 [admit-predict] id=cmpl-85b813d2d30ae6705fd21aacb05a509a tenant="rx-6144-32-1" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2521243988 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399319227 [worker] kv-reuse: 6272 of 6336 prompt tokens resumed (model q38)
+1790399319227 [spec-k] model="q38" tenant="rx-6144-32-1" K=0 source=eligibility-fallback prompt=6336 cached=6272 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399319681 [meter] admit id=cmpl-649b45d0d7db6a93f62f1ccb49bdb46a tenant=default lane=interactive model="q38"
+1790399319681 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399319681 [admit-predict] id=cmpl-649b45d0d7db6a93f62f1ccb49bdb46a tenant="rxc-6144-32-1-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2511610196 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399319682 [spec-k] model="q38" tenant="rxc-6144-32-1-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399321649 [meter] admit id=cmpl-49bcbc9acce88544273876f7b33ee569 tenant=default lane=interactive model="q38"
+1790399321649 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2573MB
+1790399321649 [admit-predict] id=cmpl-49bcbc9acce88544273876f7b33ee569 tenant="rxc-6144-32-1-2" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2516427092 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399321649 [spec-k] model="q38" tenant="rxc-6144-32-1-2" K=0 source=eligibility-fallback prompt=6240 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399323647 [meter] admit id=cmpl-11eaaf721621d8e3681a339bc57b5ce3 tenant=default lane=interactive model="q38"
+1790399323647 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2575MB
+1790399323647 [admit-predict] id=cmpl-11eaaf721621d8e3681a339bc57b5ce3 tenant="rxc-6144-32-1-3" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2521243988 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399323648 [spec-k] model="q38" tenant="rxc-6144-32-1-3" K=0 source=eligibility-fallback prompt=6336 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399325674 [meter] admit id=cmpl-82ab620e30ea8009be5581f029f9075f tenant=default lane=interactive model="q38"
+1790399325674 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399325674 [admit-predict] id=cmpl-82ab620e30ea8009be5581f029f9075f tenant="rx-6144-32-2" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2511610196 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399325674 [spec-k] model="q38" tenant="rx-6144-32-2" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399327645 [meter] admit id=cmpl-c6038332a83bb89304f30e42411b319c tenant=default lane=interactive model="q38"
+1790399327645 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2573MB
+1790399327645 [admit-predict] id=cmpl-c6038332a83bb89304f30e42411b319c tenant="rx-6144-32-2" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2516427092 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399327645 [worker] kv-reuse: 6176 of 6240 prompt tokens resumed (model q38)
+1790399327645 [spec-k] model="q38" tenant="rx-6144-32-2" K=0 source=eligibility-fallback prompt=6240 cached=6176 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399328100 [meter] admit id=cmpl-6396fb18d8fe4587c1c4519966e2764a tenant=default lane=interactive model="q38"
+1790399328100 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2575MB
+1790399328100 [admit-predict] id=cmpl-6396fb18d8fe4587c1c4519966e2764a tenant="rx-6144-32-2" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2521243988 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399328100 [worker] kv-reuse: 6272 of 6336 prompt tokens resumed (model q38)
+1790399328100 [spec-k] model="q38" tenant="rx-6144-32-2" K=0 source=eligibility-fallback prompt=6336 cached=6272 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399328555 [meter] admit id=cmpl-db890b68a5985c0b6f4f56adcfebc550 tenant=default lane=interactive model="q38"
+1790399328555 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399328555 [admit-predict] id=cmpl-db890b68a5985c0b6f4f56adcfebc550 tenant="rxc-6144-32-2-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2511610196 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399328556 [spec-k] model="q38" tenant="rxc-6144-32-2-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399330527 [meter] admit id=cmpl-da750030a08e265286c3aee19d6ea63c tenant=default lane=interactive model="q38"
+1790399330527 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2573MB
+1790399330527 [admit-predict] id=cmpl-da750030a08e265286c3aee19d6ea63c tenant="rxc-6144-32-2-2" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2516427092 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399330527 [spec-k] model="q38" tenant="rxc-6144-32-2-2" K=0 source=eligibility-fallback prompt=6240 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399332529 [meter] admit id=cmpl-9e2883a206d0c3951783eb9047c456e8 tenant=default lane=interactive model="q38"
+1790399332529 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2575MB
+1790399332529 [admit-predict] id=cmpl-9e2883a206d0c3951783eb9047c456e8 tenant="rxc-6144-32-2-3" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2521243988 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399332530 [spec-k] model="q38" tenant="rxc-6144-32-2-3" K=0 source=eligibility-fallback prompt=6336 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399334565 [meter] admit id=cmpl-a3558b5c6c8aca2db768a43761f9faca tenant=default lane=interactive model="q38"
+1790399334565 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399334565 [admit-predict] id=cmpl-a3558b5c6c8aca2db768a43761f9faca tenant="rx-6144-32-3" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2511610196 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399334565 [spec-k] model="q38" tenant="rx-6144-32-3" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399336540 [meter] admit id=cmpl-0475856910181e781e09fc14f8c7f628 tenant=default lane=interactive model="q38"
+1790399336540 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2573MB
+1790399336540 [admit-predict] id=cmpl-0475856910181e781e09fc14f8c7f628 tenant="rx-6144-32-3" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2516427092 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399336541 [worker] kv-reuse: 6176 of 6240 prompt tokens resumed (model q38)
+1790399336541 [spec-k] model="q38" tenant="rx-6144-32-3" K=0 source=eligibility-fallback prompt=6240 cached=6176 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399336996 [meter] admit id=cmpl-4bc1b1f0c64697928344aabbf8e861cc tenant=default lane=interactive model="q38"
+1790399336996 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2575MB
+1790399336996 [admit-predict] id=cmpl-4bc1b1f0c64697928344aabbf8e861cc tenant="rx-6144-32-3" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2521243988 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399336996 [worker] kv-reuse: 6272 of 6336 prompt tokens resumed (model q38)
+1790399336996 [spec-k] model="q38" tenant="rx-6144-32-3" K=0 source=eligibility-fallback prompt=6336 cached=6272 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399337451 [meter] admit id=cmpl-06da77a3d538b76bccf68d98f2306694 tenant=default lane=interactive model="q38"
+1790399337451 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399337451 [admit-predict] id=cmpl-06da77a3d538b76bccf68d98f2306694 tenant="rxc-6144-32-3-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2511610196 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399337451 [spec-k] model="q38" tenant="rxc-6144-32-3-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399339426 [meter] admit id=cmpl-7945aec78303424fc5e98eba875c784e tenant=default lane=interactive model="q38"
+1790399339426 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2573MB
+1790399339426 [admit-predict] id=cmpl-7945aec78303424fc5e98eba875c784e tenant="rxc-6144-32-3-2" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2516427092 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399339426 [spec-k] model="q38" tenant="rxc-6144-32-3-2" K=0 source=eligibility-fallback prompt=6240 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399341432 [meter] admit id=cmpl-947f38fcbe7ebf1a845c65d95022bf7f tenant=default lane=interactive model="q38"
+1790399341432 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2575MB
+1790399341432 [admit-predict] id=cmpl-947f38fcbe7ebf1a845c65d95022bf7f tenant="rxc-6144-32-3-3" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2521243988 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399341433 [spec-k] model="q38" tenant="rxc-6144-32-3-3" K=0 source=eligibility-fallback prompt=6336 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399343466 [meter] admit id=cmpl-8116cfd8bf3be392d6e29991c8332c3b tenant=default lane=interactive model="q38"
+1790399343466 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399343466 [admit-predict] id=cmpl-8116cfd8bf3be392d6e29991c8332c3b tenant="rx-6144-32-4" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2511610196 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399343467 [spec-k] model="q38" tenant="rx-6144-32-4" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399345445 [meter] admit id=cmpl-7954516e894f7f8735853896412a6579 tenant=default lane=interactive model="q38"
+1790399345445 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2573MB
+1790399345445 [admit-predict] id=cmpl-7954516e894f7f8735853896412a6579 tenant="rx-6144-32-4" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2516427092 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399345445 [worker] kv-reuse: 6176 of 6240 prompt tokens resumed (model q38)
+1790399345445 [spec-k] model="q38" tenant="rx-6144-32-4" K=0 source=eligibility-fallback prompt=6240 cached=6176 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399345900 [meter] admit id=cmpl-854218c3eae7f6837d58582daea5156a tenant=default lane=interactive model="q38"
+1790399345900 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2575MB
+1790399345900 [admit-predict] id=cmpl-854218c3eae7f6837d58582daea5156a tenant="rx-6144-32-4" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2521243988 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399345900 [worker] kv-reuse: 6272 of 6336 prompt tokens resumed (model q38)
+1790399345900 [spec-k] model="q38" tenant="rx-6144-32-4" K=0 source=eligibility-fallback prompt=6336 cached=6272 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399346356 [meter] admit id=cmpl-96bff3bd1fe14d6094f18ce3fb614171 tenant=default lane=interactive model="q38"
+1790399346356 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399346356 [admit-predict] id=cmpl-96bff3bd1fe14d6094f18ce3fb614171 tenant="rxc-6144-32-4-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2511610196 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399346356 [spec-k] model="q38" tenant="rxc-6144-32-4-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399348334 [meter] admit id=cmpl-8e9c1a4df823d1d02923826baff7926f tenant=default lane=interactive model="q38"
+1790399348334 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2007MB prefill-workspace + 323MB fixed = 2573MB
+1790399348334 [admit-predict] id=cmpl-8e9c1a4df823d1d02923826baff7926f tenant="rxc-6144-32-4-2" model="q38" verdict=admit reason=global-p95 prompt=6240 predicted_completion=32 kv_hat=2516427092 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399348335 [spec-k] model="q38" tenant="rxc-6144-32-4-2" K=0 source=eligibility-fallback prompt=6240 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399350342 [meter] admit id=cmpl-6eb2db31a84f963df0f5e622078245d4 tenant=default lane=interactive model="q38"
+1790399350342 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2009MB prefill-workspace + 323MB fixed = 2575MB
+1790399350342 [admit-predict] id=cmpl-6eb2db31a84f963df0f5e622078245d4 tenant="rxc-6144-32-4-3" model="q38" verdict=admit reason=global-p95 prompt=6336 predicted_completion=32 kv_hat=2521243988 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399350342 [spec-k] model="q38" tenant="rxc-6144-32-4-3" K=0 source=eligibility-fallback prompt=6336 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399352378 [meter] admit id=cmpl-164c033e159d016e95b01b09ff8d6e47 tenant=default lane=interactive model="q38"
+1790399352378 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399352378 [admit-predict] id=cmpl-164c033e159d016e95b01b09ff8d6e47 tenant="rx-6144-256-0" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=32 kv_hat=2511610196 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399352378 [spec-k] model="q38" tenant="rx-6144-256-0" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399357055 [meter] admit id=cmpl-b360f8d4529d12b8d095a59432c46a3b tenant=default lane=interactive model="q38"
+1790399357055 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2578MB
+1790399357055 [admit-predict] id=cmpl-b360f8d4529d12b8d095a59432c46a3b tenant="rx-6144-256-0" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=32 kv_hat=2527666516 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399357055 [worker] kv-reuse: 6400 of 6464 prompt tokens resumed (model q38)
+1790399357055 [spec-k] model="q38" tenant="rx-6144-256-0" K=0 source=eligibility-fallback prompt=6464 cached=6400 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399360212 [meter] admit id=cmpl-f9ebc06bdc3ce16580ddac6854124ec2 tenant=default lane=interactive model="q38"
+1790399360212 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2584MB
+1790399360212 [admit-predict] id=cmpl-f9ebc06bdc3ce16580ddac6854124ec2 tenant="rx-6144-256-0" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2550374740 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399360212 [worker] kv-reuse: 6720 of 6784 prompt tokens resumed (model q38)
+1790399360212 [spec-k] model="q38" tenant="rx-6144-256-0" K=0 source=eligibility-fallback prompt=6784 cached=6720 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399363372 [meter] admit id=cmpl-5f77c47595cbf0c0721d59094b0964c0 tenant=default lane=interactive model="q38"
+1790399363372 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399363372 [admit-predict] id=cmpl-5f77c47595cbf0c0721d59094b0964c0 tenant="rxc-6144-256-0-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2518262100 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399363372 [spec-k] model="q38" tenant="rxc-6144-256-0-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399368045 [meter] admit id=cmpl-372b825d0e014ca3f4f8a5290b0d7b96 tenant=default lane=interactive model="q38"
+1790399368045 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2578MB
+1790399368045 [admit-predict] id=cmpl-372b825d0e014ca3f4f8a5290b0d7b96 tenant="rxc-6144-256-0-2" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2534318420 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399368045 [spec-k] model="q38" tenant="rxc-6144-256-0-2" K=0 source=eligibility-fallback prompt=6464 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399372820 [meter] admit id=cmpl-07c729d1aa8f1532bb4b354cff2b49a3 tenant=default lane=interactive model="q38"
+1790399372820 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2584MB
+1790399372820 [admit-predict] id=cmpl-07c729d1aa8f1532bb4b354cff2b49a3 tenant="rxc-6144-256-0-3" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2550374740 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399372821 [spec-k] model="q38" tenant="rxc-6144-256-0-3" K=0 source=eligibility-fallback prompt=6784 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399377670 [meter] admit id=cmpl-5b8d322563c2590f103fde65cca9ed95 tenant=default lane=interactive model="q38"
+1790399377670 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399377670 [admit-predict] id=cmpl-5b8d322563c2590f103fde65cca9ed95 tenant="rx-6144-256-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2518262100 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399377671 [spec-k] model="q38" tenant="rx-6144-256-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399382345 [meter] admit id=cmpl-fc15175476d0712aa8546c0e331defc8 tenant=default lane=interactive model="q38"
+1790399382345 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2578MB
+1790399382345 [admit-predict] id=cmpl-fc15175476d0712aa8546c0e331defc8 tenant="rx-6144-256-1" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2534318420 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399382345 [worker] kv-reuse: 6400 of 6464 prompt tokens resumed (model q38)
+1790399382345 [spec-k] model="q38" tenant="rx-6144-256-1" K=0 source=eligibility-fallback prompt=6464 cached=6400 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399385501 [meter] admit id=cmpl-ff4467f89ce506dd30d06471a70572cd tenant=default lane=interactive model="q38"
+1790399385501 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2584MB
+1790399385501 [admit-predict] id=cmpl-ff4467f89ce506dd30d06471a70572cd tenant="rx-6144-256-1" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2550374740 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399385501 [worker] kv-reuse: 6720 of 6784 prompt tokens resumed (model q38)
+1790399385501 [spec-k] model="q38" tenant="rx-6144-256-1" K=0 source=eligibility-fallback prompt=6784 cached=6720 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399388660 [meter] admit id=cmpl-6358a175ad2012ac8c2eddfabe4a8492 tenant=default lane=interactive model="q38"
+1790399388660 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399388660 [admit-predict] id=cmpl-6358a175ad2012ac8c2eddfabe4a8492 tenant="rxc-6144-256-1-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2518262100 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399388661 [spec-k] model="q38" tenant="rxc-6144-256-1-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399393333 [meter] admit id=cmpl-9308531bfdc884473da71e3995c55b0a tenant=default lane=interactive model="q38"
+1790399393333 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2578MB
+1790399393333 [admit-predict] id=cmpl-9308531bfdc884473da71e3995c55b0a tenant="rxc-6144-256-1-2" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2534318420 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399393334 [spec-k] model="q38" tenant="rxc-6144-256-1-2" K=0 source=eligibility-fallback prompt=6464 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399398109 [meter] admit id=cmpl-b631a23946db9a9b25593e1c4d10130e tenant=default lane=interactive model="q38"
+1790399398109 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2584MB
+1790399398109 [admit-predict] id=cmpl-b631a23946db9a9b25593e1c4d10130e tenant="rxc-6144-256-1-3" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2550374740 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399398109 [spec-k] model="q38" tenant="rxc-6144-256-1-3" K=0 source=eligibility-fallback prompt=6784 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399402958 [meter] admit id=cmpl-360b5c7bee0c7eb94d138d6430c74a2f tenant=default lane=interactive model="q38"
+1790399402958 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399402958 [admit-predict] id=cmpl-360b5c7bee0c7eb94d138d6430c74a2f tenant="rx-6144-256-2" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2518262100 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399402959 [spec-k] model="q38" tenant="rx-6144-256-2" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399407633 [meter] admit id=cmpl-d33e6e40ed3ee8e09556133bdca48e77 tenant=default lane=interactive model="q38"
+1790399407633 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2578MB
+1790399407633 [admit-predict] id=cmpl-d33e6e40ed3ee8e09556133bdca48e77 tenant="rx-6144-256-2" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2534318420 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399407633 [worker] kv-reuse: 6400 of 6464 prompt tokens resumed (model q38)
+1790399407633 [spec-k] model="q38" tenant="rx-6144-256-2" K=0 source=eligibility-fallback prompt=6464 cached=6400 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399410790 [meter] admit id=cmpl-4462f4c1c8b2b75c964792920e64d7bb tenant=default lane=interactive model="q38"
+1790399410790 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2584MB
+1790399410790 [admit-predict] id=cmpl-4462f4c1c8b2b75c964792920e64d7bb tenant="rx-6144-256-2" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2550374740 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399410791 [worker] kv-reuse: 6720 of 6784 prompt tokens resumed (model q38)
+1790399410791 [spec-k] model="q38" tenant="rx-6144-256-2" K=0 source=eligibility-fallback prompt=6784 cached=6720 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399413950 [meter] admit id=cmpl-a61218d1d108d3fdfa5b91e25281b795 tenant=default lane=interactive model="q38"
+1790399413950 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399413950 [admit-predict] id=cmpl-a61218d1d108d3fdfa5b91e25281b795 tenant="rxc-6144-256-2-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2518262100 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399413951 [spec-k] model="q38" tenant="rxc-6144-256-2-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399418622 [meter] admit id=cmpl-852c71ea34f1ec176d92ae8b2fb7c655 tenant=default lane=interactive model="q38"
+1790399418622 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2578MB
+1790399418622 [admit-predict] id=cmpl-852c71ea34f1ec176d92ae8b2fb7c655 tenant="rxc-6144-256-2-2" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2534318420 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399418622 [spec-k] model="q38" tenant="rxc-6144-256-2-2" K=0 source=eligibility-fallback prompt=6464 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399423399 [meter] admit id=cmpl-cda27070b2ef85deeeb245cd32c08815 tenant=default lane=interactive model="q38"
+1790399423399 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2584MB
+1790399423399 [admit-predict] id=cmpl-cda27070b2ef85deeeb245cd32c08815 tenant="rxc-6144-256-2-3" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2550374740 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399423399 [spec-k] model="q38" tenant="rxc-6144-256-2-3" K=0 source=eligibility-fallback prompt=6784 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399428249 [meter] admit id=cmpl-936c29c908b8ef52c94434c11629cdb1 tenant=default lane=interactive model="q38"
+1790399428249 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399428249 [admit-predict] id=cmpl-936c29c908b8ef52c94434c11629cdb1 tenant="rx-6144-256-3" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2518262100 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399428249 [spec-k] model="q38" tenant="rx-6144-256-3" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399432924 [meter] admit id=cmpl-3f2e30cc5b67f6c34a8e99c91976ab39 tenant=default lane=interactive model="q38"
+1790399432924 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2578MB
+1790399432924 [admit-predict] id=cmpl-3f2e30cc5b67f6c34a8e99c91976ab39 tenant="rx-6144-256-3" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2534318420 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399432924 [worker] kv-reuse: 6400 of 6464 prompt tokens resumed (model q38)
+1790399432924 [spec-k] model="q38" tenant="rx-6144-256-3" K=0 source=eligibility-fallback prompt=6464 cached=6400 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399436080 [meter] admit id=cmpl-66bca92cd291ae788d624da1c4c9e722 tenant=default lane=interactive model="q38"
+1790399436080 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2584MB
+1790399436080 [admit-predict] id=cmpl-66bca92cd291ae788d624da1c4c9e722 tenant="rx-6144-256-3" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2550374740 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399436080 [worker] kv-reuse: 6720 of 6784 prompt tokens resumed (model q38)
+1790399436080 [spec-k] model="q38" tenant="rx-6144-256-3" K=0 source=eligibility-fallback prompt=6784 cached=6720 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399439239 [meter] admit id=cmpl-1dad42b9e604f8211cf34b4a9af100ce tenant=default lane=interactive model="q38"
+1790399439239 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399439239 [admit-predict] id=cmpl-1dad42b9e604f8211cf34b4a9af100ce tenant="rxc-6144-256-3-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2518262100 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399439240 [spec-k] model="q38" tenant="rxc-6144-256-3-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399443911 [meter] admit id=cmpl-ac72c0dba43c74a1849aa220509ff7f9 tenant=default lane=interactive model="q38"
+1790399443911 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2578MB
+1790399443911 [admit-predict] id=cmpl-ac72c0dba43c74a1849aa220509ff7f9 tenant="rxc-6144-256-3-2" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2534318420 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399443912 [spec-k] model="q38" tenant="rxc-6144-256-3-2" K=0 source=eligibility-fallback prompt=6464 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399448688 [meter] admit id=cmpl-fc2dd23eb2051798fca88020fc969540 tenant=default lane=interactive model="q38"
+1790399448688 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2584MB
+1790399448688 [admit-predict] id=cmpl-fc2dd23eb2051798fca88020fc969540 tenant="rxc-6144-256-3-3" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2550374740 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399448688 [spec-k] model="q38" tenant="rxc-6144-256-3-3" K=0 source=eligibility-fallback prompt=6784 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399453539 [meter] admit id=cmpl-bc85b8d2a3ddde090912f2d4dd934eb1 tenant=default lane=interactive model="q38"
+1790399453539 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399453539 [admit-predict] id=cmpl-bc85b8d2a3ddde090912f2d4dd934eb1 tenant="rx-6144-256-4" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2518262100 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399453539 [spec-k] model="q38" tenant="rx-6144-256-4" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399458217 [meter] admit id=cmpl-a35f4d2fccec0ac6be62d9a1e5a54289 tenant=default lane=interactive model="q38"
+1790399458217 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2578MB
+1790399458217 [admit-predict] id=cmpl-a35f4d2fccec0ac6be62d9a1e5a54289 tenant="rx-6144-256-4" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2534318420 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399458217 [worker] kv-reuse: 6400 of 6464 prompt tokens resumed (model q38)
+1790399458217 [spec-k] model="q38" tenant="rx-6144-256-4" K=0 source=eligibility-fallback prompt=6464 cached=6400 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399461374 [meter] admit id=cmpl-070d938bda07900b757033ab8241a92e tenant=default lane=interactive model="q38"
+1790399461374 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2584MB
+1790399461374 [admit-predict] id=cmpl-070d938bda07900b757033ab8241a92e tenant="rx-6144-256-4" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2550374740 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399461374 [worker] kv-reuse: 6720 of 6784 prompt tokens resumed (model q38)
+1790399461374 [spec-k] model="q38" tenant="rx-6144-256-4" K=0 source=eligibility-fallback prompt=6784 cached=6720 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399464534 [meter] admit id=cmpl-d99a91638de6e58be2fc0213eeca185f tenant=default lane=interactive model="q38"
+1790399464534 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2005MB prefill-workspace + 323MB fixed = 2571MB
+1790399464534 [admit-predict] id=cmpl-d99a91638de6e58be2fc0213eeca185f tenant="rxc-6144-256-4-1" model="q38" verdict=admit reason=global-p95 prompt=6144 predicted_completion=256 kv_hat=2518262100 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399464534 [spec-k] model="q38" tenant="rxc-6144-256-4-1" K=0 source=eligibility-fallback prompt=6144 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399469209 [meter] admit id=cmpl-b7e227c9fe5c7438877e40fe2948c80a tenant=default lane=interactive model="q38"
+1790399469210 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2011MB prefill-workspace + 323MB fixed = 2578MB
+1790399469210 [admit-predict] id=cmpl-b7e227c9fe5c7438877e40fe2948c80a tenant="rxc-6144-256-4-2" model="q38" verdict=admit reason=global-p95 prompt=6464 predicted_completion=256 kv_hat=2534318420 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399469210 [spec-k] model="q38" tenant="rxc-6144-256-4-2" K=0 source=eligibility-fallback prompt=6464 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399473986 [meter] admit id=cmpl-a7fcf6a966f35199e33fcf89b766c11e tenant=default lane=interactive model="q38"
+1790399473987 [admission] request cost: model="q38" ctx=8192 path=plain = 29696 B/token x ctx + 2018MB prefill-workspace + 323MB fixed = 2584MB
+1790399473987 [admit-predict] id=cmpl-a7fcf6a966f35199e33fcf89b766c11e tenant="rxc-6144-256-4-3" model="q38" verdict=admit reason=global-p95 prompt=6784 predicted_completion=256 kv_hat=2550374740 booked_bytes=0 booked_real=0 inflight=0 cap=64 budget_bytes=84917874688 retry_after_s=- exempt=0 enforce=0 live_free_bytes=-
+1790399473987 [spec-k] model="q38" tenant="rxc-6144-256-4-3" K=0 source=eligibility-fallback prompt=6784 cached=0 lcp=0 active=1 wave=1 placement=single-or-non-pp2
+1790399478856 [server] SIGTERM: draining (0 in flight, deadline 30s)
+1790399478856 [server] drain complete in 0.0s; exiting
+1790399478916 [server] GPU worker shutdown complete

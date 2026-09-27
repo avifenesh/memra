@@ -1,0 +1,132 @@
+[fa-pool] grow #0 dev=0 o_len 0 -> 6144 ml_len 0 -> 24 (retired kept, zero=false)
+[fa-pool] grow #1 dev=0 o_len 6144 -> 36864 ml_len 24 -> 144 (retired kept, zero=false)
+[fa-pool] grow #2 dev=0 o_len 36864 -> 73728 ml_len 144 -> 288 (retired kept, zero=false)
+[fa-pool] grow #3 dev=0 o_len 73728 -> 147456 ml_len 288 -> 576 (retired kept, zero=false)
+baseline prompt committed=256
+[fa-pool] grow #4 dev=0 o_len 147456 -> 294912 ml_len 576 -> 1152 (retired kept, zero=false)
+baseline prompt committed=512
+baseline prompt committed=768
+[fa-pool] grow #5 dev=0 o_len 294912 -> 589824 ml_len 1152 -> 2304 (retired kept, zero=false)
+baseline prompt committed=1024
+baseline prompt committed=1280
+baseline prompt committed=1536
+[fa-pool] grow #6 dev=0 o_len 589824 -> 1179648 ml_len 2304 -> 4608 (retired kept, zero=false)
+baseline prompt committed=1792
+baseline prompt committed=2048
+baseline prompt committed=2304
+baseline prompt committed=2560
+baseline prompt committed=2816
+baseline prompt committed=3072
+baseline prompt committed=3328
+baseline prompt committed=3584
+baseline prompt committed=3840
+baseline prompt committed=4096
+baseline prompt committed=4352
+baseline prompt committed=4608
+baseline prompt committed=4864
+baseline prompt committed=5120
+baseline prompt committed=5376
+baseline prompt committed=5632
+baseline prompt committed=5888
+baseline prompt committed=6144
+baseline prompt committed=6400
+baseline prompt committed=6656
+baseline prompt committed=6912
+baseline prompt committed=7168
+baseline prompt committed=7424
+baseline prompt committed=7680
+baseline prompt committed=7936
+FAULT-ARM PASS cancel-demote committed=8192 generated=128
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "env",
+    "NVIDIA_TF32_OVERRIDE=0",
+    "/root/wt-d/target/release/kv-tier-gate",
+    "--artifact",
+    "/root/artifacts/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+    "--case",
+    "active",
+    "--context",
+    "8192",
+    "--tiers",
+    "host",
+    "--same-program",
+    "--kv-allocator",
+    "pooled",
+    "--fault",
+    "cancel-demote",
+    "--out",
+    "/root/spill-receipts/d-day11/cancel-demote/receipt"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 31878214396130,
+  "ended_monotonic_ns": 32012239689273,
+  "started_utc": "2026-09-20T23:43:13.208253+00:00",
+  "ended_utc": "2026-09-20T23:45:27.233548+00:00",
+  "elapsed_seconds": 134.025293143,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 1649,
+    "sha256": "fbb26c03ec5c0d628261cedd3232ee2ea177c25c0a818f787fbcbf86b9a65566"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 58579,
+      "sha256": "4dbff6acbca090e33dd2b71b91eb17ceafeb7a0258f9f520b79565d653fdb68f"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false
+}

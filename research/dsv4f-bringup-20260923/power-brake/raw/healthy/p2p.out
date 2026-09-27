@@ -1,0 +1,9 @@
+canAccessPeer 0->1 1 1->0 1
+memcpyPeer 0->1 8192 B: 1.55 us/op 5.30 GB/s
+memcpyPeer 0->1 32768 B: 1.59 us/op 20.67 GB/s
+memcpyPeer 0->1 1048576 B: 19.00 us/op 55.18 GB/s
+memcpyPeer 0->1 268435456 B: 5105.57 us/op 52.58 GB/s
+kernel peer store 8192 B: 1.78 us/op 4.59 GB/s
+kernel peer store 33554432 B: 788.39 us/op 42.56 GB/s
+flag pingpong round trip: 1.45 us
+empty launch host rate: 1.72 us/launch

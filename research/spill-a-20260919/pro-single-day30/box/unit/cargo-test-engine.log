@@ -1,0 +1,20 @@
+   Compiling memra-tier v0.138.0 (/root/wt-a/crates/memra-tier)
+warning: memra-engine@0.138.0: nvcc auto-detected CUDA 13.2 at /usr/local/cuda-13.2/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-kv v0.138.0 (/root/wt-a/crates/memra-kv)
+   Compiling memra-engine v0.138.0 (/root/wt-a/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.56s
+     Running unittests src/lib.rs (target/debug/deps/memra_engine-bedcf781fb9cea32)
+
+running 6 tests
+test tier_transfer::tests::d2d_capture_lands_on_the_copy_stream_and_publishes_only_after_its_event ... ok
+test tier_transfer::tests::d2d_early_reader_fault_is_refused_by_the_receipt ... ok
+test tier_transfer::tests::d2d_receipt_digest_matches_the_cpu_oracle ... ok
+test tier_transfer::tests::d2d_receipt_digest_price_against_the_copy ... D2D-RECEIPT PRICE order=copy-first bytes=165675008 n_per_arm=5 copy_ms=[0.15632, 0.155168, 0.155104, 0.15712, 0.155072] copy_median=0.155 digest_ms=[0.17088, 0.167584, 0.16944, 0.166848, 0.173376] digest_median=0.169 pair_median=0.339 pair_over_copy=2.18
+D2D-RECEIPT PRICE order=digest-first bytes=165675008 n_per_arm=5 copy_ms=[0.149184, 0.154944, 0.155136, 0.156928, 0.155072] copy_median=0.155 digest_ms=[0.13504, 0.167328, 0.167648, 0.169696, 0.169632] digest_median=0.168 pair_median=0.335 pair_over_copy=2.16
+ok
+test tier_transfer::tests::d2d_restore_lands_on_the_copy_stream_and_is_ready_only_after_the_installed_wait ... ok
+test tier_transfer::tests::d2h_span_batch_lands_with_its_ticket_on_the_copy_stream ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 557 filtered out; finished in 3.67s
+

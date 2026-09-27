@@ -1,0 +1,67 @@
+usage: pinned-host-reserve-bench.py [-h] [--bytes BYTES | --fraction FRACTION]
+                                    [--basis {free,available,admissible}]
+                                    [--arms ARMS] [--chunks CHUNKS]
+                                    [--pairs-per-order PAIRS_PER_ORDER]
+                                    [--roundtrip] [--cell CELL]
+                                    [--floor FLOOR]
+                                    [--hugepage-min-fraction HUGEPAGE_MIN_FRACTION]
+                                    [--device DEVICE] [--out OUT]
+
+Pinned host arena reserve harness (memra#385): today's one cuMemHostAlloc against a candidate.
+
+Measures exactly the driver call the arena makes at startup (`PinnedHostArena::reserve`,
+crates/memra-engine/src/pinned_host.rs: cudarc `malloc_host` = cuMemHostAlloc with
+CU_MEMHOSTALLOC_PORTABLE, flag bits 1: PORTABLE plus the cached pinned kind, no write-combined bit)
+through ctypes on libcuda, so no engine binary and no engine change is needed to compare reserve
+mechanisms. Arms (`--arms A,B`; A is always compared against B, the candidate):
+
+  single   one cuMemHostAlloc(bytes, PORTABLE)                                 (today's arena)
+  chunked  N threads, each cuMemHostAlloc(bytes / N, PORTABLE), joined         (candidate 1 of #385)
+  thp      mmap(MAP_PRIVATE|MAP_ANONYMOUS) aligned to 2 MiB, madvise(MADV_HUGEPAGE),
+           cuMemHostRegister(PORTABLE); freed with cuMemHostUnregister + munmap (candidate 2 of #385,
+           the THP form: the mapping's AnonHugePages is read from /proc/self/smaps after the register
+           call and reported; the arm counts only if it is backed by huge pages)
+
+Interleaved A/B pairs in both orders (AB x pairs, then BA x pairs) inside ONE process and one window;
+every allocation is freed before the next so the box never holds two arenas. `--roundtrip` runs a
+correctness pass per arm BEFORE the timed pairs (A then B, full size): host fill with a per-2 MiB-block
+byte pattern, H2D into a device buffer, host wipe, D2H back, memcmp per block (mismatched blocks must
+be 0), and the driver's flags read back with cuMemHostGetFlags (the write-combined bit must be absent;
+the PORTABLE bit set for the cuMemHostAlloc arms). Its reserve time is reported, not pooled.
+
+Sizing: `--bytes N`, or `--fraction F --basis free|available` (F of MemFree or MemAvailable at start),
+or `--basis admissible` (MemAvailable minus the engine's 32 GiB startup margin,
+crates/memra-server/src/worker/host_memory.rs, the largest arena `check_headroom` admits); rounded
+down to 2 MiB. Prints one JSON row per measurement, a summary with per-arm medians, and when
+`--cell` is given the pre-registered rule line (research/spill-a-20260919/DAY15.md): the candidate
+wins on this card if every allocation succeeded, both roundtrips are byte exact, the write-combined
+bit is absent everywhere, a `thp` candidate is at least `--hugepage-min-fraction` huge-page backed,
+its reserve time is strictly below single's at every pair and in both orders' medians, and the pooled
+medians' ratio single / candidate is at least `--floor`. A harness receipt: the numbers describe the
+box that ran it and nothing else.
+
+usage: pinned-host-reserve-bench.py [--bytes N | --fraction 0.75 --basis free|available | --basis admissible]
+                                     [--arms single,chunked|single,thp] [--chunks 8] [--pairs-per-order 5]
+                                     [--roundtrip] [--cell NAME] [--floor 1.10] [--device 0] [--out receipt.json]
+Exit 0 = every allocation succeeded and was freed (a rule verdict of inconclusive or void is still exit 0:
+the receipt carries it); 2 = a driver call failed (the code is printed).
+
+options:
+  -h, --help            show this help message and exit
+  --bytes BYTES         arena size in bytes (rounded down to 2 MiB)
+  --fraction FRACTION   fraction of the --basis field at start (default 0.75;
+                        ignored for admissible)
+  --basis {free,available,admissible}
+                        MemFree (default: never evicts another tenant's page
+                        cache), MemAvailable, or MemAvailable minus the
+                        engine's 32 GiB margin
+  --arms ARMS           A,B with A=single and B in {chunked,thp}
+  --chunks CHUNKS
+  --pairs-per-order PAIRS_PER_ORDER
+  --roundtrip           correctness pass per arm before the timed pairs
+  --cell CELL           cell name; prints the pre-registered rule line
+                        (DAY15.md)
+  --floor FLOOR         materiality floor on pooled median single / candidate
+  --hugepage-min-fraction HUGEPAGE_MIN_FRACTION
+  --device DEVICE
+  --out OUT             write the receipt JSON here as well as to stdout

@@ -1,0 +1,201 @@
+b9713d69f7e2ac8b4f60d42493fa656d0bccff771322a5967182bb5fd3474737  /root/spill-receipts/c-day15-review/bins/memra-server
+== cell presubmit: MEMRA_KV_HOST_FAULT=contract-presubmit (one-shot) ==
+bash: line 1: has_choice: command not found
+  FAIL: presubmit: three completions served
+  ok: presubmit: door ON with the transfer engine
+  ok: presubmit: exactly one typed injected refusal, the producer fence
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+  File "<stdin>", line 4, in <genexpr>
+  File "/usr/lib/python3.12/re/__init__.py", line 177, in search
+    return _compile(pattern, flags).search(string)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/__init__.py", line 307, in _compile
+    p = _compiler.compile(pattern, flags)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/_compiler.py", line 745, in compile
+    p = _parser.parse(p, flags)
+        ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/_parser.py", line 979, in parse
+    p = _parse_sub(source, state, flags & SRE_FLAG_VERBOSE, 0)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/_parser.py", line 460, in _parse_sub
+    itemsappend(_parse(source, state, verbose, nested + 1,
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/_parser.py", line 864, in _parse
+    raise source.error("missing ), unterminated subpattern",
+re.error: missing ), unterminated subpattern at position 14
+  FAIL: presubmit: the next demote completes with a D2H contract receipt after the refusal
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+  File "<stdin>", line 4, in <genexpr>
+  File "/usr/lib/python3.12/re/__init__.py", line 177, in search
+    return _compile(pattern, flags).search(string)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/__init__.py", line 307, in _compile
+    p = _compiler.compile(pattern, flags)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/_compiler.py", line 745, in compile
+    p = _parser.parse(p, flags)
+        ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/_parser.py", line 979, in parse
+    p = _parse_sub(source, state, flags & SRE_FLAG_VERBOSE, 0)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/_parser.py", line 460, in _parse_sub
+    itemsappend(_parse(source, state, verbose, nested + 1,
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/_parser.py", line 864, in _parse
+    raise source.error("missing ), unterminated subpattern",
+re.error: missing ), unterminated subpattern at position 14
+  FAIL: presubmit: the next demote publishes
+  ok: presubmit: the tier never latched off
+  ok: presubmit: no entry was dropped as not whole (no quarantine)
+  ok: presubmit: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: presubmit: no host-tier refusal line beyond the injected one
+== cell postpublish: MEMRA_KV_HOST_FAULT=contract-postpublish (one-shot) ==
+bash: line 1: has_choice: command not found
+  FAIL: postpublish: three completions served
+  ok: postpublish: door ON with the transfer engine
+  ok: postpublish: exactly one typed injected refusal, the receipt
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+  File "<stdin>", line 4, in <genexpr>
+  File "/usr/lib/python3.12/re/__init__.py", line 177, in search
+    return _compile(pattern, flags).search(string)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/__init__.py", line 307, in _compile
+    p = _compiler.compile(pattern, flags)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/_compiler.py", line 745, in compile
+    p = _parser.parse(p, flags)
+        ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/_parser.py", line 979, in parse
+    p = _parse_sub(source, state, flags & SRE_FLAG_VERBOSE, 0)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/_parser.py", line 460, in _parse_sub
+    itemsappend(_parse(source, state, verbose, nested + 1,
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/_parser.py", line 864, in _parse
+    raise source.error("missing ), unterminated subpattern",
+re.error: missing ), unterminated subpattern at position 14
+  FAIL: postpublish: the next demote completes with a D2H contract receipt after the refusal
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+  File "<stdin>", line 4, in <genexpr>
+  File "/usr/lib/python3.12/re/__init__.py", line 177, in search
+    return _compile(pattern, flags).search(string)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/__init__.py", line 307, in _compile
+    p = _compiler.compile(pattern, flags)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/_compiler.py", line 745, in compile
+    p = _parser.parse(p, flags)
+        ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/_parser.py", line 979, in parse
+    p = _parse_sub(source, state, flags & SRE_FLAG_VERBOSE, 0)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/_parser.py", line 460, in _parse_sub
+    itemsappend(_parse(source, state, verbose, nested + 1,
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/re/_parser.py", line 864, in _parse
+    raise source.error("missing ), unterminated subpattern",
+re.error: missing ), unterminated subpattern at position 14
+  FAIL: postpublish: the next demote publishes
+  ok: postpublish: the tier never latched off
+  ok: postpublish: no entry was dropped as not whole (no quarantine)
+  ok: postpublish: no ticket leaked (no Capacity refusal, no leaked wording)
+  ok: postpublish: no host-tier refusal line beyond the injected one
+KV-HOST-CONTRACT-FAULT GATE: 6 FAILURE(S)
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "/root/spill-receipts/c-day15-review/faultgate-cell.sh",
+    "3",
+    "256"
+  ],
+  "exit_code": 1,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "failed",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 71905769302689,
+  "ended_monotonic_ns": 71941691855638,
+  "started_utc": "2026-09-21T10:50:20.763160+00:00",
+  "ended_utc": "2026-09-21T10:50:56.685715+00:00",
+  "elapsed_seconds": 35.922552949,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 5943,
+    "sha256": "7931f0846a18fe4def5cac0d84107263b7325ce5955b4deed2bbaba2aac980d9"
+  },
+  "failure_quote": "    raise source.error(\"missing ), unterminated subpattern\",",
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 15684,
+      "sha256": "60b9ad77f87e421930f5562d1f6be7caed05239990d0014fe4522dede3f671ad"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "failure": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.failure.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}

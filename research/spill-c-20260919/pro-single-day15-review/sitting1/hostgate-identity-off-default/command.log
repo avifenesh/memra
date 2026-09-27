@@ -1,0 +1,16 @@
+b9713d69f7e2ac8b4f60d42493fa656d0bccff771322a5967182bb5fd3474737  /root/spill-receipts/c-day15-review/bins/memra-server
+== host-tier ON boot (MEMRA_KV_HOST_MB=8192, verify on) ==
+  ok: device budget forced an eviction (the tier's feed)
+  ok: E_A demoted to the host tier (named log line)
+  ok: E_A promoted back on the r3 probe (named log line)
+  ok: MEMRA_KV_HOST_VERIFY digest matched across the round trip
+  ok: no verify mismatch anywhere in the run
+  ok: metrics: demotions >= 1, promotions >= 1, zero rejected allocs
+  ok: r3 served a strict-prefix hit through the promoted entry
+  ok: r4 repeats r3 byte-for-byte (deterministic promoted path)
+== host-tier OFF twin boot (MEMRA_KV_HOST_MB=0: the rollback seam) ==
+  ok: OFF boot never touches the tier (no [prefix-host] line at all)
+  ok: OFF r3 re-primed cold (nothing preserved the evicted entry)
+  ok: r1 ON == OFF byte identity (cold path unperturbed)
+  ok: r3 ON == OFF byte identity (promoted restore == cold re-prime)
+KV-HOST-SPILL IDENTITY GATE: ALL GREEN (teeth=0)

@@ -2,8 +2,12 @@
 //! their Rc-backed leases never enter a cache/PP worker's Send/Sync object graph.
 //! This is deliberately NOT an RPC implementation: a migrated worker refuses
 //! WrongOwner instead of staging on an arbitrary thread or silently falling back.
-use super::{ExpertDemand, ExpertDispatchBank, ExpertDispatchId};
-use crate::contracts::{Error, Result};
+use super::{
+    ExpertDemand, ExpertDemands, ExpertDispatchBank, ExpertDispatchId, HostBuffer, MAX_GROUP,
+    dispatch_id,
+};
+use crate::contracts::BankLease;
+use crate::contracts::{Digest, Epochs, Error, Result};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
@@ -15,9 +19,14 @@ static NEXT_OWNER: AtomicU64 = AtomicU64::new(1);
 thread_local! {
     static OWNERS: RefCell<BTreeMap<u64, Entry>> = const { RefCell::new(BTreeMap::new()) };
 }
+/// What a pending lease number holds: one record's demand, or (day 64, I15) one grouped demand.
+enum Leased {
+    One(ExpertDemand),
+    Many(ExpertDemands),
+}
 struct Entry {
     bank: Option<Box<dyn ExpertDispatchBank>>,
-    pending: BTreeMap<u64, ExpertDemand>,
+    pending: BTreeMap<u64, Leased>,
     next_lease: u64,
     limit: usize,
 }
@@ -44,10 +53,112 @@ pub struct ExpertBankProxy {
 }
 /// Host-ready token, NOT a device-ready fence. A token contains no pointer or Rc.
 /// The cache must observe its CUDA copy completion before calling finish.
+///
+/// The token carries the identity the registry holds for its lease: the leased record's
+/// artifact digest, the native dispatch key derived from its `BankId`, and the staging
+/// ticket's epochs. `demand` refuses to mint a token for a lease that names another record
+/// than the one demanded, and `with_bytes` / `finish` refuse a token whose identity does not
+/// match the pending lease, so the CUDA-thread consumer can assert what it was leased before
+/// it copies. All fields are `Copy`; the token stays `Send + Sync`.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ExpertLeaseToken {
     owner: u64,
     lease: u64,
+    record: ExpertDispatchId,
+    artifact: Digest,
+    epochs: Epochs,
+}
+impl ExpertLeaseToken {
+    /// The `(layer, proj, expert)` key of the leased record, derived from its `BankId`.
+    pub fn record(&self) -> ExpertDispatchId {
+        self.record
+    }
+    /// The artifact digest of the leased record's tensor.
+    pub fn artifact(&self) -> Digest {
+        self.artifact
+    }
+    /// The epochs stamped on the lease's staging ticket.
+    pub fn epochs(&self) -> Epochs {
+        self.epochs
+    }
+}
+/// Day 64 (I15, `research/spill-c-20260919/DAY64.md`): the token of one grouped demand, up to `MAX_GROUP` records
+/// under one ticket. It carries the identity the registry holds for the group (every record's dispatch key in order,
+/// the one artifact digest, the ticket's epochs); `with_bytes_at` and `finish_group` refuse a token that does not
+/// name it. Every field is `Copy`; the token stays `Send + Sync`.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ExpertGroupToken {
+    owner: u64,
+    lease: u64,
+    records: [ExpertDispatchId; MAX_GROUP],
+    count: u8,
+    artifact: Digest,
+    epochs: Epochs,
+}
+impl ExpertGroupToken {
+    /// The group's records' `(layer, proj, expert)` keys, in the order demanded.
+    pub fn records(&self) -> &[ExpertDispatchId] {
+        &self.records[..usize::from(self.count)]
+    }
+    pub fn artifact(&self) -> Digest {
+        self.artifact
+    }
+    pub fn epochs(&self) -> Epochs {
+        self.epochs
+    }
+}
+/// A group's identity from the registry's own `ExpertDemands`: every lease's key in order, their one artifact.
+fn group_identity(
+    demands: &ExpertDemands,
+) -> Result<([ExpertDispatchId; MAX_GROUP], u8, Digest, Epochs)> {
+    if demands.leases.is_empty() || demands.leases.len() > MAX_GROUP {
+        return Err(Error::Incomplete);
+    }
+    let artifact = demands.leases[0].id().tensor.artifact;
+    let mut records = [(0u16, 0u8, 0u16); MAX_GROUP];
+    for (slot, lease) in records.iter_mut().zip(&demands.leases) {
+        if lease.id().tensor.artifact != artifact {
+            return Err(Error::ProgramMismatch);
+        }
+        *slot = dispatch_id(&lease.id().record)?;
+    }
+    Ok((
+        records,
+        demands.leases.len() as u8,
+        artifact,
+        demands.ticket.epochs,
+    ))
+}
+fn require_group(demands: &ExpertDemands, token: &ExpertGroupToken) -> Result<()> {
+    if group_identity(demands)? != (token.records, token.count, token.artifact, token.epochs) {
+        return Err(Error::ForeignLease);
+    }
+    Ok(())
+}
+/// A lease's bytes, a heap `Vec` or a pooled buffer, lent to `f` for the borrow only.
+fn lend<T>(lease: &BankLease, f: impl FnOnce(&[u8]) -> T) -> Result<T> {
+    if let Ok(bytes) = lease.resource::<Vec<u8>>() {
+        return Ok(f(&bytes));
+    }
+    let buffer = lease.resource::<Box<dyn HostBuffer>>()?;
+    Ok(f(buffer.as_slice()))
+}
+/// The identity a pending lease carries, read from the registry's own `ExpertDemand`.
+fn identity(demand: &ExpertDemand) -> Result<(ExpertDispatchId, Digest, Epochs)> {
+    let id = demand.lease.id();
+    Ok((
+        dispatch_id(&id.record)?,
+        id.tensor.artifact,
+        demand.ticket.epochs,
+    ))
+}
+/// A token that does not name the pending lease's identity is foreign, whatever its
+/// owner and lease numbers say.
+fn require(demand: &ExpertDemand, token: &ExpertLeaseToken) -> Result<()> {
+    if identity(demand)? != (token.record, token.artifact, token.epochs) {
+        return Err(Error::ForeignLease);
+    }
+    Ok(())
 }
 impl ExpertBankOwner {
     pub fn register(bank: Box<dyn ExpertDispatchBank>, max_pending: usize) -> Result<Self> {
@@ -113,6 +224,31 @@ impl ExpertBankProxy {
     pub fn validate(&self, id: ExpertDispatchId, bytes: usize) -> Result<()> {
         self.access(|e| e.bank.as_ref().ok_or(Error::NotFound)?.validate(id, bytes))
     }
+    /// Day 50: whether the record is resident in the host tier (`ExpertDispatchBank::host_resident`),
+    /// read on the owner thread.
+    pub fn host_resident(&self, id: ExpertDispatchId) -> Result<bool> {
+        self.access(|e| e.bank.as_ref().ok_or(Error::NotFound)?.host_resident(id))
+    }
+    /// Day 77 (I17): `host_resident` for each record of `ids` (at most `MAX_GROUP`), in order, in
+    /// one registry entry; entries past `ids.len()` read `false`.
+    pub fn host_resident_many(&self, ids: &[ExpertDispatchId]) -> Result<[bool; MAX_GROUP]> {
+        if ids.len() > MAX_GROUP {
+            return Err(Error::Capacity);
+        }
+        self.access(|e| {
+            let bank = e.bank.as_ref().ok_or(Error::NotFound)?;
+            let mut out = [false; MAX_GROUP];
+            for (slot, &id) in out.iter_mut().zip(ids) {
+                *slot = bank.host_resident(id)?;
+            }
+            Ok(out)
+        })
+    }
+    /// The registered bank's stage clock line (`ExpertDispatchBank::stage_report`), read on
+    /// the owner thread like every other call; `Ok(None)` when no clock is installed.
+    pub fn stage_report(&self) -> Result<Option<String>> {
+        self.access(|e| Ok(e.bank.as_ref().ok_or(Error::NotFound)?.stage_report()))
+    }
     pub fn demand(&self, id: ExpertDispatchId, bytes: usize) -> Result<ExpertLeaseToken> {
         self.access(|e| {
             if e.pending.len() >= e.limit {
@@ -121,11 +257,27 @@ impl ExpertBankProxy {
             let lease = e.next_lease;
             let next = lease.checked_add(1).ok_or(Error::Overflow)?;
             let demand = e.bank.as_mut().ok_or(Error::NotFound)?.demand(id, bytes)?;
-            e.pending.insert(lease, demand);
+            let (record, artifact, epochs) = match identity(&demand) {
+                Ok(identity) if identity.0 == id => identity,
+                outcome => {
+                    // The bank published a lease for a record other than the one demanded.
+                    // Retire it through the bank before refusing, so no host use leaks; the
+                    // demand never becomes a token.
+                    e.bank.as_mut().ok_or(Error::NotFound)?.finish(demand)?;
+                    return Err(match outcome {
+                        Ok(_) => Error::ProgramMismatch,
+                        Err(err) => err,
+                    });
+                }
+            };
+            e.pending.insert(lease, Leased::One(demand));
             e.next_lease = next;
             Ok(ExpertLeaseToken {
                 owner: self.id,
                 lease,
+                record,
+                artifact,
+                epochs,
             })
         })
     }
@@ -136,9 +288,14 @@ impl ExpertBankProxy {
             return Err(Error::ForeignLease);
         }
         self.access(|e| {
-            let demand = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?;
-            let bytes = demand.lease.resource::<Vec<u8>>()?;
-            Ok(f(&bytes))
+            let Leased::One(demand) = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
+            else {
+                return Err(Error::ForeignLease);
+            };
+            require(demand, token)?;
+            // A heap `Vec` (no buffer source) or a pooled buffer (day 47): the same bytes lent
+            // the same way; the borrow ends before this returns.
+            lend(&demand.lease, f)
         })
     }
     /// Explicit completion observation by the CUDA owner, never Drop. On error
@@ -148,7 +305,11 @@ impl ExpertBankProxy {
             return Err(Error::ForeignLease);
         }
         self.access(|e| {
-            let demand = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?;
+            let Leased::One(demand) = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
+            else {
+                return Err(Error::ForeignLease);
+            };
+            require(demand, token)?;
             // Retain the original alias if finish fails partway through retirement.
             let submitted = ExpertDemand {
                 ticket: demand.ticket,
@@ -158,5 +319,333 @@ impl ExpertBankProxy {
             e.pending.remove(&token.lease);
             Ok(())
         })
+    }
+    /// Day 64 (I15): one ticket leasing every block of `blocks` (1 to `MAX_GROUP` records, in order) under the same
+    /// pending bound as `demand` (one lease number per ticket). A bank that publishes other records than the ones
+    /// demanded, in another order, or of more than one artifact, is refused after its group is finished through it.
+    pub fn demand_many(&self, blocks: &[(ExpertDispatchId, usize)]) -> Result<ExpertGroupToken> {
+        if blocks.is_empty() {
+            return Err(Error::EmptyBatch);
+        }
+        if blocks.len() > MAX_GROUP {
+            return Err(Error::Capacity);
+        }
+        self.access(|e| {
+            if e.pending.len() >= e.limit {
+                return Err(Error::Capacity);
+            }
+            let lease = e.next_lease;
+            let next = lease.checked_add(1).ok_or(Error::Overflow)?;
+            let demands = e
+                .bank
+                .as_mut()
+                .ok_or(Error::NotFound)?
+                .demand_many(blocks)?;
+            let identity = match group_identity(&demands) {
+                Ok(identity)
+                    if usize::from(identity.1) == blocks.len()
+                        && identity
+                            .0
+                            .iter()
+                            .zip(blocks)
+                            .all(|(got, (want, _))| got == want) =>
+                {
+                    identity
+                }
+                outcome => {
+                    e.bank
+                        .as_mut()
+                        .ok_or(Error::NotFound)?
+                        .finish_many(demands)?;
+                    return Err(match outcome {
+                        Ok(_) => Error::ProgramMismatch,
+                        Err(err) => err,
+                    });
+                }
+            };
+            e.pending.insert(lease, Leased::Many(demands));
+            e.next_lease = next;
+            let (records, count, artifact, epochs) = identity;
+            Ok(ExpertGroupToken {
+                owner: self.id,
+                lease,
+                records,
+                count,
+                artifact,
+                epochs,
+            })
+        })
+    }
+    /// Day 64 (I15): the bytes of the group's `index`-th record, lent as `with_bytes` lends one.
+    pub fn with_bytes_at<T>(
+        &self,
+        token: &ExpertGroupToken,
+        index: usize,
+        f: impl FnOnce(&[u8]) -> T,
+    ) -> Result<T> {
+        if token.owner != self.id {
+            return Err(Error::ForeignLease);
+        }
+        self.access(|e| {
+            let Leased::Many(demands) = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
+            else {
+                return Err(Error::ForeignLease);
+            };
+            require_group(demands, token)?;
+            lend(demands.leases.get(index).ok_or(Error::NotFound)?, f)
+        })
+    }
+    /// Day 77 (I17): each record's bytes of the group lent to `f(index, bytes)`, in order, in one
+    /// registry entry, with `with_bytes_at`'s checks (the group's identity, then each lease). The
+    /// first `Err` from `f` stops the walk and is returned as `Ok(Err(..))`, like `with_bytes_at`'s
+    /// value; the leases stay pending either way.
+    pub fn with_bytes_each<E>(
+        &self,
+        token: &ExpertGroupToken,
+        mut f: impl FnMut(usize, &[u8]) -> std::result::Result<(), E>,
+    ) -> Result<std::result::Result<(), E>> {
+        if token.owner != self.id {
+            return Err(Error::ForeignLease);
+        }
+        self.access(|e| {
+            let Leased::Many(demands) = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
+            else {
+                return Err(Error::ForeignLease);
+            };
+            require_group(demands, token)?;
+            for (index, lease) in demands.leases.iter().enumerate() {
+                if let Err(err) = lend(lease, |bytes| f(index, bytes))? {
+                    return Ok(Err(err));
+                }
+            }
+            Ok(Ok(()))
+        })
+    }
+    /// Day 64 (I15): finish every lease of a group, once; the same retention on error as `finish`.
+    pub fn finish_group(&self, token: &ExpertGroupToken) -> Result<()> {
+        if token.owner != self.id {
+            return Err(Error::ForeignLease);
+        }
+        self.access(|e| {
+            let Leased::Many(demands) = e.pending.get(&token.lease).ok_or(Error::UnknownTicket)?
+            else {
+                return Err(Error::ForeignLease);
+            };
+            require_group(demands, token)?;
+            let submitted = ExpertDemands {
+                ticket: demands.ticket,
+                leases: demands.leases.clone(),
+            };
+            e.bank
+                .as_mut()
+                .ok_or(Error::NotFound)?
+                .finish_many(submitted)?;
+            e.pending.remove(&token.lease);
+            Ok(())
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::contracts::*;
+    use std::cell::Cell;
+
+    const EPOCHS: Epochs = Epochs {
+        state: 3,
+        src_gen: 5,
+        dst_gen: 8,
+    };
+    fn tensor() -> TensorId {
+        TensorId {
+            version: WIRE_VERSION,
+            artifact: [7; 32],
+            name: "expert.weight".into(),
+        }
+    }
+    fn layout(len: u64) -> RecordLayout {
+        let segment = ByteSegment {
+            version: WIRE_VERSION,
+            group: 0,
+            page: 0,
+            owner: 0,
+            role: Role::Payload,
+            tensor: Some(tensor()),
+            offset: 0,
+            valid_bytes: len,
+            storage_bytes: len,
+            alignment: 1,
+            encoding: EncodingId {
+                version: WIRE_VERSION,
+                program: digest("host-exps-qtype-v1", &2i32.to_le_bytes()),
+                row_bytes: len,
+            },
+        };
+        RecordLayout {
+            version: WIRE_VERSION,
+            segments: vec![segment],
+            requirements: vec![GroupRequirement {
+                version: WIRE_VERSION,
+                group: 0,
+                owner: 0,
+                role: Role::Payload,
+                page_count: 1,
+                pages: PageRequirement::AllPages,
+            }],
+        }
+    }
+    fn record(layer: u32, projection: Projection, original_id: u32) -> RecordId {
+        RecordId::Expert {
+            layer,
+            original_id,
+            projection,
+        }
+    }
+    /// A bank that leases the record it was built to serve, whatever the caller demanded.
+    /// The lying arms below are exactly the case the token identity exists to refuse.
+    struct Serving {
+        record: RecordId,
+        issuer: LeaseIssuer,
+        finished: Rc<Cell<u32>>,
+    }
+    impl ExpertDispatchBank for Serving {
+        fn validate(&self, _: ExpertDispatchId, _: usize) -> Result<()> {
+            Ok(())
+        }
+        fn demand(&mut self, _: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand> {
+            let layout = layout(bytes as u64);
+            let id = BankId {
+                version: WIRE_VERSION,
+                tensor: tensor(),
+                record: self.record.clone(),
+                layout: layout.identity()?,
+            };
+            let charge = self.issuer.issue(TierBudget::zero(1))?;
+            let lease = BankLease::from_backend(
+                id,
+                layout,
+                LayoutClass::Uniform,
+                charge,
+                Box::new(vec![0u8; bytes]),
+            )
+            .map_err(|rejected| rejected.error)?;
+            Ok(ExpertDemand {
+                ticket: TransferTicket {
+                    issuer: 1,
+                    sequence: 1,
+                    epochs: EPOCHS,
+                },
+                lease,
+            })
+        }
+        fn finish(&mut self, demand: ExpertDemand) -> Result<()> {
+            self.finished.set(self.finished.get() + 1);
+            drop(demand);
+            Ok(())
+        }
+    }
+    fn owner(record: RecordId) -> (ExpertBankOwner, Rc<Cell<u32>>) {
+        let finished = Rc::new(Cell::new(0));
+        let bank = Serving {
+            record,
+            issuer: LeaseIssuer::default(),
+            finished: finished.clone(),
+        };
+        (
+            ExpertBankOwner::register(Box::new(bank), 1).unwrap(),
+            finished,
+        )
+    }
+
+    #[test]
+    fn token_carries_the_identity_the_registry_holds_for_its_lease() {
+        let (mut owner, finished) = owner(record(2, Projection::Gate, 9));
+        let proxy = owner.proxy();
+        let token = proxy.demand((2, 0, 9), 16).unwrap();
+        assert_eq!(token.record(), (2, 0, 9));
+        assert_eq!(token.artifact(), [7; 32]);
+        assert_eq!(token.epochs(), EPOCHS);
+        assert_eq!(proxy.with_bytes(&token, |bytes| bytes.len()), Ok(16));
+        proxy.finish(&token).unwrap();
+        assert_eq!(finished.get(), 1);
+        owner.close().unwrap();
+    }
+    #[test]
+    fn a_lease_for_another_record_is_refused_before_a_token_exists_and_retired() {
+        let (mut owner, finished) = owner(record(2, Projection::Gate, 8));
+        let proxy = owner.proxy();
+        assert_eq!(
+            proxy.demand((2, 0, 9), 16).err(),
+            Some(Error::ProgramMismatch)
+        );
+        assert_eq!(finished.get(), 1);
+        // Nothing is pending: the registry never held the mismatched lease.
+        owner.close().unwrap();
+    }
+    #[test]
+    fn a_lease_whose_record_has_no_dispatch_id_is_refused_and_retired() {
+        let (mut owner, finished) = owner(RecordId::Row(9));
+        let proxy = owner.proxy();
+        assert_eq!(
+            proxy.demand((2, 0, 9), 16).err(),
+            Some(Error::InvalidLayout)
+        );
+        assert_eq!(finished.get(), 1);
+        owner.close().unwrap();
+    }
+    #[test]
+    fn a_forged_token_with_the_right_numbers_and_the_wrong_identity_is_foreign() {
+        let (mut owner, finished) = owner(record(2, Projection::Gate, 9));
+        let proxy = owner.proxy();
+        let token = proxy.demand((2, 0, 9), 16).unwrap();
+        let forged = |record, artifact, epochs| ExpertLeaseToken {
+            owner: token.owner,
+            lease: token.lease,
+            record,
+            artifact,
+            epochs,
+        };
+        for bad in [
+            forged((2, 0, 8), token.artifact, token.epochs),
+            forged(token.record, [8; 32], token.epochs),
+            forged(
+                token.record,
+                token.artifact,
+                Epochs {
+                    state: 4,
+                    ..token.epochs
+                },
+            ),
+        ] {
+            assert_eq!(proxy.with_bytes(&bad, |_| ()), Err(Error::ForeignLease));
+            assert_eq!(proxy.finish(&bad), Err(Error::ForeignLease));
+        }
+        assert_eq!(finished.get(), 0);
+        assert_eq!(proxy.with_bytes(&token, |bytes| bytes.len()), Ok(16));
+        proxy.finish(&token).unwrap();
+        assert_eq!(finished.get(), 1);
+        owner.close().unwrap();
+    }
+    #[test]
+    fn dispatch_id_is_the_native_key_and_refuses_what_it_cannot_name() {
+        assert_eq!(
+            dispatch_id(&record(u32::from(u16::MAX), Projection::Down, 255)),
+            Ok((u16::MAX, 2, 255))
+        );
+        assert_eq!(dispatch_id(&record(3, Projection::Up, 1)), Ok((3, 1, 1)));
+        assert_eq!(
+            dispatch_id(&record(u32::from(u16::MAX) + 1, Projection::Gate, 0)),
+            Err(Error::InvalidLayout)
+        );
+        assert_eq!(
+            dispatch_id(&record(0, Projection::Gate, u32::from(u16::MAX) + 1)),
+            Err(Error::InvalidLayout)
+        );
+        assert_eq!(
+            dispatch_id(&record(0, Projection::Other("shared".into()), 0)),
+            Err(Error::InvalidLayout)
+        );
+        assert_eq!(dispatch_id(&RecordId::Row(0)), Err(Error::InvalidLayout));
     }
 }

@@ -1,0 +1,65 @@
+{
+  "label": "batched",
+  "env": {
+    "MEMRA_DEBUG_PRIMESEG": "1",
+    "MEMRA_TTFT_TRACE": "1"
+  },
+  "rig": "NVIDIA GeForce RTX 5090 Laptop GPU, 24463 MiB, [N/A], 175.00 W, 595.84, 62",
+  "binary_sha256": "5191591ba8b9f494d28b6dd0efcf9d859d0bc6fc6822917b4ac9e538d76bb6a6",
+  "binary": "/home/avifenesh/projects/wt-spill-b/target/release/memra-server",
+  "model": "/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf",
+  "budget_mib": 1024,
+  "cohort_tokens": [
+    1250,
+    1350,
+    1450,
+    1550
+  ],
+  "turns": 12,
+  "start_tokens": 11000,
+  "grow_tokens": 150,
+  "cold_turns": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+  ],
+  "max_tokens": 8,
+  "request_timeout_s": 240,
+  "prompt_ids_sha256": [
+    "da80f030466f0b7259cba165456e0efb52df4eacf2b7a000a86ff4a1292dfa9b",
+    "6f1205bfaebdb62b76cfd42bcf07eb2fc8e0c16dd6a76300947c53470c16c100",
+    "ebdae0dcdafd3b8ff7d7eecd04b203479dd655a09d4f9f46277dd3f9f84b6c88",
+    "aea3db3b5380c81fd6686e2b111dbad99568dee84aee74e060425983cec0a9ff",
+    "5cea2eb3f949b34c7978d23f2752bdd80f991c8e0058a8c6d6f1a80f2afc19d7",
+    "ec7a6dcf79acdc7d0238a936af8f330958212e3ba47b6317e9e4c80dfafdd1cb",
+    "4a9c16cea5842a863bcf05250a0d5d1ef97a896abb17079cdaf59dc7c815f43c",
+    "42b2b285e1431438476647f3a56741a5195255e5e6ee4d900964a41356f76c0f",
+    "7f5a13d573765e9f52d97077830ebb01d93a3d8868d778012d8e0f955814d819",
+    "41089cd3af59304ab7bbf7b811b03a4df16fa2704cbdba30078b1582b5495a9b",
+    "83b940e53bb7ff9f73f3f599bbf0ad200cf03f086b67a44621d2418320c92c1e",
+    "3f181c880f69688b3d93beb3b5f8deea57df3eb7b2b306e54ab629cd532bdd37"
+  ],
+  "prompt_lengths": [
+    11000,
+    11150,
+    11300,
+    11450,
+    11600,
+    11750,
+    11900,
+    12050,
+    12200,
+    12350,
+    12500,
+    12650
+  ]
+}

@@ -1,0 +1,7 @@
+cancel-demote exit=0 last=FAULT-ARM PASS cancel-demote committed=8192 generated=128
+cancel-restore exit=2 last=REFUSED: cancel-restore revoked publication, but the transfer contract has no seam to recover the H2D source after cancellation; no tokens, budget drained
+corrupt-host exit=0 last=FAULT-ARM PASS corrupt-host committed=8064 generated=0
+missing-host exit=0 last=FAULT-ARM PASS missing-host committed=8064 generated=0
+host-budget-short exit=0 last=FAULT-ARM PASS host-budget-short committed=8192 generated=128
+device-short exit=0 last=FAULT-ARM PASS device-short committed=8192 generated=128
+require-resident exit=2 last=REFUSED: require-resident has no contract today: Cache::ensure_usable accepts a suspended cache, decode_step_h unwraps a suspended layer, and tier RestoreDecision::RequireState is a load-versus-recompute rule

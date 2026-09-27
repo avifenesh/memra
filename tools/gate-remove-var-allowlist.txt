@@ -58,3 +58,6 @@ crates/memra-engine/tests/glm5_dflash_session_gpu.rs:self.0 # EnvGuard Drop guar
 crates/memra-engine/src/bin/decode_batch_gate.rs:self.key # Drop guard cleanup
 crates/memra-engine/src/bin/glm5_tp_gate.rs:k # rm_env helper teardown
 crates/memra-engine/src/bin/glm5_prime_v2_gate.rs:key # clear_env helper teardown
+
+# Restoring the naked default after a test pinned both arms (WP-B DAY44)
+crates/memra-engine/tests/grid_capture_gpu.rs:MEMRA_GDN_MMA # restore, not an OFF arm: the scan test drives both arms with set_var("1") and set_var("0"), then unsets so the later model tests in this binary run the naked default program

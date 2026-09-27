@@ -1,0 +1,15 @@
+# WP-A day 38 (DAY38.md section 1): the hash-1 survey. A research tool, not engine code: G's framed SHA-256 kernel
+# (nvrtc) checked bitwise against the receipt program (the sha2 crate with memra-tier's frame) and priced; the host's
+# write-combined read rate, direct and streamed. Detached from the workspace (the empty [workspace] table).
+# Build: cargo build --release --offline
+[package]
+name = "day38-hash-survey"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+cudarc = { version = "=0.19.8", default-features = false, features = ["std", "cuda-13010", "dynamic-loading", "driver", "nvrtc"] }
+sha2 = "0.10"

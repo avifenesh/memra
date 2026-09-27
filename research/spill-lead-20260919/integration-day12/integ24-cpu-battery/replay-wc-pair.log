@@ -1,0 +1,59 @@
+WC pair cell: evidence research/spill-a-20260919/pro-single-day15/wc-pair/ev, collector capture wc-pair
+
+o1-off: 6 demotes, 5 promotes, receipts D2H=0 H2D=0
+  raw demote ms (r2..r7):  [37.2, 41.7, 41.1, 6.2, 6.8, 6.2]
+  raw promote ms (r3..r7): [46.1, 45.5, 10.6, 11.3, 10.6]  inline demote ms: [41.7, 41.1, 6.2, 6.8, 6.2]
+  demote  (r2..r6): median 37.2 ms (N=5, min 6.2, max 41.7)
+  promote (r3..r7): median 11.3 ms (N=5, min 10.6, max 46.1)
+  promote minus inline demote: median 4.4 ms (N=5, min 4.4, max 4.5)
+  entries: 64 tok/159.9 MB
+
+o1-on: 6 demotes, 5 promotes, receipts D2H=6 H2D=5
+  raw demote ms (r2..r7):  [114.2, 118.4, 118.4, 83.0, 82.1, 81.9]
+  raw promote ms (r3..r7): [124.2, 124.1, 88.8, 88.0, 87.7]  inline demote ms: [118.4, 118.4, 83.0, 82.1, 81.9]
+  demote  (r2..r6): median 114.2 ms (N=5, min 82.1, max 118.4)
+  promote (r3..r7): median 88.8 ms (N=5, min 87.7, max 124.2)
+  promote minus inline demote: median 5.8 ms (N=5, min 5.7, max 5.9)
+  entries: 64 tok/159.9 MB
+
+o2-on: 6 demotes, 5 promotes, receipts D2H=6 H2D=5
+  raw demote ms (r2..r7):  [113.0, 117.4, 117.4, 82.1, 82.7, 81.8]
+  raw promote ms (r3..r7): [123.2, 123.1, 87.9, 88.5, 87.5]  inline demote ms: [117.4, 117.4, 82.1, 82.7, 81.8]
+  demote  (r2..r6): median 113.0 ms (N=5, min 82.1, max 117.4)
+  promote (r3..r7): median 88.5 ms (N=5, min 87.5, max 123.2)
+  promote minus inline demote: median 5.8 ms (N=5, min 5.7, max 5.8)
+  entries: 64 tok/159.9 MB
+
+o2-off: 6 demotes, 5 promotes, receipts D2H=0 H2D=0
+  raw demote ms (r2..r7):  [38.4, 43.1, 42.1, 6.1, 6.9, 6.1]
+  raw promote ms (r3..r7): [47.6, 46.6, 10.4, 11.4, 10.4]  inline demote ms: [43.1, 42.1, 6.1, 6.9, 6.1]
+  demote  (r2..r6): median 38.4 ms (N=5, min 6.1, max 43.1)
+  promote (r3..r7): median 11.4 ms (N=5, min 10.4, max 47.6)
+  promote minus inline demote: median 4.5 ms (N=5, min 4.3, max 4.5)
+  entries: 64 tok/159.9 MB
+
+pooled OFF (o1-off + o2-off):
+  demote:  median 37.8 ms (N=10, min 6.1, max 43.1)
+  promote: median 11.4 ms (N=10, min 10.4, max 47.6)
+  promote minus inline demote: median 4.4 ms (N=10, min 4.3, max 4.5)
+
+pooled ON (o1-on + o2-on):
+  demote:  median 113.6 ms (N=10, min 82.1, max 118.4)
+  promote: median 88.7 ms (N=10, min 87.5, max 124.2)
+  promote minus inline demote: median 5.8 ms (N=10, min 5.7, max 5.9)
+
+telemetry: 430 samples at 250 ms; temperature 36..51 C; power draw max 491 W (limit 600.00 W); SM clock 2160..2422 MHz
+window: 2026-09-21T16:58:02.916Z .. 2026-09-21T16:59:50.427Z (108 s, one lock hold)
+  ok: o1-off: 6 demotes and 5 promotes
+  ok: o1-off: receipts absent as the arm requires
+  ok: o1-off: every promote had an inline demote in its window
+  ok: o1-on: 6 demotes and 5 promotes
+  ok: o1-on: receipts present as the arm requires
+  ok: o1-on: every promote had an inline demote in its window
+  ok: o2-on: 6 demotes and 5 promotes
+  ok: o2-on: receipts present as the arm requires
+  ok: o2-on: every promote had an inline demote in its window
+  ok: o2-off: 6 demotes and 5 promotes
+  ok: o2-off: receipts absent as the arm requires
+  ok: o2-off: every promote had an inline demote in its window
+WC PAIR REPLAY: PASS (12 checks)

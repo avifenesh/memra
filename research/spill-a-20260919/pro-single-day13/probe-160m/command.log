@@ -1,0 +1,19 @@
+e78397f1a78c82d7481fc12d75a5268325420165a6b5f53fc6dcb44d768aefd3  /root/spill-receipts/a-day13/pinned-read-probe.py
+Python 3.12.3
+0.16 0.41 0.37 2/518 89984
+PROBE warmup {"flags": 4, "driver_flags": 6, "alloc_ms": 25.235683991922997, "sha256_ms": 1354.9433550069807, "copy_ms": 792.7717999991728, "exact": true}
+PROBE warmup {"flags": 0, "driver_flags": 2, "alloc_ms": 28.28809899801854, "sha256_ms": 77.53963200957514, "copy_ms": 44.50083700066898, "exact": true}
+PROBE timed {"flags": 4, "driver_flags": 6, "alloc_ms": 25.38718399591744, "sha256_ms": 1353.9452440018067, "copy_ms": 789.1306639940012, "exact": true, "order": 1, "pair": 1}
+PROBE timed {"flags": 0, "driver_flags": 2, "alloc_ms": 28.20651899673976, "sha256_ms": 77.46488200791646, "copy_ms": 44.69640699971933, "exact": true, "order": 1, "pair": 1}
+PROBE timed {"flags": 4, "driver_flags": 6, "alloc_ms": 25.02656298747752, "sha256_ms": 1355.5377369921189, "copy_ms": 788.9010930084623, "exact": true, "order": 1, "pair": 2}
+PROBE timed {"flags": 0, "driver_flags": 2, "alloc_ms": 28.48294899740722, "sha256_ms": 77.66827300656587, "copy_ms": 44.78091700002551, "exact": true, "order": 1, "pair": 2}
+PROBE timed {"flags": 4, "driver_flags": 6, "alloc_ms": 24.939132999861613, "sha256_ms": 1363.2497590006096, "copy_ms": 789.4534950028174, "exact": true, "order": 1, "pair": 3}
+PROBE timed {"flags": 0, "driver_flags": 2, "alloc_ms": 28.284838001127355, "sha256_ms": 77.70491499104537, "copy_ms": 44.52475500875153, "exact": true, "order": 1, "pair": 3}
+PROBE timed {"flags": 0, "driver_flags": 2, "alloc_ms": 28.5879599978216, "sha256_ms": 77.78231300471816, "copy_ms": 44.52805599430576, "exact": true, "order": 2, "pair": 1}
+PROBE timed {"flags": 4, "driver_flags": 6, "alloc_ms": 24.855572992237285, "sha256_ms": 1361.685726995347, "copy_ms": 789.2141440097475, "exact": true, "order": 2, "pair": 1}
+PROBE timed {"flags": 0, "driver_flags": 2, "alloc_ms": 28.440838999813423, "sha256_ms": 77.82564300578088, "copy_ms": 44.776277005439624, "exact": true, "order": 2, "pair": 2}
+PROBE timed {"flags": 4, "driver_flags": 6, "alloc_ms": 24.969001999124885, "sha256_ms": 1361.8972979893442, "copy_ms": 789.2455640103435, "exact": true, "order": 2, "pair": 2}
+PROBE timed {"flags": 0, "driver_flags": 2, "alloc_ms": 28.858409001259133, "sha256_ms": 77.84799399087206, "copy_ms": 44.643575994996354, "exact": true, "order": 2, "pair": 3}
+PROBE timed {"flags": 4, "driver_flags": 6, "alloc_ms": 25.403044011909515, "sha256_ms": 1360.282384994207, "copy_ms": 789.0402740013087, "exact": true, "order": 2, "pair": 3}
+RESULT {"cell": "pinned-read-probe", "bytes": 167772160, "pairs_per_order": 3, "python_sha256": true, "summary": {"write-combined": {"n": 6, "sha256_ms_median": 1360.984055994777, "copy_ms_median": 789.1724040018744, "alloc_ms_median": 24.9977824933012, "sha256_MBps": 123.27268586359095, "driver_flags": [6], "exact_all": true}, "cached": {"n": 6, "sha256_ms_median": 77.74361399788177, "copy_ms_median": 44.66999149735784, "alloc_ms_median": 28.46189399861032, "sha256_MBps": 2158.0185351888995, "driver_flags": [2], "exact_all": true}}, "qualification": false}
+0.35 0.44 0.38 2/515 89994

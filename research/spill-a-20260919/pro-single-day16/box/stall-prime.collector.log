@@ -1,0 +1,107 @@
+a447fec492389682d00f9f326a4556d6ea8d766ca74b4041b33142f82db1b49a  /root/spill-receipts/a-day16/bins/memra-server
+  run  1 order 1 idle     tokens=160 p50=13.5 max=15.0 stall=1.5 demote=[] promote=[] intruder=None
+  run  2 order 1 prime    tokens=160 p50=13.4 max=315.6 stall=302.2 demote=[] promote=[] intruder=1515.8796699979575
+  run  3 order 1 idle     tokens=160 p50=13.4 max=14.9 stall=1.5 demote=[] promote=[] intruder=None
+  run  4 order 1 prime    tokens=160 p50=13.3 max=314.3 stall=300.9 demote=[] promote=[] intruder=1515.5085300066276
+  run  5 order 1 idle     tokens=160 p50=13.4 max=14.8 stall=1.4 demote=[] promote=[] intruder=None
+  run  6 order 1 prime    tokens=160 p50=13.4 max=315.4 stall=302.0 demote=[] promote=[] intruder=1515.4717599943979
+  run  7 order 1 idle     tokens=160 p50=13.4 max=14.9 stall=1.5 demote=[] promote=[] intruder=None
+  run  8 order 1 prime    tokens=160 p50=13.4 max=315.9 stall=302.5 demote=[] promote=[] intruder=1518.139544990845
+  run  9 order 1 idle     tokens=160 p50=13.4 max=14.9 stall=1.5 demote=[] promote=[] intruder=None
+  run 10 order 1 prime    tokens=160 p50=13.4 max=315.6 stall=302.2 demote=[] promote=[] intruder=1517.0057520008413
+  run 11 order 2 prime    tokens=160 p50=13.4 max=313.9 stall=300.5 demote=[] promote=[] intruder=1514.5575490023475
+  run 12 order 2 idle     tokens=160 p50=13.4 max=14.8 stall=1.4 demote=[] promote=[] intruder=None
+  run 13 order 2 prime    tokens=160 p50=13.4 max=315.7 stall=302.3 demote=[] promote=[] intruder=1516.4659509900957
+  run 14 order 2 idle     tokens=160 p50=13.4 max=14.8 stall=1.4 demote=[] promote=[] intruder=None
+  run 15 order 2 prime    tokens=160 p50=13.4 max=299.0 stall=285.6 demote=[] promote=[] intruder=1499.4563030049903
+  run 16 order 2 idle     tokens=160 p50=13.4 max=15.0 stall=1.6 demote=[] promote=[] intruder=None
+  run 17 order 2 prime    tokens=160 p50=13.4 max=314.2 stall=300.8 demote=[] promote=[] intruder=1514.5943090028595
+  run 18 order 2 idle     tokens=160 p50=13.4 max=14.8 stall=1.4 demote=[] promote=[] intruder=None
+  run 19 order 2 prime    tokens=160 p50=13.4 max=314.1 stall=300.7 demote=[] promote=[] intruder=1514.7262190002948
+  run 20 order 2 idle     tokens=160 p50=13.4 max=14.9 stall=1.5 demote=[] promote=[] intruder=None
+STALL rule cell=stall-prime arm=prime n_per_order=5 pooled=10 idle_runs=10 idle_p50=13.5 idle_p95=14.7 idle_p99=14.9 idle_max=15.0 arm_runs=10 arm_p50=13.4 arm_p95=14.9 arm_p99=295.7 arm_max=315.9 stall_median=301.5 stall_min=285.6 stall_max=302.5 server_demote_ms=[] server_promote_ms=[] intruder_prompt_tokens=[5123, 5122, 5123, 5121, 5123, 5122, 5123, 5120, 5122, 5122] tenant_text_identical=True errors=0
+stall-prime rc=0
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "research/spill-a-20260919/pro-single-day16/stall-cell.sh",
+    "3",
+    "prime"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 105842723296349,
+  "ended_monotonic_ns": 105911297136479,
+  "started_utc": "2026-09-21T20:15:57.717154+00:00",
+  "ended_utc": "2026-09-21T20:17:06.290996+00:00",
+  "elapsed_seconds": 68.57384013,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 2708,
+    "sha256": "4a131535ebab8fa9cc4868d8acfe1d38218db466665580e455584c1c56a688fb"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 30179,
+      "sha256": "65a525de77bb4705c60c05e5fabb1826a5380a24c3a662938d3cc2a64bd22866"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 180,
+    "sha256": "ecfb2e89533c536cb8e9a07478e36938b8b03635b96a64333a8f2ef75f355c81"
+  }
+}

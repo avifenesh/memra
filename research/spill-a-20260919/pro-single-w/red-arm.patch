@@ -1,0 +1,16 @@
+diff --git a/crates/memra-engine/src/tier_transfer.rs b/crates/memra-engine/src/tier_transfer.rs
+index a6ae147d2..cbf7e4b6f 100644
+--- a/crates/memra-engine/src/tier_transfer.rs
++++ b/crates/memra-engine/src/tier_transfer.rs
+@@ -351,6 +351,11 @@ unsafe fn checksum_streamed_sse41(bytes: &[u8]) -> Digest {
+             let dst = buf.as_mut_ptr();
+             let mut i = 0usize;
+             while i < n {
++                if i == 16 {
++                    eprintln!("[day61 red arm] the second vector of each chunk is not copied");
++                    i += 16;
++                    continue;
++                }
+                 // SAFETY: `src + i` is 16-byte aligned (the head was peeled) and `i + 16 <= n`
+                 // bytes of `body` remain; `dst + i` lies inside the 64 KiB buffer.
+                 unsafe {

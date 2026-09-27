@@ -1,0 +1,687 @@
+=== glm5_dflash_session_gpu
+   Compiling memra-gguf v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-gguf)
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-tokenizer v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-tokenizer)
+   Compiling memra-kv v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-kv)
+   Compiling memra-runtime v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-runtime)
+   Compiling memra-reference v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-reference)
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 55s
+     Running tests/glm5_dflash_session_gpu.rs (target/debug/deps/glm5_dflash_session_gpu-f9274892216512d3)
+
+running 23 tests
+test gpu_cold_drafter_restore_bytes_match_plain_decode_and_republishes_a_floor_tail ... ok
+test gpu_device_penalties_are_bit_identical_to_the_host_sampler ... ok
+test gpu_dflash_confidence_gate_truncates_drafts_never_the_tape ... ok
+test gpu_dflash_device_resident_drafter_prime_kv_matches_eager_ingest ... ok
+test gpu_dflash_eos_finishes_the_session ... ok
+test gpu_dflash_forced_rejection_partial_accepts_stay_byte_identical ... ok
+test gpu_dflash_k_past_the_block_refuses_loudly ... ok
+test gpu_dflash_rank_trimmed_head_moves_acceptance_never_the_tape ... ok
+test gpu_dflash_rollback_disabled_bites ... ok
+test gpu_dflash_sampled_twin_is_deterministic_and_burst_split_invariant ... ok
+test gpu_dflash_served_bursts_greedy_tape_matches_plain_decode_k1_to_7 ... ok
+test gpu_dflash_streamed_burst_slices_concat_to_the_unhooked_burst ... ok
+test gpu_dflash_tap_shift_red_arm_moves_drafts_never_the_tape ... ok
+test gpu_draft_source_selection_matrix ... ok
+test gpu_full_cover_restore_bytes_match_plain_decode_and_cold_acceptance ... ok
+test gpu_glm5_prime_plain_segment_preserves_suffix_and_queued_after ... ok
+test gpu_glm5_prime_walker_four_turns_with_restored_suffix_and_peer ... FAILED
+test gpu_penalized_greedy_session_refuses_demotion ... ok
+test gpu_penalized_greedy_spec_tape_matches_the_plain_penalized_sampler ... ok
+test gpu_penalized_sampled_twin_is_deterministic_split_invariant_and_engaged ... ok
+test gpu_restored_continuation_is_bit_identical_to_the_split_prime_cold_twin ... ok
+test gpu_restored_session_bytes_match_plain_decode_and_cold_acceptance ... ok
+test helper_emit_dflash_receipts ... ok
+
+failures:
+
+---- gpu_glm5_prime_walker_four_turns_with_restored_suffix_and_peer stdout ----
+[tensor-contract] bound 151 semantic tensors (pack glm5_next, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+[mla-absorb-bf16] attn_k_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[mla-absorb-bf16] attn_v_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[moe] resident-experts decision (dev0): experts 0.00GB + trunk 0.00GB vs free 24.31GB (expert budget 22.31GB) -> RESIDENT
+[mla-absorb-bf16] attn_k_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[mla-absorb-bf16] attn_v_b: resident plane is not an exact BF16 widening; the f32 path stays for this layer
+[dspark] precision=q4 (MEMRA_DFLASH_PREC unset)
+[dspark] harvest=dflash (checkpoint census dflash2=true strategy_dspark=false, MEMRA_DSPARK_HARVEST unset)
+[dspark] verify-window=Ladder (accept-rate head ABSENT -> ladder, MEMRA_DSPARK_VT unset)
+[tensor-contract] 29 bound tensor(s) were not read by the loader (pack glm5_next reports, does not refuse): Layer { index: 4, tensor: PreAttentionNorm } <- ["blk.4.attn_norm.weight"]; Layer { index: 4, tensor: MlaQueryDown } <- ["blk.4.attn_q_a.weight"]; Layer { index: 4, tensor: MlaQueryDownNorm } <- ["blk.4.attn_q_a_norm.weight"]; Layer { index: 4, tensor: MlaQueryUp } <- ["blk.4.attn_q_b.weight"]; Layer { index: 4, tensor: MlaKvDown } <- ["blk.4.attn_kv_a_mqa.weight"]; Layer { index: 4, tensor: MlaKvDownNorm } <- ["blk.4.attn_kv_a_norm.weight"]; Layer { index: 4, tensor: MlaKeyUp } <- ["blk.4.attn_k_b.weight"]; Layer { index: 4, tensor: MlaValueUp } <- ["blk.4.attn_v_b.weight"]; Layer { index: 4, tensor: MlaOutput } <- ["blk.4.attn_output.weight"]; Layer { index: 4, tensor: SparseQuery } <- ["blk.4.indexer.attn_q_b.weight"]; Layer { index: 4, tensor: SparseKey } <- ["blk.4.indexer.attn_k.weight"]; Layer { index: 4, tensor: SparseKeyNorm } <- ["blk.4.indexer.k_norm.weight"] (+17 more)
+
+thread 'gpu_glm5_prime_walker_four_turns_with_restored_suffix_and_peer' (1069917) panicked at crates/memra-engine/tests/glm5_dflash_session_gpu.rs:3152:22:
+non-vacuous prefix capture
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    gpu_glm5_prime_walker_four_turns_with_restored_suffix_and_peer
+
+test result: FAILED. 22 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.16s
+
+error: test failed, to rerun pass `-p memra-engine --test glm5_dflash_session_gpu`
+exit=101 glm5_dflash_session_gpu
+=== glm5_decode_graph_capture_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.76s
+     Running tests/glm5_decode_graph_capture_gpu.rs (target/debug/deps/glm5_decode_graph_capture_gpu-e78a66e46a687518)
+
+running 8 tests
+test graph_door_decode_matches_eager_bitwise ... ok
+test graph_door_mla_halves_match_eager_bitwise ... ok
+test graph_door_mla_mid_match_eager_bitwise ... ok
+test mla_rows_live_matches_rows_exact_bitwise ... ok
+test spec_dev_io_verify_rows_match_bitwise ... ok
+test verify_graph_live_arm_matches_rows_exact_bitwise ... ok
+test verify_graph_replays_match_eager_bitwise ... ok
+test verify_snapshot_reuse_matches_fresh_clones_bitwise ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.06s
+
+exit=0 glm5_decode_graph_capture_gpu
+=== glm5_bf16_tc_trunk_prefill_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.62s
+     Running tests/glm5_bf16_tc_trunk_prefill_gpu.rs (target/debug/deps/glm5_bf16_tc_trunk_prefill_gpu-5352fa043210028f)
+
+running 6 tests
+test bf16_resident_mixer_matches_reference_band_with_door_engaged ... ok
+test decode_widths_are_byte_identical_to_the_expansion_program ... ok
+test door_forced_into_decode_fails_byte_identity ... ok
+test raw_f32_bits_fed_as_bf16_go_red ... ok
+test single_projection_door_gemm_stays_in_class ... ok
+test transposed_weight_bytes_go_red ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.62s
+
+exit=0 glm5_bf16_tc_trunk_prefill_gpu
+=== glm5_routed_router_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.72s
+     Running tests/glm5_routed_router_gpu.rs (target/debug/deps/glm5_routed_router_gpu-fb5af20e1ab2c95e)
+
+running 3 tests
+test routed_prefill_matches_the_reference ... ok
+test routed_prime_then_decode_matches_the_reference ... ok
+test wrong_router_programs_fail_the_gate ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.84s
+
+exit=0 glm5_routed_router_gpu
+=== glm5_spec_session_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.70s
+     Running tests/glm5_spec_session_gpu.rs (target/debug/deps/glm5_spec_session_gpu-1b542fcf79f9f3ed)
+
+running 10 tests
+test gpu_confidence_gate_truncates_drafts_never_the_tape ... ok
+test gpu_demote_handoff_continues_byte_identical ... ok
+test gpu_eos_finishes_the_session_and_later_bursts_are_empty ... ok
+test gpu_receipt_log_lines_red_and_green ... ok
+test gpu_sampled_twin_is_deterministic_and_burst_split_invariant ... ok
+test gpu_served_burst_with_rollback_disabled_bites ... ok
+test gpu_served_bursts_forced_rejection_partial_accepts_stay_byte_identical ... ok
+test gpu_served_bursts_greedy_tape_matches_plain_decode_k1_to_7 ... ok
+test gpu_verify_ws_bursts_byte_identical_with_alloc_receipt ... ok
+test helper_emit_glm5_receipts ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.19s
+
+exit=0 glm5_spec_session_gpu
+=== kda_fused_proj_bf16_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.60s
+     Running tests/kda_fused_proj_bf16_gpu.rs (target/debug/deps/kda_fused_proj_bf16_gpu-3ec8addd6f43afc0)
+
+running 5 tests
+test bf16_door_is_bit_identical_on_bf16_rows_and_banded_on_f32_rows_at_t_1_to_15 ... ok
+test dropped_range_mutations_are_caught_on_exactly_their_own_slice ... ok
+test the_door_never_engages_with_the_flag_off ... ok
+test transposed_slice_mutations_are_caught_on_exactly_their_own_slice ... ok
+test whole_mixer_matches_across_the_door_and_does_not_worsen_vs_reference ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.05s
+
+exit=0 kda_fused_proj_bf16_gpu
+=== hyper_connections_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.63s
+     Running tests/hyper_connections_gpu.rs (target/debug/deps/hyper_connections_gpu-72ed3abda5140754)
+
+running 6 tests
+test a_missing_hc_tensor_is_refused_by_name ... FAILED
+test hyper_forward_last_matches_the_reference_last_row ... ok
+test hyper_prefill_logits_match_the_reference ... ok
+test hyper_prime_then_decode_matches_a_full_recompute ... ok
+test hyper_two_chunk_prime_then_decode_matches_a_full_recompute ... ok
+test zeroing_an_hc_scale_breaks_the_comparison ... ok
+
+failures:
+
+---- a_missing_hc_tensor_is_refused_by_name stdout ----
+
+thread 'a_missing_hc_tensor_is_refused_by_name' (1073495) panicked at crates/memra-engine/tests/hyper_connections_gpu.rs:542:9:
+the refusal must say which plan declaration it is enforcing; got: checkpoint refused before upload (pack glm5_next, Gguf, 54 census tensors): missing tensor Layer { index: 0, tensor: HyperAttentionFunction }; accepted names: ["blk.0.hc_attn_fn"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    a_missing_hc_tensor_is_refused_by_name
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.89s
+
+error: test failed, to rerun pass `-p memra-engine --test hyper_connections_gpu`
+exit=101 hyper_connections_gpu
+=== glm5_moe_residency_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.65s
+     Running tests/glm5_moe_residency_gpu.rs (target/debug/deps/glm5_moe_residency_gpu-e9b85092b2fc2c98)
+
+running 2 tests
+test the_residency_gate_actually_binds ... FAILED
+test the_residency_path_is_bit_identical_to_stage_every_token ... FAILED
+
+failures:
+
+---- the_residency_gate_actually_binds stdout ----
+
+thread 'the_residency_gate_actually_binds' (1074134) panicked at crates/memra-engine/tests/glm5_moe_residency_gpu.rs:519:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- the_residency_path_is_bit_identical_to_stage_every_token stdout ----
+
+thread 'the_residency_path_is_bit_identical_to_stage_every_token' (1074142) panicked at crates/memra-engine/tests/glm5_moe_residency_gpu.rs:519:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+
+
+failures:
+    the_residency_gate_actually_binds
+    the_residency_path_is_bit_identical_to_stage_every_token
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.30s
+
+error: test failed, to rerun pass `-p memra-engine --test glm5_moe_residency_gpu`
+exit=101 glm5_moe_residency_gpu
+=== mla_decode_split_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.65s
+     Running tests/mla_decode_split_gpu.rs (target/debug/deps/mla_decode_split_gpu-68f8b9e296ad5ab6)
+
+running 3 tests
+test decode_24_steps_are_byte_identical_split_on_vs_off_and_the_door_engages ... ok
+test mutations_move_the_split_output ... ok
+test split_twins_are_bit_identical_to_the_unsplit_kernels_at_every_split ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+
+exit=0 mla_decode_split_gpu
+=== hc_fused_pre_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.63s
+     Running tests/hc_fused_pre_gpu.rs (target/debug/deps/hc_fused_pre_gpu-a9e75fe4d6aa4bfe)
+
+running 4 tests
+test decode_24_steps_are_byte_identical_on_vs_off_and_the_door_engages ... ok
+test fused_prechain_is_bit_identical_to_the_unfused_chain ... ok
+test scale_mutations_are_caught_on_exactly_their_own_output ... ok
+test stationarity_exit_is_bit_invisible_and_its_count_is_reported ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+exit=0 hc_fused_pre_gpu
+=== kda_fixture_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.59s
+     Running tests/kda_fixture_gpu.rs (target/debug/deps/kda_fixture_gpu-37cdc81147c29ee9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+exit=0 kda_fixture_gpu
+=== swiglu_preclamp_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.62s
+     Running tests/swiglu_preclamp_gpu.rs (target/debug/deps/swiglu_preclamp_gpu-ceec2f06e3d4b8ad)
+
+running 7 tests
+test dense_prefill_matches_the_reference ... ok
+test dense_prime_then_decode_matches_the_reference ... ok
+test plain_form_fails_the_gate ... ok
+test post_form_fails_the_gate ... ok
+test shared_expert_decode_matches_the_reference ... ok
+test shared_expert_matches_the_reference ... ok
+test the_preclamped_kernel_matches_its_oracle ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 1.25s
+
+exit=0 swiglu_preclamp_gpu
+=== glm5_kpool_indexer_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.82s
+     Running tests/glm5_kpool_indexer_gpu.rs (target/debug/deps/glm5_kpool_indexer_gpu-ec4e3c8111e80ea0)
+
+running 15 tests
+test gpu_a_missing_indexer_tensor_refuses_the_load_by_name ... ok
+test gpu_deferred_boundary_capture_publishes_the_eager_snapshot_bytes ... ok
+test gpu_kpool_attention_matches_the_reference_and_differs_from_dense ... ok
+test gpu_kpool_mutations_change_the_selection_and_the_output ... ok
+test gpu_kpool_prime_then_decode_matches_the_reference ... ok
+test gpu_kpool_radix_selection_is_byte_identical_to_the_reference_kernel ... ok
+test gpu_kpool_resident_pool_keys_match_a_full_rebuild ... ok
+test gpu_kpool_scoring_is_byte_identical_to_the_reference_kernel ... ok
+test gpu_kpool_selection_matches_the_reference ... ok
+test gpu_kpool_tail_ring_mutations_change_the_pool_keys ... ok
+test gpu_kpool_tail_ring_serves_a_whole_monolithic_prime ... ok
+test gpu_kpool_tail_ring_wraps_and_matches_the_flat_plane ... ok
+test gpu_kpool_ties_break_on_the_lowest_pool_index ... ok
+test gpu_latent_plane_red_mutations_are_refused_or_detected ... ok
+test gpu_latent_plane_snapshot_restores_byte_identically_and_continues_the_ring ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 1.10s
+
+exit=0 glm5_kpool_indexer_gpu
+=== glm5_chunked_prime_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.62s
+     Running tests/glm5_chunked_prime_gpu.rs (target/debug/deps/glm5_chunked_prime_gpu-9ff3f832b6a20baa)
+
+running 4 tests
+test a_chunked_mhc_prime_matches_the_reference_executor ... ok
+test a_chunked_mhc_prime_stays_inside_the_near_tie_band_of_the_monolithic_prime ... ok
+test a_chunked_prime_then_decode_matches_the_reference_executor ... ok
+test the_parity_comparison_has_teeth ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 2.09s
+
+exit=0 glm5_chunked_prime_gpu
+=== glm5_mtp_head_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.62s
+     Running tests/glm5_mtp_head_gpu.rs (target/debug/deps/glm5_mtp_head_gpu-efd916d9390cd6d5)
+
+running 5 tests
+test gpu_mtp_draft_logits_match_the_reference ... ok
+test gpu_mtp_eh_proj_transpose_mutation_fails_the_gate ... ok
+test gpu_mtp_h_seed_off_by_one_row_fails_the_gate ... ok
+test gpu_mtp_head_load_is_flag_gated_default_off ... ok
+test gpu_mtp_position_discipline_refuses_gaps ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.73s
+
+exit=0 glm5_mtp_head_gpu
+=== gemma4_chunked_prime_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.59s
+     Running tests/gemma4_chunked_prime_gpu.rs (target/debug/deps/gemma4_chunked_prime_gpu-644a2cdb3082fee7)
+
+running 4 tests
+test a_monolithic_gemma_prime_matches_the_reference_executor ... ok
+test a_multi_call_gemma_prime_matches_the_single_call_prime ... ok
+test an_internally_chunked_gemma_prime_matches_the_monolithic_prime ... ok
+test truth_arm_divergence_with_the_window_live_versus_inactive ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 3.24s
+
+exit=0 gemma4_chunked_prime_gpu
+=== glm5_moe_grouped_prefill_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.68s
+     Running tests/glm5_moe_grouped_prefill_gpu.rs (target/debug/deps/glm5_moe_grouped_prefill_gpu-479de20192c9bc8c)
+
+running 8 tests
+test flattened_macro_plane_fails_the_gate ... FAILED
+test grouped_prefill_matches_the_reference ... FAILED
+test grouped_prefill_matches_the_reference_at_the_chunk_cap ... FAILED
+test routing_is_identical_between_arms ... FAILED
+test sequential_control_matches_the_reference ... FAILED
+test slru_placement_fails_closed ... FAILED
+test the_two_arms_agree_and_the_knee_is_bitwise ... FAILED
+test wrong_programs_fail_the_gate ... FAILED
+
+failures:
+
+---- flattened_macro_plane_fails_the_gate stdout ----
+
+thread 'flattened_macro_plane_fails_the_gate' (1077006) panicked at crates/memra-engine/tests/glm5_moe_grouped_prefill_gpu.rs:801:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- grouped_prefill_matches_the_reference stdout ----
+
+thread 'grouped_prefill_matches_the_reference' (1077303) panicked at crates/memra-engine/tests/glm5_moe_grouped_prefill_gpu.rs:801:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+
+---- grouped_prefill_matches_the_reference_at_the_chunk_cap stdout ----
+
+thread 'grouped_prefill_matches_the_reference_at_the_chunk_cap' (1077642) panicked at crates/memra-engine/tests/glm5_moe_grouped_prefill_gpu.rs:801:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+
+---- routing_is_identical_between_arms stdout ----
+
+thread 'routing_is_identical_between_arms' (1078101) panicked at crates/memra-engine/tests/glm5_moe_grouped_prefill_gpu.rs:801:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+
+---- sequential_control_matches_the_reference stdout ----
+
+thread 'sequential_control_matches_the_reference' (1078102) panicked at crates/memra-engine/tests/glm5_moe_grouped_prefill_gpu.rs:801:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+
+---- slru_placement_fails_closed stdout ----
+
+thread 'slru_placement_fails_closed' (1078441) panicked at crates/memra-engine/tests/glm5_moe_grouped_prefill_gpu.rs:801:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+
+---- the_two_arms_agree_and_the_knee_is_bitwise stdout ----
+
+thread 'the_two_arms_agree_and_the_knee_is_bitwise' (1078730) panicked at crates/memra-engine/tests/glm5_moe_grouped_prefill_gpu.rs:801:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+
+---- wrong_programs_fail_the_gate stdout ----
+
+thread 'wrong_programs_fail_the_gate' (1078731) panicked at crates/memra-engine/tests/glm5_moe_grouped_prefill_gpu.rs:801:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+
+
+failures:
+    flattened_macro_plane_fails_the_gate
+    grouped_prefill_matches_the_reference
+    grouped_prefill_matches_the_reference_at_the_chunk_cap
+    routing_is_identical_between_arms
+    sequential_control_matches_the_reference
+    slru_placement_fails_closed
+    the_two_arms_agree_and_the_knee_is_bitwise
+    wrong_programs_fail_the_gate
+
+test result: FAILED. 0 passed; 8 failed; 0 ignored; 0 measured; 3 filtered out; finished in 14.89s
+
+error: test failed, to rerun pass `-p memra-engine --test glm5_moe_grouped_prefill_gpu`
+exit=101 glm5_moe_grouped_prefill_gpu
+=== mla_tc_prefill_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.68s
+     Running tests/mla_tc_prefill_gpu.rs (target/debug/deps/mla_tc_prefill_gpu-93e511412ad5aa90)
+
+running 6 tests
+test gpu_mla_tc_decode_stays_byte_identical ... ok
+test gpu_mla_tc_matches_cpu_oracle_and_f32_kernels_small ... ok
+test gpu_mla_tc_mixer_matches_reference_mini512 ... ok
+test gpu_mla_tc_mixer_matches_reference_t4096 ... ok
+test gpu_mla_tc_on_vs_off_at_t4096 ... ok
+test gpu_mla_tc_red_mutations_fail_the_comparator ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 53.32s
+
+exit=0 mla_tc_prefill_gpu
+=== glm5_tparallel_verify_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.72s
+     Running tests/glm5_tparallel_verify_gpu.rs (target/debug/deps/glm5_tparallel_verify_gpu-4c4fbf9961f3ea37)
+
+running 9 tests
+test gpu_accept_j_then_continue_is_byte_identical_for_every_j ... FAILED
+test gpu_batched_walk_sees_corrupted_conv_ring ... FAILED
+test gpu_disabled_rollback_breaks_the_tape ... FAILED
+test gpu_frspec_trim_equivalence_partial_and_skipped_remap_red ... FAILED
+test gpu_pool_keys_finalized_past_j_mutation_bites ... FAILED
+test gpu_spec_vs_plain_greedy_tape_byte_identity_k1_to_7 ... FAILED
+test gpu_stale_kda_state_mutation_bites ... FAILED
+test gpu_verify_batch_flag_ab_bitwise ... FAILED
+test gpu_verify_rows_match_plain_decode_rows_bitwise ... FAILED
+
+failures:
+
+---- gpu_accept_j_then_continue_is_byte_identical_for_every_j stdout ----
+
+thread 'gpu_accept_j_then_continue_is_byte_identical_for_every_j' (1082402) panicked at crates/memra-engine/tests/glm5_tparallel_verify_gpu.rs:413:18:
+mini glm5 loads (trunk only): Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 163 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [4]" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- gpu_batched_walk_sees_corrupted_conv_ring stdout ----
+
+thread 'gpu_batched_walk_sees_corrupted_conv_ring' (1082410) panicked at crates/memra-engine/tests/glm5_tparallel_verify_gpu.rs:413:18:
+mini glm5 loads (trunk only): Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 163 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [4]" }
+
+---- gpu_disabled_rollback_breaks_the_tape stdout ----
+
+thread 'gpu_disabled_rollback_breaks_the_tape' (1082411) panicked at crates/memra-engine/tests/glm5_tparallel_verify_gpu.rs:410:61:
+mini glm5 loads (with MTP): Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 163 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [4]" }
+
+---- gpu_frspec_trim_equivalence_partial_and_skipped_remap_red stdout ----
+
+thread 'gpu_frspec_trim_equivalence_partial_and_skipped_remap_red' (1082414) panicked at crates/memra-engine/tests/glm5_tparallel_verify_gpu.rs:410:61:
+mini glm5 loads (with MTP): Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 163 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [4]" }
+
+---- gpu_pool_keys_finalized_past_j_mutation_bites stdout ----
+
+thread 'gpu_pool_keys_finalized_past_j_mutation_bites' (1082422) panicked at crates/memra-engine/tests/glm5_tparallel_verify_gpu.rs:413:18:
+mini glm5 loads (trunk only): Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 163 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [4]" }
+
+---- gpu_spec_vs_plain_greedy_tape_byte_identity_k1_to_7 stdout ----
+
+thread 'gpu_spec_vs_plain_greedy_tape_byte_identity_k1_to_7' (1082425) panicked at crates/memra-engine/tests/glm5_tparallel_verify_gpu.rs:410:61:
+mini glm5 loads (with MTP): Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 163 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [4]" }
+
+---- gpu_stale_kda_state_mutation_bites stdout ----
+
+thread 'gpu_stale_kda_state_mutation_bites' (1082426) panicked at crates/memra-engine/tests/glm5_tparallel_verify_gpu.rs:413:18:
+mini glm5 loads (trunk only): Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 163 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [4]" }
+
+---- gpu_verify_batch_flag_ab_bitwise stdout ----
+
+thread 'gpu_verify_batch_flag_ab_bitwise' (1082428) panicked at crates/memra-engine/tests/glm5_tparallel_verify_gpu.rs:413:18:
+mini glm5 loads (trunk only): Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 163 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [4]" }
+
+---- gpu_verify_rows_match_plain_decode_rows_bitwise stdout ----
+
+thread 'gpu_verify_rows_match_plain_decode_rows_bitwise' (1082429) panicked at crates/memra-engine/tests/glm5_tparallel_verify_gpu.rs:413:18:
+mini glm5 loads (trunk only): Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 163 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [4]" }
+
+
+failures:
+    gpu_accept_j_then_continue_is_byte_identical_for_every_j
+    gpu_batched_walk_sees_corrupted_conv_ring
+    gpu_disabled_rollback_breaks_the_tape
+    gpu_frspec_trim_equivalence_partial_and_skipped_remap_red
+    gpu_pool_keys_finalized_past_j_mutation_bites
+    gpu_spec_vs_plain_greedy_tape_byte_identity_k1_to_7
+    gpu_stale_kda_state_mutation_bites
+    gpu_verify_batch_flag_ab_bitwise
+    gpu_verify_rows_match_plain_decode_rows_bitwise
+
+test result: FAILED. 0 passed; 9 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.08s
+
+error: test failed, to rerun pass `-p memra-engine --test glm5_tparallel_verify_gpu`
+exit=101 glm5_tparallel_verify_gpu
+=== hc_decode_ws_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.59s
+     Running tests/hc_decode_ws_gpu.rs (target/debug/deps/hc_decode_ws_gpu-d41bb274ac9838e4)
+
+running 2 tests
+test decode_24_steps_are_byte_identical_ws_on_vs_off_and_alloc_calls_drop ... ok
+test ws_composes_with_the_fused_prechain_bitwise ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+exit=0 hc_decode_ws_gpu
+=== kda_quant_operand_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.58s
+     Running tests/kda_quant_operand_gpu.rs (target/debug/deps/kda_quant_operand_gpu-6686733d4f779067)
+
+running 4 tests
+test a_mis_strided_quantized_operand_fails_the_gate ... ok
+test a_quantized_3d_operand_is_refused_by_name_not_mis_strided ... ok
+test kda_q8_0_operands_match_the_float_twin_within_the_quantization_floor ... ok
+test kda_quant_arm_is_actually_quantized ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+
+exit=0 kda_quant_operand_gpu
+=== glm5_moe_epilogue_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.69s
+     Running tests/glm5_moe_epilogue_gpu.rs (target/debug/deps/glm5_moe_epilogue_gpu-1c9dc0ec30a93ffb)
+
+running 9 tests
+test fused_epilogue_matches_the_reference ... FAILED
+test fused_epilogue_on_resident_slabs_matches_the_reference ... FAILED
+test slab_and_slru_fused_arms_agree ... FAILED
+test the_two_arms_agree ... FAILED
+test unfused_control_matches_the_reference ... FAILED
+test unfused_control_on_resident_slabs_matches_the_reference ... FAILED
+test wrong_epilogue_programs_fail_the_gate ... FAILED
+test wrong_epilogue_programs_fail_the_slab_gate ... FAILED
+test wrong_macro_plane_fails_the_gate ... FAILED
+
+failures:
+
+---- fused_epilogue_matches_the_reference stdout ----
+
+thread 'fused_epilogue_matches_the_reference' (1082882) panicked at crates/memra-engine/tests/glm5_moe_epilogue_gpu.rs:1070:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- fused_epilogue_on_resident_slabs_matches_the_reference stdout ----
+
+thread 'fused_epilogue_on_resident_slabs_matches_the_reference' (1083141) panicked at crates/memra-engine/tests/glm5_moe_epilogue_gpu.rs:1070:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+
+---- slab_and_slru_fused_arms_agree stdout ----
+
+thread 'slab_and_slru_fused_arms_agree' (1083382) panicked at crates/memra-engine/tests/glm5_moe_epilogue_gpu.rs:1070:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+
+---- the_two_arms_agree stdout ----
+
+thread 'the_two_arms_agree' (1083383) panicked at crates/memra-engine/tests/glm5_moe_epilogue_gpu.rs:1070:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+
+---- unfused_control_matches_the_reference stdout ----
+
+thread 'unfused_control_matches_the_reference' (1083384) panicked at crates/memra-engine/tests/glm5_moe_epilogue_gpu.rs:1070:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+
+---- unfused_control_on_resident_slabs_matches_the_reference stdout ----
+
+thread 'unfused_control_on_resident_slabs_matches_the_reference' (1083629) panicked at crates/memra-engine/tests/glm5_moe_epilogue_gpu.rs:1070:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+
+---- wrong_epilogue_programs_fail_the_gate stdout ----
+
+thread 'wrong_epilogue_programs_fail_the_gate' (1083976) panicked at crates/memra-engine/tests/glm5_moe_epilogue_gpu.rs:1070:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+
+---- wrong_epilogue_programs_fail_the_slab_gate stdout ----
+
+thread 'wrong_epilogue_programs_fail_the_slab_gate' (1083977) panicked at crates/memra-engine/tests/glm5_moe_epilogue_gpu.rs:1070:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+
+---- wrong_macro_plane_fails_the_gate stdout ----
+
+thread 'wrong_macro_plane_fails_the_gate' (1083978) panicked at crates/memra-engine/tests/glm5_moe_epilogue_gpu.rs:1070:10:
+mini glm5_next model loads from the contract: Custom { kind: Other, error: "checkpoint refused before upload (pack glm5_next, Gguf, 63 census tensors): tensor QuantAux { tensor: Layer { index: 1, tensor: MoeExpertGateBank }, kind: WeightScale } (blk.1.ffn_gate_exps.scale) shape mismatch: expected [1], got [8]" }
+
+
+failures:
+    fused_epilogue_matches_the_reference
+    fused_epilogue_on_resident_slabs_matches_the_reference
+    slab_and_slru_fused_arms_agree
+    the_two_arms_agree
+    unfused_control_matches_the_reference
+    unfused_control_on_resident_slabs_matches_the_reference
+    wrong_epilogue_programs_fail_the_gate
+    wrong_epilogue_programs_fail_the_slab_gate
+    wrong_macro_plane_fails_the_gate
+
+test result: FAILED. 0 passed; 9 failed; 0 ignored; 0 measured; 4 filtered out; finished in 2.61s
+
+error: test failed, to rerun pass `-p memra-engine --test glm5_moe_epilogue_gpu`
+exit=101 glm5_moe_epilogue_gpu
+=== kda_fused_proj_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.62s
+     Running tests/kda_fused_proj_gpu.rs (target/debug/deps/kda_fused_proj_gpu-a2ef4f0ac14c2d04)
+
+running 5 tests
+test a_dropped_projection_fails_the_gate_on_exactly_that_slice_for_all_six ... ok
+test a_transposed_slice_fails_the_gate_on_exactly_that_slice_for_all_six ... ok
+test flag_off_and_unqualified_shapes_never_engage ... ok
+test fused_door_is_bit_identical_on_q8_rows_and_banded_on_f32_rows_at_t_1_to_15 ... ok
+test whole_mixer_fused_matches_unfused_and_reference ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+
+exit=0 kda_fused_proj_gpu
+=== checkpoint_contract_refusal_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.49s
+     Running tests/checkpoint_contract_refusal_gpu.rs (target/debug/deps/checkpoint_contract_refusal_gpu-30f48406d241dc37)
+
+running 1 test
+test gpu_loader_refuses_a_tampered_census_before_upload_and_loads_the_clean_one ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+exit=0 checkpoint_contract_refusal_gpu
+=== mla_fixture_load_gpu
+warning: memra-engine@0.138.0: nvcc from $CUDA_HOME: /usr/local/cuda-13.1/bin/nvcc
+warning: memra-engine@0.138.0: MEMRA_CUDA_ARCH auto-detected 120a (compute_cap 12.0); set MEMRA_CUDA_ARCH to override
+   Compiling memra-engine v0.138.0 (/home/avifenesh/projects/wt-541/crates/memra-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.49s
+     Running tests/mla_fixture_load_gpu.rs (target/debug/deps/mla_fixture_load_gpu-4f3da52821f59bdd)
+
+running 1 test
+test gpu_load_glm_dsa_micro_fixture ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+exit=0 mla_fixture_load_gpu

@@ -1,0 +1,11 @@
+DAY61 host demand sequence sha256 4bdc2610c3534e42 lines=[22077]
+DAY61 I11 CHECKS rig=rtx5090 runs=40 integrity=ok
+DAY61 gen-only decode medians (N=10 each): ref=0.363 on=0.369 i11=0.369 i12=0.369
+DAY61 STEP i11_vs_on gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0072 -> flat
+DAY61 STEP i12_vs_i11 gen-only decode: pooled=+0.0000 o1=+0.0010 o2=+0.0000 noise=0.0072 -> flat
+DAY61 steady window medians (N=10 each): ref=0.400 on=0.403 i11=0.405 i12=0.402
+DAY61 STEP i11_vs_on steady window: pooled=+0.0015 o1=+0.0010 o2=+0.0020 noise=0.0042 -> flat
+DAY61 STEP i12_vs_i11 steady window: pooled=-0.0025 o1=-0.0010 o2=-0.0030 noise=0.0030 -> flat
+DAY61 DOOR i12_vs_ref gen-only decode: pooled=+0.0060 o1=+0.0070 o2=+0.0060 noise=0.0010 -> loses
+DAY61 DOOR i12_vs_ref steady window: pooled=+0.0025 o1=+0.0030 o2=+0.0050 noise=0.0050 -> matches
+DAY61 VERDICT rig=rtx5090 integrity=ok i11=flat i12=flat door=i12 vs_ref=loses (window: i11=flat i12=flat vs_ref=matches)

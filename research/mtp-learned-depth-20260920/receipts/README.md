@@ -30,14 +30,13 @@ python3 diagnose_requests.py --family qwen --ledger qwen-selected-sets.json --re
 python3 diagnose_requests.py --family gemma --ledger gemma-selected-sets.json --receipts receipts-expanded --output gemma-request-diagnostics.json
 ```
 
-Five archives have accidental `provider_name_aws` matches in their compressed bytes,
-with zero matches in any expanded member. The public-boundary exceptions pin only
-those exact archive hashes and that single rule; changed bytes and other rules
-remain checked. Reproduce the evidence with `python3 verify_archive_exceptions.py`.
-The original archives were not recompressed or rewritten to avoid the check.
+The measurement-time text matcher produced five accidental
+`provider_name_aws` matches after decoding compressed bytes with invalid
+UTF-8 removed. No expanded member matched. The historical exception file
+and `verify_archive_exceptions.py` reproduce that finding without changing
+the archive bytes.
 
-The pinned-file coverage fix makes both the content check and drift check run the
-full matcher on explicitly pinned paths, even if the fast byte-level prefilter
-misses a match after UTF-8 normalization. It changes no policy pattern and grants
-no additional exemption; ungranted rules still fail. Two regression tests cover
-that consistency and rejection behavior.
+Current main applies the raw-byte prefilter consistently in checkout,
+commit, and ref scans. Those five decoded-only strings do not require
+public-boundary allowlist entries under that policy. This publication keeps
+the historical review record and uses current main's scanner for admission.

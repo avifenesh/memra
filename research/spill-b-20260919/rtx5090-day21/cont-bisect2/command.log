@@ -1,0 +1,21 @@
+== arm MEMRA_PRIME_CHUNK=16
+/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9296 tokens: logits_sha=290420a09bcbd2c2
+  9280 + 16: logits_sha=290420a09bcbd2c2 ok
+  9248 + 48: logits_sha=290420a09bcbd2c2 ok
+A4 CONTINUATION GATE: PASS
+exit=0
+== arm MEMRA_PRIME_CHUNK=32
+/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9296 tokens: logits_sha=35bd15f063bfd5ba
+  9280 + 16: logits_sha=35bd15f063bfd5ba ok
+  9248 + 48: logits_sha=35bd15f063bfd5ba ok
+A4 CONTINUATION GATE: PASS
+exit=0
+== arm MEMRA_PRIME_CHUNK=48
+/data/ai-ml/hf-models/qwen38-27b-nvfp4-mtp/Qwen3.8-27B-NVFP4-Q5K-mtp.gguf: activation program absent
+one call over 9296 tokens: logits_sha=f317438ac6eed52e
+  9280 + 16: logits_sha=493c452e6dd23f55 DIFFERS (known: a 16-row final segment is not bitwise on either artifact)
+  9248 + 48: logits_sha=279a20e2101e6c44 DIFFERS
+A4 CONTINUATION GATE: 1 of 2 splits differ from the one-call prime
+exit=1
