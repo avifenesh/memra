@@ -1,7 +1,7 @@
 //! MiMo text forward with model-owned compressed KV.
 //! Prepared modal chunks may enter a fresh sequence. The bounded first chunk
-//! shares decode's packed attention arithmetic. There is no raw-modal decoder,
-//! payload-keyed KV reuse, or serving dispatch.
+//! shares decode's packed attention arithmetic. The explicit S5 group16 V
+//! constructor is experimental. There is no serving dispatch.
 
 use std::error::Error;
 
@@ -209,7 +209,18 @@ impl MiMoTextWeights {
         max_tokens: usize,
         min_free_after: [usize; 2],
     ) -> Result<MiMoCompressedTextForward<'a>, Fail> {
-        MiMoCompressedTextForward::new(self, engines, max_tokens, min_free_after)
+        MiMoCompressedTextForward::new(self, engines, max_tokens, min_free_after, false)
+    }
+
+    /// Explicit MiMo-only Q8_0 K / signed 5-bit group16 V text experiment.
+    /// Existing compressed text and serving paths retain their NVFP4 V choice.
+    pub fn compressed_text_forward_s5_g16<'a>(
+        &'a self,
+        engines: [&'a Engine; 2],
+        max_tokens: usize,
+        min_free_after: [usize; 2],
+    ) -> Result<MiMoCompressedTextForward<'a>, Fail> {
+        MiMoCompressedTextForward::new(self, engines, max_tokens, min_free_after, true)
     }
 }
 
@@ -219,8 +230,13 @@ impl<'a> MiMoCompressedTextForward<'a> {
         engines: [&'a Engine; 2],
         max_tokens: usize,
         min_free_after: [usize; 2],
+        s5_g16: bool,
     ) -> Result<Self, Fail> {
-        let kv = weights.compressed_text_kv(engines, max_tokens, min_free_after)?;
+        let kv = if s5_g16 {
+            weights.compressed_text_kv_s5_g16(engines, max_tokens, min_free_after)?
+        } else {
+            weights.compressed_text_kv(engines, max_tokens, min_free_after)?
+        };
         Ok(Self {
             weights,
             engines,
@@ -298,7 +314,7 @@ impl<'a> MiMoCompressedTextForward<'a> {
 
     /// Execute one fresh source-ordered chunk with bounded row groups and
     /// resident MoE. Only the first 1..=128 positions are admitted. Each
-    /// layer stores Q8_0 K / NVFP4 V or local F32 rows before attending with
+    /// layer stores Q8_0 K / selected V or local F32 rows before attending with
     /// the same per-position numeric program as continuing decode.
     /// This is an explicit component entry, not a serving dispatch.
     pub fn consume_embedding_chunk_batched(
@@ -699,6 +715,53 @@ mod tests {
         assert!(first_batch_rows(129).is_err());
         assert!(check_chunk_admission(0, 0, 128, false, 128, 128 * HIDDEN, [0, 0]).is_ok());
         assert!(check_chunk_admission(1, 1, 128, false, 20, 20 * HIDDEN, [0, 0]).is_err());
+    }
+
+    #[test]
+    #[ignore = "requires pinned MiMo source and a dedicated two-card GPU lane"]
+    fn s5_first_chunk_matches_serial_and_continues() -> Result<(), Fail> {
+        use std::path::Path;
+        use std::sync::Arc;
+
+        use memra_gguf::source::SafetensorsSource;
+
+        const FOUR_GIB: usize = 4 * 1024 * 1024 * 1024;
+        let root = std::env::var("MIMO_PINNED_SOURCE_ROOT")?;
+        let source = Arc::new(SafetensorsSource::open(Path::new(&root))?);
+        let cards = [Engine::new(0)?, Engine::new(1)?];
+        let engines = [&cards[0], &cards[1]];
+        let text = MiMoTextWeights::load(engines, source)?;
+        let prepared =
+            text.modal_embedding_gpu_chunk(&cards[0], &[42, 43, 44, 45], &[], &[], &[])?;
+        let run = |batched| -> Result<(MiMoTextStep, Vec<f32>), Fail> {
+            let mut sequence = text.compressed_text_forward_s5_g16(engines, 5, [FOUR_GIB; 2])?;
+            let first = if batched {
+                sequence.consume_embedding_chunk_batched(&prepared)?
+            } else {
+                sequence.consume_embedding_chunk(&prepared)?
+            };
+            assert_eq!(sequence.position(), 4);
+            let next = sequence.token(220)?;
+            assert_eq!(sequence.position(), 5);
+            Ok((first, next))
+        };
+        let (serial, serial_next) = run(false)?;
+        let (batch, batch_next) = run(true)?;
+        assert_eq!(batch.position, serial.position);
+        for (got, want) in [
+            (&batch.logits, &serial.logits),
+            (&batch.hidden_before_norm, &serial.hidden_before_norm),
+            (&batch_next, &serial_next),
+        ] {
+            assert_eq!(got.len(), want.len());
+            assert!(got.iter().all(|x| x.is_finite()));
+            assert!(
+                got.iter()
+                    .zip(want)
+                    .all(|(got, want)| got.to_bits() == want.to_bits())
+            );
+        }
+        Ok(())
     }
 
     #[test]

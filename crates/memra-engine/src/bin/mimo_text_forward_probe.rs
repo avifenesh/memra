@@ -49,19 +49,26 @@ fn run() -> Result<(), Fail> {
     let mut args = std::env::args().skip(1);
     let dir = args
         .next()
-        .ok_or("usage: mimo_text_forward_probe <source_dir> [--compressed-context=N] <token_id> [token_id ...]")?;
+        .ok_or("usage: mimo_text_forward_probe <source_dir> [--compressed-context=N | --s5-g16-context=N] <token_id> [token_id ...]")?;
     let first = args
         .next()
         .ok_or("MiMo text replay needs at least one token ID")?;
-    let (compressed_context, first_token) =
+    let (compressed_context, s5_g16, first_token) =
         if let Some(cap) = first.strip_prefix("--compressed-context=") {
             (
                 Some(cap.parse::<usize>()?),
+                false,
                 args.next()
                     .ok_or("MiMo compressed replay has no token ID")?,
             )
+        } else if let Some(cap) = first.strip_prefix("--s5-g16-context=") {
+            (
+                Some(cap.parse::<usize>()?),
+                true,
+                args.next().ok_or("MiMo S5 replay has no token ID")?,
+            )
         } else {
-            (None, first)
+            (None, false, first)
         };
     let token_ids = std::iter::once(first_token)
         .chain(args)
@@ -72,22 +79,27 @@ fn run() -> Result<(), Fail> {
     {
         return Err("MiMo text replay needs 1..=256 token IDs".into());
     }
+    if s5_g16 && compressed_context.is_none_or(|cap| !(1..=256).contains(&cap)) {
+        return Err("MiMo S5 diagnostic context must contain 1..=256 tokens".into());
+    }
     let source = Arc::new(SafetensorsSource::open(Path::new(&dir))?);
     let cards = [Engine::new(0)?, Engine::new(1)?];
     let engines = [&cards[0], &cards[1]];
     let weights = MiMoTextWeights::load(engines, source)?;
     let mut forward = match compressed_context {
-        Some(max) => Forward::Compressed(Box::new(weights.compressed_text_forward(
-            engines,
-            max,
-            [FOUR_GIB; 2],
-        )?)),
+        Some(max) => Forward::Compressed(Box::new(if s5_g16 {
+            weights.compressed_text_forward_s5_g16(engines, max, [FOUR_GIB; 2])?
+        } else {
+            weights.compressed_text_forward(engines, max, [FOUR_GIB; 2])?
+        })),
         None => Forward::Plain(weights.text_forward(engines)?),
     };
 
     println!(
         "format\t{}",
-        if compressed_context.is_some() {
+        if s5_g16 {
+            "memra-mimo-model-owned-s5-g16-text-forward-experiment-v1"
+        } else if compressed_context.is_some() {
             "memra-mimo-model-owned-compressed-text-forward-v1"
         } else {
             "memra-mimo-model-owned-text-forward-v1"

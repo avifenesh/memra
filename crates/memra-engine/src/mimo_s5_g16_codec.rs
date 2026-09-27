@@ -3,7 +3,8 @@
 //! Each [128] head row contains eight 16-value groups. A group is one UE4M3
 //! scale byte followed by 80 little-endian packed code bits: 88 bytes per
 //! head row, 352 bytes per [4,128] token row. Codes are two's complement
-//! [-16,15]. This module has no KV cache, forward, or serving dispatch.
+//! [-16,15]. The explicit MiMo KV experiment uses this encoder; this module
+//! has no serving dispatch.
 //!
 //! Scale and tie rules match the source-only `value_codec_quality_probe.rs`
 //! at ece94bf4a113b7d5dd6d73a808e8279580fa00d5.
@@ -134,6 +135,45 @@ pub fn decode_reference(input: &[u8]) -> Result<Vec<f32>, &'static str> {
         }
     }
     Ok(output)
+}
+
+/// Enqueue one four-head token row directly into its cache slot. The caller
+/// keeps both buffers alive until its attention launch completes.
+pub(crate) fn encode_token_at(
+    engine: &Engine,
+    input: &CudaSlice<f32>,
+    output: &mut CudaSlice<u8>,
+    position: usize,
+    max_tokens: usize,
+) -> Result<(), Box<dyn Error>> {
+    engine.gpu.ctx.bind_to_thread()?;
+    let stream = engine.stream();
+    let device = stream.context().ordinal();
+    if position >= max_tokens
+        || input.len() != 4 * HEAD_WIDTH
+        || output.len() != max_tokens * TOKEN_BYTES
+        || input.ordinal() != device
+        || output.ordinal() != device
+    {
+        return Err("MiMo S5 V append geometry, position, or device changed".into());
+    }
+    let start = position * TOKEN_BYTES;
+    let mut row = output.slice_mut(start..start + TOKEN_BYTES);
+    let row_bytes = row.len();
+    let rc = unsafe {
+        memra_mimo_s5_g16_encode_f32(
+            input.device_ptr(&stream).0 as *const f32,
+            input.len(),
+            row.device_ptr_mut(&stream).0 as *mut u8,
+            row_bytes,
+            4,
+            stream.cu_stream() as *mut c_void,
+        )
+    };
+    if rc != 0 {
+        return Err(format!("MiMo S5 V append returned {rc}").into());
+    }
+    Ok(())
 }
 
 impl Engine {
@@ -324,6 +364,28 @@ mod tests {
                     .all(|(got, want)| got.to_bits() == want.to_bits())
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires an explicitly assigned GPU; S5 cache append is unqualified"]
+    fn gpu_token_append_writes_only_selected_cache_row() -> Result<(), Box<dyn Error>> {
+        let gpu: usize = std::env::var("MEMRA_MIMO_COMPONENT_GPU")?.parse()?;
+        let engine = Engine::new(gpu)?;
+        let mut cache = engine.htod_bytes(&vec![0xa5u8; 3 * TOKEN_BYTES])?;
+        let values = (0..4 * HEAD_WIDTH)
+            .map(|i| ((i * 19 % 61) as f32 - 30.0) / 16.0)
+            .collect::<Vec<_>>();
+        let input = engine.htod(&values)?;
+        encode_token_at(&engine, &input, &mut cache, 1, 3)?;
+        let got = engine.dtoh_u8(&cache)?;
+        assert_eq!(&got[..TOKEN_BYTES], &[0xa5u8; TOKEN_BYTES]);
+        assert_eq!(
+            &got[TOKEN_BYTES..2 * TOKEN_BYTES],
+            encode_reference(&values)?
+        );
+        assert_eq!(&got[2 * TOKEN_BYTES..], &[0xa5u8; TOKEN_BYTES]);
+        assert!(encode_token_at(&engine, &input, &mut cache, 3, 3).is_err());
         Ok(())
     }
 }

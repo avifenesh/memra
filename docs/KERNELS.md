@@ -1,18 +1,24 @@
 # Kernel inventory
 
-## MiMo signed 5-bit V component, 2026-09-27
+## MiMo signed 5-bit V experiment, 2026-09-27
 
 The standalone [128] V head-row codec uses eight groups of 16 signed
 two's-complement codes. Each group has one UE4M3 scale and 80 little-endian
 packed bits: 88 bytes per head row and 352 bytes per four-head token row.
 Scale selection and rounding follow the source-only probe at `ece94bf4`.
-This component has no cache or serving caller. Hardware byte parity, error,
-and timing remain to be measured before integration.
+`MiMoTextWeights::compressed_text_kv_s5_g16` and
+`compressed_text_forward_s5_g16` explicitly select Q8_0 K / S5 V for the
+model-owned cache, one-token decode and bounded first chunk. The default
+constructors still use NVFP4 V. The deep DP4A kernel unpacks only each
+32-token V tile into shared memory, never the full cache. This does not enter
+serving dispatch. Hardware byte parity, packed attention parity, model
+replay, full-context memory admission, and timing remain unqualified.
 
 | Symbol | Purpose | Types | Architecture | Door | Binding |
 | --- | --- | --- | --- | --- | --- |
-| `memra_mimo_s5_g16_encode_f32` | Encode up to 1024 complete [128] V head rows | f32 to packed u8 | Portable CUDA C | None; component only | `Engine::mimo_s5_g16_encode_rows` |
+| `memra_mimo_s5_g16_encode_f32` | Encode up to 1024 complete [128] V head rows, including direct one-token cache append | f32 to packed u8 | Portable CUDA C | Explicit S5 constructor | `mimo_s5_g16_encode_rows`, `encode_token_at` |
 | `memra_mimo_s5_g16_decode_f32` | Decode the same rows for numeric comparison | packed u8 to f32 | Portable CUDA C | None; component only | `Engine::mimo_s5_g16_decode_rows` |
+| `memra_mimo_global_q8_s5_g16_decode_dp4a` | Fused Q8_0 K / S5 V deep split attention with a 32-token V staging tile | packed u8 to f32 context | CUDA DP4A | Explicit S5 constructor | `Engine::mimo_global_q8_s5_g16_decode` |
 
 ## Qwen FA2 attention experiment, 2026-09-09
 
