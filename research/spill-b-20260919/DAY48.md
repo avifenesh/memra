@@ -89,6 +89,17 @@ admission one debt:
   the double read changed no reserve in that run (the pool reached its high-water before the first measured
   admissions). 2.1 stands as it read. The cell reruns on the fix to confirm, with a pool that grows during the burst.
 
+### 1.7 Addendum C (2026-09-27, the rerun on the fix, before it runs)
+
+- **The binary:** the lane's crates at `521fdbbbc` (the peek). The cell, arms and shapes are 1.2's and addendum A's.
+- **V5, one debt per admission:** on every `enforce-vg` boot, each `[admit-predict]` line with `vg_debt` above 0 is
+  followed, for the same admission, by the physical `[admission] dspark verify-graph pool debt: +<MB>` line. Its MB
+  equals the predictive `vg_debt` rounded to MB, and no admission shows the two apart.
+- **V6 (a reading):** the physical debt lines' values per boot, on both arms, and how many distinct values the pool
+  took during the burst.
+- The target card as the nineteenth sitting (`pro-single-b-sitting19.sh`, S48 = `521fdbbbc`, receipts `b-day48b`);
+  V1 to V4 as registered.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
