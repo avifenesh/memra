@@ -956,6 +956,21 @@ calls. The TP/EP step pairs the shared expert's gate and up, wq_a and wkv, and e
 kv and gate projections. The component gate's `pair_case` compares both outputs with the single
 launches at M = 1, 2, 4 and 6, and checks the capture holds one pair node.
 
+**Owner-gated shared expert (memra #710).** `dsv4_dense_fast_fp8_kernel_gated<M>`,
+`dsv4_dense_fast_fp8_kernel_pair_gated<M>`, `dsv4_cvt_bf16_gated_kernel` and
+`dsv4_swiglu_bf16_gated_kernel` read a device owner word at entry and exit when it is zero;
+otherwise each block runs the ungated launch's body (SwiGLU then the bf16 pack is
+`dsv4_swiglu_kernel`'s and `dsv4_cvt_bf16_kernel`'s ops per element), so the bits are the
+ungated launches'. The fused TP/EP gate/up launch writes each rank's word: 1 on the rank with
+fewer of the step's routed slots, rank 0 on a tie. A one- to eight-row TP/EP step runs the shared
+expert's cvt, gate/up pair, SwiGLU pack and down into the rows after the routed ones in the
+contribution plane, the expert join carries them, and the tail adds them, so one rank streams
+the shared expert's weights instead of both. `memra_dsv4_gemv_fp8_m_gated`,
+`memra_dsv4_gemv_fp8_m_pair_gated`, `memra_dsv4_cvt_bf16_gated`, `memra_dsv4_swiglu_bf16_gated`;
+40004 wherever the ungated launch would not take the dense-fast transport, and the step keeps
+the replicated shared expert. The component gate's `gated_case` checks each against its
+ungated launch at M = 1, 2, 4 and 8 and that a clear word moves no output byte.
+
 `tools/dsv4-dense-fast-gate.cu` checks raw bits, guards, operand immutability
 and actual retained graph functions. All 24 real rank/shape cases, 36 boundary
 cases and two cancellation witnesses pass in normal, memcheck and synccheck;

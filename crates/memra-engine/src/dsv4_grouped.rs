@@ -2617,6 +2617,7 @@ mod tests {
         let mut word = s.alloc_zeros::<i32>(1).unwrap();
         let fault = MoeFault(word.device_ptr(&s).0);
         let mut fused_h = s.alloc_zeros::<f32>(topk * inter).unwrap();
+        let mut shared_run = s.alloc_zeros::<i32>(1).unwrap();
         let mut fused_c = s.alloc_zeros::<f32>(topk * hidden).unwrap();
         let take_word = |word: &mut CudaSlice<i32>| {
             let mut host = [0i32];
@@ -2751,6 +2752,7 @@ mod tests {
                             scale2.device_ptr(&s).0 as *const f32,
                             x.device_ptr(&s).0 as *const f32,
                             fused_h.device_ptr_mut(&s).0 as *mut f32,
+                            shared_run.device_ptr_mut(&s).0 as *mut i32,
                             topk as i32,
                             1,
                             hidden as i32,
@@ -2821,6 +2823,18 @@ mod tests {
                         (chain_word, fused_word),
                         (0, 0),
                         "clean case={case} rank={rank}"
+                    );
+                    // The shared expert's owner word: fewer routed slots, rank 0 on a tie.
+                    let mine = sel
+                        .iter()
+                        .filter(|&&e| (first..first + count).contains(&(e as usize)))
+                        .count();
+                    let theirs =
+                        sel.iter().filter(|&&e| e >= 0 && (e as usize) < ne).count() - mine;
+                    assert_eq!(
+                        s.clone_dtoh(&shared_run).unwrap()[0],
+                        i32::from(mine < theirs || (mine == theirs && first == 0)),
+                        "shared owner word case={case} rank={rank} mine={mine} theirs={theirs}"
                     );
                     let fc = s.clone_dtoh(&fused_c.slice(..topk * hidden)).unwrap();
                     assert!(
@@ -2945,6 +2959,7 @@ mod tests {
                     scale2.device_ptr(&s).0 as *const f32,
                     x_dev.device_ptr(&s).0 as *const f32,
                     fused_h_rows.device_ptr_mut(&s).0 as *mut f32,
+                    std::ptr::null_mut(),
                     topk as i32,
                     rows as i32,
                     hidden as i32,
