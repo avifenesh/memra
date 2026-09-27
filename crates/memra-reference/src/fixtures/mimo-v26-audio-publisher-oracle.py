@@ -260,9 +260,22 @@ def copy_encoder_weights(encoder, path, expected, torch):
                 target.copy_(tensor)
 
 
-def run_publisher(source, encoder, mel, frames, codec, torch, device):
+def run_publisher(source, encoder, mel, frames, codec, torch, device, capture_stages=False):
     features = torch.tensor(mel, dtype=torch.float32, device=device).reshape(frames, MEL_BINS)
     lengths = torch.tensor([frames], dtype=torch.long, device=device)
+    stage_snapshots = {}
+    handles = []
+    if capture_stages:
+        def before_frontend_layer(_module, args):
+            stage_snapshots["frontend"] = args[0].detach().clone()
+
+        def after_stack_norm(_module, _args, output):
+            stage_snapshots["stack"] = output.detach().clone()
+
+        handles = [
+            encoder.layers[0].register_forward_pre_hook(before_frontend_layer),
+            encoder.layer_norm.register_forward_hook(after_stack_norm),
+        ]
     with torch.inference_mode():
         depth_tensor, output_lengths = encoder.encode(
             features, input_lens=lengths, return_codes_only=True
@@ -271,9 +284,13 @@ def run_publisher(source, encoder, mel, frames, codec, torch, device):
         grouped_tensor = source["_pad_and_group_audio_codes"](
             token_tensor, audio_channels=CHANNELS, group_size=GROUP_SIZE
         )
-        _, pre_rvq, _, no_quant_codes = encoder.encode(
-            features, input_lens=lengths, use_quantizer=False
-        )
+        try:
+            _, pre_rvq, _, no_quant_codes = encoder.encode(
+                features, input_lens=lengths, use_quantizer=False
+            )
+        finally:
+            for handle in handles:
+                handle.remove()
     tokens = (frames + 3) // 4
     groups = (tokens + GROUP_SIZE - 1) // GROUP_SIZE
     if (
@@ -317,7 +334,20 @@ def run_publisher(source, encoder, mel, frames, codec, torch, device):
         residual = residual - layer.decode(best)
     bits = [int(value) & 0xffff for value in pre_rvq.contiguous().view(torch.int16).reshape(-1).tolist()]
     pre_rvq_bytes = struct.pack(f"<{len(bits)}H", *bits)
-    return depth_major, token_major, grouped, pre_rvq_bytes, margins, second_codes
+    stage_bytes = {}
+    if capture_stages:
+        stage_snapshots["pre_rvq"] = pre_rvq.detach().clone()
+        expected = {"frontend": (frames + 1) // 2, "stack": (frames + 1) // 2,
+                    "pre_rvq": tokens}
+        if stage_snapshots.keys() != expected.keys():
+            raise ValueError("publisher stage hooks omitted a source stage")
+        for name, tensor in stage_snapshots.items():
+            if list(tensor.shape) != [expected[name], codec["d_model"]] or tensor.dtype != torch.bfloat16:
+                raise ValueError(f"publisher {name} stage shape or dtype changed")
+            signed = tensor.to("cpu").contiguous().view(torch.int16).reshape(-1).tolist()
+            values = [int(value) & 0xffff for value in signed]
+            stage_bytes[name] = struct.pack(f"<{len(values)}H", *values)
+    return depth_major, token_major, grouped, pre_rvq_bytes, margins, second_codes, stage_bytes
 
 
 def main():
@@ -329,8 +359,9 @@ def main():
     parser.add_argument("--out", type=Path, help="write JSON receipt after a successful full run")
     parser.add_argument("--features-out", type=Path, help="write pre-RVQ BF16 feature rows after a full run")
     parser.add_argument("--device", choices=("cpu", "cuda:0", "cuda:1"), default="cpu")
+    parser.add_argument("--stages-dir", type=Path, help="write bounded publisher BF16 stage tensors")
     args = parser.parse_args()
-    if args.check_source and (args.out or args.features_out or args.device != "cpu"):
+    if args.check_source and (args.out or args.features_out or args.stages_dir or args.device != "cpu"):
         parser.error("--out and --features-out require a full checkpoint run")
 
     alignment, codec, selected, source_path = check_source(args.source_root)
@@ -382,11 +413,15 @@ def main():
     source = load_audio_nodes(selected, source_path, torch)
     encoder = build_encoder(source, codec, torch, expected, args.device)
     copy_encoder_weights(encoder, weights_path, expected, torch)
-    depth_major, token_major, grouped, pre_rvq_bytes, margins, second_codes = run_publisher(
-        source, encoder, mel, frames, codec, torch, args.device
+    depth_major, token_major, grouped, pre_rvq_bytes, margins, second_codes, stage_bytes = run_publisher(
+        source, encoder, mel, frames, codec, torch, args.device, args.stages_dir is not None
     )
     if args.features_out:
         args.features_out.write_bytes(pre_rvq_bytes)
+    if args.stages_dir:
+        args.stages_dir.mkdir(parents=True, exist_ok=True)
+        for name, values in stage_bytes.items():
+            (args.stages_dir / f"{name}.bf16").write_bytes(values)
     receipt.update({
         "status": "publisher_cpu_codes_generated",
         "memra_code_id_parity": "unchecked",
@@ -410,6 +445,10 @@ def main():
         "pre_rvq_features_sha256": hashlib.sha256(pre_rvq_bytes).hexdigest(),
         "rvq_top_two_score_margin_depth_major": margins,
         "rvq_second_code_depth_major": second_codes,
+        "stages": {name: {"sha256": hashlib.sha256(values).hexdigest(),
+                          "shape": [len(values) // (2 * codec["d_model"]), codec["d_model"]],
+                          "dtype": "BF16"}
+                   for name, values in stage_bytes.items()},
         "code_ids_sha256": hashlib.sha256(
             json.dumps(depth_major, separators=(",", ":")).encode("utf-8")
         ).hexdigest(),
