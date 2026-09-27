@@ -1092,6 +1092,8 @@ impl Engine {
             .checked_mul(open_leases as u64)
             .ok_or(Error::Overflow)?;
         capacity.inflight = open_leases as u64;
+        // Day 93 (I26): the capacities the hits' queue charge is judged against, read before the governor takes them.
+        let (pageable_capacity, inflight_capacity) = (capacity.pageable, capacity.inflight);
         let budget: SharedBudget = Rc::new(RefCell::new(Governor::new(
             capacity,
             TierBudget::zero(1),
@@ -1168,7 +1170,21 @@ impl Engine {
         };
         request.bytes.pageable = bank.slru_metadata_bytes(slots)?;
         let metadata = budget.borrow_mut().reserve(&request)?;
-        let bank = bank.with_slru(SlruPolicy::new(&plan.classes)?, &metadata)?;
+        let mut bank = bank.with_slru(SlruPolicy::new(&plan.classes)?, &metadata)?;
+        // Day 93 (I26, `research/spill-c-20260919/DAY93.md` sections 1 and 3): a host hit takes no ticket; its queue
+        // charge goes only where the bound proves it inert against this governor's capacities, else it stays.
+        let bound = bank.hit_charge_bound()?;
+        let inert = bound.inert(pageable_capacity, inflight_capacity);
+        if inert {
+            bank.drop_hit_queue_charge()?;
+        }
+        eprintln!(
+            "[experts-via-tier] hit queue charge {}: pageable_capacity={pageable_capacity} \
+             inflight_capacity={inflight_capacity} worst_without_hits={} {}",
+            if inert { "dropped" } else { "kept" },
+            bound.others,
+            bound.terms
+        );
         request.bytes = TierBudget::zero(1);
         let dispatch = SlruExpertDispatch::new(
             bank,

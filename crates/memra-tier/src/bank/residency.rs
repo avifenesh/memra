@@ -163,6 +163,37 @@ impl TicketRecords {
         pairs
     }
 }
+/// Day 93 (I26, `research/spill-c-20260919/DAY93.md` sections 1 and 3): the pageable worst case a hit's queue charge
+/// is judged against (`BankService::hit_charge_bound`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HitChargeBound {
+    /// Every pageable charge's worst case other than the hits' queue charges.
+    pub others: u64,
+    /// The hits' queue charges' worst case (each hit's pageable is its records' ticket metadata).
+    pub hits: u64,
+    /// Tickets plus hits at most this many (the bank's ticket limit).
+    pub open: usize,
+    /// The terms, named, for the install's line.
+    pub terms: String,
+}
+impl HitChargeBound {
+    /// The hits' queue charge is inert under a governor of these capacities when every charge's worst case, the
+    /// hits' included, fits the pageable capacity (so no pageable reservation is refused, charged or not), and the
+    /// in-flight capacity holds every open ticket and hit (so no in-flight reservation is either).
+    pub fn inert(&self, pageable_capacity: u64, inflight_capacity: u64) -> bool {
+        self.others
+            .checked_add(self.hits)
+            .is_some_and(|worst| worst <= pageable_capacity)
+            && inflight_capacity >= self.open as u64
+    }
+}
+/// Day 93 (I26, `research/spill-c-20260919/DAY93.md` section 1): an open host-hit demand.
+struct HitEntry {
+    /// Each leased record's charge, one per demanded position (a duplicate id counts twice, as publication did).
+    charges: Vec<(u64, u64)>,
+    /// The queue charge a ticket would hold, `None` where the install proved it inert.
+    queue: Option<ChargedLease>,
+}
 struct Pending {
     ids: Vec<BankId>,
     /// Day 85 (I22, `research/spill-c-20260919/DAY85.md`): the ids' catalog positions, for a ticket `stage_at` made.
@@ -334,6 +365,16 @@ pub struct BankService<D: BankDomain, H: Hotness<D>, R: ExactReader> {
     /// Day 93 (`research/spill-c-20260919/DAY93.md` section 3): a fault-injection door of the check. The next
     /// `finish_ticket` refuses `NotReady` after its lookup, before anything changes.
     fail_finish: bool,
+    /// Day 93 (I26, `research/spill-c-20260919/DAY93.md` section 1): the open host-hit demands, by their tickets (from
+    /// this bank's ticket sequence), each with its leased records' charges and, where the install did not prove it
+    /// inert, its queue charge. They count with `pending` against the ticket limits.
+    hits: FxMap<TransferTicket, HitEntry>,
+    /// Day 93 (I26): each leased record's open host-hit uses, by its charge; `can_release` answers `Busy` while one is
+    /// open, as it does for an unretired ticket.
+    in_use: FxMap<(u64, u64), u32>,
+    /// Day 93 (I26): whether a host hit reserves the queue charge a ticket would (the default). The door's install
+    /// turns it off only where `hit_charge_bound` proves the charge inert.
+    hit_queue_charge: bool,
     /// Day 47: where record buffers come from; `None` is a heap `Vec` per record.
     buffers: Option<Box<dyn HostBufferSource>>,
     _domain: PhantomData<D>,
@@ -369,6 +410,9 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             sequence: 0,
             clock: None,
             fail_finish: false,
+            hits: FxMap::default(),
+            in_use: FxMap::default(),
+            hit_queue_charge: true,
             buffers: None,
             _domain: PhantomData,
         })
@@ -593,7 +637,12 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
     }
     /// Bounded lifecycle inventory for orderly host shutdown/receipt collection.
     pub fn tickets(&self) -> Vec<TransferTicket> {
-        self.pending.keys().copied().collect()
+        // Day 93 (I26): the open host hits too, each finished by `finish_ticket`.
+        self.pending
+            .keys()
+            .chain(self.hits.keys())
+            .copied()
+            .collect()
     }
     pub fn reader(&self) -> &R {
         &self.reader
@@ -744,6 +793,14 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
     /// `NotReady` in the dispatch adapter). The stage clock brackets each step as the three calls did.
     pub fn finish_ticket(&mut self, ticket: &TransferTicket) -> Result<()> {
         let started = clock_start(&self.clock);
+        if self.hits.contains_key(ticket) {
+            let result = self.finish_hit(ticket);
+            clock_add(&mut self.clock, started, |c, ns| {
+                c.retire_ns += ns;
+                c.ack_ns += ns;
+            });
+            return result;
+        }
         let p = self.pending.get_mut(ticket).ok_or(Error::UnknownTicket);
         let p = match p {
             Ok(p) if !p.published && !p.cancelled && p.error.is_none() => Err(Error::Busy),
@@ -857,6 +914,10 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                     .values()
                     .any(|r| r.charge().id() == lease.charge().id())
         }) {
+            return Err(Error::Busy);
+        }
+        // Day 93 (I26): an open host hit's lease is in use, as an unretired ticket's is.
+        if self.in_use.contains_key(&lease.charge().id()) {
             return Err(Error::Busy);
         }
         // Shared API deliberately doesn't expose a mutable-borrow probe. The
@@ -987,6 +1048,253 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
     }
 }
 impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
+    /// Day 93 (I26, `research/spill-c-20260919/DAY93.md` sections 1 and 3): the host hit without a transfer ticket.
+    /// For a positioned batch every record of which the host cache holds, the demand `stage_at`, `progress` and
+    /// `publish` would make, made at once: `stage`'s checks in their order with their answers (the ticket limits
+    /// counting open hits), then publication's effects in its order (`heat.demand` for demand priority, then per id
+    /// the SLRU `hit_at` or `resident_at`), the cached leases in block order, each lease's use counted, and a hit
+    /// ticket from the ticket sequence. `Ok(None)` changes nothing: a record is not held, and the ticket path runs.
+    /// The adapter's `demand` stages and publishes inside one call (`expert_dispatch.rs`), so nothing interleaves
+    /// where publication's effects used to wait.
+    pub(crate) fn stage_hit_at(
+        &mut self,
+        positions: &[usize],
+        epochs: Epochs,
+        request: &mut BudgetRequest,
+    ) -> Result<Option<(TransferTicket, Vec<BankLease>)>> {
+        let started = clock_start(&self.clock);
+        let result = self.stage_hit_unclocked(positions, epochs, request, started);
+        // A stage when the hit path took the demand or refused it; an attempt that finds a record not held keeps its
+        // time in `stage_ns` and leaves the count to the `stage_at` that follows it.
+        let counted = !matches!(result, Ok(None));
+        clock_add(&mut self.clock, started, |c, ns| {
+            c.stages += u64::from(counted);
+            c.stage_ns += ns;
+        });
+        result
+    }
+    fn stage_hit_unclocked(
+        &mut self,
+        positions: &[usize],
+        epochs: Epochs,
+        request: &mut BudgetRequest,
+        started: Option<Instant>,
+    ) -> Result<Option<(TransferTicket, Vec<BankLease>)>> {
+        // `stage_at`'s refusals, in its order.
+        if !self.cache.indexed() {
+            return Err(Error::Unsupported);
+        }
+        if positions.is_empty() {
+            return Err(Error::EmptyBatch);
+        }
+        let open = self.pending.len() + self.hits.len();
+        if positions.len() > self.limits.items || open >= self.limits.tickets {
+            return Err(Error::Capacity);
+        }
+        request.validate()?;
+        if request.priority == Priority::OptionalPrefetch
+            && open >= self.limits.tickets.saturating_sub(1)
+        {
+            return Err(Error::Capacity);
+        }
+        if request
+            .bytes
+            .device
+            .iter()
+            .chain(&request.bytes.peer)
+            .chain(&request.bytes.replicas)
+            .any(|&n| n != 0)
+            || request.bytes.pinned != 0
+        {
+            return Err(Error::Unsupported);
+        }
+        let mut logical = 0u64;
+        let mut metadata = Some(0u64);
+        for &position in positions {
+            let id = self.catalog.id_at(position)?;
+            if !D::accepts(&id.record) {
+                return Err(Error::InvalidLayout);
+            }
+            id.validate()?;
+            let entry = self.catalog.entry_at(position)?;
+            logical = logical
+                .checked_add(entry.record.layout.storage_bytes()?)
+                .ok_or(Error::Overflow)?;
+            metadata = metadata.and_then(|n| n.checked_add(entry.metadata));
+        }
+        clock_add(&mut self.clock, started, |c, ns| c.stage_lookup_ns += ns);
+        if logical > self.limits.batch_bytes {
+            return Err(Error::Capacity);
+        }
+        // Every record held by the host cache and resident in the SLRU, or the ticket path runs.
+        let caching = clock_start(&self.clock);
+        let Some((policy, _)) = &self.slru else {
+            return Ok(None);
+        };
+        let mut leases = Vec::with_capacity(positions.len());
+        for &position in positions {
+            match self.cache.get_at(position) {
+                Some(lease) if policy.resident_at(position).is_some() => leases.push(lease.clone()),
+                _ => return Ok(None),
+            }
+        }
+        clock_add(&mut self.clock, caching, |c, ns| c.stage_cache_ns += ns);
+        let sequence = self.sequence.checked_add(1).ok_or(Error::Overflow)?;
+        let ticket = TransferTicket {
+            issuer: self.issuer,
+            sequence,
+            epochs,
+        };
+        let metadata = metadata.ok_or(Error::Overflow)?;
+        // The queue charge a ticket with nothing to read reserves (`stage`'s arithmetic), unless proved inert.
+        let queue = if self.hit_queue_charge {
+            let charging = clock_start(&self.clock);
+            let kept = (
+                request.bytes.pageable,
+                request.bytes.staging,
+                request.bytes.inflight,
+            );
+            request.bytes.pageable = kept.0.max(metadata);
+            request.bytes.inflight = kept.2.max(1);
+            let queue = self.budget.borrow_mut().reserve(request);
+            (
+                request.bytes.pageable,
+                request.bytes.staging,
+                request.bytes.inflight,
+            ) = kept;
+            clock_add(&mut self.clock, charging, |c, ns| c.stage_charge_ns += ns);
+            Some(queue?)
+        } else {
+            None
+        };
+        self.sequence = sequence;
+        // Publication's effects, in its order.
+        let policing = clock_start(&self.clock);
+        let demand = request.priority != Priority::OptionalPrefetch;
+        if demand {
+            for &position in positions {
+                let id = self.catalog.id_at(position)?;
+                self.heat.demand(id);
+            }
+        }
+        if let Some((policy, _)) = &mut self.slru {
+            for &position in positions {
+                let resident = if demand {
+                    policy.hit_at(position)
+                } else {
+                    policy.resident_at(position).is_some()
+                };
+                debug_assert!(
+                    resident,
+                    "a host hit's record left the SLRU before its publication"
+                );
+            }
+        }
+        let mut charges = Vec::with_capacity(leases.len());
+        for lease in &leases {
+            let charge = lease.charge().id();
+            *self.in_use.entry(charge).or_insert(0) += 1;
+            charges.push(charge);
+        }
+        self.hits.insert(ticket, HitEntry { charges, queue });
+        clock_add(&mut self.clock, policing, |c, ns| {
+            c.publish_ns += ns;
+            c.publish_policy_ns += ns;
+        });
+        Ok(Some((ticket, leases)))
+    }
+    /// Day 93 (I26, `DAY93.md` section 3, the lead's condition 1): a host hit's finish, all or nothing. Every fallible
+    /// step (each use counted, the injected failure, the queue charge's release, itself atomic) comes before the
+    /// first change; the changes (the uses down, the hit removed) cannot fail. A retried finish succeeds once; a
+    /// finish after success is `UnknownTicket`, as a finished ticket's is.
+    fn finish_hit(&mut self, ticket: &TransferTicket) -> Result<()> {
+        let entry = self.hits.get(ticket).ok_or(Error::UnknownTicket)?;
+        if entry
+            .charges
+            .iter()
+            .any(|charge| self.in_use.get(charge).is_none_or(|&n| n == 0))
+        {
+            return Err(Error::Incomplete);
+        }
+        if std::mem::take(&mut self.fail_finish) {
+            return Err(Error::NotReady);
+        }
+        if let Some(queue) = &entry.queue {
+            let releasing = clock_start(&self.clock);
+            let released = self.budget.borrow_mut().release(queue);
+            clock_add(&mut self.clock, releasing, |c, ns| c.ack_release_ns += ns);
+            released?;
+        }
+        let entry = self.hits.remove(ticket).expect("present above");
+        for charge in entry.charges {
+            match self.in_use.get_mut(&charge) {
+                Some(n) if *n > 1 => *n -= 1,
+                _ => {
+                    self.in_use.remove(&charge);
+                }
+            }
+        }
+        Ok(())
+    }
+    /// Day 93 (I26, `DAY93.md` sections 1 and 3): the door's install turns the hits' queue charge off after proving it
+    /// inert (`hit_charge_bound` against its governor's capacity). Refused once a demand is open.
+    pub fn drop_hit_queue_charge(&mut self) -> Result<()> {
+        if !self.pending.is_empty() || !self.hits.is_empty() {
+            return Err(Error::Busy);
+        }
+        self.hit_queue_charge = false;
+        Ok(())
+    }
+    /// Day 93 (I26): whether a host hit reserves the queue charge.
+    pub fn hit_queue_charge(&self) -> bool {
+        self.hit_queue_charge
+    }
+    /// Day 93 (I26, `research/spill-c-20260919/DAY93.md` sections 1 and 3, the lead's condition 2): the worst case
+    /// of this bank's pageable charges other than the hits' queue charges, term by term, and the hits' own bound.
+    /// Tickets and hits together are at most `limits.tickets` (the limits count both), so the evicted leases open
+    /// tickets or hits may pin are at most `tickets x items` records at the largest record charge.
+    pub fn hit_charge_bound(&self) -> Result<HitChargeBound> {
+        let (policy, _) = self.slru.as_ref().ok_or(Error::Unsupported)?;
+        let (mut max_meta, mut max_charge) = (0u64, 0u64);
+        for position in 0..self.catalog.len() {
+            if let Ok(entry) = self.catalog.entry_at(position) {
+                max_meta = max_meta.max(entry.metadata);
+                max_charge = max_charge.max(entry.resident_charge_bytes()?);
+            }
+        }
+        let mul = |a: u64, b: u64| a.checked_mul(b).ok_or(Error::Overflow);
+        let open = self.limits.tickets as u64;
+        let items = self.limits.items as u64;
+        let records = mul(open, items)?;
+        let cached = policy
+            .capacity_bytes()?
+            .checked_add(mul(policy.slots() as u64, max_meta)?)
+            .ok_or(Error::Overflow)?;
+        let slru_metadata = self.slru_metadata_bytes(policy.slots())?;
+        let held = mul(records, max_charge)?;
+        let reserved = mul(records, max_charge)?;
+        let tickets = mul(
+            open,
+            mul(items, max_meta)?
+                .checked_add(self.policy.slot_bytes)
+                .ok_or(Error::Overflow)?,
+        )?;
+        let hits = mul(records, max_meta)?;
+        let others = [cached, slru_metadata, held, reserved, tickets]
+            .iter()
+            .try_fold(0u64, |n, &v| n.checked_add(v).ok_or(Error::Overflow))?;
+        Ok(HitChargeBound {
+            others,
+            hits,
+            open: self.limits.tickets,
+            terms: format!(
+                "cached_records={cached} slru_metadata={slru_metadata} \
+                 evicted_leases_held_by_open_tickets_or_hits={held} (tickets_plus_hits<={open} x items={items} x \
+                 max_record_charge={max_charge}) miss_reservations={reserved} miss_ticket_charges={tickets} \
+                 hits_charge_bound={hits} (tickets_plus_hits<={open} x items={items} x max_ticket_metadata={max_meta})"
+            ),
+        })
+    }
     /// Day 85 (I22, `research/spill-c-20260919/DAY85.md`): `stage` for a batch whose ids' catalog positions the
     /// caller already holds (`positions[k]` is `batch.ids[k]`'s), which reads the catalog entry, the host cache and,
     /// at publication, the SLRU by position. Crate-private: the dispatch adapter's positions are the catalog's own; a
@@ -1016,13 +1324,15 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         if batch.ids.is_empty() {
             return Err(Error::EmptyBatch);
         }
-        if batch.ids.len() > self.limits.items || self.pending.len() >= self.limits.tickets {
+        // Day 93 (I26): an open host hit holds a ticket's slot.
+        let open = self.pending.len() + self.hits.len();
+        if batch.ids.len() > self.limits.items || open >= self.limits.tickets {
             return Err(Error::Capacity);
         }
         batch.request.validate()?;
         // One ticket is reserved for mandatory/demand work, even when hints stall.
         if batch.request.priority == Priority::OptionalPrefetch
-            && self.pending.len() >= self.limits.tickets.saturating_sub(1)
+            && open >= self.limits.tickets.saturating_sub(1)
         {
             return Err(Error::Capacity);
         }

@@ -252,6 +252,15 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpert
         self.validated(local, bytes).map(|_| ())
     }
     fn demand(&mut self, local: ExpertDispatchId, bytes: usize) -> Result<ExpertDemand> {
+        // Day 93 (I26, `research/spill-c-20260919/DAY93.md`): a host hit takes no ticket; anything else stages one.
+        let position = self.validated(local, bytes)?.1;
+        if let Some((ticket, mut leases)) =
+            self.bank
+                .stage_hit_at(&[position], self.epochs, &mut self.request)?
+        {
+            let lease = leases.pop().ok_or(Error::Incomplete)?;
+            return Ok(ExpertDemand { ticket, lease });
+        }
         // Day 61 (I11 change 4): the id validated is the id staged; one lookup. Day 85 (I22): staged with
         // its catalog position.
         let (id, position) = self.validated(local, bytes)?;
@@ -310,6 +319,17 @@ impl<H: Hotness<ExpertDomain>, R: ExactReader> ExpertDispatchBank for SlruExpert
         }
         if blocks.len() > MAX_GROUP {
             return Err(Error::Capacity);
+        }
+        // Day 93 (I26): every block a host hit takes no ticket; anything else stages one, as before.
+        let mut at = [0usize; MAX_GROUP];
+        for (slot, &(local, bytes)) in at.iter_mut().zip(blocks) {
+            *slot = self.validated(local, bytes)?.1;
+        }
+        if let Some((ticket, leases)) =
+            self.bank
+                .stage_hit_at(&at[..blocks.len()], self.epochs, &mut self.request)?
+        {
+            return Ok(ExpertDemands { ticket, leases });
         }
         // Day 85 (I22): each block's id and catalog position, staged together.
         let mut ids = Vec::with_capacity(blocks.len());

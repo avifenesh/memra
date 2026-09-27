@@ -254,3 +254,70 @@ fn day93_record() {
         path.display()
     );
 }
+
+/// Day 93 section 3 (the lead's condition 2): the bound names the evicted leases open tickets or hits may pin; `inert`
+/// holds only where the worst case, the hits' included, fits both capacities; and both branches: kept (the default)
+/// charges a held hit the queue charge a ticket would, dropped charges it nothing, and both return to the same
+/// charge after its finish. Dropping is refused while a demand is open.
+#[test]
+fn the_hit_charge_bound_names_hits_and_both_branches_hold() {
+    let (_, ids) = spread();
+    for drop in [false, true] {
+        let (mut positioned, req, g) = bank_governed(5, Priority::Demand);
+        let bound = positioned.hit_charge_bound().unwrap();
+        assert!(
+            bound
+                .terms
+                .contains("evicted_leases_held_by_open_tickets_or_hits="),
+            "{}",
+            bound.terms
+        );
+        assert!(
+            bound.terms.contains("tickets_plus_hits<=4"),
+            "{}",
+            bound.terms
+        );
+        assert!(bound.hits > 0 && bound.others > bound.hits);
+        let worst = bound.others + bound.hits;
+        assert!(bound.inert(worst, 4));
+        assert!(!bound.inert(worst - 1, 4));
+        assert!(!bound.inert(u64::MAX, 3));
+        if drop {
+            positioned.drop_hit_queue_charge().unwrap();
+        }
+        let map = ids
+            .iter()
+            .map(|b| (dispatch_id(&b.record).unwrap(), b.clone()))
+            .collect();
+        let mut d = SlruExpertDispatch::new(positioned, map, req, epochs()).unwrap();
+        assert_eq!(d.bank().hit_queue_charge(), !drop);
+        let group: Vec<(ExpertDispatchId, usize)> = ids[0..3]
+            .iter()
+            .map(|id| (dispatch_id(&id.record).unwrap(), 16))
+            .collect();
+        let first = d.demand_many(&group).unwrap();
+        d.finish_many(&first).unwrap();
+        let before = g.borrow().used.clone();
+        let held = d.demand_many(&group).unwrap();
+        let during = g.borrow().used.clone();
+        if drop {
+            assert_eq!(during, before, "a dropped hit charge changed the governor");
+        } else {
+            assert_eq!(during.inflight, before.inflight + 1);
+            assert!(during.pageable > before.pageable);
+        }
+        d.finish_many(&held).unwrap();
+        assert_eq!(g.borrow().used, before);
+    }
+    let (mut b, req) = super::day85::bank(5, Priority::Demand);
+    let ticket = b
+        .stage(BankBatch {
+            ids: vec![ids[0].clone()],
+            epochs: epochs(),
+            request: req,
+        })
+        .unwrap();
+    assert_eq!(b.drop_hit_queue_charge(), Err(Error::Busy));
+    assert!(b.hit_queue_charge());
+    b.cancel(&ticket).unwrap();
+}
