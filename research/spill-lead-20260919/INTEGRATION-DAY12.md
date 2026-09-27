@@ -4698,6 +4698,9 @@ reader checks, or a physical line on every admission, lane B's next addendum) is
   spec-ctx-edge and the pause gate `ALL GREEN`; `tier-transfer-gate` and all seven `kv-tier-gate` fault arms PASS; the
   admit-mem burst gate with `MEMRA_ADMIT_PREDICT_VG_DEBT=1` `ALL GREEN`. Lane C reads BOX43 as having an hourly host-wide
   stall at about half past each hour (DAY86); no cell here failed on a timeout.
+- Main moved after GPU run 2 to `83225c1dc` (#871 and #874: DSv4 serving lanes and B-row width to 16, the fused MoE
+  tail, DSv4 FLAGS and TESTING rows), merged in clean (`a775249bd`); none of it is reachable from the spill cells (DSv4
+  only), so this merge is gated by a CPU battery on the merged head (`integ72-cpu-battery-main874/`) and the PR's CI.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
