@@ -1,3 +1,7 @@
+# WP-B checkpoint 2026-09-27 11:3xZ: integ71 merges with the doors-off program green (revuto round 2 approved 451ccd0c3).
+The RW cell's R1 FAIL placed on its wording (the G=32 later turns resume through the exact path at the settle point;
+all 20 resumed on both exact boots, R2 matched cold); DAY44 2.2 and addendum D; the revised reader at f7901d987; the
+lead reruns c13 on the lane tip. lane/spill-b-integ71-fixes not needed after the merge; remove wt-b-fix71 then.
 # WP-B checkpoint 2026-09-27 07:0xZ: the four #844 items fixed on 24bddc8cb's line (lane/spill-b-integ71-fixes at
 f0b824ff5: the kv fault OOM formats without libcuda, the remove-var allowlist, DAY44 addendum C's settle checkpoint and
 memory gate with the RW cell), merged into the lane (2d84b98a5); DAY48 2.1 read (V1 to V4 PASS, no measurable change).
