@@ -4655,6 +4655,43 @@ measurable on this model and card and stays off. C: `DAY87 PACKET LINES tree=359
 - CPU battery 16 of 16 with CI's gates job on `e66726e1f` (`integ72-cpu-battery/`: server lib 988, engine lib 596).
 - CPU battery 16 of 16 with CI's gates job on the merged head `50bad99d2` (main `f2b1030d7` in;
   `integ72-cpu-battery-main856/`: server lib 988, engine lib 596).
+- GPU battery run 1 on BOX43 (`integ72-pro-run1/`, 585 receipts mirrored and checked), tree `50bad99d2`, 09:43Z to
+  10:23Z: serve-smoke 1 failed (the Q35 arm, #777, the same line as integ69 to integ71); engine cells `26 passed`;
+  worker span cells `19 passed`; identity, fault default and plain, hit OFF and ON, admit-mem burst, spec-ctx-edge and
+  the pause gate `ALL GREEN`; `tier-transfer-gate` and all seven `kv-tier-gate` fault arms PASS; the admit-mem burst gate
+  with `MEMRA_ADMIT_PREDICT_VG_DEBT=1` `ALL GREEN`, with no `vg_debt=` line (the 9B has no verify-graph pool, so that
+  cell barely reaches the door; lane B's DAY48 sitting on the Ornith 35B is the door's coverage).
+
+**Revuto round 1 on #857 found a real defect in the DAY48 door, fixed in lane B.** Review comment 4114891741:
+`dspark_vg_admission_debt` is not read-only; `DsparkVerifyGraphs::admission_debt` records `(captures, reserved)`
+whenever captures grew, and the physical gate calls it again later in the same admission. With the door on, the
+predictive call consumed the marginal reading, so the physical call fell to the bootstrap branch (up to a whole extra
+pool's worth of reserve) and the two sides logged different debts. Registered first as DAY48 addendum B, fixed in
+`521fdbbbc`: the predictive seam reads a non-recording peek (`admission_debt_peek`); the physical gate's call is
+unchanged and still records, so it returns what the peek returned and its reserve is the door-off one. The engine test
+`the_peek_leaves_the_physical_debt_unchanged_across_a_growing_pool` runs seven admissions over a growing pool and
+asserts equal physical debts door off and on, equal logged debts, and that the old double read differs. Revuto round
+2 on `4ecb9bb9b` APPROVED. The lead's review had missed it: it checked the door is inert when off, not that the door's
+on path calls a function with side effects.
+
+**Lane B's DAY48 rerun on the fix (the nineteenth sitting).** The first attempt did not run: `boot O1-enforce: waiting
+for an idle rig` at 10:28:26Z, then `rig not idle after 7200 s; not run`, `boots stopped rc=3` at 12:28:27Z. Lane C's
+DAY86 load runs back-to-back door runs, taking the lock per run, so the boot's idle poll (`flock -n`, then no compute
+app) never found a free window; the lead had launched it into the load window (its receipts are kept as
+`pro-single-day48/box-b-notrun`). Lane B's runner now takes the lock blocking first and checks idle under the hold
+(DAY48 addendum D, `a6ea7c49f`, a scratch-lock test with a back-to-back taker: the old poll found the lock free on 0 of
+20 probes, the hold got in within 1 s). The rerun (`pro-single-day48/box-b`, tree `b094f619d`, binary on `521fdbbbc`,
+12:41Z to 12:56Z, between the load's runs): V1 to V3 PASS on all four boots, V4 PASS in both orders (`differ=[]`), V5
+`paired=38 apart=[]` and `paired=41 apart=[]` PASS on both enforce-vg boots, V6 the physical debt `distinct_mb=[34]`
+everywhere. Lane B records V5's clause as written not met beside the reader's PASS: 11 admissions printed no physical
+line (the estimate log dedups a repeated cost key), so their debts are unobserved, not apart; any revision of the
+clause is the owner's. The pool did not grow during the burst, so the defect's case is covered by the engine test alone.
+- Main moved to `286c0c54c` (#862, DSv4 only), merged clean with lane B's `08fa610e1` (the sitting's receipts and
+  reading). CPU battery 16 of 16 with CI's gates job on the final code `2aa19a0ac` (`integ72-cpu-battery-final/`:
+  server lib 988, engine lib 597); on `b62118980` too (`integ72-cpu-battery-fix/`).
+
+**Ruling 67, addendum:** the door lands default-off with the peek; V5's clause revision (to the paired-equality the
+reader checks, or a physical line on every admission, lane B's next addendum) is the owner's, beside DAY44's R1.
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
