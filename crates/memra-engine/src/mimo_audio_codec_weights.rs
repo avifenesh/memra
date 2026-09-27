@@ -353,6 +353,44 @@ fn expected_rvq_bins(depth: usize) -> Option<usize> {
     }
 }
 
+fn prevalidate_rvq_codebooks(
+    rows: &[EncoderRow],
+    payload: &[u8],
+    data_base: usize,
+    contract: &AudioTokenizerAuxiliaryContract,
+) -> Result<(), String> {
+    if contract.quantizers != 20 || contract.hidden_size != 1_024 {
+        return Err("MiMo codec RVQ pinned plan changed".into());
+    }
+    for depth in 0..20 {
+        let bins = expected_rvq_bins(depth).unwrap();
+        if contract.codebook_sizes[depth] != bins {
+            return Err(format!("MiMo codec RVQ depth {depth} bin schedule changed"));
+        }
+        let name = format!("encoder.quantizer.vq.layers.{depth}._codebook.embed");
+        let row = rows
+            .iter()
+            .find(|row| row.name == name)
+            .ok_or_else(|| format!("MiMo codec encoder missing {name}"))?;
+        check_codebook_row(&name, row.dtype, &row.shape, row.byte_len()?, bins)?;
+        let start = data_base
+            .checked_add(row.offsets[0])
+            .ok_or_else(|| format!("MiMo codec encoder {name} start offset overflows"))?;
+        let end = data_base
+            .checked_add(row.offsets[1])
+            .ok_or_else(|| format!("MiMo codec encoder {name} end offset overflows"))?;
+        let bytes = payload
+            .get(start..end)
+            .ok_or_else(|| format!("MiMo codec encoder {name} exceeds mapped file"))?;
+        if bytes.len() != row.byte_len()? || !finite_f32_payload(bytes) {
+            return Err(format!(
+                "MiMo codec encoder {name} has invalid F32 codebook values"
+            ));
+        }
+    }
+    Ok(())
+}
+
 impl MiMoAudioCodecEncoderWeights {
     pub fn tensor(&self, name: &str) -> Option<&CodecEncoderTensor> {
         self.tensors.get(name)
@@ -587,6 +625,7 @@ impl MiMoAudioCodecEncoderWeights {
         let headers = parse_header_json_checked(header)?;
         let rows = select_encoder_rows(&headers)?;
         let data_base = 8 + header_bytes.len();
+        prevalidate_rvq_codebooks(&rows, &mmap, data_base, &contract)?;
 
         engine.gpu.ctx.bind_to_thread()?;
         let ordinal = engine.stream().context().ordinal();
@@ -612,16 +651,6 @@ impl MiMoAudioCodecEncoderWeights {
             if row.dtype == CodecEncoderDtype::Bf16 && !finite_bf16_payload(bytes) {
                 return Err(format!(
                     "MiMo codec encoder {} has non-finite BF16 weights",
-                    row.name
-                )
-                .into());
-            }
-            if row.name.starts_with("encoder.quantizer.vq.layers.")
-                && row.name.ends_with("._codebook.embed")
-                && !finite_f32_payload(bytes)
-            {
-                return Err(format!(
-                    "MiMo codec encoder {} has non-finite F32 codebook values",
                     row.name
                 )
                 .into());
@@ -763,6 +792,40 @@ mod tests {
         assert!(!finite_f32_payload(&f32::INFINITY.to_le_bytes()));
         assert!(!finite_f32_payload(&[0, 0, 0]));
         assert_eq!(expected_rvq_bins(20), None);
+    }
+
+    #[test]
+    fn rvq_preflight_rejects_corrupt_last_book_before_upload() {
+        let contract = verify_pinned_auxiliary(
+            SOURCE,
+            include_bytes!(
+                "../../memra-gguf/src/model_packs/mimo_v2/fixtures/audio-tokenizer-config.json"
+            ),
+            FIXTURE.as_bytes(),
+            LFS_WEIGHT_SHA256,
+            FILE_BYTES,
+        )
+        .unwrap();
+        let mut rows = Vec::new();
+        let mut payload = Vec::new();
+        for depth in 0..20 {
+            let bins = expected_rvq_bins(depth).unwrap();
+            let start = payload.len();
+            payload.resize(start + bins * 1_024 * 4, 0);
+            rows.push(EncoderRow {
+                name: format!("encoder.quantizer.vq.layers.{depth}._codebook.embed"),
+                dtype: CodecEncoderDtype::F32,
+                shape: vec![bins as u64, 1_024],
+                offsets: [start, payload.len()],
+            });
+        }
+        prevalidate_rvq_codebooks(&rows, &payload, 0, &contract).unwrap();
+        let last = rows[19].offsets[0];
+        payload[last..last + 4].copy_from_slice(&f32::NAN.to_le_bytes());
+        assert!(prevalidate_rvq_codebooks(&rows, &payload, 0, &contract).is_err());
+        payload[last..last + 4].fill(0);
+        rows[19].shape[0] -= 1;
+        assert!(prevalidate_rvq_codebooks(&rows, &payload, 0, &contract).is_err());
     }
 
     #[test]
