@@ -130,3 +130,7 @@ mod tests {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "mimo_audio_codec_encode/target_gpu_parity_probe.rs"]
+mod target_gpu_parity_probe;

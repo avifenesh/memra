@@ -1,0 +1,163 @@
+//! Compare Memra's combined audio encoder with independent publisher inputs.
+//! This is a diagnostic; a printed code mismatch remains a qualification gap.
+
+use std::path::Path;
+
+use memra_gguf::model_packs::mimo_v2::audio_tokenizer::{LFS_WEIGHT_SHA256, SOURCE};
+use sha2::{Digest, Sha256};
+
+use super::{Engine, Fail, MEL_CHANNELS, MiMoAudioCodecEncoderWeights};
+
+const TOKENS: usize = 3;
+const WIDTH: usize = 1_024;
+const DEPTHS: usize = 20;
+const CPU_IDS: [u16; TOKENS * DEPTHS] = [
+    892, 542, 112, 40, 86, 47, 38, 118, 18, 53, 99, 124, 43, 24, 87, 75, 69, 26, 58, 91, 54, 61,
+    119, 28, 59, 86, 90, 38, 102, 35, 72, 17, 29, 37, 55, 24, 123, 127, 17, 18, 992, 285, 49, 126,
+    107, 96, 114, 107, 88, 83, 89, 5, 48, 24, 37, 56, 16, 64, 29, 44,
+];
+const PUBLISHER_GPU_IDS: [u16; TOKENS * DEPTHS] = [
+    892, 542, 112, 0, 86, 47, 38, 118, 18, 91, 99, 124, 43, 24, 24, 5, 69, 26, 58, 91, 54, 61, 119,
+    28, 59, 86, 90, 38, 102, 35, 72, 17, 29, 37, 55, 24, 123, 127, 17, 18, 992, 285, 49, 126, 107,
+    96, 114, 107, 88, 83, 89, 5, 48, 24, 37, 56, 16, 64, 29, 72,
+];
+const CPU_FEATURES: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../memra-reference/src/fixtures/mimo-v26-publisher-cpu-pre-rvq.bf16"
+));
+const PUBLISHER_GPU_FEATURES: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-pre-rvq.bf16"
+));
+const MEL: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../memra-reference/src/fixtures/mimo-pcm-mel-voiced-2048.logmel.f32"
+));
+
+fn decode_bf16(bytes: &[u8]) -> Result<Vec<f32>, Fail> {
+    if bytes.len() != TOKENS * WIDTH * 2 {
+        return Err("MiMo pre-RVQ feature fixture extent changed".into());
+    }
+    Ok(bytes
+        .chunks_exact(2)
+        .map(|pair| {
+            let bits = u16::from_le_bytes([pair[0], pair[1]]);
+            f32::from_bits(u32::from(bits) << 16)
+        })
+        .collect())
+}
+
+fn feature_stats(label: &str, actual: &[f32], reference: &[f32]) -> Result<(), Fail> {
+    if actual.len() != TOKENS * WIDTH || reference.len() != actual.len() {
+        return Err("MiMo pre-RVQ feature comparison extent changed".into());
+    }
+    let mut numerator = 0.0f64;
+    let mut denominator = 0.0f64;
+    let mut max_abs = 0.0f32;
+    let mut matching_bits = 0usize;
+    for (&got, &want) in actual.iter().zip(reference) {
+        if !got.is_finite() || !want.is_finite() {
+            return Err("MiMo pre-RVQ feature comparison was non-finite".into());
+        }
+        let difference = (got - want).abs();
+        numerator += f64::from(difference).powi(2);
+        denominator += f64::from(want).powi(2);
+        max_abs = max_abs.max(difference);
+        matching_bits += usize::from(got.to_bits() == want.to_bits());
+    }
+    println!(
+        "mimo_audio_features\t{label}\trel_l2={:.9e}\tmax_abs={max_abs:.9e}\tmatching_bits={matching_bits}/{}",
+        (numerator / denominator).sqrt(),
+        actual.len()
+    );
+    Ok(())
+}
+
+fn code_diff(label: &str, actual: &[u16], reference: &[u16]) -> Result<(), Fail> {
+    if actual.len() != TOKENS * DEPTHS || reference.len() != actual.len() {
+        return Err("MiMo RVQ code comparison extent changed".into());
+    }
+    let mut differences = 0;
+    for (index, (&got, &want)) in actual.iter().zip(reference).enumerate() {
+        if got != want {
+            differences += 1;
+            println!(
+                "mimo_audio_code_diff\t{label}\trow={}\tdepth={}\tactual={got}\treference={want}",
+                index / DEPTHS,
+                index % DEPTHS
+            );
+        }
+    }
+    println!(
+        "mimo_audio_codes\t{label}\tmatching={}/{}",
+        actual.len() - differences,
+        actual.len()
+    );
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires pinned bundled weights and a dedicated target GPU"]
+fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
+    assert_eq!(
+        SOURCE,
+        "XiaomiMiMo/MiMo-V2.6-Flash-RL@3b38d063180c3e4aed9691fdc735f3d10b266ee4"
+    );
+    assert_eq!(
+        LFS_WEIGHT_SHA256,
+        "077033345d80eef3a315e8d394e0589667e80e4cdaba9bc5a7488410c6657265"
+    );
+    assert_eq!(
+        format!("{:x}", Sha256::digest(CPU_FEATURES)),
+        "8ca5d8fcb8e8cc3c07043f458f3a3e0c57d609609638a2522a3365ec4890d174"
+    );
+    assert_eq!(
+        format!("{:x}", Sha256::digest(PUBLISHER_GPU_FEATURES)),
+        "103eab4231e8acef815884e438df7fcb63ab908071fd7a99abff59d1544c90db"
+    );
+    assert_eq!(MEL.len(), 9 * MEL_CHANNELS * 4);
+    let mel = MEL
+        .chunks_exact(4)
+        .map(|word| f32::from_le_bytes(word.try_into().expect("four-byte F32")))
+        .collect::<Vec<_>>();
+    let root = std::env::var("MIMO_PINNED_SOURCE_ROOT")?;
+    let gpu = std::env::var("MEMRA_MIMO_COMPONENT_GPU")
+        .unwrap_or_else(|_| "0".into())
+        .parse()?;
+    let engine = Engine::new(gpu)?;
+    let weights = MiMoAudioCodecEncoderWeights::load(&engine, Path::new(&root))?;
+    let first = weights.encode_prepared_mel_conv(&engine, &engine.htod(&mel)?, 9)?;
+    let stack = weights.encode_transformer_stack(&engine, &first, 5)?;
+    let features = weights.downsample_post_stack(&engine, &stack, 5)?;
+    let memra_features = engine.dtoh(&features)?;
+    let cpu_features = decode_bf16(CPU_FEATURES)?;
+    let publisher_gpu_features = decode_bf16(PUBLISHER_GPU_FEATURES)?;
+    feature_stats("memra_vs_cpu_publisher", &memra_features, &cpu_features)?;
+    feature_stats(
+        "memra_vs_gpu_publisher",
+        &memra_features,
+        &publisher_gpu_features,
+    )?;
+    feature_stats(
+        "cpu_vs_gpu_publisher",
+        &cpu_features,
+        &publisher_gpu_features,
+    )?;
+
+    let memra_ids = weights.encode_20_rvq(&engine, &features, TOKENS)?.code_ids;
+    code_diff("memra_vs_cpu_publisher", &memra_ids, &CPU_IDS)?;
+    code_diff("memra_vs_gpu_publisher", &memra_ids, &PUBLISHER_GPU_IDS)?;
+    for (label, reference_features, expected) in [
+        ("gpu_rvq_on_cpu_features", &cpu_features, &CPU_IDS),
+        (
+            "gpu_rvq_on_gpu_publisher_features",
+            &publisher_gpu_features,
+            &PUBLISHER_GPU_IDS,
+        ),
+    ] {
+        let input = engine.htod(reference_features)?;
+        let ids = weights.encode_20_rvq(&engine, &input, TOKENS)?.code_ids;
+        code_diff(label, &ids, expected)?;
+    }
+    Ok(())
+}
