@@ -1,0 +1,22 @@
+== with-i22 cell rc=0
+== with-i22 arms: arms: ref i20 i21 i22 i22r
+== with-i22 calls: 50 lines
+     10 run-gen-i20 --experts-via-tier --expert-bank-host-bytes=17179869184
+     10 run-gen-i21
+     10 run-gen-i21 --experts-via-tier --expert-bank-host-bytes=17179869184
+     10 run-gen-i22 --experts-via-tier --expert-bank-host-bytes=17179869184
+     10 run-gen-i22 --experts-via-tier --expert-bank-host-bytes=17179869184 --expert-bank-pool-registered
+== with-i22 order: o1-ref-r1 o1-i20-r1 o1-i21-r1 o1-i22-r1 o1-i22r-r1 o1-ref-r2 o1-i20-r2 o1-i21-r2 o1-i22-r2 o1-i22r-r2 o1-ref-r3 o1-i20-r3 o1-i21-r3 o1-i22-r3 o1-i22r-r3 o1-ref-r4 o1-i20-r4 o1-i21-r4 o1-i22-r4 o1-i22r-r4 o1-ref-r5 o1-i20-r5 o1-i21-r5 o1-i22-r5 o1-i22r-r5 o2-i22r-r1 o2-i22-r1 o2-i21-r1 o2-i20-r1 o2-ref-r1 o2-i22r-r2 o2-i22-r2 o2-i21-r2 o2-i20-r2 o2-ref-r2 o2-i22r-r3 o2-i22-r3 o2-i21-r3 o2-i20-r3 o2-ref-r3 o2-i22r-r4 o2-i22-r4 o2-i21-r4 o2-i20-r4 o2-ref-r4 o2-i22r-r5 o2-i22-r5 o2-i21-r5 o2-i20-r5 o2-ref-r5
+== with-i22 exits:      50 0 
+== with-i22 snapshots: 100, with vmstat 100, with buddyinfo 100
+== with-i22 cell tail: slow86 cell done:      50 0 
+== without-i22 cell rc=0
+== without-i22 arms: arms: ref i20 i21
+== without-i22 calls: 30 lines
+     10 run-gen-i20 --experts-via-tier --expert-bank-host-bytes=17179869184
+     10 run-gen-i21
+     10 run-gen-i21 --experts-via-tier --expert-bank-host-bytes=17179869184
+== without-i22 order: o1-ref-r1 o1-i20-r1 o1-i21-r1 o1-ref-r2 o1-i20-r2 o1-i21-r2 o1-ref-r3 o1-i20-r3 o1-i21-r3 o1-ref-r4 o1-i20-r4 o1-i21-r4 o1-ref-r5 o1-i20-r5 o1-i21-r5 o2-i21-r1 o2-i20-r1 o2-ref-r1 o2-i21-r2 o2-i20-r2 o2-ref-r2 o2-i21-r3 o2-i20-r3 o2-ref-r3 o2-i21-r4 o2-i20-r4 o2-ref-r4 o2-i21-r5 o2-i20-r5 o2-ref-r5
+== without-i22 exits:      30 0 
+== without-i22 snapshots: 60, with vmstat 60, with buddyinfo 60
+== without-i22 cell tail: slow86 cell done:      30 0 

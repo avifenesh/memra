@@ -121,7 +121,14 @@ pub struct SlruPolicy {
     occupants: Vec<Option<BankId>>,
     reserved: FxMap<BankId, usize>,
     table: FxMap<BankId, usize>,
+    /// Day 84 (I21, `research/spill-c-20260919/DAY84.md`): once `index_positions` ran, the host slot of each catalog
+    /// position (`NO_SLOT` when not resident) beside `table`, and each slot's position (`NO_SLOT` when free), kept
+    /// equal to `table` at its every change; empty otherwise.
+    by_position: Vec<u32>,
+    slot_position: Vec<u32>,
 }
+/// Day 84 (I21): an absent entry of the position view.
+const NO_SLOT: u32 = u32::MAX;
 impl SlruPolicy {
     /// Ascending, unique (capacity, count) classes. Caller uses the native size
     /// class planner; this does not infer a hardware budget or change that plan.
@@ -138,6 +145,8 @@ impl SlruPolicy {
             occupants: Vec::new(),
             reserved: FxMap::default(),
             table: FxMap::default(),
+            by_position: Vec::new(),
+            slot_position: Vec::new(),
         };
         for &(capacity, count) in classes {
             let start = out.slot_class.len();
@@ -175,6 +184,41 @@ impl SlruPolicy {
     pub fn resident(&self, id: &BankId) -> Option<usize> {
         self.table.get(id).copied()
     }
+    /// Day 84 (I21): install the position view for a catalog of `records` ids, on an empty policy (`Busy`
+    /// otherwise, or when installed already); from then on a publication names the record's position
+    /// (`publish_at`), and `publish` refuses. Positions and slots must fit `u32` below `NO_SLOT`.
+    pub fn index_positions(&mut self, records: usize) -> Result<()> {
+        if !self.is_empty() || !self.slot_position.is_empty() {
+            return Err(Error::Busy);
+        }
+        if records >= NO_SLOT as usize || self.occupants.len() >= NO_SLOT as usize {
+            return Err(Error::Overflow);
+        }
+        self.by_position = vec![NO_SLOT; records];
+        self.slot_position = vec![NO_SLOT; self.occupants.len()];
+        Ok(())
+    }
+    /// Day 84 (I21): whether the position view is installed.
+    pub fn indexed(&self) -> bool {
+        !self.slot_position.is_empty()
+    }
+    /// Day 84 (I21): `resident` for the record at catalog `position`, read from the position view (`None` for a
+    /// position outside it, and whenever the view is not installed).
+    pub fn resident_at(&self, position: usize) -> Option<usize> {
+        match self.by_position.get(position) {
+            Some(&slot) if slot != NO_SLOT => Some(slot as usize),
+            _ => None,
+        }
+    }
+    /// Day 84 (I21): a slot leaves `table`; its position, if the view holds one, leaves the view.
+    fn clear_position(&mut self, slot: usize) {
+        if let Some(position) = self.slot_position.get_mut(slot) {
+            if *position != NO_SLOT {
+                self.by_position[*position as usize] = NO_SLOT;
+            }
+            *position = NO_SLOT;
+        }
+    }
     pub fn pending(&self, id: &BankId) -> bool {
         self.reserved.contains_key(id)
     }
@@ -182,6 +226,18 @@ impl SlruPolicy {
         let Some(slot) = self.resident(id) else {
             return false;
         };
+        self.hit_slot(slot)
+    }
+    /// Day 85 (I22, `research/spill-c-20260919/DAY85.md`): `hit` for the record at catalog `position`, its slot read
+    /// from the position view (`false` when the view holds none, as `hit` answers for a record not resident).
+    pub fn hit_at(&mut self, position: usize) -> bool {
+        let Some(slot) = self.resident_at(position) else {
+            return false;
+        };
+        self.hit_slot(slot)
+    }
+    /// The promotion `hit` makes once it has the resident record's slot.
+    fn hit_slot(&mut self, slot: usize) -> bool {
         let class = &mut self.classes[self.slot_class[slot]];
         if !class.free.is_empty() {
             return true;
@@ -256,6 +312,7 @@ impl SlruPolicy {
         let evicted = self.occupants[slot].take();
         if let Some(old) = &evicted {
             self.table.remove(old);
+            self.clear_position(slot);
         }
         self.reserved.insert(id.clone(), slot);
         Ok(Some(SlruDecision { slot, evicted }))
@@ -284,6 +341,27 @@ impl SlruPolicy {
     /// CPU producer completion only. Native caller must establish consumer wait
     /// before this metadata publication; calling this cannot create a ReadyView.
     pub fn publish(&mut self, id: &BankId) -> Result<usize> {
+        // Day 84 (I21): an indexed policy learns each publication's position, or its view would go stale.
+        if self.indexed() {
+            return Err(Error::Unsupported);
+        }
+        self.publish_unindexed(id)
+    }
+    /// Day 84 (I21): `publish` on an indexed policy, the record at catalog `position` (`InvalidLayout` for a
+    /// position outside the view, `Unsupported` when the view is not installed; either before any change).
+    pub fn publish_at(&mut self, id: &BankId, position: usize) -> Result<usize> {
+        if !self.indexed() {
+            return Err(Error::Unsupported);
+        }
+        if position >= self.by_position.len() {
+            return Err(Error::InvalidLayout);
+        }
+        let slot = self.publish_unindexed(id)?;
+        self.by_position[position] = slot as u32;
+        self.slot_position[slot] = position as u32;
+        Ok(slot)
+    }
+    fn publish_unindexed(&mut self, id: &BankId) -> Result<usize> {
         let slot = self.reserved.remove(id).ok_or(Error::NotFound)?;
         self.occupants[slot] = Some(id.clone());
         self.table.insert(id.clone(), slot);
@@ -305,6 +383,7 @@ impl SlruPolicy {
         let Some(slot) = self.table.remove(id) else {
             return false;
         };
+        self.clear_position(slot);
         self.occupants[slot] = None;
         let class = &mut self.classes[self.slot_class[slot]];
         match self.links[slot].seg {

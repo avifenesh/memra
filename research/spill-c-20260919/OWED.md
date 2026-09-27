@@ -105,7 +105,35 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   (`DAY79.md`): I18 (`c7294b912`, a bank ticket's records by position instead of a set and a map of cloned ids, the
   host-hit demand's largest part), CPU gates green, the profile about 150 ns per block below I17; on BOX34 `DAY79
   VERDICT rig=pro-single integrity=ok i18=flat door=i18 vs_ref=loses (window: i18=flat vs_ref=matches)` (stays); the
-  5090's `i18` inadmissible. Open: the next cut of the prefetch path, registered before code.
+  5090's `i18` inadmissible. Day 81 (`DAY81.md`): I19 (the next-but-one expert prefetched after the current
+  expert's accumulate) withdrawn before any card, its order is I18's (the local check's host demand sequence
+  byte-for-byte I18's), reverted (`5f8824d6b`). Day 82 (`DAY82.md`): an allocation census of the grouped host-hit
+  cycle chose I20 (`8efea3a54`, the bank's stage without its two `BudgetRequest` clones: 22 to 16 allocations per
+  cycle), CPU gates green, P9 unresolved on the local CPU; the card cell `i20` adds I15 as a fifth arm (I20 against
+  I15 printed beside the registered step, deciding nothing); on BOX39 (the 285K class) `DAY82 VERDICT rig=pro-single
+  integrity=ok i20=flat door=i20 vs_ref=loses (window: i20=flat vs_ref=matches)` (admissible; I20 stays; the door 3 ms
+  over 32 tokens behind REF gen-only; beside it I20 against I15 -1 ms, `flat`); the local RTX 5090 check `PASS`; on
+  BOX40 (a 9950X) `DAY82 VERDICT rig=pro-single integrity=ok i20=flat door=i20 vs_ref=loses (window: i20=flat
+  vs_ref=loses)` (admissible; I20 stays on both classes; the door 3 ms gen-only and 1 ms on the window behind REF;
+  beside it I20 against I15 -1 ms, one printed tick, `improves` by the rule, deciding nothing). Day 83 (`DAY83.md`):
+  the card cells' own clocks put the door-only work at about 2.4 us per prefetched block (453 us per generated token
+  on BOX39); the in-situ split on the local RTX 5090 (cell `split20`) named `outer` the largest leaf at I20 (171 us per
+  token, 26 percent), then `pf_resident` (125), both largely one per-record read (the id tree and the SLRU table).
+  Day 84 (`DAY84.md`): I21 (`b555b4141`, residency by catalog position: the SLRU's position view, the adapter's dense
+  position table), CPU gates green, the day-61 profile's residency check 574-607 to 47-51 ns per call; the local check
+  `PASS`; in situ the two leaves -243 us per token, 93 of it moved to the next hashed reads of the same records, net
+  -150 (22 percent of the door-only leaves). The card cell `i21`: on BOX41 (285K) `i21=flat door=i21 vs_ref=loses
+  (window: i21=flat vs_ref=matches)`; on BOX31 (a 9950X with 19 h of prior sittings) void, inadmissible, C12's slow
+  state in every door arm (DAY86 asks whether the cuts raise its rate); the rerun on BOX42 (a fresh 9950X) `i21=improves
+  door=i21 vs_ref=loses (window: i21=flat vs_ref=matches)`: I21 stays, the first cut since I15 a class resolves on its
+  own step; the door 2 ms behind REF gen-only on both classes, matching the window. Day 85 (`DAY85.md`): the rc check
+  (one historical receipt line, no live script); I22 (`4b378a064`, the bank's host cache, SLRU hit, catalog entry and
+  the adapter's `validated` by position), CPU gates green, the day-61 profile's grouped cycle about 60 percent less per
+  block; the card cell `i22`: on BOX43 (9950X) `i22=improves door=i22 vs_ref=matches (window: i22=flat
+  vs_ref=matches)`, on BOX41 (285K) `i22=flat door=i22 vs_ref=matches (window: i22=flat vs_ref=matches)`: I22 stays,
+  and the tuned door matches REF on both classes by the rule (1 to 2 ms behind gen-only by the medians, against 9 to 10
+  at I15; `DAY85.md` section 5); the local check and split of I22 queued (v19). Day 86 (`DAY86.md`): the cell `slow86`
+  on BOX43 once it has carried 12 h of sittings (no earlier than 2026-09-27T09:40Z).
 
 ## C12. The door's sensitivity to its owner thread's host placement (the 9950X class)
 
@@ -159,9 +187,9 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
   isolates and cannot move. Day 80 (`DAY80.md`): the fix, a pool of private anonymous memory pinned with
   `cuMemHostRegister` (`57086efc8`, `--expert-bank-pool-registered`, decide-by 2026-10-10), cells `regtime` and
   `regpool` ready (`day80-box.sh`, the 285K and a 9950X); on BOX37 (285K) `registered_clears` and `dr=flat`
-  (admissible); the local 5090 check MATCH with the same tape; the 5090's `regtime` inadmissible. Open: the 9950X half
-  (a 123 GB host is valid by section 1: `regtime` with the natural-slow reading, `regpool` `not_run`), then the owner's
-  question (`DAY80.md` section 4); `induce-b` on a 9950X with at least 98 GiB
+  (admissible); the local 5090 check MATCH with the same tape; the 5090's `regtime` inadmissible; on BOX38 (9950X)
+  `regtime` admissible `dr=flat`, `no_natural_slow`, `regpool` `not_run` (a valid half by section 3). Open: the
+  owner's question (`DAY80.md` section 4a), then the flip and its qualification sitting; `induce-b` on a 9950X with at least 98 GiB
   `MemFree`; DAY71's default half on BOX15's machine, then the class line.
 
 ## C2. The slot cache door's promotion prerequisites (the door doc's pending items 1, 2, 3, 5, 6)

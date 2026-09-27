@@ -165,6 +165,8 @@ impl TicketRecords {
 }
 struct Pending {
     ids: Vec<BankId>,
+    /// Day 85 (I22, `research/spill-c-20260919/DAY85.md`): the ids' catalog positions, for a ticket `stage_at` made.
+    positions: Option<Vec<usize>>,
     work: Option<ReadWork>,
     missing: Vec<(BankId, CatalogRecord)>,
     charges: Vec<ChargedLease>,
@@ -207,6 +209,9 @@ struct CacheIndex {
     map: FxMap<BankId, BankLease>,
     bytes: u64,
     candidates: Vec<BankLease>,
+    /// Day 85 (I22, `research/spill-c-20260919/DAY85.md`): once installed (with the SLRU), each catalog position's
+    /// cached lease beside `map`, kept equal at its every change; empty otherwise.
+    by_position: Vec<Option<BankLease>>,
 }
 impl CacheIndex {
     fn new() -> Self {
@@ -214,6 +219,33 @@ impl CacheIndex {
             map: FxMap::default(),
             bytes: 0,
             candidates: Vec::new(),
+            by_position: Vec::new(),
+        }
+    }
+    /// Day 85 (I22): install the position view for a catalog of `records` ids, on an empty index only.
+    fn index_positions(&mut self, records: usize) -> Result<()> {
+        if !self.map.is_empty() || !self.by_position.is_empty() {
+            return Err(Error::Busy);
+        }
+        self.by_position = vec![None; records];
+        Ok(())
+    }
+    fn indexed(&self) -> bool {
+        !self.by_position.is_empty()
+    }
+    /// Day 85 (I22): `get` for the id at catalog `position`, read from the view (`None` when it is not installed).
+    fn get_at(&self, position: usize) -> Option<&BankLease> {
+        self.by_position.get(position).and_then(Option::as_ref)
+    }
+    /// Day 85 (I22): mirror one change of `map` at `id`'s position (every change passes it once the view is
+    /// installed; `BankService::cache_position` resolves it).
+    fn mirror(&mut self, position: Option<usize>, lease: Option<&BankLease>) {
+        debug_assert!(
+            !self.indexed() || position.is_some(),
+            "an indexed cache change without a position"
+        );
+        if let Some(entry) = position.and_then(|p| self.by_position.get_mut(p)) {
+            *entry = lease.cloned();
         }
     }
     fn lease_bytes(lease: &BankLease) -> u64 {
@@ -225,10 +257,12 @@ impl CacheIndex {
     fn contains_key(&self, id: &BankId) -> bool {
         self.map.contains_key(id)
     }
-    /// Insert, and hand a replaced lease of another charge to the release candidates.
-    fn insert(&mut self, id: BankId, lease: BankLease) {
+    /// Insert, and hand a replaced lease of another charge to the release candidates. Day 85 (I22): `position` is
+    /// the id's catalog position when the view is installed.
+    fn insert(&mut self, id: BankId, lease: BankLease, position: Option<usize>) {
         let charge = lease.charge().id();
         self.bytes += Self::lease_bytes(&lease);
+        self.mirror(position, Some(&lease));
         if let Some(old) = self.map.insert(id, lease) {
             self.bytes -= Self::lease_bytes(&old);
             if old.charge().id() != charge {
@@ -236,10 +270,11 @@ impl CacheIndex {
             }
         }
     }
-    /// Remove an id that leaves the cache while its lease may still be owned.
-    fn remove_evicted(&mut self, id: &BankId) -> bool {
+    /// Remove an id that leaves the cache while its lease may still be owned. Day 85 (I22): `position` as `insert`.
+    fn remove_evicted(&mut self, id: &BankId, position: Option<usize>) -> bool {
         match self.map.remove(id) {
             Some(old) => {
+                self.mirror(position, None);
                 self.bytes -= Self::lease_bytes(&old);
                 self.candidates.push(old);
                 true
@@ -247,18 +282,30 @@ impl CacheIndex {
             None => false,
         }
     }
-    /// Remove the entry of a lease that is being released now (not a candidate).
-    fn remove_released(&mut self, lease: &BankLease) -> bool {
+    /// Remove the entry of a lease that is being released now (not a candidate). Day 85 (I22): `position` as
+    /// `insert`.
+    fn remove_released(&mut self, lease: &BankLease, position: Option<usize>) -> bool {
         if self
             .map
             .get(lease.id())
             .is_some_and(|r| r.charge().id() == lease.charge().id())
         {
             let old = self.map.remove(lease.id()).expect("checked present");
+            self.mirror(position, None);
             self.bytes -= Self::lease_bytes(&old);
             return true;
         }
         false
+    }
+}
+
+/// Day 85 (I22): `id`'s catalog position when the host cache's position view is installed, `None` otherwise (a free
+/// function so a caller holding the SLRU mutably can still pass the cache and the catalog).
+fn cache_position(cache: &CacheIndex, catalog: &Catalog, id: &BankId) -> Option<usize> {
+    if cache.indexed() {
+        catalog.position(id).ok()
+    } else {
+        None
     }
 }
 
@@ -356,6 +403,12 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         {
             return Err(Error::Capacity);
         }
+        // Day 84 (I21, `research/spill-c-20260919/DAY84.md`): the policy's position view over this catalog, so
+        // the lease path reads residency by position; `slru_metadata_bytes` charges it.
+        let mut policy = policy;
+        policy.index_positions(self.catalog.len())?;
+        // Day 85 (I22): the host cache's position view, with the policy's.
+        self.cache.index_positions(self.catalog.len())?;
         self.slru = Some((policy, metadata.pin()?));
         Ok(self)
     }
@@ -363,7 +416,14 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         let max_id = self.catalog.ids().try_fold(0u64, |max_id, id| {
             id.encode().map(|b| max_id.max(b.len() as u64))
         })?;
-        // Two full-key maps + occupant key + queues, conservative node allowance.
+        // Two full-key maps + occupant key + queues, conservative node allowance; day 84 (I21): plus the position
+        // view, one `u32` per catalog id and one per slot; day 85 (I22): plus the host cache's view, one lease handle
+        // (8 bytes) per catalog id.
+        let view = (self.catalog.len() as u64)
+            .checked_add(slots as u64)
+            .and_then(|n| n.checked_mul(4))
+            .and_then(|n| n.checked_add((self.catalog.len() as u64).checked_mul(8)?))
+            .ok_or(Error::Overflow)?;
         (slots as u64)
             .checked_mul(
                 max_id
@@ -372,10 +432,25 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                     .ok_or(Error::Overflow)?,
             )
             .and_then(|n| n.checked_add(4096))
+            .and_then(|n| n.checked_add(view))
             .ok_or(Error::Overflow)
     }
     pub fn slru_policy(&self) -> Option<&SlruPolicy> {
         self.slru.as_ref().map(|(p, _)| p)
+    }
+    /// Day 85 (I22, `research/spill-c-20260919/DAY85.md`): the id and layout at catalog `position`, with `layout`'s
+    /// refusals for that id (`InvalidLayout` for a record outside the domain, then `NotFound` or `MaskedId`).
+    pub(crate) fn layout_at(&self, position: usize) -> Result<(&BankId, &RecordLayout)> {
+        let id = self.catalog.id_at(position)?;
+        if !D::accepts(&id.record) {
+            return Err(Error::InvalidLayout);
+        }
+        Ok((id, &self.catalog.entry_at(position)?.record.layout))
+    }
+    /// Day 84 (I21, `research/spill-c-20260919/DAY84.md`): `Catalog::position` of this bank's catalog, read once per
+    /// record by an adapter that then asks `SlruPolicy::resident_at`.
+    pub fn catalog_position(&self, id: &BankId) -> Result<usize> {
+        self.catalog.position(id)
     }
     /// Execute at most one bounded host read. CPU work must be pumped off a
     /// serving scheduler thread. Returning true means producer terminal, NOT GPU ready.
@@ -568,6 +643,8 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         if policy.resident(id).is_some() || policy.pending(id) {
             return Ok(FillOutcome::Dropped);
         }
+        // Day 84 (I21): the record's catalog position, read before anything is reserved.
+        let position = self.catalog.position(id)?;
         let Some(_slot) = policy.reserve_free(id, layout.storage_bytes()?)? else {
             return Ok(if policy.free_slots() == 0 {
                 FillOutcome::Full
@@ -593,9 +670,11 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             bytes.into_backing(),
         ) {
             Ok(lease) => {
-                policy.publish(id)?;
+                // Day 84 (I21): the publication names the record's catalog position.
+                policy.publish_at(id, position)?;
                 self.owned.insert(lease.charge().id(), lease.clone());
-                self.cache.insert(id.clone(), lease);
+                let at = self.cache.indexed().then_some(position);
+                self.cache.insert(id.clone(), lease, at);
                 Ok(FillOutcome::Admitted)
             }
             Err(rejected) => {
@@ -618,7 +697,8 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         if let Some((policy, _)) = &mut self.slru {
             policy.remove(id);
         }
-        Ok(self.cache.remove_evicted(id))
+        let at = cache_position(&self.cache, &self.catalog, id);
+        Ok(self.cache.remove_evicted(id, at))
     }
     /// Host consumer adapter calls after its last use (including speculative
     /// rollback). No CUDA/graph use is accepted by this backend. Does not release
@@ -778,7 +858,8 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                 })
                 .cloned()
                 .expect("nonempty cache");
-            self.cache.remove_evicted(&id);
+            let at = cache_position(&self.cache, &self.catalog, &id);
+            self.cache.remove_evicted(&id, at);
             if let Some((policy, _)) = &mut self.slru {
                 policy.remove(&id);
             }
@@ -841,7 +922,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
     }
     fn stage(&mut self, batch: BankBatch) -> Result<TransferTicket> {
         let started = clock_start(&self.clock);
-        let result = self.stage_unclocked(batch);
+        let result = self.stage_unclocked(batch, None);
         clock_add(&mut self.clock, started, |c, ns| {
             c.stages += 1;
             c.stage_ns += ns;
@@ -876,7 +957,8 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
         self.can_release(lease)?;
         lease.retire_backing()?;
         self.budget.borrow_mut().release(lease.charge())?;
-        if self.cache.remove_released(lease)
+        let at = cache_position(&self.cache, &self.catalog, lease.id());
+        if self.cache.remove_released(lease, at)
             && let Some((policy, _)) = &mut self.slru
         {
             policy.remove(lease.id());
@@ -886,7 +968,32 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankedResidency for BankServi
     }
 }
 impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
-    fn stage_unclocked(&mut self, batch: BankBatch) -> Result<TransferTicket> {
+    /// Day 85 (I22, `research/spill-c-20260919/DAY85.md`): `stage` for a batch whose ids' catalog positions the
+    /// caller already holds (`positions[k]` is `batch.ids[k]`'s), which reads the catalog entry, the host cache and,
+    /// at publication, the SLRU by position. Crate-private: the dispatch adapter's positions are the catalog's own; a
+    /// debug build asserts each. Needs the host cache's position view (the SLRU installs it), `Unsupported` without.
+    pub(crate) fn stage_at(
+        &mut self,
+        batch: BankBatch,
+        positions: Vec<usize>,
+    ) -> Result<TransferTicket> {
+        let started = clock_start(&self.clock);
+        let result = if !self.cache.indexed() || positions.len() != batch.ids.len() {
+            Err(Error::Unsupported)
+        } else {
+            self.stage_unclocked(batch, Some(positions))
+        };
+        clock_add(&mut self.clock, started, |c, ns| {
+            c.stages += 1;
+            c.stage_ns += ns;
+        });
+        result
+    }
+    fn stage_unclocked(
+        &mut self,
+        mut batch: BankBatch,
+        positions: Option<Vec<usize>>,
+    ) -> Result<TransferTicket> {
         if batch.ids.is_empty() {
             return Err(Error::EmptyBatch);
         }
@@ -919,11 +1026,20 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         let looking = clock_start(&self.clock);
         let mut logical = 0u64;
         let mut metadata = Some(0u64);
-        for id in &batch.ids {
+        for (k, id) in batch.ids.iter().enumerate() {
             if !D::accepts(&id.record) {
                 return Err(Error::InvalidLayout);
             }
-            let entry = self.catalog.entry(id)?;
+            // Day 85 (I22): by position for a positioned batch (the id's validation and then the entry, as
+            // `Catalog::entry` reads them), by the hashed index otherwise.
+            let entry = match &positions {
+                Some(positions) => {
+                    id.validate()?;
+                    debug_assert_eq!(self.catalog.id_at(positions[k]).ok(), Some(id));
+                    self.catalog.entry_at(positions[k])?
+                }
+                None => self.catalog.entry(id)?,
+            };
             logical = logical
                 .checked_add(entry.record.layout.storage_bytes()?)
                 .ok_or(Error::Overflow)?;
@@ -942,7 +1058,12 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
         let mut missing = Vec::new();
         for k in 0..records.first.len() {
             let id = &batch.ids[records.first[k]];
-            match self.cache.get(id) {
+            // Day 85 (I22): a positioned batch reads the host cache's position view.
+            let cached = match &positions {
+                Some(positions) => self.cache.get_at(positions[records.first[k]]),
+                None => self.cache.get(id),
+            };
+            match cached {
                 Some(lease) => records.leases[k] = Some(lease.clone()),
                 None => missing.push((id.clone(), self.catalog.record(id)?.clone())),
             }
@@ -973,16 +1094,35 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             .checked_add(metadata)
             .and_then(|n| n.checked_add(slot))
             .ok_or(Error::Overflow)?;
-        let mut queue_request = batch.request.clone();
-        queue_request.bytes.pageable = queue_request.bytes.pageable.max(required) - output_bytes;
-        queue_request.bytes.staging = queue_request.bytes.staging.max(slot);
-        queue_request.bytes.inflight = queue_request.bytes.inflight.max(1);
+        // Day 82 (I20): the queue's request is the batch's own, its three queue dimensions set for
+        // the reservation and restored after it, where a clone of it (and of its three budget
+        // vectors) was reserved before; the reserved values are the same.
+        let kept = (
+            batch.request.bytes.pageable,
+            batch.request.bytes.staging,
+            batch.request.bytes.inflight,
+        );
+        batch.request.bytes.pageable = kept.0.max(required) - output_bytes;
+        batch.request.bytes.staging = kept.1.max(slot);
+        batch.request.bytes.inflight = kept.2.max(1);
         let charging = clock_start(&self.clock);
-        let queue = self.budget.borrow_mut().reserve(&queue_request)?;
+        let queue = self.budget.borrow_mut().reserve(&batch.request);
+        (
+            batch.request.bytes.pageable,
+            batch.request.bytes.staging,
+            batch.request.bytes.inflight,
+        ) = kept;
+        let queue = queue?;
         let mut charges = Vec::new();
         for (id, _) in &missing {
-            let mut request = batch.request.clone();
-            request.bytes = TierBudget::zero(request.bytes.device.len());
+            // Day 82 (I20): the missing record's request built from the batch's fields, not a
+            // clone whose budget is then replaced.
+            let mut request = BudgetRequest {
+                bytes: TierBudget::zero(batch.request.bytes.device.len()),
+                priority: batch.request.priority,
+                deadline: batch.request.deadline,
+                tenant: batch.request.tenant,
+            };
             request.bytes.pageable = self.catalog.entry(id)?.resident_charge_bytes()?;
             let result = self.budget.borrow_mut().reserve(&request);
             match result {
@@ -1060,6 +1200,7 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             ticket,
             Pending {
                 ids: batch.ids,
+                positions,
                 work,
                 missing,
                 charges,
@@ -1075,8 +1216,9 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
                 error: None,
                 plan,
                 queue: Some(queue),
-                request: batch.request.clone(),
                 demand: batch.request.priority != Priority::OptionalPrefetch,
+                // Day 82 (I20): the batch's request moved into the ticket, not cloned.
+                request: batch.request,
                 cancelled: false,
                 published: false,
                 host_use_done: false,
@@ -1147,22 +1289,33 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             // A prefetch hit is a no-op, not demand heat. Duplicate IDs retain order.
             for (pos, id) in p.ids.iter().enumerate() {
                 // Day 61 (I11 change 3): one SLRU lookup per id; `hit` answers residency and
-                // promotes as it did after the separate check.
-                let resident = if p.demand {
-                    policy.hit(id)
-                } else {
-                    policy.resident(id).is_some()
+                // promotes as it did after the separate check. Day 85 (I22): by the ticket's
+                // catalog position when `stage_at` made it (the answer the id's lookup gives).
+                let at = p.positions.as_ref().map(|positions| positions[pos]);
+                let resident = match (p.demand, at) {
+                    (true, Some(position)) => policy.hit_at(position),
+                    (true, None) => policy.hit(id),
+                    (false, Some(position)) => policy.resident_at(position).is_some(),
+                    (false, None) => policy.resident(id).is_some(),
                 };
                 if resident {
                     continue;
                 }
                 let lease = p.records.lease_at(pos);
+                // Day 84 (I21): the record's catalog position, read before anything is reserved.
+                let position = match at {
+                    Some(position) => position,
+                    None => self.catalog.position(id)?,
+                };
                 if let Some(decision) = policy.reserve(id, lease.layout().storage_bytes()?, &[])? {
                     if let Some(old) = decision.evicted {
-                        self.cache.remove_evicted(&old);
+                        let old_at = cache_position(&self.cache, &self.catalog, &old);
+                        self.cache.remove_evicted(&old, old_at);
                     }
-                    policy.publish(id)?;
-                    self.cache.insert(id.clone(), lease.clone());
+                    // Day 84 (I21): the publication names the record's catalog position.
+                    policy.publish_at(id, position)?;
+                    let cached_at = self.cache.indexed().then_some(position);
+                    self.cache.insert(id.clone(), lease.clone(), cached_at);
                 } else {
                     // Published to this ticket with no host slot: owned, never cached.
                     self.cache.candidates.push(lease.clone());
@@ -1170,7 +1323,8 @@ impl<D: BankDomain, H: Hotness<D>, R: ExactReader> BankService<D, H, R> {
             }
         } else {
             for (id, lease) in p.records.sorted_pairs(&p.ids) {
-                self.cache.insert(id.clone(), lease.clone());
+                let at = cache_position(&self.cache, &self.catalog, id);
+                self.cache.insert(id.clone(), lease.clone(), at);
             }
             self.trim();
         }
