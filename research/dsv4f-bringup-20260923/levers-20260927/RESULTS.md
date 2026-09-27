@@ -594,3 +594,41 @@ x mirror, which every CTA builds for itself and nothing overlaps.
 | sampled c1 | 94.53 / 94.55 | 96.04 / 96.22, +1.7% |
 | greedy c2 | 125.80 / 126.03 | 126.96 / 127.25, +1.0% |
 | greedy c4 | 160.03 / 159.32 | 161.37 / 163.76, +1.5% |
+
+## The indexer q chain, and o's inverse RoPE with its bf16 pack, each in one launch (adopted)
+
+Lane `lane/dsv4-attn-small-fuse2-20260927`, measured against main `80f734c77` on the second SE
+pair (`raw/se2-attn-fuse2-s2zi/`).
+
+**What changed.** Two fused kernels replace six launches per ratio-4 layer and two per other
+layer on the f32-chain arm, which is the served one:
+- `dsv4_indexer_q_chain_kernel` replaces `rope`, `hadamard`, `fp4_act_quant` and
+  `q_transpose_m` on the indexer's q rows. One CTA per (position, head) row loads it into shared
+  memory, rotates the last rd dims, runs the Hadamard butterflies and scale, does the per-32 FP4
+  QAT (the group max is exact in any order), and writes both the row and the scorer's
+  `[hd][heads]` staging.
+- `dsv4_rope_inv_cvt_kernel` replaces the inverse `rope` on o and its `cvt_bf16`. Each thread
+  takes one element pair, rotates it with the inverse expression when it lies in the last rd
+  dims, and writes the f32 row and the bf16 pack.
+
+Every value is those kernels' op in their order.
+
+**Correctness.**
+- The long gate hash is `fbce1a0492d69635`.
+- The TP/EP rows gate and the KV split gate pass.
+- The DSpark TP/EP gate passes with the pair's shas `cc6082dd` and `373e6557`.
+- All 40 served requests have the same text in every arm, sampled cells included.
+
+**Long gate,** order M F F M M F: 9.90 .. 10.06 ms/token against 9.99 .. 10.12, about -0.6%.
+
+**Served,** cells-pdl M F F M, N=2:
+
+| cell | main | lane |
+|---|---|---|
+| greedy c1 | 96.89 / 97.06 (decode 101.6 / 101.8) | 97.20 / 97.70 (decode 102.0 / 102.4), **+0.5%** |
+| sampled c1 | 96.88 / 97.21 | 97.29 / 97.98, +0.5% |
+| greedy c2 | 127.70 / 128.13 | 127.94 / 129.12, +0.5% |
+| greedy c4 | 154.11 / 163.18 | 162.77 / 161.13 |
+
+Every lane c1 row is above every main c1 row. The c4 cells swing about 6% between boots of the
+same build, so they settle nothing here.

@@ -780,6 +780,122 @@ extern "C" int memra_dsv4_hadamard(float* x, int rows, int d, float scale, void*
     return 0;
 }
 
+// The indexer q chain in one launch (memra #710): dsv4_rope_kernel on the row's last rd dims,
+// dsv4_hadamard_kernel's butterflies and scale, dsv4_fp4_act_quant_kernel's per-32 QAT (the
+// group max is exact in any order), then dsv4_q_transpose_m_kernel's [hd][heads] staging. Each
+// value is those kernels' op in their order; four launches become one. One CTA of d / 2
+// threads per (position, head) row; d a power of two up to 1024.
+extern "C" __global__ void dsv4_indexer_q_chain_kernel(float* __restrict__ x,
+                                                       float* __restrict__ qt, int heads, int d,
+                                                       int rd, const float* __restrict__ cs,
+                                                       const int* __restrict__ positions,
+                                                       float scale) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    extern __shared__ float sh[];
+    const int row = blockIdx.x, p = row / heads, hh = row % heads;
+    float* xr = x + (long)row * d;
+    for (int i = threadIdx.x; i < d; i += blockDim.x) sh[i] = xr[i];
+    __syncthreads();
+    for (int kk = threadIdx.x; kk < rd / 2; kk += blockDim.x) {
+        const float* crow = cs + (long)positions[p] * rd + 2 * kk;
+        const float c = crow[0], sn = crow[1];
+        const int base = (d - rd) + 2 * kk;
+        const float x0 = sh[base], x1 = sh[base + 1];
+        sh[base] = x0 * c - x1 * sn;
+        sh[base + 1] = x0 * sn + x1 * c;
+    }
+    __syncthreads();
+    for (int h = 1; h < d; h *= 2) {
+        const int npairs = d / 2;
+        for (int q = threadIdx.x; q < npairs; q += blockDim.x) {
+            const int base = (q / h) * 2 * h;
+            const int i = base + (q % h);
+            const float a = sh[i], b = sh[i + h];
+            sh[i] = a + b;
+            sh[i + h] = a - b;
+        }
+        __syncthreads();
+    }
+    for (int i = threadIdx.x; i < d; i += blockDim.x) sh[i] = sh[i] * scale;
+    __syncthreads();
+    // Per-32 groups, one warp each.
+    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5, nw = blockDim.x >> 5;
+    for (int g = warp; g < d / 32; g += nw) {
+        const float v = sh[g * 32 + lane];
+        float a = fabsf(v);
+#pragma unroll
+        for (int o = 16; o; o >>= 1) a = fmaxf(a, __shfl_xor_sync(0xffffffffu, a, o));
+        const float floorv = 6.0f * ldexpf(1.0f, -126);
+        const float amax = fmaxf(a, floorv);
+        const float inv = (float)(1.0 / 6.0);
+        const float s = dsv4_pow2_ceil(amax * inv);
+        const float out = dsv4_e2m1_rne(fminf(fmaxf(v / s, -6.0f), 6.0f)) * s;
+        const int i = g * 32 + lane;
+        xr[i] = out;
+        qt[(long)p * heads * d + (long)i * heads + hh] = out;
+    }
+}
+
+extern "C" int memra_dsv4_indexer_q_chain(float* x, float* qt, int n_pos, int heads, int d,
+                                          int rd, const float* cs, const int* positions,
+                                          float scale, void* stream_v) {
+    if (!x || !qt || !cs || !positions || n_pos < 1 || heads < 1 || d < 64 || d > 1024 ||
+        (d & (d - 1)) || rd > d || rd % 2)
+        return 40004;
+    memra_chain_launch(dsv4_indexer_q_chain_kernel, (unsigned)(n_pos * heads), (unsigned)(d / 2),
+                       (size_t)d * sizeof(float), (cudaStream_t)stream_v)(
+        x, qt, heads, d, rd, cs, positions, scale);
+    DSV4_ERR();
+    return 0;
+}
+
+// The attention output's inverse RoPE and its bf16 pack in one launch (memra #710): each thread
+// takes one element pair of a head row, rotates it as dsv4_rope_kernel does with inverse set when
+// the pair lies in the last rd dims, and writes both the f32 row and dsv4_cvt_bf16_kernel's pack.
+extern "C" __global__ void dsv4_rope_inv_cvt_kernel(float* __restrict__ x,
+                                                    __nv_bfloat16* __restrict__ xb, long pairs,
+                                                    int heads, int d, int rd,
+                                                    const float* __restrict__ cs,
+                                                    const int* __restrict__ positions) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const long j = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (j >= pairs) return;
+    const int half_d = d / 2;
+    const int e = (int)(j % half_d) * 2;
+    const long row = j / half_d;
+    const int p = (int)(row / heads);
+    float* xr = x + row * d;
+    float x0 = xr[e], x1 = xr[e + 1];
+    if (e >= d - rd) {
+        const int kk = (e - (d - rd)) / 2;
+        const float* crow = cs + (long)positions[p] * rd + 2 * kk;
+        const float c = crow[0], s0 = crow[1];
+        const float sn = -s0;
+        const float y0 = x0 * c - x1 * sn;
+        const float y1 = x0 * sn + x1 * c;
+        x0 = y0;
+        x1 = y1;
+        xr[e] = x0;
+        xr[e + 1] = x1;
+    }
+    xb[row * d + e] = __float2bfloat16(x0);
+    xb[row * d + e + 1] = __float2bfloat16(x1);
+}
+
+extern "C" int memra_dsv4_rope_inv_cvt(float* x, void* xb, int n_pos, int heads, int d, int rd,
+                                       const float* cs, const int* positions, void* stream_v) {
+    if (!x || !xb || !cs || !positions || n_pos < 1 || heads < 1 || d % 2 || rd > d || rd % 2 ||
+        (d - rd) % 2)
+        return 40004;
+    const long pairs = (long)n_pos * heads * (d / 2);
+    const int threads = 256;
+    memra_chain_launch(dsv4_rope_inv_cvt_kernel, (unsigned)((pairs + threads - 1) / threads),
+                       threads, 0, (cudaStream_t)stream_v)(
+        x, (__nv_bfloat16*)xb, pairs, heads, d, rd, cs, positions);
+    DSV4_ERR();
+    return 0;
+}
+
 // ---------------------------------------------------------------- compressor / indexer
 
 // Gated softmax pooling over ratio-blocks (model.py:279-377; oracle CompressorW::forward).

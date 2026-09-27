@@ -777,6 +777,35 @@ unsafe extern "C" {
         clamp_only: i32,
         stream: *mut c_void,
     ) -> i32;
+    /// The indexer q chain in one launch (memra #710): `memra_dsv4_rope`, `memra_dsv4_hadamard`,
+    /// `memra_dsv4_fp4_act_quant` over `x` in place and `memra_dsv4_q_transpose_m` into `qt`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_indexer_q_chain(
+        x: *mut f32,
+        qt: *mut f32,
+        n_pos: i32,
+        heads: i32,
+        d: i32,
+        rd: i32,
+        cs: *const f32,
+        positions: *const i32,
+        scale: f32,
+        stream: *mut c_void,
+    ) -> i32;
+    /// `memra_dsv4_rope` with inverse set, then `memra_dsv4_cvt_bf16` of the rows into `xb`, in
+    /// one launch (memra #710).
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_rope_inv_cvt(
+        x: *mut f32,
+        xb: *mut c_void,
+        n_pos: i32,
+        heads: i32,
+        d: i32,
+        rd: i32,
+        cs: *const f32,
+        positions: *const i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_rope(
         x: *mut f32,
         n_pos: i32,
