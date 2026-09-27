@@ -3,6 +3,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
 use memra_engine::Engine;
 use memra_engine::mimo_compressed_text_forward::MiMoCompressedTextForward;
@@ -32,6 +33,16 @@ impl Forward<'_> {
             Self::Compressed(forward) => forward.position(),
         }
     }
+}
+
+fn argmax(logits: &[f32]) -> usize {
+    let mut best = 0;
+    for index in 1..logits.len() {
+        if logits[index].total_cmp(&logits[best]).is_gt() {
+            best = index;
+        }
+    }
+    best
 }
 
 fn run() -> Result<(), Fail> {
@@ -82,22 +93,37 @@ fn run() -> Result<(), Fail> {
             "memra-mimo-model-owned-text-forward-v1"
         }
     );
+    let turn_start = Instant::now();
     let mut logits = forward.token(token_ids[0])?;
     println!("processed_token\t0\t{}", token_ids[0]);
+    let mut last_argmax = None;
+    if compressed_context.is_some() {
+        let top = argmax(&logits);
+        last_argmax = Some(top);
+        println!("argmax_turn\t0\t{top}");
+        println!(
+            "turn_wall_ms\t0\t{:.3}",
+            turn_start.elapsed().as_secs_f64() * 1000.0
+        );
+    }
     for (turn, &token) in token_ids.iter().enumerate().skip(1) {
+        let turn_start = Instant::now();
         logits = forward.token(token)?;
         println!("processed_token\t{turn}\t{token}");
+        if compressed_context.is_some() {
+            let top = argmax(&logits);
+            last_argmax = Some(top);
+            println!("argmax_turn\t{turn}\t{top}");
+            println!(
+                "turn_wall_ms\t{turn}\t{:.3}",
+                turn_start.elapsed().as_secs_f64() * 1000.0
+            );
+        }
     }
     if forward.position() != token_ids.len() || logits.len() != 152_576 {
         return Err("MiMo text replay returned incomplete logits or KV positions".into());
     }
-    let mut argmax = 0;
-    for index in 1..logits.len() {
-        if logits[index] > logits[argmax] {
-            argmax = index;
-        }
-    }
-    println!("argmax\t{argmax}");
+    println!("argmax\t{}", last_argmax.unwrap_or_else(|| argmax(&logits)));
     for (index, value) in logits.iter().enumerate() {
         println!("logit\t{index}\t{:08x}", value.to_bits());
     }
