@@ -1,4 +1,4 @@
-# WP-F resumable state (2026-09-27 about 20:20Z; integrable; OWED 18's 5090 8 GiB rerun is the open measurement)
+# WP-F resumable state (2026-09-27 about 21:10Z; integrable; OWED 18 v1 8 GiB rerun, then v2 cells, on the 5090)
 
 - Lane `lane/spill-f-20260919`, worktree `wt-spill-f`; tip on origin; main 21ce97836 (integ72)
   fast-forwarded in. Everything through d58f4bfd8 (OWED 26, 17 and 18 code, BOX36) is in main.
@@ -21,3 +21,11 @@
   that decide open items.
 - Scratch at the end: `~/spill-f-5090/`, `/data/cache/spill-f-b2/`, `/data/cache/spill-f-5090-proof/`,
   the local backup ref.
+- OWED 18 v2 (section E, pipelined direct writer; `owed18/v2/`): the 5090 1 GiB v1 pairs were flat
+  because direct export was trimodal with its write phase (QD1 synchronous writes) absorbing the
+  shared volume's latency. v2 writes up to three blocks in flight from a writer thread; 13 handoff
+  cells and the server suite (991) green. Frozen gate binaries in `~/spill-f-5090/bin18v2`.
+  `~/spill-f-5090/chain-v2.sh` (nice 19) starts `--from handoff-1g-v2` when the v1 8 GiB step ends;
+  both v2 steps mirror each cell into `owed18/5090/handoff-{1g,8g}-v2`. The default decision uses the
+  v2 rows on both cards; the PRO 6000 v2 pair needs a target card.
+
