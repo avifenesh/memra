@@ -1229,8 +1229,11 @@ capacity the cache and hidden digests read tens of megabytes per step, so such a
 steps and on the 64 steps either side of the handoff. A run with a handoff checks that it
 happened at the limit and skips the timing arm. `DSV4_REPLAY_GATE_PROFILE=replay|eager` replaces
 the timing arm with one warm run and one run bracketed by `cuProfilerStart`/`Stop`, for
-`nsys --capture-range=cudaProfilerApi`. Receipts:
-`research/dsv4f-bringup-20260923/tpep-default/`.
+`nsys --capture-range=cudaProfilerApi`. `DSV4_REPLAY_GATE_FLOOR=1` replaces it with the step's
+launch floor (memra #710 ceiling): the captured forward and commit graphs launched back to back
+with no host step, against clones whose every kernel node runs an empty kernel on its own grid,
+and clones that keep only the cross-rank joins, three rotating reps of 200 steps each (`FLOOR`
+lines). Receipts: `research/dsv4f-bringup-20260923/tpep-default/`.
 
 ### DSv4 compressor BF16 island storage (#695)
 

@@ -6887,6 +6887,26 @@ fn wants_prometheus(headers: &HeaderMap) -> bool {
     text_q > json_q
 }
 
+/// Which scalar of a [`route_telemetry::RouteLoadSnapshot`] a family-outer render loop is on
+/// (the Prometheus text format needs one metric family's lines kept together, so the route
+/// block is metric-outer, route-inner, and this selects the field).
+#[derive(Clone, Copy)]
+enum RouteSample {
+    TokensOut,
+    Waiting,
+    Running,
+    Capacity,
+}
+
+/// Which histogram of a [`route_telemetry::RouteLoadSnapshot`] a family-outer render loop is
+/// on (same reason as [`RouteSample`]).
+#[derive(Clone, Copy)]
+enum RouteHist {
+    QueueWait,
+    E2e,
+    Round,
+}
+
 /// Render the Prometheus text exposition (memra#522) from the same authorized snapshot the
 /// JSON body reads. Gated identically: process-wide counters only with
 /// [`MetricsScope::process_wide`], per-route detail only with [`MetricsScope::operator`] (the
@@ -6925,16 +6945,14 @@ fn render_prometheus_metrics(
         ));
     }
     if metrics_scope.operator() {
+        // The Prometheus text format (0.0.4) requires every line of one metric family to
+        // appear together, after that family's one `# TYPE` line (revuto finding on PR #908,
+        // the hybrid block's twin of this bug). One route is registered in practice today
+        // (dsv4), but a route-outer loop would split each family across the output the moment
+        // a second one registers and trip a strict parser (promtool, OpenMetrics, the Go
+        // expfmt text parser). Loop the family on the outside, the route on the inside.
         out.push_str("# TYPE memra_route_requests_total counter\n");
-        out.push_str("# TYPE memra_route_queue_wait_seconds histogram\n");
-        out.push_str("# TYPE memra_route_e2e_seconds histogram\n");
-        out.push_str("# TYPE memra_route_round_seconds histogram\n");
-        out.push_str("# TYPE memra_route_tokens_out_total counter\n");
-        out.push_str("# TYPE memra_route_waiting gauge\n");
-        out.push_str("# TYPE memra_route_running gauge\n");
-        out.push_str("# TYPE memra_route_capacity gauge\n");
         for r in routes {
-            let labels = format!("route=\"{}\"", r.name);
             for (code, count) in [
                 ("completed", r.completed),
                 ("failed", r.failed),
@@ -6942,31 +6960,47 @@ fn render_prometheus_metrics(
                 ("refused", r.refused),
             ] {
                 out.push_str(&format!(
-                    "memra_route_requests_total{{{labels},code=\"{code}\"}} {count}\n"
+                    "memra_route_requests_total{{route=\"{}\",code=\"{code}\"}} {count}\n",
+                    r.name
                 ));
             }
-            out.push_str(&format!(
-                "memra_route_tokens_out_total{{{labels}}} {}\n",
-                r.tokens_out
-            ));
-            out.push_str(&format!("memra_route_waiting{{{labels}}} {}\n", r.waiting));
-            out.push_str(&format!("memra_route_running{{{labels}}} {}\n", r.running));
-            out.push_str(&format!(
-                "memra_route_capacity{{{labels}}} {}\n",
-                r.capacity
-            ));
-            out.push_str(
-                &r.queue_wait_hist
-                    .render_prometheus("memra_route_queue_wait_seconds", &labels),
-            );
-            out.push_str(
-                &r.e2e_hist
-                    .render_prometheus("memra_route_e2e_seconds", &labels),
-            );
-            out.push_str(
-                &r.round_hist
-                    .render_prometheus("memra_route_round_seconds", &labels),
-            );
+        }
+        for (name, kind, sample) in [
+            (
+                "memra_route_tokens_out_total",
+                "counter",
+                RouteSample::TokensOut,
+            ),
+            ("memra_route_waiting", "gauge", RouteSample::Waiting),
+            ("memra_route_running", "gauge", RouteSample::Running),
+            ("memra_route_capacity", "gauge", RouteSample::Capacity),
+        ] {
+            out.push_str(&format!("# TYPE {name} {kind}\n"));
+            for r in routes {
+                let value = match sample {
+                    RouteSample::TokensOut => r.tokens_out,
+                    RouteSample::Waiting => r.waiting as u64,
+                    RouteSample::Running => r.running as u64,
+                    RouteSample::Capacity => r.capacity as u64,
+                };
+                out.push_str(&format!("{name}{{route=\"{}\"}} {value}\n", r.name));
+            }
+        }
+        for (name, hist) in [
+            ("memra_route_queue_wait_seconds", RouteHist::QueueWait),
+            ("memra_route_e2e_seconds", RouteHist::E2e),
+            ("memra_route_round_seconds", RouteHist::Round),
+        ] {
+            out.push_str(&format!("# TYPE {name} histogram\n"));
+            for r in routes {
+                let labels = format!("route=\"{}\"", r.name);
+                let h = match hist {
+                    RouteHist::QueueWait => &r.queue_wait_hist,
+                    RouteHist::E2e => &r.e2e_hist,
+                    RouteHist::Round => &r.round_hist,
+                };
+                out.push_str(&h.render_prometheus(name, &labels));
+            }
         }
     }
     out
@@ -19452,6 +19486,105 @@ default_reasoning_effort = "always"
             "Prometheus's own default scrape Accept header must select the exposition, \
              not JSON"
         );
+    }
+
+    /// The Prometheus text format (0.0.4) requires every line of one metric family to appear
+    /// together (revuto finding on PR #908, the hybrid block's twin of this bug). A route-outer
+    /// render loop would split each family's lines apart the moment TWO dedicated routes are
+    /// registered. This registers two routes, moves every histogram on both, renders their
+    /// snapshots through `render_prometheus_metrics`, and asserts every family is one
+    /// contiguous run under its own single `# TYPE` line.
+    #[test]
+    fn route_prometheus_families_stay_contiguous_across_two_routes() {
+        let routes = ["t522-contig-a", "t522-contig-b"]
+            .iter()
+            .enumerate()
+            .map(|(i, name)| {
+                let route = route_telemetry::register(name, 2 + i);
+                route.record_wait(std::time::Duration::from_millis(5 + i as u64));
+                route.note_round(50 + i as u64);
+                let mut run = route.begin();
+                run.admit();
+                run.finish(route_telemetry::ServeStats {
+                    tokens_out: 3 + i,
+                    n_prompt: 1,
+                    n_cached: 0,
+                    rounds: 1,
+                });
+                route.snapshot()
+            })
+            .collect::<Vec<_>>();
+        let text =
+            render_prometheus_metrics(&worker::Metrics::default(), &routes, &MetricsScope::All);
+        let families = [
+            ("memra_route_requests_total", "counter"),
+            ("memra_route_tokens_out_total", "counter"),
+            ("memra_route_waiting", "gauge"),
+            ("memra_route_running", "gauge"),
+            ("memra_route_capacity", "gauge"),
+            ("memra_route_queue_wait_seconds", "histogram"),
+            ("memra_route_e2e_seconds", "histogram"),
+            ("memra_route_round_seconds", "histogram"),
+        ];
+        let family_of = |line: &str| {
+            let metric = line.split(['{', ' ']).next().unwrap_or(line);
+            families
+                .iter()
+                .map(|(f, _)| *f)
+                .find(|f| {
+                    metric == *f
+                        || ["_bucket", "_sum", "_count"]
+                            .iter()
+                            .any(|sfx| metric.strip_suffix(sfx) == Some(*f))
+                })
+                .unwrap_or_else(|| panic!("line {line:?} belongs to no route family: {text}"))
+        };
+        let route_block = &text[text
+            .find("# TYPE memra_route_")
+            .unwrap_or_else(|| panic!("route block missing: {text}"))..];
+        // Walk the route block line by line: each family's `# TYPE` line appears exactly once,
+        // in this order, and every sample line that follows it until the next `# TYPE` belongs
+        // to that family. A family that reappears after another one started is the split this
+        // test guards.
+        let mut seen = Vec::new();
+        let mut current = None;
+        for line in route_block.lines() {
+            if let Some(decl) = line.strip_prefix("# TYPE ") {
+                let (name, kind) = decl.split_once(' ').unwrap();
+                assert!(
+                    !seen.iter().any(|(n, _)| *n == name),
+                    "{name} declared twice (family split): {text}"
+                );
+                seen.push((name, kind));
+                current = Some(name);
+                continue;
+            }
+            let family = family_of(line);
+            assert_eq!(
+                Some(family),
+                current,
+                "line {line:?} sits outside its own family's run: {text}"
+            );
+        }
+        assert_eq!(
+            seen, families,
+            "every route family declared once, in order: {text}"
+        );
+        // Both routes land inside every family (the contiguity above would pass vacuously on
+        // one route).
+        for (family, _) in families {
+            let type_line = format!("# TYPE {family} ");
+            let start = text.find(&type_line).unwrap() + type_line.len();
+            let rest = &text[start..];
+            let rest = &rest[rest.find('\n').unwrap() + 1..];
+            let block = &rest[..rest.find("# TYPE ").unwrap_or(rest.len())];
+            for route in ["t522-contig-a", "t522-contig-b"] {
+                assert!(
+                    block.contains(&format!("route=\"{route}\"")),
+                    "{family} block must carry {route}'s lines: {block}"
+                );
+            }
+        }
     }
 
     /// A fake DSv4-shaped route whose worker runs the route's real memory door
