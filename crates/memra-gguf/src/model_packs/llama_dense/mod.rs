@@ -10,6 +10,8 @@ use crate::config::HfConfig;
 /// English): 40 layers, hidden 5120, 32 heads over 8 KV heads, head_dim 128, ffn 32768,
 /// vocab 131072, rope_theta 1e6, no sliding window, untied embeddings.
 pub static PACK: ModelPack = ModelPack {
+    inventory_schema: None,
+    default_output_head: crate::tensor_contract::OutputHead::Separate,
     family: "llama_dense",
     output_head: OutputHeadContract::TiedHeadAllowed,
     tensor_consumption: TensorConsumption::Report,

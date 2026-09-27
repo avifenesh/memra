@@ -1,0 +1,72 @@
+{
+  "baseline": "1770f1bca9e48256f8ddd2290f6eec50f4b38376",
+  "review_probe_sha256": "06222b8e636915e2dac2e6b09431febaa732b256f47e1a5d1c6cd2c2c14a85ab",
+  "source_sha256": {
+    "crates/memra-engine/src/model_memory_fixture.rs": "05ae397dc85628df9c8a3cf899397717825fd496ceceda08c85cce306a6a0aec",
+    "crates/memra-gguf/src/bound_source.rs": "6bfeb3006e018b4ce9f4a2efd665d6b0502c71ef0866be6b473011a11b877c7a",
+    "crates/memra-gguf/src/bound_source/tests.rs": "9c62bae86281570b35546e5bf1dc03253d9117194390fa0857112962b690759a",
+    "crates/memra-gguf/src/model_packs/deepseek_v4/mod.rs": "f2b87772ae1b19541303612c56caec06169143e0c121b664fe2ed4cda802c2ce",
+    "crates/memra-gguf/src/model_packs/hy3/mod.rs": "9e1d9728a28db2e34cf0934be22e42cfee51f5e1d09a58c84a95c8c115cdfb5f",
+    "crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs": "c1647dd61c2c14ee2ed503c67c610f25d0a059240b108685b66f0e7b852862bd",
+    "crates/memra-gguf/src/model_packs/step35/inventory.rs": "479c158cfce502fecd806980adb0cffe90cc2fdc7b41186273c5429fa0cdcae6",
+    "crates/memra-gguf/src/model_packs/step35/tensors.rs": "aaa4f00dd4d436d77bceea562b304f7944def8b3f72d2902c0aace9cd1f9d629",
+    "crates/memra-gguf/src/model_packs/whisper/mod.rs": "7989ab1a9192d0afaac771bb1af2b512ad35691a31108b78f224757cd16a3b32",
+    "crates/memra-gguf/src/source.rs": "7f339544936cd876b51b7eeedc09c08ada50206fb0119c94f33aaf69f28430f6",
+    "crates/memra-gguf/src/tensor_contract.rs": "7341359cb0348846d06ed829f3fc724995ce5fa862547cbe687e393fb0f015b9",
+    "crates/memra-reference/src/bin/qwen4exp_tiny_parity.rs": "70d9befdcbaafea1d12d97fd4a67d5ff300dd82ecd7118422ed7f3974c3dd70d",
+    "crates/memra-reference/src/speech/decoder.rs": "8b91111039676f3c9f47bf0a5c3053a1e1bf499b662e863683078bdaa6e34605",
+    "crates/memra-reference/src/speech/encoder.rs": "9dbe5fec435299d7ab6df0401547bb58b02c29033d326e3ee92d3e6070105af2"
+  },
+  "raw": {
+    "raw/541-aux-inventory-red.log.gz": {
+      "sha256": "49bb99c2976802241781bcb294324a47eca427c3ec7a8e604dac767c166c10b4",
+      "uncompressed_sha256": "093ad7cb607fc7db2f3c19c216fde040c2b50857e829e9859efa220a2e8ad895",
+      "uncompressed_bytes": 1058
+    },
+    "raw/541-aux-inventory-green.log.gz": {
+      "sha256": "c03eb1ce51efdab65ed510ee9f5faa0250602c81f768df3d8521fe77160c6adb",
+      "uncompressed_sha256": "5b8eed41dfecd869e8dfaf5a625e8f3d414a479215389ee3cbd326bc20354f26",
+      "uncompressed_bytes": 470
+    },
+    "raw/541-aux-inventory-compiler.log.gz": {
+      "sha256": "b3106746bbbce76f286868ef0eed187aabda6dca0b40359953adb4867baca780",
+      "uncompressed_sha256": "f68649cd1fc917c20ae30608b06627ff3f80f5edb78d5d2f60ba5b75dabd165d",
+      "uncompressed_bytes": 32958
+    },
+    "raw/541-aux-inventory-clippy.log.gz": {
+      "sha256": "a5553cb193488ee7bae52f4579457e56562328d37df8bae5aa21cfe9271326af",
+      "uncompressed_sha256": "c9082e8f9c7ec6fac90d59d27f5c63f8cd9ce1f3444e4e330b029c132dbdc4a4",
+      "uncompressed_bytes": 522
+    },
+    "raw/541-aux-inventory-linux.log.gz": {
+      "sha256": "728b2dc34c4386117d0d10473580899bb39356af9324a0a95f537ad63bdc7249",
+      "uncompressed_sha256": "a4e41c83a328c5371959a32cc4c9b49eeac12b0ff2ee7c60df44f4a5e1d2aff8",
+      "uncompressed_bytes": 820
+    },
+    "raw/541-aux-inventory-build.log.gz": {
+      "sha256": "f50a2dda5894acdfea4761e767863a1a155d293e1c5cb448a3ccef667f9c2dae",
+      "uncompressed_sha256": "fecede7c2157efe2f16c8c8b9dce94b0fb4dd384dca8207046c8bf7636eb0ffe",
+      "uncompressed_bytes": 72
+    },
+    "raw/541-aux-inventory-build.jsonl.gz": {
+      "sha256": "720e60d79fb74eba79c7f9525b3e12ac680bcab63660ce2481101e4f18e43a66",
+      "uncompressed_sha256": "984fb9475d15e1060bd88a1f577c211b27b0e7e37f8fd94db21cf9e68baaf682",
+      "uncompressed_bytes": 11964
+    },
+    "raw/541-exact-review-repair.log.gz": {
+      "sha256": "84a5c296205192e0438d011e395be353a3379e9ae1c6b736212fa2eee807e592",
+      "uncompressed_sha256": "df61872a3d7db7e0fcd6b74473223ce28bc3534d8df60a6c29d2463600167959",
+      "uncompressed_bytes": 252
+    },
+    "raw/541-aux-full-catalog.log.gz": {
+      "sha256": "a4d6170654ac413cc4fb20dab14cfa996c208ce273933d02f632c2937dbfe545",
+      "uncompressed_sha256": "16cd9a29f1cfda591a3c45312825c4910420735f0e5c9674b01ee59515c5e619",
+      "uncompressed_bytes": 173
+    },
+    "raw/541-aux-inventory-format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    }
+  }
+}

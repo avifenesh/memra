@@ -27,6 +27,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+pub mod bound_disk;
+mod bound_output;
+pub mod bound_source;
 pub mod checkpoint_binding;
 pub mod config;
 mod config_json;
@@ -51,6 +54,7 @@ pub mod safetensors;
 pub mod source;
 pub mod spec_oracle;
 pub(crate) mod strict_json;
+pub mod surface_catalog;
 pub mod tensor_contract;
 
 pub const GGUF_MAGIC: u32 = 0x4655_4747; // "GGUF" little-endian
@@ -1110,6 +1114,12 @@ impl GgufFile {
         self.shards.len()
     }
 
+    /// Complete bytes of the opened mappings, including metadata and padding. Identity callers
+    /// must use these views rather than reopening the diagnostic shard paths.
+    pub(crate) fn opened_shard_bytes(&self) -> impl ExactSizeIterator<Item = &[u8]> {
+        self.shards.iter().map(|shard| &shard.mmap[..])
+    }
+
     /// On-disk path of a given shard.
     pub fn shard_path(&self, i: usize) -> &Path {
         &self.shards[i].path
@@ -1141,6 +1151,19 @@ impl GgufFile {
     pub fn tensor_file_range(&self, t: &TensorInfo) -> (usize, usize) {
         let start = (self.shards[t.shard].data_start + t.offset) as usize;
         (start, start + t.n_bytes as usize)
+    }
+
+    /// Crate-internal backing access for a validated tensor. Scoped callers wrap this immediately;
+    /// retaining the original parsed mapping avoids a second map or a checkpoint-path reopen.
+    pub(crate) fn tensor_disk_extent(&self, tensor: &TensorInfo) -> source::DiskExtent {
+        let shard = &self.shards[tensor.shard];
+        let (start, end) = self.tensor_file_range(tensor);
+        source::DiskExtent {
+            map: shard.mmap.clone(),
+            file: shard.file.clone(),
+            offset: start as u64,
+            len: end - start,
+        }
     }
 
     pub fn find(&self, name: &str) -> Option<&TensorInfo> {
@@ -1374,6 +1397,38 @@ mod split_tests {
     }
 
     #[test]
+    fn artifact_sha256_gguf_binds_every_opened_shard_after_path_replacement() {
+        use crate::source::{GgufSource, TensorSource};
+
+        let (dir, p0, p1) = write_split_pair("identity");
+        let original = GgufFile::open(&p0).unwrap();
+        let identity = GgufSource(&original).artifact_sha256().unwrap();
+        let from_last = GgufFile::open(&p1).unwrap();
+        assert_eq!(GgufSource(&from_last).artifact_sha256().unwrap(), identity);
+        let renamed = dir.join("renamed-00001-of-00002.gguf");
+        let renamed_last = dir.join("renamed-00002-of-00002.gguf");
+        std::fs::rename(&p0, &renamed).unwrap();
+        std::fs::rename(&p1, &renamed_last).unwrap();
+        let moved = GgufFile::open(&renamed).unwrap();
+        assert_eq!(GgufSource(&moved).artifact_sha256().unwrap(), identity);
+
+        let mut replacement = std::fs::read(&renamed_last).unwrap();
+        *replacement.last_mut().unwrap() ^= 1;
+        std::fs::copy(&renamed, &p0).unwrap();
+        std::fs::write(&p1, replacement).unwrap();
+        let replaced = GgufFile::open(&p0).unwrap();
+        assert_ne!(GgufSource(&replaced).artifact_sha256().unwrap(), identity);
+        std::fs::remove_file(&renamed).unwrap();
+        std::fs::remove_file(&renamed_last).unwrap();
+        assert_eq!(GgufSource(&original).artifact_sha256().unwrap(), identity);
+        assert_eq!(
+            original.tensor_data(original.find("blk.2.w").unwrap()),
+            &[0xB1; 64]
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn tensor_file_range_is_relative_to_the_owning_shard() {
         let (dir, p0, p1) = write_split_pair("range");
         let g = GgufFile::open(&p0).unwrap();
@@ -1388,6 +1443,20 @@ mod split_tests {
         let raw0 = std::fs::read(&p0).unwrap();
         let (s0, e0) = g.tensor_file_range(g.find("blk.0.w").unwrap());
         assert_eq!(&raw0[s0..e0], vec![0xA1u8; 32].as_slice());
+        let extent = g.tensor_disk_extent(t);
+        assert!(std::sync::Arc::ptr_eq(&extent.file, g.shard_file(1)));
+        let cache = crate::bound_disk::BoundDiskCache::default();
+        let view = cache
+            .view(extent, std::sync::Arc::from("split-test"))
+            .unwrap();
+        drop(g);
+        std::fs::remove_file(&p1).unwrap();
+        std::fs::write(&p1, b"replacement is not the parsed shard").unwrap();
+        assert_eq!(view.bytes(), &[0xB1; 64]);
+        let mut bytes = [0; 64];
+        assert_eq!(view.read_at(&mut bytes, 0).unwrap(), 64);
+        assert_eq!(bytes, [0xB1; 64]);
+        assert!(view.read_at(&mut bytes, 1).is_err());
         std::fs::remove_dir_all(dir).ok();
     }
 

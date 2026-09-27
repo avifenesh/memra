@@ -1,8 +1,11 @@
 use super::*;
 use crate::model_plan::{AttentionPlan, DraftSourcePlan, RopeFactors, SamplingDefaultsPlan};
+mod inventory;
 pub(crate) mod tensors;
 
 pub static PACK: ModelPack = ModelPack {
+    inventory_schema: Some(inventory::compile),
+    default_output_head: crate::tensor_contract::OutputHead::Separate,
     family: "step35",
     output_head: OutputHeadContract::SeparateHead,
     tensor_consumption: TensorConsumption::Report,

@@ -88,9 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("verify tokens (greedy continuation): {gold:?}");
 
     // Resident embed table — the spec hot loop's gather source.
-    let embd_gpu = model
-        .embd_gpu
-        .get_or_init(|| e.upload_u8(&model.embd.raw).expect("embed table upload"));
+    let embd_gpu = model.resident_embed_table(&e)?;
     let (embd_qt, embd_rb) = model.embd.qt_and_row_bytes(n_embd);
 
     // MEMRA_MSCALE_NOEAGER=1: skip the eager reference (keeps an nsys trace verify-only).

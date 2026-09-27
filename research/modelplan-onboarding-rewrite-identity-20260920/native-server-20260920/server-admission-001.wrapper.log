@@ -1,0 +1,14 @@
+{"case": "inspect", "command": ["/home/memra-qual/scratch/memra-542/repo/target/release/memra", "model", "inspect", "/home/memra-qual/scratch/memra-542/qwen3-0.6b", "--against", "qwen3", "--out", "/home/memra-qual/scratch/memra-542/server-admission-001/bundle"], "returncode": 0, "expected_refusal": null, "passed": true, "wall_seconds": 0.01576497033238411, "log_sha256": "53a81495d97b01acc4e4048d956109279f0b22199534ab64f9dad3a3f545cb21"}
+{"case": "native-capture-and-reinstall", "command": ["/home/memra-qual/scratch/memra-542/repo/target/release/rewrite_identity_gate", "capture", "/home/memra-qual/scratch/memra-542/qwen3-0.6b", "/home/memra-qual/scratch/memra-542/server-admission-001/bundle"], "returncode": 1, "expected_refusal": null, "passed": false, "wall_seconds": 3.1274420358240604, "log_sha256": "deac2f0e8b01653395ab237d11d9a6f4eed3f719c8a66228fb74f9a69eca40dc"}
+Traceback (most recent call last):
+  File "/home/memra-qual/scratch/memra-542/repo/research/modelplan-onboarding-rewrite-identity-20260920/qualify-native.py", line 292, in <module>
+    main()
+    ~~~~^^
+  File "/home/memra-qual/scratch/memra-542/repo/research/modelplan-onboarding-rewrite-identity-20260920/qualify-native.py", line 286, in main
+    run(args)
+    ~~~^^^^^^
+  File "/home/memra-qual/scratch/memra-542/repo/research/modelplan-onboarding-rewrite-identity-20260920/qualify-native.py", line 238, in run
+    captured = case('native-capture-and-reinstall', [tools['rewrite_identity_gate'], 'capture', model, bundle], capture)
+  File "/home/memra-qual/scratch/memra-542/repo/research/modelplan-onboarding-rewrite-identity-20260920/qualify-native.py", line 221, in case
+    raise RuntimeError(f'{name} failed; see {out / (name + ".log")}')
+RuntimeError: native-capture-and-reinstall failed; see /home/memra-qual/scratch/memra-542/server-admission-001/native-capture-and-reinstall.log

@@ -1,0 +1,333 @@
+{
+  "base": "231a5a12ee8e161515ec9683bcefc57b893f0eb4",
+  "recorded_utc": "2026-09-21T19:41:28.354933+00:00",
+  "source_review": "pending",
+  "source": {
+    "crates/memra-gguf/src/bound_source/draft.rs": "57f3f94454c30142b7699630c7c9f10510bf4a427812a00dd3adea4c6094e94f",
+    "crates/memra-gguf/src/bound_source/draft/composite.rs": "88c7e72e7a53973d40cdf08a5483591aadf29ce4659c529026d5d4a302de5b82",
+    "crates/memra-engine/src/hybrid.rs": "48b91f969dbd372f08509d53d6c624aa090eb55a5387cacb421c9ac55a38247e",
+    "research/modelplan-onboarding-bound-census-20260920/composite-draft-20260921/consumer-harness/Cargo.lock": "5697aa1b94ba43d7e5697b8f6d3e4302f8cfe92969bdc1ca313f1bf51f9a99bc",
+    "research/modelplan-onboarding-bound-census-20260920/composite-draft-20260921/consumer-harness/Cargo.toml": "429a9f9fdc5257f65395081ab718299d6c08996dd1f9458df47ec37234baf2bf",
+    "research/modelplan-onboarding-bound-census-20260920/composite-draft-20260921/consumer-harness/src/lib.rs": "82034e7c7aa9774627b826f2b220bd3b1be3ddb42ed323a3c13adfcd8ae5dd8d",
+    "research/modelplan-onboarding-bound-census-20260920/draft-repair-20260921/consumer-harness/src/fixture.rs": "88492db1c3474a278ff4857fca2dcc4705376837bca1b1c1487c45e8cc467eb7",
+    "crates/memra-engine/src/model/nvfp4_scale.rs": "d27d048082bd2866edb7f5c961d77695e787a87f0dc95828f159d6fefeb9fa2c"
+  },
+  "commands": [
+    {
+      "name": "consumer-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/research/modelplan-onboarding-bound-census-20260920/composite-draft-20260921/consumer-harness/Cargo.toml",
+        "--",
+        "--nocapture"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 2.4050742919789627
+    },
+    {
+      "name": "draft-compatibility",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "--lib",
+        "bound_source::draft::tests",
+        "--",
+        "--nocapture"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 11.886632167035714
+    },
+    {
+      "name": "source-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 6.42715862498153
+    },
+    {
+      "name": "consumer-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/research/modelplan-onboarding-bound-census-20260920/composite-draft-20260921/consumer-harness/Cargo.toml",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 2.383627792005427
+    },
+    {
+      "name": "engine-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "-p",
+        "memra-engine",
+        "--lib",
+        "--tests",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2",
+        "DOCS_RS": "1"
+      },
+      "exit_code": 0,
+      "wall_seconds": 50.461740707978606
+    },
+    {
+      "name": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 3.970729042077437
+    },
+    {
+      "name": "consumer-format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/research/modelplan-onboarding-bound-census-20260920/composite-draft-20260921/consumer-harness/Cargo.toml",
+        "--",
+        "--check"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 0.11311554105486721
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 0.07827325002290308
+    }
+  ],
+  "raw": {
+    "raw/audit-preservation.py.gz": {
+      "sha256": "8af20d666ab5ae6797e0c80cf8d85cf70acac6bb170317a9bd3c1b3e4585bfb6",
+      "uncompressed_sha256": "cecc77e47d2da4b2b75020ff4e488c5fb1a0d0728716a3a4d4244cac164da12d",
+      "uncompressed_bytes": 3296
+    },
+    "raw/consumer-clippy-final.log.gz": {
+      "sha256": "c709f82ba0ee9a58777b5cd10aadec4939126d5809e0cf184477e9a15565c0bd",
+      "uncompressed_sha256": "ca4595d150051dc185475eb18c0f7e674cea0ae9b2b6518fa59be314a9a4162c",
+      "uncompressed_bytes": 392
+    },
+    "raw/consumer-format-final.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/consumer-tests-final.log.gz": {
+      "sha256": "93861ab71fe085f489f75088fad4e18851f24c9d05d9d3ceac252920e9f8b5c5",
+      "uncompressed_sha256": "d656161c0fd760249d99b05fe832ca22a10b44e111920ae64b320fefcbdd97c7",
+      "uncompressed_bytes": 3563
+    },
+    "raw/diff-final.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/draft-compatibility-final.log.gz": {
+      "sha256": "913b8be9d80382db0041e9b64f11cb4d5f7a41882ef5ef938f159b3474a3be8d",
+      "uncompressed_sha256": "b562194638a3604949721e13196c12fcad20b99a09544a2152f6253aa0930dae",
+      "uncompressed_bytes": 1897
+    },
+    "raw/engine-clippy-final.log.gz": {
+      "sha256": "81542ff56ed4a5b8aaa970716e124788507dc87554d0f10ddc90c11357b2d2f5",
+      "uncompressed_sha256": "49b6c6579dbb6888c3e757ca115d99f47bfcd82448d6fc6bdf6bd086544a10ec",
+      "uncompressed_bytes": 789
+    },
+    "raw/format-final.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/preservation-final.log.gz": {
+      "sha256": "8b1f4f63b2748ce7caaae0c43f770e3e3ca7fcb3b30ee16fa3dcb311abdbce86",
+      "uncompressed_sha256": "b0988375c6ffcbd96af8215295f676c5277ef5e8b5cb9ffce9afbee2e88d7715",
+      "uncompressed_bytes": 108
+    },
+    "raw/preservation.json.gz": {
+      "sha256": "de092cdef0088381ff80fe3597d97a19d17fc6f244ef5af52fed4b73ff3e7e2e",
+      "uncompressed_sha256": "6fd6292ea2be1d97048e22f32c5a6a860bf8dad9a87a6ca571fe66fdf8f1be46",
+      "uncompressed_bytes": 222472
+    },
+    "raw/results.json.gz": {
+      "sha256": "ced6ff652656b3b359b3ade5b393c8a3fe76c06e6487d434c1a4a9eed2828499",
+      "uncompressed_sha256": "5f277a296bfe30aaf54b397f0ed0a906d2bc769029619eab6f1186c20d706f78",
+      "uncompressed_bytes": 4065
+    },
+    "raw/run-final.py.gz": {
+      "sha256": "941adab02b1c8cd5f2355f5eb8eedd06f121b5ca0ab4fce4ea0775410f8e8a12",
+      "uncompressed_sha256": "12594914331ea4cfb7dd25a490383c834128a4927135c95cd65b6f965499f0b4",
+      "uncompressed_bytes": 2716
+    },
+    "raw/source-clippy-final.log.gz": {
+      "sha256": "8c518c5d762f5cc02d45b3dda7611c5e35cfe7671d0a2e346a26d578ab84c6a5",
+      "uncompressed_sha256": "19df4a3c93ec75ef41309ead242c9a32c44f3c6634ae8a79e5ce3b0cade5b1ea",
+      "uncompressed_bytes": 187
+    },
+    "raw/source-pin.json.gz": {
+      "sha256": "0d259143eb8002fe4d9d3564ee09e84b400f5ba6667c0de921699326bb0f9558",
+      "uncompressed_sha256": "7f38f533261a8d192d518a9316462a159f1acb7da04af7a4061f694e53913c11",
+      "uncompressed_bytes": 1185
+    },
+    "raw/source-stability.json.gz": {
+      "sha256": "532d149c6fb41397fac80913438ebf7047be770fa4ec5b015c8f66b139f08a21",
+      "uncompressed_sha256": "e6cb3a396422b017391956143d0d958ce64b763810fa7d299c3cd875be419a21",
+      "uncompressed_bytes": 48
+    },
+    "raw/toolchain.txt.gz": {
+      "sha256": "1cbd37f890e43338815f171ec5885e8fca21383e2535c8d29450dc5703658d54",
+      "uncompressed_sha256": "cdd372f49763b7ad6faf8210706bc4f7212e18ebbd1abee8ab874ebbd588c4a3",
+      "uncompressed_bytes": 72
+    }
+  },
+  "development": {
+    "development/audit-preservation-initial.py.gz": {
+      "sha256": "7f1d410f516b1c4c716d4a581eea3fe9d33227ef52ff79b779df3e5a5669ad45",
+      "uncompressed_sha256": "f11bddc42010b7dfb8770163e66e1c5afac2d9a740dc3e36c701b75a8c3cbcd5",
+      "uncompressed_bytes": 3214
+    },
+    "development/audit-preservation-second.py.gz": {
+      "sha256": "0d5e25ec0fe27bc45d689433ae8a949a34133750a000567ed042a9820be6a5d8",
+      "uncompressed_sha256": "c9f9a6e75897e9544d906b51ade8c3d65782496a2095d64b703995c08b569489",
+      "uncompressed_bytes": 3266
+    },
+    "development/consumer-tests-1.log.gz": {
+      "sha256": "b686666bdd2e0efc73891a851a404672b6502633d98abc1139396757205e0e14",
+      "uncompressed_sha256": "243e6c9d316ca5ea1db101bb68158292d004600ccd781243214e4f91f37092c7",
+      "uncompressed_bytes": 1827
+    },
+    "development/consumer-tests-2.log.gz": {
+      "sha256": "bb4508f75c6402021471e27dccc2d835956eddbd4fe274eed28fc7f3b97ca8d2",
+      "uncompressed_sha256": "3f6f4354e43b65551800bb9325b00b00a62c5665f8b8b3ecb41f7d92eb9513da",
+      "uncompressed_bytes": 1212
+    },
+    "development/initial-check.log.gz": {
+      "sha256": "ff1d3fa057281c5eac973ef042dbce3f5bf7235011a7e781cebcd3d5bc944c60",
+      "uncompressed_sha256": "a9d50eaf521b448f7a3e07a26fb58ae5e44deec5397af603cf2673c6a62cbf21",
+      "uncompressed_bytes": 2502
+    },
+    "development/preservation-initial-failure.log.gz": {
+      "sha256": "072d6f66a74d22188a2167891ff4c87fd3a98dc5aa373c4fd81746c62e884b0e",
+      "uncompressed_sha256": "cd409fc7e1d2def07c08d573218a0da9acc01206697dcda4dd7e02cb29b9a1a5",
+      "uncompressed_bytes": 310
+    },
+    "development/preservation-second-failure.log.gz": {
+      "sha256": "38aabcbbb17a4528e099954b091c2bc0806cdbcbefaef65719ffaf9ac273363c",
+      "uncompressed_sha256": "62aaa03c2837b5864acd5d5c9a7c218f8d8dec9eff78a87fbbc05db846ef2521",
+      "uncompressed_bytes": 449
+    },
+    "development/source-check-2.log.gz": {
+      "sha256": "19eb2e4c58fc430cd57c177125d2bf2c283bb642e4db0343d03f8c8402752dcd",
+      "uncompressed_sha256": "1deb6581f28df99a8978aa669061bffcd686310c7b00a8958f02c3b17f9179fe",
+      "uncompressed_bytes": 187
+    }
+  },
+  "reviewed_input": {
+    "reviewed_input/issue-541-head-trim-231a5a12.json.gz": {
+      "sha256": "f3de453a1839ec197ee3ac4a33707a8e17738fa06a84b958cf9da9b480e1b097",
+      "uncompressed_sha256": "87c618b4d05bfdcf81a973caca3aaab75f4ae72cc06c85299180e671f4c6413a",
+      "uncompressed_bytes": 5374
+    }
+  },
+  "binaries": {
+    "composite-consumer-tests": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/artifacts/541/composite-draft/composite-consumer-tests-66070f07937ee929c759dd5574504702d5b4908911d13dbe510a0527557de03e",
+      "sha256": "66070f07937ee929c759dd5574504702d5b4908911d13dbe510a0527557de03e",
+      "bytes": 10534552,
+      "format": "Mach-O 64-bit executable arm64"
+    },
+    "standalone-draft-tests": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/artifacts/541/composite-draft/standalone-draft-tests-5a68ff6eeaabdc3b41d7b4677f10e9810e42d51179145dc6c3d1f00414457675",
+      "sha256": "5a68ff6eeaabdc3b41d7b4677f10e9810e42d51179145dc6c3d1f00414457675",
+      "bytes": 20201640,
+      "format": "Mach-O 64-bit executable arm64"
+    }
+  },
+  "protected_crate_files": 930,
+  "test_counts": {
+    "composite_source_consumer": 7,
+    "standalone_draft_compatibility": 14,
+    "failed": 0,
+    "ignored": 0,
+    "broad_root_rerun": false
+  },
+  "identity_scope": "Ordered complete opened GGUF components plus bound draft semantic scope; selected head/macro/rank materialization receipts remain separate. No paired target/draft/native/admission proof."
+}

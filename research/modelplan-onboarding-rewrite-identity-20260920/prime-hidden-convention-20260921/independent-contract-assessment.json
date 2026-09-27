@@ -1,0 +1,44 @@
+{
+  "candidate": "45c0b1742",
+  "code": "9733594ef",
+  "basis": "Independent source-contract assessment using the supplied facts only. No tools, model-routing changes, or native execution. BedrockAstra execution was not independently verified.",
+  "finding": {
+    "severity": "High / P1 correctness regression for the admitted non-PLE Gemma + spec_hpost=true path",
+    "confidence": "High given the supplied source facts",
+    "bug": "The fallback copies pre-norm T1 hidden rows into a public prime result that promises post-norm rows and seed. hidden_postnorm_row then skips the required RMS normalization.",
+    "scope": "This establishes an incorrect hidden-output contract. It does not establish incorrect T1 logits, cache updates, or token generation. Effects on downstream speculative consumers require tracing and native verification."
+  },
+  "minimal_safe_correction": {
+    "location": "prime_cache_eager only",
+    "predicate": "uses_gemma_program() && !is_gemma4_e4b() && spec_hpost",
+    "operation": "After each decode_step_h completes, apply the existing output RMS normalization to its returned hidden row under this predicate. Copy that selected row into fullstack and return the final selected row as seed.",
+    "preserve": [
+      "Generic families already honoring spec_hpost",
+      "PLE/E4B pre-norm conventions",
+      "Overlay rejection before work",
+      "T1 cache, recurrent state, logits, and next-token execution"
+    ]
+  },
+  "adapter_assessment": {
+    "verdict": "The proposed adapter is appropriate and narrowly restores the existing public contract.",
+    "requirements": [
+      "Use the exact existing output normalization semantics: weights, epsilon, dtype, accumulation, and any Gemma weight-offset handling.",
+      "Keep the adapted buffer separate from mutable decode state; do not normalize aliased cache or recurrent-state storage.",
+      "Apply normalization exactly once to every returned row, including the final seed, with correct stream ordering."
+    ],
+    "distinction": "The seed's selected representation is part of the public API. Restoring that representation leaves the T1 numerical trunk unchanged, but the seed can affect downstream computation; it is not merely cosmetic. The adapter does not prove numerical identity with ordinary chunked prime, whose trunk may differ."
+  },
+  "necessary_cpu_source_dataflow_controls": [
+    "Cover the predicate matrix: generic versus canonical Gemma program, PLE versus non-PLE, and spec_hpost off versus on. Verify overlay rejection still precedes decode or cache mutation.",
+    "Use deterministic non-unit hidden rows and nonuniform normalization weights to detect missing or duplicate normalization. Check every fullstack row and equality of the returned seed to the final selected row.",
+    "Trace that only exported hidden results receive normalization: logits, cache updates, and subsequent decode inputs retain their existing dataflow.",
+    "Check row dimensions, dtype, buffer ownership, ordering, and existing empty-input behavior. CPU checks establish selection and representation logic, not CUDA numerical equivalence."
+  ],
+  "necessary_native_evidence": [
+    "For each affected execution variant admitted by qualification receipts\u2014single GPU, PP2, and PP2 same-stream\u2014bind results to the exact artifact, plan, runtime binary, and numeric class.",
+    "Replay identical tokens through direct T1 execution and the fallback. Verify fullstack and seed against output-normalized T1 pre-norm rows, while confirming unchanged T1 logits, cache state, and continuation behavior.",
+    "Exercise spec_hpost on and off through actual public-prime consumers, including hidden_postnorm_row and applicable seed consumers. Establish the required equivalence explicitly; any claimed bit-identical transition requires bitwise evidence.",
+    "Run applicable serving-shape, run-gen, and run-spec K=1..8 gates wherever these outputs enter those paths, including relevant carried-prefix boundaries."
+  ],
+  "qualification_status": "Source-contract finding only. No native passes or qualification claimed."
+}

@@ -1,0 +1,84 @@
+{
+  "parent": "c2bcfe858f0d9aa428224b32fb403189b9f2a9b9",
+  "reproduced_old_ref": "343b3bec0dc145209f7e1d9486f303cf9718134a",
+  "finding": "TC541-IDENTITY-01",
+  "source_sha256": {
+    ".github/workflows/ci.yml": "a91ae1e9b541fbdfde46d550cbf4a87fcc60b4928e47bbfe285a345f9ec91251",
+    "crates/memra-gguf/src/bound_source.rs": "bdd96a392601ce41d61046dd3db4a5f4eae92602a82843c0966209973242f0d3",
+    "crates/memra-gguf/src/bound_source/runtime.rs": "7b6f6f75f7d09054a6a6dcf010c82dce29df7e190892ceb65ec51df7d21d5c92",
+    "crates/memra-gguf/src/model_packs/mod.rs": "d0ee0c8808479ea5f3ac20750c7fe78516a818ef3614002b0eeff8b6852d0094",
+    "crates/memra-gguf/src/source.rs": "a92912ad67b8411a9aaf78231039769f0ed5dfae31d3b9dabdf05e4ab3a7cd10",
+    "crates/memra-gguf/tests/sealed_preflight.rs": "702014fb921a5a7aa4a543fba9a7827e457dc92ce1725cc4bf60c22525a01488"
+  },
+  "probe_sha256": {
+    "541-seal-direct-tuple-probe.rs": "8cd50ca001be876f73a4e9f632335135c3a229dad34e0ecf571a15514821176e",
+    "541-seal-forward-probe.rs": "bcfdfc57ce8abce148247309c21ce0f52a3197250e8797bf80879ae0174e23e9"
+  },
+  "raw": {
+    "raw/541-preflight-seal-clippy-final-pass.log.gz": {
+      "sha256": "4355870f7d7079bac7e40528413fa01a4a9e4d9c851f1e40c9d74557ae9b577c",
+      "uncompressed_sha256": "dd1897d8119dafe7ef275e24f2b88dfba88d28adb4ef3cedfb201fbc24baa5f3",
+      "uncompressed_bytes": 550
+    },
+    "raw/541-preflight-seal-doctests.log.gz": {
+      "sha256": "1c98de000aea9729ef02f25194659ece54afa53b4d7234a05642c08443404549",
+      "uncompressed_sha256": "b1e233dc973bd139bc15966e453882fa7ffa9d05c893dd836c985d54819e9274",
+      "uncompressed_bytes": 429
+    },
+    "raw/541-preflight-seal-engine-green.log.gz": {
+      "sha256": "4395cdf7668dcff1c74243c728c5aed862fbc2051c699b62cf5fb5d218203286",
+      "uncompressed_sha256": "abacea41e12da20be37a5d28ce06b750ed95cda78afdc931e9b1bd9c9d101559",
+      "uncompressed_bytes": 1012
+    },
+    "raw/541-preflight-seal-exact-new-refusal.log.gz": {
+      "sha256": "3466dbcc2a50c802a641215e0c082177250583bf9c13e246ad149b119c6222ad",
+      "uncompressed_sha256": "5f2b49db4d7525996d076b66e4dcd66a681310a063ecb68d546c75b096079f1e",
+      "uncompressed_bytes": 1494
+    },
+    "raw/541-preflight-seal-exact-old-red.log.gz": {
+      "sha256": "68bcdac7140878be911aeadc9069184ec29580f839bec2c0d8c5a469e492e72a",
+      "uncompressed_sha256": "ac06b5498f03b26d66d5a346fdbd096bfb2f02c0148d64a81c81f57e24330270",
+      "uncompressed_bytes": 1082
+    },
+    "raw/541-preflight-seal-exact-status.json.gz": {
+      "sha256": "5c4e5437863e09775449a9978980e0479a496b6cd077c24695e5c3cd372c2138",
+      "uncompressed_sha256": "6a6bb15e6c22d382f70eb29bbe2cd53c013c0ccaa601a80cbdb1a616da78b901",
+      "uncompressed_bytes": 190
+    },
+    "raw/541-preflight-seal-external-green.log.gz": {
+      "sha256": "aa2428aaef64f1a3ff419b0762e60e706a85dd1ab4f75086b8faae0f7fa49e94",
+      "uncompressed_sha256": "6cedcff3408a4809095fdbcd4598ee9298bbabf9afde9c4a1363d72100a8bbb2",
+      "uncompressed_bytes": 561
+    },
+    "raw/541-preflight-seal-external.log.gz": {
+      "sha256": "77540d181aa9219e9aa59dba94b08fd9982ad3b1127782111a53ed39639b818a",
+      "uncompressed_sha256": "3ba215a25c5a16af418d9ef0f1c26c71b6ca8ab5568f431ea7c7492f866cc837",
+      "uncompressed_bytes": 71
+    },
+    "raw/541-preflight-seal-format-final-pass.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/541-preflight-seal-forward-refusal.log.gz": {
+      "sha256": "75f40386b4fc3ae08ce1df8041a1bf6ff84c5c2039701b0673d0e4a7f4646bc6",
+      "uncompressed_sha256": "3a8e839f507a4ab6a7f4bdac2776b81ee22158d2aad6755b0e1145dede500bfa",
+      "uncompressed_bytes": 880
+    },
+    "raw/541-preflight-seal-full-final-pass.log.gz": {
+      "sha256": "ccb70219ca7996bf6e1f81ad2e38a605b55cfd75ebb502bde206fe637e69c600",
+      "uncompressed_sha256": "79b7499d9c7254e5f37de0643ae2643a9e2f7a847e073e23b1a6cf3575f8fb20",
+      "uncompressed_bytes": 35525
+    },
+    "raw/541-preflight-seal-full-green.log.gz": {
+      "sha256": "6313d0f06ac10b8f847d73aca5f7047289e98195bfd8d5bd5caf5cb48854957b",
+      "uncompressed_sha256": "2ad8c58f5b545eab2576fcdcfb11ef8452afbaa421aa50aa6ca8055606a11743",
+      "uncompressed_bytes": 819
+    },
+    "raw/541-preflight-seal-identity-green.log.gz": {
+      "sha256": "c41294cbefacd37adad59de22d92aca0fafe255eb440b14d8fe3304df2fee673",
+      "uncompressed_sha256": "34af995fe7436d3c84e1a71721b93ae958f880cf3f5e388a3aa3512278248376",
+      "uncompressed_bytes": 3064
+    }
+  }
+}

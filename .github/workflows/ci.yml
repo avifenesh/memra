@@ -230,6 +230,13 @@ jobs:
           MEMRA_GGUF_SKIP_BUDGET=12 python3 tools/skip-census.py run \
             --budget-var MEMRA_GGUF_SKIP_BUDGET --min-passed 400 \
             -- cargo test -p memra-gguf -p memra-reference -p memra-tokenizer -p memra-validate -p memra-sampling --lib
+      - name: Sealed source preflight authority contracts (CPU-only)
+        run: |
+          cargo test -p memra-gguf --test sealed_preflight
+          cargo test -p memra-gguf --doc
+          cargo test -p memra-reference --test composite_source
+      - name: Retained scoped disk reader C ABI (CPU-only)
+        run: python3 tools/test-scoped-disk-ffi.py
       - name: Canonical config and shared JSON feature-unification contracts
         run: |
           cargo test -p memra-gguf --test canonical_config

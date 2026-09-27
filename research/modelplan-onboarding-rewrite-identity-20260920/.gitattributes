@@ -1,0 +1,9 @@
+# Preserve command output byte-for-byte, including blank lines and rustfmt diff context.
+raw/*.log -whitespace
+native-server-20260920/**/*.log -whitespace
+native-server-20260920/**/*.f32 -text
+merge-main-20260920/*.log -whitespace
+later-drift-20260920/**/*.log -whitespace
+cleanup-receipt-20260920/*.log -whitespace
+cleanup-receipt-20260920/combined/*.log -whitespace
+cleanup-receipt-20260920/cancellation/*.log -whitespace

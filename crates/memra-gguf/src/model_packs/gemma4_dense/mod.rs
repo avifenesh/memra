@@ -6,6 +6,8 @@ use crate::tensor_contract::{
 };
 
 pub static PACK: ModelPack = ModelPack {
+    inventory_schema: None,
+    default_output_head: crate::tensor_contract::OutputHead::TiedToEmbedding,
     family: "gemma4_dense",
     output_head: OutputHeadContract::TiedHeadAllowed,
     tensor_consumption: TensorConsumption::Report,

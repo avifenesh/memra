@@ -1,0 +1,21 @@
+SCOPE native-program-admission-only support_promotion=false performance=not-measured mode=capture artifact_lock_sha256=ab8562e15d2b812d53e7986e2b8f54fd98f30dc07e25572dfad475aa697e7da2
+[q8rp] split-plane decode mirrors built: 196 tensors
+LOADED artifact_sha256=0883c0d75d2b9911278e09f4933a6adfc5e2c7e9a62da1cccfa0b37f40650e96 implementation_sha256=ae4dc2bcc85bdabd0da1ec69c9c59349e73386053ac7db99ef383e2f548e4efe numeric_program_sha256=f04f43be8d81e2f8845ac938121f3a81a36111d2972c15f08db46d557f0e4938
+POLICY family=qwen3 atol=0.005 rtol=0.005 require_argmax=true
+[fa-pool] grow #0 dev=0 o_len 0 -> 2048 ml_len 0 -> 16 (retired kept, zero=false)
+OUTPUT stage=quantized-cache-verify-prefill prompt=0 tokens=[1, 2, 3, 4] values=151936 argmax=3 file=/home/memra-qual/scratch/memra-542/server-admission-003/bundle/outputs/quantized-cache-verify-prefill-73427-prompt-0.f32 sha256=f18d4f15f633d2e77ee056545530d3cd44b27c977a6409f7a1389ac18a608206
+OUTPUT stage=pre-install-tokenwise prompt=0 tokens=[1, 2, 3, 4] values=151936 argmax=3 file=/home/memra-qual/scratch/memra-542/server-admission-003/bundle/outputs/pre-install-tokenwise-73427-prompt-0.f32 sha256=a1a60e5a6d7587b2338fcbce3a980ed27efa56a8606d62d7b08226237fd363ad
+OUTPUT stage=fresh-kv-diagnostic prompt=0 tokens=[1, 2, 3, 4] values=151936 argmax=3 file=/home/memra-qual/scratch/memra-542/server-admission-003/bundle/outputs/fresh-kv-diagnostic-73427-prompt-0.f32 sha256=9d8d6643a72357a3d13c73cf7bcbc3cdfc770ac65acb58386a67abb3e60c119a
+FRESH_KV_CLASS_CONTROL prompt=0 same_class=false max_abs=3.1681318 max_rel=16323.148 within_tolerance=false used_for_qualification=false
+PROMPT_PARITY_PASS prompt=0 max_abs=0.0000019073486 max_rel=0.01438849
+OUTPUT stage=quantized-cache-verify-prefill prompt=1 tokens=[7, 11, 19, 5, 3, 17, 2, 13] values=151936 argmax=19 file=/home/memra-qual/scratch/memra-542/server-admission-003/bundle/outputs/quantized-cache-verify-prefill-73427-prompt-1.f32 sha256=3a197dfe63d6c4faf70fdf3ad1cefea19df31340b65c6a9071fe9b131d4bc83c
+OUTPUT stage=pre-install-tokenwise prompt=1 tokens=[7, 11, 19, 5, 3, 17, 2, 13] values=151936 argmax=19 file=/home/memra-qual/scratch/memra-542/server-admission-003/bundle/outputs/pre-install-tokenwise-73427-prompt-1.f32 sha256=3a197dfe63d6c4faf70fdf3ad1cefea19df31340b65c6a9071fe9b131d4bc83c
+OUTPUT stage=fresh-kv-diagnostic prompt=1 tokens=[7, 11, 19, 5, 3, 17, 2, 13] values=151936 argmax=19 file=/home/memra-qual/scratch/memra-542/server-admission-003/bundle/outputs/fresh-kv-diagnostic-73427-prompt-1.f32 sha256=a592d263cd444e5703df183196d0e9214a5e76cbc3124fbd9d5ed85e55fa80c2
+FRESH_KV_CLASS_CONTROL prompt=1 same_class=false max_abs=1.2175379 max_rel=7836.325 within_tolerance=false used_for_qualification=false
+PROMPT_PARITY_PASS prompt=1 max_abs=0 max_rel=0
+OUTPUT stage=quantized-cache-verify-prefill prompt=2 tokens=[2, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 2, 3, 2, 3] values=151936 argmax=2 file=/home/memra-qual/scratch/memra-542/server-admission-003/bundle/outputs/quantized-cache-verify-prefill-73427-prompt-2.f32 sha256=f8e8a9f8b129dd4de07579c48ea8c653671e511f2fcf2b8805ee07f14c736cdd
+OUTPUT stage=pre-install-tokenwise prompt=2 tokens=[2, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 2, 3, 2, 3] values=151936 argmax=2 file=/home/memra-qual/scratch/memra-542/server-admission-003/bundle/outputs/pre-install-tokenwise-73427-prompt-2.f32 sha256=f8e8a9f8b129dd4de07579c48ea8c653671e511f2fcf2b8805ee07f14c736cdd
+OUTPUT stage=fresh-kv-diagnostic prompt=2 tokens=[2, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 2, 3, 2, 3] values=151936 argmax=2 file=/home/memra-qual/scratch/memra-542/server-admission-003/bundle/outputs/fresh-kv-diagnostic-73427-prompt-2.f32 sha256=8cb9117ec1f88f2bc09c49ee78bd7b8546a8da4b90e6b65d63ef370f3e9c563a
+FRESH_KV_CLASS_CONTROL prompt=2 same_class=false max_abs=1.4718347 max_rel=27951.14 within_tolerance=false used_for_qualification=false
+PROMPT_PARITY_PASS prompt=2 max_abs=0 max_rel=0
+REWRITE_IDENTITY_GATE_FAIL: rewrite identity is stale: loaded executable mappings changed: added=["/usr/lib/x86_64-linux-gnu/libnvidia-gpucomp.so.595.58.03", "/usr/lib/x86_64-linux-gnu/libnvidia-ptxjitcompiler.so.595.58.03"] removed=[] modified=[]

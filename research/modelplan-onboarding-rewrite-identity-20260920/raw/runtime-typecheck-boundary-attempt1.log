@@ -1,0 +1,46 @@
+    Checking memra-gguf v0.138.0 (/Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf)
+   Compiling memra-engine v0.138.0 (/Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-engine)
+   Compiling memra-server v0.138.0 (/Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-server)
+    Checking memra-tokenizer v0.138.0 (/Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-tokenizer)
+    Checking memra-kv v0.138.0 (/Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-kv)
+    Checking memra-runtime v0.138.0 (/Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-runtime)
+    Checking memra-reference v0.138.0 (/Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-reference)
+error[E0425]: cannot find value `m` in this scope
+  --> crates/memra-engine/src/bin/graph_session_gate.rs:60:34
+   |
+60 |             sess.prof_apply(&e, &m)?;
+   |                                  ^
+   |
+help: a local variable with a similar name exists
+   |
+60 -             sess.prof_apply(&e, &m)?;
+60 +             sess.prof_apply(&e, &e)?;
+   |
+
+error[E0425]: cannot find value `m` in this scope
+  --> crates/memra-engine/src/bin/graph_session_gate.rs:63:31
+   |
+63 |             sess.prof_launch(&m)?;
+   |                               ^
+   |
+help: a local variable with a similar name exists
+   |
+63 -             sess.prof_launch(&m)?;
+63 +             sess.prof_launch(&e)?;
+   |
+
+error[E0425]: cannot find value `m` in this scope
+  --> crates/memra-engine/src/bin/graph_session_gate.rs:66:41
+   |
+66 |             let _ = sess.prof_read(&e, &m)?;
+   |                                         ^
+   |
+help: a local variable with a similar name exists
+   |
+66 -             let _ = sess.prof_read(&e, &m)?;
+66 +             let _ = sess.prof_read(&e, &e)?;
+   |
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `memra-engine` (bin "graph-session-gate") due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...

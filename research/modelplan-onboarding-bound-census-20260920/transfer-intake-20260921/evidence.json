@@ -1,0 +1,143 @@
+{
+  "parents": {
+    "frozen-541": "285760cfc141af90183097fc68872bff8fce7b20",
+    "reviewed-542": "68e5e520810fd105bf64f43048a3a88514f6a064"
+  },
+  "source_sha256": {
+    "crates/memra-engine/src/banked_residency.rs": "acce511792c7534db524ecd949cbdbe1d8c2d074f4af48d50f2f3825ee1c0fe0",
+    "crates/memra-engine/src/banked_residency/native.rs": "9d0c577ac012ffc354148be4bbefee2c24378844dba4228f0381ca869554164a",
+    "crates/memra-engine/src/bin/kv_tier_gate.rs": "1b34389ce2fabfa4e3e608db73c8003ac8e04c9701abd763cddab9be8f541b8f",
+    "crates/memra-engine/src/bin/kv_tier_gate/active.rs": "07cded49f7a194c644dc9d3751258e7e868531611eb68c00b25d1aa2ca6fa072",
+    "crates/memra-engine/src/bin/run_gen.rs": "f7598f69d7e4e83e2c182dfd9eba15a095e459fe0e5df0177aa92b153095a9f5",
+    "crates/memra-engine/src/bin/run_spec.rs": "c43e26ed3eb3a9f158983cf8f7bce4b774d098dc1285876919f14ca83e28cb2c",
+    "crates/memra-engine/src/bin/tier_transfer_gate.rs": "8c95932eee4f3a05ae98a6408b3b06a75443158bafa54a9d1150bfde50841233",
+    "crates/memra-engine/src/hybrid_forward.rs": "73e2636d346fcdf25e3ac0204106250d25f780b79c074fdcbef56e3e1c22276d",
+    "crates/memra-engine/src/lib.rs": "0bd0a66c7adc412a8f5553b9f3aad40eb5698de46cfcfee4f0c182d60288abde",
+    "crates/memra-engine/src/model/repack.rs": "f1a8e9a94cbb54370139e65bb2945ebb5e1a67372278989b1cd24aee59451940",
+    "crates/memra-engine/src/moe_cache.rs": "ac57e48e5098fb2a4e8b29431dcfc2eb375f70b48cfcc08f7ee9576a2a80cc78",
+    "crates/memra-engine/src/plan_backend/execution_snapshot.rs": "4c1578fc5ef7148c73e98209022d1ddb50fe7aea4a32f54156b581baa368433c",
+    "crates/memra-engine/src/plan_backend/runtime_identity.rs": "396842b7b5d5611c4429142872d10ecc9e891362ca72de08ca3ccb9866b2f5c9",
+    "crates/memra-engine/src/spill_pread.rs": "d0503d1d7ec028a0004748a4aedc41c740b8f2d72e69748f100fc3555f743db8",
+    "crates/memra-engine/src/tier_transfer.rs": "07f6badcac5cee9ecd2333f2171ac2d8647f90e5e578658d5d3a26a0eddab70c",
+    "crates/memra-gguf/src/bound_disk.rs": "570cc92ddb1a71621a044bf4cb6c3b2a671fc8cb81421877e7e09b8d40d98445",
+    "crates/memra-gguf/src/bound_source.rs": "bdd96a392601ce41d61046dd3db4a5f4eae92602a82843c0966209973242f0d3",
+    "crates/memra-gguf/src/bound_source/runtime.rs": "c2303207f4ba228ba5f828f23d22e50d4fac46a94134b41515ef787e8243b055",
+    "crates/memra-gguf/src/source.rs": "a8962a59c2f345b5dd7f2930f5efb19f8bb852317512dfdb14901969d4676b81",
+    "crates/memra-kv/src/lib.rs": "470022048fabcd30233de8379ac0ba13b8d0212b744ec0767315ca40119d9644",
+    "crates/memra-kv/src/plane.rs": "6c512b01314a0078a599319493954cdfd5173fcd6cf93ef15fd48572cb6a8dab",
+    "crates/memra-tier/tests/bank/day10.rs": "28a9299340403c2fd2d7b65a389ed13b21ea578064db2438c3ebf693dc0d09ee",
+    "crates/memra-tier/tests/bank/main.rs": "d7b28a28a0950dcae0808683e93fe058f07329c6fa57b28b9b6d142d93251368",
+    "crates/memra-tier/tests/battery/test_day10.py": "155d1d3f773bfd793849133cfa35f179862b78de2f1de55d032d3ab544a05a5e",
+    "crates/memra-tier/tests/battery/test_g2_campaign.py": "e07399fbb1c3159ea340941c613e85b19c0cc05446a5922cd576d962ac061c22",
+    "crates/memra-tier/tests/battery/test_g2_summary.py": "0473a84efffe481f7c015684260f6ced4af5b2d7e4804fce0264a61774e7ad5f",
+    "research/modelplan-onboarding-rewrite-identity-20260920/native_build_record.py": "297817a7f1913e9c89e14311cae2d8bf94773763250904ad98d44e220d48fdb4",
+    "research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py": "1d096304c4a79e473602fbb747afd54ed16ac3edc25a900e292037835d407921"
+  },
+  "raw": {
+    "raw/537-test_qualify.log.gz": {
+      "sha256": "8a7bbebce8573c444145cef4e283fd7da4b36f392abb9e6f11bcac540f5a38a2",
+      "uncompressed_sha256": "d590e9eba3ec5b679bf7b69849b4fd0d5f05ab5952cfec6cbccd14065cc63e1e",
+      "uncompressed_bytes": 2741
+    },
+    "raw/cpu-clippy.log.gz": {
+      "sha256": "7861af992c80cdf35996e5ecbfdb57c83b6358fa46fad8c46e5abeb5f81794e5",
+      "uncompressed_sha256": "ef7001d85c04ca61ac58b80501a547d82e8e32f37b26c7523ef167c07f30b078",
+      "uncompressed_bytes": 1461
+    },
+    "raw/cpu-suites.log.gz": {
+      "sha256": "30e8ac249a19aac652b5a436fea1b62c48137e5b53cf5eb130bb248f3fbc76cc",
+      "uncompressed_sha256": "67e0c2be428bc503cb8f76f1f66c044aadc1e3465e1a48cfbf2e45ce04a82d1a",
+      "uncompressed_bytes": 59491
+    },
+    "raw/device-memory.log.gz": {
+      "sha256": "920ad5c6481d7b8bb144893be9de849c88ec787aec8c73a9bc23ef9e7b5f8598",
+      "uncompressed_sha256": "81bce798d08c3848711ac6ef9efd9ede62640160b96083e4a8b084567ed5a8e1",
+      "uncompressed_bytes": 1677
+    },
+    "raw/first-parent-whitespace.log.gz": {
+      "sha256": "e51da9fdec3bd9329c9e35c7985040b618ceb15d587187f816ed165237a6ec95",
+      "uncompressed_sha256": "a8c9448339953ac242f478ae39bfecf985d0a912a6066f6133d69ce05d2bca64",
+      "uncompressed_bytes": 2116
+    },
+    "raw/flags.log.gz": {
+      "sha256": "76188f1d03361812b7b3efde2e8c60c91be50ac36fee5df164ab0a3da3de27f2",
+      "uncompressed_sha256": "c0c7dc0d15c2ac5b7e37872e10887d6dbba9bb917224734af1f89ee8ab63f21f",
+      "uncompressed_bytes": 174
+    },
+    "raw/format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/identity-repack-host.log.gz": {
+      "sha256": "51438afdb960eeb6bc639a3600921842620c60720bc93b4c6cef9dd850018242",
+      "uncompressed_sha256": "c5080e09e2570cc65c38658d8684698c5d5bf2b3669faf85d18d9074114b27da",
+      "uncompressed_bytes": 3626
+    },
+    "raw/linux-engine-clippy.log.gz": {
+      "sha256": "d08d44d474cf7e01329b13f2ea0262a9c5ae4c9ae015a6500d6e5b93da7b56d7",
+      "uncompressed_sha256": "88ff521eed369c064d4d958a790ce01a40341dd6c4feee6b5328e87d1c6b8fda",
+      "uncompressed_bytes": 1386
+    },
+    "raw/memory-fixture.log.gz": {
+      "sha256": "d01695ac2bbe32fbdf11e78dc2e71df7469f5f85334824f819b0f8cc4091a3b1",
+      "uncompressed_sha256": "257ed05ae98efdb8453c2dbb4dc8dd3c92c99622f39afd179b75dcba9ebff6cc",
+      "uncompressed_bytes": 2444
+    },
+    "raw/net-whitespace.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/preservation.json.gz": {
+      "sha256": "a078b49dbe47df6585e86fed07dd35d7aa92d9c65153d20fc4dda7afc834530d",
+      "uncompressed_sha256": "4e8091cd918cd0483ccbd0c0dcbf687b7f6e499c61a9456c4a57c23c98994ccd",
+      "uncompressed_bytes": 2869
+    },
+    "raw/runner-status.json.gz": {
+      "sha256": "623ba7579a4facc85b8fb77f20e12c7da5b70441cf9c4a57a210132e22cad209",
+      "uncompressed_sha256": "022d55dae4cb5c599e873dd74c052fd0e7d025b8509365f2027a74c55373dd8f",
+      "uncompressed_bytes": 1010
+    },
+    "raw/slru-composition.log.gz": {
+      "sha256": "e727b7f864bebb76d21ff19fc504435e09762f791aaa0885da6a0149ce342781",
+      "uncompressed_sha256": "a9be4dbc6bdf7a5cad09d0457f5f841437c1f5287646ae2e73341dd9735c346d",
+      "uncompressed_bytes": 704
+    },
+    "raw/test_finalization_signals.log.gz": {
+      "sha256": "5c079482d81b0f88a6520d56a65b7e760e1efbe8832eb17cc4a1a3e1225afe01",
+      "uncompressed_sha256": "7052813e7e2340479cd2f6acce7695df218e67636b468a6782b304bbb296207d",
+      "uncompressed_bytes": 2265
+    },
+    "raw/test_native_env_controller.log.gz": {
+      "sha256": "f33712723d586c52aa07cebb25cd0a7b968ae6a1ef9b7a15991dee4807ef3e72",
+      "uncompressed_sha256": "e24c9367f512dccef9d5af6cabbbf08ef6dfdbfe387b42ffcb4dc2d73df1a433",
+      "uncompressed_bytes": 138
+    },
+    "raw/test_native_finalization.log.gz": {
+      "sha256": "e40f0849be714c57aa8c651ca1f304ee155413a0bf42adfdb85699a706bae881",
+      "uncompressed_sha256": "d408eccb1575f3486b67a5a6defc0adfa7c69289ac4687771386624db4c7b827",
+      "uncompressed_bytes": 105
+    },
+    "raw/test_qualify_callers.log.gz": {
+      "sha256": "51f5ce423117e08efd2cdcade8dd61c129a6d045955cc199f3624bc06facac07",
+      "uncompressed_sha256": "8b287c8ab7d87bff9d0adf8420d8d95628ba68c30d1fd7abbd9a1b7aab87d8bb",
+      "uncompressed_bytes": 116
+    },
+    "raw/test_qualify_native.log.gz": {
+      "sha256": "b2c2011f8bed15d4d12c313cff4c2257e44a45576a2a7dd908be204108188fff",
+      "uncompressed_sha256": "70d35c7e17d9ee602fb5d29bd0c4cc63b92c05d17aed93d7493ba7b548b0098a",
+      "uncompressed_bytes": 134
+    },
+    "raw/frozen-541-source-delta.patch.gz": {
+      "sha256": "b14ff9bc1d3c3a75e14eb8edbad27336096de42ed5593d7f42fa2015aaf9ec18",
+      "uncompressed_sha256": "838551ece06b2295c4b70c63ff6f7c0e7b82d8af7033494d5aa571225e1bc656",
+      "uncompressed_bytes": 89107
+    },
+    "raw/reviewed-542-source-delta.patch.gz": {
+      "sha256": "1da6fdb09a0e551c010259968b58a6189e138c3b6a86282d17392bcfc84d6bf8",
+      "uncompressed_sha256": "5586b4f98ab7b5149db23c45e9a6cd6b5cb4eafd0b47861cdcd645c86f3519d0",
+      "uncompressed_bytes": 348070
+    }
+  }
+}

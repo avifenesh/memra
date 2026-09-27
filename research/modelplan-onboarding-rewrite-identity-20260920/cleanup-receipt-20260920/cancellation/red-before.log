@@ -1,0 +1,90 @@
+test_sigterm_during_final_verify (__main__.RealCancellationTests.test_sigterm_during_final_verify) ... REAL_SIGNAL_CONTROL kind=baseline fault=sig_verify exit=1 records=[{'signal_control': 'baseline', 'fault': 'sig_verify', 'signals_sent': 1, 'status': 'passed', 'had_error': False}]
+
+  test_sigterm_during_final_verify (__main__.RealCancellationTests.test_sigterm_during_final_verify) (kind='baseline') ... FAIL
+REAL_SIGNAL_CONTROL kind=callers fault=sig_verify exit=1 records=[{'signal_control': 'callers', 'fault': 'sig_verify', 'signals_sent': 1, 'status': 'passed', 'had_error': False}]
+  test_sigterm_during_final_verify (__main__.RealCancellationTests.test_sigterm_during_final_verify) (kind='callers') ... FAIL
+REAL_SIGNAL_CONTROL kind=battery fault=sig_verify exit=1 records=[{'signal_control': 'battery', 'fault': 'sig_verify', 'signals_sent': 1, 'status': 'passed', 'had_error': False}]
+  test_sigterm_during_final_verify (__main__.RealCancellationTests.test_sigterm_during_final_verify) (kind='battery') ... FAIL
+
+======================================================================
+FAIL: test_sigterm_during_final_verify (__main__.RealCancellationTests.test_sigterm_during_final_verify) (kind='baseline')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-cancellation/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_finalization_signals.py", line 50, in test_sigterm_during_final_verify
+    with self.subTest(kind=kind): self.check_case(kind, 'sig_verify')
+                                  ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-cancellation/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_finalization_signals.py", line 42, in check_case
+    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 0 : {"signal_control": "baseline", "fault": "sig_verify", "signals_sent": 1, "status": "passed", "had_error": false}
+Traceback (most recent call last):
+  File "<string>", line 8, in <module>
+    if kind=='baseline':m.NativeFinalizationTests().exercise(fault)
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-cancellation/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_native_finalization.py", line 124, in exercise
+    self.assertIsNotNone(failure, 'finalization failure was ignored')
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py", line 1327, in assertIsNotNone
+    self.fail(self._formatMessage(msg, standardMsg))
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py", line 750, in fail
+    raise self.failureException(msg)
+AssertionError: unexpectedly None : finalization failure was ignored
+
+
+======================================================================
+FAIL: test_sigterm_during_final_verify (__main__.RealCancellationTests.test_sigterm_during_final_verify) (kind='callers')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-cancellation/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_finalization_signals.py", line 50, in test_sigterm_during_final_verify
+    with self.subTest(kind=kind): self.check_case(kind, 'sig_verify')
+                                  ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-cancellation/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_finalization_signals.py", line 42, in check_case
+    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 0 : {"signal_control": "callers", "fault": "sig_verify", "signals_sent": 1, "status": "passed", "had_error": false}
+Traceback (most recent call last):
+  File "<string>", line 9, in <module>
+    else:m.FinalizationTests().exercise(kind,fault)
+         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-cancellation/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 230, in exercise
+    self.assertIsNotNone(failure, 'finalization failure was ignored')
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py", line 1327, in assertIsNotNone
+    self.fail(self._formatMessage(msg, standardMsg))
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py", line 750, in fail
+    raise self.failureException(msg)
+AssertionError: unexpectedly None : finalization failure was ignored
+
+
+======================================================================
+FAIL: test_sigterm_during_final_verify (__main__.RealCancellationTests.test_sigterm_during_final_verify) (kind='battery')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-cancellation/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_finalization_signals.py", line 50, in test_sigterm_during_final_verify
+    with self.subTest(kind=kind): self.check_case(kind, 'sig_verify')
+                                  ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-cancellation/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_finalization_signals.py", line 42, in check_case
+    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 0 : {"signal_control": "battery", "fault": "sig_verify", "signals_sent": 1, "status": "passed", "had_error": false}
+Traceback (most recent call last):
+  File "<string>", line 9, in <module>
+    else:m.FinalizationTests().exercise(kind,fault)
+         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-cancellation/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py", line 230, in exercise
+    self.assertIsNotNone(failure, 'finalization failure was ignored')
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py", line 1327, in assertIsNotNone
+    self.fail(self._formatMessage(msg, standardMsg))
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py", line 750, in fail
+    raise self.failureException(msg)
+AssertionError: unexpectedly None : finalization failure was ignored
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.708s
+
+FAILED (failures=3)

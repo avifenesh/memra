@@ -1,0 +1,73 @@
+test_telemetry_timeout_refuses_final_pass (__main__.NativeFinalizationTests.test_telemetry_timeout_refuses_final_pass) ... FAIL
+test_telemetry_error_refuses_final_pass (__main__.NativeFinalizationTests.test_telemetry_error_refuses_final_pass) ... FAIL
+test_variant_cleanup_failure_refuses_final_pass (__main__.NativeFinalizationTests.test_variant_cleanup_failure_refuses_final_pass) ... /opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/mock.py:2259: ResourceWarning: unclosed file <_io.FileIO name='/private/var/folders/x7/jjkpm1dj6ybc9rhmdrv2cy7h0000gr/T/tmppuywls42/evidence/all-card-telemetry-250ms.csv' mode='wb' closefd=True>
+  def __init__(self, name, parent):
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+FAIL
+test_manifest_failure_refuses_final_pass (__main__.NativeFinalizationTests.test_manifest_failure_refuses_final_pass) ... FAIL
+test_final_identity_failure_refuses_final_pass (__main__.NativeFinalizationTests.test_final_identity_failure_refuses_final_pass) ... FAIL
+
+======================================================================
+FAIL: test_telemetry_timeout_refuses_final_pass (__main__.NativeFinalizationTests.test_telemetry_timeout_refuses_final_pass)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_native_finalization.py", line 114, in test_telemetry_timeout_refuses_final_pass
+    def test_telemetry_timeout_refuses_final_pass(self): self.exercise('timeout')
+                                                         ~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_native_finalization.py", line 106, in exercise
+    self.assertIn(result['status'], ('failed', 'incomplete'), 'baseline finalization left stale passed result')
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'passed' not found in ('failed', 'incomplete') : baseline finalization left stale passed result
+
+======================================================================
+FAIL: test_telemetry_error_refuses_final_pass (__main__.NativeFinalizationTests.test_telemetry_error_refuses_final_pass)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_native_finalization.py", line 115, in test_telemetry_error_refuses_final_pass
+    def test_telemetry_error_refuses_final_pass(self): self.exercise('terminate')
+                                                       ~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_native_finalization.py", line 106, in exercise
+    self.assertIn(result['status'], ('failed', 'incomplete'), 'baseline finalization left stale passed result')
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'passed' not found in ('failed', 'incomplete') : baseline finalization left stale passed result
+
+======================================================================
+FAIL: test_variant_cleanup_failure_refuses_final_pass (__main__.NativeFinalizationTests.test_variant_cleanup_failure_refuses_final_pass)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_native_finalization.py", line 116, in test_variant_cleanup_failure_refuses_final_pass
+    def test_variant_cleanup_failure_refuses_final_pass(self): self.exercise('variant')
+                                                               ~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_native_finalization.py", line 106, in exercise
+    self.assertIn(result['status'], ('failed', 'incomplete'), 'baseline finalization left stale passed result')
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'passed' not found in ('failed', 'incomplete') : baseline finalization left stale passed result
+
+======================================================================
+FAIL: test_manifest_failure_refuses_final_pass (__main__.NativeFinalizationTests.test_manifest_failure_refuses_final_pass)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_native_finalization.py", line 117, in test_manifest_failure_refuses_final_pass
+    def test_manifest_failure_refuses_final_pass(self): self.exercise('manifest')
+                                                        ~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_native_finalization.py", line 106, in exercise
+    self.assertIn(result['status'], ('failed', 'incomplete'), 'baseline finalization left stale passed result')
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'passed' not found in ('failed', 'incomplete') : baseline finalization left stale passed result
+
+======================================================================
+FAIL: test_final_identity_failure_refuses_final_pass (__main__.NativeFinalizationTests.test_final_identity_failure_refuses_final_pass)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_native_finalization.py", line 118, in test_final_identity_failure_refuses_final_pass
+    def test_final_identity_failure_refuses_final_pass(self): self.exercise('verify')
+                                                              ~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/avifen/.codex/worktrees/pr557-receipt-cleanup/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_native_finalization.py", line 105, in exercise
+    self.assertIsNotNone(failure, 'finalization failure was ignored')
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: unexpectedly None : finalization failure was ignored
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.182s
+
+FAILED (failures=5)

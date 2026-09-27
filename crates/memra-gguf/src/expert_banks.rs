@@ -358,6 +358,7 @@ mod tests {
                         quant("IQ4_XS", 256)
                     },
                     physical_bytes: requirement.shape.iter().product::<u64>() / 2,
+                    auxiliaries: Vec::new(),
                 })
             })
             .collect()
@@ -523,6 +524,7 @@ mod tests {
                 shape: vec![4],
                 storage: StorageLayout::Float(FloatType::F32),
                 physical_bytes: 4,
+                auxiliaries: Vec::new(),
             });
         }
         assert_eq!(

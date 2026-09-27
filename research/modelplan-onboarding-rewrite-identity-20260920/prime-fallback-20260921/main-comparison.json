@@ -1,0 +1,57 @@
+{
+  "failed_ref": "65510819038727f9d5bc00c8ecfb5e38d0afc80d",
+  "main_ref": "0175e39d40d1de1b85a367b79b5b669a7397c766",
+  "functions": {
+    "prime_cache_overlaid_inner": {
+      "same": true,
+      "failed_sha256": "e3f2449afdb8b20a5b7a1fd9e09ce6465928af221bce7b5176280ff2ea298e72",
+      "main_sha256": "e3f2449afdb8b20a5b7a1fd9e09ce6465928af221bce7b5176280ff2ea298e72"
+    },
+    "prime_chunk": {
+      "same": true,
+      "failed_sha256": "07a2d9672e4b28c32995f9866d5bfb3e90969de9cff86a0b04a06ab6d8dadd04",
+      "main_sha256": "07a2d9672e4b28c32995f9866d5bfb3e90969de9cff86a0b04a06ab6d8dadd04"
+    },
+    "prime_layers": {
+      "same": true,
+      "failed_sha256": "b595d4d63cb70729ad0999f0095ac3706ce33fa4dede15d36374f2a87471930d",
+      "main_sha256": "b595d4d63cb70729ad0999f0095ac3706ce33fa4dede15d36374f2a87471930d"
+    },
+    "full_attn_prime": {
+      "same": true,
+      "failed_sha256": "1bc75623742637f57b6b0054a788fdb54eca485be4b8e9dcca47b2af3fb558bc",
+      "main_sha256": "1bc75623742637f57b6b0054a788fdb54eca485be4b8e9dcca47b2af3fb558bc"
+    },
+    "full_attn_prime_fa_dispatch": {
+      "same": true,
+      "failed_sha256": "afece6ddfbe8bf7e1e3f922fc5be98cf020297d94a9e00688ab7b228f1a4b2da",
+      "main_sha256": "afece6ddfbe8bf7e1e3f922fc5be98cf020297d94a9e00688ab7b228f1a4b2da"
+    },
+    "matmul": {
+      "same": true,
+      "failed_sha256": "5586deafc088d051ebedd2f181057bc719a88bed8a8d4f0906d4848ec18befe1",
+      "main_sha256": "5586deafc088d051ebedd2f181057bc719a88bed8a8d4f0906d4848ec18befe1"
+    },
+    "matmul_prefill": {
+      "same": true,
+      "failed_sha256": "50ff39a5d1c6adf1bd98844b8fefea8ab2f217abf3e41a9689d18c8ee19dbcc3",
+      "main_sha256": "50ff39a5d1c6adf1bd98844b8fefea8ab2f217abf3e41a9689d18c8ee19dbcc3"
+    },
+    "matmul_group": {
+      "same": true,
+      "failed_sha256": "80f459d7f0232ecd572f47be78c4297dae8c04ff3efafa22297a05fecc48a5fc",
+      "main_sha256": "80f459d7f0232ecd572f47be78c4297dae8c04ff3efafa22297a05fecc48a5fc"
+    },
+    "matmul_group_xh": {
+      "same": true,
+      "failed_sha256": "d0589c635f98e95252d3558070daca9746ef2a39ec55abd5cc4cd281b8b99ed4",
+      "main_sha256": "d0589c635f98e95252d3558070daca9746ef2a39ec55abd5cc4cd281b8b99ed4"
+    },
+    "matmul_decode_exact": {
+      "same": false,
+      "failed_sha256": "1b72caf518c7790d4c2e646d71b9c8abf9c4d6d8d7a2f10587e9920cc0e0285f",
+      "main_sha256": "d80620c6ec75d450b59fff53701f59491ad20b0f06169c89570fc170e58b15b7"
+    }
+  },
+  "scope": "source comparison only; no main numerical run or first-divergence claim"
+}

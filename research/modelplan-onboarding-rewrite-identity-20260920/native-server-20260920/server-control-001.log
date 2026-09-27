@@ -1,0 +1,8 @@
+[q8rp] split-plane decode mirrors built: 196 tensors
+loaded Qwen3 from safetensors (28 trunk layers; optional MTP skipped)
+prompt tokens: [1, 2, 3, 4]
+[fa-pool] grow #0 dev=0 o_len 0 -> 2048 ml_len 0 -> 16 (retired kept, zero=false)
+[ttft] prompt_tokens=4 prefill_wall_s=0.010 (verify-class batched prefill; time to first generated token from a warm model)
+fp8-mmq dispatches after prefill: 0  (hook entries=0 gate_off=0 no_operand=0 bad_shape=0 bad_scale=0 nan=0)
+verify-prefill argmax=3  decode argmax=3  logit maxdiff=1.907e-6  MATCH
+fp8-mmq dispatches: 0

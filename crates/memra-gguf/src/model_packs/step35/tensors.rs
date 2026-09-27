@@ -39,6 +39,7 @@ pub(crate) fn hf_moe_requirements(
     let h = u64::from(plan.hidden_size);
     let f = u64::from(moe.expert_intermediate_size);
     let e = u64::from(moe.expert_count);
+    let retained = moe.stored_expert_count() as u64;
     let mut add = |tensor, suffix: &str, shape, quant| {
         rows.push(requirement(
             TensorId::Layer { index, tensor },
@@ -74,17 +75,17 @@ pub(crate) fn hf_moe_requirements(
         (
             LayerTensor::MoeExpertGateBank,
             "moe.gate_proj.weight",
-            vec![e, f, h],
+            vec![retained, f, h],
         ),
         (
             LayerTensor::MoeExpertUpBank,
             "moe.up_proj.weight",
-            vec![e, f, h],
+            vec![retained, f, h],
         ),
         (
             LayerTensor::MoeExpertDownBank,
             "moe.down_proj.weight",
-            vec![e, h, f],
+            vec![retained, h, f],
         ),
     ] {
         add(tensor, suffix, shape, QuantConstraint::Weight);
@@ -204,6 +205,34 @@ mod tests {
     }
 
     #[test]
+    fn retained_step_banks_keep_full_router_axis_and_compact_weight_axis() {
+        let (cfg, mut plan, _, _) = contracts();
+        let crate::model_plan::MlpPlan::Moe(moe) = &mut plan.layers[1].mlp else {
+            unreachable!()
+        };
+        moe.retained_experts = Some(vec![1, 3, 5]);
+        let contract = super::super::PACK
+            .compile_tensor_contract(
+                &cfg,
+                &plan,
+                CheckpointDialect::HfSafetensors,
+                ContractOptions::default(),
+            )
+            .unwrap();
+        let row = |tensor| {
+            contract
+                .requirements
+                .iter()
+                .find(|r| r.id == TensorId::Layer { index: 1, tensor })
+                .unwrap()
+        };
+        assert_eq!(row(LayerTensor::MoeRouter).shape, vec![6, 16]);
+        assert_eq!(row(LayerTensor::MoeRouterBias).shape, vec![6]);
+        assert_eq!(row(LayerTensor::MoeExpertGateBank).shape, vec![3, 12, 16]);
+        assert_eq!(row(LayerTensor::MoeExpertDownBank).shape, vec![3, 16, 12]);
+    }
+
+    #[test]
     fn step_declared_hf_names_and_folds_match_the_existing_native_mapping() {
         let (cfg, plan, hf, gguf) = contracts();
         assert!(matches!(
@@ -263,6 +292,7 @@ mod tests {
             }
             for name in &requirement.names {
                 rows.push(TensorCensusEntry {
+                    auxiliaries: Vec::new(),
                     name: name.clone(),
                     shape: requirement.shape.clone(),
                     storage: StorageLayout::Float(FloatType::Bf16),
@@ -309,6 +339,7 @@ mod tests {
         assert!(hf.bind(&wrong).is_err());
         let mut wrong = rows.clone();
         wrong.push(TensorCensusEntry {
+            auxiliaries: Vec::new(),
             name: "model.layers.2.transformer.shared_head.output.weight".into(),
             shape: vec![64, 16],
             storage: StorageLayout::Float(FloatType::Bf16),

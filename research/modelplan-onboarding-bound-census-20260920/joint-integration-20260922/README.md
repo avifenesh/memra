@@ -1,0 +1,13 @@
+# Selected #541/#542 composition
+
+The integration starts from main `3df0556016e5fbc620bdc9b9b9e12944936cd01a`, merges #542 `7236d6368563bdce844583fc8d108950c441009b`, then #541 production `6f6ef12f85e4eac60616b3263f7d664266f3133c`. Native-test `300742b29bbbfb04d7d0a40e225c3aece34f87df` is taken only as its four-file delta. Its private documentation parents are excluded.
+
+The CPU expert seam preserves main's bare down-projection rows and ordered route-weight/down-scale FMA accumulation. Bound and mirrored sources use new optional scoped raw-row companion symbols; they never fall back to an exposed descriptor. Legacy weighted/scoped calls keep their program. The actual scoped-reader controls now check raw-row parity and nontrivial scaling, including original reader ownership after pathname replacement.
+
+The I/O queue retains #541's single whole-vector publication. A noexcept-movable batch gives deque insertion the strong exception guarantee. Main's prefetch claim guard and final-half charge release remain authoritative, and the demand drain guard is armed only after successful publication. `tools/memra_cpu_queue_publication_test.cpp` injects a real deque allocation failure after an existing prefix, plus prefetch/demand publication failures, to check queue, reader, claim and charge ownership. This test is CPU-only and must execute on Linux; a cross-target check is insufficient.
+
+The tokenwise Eager prime loop now checks main's typed cancellation boundary after each completed nonfinal row, retaining the taint guard. Final-row completion remains successful. `test-prime-cancellation.py` compiles the actual loop, typed cancellation and taint code with explicitly substituted device/math providers: the selected #542 baseline misses partial cancellation and the composition stops at the next completed row. These are boundary controls, not numerical qualification.
+
+The exact matmul scope and main's ordinary small-M threshold coexist. The generated execution registry contains 68 operations and 12 columns, including both Gemma and GDN Eager declarations and an unsupported RetainedExpertRouting row. The strict GDN speculative verification refusal remains intact. Worker/LRU policy is not changed by the conflict resolution.
+
+Local validation covers the GGUF/compiler/CLI suites, registry regeneration, Linux-target engine/server warnings-denied typechecking, the Rust scoped-bridge typecheck and the focused prime dispatch/cancellation controls. Native loader runner repair and its normal/optimized Python controls are in the sibling native-acceptance directory. Actual Linux CPU companion execution and all CUDA/model/serving gates remain separate pending evidence. This composition does not grant model or speculative support.

@@ -1,0 +1,17 @@
+test_sigterm_before_atomic_replace (__main__.RealCancellationTests.test_sigterm_before_atomic_replace) ... REAL_SIGNAL_CONTROL kind=baseline fault=sig_replace exit=0 records=[{'signal_control': 'baseline', 'fault': 'sig_replace', 'signals_sent': 1, 'status': 'failed', 'had_error': True}]
+REAL_SIGNAL_CONTROL kind=callers fault=sig_replace exit=0 records=[{'signal_control': 'callers', 'fault': 'sig_replace', 'signals_sent': 1, 'status': 'failed', 'had_error': True}]
+REAL_SIGNAL_CONTROL kind=battery fault=sig_replace exit=0 records=[{'signal_control': 'battery', 'fault': 'sig_replace', 'signals_sent': 1, 'status': 'failed', 'had_error': True}]
+ok
+test_sigterm_during_final_verify (__main__.RealCancellationTests.test_sigterm_during_final_verify) ... REAL_SIGNAL_CONTROL kind=baseline fault=sig_verify exit=0 records=[{'signal_control': 'baseline', 'fault': 'sig_verify', 'signals_sent': 1, 'status': 'failed', 'had_error': True}]
+REAL_SIGNAL_CONTROL kind=callers fault=sig_verify exit=0 records=[{'signal_control': 'callers', 'fault': 'sig_verify', 'signals_sent': 1, 'status': 'failed', 'had_error': True}]
+REAL_SIGNAL_CONTROL kind=battery fault=sig_verify exit=0 records=[{'signal_control': 'battery', 'fault': 'sig_verify', 'signals_sent': 1, 'status': 'failed', 'had_error': True}]
+ok
+test_sigterm_during_pending_result_write (__main__.RealCancellationTests.test_sigterm_during_pending_result_write) ... REAL_SIGNAL_CONTROL kind=baseline fault=sig_pending exit=0 records=[{'signal_control': 'baseline', 'fault': 'sig_pending', 'signals_sent': 1, 'status': 'failed', 'had_error': True}]
+REAL_SIGNAL_CONTROL kind=callers fault=sig_pending exit=0 records=[{'signal_control': 'callers', 'fault': 'sig_pending', 'signals_sent': 1, 'status': 'failed', 'had_error': True}]
+REAL_SIGNAL_CONTROL kind=battery fault=sig_pending exit=0 records=[{'signal_control': 'battery', 'fault': 'sig_pending', 'signals_sent': 1, 'status': 'failed', 'had_error': True}]
+ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 3.308s
+
+OK

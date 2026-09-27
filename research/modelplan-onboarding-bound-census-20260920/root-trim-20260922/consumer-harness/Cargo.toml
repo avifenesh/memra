@@ -1,0 +1,10 @@
+[package]
+name = "memra-root-trim-host"
+version = "0.0.0"
+edition = "2024"
+[workspace]
+[dependencies]
+memra-gguf = { path = "../../../../crates/memra-gguf" }
+sha2 = "0.10"
+libc = "0.2"
+serde_json = "1"

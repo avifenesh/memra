@@ -1,0 +1,72 @@
+{
+  "source_commit": "291c1ef5c8a610131748645ac1d1666a121c71ef",
+  "issue": "https://github.com/avifenesh/memra/issues/586",
+  "finding": "ARCH541-CPU-MIRROR-01",
+  "source_GO": false,
+  "expected_red_reproduced": true,
+  "builds_passed": 3,
+  "regressions_failed_as_expected": 4,
+  "source_files_verified": 914,
+  "raw": {
+    "companion-build.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "expected-red.json.gz": {
+      "sha256": "3273fcf73008df610faf657c8c1bfb66cad123ecf5a7556e58032eab7472ade4",
+      "uncompressed_sha256": "b37742a4acf163c5fa56f805e1cce5ae64b35c0f0749ce4da2b5b41e819cccf1",
+      "uncompressed_bytes": 53
+    },
+    "legacy-fixture-build.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "mirror-counter-error-pipeline-0.log.gz": {
+      "sha256": "0a2da937720db72885f6b970f0e1a93033ee559babf91455735e2f8c70d60956",
+      "uncompressed_sha256": "2fc6173a836bd52e13a4fec1d9d5ef99223dd0f0f6a8cb8db40f36ed59bf4659",
+      "uncompressed_bytes": 5677
+    },
+    "mirror-counter-error-pipeline-1.log.gz": {
+      "sha256": "d23c97171147f35c9a41f288e9ec557f8a6cb0fdebed9af2147139af7f9c19cb",
+      "uncompressed_sha256": "d04421e5b0cc5f30db93b62274b7989726cb9f07428fc1e30b514a1248142d24",
+      "uncompressed_bytes": 5677
+    },
+    "mirror-counter-pipeline-0.log.gz": {
+      "sha256": "f53e9fe62eb98a14b320eec7fc150d9115c9ca000782e01a7d7284ff26e8e025",
+      "uncompressed_sha256": "012044ef010d068be17a0681f2c0b49b1cc3323afccacd3aa39617152c7c2038",
+      "uncompressed_bytes": 6217
+    },
+    "mirror-counter-pipeline-1.log.gz": {
+      "sha256": "ee1b3d252fbcdf1f1706b22e4f128003ad802345bbeaaffcd2cb4c6e834b1e2f",
+      "uncompressed_sha256": "567b7d70c388db8acc0664417c9fa9da03e88d4955a198e51928392326054fa8",
+      "uncompressed_bytes": 5732
+    },
+    "observer-build.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "observer-exports.log.gz": {
+      "sha256": "3ce27272ce1faca95c341b3ddeca69335ef538dcaf2aaeb108b8e8ea07dec356",
+      "uncompressed_sha256": "1af8ed7c167dfad3aa286a00aba22abcac30bd62027f954c3502e15a8a3e484b",
+      "uncompressed_bytes": 13478
+    },
+    "production-exports.log.gz": {
+      "sha256": "e8e0c695818e9e1b1d558b54ca3c15ad70d3090572787ede448fdde1d308aa36",
+      "uncompressed_sha256": "7e5e33e7ab350ba3960015dffdf3948fc17a21d569fdcd83d370346f71509ffa",
+      "uncompressed_bytes": 12995
+    },
+    "result.json.gz": {
+      "sha256": "72665758143ab8a267a11dd3bd6ab4004051fb0bca95a564cb467be512a5ac6b",
+      "uncompressed_sha256": "86a7addf6555e3a007147441a24b042ea4abb4cc80e3009564530b9602429298",
+      "uncompressed_bytes": 122929
+    },
+    "source-manifest.json.gz": {
+      "sha256": "622353ece878de73045c355a8b1da1564dc58a2647ec9d9221fc90cf5f933f99",
+      "uncompressed_sha256": "342bf9fe81d49d3b9a42723fb5c31783c3388ea581705e291e517432f3b8fdad",
+      "uncompressed_bytes": 117020
+    }
+  }
+}

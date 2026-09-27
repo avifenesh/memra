@@ -60,7 +60,6 @@ use memra_engine::decode_batch::{DevPenalty, DevSamp};
 use memra_engine::forward::argmax;
 use memra_engine::hybrid::HybridModel;
 use memra_gguf::GgufFile;
-use sha2::{Digest, Sha256};
 
 /// Restore a process environment variable when a temporary in-process gate arm exits. Rust drops
 /// the guard on both `Ok` and `?`, so a failed decode cannot leak a diagnostic route into the next
@@ -534,11 +533,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 rewrite.surface == memra_engine::plan_backend::RewriteSurface::DecodeBatch
             })
             .ok_or("decode-batch rewrite manifest is missing")?;
-        let executable = std::fs::read(std::env::current_exe()?)?;
-        let executable_sha256 = Sha256::digest(&executable)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
+        let executable_sha256 = memra_engine::plan_backend::running_implementation_sha256()?;
         let receipt = rewrite.verify_logits(
             &executable_sha256,
             &reference_logits_flat,
@@ -549,7 +544,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 require_argmax: true,
             },
         )?;
-        let receipt = memra_engine::plan_backend::bind_rewrite_artifact(receipt)?;
+        let receipt = memra_engine::plan_backend::bind_rewrite_artifact(&model, receipt)?;
         receipt.validate_for(&rewrite)?;
         Some(receipt.to_tsv())
     } else {
@@ -2024,11 +2019,7 @@ fn pp_battery(
             .into_iter()
             .find(|rewrite| rewrite.surface == memra_engine::plan_backend::RewriteSurface::Pipeline)
             .ok_or("pipeline rewrite manifest is missing")?;
-        let executable = std::fs::read(std::env::current_exe()?)?;
-        let executable_sha256 = Sha256::digest(&executable)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
+        let executable_sha256 = memra_engine::plan_backend::running_implementation_sha256()?;
         let receipt = rewrite.verify_logits(
             &executable_sha256,
             &rewrite_reference,
@@ -2039,7 +2030,7 @@ fn pp_battery(
                 require_argmax: true,
             },
         )?;
-        let receipt = memra_engine::plan_backend::bind_rewrite_artifact(receipt)?;
+        let receipt = memra_engine::plan_backend::bind_rewrite_artifact(model, receipt)?;
         receipt.validate_for(&rewrite)?;
         std::fs::write(&path, receipt.to_tsv())?;
         println!("rewrite receipt: {}", std::path::Path::new(&path).display());

@@ -1109,11 +1109,10 @@ impl MlaConfig {
 
 #[derive(Debug, Clone)]
 pub struct ModelConfig {
+    /// Explicit checkpoint ownership; None uses the pack policy, never tensor absence.
+    pub tie_word_embeddings: Option<bool>,
     pub arch: Arch,
     pub prefill_activation: Option<crate::model_packs::qwen35::activation::PrefillFp4>,
-    /// HF `tie_word_embeddings` as declared by config.json (`None` for GGUF, which carries no
-    /// such key; an absent head tensor is the GGUF convention for a tied head).
-    pub tie_word_embeddings: Option<bool>,
     pub name: String,
     pub n_layer: u32,
     pub n_embd: u32,
@@ -1581,7 +1580,6 @@ impl ModelConfig {
             arch,
             prefill_activation: crate::model_packs::qwen35::activation::PrefillFp4::from_gguf(g)
                 .unwrap_or_else(|error| panic!("{error}")),
-            tie_word_embeddings: None,
             window_hint: u("attention.sliding_window"),
             rope_scaling_hint: g
                 .meta_arch("rope.scaling.type")
@@ -1590,6 +1588,10 @@ impl ModelConfig {
                 .map(|kind| if kind == "none" { "default" } else { kind }.to_owned()),
             layer_rope_scaling: Vec::new(),
             hidden_act: None,
+            tie_word_embeddings: g.meta_arch("tie_word_embeddings").map(|v| match v {
+                MetaValue::Bool(value) => *value,
+                other => panic!("tie_word_embeddings must be boolean, got {other:?}"),
+            }),
             name: g
                 .metadata
                 .get("general.name")
@@ -2319,9 +2321,9 @@ impl ModelConfig {
         };
 
         ModelConfig {
+            tie_word_embeddings: c.tie_word_embeddings,
             arch,
             prefill_activation: None,
-            tie_word_embeddings: c.tie_word_embeddings,
             window_hint: c.sliding_window,
             rope_scaling_hint: c.rope_scaling_type.clone(),
             layer_rope_scaling: c.layer_rope_scaling.clone(),
@@ -2752,6 +2754,7 @@ impl SwigluClamp {
 /// (qwen3_5) nest the transformer fields under `text_config` — `parse` flattens that automatically.
 #[derive(Debug, Clone)]
 pub struct HfConfig {
+    pub tie_word_embeddings: Option<bool>,
     pub model_type: String,
     pub name: Option<String>,
     pub num_hidden_layers: u32,
@@ -2794,8 +2797,6 @@ pub struct HfConfig {
     pub num_global_key_value_heads: Option<u32>,
     pub sliding_window: Option<u32>,
     pub final_logit_softcapping: Option<f32>,
-    /// `tie_word_embeddings` as written in config.json; `None` when the key is absent.
-    pub tie_word_embeddings: Option<bool>,
     /// rope_parameters.{full_attention,sliding_attention}.rope_theta, flattened in apply().
     pub gemma4_rope_theta_global: Option<f32>,
     pub gemma4_rope_theta_swa: Option<f32>,
@@ -2942,6 +2943,7 @@ pub struct HfConfig {
 impl Default for HfConfig {
     fn default() -> Self {
         HfConfig {
+            tie_word_embeddings: None,
             model_type: String::new(),
             name: None,
             num_hidden_layers: 0,
@@ -3002,7 +3004,6 @@ impl Default for HfConfig {
             global_head_dim: None,
             num_global_key_value_heads: None,
             sliding_window: None,
-            tie_word_embeddings: None,
             final_logit_softcapping: None,
             gemma4_rope_theta_global: None,
             gemma4_rope_theta_swa: None,

@@ -105,6 +105,7 @@ impl FixtureSource {
         self.tensors
             .iter()
             .map(|(name, tensor)| TensorCensusEntry {
+                auxiliaries: Vec::new(),
                 name: name.clone(),
                 shape: tensor.shape.clone(),
                 storage: StorageLayout::Float(FloatType::F32),
@@ -146,6 +147,7 @@ impl TensorSource for FixtureSource {
                 .census()
                 .into_iter()
                 .map(|entry| memra_gguf::source::TensorCensusRecord {
+                    auxiliaries: Vec::new(),
                     physical_name: entry.name.clone(),
                     dtype: "F32".to_string(),
                     entry,

@@ -7,6 +7,8 @@ use crate::tensor_contract::{
 };
 
 pub static PACK: ModelPack = ModelPack {
+    inventory_schema: None,
+    default_output_head: crate::tensor_contract::OutputHead::Separate,
     family: "deepseek_v4",
     output_head: OutputHeadContract::SeparateHead,
     tensor_consumption: TensorConsumption::Report,
@@ -36,6 +38,8 @@ pub static PACK: ModelPack = ModelPack {
 };
 
 pub static DSPARK_PACK: ModelPack = ModelPack {
+    inventory_schema: None,
+    default_output_head: crate::tensor_contract::OutputHead::Separate,
     family: "deepseek_v4_dspark",
     output_head: OutputHeadContract::SeparateHead,
     tensor_consumption: TensorConsumption::Report,
@@ -571,6 +575,7 @@ mod tests {
             .requirements
             .iter()
             .map(|requirement| TensorCensusEntry {
+                auxiliaries: requirement.auxiliaries.clone().unwrap_or_default(),
                 name: requirement.names[0].clone(),
                 shape: requirement.shape.clone(),
                 storage: match requirement.quant {

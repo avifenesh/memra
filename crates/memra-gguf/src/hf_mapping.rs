@@ -703,14 +703,14 @@ fn reorder_rows_v(
 
 /// Reorder the V-head COLUMNS of a row-major [out_rows][in_f=value_dim] matrix (out_proj, dim=1).
 /// Column index = V-head*head_dim + d over the whole `value_dim` input axis.
-fn reorder_cols_v(
-    data: &[f32],
+fn reorder_cols_v<T: Copy>(
+    data: &[T],
     out_rows: usize,
     in_f: usize,
     num_v_heads: usize,
     num_k_heads: usize,
     head_dim: usize,
-) -> Vec<f32> {
+) -> Vec<T> {
     let num_v_per_k = num_v_heads / num_k_heads;
     debug_assert_eq!(in_f, num_v_heads * head_dim);
     let mut out = data.to_vec();
@@ -727,6 +727,35 @@ fn reorder_cols_v(
         }
     }
     out
+}
+
+/// Apply the weight's input-column permutation to an input-axis auxiliary without changing its
+/// encoding. The same permutation primitive handles weight values and scalar byte offsets.
+pub(crate) fn reorder_input_scale_bytes(
+    bytes: &[u8],
+    element_bytes: usize,
+    cfg: &ModelConfig,
+) -> Result<Vec<u8>, String> {
+    if cfg.ssm.is_none() {
+        return Err("input-scale column transform requires SSM geometry".into());
+    }
+    let (nk, nv, _, hv) = head_params(cfg);
+    let width = nv.checked_mul(hv).ok_or("input-scale width overflow")?;
+    if nk == 0
+        || nv == 0
+        || !nv.is_multiple_of(nk)
+        || element_bytes == 0
+        || width.checked_mul(element_bytes) != Some(bytes.len())
+    {
+        return Err("input-scale extent disagrees with the weight column geometry".into());
+    }
+    let indices: Vec<_> = (0..width).collect();
+    let order = reorder_cols_v(&indices, 1, width, nv, nk, hv);
+    let mut out = Vec::with_capacity(bytes.len());
+    for index in order {
+        out.extend_from_slice(&bytes[index * element_bytes..(index + 1) * element_bytes]);
+    }
+    Ok(out)
 }
 
 fn f32_to_le(v: &[f32]) -> Vec<u8> {

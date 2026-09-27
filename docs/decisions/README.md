@@ -6,6 +6,7 @@ half — "we tried X and it lost by Y% on Z" cannot be reconstructed from the co
 
 | Record | Decides |
 |---|---|
+| [REWRITE-IDENTITY.md](REWRITE-IDENTITY.md) | bind strict rewrite admission to the opened artifact, executable, and numerical program |
 | [MTP-LEARNED-DEPTH-20260920.md](MTP-LEARNED-DEPTH-20260920.md) | full-head MTP depth research: fixed, native adaptive and learned policies on Qwen and Gemma |
 | [SAFETENSORS-DECISION.md](SAFETENSORS-DECISION.md) | safetensors as the semantic source, and what that does not mean for the compute format |
 | [FORMAT-DECISION.md](FORMAT-DECISION.md) | which artifact formats the engine imports and serves |

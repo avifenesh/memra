@@ -1,0 +1,28 @@
+{
+  "base_commit": "68e5e520810fd105bf64f43048a3a88514f6a064",
+  "changed_source_sha256": {
+    "crates/memra-engine/src/lib.rs": "278cd8482ad5d0debda017c165da8e79cb1024f0d879666127c095aed3788c32",
+    "crates/memra-engine/src/bin/rewrite_identity_gate/capture.rs": "50bd6098bb78aa21fcde6926441a1d554973e0fdca3a8d4d683cacc7850d080f"
+  },
+  "CPU_scope_teeth": "1 actual-source test passes error propagation, already-active scope and early drop; no CUDA math claim",
+  "linux_target_clippy": "DOCS_RS=1 cargo clippy --locked --target x86_64-unknown-linux-gnu -p memra-engine -p memra-server --lib --bins --tests -- -D warnings; pass, compile-only placeholders",
+  "fmt": "cargo fmt --all -- --check; pass",
+  "diff_check": "git diff --check; pass",
+  "native_green": "pending fresh reviewed source/build",
+  "native_eager_widths": [
+    4,
+    8,
+    16,
+    15,
+    17
+  ],
+  "arithmetic_policy_unchanged": true,
+  "new_kernel_or_env_flag": false,
+  "log_sha256": {
+    "linux-clippy.log": "2b71427d8392c11197320f75dde8bf99e9a4e4b6dc906f08606e212a3075f4bc",
+    "cpu-scope.log.gz": "de9db9d96ff305b51c78f20670a06e3f9d8210ff39805b44a510b74cdd7fe311"
+  },
+  "uncompressed_log_sha256": {
+    "cpu-scope.log.gz": "74c6a2d7eb8322f86d76051f56f00bf571326a73117ce7c4861232dc17f87f83"
+  }
+}

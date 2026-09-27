@@ -4,6 +4,8 @@ use crate::model_plan::SamplingDefaultsPlan;
 use crate::tensor_contract::{LayerTensor, QuantConstraint, TensorId};
 
 pub static PACK: ModelPack = ModelPack {
+    inventory_schema: None,
+    default_output_head: crate::tensor_contract::OutputHead::Separate,
     family: "hy3",
     output_head: OutputHeadContract::SeparateHead,
     tensor_consumption: TensorConsumption::Report,
@@ -36,6 +38,8 @@ pub static PACK: ModelPack = ModelPack {
 };
 
 pub static NVFP4_PACK: ModelPack = ModelPack {
+    inventory_schema: None,
+    default_output_head: crate::tensor_contract::OutputHead::Separate,
     family: "hy3_nvfp4",
     output_head: OutputHeadContract::SeparateHead,
     tensor_consumption: TensorConsumption::Report,
@@ -197,6 +201,7 @@ mod tests {
             };
             for name in names {
                 census.push(TensorCensusEntry {
+                    auxiliaries: Vec::new(),
                     name: name.clone(),
                     shape: requirement.shape.clone(),
                     storage: storage.clone(),

@@ -1,0 +1,78 @@
+{
+  "parent": "7b5eb2cd4a528fc3a15483a3eab933d751baa6be",
+  "source_sha256": {
+    "crates/memra-engine/src/cpu_experts.rs": "757f0d10db35312489819b1c2c001c00af1301e9c0d922ded7a5f9004fc2ac4b",
+    "crates/memra-engine/src/hybrid_forward.rs": "b78439ed8e4a8806c1e4cb1693dd3586cdb48663da83b2f4fc87064ce7712de6",
+    "crates/memra-gguf/src/bound_disk.rs": "371e5e95ec43d25ba3ad2dedfb9f32d8214f408ffb8ac561a01e3dbd532b1561",
+    "tools/test-cpu-scoped-bridge.py": "e1113d310b4dbffe86e6f09512b5831997acacefca48d1344485c47e077fa5fc",
+    "tools/memra_cpu_legacy_abi_fixture.c": "1fb5895159c07175e1f7b6e6446c660d08f0ef47af2e74210f61709055a00d15"
+  },
+  "raw": {
+    "pre-execution-raw/541-cpu-scoped-bridge-freeze-clippy.log.gz": {
+      "sha256": "7ad5dee1e4950c230b261cb5df6224c4d95c2838df194b055457499436f74937",
+      "uncompressed_sha256": "5e9df9bce348e9f7a6385432eae653e2a0cf876b0e74a9b2970bb1eb567a5b7b",
+      "uncompressed_bytes": 311
+    },
+    "pre-execution-raw/541-cpu-scoped-bridge-gates-typecheck.log.gz": {
+      "sha256": "7e226021cbca6a2e99272dff2b540804b716042530a53c0930d2e57d45344c54",
+      "uncompressed_sha256": "15757d387375e668866642a19e2c243f17f5db2671ce07e408ab32829e63958a",
+      "uncompressed_bytes": 311
+    },
+    "pre-execution-raw/541-cpu-scoped-bridge-typecheck-final.log.gz": {
+      "sha256": "2f30b3dbbd32e0f4fc805eb51ce6d4678758b5c45c0f419928e6a173a073ac5e",
+      "uncompressed_sha256": "2385d21857b433627bd435f4546963b18de4217c0c6a3a0b70c067158a7547a3",
+      "uncompressed_bytes": 311
+    },
+    "pre-execution-raw/541-cpu-scoped-bridge-typecheck.log.gz": {
+      "sha256": "6314fd082a1003fb5a9e436f8bc1fd4db5dd5f9c147d4732651ae8396683fe9f",
+      "uncompressed_sha256": "171c72a53fec2dc5f187a1dcd180999c8f1996185f982ce261a8ba2d68d34228",
+      "uncompressed_bytes": 908
+    },
+    "pre-execution-raw/541-cpu-bridge-compiler-clippy.log.gz": {
+      "sha256": "333063a2f86f35333ab33853b19ad617904bb1504350046c1a930f5943371020",
+      "uncompressed_sha256": "96d798b88f8a21662b28fc0ec7db9a9f7ab8f551facbca796764535e003262b8",
+      "uncompressed_bytes": 550
+    },
+    "pre-execution-raw/541-cpu-bridge-compiler-tests.log.gz": {
+      "sha256": "f10dca898fe6ea0710284a1cd7cd7d345e7a6c38cc5b962c72fe437ed9426c6a",
+      "uncompressed_sha256": "e2034f21e2f4fa703241edbf7d88602807c8988da427604e411be5439621526c",
+      "uncompressed_bytes": 36186
+    },
+    "pre-execution-raw/541-cpu-bridge-final-format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "pre-execution-raw/541-cpu-bridge-flags.log.gz": {
+      "sha256": "ccef4fca89c65b2b716d583c059dddd7fe5f19d449c9ffd334f829d2fceb97aa",
+      "uncompressed_sha256": "f39e977d59fd472d539054480ad089e6824127d5772248dd9a522c409798418e",
+      "uncompressed_bytes": 174
+    },
+    "pre-execution-raw/541-cpu-bridge-format-final.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "pre-execution-raw/541-cpu-bridge-format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "pre-execution-raw/541-cpu-bridge-host-harness-check-admission.log.gz": {
+      "sha256": "2668aff7d89688062ab83d7de7e9fc2f64d422d6444d1431924cf98b0742d626",
+      "uncompressed_sha256": "4ca7d42342dfe763409ab8881b0d5e0c1c975ff7936ef8c8217415bae9336055",
+      "uncompressed_bytes": 1114
+    },
+    "pre-execution-raw/541-cpu-bridge-host-harness-check-final.log.gz": {
+      "sha256": "71dae6680a8fc57c592a2b0789e3fa44fefdc2b502bc3e84f40b4f9032e0c18a",
+      "uncompressed_sha256": "54477376cc2216b23f496812678301b0033c2e06cd9a35be9209d5061e093323",
+      "uncompressed_bytes": 1114
+    },
+    "pre-execution-raw/541-cpu-bridge-host-harness-check.log.gz": {
+      "sha256": "b5e2196c8ee0946158e99a59fc897cc8ff68ffd8ebe3a5802d90c091995833cf",
+      "uncompressed_sha256": "e986c829781e0d0d0cd01c910223536798526006436d0937633b55e7ca81a698",
+      "uncompressed_bytes": 1565
+    }
+  },
+  "native_bridge_executed": false
+}

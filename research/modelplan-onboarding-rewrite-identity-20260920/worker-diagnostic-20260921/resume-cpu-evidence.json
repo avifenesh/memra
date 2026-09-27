@@ -1,0 +1,48 @@
+{
+  "predecessor_reviewed_commit": "b135038ee119cfaa2ab83cabff47cc84b2b79fda",
+  "scope": "additional CPU negative controls only; native qualification pending",
+  "tests": {
+    "actual_passed": 6,
+    "no_hook_negative_passed": 3,
+    "no_hook_negative_failed_expected": 3,
+    "caller_runner_controls_passed": 21,
+    "selected_native_case_count_unchanged": 27
+  },
+  "clippy": "DOCS_RS=1 cargo clippy -p memra-server --all-targets --target x86_64-unknown-linux-gnu -- -D warnings; passed; compile-only",
+  "fmt_diff_check": "passed",
+  "source_sha256": {
+    "crates/memra-server/src/worker.rs": "fa1280b559a5b18230388d330ee72c047a9c3d67e210a911ded4b5579eff6fe1",
+    "crates/memra-server/src/worker/rewrite_native_tests.rs": "0aabf76ebe85c11c202a8ff29c93e9f0bf6b7d1833f5770b5f3df9d925cc2250",
+    "crates/memra-server/src/worker/rewrite_native_tests/diagnostics.rs": "a189c51bfed887ce04398aa6b889bddb8b4effca6f554b21e68177245d3887ce",
+    "research/modelplan-onboarding-rewrite-identity-20260920/run-worker-diagnostic-tests.py": "8c1dd364b270dc09bdc5266737f0904bf1c455498baefcd094ab2562a0bb0b17"
+  },
+  "structure_checks": {
+    "production_worker_unchanged_except_cfg_test_hook": true,
+    "capture_implementation_unchanged_from_reviewed_b135": true,
+    "native_caller_positive_and_mutation_witnesses_unchanged_from_reviewed_b135": true,
+    "native_27_case_schedule_unchanged": true,
+    "http_SSE_implementation_unchanged": true
+  },
+  "logs": {
+    "resume-cpu-actual.log": {
+      "file": "resume-cpu-actual.log.gz",
+      "raw_sha256": "30f98e520f31c9522abc591e0a7693c53b6d23ddd5a80b50e6466c69591caeff",
+      "archive_sha256": "a85831cc932ef66678d623c071d39ffe99f5b3fdbbd9e24ddd4fdee9b4e53853"
+    },
+    "resume-cpu-no-hook-negative.log": {
+      "file": "resume-cpu-no-hook-negative.log.gz",
+      "raw_sha256": "94c9fd48bc58931813c102407163289f0cee2aac876abcf4d178b6b7c9ef5ddc",
+      "archive_sha256": "cd01f0eb556008bc6549d669dedae0773f5bc4f5341768eade8dc6d28d18e137"
+    },
+    "resume-linux-clippy.log": {
+      "file": "resume-linux-clippy.log.gz",
+      "raw_sha256": "8fbbd0fa6953495a08ffa6a545a31ff571350cf9413790d42689bb4f88f30fbc",
+      "archive_sha256": "a3be597cf75e66dc532bdd0472caddc9ef4d3a46ae621c172d9c0c2f73545242"
+    },
+    "resume-callers.log": {
+      "file": "resume-callers.log.gz",
+      "raw_sha256": "3a8a9c38a0a172ca6afec85700e0bbec25db37c953aad01e13d2d51d1f65c991",
+      "archive_sha256": "700be0e6c3adda14b322e12bac03e01ce50544393b7bb265ae5c6fa81980b02f"
+    }
+  }
+}

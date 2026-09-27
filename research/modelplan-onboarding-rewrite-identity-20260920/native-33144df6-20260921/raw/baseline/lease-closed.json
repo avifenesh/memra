@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "wrapper_pid": 2186803,
+  "child_pid": 2186823,
+  "requested_uuids": [
+    "GPU-09f40640-fcd1-6793-8acf-5fef0a021ddf"
+  ],
+  "lock_order": [
+    "GPU-09f40640-fcd1-6793-8acf-5fef0a021ddf"
+  ],
+  "lock_files": {
+    "GPU-09f40640-fcd1-6793-8acf-5fef0a021ddf": "/tmp/memra-gpu-locks/GPU-09f40640-fcd1-6793-8acf-5fef0a021ddf.lock"
+  },
+  "lock_inodes": {
+    "GPU-09f40640-fcd1-6793-8acf-5fef0a021ddf": {
+      "inode": 18088669,
+      "device_major": 253,
+      "device_minor": 1
+    }
+  },
+  "devices": [
+    {
+      "index": 3,
+      "uuid": "GPU-09f40640-fcd1-6793-8acf-5fef0a021ddf",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:08:00.0"
+    }
+  ],
+  "all_devices": [
+    {
+      "index": 0,
+      "uuid": "GPU-1ee63385-225d-6adb-4f53-80a3032e9891",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:05:00.0"
+    },
+    {
+      "index": 1,
+      "uuid": "GPU-9aac15ee-fcda-a1e3-367f-f9517f7376ff",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:06:00.0"
+    },
+    {
+      "index": 2,
+      "uuid": "GPU-0ef61756-6a47-f49f-7c77-4ea56a37dd41",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:07:00.0"
+    },
+    {
+      "index": 3,
+      "uuid": "GPU-09f40640-fcd1-6793-8acf-5fef0a021ddf",
+      "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "memory_mib": 97887,
+      "pci_bus_id": "00000000:08:00.0"
+    }
+  ],
+  "command": [
+    "python3",
+    "-B",
+    "/home/memra-five/owners/issue-542/src-33144df6/research/modelplan-onboarding-rewrite-identity-20260920/qualify-native.py",
+    "--model",
+    "/data/models/issue-542/qwen3-0.6b-c1899de",
+    "--out",
+    "/data/receipts/issue-542-33144df6-baseline-attempt-001",
+    "--build-record",
+    "/home/memra-five/owners/issue-542/build-33144df6/build.json",
+    "--binary-dir",
+    "/home/memra-five/owners/issue-542/build-33144df6/target/release",
+    "--mtp-model",
+    "/data/models/kernel-oracles/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf",
+    "--mtp-sha256",
+    "52c9cceb190055e0591a9a30c21f7200572eaf3ff1c59f6e9a1eda838a8f39de"
+  ],
+  "started_unix": 1789999345.3077633,
+  "state": "finished",
+  "exit_code": 0,
+  "child_exit_code": 0,
+  "finished_unix": 1789999410.4276335,
+  "timed_out": false,
+  "interrupted_signal": null,
+  "lingering_compute": []
+}

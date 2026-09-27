@@ -3,9 +3,11 @@ use super::*;
 /// Explicit ownership of the existing OLMoE program, formerly reached through the loader's
 /// generic fallback. Registration preserves that program; it does not promote qualification.
 pub static PACK: ModelPack = ModelPack {
-    family: "olmoe",
     output_head: OutputHeadContract::TiedHeadAllowed,
     tensor_consumption: TensorConsumption::Report,
+    inventory_schema: None,
+    default_output_head: crate::tensor_contract::OutputHead::Separate,
+    family: "olmoe",
     aliases: &["olmoe"],
     config_layout: ConfigLayout::Flat,
     tokenizer_sources: &[

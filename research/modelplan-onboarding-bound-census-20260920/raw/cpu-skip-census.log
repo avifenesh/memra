@@ -1,0 +1,23 @@
+skip-census: running: cargo test --locked -p memra-gguf -p memra-reference -p memra-tokenizer -p memra-validate -p memra-sampling --lib -- --test-threads=1 --nocapture
+skip-census: FAIL — the suite exited 101
+    test result: FAILED. 65 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.87s
+  left: [3182242064, 1053299395, 3199800549, 3198737447, 3180184138, 3187768632, 1057556100, 1035812927]
+ right: [3182242076, 1053299392, 3199800546, 3198737445, 3180184136, 3187768631, 1057556100, 1035812924]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test tests::qwen3_moe_fixture_executes_routed_and_shared_branches ... ok
+test tests::qwen4exp_tiny_plan_executes_gated_residual_qsa_ple_moe_and_mtp ... ok
+test tests::rope_uses_neox_split_half_pairs ... ok
+test tests::router_laws_pin_stable_ties_and_selection_only_bias ... ok
+test tests::sliding_window_limits_attention_and_trims_reference_state ... ok
+test tests::the_mla_fixture_shapes_match_the_tensor_contract ... ok
+test tests::token_hash_moe_fixture_executes_from_semantic_token_table ... ok
+
+failures:
+
+failures:
+    tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state
+
+test result: FAILED. 65 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.87s
+
+error: test failed, to rerun pass `-p memra-reference --lib`

@@ -497,14 +497,68 @@ pub struct DenseMlpPlan {
     pub activation: ActivationPlan,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct MoeMlpPlan {
     pub expert_count: u32,
+    /// Original router IDs in strictly increasing order. Banks contain only these rows, in
+    /// this order; router logits/bias retain expert_count entries. None is the complete bank.
+    pub retained_experts: Option<Vec<u32>>,
     pub experts_per_token: u32,
     pub expert_intermediate_size: u32,
     pub router: RouterPlan,
     pub shared: Option<SharedMlpPlan>,
     pub activation: ActivationPlan,
+}
+
+// Preserve existing unpruned plan serialization and its qualification identities.
+impl std::fmt::Debug for MoeMlpPlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("MoeMlpPlan");
+        d.field("expert_count", &self.expert_count);
+        if let Some(ids) = &self.retained_experts {
+            d.field("retained_experts", ids);
+        }
+        d.field("experts_per_token", &self.experts_per_token)
+            .field("expert_intermediate_size", &self.expert_intermediate_size)
+            .field("router", &self.router)
+            .field("shared", &self.shared)
+            .field("activation", &self.activation)
+            .finish()
+    }
+}
+
+impl MoeMlpPlan {
+    pub fn validate_expert_set(&self) -> Result<(), &'static str> {
+        if self.experts_per_token == 0 || self.experts_per_token > self.expert_count {
+            return Err("MoE top-k must be in 1..=expert_count");
+        }
+        if let Some(ids) = &self.retained_experts {
+            if ids.len() < self.experts_per_token as usize {
+                return Err("retained expert set has fewer entries than MoE top-k");
+            }
+            if ids.iter().any(|&id| id >= self.expert_count) {
+                return Err("retained expert ID exceeds router expert_count");
+            }
+            if ids.windows(2).any(|pair| pair[0] >= pair[1]) {
+                return Err("retained expert IDs must be unique and strictly increasing");
+            }
+        }
+        Ok(())
+    }
+
+    pub fn stored_expert_count(&self) -> usize {
+        self.retained_experts
+            .as_ref()
+            .map_or(self.expert_count as usize, Vec::len)
+    }
+
+    /// Translate a router ID to a bank row. A masked ID has no row or fabricated weights.
+    pub fn expert_bank_row(&self, original_id: u32) -> Option<usize> {
+        match &self.retained_experts {
+            Some(ids) => ids.binary_search(&original_id).ok(),
+            None => (original_id < self.expert_count).then_some(original_id as usize),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1551,6 +1605,9 @@ impl LayerPlan {
             }
             MlpPlan::Moe(moe) => {
                 operations.push(OperationKind::MoeMlp);
+                if moe.retained_experts.is_some() {
+                    operations.push(OperationKind::RetainedExpertRouting);
+                }
                 operations.push(match moe.router {
                     RouterPlan::Softmax => OperationKind::SoftmaxRouter,
                     RouterPlan::Sigmoid { .. } => OperationKind::SigmoidRouter,
@@ -2109,6 +2166,7 @@ fn compile_mlp(cfg: &ModelConfig, index: u32, mtp: bool) -> Result<MlpPlan, Plan
     };
     Ok(MlpPlan::Moe(MoeMlpPlan {
         expert_count: moe.expert_count,
+        retained_experts: None,
         experts_per_token: moe.expert_used_count,
         expert_intermediate_size: moe.expert_ff_length,
         router: router(cfg, index),
@@ -2341,6 +2399,7 @@ pub enum OperationKind {
     SeparateAttentionGate,
     DenseMlp,
     MoeMlp,
+    RetainedExpertRouting,
     SoftmaxRouter,
     SigmoidRouter,
     SqrtSoftplusRouter,
@@ -3029,5 +3088,33 @@ mod tests {
             "linear_num_key_heads":1,"linear_num_value_heads":2}"#,
         );
         assert!(gated.uses_hybrid_executor());
+    }
+    #[test]
+    fn retained_expert_set_preserves_router_ids_and_legacy_debug() {
+        let mut moe = MoeMlpPlan {
+            expert_count: 4,
+            retained_experts: None,
+            experts_per_token: 2,
+            expert_intermediate_size: 8,
+            router: RouterPlan::Softmax,
+            shared: None,
+            activation: ActivationPlan::Silu,
+        };
+        assert_eq!(
+            format!("{moe:?}"),
+            "MoeMlpPlan { expert_count: 4, experts_per_token: 2, expert_intermediate_size: 8, router: Softmax, shared: None, activation: Silu }"
+        );
+        moe.retained_experts = Some(vec![1, 3]);
+        assert!(moe.validate_expert_set().is_ok());
+        assert_eq!(moe.stored_expert_count(), 2);
+        assert_eq!(moe.expert_bank_row(0), None);
+        assert_eq!(moe.expert_bank_row(1), Some(0));
+        assert_eq!(moe.expert_bank_row(2), None);
+        assert_eq!(moe.expert_bank_row(3), Some(1));
+        assert!(format!("{moe:?}").contains("retained_experts: [1, 3]"));
+        for ids in [vec![], vec![1], vec![1, 1], vec![3, 1], vec![1, 4]] {
+            moe.retained_experts = Some(ids);
+            assert!(moe.validate_expert_set().is_err());
+        }
     }
 }

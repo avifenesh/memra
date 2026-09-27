@@ -1,0 +1,359 @@
+{
+  "base": "57de5874a94a8a5b520373a5344adbff35e9a280",
+  "recorded_utc": "2026-09-21T20:54:38.817374+00:00",
+  "source_review": "pending",
+  "source": {
+    "crates/memra-engine/src/head_trim.rs": "bdd932a71bcd0fcbd48a067c7993ccd893b9c3ae866c55692be889bca8750094",
+    "crates/memra-engine/src/lib.rs": "ab51d7233c435473f3500553cfeadf43cac602d1736f0c823775470068d8ee1c",
+    "crates/memra-engine/src/model.rs": "3b1d46adaf5695ce1d854bdccf90d80d1a3d950db749c76995a441b104103a13",
+    "crates/memra-engine/src/model/final_upload.rs": "164ca7ce34c329e25493928912dec6744a473bd11fd5dfe3ad82addefc05d2b4",
+    "crates/memra-gguf/src/bound_source/draft_pair.rs": "d30ad1d6fce23b765f178287b99138486438bd5e8ed74874d1ec6ba058c108c6",
+    "crates/memra-gguf/src/bound_source/head_trim.rs": "059cdd10eaef0e77ebc33a6e95418ef999192da16458ea8c04e6f200b290cf3e",
+    "research/modelplan-onboarding-bound-census-20260920/final-upload-20260921/consumer-harness/Cargo.lock": "43787a50fefd05de073f9dfa547f35bcb4660107b2c1973ddfbc08c9068bdd49",
+    "research/modelplan-onboarding-bound-census-20260920/final-upload-20260921/consumer-harness/Cargo.toml": "7f88609056fa99aa06ebc898a27b43887af166a302b91d41e0edbfe646b14806",
+    "research/modelplan-onboarding-bound-census-20260920/final-upload-20260921/consumer-harness/build.rs": "37161c7a066dfb938a07cd3624250a6b580f77cba987e6c492e448f3efc48f96",
+    "research/modelplan-onboarding-bound-census-20260920/final-upload-20260921/consumer-harness/src/baseline_quant_upload.rs": "83643bafa88a3c9921ca3e7f3d34df2cab641d916eea11a607b305fb6f95f05d",
+    "research/modelplan-onboarding-bound-census-20260920/final-upload-20260921/consumer-harness/src/lib.rs": "4047440fcbdf41cdf949e74d2fbbd153297eeb1d7224742fb17464446b8ccb13",
+    "research/modelplan-onboarding-bound-census-20260920/head-trim-20260921/consumer-harness/src/fixture.rs": "a7307cc265fdc45b16cb101f4e9da8c516dd2f745102f92dcea909a063c206ac"
+  },
+  "commands": [
+    {
+      "name": "engine-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "-p",
+        "memra-engine",
+        "--lib",
+        "--tests",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2",
+        "DOCS_RS": "1"
+      },
+      "exit_code": 0,
+      "wall_seconds": 58.47739487502258
+    },
+    {
+      "name": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 5.09999612509273
+    },
+    {
+      "name": "upload-rp0-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/research/modelplan-onboarding-bound-census-20260920/final-upload-20260921/consumer-harness/Cargo.toml",
+        "--",
+        "--nocapture"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "MEMRA_RP": "0"
+      },
+      "exit_code": 0,
+      "wall_seconds": 12.503858666983433
+    },
+    {
+      "name": "upload-rp1-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/research/modelplan-onboarding-bound-census-20260920/final-upload-20260921/consumer-harness/Cargo.toml",
+        "--",
+        "--nocapture"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "MEMRA_RP": "1"
+      },
+      "exit_code": 0,
+      "wall_seconds": 9.806065290933475
+    },
+    {
+      "name": "harness-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/research/modelplan-onboarding-bound-census-20260920/final-upload-20260921/consumer-harness/Cargo.toml",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target"
+      },
+      "exit_code": 0,
+      "wall_seconds": 0.5575074589578435
+    },
+    {
+      "name": "harness-format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/research/modelplan-onboarding-bound-census-20260920/final-upload-20260921/consumer-harness/Cargo.toml",
+        "--",
+        "--check"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target"
+      },
+      "exit_code": 0,
+      "wall_seconds": 0.13530441606417298
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target"
+      },
+      "exit_code": 0,
+      "wall_seconds": 0.07813066593371332
+    }
+  ],
+  "raw": {
+    "raw/audit-preservation.py.gz": {
+      "sha256": "ab770ac635a873a7c815934ca555f62117dca83b267b7c56b1ac9abd9fea7659",
+      "uncompressed_sha256": "b9fa3b69f5905ff74c5e0d72c8211c77783e0a65aed97bcf43096f49c09891f9",
+      "uncompressed_bytes": 4101
+    },
+    "raw/check-compatibility.py.gz": {
+      "sha256": "bc81826822fa89a3e789732ce8d794d757328cbd0d22ab640eb623662355a6b2",
+      "uncompressed_sha256": "9207171e4b89c2dffa8f3726052e3764db2de1bcb90b9de15e804238a6a99a6f",
+      "uncompressed_bytes": 2922
+    },
+    "raw/compatibility-check.log.gz": {
+      "sha256": "81c36b023caa4f6b02763a8aa45a31645a2dfd9fdbf82497c124ca6303d49167",
+      "uncompressed_sha256": "a0fd4d5d81ad76b61cb0f5c0f60e064966dee3caba2bafc0a15fbd5dfdce21f5",
+      "uncompressed_bytes": 644
+    },
+    "raw/diff.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/engine-clippy.log.gz": {
+      "sha256": "6d0ba5ff40cda80cd331877ef2fedc7b8b2a17c473e700da4508e41ee017efec",
+      "uncompressed_sha256": "9b25b254c22e3d5ecee46e3d2d4583d39ed0965efd09791421d59af555b93108",
+      "uncompressed_bytes": 192
+    },
+    "raw/extracted-quant-upload.rs.gz": {
+      "sha256": "972ced7c3f83be7bafeda4886a8467ea3c4191d19f1962c45118c52b452fc5f5",
+      "uncompressed_sha256": "30f12e02ee17cf75ebf5131f0c2526e50be39aca825c08b288ed794ebe56a4fb",
+      "uncompressed_bytes": 4293
+    },
+    "raw/format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/github-main-pre-freeze.json.gz": {
+      "sha256": "e925cf14592548fbef31c5f5f7ef9bd25b469b45a8f5a5b28ca64743cf45b42d",
+      "uncompressed_sha256": "412b0f3f2dc4901fb8630f43c31d5aae8d4173c0472520fd5160f36a4394b326",
+      "uncompressed_bytes": 352
+    },
+    "raw/harness-clippy.log.gz": {
+      "sha256": "a0110e11a7a1683f756817daaaf23544d442fe15f8de8823ab239c1fe277d054",
+      "uncompressed_sha256": "a08eef8d999ac75a7e8ab2ef5cec062b1657fbc15bbfe317cd5734f71e95754e",
+      "uncompressed_bytes": 271
+    },
+    "raw/harness-format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/initial-source-reconciliation.json.gz": {
+      "sha256": "92078224b0e5827cdeda3d734ca3d7e28f4f472d5dc9b4e6428a523be524b3d7",
+      "uncompressed_sha256": "2d929aa60d518312a9243350e38c508cd912a20d8ba8f00fefdc22d906dd4c55",
+      "uncompressed_bytes": 3192
+    },
+    "raw/model-upload-numeric-hunks.patch.gz": {
+      "sha256": "2f5a3bce00510742792027bc166d8e92c29b15a308a6e799f43f911d99cd9db3",
+      "uncompressed_sha256": "dbc8ed21b024a21d7a1ed203e740afed137076b343739e67edf7dd9808091651",
+      "uncompressed_bytes": 4720
+    },
+    "raw/model-upload.patch.gz": {
+      "sha256": "0a13607eab355b413825bb137faf24872df1192b05caaba27d7fbebe19640060",
+      "uncompressed_sha256": "0a26c708bd826947dd4c25179bffafc1f6884bea0908bb85c5b359068751ca3b",
+      "uncompressed_bytes": 4964
+    },
+    "raw/preservation.json.gz": {
+      "sha256": "ec75bdc1762d3aa8a780e1b4c546a65783404c3680a761b2d9dea0fa515f2b13",
+      "uncompressed_sha256": "6f58cf342e79ee14d010d6a860774e3f17a74c774dda8e547cf6767bcfab7590",
+      "uncompressed_bytes": 223112
+    },
+    "raw/preservation.log.gz": {
+      "sha256": "e840b251b9f9d6575bb39feba6abbabac2562f47b6706d674adfae028dc3a5bd",
+      "uncompressed_sha256": "32fbe1035687321db9fa19cee816ac768f8efe1d89cea4232f42d43fa182f084",
+      "uncompressed_bytes": 128
+    },
+    "raw/results.json.gz": {
+      "sha256": "216065be57e3e3182d52279b45657ce6b0c9769728b5c1e896895fd4e839f5c7",
+      "uncompressed_sha256": "d90810d419a56a675b4a364332732bbda83a19e342fe2480dbb6ed451d1aca5c",
+      "uncompressed_bytes": 3741
+    },
+    "raw/run-checks.py.gz": {
+      "sha256": "71b54392867f6a41105d6345aa1d2e0a0b54112cc3140d7d6d3a5f5b46cac822",
+      "uncompressed_sha256": "7e0596ecabd84bf0ec5cb6574d84233853e86d14976ec762450cc5e5d45a6e2d",
+      "uncompressed_bytes": 1966
+    },
+    "raw/run-final-harness.py.gz": {
+      "sha256": "e7362ebceafb22f65226bc269220ed7546b800cc438dfbe9138addd1732d971b",
+      "uncompressed_sha256": "1948148ae7daf9e5e743869293f84eaa0405be6bbc30e9867455b4a32b4c4b63",
+      "uncompressed_bytes": 2300
+    },
+    "raw/source-pin.json.gz": {
+      "sha256": "34346e1a7d63786c37a5122093ad884059fbe312dd1ab7b8bf89cae742e9fc77",
+      "uncompressed_sha256": "9e841adaa80eacd0320b79ad0a4556e69f3824a298ce1423c8ebe4f2362c5f80",
+      "uncompressed_bytes": 1752
+    },
+    "raw/source-stability.json.gz": {
+      "sha256": "73ebb2dbeae8662cb59930a4b70d18b2d4891c359cd07e8e3e5e52d15d27959c",
+      "uncompressed_sha256": "ed2b5bed633bb7a0ec461f784a04709d94e88d65c9b320f76ac264554b21facf",
+      "uncompressed_bytes": 175
+    },
+    "raw/toolchain.txt.gz": {
+      "sha256": "809318281757fb637fc7791f46dc378ce8745503acd94f00623c2500132e9316",
+      "uncompressed_sha256": "fa5ba3546cce80ffdb5fddb39dad6b064385ed7af0540faa80dc3c05cda5db28",
+      "uncompressed_bytes": 72
+    },
+    "raw/upload-compatibility.json.gz": {
+      "sha256": "c406aaf4a5e813d24f1ca57016bfc34b87df2766c4835f3ac09305d4b8e622dd",
+      "uncompressed_sha256": "6a6d0d7e6de876cc7738dc75f38d3d1b4923e9c35dd9f9eda45553b87806645f",
+      "uncompressed_bytes": 3326
+    },
+    "raw/upload-rp0-tests.log.gz": {
+      "sha256": "5a786f7ae584f38ffedd2db8948d0356d00450e79309679ba92d3d552b73edae",
+      "uncompressed_sha256": "09aa0730cb4430b29cd51b9ddf59d074e65c0c0e6f8210cb5c6a80a83eeda7ad",
+      "uncompressed_bytes": 3148
+    },
+    "raw/upload-rp1-tests.log.gz": {
+      "sha256": "d63edaebf1bbb7e4db131ff0f9ae8300254a0db9121f3f5cbb40d77a0a94ee4a",
+      "uncompressed_sha256": "4f66dcf3dc47b00d82ac26c04e27d71c301112fb89a8743d7f57b3d2f695107e",
+      "uncompressed_bytes": 2955
+    }
+  },
+  "development": {
+    "development/before-baseline-check-results.json.gz": {
+      "sha256": "9156ebf04d0fd694175e5366f0470bd389d888ee7584f0706199838a065c876a",
+      "uncompressed_sha256": "62d5cb25a9d5c95362d49b1f743f8e951a4af347fd7f13b8c98dc364e74d023f",
+      "uncompressed_bytes": 2479
+    },
+    "development/before-baseline-harness-clippy.log.gz": {
+      "sha256": "44864bae6f518a62462ff21d21b3a7d2cd268f306c3c4ae6e4e12f1f059d6722",
+      "uncompressed_sha256": "e80c396dc2c7d61fff8c1df3c8b56e11b684713ca632af8ed3853b59aa4b06fc",
+      "uncompressed_bytes": 271
+    },
+    "development/before-baseline-source-pin.json.gz": {
+      "sha256": "72e2690cd01ff661d922ac119a1f2e6c9fd37639e6c9935657c49f416b6f5e4f",
+      "uncompressed_sha256": "efc166f7d701afb0a7c99ed8bb4e0e214c57d04c4d3ea218d2bd452a987753c6",
+      "uncompressed_bytes": 1559
+    },
+    "development/before-baseline-upload-rp0-tests.log.gz": {
+      "sha256": "fddef2418afb66eb7f61e05e8b75813a371726eba6688fe2aa8b05fd5c06fe27",
+      "uncompressed_sha256": "e7bfb09da8ec2c519218ee45b87079179549cf0dcbf5d440d46e207b8bcbd978",
+      "uncompressed_bytes": 2949
+    },
+    "development/before-baseline-upload-rp1-tests.log.gz": {
+      "sha256": "7dda53458f36bcbf8966ce6ea388730a9d5f831a61dc8c2960a9b1932ecb1d0f",
+      "uncompressed_sha256": "2a636faea424da80af0986aad78d7409ed3d335eca415f8d06c90e8a448af4c8",
+      "uncompressed_bytes": 3154
+    },
+    "development/check-results.json.gz": {
+      "sha256": "9156ebf04d0fd694175e5366f0470bd389d888ee7584f0706199838a065c876a",
+      "uncompressed_sha256": "62d5cb25a9d5c95362d49b1f743f8e951a4af347fd7f13b8c98dc364e74d023f",
+      "uncompressed_bytes": 2479
+    },
+    "development/upload-tests-1.log.gz": {
+      "sha256": "1420e21229b06e135c783978583555b2b5f80cf2a16fffe03fddf5e2d8d5e654",
+      "uncompressed_sha256": "f863df6abe57bc9a22fc7bd7d3c749022641cf861e9c081b0aa4585c7743efb8",
+      "uncompressed_bytes": 3432
+    }
+  },
+  "reviewed_input": {
+    "reviewed_input/issue-541-draft-pair-57de5874.json.gz": {
+      "sha256": "924d75382dfae8fb152625302521ef9621bb74159b63b6e49939ec33bd55b8cd",
+      "uncompressed_sha256": "bcbfc84f5da2fcf60e4ca524dc65935155f7d702f959e2588f152e1176dccf10",
+      "uncompressed_bytes": 5522
+    },
+    "reviewed_input/interface-handoff-541-prepared-draft-target-24668af5.json.gz": {
+      "sha256": "b7892d187c754013d4869f711181ba3053950cd10a532d5f10f442ff06ec7e08",
+      "uncompressed_sha256": "9a5010599acda8d1cf957a23a8b910f332623903a6320d67a8a66175515d77f6",
+      "uncompressed_bytes": 2159
+    },
+    "reviewed_input/interface-review-541-target-trim-admission-57de5874-vs24668af5.json.gz": {
+      "sha256": "010a1fd7b4c94a0e2613b4dafc2e826fdf052b3ff944f58aa603cf630288c3c7",
+      "uncompressed_sha256": "931e7902e424ffc68d002b0213e316a6be7519fdcaeb8461d74d4c08777b25c0",
+      "uncompressed_bytes": 4911
+    }
+  },
+  "binaries": {
+    "upload-consumer-tests": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/artifacts/541/final-upload/upload-consumer-tests-95b57e59daec4f35471fa1621c8d7032589a6d1f0659105ccf8b23c78654db26",
+      "sha256": "95b57e59daec4f35471fa1621c8d7032589a6d1f0659105ccf8b23c78654db26",
+      "bytes": 9686536,
+      "format": "Mach-O 64-bit executable arm64",
+      "process_modes": [
+        "MEMRA_RP=0",
+        "MEMRA_RP=1"
+      ]
+    }
+  },
+  "protected_crate_files": 934,
+  "test_counts": {
+    "rp0": 8,
+    "rp1": 8,
+    "failed": 0,
+    "ignored": 0,
+    "broad_old_suite_rerun": false
+  },
+  "scope": "Owned actual returned GPU tensor plus same-buffer final H2D operand identities and ordered source/host receipts. CPU terminal recorders only. No actual loaded-model slot/truncation/barrier proof, binary/numeric pairing, shared admission or native qualification.",
+  "composition": "Pinned compatibility only:54224668/main653. Numeric hunks compatible; whole registration patch requires reviewed541 prerequisites. No broad intake."
+}

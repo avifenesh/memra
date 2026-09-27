@@ -67,6 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|name| {
             let (info, bytes) = st.raw(name).expect("census name resolves");
             TensorCensusEntry {
+                auxiliaries: Vec::new(),
                 name: name.clone(),
                 shape: info.shape.clone(),
                 storage: match info.dtype.as_str() {

@@ -1,0 +1,29 @@
+{
+  "phase": "gemma-prime",
+  "status": "passed",
+  "command": [
+    "/usr/local/bin/memra-gpu-run",
+    "--gpus",
+    "GPU-09f40640-fcd1-6793-8acf-5fef0a021ddf",
+    "--receipt",
+    "/data/receipts/issue-542-33144df6-gemma-prime-lease-attempt-001",
+    "--wait-seconds",
+    "3600",
+    "--max-run-seconds",
+    "1800",
+    "--",
+    "python3",
+    "-B",
+    "/home/memra-five/owners/issue-542/run-extra-native-33144df6.py",
+    "--phase",
+    "gemma-prime",
+    "--out",
+    "/data/receipts/issue-542-33144df6-gemma-prime-attempt-001"
+  ],
+  "startup_environment": {},
+  "build_record_sha256": "bcc67cf106dd9d8899bd3d807087df58375c2e6286df6ea93a32f2903e6d4349",
+  "source_commit": "33144df6d12c58a7821b351e18490cf8eff38f3e",
+  "wrapper_returncode": 0,
+  "lease_sha256": "c3d63d403873d97020a60ea2e80118aaf789340824fcb55fa03e6c58bf584054",
+  "runner_result_sha256": "65a722b2231eede7d33494f6bf98c4fe2a441c43a4923c3f0609a07bc4fde16a"
+}

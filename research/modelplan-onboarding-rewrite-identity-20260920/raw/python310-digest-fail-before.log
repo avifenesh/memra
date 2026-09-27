@@ -1,0 +1,17 @@
+E
+======================================================================
+ERROR: test_digest_does_not_require_python311_file_digest (__main__.LeaseTests.test_digest_does_not_require_python311_file_digest)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/.codex/worktrees/1fc5/memra/research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_native.py", line 38, in test_digest_does_not_require_python311_file_digest
+    self.assertEqual(gate.digest(path), expected)
+                     ~~~~~~~~~~~^^^^^^
+  File "/Users/avifen/.codex/worktrees/1fc5/memra/research/modelplan-onboarding-rewrite-identity-20260920/qualify-native.py", line 27, in digest
+    return hashlib.file_digest(stream, 'sha256').hexdigest()
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+TypeError: 'NoneType' object is not callable
+
+----------------------------------------------------------------------
+Ran 1 test in 0.003s
+
+FAILED (errors=1)

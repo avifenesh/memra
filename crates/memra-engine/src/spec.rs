@@ -1581,6 +1581,8 @@ pub fn budget_clamp_slot(room: usize, n_acc: usize, base: usize) -> Option<usize
 }
 
 pub struct SpecSession {
+    // Never refreshed on resume: predictions, KV and captured draft graphs share this origin.
+    rewrite_execution: crate::plan_backend::RewriteExecutionSnapshot,
     prime_ready: Option<prime::PreparedMtp>,
     pub(crate) cache: Cache,
     pub(crate) scratch: MtpScratch,
@@ -1786,6 +1788,12 @@ impl SpecSession {
     /// None when the scratch is ring-backed (Step35 SWA — physical rows are not
     /// prefix-addressable; the prefix cache already refuses that class end to end).
     pub fn draft_plane_ref(&self) -> Option<(&CudaSlice<u8>, &CudaSlice<u8>, usize, usize)> {
+        if !self
+            .rewrite_execution
+            .allows(memra_gguf::execution_manifest::RewriteSurface::MtpSpec)
+        {
+            return None;
+        }
         if self.scratch.kv.ring.is_some() {
             return None;
         }
@@ -1851,6 +1859,12 @@ impl SpecSession {
     /// one-way by design — there is no cheap symmetric re-promotion (rebuilding the draft KV
     /// would mean an `mtp_kv_fill` over the whole committed history).
     pub fn into_demoted(self) -> Option<(Cache, u32)> {
+        if !self
+            .rewrite_execution
+            .allows(memra_gguf::execution_manifest::RewriteSurface::MtpSpec)
+        {
+            return None;
+        }
         if self.pending_tok.is_some() || self.cache.tainted {
             return None;
         }
@@ -1867,6 +1881,12 @@ impl SpecSession {
     /// capture failure must not persist for the pool's whole lifetime (the TRT #16072 class).
     /// Logs once iff a flag was actually set; a no-fallback resume is silent and free.
     pub fn reset_graph_fallback_on_resume(&mut self) {
+        if !self
+            .rewrite_execution
+            .allows(memra_gguf::execution_manifest::RewriteSurface::MtpSpec)
+        {
+            return;
+        }
         if let Some(line) = self
             .draft_ctx
             .as_mut()
@@ -5188,6 +5208,20 @@ impl HybridModel {
         Ok(())
     }
 
+    /// GDN verification selects the batched numerical class, not native-gdn-eager.
+    /// No current receipt separately qualifies this teacher-forced program. Keep
+    /// strict execution closed instead of borrowing Eager, Batch or Spec authority.
+    /// Legacy diagnostics retain their existing numerical path and qualification=false.
+    fn refuse_unqualified_gdn_verify(&self) -> Result<(), String> {
+        if self.rewrite_is_qualified() && self.batched_serving_numeric_class() {
+            return Err(
+                "GDN verify numerical program is not qualified; native-gdn-eager does not authorize batched verification"
+                    .into(),
+            );
+        }
+        Ok(())
+    }
+
     /// Batched target verify forward over `tokens` at positions `pos0..pos0+T` (§D.3, T=K+1).
     /// Returns ALL T logit columns (host f32, [T*n_vocab]); appends T cols to every full-attn KV
     /// and advances every linear-attn recur state by T steps (the recur steps are SEQUENTIAL T=1).
@@ -5199,6 +5233,11 @@ impl HybridModel {
         pos0: usize,
         cache: &mut Cache,
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        // Shared teacher-forced/prefill rows need a live eager baseline. Speculative
+        // session entry points additionally require their MTP/GLM5 surface receipt.
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
+        self.refuse_unqualified_gdn_verify()?;
         if self.is_gemma4_e4b() {
             return Ok(self.gemma4_e4b_decode_step_t_h(e, tokens, pos0, cache)?.0);
         }
@@ -5249,6 +5288,11 @@ impl HybridModel {
         cache: &mut Cache,
         embd_dev: Option<(&CudaSlice<u8>, i32, usize)>,
     ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        // Shared teacher-forced/prefill rows need a live eager baseline. Speculative
+        // session entry points additionally require their MTP/GLM5 surface receipt.
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
+        self.refuse_unqualified_gdn_verify()?;
         cache.ensure_usable("decode_step_t")?;
         let n_embd = self.cfg.n_embd as usize;
         let t = tokens.len();
@@ -5334,6 +5378,8 @@ impl HybridModel {
         vtok_dev: Option<&CudaSlice<u32>>,
         graphs: Option<&mut DsparkVerifyGraphs>,
     ) -> Result<(CudaSlice<f32>, CudaSlice<f32>), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.refuse_unqualified_gdn_verify()?;
         // memra#659: a verify window never writes past the session cache. The round loops bound
         // their rounds before they call here; this turns a missed bound into a typed refusal
         // instead of an out-of-bounds KV row. Host-len appends land at cache.pos..; the
@@ -8711,6 +8757,11 @@ impl HybridModel {
         (Vec<f32>, Vec<CudaSlice<f32>>, Option<Vec<CudaSlice<f32>>>),
         Box<dyn std::error::Error>,
     > {
+        // Shared teacher-forced/prefill rows need a live eager baseline. Speculative
+        // session entry points additionally require their MTP/GLM5 surface receipt.
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::DecodeEager)?;
+        self.refuse_unqualified_gdn_verify()?;
         cache.ensure_usable("decode_step_t_aux2")?;
         let cfg = &self.cfg;
         let n_embd = cfg.n_embd as usize;
@@ -9317,7 +9368,10 @@ impl HybridModel {
         e: &Engine,
         max_ctx: usize,
     ) -> Result<SpecSession, Box<dyn std::error::Error>> {
+        let rewrite_execution = self.current_rewrite_execution_snapshot()?;
+        let _rewrite_scope = self.enter_rewrite_execution(&rewrite_execution)?;
         Ok(SpecSession {
+            rewrite_execution,
             prime_ready: None,
             // STAGE-OWNED KV (lane/pp2-spec 2026-08-06): `pp::new_cache`, not `Cache::new`. This
             // is the SERVING spec-session path, and with the ppN door open across two cards a
@@ -9484,6 +9538,21 @@ impl HybridModel {
         republish_at: Option<usize>,
         defer_suffix: bool,
     ) -> Result<SpecSession, (Option<Cache>, String)> {
+        // Raw-KV import creates a new object at this request boundary. No captured graphs
+        // are imported, and an existing session's provenance is never refreshed here.
+        let rewrite_execution = match self.current_rewrite_execution_snapshot() {
+            Ok(snapshot) => snapshot,
+            Err(error) => return Err((Some(cache), error)),
+        };
+        let _rewrite_scope = match self.enter_rewrite_execution(&rewrite_execution) {
+            Ok(scope) => scope,
+            Err(error) => return Err((Some(cache), error)),
+        };
+        if let Err(error) =
+            self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::MtpSpec)
+        {
+            return Err((Some(cache), error));
+        }
         let pos = prefix.len();
         let fail = |cache: Cache, msg: String| -> Result<SpecSession, (Option<Cache>, String)> {
             Err((Some(cache), msg))
@@ -9555,6 +9624,7 @@ impl HybridModel {
             require_anchor,
             republish_at,
             defer_suffix,
+            rewrite_execution,
         )
     }
 
@@ -9588,6 +9658,21 @@ impl HybridModel {
         republish_at: Option<usize>,
         defer_suffix: bool,
     ) -> Result<SpecSession, (Option<Cache>, String)> {
+        // Raw-KV import creates a new object at this request boundary. No captured graphs
+        // are imported, and an existing session's provenance is never refreshed here.
+        let rewrite_execution = match self.current_rewrite_execution_snapshot() {
+            Ok(snapshot) => snapshot,
+            Err(error) => return Err((Some(cache), error)),
+        };
+        let _rewrite_scope = match self.enter_rewrite_execution(&rewrite_execution) {
+            Ok(scope) => scope,
+            Err(error) => return Err((Some(cache), error)),
+        };
+        if let Err(error) =
+            self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::MtpSpec)
+        {
+            return Err((Some(cache), error));
+        }
         let pos = prefix.len();
         let fail = |cache: Cache, msg: String| -> Result<SpecSession, (Option<Cache>, String)> {
             Err((Some(cache), msg))
@@ -9646,6 +9731,7 @@ impl HybridModel {
             require_anchor,
             republish_at,
             defer_suffix,
+            rewrite_execution,
         )
     }
 
@@ -9667,6 +9753,8 @@ impl HybridModel {
         source_k_len: usize,
         source_v_len: usize,
     ) -> Result<RestoredDraftScratch, String> {
+        let _rewrite_scope = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::MtpSpec)?;
         if self.mtp.is_none() {
             return Err("no MTP head attached (nothing to draft with)".into());
         }
@@ -9732,6 +9820,7 @@ impl HybridModel {
         require_anchor: bool,
         republish_at: Option<usize>,
         defer_suffix: bool,
+        rewrite_execution: crate::plan_backend::RewriteExecutionSnapshot,
     ) -> Result<SpecSession, (Option<Cache>, String)> {
         let pos = prefix.len();
         let fail = |cache: Cache, msg: String| -> Result<SpecSession, (Option<Cache>, String)> {
@@ -10063,6 +10152,7 @@ impl HybridModel {
             });
         }
         Ok(SpecSession {
+            rewrite_execution,
             prime_ready: None,
             cache,
             scratch,
@@ -10124,6 +10214,9 @@ impl HybridModel {
         e: &Engine,
         sess: &mut SpecSession,
     ) -> Result<Option<usize>, Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        let _origin = self.enter_rewrite_execution(&sess.rewrite_execution)?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::MtpSpec)?;
         if sess.turn_ckpt.as_ref().is_some_and(|ckpt| {
             !sess.cache.can_rollback(&ckpt.snap, 0) || !sess.scratch.can_rewind_to(ckpt.pos)
         }) {
@@ -10230,6 +10323,9 @@ impl HybridModel {
         sess: &mut SpecSession,
         target_cap: usize,
     ) -> Result<Option<usize>, Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        let _origin = self.enter_rewrite_execution(&sess.rewrite_execution)?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::MtpSpec)?;
         if target_cap <= sess.cache.max_ctx {
             return self.spec_rewind_to_checkpoint(e, sess);
         }
@@ -10373,6 +10469,9 @@ impl HybridModel {
         sess: &mut SpecSession,
         sampling: Option<SpecSampling>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::MtpSpec)?;
+        let _origin = self.enter_rewrite_execution(&sess.rewrite_execution)?;
         sess.cache.ensure_usable("spec_flush_pending")?;
         let Some(b) = sess.pending_tok.take() else {
             return Ok(());
@@ -10618,6 +10717,9 @@ impl HybridModel {
         prime_split: Option<usize>,
         on_commit: Option<&mut dyn FnMut(&[u32]) -> bool>,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
+        self.require_rewrite(memra_gguf::execution_manifest::RewriteSurface::MtpSpec)?;
+        let _origin = self.enter_rewrite_execution(&sess.rewrite_execution)?;
         if constraint.is_some() && sampling.is_some_and(|s| s.temp > 0.0) {
             return Err(
                 "constrained spec decode is greedy-only (worker routes sampled \
@@ -10698,6 +10800,7 @@ impl HybridModel {
         max_new: usize,
         k: usize,
     ) -> Result<(Vec<u32>, usize, usize), Box<dyn std::error::Error>> {
+        let _rewrite_execution = self.protect_rewrite_execution()?;
         // glm5 T-parallel verify door (lane/glm5-tparallel-verify): an hc trunk with a
         // loaded DRAFT SOURCE — the embedded MTP head OR the DFlash2 drafter
         // (lane/glm5-dflash-draft-src) — routes to the glm5 draft->verify->rollback loop —
@@ -10709,7 +10812,7 @@ impl HybridModel {
             && crate::glm_spec::glm5_spec_on()
             && (self.mtp.is_some() || self.glm5_dflash.is_some())
         {
-            if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::MtpSpec) {
+            if !self.rewrite_allowed(memra_gguf::execution_manifest::RewriteSurface::Glm5Spec) {
                 return Err("speculative rewrite is not qualified for this ModelPlan".into());
             }
             return self.generate_spec_glm5(e, prompt, max_new, k);
@@ -11675,6 +11778,12 @@ impl HybridModel {
             Some(s) => s.cache.max_ctx,
             None => prompt.len() + max_new + k + 8,
         };
+        // Check the retained preparation before taking it out of the session.
+        let _prepared_origin = sess
+            .as_ref()
+            .and_then(|s| s.prime_ready.as_ref())
+            .map(|prepared| self.enter_rewrite_execution(&prepared.rewrite_execution))
+            .transpose()?;
         let mut prepared = sess.as_mut().and_then(|s| s.prime_ready.take());
         if prepared.as_ref().is_some_and(|p| {
             p.prompt != prompt
@@ -11724,6 +11833,7 @@ impl HybridModel {
         ) = match sess.take() {
             Some(sr) => {
                 let SpecSession {
+                    rewrite_execution: _,
                     cache,
                     scratch,
                     committed,

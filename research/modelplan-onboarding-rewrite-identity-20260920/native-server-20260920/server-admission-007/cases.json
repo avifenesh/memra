@@ -1,0 +1,166 @@
+[
+  {
+    "case": "inspect",
+    "command": [
+      "/home/memra-qual/scratch/memra-542/repo/target/release/memra",
+      "model",
+      "inspect",
+      "/home/memra-qual/scratch/memra-542/qwen3-0.6b",
+      "--against",
+      "qwen3",
+      "--out",
+      "/home/memra-qual/scratch/memra-542/server-admission-007/bundle"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "501ebd87df13ce90514ecd19f27f1c0cb2a9cb84368490d3a7cea7886e0b7cc2",
+    "passed": true,
+    "returncode": 0,
+    "wall_seconds": 0.015976980328559875
+  },
+  {
+    "case": "native-capture-and-reinstall",
+    "command": [
+      "/home/memra-qual/scratch/memra-542/repo/target/release/rewrite_identity_gate",
+      "capture",
+      "/home/memra-qual/scratch/memra-542/qwen3-0.6b",
+      "/home/memra-qual/scratch/memra-542/server-admission-007/bundle"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "10ba0d1db779f4ae9aae2f30de94fdb7bbeccd3280ed17eec3732335f8b91f2e",
+    "passed": true,
+    "returncode": 0,
+    "wall_seconds": 3.2377483043819666
+  },
+  {
+    "case": "native-positive-fresh-process",
+    "command": [
+      "/home/memra-qual/scratch/memra-542/repo/target/release/rewrite_identity_gate",
+      "check",
+      "/home/memra-qual/scratch/memra-542/qwen3-0.6b",
+      "/home/memra-qual/scratch/memra-542/server-admission-007/bundle"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "1646bc0b866e9584f18434577b54ac035e40328ff71f3f3d8defe520719c8327",
+    "passed": true,
+    "returncode": 0,
+    "wall_seconds": 3.1690455190837383
+  },
+  {
+    "case": "missing-bundle",
+    "command": [
+      "/home/memra-qual/scratch/memra-542/repo/target/release/rewrite_identity_gate",
+      "check",
+      "/home/memra-qual/scratch/memra-542/qwen3-0.6b",
+      "/home/memra-qual/scratch/memra-542/server-admission-007/bundle"
+    ],
+    "expected_refusal": "read artifact.lock",
+    "log_sha256": "853482e84604c99ca5522b8301a8573426422af6d174d085a0305f333ca87419",
+    "passed": true,
+    "returncode": 1,
+    "wall_seconds": 3.0633132997900248
+  },
+  {
+    "case": "different-numerical-program",
+    "command": [
+      "/home/memra-qual/scratch/memra-542/repo/target/release/rewrite_identity_gate",
+      "check",
+      "/home/memra-qual/scratch/memra-542/qwen3-0.6b",
+      "/home/memra-qual/scratch/memra-542/server-admission-007/bundle"
+    ],
+    "expected_refusal": "does not bind numeric_program_sha256=",
+    "log_sha256": "ac5c703ffec7dee816162fdfe6181547f6c47cd8ea01f5d24b292923f6909c62",
+    "passed": true,
+    "returncode": 1,
+    "wall_seconds": 3.078561844304204
+  },
+  {
+    "case": "different-weights-same-geometry",
+    "command": [
+      "/home/memra-qual/scratch/memra-542/repo/target/release/rewrite_identity_gate",
+      "check",
+      "/home/memra-qual/scratch/memra-542/server-admission-007/wrong-weights",
+      "/home/memra-qual/scratch/memra-542/server-admission-007/bundle"
+    ],
+    "expected_refusal": "does not bind artifact_sha256=",
+    "log_sha256": "c3f44faf042673138f451f6bc91f9e19d00b6897909f082e0d62cc2921244019",
+    "passed": true,
+    "returncode": 1,
+    "wall_seconds": 3.1509976349771023
+  },
+  {
+    "case": "different-executable-same-source",
+    "command": [
+      "/home/memra-qual/scratch/memra-542/server-admission-007/changed-executable",
+      "check",
+      "/home/memra-qual/scratch/memra-542/qwen3-0.6b",
+      "/home/memra-qual/scratch/memra-542/server-admission-007/bundle"
+    ],
+    "expected_refusal": "does not bind implementation_sha256=",
+    "log_sha256": "376cb2f2dca832661b53f4b298a53e74e5f6b040b29d9fe891ef18b7032a8880",
+    "passed": true,
+    "returncode": 1,
+    "wall_seconds": 3.104424748569727
+  },
+  {
+    "case": "fresh-kv-output-control-unqualified",
+    "command": [
+      "/home/memra-qual/scratch/memra-542/repo/target/release/rewrite_identity_gate",
+      "fresh-control",
+      "/home/memra-qual/scratch/memra-542/qwen3-0.6b",
+      "/home/memra-qual/scratch/memra-542/server-admission-007/fresh-kv-control"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "ec8aa9718aa060b5888b1fb17bcb56ed195b7aed4aeaf197d00a30e5009daf73",
+    "passed": true,
+    "returncode": 0,
+    "wall_seconds": 3.0750858299434185
+  },
+  {
+    "case": "cached-replay-after-isolated-fresh-control",
+    "command": [
+      "/home/memra-qual/scratch/memra-542/repo/target/release/rewrite_identity_gate",
+      "check",
+      "/home/memra-qual/scratch/memra-542/qwen3-0.6b",
+      "/home/memra-qual/scratch/memra-542/server-admission-007/bundle"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "e78a7f69f3bf295519095543317d9227a6fe6b4ab9f9beb99ba1b96f1ffc4d7d",
+    "passed": true,
+    "returncode": 0,
+    "wall_seconds": 3.0843277350068092
+  },
+  {
+    "case": "legacy-argmax-regression",
+    "command": [
+      "/home/memra-qual/scratch/memra-542/repo/target/release/run-gen",
+      "/home/memra-qual/scratch/memra-542/qwen3-0.6b",
+      "1",
+      "2",
+      "3",
+      "4"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "47a1512d70faeca92ffbf7b9d70b111d05be36c9ac3757082fc2b155e271a5e3",
+    "passed": true,
+    "returncode": 0,
+    "wall_seconds": 1.9365492351353168
+  },
+  {
+    "case": "legacy-batch-regression",
+    "command": [
+      "/home/memra-qual/scratch/memra-542/repo/target/release/decode-batch-gate",
+      "/home/memra-qual/scratch/memra-542/qwen3-0.6b",
+      "--mode",
+      "config",
+      "--batch",
+      "2",
+      "--steps",
+      "16"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "4c6957add67d267c70a76216b31fcf35cdf9ff252af335d13af724338f8257f0",
+    "passed": true,
+    "returncode": 0,
+    "wall_seconds": 2.5485674664378166
+  }
+]

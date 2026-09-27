@@ -1,0 +1,13 @@
+perf board is up to date
+pre-push: flags census OK — runtime literal reads=864
+pre-push: releasability censuses OK — publish list, stub ABI, arch matrix
+pre-push: docs-registry census OK
+    KERNELS.md file references=122, all resolve
+    MODELS.md support-state tokens=5, all in the three-state vocabulary
+    ROUTER.md lines=41 (cap 60)
+    check-flags --list answered with 864 runtime names (coverage enforced by check-flags.sh itself)
+    flags-table-census: docs/FLAGS.md tables=58 rows=900, every row matches its header
+pre-push: NOTE — engine files touched but no model dir; perf-ci not enforced here.
+public-boundary: 1 matches (1 grandfathered, 0 new).
+To https://github.com/avifenesh/memra.git
+   4fa70f447..e0bfca315  HEAD -> codex/542-trusted-rewrite-identity

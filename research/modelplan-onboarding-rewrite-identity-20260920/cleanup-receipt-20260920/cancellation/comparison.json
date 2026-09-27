@@ -1,0 +1,21 @@
+{
+  "base": "865a00ef359cdd2585aa0c0b0c8f3f9725799ec6",
+  "finding": "TC557-CALLERS-01 late cancellation",
+  "cpu_only": true,
+  "actual_signal": "SIGTERM sent in owned isolated test processes; native commands mocked",
+  "result": "three runner phases xthree signal points refused; oldfinalverifycontrolspublishedpassed",
+  "files": {
+    "native_finalization.py": "c4a8eca23bd4ba3b94de81e60fb419785881b9fe9e8a60aa5961a1c9fc2cf9c0",
+    "qualify-native.py": "1c8ddbd8d2848e1092d82a4a4d65bff177d5cb4da4325f4dc24ca7c3cb3f6e97",
+    "qualify-callers.py": "eecb9d91df27c57c8c9bd9974760ff7fd9a67b015994ab7426679f34e6f632ac",
+    "test_finalization_signals.py": "cf4e0452c74d5c00457b53e8854f79d35974c0ea5c2f2871248ade196a8ce5e1",
+    "test_native_finalization.py": "c1eec0c48b64f6d5dd5f256a64a97c893904ddfc540ae6e90abd9cc37264795c",
+    "test_qualify_callers.py": "8e6d73f47746f8115872eab9925eea75753dbfd88d77f4f84c75470e6f10d924"
+  },
+  "logs": {
+    "baseline-green.log": "68d8dee14cae8cadb7f92683e04dabe0c01f60d89bcf83e78cabaf203b9e53ef",
+    "signals-green.log": "1f16b464a11fd3a850456a458f9bca43185529175df6e0236e0ce388273e9eaf",
+    "callers-green.log": "a8512593e378fea10e90f8d050ad7794c526777c35a31f13e56e03239617286b",
+    "red-before.log": "31547c3e0a15c7741c9201e208e4eb9e80e69612a59ba60ed69be3928c2583db"
+  }
+}

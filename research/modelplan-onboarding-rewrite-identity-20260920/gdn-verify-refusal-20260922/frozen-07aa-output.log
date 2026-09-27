@@ -1,0 +1,17 @@
+
+running 3 tests
+test existing_public_eager_refusal_still_precedes_work ... ok
+test legacy_gdn_and_qualified_non_gdn_keep_the_original_path ... ok
+test qualified_gdn_refuses_before_any_cache_or_math_work ... FAILED
+
+failures:
+
+failures:
+    qualified_gdn_refuses_before_any_cache_or_math_work
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+thread 'qualified_gdn_refuses_before_any_cache_or_math_work' (30301489) panicked at /Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/gpu/issue-542-prime-fallback-correction/acceptance-closeout-20260922/gdn-verify-frozen-07aa/actual-entry-controls.rs:92:9:
+qualified GDN entered different numerical program
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

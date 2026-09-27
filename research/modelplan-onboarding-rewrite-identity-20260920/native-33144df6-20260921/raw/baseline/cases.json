@@ -1,0 +1,196 @@
+[
+  {
+    "case": "inspect",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/memra",
+      "model",
+      "inspect",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "--against",
+      "qwen3",
+      "--out",
+      "/data/receipts/issue-542-33144df6-baseline-attempt-001/bundle"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "08fd5f8072699616c54d924cbe45866e6b24e33714290244c9f5896798f0325c",
+    "passed": true,
+    "returncode": 0,
+    "wall_seconds": 0.024130505000357516
+  },
+  {
+    "case": "native-capture-and-reinstall",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "capture",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-baseline-attempt-001/bundle"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "ad572ffb659540b0064c69e4ef972f6e9cc1fde4d16bbff047f52c5af611271f",
+    "passed": true,
+    "returncode": 0,
+    "wall_seconds": 3.5704155639978126
+  },
+  {
+    "case": "native-positive-fresh-process",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "check",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-baseline-attempt-001/bundle"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "a4c4ec78fd472e6d1008342a876c1624acc9bf4876f91b7e5626d59cf2fd9502",
+    "passed": true,
+    "returncode": 0,
+    "wall_seconds": 3.529805637008394
+  },
+  {
+    "case": "retained-library-drift",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "library-drift",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-baseline-attempt-001/bundle"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "663adc3f508b253f8277dca8004cb7dcd91093140ba1c3eb7d5be8264807fbbc",
+    "passed": true,
+    "returncode": 0,
+    "wall_seconds": 3.6171479939948767
+  },
+  {
+    "case": "missing-bundle",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "check",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-baseline-attempt-001/bundle"
+    ],
+    "expected_refusal": "read artifact.lock",
+    "log_sha256": "6d58766be6bfa4fb2d47c9ed07120a1149e1361b568aea6a3d07ed6c1221b974",
+    "passed": true,
+    "returncode": 1,
+    "wall_seconds": 3.7546907929936424
+  },
+  {
+    "case": "different-numerical-program",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "check",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-baseline-attempt-001/bundle"
+    ],
+    "expected_refusal": "does not bind numeric_program_sha256=",
+    "log_sha256": "a8eab0e95c712fc79e75296878963f81f4fa1166e2a50c4e85853bbc8abd1d21",
+    "passed": true,
+    "returncode": 1,
+    "wall_seconds": 3.5891615059954347
+  },
+  {
+    "case": "different-weights-same-geometry",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "check",
+      "/data/receipts/issue-542-33144df6-baseline-attempt-001/wrong-weights",
+      "/data/receipts/issue-542-33144df6-baseline-attempt-001/bundle"
+    ],
+    "expected_refusal": "does not bind artifact_sha256=",
+    "log_sha256": "302b9a9b4ec8ad6f61876f471a840a6e1dd1e918847cc450af6d98dbc06de994",
+    "passed": true,
+    "returncode": 1,
+    "wall_seconds": 3.8717619110102532
+  },
+  {
+    "case": "different-executable-same-source",
+    "command": [
+      "/data/receipts/issue-542-33144df6-baseline-attempt-001/changed-executable",
+      "check",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-baseline-attempt-001/bundle"
+    ],
+    "expected_refusal": "does not bind implementation_sha256=",
+    "log_sha256": "ebf34dc63dfe9169dc7bc73aef136152faf9ac853be7a71d3d9781fce371aaaa",
+    "passed": true,
+    "returncode": 1,
+    "wall_seconds": 3.585386214996106
+  },
+  {
+    "case": "fresh-kv-output-control-unqualified",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "fresh-control",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-baseline-attempt-001/fresh-kv-control"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "7ca6ad569046da8f30ad3c39b10f6a57bb0c739a41fa80511246fab19ec477d7",
+    "passed": true,
+    "returncode": 0,
+    "wall_seconds": 3.5478209369903198
+  },
+  {
+    "case": "cached-replay-after-isolated-fresh-control",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/rewrite_identity_gate",
+      "check",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "/data/receipts/issue-542-33144df6-baseline-attempt-001/bundle"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "2cd030225305849a19b97c190e24d3dc30c36325f8455d33db8f524220a7a839",
+    "passed": true,
+    "returncode": 0,
+    "wall_seconds": 3.584725843000342
+  },
+  {
+    "case": "legacy-argmax-regression",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/run-gen",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "1",
+      "2",
+      "3",
+      "4"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "47a1512d70faeca92ffbf7b9d70b111d05be36c9ac3757082fc2b155e271a5e3",
+    "passed": true,
+    "returncode": 0,
+    "wall_seconds": 2.1588075289910194
+  },
+  {
+    "case": "legacy-batch-regression",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/decode-batch-gate",
+      "/data/models/issue-542/qwen3-0.6b-c1899de",
+      "--mode",
+      "config",
+      "--batch",
+      "2",
+      "--steps",
+      "16"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "4c6957add67d267c70a76216b31fcf35cdf9ff252af335d13af724338f8257f0",
+    "passed": true,
+    "returncode": 0,
+    "wall_seconds": 3.005712821992347
+  },
+  {
+    "case": "mtp-k1-through-k8",
+    "command": [
+      "/home/memra-five/owners/issue-542/build-33144df6/target/release/run-spec",
+      "/data/models/kernel-oracles/Qwen3.5-9B-NVFP4-MTP-GGUF.gguf",
+      "1",
+      "2",
+      "3",
+      "4"
+    ],
+    "expected_refusal": null,
+    "log_sha256": "bc675726185f164d0da054db94bad39ff38d4395332910afc055598909492fe1",
+    "passed": true,
+    "returncode": 0,
+    "wall_seconds": 3.3072923439904116
+  }
+]

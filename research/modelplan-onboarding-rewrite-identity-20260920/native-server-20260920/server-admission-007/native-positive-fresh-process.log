@@ -1,0 +1,11 @@
+SCOPE native-program-admission-only support_promotion=false performance=not-measured mode=check artifact_lock_sha256=ab8562e15d2b812d53e7986e2b8f54fd98f30dc07e25572dfad475aa697e7da2
+[q8rp] split-plane decode mirrors built: 196 tensors
+LOADED artifact_sha256=0883c0d75d2b9911278e09f4933a6adfc5e2c7e9a62da1cccfa0b37f40650e96 implementation_sha256=5eef5b6324578f455ff9b8139d832518e372f6fc88100fada0ce6cbf1a1bef79 numeric_program_sha256=577c03f674faaaf31875251b24e7915b279246af3d390ef7d4f290bdeed5b169
+POLICY family=qwen3 atol=0.005 rtol=0.005 require_argmax=true
+GRAPH_REFUSAL_PASS: decode-graph rewrite is not qualified for the current loaded runtime identity
+FRESH_KV_REFUSAL_PASS: quantized-cache eager receipt cannot authorize forward/forward_last
+[fa-pool] grow #0 dev=0 o_len 0 -> 2048 ml_len 0 -> 16 (retired kept, zero=false)
+OUTPUT stage=check-eager prompt=0 tokens=[1, 2, 3, 4] values=151936 argmax=3 file=/home/memra-qual/scratch/memra-542/server-admission-007/bundle/outputs/check-eager-148186-prompt-0.f32 sha256=a1a60e5a6d7587b2338fcbce3a980ed27efa56a8606d62d7b08226237fd363ad
+OUTPUT stage=check-eager prompt=1 tokens=[7, 11, 19, 5, 3, 17, 2, 13] values=151936 argmax=19 file=/home/memra-qual/scratch/memra-542/server-admission-007/bundle/outputs/check-eager-148186-prompt-1.f32 sha256=3a197dfe63d6c4faf70fdf3ad1cefea19df31340b65c6a9071fe9b131d4bc83c
+OUTPUT stage=check-eager prompt=2 tokens=[2, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 2, 3, 2, 3] values=151936 argmax=2 file=/home/memra-qual/scratch/memra-542/server-admission-007/bundle/outputs/check-eager-148186-prompt-2.f32 sha256=f8e8a9f8b129dd4de07579c48ea8c653671e511f2fcf2b8805ee07f14c736cdd
+REWRITE_IDENTITY_GATE_PASS mode=check scope=native-program-admission-only support_promotion=false

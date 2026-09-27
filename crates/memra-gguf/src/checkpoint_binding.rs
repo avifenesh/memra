@@ -216,9 +216,50 @@ pub fn bind_census(
     plan: &ModelPlan,
     census: &TensorCensus,
 ) -> Result<CheckpointBinding, CheckpointBindError> {
+    let output_head = output_head_for(pack, cfg, census)?;
+    bind_census_with_head(pack, cfg, plan, census, output_head)
+}
+
+/// Head policy for a prepared program: retain the pack's refusal, then use its explicit
+/// config/default ownership. Physical absence cannot silently select a different program.
+pub fn declared_output_head_for(
+    pack: &'static ModelPack,
+    cfg: &ModelConfig,
+    dialect: CheckpointDialect,
+) -> Result<OutputHead, CheckpointBindError> {
+    let output_head = pack.contract_options(cfg).output_head;
+    if output_head == OutputHead::TiedToEmbedding
+        && pack.output_head == OutputHeadContract::SeparateHead
+    {
+        return Err(CheckpointBindError::OutputHead {
+            family: pack.family,
+            dialect,
+            reason: "the declared program ties the head, but this pack requires a separate output projection".into(),
+        });
+    }
+    Ok(output_head)
+}
+
+/// Inspection uses the same declared head policy as prepared runtime sources.
+pub fn bind_declared_census(
+    pack: &'static ModelPack,
+    cfg: &ModelConfig,
+    plan: &ModelPlan,
+    census: &TensorCensus,
+) -> Result<CheckpointBinding, CheckpointBindError> {
+    let output_head = declared_output_head_for(pack, cfg, census.dialect)?;
+    bind_census_with_head(Some(pack), cfg, plan, census, output_head)
+}
+
+fn bind_census_with_head(
+    pack: Option<&'static ModelPack>,
+    cfg: &ModelConfig,
+    plan: &ModelPlan,
+    census: &TensorCensus,
+    output_head: OutputHead,
+) -> Result<CheckpointBinding, CheckpointBindError> {
     let family = family_of(pack);
     let dialect = census.dialect;
-    let output_head = output_head_for(pack, cfg, census)?;
     let options = ContractOptions { output_head };
     let contract = compile_contract(pack, cfg, plan, dialect, options).map_err(|error| {
         CheckpointBindError::Contract {
@@ -273,6 +314,163 @@ impl std::fmt::Debug for CheckpointBinding {
             .field("output_head", &self.output_head)
             .field("bound", &self.bound.tensors.len())
             .finish()
+    }
+}
+
+/// The loader's consumption view over a raw binding or an already sealed source. It never
+/// rebinds a composite as a single checkpoint or exposes its component materialization handles.
+pub struct LoaderBinding<'a> {
+    source: &'a dyn TensorSource,
+    raw: Option<CheckpointBinding>,
+    pack: Option<&'static ModelPack>,
+    output_head: OutputHead,
+    names: BTreeMap<TensorId, String>,
+    selected: Vec<crate::bound_source::BoundConsumerTensor>,
+}
+
+pub fn bind_loader_source<'a>(
+    source: &'a dyn TensorSource,
+    cfg: &ModelConfig,
+    plan: &ModelPlan,
+) -> Result<LoaderBinding<'a>, String> {
+    if let Some(program) = source.bound_program() {
+        if matches!(
+            program,
+            crate::bound_source::BoundProgramRef::ExternalDraft(_)
+        ) {
+            return Err("external draft source cannot substitute for a root model".into());
+        }
+        let (cfg, plan) = program.cloned_pair();
+        let pack = for_config(&cfg);
+        let output_head = program.output_head();
+        if output_head == OutputHead::TiedToEmbedding
+            && pack.is_some_and(|p| p.output_head == OutputHeadContract::SeparateHead)
+        {
+            return Err(format!(
+                "pack {} requires a separate output projection",
+                family_of(pack)
+            ));
+        }
+        let mut names = BTreeMap::new();
+        for (name, id) in TensorContract::engine_abi_aliases(&plan, ContractOptions { output_head })
+            .map_err(|e| e.to_string())?
+        {
+            names.entry(id).or_insert(name);
+        }
+        let selected = program.consumer_tensors();
+        names.retain(|id, _| selected.iter().any(|tensor| tensor.id == *id));
+        Ok(LoaderBinding {
+            source,
+            raw: None,
+            pack,
+            output_head,
+            names,
+            selected,
+        })
+    } else {
+        let raw = bind_source(source, cfg, plan).map_err(|e| e.to_string())?;
+        Ok(LoaderBinding {
+            source,
+            pack: raw.pack,
+            output_head: raw.output_head,
+            raw: Some(raw),
+            names: BTreeMap::new(),
+            selected: Vec::new(),
+        })
+    }
+}
+
+impl LoaderBinding<'_> {
+    pub fn ggml_name(&self, id: &TensorId) -> Option<&str> {
+        match &self.raw {
+            Some(raw) => raw.ggml_name(id),
+            None => self.names.get(id).map(String::as_str),
+        }
+    }
+    pub fn require_ggml(&self, id: &TensorId) -> Result<String, String> {
+        self.ggml_name(id).map(str::to_string).ok_or_else(|| {
+            format!(
+                "pack {} has no selected runtime binding for {id:?}",
+                family_of(self.pack)
+            )
+        })
+    }
+    pub fn output_head_ggml_name(&self) -> Result<String, String> {
+        self.require_ggml(&match self.output_head {
+            OutputHead::Separate => TensorId::OutputProjection,
+            OutputHead::TiedToEmbedding => TensorId::TokenEmbedding,
+        })
+    }
+    pub fn describe(&self) -> String {
+        match &self.raw {
+            Some(raw) => describe(raw),
+            None => format!(
+                "[tensor-contract] {} selected semantic tensors from compiler-bound source (pack {}, output head {:?})",
+                self.selected.len(),
+                family_of(self.pack),
+                self.output_head
+            ),
+        }
+    }
+    pub fn settle_consumption(
+        &self,
+        requested: &BTreeSet<String>,
+        trunk: u32,
+        loaded_mtp: u32,
+    ) -> Result<(), String> {
+        if let Some(raw) = &self.raw {
+            let cfg = self.source.try_config()?;
+            let missing = raw.audit_consumption(requested, &cfg, |id, tensor| {
+                unread_by_design(id)
+                    || owned_by_vision(tensor)
+                    || unloaded_mtp(tensor, trunk, loaded_mtp)
+            });
+            return settle_consumption(raw, &missing);
+        }
+        let program = self
+            .source
+            .bound_program()
+            .ok_or("sealed source authority disappeared")?;
+        let consumed = program.consumed_ids(requested)?;
+        let missing: Vec<_> = self
+            .selected
+            .iter()
+            .filter(|tensor| {
+                let skipped = unread_by_design(&tensor.id)
+                    || match tensor.owner {
+                        TensorOwner::Vision(_) => true,
+                        TensorOwner::Mtp(depth) => depth >= loaded_mtp,
+                        TensorOwner::Layer(index) => index >= trunk + loaded_mtp,
+                        TensorOwner::Global => false,
+                    };
+                !skipped && !consumed.contains(&tensor.id)
+            })
+            .map(|tensor| UnconsumedTensor {
+                id: tensor.id.clone(),
+                checkpoint_names: tensor.checkpoint_names.clone(),
+            })
+            .collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        let text = describe_unconsumed(&missing);
+        match self
+            .pack
+            .map(|p| p.tensor_consumption)
+            .unwrap_or(TensorConsumption::Report)
+        {
+            TensorConsumption::Refuse => Err(format!(
+                "checkpoint refused after load (pack {}): selected tensors were never read: {text}",
+                family_of(self.pack)
+            )),
+            TensorConsumption::Report => {
+                eprintln!(
+                    "[tensor-contract] selected tensors not read (pack {}): {text}",
+                    family_of(self.pack)
+                );
+                Ok(())
+            }
+        }
     }
 }
 
@@ -483,6 +681,151 @@ impl<'a> RecordingSource<'a> {
 }
 
 impl TensorSource for RecordingSource<'_> {
+    fn bound_tensor_charges(
+        &self,
+    ) -> Result<Option<Vec<crate::source::BoundTensorCharge>>, String> {
+        self.inner.bound_tensor_charges()
+    }
+    #[allow(private_interfaces)]
+    fn bound_program(&self) -> Option<crate::bound_source::BoundProgramRef<'_>> {
+        self.inner.bound_program()
+    }
+    #[allow(private_interfaces)]
+    fn composite_input(&self) -> Option<crate::bound_source::CompositeInput<'_>> {
+        self.inner.composite_input()
+    }
+    #[allow(private_interfaces)]
+    fn bound_output_root(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<&crate::bound_output::RetainedOutputRoot>, String> {
+        self.inner.bound_output_root(request)
+    }
+    fn physical_tensor_inventory(&self) -> Result<crate::source::PhysicalTensorInventory, String> {
+        self.inner.physical_tensor_inventory()
+    }
+    fn gguf_tensor_metadata(
+        &self,
+    ) -> Result<Option<Vec<crate::source::GgufTensorMetadata>>, String> {
+        self.inner.gguf_tensor_metadata()
+    }
+    fn runtime_metadata(&self) -> Result<crate::source::RuntimeSourceMetadata, String> {
+        self.inner.runtime_metadata()
+    }
+    fn raw_config_json(&self) -> Option<&str> {
+        self.inner.raw_config_json()
+    }
+    fn bound_interpretation(&self) -> Result<crate::source::BoundSourceInterpretation, String> {
+        self.inner.bound_interpretation()
+    }
+    fn artifact_sha256(&self) -> Result<String, String> {
+        self.inner.artifact_sha256()
+    }
+    fn bound_gguf_name<'a>(&'a self, name: &'a str) -> Result<&'a str, String> {
+        self.inner.bound_gguf_name(name)
+    }
+    fn try_has(&self, name: &str) -> Result<bool, String> {
+        self.inner.try_has(name)
+    }
+    fn try_find(&self, name: &str) -> Result<Option<TensorView<'_>>, String> {
+        self.record(name);
+        self.inner.try_find(name)
+    }
+    fn try_find_nvfp4_native(&self, name: &str) -> Result<Option<Nvfp4Native<'_>>, String> {
+        self.record(name);
+        self.inner.try_find_nvfp4_native(name)
+    }
+    fn try_find_fp8_native(&self, name: &str) -> Result<Option<Fp8Native<'_>>, String> {
+        self.record(name);
+        self.inner.try_find_fp8_native(name)
+    }
+    fn try_find_fp8_stacked_native(
+        &self,
+        name: &str,
+    ) -> Result<Option<Fp8StackedNative<'_>>, String> {
+        self.record(name);
+        self.inner.try_find_fp8_stacked_native(name)
+    }
+    fn try_find_nvfp4_stacked_native(
+        &self,
+        name: &str,
+    ) -> Result<Option<Nvfp4StackedNative<'_>>, String> {
+        self.record(name);
+        self.inner.try_find_nvfp4_stacked_native(name)
+    }
+    fn try_canonical_nvfp4_bank(
+        &self,
+        name: &str,
+    ) -> Result<Option<crate::bound_disk::BoundDiskView>, String> {
+        self.record(name);
+        self.inner.try_canonical_nvfp4_bank(name)
+    }
+    fn try_find_expert_disk(
+        &self,
+        name: &str,
+    ) -> Result<Option<crate::bound_disk::ExpertDiskView>, String> {
+        self.record(name);
+        self.inner.try_find_expert_disk(name)
+    }
+    fn try_find_gguf_disk(
+        &self,
+        name: &str,
+    ) -> Result<Option<crate::bound_disk::ExpertDiskView>, String> {
+        self.record(name);
+        self.inner.try_find_gguf_disk(name)
+    }
+    fn try_has_expert_mmap(&self, name: &str) -> Result<bool, String> {
+        self.inner.try_has_expert_mmap(name)
+    }
+    fn validate_bound_metadata(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<(), String> {
+        self.inner.validate_bound_metadata(request)
+    }
+    fn read_bound(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<TensorView<'_>, String> {
+        self.inner.read_bound(request)
+    }
+    fn auxiliary_bound(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+        kind: crate::tensor_contract::QuantAuxTensor,
+    ) -> Result<Option<TensorView<'_>>, String> {
+        self.inner.auxiliary_bound(request, kind)
+    }
+    fn nvfp4_bound(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Nvfp4Native<'_>>, String> {
+        self.inner.nvfp4_bound(request)
+    }
+    fn fp8_bound(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Fp8Native<'_>>, String> {
+        self.inner.fp8_bound(request)
+    }
+    fn fp8_stacked_bound(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Fp8StackedNative<'_>>, String> {
+        self.inner.fp8_stacked_bound(request)
+    }
+    fn nvfp4_stacked_bound(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<Nvfp4StackedNative<'_>>, String> {
+        self.inner.nvfp4_stacked_bound(request)
+    }
+    fn disk_bound(
+        &self,
+        request: &crate::bound_source::BoundTensorRequest<'_>,
+    ) -> Result<Option<DiskExtent>, String> {
+        self.inner.disk_bound(request)
+    }
     fn config(&self) -> ModelConfig {
         self.inner.config()
     }
@@ -737,11 +1080,13 @@ mod tests {
                 .map(|name| TensorCensusRecord {
                     physical_name: name.to_string(),
                     dtype: "F32".into(),
+                    auxiliaries: Vec::new(),
                     entry: TensorCensusEntry {
                         name: name.to_string(),
                         shape: vec![1],
                         storage: StorageLayout::Float(FloatType::F32),
                         physical_bytes: 4,
+                        auxiliaries: Vec::new(),
                     },
                 })
                 .collect(),

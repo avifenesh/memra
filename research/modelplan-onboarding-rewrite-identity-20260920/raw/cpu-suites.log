@@ -1,0 +1,409 @@
+warning: unused import: `std::os::fd::AsRawFd`
+  --> crates/memra-gguf/src/source.rs:21:5
+   |
+21 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-gguf` (lib) generated 1 warning (run `cargo fix --lib -p memra-gguf` to apply 1 suggestion)
+warning: `memra-gguf` (lib test) generated 1 warning (1 duplicate)
+   Compiling memra-reference v0.138.0 (/Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-reference)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.13s
+     Running unittests src/lib.rs (target/debug/deps/memra_cli-a05b1ba2f19d404e)
+
+running 11 tests
+test tests::deepseek_v4_packs_own_their_dialect_in_the_engine ... ok
+test tests::pinned_source_and_wrapper_normalization_fail_closed ... ok
+test tests::template_contract_refuses_the_wrong_artifact_shape_both_ways ... ok
+test tests::unimplemented_verify_stages_refuse_without_fallback ... ok
+test tests::checkpoint_oracle_bundle_is_pinned_and_parity_is_fail_closed ... ok
+test tests::scaffold_is_deterministic_and_refuses_non_empty_targets ... ok
+test tests::rewrite_verifier_binds_manifest_plan_and_exact_streams ... ok
+test tests::local_repack_inspect_routes_metadata_census_into_placement ... ok
+test tests::local_glm_fixture_generates_deterministic_onboarding_artifacts ... ok
+test tests::supported_packs_write_deterministic_native_oracles ... ok
+test tests::native_serve_gate_launches_readiness_and_completion_on_real_http ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.17s
+
+     Running unittests src/lib.rs (target/debug/deps/memra_gguf-e80b7f4edcbfcfe8)
+
+running 287 tests
+test config::hf_tests::every_registered_arch_declares_a_gate_layout ... ok
+test config::hf_tests::fused_q_gate_extent_catches_the_2x_overread ... ok
+test config::hf_tests::head_dim_fallback ... ok
+test config::hf_tests::moe_config ... ok
+test config::hf_tests::gemma4_partial_rotary_does_not_truncate_n_rot ... ok
+test config::hf_tests::glm5_next_missing_field_panics - should panic ... ok
+test config::hf_tests::glm5_next_layer_types_crosscheck_panics - should panic ... ok
+test config::hf_tests::parse_dsv4_0731_derives_nextn_from_compress_ratios ... ok
+test config::hf_tests::nested_text_config_hybrid ... ok
+test config::hf_tests::qwen35_mtp_layer_is_explicit_full_attention_geometry ... ok
+test config::hf_tests::parse_dsv4_preview_nextn_unchanged ... ok
+test config::hf_tests::parse_qwen3_dense ... ok
+test config::hf_tests::parse_hy3_reap_config ... ok
+test config::hf_tests::parse_step37_per_layer_geometry_and_moe_aliases ... ok
+test config::hf_tests::qwen35_hf_without_a_partial_rotary_declaration_is_full_rope ... ok
+test config::hf_tests::qwen35_hf_partial_rotary_under_rope_parameters_is_read_too ... ok
+test config::hf_tests::parse_qwen4exp_all_family_fields ... ok
+test config::hf_tests::resolve_rope_dim_count_precedence ... ok
+test config::hf_tests::registered_arches_validate_their_layout ... ok
+test config::hf_tests::unregistered_arch_never_inherits_a_fused_gate ... ok
+test config::minimax_tests::minimax_name_mapping_against_index ... ok
+test config::minimax_tests::parse_minimax_m3_vl ... ok
+test config::hf_tests::step37_hf_defaults_and_llama3_rope_factors ... ok
+test dequant::tests::bf16_dequant_on_use_kernel_contract ... ok
+test dequant::tests::bf16_known_values ... ok
+test dequant::tests::fp16_known_values ... ok
+test dequant::tests::nvfp4_table_and_finite ... ok
+test dequant::tests::q2k_planes_scales_and_minimum ... ok
+test dequant::tests::q3k_hmask_offset ... ok
+test dequant::tests::q5k_no_nan_zeromean ... ok
+test config::hf_tests::n_rot_agrees_across_the_gguf_and_hf_loader_paths ... ok
+test dequant::tests::iq3s_vs_ggml_oracle ... ok
+test config::hf_tests::parse_glm5_next_flash_banked_config ... ok
+test dequant::tests::q8_0_roundtrip_simple ... ok
+test dsv4::tests::e8m0_known_values ... ok
+test dsv4::tests::mxfp4_synthetic_decode ... ok
+test dsv4_decode::tests::argmax_first_on_ties ... ok
+test dsv4::tests::nvfp4_matches_qwen_lane_reference ... ok
+test dsv4_decode::tests::compress_idxs_decode_matches_reference ... ok
+test dsv4_decode::tests::sparse_attn_query_single_row_passthrough ... ok
+test dsv4_decode::tests::window_idxs_decode_matches_reference ... ok
+test dsv4_dspark::tests::dspark_topk_idxs_matches_reference ... ok
+test dsv4::tests::fp8_blk128_synthetic_decode ... ok
+test dsv4_dspark::tests::dspark_topk_idxs_refuses_prefill - should panic ... ok
+test dsv4_forward::tests::e2m1_rne_ties_to_even ... ok
+test dsv4_forward::tests::act_quant_grid_values_roundtrip_exact ... ok
+test dsv4_forward::tests::freqs_cis_no_yarn_matches_closed_form ... ok
+test dsv4_forward::tests::hadamard_sylvester_order_and_involution ... ok
+test dsv4_forward::tests::pow2_ceil_exact_and_between ... ok
+test dsv4_forward::tests::matmul_f64_accum_small ... ok
+test dsv4_forward::tests::rope_roundtrip_inverse ... ok
+test dsv4_forward::tests::sinkhorn_comb_is_doubly_stochastic ... ok
+test dsv4_forward::tests::window_and_compress_idxs_match_reference_shapes ... ok
+test execution_manifest::glm5_spec_class_matrix::foreign_state_classes_fail_closed_under_glm5_spec ... ok
+test execution_manifest::glm5_spec_class_matrix::glm5_without_an_mtp_block_fails_closed_on_the_draft_plan ... ok
+test execution_manifest::glm5_spec_class_matrix::glm5_with_mtp_block_is_supported_and_the_rewrite_row_is_eligible ... ok
+test execution_manifest::glm5_spec_class_matrix::the_two_spec_programs_never_both_claim_one_plan ... ok
+test dsv4_decode::tests::comp_reset_is_construction_state ... ok
+test dsv4::tests::config_parses_all_dsv4_fields ... ok
+test config::hf_tests::qwen3next_gguf_experts_survive_the_dense_arch_alias ... ok
+test dsv4_forward::tests::npz_reader_parses_synthetic_stored_zip ... ok
+test hf_mapping::glm5_hc_resolve::glm5_next_hc_names_resolve_through_the_source_path ... ok
+test hf_mapping::tests::block_perm_alignment ... ok
+test hf_mapping::tests::expert_names ... ok
+test hf_mapping::tests::fp8_blk_non_aligned_refused ... ok
+test execution_manifest::tests::manifest_reports_operation_blockers_instead_of_model_names ... ok
+test hf_mapping::tests::glm5_next_every_contract_tensor_resolves_through_the_engine_map ... ok
+test hf_mapping::tests::glm5_next_kda_names_match_the_contract ... ok
+test hf_mapping::tests::glm5_next_mla_names_match_the_contract ... ok
+test hf_mapping::tests::glm5_next_mtp_block_resolves_through_the_engine_map ... ok
+test hf_mapping::tests::hy3_appended_mtp_names_use_layer_namespace ... ok
+test hf_mapping::tests::hy3_moe_names ... ok
+test execution_manifest::tests::qualification_rejects_bundle_without_loaded_runtime_identity ... ok
+test hf_mapping::tests::llama_dense_every_contract_tensor_resolves_through_the_engine_map ... ok
+test hf_mapping::tests::mla_kv_split_matches_the_micro_fixture_convention ... ok
+test hf_mapping::tests::mla_kv_split_has_no_packed_fast_path ... ok
+test hf_mapping::tests::per_layer_dense ... ok
+test hf_mapping::tests::norm_transform_is_arch_specific ... ok
+test hf_mapping::tests::qwen35_moe_appended_mtp_names_use_mtp_namespace ... ok
+test hf_mapping::tests::top_level_names ... ok
+test hf_mapping::tests::step37_stacked_moe_gate_and_appended_mtp_names ... ok
+test hf_mapping::tests::unmapped_returns_none ... ok
+test hf_mapping::tests::v_reorder_permutation ... ok
+test hf_mapping::tests::v_reorder_rows ... ok
+test hf::tests::pattern_selects_a_rank_sidecar_gguf_from_a_model_cache ... ok
+test hf_mapping::tests::fp8_blk_v_reorder_is_exact ... ok
+test execution_manifest::tests::rewrite_receipts_bind_plan_program_binary_and_outputs ... ok
+test micro_gguf::tests::non_glm_arch_has_no_mla ... ok
+test micro_gguf::tests::parse_glm52_without_indexer_types_key ... ok
+test execution_manifest::tests::strict_pending_never_inherits_legacy_unbundled_permission ... ok
+test micro_gguf::tests::parse_glm52_pinned_metadata ... ok
+test model_packs::deepseek_v4::tests::generated_schema_binds_all_three_quant_recipes_and_auxiliaries ... ok
+test model_packs::gemma4_dense::tests::unified_12b_lands_on_the_dense_pack_as_a_text_only_plan ... ok
+test model_packs::gemma4_dense::tests::vision_config_compiles_to_typed_plan_and_exact_auxiliary_schema ... ok
+test model_packs::deepseek_v4::tests::three_block_config_selects_live_dspark_schema_and_plan ... ok
+test micro_gguf::tests::parse_step35_pinned_metadata ... ok
+test model_packs::hy3::tests::nvfp4_profile_quantizes_every_routed_expert_including_mtp ... ok
+test model_packs::hy3::tests::tiny_plan_covers_hy3_dense_moe_and_embedded_mtp_semantics ... ok
+test model_packs::llama_dense::tests::a_dense_mistral_with_a_sliding_window_is_refused ... ok
+test model_packs::gemma4_moe::tests::official_a4b_geometry_compiles_parallel_moe_tensor_contract ... ok
+test model_packs::llama_dense::tests::a_llama3_rope_scaled_config_is_refused ... ok
+test model_packs::llama_dense::tests::dictalm_24b_compiles_the_dense_gqa_stack ... ok
+test model_packs::llama_dense::tests::qwen3_shaped_config_does_not_land_in_this_pack ... ok
+test model_packs::llama_dense::tests::mistral_model_type_is_the_llama_program_and_selects_this_pack ... ok
+test model_packs::llama_dense::tests::the_dictalm_config_still_matches ... ok
+test model_packs::llama_dense::tests::tiny_fixture_compiles ... ok
+test micro_gguf::tests::parse_step35_mtp_drafter_metadata_and_trunk_fallback_trap ... ok
+test model_packs::llama_dense::tests::tensor_contract_compiles_on_both_dialects ... ok
+test model_packs::nemotron_rnnt::tests::the_prompt_slot_is_the_encoder_row_plus_a_language_slot ... ok
+test model_packs::nemotron_rnnt::tests::the_qualified_streaming_arm_never_reads_future_audio ... ok
+test model_packs::nemotron_rnnt::tests::aliased_storage_fails_the_bind_before_any_shape_is_checked ... ok
+test model_packs::qwen35::activation::tests::digest_separates_two_calibrations_and_the_receipt_carries_it ... ok
+test model_packs::qwen35::activation::tests::scale_less_artifact_never_selects_a4 ... ok
+test model_packs::nemotron_rnnt::tests::the_contract_binds_the_pinned_hebrew_checkpoint_exactly ... ok
+test model_packs::qwen3_tts::tests::a_census_whose_total_moves_is_refused_even_when_every_name_binds ... ok
+test model_packs::nemotron_rnnt::tests::a_missing_extra_or_reshaped_tensor_fails_the_bind ... ok
+test model_packs::qwen35::activation::tests::scaled_artifact_is_prefill_only_and_preserves_precision_islands ... ok
+test model_packs::qwen3_tts::tests::a_missing_tensor_is_refused_by_name ... ok
+test model_packs::qwen3_tts::tests::a_reshaped_tensor_is_refused_with_both_shapes ... ok
+test model_packs::qwen3_tts::tests::a_tensor_that_does_not_read_its_own_storage_densely_is_refused ... ok
+test model_packs::qwen3_tts::tests::a_wrong_storage_dtype_is_refused ... ok
+test model_packs::qwen3_tts::tests::a_geometry_that_disagrees_with_the_artifact_fails_rather_than_binding_a_shorter_model ... ok
+test model_packs::qwen3_tts::tests::suppression_bans_every_control_and_speaker_id_except_codec_eos ... ok
+test model_packs::qwen3_tts::tests::the_audio_contract_is_read_off_the_artifact_and_closes_on_itself ... ok
+test model_packs::qwen3_tts::tests::aliased_storage_is_refused_before_any_shape_is_checked ... ok
+test model_packs::qwen3_tts::tests::an_extra_tensor_is_refused_by_name ... ok
+test model_packs::qwen3_tts::tests::the_codec_upsample_chain_multiplies_to_exactly_one_frame ... ok
+test model_packs::qwen3_tts::tests::the_emit_contract_is_one_whole_frame_and_declares_its_silence ... ok
+test model_packs::qwen3_tts::tests::the_generated_contract_reproduces_the_census_groups_the_artifact_reports ... ok
+test execution_manifest::tests::qualification_requires_each_actual_identity_even_with_consistent_bundle_hashes ... ok
+test model_packs::qwen3_tts::tests::the_pin_and_licence_are_the_artifacts_own_and_not_a_family_inheritance ... ok
+test model_packs::qwen3_tts::tests::the_codec_encoder_half_is_refused_by_the_decoder_contract ... ok
+test model_packs::qwen3_tts::tests::the_prefill_rows_are_the_exact_codec_sequence_in_order ... ok
+test model_packs::qwen3_tts::tests::the_prefill_widths_close_against_three_measured_values ... ok
+test model_packs::qwen3_tts::tests::the_served_decode_is_sampled_on_both_loops_and_greedy_is_only_the_instrument ... ok
+test model_packs::qwen3_tts::tests::the_speaker_and_language_tables_match_the_artifact_and_the_dialect_rule_holds ... ok
+test micro_gguf::tests::micro_fixture_parse_and_tensor_audit ... ok
+test model_packs::qwen3_tts::tests::the_codec_decoder_contract_binds_exactly_and_the_encoder_half_is_dead_weight ... ok
+test micro_gguf::tests::micro_fixture_kv_b_split_convention ... ok
+test model_packs::qwen4_exp::tests::pack_resolves_by_alias_and_matches_the_artifact_config ... ok
+test model_packs::qwen4_exp::tests::tiny_plan_compiles_the_whole_family_program ... ok
+test model_packs::qwen4_exp::tests::expected_census_totals_and_spot_shapes ... ok
+test model_packs::qwen3_tts::tests::the_talker_contract_binds_the_pinned_artifact_exactly ... ok
+test model_packs::tests::pack_aliases_are_unique_and_manifests_are_complete ... ok
+test model_packs::tests::registered_pack_compiles_plan_and_schema_and_refuses_other_family ... ok
+test model_packs::whisper::tests::decode_constants_come_from_the_pinned_generation_config ... ok
+test model_packs::whisper::tests::changed_graph_frontend_and_storage_are_refused ... ok
+test model_packs::whisper::tests::fixture_bytes_are_the_pinned_source_metadata ... ok
+test model_packs::qwen4_exp::tests::expected_census_matches_the_banked_artifact_and_the_contract_binds_it ... ok
+test execution_manifest::tests::qualification_rejects_ambiguous_and_invalid_receipts ... ok
+test model_packs::whisper::tests::suppressed_ids_are_sorted_unique_and_never_timestamps ... ok
+test model_plan::tests::capabilities_are_intersection_of_required_operations ... ok
+test model_plan::tests::compiles_dense_hf_config_into_typed_layers ... ok
+test model_plan::tests::compiles_gdn_full_attention_and_mtp_from_one_config ... ok
+test model_plan::tests::compiles_gemma_swa_and_logits_transforms ... ok
+test model_plan::tests::compiles_moe_and_shared_mlp_without_architecture_capability_checks ... ok
+test model_plan::tests::compiles_qwen4exp_qsa_gdn_ple_gated_residual_and_mtp ... ok
+test model_plan::tests::compiles_qwen4exp_yarn_rope_from_config ... ok
+test model_plan::tests::executor_selection_is_derived_from_plan_operations ... ok
+test model_plan::tests::external_draft_attachment_updates_the_canonical_spec_subplan ... ok
+test model_plan::tests::invalid_gdn_metadata_fails_during_compilation ... ok
+test model_packs::whisper::tests::real_ivrit_metadata_binds_every_tensor_and_stays_unsupported ... ok
+test model_plan::tests::topology_limits_refuse_artifact_controlled_allocation_counts ... ok
+test model_packs::whisper::tests::same_size_wrong_shape_and_unexpected_bias_fail_the_tensor_contract ... ok
+test model_plan::tests::yarn_divisors_match_the_banked_transformers_receipt ... ok
+test nemo::tests::a_checkpoint_that_names_an_executable_global_is_refused ... ok
+test nemo::tests::aliased_storages_are_reported_together ... ok
+test nemo::tests::a_truncated_pickle_does_not_return_a_short_census ... ok
+test nemo::tests::census_of_the_pinned_hebrew_rnnt_checkpoint ... ok
+test model_plan::tests::standalone_step_draft_metadata_attaches_three_typed_swa_blocks ... ok
+test nemo::tests::unsupported_tar_entries_and_broken_headers_are_refused ... ok
+test nemo::tests::pax_extended_header_names_the_member_not_the_truncated_ustar_field ... ok
+test nemo::tests::zip_entries_refuse_compression_and_bad_offsets ... ok
+test nvfp4_repack::fp8_tests::e4m3_encode_roundtrip ... ok
+test nvfp4_repack::fp8_tests::e4m3_known_values ... ok
+test nvfp4_repack::swizzle_tests::a_swapped_row_group_is_caught ... ok
+test nemo::tests::every_storage_in_the_pinned_checkpoint_belongs_to_exactly_one_tensor ... ok
+test nvfp4_repack::tests::col_perm_nvfp4_equals_f32 ... ok
+test nvfp4_repack::tests::f32_to_nvfp4_roundtrip_class_error ... ok
+test nvfp4_repack::tests::nibble_order_conversion ... ok
+test model_packs::nemotron_rnnt::tests::the_real_archive_census_matches_the_fixture_when_the_artifact_is_present ... ok
+test nvfp4_repack::tests::repack_roundtrip_matches_modelopt ... ok
+test nvfp4_repack::tests::row_perm_nvfp4_equals_f32 ... ok
+test nvfp4_repack::tests::split_plane_matches_gguf_blocks ... ok
+test placement::tests::byte_cost_overflow_refuses ... ok
+test placement::tests::dense_uniform_costs_split_evenly_and_include_fixed_and_kv_bytes ... ok
+test placement::tests::equal_peak_tie_chooses_lexicographically_first_cuts ... ok
+test placement::tests::four_stage_uniform_plan_is_stable ... ok
+test placement::tests::illegal_and_insufficient_boundaries_refuse ... ok
+test placement::tests::moe_heavy_tail_uses_three_contiguous_stages ... ok
+test safetensors::tests::checked_parsers_enforce_required_unique_and_metadata_contracts ... ok
+test nvfp4_repack::swizzle_tests::the_permutation_is_a_bijection_on_the_unpadded_coordinates ... ok
+test safetensors::tests::accepts_current_spec_subbyte_fnuz_and_complex_dtypes ... ok
+test model_packs::whisper::tests::mmap_loader_validates_real_checkpoint_metadata_without_weight_download ... ok
+test safetensors::tests::huggingface_snapshot_symlinks_are_confined_to_same_repository_blobs ... ok
+test model_packs::whisper::tests::missing_duplicate_wrong_shard_and_truncated_payload_are_rejected ... ok
+test safetensors::tests::malformed_safetensors_headers_return_errors_without_panicking ... ok
+test safetensors::tests::real_qwen3_17b_config ... ok
+test safetensors::tests::real_qwen3_17b_header ... ok
+test safetensors::tests::multi_shard_header_sidecar_survives_an_incomplete_index ... ok
+test safetensors::tests::model_index_rejects_absolute_parent_and_symlink_shard_paths ... ok
+test safetensors::tests::single_file_model_open ... ok
+test safetensors::tests::synthetic_dequant_through_path ... ok
+test safetensors::tests::multi_shard_index_routing ... ok
+test safetensors::tests::unsupported_generic_dtypes_are_fallible ... ok
+test safetensors::tests::rejects_tensor_extents_that_disagree_with_shape_or_payload ... ok
+test source::artifact_identity_tests::artifact_sha256_repack_refuses_incomplete_composite_identity ... ok
+test safetensors::tests::rejects_overlaps_gaps_and_unclaimed_payload_tail ... ok
+test safetensors::tests::synthetic_header_roundtrip ... ok
+test source::artifact_identity_tests::artifact_sha256_synthetic_source_fails_closed ... ok
+test safetensors::tests::multi_shard_index_refuses_missing_and_duplicate_tensor_ownership ... ok
+test dsv4_decode::tests::comp_ckpt_rollback_replay_matches_plain_decode ... ok
+test source::expert_slab_populate_tests::empty_or_unknown_budget_never_underflows ... ok
+test source::expert_slab_populate_tests::floor_is_enforced_against_a_slab_that_would_just_fit ... ok
+test source::expert_slab_populate_tests::populate_policy_parses_both_arms_and_rejects_junk ... ok
+test source::expert_slab_populate_tests::slab_fitting_under_the_floor_populates ... ok
+test source::expert_slab_populate_tests::slab_larger_than_available_ram_does_not_populate ... ok
+test source::expert_slab_populate_tests::unset_advice_is_random_and_unset_populate_is_fits ... ok
+test source::compressed_tensors_roundtrip::ct_global_scale_inversion ... ok
+test source::compressed_tensors_roundtrip::modelopt_scale2_direct_borrow ... ok
+test source::artifact_identity_tests::artifact_sha256_safetensors_uses_opened_weights_after_path_replacement ... ok
+test source::artifact_identity_tests::artifact_sha256_safetensors_covers_all_shards_independent_of_filenames ... ok
+test source::f8_block128::scale_shape_detection ... ok
+test source::hy3_repack_probe::hy3_inventory_dtype_shape_assertions ... ok
+test source::hy3_repack_probe::hy3_load_plan_dry_run_no_cuda ... ok
+test source::hy3_repack_probe::hy3_manifest_offset_roundtrip ... ok
+test source::m3_probe::minimax_m3_lm_head_q8 ... ok
+test source::nv27b_probe::nvidia_27b_dtype_routing ... ok
+test source::nv27b_probe::nvidia_27b_mtp_mapping ... ok
+test source::nv27b_twin_parity::nvidia_27b_vs_gguf_twin_f32_parity ... ok
+test source::pre_quant_scale_census_tests::pre_quant_scale_is_an_auxiliary_of_its_weight_in_the_census ... ok
+test source::f8_block128::per_tensor_scale_class_unchanged ... ok
+test source::f8_block128::fp8_native_carries_block_grid ... ok
+test source::tests::expert_activation_precision_is_artifact_metadata_not_family_identity ... ok
+test source::tests::expert_mmap_advice_parser_preserves_random_default ... ok
+test source::artifact_identity_tests::artifact_sha256_safetensors_binds_config_and_loaded_interpretation ... ok
+test source::pre_quant_scale_lookup::pre_quant_scale_resolves_through_find ... ok
+test source::f8_block128::block128_dequant_bit_exact ... ok
+test source::tests::hy3_modelopt_router_and_shared_expert_aliases_resolve ... ok
+test source::f8_block128::qwen_official_fp8_find_q8_0_roundtrip ... ok
+test source::tests::manifest_payload_paths_cannot_escape_artifact_root ... ok
+test source::tests::expert_overlay_overrides_selected_tensor_and_falls_back_to_hf ... ok
+test source::tests::hy3_expert_bias_resolves_current_and_preview_keys ... ok
+test source::tests::repack_census_reads_manifest_lengths_without_tensor_views ... ok
+test nvfp4_repack::swizzle_tests::round_trip_on_the_served_expert_shapes ... ok
+test source::tests::repack_manifest_requires_exact_encoded_extent ... ok
+test source::tests::safetensors_census_is_header_only_and_counts_quant_auxiliaries ... ok
+test source::tests::nvfp4_scale_layout_is_declared_and_unrecognised_declarations_refuse_to_load ... ok
+test source::tests::repack_shard_symlink_is_rejected_without_an_explicit_trusted_root ... ok
+test source::tests::safetensors_source_find_maps_names ... ok
+test source::tests::step_stacked_fp8_native_preserves_expert_scale_and_file_axes ... ok
+test source::tests::exact_step37_fp8_preserves_every_bf16_checkpoint_surface ... ok
+test split_tests::a_non_gguf_file_is_an_error_not_a_panic ... ok
+test split_tests::any_shard_is_a_valid_entry_point ... ok
+test split_tests::artifact_sha256_gguf_binds_every_opened_shard_after_path_replacement ... ok
+test split_tests::impossible_counts_and_array_lengths_are_errors_not_panics ... ok
+test source::tests::v2_overlay_supports_repack_fallback_offsets_and_prune_mask ... ok
+test split_tests::signed_metadata_cannot_become_a_large_unsigned_value ... ok
+test split_tests::single_file_gguf_is_unchanged_one_shard ... ok
+test split_tests::metadata_string_and_tensor_rank_limits_fail_before_allocation ... ok
+test split_tests::invalid_dimensions_and_tensor_sizes_are_errors_not_panics ... ok
+test split_tests::split_shard_with_a_nonstandard_filename_is_a_clear_error ... ok
+test split_tests::split_model_presents_one_merged_tensor_table ... ok
+test split_tests::split_metadata_mismatches_are_errors_not_panics ... ok
+test split_tests::tensor_file_range_is_relative_to_the_owning_shard ... ok
+test tensor_contract::glm5_dump::dump_glm5_contract_names ... ignored
+test tensor_contract::pre_quant_scale_tests::pre_quant_scale_is_declared_on_the_hf_dialect_only ... ok
+test tensor_contract::pre_quant_scale_tests::scaling_the_input_equals_scaling_the_weight_columns ... ok
+test tensor_contract::tests::bound_tensor_preserves_checked_physical_byte_total ... ok
+test split_tests::tensor_ranges_are_rejected_during_open_not_deferred_to_slicing ... ok
+test tensor_contract::tests::dense_hf_contract_binds_every_tensor_to_stable_ids ... ok
+test tensor_contract::tests::dense_gemma_contract_pins_norms_scale_factors_and_k_as_v ... ok
+test tensor_contract::tests::gguf_and_hf_contracts_have_same_semantic_ids_and_transposed_matrix_shapes ... ok
+test source::tests::hy3_nvfp4_formats_preserve_deliberately_unquantized_bf16_linears ... ok
+test tensor_contract::tests::hy3_contract_binds_modelopt_router_bias_and_shared_expert_aliases ... ok
+test tensor_contract::tests::missing_extra_ambiguous_shape_and_layout_all_fail_closed ... ok
+test tensor_contract::tests::gdn_contract_pins_hf_shapes_and_value_reorder_transforms ... ok
+test split_tests::truncated_fixed_fields_and_strings_are_errors_not_panics ... ok
+test tensor_contract::tests::moe_bank_id_binds_hf_expert_group_and_gguf_stack ... ok
+test tensor_contract::tests::mtp_contract_reuses_block_schema_and_rewrites_hf_namespace ... ok
+test split_tests::unknown_types_and_zero_alignment_are_errors_not_panics ... ok
+test tensor_contract::tests::glm_mla_moe_mtp_contract_binds_the_existing_micro_fixture ... ok
+test split_tests::every_prefix_truncation_of_a_valid_gguf_is_an_error_not_a_panic ... ok
+test dsv4::tests::census_matches_artifact_totals ... ok
+test source::tests::glm5_next_mla_kv_b_splits_to_f32_3d_planes_through_the_source ... ok
+test model_packs::qwen4_exp::tests::nvfp4_expected_census_totals_and_spot_shapes ... ok
+test model_packs::qwen4_exp::tests::nvfp4_census_matches_the_banked_mint_and_the_dialect_contract_binds_it ... ok
+
+test result: ok. 286 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 4.17s
+
+     Running unittests src/lib.rs (target/debug/deps/memra_reference-89d9c76964145031)
+
+running 66 tests
+test speech::decode::tests::seek_advance_reproduces_pinned_oracle_window_starts ... ok
+test speech::decode::tests::window_mel_zero_fills_past_the_audio ... ok
+test speech::decode::tests::suppressed_ids_are_masked_at_every_step ... ok
+test speech::decode::tests::closed_segment_admits_only_text_and_moves_time_forward ... ok
+test speech::encoder::tests::half_rounding_is_nearest_even_and_erf_gelu_is_not_tanh_gelu ... ok
+test speech::decode::tests::first_step_suppresses_blank_eos_and_late_timestamps ... ok
+test speech::decode::tests::open_segment_admits_only_a_closing_timestamp_or_the_end ... ok
+test speech::fastconformer::tests::a_wider_chunk_is_refused_rather_than_approximated ... ok
+test speech::fastconformer::tests::causal_convolution_reads_the_past_and_a_stride_of_zeros_after_it ... ok
+test speech::encoder::tests::changed_encoder_programs_fail_before_loading_weights ... ok
+test speech::fastconformer::tests::the_position_table_centres_on_the_current_frame ... ok
+test speech::fastconformer::tests::the_stem_reduces_one_hundred_twenty_eight_bins_to_seventeen ... ok
+test speech::decode::tests::timestamp_mass_over_the_best_text_id_forces_a_timestamp ... ok
+test speech::encoder::tests::gelu_matches_the_pinned_hf_vector_numeric_program ... ok
+test speech::fastconformer::tests::the_cache_rolls_oldest_out_and_reports_only_written_rows ... ok
+test speech::matrix::tests::independent_row_vectorization_preserves_fma_order_with_tails ... ok
+test speech::rnnt_frontend::tests::a_mismatched_window_or_filterbank_is_refused ... ok
+test speech::matrix::tests::column_blocking_is_bit_identical_so_thread_count_cannot_move_a_number ... ok
+test speech::rnnt_frontend::tests::a_short_or_non_finite_waveform_is_refused ... ok
+test speech::decoder::tests::sessions_are_independent_and_invalid_steps_do_not_advance_caches ... ok
+test speech::rnnt_frontend::tests::the_transform_is_five_hundred_twelve_over_a_four_hundred_sample_window ... ok
+test speech::rnnt_head::tests::the_blank_is_the_last_class_and_the_joint_is_one_wider_than_the_vocabulary ... ok
+test speech::rnnt_head::tests::the_predictor_packs_four_gates_into_every_row ... ok
+test speech::encoder::tests::every_encoder_stage_matches_independent_hf_f32_and_f16_fixtures ... ok
+test speech::rnnt_head::tests::the_prompt_slot_is_a_language_index_not_a_token ... ok
+test speech::matrix::tests::grouping_is_bit_identical_across_group_and_lane_boundaries ... ok
+test speech_refusal_tests::speech_cannot_execute_as_an_empty_text_trunk ... ok
+test speech::frontend::tests::silence_has_the_analytic_floor_in_both_whisper_mel_geometries ... ok
+test tests::dense_gemma_executes_scaled_parallel_residual_and_k_as_v ... ok
+test speech::frontend::tests::padding_happens_before_reflection_and_invalid_audio_is_rejected ... ok
+test speech::rnnt_frontend::tests::silence_reaches_the_log_guard_and_not_negative_infinity ... ok
+test tests::embedded_mtp_executes_typed_fusion_block_and_fallback_head ... ok
+test tests::eos_segment_reset_reads_eos_across_boundaries ... ok
+test tests::full_attention_selection_mask_restricts_sources_to_hand_derived_rows ... ok
+test tests::gated_residual_read_and_write_match_hand_derived_two_stream_toy ... ok
+test tests::gdn_sigmoid_gate_matches_hand_derived_single_token ... ok
+test speech::text::tests::timestamps_and_the_terminator_never_reach_the_transcript ... ok
+test tests::gemma4_parallel_moe_executes_shared_routed_and_scaled_residual_branches ... ok
+test tests::generated_tiny_fixture_is_deterministic_and_executable ... ok
+test tests::gemma4_vision_executes_patch_rope_pool_standardize_and_projection ... ok
+test speech::text::tests::a_window_of_pinned_oracle_ids_reads_as_hebrew ... ok
+test tests::compressed_mla_executes_window_compressor_indexer_and_grouped_output ... ok
+test tests::kimi_delta_net_matches_hand_derived_three_token_recurrence ... ok
+test tests::kpool_indexer_selects_causal_pools_and_appends_visible_tail ... ok
+test tests::micro_block_indexer_selects_unambiguous_block_and_always_keeps_the_tail ... ok
+test tests::mla_fixture_emits_latent_state_and_sparse_overflow_refuses ... ok
+test tests::hyperconnections_execute_stream_state_and_head_collapse ... ok
+test tests::multi_depth_mtp_threads_hidden_through_every_typed_block ... ok
+test tests::ngram_ids_match_independently_computed_hash_chain ... ok
+test tests::one_token_dense_plan_matches_hand_derived_logits_and_emits_kv_state ... ok
+test tests::ple_block_matches_hand_derived_scalar_gather_gate_and_dilated_conv ... ok
+test tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state ... FAILED
+test tests::qwen3_moe_fixture_executes_routed_and_shared_branches ... ok
+test tests::rope_uses_neox_split_half_pairs ... ok
+test tests::router_laws_pin_stable_ties_and_selection_only_bias ... ok
+test tests::the_mla_fixture_shapes_match_the_tensor_contract ... ok
+test tests::sliding_window_limits_attention_and_trims_reference_state ... ok
+test tests::glm5_shaped_tiny_plan_executes_kda_kpool_mla_and_mean_collapse_deterministically ... ok
+test tests::token_hash_moe_fixture_executes_from_semantic_token_table ... ok
+test speech::decoder::tests::cached_steps_hidden_logits_and_kv_match_independent_hf ... ok
+test tests::dsv4_shaped_trunk_executes_one_canonical_plan ... ok
+test tests::qwen4exp_tiny_plan_executes_gated_residual_qsa_ple_moe_and_mtp ... ok
+test tests::dspark_executes_trunk_tap_ring_blocks_markov_and_confidence ... ok
+test speech::rnnt_frontend::tests::frames_past_the_valid_length_are_the_pad_value_not_a_log_floor ... ok
+test speech::frontend::tests::two_second_waveform_matches_the_pinned_hf_fp32_frontend ... ok
+test speech::frontend::tests::clip_features_use_a_clip_wide_clamp_and_read_zeros_past_the_last_sample ... ok
+
+failures:
+
+---- tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state stdout ----
+
+thread 'tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state' (18817189) panicked at crates/memra-reference/src/lib.rs:8147:9:
+assertion `left == right` failed
+  left: [3182242064, 1053299395, 3199800549, 3198737447, 3180184138, 3187768632, 1057556100, 1035812927]
+ right: [3182242076, 1053299392, 3199800546, 3198737445, 3180184136, 3187768631, 1057556100, 1035812924]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::qwen35_fixture_executes_mixed_gdn_and_full_attention_state
+
+test result: FAILED. 65 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.38s
+
+error: test failed, to rerun pass `-p memra-reference --lib`

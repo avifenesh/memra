@@ -36,7 +36,7 @@
 use crate::Engine;
 use crate::banked_residency::SLOT_TAIL_PAD_BYTES;
 use crate::model::{ExpertKeepalive, ExpertSource};
-use crate::spill_pread::{PreadPool, PreadStats, ReadTicket, SpillIoMode};
+use crate::spill_pread::{DiskReadSource, PreadPool, PreadStats, ReadTicket, SpillIoMode};
 use cudarc::driver::{CudaEvent, CudaSlice, CudaStream, HostSlice, SyncOnDrop};
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
@@ -638,6 +638,7 @@ enum KeepaliveKey {
     Pinned(usize),
     Buffer(usize),
     Mmap(usize),
+    Bounded(memra_gguf::bound_disk::BoundBackingId),
 }
 
 impl KeepaliveKey {
@@ -646,6 +647,7 @@ impl KeepaliveKey {
             ExpertKeepalive::Pinned(value) => Self::Pinned(Arc::as_ptr(value) as usize),
             ExpertKeepalive::Buffer(value) => Self::Buffer(Arc::as_ptr(value) as usize),
             ExpertKeepalive::Mmap(value) => Self::Mmap(Arc::as_ptr(value) as usize),
+            ExpertKeepalive::Bounded(value) => Self::Bounded(value.backing_id()),
         }
     }
 }
@@ -1933,8 +1935,7 @@ impl MoeSlotCache {
     fn dispatch_disk(
         &mut self,
         id: BlockId,
-        file: &Arc<std::fs::File>,
-        offset: u64,
+        read_source: &DiskReadSource<'_>,
         len: usize,
         fallback: &[u8],
         e: &Engine,
@@ -1951,7 +1952,7 @@ impl MoeSlotCache {
         let read = if is_worker {
             let ticket = match pending {
                 Some(read) => Ok(read.ticket),
-                None => self.submit_demand_read(id, file, offset, len),
+                None => self.submit_demand_read(id, read_source, len),
             };
             let pool = self.pread.as_mut().unwrap();
             match ticket {
@@ -1968,10 +1969,7 @@ impl MoeSlotCache {
             }
         } else {
             debug_assert!(pending.is_none());
-            self.pread
-                .as_mut()
-                .unwrap()
-                .read(file.as_ref(), offset, len)
+            self.pread.as_mut().unwrap().read(read_source, len)
         };
         let index = match read {
             Ok(index) => index,
@@ -2047,8 +2045,7 @@ impl MoeSlotCache {
     fn submit_demand_read(
         &mut self,
         id: BlockId,
-        file: &Arc<std::fs::File>,
-        offset: u64,
+        read_source: &DiskReadSource<'_>,
         len: usize,
     ) -> Result<ReadTicket, Box<dyn std::error::Error>> {
         loop {
@@ -2056,7 +2053,7 @@ impl MoeSlotCache {
                 self.pread
                     .as_mut()
                     .unwrap()
-                    .submit_worker(file.clone(), offset, len)?
+                    .submit_worker(read_source, len)?
             {
                 return Ok(ticket);
             }
@@ -2297,8 +2294,7 @@ impl MoeSlotCache {
                 Ok(DispatchSlot::Resident(slot))
             }
             ExpertSource::Disk {
-                file,
-                offset,
+                read,
                 len,
                 fallback,
                 keepalive,
@@ -2306,7 +2302,7 @@ impl MoeSlotCache {
                 // The owner is only needed when dispatch_disk falls back to mmap, but retaining
                 // the usually shared mmap Arc once keeps every fallback branch simple and safe.
                 self.retain_compute_source(Some(keepalive));
-                self.dispatch_disk(id, file, offset, len, fallback, e)
+                self.dispatch_disk(id, &read, len, fallback, e)
             }
         }
     }
@@ -2488,18 +2484,18 @@ impl MoeSlotCache {
                 self.prefetch_bytes(id, bytes, keepalive, keep, e)
             }
             ExpertSource::Disk {
-                file,
-                offset,
+                read,
                 len,
                 fallback,
                 keepalive,
             } => {
                 if self.pread.as_ref().is_some_and(PreadPool::is_worker) {
-                    match self.pread.as_mut().unwrap().submit_worker_speculative(
-                        file.clone(),
-                        offset,
-                        len,
-                    ) {
+                    match self
+                        .pread
+                        .as_mut()
+                        .unwrap()
+                        .submit_worker_speculative(&read, len)
+                    {
                         Ok(Some(ticket)) => {
                             self.worker_reads.insert(id, WorkerRead { ticket });
                             Ok(true)

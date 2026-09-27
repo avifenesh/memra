@@ -1,0 +1,27 @@
+warning: unused import: `std::os::fd::AsRawFd`
+  --> /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/source.rs:21:5
+   |
+21 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-gguf` (lib) generated 1 warning (run `cargo fix --lib -p memra-gguf` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running unittests src/lib.rs (target/debug/deps/memra_reentry_comparison-2c635150096dcf80)
+
+running 1 test
+test execution_snapshot::reentry_tests::retained_qualified_scope_must_refuse_later_library_inventory_drift ... 
+thread 'execution_snapshot::reentry_tests::retained_qualified_scope_must_refuse_later_library_inventory_drift' (21750114) panicked at /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-engine/src/plan_backend/execution_snapshot/reentry_tests.rs:243:14:
+library drift admitted retained output
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    execution_snapshot::reentry_tests::retained_qualified_scope_must_refuse_later_library_inventory_drift
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `--lib`

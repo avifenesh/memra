@@ -6,7 +6,7 @@
 use crate::config::{Arch, ModelConfig};
 use crate::model_plan::{ModelPlan, PlanCompileError};
 use crate::tensor_contract::{
-    CheckpointDialect, ContractOptions, TensorContract, TensorContractError,
+    CheckpointDialect, ContractOptions, OutputHead, TensorContract, TensorContractError,
 };
 
 pub mod deepseek_v4;
@@ -114,12 +114,23 @@ pub enum TensorConsumption {
     Refuse,
 }
 
+pub(crate) type InventorySchema =
+    fn(
+        &ModelConfig,
+        CheckpointDialect,
+        &str,
+    ) -> Result<Vec<crate::surface_catalog::InventorySurface>, String>;
+
 pub struct ModelPack {
     pub family: &'static str,
     /// Output-head ownership when the head tensor is absent.
     pub output_head: OutputHeadContract,
     /// Loader policy for bound tensors that were never consumed.
     pub tensor_consumption: TensorConsumption,
+    /// Exact inventory schemas for components not represented by the canonical executable plan.
+    /// Metadata validation does not grant reference/native support for those components.
+    pub(crate) inventory_schema: Option<InventorySchema>,
+    pub default_output_head: OutputHead,
     pub aliases: &'static [&'static str],
     pub config_layout: ConfigLayout,
     pub tokenizer_sources: &'static [TokenizerSource],
@@ -141,6 +152,27 @@ pub struct ModelPack {
 }
 
 impl ModelPack {
+    pub fn additional_inventory(
+        &self,
+        config: &ModelConfig,
+        dialect: CheckpointDialect,
+        raw_config: Option<&str>,
+    ) -> Result<Vec<crate::surface_catalog::InventorySurface>, String> {
+        match (self.inventory_schema, raw_config) {
+            (Some(schema), Some(raw)) => schema(config, dialect, raw),
+            _ => Ok(Vec::new()),
+        }
+    }
+    pub fn contract_options(&self, config: &ModelConfig) -> ContractOptions {
+        ContractOptions {
+            output_head: match config.tie_word_embeddings {
+                Some(true) => OutputHead::TiedToEmbedding,
+                Some(false) => OutputHead::Separate,
+                None => self.default_output_head,
+            },
+        }
+    }
+
     pub fn matches_config(&self, config: &ModelConfig) -> bool {
         (self.matches_config)(config)
     }
@@ -229,6 +261,9 @@ pub fn compile_for_load(config: &ModelConfig) -> Result<ModelPlan, PlanCompileEr
 pub fn compile_for_source(
     source: &dyn crate::source::TensorSource,
 ) -> Result<(ModelConfig, ModelPlan), Box<dyn std::error::Error>> {
+    if let Some(program) = source.bound_program() {
+        return Ok(program.cloned_pair());
+    }
     let mut config = source.try_config().map_err(std::io::Error::other)?;
     let plan = compile_for_load(&config)?;
     if crate::tensor_contract::rope_factor_width(&plan).unwrap_or(0) == 0
@@ -243,6 +278,14 @@ pub fn compile_for_source(
     }
     step35::prepare_rope_factors(&mut config, &plan, source)?;
     Ok((config, plan))
+}
+
+pub(crate) fn prepare_bound_rope_factors(
+    config: &mut ModelConfig,
+    plan: &ModelPlan,
+    source: &dyn crate::source::TensorSource,
+) -> Result<(), PlanCompileError> {
+    step35::prepare_rope_factors(config, plan, source)
 }
 
 pub(super) fn canonical_plan(config: &ModelConfig) -> Result<ModelPlan, PlanCompileError> {

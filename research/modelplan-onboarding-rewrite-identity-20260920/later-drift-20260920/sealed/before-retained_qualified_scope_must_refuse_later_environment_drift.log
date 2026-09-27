@@ -1,0 +1,58 @@
+     Locking 12 packages to latest Rust 1.97.1 compatible versions
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling libc v0.2.189
+   Compiling cfg-if v1.0.5
+   Compiling generic-array v0.14.7
+   Compiling cpufeatures v0.2.17
+   Compiling memmap2 v0.9.11
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling memra-gguf v0.138.0 (/Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf)
+warning: unused import: `std::os::fd::AsRawFd`
+  --> /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/source.rs:21:5
+   |
+21 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-gguf` (lib) generated 1 warning (run `cargo fix --lib -p memra-gguf` to apply 1 suggestion)
+   Compiling memra-reentry-comparison v0.0.0 (/Users/avifen/.codex/worktrees/1fc5/memra/target/rewrite-reentry-comparison-qzci5f2n)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.47s
+     Running unittests src/lib.rs (target/debug/deps/memra_reentry_comparison-2c635150096dcf80)
+
+running 1 test
+test execution_snapshot::reentry_tests::retained_qualified_scope_must_refuse_later_environment_drift ... 
+thread 'execution_snapshot::reentry_tests::retained_qualified_scope_must_refuse_later_environment_drift' (21776945) panicked at /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-engine/src/plan_backend/execution_snapshot/reentry_tests.rs:110:5:
+isolated re-entry regression failed or ran no test:
+
+running 1 test
+test execution_snapshot::reentry_tests::retained_qualified_scope_must_refuse_later_environment_drift ... FAILED
+
+failures:
+
+failures:
+    execution_snapshot::reentry_tests::retained_qualified_scope_must_refuse_later_environment_drift
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.02s
+
+
+
+thread 'execution_snapshot::reentry_tests::retained_qualified_scope_must_refuse_later_environment_drift' (21776947) panicked at /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-engine/src/plan_backend/execution_snapshot/reentry_tests.rs:177:9:
+retained qualified token path admitted after environment drift
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    execution_snapshot::reentry_tests::retained_qualified_scope_must_refuse_later_environment_drift
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.04s
+
+error: test failed, to rerun pass `--lib`

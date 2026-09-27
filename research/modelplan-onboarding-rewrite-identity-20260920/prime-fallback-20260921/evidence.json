@@ -1,0 +1,36 @@
+{
+  "failed_source": "65510819038727f9d5bc00c8ecfb5e38d0afc80d",
+  "main_compared": "0175e39d40d1de1b85a367b79b5b669a7397c766",
+  "status": "FAILED;26of27passed;fallbackfailed;notqualification",
+  "seed_max_abs": 4.4796142578125,
+  "logit_max_abs_by_step": [
+    0.35795366764068604,
+    0.35865211486816406,
+    0.328216552734375,
+    0.4310474395751953,
+    0.3623616099357605
+  ],
+  "policy": {
+    "max_abs": 0.005,
+    "max_rel": 0.005,
+    "require_argmax": true
+  },
+  "greedy_tokens": [
+    2,
+    3,
+    2,
+    3,
+    2
+  ],
+  "ordinary_and_batch_fallback_bytes_equal": true,
+  "root_cause_level": "dispatch/admission contract: CarriedPrime absent but ordinary prefill admitted under DecodeEager; primitive first-divergence not isolated",
+  "main_comparison": "ordinary driver, prime chunk/layers, attention dispatch and generic matmul bodies byte-identical; no main runtime rerun claimed",
+  "relationship_to_580": "decode-exact scope repair remains separate and intact; ordinary prefill bypasses that entry",
+  "relationship_to_585": "additional production prime/fallback manifestation retained in the existing prime-program tracker; no proof that the padded graph has the same first divergent primitive",
+  "correction": "unqualified-prime fallback invokes existing qualified T1 decode_step_h and retains each hidden row; qualified/legacy prefill unchanged; no format/tolerance/oracle changes",
+  "CPU": "6 pass, frozen655 entry has5expected failures;21runner controls pass;strictLinuxclippy passed compile-only",
+  "native_plan": "originalT16 plus7additional scenarios: fresh15/17,carried15/16/17,B3bothorders; allseed/hidden/logit rows and4owncontinuations required",
+  "native_correction_qualification": "pending independent source review and fresh build/native run",
+  "old_0ea0": "untouchedFAILED16UNRUN",
+  "offbox_archive": "36ec4ea1d38556930e3c9b84f187df148df6d916be8f6709944734458e9247ef"
+}

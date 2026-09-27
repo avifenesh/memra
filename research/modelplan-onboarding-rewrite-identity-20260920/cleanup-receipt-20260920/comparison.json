@@ -1,0 +1,17 @@
+{
+  "base": "1aeea4c0b6a514e034e087e6cb55c866c7b0f448",
+  "cpu_only": true,
+  "equivalence_limit": "Rust/Cargo runtime inputs unchanged; recorded gate input qualify-callers.py changed. This does not relabel the preserved1aee build or authorize GPU execution.",
+  "files": {
+    "research/modelplan-onboarding-rewrite-identity-20260920/qualify-callers.py": "6242ce50a19956955504eac28e311468cc64146886f50464d865b0061c24f4c5",
+    "research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py": "ab939fe3568262d98f406021f4214f6a1cb66e63d0abbcbb5b8fb229c3c27cc6"
+  },
+  "finding": "TC557-CALLERS-01",
+  "green_after": "12 tests pass; both phases covered",
+  "logs": {
+    "green-after.log": "69df49f743eb5d84eafef1cad3d4f3024ba6a1da249c72ae2a62d13a8c6cb712",
+    "red-before.log": "e74ef02d4199611225635fd0d0cd32a9b039ea87399da97fe2b8bcf2e58b1b52"
+  },
+  "red_before": "same cleanup/manifest/final-invariant expectations fail on frozen1aee caller runner",
+  "runtime_input_diff": []
+}

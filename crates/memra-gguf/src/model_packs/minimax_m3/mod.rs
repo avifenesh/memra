@@ -3,9 +3,11 @@ use super::*;
 /// Explicit ownership of the existing MiniMax-M3 program, formerly reached through the
 /// loader's generic fallback. Native checkpoint/serving qualification remains separate.
 pub static PACK: ModelPack = ModelPack {
-    family: "minimax_m3",
     output_head: OutputHeadContract::TiedHeadAllowed,
     tensor_consumption: TensorConsumption::Report,
+    inventory_schema: None,
+    default_output_head: crate::tensor_contract::OutputHead::Separate,
+    family: "minimax_m3",
     aliases: &["minimax-m3", "minimax_m3_vl", "minimax_m3_text"],
     config_layout: ConfigLayout::FlatOrTextConfig,
     tokenizer_sources: &[

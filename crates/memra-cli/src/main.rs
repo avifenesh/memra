@@ -90,7 +90,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 oracle,
                 native_runner,
             })?;
-            println!("family={} verified={:?}", summary.family, summary.stage);
+            if summary.stage == VerifyStage::Rewrite {
+                println!(
+                    "family={} imported=Rewrite runtime_qualification=pending",
+                    summary.family
+                );
+            } else {
+                println!("family={} verified={:?}", summary.family, summary.stage);
+            }
             Ok(())
         }
         _ => Err(USAGE.into()),

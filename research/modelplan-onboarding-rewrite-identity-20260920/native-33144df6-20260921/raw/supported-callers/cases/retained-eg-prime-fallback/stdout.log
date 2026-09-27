@@ -1,0 +1,531 @@
+SCOPE mode=retained-eg-prime-fallback native-caller-only support_promotion=false performance=not-measured pid=2683978
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/artifact.lock bytes=801 sha256=3d91ccb45bd39b446bb995630b628ba96e92a65c36bebbee519be647f8ce3be3
+SOURCE pin=Qwen/Qwen3-0.6B@c1899de289a04d12100db370d81485cdf75e47ca
+SOURCE_FILE name=model.safetensors bytes=1503300328 sha256=f47f71177f32bcd101b7573ec9171e6a57f4f4d31148d38e382306f42996874b
+SOURCE_FILE name=config.json bytes=726 sha256=660db3b73d788119c04535e48cf9be5f55bc3100841a718637ae695b442f27dd
+SOURCE_FILE name=generation_config.json bytes=239 sha256=2325da0f15bb848e018c5ae071b7943332e9f871d6b60e2ed22ca97d4cb993d2
+SOURCE_FILE name=tokenizer.json bytes=11422654 sha256=aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4
+SOURCE_FILE name=tokenizer_config.json bytes=9732 sha256=d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101
+SOURCE_FILE name=merges.txt bytes=1671853 sha256=8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5
+SOURCE_FILE name=vocab.json bytes=2776833 sha256=ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910
+SOURCE_FILE name=LICENSE bytes=11343 sha256=832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/identity.txt bytes=287 sha256=4c08d22d9dd8480e43eeb2b9d564406cb031257833bbf67171860f37ecd7ae48
+POLICY RewriteParityPolicy { max_abs: 0.005, max_rel: 0.005, require_argmax: true }
+QUALIFICATION_SCOPE EagerGraph surfaces=[DecodeEager, DecodeGraph] carried_prime_selected=false
+FALLBACK_INPUT tokens=[2, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 2, 3, 2, 3] prime_permission=false reference=tokenwise ordinary=prime_cache candidate=prime_cache_batch
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-reference-seed.f32 bytes=4096 sha256=8190eecf7ed77581c880058abcd2cb7468410e0af080c4022f99fc48ce6e1cac
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-ordinary-seed.f32 bytes=4096 sha256=8190eecf7ed77581c880058abcd2cb7468410e0af080c4022f99fc48ce6e1cac
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-candidate-seed.f32 bytes=4096 sha256=8190eecf7ed77581c880058abcd2cb7468410e0af080c4022f99fc48ce6e1cac
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-ordinary-hidden.f32 bytes=65536 sha256=672f4c3475884e54f6720b84749943185a2e46c33c98157724b939dbc94239c9
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-candidate-hidden.f32 bytes=65536 sha256=672f4c3475884e54f6720b84749943185a2e46c33c98157724b939dbc94239c9
+FALLBACK_PARITY label=ordinary-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=candidate-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-reference-0.f32 bytes=607744 sha256=a90d5e6d87e73c1234ba8ab8aea51549e8c685702af29e2033e2832fb63b5a9d
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-ordinary-0.f32 bytes=607744 sha256=a90d5e6d87e73c1234ba8ab8aea51549e8c685702af29e2033e2832fb63b5a9d
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-candidate-0.f32 bytes=607744 sha256=a90d5e6d87e73c1234ba8ab8aea51549e8c685702af29e2033e2832fb63b5a9d
+FALLBACK_PARITY label=ordinary-0 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+FALLBACK_PARITY label=candidate-0 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-reference-1.f32 bytes=607744 sha256=52e82f054b26fa6094f4759d26f89df1c5e90ec2a7beda03592ae31be6454bb1
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-ordinary-1.f32 bytes=607744 sha256=52e82f054b26fa6094f4759d26f89df1c5e90ec2a7beda03592ae31be6454bb1
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-candidate-1.f32 bytes=607744 sha256=52e82f054b26fa6094f4759d26f89df1c5e90ec2a7beda03592ae31be6454bb1
+FALLBACK_PARITY label=ordinary-1 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=candidate-1 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-reference-2.f32 bytes=607744 sha256=87f510667fa657d06b41bb09d130112b07bd991cb659d53f8b50ab3634e41048
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-ordinary-2.f32 bytes=607744 sha256=87f510667fa657d06b41bb09d130112b07bd991cb659d53f8b50ab3634e41048
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-candidate-2.f32 bytes=607744 sha256=87f510667fa657d06b41bb09d130112b07bd991cb659d53f8b50ab3634e41048
+FALLBACK_PARITY label=ordinary-2 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+FALLBACK_PARITY label=candidate-2 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-reference-3.f32 bytes=607744 sha256=5ec0c867f6c3583974998974276e88729634af9b34641711f78aa7d4b9c24701
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-ordinary-3.f32 bytes=607744 sha256=5ec0c867f6c3583974998974276e88729634af9b34641711f78aa7d4b9c24701
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-candidate-3.f32 bytes=607744 sha256=5ec0c867f6c3583974998974276e88729634af9b34641711f78aa7d4b9c24701
+FALLBACK_PARITY label=ordinary-3 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=candidate-3 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-reference-4.f32 bytes=607744 sha256=f35f756a28767324eb0921b55718db2f15d86ad50278da06d185b6bc229d06c0
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-ordinary-4.f32 bytes=607744 sha256=f35f756a28767324eb0921b55718db2f15d86ad50278da06d185b6bc229d06c0
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-candidate-4.f32 bytes=607744 sha256=f35f756a28767324eb0921b55718db2f15d86ad50278da06d185b6bc229d06c0
+FALLBACK_PARITY label=ordinary-4 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+FALLBACK_PARITY label=candidate-4 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-reference.u32 bytes=20 sha256=8284c0983fda1bebf728e3318be67cfa3bc6b6d8086125c54c91c2b72c96883d
+TOKENS fallback-reference [2, 3, 2, 3, 2]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-ordinary.u32 bytes=20 sha256=8284c0983fda1bebf728e3318be67cfa3bc6b6d8086125c54c91c2b72c96883d
+TOKENS fallback-ordinary [2, 3, 2, 3, 2]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fallback-candidate.u32 bytes=20 sha256=8284c0983fda1bebf728e3318be67cfa3bc6b6d8086125c54c91c2b72c96883d
+TOKENS fallback-candidate [2, 3, 2, 3, 2]
+EAGER_PRIME_FALLBACK_ORIGINAL_CASE_PASS true_tokens=16 continuation_steps=4 carried_prime_qualified=false receipt_emitted=false
+FALLBACK_MATRIX_CASE_BEGIN fresh-t15
+FALLBACK_MATRIX_INPUT stream=0 prompt=[2, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 2, 3, 2] prefix=[] batch=1 prime_permission=false
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-reference-seed.f32 bytes=4096 sha256=4e4d908a2d2a8af041357c38f200f5fb427b82e23218e6167dc8984c2f32e8e8
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-ordinary-seed.f32 bytes=4096 sha256=4e4d908a2d2a8af041357c38f200f5fb427b82e23218e6167dc8984c2f32e8e8
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-candidate-seed.f32 bytes=4096 sha256=4e4d908a2d2a8af041357c38f200f5fb427b82e23218e6167dc8984c2f32e8e8
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-reference-hiddens.f32 bytes=61440 sha256=2a53c03f5c8d64789a952e27650d3995c48ee44160b32845dd8f401efaf43550
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-ordinary-hiddens.f32 bytes=61440 sha256=2a53c03f5c8d64789a952e27650d3995c48ee44160b32845dd8f401efaf43550
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-candidate-hiddens.f32 bytes=61440 sha256=2a53c03f5c8d64789a952e27650d3995c48ee44160b32845dd8f401efaf43550
+FALLBACK_PARITY label=stream0-ordinary-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-ordinary-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-reference-0.f32 bytes=607744 sha256=6636e2e373f6f37394793a038dfe0d7edffbba8ccfd5073dcdabd48c2749080c
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-ordinary-0.f32 bytes=607744 sha256=6636e2e373f6f37394793a038dfe0d7edffbba8ccfd5073dcdabd48c2749080c
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-candidate-0.f32 bytes=607744 sha256=6636e2e373f6f37394793a038dfe0d7edffbba8ccfd5073dcdabd48c2749080c
+FALLBACK_PARITY label=stream0-ordinary-0 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-0 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-reference-1.f32 bytes=607744 sha256=83c4d22fd989661efad742ec44458b01f6a784f2b8c719d021f37b6c3018c455
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-ordinary-1.f32 bytes=607744 sha256=83c4d22fd989661efad742ec44458b01f6a784f2b8c719d021f37b6c3018c455
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-candidate-1.f32 bytes=607744 sha256=83c4d22fd989661efad742ec44458b01f6a784f2b8c719d021f37b6c3018c455
+FALLBACK_PARITY label=stream0-ordinary-1 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-1 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-reference-2.f32 bytes=607744 sha256=64f3eb57ca7e5a6bbb2a353995f94b3bcbd30e6afc39f55b5d85430dbc5bef87
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-ordinary-2.f32 bytes=607744 sha256=64f3eb57ca7e5a6bbb2a353995f94b3bcbd30e6afc39f55b5d85430dbc5bef87
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-candidate-2.f32 bytes=607744 sha256=64f3eb57ca7e5a6bbb2a353995f94b3bcbd30e6afc39f55b5d85430dbc5bef87
+FALLBACK_PARITY label=stream0-ordinary-2 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-2 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-reference-3.f32 bytes=607744 sha256=8dfdd4b0b0e44f7b32de0a1e096897c5044328e4d8394a3d4e9fa8bbd2652bde
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-ordinary-3.f32 bytes=607744 sha256=8dfdd4b0b0e44f7b32de0a1e096897c5044328e4d8394a3d4e9fa8bbd2652bde
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-candidate-3.f32 bytes=607744 sha256=8dfdd4b0b0e44f7b32de0a1e096897c5044328e4d8394a3d4e9fa8bbd2652bde
+FALLBACK_PARITY label=stream0-ordinary-3 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-3 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-reference-4.f32 bytes=607744 sha256=3bbe03af951416238a053a7086ce907e994af2e9b6600e8eb1d705f161d91f0b
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-ordinary-4.f32 bytes=607744 sha256=3bbe03af951416238a053a7086ce907e994af2e9b6600e8eb1d705f161d91f0b
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-candidate-4.f32 bytes=607744 sha256=3bbe03af951416238a053a7086ce907e994af2e9b6600e8eb1d705f161d91f0b
+FALLBACK_PARITY label=stream0-ordinary-4 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-4 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-reference.u32 bytes=20 sha256=8f99725431042fe0e10307c4dcbc565f0bb905bacf74ec55098554e168af15ca
+TOKENS stream0-reference [5, 3, 2, 5, 3]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-ordinary.u32 bytes=20 sha256=8f99725431042fe0e10307c4dcbc565f0bb905bacf74ec55098554e168af15ca
+TOKENS stream0-ordinary [5, 3, 2, 5, 3]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t15/stream0-candidate.u32 bytes=20 sha256=8f99725431042fe0e10307c4dcbc565f0bb905bacf74ec55098554e168af15ca
+TOKENS stream0-candidate [5, 3, 2, 5, 3]
+FALLBACK_MATRIX_CASE_PASS batch=1 continuation_steps=4
+FALLBACK_MATRIX_CASE_BEGIN fresh-t17
+FALLBACK_MATRIX_INPUT stream=0 prompt=[2, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 2, 3, 2, 3, 5] prefix=[] batch=1 prime_permission=false
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-reference-seed.f32 bytes=4096 sha256=2a7ea33f2c711cd1bb2a3c5bb2a6c342c1811833c6ae9a49fe2af0136c44d952
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-ordinary-seed.f32 bytes=4096 sha256=2a7ea33f2c711cd1bb2a3c5bb2a6c342c1811833c6ae9a49fe2af0136c44d952
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-candidate-seed.f32 bytes=4096 sha256=2a7ea33f2c711cd1bb2a3c5bb2a6c342c1811833c6ae9a49fe2af0136c44d952
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-reference-hiddens.f32 bytes=69632 sha256=b76afe4b8798bc6417aa398299088fb257887d583b6cf7df8264ad827c072085
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-ordinary-hiddens.f32 bytes=69632 sha256=b76afe4b8798bc6417aa398299088fb257887d583b6cf7df8264ad827c072085
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-candidate-hiddens.f32 bytes=69632 sha256=b76afe4b8798bc6417aa398299088fb257887d583b6cf7df8264ad827c072085
+FALLBACK_PARITY label=stream0-ordinary-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-ordinary-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-reference-0.f32 bytes=607744 sha256=50d8f8d13d8565758b67849fcce9ad8e3b7465a46745960686133b275c61c142
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-ordinary-0.f32 bytes=607744 sha256=50d8f8d13d8565758b67849fcce9ad8e3b7465a46745960686133b275c61c142
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-candidate-0.f32 bytes=607744 sha256=50d8f8d13d8565758b67849fcce9ad8e3b7465a46745960686133b275c61c142
+FALLBACK_PARITY label=stream0-ordinary-0 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-0 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-reference-1.f32 bytes=607744 sha256=d77f54659786f7b60b151f0dd574d82d90a94cf3349da4acdbf36a522e54d5c8
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-ordinary-1.f32 bytes=607744 sha256=d77f54659786f7b60b151f0dd574d82d90a94cf3349da4acdbf36a522e54d5c8
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-candidate-1.f32 bytes=607744 sha256=d77f54659786f7b60b151f0dd574d82d90a94cf3349da4acdbf36a522e54d5c8
+FALLBACK_PARITY label=stream0-ordinary-1 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-1 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-reference-2.f32 bytes=607744 sha256=15d20b734cee9552a66f0e2002bf31cff4789376e644c0d180b9f9ae1c115c6e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-ordinary-2.f32 bytes=607744 sha256=15d20b734cee9552a66f0e2002bf31cff4789376e644c0d180b9f9ae1c115c6e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-candidate-2.f32 bytes=607744 sha256=15d20b734cee9552a66f0e2002bf31cff4789376e644c0d180b9f9ae1c115c6e
+FALLBACK_PARITY label=stream0-ordinary-2 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-2 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-reference-3.f32 bytes=607744 sha256=59b4855be057ccd7ec44eb8c7c1b73116b47b4135e3dfa65739e47baa5bd2836
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-ordinary-3.f32 bytes=607744 sha256=59b4855be057ccd7ec44eb8c7c1b73116b47b4135e3dfa65739e47baa5bd2836
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-candidate-3.f32 bytes=607744 sha256=59b4855be057ccd7ec44eb8c7c1b73116b47b4135e3dfa65739e47baa5bd2836
+FALLBACK_PARITY label=stream0-ordinary-3 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-3 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-reference-4.f32 bytes=607744 sha256=2be43472b0813b0145e2fd8bb99a0681059b72e0746a490bfc5d0e087c91b88e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-ordinary-4.f32 bytes=607744 sha256=2be43472b0813b0145e2fd8bb99a0681059b72e0746a490bfc5d0e087c91b88e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-candidate-4.f32 bytes=607744 sha256=2be43472b0813b0145e2fd8bb99a0681059b72e0746a490bfc5d0e087c91b88e
+FALLBACK_PARITY label=stream0-ordinary-4 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-4 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-reference.u32 bytes=20 sha256=cc75fd55812ff03c72c4fa05ad167be2ba012f8695db1b7f25a93da72404a628
+TOKENS stream0-reference [3, 2, 3, 5, 3]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-ordinary.u32 bytes=20 sha256=cc75fd55812ff03c72c4fa05ad167be2ba012f8695db1b7f25a93da72404a628
+TOKENS stream0-ordinary [3, 2, 3, 5, 3]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/fresh-t17/stream0-candidate.u32 bytes=20 sha256=cc75fd55812ff03c72c4fa05ad167be2ba012f8695db1b7f25a93da72404a628
+TOKENS stream0-candidate [3, 2, 3, 5, 3]
+FALLBACK_MATRIX_CASE_PASS batch=1 continuation_steps=4
+FALLBACK_MATRIX_CASE_BEGIN carried-t15
+FALLBACK_MATRIX_INPUT stream=0 prompt=[2, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 2, 3, 2] prefix=[2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31] batch=1 prime_permission=false
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-reference-seed.f32 bytes=4096 sha256=0e722c6b22edc07a211638676cbc29920428cf8eb3088cde1b8c4b2dd8d24e66
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-ordinary-seed.f32 bytes=4096 sha256=0e722c6b22edc07a211638676cbc29920428cf8eb3088cde1b8c4b2dd8d24e66
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-candidate-seed.f32 bytes=4096 sha256=0e722c6b22edc07a211638676cbc29920428cf8eb3088cde1b8c4b2dd8d24e66
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-reference-hiddens.f32 bytes=61440 sha256=ab5b2db1ee16a733438e18c83c9a86ff2bb17a424326bee5ecdfd76d35226608
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-ordinary-hiddens.f32 bytes=61440 sha256=ab5b2db1ee16a733438e18c83c9a86ff2bb17a424326bee5ecdfd76d35226608
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-candidate-hiddens.f32 bytes=61440 sha256=ab5b2db1ee16a733438e18c83c9a86ff2bb17a424326bee5ecdfd76d35226608
+FALLBACK_PARITY label=stream0-ordinary-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-ordinary-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=9251 candidate_argmax=9251 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=9251 candidate_argmax=9251 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-reference-0.f32 bytes=607744 sha256=0c6f7cf39c07f07ccec9c93c1df5d55753aa1a2baf6c762f0d817d30e1e958d6
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-ordinary-0.f32 bytes=607744 sha256=0c6f7cf39c07f07ccec9c93c1df5d55753aa1a2baf6c762f0d817d30e1e958d6
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-candidate-0.f32 bytes=607744 sha256=0c6f7cf39c07f07ccec9c93c1df5d55753aa1a2baf6c762f0d817d30e1e958d6
+FALLBACK_PARITY label=stream0-ordinary-0 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-0 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-reference-1.f32 bytes=607744 sha256=c678147de6d496db6c79428e3a5b2683800667f8c1eb879ea5f0110bed08a4d9
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-ordinary-1.f32 bytes=607744 sha256=c678147de6d496db6c79428e3a5b2683800667f8c1eb879ea5f0110bed08a4d9
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-candidate-1.f32 bytes=607744 sha256=c678147de6d496db6c79428e3a5b2683800667f8c1eb879ea5f0110bed08a4d9
+FALLBACK_PARITY label=stream0-ordinary-1 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-1 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-reference-2.f32 bytes=607744 sha256=ab63eb39c468ea50a55a44af83dfa5220760ba1390a0265f764984ede908c4df
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-ordinary-2.f32 bytes=607744 sha256=ab63eb39c468ea50a55a44af83dfa5220760ba1390a0265f764984ede908c4df
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-candidate-2.f32 bytes=607744 sha256=ab63eb39c468ea50a55a44af83dfa5220760ba1390a0265f764984ede908c4df
+FALLBACK_PARITY label=stream0-ordinary-2 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-2 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-reference-3.f32 bytes=607744 sha256=5409d2a03b88fde6f14cc33303cdb7d8c75fcd07ffa8d2326997f1b653b365c0
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-ordinary-3.f32 bytes=607744 sha256=5409d2a03b88fde6f14cc33303cdb7d8c75fcd07ffa8d2326997f1b653b365c0
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-candidate-3.f32 bytes=607744 sha256=5409d2a03b88fde6f14cc33303cdb7d8c75fcd07ffa8d2326997f1b653b365c0
+FALLBACK_PARITY label=stream0-ordinary-3 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-3 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-reference-4.f32 bytes=607744 sha256=049d4e21000c98df6876aca02a022532008d8438f9f78b762cbe8e179285e8a9
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-ordinary-4.f32 bytes=607744 sha256=049d4e21000c98df6876aca02a022532008d8438f9f78b762cbe8e179285e8a9
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-candidate-4.f32 bytes=607744 sha256=049d4e21000c98df6876aca02a022532008d8438f9f78b762cbe8e179285e8a9
+FALLBACK_PARITY label=stream0-ordinary-4 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-4 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-reference.u32 bytes=20 sha256=09e683926451904f2af27b8583763dfe0b333c38357f6954b0cbb57ad749d11b
+TOKENS stream0-reference [5, 3, 5, 3, 5]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-ordinary.u32 bytes=20 sha256=09e683926451904f2af27b8583763dfe0b333c38357f6954b0cbb57ad749d11b
+TOKENS stream0-ordinary [5, 3, 5, 3, 5]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t15/stream0-candidate.u32 bytes=20 sha256=09e683926451904f2af27b8583763dfe0b333c38357f6954b0cbb57ad749d11b
+TOKENS stream0-candidate [5, 3, 5, 3, 5]
+FALLBACK_MATRIX_CASE_PASS batch=1 continuation_steps=4
+FALLBACK_MATRIX_CASE_BEGIN carried-t16
+FALLBACK_MATRIX_INPUT stream=0 prompt=[2, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 2, 3, 2, 3] prefix=[2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31] batch=1 prime_permission=false
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-reference-seed.f32 bytes=4096 sha256=f68a301ad63e7dae3583d066d0ac616fa57edc493deeafce1dcee5bf3dd9395e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-ordinary-seed.f32 bytes=4096 sha256=f68a301ad63e7dae3583d066d0ac616fa57edc493deeafce1dcee5bf3dd9395e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-candidate-seed.f32 bytes=4096 sha256=f68a301ad63e7dae3583d066d0ac616fa57edc493deeafce1dcee5bf3dd9395e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-reference-hiddens.f32 bytes=65536 sha256=f3f4b9594681eeb9904975307afbe6e49c0078aefb5daf5ad0d44bb919d8bb34
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-ordinary-hiddens.f32 bytes=65536 sha256=f3f4b9594681eeb9904975307afbe6e49c0078aefb5daf5ad0d44bb919d8bb34
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-candidate-hiddens.f32 bytes=65536 sha256=f3f4b9594681eeb9904975307afbe6e49c0078aefb5daf5ad0d44bb919d8bb34
+FALLBACK_PARITY label=stream0-ordinary-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-ordinary-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=9251 candidate_argmax=9251 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=9251 candidate_argmax=9251 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-reference-0.f32 bytes=607744 sha256=83a5b19a06fa6fb1e85e2b89f85962e58945ce1f5eec0977cabd1ffbea5165af
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-ordinary-0.f32 bytes=607744 sha256=83a5b19a06fa6fb1e85e2b89f85962e58945ce1f5eec0977cabd1ffbea5165af
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-candidate-0.f32 bytes=607744 sha256=83a5b19a06fa6fb1e85e2b89f85962e58945ce1f5eec0977cabd1ffbea5165af
+FALLBACK_PARITY label=stream0-ordinary-0 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-0 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-reference-1.f32 bytes=607744 sha256=cbe6782fbfc35ca0ee8774bd7d0f860d542082818506dc2b778e234cd01002df
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-ordinary-1.f32 bytes=607744 sha256=cbe6782fbfc35ca0ee8774bd7d0f860d542082818506dc2b778e234cd01002df
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-candidate-1.f32 bytes=607744 sha256=cbe6782fbfc35ca0ee8774bd7d0f860d542082818506dc2b778e234cd01002df
+FALLBACK_PARITY label=stream0-ordinary-1 passed=true max_abs=0 max_rel=0 reference_argmax=7 candidate_argmax=7 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-1 passed=true max_abs=0 max_rel=0 reference_argmax=7 candidate_argmax=7 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-reference-2.f32 bytes=607744 sha256=a648881e6fb08813b1ed923d3ec0bbf2ddc8c3990878e6b5fe6db8d5d6d5f646
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-ordinary-2.f32 bytes=607744 sha256=a648881e6fb08813b1ed923d3ec0bbf2ddc8c3990878e6b5fe6db8d5d6d5f646
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-candidate-2.f32 bytes=607744 sha256=a648881e6fb08813b1ed923d3ec0bbf2ddc8c3990878e6b5fe6db8d5d6d5f646
+FALLBACK_PARITY label=stream0-ordinary-2 passed=true max_abs=0 max_rel=0 reference_argmax=11 candidate_argmax=11 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-2 passed=true max_abs=0 max_rel=0 reference_argmax=11 candidate_argmax=11 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-reference-3.f32 bytes=607744 sha256=da1c9dbc8ddd5361b8ff954273f4c2f1a34fbf84876b2732c48a0564663f2a56
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-ordinary-3.f32 bytes=607744 sha256=da1c9dbc8ddd5361b8ff954273f4c2f1a34fbf84876b2732c48a0564663f2a56
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-candidate-3.f32 bytes=607744 sha256=da1c9dbc8ddd5361b8ff954273f4c2f1a34fbf84876b2732c48a0564663f2a56
+FALLBACK_PARITY label=stream0-ordinary-3 passed=true max_abs=0 max_rel=0 reference_argmax=17 candidate_argmax=17 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-3 passed=true max_abs=0 max_rel=0 reference_argmax=17 candidate_argmax=17 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-reference-4.f32 bytes=607744 sha256=72c0d9700ca7769209845303170c256aee2ac81161c2d1b7a47771c08b0a6aba
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-ordinary-4.f32 bytes=607744 sha256=72c0d9700ca7769209845303170c256aee2ac81161c2d1b7a47771c08b0a6aba
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-candidate-4.f32 bytes=607744 sha256=72c0d9700ca7769209845303170c256aee2ac81161c2d1b7a47771c08b0a6aba
+FALLBACK_PARITY label=stream0-ordinary-4 passed=true max_abs=0 max_rel=0 reference_argmax=19 candidate_argmax=19 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-4 passed=true max_abs=0 max_rel=0 reference_argmax=19 candidate_argmax=19 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-reference.u32 bytes=20 sha256=1af4a191bb6ad00a0a291b3d9d98f24b630e14b96ca1e898ef38333771ffdb4e
+TOKENS stream0-reference [5, 7, 11, 17, 19]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-ordinary.u32 bytes=20 sha256=1af4a191bb6ad00a0a291b3d9d98f24b630e14b96ca1e898ef38333771ffdb4e
+TOKENS stream0-ordinary [5, 7, 11, 17, 19]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t16/stream0-candidate.u32 bytes=20 sha256=1af4a191bb6ad00a0a291b3d9d98f24b630e14b96ca1e898ef38333771ffdb4e
+TOKENS stream0-candidate [5, 7, 11, 17, 19]
+FALLBACK_MATRIX_CASE_PASS batch=1 continuation_steps=4
+FALLBACK_MATRIX_CASE_BEGIN carried-t17
+FALLBACK_MATRIX_INPUT stream=0 prompt=[2, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 2, 3, 2, 3, 5] prefix=[2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31] batch=1 prime_permission=false
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-reference-seed.f32 bytes=4096 sha256=e1c067fffda4bd27f227c462e8cb79e39f76251940422c3acc5c061579d20a23
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-ordinary-seed.f32 bytes=4096 sha256=e1c067fffda4bd27f227c462e8cb79e39f76251940422c3acc5c061579d20a23
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-candidate-seed.f32 bytes=4096 sha256=e1c067fffda4bd27f227c462e8cb79e39f76251940422c3acc5c061579d20a23
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-reference-hiddens.f32 bytes=69632 sha256=1b1f61e27fd1b79a813bfd9f92ff8d8d8e3faef0f78153f2bad510c3c2988674
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-ordinary-hiddens.f32 bytes=69632 sha256=1b1f61e27fd1b79a813bfd9f92ff8d8d8e3faef0f78153f2bad510c3c2988674
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-candidate-hiddens.f32 bytes=69632 sha256=1b1f61e27fd1b79a813bfd9f92ff8d8d8e3faef0f78153f2bad510c3c2988674
+FALLBACK_PARITY label=stream0-ordinary-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-ordinary-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=9251 candidate_argmax=9251 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=9251 candidate_argmax=9251 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-reference-0.f32 bytes=607744 sha256=cbe6782fbfc35ca0ee8774bd7d0f860d542082818506dc2b778e234cd01002df
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-ordinary-0.f32 bytes=607744 sha256=cbe6782fbfc35ca0ee8774bd7d0f860d542082818506dc2b778e234cd01002df
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-candidate-0.f32 bytes=607744 sha256=cbe6782fbfc35ca0ee8774bd7d0f860d542082818506dc2b778e234cd01002df
+FALLBACK_PARITY label=stream0-ordinary-0 passed=true max_abs=0 max_rel=0 reference_argmax=7 candidate_argmax=7 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-0 passed=true max_abs=0 max_rel=0 reference_argmax=7 candidate_argmax=7 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-reference-1.f32 bytes=607744 sha256=a648881e6fb08813b1ed923d3ec0bbf2ddc8c3990878e6b5fe6db8d5d6d5f646
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-ordinary-1.f32 bytes=607744 sha256=a648881e6fb08813b1ed923d3ec0bbf2ddc8c3990878e6b5fe6db8d5d6d5f646
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-candidate-1.f32 bytes=607744 sha256=a648881e6fb08813b1ed923d3ec0bbf2ddc8c3990878e6b5fe6db8d5d6d5f646
+FALLBACK_PARITY label=stream0-ordinary-1 passed=true max_abs=0 max_rel=0 reference_argmax=11 candidate_argmax=11 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-1 passed=true max_abs=0 max_rel=0 reference_argmax=11 candidate_argmax=11 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-reference-2.f32 bytes=607744 sha256=da1c9dbc8ddd5361b8ff954273f4c2f1a34fbf84876b2732c48a0564663f2a56
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-ordinary-2.f32 bytes=607744 sha256=da1c9dbc8ddd5361b8ff954273f4c2f1a34fbf84876b2732c48a0564663f2a56
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-candidate-2.f32 bytes=607744 sha256=da1c9dbc8ddd5361b8ff954273f4c2f1a34fbf84876b2732c48a0564663f2a56
+FALLBACK_PARITY label=stream0-ordinary-2 passed=true max_abs=0 max_rel=0 reference_argmax=17 candidate_argmax=17 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-2 passed=true max_abs=0 max_rel=0 reference_argmax=17 candidate_argmax=17 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-reference-3.f32 bytes=607744 sha256=72c0d9700ca7769209845303170c256aee2ac81161c2d1b7a47771c08b0a6aba
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-ordinary-3.f32 bytes=607744 sha256=72c0d9700ca7769209845303170c256aee2ac81161c2d1b7a47771c08b0a6aba
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-candidate-3.f32 bytes=607744 sha256=72c0d9700ca7769209845303170c256aee2ac81161c2d1b7a47771c08b0a6aba
+FALLBACK_PARITY label=stream0-ordinary-3 passed=true max_abs=0 max_rel=0 reference_argmax=19 candidate_argmax=19 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-3 passed=true max_abs=0 max_rel=0 reference_argmax=19 candidate_argmax=19 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-reference-4.f32 bytes=607744 sha256=43d2e66ba75c308b04a5cad8f6807ad41ba64862a646afc325468b71d767abad
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-ordinary-4.f32 bytes=607744 sha256=43d2e66ba75c308b04a5cad8f6807ad41ba64862a646afc325468b71d767abad
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-candidate-4.f32 bytes=607744 sha256=43d2e66ba75c308b04a5cad8f6807ad41ba64862a646afc325468b71d767abad
+FALLBACK_PARITY label=stream0-ordinary-4 passed=true max_abs=0 max_rel=0 reference_argmax=23 candidate_argmax=23 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-4 passed=true max_abs=0 max_rel=0 reference_argmax=23 candidate_argmax=23 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-reference.u32 bytes=20 sha256=6138155f79adc893bd1e4a9e9e6c1d923195bb512cb5e4cd2562cac1d2a43160
+TOKENS stream0-reference [7, 11, 17, 19, 23]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-ordinary.u32 bytes=20 sha256=6138155f79adc893bd1e4a9e9e6c1d923195bb512cb5e4cd2562cac1d2a43160
+TOKENS stream0-ordinary [7, 11, 17, 19, 23]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/carried-t17/stream0-candidate.u32 bytes=20 sha256=6138155f79adc893bd1e4a9e9e6c1d923195bb512cb5e4cd2562cac1d2a43160
+TOKENS stream0-candidate [7, 11, 17, 19, 23]
+FALLBACK_MATRIX_CASE_PASS batch=1 continuation_steps=4
+FALLBACK_MATRIX_CASE_BEGIN batch-15-16-17
+FALLBACK_MATRIX_INPUT stream=0 prompt=[2, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 2, 3, 2] prefix=[] batch=3 prime_permission=false
+FALLBACK_MATRIX_INPUT stream=1 prompt=[2, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 2, 3, 2, 3] prefix=[2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31] batch=3 prime_permission=false
+FALLBACK_MATRIX_INPUT stream=2 prompt=[2, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 2, 3, 2, 3, 5] prefix=[] batch=3 prime_permission=false
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-reference-seed.f32 bytes=4096 sha256=4e4d908a2d2a8af041357c38f200f5fb427b82e23218e6167dc8984c2f32e8e8
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-ordinary-seed.f32 bytes=4096 sha256=4e4d908a2d2a8af041357c38f200f5fb427b82e23218e6167dc8984c2f32e8e8
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-candidate-seed.f32 bytes=4096 sha256=4e4d908a2d2a8af041357c38f200f5fb427b82e23218e6167dc8984c2f32e8e8
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-reference-hiddens.f32 bytes=61440 sha256=2a53c03f5c8d64789a952e27650d3995c48ee44160b32845dd8f401efaf43550
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-ordinary-hiddens.f32 bytes=61440 sha256=2a53c03f5c8d64789a952e27650d3995c48ee44160b32845dd8f401efaf43550
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-candidate-hiddens.f32 bytes=61440 sha256=2a53c03f5c8d64789a952e27650d3995c48ee44160b32845dd8f401efaf43550
+FALLBACK_PARITY label=stream0-ordinary-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-ordinary-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-reference-0.f32 bytes=607744 sha256=6636e2e373f6f37394793a038dfe0d7edffbba8ccfd5073dcdabd48c2749080c
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-ordinary-0.f32 bytes=607744 sha256=6636e2e373f6f37394793a038dfe0d7edffbba8ccfd5073dcdabd48c2749080c
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-candidate-0.f32 bytes=607744 sha256=6636e2e373f6f37394793a038dfe0d7edffbba8ccfd5073dcdabd48c2749080c
+FALLBACK_PARITY label=stream0-ordinary-0 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-0 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-reference-1.f32 bytes=607744 sha256=83c4d22fd989661efad742ec44458b01f6a784f2b8c719d021f37b6c3018c455
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-ordinary-1.f32 bytes=607744 sha256=83c4d22fd989661efad742ec44458b01f6a784f2b8c719d021f37b6c3018c455
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-candidate-1.f32 bytes=607744 sha256=83c4d22fd989661efad742ec44458b01f6a784f2b8c719d021f37b6c3018c455
+FALLBACK_PARITY label=stream0-ordinary-1 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-1 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-reference-2.f32 bytes=607744 sha256=64f3eb57ca7e5a6bbb2a353995f94b3bcbd30e6afc39f55b5d85430dbc5bef87
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-ordinary-2.f32 bytes=607744 sha256=64f3eb57ca7e5a6bbb2a353995f94b3bcbd30e6afc39f55b5d85430dbc5bef87
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-candidate-2.f32 bytes=607744 sha256=64f3eb57ca7e5a6bbb2a353995f94b3bcbd30e6afc39f55b5d85430dbc5bef87
+FALLBACK_PARITY label=stream0-ordinary-2 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-2 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-reference-3.f32 bytes=607744 sha256=8dfdd4b0b0e44f7b32de0a1e096897c5044328e4d8394a3d4e9fa8bbd2652bde
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-ordinary-3.f32 bytes=607744 sha256=8dfdd4b0b0e44f7b32de0a1e096897c5044328e4d8394a3d4e9fa8bbd2652bde
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-candidate-3.f32 bytes=607744 sha256=8dfdd4b0b0e44f7b32de0a1e096897c5044328e4d8394a3d4e9fa8bbd2652bde
+FALLBACK_PARITY label=stream0-ordinary-3 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-3 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-reference-4.f32 bytes=607744 sha256=3bbe03af951416238a053a7086ce907e994af2e9b6600e8eb1d705f161d91f0b
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-ordinary-4.f32 bytes=607744 sha256=3bbe03af951416238a053a7086ce907e994af2e9b6600e8eb1d705f161d91f0b
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-candidate-4.f32 bytes=607744 sha256=3bbe03af951416238a053a7086ce907e994af2e9b6600e8eb1d705f161d91f0b
+FALLBACK_PARITY label=stream0-ordinary-4 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-4 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-reference.u32 bytes=20 sha256=8f99725431042fe0e10307c4dcbc565f0bb905bacf74ec55098554e168af15ca
+TOKENS stream0-reference [5, 3, 2, 5, 3]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-ordinary.u32 bytes=20 sha256=8f99725431042fe0e10307c4dcbc565f0bb905bacf74ec55098554e168af15ca
+TOKENS stream0-ordinary [5, 3, 2, 5, 3]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream0-candidate.u32 bytes=20 sha256=8f99725431042fe0e10307c4dcbc565f0bb905bacf74ec55098554e168af15ca
+TOKENS stream0-candidate [5, 3, 2, 5, 3]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-reference-seed.f32 bytes=4096 sha256=f68a301ad63e7dae3583d066d0ac616fa57edc493deeafce1dcee5bf3dd9395e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-ordinary-seed.f32 bytes=4096 sha256=f68a301ad63e7dae3583d066d0ac616fa57edc493deeafce1dcee5bf3dd9395e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-candidate-seed.f32 bytes=4096 sha256=f68a301ad63e7dae3583d066d0ac616fa57edc493deeafce1dcee5bf3dd9395e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-reference-hiddens.f32 bytes=65536 sha256=f3f4b9594681eeb9904975307afbe6e49c0078aefb5daf5ad0d44bb919d8bb34
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-ordinary-hiddens.f32 bytes=65536 sha256=f3f4b9594681eeb9904975307afbe6e49c0078aefb5daf5ad0d44bb919d8bb34
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-candidate-hiddens.f32 bytes=65536 sha256=f3f4b9594681eeb9904975307afbe6e49c0078aefb5daf5ad0d44bb919d8bb34
+FALLBACK_PARITY label=stream1-ordinary-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream1-candidate-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream1-ordinary-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=9251 candidate_argmax=9251 first_violation=None
+FALLBACK_PARITY label=stream1-candidate-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=9251 candidate_argmax=9251 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-reference-0.f32 bytes=607744 sha256=83a5b19a06fa6fb1e85e2b89f85962e58945ce1f5eec0977cabd1ffbea5165af
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-ordinary-0.f32 bytes=607744 sha256=83a5b19a06fa6fb1e85e2b89f85962e58945ce1f5eec0977cabd1ffbea5165af
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-candidate-0.f32 bytes=607744 sha256=83a5b19a06fa6fb1e85e2b89f85962e58945ce1f5eec0977cabd1ffbea5165af
+FALLBACK_PARITY label=stream1-ordinary-0 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+FALLBACK_PARITY label=stream1-candidate-0 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-reference-1.f32 bytes=607744 sha256=cbe6782fbfc35ca0ee8774bd7d0f860d542082818506dc2b778e234cd01002df
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-ordinary-1.f32 bytes=607744 sha256=cbe6782fbfc35ca0ee8774bd7d0f860d542082818506dc2b778e234cd01002df
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-candidate-1.f32 bytes=607744 sha256=cbe6782fbfc35ca0ee8774bd7d0f860d542082818506dc2b778e234cd01002df
+FALLBACK_PARITY label=stream1-ordinary-1 passed=true max_abs=0 max_rel=0 reference_argmax=7 candidate_argmax=7 first_violation=None
+FALLBACK_PARITY label=stream1-candidate-1 passed=true max_abs=0 max_rel=0 reference_argmax=7 candidate_argmax=7 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-reference-2.f32 bytes=607744 sha256=a648881e6fb08813b1ed923d3ec0bbf2ddc8c3990878e6b5fe6db8d5d6d5f646
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-ordinary-2.f32 bytes=607744 sha256=a648881e6fb08813b1ed923d3ec0bbf2ddc8c3990878e6b5fe6db8d5d6d5f646
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-candidate-2.f32 bytes=607744 sha256=a648881e6fb08813b1ed923d3ec0bbf2ddc8c3990878e6b5fe6db8d5d6d5f646
+FALLBACK_PARITY label=stream1-ordinary-2 passed=true max_abs=0 max_rel=0 reference_argmax=11 candidate_argmax=11 first_violation=None
+FALLBACK_PARITY label=stream1-candidate-2 passed=true max_abs=0 max_rel=0 reference_argmax=11 candidate_argmax=11 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-reference-3.f32 bytes=607744 sha256=da1c9dbc8ddd5361b8ff954273f4c2f1a34fbf84876b2732c48a0564663f2a56
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-ordinary-3.f32 bytes=607744 sha256=da1c9dbc8ddd5361b8ff954273f4c2f1a34fbf84876b2732c48a0564663f2a56
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-candidate-3.f32 bytes=607744 sha256=da1c9dbc8ddd5361b8ff954273f4c2f1a34fbf84876b2732c48a0564663f2a56
+FALLBACK_PARITY label=stream1-ordinary-3 passed=true max_abs=0 max_rel=0 reference_argmax=17 candidate_argmax=17 first_violation=None
+FALLBACK_PARITY label=stream1-candidate-3 passed=true max_abs=0 max_rel=0 reference_argmax=17 candidate_argmax=17 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-reference-4.f32 bytes=607744 sha256=72c0d9700ca7769209845303170c256aee2ac81161c2d1b7a47771c08b0a6aba
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-ordinary-4.f32 bytes=607744 sha256=72c0d9700ca7769209845303170c256aee2ac81161c2d1b7a47771c08b0a6aba
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-candidate-4.f32 bytes=607744 sha256=72c0d9700ca7769209845303170c256aee2ac81161c2d1b7a47771c08b0a6aba
+FALLBACK_PARITY label=stream1-ordinary-4 passed=true max_abs=0 max_rel=0 reference_argmax=19 candidate_argmax=19 first_violation=None
+FALLBACK_PARITY label=stream1-candidate-4 passed=true max_abs=0 max_rel=0 reference_argmax=19 candidate_argmax=19 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-reference.u32 bytes=20 sha256=1af4a191bb6ad00a0a291b3d9d98f24b630e14b96ca1e898ef38333771ffdb4e
+TOKENS stream1-reference [5, 7, 11, 17, 19]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-ordinary.u32 bytes=20 sha256=1af4a191bb6ad00a0a291b3d9d98f24b630e14b96ca1e898ef38333771ffdb4e
+TOKENS stream1-ordinary [5, 7, 11, 17, 19]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream1-candidate.u32 bytes=20 sha256=1af4a191bb6ad00a0a291b3d9d98f24b630e14b96ca1e898ef38333771ffdb4e
+TOKENS stream1-candidate [5, 7, 11, 17, 19]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-reference-seed.f32 bytes=4096 sha256=2a7ea33f2c711cd1bb2a3c5bb2a6c342c1811833c6ae9a49fe2af0136c44d952
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-ordinary-seed.f32 bytes=4096 sha256=2a7ea33f2c711cd1bb2a3c5bb2a6c342c1811833c6ae9a49fe2af0136c44d952
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-candidate-seed.f32 bytes=4096 sha256=2a7ea33f2c711cd1bb2a3c5bb2a6c342c1811833c6ae9a49fe2af0136c44d952
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-reference-hiddens.f32 bytes=69632 sha256=b76afe4b8798bc6417aa398299088fb257887d583b6cf7df8264ad827c072085
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-ordinary-hiddens.f32 bytes=69632 sha256=b76afe4b8798bc6417aa398299088fb257887d583b6cf7df8264ad827c072085
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-candidate-hiddens.f32 bytes=69632 sha256=b76afe4b8798bc6417aa398299088fb257887d583b6cf7df8264ad827c072085
+FALLBACK_PARITY label=stream2-ordinary-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream2-candidate-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream2-ordinary-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream2-candidate-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-reference-0.f32 bytes=607744 sha256=50d8f8d13d8565758b67849fcce9ad8e3b7465a46745960686133b275c61c142
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-ordinary-0.f32 bytes=607744 sha256=50d8f8d13d8565758b67849fcce9ad8e3b7465a46745960686133b275c61c142
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-candidate-0.f32 bytes=607744 sha256=50d8f8d13d8565758b67849fcce9ad8e3b7465a46745960686133b275c61c142
+FALLBACK_PARITY label=stream2-ordinary-0 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=stream2-candidate-0 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-reference-1.f32 bytes=607744 sha256=d77f54659786f7b60b151f0dd574d82d90a94cf3349da4acdbf36a522e54d5c8
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-ordinary-1.f32 bytes=607744 sha256=d77f54659786f7b60b151f0dd574d82d90a94cf3349da4acdbf36a522e54d5c8
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-candidate-1.f32 bytes=607744 sha256=d77f54659786f7b60b151f0dd574d82d90a94cf3349da4acdbf36a522e54d5c8
+FALLBACK_PARITY label=stream2-ordinary-1 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+FALLBACK_PARITY label=stream2-candidate-1 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-reference-2.f32 bytes=607744 sha256=15d20b734cee9552a66f0e2002bf31cff4789376e644c0d180b9f9ae1c115c6e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-ordinary-2.f32 bytes=607744 sha256=15d20b734cee9552a66f0e2002bf31cff4789376e644c0d180b9f9ae1c115c6e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-candidate-2.f32 bytes=607744 sha256=15d20b734cee9552a66f0e2002bf31cff4789376e644c0d180b9f9ae1c115c6e
+FALLBACK_PARITY label=stream2-ordinary-2 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=stream2-candidate-2 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-reference-3.f32 bytes=607744 sha256=59b4855be057ccd7ec44eb8c7c1b73116b47b4135e3dfa65739e47baa5bd2836
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-ordinary-3.f32 bytes=607744 sha256=59b4855be057ccd7ec44eb8c7c1b73116b47b4135e3dfa65739e47baa5bd2836
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-candidate-3.f32 bytes=607744 sha256=59b4855be057ccd7ec44eb8c7c1b73116b47b4135e3dfa65739e47baa5bd2836
+FALLBACK_PARITY label=stream2-ordinary-3 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+FALLBACK_PARITY label=stream2-candidate-3 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-reference-4.f32 bytes=607744 sha256=2be43472b0813b0145e2fd8bb99a0681059b72e0746a490bfc5d0e087c91b88e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-ordinary-4.f32 bytes=607744 sha256=2be43472b0813b0145e2fd8bb99a0681059b72e0746a490bfc5d0e087c91b88e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-candidate-4.f32 bytes=607744 sha256=2be43472b0813b0145e2fd8bb99a0681059b72e0746a490bfc5d0e087c91b88e
+FALLBACK_PARITY label=stream2-ordinary-4 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=stream2-candidate-4 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-reference.u32 bytes=20 sha256=cc75fd55812ff03c72c4fa05ad167be2ba012f8695db1b7f25a93da72404a628
+TOKENS stream2-reference [3, 2, 3, 5, 3]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-ordinary.u32 bytes=20 sha256=cc75fd55812ff03c72c4fa05ad167be2ba012f8695db1b7f25a93da72404a628
+TOKENS stream2-ordinary [3, 2, 3, 5, 3]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-15-16-17/stream2-candidate.u32 bytes=20 sha256=cc75fd55812ff03c72c4fa05ad167be2ba012f8695db1b7f25a93da72404a628
+TOKENS stream2-candidate [3, 2, 3, 5, 3]
+FALLBACK_MATRIX_CASE_PASS batch=3 continuation_steps=4
+FALLBACK_MATRIX_CASE_BEGIN batch-17-16-15
+FALLBACK_MATRIX_INPUT stream=0 prompt=[2, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 2, 3, 2, 3, 5] prefix=[] batch=3 prime_permission=false
+FALLBACK_MATRIX_INPUT stream=1 prompt=[2, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 2, 3, 2, 3] prefix=[2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31] batch=3 prime_permission=false
+FALLBACK_MATRIX_INPUT stream=2 prompt=[2, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 2, 3, 2] prefix=[] batch=3 prime_permission=false
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-reference-seed.f32 bytes=4096 sha256=2a7ea33f2c711cd1bb2a3c5bb2a6c342c1811833c6ae9a49fe2af0136c44d952
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-ordinary-seed.f32 bytes=4096 sha256=2a7ea33f2c711cd1bb2a3c5bb2a6c342c1811833c6ae9a49fe2af0136c44d952
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-candidate-seed.f32 bytes=4096 sha256=2a7ea33f2c711cd1bb2a3c5bb2a6c342c1811833c6ae9a49fe2af0136c44d952
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-reference-hiddens.f32 bytes=69632 sha256=b76afe4b8798bc6417aa398299088fb257887d583b6cf7df8264ad827c072085
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-ordinary-hiddens.f32 bytes=69632 sha256=b76afe4b8798bc6417aa398299088fb257887d583b6cf7df8264ad827c072085
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-candidate-hiddens.f32 bytes=69632 sha256=b76afe4b8798bc6417aa398299088fb257887d583b6cf7df8264ad827c072085
+FALLBACK_PARITY label=stream0-ordinary-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-ordinary-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-reference-0.f32 bytes=607744 sha256=50d8f8d13d8565758b67849fcce9ad8e3b7465a46745960686133b275c61c142
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-ordinary-0.f32 bytes=607744 sha256=50d8f8d13d8565758b67849fcce9ad8e3b7465a46745960686133b275c61c142
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-candidate-0.f32 bytes=607744 sha256=50d8f8d13d8565758b67849fcce9ad8e3b7465a46745960686133b275c61c142
+FALLBACK_PARITY label=stream0-ordinary-0 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-0 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-reference-1.f32 bytes=607744 sha256=d77f54659786f7b60b151f0dd574d82d90a94cf3349da4acdbf36a522e54d5c8
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-ordinary-1.f32 bytes=607744 sha256=d77f54659786f7b60b151f0dd574d82d90a94cf3349da4acdbf36a522e54d5c8
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-candidate-1.f32 bytes=607744 sha256=d77f54659786f7b60b151f0dd574d82d90a94cf3349da4acdbf36a522e54d5c8
+FALLBACK_PARITY label=stream0-ordinary-1 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-1 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-reference-2.f32 bytes=607744 sha256=15d20b734cee9552a66f0e2002bf31cff4789376e644c0d180b9f9ae1c115c6e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-ordinary-2.f32 bytes=607744 sha256=15d20b734cee9552a66f0e2002bf31cff4789376e644c0d180b9f9ae1c115c6e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-candidate-2.f32 bytes=607744 sha256=15d20b734cee9552a66f0e2002bf31cff4789376e644c0d180b9f9ae1c115c6e
+FALLBACK_PARITY label=stream0-ordinary-2 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-2 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-reference-3.f32 bytes=607744 sha256=59b4855be057ccd7ec44eb8c7c1b73116b47b4135e3dfa65739e47baa5bd2836
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-ordinary-3.f32 bytes=607744 sha256=59b4855be057ccd7ec44eb8c7c1b73116b47b4135e3dfa65739e47baa5bd2836
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-candidate-3.f32 bytes=607744 sha256=59b4855be057ccd7ec44eb8c7c1b73116b47b4135e3dfa65739e47baa5bd2836
+FALLBACK_PARITY label=stream0-ordinary-3 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-3 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-reference-4.f32 bytes=607744 sha256=2be43472b0813b0145e2fd8bb99a0681059b72e0746a490bfc5d0e087c91b88e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-ordinary-4.f32 bytes=607744 sha256=2be43472b0813b0145e2fd8bb99a0681059b72e0746a490bfc5d0e087c91b88e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-candidate-4.f32 bytes=607744 sha256=2be43472b0813b0145e2fd8bb99a0681059b72e0746a490bfc5d0e087c91b88e
+FALLBACK_PARITY label=stream0-ordinary-4 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=stream0-candidate-4 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-reference.u32 bytes=20 sha256=cc75fd55812ff03c72c4fa05ad167be2ba012f8695db1b7f25a93da72404a628
+TOKENS stream0-reference [3, 2, 3, 5, 3]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-ordinary.u32 bytes=20 sha256=cc75fd55812ff03c72c4fa05ad167be2ba012f8695db1b7f25a93da72404a628
+TOKENS stream0-ordinary [3, 2, 3, 5, 3]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream0-candidate.u32 bytes=20 sha256=cc75fd55812ff03c72c4fa05ad167be2ba012f8695db1b7f25a93da72404a628
+TOKENS stream0-candidate [3, 2, 3, 5, 3]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-reference-seed.f32 bytes=4096 sha256=f68a301ad63e7dae3583d066d0ac616fa57edc493deeafce1dcee5bf3dd9395e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-ordinary-seed.f32 bytes=4096 sha256=f68a301ad63e7dae3583d066d0ac616fa57edc493deeafce1dcee5bf3dd9395e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-candidate-seed.f32 bytes=4096 sha256=f68a301ad63e7dae3583d066d0ac616fa57edc493deeafce1dcee5bf3dd9395e
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-reference-hiddens.f32 bytes=65536 sha256=f3f4b9594681eeb9904975307afbe6e49c0078aefb5daf5ad0d44bb919d8bb34
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-ordinary-hiddens.f32 bytes=65536 sha256=f3f4b9594681eeb9904975307afbe6e49c0078aefb5daf5ad0d44bb919d8bb34
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-candidate-hiddens.f32 bytes=65536 sha256=f3f4b9594681eeb9904975307afbe6e49c0078aefb5daf5ad0d44bb919d8bb34
+FALLBACK_PARITY label=stream1-ordinary-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream1-candidate-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream1-ordinary-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=9251 candidate_argmax=9251 first_violation=None
+FALLBACK_PARITY label=stream1-candidate-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=9251 candidate_argmax=9251 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-reference-0.f32 bytes=607744 sha256=83a5b19a06fa6fb1e85e2b89f85962e58945ce1f5eec0977cabd1ffbea5165af
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-ordinary-0.f32 bytes=607744 sha256=83a5b19a06fa6fb1e85e2b89f85962e58945ce1f5eec0977cabd1ffbea5165af
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-candidate-0.f32 bytes=607744 sha256=83a5b19a06fa6fb1e85e2b89f85962e58945ce1f5eec0977cabd1ffbea5165af
+FALLBACK_PARITY label=stream1-ordinary-0 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+FALLBACK_PARITY label=stream1-candidate-0 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-reference-1.f32 bytes=607744 sha256=cbe6782fbfc35ca0ee8774bd7d0f860d542082818506dc2b778e234cd01002df
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-ordinary-1.f32 bytes=607744 sha256=cbe6782fbfc35ca0ee8774bd7d0f860d542082818506dc2b778e234cd01002df
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-candidate-1.f32 bytes=607744 sha256=cbe6782fbfc35ca0ee8774bd7d0f860d542082818506dc2b778e234cd01002df
+FALLBACK_PARITY label=stream1-ordinary-1 passed=true max_abs=0 max_rel=0 reference_argmax=7 candidate_argmax=7 first_violation=None
+FALLBACK_PARITY label=stream1-candidate-1 passed=true max_abs=0 max_rel=0 reference_argmax=7 candidate_argmax=7 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-reference-2.f32 bytes=607744 sha256=a648881e6fb08813b1ed923d3ec0bbf2ddc8c3990878e6b5fe6db8d5d6d5f646
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-ordinary-2.f32 bytes=607744 sha256=a648881e6fb08813b1ed923d3ec0bbf2ddc8c3990878e6b5fe6db8d5d6d5f646
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-candidate-2.f32 bytes=607744 sha256=a648881e6fb08813b1ed923d3ec0bbf2ddc8c3990878e6b5fe6db8d5d6d5f646
+FALLBACK_PARITY label=stream1-ordinary-2 passed=true max_abs=0 max_rel=0 reference_argmax=11 candidate_argmax=11 first_violation=None
+FALLBACK_PARITY label=stream1-candidate-2 passed=true max_abs=0 max_rel=0 reference_argmax=11 candidate_argmax=11 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-reference-3.f32 bytes=607744 sha256=da1c9dbc8ddd5361b8ff954273f4c2f1a34fbf84876b2732c48a0564663f2a56
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-ordinary-3.f32 bytes=607744 sha256=da1c9dbc8ddd5361b8ff954273f4c2f1a34fbf84876b2732c48a0564663f2a56
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-candidate-3.f32 bytes=607744 sha256=da1c9dbc8ddd5361b8ff954273f4c2f1a34fbf84876b2732c48a0564663f2a56
+FALLBACK_PARITY label=stream1-ordinary-3 passed=true max_abs=0 max_rel=0 reference_argmax=17 candidate_argmax=17 first_violation=None
+FALLBACK_PARITY label=stream1-candidate-3 passed=true max_abs=0 max_rel=0 reference_argmax=17 candidate_argmax=17 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-reference-4.f32 bytes=607744 sha256=72c0d9700ca7769209845303170c256aee2ac81161c2d1b7a47771c08b0a6aba
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-ordinary-4.f32 bytes=607744 sha256=72c0d9700ca7769209845303170c256aee2ac81161c2d1b7a47771c08b0a6aba
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-candidate-4.f32 bytes=607744 sha256=72c0d9700ca7769209845303170c256aee2ac81161c2d1b7a47771c08b0a6aba
+FALLBACK_PARITY label=stream1-ordinary-4 passed=true max_abs=0 max_rel=0 reference_argmax=19 candidate_argmax=19 first_violation=None
+FALLBACK_PARITY label=stream1-candidate-4 passed=true max_abs=0 max_rel=0 reference_argmax=19 candidate_argmax=19 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-reference.u32 bytes=20 sha256=1af4a191bb6ad00a0a291b3d9d98f24b630e14b96ca1e898ef38333771ffdb4e
+TOKENS stream1-reference [5, 7, 11, 17, 19]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-ordinary.u32 bytes=20 sha256=1af4a191bb6ad00a0a291b3d9d98f24b630e14b96ca1e898ef38333771ffdb4e
+TOKENS stream1-ordinary [5, 7, 11, 17, 19]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream1-candidate.u32 bytes=20 sha256=1af4a191bb6ad00a0a291b3d9d98f24b630e14b96ca1e898ef38333771ffdb4e
+TOKENS stream1-candidate [5, 7, 11, 17, 19]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-reference-seed.f32 bytes=4096 sha256=4e4d908a2d2a8af041357c38f200f5fb427b82e23218e6167dc8984c2f32e8e8
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-ordinary-seed.f32 bytes=4096 sha256=4e4d908a2d2a8af041357c38f200f5fb427b82e23218e6167dc8984c2f32e8e8
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-candidate-seed.f32 bytes=4096 sha256=4e4d908a2d2a8af041357c38f200f5fb427b82e23218e6167dc8984c2f32e8e8
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-reference-hiddens.f32 bytes=61440 sha256=2a53c03f5c8d64789a952e27650d3995c48ee44160b32845dd8f401efaf43550
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-ordinary-hiddens.f32 bytes=61440 sha256=2a53c03f5c8d64789a952e27650d3995c48ee44160b32845dd8f401efaf43550
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-candidate-hiddens.f32 bytes=61440 sha256=2a53c03f5c8d64789a952e27650d3995c48ee44160b32845dd8f401efaf43550
+FALLBACK_PARITY label=stream2-ordinary-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream2-candidate-seed passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream2-ordinary-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+FALLBACK_PARITY label=stream2-candidate-hiddens passed=true max_abs=0 max_rel=0 reference_argmax=35 candidate_argmax=35 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-reference-0.f32 bytes=607744 sha256=6636e2e373f6f37394793a038dfe0d7edffbba8ccfd5073dcdabd48c2749080c
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-ordinary-0.f32 bytes=607744 sha256=6636e2e373f6f37394793a038dfe0d7edffbba8ccfd5073dcdabd48c2749080c
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-candidate-0.f32 bytes=607744 sha256=6636e2e373f6f37394793a038dfe0d7edffbba8ccfd5073dcdabd48c2749080c
+FALLBACK_PARITY label=stream2-ordinary-0 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+FALLBACK_PARITY label=stream2-candidate-0 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-reference-1.f32 bytes=607744 sha256=83c4d22fd989661efad742ec44458b01f6a784f2b8c719d021f37b6c3018c455
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-ordinary-1.f32 bytes=607744 sha256=83c4d22fd989661efad742ec44458b01f6a784f2b8c719d021f37b6c3018c455
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-candidate-1.f32 bytes=607744 sha256=83c4d22fd989661efad742ec44458b01f6a784f2b8c719d021f37b6c3018c455
+FALLBACK_PARITY label=stream2-ordinary-1 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=stream2-candidate-1 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-reference-2.f32 bytes=607744 sha256=64f3eb57ca7e5a6bbb2a353995f94b3bcbd30e6afc39f55b5d85430dbc5bef87
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-ordinary-2.f32 bytes=607744 sha256=64f3eb57ca7e5a6bbb2a353995f94b3bcbd30e6afc39f55b5d85430dbc5bef87
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-candidate-2.f32 bytes=607744 sha256=64f3eb57ca7e5a6bbb2a353995f94b3bcbd30e6afc39f55b5d85430dbc5bef87
+FALLBACK_PARITY label=stream2-ordinary-2 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+FALLBACK_PARITY label=stream2-candidate-2 passed=true max_abs=0 max_rel=0 reference_argmax=2 candidate_argmax=2 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-reference-3.f32 bytes=607744 sha256=8dfdd4b0b0e44f7b32de0a1e096897c5044328e4d8394a3d4e9fa8bbd2652bde
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-ordinary-3.f32 bytes=607744 sha256=8dfdd4b0b0e44f7b32de0a1e096897c5044328e4d8394a3d4e9fa8bbd2652bde
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-candidate-3.f32 bytes=607744 sha256=8dfdd4b0b0e44f7b32de0a1e096897c5044328e4d8394a3d4e9fa8bbd2652bde
+FALLBACK_PARITY label=stream2-ordinary-3 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+FALLBACK_PARITY label=stream2-candidate-3 passed=true max_abs=0 max_rel=0 reference_argmax=5 candidate_argmax=5 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-reference-4.f32 bytes=607744 sha256=3bbe03af951416238a053a7086ce907e994af2e9b6600e8eb1d705f161d91f0b
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-ordinary-4.f32 bytes=607744 sha256=3bbe03af951416238a053a7086ce907e994af2e9b6600e8eb1d705f161d91f0b
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-candidate-4.f32 bytes=607744 sha256=3bbe03af951416238a053a7086ce907e994af2e9b6600e8eb1d705f161d91f0b
+FALLBACK_PARITY label=stream2-ordinary-4 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+FALLBACK_PARITY label=stream2-candidate-4 passed=true max_abs=0 max_rel=0 reference_argmax=3 candidate_argmax=3 first_violation=None
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-reference.u32 bytes=20 sha256=8f99725431042fe0e10307c4dcbc565f0bb905bacf74ec55098554e168af15ca
+TOKENS stream2-reference [5, 3, 2, 5, 3]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-ordinary.u32 bytes=20 sha256=8f99725431042fe0e10307c4dcbc565f0bb905bacf74ec55098554e168af15ca
+TOKENS stream2-ordinary [5, 3, 2, 5, 3]
+RAW file=/data/receipts/issue-542-33144df6-supported-callers-attempt-001/retained-eg-bundle/retained-eg-prime-fallback-2683978/batch-17-16-15/stream2-candidate.u32 bytes=20 sha256=8f99725431042fe0e10307c4dcbc565f0bb905bacf74ec55098554e168af15ca
+TOKENS stream2-candidate [5, 3, 2, 5, 3]
+FALLBACK_MATRIX_CASE_PASS batch=3 continuation_steps=4
+EAGER_PRIME_FALLBACK_PASS lengths=15,16,17 batches=1,3 fresh_and_carried=true continuation_steps=4 carried_prime_qualified=false receipt_emitted=false

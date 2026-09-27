@@ -219,7 +219,7 @@ fn load_site(
     ] {
         // The ggml spellings `add_hyper_connections` (memra-gguf tensor_contract) emits.
         let name = format!("blk.{il}.{site}_{suffix}");
-        if !src.has(&name) {
+        if !src.try_has(&name)? {
             return Err(format!(
                 "{name} is absent, but the compiled ModelPlan declares \
                  ResidualTopology::HyperConnections{{ streams: {} }} for layer {il}. Refusing to \
@@ -276,7 +276,7 @@ impl HyperHead {
             ("hc_head_base", streams),
             ("hc_head_scale", 1),
         ] {
-            if !src.has(name) {
+            if !src.try_has(name)? {
                 return Err(format!(
                     "{name} is absent, but the compiled ModelPlan declares \
                      HcCollapse::GatedHead. Refusing to load: collapsing with an unweighted mean \

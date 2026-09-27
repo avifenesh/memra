@@ -1,0 +1,12 @@
+SCOPE native-program-admission-only support_promotion=false performance=not-measured mode=check artifact_lock_sha256=3d91ccb45bd39b446bb995630b628ba96e92a65c36bebbee519be647f8ce3be3
+[q8rp] split-plane decode mirrors built: 196 tensors
+LOADED artifact_sha256=6d4312dcfb019825ba279b31df909865454da0390634446b1b861f84254b2f37 implementation_sha256=c5b12e6f468bae01a230c8aeb8b093cbdf193f5cb009ccec16981f76d866c6dd numeric_program_sha256=b3903443c7c3ad02aa62f8af17b972d954b55dcf8f299b2bb603fdcf93041ea6
+POLICY family=qwen3 atol=0.005 rtol=0.005 require_argmax=true
+GRAPH_REFUSAL_PASS: decode-graph rewrite is not qualified for the current loaded runtime identity
+FRESH_KV_REFUSAL_PASS: quantized-cache eager receipt cannot authorize forward/forward_last
+[fa-pool] grow #0 dev=0 o_len 0 -> 2048 ml_len 0 -> 16 (retired kept, zero=false)
+OUTPUT stage=check-eager prompt=0 tokens=[1, 2, 3, 4] values=151936 argmax=3 file=/data/receipts/issue-542-33144df6-baseline-attempt-001/bundle/outputs/check-eager-2216511-prompt-0.f32 sha256=a1a60e5a6d7587b2338fcbce3a980ed27efa56a8606d62d7b08226237fd363ad
+OUTPUT stage=check-eager prompt=1 tokens=[7, 11, 19, 5, 3, 17, 2, 13] values=151936 argmax=19 file=/data/receipts/issue-542-33144df6-baseline-attempt-001/bundle/outputs/check-eager-2216511-prompt-1.f32 sha256=3a197dfe63d6c4faf70fdf3ad1cefea19df31340b65c6a9071fe9b131d4bc83c
+OUTPUT stage=check-eager prompt=2 tokens=[2, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 2, 3, 2, 3] values=151936 argmax=2 file=/data/receipts/issue-542-33144df6-baseline-attempt-001/bundle/outputs/check-eager-2216511-prompt-2.f32 sha256=f8e8a9f8b129dd4de07579c48ea8c653671e511f2fcf2b8805ee07f14c736cdd
+MODEL_MUTATION_REVOCATION_PASS
+REWRITE_IDENTITY_GATE_PASS mode=check scope=native-program-admission-only support_promotion=false

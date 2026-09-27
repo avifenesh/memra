@@ -1,0 +1,14 @@
+    Checking memra-kv v0.138.0 (/Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-kv)
+   Compiling memra-engine v0.138.0 (/Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-engine)
+error: method `matches_snapshot` is never used
+   --> crates/memra-engine/src/plan_backend/runtime_identity.rs:109:19
+    |
+108 | impl RewriteLoadState {
+    | --------------------- method in this implementation
+109 |     pub(crate) fn matches_snapshot(
+    |                   ^^^^^^^^^^^^^^^^
+    |
+    = note: `-D dead-code` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[expect(dead_code)]` or `#[allow(dead_code)]`
+
+error: could not compile `memra-engine` (lib) due to 1 previous error

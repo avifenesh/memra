@@ -1,0 +1,28 @@
+warning: unused import: `std::os::fd::AsRawFd`
+  --> crates/memra-gguf/src/source.rs:21:5
+   |
+21 | use std::os::fd::AsRawFd;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `memra-gguf` (lib) generated 1 warning (run `cargo fix --lib -p memra-gguf` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/lib.rs (target/debug/deps/performance_557_rereview_host-3694f41f01b8ec5d)
+
+running 1 test
+test drift_repro::retained_qualified_scope_must_refuse_later_environment_drift ... drift_visible=true boundary_calls=1 retained_reentry=true still_qualified=true graph_allowed=true
+
+thread 'drift_repro::retained_qualified_scope_must_refuse_later_environment_drift' (21623176) panicked at host-harness/src/drift_repro.rs:57:5:
+retained qualified token path admitted after tracked numerical-environment drift without boundary validation
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    drift_repro::retained_qualified_scope_must_refuse_later_environment_drift
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p performance-557-rereview-host --lib`

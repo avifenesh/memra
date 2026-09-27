@@ -113,6 +113,7 @@ impl WhisperDecoder {
                     return Err(format!("decoder source tensor {name} must be F32"));
                 }
                 Ok(TensorCensusEntry {
+                    auxiliaries: Vec::new(),
                     name: name.clone(),
                     shape: info.shape.clone(),
                     storage: StorageLayout::Float(FloatType::F32),

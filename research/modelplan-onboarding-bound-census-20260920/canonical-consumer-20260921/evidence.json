@@ -1,0 +1,104 @@
+{
+  "base_commit": "853099a12231bd1bd4b4a9e65afee66a3fd86360",
+  "source_sha256": {
+    "crates/memra-engine/src/model.rs": "70d40513c5fabfd77bc1c27d622205f393ed819639aac70b465b51a2a386db9f",
+    "crates/memra-engine/src/model/repack.rs": "610ea1c0565c3a94183da2a38cac8f538bdb114a121097928f0493a3849adce9",
+    "crates/memra-engine/src/model/repack/tests.rs": "5ceff07d16f3f508214fa085ff9e0463db480baca82a927f6e3e54a8a09ad90d",
+    "crates/memra-gguf/src/bound_disk.rs": "fbeff4afef3de4fa38e25afe18ac9125f23254cc1241d632967ae02fc2d1d7b6",
+    "crates/memra-gguf/src/bound_source/runtime.rs": "9cf7b116c10506800f74b013e63ddefae0287f76645adde13c8ff67a5afffcb3",
+    "crates/memra-gguf/src/source.rs": "499cd40465ea10141763d135dd4012dc084ff85bf82045784b3473d0a233cd5b"
+  },
+  "source_review": "pass",
+  "source_GO": true,
+  "native_execution": false,
+  "root_adoption": false,
+  "raw": {
+    "raw/541-canonical-consumer-frozen-host.log.gz": {
+      "sha256": "159637c54084dbd1fe72dc4552d00ed979d01bf60158043e8be27a69bd6ca235",
+      "uncompressed_sha256": "243ffd9fcca8ee6765f76f179dd7d4e27f355ead384dc047b2130596a5928bda",
+      "uncompressed_bytes": 1214
+    },
+    "raw/541-canonical-consumer-frozen-gguf.log.gz": {
+      "sha256": "59febeb48a00a94749b08c22166c2043ba5dd4d31fa948e7056ce2c4099f3217",
+      "uncompressed_sha256": "c09738d1cb349fa012e9b99519145f0540f1d4ed13b22c9039953c8ef1bce9a2",
+      "uncompressed_bytes": 36761
+    },
+    "raw/541-canonical-consumer-frozen-clippy.log.gz": {
+      "sha256": "1bb2d56374ca94a59eda367e6e43301b42f6c2c67c56a378f0eaf92ec0924698",
+      "uncompressed_sha256": "bde84118e0c9b1659f37671beb62202b23cac64fa7657d41caa98d1877ca6d0e",
+      "uncompressed_bytes": 789
+    },
+    "raw/541-canonical-consumer-frozen-format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/541-canonical-consumer-frozen-diff.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    }
+  },
+  "harness": {
+    "harness/Cargo.toml.gz": {
+      "sha256": "e8048bc99c04c18e7edf23ca736245b6a655ebf8e01a70aceb85322a4d667fd8",
+      "uncompressed_sha256": "4ec806dcf2c50d54f7c2435e45ab6489dd1c18e923e652ee50e59e3fc6847c69",
+      "uncompressed_bytes": 230
+    },
+    "harness/Cargo.lock.gz": {
+      "sha256": "0dd2ea2733894dba4edf51e77565c62bdf86d0d88632ecab6ae36645be047e00",
+      "uncompressed_sha256": "f434f0c88b9ec9ed2074df61a5445f9a5eca6c0b980bce412277e5ea119eef22",
+      "uncompressed_bytes": 5240
+    },
+    "harness/src-lib.rs.gz": {
+      "sha256": "c8841df1cad1ff5cc04b617855fcd2e51f871958666bd2b99c69a6ea88d6b581",
+      "uncompressed_sha256": "c368c829ef5c12370e2722b375949a2da49b3e5707db2416d1293826568c34f7",
+      "uncompressed_bytes": 145
+    }
+  },
+  "reviewed_input": {
+    "reviewed_input/issue-541-canonical-output-853099a1.json.gz": {
+      "sha256": "117f94d5e399ce5acb1284905993a06b79f2c45b361b66109ccb132ad6240158",
+      "uncompressed_sha256": "e586c1783efc5387f58a070c4242bfc9bba9528c731b2a4b1f8f7e42c6e81080",
+      "uncompressed_bytes": 4585
+    }
+  },
+  "commands": [
+    {
+      "command": "CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=target cargo test --locked --offline --manifest-path target/541-repack-consumer-host/Cargo.toml",
+      "exit_code": 0
+    },
+    {
+      "command": "CARGO_INCREMENTAL=0 cargo test --locked --offline -p memra-gguf --lib",
+      "exit_code": 0
+    },
+    {
+      "command": "CARGO_INCREMENTAL=0 DOCS_RS=1 cargo clippy --locked --offline --target x86_64-unknown-linux-gnu -p memra-engine --lib -- -D warnings",
+      "exit_code": 0
+    },
+    {
+      "command": "cargo fmt --all -- --check",
+      "exit_code": 0
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0
+    }
+  ],
+  "host_binary": {
+    "sha256": "a3af06cf2eccc4632b62928959ffb6162ed94524e631a580dadae2fde39375f0",
+    "bytes": 7690528,
+    "preserved_path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/artifacts/541/canonical-consumer/host-tests-a3af06cf2eccc4632b62928959ffb6162ed94524e631a580dadae2fde39375f0"
+  },
+  "unchanged_seams": [
+    "crates/memra-engine/src/hybrid.rs",
+    "crates/memra-engine/src/plan_backend.rs",
+    "crates/memra-engine/src/plan_backend/runtime_identity.rs",
+    "crates/memra-server/src/worker.rs",
+    "crates/memra-gguf/src/config.rs",
+    "crates/memra-gguf/src/strict_json.rs"
+  ],
+  "dense_root_sha256": "53d7f44304456e3ebc6a51ef9230728e1fa743eb02f015581dd8c6c6d81af2bf",
+  "source_commit": "725551d7bec6ce9c652296fc7fd89ebaed17b9e5",
+  "review_report": "../root-integration-20260921/reviewed_input/issue-541-canonical-consumer-725551d7.json.gz"
+}

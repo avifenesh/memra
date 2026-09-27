@@ -1,0 +1,36 @@
+{
+  "source_commit": "3d1cd9ea631bb0b2ec016947142e078f8a88c346",
+  "build_record_sha256": "795ad2784ec3d06eff3511d0078b3fff5efc4fb1dfb126ef45d05feb5e2303b7",
+  "gate_ELF_sha256": "6c0a30e869ab8d57ad526a5924edbfccebc37fb28b2ecb6508b7e080d22c99db",
+  "model_pin": "Qwen/Qwen3-0.6B@c1899de289a04d12100db370d81485cdf75e47ca",
+  "numerical_settings": {
+    "MEMRA_FAST": "0",
+    "CUDA_FORCE_PRELOAD_LIBRARIES": "1"
+  },
+  "policy": {
+    "max_abs": 0.005,
+    "max_rel": 0.005,
+    "require_argmax": true
+  },
+  "true_tokens": 4,
+  "bucket": 16,
+  "later_prime_inputs_8_16_and_continuations": "unrun after first failure",
+  "CarriedPrime_receipt_issued": false,
+  "remaining_original_caller_cases": "24 unrun",
+  "scope": "original failed3-surface campaign, not a result of the new selected phase",
+  "files": {
+    "offline-comparison.json": "56fcd85003429d22b1d756bc939508942a7af056ad01027baea1e8d627c8b6ec",
+    "original-failed-result.json": "fe98921f6cc4861c16b893d62189fc24424135f51167055a83d70c073c9e1b5b",
+    "raw/artifact.lock": "3d91ccb45bd39b446bb995630b628ba96e92a65c36bebbee519be647f8ce3be3",
+    "raw/capture-prime-0-graph-0.f32": "dae6c70d732402134e8c345daeb8f3a27e096cbdfd7546b187638cbc906a83b1",
+    "raw/capture-prime-0-graph-seed.f32": "97463bab2b5d64a985c03adc32f37f506ebf1b8e0d1624d137b205aa01f32ff8",
+    "raw/capture-prime-0-ordinary-0.f32": "3903abe6f52a2e5bfc85abedecd858779ab575fda9ad8fc1318aca6b716f935b",
+    "raw/capture-prime-0-ordinary-seed.f32": "e1916037bd32827d2568ddc03e76f47c6e14871be7640b97f4c1acc4a69793dd",
+    "raw/capture-prime-0-reference-0.f32": "782a0385bdf2ef6b681736f8e6e4fac4a5a3716c4a580482de3c5e84b327ebe5",
+    "raw/capture-prime-0-verify-all.f32": "753f0de83aa7527b3a034889cfeaec2b81e01770ffdbe7b2ea949ae424ae3ca3",
+    "raw/events.log": "aeb2a30b485136f65ede7b24259589ae4bcc6a96cea49fdbee901675878f7508",
+    "raw/identity.txt": "1ff595f1336c5903dde29f7a1487f55abc433ef1dce79997e905d9a29fb2c9c1",
+    "raw/stderr.log": "bbabf0165a5ba9dd5cddbe13bc69d1d110a175c5acb5475747f47e987233f6eb",
+    "raw/stdout.log": "aeb2a30b485136f65ede7b24259589ae4bcc6a96cea49fdbee901675878f7508"
+  }
+}

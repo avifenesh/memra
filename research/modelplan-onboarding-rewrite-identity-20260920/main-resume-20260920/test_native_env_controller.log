@@ -1,0 +1,32 @@
+test_child_nonzero_status_is_preserved_after_valid_protocol (__main__.LinuxChildTests.test_child_nonzero_status_is_preserved_after_valid_protocol) ... skipped 'UNSUPPORTED here: actual Linux /proc child execution required'
+test_cli_sigterm_kills_owned_stopped_child (__main__.LinuxChildTests.test_cli_sigterm_kills_owned_stopped_child) ... skipped 'UNSUPPORTED here: actual Linux /proc child execution required'
+test_real_failures_kill_and_reap_without_skip (__main__.LinuxChildTests.test_real_failures_kill_and_reap_without_skip) ... skipped 'UNSUPPORTED here: actual Linux /proc child execution required'
+test_real_getenv_mutation_and_restore_with_background_threads (__main__.LinuxChildTests.test_real_getenv_mutation_and_restore_with_background_threads) ... skipped 'UNSUPPORTED here: actual Linux /proc child execution required'
+test_real_stopped_and_running_timeouts (__main__.LinuxChildTests.test_real_stopped_and_running_timeouts) ... skipped 'UNSUPPORTED here: actual Linux /proc child execution required'
+test_cleanup_does_not_signal_an_already_reaped_pid (__main__.PortableProcessTests.test_cleanup_does_not_signal_an_already_reaped_pid) ... ok
+test_flooded_pipes_are_preserved_without_deadlock (__main__.PortableProcessTests.test_flooded_pipes_are_preserved_without_deadlock) ... ok
+test_fragmented_and_unterminated_protocol_is_preserved (__main__.PortableProcessTests.test_fragmented_and_unterminated_protocol_is_preserved) ... ok
+test_malformed_protocol_kills_stopped_child_and_preserves_raw (__main__.PortableProcessTests.test_malformed_protocol_kills_stopped_child_and_preserves_raw) ... ok
+test_memory_access_denial_reaps_a_real_stopped_child (__main__.PortableProcessTests.test_memory_access_denial_reaps_a_real_stopped_child) ... ok
+test_protocol_without_stop_times_out_without_opening_mem (__main__.PortableProcessTests.test_protocol_without_stop_times_out_without_opening_mem) ... ok
+test_running_timeout_preserves_pipes_and_reaps (__main__.PortableProcessTests.test_running_timeout_preserves_pipes_and_reaps) ... ok
+test_spawn_failure_has_failure_receipt (__main__.PortableProcessTests.test_spawn_failure_has_failure_receipt) ... ok
+test_stopped_child_without_protocol_times_out_and_is_reaped (__main__.PortableProcessTests.test_stopped_child_without_protocol_times_out_and_is_reaped) ... ok
+test_unbounded_stdout_line_fails_and_reaps (__main__.PortableProcessTests.test_unbounded_stdout_line_fails_and_reaps) ... ok
+test_exact_order_and_fixed_values (__main__.ProtocolTests.test_exact_order_and_fixed_values) ... ok
+test_invalid_timeout_command_and_existing_output_never_spawn (__main__.ProtocolTests.test_invalid_timeout_command_and_existing_output_never_spawn) ... ok
+test_malformed_or_ambiguous_protocol_is_rejected (__main__.ProtocolTests.test_malformed_or_ambiguous_protocol_is_rejected) ... ok
+test_missing_proc_is_failure (__main__.ProtocolTests.test_missing_proc_is_failure) ... ok
+test_monotonic_timeout_and_cancellation (__main__.ProtocolTests.test_monotonic_timeout_and_cancellation) ... ok
+test_unsupported_platform_is_failure_with_evidence_and_no_spawn (__main__.ProtocolTests.test_unsupported_platform_is_failure_with_evidence_and_no_spawn) ... ok
+test_invalid_value_nul_short_read_and_group_change_never_write (__main__.StopAndMemoryTests.test_invalid_value_nul_short_read_and_group_change_never_write) ... ok
+test_no_stop_or_incomplete_group_never_opens_memory (__main__.StopAndMemoryTests.test_no_stop_or_incomplete_group_never_opens_memory) ... ok
+test_only_known_byte_is_written_after_full_stop_and_verified_before_continue (__main__.StopAndMemoryTests.test_only_known_byte_is_written_after_full_stop_and_verified_before_continue) ... ok
+test_partial_write_bad_readback_and_access_denial_never_resume (__main__.StopAndMemoryTests.test_partial_write_bad_readback_and_access_denial_never_resume) ... ok
+test_task_scan_checks_every_thread_and_identity (__main__.StopAndMemoryTests.test_task_scan_checks_every_thread_and_identity) ... ok
+test_waitpid_requires_wuntraced_sigstop (__main__.StopAndMemoryTests.test_waitpid_requires_wuntraced_sigstop) ... ok
+
+----------------------------------------------------------------------
+Ran 27 tests in 1.477s
+
+OK (skipped=5)

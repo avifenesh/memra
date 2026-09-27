@@ -1,0 +1,335 @@
+{
+  "base_commit": "f8707ab2d89ed31dc28bb439106b3312c172e17f",
+  "source_sha256": {
+    "crates/memra-gguf/src/bound_source.rs": "9a07c59197ec8307ee96caade069df5b7b0f422d7584c726168bcd78ed0e58dd",
+    "crates/memra-gguf/src/bound_source/draft.rs": "771f8899f5198f1f762ecdbb14045ed901d11d45acde397ce2ccef0a8d374dc7",
+    "crates/memra-gguf/src/bound_source/ranks.rs": "a621a8d20f05c41745126a7b242888a7508aff4c13be3848fdc7770130d37a32",
+    "crates/memra-gguf/src/bound_source/ranks/tests.rs": "4a0c43e6382a51b2746c841e4d373c0abca0b4c70bf920aeaa60adecc080782a",
+    "crates/memra-engine/src/lib.rs": "cf34df599fd87131da38e43fea9d96008d144aeeffe2c876fa8d713d824dd0ca",
+    "crates/memra-engine/src/hybrid.rs": "7deb9f83d14f3377f842b2691926c9bdc92a535203d4d0114b635e46e5b39428",
+    "crates/memra-engine/src/trim_ranks.rs": "1ac5d55bf628080f20884edc06675140e19d9215e79e3f187e7cf1b3ebdf5a03",
+    "research/modelplan-onboarding-bound-census-20260920/rank-intake-20260921/consumer-harness/Cargo.toml": "b6e68d97a9f20cef266020454c785cd5e1d2e0867326e17ab10b6163ce8afec6",
+    "research/modelplan-onboarding-bound-census-20260920/rank-intake-20260921/consumer-harness/Cargo.lock": "4baa563da723e092aad796acc44db085beefd622bd7e0c05e4341b235a24313d",
+    "research/modelplan-onboarding-bound-census-20260920/rank-intake-20260921/consumer-harness/src/lib.rs": "c6e65a79a6b2800ff71fac7a59117f3927262dd2127b54bba51ddb2c002d6743"
+  },
+  "source_review": "pending",
+  "source_GO": false,
+  "paired_target_draft_identity": false,
+  "external_spec_promotion": false,
+  "native_execution": false,
+  "support_promotion": false,
+  "coordination": {
+    "owner_542": "01a0bb71-ea9b-7150-b433-856d5dd74a1d",
+    "proposal_relay": "parent via existing multi-agent channel",
+    "shared_rewrite_interfaces_changed": false
+  },
+  "commands": [
+    {
+      "name": "production-consumer-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/research/modelplan-onboarding-bound-census-20260920/rank-intake-20260921/consumer-harness/Cargo.toml",
+        "--",
+        "--nocapture"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target"
+      },
+      "exit_code": 0,
+      "test_result": "3 passed; 0 failed; 0 ignored"
+    },
+    {
+      "name": "rank-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "--lib",
+        "bound_source::ranks",
+        "--",
+        "--nocapture"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 15.382609583903104
+    },
+    {
+      "name": "draft-compatibility",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "--lib",
+        "bound_source::draft::tests",
+        "--",
+        "--nocapture"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 0.21818404202349484
+    },
+    {
+      "name": "source-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 7.675307209021412
+    },
+    {
+      "name": "consumer-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/research/modelplan-onboarding-bound-census-20260920/rank-intake-20260921/consumer-harness/Cargo.toml",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 2.8281457079574466
+    },
+    {
+      "name": "engine-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "-p",
+        "memra-engine",
+        "--lib",
+        "--tests",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2",
+        "DOCS_RS": "1"
+      },
+      "exit_code": 0,
+      "wall_seconds": 61.48730337503366
+    },
+    {
+      "name": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 4.9959536250680685
+    },
+    {
+      "name": "consumer-format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/research/modelplan-onboarding-bound-census-20260920/rank-intake-20260921/consumer-harness/Cargo.toml",
+        "--",
+        "--check"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 0.12923608301207423
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 0.18289295805152506
+    }
+  ],
+  "raw": {
+    "raw/consumer-clippy.log.gz": {
+      "sha256": "37d8742265d314a4300447eb20bac4e5e0cd84ada4b012e71b7b7fcab3a2075d",
+      "uncompressed_sha256": "f8b5f0413d588756ae0c33accb00654d36e3fe7519ff5c20123056206c1c56c1",
+      "uncompressed_bytes": 384
+    },
+    "raw/consumer-format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/consumer-tests-1.log.gz": {
+      "sha256": "d54bae5fc286123c6cfafa6a391ef305c90246c3bb9c811b499cedfe0d244724",
+      "uncompressed_sha256": "47a3ed0fbffab5d905e9a91400e63767120f6ad9f3e9dc4b9b9e1913830f3918",
+      "uncompressed_bytes": 982
+    },
+    "raw/diff.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/draft-compatibility.log.gz": {
+      "sha256": "960749b2478d323183f090b289e22c160a154b5560032b51c5393a9ae6f290b2",
+      "uncompressed_sha256": "11f9daf9fe1404b77e443edadeadbead688693e354bd8472cd7b233d116ca9c4",
+      "uncompressed_bytes": 1781
+    },
+    "raw/engine-clippy.log.gz": {
+      "sha256": "c09fd9cfacdf400af22b09b54a688948f3561fd5a2190514aa9acdb5f4d8a278",
+      "uncompressed_sha256": "13420a5cd255403770fbb1c0263e12906394850d67e204f7187d004f589f9015",
+      "uncompressed_bytes": 789
+    },
+    "raw/format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/preservation.json.gz": {
+      "sha256": "229a954ce499f4ae5b0073430a9e4e80db5ca5e52999566171b69c784ef4bfab",
+      "uncompressed_sha256": "ffa016580dd357695f9836ce9c6808849bca6934ffb6773f2f0561564031b12b",
+      "uncompressed_bytes": 118844
+    },
+    "raw/rank-tests.log.gz": {
+      "sha256": "296dce97ec4fd48698bf3e1e8d270111a13dd79fa72bbebec9f88bf0cf99da21",
+      "uncompressed_sha256": "a94bbc79c4338e697ad7b51fbda21ac0c2af58d5be4df81b8eca7eeb0f9c03e0",
+      "uncompressed_bytes": 1167
+    },
+    "raw/results.json.gz": {
+      "sha256": "21687886d6aa4404bc3dfae241a82068218460f125f7c777ed44ba9e5c641190",
+      "uncompressed_sha256": "d61ff1bacde57ad76268e6c3f8ec8dba38ea0a18d16b392b410ab8c47d975677",
+      "uncompressed_bytes": 3931
+    },
+    "raw/run-final.py.gz": {
+      "sha256": "255b797f62719f8a9d8d931880df3b56b81ec08a63ea16b3df4906490bed18df",
+      "uncompressed_sha256": "27042037460a55e6e9743613a1e4cff687a443f13a02ae768ae7600ad4fab6b8",
+      "uncompressed_bytes": 1979
+    },
+    "raw/source-clippy.log.gz": {
+      "sha256": "a59cf126ba3b1fb95632e2f9659d72d87ffe5c7bc5402c8a9b478454faa3c139",
+      "uncompressed_sha256": "103db4a3a51c2ef79a10d59794b4996a33af201ed3ede6afeab0980394f000a9",
+      "uncompressed_bytes": 187
+    },
+    "raw/source-pin.json.gz": {
+      "sha256": "18f8673ea986f4ef44f9cb51bd6c6a2e4864ed7b4cd67f21ffd597cd08a8d504",
+      "uncompressed_sha256": "2f47695f0319489ad6fee9e639085adaa079e18e7b749e0d9528a55c0d8df870",
+      "uncompressed_bytes": 1315
+    },
+    "raw/toolchain.txt.gz": {
+      "sha256": "1cbd37f890e43338815f171ec5885e8fca21383e2535c8d29450dc5703658d54",
+      "uncompressed_sha256": "cdd372f49763b7ad6faf8210706bc4f7212e18ebbd1abee8ab874ebbd588c4a3",
+      "uncompressed_bytes": 72
+    }
+  },
+  "development": {
+    "development/initial-check.log.gz": {
+      "sha256": "c12860458c61b170a477caef4ddda380156b90fdd0a71a5c99c41e07fdf8453a",
+      "uncompressed_sha256": "9d29ec1175ec1047e1c397f26de11c37c7128c185419af647e4c658576b7b738",
+      "uncompressed_bytes": 187
+    },
+    "development/rank-tests-1.log.gz": {
+      "sha256": "a7595edea4fd4866bd325c2d2b3e56a3f772b824fb5d639f36c137e85dade3d9",
+      "uncompressed_sha256": "ea64fdecc84b661fd26f44d8d4d65db1b0e0013bc4171bff08eacbdd7fa99691",
+      "uncompressed_bytes": 1166
+    }
+  },
+  "reviewed_input": {
+    "reviewed_input/issue-541-draft-repair-f8707ab2.json.gz": {
+      "sha256": "7e1b605e0563a7cb567fb60bd6afea40200d87967b493d2ec7e7ccdf79fa872a",
+      "uncompressed_sha256": "4ae68ba4d8aa856215c80bba34e12e5a502f556eba7ab1bb7b5f670288ada78b",
+      "uncompressed_bytes": 5285
+    },
+    "reviewed_input/issue-541-root-repair-80483aaf.json.gz": {
+      "sha256": "cb77cee389beb1fd2b4e555df245a084a37eb655cfaf72ceb6608ea0dc4ebcfd",
+      "uncompressed_sha256": "22d03c8e1bb7daaa8d0cc2d1f58585197ad312097d270da48964c76c7de7c8ce",
+      "uncompressed_bytes": 2939
+    }
+  },
+  "binaries": {
+    "rank-and-draft-tests": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/artifacts/541/rank-intake/rank-and-draft-tests-6df89ef5ccaadccd3cd7908f085ec39f5bd487ed2767f73d79cd9c706e910c13",
+      "sha256": "6df89ef5ccaadccd3cd7908f085ec39f5bd487ed2767f73d79cd9c706e910c13",
+      "bytes": 19758120,
+      "format": "macOS CPU executable; not native GPU proof"
+    },
+    "production-consumer-tests": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/artifacts/541/rank-intake/production-consumer-tests-5eefa8bdaca884f651dc484de27b1a0bb31ba83a8a5c81b2765f21c695e28a38",
+      "sha256": "5eefa8bdaca884f651dc484de27b1a0bb31ba83a8a5c81b2765f21c695e28a38",
+      "bytes": 2184536,
+      "format": "macOS CPU executable; not native GPU proof"
+    }
+  },
+  "protected_crate_files": 922,
+  "test_counts": {
+    "rank_source": 8,
+    "production_consumer": 3,
+    "draft_compatibility": 14,
+    "broad_root_rerun": false
+  },
+  "capture_contract": {
+    "text": "hash and parse one captured buffer",
+    "gguf": "hash stream and retain header/rank slices from the same buffers over opened handles; attest captured header before decode",
+    "single_file_source_hash": "raw SHA256, preserving existing sha16 stamps",
+    "split_source_hash": "framed complete opened-shard hashes",
+    "normalized_order_identity": "separate versioned ordered-u32 digest"
+  }
+}

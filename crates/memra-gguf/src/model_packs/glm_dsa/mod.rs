@@ -6,6 +6,8 @@ use crate::model_plan::{
 };
 
 pub static PACK: ModelPack = ModelPack {
+    inventory_schema: None,
+    default_output_head: crate::tensor_contract::OutputHead::Separate,
     family: "glm_dsa",
     output_head: OutputHeadContract::SeparateHead,
     tensor_consumption: TensorConsumption::Report,
@@ -102,6 +104,7 @@ fn tiny_plan() -> Result<ModelPlan, PlanCompileError> {
                 attention(SparseIndexPlan::SharedFromPrevious { top_k: 8 }),
                 MlpPlan::Moe(MoeMlpPlan {
                     expert_count: 4,
+                    retained_experts: None,
                     experts_per_token: 2,
                     expert_intermediate_size: 8,
                     router: RouterPlan::Sigmoid {

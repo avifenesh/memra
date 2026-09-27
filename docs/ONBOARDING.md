@@ -35,6 +35,24 @@ Canonical supporting documents:
 | 8 | Run the target-rig battery and close receipts | kernel, argmax, spec, invariance, batch, and serve gates are green with raw logs |
 | 9 | Update canonical docs and release surfaces | no duplicate runbook, generated surfaces current, merge/tag only after target-rig approval |
 
+## Strict rewrite qualification
+
+`MEMRA_REWRITE_BUNDLE` requests strict admission. Each v2 receipt binds the compiled plan,
+artifact-lock bytes, actual opened checkpoint bytes, running executable SHA-256, and loaded
+numerical-program identity. Internally consistent bundle hashes do not establish any of these
+runtime identities. A changed checkpoint with the same geometry, a rebuilt executable, or changed
+numerical settings requires fresh receipts. Missing, duplicate, old-schema, and mismatched
+identity fields refuse admission.
+
+Without a bundle, execution is explicitly `LegacyUnbundled`; it makes no receipt-backed
+qualification claim. Importing evidence with `model verify rewrite` validates its structure and
+bundle bindings while keeping `RewriteParity=pending` and labeling the evidence imported.
+Installation performs the independent runtime comparison. Receipts produced by
+a standalone gate executable therefore cannot qualify a different `memra-server` executable.
+The quantized-cache `decode-eager` and monolithic `forward-fresh-kv` programs have separate
+receipts. A shared plan and loaded artifact do not make their KV numerical classes equivalent.
+CPU identity tests prove the admission boundary, not model or GPU parity.
+
 ## 0. Freeze the lane and artifact
 
 Start from an isolated worktree. Record the exact source tree before the first model run:

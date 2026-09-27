@@ -1,0 +1,430 @@
+{
+  "base_commit": "80483aaf2f66563c29612c529f2e465e3517fc01",
+  "draft_review_commit": "1254b644b2f4fae94c193ef407882b38e0fd8711",
+  "source_sha256": {
+    "crates/memra-gguf/src/bound_source.rs": "d654dc835e5687c2e22895a91b8b2c9b7f92535ceb587176f0b180c710771888",
+    "crates/memra-gguf/src/bound_source/consumer.rs": "93616cd9c0688b12325f8463b9845340d631912d2e9ed62df3b073eec5c832ab",
+    "crates/memra-gguf/src/bound_source/draft.rs": "d5ae225a04ff1d44bfcfb209686b4689398634d1b71e110c891eced250dbc833",
+    "crates/memra-gguf/src/bound_source/draft/tests.rs": "b308d3a447203e1798d222fed55df027e3a6b50b347ce0ad6db6f8bcc5cb8802",
+    "crates/memra-engine/src/ffn_activation.rs": "0d2121f28c45749ee5ee5544a5aef3dacccbcada71775cb7be8ca775534d4c67",
+    "crates/memra-engine/src/lib.rs": "c671c043e8767041bbbe9013e353159e7fbeec6a53d576a1dfd01fb57ea83f4e",
+    "crates/memra-engine/src/model.rs": "4115452204205c140031936a78ea3bc68082f3535cbaf287ecbd52e3e7df1bb1",
+    "crates/memra-engine/src/model/nvfp4_scale.rs": "d27d048082bd2866edb7f5c961d77695e787a87f0dc95828f159d6fefeb9fa2c",
+    "crates/memra-engine/src/hybrid.rs": "651f9785d9a089c1ef8bc70d5b95532badcf25a1f159bb67b562a08b9338be85",
+    "crates/memra-engine/src/hybrid_forward.rs": "2435c130d1754d8ec1cfeda586a9de66778046511bd6fc68f68a3954d8dc2f15",
+    "research/modelplan-onboarding-bound-census-20260920/draft-repair-20260921/consumer-harness/Cargo.toml": "e222705d201ca48e13eb33977648e65f44a74704f27fad007ec1e71ec5e133f3",
+    "research/modelplan-onboarding-bound-census-20260920/draft-repair-20260921/consumer-harness/Cargo.lock": "24130485bc8746c1e7d92fffd8df12e0f1213bdf1c6304eeb68e7f52a812db1f",
+    "research/modelplan-onboarding-bound-census-20260920/draft-repair-20260921/consumer-harness/src/lib.rs": "846c15024b1c574f03b6a75e8a26efc8a2c482c4e81361907343977d2082a103",
+    "research/modelplan-onboarding-bound-census-20260920/draft-repair-20260921/consumer-harness/src/fixture.rs": "88492db1c3474a278ff4857fca2dcc4705376837bca1b1c1487c45e8cc467eb7"
+  },
+  "mandatory_findings": [
+    "ARCH541-DRAFT-01",
+    "ARCH541-DRAFT-02"
+  ],
+  "source_review": "pending",
+  "source_GO": false,
+  "finding_closure": "pending independent Carver review",
+  "native_execution": false,
+  "support_promotion": false,
+  "commands_before": [
+    {
+      "command": [
+        "cargo",
+        "run",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target/541-draft-repair-probe/Cargo.toml",
+        "--",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target/541-draft-repair-probe/fixtures"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 101,
+      "wall_seconds": 3.4115807499038056,
+      "binary_sha256": "4e4cfe54d2c617c2c59206950204621bb13cf65293b8dec9df289866db55c908"
+    }
+  ],
+  "commands_after": [
+    {
+      "name": "draft-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "--lib",
+        "bound_source::draft::tests",
+        "--",
+        "--nocapture"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0"
+      },
+      "target_directory": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+      "exit_code": 0,
+      "test_result": "14 passed; 0 failed; 0 ignored"
+    },
+    {
+      "name": "consumer-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/research/modelplan-onboarding-bound-census-20260920/draft-repair-20260921/consumer-harness/Cargo.toml",
+        "--",
+        "--nocapture"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target"
+      },
+      "exit_code": 0,
+      "test_result": "6 passed; 0 failed; 0 ignored"
+    },
+    {
+      "name": "after-probe",
+      "command": [
+        "cargo",
+        "run",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target/541-draft-repair-probe/Cargo.toml",
+        "--",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target/541-draft-repair-probe/fixtures"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 1.5787748330039904
+    },
+    {
+      "name": "source-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 7.199489083955996
+    },
+    {
+      "name": "consumer-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/research/modelplan-onboarding-bound-census-20260920/draft-repair-20260921/consumer-harness/Cargo.toml",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 2.5640335000352934
+    },
+    {
+      "name": "engine-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "-p",
+        "memra-engine",
+        "--lib",
+        "--tests",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2",
+        "DOCS_RS": "1"
+      },
+      "exit_code": 0,
+      "wall_seconds": 54.99474287498742
+    },
+    {
+      "name": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 5.437467959010974
+    },
+    {
+      "name": "consumer-format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--manifest-path",
+        "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/research/modelplan-onboarding-bound-census-20260920/draft-repair-20260921/consumer-harness/Cargo.toml",
+        "--",
+        "--check"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 0.13531770801637322
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "environment": {
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_TARGET_DIR": "/Users/avifen/.codex/worktrees/541-transfer-composition/memra/target",
+        "CARGO_BUILD_JOBS": "2"
+      },
+      "exit_code": 0,
+      "wall_seconds": 0.23525929194875062
+    }
+  ],
+  "raw": {
+    "raw/after-probe.log.gz": {
+      "sha256": "39c4141e5c3f7ef0d8c8d32e93563a5308e7a187b4bbf8cd7849e5521f351b73",
+      "uncompressed_sha256": "8070f08df65223793981953834ad65ab15a167bd6d22a79da7123d26245f394d",
+      "uncompressed_bytes": 1637
+    },
+    "raw/before-result.json.gz": {
+      "sha256": "f9a0d835b2618abdba421a675b7bf88a299a7df842499a22c26614db03394247",
+      "uncompressed_sha256": "1cbc8c0f13a6744c5da549bd437100960925f9f2bcf4b1a4c5d4d9b892e8c4d8",
+      "uncompressed_bytes": 653
+    },
+    "raw/before.log.gz": {
+      "sha256": "608ecca2986e61db6a764a05543b6dfa48fbea5b105ebd987a303b8bf7170613",
+      "uncompressed_sha256": "e37ea4587e1955815d9eff9c4034d93005ee35f2099547fe65fe4003d9ce317a",
+      "uncompressed_bytes": 1729
+    },
+    "raw/consumer-clippy.log.gz": {
+      "sha256": "39578d3373c3820ac369d811345da46c4d3ef0661bfdd7989164287fb2d1f6e0",
+      "uncompressed_sha256": "5819e57744995a344af8106af52aa449ab3abfb4010b033cd8ae9b596d015520",
+      "uncompressed_bytes": 388
+    },
+    "raw/consumer-format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/consumer-tests.log.gz": {
+      "sha256": "bb96806f16e822ba3e67821129ddb1e16917e183e858817e7e7c69af3524a5e5",
+      "uncompressed_sha256": "c7cc798c9eff80c8fcb467b1095e58b282d402851b550a2eb1d22c6dae9236f5",
+      "uncompressed_bytes": 1217
+    },
+    "raw/diff.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/draft-tests-1.log.gz": {
+      "sha256": "ab683b9e2e501259a3fed47fc39823f5ed84ab11fb5b90676a7aad16cfaedfbb",
+      "uncompressed_sha256": "9cbab78b7be6f91aeb5aa097d2b4b28e0604e6362a0551d2038715da7cf6c895",
+      "uncompressed_bytes": 1896
+    },
+    "raw/engine-clippy.log.gz": {
+      "sha256": "15805d535b9aa8f1398faba065efe129b7711c92da8525489503632b62338ab6",
+      "uncompressed_sha256": "0e5ad92190e9bcde389eee020e568427f8270c12f54ad155a487fcca59b0733d",
+      "uncompressed_bytes": 789
+    },
+    "raw/final-results.json.gz": {
+      "sha256": "e002ad156020c70244cef9aee71aef2978cbba28920c5484e6ab456b5d71636b",
+      "uncompressed_sha256": "d83c9d40be9e291d7c97892676e1e45303638b83f46e33d763d4a7461dff2ffd",
+      "uncompressed_bytes": 3585
+    },
+    "raw/format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "raw/preservation.json.gz": {
+      "sha256": "33b0d7e8d05cc25e9e989ee21473b68e69ca57c474bda29088d84cab958850b2",
+      "uncompressed_sha256": "237eb8730947d7b07e1bbf994ee46fda788d9df143ae9c673d7909879b6a64d3",
+      "uncompressed_bytes": 118950
+    },
+    "raw/run-before.py.gz": {
+      "sha256": "0b7a7f48a6158e778a4f96f5b672f904bceef9b8cc5f0e796f93e6ddfca4bf5b",
+      "uncompressed_sha256": "cf8817c20a30e9d332c1c25764dda150f840319d8701e17d7589e1680b2f2aad",
+      "uncompressed_bytes": 1051
+    },
+    "raw/run-final.py.gz": {
+      "sha256": "9bf31cb103ca24f200889b386a17d0882cd34637a264fa2ec0ae4fd08b81e3e9",
+      "uncompressed_sha256": "b282d9553c208a5e39b4403225710d8b91eb7fe3ca6ee15082ee8e362ee52d48",
+      "uncompressed_bytes": 2312
+    },
+    "raw/source-clippy.log.gz": {
+      "sha256": "c9d4299c1a52afacde20fa2198b66b188801c68f308b2c985832c01329aa41b2",
+      "uncompressed_sha256": "f17250347ed0155b3665dcc0e55fd33f65073cc72be05777a2d52957839fef57",
+      "uncompressed_bytes": 187
+    },
+    "raw/source-pin.json.gz": {
+      "sha256": "c9011b6d2db1d58474ae6e0e3a357ee303984b67b2ff0b8a97aa7c16d66f0b1c",
+      "uncompressed_sha256": "0cb3fa13be42095b8cf1b01c4e326c83e36136c24734affb30583db60091b3db",
+      "uncompressed_bytes": 1843
+    },
+    "raw/toolchain.txt.gz": {
+      "sha256": "1cbd37f890e43338815f171ec5885e8fca21383e2535c8d29450dc5703658d54",
+      "uncompressed_sha256": "cdd372f49763b7ad6faf8210706bc4f7212e18ebbd1abee8ab874ebbd588c4a3",
+      "uncompressed_bytes": 72
+    }
+  },
+  "development": {
+    "development/consumer-tests-1.log.gz": {
+      "sha256": "6656dd7464ebe1b04dc688bb7c0cf7e0024db463140888af89f7e5851df98cc5",
+      "uncompressed_sha256": "570bd88f34f7e149ff6b65fab5a0d7b94504fc3bd022664ac38b91bf89f91606",
+      "uncompressed_bytes": 1573
+    },
+    "development/initial-check.log.gz": {
+      "sha256": "deaec01964572e859f2a237d5d6ea557fc502d64943479fd2d1c53121ace1145",
+      "uncompressed_sha256": "a331b4391ef0137895bd68485847f78a6d2f83a21d861afd2f97055b56f2451a",
+      "uncompressed_bytes": 591
+    },
+    "development/initial-consumer-Cargo.lock.gz": {
+      "sha256": "aa19ef2bfcf0a13ccd81b39b7a1f8a12ee99182e7ad328c059d26559cae60c37",
+      "uncompressed_sha256": "d8bf1bd0d530475ea242cf5e230ba5ee98039b9b9610d5bbfcec7fe8017628ce",
+      "uncompressed_bytes": 5213
+    }
+  },
+  "reviewed_input": {
+    "reviewed_input/issue-541-root-repair-80483aaf.json.gz": {
+      "sha256": "cb77cee389beb1fd2b4e555df245a084a37eb655cfaf72ceb6608ea0dc4ebcfd",
+      "uncompressed_sha256": "22d03c8e1bb7daaa8d0cc2d1f58585197ad312097d270da48964c76c7de7c8ce",
+      "uncompressed_bytes": 2939
+    },
+    "reviewed_input/issue-541-external-draft-1254b644.json.gz": {
+      "sha256": "20b68e6d87e272ddba94e612ac7499d4283f0a2362045b8c97dddf935dd74fe9",
+      "uncompressed_sha256": "08cc6ddb7d1cfbdb601e4a3b01bc8087a3165b34549f4f96a65365425c792071",
+      "uncompressed_bytes": 6075
+    }
+  },
+  "probe": {
+    "probe/Cargo.toml.gz": {
+      "sha256": "b60817af3b651d526ebbb27abde763c647adae32f6f52d27480843533c8839f0",
+      "uncompressed_sha256": "b60d7c30c79afa61541eb3ea02e4ba918ad6146da7318dcb359ebc06e810b184",
+      "uncompressed_bytes": 149
+    },
+    "probe/Cargo.lock.gz": {
+      "sha256": "eacc5d7ca06481501eb9f4f73552e9b26f9f19a843f477ae8f94d4305a02af1f",
+      "uncompressed_sha256": "b54b213a06845c3001c2a5277265584ee800001be0588605358edece5d5e49d7",
+      "uncompressed_bytes": 5219
+    },
+    "probe/src/main.rs.gz": {
+      "sha256": "75c7a03a87264cb6761dc15c1c9f9f282bbc191e718473b51992f0ff2d875b46",
+      "uncompressed_sha256": "72ca7614c96ac4806269c5ae066ac99433624b0ead82591cc8c2bad5034d907f",
+      "uncompressed_bytes": 3985
+    },
+    "probe/fixtures/activation/draft.gguf.gz": {
+      "sha256": "7866b09bd56cc1d6de2507eb915e539e72cfa8609a2bb6716116ade74513b16b",
+      "uncompressed_sha256": "6c895a1611ed0510a5fc83441329c2065d81c111326f0dc30aae3c5f5955edd1",
+      "uncompressed_bytes": 49344
+    },
+    "probe/fixtures/scale-F32/draft.gguf.gz": {
+      "sha256": "f9e9b8946e8c42934c0a5533c44c093ac248d1a89f3aeb586e9c6241958d6ca3",
+      "uncompressed_sha256": "086242c489d52e5fea4a04cb9c3a5d448bf4df597f5933965104193a9827e872",
+      "uncompressed_bytes": 134724
+    },
+    "probe/fixtures/scale-F16/draft.gguf.gz": {
+      "sha256": "c872fc8689d940f588daff85555cc461a25a795f099dcf5bae02a6c70e4dea1c",
+      "uncompressed_sha256": "c05aa3e66be9e64d3032262c0d24cb9c10b3914c5788e0d9e8544712e2493543",
+      "uncompressed_bytes": 134722
+    },
+    "probe/fixtures/scale-BF16/draft.gguf.gz": {
+      "sha256": "50b1c5ad942c0fefccfbab6a7623b9479c02577c7e54e18be9378bc5b6df61c2",
+      "uncompressed_sha256": "9b1232974eac700f239815945a8b8d04a196faf8170f8056990355bdc1a28697",
+      "uncompressed_bytes": 134722
+    }
+  },
+  "binaries": {
+    "before-probe": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/artifacts/541/draft-repair/before-probe-4e4cfe54d2c617c2c59206950204621bb13cf65293b8dec9df289866db55c908",
+      "sha256": "4e4cfe54d2c617c2c59206950204621bb13cf65293b8dec9df289866db55c908",
+      "bytes": 5865952,
+      "format": "macOS CPU executable; not a native GPU binary"
+    },
+    "after-probe": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/artifacts/541/draft-repair/after-probe-2d0bc2b46a833f44ca1871f99f756e74b56ff3a73a3ae5f61cc53958df430ad8",
+      "sha256": "2d0bc2b46a833f44ca1871f99f756e74b56ff3a73a3ae5f61cc53958df430ad8",
+      "bytes": 5890592,
+      "format": "macOS CPU executable; not a native GPU binary"
+    },
+    "initial-consumer-development": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/artifacts/541/draft-repair/initial-consumer-development-d461770fea1f9e312ecd989cc6052d088bda9320e4327fa213d52f73b102a038",
+      "sha256": "d461770fea1f9e312ecd989cc6052d088bda9320e4327fa213d52f73b102a038",
+      "bytes": 6494280,
+      "format": "macOS CPU executable; not a native GPU binary"
+    },
+    "draft-tests": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/artifacts/541/draft-repair/draft-tests-2722d91ecd8bda0be3942c920d81365a3687ad19571d1b5eb1778eb1ce7560d0",
+      "sha256": "2722d91ecd8bda0be3942c920d81365a3687ad19571d1b5eb1778eb1ce7560d0",
+      "bytes": 19567352,
+      "format": "macOS CPU executable; not a native GPU binary"
+    },
+    "consumer-tests": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/artifacts/541/draft-repair/consumer-tests-995fda73be541cd5b86a1a431f71e5793dacd45392eaecb7f9185c1d2a3232f3",
+      "sha256": "995fda73be541cd5b86a1a431f71e5793dacd45392eaecb7f9185c1d2a3232f3",
+      "bytes": 6477112,
+      "format": "macOS CPU executable; not a native GPU binary"
+    }
+  },
+  "protected_crate_files": 916,
+  "consumer_call_path": [
+    "MtpHead::load_draft -> PreparedExternalDraftSource::compile -> with_runtime -> load_prepared_draft",
+    "selected private/file head and student output-up -> load_t -> GpuTensor::load_from_source -> load_from_source_inner",
+    "standalone GGUF reports no HF native operand; NVFP4 view selects QT_NVFP4 branch -> model::nvfp4_scale::load (executed by CPU harness)",
+    "spec.rs FFN call passes target self.cfg and source-resolved Step clamp -> HybridModel::ffn_act_lim -> ffn_activation::apply (native calls recorded by CPU harness)"
+  ],
+  "test_counts": {
+    "draft": 14,
+    "production_consumer": 6,
+    "broad_root_rerun": false
+  }
+}

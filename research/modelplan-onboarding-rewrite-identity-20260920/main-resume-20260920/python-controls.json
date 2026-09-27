@@ -1,0 +1,91 @@
+[
+  {
+    "name": "test_qualify_native",
+    "command": [
+      "python3",
+      "-B",
+      "research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_native.py",
+      "-v"
+    ],
+    "exit_code": 0,
+    "start": "2026-09-20T16:29:55.026420+00:00",
+    "end": "2026-09-20T16:33:35.089508+00:00",
+    "sha256": "281167d08bf7d7c86c29d0b7b87478b82275194011038c8441b0f28e5cc9d53a"
+  },
+  {
+    "name": "test_qualify_callers",
+    "command": [
+      "python3",
+      "-B",
+      "research/modelplan-onboarding-rewrite-identity-20260920/test_qualify_callers.py",
+      "-v"
+    ],
+    "exit_code": 0,
+    "start": "2026-09-20T16:29:55.027241+00:00",
+    "end": "2026-09-20T16:29:57.729700+00:00",
+    "sha256": "bd1bce8d66c0fa5c01228f7ab06a385322a2504d7f64b2eceab6486f57b52002"
+  },
+  {
+    "name": "test_native_finalization",
+    "command": [
+      "python3",
+      "-B",
+      "research/modelplan-onboarding-rewrite-identity-20260920/test_native_finalization.py",
+      "-v"
+    ],
+    "exit_code": 0,
+    "start": "2026-09-20T16:29:55.027417+00:00",
+    "end": "2026-09-20T16:29:56.144218+00:00",
+    "sha256": "5462196637427bc530b28de2acf11d312f2df4f1250eb1dc228d1d4108889e55"
+  },
+  {
+    "name": "test_finalization_signals",
+    "command": [
+      "python3",
+      "-B",
+      "research/modelplan-onboarding-rewrite-identity-20260920/test_finalization_signals.py",
+      "-v"
+    ],
+    "exit_code": 0,
+    "start": "2026-09-20T16:29:56.145189+00:00",
+    "end": "2026-09-20T16:29:59.689520+00:00",
+    "sha256": "5aaa8cb5955ffd311da43f0b3276fb4dfc3ca9da5e9224ed0db44a5b9da1b2b4"
+  },
+  {
+    "name": "test_native_env_controller",
+    "command": [
+      "python3",
+      "-B",
+      "research/modelplan-onboarding-rewrite-identity-20260920/test_native_env_controller.py",
+      "-v"
+    ],
+    "exit_code": 0,
+    "start": "2026-09-20T16:29:57.730046+00:00",
+    "end": "2026-09-20T16:29:59.401308+00:00",
+    "sha256": "702be9c5eac23a6baf23bcbcbc0b7ee2e289dfb3007ec0c8136f0b19907e97c3"
+  },
+  {
+    "name": "memory-runner",
+    "command": [
+      "python3",
+      "-B",
+      "tools/test_qualify_model_device_memory.py",
+      "-v"
+    ],
+    "exit_code": 0,
+    "start": "2026-09-20T16:29:59.403154+00:00",
+    "end": "2026-09-20T16:29:59.689354+00:00",
+    "sha256": "3dff585b199d81f4f009918af1d2677976fe2e6238349a6c53536db0eb0f0969"
+  },
+  {
+    "name": "memory-arithmetic",
+    "command": [
+      "sh",
+      "tools/test-model-device-memory.sh"
+    ],
+    "exit_code": 0,
+    "start": "2026-09-20T16:29:59.689821+00:00",
+    "end": "2026-09-20T16:30:01.258489+00:00",
+    "sha256": "21b361b2c5ce737d102098a66a2d9f1ac1b42990c11d53bcd0297652b67f8f6d"
+  }
+]

@@ -1,0 +1,230 @@
+{
+  "source_commit": "625aad049d5b5c87689efc047452364eb726c979",
+  "source_GO": true,
+  "source_sha256": {
+    "Cargo.lock": "ca13568596b005f63aac2fa73ac7f4b10bc9f2b43bfa9cc602da973dae6e3407",
+    "crates/memra-gguf/Cargo.toml": "c658eebdb7b1852ad117f7efefcfda4ce7e75f5e549335253d89da45e3b03ebf",
+    "crates/memra-gguf/src/bound_source/tests.rs": "2de2558ea6bc71ef6c91bdc7b23a29dec663e2fd1fc4b0f6e7624addf2c1a338",
+    "crates/memra-gguf/src/config.rs": "e16641ce7485342100fb8e2ac204c8f6c38d506dc69856cc0c0165cd9af636b5",
+    "crates/memra-gguf/src/lib.rs": "8af2703f49dd10b40fa7914a6f48fafcbf85270d22966a5d3bdaf32ec910ed24",
+    "crates/memra-gguf/src/safetensors.rs": "88e26a8a40520b0b803e3e749a870902514914c49f9fabb23c3ae4662db9d1fc",
+    "crates/memra-gguf/src/source.rs": "7d4e0cb73de64743c869e676b00fddc65af7495b8f095aead3ff4d91d4fd031e",
+    "crates/memra-reference/src/lib.rs": "49cc0bb10aba6868aeb3c2ee3acd5162481dbefcd1adc1cb9ab810f24cf5e7d9",
+    "crates/memra-server/Cargo.toml": "94764f45af62f971d2bf12b790839c6ed1342068be54cf20c7bedede1dbd956d",
+    "crates/memra-gguf/src/strict_json.rs": "cc2aa28413cd42423f88bed7de6718175065427785f1ded504a6caae72c47503"
+  },
+  "commands": [
+    {
+      "name": "compiler-cli-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "-p",
+        "memra-cli"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 31.39537387492601
+    },
+    {
+      "name": "compiler-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-gguf",
+        "-p",
+        "memra-cli",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 3.278382874908857
+    },
+    {
+      "name": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 3.924079666961916
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "wall_seconds": 0.09819875005632639
+    },
+    {
+      "name": "escape-probe",
+      "command": [
+        "cargo",
+        "run",
+        "--locked",
+        "--offline",
+        "--manifest-path",
+        "target/541-repack-json-escape-green/probe/Cargo.toml",
+        "--bin",
+        "reviewer-repack-escapes",
+        "--",
+        "target/541-repack-json-escape-green/final-fixtures"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "runtime-identity-host",
+      "command": [
+        "python3",
+        "research/modelplan-onboarding-rewrite-identity-20260920/run-host-tests.py",
+        "--offline"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "linux-engine-server-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "-p",
+        "memra-engine",
+        "-p",
+        "memra-server",
+        "--lib",
+        "--bins",
+        "--tests",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "environment": {
+        "DOCS_RS": "1"
+      },
+      "exit_code": 0
+    },
+    {
+      "name": "reference-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "memra-reference",
+        "--lib"
+      ],
+      "exit_code": 101,
+      "existing_issue": "https://github.com/avifenesh/memra/issues/548",
+      "result": "68 pass / 1 fail, exact previously recorded arrays"
+    }
+  ],
+  "unchanged_probe_source_sha256": "13f70adcf0ed30c6359ed46f28f45c36e95bfe3fbf271d29755094dea423cb59",
+  "red_green_fixture_sha256_identical": {
+    "weights.bin": "36faf894356a6b96ad69c40f39a203a33538e9e8cbdf67a6f010b1668bfed935",
+    "literal_mask_uniform_bank.manifest.json": "73432fb73a67500923fda5a5296d24b4d68c5eadc0dd74f14061e25ed39dfdcb",
+    "config.json": "ed494bb4a4edf8dbb4f03c84d882bdef0e254556e709b5337c6b0dc8d543c737",
+    "duplicate_escaped_mask.manifest.json": "0bc3e1ce163e29c0e95e3b954bac7e1e6623f31ed92200d7eb21bc51945f0d60",
+    "escaped_mask_uniform_bank.manifest.json": "181beba00ff1aba03637f884db40e8859eeaa9913c2cd05b2a7bc0b5f5b7caf6",
+    "escaped_overlay_missing_source.manifest.json": "7df138276619816d53f3da5b4d254650c25d4f69824e9185be11266dbf054320",
+    "literal_overlay_missing_source.manifest.json": "f501f1fbef250bec8a8ace29b899521d742ec5a6c84b4eddc9f6da283e5cc327",
+    "manifest.json": "7df138276619816d53f3da5b4d254650c25d4f69824e9185be11266dbf054320",
+    "ordinary_complete.manifest.json": "915ac1e53f10188a1cb1edeb0ae8edc28bdcb70bd4b3eddbe819ecaa9b045666"
+  },
+  "probe_observations": [
+    "ordinary_complete: mask=None identity_ok=true bind_ok=true retained_operation=false",
+    "literal_mask_uniform_bank: mask=Some([false, true, false, true]) identity_ok=true bind_refused=missing tensor Layer { index: 0, tensor: MoeExpertGateBank }; accepted names: [\"blk.0.ffn_gate_exps.1.weight\", \"blk.0.ffn_gate_exps.3.weight\"]",
+    "escaped_mask_uniform_bank: mask=Some([false, true, false, true]) identity_ok=true bind_refused=missing tensor Layer { index: 0, tensor: MoeExpertGateBank }; accepted names: [\"blk.0.ffn_gate_exps.1.weight\", \"blk.0.ffn_gate_exps.3.weight\"]",
+    "duplicate_escaped_mask: open_refused=duplicate JSON key \"pruned_experts\" at line 1 column 1408",
+    "literal_overlay_missing_source: open_refused=expert overlay manifest missing source_dir",
+    "escaped_overlay_missing_source: open_refused=expert overlay manifest missing source_dir"
+  ],
+  "cuda_executed": false,
+  "root_activation": false,
+  "full_reference_suite_green": false,
+  "raw": {
+    "compiler-cli-tests.log.gz": {
+      "sha256": "73a03303f85b857d98303c557d146e0d8558af043bb927bffab604d6fa9c1333",
+      "uncompressed_sha256": "de8ed1f9c532c1ab457ea5d198a62c23583a62a1ebc81d7c146dda2a5c687556",
+      "uncompressed_bytes": 37781
+    },
+    "compiler-clippy.log.gz": {
+      "sha256": "6e4f6fd6c2a95400ed8589adc3dbbfb20d011ffc536e079935265bb8ccb71bcc",
+      "uncompressed_sha256": "8532d0522652ff8bb25569d58b14c482e37a1a9674185bb2afc67328c2c0530c",
+      "uncompressed_bytes": 550
+    },
+    "diff.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "escape-probe.log.gz": {
+      "sha256": "f20bce8e00c955d6ef6c6244a2bd6c71e0b37d418db05894a1c17abd0a906d0d",
+      "uncompressed_sha256": "0e46a9743f478bb9ba85d3bc7466561bd844ded24dfc018d2791228852e6bb39",
+      "uncompressed_bytes": 1306
+    },
+    "format.log.gz": {
+      "sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64",
+      "uncompressed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "uncompressed_bytes": 0
+    },
+    "linux-engine-server-clippy.log.gz": {
+      "sha256": "f0167ab0b00f13387994812f995565a755412512065a0d97298b6820e1f510c7",
+      "uncompressed_sha256": "ba0d05976c5e8f9c0103b16640b6d67e8dca1f36fa1fbd22b2f4f5022d50c41d",
+      "uncompressed_bytes": 1170
+    },
+    "reference-tests.log.gz": {
+      "sha256": "e40cf22737fed6698854d68a5da97ef7db7470032b181e051887f7021ab1c846",
+      "uncompressed_sha256": "7f8671b537576984b865e64f92dac1df239f4830288dc6764e84221d52ed6505",
+      "uncompressed_bytes": 7257
+    },
+    "result.json.gz": {
+      "sha256": "2145660df648bf0dec11b39ca96eb27e7764b1f37d3d495d17ee53a516e11c0e",
+      "uncompressed_sha256": "1340164aa16e4c79249827ea3d8ca5fa11b44c4f217e720ba6974148600434a3",
+      "uncompressed_bytes": 913
+    },
+    "runtime-identity-host.log.gz": {
+      "sha256": "0b252b9caf7b6fa8b4389e3f8a0b42f70d768ff3a275ad6b00b01d5d0b93f05b",
+      "uncompressed_sha256": "2287a039843a5ce7d9e1d3263edb5eb2b39498b47ccf4416b02f04f7ce992aa4",
+      "uncompressed_bytes": 3289
+    }
+  },
+  "binary_sha256": {
+    "target/debug/deps/memra_cli-ada56e296c3e01ec": "99f9850bcdf51eb9f0e571bc676529996d152ffdd8067c332c27c301a9f2c101",
+    "target/debug/deps/memra-13d087d0f915a3f2": "e7cf8199ec9b2f3a08c7cf996d7a447e28711f834bc354c2b186fc1135e6884f",
+    "target/debug/deps/step_rope_contract-76fad8cebe0294ac": "7835788d3cf19dc442c04d5538242b98c42720c1ce9e1874f8eb1607b66de540",
+    "target/debug/deps/memra_gguf-31cfcc90258f3d32": "385f1b3d52d0a1c8d2a4e664b7cb10558c5147f3c612a3ce417dae9ae69eb48e",
+    "target/debug/deps/dsv4_census-6d7e31380e0facf1": "2e4d88dbaccc3df20a69f0b8e42dc1c6dc3fcac99e5d4bf5e6ddda3496148c09",
+    "target/debug/deps/dsv4_decode_oracle_check-e79b208dc7d38711": "90442f36eed22be45a2e6d2e12578a1eb997507ef9f10c34186f5b060dd4f275",
+    "target/debug/deps/dsv4_dspark_gate-508716347eab6c8e": "d21fa4f108590fb495071f77d32a1e1a628d6abcac21cb1a7407d0ef0b0abbae",
+    "target/debug/deps/dsv4_forward-1d2267e93846cb50": "824d314e5a684f8799f339b76a78ede938b461b2b4b9242e02c63a56b284a9fe",
+    "target/debug/deps/dsv4_greedy_verify-f64314231c7dcdbb": "d1951fa79ff3527381b18ab4ca58cca25cf1d50bc178ff652b690e44f638373a",
+    "target/debug/deps/dsv4_mtp_probe-715a3243fc77efb3": "4eaf5900705a6485ab99a1c737de2f96ea089a24885ef101de41338b9b4ce31c",
+    "target/debug/deps/dsv4_mint-7a05fb3ec492cc64": "a82001b3583f32f200ac8ef8d35148dd3552cdfbe672af3a9151d923d74be1de",
+    "target/debug/deps/gguf_inspect-29d5ebf0726ceb6f": "1bc9d68a2f40d9eacc6c348859dc8b5286a9b50b8e8bbc52744652239c174381",
+    "target/debug/deps/nvfp4_validate-7ac8e2906e6f3760": "024e4a9db26115c4c645b471bc18c541cf4b987c704ca744f33ab4e1980deaf2",
+    "target/debug/deps/sealed_preflight-1663dd1bc7e7b678": "02a6a9bbc2e05d17bfb2f4eeb073be096b47d586b78e3dfde1e024aa7d0f123f",
+    "target/debug/deps/memra_reference-5ba7426c99d120e7": "a16975dbb2910999713e9d4f5f1951fa4c322f9e1f3f062c1c69647258d67945",
+    "target/541-repack-json-escape-green/build/debug/reviewer-repack-escapes": "c7ca0127463143e423cc0da627fe57d2df002c9c4378021036364b336fe117ad"
+  },
+  "source_review": "pass",
+  "review_bank": "../review-625aad04/",
+  "closed_finding": "ARCH541-REPACK-JSON-01"
+}

@@ -1,0 +1,546 @@
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-cli/src/lib.rs:1826:
+         if hex_sha256(&receipt) != receipt_hash {
+             return false;
+         }
+-        let Ok(text) = std::str::from_utf8(&receipt) else { return false; };
+-        let Ok(fields) = memra_gguf::execution_manifest::parse_qualified_rewrite_receipt(text) else {
++        let Ok(text) = std::str::from_utf8(&receipt) else {
+             return false;
+         };
++        let Ok(fields) = memra_gguf::execution_manifest::parse_qualified_rewrite_receipt(text)
++        else {
++            return false;
++        };
+         for (field, expected) in [
+-            ("rewrite", columns[0]), ("surface", columns[1]),
+-            ("implementation", columns[2]), ("plan_sha256", plan),
++            ("rewrite", columns[0]),
++            ("surface", columns[1]),
++            ("implementation", columns[2]),
++            ("plan_sha256", plan),
+             ("artifact_lock_sha256", lock_hash.as_str()),
+         ] {
+-            if fields[field] != expected { return false; }
++            if fields[field] != expected {
++                return false;
++            }
+         }
+-        let identity = ["artifact_sha256", "implementation_sha256", "numeric_program_sha256"]
+-            .map(|key| fields[key].to_string());
+-        if bundle_identity.as_ref().is_some_and(|previous| previous != &identity) {
++        let identity = [
++            "artifact_sha256",
++            "implementation_sha256",
++            "numeric_program_sha256",
++        ]
++        .map(|key| fields[key].to_string());
++        if bundle_identity
++            .as_ref()
++            .is_some_and(|previous| previous != &identity)
++        {
+             return false;
+         }
+         bundle_identity = Some(identity);
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-cli/src/lib.rs:2459:
+                 artifact_sha256: "22".repeat(32),
+                 implementation_sha256: "00".repeat(32),
+                 numeric_program_sha256: "33".repeat(32),
+-            }).unwrap()
++            })
++            .unwrap()
+             .to_tsv();
+         let receipt_path = root.join("receipt.tsv");
+         std::fs::write(&receipt_path, &receipt).unwrap();
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-cli/src/lib.rs:2480:
+         for malformed in [
+             receipt.replace(&format!("implementation_sha256\t{}\n", "00".repeat(32)), ""),
+             receipt.replace(&format!("artifact_sha256\t{}\n", "22".repeat(32)), ""),
+-            receipt.replace(&format!("numeric_program_sha256\t{}\n", "33".repeat(32)), ""),
++            receipt.replace(
++                &format!("numeric_program_sha256\t{}\n", "33".repeat(32)),
++                "",
++            ),
+             format!("{receipt}status\tfailed\n"),
+         ] {
+             std::fs::write(&receipt_path, malformed).unwrap();
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-cli/src/lib.rs:2487:
+-            assert!(verify_rewrite_receipt(model_packs::by_alias("qwen3").unwrap(), &receipt_path, &root).is_err());
++            assert!(
++                verify_rewrite_receipt(
++                    model_packs::by_alias("qwen3").unwrap(),
++                    &receipt_path,
++                    &root
++                )
++                .is_err()
++            );
+         }
+ 
+         let wrong = receipt.replace(&rewrite.plan_sha256, &"11".repeat(32));
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:67:
+     pub fn validate(&self) -> Result<(), String> {
+         for (key, value) in self.fields() {
+             if !is_sha256(value) {
+-                return Err(format!("trusted rewrite identity {key} must be a lowercase SHA-256"));
++                return Err(format!(
++                    "trusted rewrite identity {key} must be a lowercase SHA-256"
++                ));
+             }
+         }
+         Ok(())
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:115:
+ impl RewriteQualifications {
+     /// `identity` must come from the loader and running implementation, independently of
+     /// the bundle. Bundle hashes alone only establish internal consistency.
+-    pub fn load(bundle: &Path, plan: &ModelPlan, identity: &RewriteIdentity) -> Result<Self, String> {
++    pub fn load(
++        bundle: &Path,
++        plan: &ModelPlan,
++        identity: &RewriteIdentity,
++    ) -> Result<Self, String> {
+         identity.validate()?;
+         let expected = execution_rewrites(plan);
+         let artifact_lock = std::fs::read(bundle.join("artifact.lock"))
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:160:
+                 ("implementation", rewrite.implementation),
+                 ("plan_sha256", rewrite.plan_sha256.as_str()),
+                 ("artifact_lock_sha256", artifact_lock_sha256.as_str()),
+-            ].into_iter().chain(identity.fields()) {
++            ]
++            .into_iter()
++            .chain(identity.fields())
++            {
+                 if fields.get(key).copied() != Some(value) {
+                     return Err(format!(
+                         "rewrite receipt {} does not bind {key}={value}",
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:169:
+                 }
+             }
+             if !passed.insert(rewrite.surface) {
+-                return Err(format!("duplicate rewrite receipt index row for {}", rewrite.id));
++                return Err(format!(
++                    "duplicate rewrite receipt index row for {}",
++                    rewrite.id
++                ));
+             }
+         }
+         if passed.is_empty() {
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:191:
+     }
+ 
+     pub fn all_eligible(&self, plan: &ModelPlan) -> bool {
+-        self.plan_sha256 == plan_sha256(plan) && execution_rewrites(plan)
+-            .into_iter()
+-            .filter(ExecutionRewrite::eligible)
+-            .all(|rewrite| self.allows(rewrite.surface))
++        self.plan_sha256 == plan_sha256(plan)
++            && execution_rewrites(plan)
++                .into_iter()
++                .filter(ExecutionRewrite::eligible)
++                .all(|rewrite| self.allows(rewrite.surface))
+     }
+ }
+ 
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:216:
+ /// duplicates, missing identity fields and old unbound receipts are errors.
+ pub fn parse_qualified_rewrite_receipt(text: &str) -> Result<BTreeMap<&str, &str>, String> {
+     const KEYS: &[&str] = &[
+-        "format", "status", "rewrite", "surface", "implementation", "implementation_sha256",
+-        "plan_sha256", "artifact_lock_sha256", "artifact_sha256", "numeric_program_sha256",
+-        "reference_sha256", "candidate_sha256", "value_kind", "values", "max_abs", "max_rel",
+-        "reference_argmax", "candidate_argmax", "atol", "rtol", "require_argmax", "first_violation",
++        "format",
++        "status",
++        "rewrite",
++        "surface",
++        "implementation",
++        "implementation_sha256",
++        "plan_sha256",
++        "artifact_lock_sha256",
++        "artifact_sha256",
++        "numeric_program_sha256",
++        "reference_sha256",
++        "candidate_sha256",
++        "value_kind",
++        "values",
++        "max_abs",
++        "max_rel",
++        "reference_argmax",
++        "candidate_argmax",
++        "atol",
++        "rtol",
++        "require_argmax",
++        "first_violation",
+     ];
+     let mut fields = BTreeMap::new();
+     for line in text.lines() {
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:226:
+-        let (key, value) = line.split_once('\t')
++        let (key, value) = line
++            .split_once('\t')
+             .ok_or_else(|| format!("malformed rewrite receipt line {line:?}"))?;
+         if !KEYS.contains(&key) || value.is_empty() || value.contains('\t') {
+             return Err(format!("invalid rewrite receipt field {key:?}"));
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:238:
+         }
+     }
+     for (key, value) in [
+-        ("format", "memra-rewrite-parity-v2"), ("status", "passed"), ("first_violation", "none"),
++        ("format", "memra-rewrite-parity-v2"),
++        ("status", "passed"),
++        ("first_violation", "none"),
+     ] {
+         if fields[key] != value {
+             return Err(format!("rewrite receipt requires {key}={value}"));
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:245:
+         }
+     }
+-    for key in ["implementation_sha256", "artifact_sha256", "numeric_program_sha256",
+-        "artifact_lock_sha256", "plan_sha256", "reference_sha256", "candidate_sha256"] {
++    for key in [
++        "implementation_sha256",
++        "artifact_sha256",
++        "numeric_program_sha256",
++        "artifact_lock_sha256",
++        "plan_sha256",
++        "reference_sha256",
++        "candidate_sha256",
++    ] {
+         if !is_sha256(fields[key]) {
+             return Err(format!("rewrite receipt {key} is not a lowercase SHA-256"));
+         }
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:252:
+     }
+-    let integer = |key| fields[key].parse::<usize>()
+-        .map_err(|_| format!("rewrite receipt {key} is not an unsigned integer"));
++    let integer = |key| {
++        fields[key]
++            .parse::<usize>()
++            .map_err(|_| format!("rewrite receipt {key} is not an unsigned integer"))
++    };
+     let values = integer("values")?;
+     if values == 0 {
+         return Err("rewrite receipt compared no values".into());
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:258:
+     }
+     let nonnegative = |key| -> Result<f32, String> {
+-        let value = fields[key].parse::<f32>()
++        let value = fields[key]
++            .parse::<f32>()
+             .map_err(|_| format!("rewrite receipt {key} is not a number"))?;
+         if !value.is_finite() || value < 0.0 {
+-            return Err(format!("rewrite receipt {key} is not finite and nonnegative"));
++            return Err(format!(
++                "rewrite receipt {key} is not finite and nonnegative"
++            ));
+         }
+         Ok(value)
+     };
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:271:
+     let reference_argmax = integer("reference_argmax")?;
+     let candidate_argmax = integer("candidate_argmax")?;
+     match (fields["value_kind"], fields["require_argmax"]) {
+-        ("logits-f32", "true") if reference_argmax == candidate_argmax && reference_argmax < values => {},
+-        ("token-ids-u32", "false") if atol == 0.0 && rtol == 0.0 && max_abs == 0.0
+-            && max_rel == 0.0 && reference_argmax == 0 && candidate_argmax == 0 => {},
++        ("logits-f32", "true")
++            if reference_argmax == candidate_argmax && reference_argmax < values => {}
++        ("token-ids-u32", "false")
++            if atol == 0.0
++                && rtol == 0.0
++                && max_abs == 0.0
++                && max_rel == 0.0
++                && reference_argmax == 0
++                && candidate_argmax == 0 => {}
+         _ => return Err("rewrite receipt has an invalid value_kind/argmax policy".into()),
+     }
+-    if atol == 0.0 && rtol == 0.0
+-        && (max_abs != 0.0 || max_rel != 0.0 || fields["reference_sha256"] != fields["candidate_sha256"]) {
++    if atol == 0.0
++        && rtol == 0.0
++        && (max_abs != 0.0
++            || max_rel != 0.0
++            || fields["reference_sha256"] != fields["candidate_sha256"])
++    {
+         return Err("exact rewrite receipt has nonzero error or different stream hashes".into());
+     }
+     Ok(fields)
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:1129:
+     impl QualificationFixture {
+         fn new() -> Self {
+             static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+-            let root = std::env::temp_dir().join(format!("memra-bound-rewrite-{}-{}",
+-                std::process::id(), NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+-            let plan = crate::model_packs::by_alias("qwen3").unwrap().compile_tiny_plan().unwrap();
+-            let rewrite = execution_rewrites(&plan).into_iter()
+-                .find(|rewrite| rewrite.surface == RewriteSurface::DecodeEager).unwrap();
++            let root = std::env::temp_dir().join(format!(
++                "memra-bound-rewrite-{}-{}",
++                std::process::id(),
++                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
++            ));
++            let plan = crate::model_packs::by_alias("qwen3")
++                .unwrap()
++                .compile_tiny_plan()
++                .unwrap();
++            let rewrite = execution_rewrites(&plan)
++                .into_iter()
++                .find(|rewrite| rewrite.surface == RewriteSurface::DecodeEager)
++                .unwrap();
+             let lock = b"format_version=2\nfamily=qwen3\n";
+-            let receipt = rewrite.verify_tokens(&test_identity().implementation_sha256, &[1, 2, 3], &[1, 2, 3])
+-                .unwrap().bind_artifact_lock(lock).bind_runtime_identity(&test_identity()).unwrap().to_tsv();
++            let receipt = rewrite
++                .verify_tokens(
++                    &test_identity().implementation_sha256,
++                    &[1, 2, 3],
++                    &[1, 2, 3],
++                )
++                .unwrap()
++                .bind_artifact_lock(lock)
++                .bind_runtime_identity(&test_identity())
++                .unwrap()
++                .to_tsv();
+             std::fs::create_dir_all(root.join("rewrite-receipts")).unwrap();
+             std::fs::write(root.join("artifact.lock"), lock).unwrap();
+-            let fixture = Self { root, plan, rewrite, receipt };
++            let fixture = Self {
++                root,
++                plan,
++                rewrite,
++                receipt,
++            };
+             fixture.write_receipt(&fixture.receipt);
+             fixture
+         }
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:1146:
+ 
+         /// Rehash the index too: these attacks remain internally consistent.
+         fn write_receipt(&self, receipt: &str) {
+-            std::fs::write(self.root.join("rewrite-receipts").join(format!("{}.tsv", self.rewrite.id)), receipt).unwrap();
+-            std::fs::write(self.root.join("rewrite-receipts.tsv"), format!(
+-                "rewrite\tplan_sha256\treceipt_sha256\tstatus\n{}\t{}\t{}\tpassed\n",
+-                self.rewrite.id, self.rewrite.plan_sha256, hex_sha256(receipt.as_bytes())
+-            )).unwrap();
++            std::fs::write(
++                self.root
++                    .join("rewrite-receipts")
++                    .join(format!("{}.tsv", self.rewrite.id)),
++                receipt,
++            )
++            .unwrap();
++            std::fs::write(
++                self.root.join("rewrite-receipts.tsv"),
++                format!(
++                    "rewrite\tplan_sha256\treceipt_sha256\tstatus\n{}\t{}\t{}\tpassed\n",
++                    self.rewrite.id,
++                    self.rewrite.plan_sha256,
++                    hex_sha256(receipt.as_bytes())
++                ),
++            )
++            .unwrap();
+         }
+ 
+         fn load(&self, identity: &RewriteIdentity) -> Result<RewriteQualifications, String> {
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:1159:
+     }
+ 
+     impl Drop for QualificationFixture {
+-        fn drop(&mut self) { std::fs::remove_dir_all(&self.root).unwrap(); }
++        fn drop(&mut self) {
++            std::fs::remove_dir_all(&self.root).unwrap();
++        }
+     }
+ 
+     #[test]
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:1169:
+         let qualified = fixture.load(&identity).unwrap();
+         assert!(qualified.allows(RewriteSurface::DecodeEager));
+         assert!(qualified.matches(&fixture.plan, &identity));
+-        for field in ["artifact_sha256", "implementation_sha256", "numeric_program_sha256"] {
++        for field in [
++            "artifact_sha256",
++            "implementation_sha256",
++            "numeric_program_sha256",
++        ] {
+             let mut different = identity.clone();
+             let target = match field {
+                 "artifact_sha256" => &mut different.artifact_sha256,
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:1181:
+             assert!(error.contains(field), "{error}");
+             assert!(!qualified.matches(&fixture.plan, &different));
+ 
+-            let original = identity.fields().into_iter().find(|(key, _)| *key == field).unwrap().1;
+-            let missing = fixture.receipt.replace(&format!("{field}\t{original}\n"), "");
++            let original = identity
++                .fields()
++                .into_iter()
++                .find(|(key, _)| *key == field)
++                .unwrap()
++                .1;
++            let missing = fixture
++                .receipt
++                .replace(&format!("{field}\t{original}\n"), "");
+             fixture.write_receipt(&missing);
+             assert!(fixture.load(&identity).unwrap_err().contains(field));
+-            let stale = fixture.receipt.replace(&format!("{field}\t{original}"), &format!("{field}\t{}", "ff".repeat(32)));
++            let stale = fixture.receipt.replace(
++                &format!("{field}\t{original}"),
++                &format!("{field}\t{}", "ff".repeat(32)),
++            );
+             fixture.write_receipt(&stale);
+             assert!(fixture.load(&identity).unwrap_err().contains(field));
+             fixture.write_receipt(&fixture.receipt);
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:1192:
+         }
+         let mut missing = identity;
+         missing.artifact_sha256.clear();
+-        assert!(fixture.load(&missing).unwrap_err().contains("trusted rewrite identity"));
++        assert!(
++            fixture
++                .load(&missing)
++                .unwrap_err()
++                .contains("trusted rewrite identity")
++        );
+         let mut changed_plan = fixture.plan.clone();
+         changed_plan.layers.pop();
+         assert!(!qualified.matches(&changed_plan, &test_identity()));
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:1199:
+         assert!(!qualified.all_eligible(&changed_plan));
+-        assert!(RewriteQualifications::load(&fixture.root, &changed_plan, &test_identity()).is_err());
++        assert!(
++            RewriteQualifications::load(&fixture.root, &changed_plan, &test_identity()).is_err()
++        );
+     }
+ 
+     #[test]
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:1205:
+         let fixture = QualificationFixture::new();
+         for malformed in [
+             format!("{}status\tfailed\n", fixture.receipt),
+-            format!("{}implementation_sha256\t{}\n", fixture.receipt, "ff".repeat(32)),
+-            fixture.receipt.replace("memra-rewrite-parity-v2", "memra-rewrite-parity-v1"),
++            format!(
++                "{}implementation_sha256\t{}\n",
++                fixture.receipt,
++                "ff".repeat(32)
++            ),
++            fixture
++                .receipt
++                .replace("memra-rewrite-parity-v2", "memra-rewrite-parity-v1"),
+             fixture.receipt.replace("values\t3", "values\t0"),
+             fixture.receipt.replace("max_abs\t0", "max_abs\tNaN"),
+             fixture.receipt.replace("rtol\t0", "rtol\tinf"),
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:1213:
+             fixture.receipt.replace("max_rel\t0", "max_rel\t-1"),
+-            fixture.receipt.replace("require_argmax\tfalse", "require_argmax\ttrue"),
++            fixture
++                .receipt
++                .replace("require_argmax\tfalse", "require_argmax\ttrue"),
+             fixture.receipt.replace("token-ids-u32", "unknown-stream"),
+         ] {
+             fixture.write_receipt(&malformed);
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:1218:
+-            assert!(fixture.load(&test_identity()).is_err(), "accepted {malformed}");
++            assert!(
++                fixture.load(&test_identity()).is_err(),
++                "accepted {malformed}"
++            );
+         }
+         fixture.write_receipt(&fixture.receipt);
+         let index_path = fixture.root.join("rewrite-receipts.tsv");
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:1222:
+         let index = std::fs::read_to_string(&index_path).unwrap();
+-        std::fs::write(&index_path, format!("{index}{}\n", index.lines().nth(1).unwrap())).unwrap();
+-        assert!(fixture.load(&test_identity()).unwrap_err().contains("duplicate"));
+-        std::fs::write(&index_path, "rewrite\tplan_sha256\treceipt_sha256\tstatus\n").unwrap();
+-        assert!(fixture.load(&test_identity()).unwrap_err().contains("no qualified surfaces"));
+-        std::fs::write(&index_path, index.replace("receipt_sha256", "ignored-header")).unwrap();
+-        assert!(fixture.load(&test_identity()).unwrap_err().contains("index header"));
++        std::fs::write(
++            &index_path,
++            format!("{index}{}\n", index.lines().nth(1).unwrap()),
++        )
++        .unwrap();
++        assert!(
++            fixture
++                .load(&test_identity())
++                .unwrap_err()
++                .contains("duplicate")
++        );
++        std::fs::write(
++            &index_path,
++            "rewrite\tplan_sha256\treceipt_sha256\tstatus\n",
++        )
++        .unwrap();
++        assert!(
++            fixture
++                .load(&test_identity())
++                .unwrap_err()
++                .contains("no qualified surfaces")
++        );
++        std::fs::write(
++            &index_path,
++            index.replace("receipt_sha256", "ignored-header"),
++        )
++        .unwrap();
++        assert!(
++            fixture
++                .load(&test_identity())
++                .unwrap_err()
++                .contains("index header")
++        );
+     }
+ 
+     #[test]
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:1258:
+             .unwrap()
+             .bind_artifact_lock(lock)
+             .to_tsv();
+-        let root = std::env::temp_dir().join(format!(
+-            "memra-rewrite-unbound-{}", std::process::id()
+-        ));
++        let root =
++            std::env::temp_dir().join(format!("memra-rewrite-unbound-{}", std::process::id()));
+         std::fs::create_dir_all(root.join("rewrite-receipts")).unwrap();
+         std::fs::write(root.join("artifact.lock"), lock).unwrap();
+-        std::fs::write(root.join("rewrite-receipts").join(format!("{}.tsv", rewrite.id)), &receipt).unwrap();
+-        std::fs::write(root.join("rewrite-receipts.tsv"), format!(
+-            "rewrite\tplan_sha256\treceipt_sha256\tstatus\n{}\t{}\t{}\tpassed\n",
+-            rewrite.id, rewrite.plan_sha256, hex_sha256(receipt.as_bytes())
+-        )).unwrap();
++        std::fs::write(
++            root.join("rewrite-receipts")
++                .join(format!("{}.tsv", rewrite.id)),
++            &receipt,
++        )
++        .unwrap();
++        std::fs::write(
++            root.join("rewrite-receipts.tsv"),
++            format!(
++                "rewrite\tplan_sha256\treceipt_sha256\tstatus\n{}\t{}\t{}\tpassed\n",
++                rewrite.id,
++                rewrite.plan_sha256,
++                hex_sha256(receipt.as_bytes())
++            ),
++        )
++        .unwrap();
+         let result = RewriteQualifications::load(&root, &dense, &test_identity());
+         std::fs::remove_dir_all(root).unwrap();
+-        assert!(result.is_err(), "internally consistent bundle must not qualify without loaded runtime identity");
++        assert!(
++            result.is_err(),
++            "internally consistent bundle must not qualify without loaded runtime identity"
++        );
+     }
+ 
+     #[test]
+Diff in /Users/avifen/.codex/worktrees/1fc5/memra/crates/memra-gguf/src/execution_manifest.rs:1308:
+             )
+             .unwrap()
+             .bind_artifact_lock(artifact_lock)
+-            .bind_runtime_identity(&test_identity()).unwrap();
++            .bind_runtime_identity(&test_identity())
++            .unwrap();
+         assert!(receipt.passed);
+         receipt.validate_for(batch).unwrap();
+         let tsv = receipt.to_tsv();

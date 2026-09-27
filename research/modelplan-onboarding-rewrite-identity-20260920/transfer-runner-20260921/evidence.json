@@ -1,0 +1,39 @@
+{
+  "base_commit": "222d504050bb4173f77a334835d0b438d5c4690b",
+  "evidence_sha256": {
+    "README.md": "e242641aaae198826cfbc24029b9212d67edbd83398e418bfc4632ec83d23574",
+    "caller-controls.log": "5ac3d66608439baf012c0dbfa3c4301f3d70f7095b0aba13f6ece57f99640671",
+    "caller-initial-path-failure-excerpt.log": "62d1d9a184a496515266cbdf52086dd3f592197077659d8e8ed2d8f55043a232",
+    "gate-contract.json": "f9cb4781d2b49f574115d44a34f5b96719301bf08fa164882414d66b316e6678",
+    "provenance-controls.log": "e772121a30e4c29d036638a5ca04de43b3063c36e01904330f89330641469879",
+    "signal-controls.log": "459a9a6460436ca67758eaf313c78f2d6b1c76e7de4bbcd502184bd7e8342f3e"
+  },
+  "initial_test_failure": "Caller fixture did not resolve macOS temporary path alias; fixed and rerun. Original truncated output preserved as excerpt.",
+  "native_build": false,
+  "native_executed": false,
+  "schema": "memra-transfer-runner-cpu-controls-v1",
+  "source_sha256": {
+    "NATIVE-REFUSAL-PLAN.md": "c648f78a5d00aa331bf3da5ecae9b454e197c2eaac637bb353223bd5bcc815c0",
+    "native_build_record.py": "297817a7f1913e9c89e14311cae2d8bf94773763250904ad98d44e220d48fdb4",
+    "qualify-callers.py": "1d096304c4a79e473602fbb747afd54ed16ac3edc25a900e292037835d407921",
+    "test_finalization_signals.py": "bdb1cbc8245e05f4351da0ba5dfebd9f4a1dbba46e76f43c309d489fb44ef2e8",
+    "test_qualify_callers.py": "49d8e51fcecc8972f0a19f377b98a0114029f446fa729ed04a5c66a0d8c3445a",
+    "test_qualify_native.py": "0ba0a7780725cf040fa41e73b490ec4486c5a31cd0c123a8879262027de13717"
+  },
+  "tests": {
+    "test_finalization_signals.py": {
+      "failed": 0,
+      "passed": 3,
+      "real_SIGTERM_scenarios": 12
+    },
+    "test_qualify_callers.py": {
+      "failed": 0,
+      "passed": 17,
+      "transfer_scenarios": 66
+    },
+    "test_qualify_native.py": {
+      "failed": 0,
+      "passed": 33
+    }
+  }
+}

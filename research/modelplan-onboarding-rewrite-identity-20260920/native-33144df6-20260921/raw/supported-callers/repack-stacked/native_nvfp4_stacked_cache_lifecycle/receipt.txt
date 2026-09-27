@@ -1,0 +1,14 @@
+test=native_nvfp4_stacked_cache_lifecycle
+result=pass
+source_format=native NVFP4 safetensors
+artifact_sha256=17e691aa6bd25b1e85617f1089696e7ac0853f69947489bad232092d55b93508
+binary_sha256=c94c38601010ef8ad1474e72fb3b88bafe08d4c1f43a35779c71cfadebf68dcf
+shape=2x512x128
+repacked_bytes=73728
+strict_identity=true
+cache_hit=verified inode preserved
+poisoned_cache=canonical regeneration
+retained_backing=unlinked read-only mmap and positioned File reads
+transfer=Engine::stage_expert H2D and Engine::dtoh_u8 D2H
+math=Engine::qmatvec_view NVFP4 f32 dequant plus scale_inplace; exact f32 bits
+model_qualification=not performed; no support promotion

@@ -1,0 +1,36 @@
+{
+  "scope": "CPU publisher/channel controls only; native caller green pending",
+  "actual": {
+    "tests_passed": 2,
+    "returncode": 0
+  },
+  "no_send_negative": {
+    "tests_passed": 1,
+    "tests_failed": 1,
+    "returncode": 101
+  },
+  "source_sha256": {
+    "crates/memra-server/src/worker.rs": "a253f232c71468bc0efa36423df42ac3c10fb6c184b6eea3222e3fe74f6bdea3",
+    "crates/memra-server/src/worker/rewrite_native_tests.rs": "be9e549b98cad4cd7d12eed31d91af7a130edf456377a98dc2c670c90029f666",
+    "research/modelplan-onboarding-rewrite-identity-20260920/run-worker-publisher-tests.py": "e0e4b7f8d2ee13caea3e5c989245e011d7cfbd42adaa9a72625444ec42df0745"
+  },
+  "logs": {
+    "publisher-actual.log": {
+      "file": "publisher-actual.log.gz",
+      "raw_sha256": "6f63c9704331f5274baec419615ed8d09a2233c77fc738b14e0888f37489369f",
+      "archive_sha256": "f765b60cc755838ed03412b82d6d04688a35be74c8181798e79b1ae0a6563f48"
+    },
+    "publisher-no-send-negative.log": {
+      "file": "publisher-no-send-negative.log.gz",
+      "raw_sha256": "abf26313f5158375090580abc0e4ab2bd49d142a4b004790209eda99c1e4e2e7",
+      "archive_sha256": "e3a55d8070e948cc4510ddb0f1f5de4364b832d9817e604180234c82eae668d3"
+    },
+    "publisher-clippy.log": {
+      "file": "publisher-clippy.log.gz",
+      "raw_sha256": "688c3a49c827adfd3bf52fe6a5ce3e9d6502ef30fc9b49c6b9fa4c3a06e086b7",
+      "archive_sha256": "50f265affd7ab2fc3d02a9e2ed0c1eefc030b4c4bcc96b4ccd99a9fdcd556046"
+    }
+  },
+  "clippy": "DOCS_RS=1 cargo clippy -p memra-server --all-targets --target x86_64-unknown-linux-gnu -- -D warnings",
+  "fmt_diff_checks": "passed"
+}
