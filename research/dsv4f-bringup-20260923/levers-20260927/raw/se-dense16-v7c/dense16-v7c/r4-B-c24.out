@@ -1,0 +1,10 @@
+START utc=2026-09-27T22:25:57Z bin=/root/lane/bin-7cB/memra-server env=MEMRA_ENV_AUDIT=on
+READY after=262s port=44047
+CELL warmup c=1 ok=1/1 agg=57.82 tok/s decode_p50=88.39 tok/s ttft_p50=202 ms tpot_p50=11.31 ms errs=[]
+CELL greedy-c4 c=4 ok=8/8 agg=213.51 tok/s decode_p50=57.22 tok/s ttft_p50=324 ms tpot_p50=17.48 ms errs=[]
+CELL greedy-c8 c=8 ok=16/16 agg=298.16 tok/s decode_p50=40.92 tok/s ttft_p50=611 ms tpot_p50=24.44 ms errs=[]
+CELL greedy-c16 c=16 ok=16/16 agg=272.71 tok/s decode_p50=18.68 tok/s ttft_p50=1320 ms tpot_p50=53.52 ms errs=[]
+CELL greedy-c24 c=24 ok=24/24 agg=278.72 tok/s decode_p50=18.60 tok/s ttft_p50=1731 ms tpot_p50=53.75 ms errs=[]
+CELL sampled-c8 c=8 ok=16/16 agg=274.02 tok/s decode_p50=36.94 tok/s ttft_p50=544 ms tpot_p50=27.07 ms errs=[]
+CELLS_DONE utc=2026-09-27T22:31:36Z
+TERMINAL rc=0 utc=2026-09-27T22:31:42Z
