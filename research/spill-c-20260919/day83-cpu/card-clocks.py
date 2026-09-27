@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """DAY83 section 0: the dispatch clock per prefetched block and per generated token in the generate phase (generate minus gate) and the window (window minus warm), medians over each clocked arm's 10 runs, from mirrored card cells. usage: card-clocks.py <label> <glob> [...]"""
+import re, sys, statistics, glob
 CLOCK=re.compile(r"\[moe-cache\] dispatch-clock phase=(\w+) (.*)")
 def read(path):
     ph={}

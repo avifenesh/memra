@@ -1,0 +1,7 @@
+# DAY88 section 6a: the reader's --only promo-res mode on make-synthetic.py's root (meaningless)
+DAY88 PROMO-RES CHECKS rig=synthetic runs=20 integrity=ok
+DAY88 PROMO-RES ADMISSIBILITY rig=synthetic ceiling=0.005 max_iqr_gen=0.0003 failing=[] -> admissible
+DAY88 PROMO-RES gen-only decode medians (N=10 each): naked=0.312 legacy=0.312
+DAY88 PROMO-RES naked_vs_legacy gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0003 -> flat
+DAY88 PROMO-RES to_prefill_s medians (beside): naked=4.37 legacy=4.37
+DAY88 PROMO-RES VERDICT rig=synthetic -> passes

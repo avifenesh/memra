@@ -1,0 +1,89 @@
+60166b161a6395f71f0e237f939423b484da3b8d
+00bad0533e84ea7d8344975a5d1a7819bff423aa7b3ec20384c4f4e6efc4e920  /root/spill-receipts/c-day88/bins/run-gen-p88
+60edae9eb2d41b63d5cd79638a4672df4e1dffed546c01ed6460cbae80c044b0  /root/spill-receipts/c-day88/bins/run-gen-i22
+/root/artifacts/Qwen3.6-35B-A3B-UD-IQ4_XS.gguf 18209036576 1790534121
+promo cell done:      60 0 
+{
+  "schema_version": 1,
+  "kind": "subprocess-capture",
+  "command": [
+    "bash",
+    "/root/wt-c/research/spill-c-20260919/day88-cell.sh",
+    "promo",
+    "3"
+  ],
+  "exit_code": 0,
+  "timed_out": false,
+  "parse_error": null,
+  "status": "executed-not-qualified",
+  "gpu_power_limits": [
+    {
+      "device": "0",
+      "power.limit": "600.00 W",
+      "power.max_limit": "600.00 W"
+    }
+  ],
+  "started_monotonic_ns": 281031770177853,
+  "ended_monotonic_ns": 281803265753804,
+  "started_utc": "2026-09-27T18:42:16.047516+00:00",
+  "ended_utc": "2026-09-27T18:55:07.543094+00:00",
+  "elapsed_seconds": 771.495575951,
+  "timing_scope": "collector-with-snapshots-and-sampler",
+  "storage": null,
+  "raw_log": {
+    "path": "command.log",
+    "bytes": 363,
+    "sha256": "6d948201d5b2f2d2f62563751de6a6358f67617d2d982c339c9b25fae59e946e"
+  },
+  "failure_quote": null,
+  "result": null,
+  "gpu_telemetry": {
+    "status": "captured-unvalidated",
+    "interval_ms": 250,
+    "command": [
+      "/usr/bin/nvidia-smi",
+      "--query-gpu=timestamp,index,pstate,clocks.sm,clocks.mem,power.draw,power.limit,power.max_limit,temperature.gpu,memory.used,utilization.gpu,pcie.link.gen.current,pcie.link.width.current",
+      "--format=csv",
+      "-lms",
+      "250"
+    ],
+    "tier_counters": "not collected",
+    "exit_code": 0,
+    "raw_csv": {
+      "path": "command.gpu.csv",
+      "bytes": 329254,
+      "sha256": "94aefb132b320c2fa2f1808a1ce38d8142ae76c93a8b89e157daeac27b499c10"
+    },
+    "stderr": {
+      "path": "command.sampler.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "compute_apps": {
+    "before": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.before.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    },
+    "after": {
+      "exit_code": 0,
+      "timed_out": false,
+      "raw_log": {
+        "path": "command.after.log",
+        "bytes": 41,
+        "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+      }
+    }
+  },
+  "qualification": false,
+  "lock_proof": {
+    "path": "lock.json",
+    "bytes": 182,
+    "sha256": "eacc7fede55541fda92f040589ab6dd60ed9f2a4116f918a33c937ac4e06ecf0"
+  }
+}

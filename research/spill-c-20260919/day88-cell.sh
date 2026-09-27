@@ -47,7 +47,12 @@ run_gen() { # $1 label  $2.. argv (env words first)
 }
 case $cell in
 promo|promo-res)
-    sha256sum "$D40_BINS/run-gen-p88" "$D40_BINS/run-gen-i22" | tee "$EV/binary.sha256"
+    # DAY88 section 6a: each cell hashes the binaries it runs (promo-res runs run-gen-p88 alone).
+    if [ "$cell" = promo ]; then
+        sha256sum "$D40_BINS/run-gen-p88" "$D40_BINS/run-gen-i22" | tee "$EV/binary.sha256"
+    else
+        sha256sum "$D40_BINS/run-gen-p88" | tee "$EV/binary.sha256"
+    fi
     stat -c '%n %s %Y' "$D40_ART" | tee "$EV/artifact.stat"
     [ -f "$D40_ART.sha256" ] && cp "$D40_ART.sha256" "$EV/artifact.sha256"
     shape=(MEMRA_MOE_RESIDENT=0 MEMRA_MOE_SLOTS=9986)

@@ -3,7 +3,11 @@
 registered before this script): each cell's integrity and admissibility, the registered readings (DAY61 section 2's
 rule, gen-only primary, the window beside), the startup walls beside them, and the phase's verdict.
 
-usage: day88-read.py <root holding promo/, promo-res/, promo-spec/> [--rig NAME]
+usage: day88-read.py <root holding promo/, promo-res/, promo-spec/> [--rig NAME] [--only promo-res]
+
+Section 6a (the addendum, registered before any rerun): `promo-res` has no steady window by construction (no slot
+cache), so its admissibility is the gen-only IQR alone and its reading gen-only; `--only promo-res` reads a rerun of
+that cell on its own, with its own verdict line.
 """
 import datetime
 import hashlib
@@ -154,19 +158,61 @@ def integrity(runs, arms, expect, rig, cell):
     return ok
 
 
-def admissibility(runs, arms, rig, cell):
-    failing = [f"{a}:{k}={iqr(values(runs, a, k)):.4f}" for a in arms for k in ("gen_s", "window_s")
+def admissibility(runs, arms, rig, cell, keys=("gen_s", "window_s")):
+    failing = [f"{a}:{k}={iqr(values(runs, a, k)):.4f}" for a in arms for k in keys
                if not iqr(values(runs, a, k)) <= ADMISSIBLE_IQR]
-    worst = {k: max(iqr(values(runs, a, k)) for a in arms) for k in ("gen_s", "window_s")}
-    print(f"DAY88 {cell.upper()} ADMISSIBILITY rig={rig} ceiling={ADMISSIBLE_IQR} max_iqr_gen={worst['gen_s']:.4f}"
-          f" max_iqr_window={worst['window_s']:.4f} failing={failing}"
-          f" -> {'admissible' if not failing else 'inadmissible'}")
+    worst = {k: max(iqr(values(runs, a, k)) for a in arms) for k in keys}
+    print(f"DAY88 {cell.upper()} ADMISSIBILITY rig={rig} ceiling={ADMISSIBLE_IQR} "
+          + " ".join(f"max_iqr_{'gen' if k == 'gen_s' else 'window'}={worst[k]:.4f}" for k in keys)
+          + f" failing={failing} -> {'admissible' if not failing else 'inadmissible'}")
     return not failing
+
+
+def read_resident(root, rig, keys):
+    """`promo-res`: integrity, admissibility over `keys`, the reading on `keys`; returns what blocks."""
+    blocks = []
+    runs = read_cell(root / "promo-res")
+    arms = list(EXPECT_RES)
+    ok = integrity(runs, arms, EXPECT_RES, rig, "promo-res")
+    adm = admissibility(runs, arms, rig, "promo-res", keys) if ok else False
+    if ok:
+        for key, label in (("gen_s", "gen-only decode"), ("window_s", "steady window")):
+            if key not in keys:
+                continue
+            print(f"DAY88 PROMO-RES {label} medians (N=10 each): "
+                  + " ".join(f"{a}={med(values(runs, a, key)):.3f}" for a in arms))
+            line, name = compare(runs, "naked", "legacy", key)
+            print(f"DAY88 PROMO-RES naked_vs_legacy {label}: {line}")
+            if key == "gen_s" and adm and name == "regresses":
+                blocks.append("the resident shape regresses")
+        print("DAY88 PROMO-RES to_prefill_s medians (beside): "
+              + " ".join(f"{a}={med(values(runs, a, 'to_prefill_s')):.2f}" for a in arms))
+    if not ok:
+        blocks.append("promo-res integrity FAIL")
+    elif not adm:
+        blocks.append("promo-res inadmissible")
+    return blocks
+
+
+def verdict(blocks):
+    if any(b.endswith("FAIL") or b.endswith("inadmissible") for b in blocks):
+        return "void (" + "; ".join(blocks) + ")"
+    if blocks:
+        return "phase1_does_not_land (" + "; ".join(blocks) + ")"
+    return "phase1_lands"
 
 
 def main():
     root = Path(sys.argv[1])
     rig = sys.argv[sys.argv.index("--rig") + 1] if "--rig" in sys.argv else "?"
+    if "--only" in sys.argv:
+        only = sys.argv[sys.argv.index("--only") + 1]
+        if only != "promo-res":
+            raise SystemExit(f"--only {only}: only promo-res reads on its own (DAY88 section 6a)")
+        blocks = read_resident(root, rig, ("gen_s",))
+        print(f"DAY88 PROMO-RES VERDICT rig={rig} -> "
+              + ("passes" if not blocks else verdict(blocks)))
+        return 0
     blocks = []
     # promo
     runs = read_cell(root / "promo")
@@ -199,25 +245,8 @@ def main():
             blocks.append("naked regresses against q22")
         if step[("legacy", "gen_s")] == "loses":
             blocks.append("naked loses to legacy")
-    # promo-res
-    runs = read_cell(root / "promo-res")
-    arms = list(EXPECT_RES)
-    ok = integrity(runs, arms, EXPECT_RES, rig, "promo-res")
-    adm = admissibility(runs, arms, rig, "promo-res") if ok else False
-    if ok:
-        for key, label in (("gen_s", "gen-only decode"), ("window_s", "steady window")):
-            print(f"DAY88 PROMO-RES {label} medians (N=10 each): "
-                  + " ".join(f"{a}={med(values(runs, a, key)):.3f}" for a in arms))
-            line, name = compare(runs, "naked", "legacy", key)
-            print(f"DAY88 PROMO-RES naked_vs_legacy {label}: {line}")
-            if key == "gen_s" and adm and name == "regresses":
-                blocks.append("the resident shape regresses")
-        print("DAY88 PROMO-RES to_prefill_s medians (beside): "
-              + " ".join(f"{a}={med(values(runs, a, 'to_prefill_s')):.2f}" for a in arms))
-    if not ok:
-        blocks.append("promo-res integrity FAIL")
-    elif not adm:
-        blocks.append("promo-res inadmissible")
+    # promo-res (as the first sitting read it: both keys)
+    blocks += read_resident(root, rig, ("gen_s", "window_s"))
     # promo-spec
     ev = root / "promo-spec" / "ev"
     spec = {}
@@ -232,13 +261,7 @@ def main():
     if not (spec["spec-naked"][:3] == ("0", True, True) and spec["spec-legacy"][0] == "0"
             and spec["spec-legacy"][1] and spec["spec-legacy"][3]):
         blocks.append("promo-spec")
-    if any(b.endswith("FAIL") or b.endswith("inadmissible") for b in blocks):
-        verdict = "void (" + "; ".join(blocks) + ")"
-    elif blocks:
-        verdict = "phase1_does_not_land (" + "; ".join(blocks) + ")"
-    else:
-        verdict = "phase1_lands"
-    print(f"DAY88 VERDICT rig={rig} -> {verdict}")
+    print(f"DAY88 VERDICT rig={rig} -> {verdict(blocks)}")
     return 0
 
 

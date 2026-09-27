@@ -1,0 +1,53 @@
+18:58:48.479	[moe-prefetch] default=on (a qualified artifact) effective=on
+18:58:48.479	[experts-via-tier] off: MEMRA_EXPERTS_VIA_TIER=0 (the legacy slot cache)
+18:58:48.480	[tensor-contract] bound 753 semantic tensors (pack qwen35_moe, Gguf, output head Separate); every census tensor is claimed and every required tensor is present with its declared shape and storage
+18:58:50.791	[q8rp] split-plane decode mirrors built: 191 tensors
+18:58:50.791	loaded qwen35moe (41 layers, nextn=1)
+18:58:50.791	prompt tokens: [55, 88, 13]
+18:58:50.843	[fa-pool] grow #0 dev=0 o_len 0 -> 4096 ml_len 0 -> 16 (retired kept, zero=false)
+18:58:50.926	[glm5-vrows-t1-deny] dev=0 il=13 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+18:58:50.926	[glm5-vrows-t1-deny] dev=0 il=14 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+18:58:50.926	[glm5-vrows-t1-deny] dev=0 il=15 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+18:58:50.927	[glm5-vrows-t1-deny] dev=0 il=16 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+18:58:50.927	[glm5-vrows-t1-deny] dev=0 il=17 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+18:58:50.928	[glm5-vrows-t1-deny] dev=0 il=18 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+18:58:50.928	[glm5-vrows-t1-deny] dev=0 il=19 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+18:58:50.928	[glm5-vrows-t1-deny] dev=0 il=20 capture_open=false t1_dev=false forced=false slab_bases=false moe_q8=true uniform=true n_used=8 sigmoid_cfg=false pre_clamp=false cpu_hybrid=false observe_routes=false sig_router_env=true — the T=1 device-table MoE arm stood down and this layer takes the host-readback path. Benign with capture_open=false (an eager gap layer); with capture_open=true it is the wrong-answer class the router guard refuses, and the first denied conjunct on the line is the reason.
+18:58:51.234	
+18:58:51.234	[generate]   31 tok in 0.254s = 121.93 tok/s (gen-only; this run's prime 0.013s)
+18:58:51.234	  tokens: [198, 760, 1118, 3065, 310, 635, 369, 310, 1791, 264, 491, 2313, 13, 353, 2688, 2019, 310, 958, 279, 1581, 46796, 35309, 9237, 4736, 7093, 3683, 13, 198, 5666, 11, 353, 2688]
+18:58:51.234	[spec] draft graph unavailable: non-resident MoE MTP head; eager draft chain engaged
+18:58:51.284	[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+18:58:51.449	
+18:58:51.449	[generate_spec K=1] 32 tok in 0.197s = 157.56 tok/s (1.29x vs generate; this run's prime 0.018s)
+18:58:51.449	  acceptance: 11/20 = 55.0%   self-consistency: PASS (identical to plain target)
+18:58:51.482	[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+18:58:51.663	
+18:58:51.663	[generate_spec K=2] 32 tok in 0.189s = 164.33 tok/s (1.35x vs generate; this run's prime 0.025s)
+18:58:51.663	  acceptance: 17/28 = 60.7%   self-consistency: PASS (identical to plain target)
+18:58:51.701	[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+18:58:51.938	
+18:58:51.938	[generate_spec K=3] 32 tok in 0.246s = 125.88 tok/s (1.03x vs generate; this run's prime 0.029s)
+18:58:51.938	  acceptance: 17/42 = 40.5%   self-consistency: PASS (identical to plain target)
+18:58:51.975	[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+18:58:52.245	
+18:58:52.245	[generate_spec K=4] 32 tok in 0.278s = 111.48 tok/s (0.91x vs generate; this run's prime 0.028s)
+18:58:52.245	  acceptance: 17/56 = 30.4%   self-consistency: PASS (identical to plain target)
+18:58:52.280	[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+18:58:52.597	
+18:58:52.597	[generate_spec K=5] 32 tok in 0.324s = 95.58 tok/s (0.78x vs generate; this run's prime 0.027s)
+18:58:52.597	  acceptance: 17/70 = 24.3%   self-consistency: PASS (identical to plain target)
+18:58:52.633	[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+18:58:53.013	
+18:58:53.013	[generate_spec K=6] 32 tok in 0.388s = 79.82 tok/s (0.65x vs generate; this run's prime 0.028s)
+18:58:53.013	  acceptance: 17/84 = 20.2%   self-consistency: PASS (identical to plain target)
+18:58:53.052	[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+18:58:53.512	
+18:58:53.512	[generate_spec K=7] 32 tok in 0.469s = 66.09 tok/s (0.54x vs generate; this run's prime 0.030s)
+18:58:53.512	  acceptance: 17/98 = 17.3%   self-consistency: PASS (identical to plain target)
+18:58:53.553	[spec-vg] MTP verify-graph pool declined (non-resident MoE MTP head); eager verify walk
+18:58:54.100	
+18:58:54.100	[generate_spec K=8] 32 tok in 0.556s = 55.74 tok/s (0.46x vs generate; this run's prime 0.032s)
+18:58:54.100	  acceptance: 17/112 = 15.2%   self-consistency: PASS (identical to plain target)
+18:58:54.100	
+18:58:54.100	=== SELF-CONSISTENCY PASS ===

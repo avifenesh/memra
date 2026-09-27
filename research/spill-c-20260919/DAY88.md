@@ -192,3 +192,92 @@ read 9.79 s against REF's 4.37 (the SHA-256 lock over 18.2 GB and the host fill 
 Run as `D88_BUILDS="i22=4b378a064 p88=0155bc69f" bash /root/wt-c/research/spill-c-20260919/day88-box.sh` on a Core Ultra
 9 285K host with one RTX PRO 6000 Blackwell Workstation Edition, then the same on a fresh 9950X (at least 48 GB
 MemAvailable and 17 GB for the door's pinned bank beside it; about 45 minutes: two builds, 82 runs).
+
+## 6. The cells, read as registered (run by the lead, tree `60166b161`; `pro-single-day88/`, `pro-single-day88-9950x/`)
+
+Both hosts: `D88_BUILDS="i22=4b378a064 p88=0155bc69f" bash .../day88-box.sh`; the builds name `tree=4b378a064...` and
+`tree=0155bc69f...`, each `rc=0`; 389 receipts per host `OK` against the lead's box manifests (re-checked here), ELFs by
+hash, the power brake not active on either.
+
+**285K class** (BOX44, a Core Ultra 9 285K, one RTX PRO 6000 WS, 249 GB, driver 580.173.02, after lane A's sitting on the
+same card; 18:49Z to 19:09Z; `promo` 38 to 47 C, SM median 2692 MHz, N=800 busy samples). Verbatim (`reading.log`):
+- `DAY88 PROMO CHECKS rig=pro-single runs=60 integrity=ok` (host demand sequences: the door with its prefetch
+  `4bdc2610c3534e42`, `nopf` `0e220d04f52d13e9`)
+- `DAY88 PROMO ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0033 max_iqr_window=0.0022 failing=[] -> admissible`
+- `DAY88 PROMO gen-only decode medians (N=10 each): naked=0.314 q22=0.314 legacy=0.311 alloc=0.314 nopf=0.380 legnopf=0.379`
+- `DAY88 PROMO naked_vs_q22 gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0010 noise=0.0013 -> flat`
+- `DAY88 PROMO naked_vs_legacy gen-only decode: pooled=+0.0025 o1=+0.0030 o2=+0.0030 noise=0.0013 -> loses`
+- `DAY88 PROMO naked_vs_legacy steady window: pooled=+0.0005 o1=+0.0010 o2=+0.0000 noise=0.0010 -> matches`
+- `DAY88 PROMO-RES ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0003 max_iqr_window=nan failing=['naked:window_s=nan', 'legacy:window_s=nan'] -> inadmissible`
+- `DAY88 PROMO-SPEC spec-naked rc=0 self_consistency=PASS installed=True off_rollback=False` and `spec-legacy ... PASS`
+- `DAY88 VERDICT rig=pro-single -> void (naked loses to legacy; promo-res inadmissible)`
+
+**9950X class** (BOX45, a fresh Ryzen 9 9950X, one RTX PRO 6000 WS, 186 GB, driver 595.91.07; 18:36Z to 18:59Z; `promo`
+46 to 59 C, SM median 2677 MHz, N=599). Verbatim:
+- `DAY88 PROMO CHECKS rig=pro-single runs=60 integrity=ok` (the same two host demand sequences)
+- `DAY88 PROMO ADMISSIBILITY rig=pro-single ceiling=0.005 max_iqr_gen=0.0010 max_iqr_window=0.0010 failing=[] -> admissible`
+- `DAY88 PROMO gen-only decode medians (N=10 each): naked=0.245 q22=0.245 legacy=0.246 alloc=0.245 nopf=0.324 legnopf=0.326`
+- `DAY88 PROMO naked_vs_q22 gen-only decode: pooled=+0.0000 o1=+0.0000 o2=+0.0000 noise=0.0000 -> flat`
+- `DAY88 PROMO naked_vs_legacy gen-only decode: pooled=-0.0010 o1=-0.0010 o2=-0.0010 noise=0.0003 -> beats`
+- `DAY88 PROMO naked_vs_legacy steady window: pooled=-0.0020 o1=-0.0020 o2=-0.0020 noise=0.0000 -> beats`
+- `DAY88 PROMO-RES ADMISSIBILITY ... failing=['naked:window_s=nan', 'legacy:window_s=nan'] -> inadmissible`
+- `DAY88 PROMO-SPEC spec-naked rc=0 self_consistency=PASS installed=True ...` and `spec-legacy ... PASS`
+- `DAY88 VERDICT rig=pro-single -> void (promo-res inadmissible)`
+
+**Read as registered.** On the 285K class phase 1 does not land: `naked` loses to `legacy` gen-only (+2.5 ms over 32
+tokens, 0.314 against 0.311 s, both orders), matching it on the window. The clause stands as registered. On the 9950X
+class `promo` passes (the door beats its rollback by 1 ms gen-only and 2 ms on the window) and `promo-spec` passes;
+the phase's verdict is void there only because `promo-res` is. On both hosts the promotion changes no program (`naked`
+against `q22` flat) and `promo-spec` passes both arms.
+
+**Beside it, deciding nothing.**
+- The prefetch: every arm with it is 65 to 80 ms faster over 32 tokens gen-only than without it, on both programs and
+  both classes (`naked_vs_nopf` -0.0655 and -0.0790, `legacy_vs_legnopf` -0.0675 and -0.0800).
+- The pool: `alloc_vs_naked` flat on both.
+- Startup in the spill shape (process start to the prefill `MATCH` line, medians): the door 10.39 s against the
+  legacy's 8.72 on the 285K, 12.39 against 9.70 on the 9950X (the SHA-256 lock over 18.2 GB and the host fill). In the
+  resident shape the promoted binary starts faster than the legacy (6.19 against 8.84 s; 8.54 against 9.81), the
+  mapped banks sparing the pinned copy.
+- The resident shape's gen-only, read by the rule's arithmetic though the cell was not admissible: flat on the 9950X
+  (0.112 and 0.112 s), `+0.0010 ... noise=0.0003` on the 285K (0.153 against 0.152).
+
+## 6a. Addendum, registered before any rerun: the resident shape's admissibility
+
+The harness gap: without a slot cache, `run-gen` measures and prints no steady-state window (the window lives inside
+the slot cache's report, `run_gen.rs`), so the resident shape has no window by construction, and DAY64's clause, applied
+to both keys, read the two absent IQRs as failing. Section 5 registered `promo-res`'s reading on decode alone. From now
+on, for `promo-res` only, admissibility is the gen-only IQR (at most 0.005 s per arm) and the reading is gen-only; the
+spill cells keep both keys. `day88-read.py --only promo-res` reads a rerun on its own. Nothing else changes: the rerun
+is `promo-res` on both classes, the same binaries and tree, into its own receipts (`day88b-box.sh`; the cell now hashes
+only the binaries it runs, so `promo-res` records `run-gen-p88` alone), and `regresses` still blocks. If it
+reads `regresses` on a class, the resident shape's load (mapped banks for a resident qualified artifact) is the change
+to fix, registered on its own (pinned copies whenever the experts will be resident), before its code.
+
+## 6b. What the 285K class's loss means for the promotion (for the owner)
+
+**Where the 2.5 ms is.** The door and the legacy run the same kernels on the same bytes (one tape, and `naked` equals
+`q22`); the difference is the door's host-hit protocol on the CPU, between two launches of a launch-bound decode
+(`DAY72.md`, `DAY83.md`). At I22 the door-only work in the generate phase is 223 us per generated token on the 285K
+class (BOX41's clocked arm in `DAY85.md`: the lease 164, the residency check 4.5, the retire 54), 7.1 ms over 32
+tokens, and 190 us on the 9950X class (BOX43). About a third of it reaches the 285K's wall (the 2.5 ms); the 9950X hides
+it and the door beats there. So the loss is real, host-dependent, and a known quantity.
+
+**Proposal.**
+1. **Close it with further cuts, then rerun `promo` on both classes; no per-host default.** A per-host default would
+   have to key on a CPU model, one measured model per class, which carries one host's evidence to hosts nobody measured.
+   The remaining door-only leaves, measured in situ (`DAY85.md` section 3b), are the budget governor's per-ticket
+   reserve and release (about 58 us per token on the development host), the retire walk with its event query (36 to 57),
+   the owner proxy's registry, identity and pending bookkeeping (47), the adapter's `validated` (42) and the host cache
+   (40). Given how much of a cut the 285K's wall has returned, the wall needs on the order of 100 to 150 us per token
+   removed: two or three cuts, the governor and the retire side first, each registered and CPU-gated as before, then one
+   `promo` sitting on both classes (with the `promo-res` rerun of section 6a).
+2. **In the meantime, what does not depend on the door can land.** C10's prefetch wins 65 to 80 ms over 32 tokens on
+   the legacy program as on the door, on both classes (this cell), with G1 to G3 and `pf_wins` from `DAY59.md`; the
+   registered pool matters only under the door. The owner can take the prefetch default now (for the qualified
+   artifact, on the legacy slot cache: REF, the program this cell's `legacy` arm ran), with the door kept behind
+   `--experts-via-tier` until the cuts land; or hold all three for one landing.
+3. **Or accept the loss.** The 285K class's gen-only loss is +2.5 ms over 32 tokens (0.8 percent) with the window equal,
+   and the 9950X class beats; promoting on both classes now is inside the owner's power and outside the rule this lane
+   registered, so it is the owner's call and not this lane's.
+
+This lane recommends 1, with 2's prefetch landing now if the owner wants the 65 to 80 ms in the meantime.
