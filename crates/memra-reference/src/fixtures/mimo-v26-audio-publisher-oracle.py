@@ -15,7 +15,8 @@ checked-in mimo-pcm-mel-voiced-2048.logmel.f32 is one deterministic example.
 
 Use --check-source to validate pinned source, configuration, AST extraction,
 and mel geometry without weights or third-party packages. The full run needs
-CPU torch and safetensors. It loads no LLM, decoder, GPU, or remote artifact.
+torch and safetensors. It loads no LLM or decoder. --device cuda:0 or cuda:1
+uses only the named card on a dedicated two-card box.
 """
 
 import argparse
@@ -199,7 +200,7 @@ def load_audio_nodes(selected, source_path, torch):
     return scope
 
 
-def build_encoder(source, codec, torch, expected):
+def build_encoder(source, codec, torch, expected, device):
     config = SimpleNamespace(**codec)
     original_dtype = torch.get_default_dtype()
     try:
@@ -227,13 +228,13 @@ def build_encoder(source, codec, torch, expected):
     # to_empty loses the nonpersistent RoPE buffer. Recreate it with the
     # pinned publisher class after allocation; all checkpoint state is copied
     # separately below.
-    encoder.to_empty(device="cpu")
+    encoder.to_empty(device=device)
     encoder.position_embedding = source["AudioTokenizerRotaryEmbedding"](
         codec["rope_theta"],
         codec["d_model"] // codec["encoder_attention_heads"],
         encoder.max_source_positions,
         codec["rope_type"],
-        device="cpu",
+        device=device,
     )
     nonpersistent = {
         name for name, _ in encoder.named_buffers() if name not in encoder.state_dict()
@@ -259,9 +260,9 @@ def copy_encoder_weights(encoder, path, expected, torch):
                 target.copy_(tensor)
 
 
-def run_publisher(source, encoder, mel, frames, codec, torch):
-    features = torch.tensor(mel, dtype=torch.float32, device="cpu").reshape(frames, MEL_BINS)
-    lengths = torch.tensor([frames], dtype=torch.long, device="cpu")
+def run_publisher(source, encoder, mel, frames, codec, torch, device):
+    features = torch.tensor(mel, dtype=torch.float32, device=device).reshape(frames, MEL_BINS)
+    lengths = torch.tensor([frames], dtype=torch.long, device=device)
     with torch.inference_mode():
         depth_tensor, output_lengths = encoder.encode(
             features, input_lens=lengths, return_codes_only=True
@@ -327,8 +328,9 @@ def main():
     parser.add_argument("--check-source", action="store_true", help="no weights or third-party packages")
     parser.add_argument("--out", type=Path, help="write JSON receipt after a successful full run")
     parser.add_argument("--features-out", type=Path, help="write pre-RVQ BF16 feature rows after a full run")
+    parser.add_argument("--device", choices=("cpu", "cuda:0", "cuda:1"), default="cpu")
     args = parser.parse_args()
-    if args.check_source and (args.out or args.features_out):
+    if args.check_source and (args.out or args.features_out or args.device != "cpu"):
         parser.error("--out and --features-out require a full checkpoint run")
 
     alignment, codec, selected, source_path = check_source(args.source_root)
@@ -359,9 +361,9 @@ def main():
     if weights_sha256 != WEIGHTS_SHA256:
         raise ValueError(f"checkpoint SHA256 {weights_sha256} != pinned {WEIGHTS_SHA256}")
 
-    # Set thread and device bounds before importing torch. No GPU probing or
-    # accelerator execution is needed for this oracle.
-    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    # Set thread and device bounds before importing torch.
+    if args.device == "cpu":
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
     for name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
         os.environ[name] = "1"
     try:
@@ -371,11 +373,17 @@ def main():
         raise RuntimeError("full oracle needs existing CPU torch and safetensors installations") from error
     torch.set_num_threads(1)
     torch.set_num_interop_threads(1)
+    if args.device != "cpu" and (
+        not torch.cuda.is_available()
+        or torch.cuda.device_count() != 2
+        or torch.cuda.get_device_name(args.device) != "NVIDIA RTX PRO 6000 Blackwell Server Edition"
+    ):
+        raise ValueError("publisher GPU request changed from the dedicated two-card box")
     source = load_audio_nodes(selected, source_path, torch)
-    encoder = build_encoder(source, codec, torch, expected)
+    encoder = build_encoder(source, codec, torch, expected, args.device)
     copy_encoder_weights(encoder, weights_path, expected, torch)
     depth_major, token_major, grouped, pre_rvq_bytes, margins, second_codes = run_publisher(
-        source, encoder, mel, frames, codec, torch
+        source, encoder, mel, frames, codec, torch, args.device
     )
     if args.features_out:
         args.features_out.write_bytes(pre_rvq_bytes)
@@ -406,6 +414,9 @@ def main():
             json.dumps(depth_major, separators=(",", ":")).encode("utf-8")
         ).hexdigest(),
         "environment": {
+            "device": args.device,
+            "gpu_name": torch.cuda.get_device_name(args.device) if args.device != "cpu" else None,
+            "gpu_capability": torch.cuda.get_device_capability(args.device) if args.device != "cpu" else None,
             "python": platform.python_version(),
             "platform": platform.platform(),
             "torch": torch.__version__,
@@ -414,7 +425,7 @@ def main():
             "mkldnn_enabled": torch.backends.mkldnn.enabled,
             "torch_threads": torch.get_num_threads(),
             "torch_interop_threads": torch.get_num_interop_threads(),
-            "cuda_visible_devices": os.environ["CUDA_VISIBLE_DEVICES"],
+            "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
             "omp_num_threads": os.environ["OMP_NUM_THREADS"],
             "mkl_num_threads": os.environ["MKL_NUM_THREADS"],
         },
