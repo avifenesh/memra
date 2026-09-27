@@ -208,7 +208,7 @@ and item 7, `HOSTPREFIX-DOOR.md` section D, the lead record `research/spill-lead
 - **Dependency, stated.** These are the door's promotion work. They are executed after C1's deciding cell if the
   tuned door wins it; if it loses, door hygiene deletes the door and these items with it in the same lane. This is
   the door doc's own decision rule, not a deferral.
-- **Status.** Open, sequenced after C1(c).
+- **Status.** C1(c) ruled PROMOTE by the owner (2026-09-27): C2 is the promotion work. Phase 1 (`DAY88.md`): the door, the registered pool and the prefetch the default of `run-gen` and `run-spec` on both cards for a qualified artifact (by digest), landed on the lane as `9c20f327d` and `0155bc69f` with its decision record (`docs/decisions/MOE-SPILL-DOOR-DEFAULT.md`), FLAGS rows and cards; CPU gates green; the local RTX 5090 check queued (v20); the cells `promo`, `promo-res` and `promo-spec` ready (`day88-box.sh`, the 285K class, then a 9950X). Phases 2 (the serving installer, item 6), 3 (PP, item 1) and 4 (generality, items 2, 3 and 5) each register on their own.
 
 ## C3. The contracts door decision packet kept current (owner decision 2026-10-05)
 
