@@ -22,7 +22,7 @@
 #     denies it: `<!-- support: none; not NativeQualified -->`, or beside a record,
 #     `<!-- support: hy3-bf16-reference; not NativeQualified -->`. A denied state must rank
 #     above every named record, so a marker can never deny what its records prove. A bare
-#     `<!-- support: none -->` is allowed only on a definition entry (`- **NativeReference**: ...`).
+#     `<!-- support: none -->` never passes: a glossary line denies the states it defines.
 #
 # Gates not passed are listed as "pending". A pending gate is the honest state, never a gap to
 # paper over. Evidence outside this repository never backs a gate here: a receipt that cannot

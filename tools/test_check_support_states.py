@@ -137,6 +137,16 @@ class SupportStateCensus(unittest.TestCase):
                 (self.root / "docs/NEW.md").write_text(claim + " <!-- support: none -->\n")
                 self.assert_fails("docs/NEW.md:1: support: none on a line that reads as a claim of NativeQualified")
 
+    def test_definition_shape_does_not_excuse_a_none_claim(self):
+        # revuto on #891, round 2: a glossary-shaped line is still a claim.
+        for claim in (
+            "- **NativeQualified**: Foo on B200.",
+            "**NativeTuned**, Qwen3.8-27B-FP8 on B200.",
+        ):
+            with self.subTest(claim=claim):
+                (self.root / "docs/NEW.md").write_text(claim + " <!-- support: none -->\n")
+                self.assert_fails("docs/NEW.md:1: support: none on a line that reads as a claim of Native")
+
     def test_none_must_deny_every_state_it_names(self):
         (self.root / "docs/NEW.md").write_text(
             "Pending NativeQualified; Foo is NativeTuned. <!-- support: none; not NativeQualified -->\n"

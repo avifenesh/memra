@@ -51,11 +51,9 @@ DOC_DIRS = ("docs",)
 DOC_EXCLUDE = ("docs/archive/",)
 TOKEN_RE = re.compile(r"\b(NativeReference|NativeQualified|NativeTuned)\b")
 MARKER_RE = re.compile(r"<!--\s*support:\s*([^>]*?)\s*-->")
-# A `none` line claims nothing: it is a definition entry (the line opens with the bold state
-# name, e.g. "- **NativeReference**: ..."), or it denies every state it mentions with
-# `; not <State> ...`. Word lists are not used: a cue word anywhere on a line says nothing
-# about the state token beside it.
-DEFINITION = re.compile(r"^\s*(?:- )?\*\*`?Native(?:Reference|Qualified|Tuned)`?\*\*[:,]")
+# A `none` line claims nothing: `; not <State> ...` must cover every state it mentions. No
+# exemption by wording or by line shape: a cue word or a glossary layout says nothing about
+# what the line asserts (revuto on #891, twice).
 HEX40 = re.compile(r"\b[0-9a-f]{40}\b")
 SHA256 = re.compile(r"\b[0-9a-f]{64}\b")
 
@@ -311,9 +309,8 @@ def check_docs(root, by_id, errors) -> int:
                     errors.append(f"{rel}:{n}: 'not {' '.join(sorted(denied - tokens))}' names a state the line does not mention")
                     continue
             if ids == ["none"]:
-                bare = MARKER_RE.sub("", line)
                 claimed = tokens - denied
-                if claimed and not DEFINITION.match(bare):
+                if claimed:
                     errors.append(
                         f"{rel}:{n}: support: none on a line that reads as a claim of "
                         f"{', '.join(sorted(claimed))}: name its record, or deny it with "

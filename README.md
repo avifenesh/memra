@@ -127,10 +127,10 @@ Support is specific to a model, quantization, and drafter combination, never to 
 are exactly three positive states, the enum `NativeSupport` in
 `crates/memra-gguf/src/model_packs/mod.rs`:
 
-- **NativeReference**: the plan compiles and runs in memra's reference executor. Bring-up <!-- support: none -->
+- **NativeReference**: the plan compiles and runs in memra's reference executor. Bring-up <!-- support: none; not NativeReference -->
   evidence only.
-- **NativeQualified**: the required checkpoint and serving gates pass. <!-- support: none -->
-- **NativeTuned**: qualified, plus current receipts for the optimized rewrites the deployment <!-- support: none -->
+- **NativeQualified**: the required checkpoint and serving gates pass. <!-- support: none; not NativeQualified -->
+- **NativeTuned**: qualified, plus current receipts for the optimized rewrites the deployment <!-- support: none; not NativeTuned -->
   selects.
 
 Each pack's state is backed by a record in [`docs/support-records.toml`](docs/support-records.toml),

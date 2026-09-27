@@ -297,17 +297,17 @@ a roadmap. (TTS was on this list until 2026-09-11 and is now §2.4.)
 
 Same ladder as the text models. Loading and running are not support.
 
-**`NativeReference`**, the complete speech forward and decode execute in memra's unfused <!-- support: none -->
+**`NativeReference`**, the complete speech forward and decode execute in memra's unfused <!-- support: none; not NativeReference -->
 native executor, with persisted stage parity beneath them. Requires: the pack in the registry,
 the plan compiled through the shared `TensorContract`, the tokenizer bound in **both**
 directions inside the engine, speech plans accepted by the reference executor and by
 `model inspect`. Bring-up evidence only. **Not production permission.**
 
-**`NativeQualified`**, `NativeReference` plus checkpoint parity on the full pinned clip set, <!-- support: none -->
+**`NativeQualified`**, `NativeReference` plus checkpoint parity on the full pinned clip set, <!-- support: none; not NativeQualified NativeReference -->
 plus the serving battery of §5 bound to one artifact, one plan, one numeric stream, one binary
 and one bundle hash. Minimum state for production admission.
 
-**`NativeTuned`**, `NativeQualified` plus current binary-bound rewrite receipts for each <!-- support: none -->
+**`NativeTuned`**, `NativeQualified` plus current binary-bound rewrite receipts for each <!-- support: none; not NativeQualified NativeTuned -->
 admitted device and execution surface, with phase profiles and end-to-end measurements.
 
 Both current checkpoints are below `NativeReference`: the state is unset for every speech pack, <!-- support: none; not NativeReference -->
