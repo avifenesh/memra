@@ -5652,6 +5652,26 @@ impl crate::hybrid::HybridModel {
             .unwrap_or(0)
     }
 
+    /// `dspark_vg_admission_debt` without recording the pool's observation (WP-B day 48 addendum B):
+    /// what the physical gate's call later in the same admission returns, read first by the predictive
+    /// seam under `MEMRA_ADMIT_PREDICT_VG_DEBT`, so that call is unchanged.
+    pub fn dspark_vg_admission_debt_peek(&self, e: &Engine) -> usize {
+        let dspark_door =
+            crate::spec::dspark_verify_graph_serve_on() || crate::spec::dspark_verify_graph_on();
+        let mtp_door =
+            crate::spec::spec_verify_graph_env().unwrap_or_else(|| self.vgraph_family_default());
+        if !dspark_door && !mtp_door {
+            return 0;
+        }
+        let reserved = e.device_graph_mem_reserved();
+        self.dspark_vgraphs
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|g| g.admission_debt_peek(reserved))
+            .unwrap_or(0)
+    }
+
     /// MULTI-TURN RESUME (lane/dflash2-session-reuse, 2026-08-25): continue a parked
     /// dspark session with the next turn's suffix — the dspark twin of the MTP pool
     /// resume. Trunk rows for the committed stream are already resident in `cache` and
