@@ -158,3 +158,25 @@ DAY50 S0 card=pro6000 L=122880 R=288 N=5 wall_ms p50=235.86 gpu_span_ms p50=235.
   small-M prime kernel can keep the cold prime's exact numbers (the same K-reduction order per output) is a separate
   improvement. It would shorten `keep`'s resume too, so it does not change E2's ratio, and it is recorded as a
   candidate, not an arm of this day. The 5090 half (`rtx5090-day50/`) waits for the card.
+
+### 2.2 Stage 0 on the 5090 (the 9B, `rtx5090-day50/`, 2026-09-27 to 03:31Z)
+
+The probe `5d94e26ae`'s mode, built in the lane checkout at `3c6d98784` (sha256 `d51c26e6...`). The run's own
+`read-L*.log` came from the reader before addendum B, and at both L it printed "not read". The re-read under addendum B
+is `stage0/reread-L*.log` (at 30,720 the setup prime of 30,720 tokens leaves 38 leading clusters; the pair shape
+checks ok at both L). The trace CSVs are gzipped with their raw sha256, and the four nsys files are outside git, by hash
+in `EXCLUDED.sha256`. Verbatim:
+
+```
+DAY50 S0 card=rtx5090 L=6144 R=32 N=5 wall_ms p50=37.96 gpu_span_ms p50=37.66 gpu_busy_ms p50=37.27 busy_share=0.982 in_span_gaps_ms p50=0.39 host_outside_span_ms p50=0.30 attn_ms=0.15 gdn_ms=0.87 gemm_ms=22.91 other_ms=13.37
+DAY50 S0 card=rtx5090 L=6144 R=64 N=5 wall_ms p50=37.98 gpu_span_ms p50=37.72 gpu_busy_ms p50=37.35 busy_share=0.983 in_span_gaps_ms p50=0.38 host_outside_span_ms p50=0.26 attn_ms=0.16 gdn_ms=1.06 gemm_ms=22.10 other_ms=14.02
+DAY50 S0 card=rtx5090 L=6144 R=288 N=5 wall_ms p50=88.66 gpu_span_ms p50=88.40 gpu_busy_ms p50=87.98 busy_share=0.992 in_span_gaps_ms p50=0.42 host_outside_span_ms p50=0.26 attn_ms=0.68 gdn_ms=3.36 gemm_ms=53.84 other_ms=30.10
+DAY50 S0 card=rtx5090 L=30720 R=32 N=5 wall_ms p50=55.69 gpu_span_ms p50=55.46 gpu_busy_ms p50=55.09 busy_share=0.989 in_span_gaps_ms p50=0.36 host_outside_span_ms p50=0.23 attn_ms=0.15 gdn_ms=0.87 gemm_ms=21.72 other_ms=32.17
+DAY50 S0 card=rtx5090 L=30720 R=64 N=5 wall_ms p50=56.68 gpu_span_ms p50=56.48 gpu_busy_ms p50=56.07 busy_share=0.989 in_span_gaps_ms p50=0.41 host_outside_span_ms p50=0.20 attn_ms=0.16 gdn_ms=1.06 gemm_ms=21.88 other_ms=32.74
+DAY50 S0 card=rtx5090 L=30720 R=288 N=5 wall_ms p50=103.69 gpu_span_ms p50=103.45 gpu_busy_ms p50=103.07 busy_share=0.994 in_span_gaps_ms p50=0.37 host_outside_span_ms p50=0.24 attn_ms=0.64 gdn_ms=3.24 gemm_ms=49.77 other_ms=49.55
+```
+
+- **The rule of 1.3 selects arm O on the 5090 class too.** The 32-row call is GPU-busy for 98.2% and 98.9% of its
+  wall. The shape matches the target card's: the GEMM costs the same 22 ms for 32 and 64 rows, and the prefill
+  attention grows with the context (in `other`).
+- Timings stay on this card and are not compared with the target card's.
