@@ -165,6 +165,21 @@ the per-hardware rule, with `=0` as its seam and a decide-by. The RTX 5090 gets 
 - **Records:** `docs/decisions/BATCH-OOM-RECOVER-DEFAULT.md` (what was chosen, the receipts, the 5090's pending
   flip), the FLAGS.md row, and the decisions index.
 
+### 1.11 Addendum G (2026-09-28, the RTX 5090's flip, the owner's ruling, before its code)
+
+Addendum F left the RTX 5090 default off until its serving boots read ("the 5090 gets its per-card flip once its
+serving boots (queue-n) read", the owner's ruling of 2026-09-27 via the lead). They have read: 2.6's gates, and 2.7's
+serving shape on every `on` boot of both routes and both orders.
+
+- **The program:** unset on a card whose name `hardware_target_of` reads as the RTX 5090 class now runs the recovery,
+  as it does on the RTX PRO 6000 Blackwell class. Unset on any other device stays off (no default). `=0` and `=1`
+  decide on any card, as before. The boot line's source names the class, `pro6000-class-default` or
+  `rtx5090-class-default`.
+- **The seam:** `=0` stays the rollback seam, `decide-by: 2026-10-12` (14 days from this flip) for deleting it on both
+  classes. The 5090's separate 2026-10-10 date goes away.
+- **Records:** the decision record, the FLAGS.md row and the unit test move with the code. No new cell: the arm is the
+  one 2.6 and 2.7 read.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
