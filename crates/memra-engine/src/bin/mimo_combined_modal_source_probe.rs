@@ -1,6 +1,7 @@
 //! One pinned MiMo source composition on exactly two GPUs.
 //! Prepared pixels and mels reach model-owned text through vision, the
 //! bundled 20-depth audio codec, and the grouped-code audio patch encoder.
+//! An explicit RGB8 mode also runs the source image processor before vision.
 //! A separate position-zero MTP3 draft runs while the 1M text KV stays
 //! allocated. This is synthetic offline evidence, not request serving.
 
@@ -17,6 +18,8 @@ use memra_gguf::model_packs::mimo_v2::bind_pinned_text_source;
 use memra_gguf::model_packs::mimo_v2::vision::MiMoVisionGrid;
 use memra_gguf::source::SafetensorsSource;
 use memra_reference::mimo_modal_overlay::{AUDIO_TOKEN_ID, IMAGE_TOKEN_ID, VIDEO_TOKEN_ID};
+use memra_reference::mimo_pixel_prepare::prepare_mimo_rgb8_frames;
+use memra_reference::mimo_vision_patchify::patchify_prepared_frames;
 use sha2::{Digest, Sha256};
 
 type Fail = Box<dyn std::error::Error>;
@@ -31,6 +34,10 @@ fn digest(values: &[f32]) -> String {
         hash.update(value.to_bits().to_le_bytes());
     }
     format!("{:x}", hash.finalize())
+}
+
+fn digest_bytes(values: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(values))
 }
 
 fn argmax(logits: &[f32]) -> Result<usize, &'static str> {
@@ -67,9 +74,14 @@ fn run() -> Result<(), Fail> {
     let mut args = std::env::args().skip(1);
     let dir = args
         .next()
-        .ok_or("usage: mimo_combined_modal_source_probe <source_dir>")?;
+        .ok_or("usage: mimo_combined_modal_source_probe <source_dir> [--rgb8]")?;
+    let rgb8 = match args.next().as_deref() {
+        None => false,
+        Some("--rgb8") => true,
+        _ => return Err("usage: mimo_combined_modal_source_probe <source_dir> [--rgb8]".into()),
+    };
     if args.next().is_some() {
-        return Err("usage: mimo_combined_modal_source_probe <source_dir>".into());
+        return Err("usage: mimo_combined_modal_source_probe <source_dir> [--rgb8]".into());
     }
     let source = Arc::new(SafetensorsSource::open(Path::new(&dir))?);
     let (config, _, binding) = bind_pinned_text_source(&source)?;
@@ -78,7 +90,14 @@ fn run() -> Result<(), Fail> {
     if cards[0].stream().context().ordinal() == cards[1].stream().context().ordinal() {
         return Err("MiMo combined source needs two distinct GPU devices".into());
     }
-    println!("format\tmemra-mimo-combined-modal-source-v1");
+    println!(
+        "format\t{}",
+        if rgb8 {
+            "memra-mimo-combined-modal-source-rgb8-v1"
+        } else {
+            "memra-mimo-combined-modal-source-v1"
+        }
+    );
     println!("source\tXiaomiMiMo/MiMo-V2.6-Flash-RL@3b38d063180c3e4aed9691fdc735f3d10b266ee4");
     record(engines, "empty", false)?;
 
@@ -103,31 +122,84 @@ fn run() -> Result<(), Fail> {
     let mut text_sequence = text.compressed_text_forward(engines, FULL_CONTEXT, [FOUR_GIB; 2])?;
     record(engines, "kv1m", true)?;
 
-    let pixels = (0..8 * 3 * 2 * 16 * 16)
-        .map(|index| ((index * 17 % 251) as f32 - 125.0) / 256.0)
-        .collect::<Vec<_>>();
-    let grids = [
-        MiMoVisionGrid {
-            frames: 1,
-            height: 2,
-            width: 2,
-        },
-        MiMoVisionGrid {
-            frames: 1,
-            height: 2,
-            width: 2,
-        },
-    ];
+    let (pixels, grids, image_tokens, video_tokens) = if rgb8 {
+        const HEIGHT: usize = 33;
+        const WIDTH: usize = 65;
+        let image_rgb = (0..HEIGHT * WIDTH * 3)
+            .map(|index| ((index * 17 + 29) % 256) as u8)
+            .collect::<Vec<_>>();
+        let video_rgb = (0..3 * HEIGHT * WIDTH * 3)
+            .map(|index| ((index * 23 + 71) % 256) as u8)
+            .collect::<Vec<_>>();
+        println!("rgb_image_sha256\t{}", digest_bytes(&image_rgb));
+        println!("rgb_video_sha256\t{}", digest_bytes(&video_rgb));
+        let (image_prepared, image_shape) =
+            prepare_mimo_rgb8_frames(&image_rgb, [1, HEIGHT, WIDTH, 3])?;
+        let (video_prepared, video_shape) =
+            prepare_mimo_rgb8_frames(&video_rgb, [3, HEIGHT, WIDTH, 3])?;
+        let (mut image_patches, image_grid) =
+            patchify_prepared_frames(&image_prepared, image_shape)?;
+        let (video_patches, video_grid) = patchify_prepared_frames(&video_prepared, video_shape)?;
+        let image_tokens = (image_grid.frames * image_grid.height * image_grid.width / 4) as usize;
+        let video_tokens = (video_grid.frames * video_grid.height * video_grid.width / 4) as usize;
+        image_patches.extend(video_patches);
+        (
+            image_patches,
+            [image_grid, video_grid],
+            image_tokens,
+            video_tokens,
+        )
+    } else {
+        (
+            (0..8 * 3 * 2 * 16 * 16)
+                .map(|index| ((index * 17 % 251) as f32 - 125.0) / 256.0)
+                .collect::<Vec<_>>(),
+            [
+                MiMoVisionGrid {
+                    frames: 1,
+                    height: 2,
+                    width: 2,
+                },
+                MiMoVisionGrid {
+                    frames: 1,
+                    height: 2,
+                    width: 2,
+                },
+            ],
+            1,
+            1,
+        )
+    };
+    if rgb8 {
+        println!("rgb_image_tokens\t{image_tokens}");
+        println!("rgb_video_tokens\t{video_tokens}");
+    }
     let vision_output =
         vision.forward_patchified_vision(&cards[0], &config, &grids, &cards[0].htod(&pixels)?)?;
     let visual_rows = cards[0].dtoh(&vision_output)?;
-    if visual_rows.len() != 2 * HIDDEN {
+    if visual_rows.len() != (image_tokens + video_tokens) * HIDDEN {
         return Err("MiMo combined source vision rows are incomplete".into());
     }
-    let image_rows = vec![visual_rows[..HIDDEN].to_vec()];
-    let video_rows = vec![visual_rows[HIDDEN..].to_vec()];
+    let image_rows = visual_rows[..image_tokens * HIDDEN]
+        .chunks_exact(HIDDEN)
+        .map(<[f32]>::to_vec)
+        .collect::<Vec<_>>();
+    let video_rows = visual_rows[image_tokens * HIDDEN..]
+        .chunks_exact(HIDDEN)
+        .map(<[f32]>::to_vec)
+        .collect::<Vec<_>>();
     println!("image_row_sha256\t{}", digest(&image_rows[0]));
     println!("video_row_sha256\t{}", digest(&video_rows[0]));
+    if rgb8 {
+        println!(
+            "image_rows_sha256\t{}",
+            digest(&visual_rows[..image_tokens * HIDDEN])
+        );
+        println!(
+            "video_rows_sha256\t{}",
+            digest(&visual_rows[image_tokens * HIDDEN..])
+        );
+    }
     record(engines, "vision_forward", true)?;
 
     let mel = (0..4 * 128)
@@ -151,14 +223,29 @@ fn run() -> Result<(), Fail> {
     println!("audio_row_sha256\t{}", digest(&audio_rows[0]));
     record(engines, "audio_forward", true)?;
 
-    let tokens = [42, IMAGE_TOKEN_ID, VIDEO_TOKEN_ID, AUDIO_TOKEN_ID];
+    let tokens = if rgb8 {
+        let mut tokens = vec![42];
+        tokens.extend(std::iter::repeat_n(IMAGE_TOKEN_ID, image_tokens));
+        tokens.extend(std::iter::repeat_n(VIDEO_TOKEN_ID, video_tokens));
+        tokens.push(AUDIO_TOKEN_ID);
+        tokens
+    } else {
+        vec![42, IMAGE_TOKEN_ID, VIDEO_TOKEN_ID, AUDIO_TOKEN_ID]
+    };
     let prepared =
         text.modal_embedding_gpu_chunk(&cards[0], &tokens, &image_rows, &video_rows, &audio_rows)?;
     if !prepared.requires_payload_identity() || prepared.token_count() != tokens.len() {
         return Err("MiMo combined source lost modal payload identity".into());
     }
+    if rgb8
+        && (prepared.modal_counts().image != image_tokens
+            || prepared.modal_counts().video != video_tokens
+            || prepared.modal_counts().audio != 1)
+    {
+        return Err("MiMo RGB8 source modal placeholder counts drifted".into());
+    }
     let step = text_sequence.consume_embedding_chunk(&prepared)?;
-    if step.position != 3 || text_sequence.position() != 4 {
+    if step.position != tokens.len() - 1 || text_sequence.position() != tokens.len() {
         return Err("MiMo combined source text and KV cursors drifted".into());
     }
     println!("modal_text_argmax\t{}", argmax(&step.logits)?);
