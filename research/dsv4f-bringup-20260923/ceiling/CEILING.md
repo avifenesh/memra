@@ -228,6 +228,21 @@ tensor census gives about 6.0 to 6.2 GB of weights per rank, and the KV rows, ac
 scratch make up the rest. The average read rate over the step is 0.67 TB/s, 43% of the practical
 1.54 TB/s.
 
+**Census after the B-row lanes** (`raw/census-se-v7d/`, main with #906 and #909, PDL off,
+nsys graph-node tracing). The one-row replayed step is 10.24 ms captured, 9.53 ms of kernels on
+rank 0, and 1,754 launches:
+- dense-fast FP8 GEMVs, single, pair and gated: 2.74 ms;
+- the fused MoE pair: 1.82 ms;
+- dots: 1.05 ms;
+- joins: 0.88 ms;
+- HC finish: 0.40 ms;
+- sink attention: 0.54 ms;
+- the rest is the small chains.
+
+At 16 rows (`raw/census-se-v7d/rows-b16/`) a captured step is 37.6 ms over 1,696 launches, as
+many as 4 rows take. The fused MoE pair over the union of the rows' experts is 14.4 ms, dense-fast
+GEMVs and dots 12.0 ms, and the expert join 3.4 ms.
+
 **The ceiling of this program.** Streaming 6.68 GB at 1.54 TB/s takes 4.34 ms. With the 1.64 ms
 launch-and-join floor on top, a step that ran every kernel at practical bandwidth would take
 about 6.0 ms, 167 tok/s of device time. Overlapping launches with streaming could shave that

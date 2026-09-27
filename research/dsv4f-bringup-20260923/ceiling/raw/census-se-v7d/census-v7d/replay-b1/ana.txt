@@ -1,0 +1,55 @@
+capture span 655.2 ms over 64 steps = 10.24 ms/step
+dev0: kernels 112240 (1754/step) kernel-sum 9.53 ms/step busy-union 9.59 ms/step memcpys 50/step
+dev1: kernels 113584 (1775/step) kernel-sum 9.51 ms/step busy-union 9.58 ms/step memcpys 51/step
+--- dev0 top kernels (ms/step, count/step, share)
+    1.423    108  14.9%  dsv4_dense_fast_fp8_kernel
+    1.095     43  11.5%  dsv4_moe_fused_gu_kernel
+    0.722     43   7.6%  dsv4_moe_fused_down_kernel
+    0.666     64   7.0%  dsv4_dense_fast_fp8_kernel_pair
+    0.545     45   5.7%  dsv4_dense_fast_dots_kernel
+    0.501     62   5.3%  dsv4_dense_fast_dots_kernel_pair
+    0.441     87   4.6%  memra_tp_ar_push_gather_rows_kernel
+    0.439     43   4.6%  memra_tp_ar_push_reduce_kernel
+    0.406     43   4.3%  dsv4_dense_fast_fp8_kernel_pair_gated
+    0.401     86   4.2%  dsv4_hc_finish_f32_fixed_order_kernel
+    0.323     43   3.4%  dsv4_sink_softout_st_f32acc_kernel
+    0.269     43   2.8%  dsv4_route_mirror_m_kernel
+    0.246     43   2.6%  dsv4_dense_fast_fp8_kernel_gated
+    0.240     21   2.5%  dsv4_indexer_score_f32acc_kernel
+    0.213     43   2.2%  dsv4_sink_scores_st_f32acc_kernel
+    0.195     86   2.0%  dsv4_hc_dot_split_partial_kernel
+    0.147     21   1.5%  dsv4_c4_split_gather_kernel
+    0.118    129   1.2%  dsv4_replay_copy_row_kernel
+--- dev1 top kernels (ms/step, count/step, share)
+    1.426    108  15.0%  dsv4_dense_fast_fp8_kernel
+    1.134     43  11.9%  dsv4_moe_fused_gu_kernel
+    0.738     43   7.8%  dsv4_moe_fused_down_kernel
+    0.663     64   7.0%  dsv4_dense_fast_fp8_kernel_pair
+    0.635     43   6.7%  memra_tp_ar_push_reduce_kernel
+    0.546     45   5.7%  dsv4_dense_fast_dots_kernel
+    0.506     62   5.3%  dsv4_dense_fast_dots_kernel_pair
+    0.401     86   4.2%  dsv4_hc_finish_f32_fixed_order_kernel
+    0.348     87   3.7%  memra_tp_ar_push_gather_rows_kernel
+    0.325     43   3.4%  dsv4_sink_softout_st_f32acc_kernel
+    0.269     43   2.8%  dsv4_route_mirror_m_kernel
+    0.244     43   2.6%  dsv4_dense_fast_fp8_kernel_pair_gated
+    0.243     21   2.6%  dsv4_indexer_score_f32acc_kernel
+    0.215     43   2.3%  dsv4_sink_scores_st_f32acc_kernel
+    0.194     86   2.0%  dsv4_hc_dot_split_partial_kernel
+    0.167     43   1.8%  dsv4_dense_fast_fp8_kernel_gated
+    0.134     21   1.4%  dsv4_c4_split_gather_kernel
+    0.118    129   1.2%  dsv4_replay_copy_row_kernel
+memcpy kind: count/step bytes/step ms/step {8: (91.9375, 1199072, 0.055), 1: (2.015625, 48, 0.001), 2: (7.0, 364, 0.004)}
+--- runtime API (count/step, ms/step)
+         7    9.501  cuMemcpyDtoHAsync_v2
+         9    0.543  cuStreamSynchronize
+         4    0.181  cudaGraphLaunch_v10000
+         6    0.024  cuMemcpyDtoDAsync_v2
+         2    0.004  cuMemcpyHtoDAsync_v2
+        16    0.001  cuCtxSetCurrent
+         0    0.000  cuMemsetD8Async
+         0    0.000  cuMemAllocAsync
+         0    0.000  cuCtxSynchronize
+         0    0.000  cuMemFreeAsync
+         0    0.000  cuProfilerStart
+         0    0.000  cuProfilerStop
