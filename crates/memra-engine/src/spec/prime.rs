@@ -505,7 +505,9 @@ impl MtpPrimeWalker<'_> {
                 latent_tails: Vec::new(),
             });
         }
-        if s.ckpt_rel.is_none() && !s.grid_requested {
+        // WP-B day 44 addendum C: the settle's prime-only walk takes no prompt-end checkpoint, so the
+        // turn checkpoint the settle retained (at `g`) survives it for affinity.
+        if s.ckpt_rel.is_none() && !s.grid_requested && !s.prime_only {
             let anchor = self.e.uninit(n).and_then(|mut a| {
                 self.e
                     .copy_view_into(&mut a, 0, &h.slice((tp - 1) * n..tp * n), n)?;

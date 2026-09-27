@@ -3362,7 +3362,10 @@ fn exact_resume_plain(
              (priming {} rows, settled; model {model})",
             prompt.len() - committed
         );
-        return (Some(e), None);
+        // DAY44 addendum C: the settle kept the checkpoint at `g`; the session carries it until
+        // its own call's in-call capture replaces it (case 9), so affinity keeps a rewind point.
+        let carry = e.ckpt.take();
+        return (Some(e), carry);
     }
     let Some(mut ckpt) = e.ckpt.take() else {
         decline("no checkpoint");
@@ -15872,6 +15875,8 @@ struct SettleJob {
 #[derive(Default)]
 struct SettleQueue {
     jobs: VecDeque<SettleJob>,
+    /// DAY44 addendum C: the job whose settle waits for the memory reading, printed once.
+    waiting: Option<u64>,
 }
 
 impl SettleQueue {
@@ -15908,6 +15913,32 @@ fn exact_settle_point(committed: usize, ckpt: usize) -> Option<usize> {
     (committed >= floor && s >= ckpt + floor && committed - s >= floor).then_some(s)
 }
 
+/// DAY44 1.3 case 6 and addendum C: a settle runs only when the memory reading covers what its
+/// call allocates. `need` is the memory door's pending term for one owed prime of the settle's rows
+/// plus the admission reserve; `reading` is effective free (driver free plus pool cached). No
+/// reading waits too.
+fn settle_reading_covers(need: usize, reading: Option<usize>) -> bool {
+    reading.is_some_and(|free| need <= free)
+}
+
+/// The rows a settle of this entry would prime (`from`, `to`), or `None` when it would not run.
+fn plain_settle_rows(e: &ReuseEntry) -> Option<(usize, usize)> {
+    if e.settled {
+        return None;
+    }
+    let from = e.ckpt.as_ref()?.pos;
+    exact_settle_point(e.fed.len(), from).map(|to| (from, to))
+}
+
+fn spec_settle_rows(e: &SpecReuseEntry) -> Option<(usize, usize)> {
+    if e.settled {
+        return None;
+    }
+    let from = e.sess.rewind_pos()?;
+    let public = e.public_len.min(e.sess.committed.len());
+    exact_settle_point(public, from).map(|to| (from, to))
+}
+
 /// Run the next settle job whose entry still exists (DAY44 1.2 (c)). The entry is moved out of its
 /// pool, restored to its checkpoint, its committed rows up to the settle point primed in one call,
 /// and put back settled; a failure drops it with its line (DAY44 1.3 case 7).
@@ -15917,11 +15948,44 @@ fn settle_one(
     reuse: &mut HashMap<PoolKey, Vec<ReuseEntry>>,
     spec_reuse: &mut HashMap<PoolKey, Vec<SpecReuseEntry>>,
     queue: &mut SettleQueue,
+    need_for: &dyn Fn(&str, usize, bool) -> usize,
+    reading: &dyn Fn() -> Option<usize>,
 ) {
     while let Some(job) = queue.pop() {
         let Some(lm) = loaded.get(&job.key.0) else {
             continue;
         };
+        // DAY44 1.3 case 6 (addendum C): the gate reads before the entry moves. A settle the reading
+        // does not cover waits at the head of the queue for the next idle pass.
+        let rows = match job.pool {
+            ParkedPool::Plain => reuse
+                .get(&job.key)
+                .and_then(|pool| pool.iter().find(|e| e.id == job.id))
+                .and_then(plain_settle_rows),
+            ParkedPool::Spec => spec_reuse
+                .get(&job.key)
+                .and_then(|pool| pool.iter().find(|e| e.id == job.id))
+                .and_then(spec_settle_rows),
+            ParkedPool::Dspark => None,
+        };
+        if let Some((from, to)) = rows {
+            let need = need_for(&job.key.0, to - from, job.pool == ParkedPool::Spec);
+            let free = reading();
+            if !settle_reading_covers(need, free) {
+                if queue.waiting != Some(job.id) {
+                    eprintln!(
+                        "[kv-reuse] exact: settle {} waits (needs {:.0}MB, reading {})",
+                        job.id,
+                        need as f64 / 1e6,
+                        free.map_or("none".to_string(), |f| format!("{:.0}MB", f as f64 / 1e6))
+                    );
+                    queue.waiting = Some(job.id);
+                }
+                queue.jobs.push_back(job);
+                return;
+            }
+        }
+        queue.waiting = None;
         match job.pool {
             ParkedPool::Plain => {
                 let Some(i) = reuse
@@ -16010,7 +16074,9 @@ fn exact_settle_plain(
         .map_err(|err| format!("prime failed: {err}"))?;
     e.fed.truncate(to);
     e.last_logits = logits;
-    e.ckpt = None;
+    // DAY44 addendum C: the checkpoint at `g` stays beside the settled state. The settle does not
+    // touch rows `[0, g)` and the snapshot holds the recurrent state at `g`, so plain affinity (a
+    // client that rewrites its history) can still rewind there instead of priming cold.
     e.settled = true;
     Ok(Some((from, to)))
 }
@@ -16037,9 +16103,16 @@ fn exact_settle_spec(
         return Ok(None);
     }
     let tokens = e.sess.committed[from..to].to_vec();
-    lm.model
-        .spec_rewind_to_checkpoint(engine, &mut e.sess)
-        .map_err(|err| format!("rewind failed: {err}"))?;
+    // DAY44 addendum C: the retaining rewind keeps the turn checkpoint at `g` (the prime-only walk
+    // takes none of its own), so spec affinity can still rewind a history rewrite there.
+    match lm
+        .model
+        .spec_rewind_to_checkpoint_retaining(engine, &mut e.sess)
+        .map_err(|err| format!("rewind failed: {err}"))?
+    {
+        Some(p) if p == from => {}
+        other => return Err(format!("rewind landed at {other:?}, expected {from}")),
+    }
     if resume_exact_fault_settle() {
         return Err("fault injection (MEMRA_RESUME_EXACT_FAULT=settle-fail)".into());
     }
@@ -27488,14 +27561,56 @@ pub fn run(
                     let ready = last_work + EXACT_SETTLE_GRACE;
                     let now = Instant::now();
                     if now >= ready {
+                        // DAY44 1.3 case 6 (addendum C): a settle's need is the memory door's
+                        // pending term for one owed prime of its rows, plus the admission reserve.
+                        let need_for = |name: &str, rows: usize, spec: bool| -> usize {
+                            let Some(model) = admission_costs.get(name) else {
+                                return 0;
+                            };
+                            let owed = PrimeOwed {
+                                rows,
+                                unstarted_walker: spec,
+                                cooperative: memra_engine::prime_walker::prime_yield_enabled()
+                                    && loaded
+                                        .get(name)
+                                        .is_some_and(|lm| lm.model.mtp_prime_walk_supported()),
+                                snapshot_bytes: 0,
+                            };
+                            let slab = loaded
+                                .get(name)
+                                .map_or(0, |lm| lm.model.prime_slab_bytes(&engine));
+                            let workspace = pending_prime_for_model(
+                                &[owed],
+                                model.prime.as_ref(),
+                                model.prefill.as_ref(),
+                                slab,
+                            );
+                            workspace.saturating_add(admission_reserve(
+                                true,
+                                workspace,
+                                model.transient_floor,
+                                admit_reserve_override(),
+                            ))
+                        };
+                        let reading = || effective_free_bytes(&engine).map(|(free, _)| free);
+                        let before = settle_queue.jobs.len();
                         settle_one(
                             &engine,
                             &loaded,
                             &mut reuse,
                             &mut spec_reuse,
                             &mut settle_queue,
+                            &need_for,
+                            &reading,
                         );
-                        wait = Duration::ZERO;
+                        // A settle that waits for the reading leaves the queue as it was: the next
+                        // pass reads again after the grace, not in a spin.
+                        if settle_queue.waiting.is_some() && settle_queue.jobs.len() == before {
+                            last_work = Instant::now();
+                            wait = wait.min(EXACT_SETTLE_GRACE);
+                        } else {
+                            wait = Duration::ZERO;
+                        }
                     } else {
                         wait = wait.min(ready - now);
                     }
@@ -59482,6 +59597,53 @@ mod tests {
     }
 
     /// WP-B day 44 (DAY44 1.2 (c), 1.3): the settle point and the settle queue.
+    /// DAY44 addendum C: the settle keeps the checkpoint affinity nominates on both routes, and a
+    /// settle runs only when the memory reading covers its workspace (case 6), waiting otherwise.
+    #[test]
+    fn settle_keeps_the_affinity_checkpoint_and_waits_for_the_reading() {
+        // The gate's decision: waits while short or unread, runs once the reading covers the need.
+        assert!(!super::settle_reading_covers(10, Some(9)));
+        assert!(!super::settle_reading_covers(10, None));
+        assert!(super::settle_reading_covers(10, Some(10)));
+        assert!(super::settle_reading_covers(0, Some(0)));
+        let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
+        let worker = squash(include_str!("worker.rs"));
+        let live = &worker[..worker.find("mod tests").expect("the test module exists")];
+        let body = |start: &str| -> &str {
+            let at = live.find(start).expect(start);
+            let end = live[at + 1..]
+                .find("\nfn ")
+                .map_or(live.len(), |n| at + 1 + n);
+            let _ = end;
+            &live[at..(at + 6000).min(live.len())]
+        };
+        // Plain: the settle leaves the checkpoint in place; the settled resume carries it.
+        let plain = body("fn exact_settle_plain(");
+        let plain = &plain[..plain.find("fn exact_settle_spec(").unwrap_or(plain.len())];
+        assert!(
+            !plain.contains("e.ckpt = None;"),
+            "the plain settle keeps the checkpoint at g"
+        );
+        assert!(live.contains("let carry = e.ckpt.take(); return (Some(e), carry);"));
+        // Spec: the retaining rewind.
+        let spec = body("fn exact_settle_spec(");
+        assert!(spec.contains("spec_rewind_to_checkpoint_retaining(engine, &mut e.sess)"));
+        assert!(
+            !spec[..spec.find("fn reclaim_queue_drain(").unwrap_or(spec.len())]
+                .contains(".spec_rewind_to_checkpoint(engine")
+        );
+        // The gate reads before any entry moves out of its pool.
+        let one = body("fn settle_one(");
+        let gate = one
+            .find("if !settle_reading_covers(need, free) {")
+            .expect("the gate");
+        let first_move = one.find(".remove(i);").expect("the move");
+        assert!(gate < first_move, "the gate reads before the entry moves");
+        // The spec prime-only walk takes no prompt-end checkpoint.
+        let prime = squash(include_str!("../../memra-engine/src/spec/prime.rs"));
+        assert!(prime.contains("if s.ckpt_rel.is_none() && !s.grid_requested && !s.prime_only {"));
+    }
+
     #[test]
     fn exact_settle_point_and_queue_follow_day44() {
         use super::{ParkedPool, SettleJob, SettleQueue, exact_settle_point};
