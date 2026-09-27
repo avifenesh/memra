@@ -1124,6 +1124,105 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires pinned MiMo source and a dedicated two-card GPU lane"]
+    fn first_batch_128_packed_diagnostic() -> Result<(), Fail> {
+        use std::path::Path;
+        use std::sync::Arc;
+
+        use memra_gguf::source::SafetensorsSource;
+
+        const FOUR_GIB: usize = 4 * 1024 * 1024 * 1024;
+        const TOKENS: usize = 128;
+        let root = std::env::var("MIMO_PINNED_SOURCE_ROOT")?;
+        let source = Arc::new(SafetensorsSource::open(Path::new(&root))?);
+        let cards = [Engine::new(0)?, Engine::new(1)?];
+        let engines = [&cards[0], &cards[1]];
+        let text = MiMoTextWeights::load(engines, source)?;
+        let ids = (42..42 + TOKENS as u32).collect::<Vec<_>>();
+        let prepared = text.modal_embedding_gpu_chunk(&cards[0], &ids, &[], &[], &[])?;
+        let (batched, batched_next, batched_rows, batched_stages) = {
+            let mut sequence = text.compressed_text_forward(engines, TOKENS + 1, [FOUR_GIB; 2])?;
+            sequence.trace_position = Some(TOKENS - 1);
+            sequence.batch_packed_attention = true;
+            let step = sequence.consume_embedding_chunk_batched(&prepared)?;
+            let next = sequence.token(220)?;
+            (step, next, sequence.trace_rows, sequence.trace_stages)
+        };
+        let (serial, serial_next, serial_rows, serial_stages) = {
+            let mut sequence = text.compressed_text_forward(engines, TOKENS + 1, [FOUR_GIB; 2])?;
+            sequence.trace_position = Some(TOKENS - 1);
+            let step = sequence.consume_embedding_chunk(&prepared)?;
+            let next = sequence.token(220)?;
+            (step, next, sequence.trace_rows, sequence.trace_stages)
+        };
+        let compare = |candidate: &[f32], control: &[f32]| {
+            let (diff, base, matching) = candidate.iter().zip(control).fold(
+                (0.0f64, 0.0f64, 0usize),
+                |(diff, base, matching), (&got, &want)| {
+                    (
+                        diff + f64::from(got - want).powi(2),
+                        base + f64::from(want).powi(2),
+                        matching + usize::from(got.to_bits() == want.to_bits()),
+                    )
+                },
+            );
+            ((diff / base).sqrt(), matching)
+        };
+        let argmax = |values: &[f32]| {
+            values
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.total_cmp(b))
+                .map(|(index, _)| index)
+                .unwrap()
+        };
+        for (name, candidate, control) in [
+            ("last", batched.logits.as_slice(), serial.logits.as_slice()),
+            (
+                "continuation",
+                batched_next.as_slice(),
+                serial_next.as_slice(),
+            ),
+        ] {
+            let (relative_l2, matching_bits) = compare(candidate, control);
+            println!(
+                "mimo_packed_128\tstage={name}\trel_l2={relative_l2:.9e}\tmatching_bits={matching_bits}\tbatch_argmax={}\tserial_argmax={}",
+                argmax(candidate),
+                argmax(control)
+            );
+        }
+        if batched_rows.len() != LAYERS
+            || serial_rows.len() != LAYERS
+            || batched_stages.len() != 18
+            || serial_stages.len() != 18
+        {
+            return Err("MiMo packed 128 trace is incomplete".into());
+        }
+        for ((layer, candidate), (control_layer, control)) in batched_rows.iter().zip(&serial_rows)
+        {
+            if layer != control_layer {
+                return Err("MiMo packed 128 layers are misaligned".into());
+            }
+            let (relative_l2, matching_bits) = compare(candidate, control);
+            println!(
+                "mimo_packed_128\tlayer={layer}\trel_l2={relative_l2:.9e}\tmatching_bits={matching_bits}"
+            );
+        }
+        for ((layer, name, candidate), (control_layer, control_name, control)) in
+            batched_stages.iter().zip(&serial_stages)
+        {
+            if layer != control_layer || name != control_name {
+                return Err("MiMo packed 128 stages are misaligned".into());
+            }
+            let (relative_l2, matching_bits) = compare(candidate, control);
+            println!(
+                "mimo_packed_128\tlayer={layer}\tstage={name}\trel_l2={relative_l2:.9e}\tmatching_bits={matching_bits}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn compressed_forward_plan_keeps_source_value_scale_and_stage_census() {
         let config = ModelConfig::from_hf(&HfConfig::parse(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
