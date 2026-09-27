@@ -16171,7 +16171,7 @@ impl Dsv4Gpu {
         }
     }
 
-    /// f32 cvt + batched GEMV (the m=T twin of `gemm_dev`).    /// f32 cvt + batched GEMV (the m=T twin of `gemm_dev`).
+    /// f32 cvt + batched GEMV (the m=T twin of `gemm_dev`).
     #[allow(clippy::too_many_arguments)]
     fn gemm_m_dev(
         st: &Stage,
@@ -16208,8 +16208,6 @@ impl Dsv4Gpu {
         )
     }
 
-    /// Island dots, batched rows, weight row hoisted. Same arm selection as `dots_dev`.
-    #[allow(clippy::too_many_arguments)]
     /// Two dots of one storage class over the same x rows (memra #710): one launch on the
     /// f32-accumulation arm when both take the dense-fast transport, else the two ordinary calls.
     #[allow(clippy::too_many_arguments)]
@@ -16252,6 +16250,8 @@ impl Dsv4Gpu {
         }
     }
 
+    /// Island dots, batched rows, weight row hoisted. Same arm selection as `dots_dev`.
+    #[allow(clippy::too_many_arguments)]
     fn dots_m_dev(
         &self,
         st: &Stage,
