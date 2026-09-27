@@ -564,7 +564,15 @@ and the dense-fast enqueue count; `dsv4_latency_kernels_gpu` times both at the
 served shape. The ignored
 `cuda_gemv_fp8_grouped_m1_matches_eight_slices_and_counts_one_enqueue` test
 compares the real 8x1024x4096 shape and padded two-group case bitwise and
-checks invalid-stride refusals. Full-model gate: `dsv4_plain_perf_gate wo-a`,
+checks invalid-stride refusals. Since 2026-09-27 (memra #710 B-row)
+`memra_dsv4_gemv_fp8_grouped_m` takes the 2- to 8-row widths too: one
+`dsv4_dense_fast_fp8_kernel<2,true,M>` launch over every group's M rows, each
+token row at the addresses its group's own M-row launch reads and writes. It
+returns 1 without launching when dense fast does not admit the slices, and the
+caller runs the per-group launches. The ignored
+`cuda_gemv_fp8_grouped_m_matches_per_group_m_row_launches` test compares it
+bitwise against the per-group launches at M = 2..8 on 4x1024x4096, 8x1024x4096
+and 2x128x4096 and checks the refusals. Full-model gate: `dsv4_plain_perf_gate wo-a`,
 holding half2 ON in both arms. Both-device memcheck and all 28 full-model
 token/logit/KV rows pass. Measured +1.897%/+1.491% at 256/8192; serving
 qualification remains separate. Record:
@@ -877,6 +885,7 @@ The source rebase does not relabel the pinned binary receipts as a new build.
 | `cu/dsv4_gpu.cu` | `dsv4_c4_split_gather_kernel`, `dsv4_c4_split_store_kernel` | TP/EP position-split C4 store (memra #710). The gather copies each query's selected rows (window, compressed and transient rows) from the local store, the local recent ring, or the peer's store over the fabric into the C4 gather workspace, with indices rewritten to it, like the host-C4 gather. The store writes an emitted block to its owner's row or the other rank's tagged recent slot: from the host block number when eager, from the device position when replayed (`memra_dsv4_replay_compressor_emit` takes the split ring). FFI `memra_dsv4_c4_split_gather`, `memra_dsv4_c4_split_store`. |
 | `cu/dsv4_gpu.cu` | `dsv4_copy2_f32_kernel` | A compressor checkpoint's kv and score snapshots as one float4 grid-stride copy (memra #710), replacing two memcpy nodes per compressor per step, so a captured TP/EP step keeps its programmatic dependent launch chain through the snapshot. Pure bit movement. FFI `memra_dsv4_copy2_f32`. |
 | `cu/dsv4_gpu.cu` | `dsv4_cmp_rollback_kernel`, `dsv4_cmp_rows_to_slots_kernel` | A verify round's compressor ring moves as single launches (memra #710 DSpark round): the rollback replays the snapshot restore, the committed rows' slot writes and the overlap half shifts per element in position order; the row placement writes the rows between two block boundaries into their slots. Pure bit movement, replacing 2 + 2 n_commit + 2 x blocks and 2 t memcpy nodes per compressor. FFI `memra_dsv4_cmp_rollback`, `memra_dsv4_cmp_rows_to_slots`. |
+| `cu/dsv4_gpu.cu` | `dsv4_cmp_rows_append_kernel`, `dsv4_cmp_rows_pool_kernel`, `dsv4_cmp_rows_finish_kernel` | A multi-request replay step's compressors (memra #710 B-row, 2026-09-27): three launches per compressor for up to 16 rows, each row's buffers from a `__grid_constant__` table and its position from the device, in place of the per-row snapshot, record, append and emission chain (about a dozen launches per compressor per row). Append: the snapshot of both pending rings, the row record and the slot write, per element in `dsv4_copy2_f32_kernel` then `dsv4_replay_copy_row_kernel` order. Pool: the emitted block's row through `dsv4_compressor_pool_elem` (the pool kernel's own per-channel body), 32 channels per CTA. Finish: one 128-thread CTA per row runs the overlap half shift, `dsv4_rmsnorm_f32acc_regs<8>`, the RoPE-at expression, the Hadamard butterflies and per-32 FP4 QAT or the per-64 FP8 QAT, and the store (split or unsplit), each group maximum paired as `dsv4_block_max` pairs. Non-emitting rows exit at entry. The rows gate's wide phases compare every row's logits bits against its solo steps. FFI `memra_dsv4_cmp_rows_replay`. |
 | `cu/dsv4_gpu.cu` | `dsv4_replay_copy_row_kernel`, `dsv4_replay_copy_if_kernel` | Live append/emission addresses and uniformly predicated pending shifts. Byte copies only; existing active compressor arithmetic/reduction order retained. Same diagnostic door. |
 | `cu/dsv4_gpu.cu` | Existing compressor pool, f32 RMSNorm, RoPE-at, Hadamard and activation-quant kernels | Optional uniform whole-block emission predicate at entry, before barriers. Null preserves eager behavior. `memra_dsv4_replay_compressor_emit` composes the exact active program; no CUDA conditional body. Real-kernel byte/sanitizer gate: `tools/dsv4-replay-live-kernel-gate.cu`. |
 | `cu/dsv4_gpu.cu` | Existing redirect, numeric top-k, f32 indexer-score and sink score/soft/out kernels | Optional live position/count/slot inputs; same loop bounds and reduction order as eager. No padded reduction replacement. Same default-OFF full-token door and component gate. |

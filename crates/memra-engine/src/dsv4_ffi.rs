@@ -6,7 +6,54 @@
 
 use std::os::raw::c_void;
 
+/// One row of `memra_dsv4_cmp_rows_replay`'s table (cu/dsv4_gpu.cu `Dsv4CmpRowPtrs`). Null
+/// `kv_snap`/`sc_snap` skip the snapshot; null `recent` stores without the position split.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Dsv4CmpRowPtrs {
+    pub pend_kv: *mut f32,
+    pub pend_sc: *mut f32,
+    pub kv_snap: *mut f32,
+    pub sc_snap: *mut f32,
+    pub rows_kv: *mut f32,
+    pub rows_sc: *mut f32,
+    pub src_kv: *const f32,
+    pub src_sc: *const f32,
+    pub emit: *mut f32,
+    pub store: *mut f32,
+    pub recent: *mut f32,
+    pub tags: *mut i32,
+    pub pos: *const i32,
+    pub store_row0: i32,
+    pub pad: i32,
+}
+
 unsafe extern "C" {
+    /// The compressor of every row of a multi-request replay step (memra #710 B-row): the
+    /// snapshot, row record and slot append, the pooled block, then the overlap shift, RMS norm,
+    /// RoPE, QAT and store, as three launches per 16 rows. `rows` is host memory, copied into
+    /// the launches' parameters.
+    #[allow(clippy::too_many_arguments)]
+    pub fn memra_dsv4_cmp_rows_replay(
+        rows: *const Dsv4CmpRowPtrs,
+        n_rows: i32,
+        ape: *const f32,
+        norm: *const f32,
+        cs: *const f32,
+        ratio: i32,
+        d: i32,
+        latent: i32,
+        overlap: i32,
+        rotate: i32,
+        clamp_only: i32,
+        rd: i32,
+        eps: f32,
+        hadamard_scale: f32,
+        pend_len: i64,
+        recent_rows: i32,
+        rank: i32,
+        stream: *mut c_void,
+    ) -> i32;
     pub fn memra_dsv4_replay_compressor_emit(
         pending_kv: *mut f32,
         pending_score: *mut f32,

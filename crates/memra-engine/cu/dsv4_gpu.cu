@@ -898,23 +898,13 @@ extern "C" int memra_dsv4_rope_inv_cvt(float* x, void* xb, int n_pos, int heads,
 
 // ---------------------------------------------------------------- compressor / indexer
 
-// Gated softmax pooling over ratio-blocks (model.py:279-377; oracle CompressorW::forward).
-// kv/score: [s, latent] f32 (raw GEMM outputs; ape added HERE). out: [nb, d].
-// overlap != 0 (fine r=4): position slots = prev block via dims [0:d] (block 0 -> -inf),
-// current block via dims [d:2d]. One thread per (j, c), sequential f64 num/den like the
-// oracle.
-extern "C" __global__ void dsv4_compressor_pool_kernel(const float* __restrict__ kv,
-                                                       const float* __restrict__ score,
-                                                       const float* __restrict__ ape,
-                                                       float* __restrict__ out, int nb,
-                                                       int ratio, int d, int latent,
-                                                       int overlap, const int* emit_pos = nullptr) {
-    MEMRA_PDL_CHAIN_ENTRY();
-    if (!dsv4_replay_emit(emit_pos,ratio)) return;
-    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= (long)nb * d) return;
-    int j = (int)(i / d);
-    int c = (int)(i % d);
+// One pooled channel `c` of block `j`: dsv4_compressor_pool_kernel's per-thread body, shared with
+// the multi-row replay pool (memra #710 B-row).
+__device__ __forceinline__ float dsv4_compressor_pool_elem(const float* __restrict__ kv,
+                                                           const float* __restrict__ score,
+                                                           const float* __restrict__ ape, int j,
+                                                           int c, int ratio, int d, int latent,
+                                                           int overlap) {
     int positions = overlap ? 2 * ratio : ratio;
     float mx = -INFINITY;
     // pass 1: max of gated scores at this channel
@@ -962,7 +952,27 @@ extern "C" __global__ void dsv4_compressor_pool_kernel(const float* __restrict__
         den += (double)e;
         num += (double)e * (double)kvv;
     }
-    out[i] = (float)(num / den);
+    return (float)(num / den);
+}
+
+// Gated softmax pooling over ratio-blocks (model.py:279-377; oracle CompressorW::forward).
+// kv/score: [s, latent] f32 (raw GEMM outputs; ape added HERE). out: [nb, d].
+// overlap != 0 (fine r=4): position slots = prev block via dims [0:d] (block 0 -> -inf),
+// current block via dims [d:2d]. One thread per (j, c), sequential f64 num/den like the
+// oracle.
+extern "C" __global__ void dsv4_compressor_pool_kernel(const float* __restrict__ kv,
+                                                       const float* __restrict__ score,
+                                                       const float* __restrict__ ape,
+                                                       float* __restrict__ out, int nb,
+                                                       int ratio, int d, int latent,
+                                                       int overlap, const int* emit_pos = nullptr) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    if (!dsv4_replay_emit(emit_pos,ratio)) return;
+    long i = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= (long)nb * d) return;
+    int j = (int)(i / d);
+    int c = (int)(i % d);
+    out[i] = dsv4_compressor_pool_elem(kv, score, ape, j, c, ratio, d, latent, overlap);
 }
 
 extern "C" int memra_dsv4_compressor_pool(const float* kv, const float* score,
@@ -8661,6 +8671,227 @@ extern "C" int memra_dsv4_replay_compressor_emit(float* pending_kv,float* pendin
         memra_chain_launch(dsv4_replay_copy_if_kernel,(ratio*latent+255)/256,256,0,stream)(pending+ratio*latent,shift,ratio*latent,pos,ratio);
         DSV4_ERR();
         memra_chain_launch(dsv4_replay_copy_if_kernel,(ratio*latent+255)/256,256,0,stream)(shift,pending,ratio*latent,pos,ratio);
+        DSV4_ERR();
+    }
+    return 0;
+}
+
+// ---- The compressors of a multi-request replay step (memra #710 B-row). A captured B-row step
+// ran each row's compressor as its own chain: the checkpoint snapshot, the row record, two slot
+// appends, then the emission (pool, RMS norm, RoPE, QAT, store and the overlap shifts), about a
+// dozen launches per compressor per row, most of them skipping on a position that emits
+// nothing. Three launches now cover every row of the step, each reading its row's buffers from
+// the table below and its position from the device, with every element's arithmetic the
+// per-row chain's own.
+#define DSV4_CMP_ROWS_MAX 16
+struct Dsv4CmpRowPtrs {
+    float* pend_kv;
+    float* pend_sc;
+    float* kv_snap;   // null: no snapshot
+    float* sc_snap;
+    float* rows_kv;   // the row record a rollback replays
+    float* rows_sc;
+    const float* src_kv;  // this row's projections
+    const float* src_sc;
+    float* emit;      // d floats of scratch: the pooled row
+    float* store;
+    float* recent;    // null: no position split
+    int* tags;
+    const int* pos;
+    int store_row0;
+    int pad;
+};
+struct Dsv4CmpRowTable {
+    Dsv4CmpRowPtrs r[DSV4_CMP_ROWS_MAX];
+};
+
+// The snapshot of both pending rings (dsv4_copy2_f32_kernel's bytes), the row record, and the
+// row's slot write (dsv4_replay_copy_row_kernel's), per element in that order.
+__global__ void dsv4_cmp_rows_append_kernel(const __grid_constant__ Dsv4CmpRowTable t, int ratio,
+                                            int latent, int overlap, long pend_len) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const Dsv4CmpRowPtrs& r = t.r[blockIdx.y];
+    const long e = (long)blockIdx.x * blockDim.x + threadIdx.x;
+    if (e >= pend_len) return;
+    const long lo = (long)((overlap ? ratio : 0) + *r.pos % ratio) * latent;
+    const float kv = r.pend_kv[e], sc = r.pend_sc[e];
+    if (r.kv_snap) {
+        r.kv_snap[e] = kv;
+        r.sc_snap[e] = sc;
+    }
+    if (e >= lo && e < lo + latent) {
+        const long c = e - lo;
+        const float nk = r.src_kv[c], ns = r.src_sc[c];
+        r.rows_kv[c] = nk;
+        r.rows_sc[c] = ns;
+        r.pend_kv[e] = nk;
+        r.pend_sc[e] = ns;
+    }
+}
+
+// The emitted block's pooled row (dsv4_compressor_pool_kernel's last block), 32 channels per
+// CTA so the f64 pooling of a 128-position block spreads over SMs.
+__global__ void dsv4_cmp_rows_pool_kernel(const __grid_constant__ Dsv4CmpRowTable t,
+                                          const float* __restrict__ ape, int ratio, int d,
+                                          int latent, int overlap) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const Dsv4CmpRowPtrs& r = t.r[blockIdx.y];
+    if (!dsv4_replay_emit(r.pos, ratio)) return;
+    const int c = blockIdx.x * blockDim.x + threadIdx.x;
+    if (c >= d) return;
+    r.emit[c] = dsv4_compressor_pool_elem(r.pend_kv, r.pend_sc, ape, overlap ? 1 : 0, c, ratio, d,
+                                          latent, overlap);
+}
+
+// One CTA of 128 per row: the overlap ring's half shift (the two copy_if pairs' bytes), then
+// dsv4_rmsnorm_f32acc_kernel (the 128-thread register form), dsv4_rope_at_kernel, either
+// dsv4_hadamard_kernel plus dsv4_fp4_act_quant_kernel or dsv4_act_quant_kernel, and the store
+// (dsv4_c4_split_store_kernel or dsv4_replay_copy_row_kernel), on the row in shared memory. Each
+// stage's per-element expressions and each group maximum's pairing are those kernels' own.
+__global__ void __launch_bounds__(128) dsv4_cmp_rows_finish_kernel(
+        const __grid_constant__ Dsv4CmpRowTable t, const float* __restrict__ norm,
+        const float* __restrict__ cs, int ratio, int d, int latent, int overlap, int rotate,
+        int clamp_only, int rd, float eps, float hadamard_scale, int recent_rows, int rank) {
+    MEMRA_PDL_CHAIN_ENTRY();
+    const Dsv4CmpRowPtrs& r = t.r[blockIdx.x];
+    if (!dsv4_replay_emit(r.pos, ratio)) return;
+    extern __shared__ float sm[];
+    float* row = sm;
+    float* red = sm + d;
+    const int tid = threadIdx.x;
+    const int pos = *r.pos;
+    if (overlap) {
+        const long n = (long)ratio * latent;
+        for (long e = tid; e < n; e += 128) {
+            r.pend_kv[e] = r.pend_kv[e + n];
+            r.pend_sc[e] = r.pend_sc[e + n];
+        }
+    }
+    for (int i = tid; i < d; i += 128) row[i] = r.emit[i];
+    __syncthreads();
+    dsv4_rmsnorm_f32acc_regs<8>(row, norm, row, d, eps, red);
+    __syncthreads();
+    {
+        const int p0 = (pos / ratio) * ratio;
+        for (int kk = tid; kk < rd / 2; kk += 128) {
+            const float* cr = cs + (long)p0 * rd + 2 * kk;
+            const float c = cr[0];
+            const float s = cr[1];
+            const int base = (d - rd) + 2 * kk;
+            const float x0 = row[base], x1 = row[base + 1];
+            row[base] = x0 * c - x1 * s;
+            row[base + 1] = x0 * s + x1 * c;
+        }
+    }
+    __syncthreads();
+    const int lane = tid & 31, warp = tid >> 5;
+    if (rotate) {
+        for (int h = 1; h < d; h *= 2) {
+            for (int p = tid; p < d / 2; p += 128) {
+                const int i = (p / h) * 2 * h + (p % h);
+                const float a = row[i], b = row[i + h];
+                row[i] = a + b;
+                row[i + h] = a - b;
+            }
+            __syncthreads();
+        }
+        for (int i = tid; i < d; i += 128) row[i] = row[i] * hadamard_scale;
+        __syncthreads();
+        const float floorv = 6.0f * ldexpf(1.0f, -126);
+        const float inv = (float)(1.0 / 6.0);
+        for (int g = warp; g < d / 32; g += 4) {
+            const float v = row[g * 32 + lane];
+            float m = fmaxf(0.0f, fabsf(v));
+#pragma unroll
+            for (int off = 16; off > 0; off >>= 1)
+                m = fmaxf(m, __shfl_down_sync(0xffffffffu, m, off));
+            float amax = __shfl_sync(0xffffffffu, m, 0);
+            amax = fmaxf(amax, floorv);
+            const float s = dsv4_pow2_ceil(amax * inv);
+            row[g * 32 + lane] = dsv4_e2m1_rne(fminf(fmaxf(v / s, -6.0f), 6.0f)) * s;
+        }
+    } else {
+        const int ng = (d - rd) / 64;
+        const int half = tid >> 6, t64 = tid & 63;
+        const float inv = (float)(1.0 / 448.0);
+        for (int g0 = 0; g0 < ng; g0 += 2) {
+            const int g = g0 + half;
+            const bool live = g < ng;
+            const float v = live ? row[g * 64 + t64] : 0.0f;
+            red[tid] = fmaxf(0.0f, fabsf(v));
+            __syncthreads();
+            if (t64 < 32) {
+                float m = fmaxf(red[tid], red[tid + 32]);
+#pragma unroll
+                for (int off = 16; off > 0; off >>= 1)
+                    m = fmaxf(m, __shfl_down_sync(0xffffffffu, m, off));
+                if (t64 == 0) red[half * 64] = m;
+            }
+            __syncthreads();
+            float amax = red[half * 64];
+            amax = fmaxf(amax, 1e-4f);
+            const float s = dsv4_pow2_ceil(amax * inv);
+            if (live) {
+                float q = fminf(fmaxf(v / s, -448.0f), 448.0f);
+                if (!clamp_only) {
+                    __nv_fp8_storage_t c8 = __nv_cvt_float_to_fp8(q, __NV_SATFINITE, __NV_E4M3);
+                    q = __half2float(__nv_cvt_fp8_to_halfraw(c8, __NV_E4M3));
+                }
+                row[g * 64 + t64] = q * s;
+            }
+            __syncthreads();
+        }
+    }
+    __syncthreads();
+    const int blk = pos / ratio;
+    float* dst;
+    if (r.recent) {
+        const int hb = blk >> 1;
+        if ((blk & 1) == rank) {
+            dst = r.store + (long)(r.store_row0 + hb) * d;
+        } else {
+            const int slot = hb % recent_rows;
+            dst = r.recent + (long)slot * d;
+            if (tid == 0) r.tags[slot] = blk;
+        }
+    } else {
+        dst = r.store + (long)(r.store_row0 + blk) * d;
+    }
+    for (int i = tid; i < d; i += 128) dst[i] = row[i];
+}
+
+// Validates the table and launches `append`, `pool` and `finish` over `n_rows` rows, in chunks of
+// DSV4_CMP_ROWS_MAX.
+extern "C" int memra_dsv4_cmp_rows_replay(const Dsv4CmpRowPtrs* rows, int n_rows,
+    const float* ape, const float* norm, const float* cs, int ratio, int d, int latent,
+    int overlap, int rotate, int clamp_only, int rd, float eps, float hadamard_scale,
+    long pend_len, int recent_rows, int rank, void* raw_stream) {
+    if (!rows || n_rows < 1 || !ape || !norm || !cs || (ratio != 4 && ratio != 128) || d < rd ||
+        rd <= 0 || rd % 2 || d > 1024 || latent != (overlap ? 2 * d : d) ||
+        (rotate && ((d & (d - 1)) || d % 32)) || (!rotate && (d - rd) % 64) ||
+        pend_len < (long)(overlap ? 2 : 1) * ratio * latent) return 40074;
+    for (int i = 0; i < n_rows; ++i) {
+        const Dsv4CmpRowPtrs& r = rows[i];
+        if (!r.pend_kv || !r.pend_sc || !r.rows_kv || !r.rows_sc || !r.src_kv || !r.src_sc ||
+            !r.emit || !r.store || !r.pos || r.store_row0 < 0 || (!r.kv_snap != !r.sc_snap) ||
+            (r.recent && (!r.tags || recent_rows < 1 || (rank != 0 && rank != 1))))
+            return 40074;
+    }
+    auto stream = (cudaStream_t)raw_stream;
+    for (int base = 0; base < n_rows; base += DSV4_CMP_ROWS_MAX) {
+        const int n = min(DSV4_CMP_ROWS_MAX, n_rows - base);
+        Dsv4CmpRowTable t{};
+        for (int i = 0; i < n; ++i) t.r[i] = rows[base + i];
+        memra_chain_launch(dsv4_cmp_rows_append_kernel, dim3((unsigned)((pend_len + 255) / 256), n),
+                           256, 0, stream)(t, ratio, latent, overlap, pend_len);
+        DSV4_ERR();
+        memra_chain_launch(dsv4_cmp_rows_pool_kernel, dim3((unsigned)((d + 31) / 32), n), 32, 0,
+                           stream)(t, ape, ratio, d, latent, overlap);
+        DSV4_ERR();
+        memra_chain_launch(dsv4_cmp_rows_finish_kernel, dim3(n), 128,
+                           (size_t)(d + 128) * sizeof(float), stream)(
+            t, norm, cs, ratio, d, latent, overlap, rotate, clamp_only, rd, eps, hadamard_scale,
+            recent_rows, rank);
         DSV4_ERR();
     }
     return 0;
