@@ -4747,6 +4747,15 @@ default on the RTX PRO 6000 class; memra#476's pre-grow lands (the issue closes 
   and plain, hit OFF and ON, admit-mem burst, spec-ctx-edge and the pause gate `ALL GREEN`; `tier-transfer-gate` and all
   seven `kv-tier-gate` fault arms PASS; the health gate `arms=g,h,j pass=6 documented=1 fail=0`.
 - `research/spill-b-20260919/DAY51.md` loses a trailing blank line (the lead's, so `git diff --check` passes).
+- After main's #855 and #887 to #889 merged in: CPU battery 16 of 16 on `8a1007c19` (`integ73-cpu-battery-m889/`: server
+  lib 993, engine lib 667). GPU run 2 on BOX44 on `8a1007c19` (`integ73-pro-run2/`, 682 receipts mirrored and checked),
+  20:29Z to 21:04Z: every cell reads as run 1 (serve-smoke's one failure is the Q35 arm, its `q35_cold_mixed` lines'
+  md5 `b47284715102cdec1f7cb02c372873a5` equal to integ72's, #777).
+- Main then moved by #882 and #890 to #895. Two integ73 files overlap: `memra-engine/src/lib.rs` and `worker.rs`
+  change one skip message each (#890's `SKIP[...]` protocol), no program change, so under the owner's lean ruling CI on
+  the merged head gates it and no GPU cell reruns. `tools/skip-census.py verify` on the merged tree: `VERIFY OK`.
+- Revuto round 2 hit the two-round cap on #885 (`reached the 2-round review limit`); round 1 approved `8767e9e57` and
+  the lead's self-review stands for the rest (owner ruling 2026-09-16).
 
 ## Lanes
 - D day 11 sealed and pushed (`15bd53152`); merged into integ9.
