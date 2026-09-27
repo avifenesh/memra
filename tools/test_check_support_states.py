@@ -30,7 +30,7 @@ class SupportStateCensus(unittest.TestCase):
         self.root = pathlib.Path(self.tmp.name)
         for rel in ("crates/memra-gguf/src/model_packs", "docs"):
             shutil.copytree(REPO / rel, self.root / rel)
-        for rel in (CLI, "README.md", "STATUS.md", "CLAUDE.md"):
+        for rel in (CLI, "README.md", "STATUS.md", "AGENTS.md"):
             (self.root / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(REPO / rel, self.root / rel)
         records = tomllib.loads((REPO / RECORDS).read_text())["record"]
@@ -121,6 +121,10 @@ class SupportStateCensus(unittest.TestCase):
     def test_doc_state_without_marker(self):
         (self.root / "docs/NEW.md").write_text("Foo is NativeQualified on B200.\n")
         self.assert_fails("docs/NEW.md:1: NativeQualified needs one")
+
+    def test_agent_instructions_are_censused(self):
+        (self.root / "AGENTS.md").write_text("Foo is NativeQualified on B200.\n")
+        self.assert_fails("AGENTS.md:1: NativeQualified needs one")
 
     def test_none_marker_on_a_claim(self):
         (self.root / "docs/NEW.md").write_text("Foo is NativeQualified on B200. <!-- support: none -->\n")
