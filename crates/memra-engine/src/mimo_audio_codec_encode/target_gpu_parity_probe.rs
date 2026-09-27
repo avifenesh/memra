@@ -62,6 +62,14 @@ const PUBLISHER_GPU_CONV2_PRE_GELU_LINEAR_CONTROL: &[u8] = include_bytes!(concat
     env!("CARGO_MANIFEST_DIR"),
     "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-conv2-pre-gelu-linear-control.bf16"
 ));
+const PUBLISHER_GPU_LAYER0_CUDNN: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-layer0-cudnn.bf16"
+));
+const PUBLISHER_GPU_LAYER0_LINEAR_CONTROL: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-layer0-linear-control.bf16"
+));
 const PUBLISHER_GPU_FRONTEND_LINEAR_CONTROL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../memra-reference/src/fixtures/mimo-v26-publisher-pro6000-audio-frontend-linear-control.bf16"
@@ -212,6 +220,14 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
         "c224a2b9204945c41f67fc8cd753f49a9ceed0942017ab2d7c3d5e60ee1f6d7f"
     );
     assert_eq!(
+        format!("{:x}", Sha256::digest(PUBLISHER_GPU_LAYER0_CUDNN)),
+        "6f17d647d78f434d3b23cef1553d6bf95631ad5332ca7d749ad6a6d29eaf8d65"
+    );
+    assert_eq!(
+        format!("{:x}", Sha256::digest(PUBLISHER_GPU_LAYER0_LINEAR_CONTROL)),
+        "70624fd0c6dc490801117559883ab75707667d3bb0326e300463405b317d324d"
+    );
+    assert_eq!(
         format!("{:x}", Sha256::digest(PUBLISHER_GPU_STACK)),
         "fc95bf4a5f0bc569ce8fb0d31c19824395e92f2e4c5e9271aa06a2926a6aafd2"
     );
@@ -324,6 +340,8 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
         5,
     )?;
     let fused_frontend_values = engine.dtoh(&fused_frontend)?;
+    let fused_layer0 = weights.encode_one_transformer_layer(&engine, &fused_frontend, 5, 0)?;
+    let fused_layer0_values = engine.dtoh(&fused_layer0)?;
     let fused_stack = weights.encode_transformer_stack(&engine, &fused_frontend, 5)?;
     let fused_stack_values = engine.dtoh(&fused_stack)?;
     let fused_features = weights.downsample_post_stack(&engine, &fused_stack, 5)?;
@@ -333,6 +351,8 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
         .code_ids;
     let first = weights.encode_prepared_mel_conv(&engine, &engine.htod(&mel)?, 9)?;
     let frontend_values = engine.dtoh(&first)?;
+    let default_layer0 = weights.encode_one_transformer_layer(&engine, &first, 5, 0)?;
+    let default_layer0_values = engine.dtoh(&default_layer0)?;
     let stack = weights.encode_transformer_stack(&engine, &first, 5)?;
     let stack_values = engine.dtoh(&stack)?;
     let features = weights.downsample_post_stack(&engine, &stack, 5)?;
@@ -344,6 +364,20 @@ fn prepared_mel_target_features_and_rvq_diagnostic() -> Result<(), Fail> {
     let publisher_linear_frontend = decode_bf16(PUBLISHER_GPU_FRONTEND_LINEAR_CONTROL, 5)?;
     let publisher_linear_stack = decode_bf16(PUBLISHER_GPU_STACK_LINEAR_CONTROL, 5)?;
     let publisher_linear_pre_rvq = decode_bf16(PUBLISHER_GPU_PRE_RVQ_LINEAR_CONTROL, TOKENS)?;
+    let publisher_cudnn_layer0 = decode_bf16(PUBLISHER_GPU_LAYER0_CUDNN, 5)?;
+    let publisher_linear_layer0 = decode_bf16(PUBLISHER_GPU_LAYER0_LINEAR_CONTROL, 5)?;
+    feature_stats(
+        "memra_default_layer0_vs_gpu_publisher_cudnn",
+        &default_layer0_values,
+        &publisher_cudnn_layer0,
+        5,
+    )?;
+    feature_stats(
+        "memra_fused_bias_layer0_vs_gpu_publisher_linear_control",
+        &fused_layer0_values,
+        &publisher_linear_layer0,
+        5,
+    )?;
     feature_stats(
         "memra_fused_bias_frontend_vs_gpu_publisher_linear_control",
         &fused_frontend_values,
