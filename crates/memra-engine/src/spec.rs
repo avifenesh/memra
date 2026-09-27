@@ -1324,26 +1324,14 @@ mod draft_source_kind_tests {
     }
 }
 
-/// `MEMRA_SPEC_PMIN` break semantics over per-slot draft confidences (the chain break this
-/// module's drafting loops apply inline: `p < p_min && (j > 0 || pmin0)`): keep the longest
-/// prefix whose every slot clears `p_min`; slot 0 survives a miss unless PMIN0 arms
-/// zero-draft rounds. Prefix truncation is forced by the accept rule anyway (a kept slot
-/// after a dropped one could never commit — the dspark confidence-slot argument). Pure so
-/// the rule is CPU-gateable; the SHARED K-policy surface every spec family consumes
-/// (hoisted from the glm5 loop, lane/glm5-extract-general).
-pub fn spec_conf_keep(q: &[f32], p_min: f32, pmin0: bool) -> usize {
-    if p_min <= 0.0 {
-        return q.len();
-    }
-    let mut kept = 0usize;
-    for (j, &qj) in q.iter().enumerate() {
-        if qj < p_min && (j > 0 || pmin0) {
-            break;
-        }
-        kept += 1;
-    }
-    kept
-}
+/// `MEMRA_SPEC_PMIN` break semantics over per-slot draft confidences: keep the longest prefix
+/// whose every slot clears `p_min`; slot 0 survives a miss unless PMIN0 arms zero-draft
+/// rounds. The rule, the draw-independence contract on the confidence it thresholds, and the
+/// exact small-vocab proof that a sampled round then emits the target law live in
+/// `memra_sampling::spec_stop` (memra#673, memra#412) so they run in the CUDA-free unit suite.
+/// The SHARED K-policy surface every spec family consumes.
+pub use memra_sampling::spec_stop::conf_keep as spec_conf_keep;
+pub use memra_sampling::spec_stop::stops_at as spec_stops_at;
 
 /// Host Philox4x32-10 uniform in (0,1) — mirrors spec_sample.cu's `philox4`/`u01` with the
 /// ctr_lo tag 0xFFFF_FFFE, so the host accept-test stream never collides with any device
@@ -5152,10 +5140,12 @@ impl HybridModel {
                     }
                 }
                 e.argmax_token_device_into(perturb_d, tok_d, d_vocab)?;
-                // p-min prob = the head's RAW softmax confidence in the SAMPLED pick — same
-                // semantics as the eager sampled arm's prob_of_token_device(dl_d, tok_d).
+                // p-min statistic = the head's RAW softmax MAX (its argmax's probability),
+                // never the probability of the SAMPLED pick: the stop must not depend on the
+                // draw or the round stops emitting the target law (memra#673,
+                // memra_sampling::spec_stop). Same statistic as the eager sampled arm.
                 if with_prob {
-                    e.prob_of_token_device_into(&logits, tok_d, p_d, d_vocab)?;
+                    e.max_prob_device_into(&logits, p_d, d_vocab)?;
                 }
             } else {
                 // draft token -> persistent tok_d (next replay's embed reads it; host reads the 4 bytes).
@@ -12442,8 +12432,9 @@ impl HybridModel {
         let mut st_len_hist = vec![0usize; k + 1];
         let mut st_full = 0usize;
         // P-MIN CONFIDENCE GATE (MEMRA_SPEC_PMIN, the serve script's --spec-draft-p-min mechanism):
-        // stop the draft chain early when the head's softmax confidence in its own pick drops
-        // below p_min. Hoisted above the loop: the graph capture bakes the prob kernels iff on.
+        // stop the draft chain early when the head's softmax confidence (its row max, which for
+        // a greedy pick is the pick's probability) drops below p_min. Hoisted above the loop:
+        // the graph capture bakes the prob kernels iff on. Rule: memra_sampling::spec_stop.
         static PMIN: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
         let p_min = *PMIN.get_or_init(|| {
             std::env::var("MEMRA_SPEC_PMIN")
@@ -13009,9 +13000,11 @@ impl HybridModel {
             ph_mark(&mut ph_rest, phase_on);
 
             // --- 1. DRAFT k tokens with the NextN head (autoregressive, T=1 each) ---
-            // p-min semantics (both paths): stop the chain early when the head's confidence in
-            // its own pick drops below p_min — the just-drafted token is DISCARDED, but its
-            // scratch append stands (identical to the eager chain's ordering). j==0 always drafts.
+            // p-min semantics (both paths): stop the chain early when the head's confidence
+            // (its softmax MAX: for a greedy pick the pick's own probability) drops below p_min.
+            // The statistic never depends on a sampled draw (memra#673): the just-drafted token
+            // is DISCARDED, but its scratch append stands (identical to the eager chain's
+            // ordering). j==0 drafts unless PMIN0 arms a zero-draft round over a pending bonus.
             let base0 = if pending.is_some() { 1usize } else { 0usize };
             // fixed draft length by default; MEMRA_SPEC_ADAPT=1 drafts at last round's
             // accepted run + 1 (the gemma law — see the setup block above the loop).
@@ -13141,9 +13134,8 @@ impl HybridModel {
                         } else {
                             None
                         };
-                        if let Some(p) = draft_p.filter(|_| p_min > 0.0)
-                            && p < p_min
-                            && (j > 0 || (pmin0 && base0 == 1))
+                        if let Some(p) = draft_p
+                            && spec_stops_at(p, j, p_min, pmin0 && base0 == 1)
                         {
                             break;
                         }
@@ -13247,7 +13239,7 @@ impl HybridModel {
                         draft_idx.push(idx);
                         if p_min > 0.0 {
                             let p = e.dtoh(&dctx.g_p)?[0];
-                            if p < p_min && (j > 0 || (pmin0 && base0 == 1)) {
+                            if spec_stops_at(p, j, p_min, pmin0 && base0 == 1) {
                                 break;
                             }
                         }
@@ -13351,9 +13343,8 @@ impl HybridModel {
                         } else {
                             None
                         };
-                        if let Some(p) = draft_p.filter(|_| p_min > 0.0)
-                            && p < p_min
-                            && (j > 0 || (pmin0 && base0 == 1))
+                        if let Some(p) = draft_p
+                            && spec_stops_at(p, j, p_min, pmin0 && base0 == 1)
                         {
                             break;
                         }
@@ -13454,7 +13445,7 @@ impl HybridModel {
                         draft_idx.push(idx);
                         if p_min > 0.0 {
                             let p = e.dtoh(&dctx.g_p)?[0];
-                            if p < p_min && (j > 0 || (pmin0 && base0 == 1)) {
+                            if spec_stops_at(p, j, p_min, pmin0 && base0 == 1) {
                                 break;
                             }
                         }
@@ -13634,15 +13625,20 @@ impl HybridModel {
                         if sampled {
                             draft_idx.push(idx);
                         }
+                        // p-min statistic: greedy = the pick's probability (== the row max);
+                        // sampled = the row max, draw-independent (memra#673).
                         let draft_p = if p_min > 0.0 {
-                            let p_d = e.prob_of_token_device(&dl_d, &tok_d, d_vocab)?;
+                            let p_d = if sampled {
+                                e.max_prob_device(&dl_d, d_vocab)?
+                            } else {
+                                e.prob_of_token_device(&dl_d, &tok_d, d_vocab)?
+                            };
                             Some(e.dtoh(&p_d)?[0])
                         } else {
                             None
                         };
-                        if let Some(p) = draft_p.filter(|_| p_min > 0.0)
-                            && p < p_min
-                            && (j > 0 || (pmin0 && base0 == 1))
+                        if let Some(p) = draft_p
+                            && spec_stops_at(p, j, p_min, pmin0 && base0 == 1)
                         {
                             break;
                         }

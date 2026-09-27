@@ -14583,6 +14583,35 @@ impl Engine {
         Ok(())
     }
 
+    /// Draw-independent p-min confidence of a logits row: the softmax probability of its
+    /// argmax, i.e. the row's max probability (`memra_sampling::spec_stop::row_confidence` on
+    /// device). A SAMPLED draft chain must threshold this, not the probability of the token it
+    /// drew: gating on the drawn token censors the proposal while verify still divides by the
+    /// uncensored q, and the emitted law leaves the target (memra#673). For a greedy pick the
+    /// two are the same number. Same argmax + prob kernels, into a PERSISTENT `p_out` so a
+    /// captured draft graph can write it (the argmax index lands in a scratch u32).
+    pub fn max_prob_device_into(
+        &self,
+        logits: &CudaSlice<f32>,
+        p_out: &mut CudaSlice<f32>,
+        n_vocab: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut am = self.alloc_uninit::<u32>(1)?;
+        self.argmax_token_device_into(logits, &mut am, n_vocab)?;
+        self.prob_of_token_device_into(logits, &am, p_out, n_vocab)
+    }
+
+    /// [`Self::max_prob_device_into`] into a fresh device [1] f32 (the eager draft arms).
+    pub fn max_prob_device(
+        &self,
+        logits: &CudaSlice<f32>,
+        n_vocab: usize,
+    ) -> Result<CudaSlice<f32>, Box<dyn std::error::Error>> {
+        let mut p = self.alloc_uninit::<f32>(1)?;
+        self.max_prob_device_into(logits, &mut p, n_vocab)?;
+        Ok(p)
+    }
+
     /// Token-graph chunk loop: hist[idx] = *tok; idx += 1 — device-indexed history append
     /// (graph-constant params, device-varying index). Capture-safe.
     pub fn u32_hist_append(
