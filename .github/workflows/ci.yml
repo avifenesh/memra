@@ -112,7 +112,7 @@ jobs:
         run: |
           tools/unittest-floor.sh tools test_local_build_cache.py 46
           tools/unittest-floor.sh tools test_build_measurement.py 2
-          tools/unittest-floor.sh tools/fast-gate test_plan.py 32
+          tools/unittest-floor.sh tools/fast-gate test_plan.py 33
           tools/unittest-floor.sh tools/fast-gate test_component.py 4
 
       - name: Cache qualification harness regressions (unittest floor 15; 16 measured 2026-09-21)

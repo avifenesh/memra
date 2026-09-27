@@ -217,6 +217,9 @@ run_probe() {
     # (run-gen "tokens: [...]" at col 0; run-spec indents its plain-generate line "  tokens:").
     PROBE_TOKS=$(grep -oE "^ *tokens: \[[0-9, ]*\]" "$log" | head -1 | sed 's/^ *//')
     [ -n "$PROBE_TOKS" ] || { echo "  $id: FAIL (no generated-tokens line, $((t1-t0))s)"; return 1; }
+    echo "$PROBE_TOKS" | grep -qE '[0-9]+' || {
+        echo "  $id: FAIL (zero generated token IDs, $((t1-t0))s)"; return 1;
+    }
     if [ "$mode" = "check" ]; then
         local gfile="$GOLDENS/$id.tokens"
         if [ ! -f "$gfile" ]; then

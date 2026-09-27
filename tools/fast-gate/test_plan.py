@@ -333,6 +333,14 @@ class CheckoutAndWrapperTests(unittest.TestCase):
         self.assertIn("NO GOLDEN pinned", result.stdout)
         self.assertFalse(self.calls.exists(), "missing golden must refuse before compilation")
 
+    def test_empty_generated_tokens_cannot_match_an_empty_golden(self):
+        self.setup_model_probe("g12", "argmax", "argmax=1 decode argmax=1 CPU MATCH\ntokens: []")
+        (self.fg / "goldens").mkdir(exist_ok=True)
+        (self.fg / "goldens/g12.tokens").write_text("# CPU empty golden\ntokens: []\n")
+        result = self.wrapper("--probes", "g12")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("zero generated token IDs", result.stdout)
+
     def test_explicit_probes_work_without_git_but_claim_unknown_coverage(self):
         self.setup_model_probe("g31spec", "gspec", "stream agreement 8/8")
         shutil.rmtree(self.repo / ".git")
