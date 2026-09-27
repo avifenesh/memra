@@ -1,0 +1,19 @@
+serving_listener.ListenerOwnershipError: descriptor inventory is incomplete or changed
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/issue-526-listener-ci-repair/old/repro.py", line 8, in <module>
+    case.test_real_inherited_listener_and_dead_pid_refuse()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/issue-526-listener-ci-repair/old/test_serving_listener.py", line 406, in test_real_inherited_listener_and_dead_pid_refuse
+    with self.assertRaisesRegex(listener.ListenerOwnershipError, "shared with another"):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py", line 285, in __exit__
+    self._raiseFailure('"{}" does not match "{}"'.format(
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+             expected_regex.pattern, str(exc_value)))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/case.py", line 209, in _raiseFailure
+    raise self.test_case.failureException(msg)
+AssertionError: "shared with another" does not match "descriptor inventory is incomplete or changed"

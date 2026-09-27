@@ -1,0 +1,596 @@
+{
+  "issue": 526,
+  "domain": "architecture-devops: original phase collector findings closure",
+  "reviewed_head": "38b8f0e74b71235c195654027b6699f6a7462319",
+  "base_snapshot": "14669ca14aabea1ffdfe31334bb68bba18687310",
+  "original_finding_head": "9cc385b0519890460c1c33e6fb3b08d57561899e",
+  "code_review": "pass",
+  "source_go": true,
+  "collector_source_go": true,
+  "findings": [],
+  "reader_source_go": false,
+  "reader_review_status": "separate_independent_review_pending",
+  "native_go": false,
+  "outer_C4_go": false,
+  "merge_go": false,
+  "security_domain_go": false,
+  "conclusion": "Scoped collector source GO at exact38b8f0e. AD526-PHASE-1/2 and parentAD526-PHASE-3 are resolved in the reviewed contract. Actual Event/loopback controls pass, long-poll failure waits for settlement and retains a stable final index, and actual observed file shrink refuses. No actionable new defect found in this bounded repair. The unchanged parent reader receives no approval from this collector closure or its compatibility tests.",
+  "resolved_findings": [
+    {
+      "id": "AD526-PHASE-1",
+      "status": "resolved",
+      "file": "tools/serving_cancel.py",
+      "line": 222,
+      "evidence": "Both original real Event scheduling arms now capture in normal/-O. Actual cancelled target can finish inside caller[before,after]; raw bracket is preserved. min(after,target.finish) is used only after client_cancelled validation to bound set time for peer coverage. Before/after ordering, actual target lifetime lower bound, legacy minimum delay, complete-wire/typed-error vetoes, identities, generation and recovery checks remain. No tolerance or fabricated exact set timestamp."
+    },
+    {
+      "id": "AD526-PHASE-2",
+      "status": "resolved",
+      "file": "tools/serving_cancel_phase.py",
+      "line": 305,
+      "evidence": "Original9/9/8/25second program withHTTPwall.5 retained. Target retirement timeout now fails around9.4seconds with no live invocation/HTTP worker at return, target+peer raw observations persisted, and unchanged capture bytes after another8.1seconds. Cancellation-aware poll and phase-sized group budget are present; registered worker settlement precedes log closure/final index. Overrun records failure while waiting for actual exit."
+    },
+    {
+      "id": "AD526-PHASE-3",
+      "status": "resolved",
+      "file": "tools/serving_cancel_phase.py",
+      "line": 168,
+      "evidence": "Independent real-file9-bytepread followed by23-byteappend gives actualpoststat32. Subsequent truncation to9 is accepted by original14669 _PinnedLog but refused by38b. Ordinary append is accepted by both. Open and each FD/path stat contribute to a monotonically remembered maximum."
+    }
+  ],
+  "assessment": [
+    {
+      "boundary": "Causal cancellation bound",
+      "result": "For an actual cancelled capture, Event.set precedes the protected capture decision and finished_ns. Both callerafter and targetfinish bound that set from above, so theirminimum is justified. A target finishing beforebefore, an inverted bracket, noncancelled outcome, complete response or typed backend error still refuses. Peer lifetime covers[before,min(after,finish)]; this changes no raw timestamp."
+    },
+    {
+      "boundary": "Settlement and immutable failure evidence",
+      "result": "tracked_invoke persists returned rows before its completion event, with idempotent shared flush. Target HTTP thread and invocation workers register cancellation/done signals; finalization waits on events and joins before closing the reader or sealing. Source explicitly does not promise a hard Python return deadline through an unkillable OS stall; such overrun is failed, not permission to seal live registered writers."
+    },
+    {
+      "boundary": "Observed append bounds",
+      "result": "Maximum size includes open, pre-readFD/path and post-readFD/path observations. size_after now records the last checked pathname stat. Full prior-byte prefix, identity and64MiB/read-count controls remain; byte data lagging a larger stat cannot reset the minimum accepted later size."
+    },
+    {
+      "boundary": "Preservation and scope",
+      "result": "Only4 owned files change. Legacy timed collector body and synthetic SERVER fixture remain unchanged; shared wire predicate change is intentional. Runtime remains exactaa25;7b parser and parent reader files/fixture are unchanged. No source/build/model/lease or wholeC4 authentication approval."
+    }
+  ],
+  "independent_tests": {
+    "normal": {
+      "suite": {
+        "passed": 46,
+        "failed": 0,
+        "skipped": 2
+      },
+      "event_cases": [
+        {
+          "state": "captured",
+          "finish_minus_set_after_ns": 9552833,
+          "peer_spans_recorded_bracket": true
+        },
+        {
+          "state": "captured",
+          "finish_minus_set_after_ns": -119958,
+          "peer_spans_recorded_bracket": true
+        }
+      ],
+      "cleanup": {
+        "state": "failed",
+        "elapsed_s": 9.404184708,
+        "live_threads": [],
+        "capture_changed_after_return": false,
+        "additional_stability_wait_s": 8.1
+      },
+      "append_truncate": [
+        {
+          "source": "before",
+          "truncate": false,
+          "first": {
+            "started_ns": 641330591939833,
+            "device": 16777236,
+            "inode": 603107011,
+            "size_before": 9,
+            "named_device": 16777236,
+            "named_inode": 603107011,
+            "size_after": 32,
+            "named_after_device": 16777236,
+            "named_after_inode": 603107011,
+            "finished_ns": 641330592164125,
+            "bytes": 9,
+            "complete_bytes": 9,
+            "sha256": "25718360e05d3c2d0963d1381e9dd4dae5fca789244ee4b9f861adcc0cc96218"
+          },
+          "result": "accepted",
+          "detail": {
+            "size_before": 32,
+            "offset": 9,
+            "delta_bytes": 23
+          }
+        },
+        {
+          "source": "before",
+          "truncate": true,
+          "first": {
+            "started_ns": 641330593560125,
+            "device": 16777236,
+            "inode": 603107013,
+            "size_before": 9,
+            "named_device": 16777236,
+            "named_inode": 603107013,
+            "size_after": 32,
+            "named_after_device": 16777236,
+            "named_after_inode": 603107013,
+            "finished_ns": 641330593774500,
+            "bytes": 9,
+            "complete_bytes": 9,
+            "sha256": "25718360e05d3c2d0963d1381e9dd4dae5fca789244ee4b9f861adcc0cc96218"
+          },
+          "result": "accepted",
+          "detail": {
+            "size_before": 9,
+            "offset": 9,
+            "delta_bytes": 0
+          }
+        },
+        {
+          "source": "after",
+          "truncate": false,
+          "first": {
+            "started_ns": 641330595073666,
+            "device": 16777236,
+            "inode": 603107015,
+            "size_before": 9,
+            "named_device": 16777236,
+            "named_inode": 603107015,
+            "size_after": 32,
+            "named_after_device": 16777236,
+            "named_after_inode": 603107015,
+            "finished_ns": 641330595233333,
+            "bytes": 9,
+            "complete_bytes": 9,
+            "sha256": "25718360e05d3c2d0963d1381e9dd4dae5fca789244ee4b9f861adcc0cc96218"
+          },
+          "result": "accepted",
+          "detail": {
+            "size_before": 32,
+            "offset": 9,
+            "delta_bytes": 23
+          }
+        },
+        {
+          "source": "after",
+          "truncate": true,
+          "first": {
+            "started_ns": 641330595976750,
+            "device": 16777236,
+            "inode": 603107017,
+            "size_before": 9,
+            "named_device": 16777236,
+            "named_inode": 603107017,
+            "size_after": 32,
+            "named_after_device": 16777236,
+            "named_after_inode": 603107017,
+            "finished_ns": 641330596152666,
+            "bytes": 9,
+            "complete_bytes": 9,
+            "sha256": "25718360e05d3c2d0963d1381e9dd4dae5fca789244ee4b9f861adcc0cc96218"
+          },
+          "result": "refused",
+          "detail": {
+            "error": "owned log read failed: owned log truncated below observed size"
+          }
+        }
+      ],
+      "historical_typed_error": {
+        "before": {
+          "error": "target did not span the actual client cancellation interval",
+          "code": "invalid_response"
+        },
+        "after": {
+          "error": "server error deadline_exceeded: request exceeded timeout",
+          "code": "typed_error"
+        }
+      }
+    },
+    "optimized": {
+      "suite": {
+        "passed": 46,
+        "failed": 0,
+        "skipped": 2
+      },
+      "event_cases": [
+        {
+          "state": "captured",
+          "finish_minus_set_after_ns": 11161750,
+          "peer_spans_recorded_bracket": true
+        },
+        {
+          "state": "captured",
+          "finish_minus_set_after_ns": -174375,
+          "peer_spans_recorded_bracket": true
+        }
+      ],
+      "cleanup": {
+        "state": "failed",
+        "elapsed_s": 9.431785208,
+        "live_threads": [],
+        "capture_changed_after_return": false,
+        "additional_stability_wait_s": 8.1
+      },
+      "append_truncate": [
+        {
+          "source": "before",
+          "truncate": false,
+          "first": {
+            "started_ns": 641330839653041,
+            "device": 16777236,
+            "inode": 603107038,
+            "size_before": 9,
+            "named_device": 16777236,
+            "named_inode": 603107038,
+            "size_after": 32,
+            "named_after_device": 16777236,
+            "named_after_inode": 603107038,
+            "finished_ns": 641330839905875,
+            "bytes": 9,
+            "complete_bytes": 9,
+            "sha256": "25718360e05d3c2d0963d1381e9dd4dae5fca789244ee4b9f861adcc0cc96218"
+          },
+          "result": "accepted",
+          "detail": {
+            "size_before": 32,
+            "offset": 9,
+            "delta_bytes": 23
+          }
+        },
+        {
+          "source": "before",
+          "truncate": true,
+          "first": {
+            "started_ns": 641330840900791,
+            "device": 16777236,
+            "inode": 603107040,
+            "size_before": 9,
+            "named_device": 16777236,
+            "named_inode": 603107040,
+            "size_after": 32,
+            "named_after_device": 16777236,
+            "named_after_inode": 603107040,
+            "finished_ns": 641330841107916,
+            "bytes": 9,
+            "complete_bytes": 9,
+            "sha256": "25718360e05d3c2d0963d1381e9dd4dae5fca789244ee4b9f861adcc0cc96218"
+          },
+          "result": "accepted",
+          "detail": {
+            "size_before": 9,
+            "offset": 9,
+            "delta_bytes": 0
+          }
+        },
+        {
+          "source": "after",
+          "truncate": false,
+          "first": {
+            "started_ns": 641330842217541,
+            "device": 16777236,
+            "inode": 603107042,
+            "size_before": 9,
+            "named_device": 16777236,
+            "named_inode": 603107042,
+            "size_after": 32,
+            "named_after_device": 16777236,
+            "named_after_inode": 603107042,
+            "finished_ns": 641330842394291,
+            "bytes": 9,
+            "complete_bytes": 9,
+            "sha256": "25718360e05d3c2d0963d1381e9dd4dae5fca789244ee4b9f861adcc0cc96218"
+          },
+          "result": "accepted",
+          "detail": {
+            "size_before": 32,
+            "offset": 9,
+            "delta_bytes": 23
+          }
+        },
+        {
+          "source": "after",
+          "truncate": true,
+          "first": {
+            "started_ns": 641330843367333,
+            "device": 16777236,
+            "inode": 603107044,
+            "size_before": 9,
+            "named_device": 16777236,
+            "named_inode": 603107044,
+            "size_after": 32,
+            "named_after_device": 16777236,
+            "named_after_inode": 603107044,
+            "finished_ns": 641330843609291,
+            "bytes": 9,
+            "complete_bytes": 9,
+            "sha256": "25718360e05d3c2d0963d1381e9dd4dae5fca789244ee4b9f861adcc0cc96218"
+          },
+          "result": "refused",
+          "detail": {
+            "error": "owned log read failed: owned log truncated below observed size"
+          }
+        }
+      ],
+      "historical_typed_error": {
+        "before": {
+          "error": "target did not span the actual client cancellation interval",
+          "code": "invalid_response"
+        },
+        "after": {
+          "error": "server error deadline_exceeded: request exceeded timeout",
+          "code": "typed_error"
+        }
+      }
+    }
+  },
+  "owner_raw_evidence_verification": {
+    "owner_captures_verified": 60,
+    "payload_hashes_verified": 1555,
+    "owner_closed_receipts_verified": 60,
+    "all_qualification_false": true,
+    "owner_audit_sha256": "327bf3b64a5f157058abff331a2ed91d032c867755ed8c6c61798b6229e37cbd"
+  },
+  "tests_or_reads": [
+    "Frozen4-file diff and protected dependency/runtime identities.",
+    "Independent48-test collector/timed-cancel suites in normal/-O:46pass,2explicitLinuxskips each.",
+    "Original actualEvent and long-poll stimulus/programs copied with only repaired expected outcomes and added8.1s stability check; original scripts untouched.",
+    "Actual file append/truncate before/after controls and historical typed-error replay in normal/-O.",
+    "Verified owner60capture indices,1555referenced payload hashes and60closed owned-process receipts; allqualificationFalse."
+  ],
+  "historical_failures": {
+    "original_report": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-collector-9cc385b0.json",
+    "sha256": "7cf335e20ed7f390e8906d8bddbaa24fcc0b702aa131ed9b48802b3b55b8e93e",
+    "original_repro_hashes": {
+      "event_interval_repro.py": "8a4082173f6e6361d46c89933fbe7d794e7ffc34edfae1f9f1712ffdd6be7f4a",
+      "cleanup_repro.py": "2388f7ebb57900db0144bb13edc59f15b0e9000746d2e1ec90a9d7d396f845ac"
+    },
+    "typed_error": "Original broad optimized sample remains failed in history. Repaired evaluator still refuses its realtyped-error body as typed_error/deadline_exceeded; before evaluator interval refusal is preserved.",
+    "parent_reader_compatibility": "Owner18test pass is recorded as compatibility only; it is not included as independent reader approval."
+  },
+  "validation_gaps": [
+    {
+      "kind": "actual_Linux_listener_birth",
+      "status": "pending",
+      "description": "Two local tests per mode skip Linux procfs identity/listener proof. Real local sockets/processes use explicit synthetic portable ownership substitutions."
+    },
+    {
+      "kind": "separate_reader_and_native_C4",
+      "status": "pending",
+      "description": "Next reader review and parent realLinuxIO/source-build-model-controller-physicallease/nativeC4 qualification remain independent requirements."
+    }
+  ],
+  "source_identity": {
+    "tools/test_serving_cancel_evidence.py": "a090e7b2ebc2fbe0b3da74cfc890691f7a12f8e53041292009134af8a016a237",
+    "tools/serving_release.py": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c",
+    "tools/serving_cancel_evidence.py": "9c6a3e193d1f1f29bb6ef48c703ca15bacd2398f2aca15f4099cfa60d613b6af",
+    "tools/serving_trace.py": "986eefdee5bc30cb0c8f56b1618554128c69fa9002440bae6d705de118e90db4",
+    "tools/serving_completion.py": "bf0d4dd9c569884133d0516e128bfa625cd83d993d62bdda41cb4f1dea3aa1fa",
+    "tools/serving_policy.py": "d7cb92568dbd45b4433159ee98d216405d76b12cc42a579062298c741b2243c7",
+    "tools/serving_lifecycle.py": "36ed3c2f9403a05ec064569f7c34558298226f1473fa154b892fc671fc2dbeb3",
+    "tools/serving_evidence.py": "b5896f13f2b37f0b64719d2f86d663f99e1d28cc05714b32962362d2a4250970",
+    "tools/serving_capture.py": "4fc3434999a5490a077386a8f235166ed0e87cd997a889eb8e8da8e807aca163",
+    "tools/serving_process.py": "22dca5e161a926fa8c9382c762223af0b8029ae2cf0c13f16bef7f5066df984a",
+    "tools/serving_listener.py": "e71bf54a25ed91f2549ff690ee2a96cbd9db902c8c3af1651f4958f7e196f58e",
+    "tools/serving_http.py": "287e493db1678b503106c3ce662601d553229062670244c716369a2b619569d8",
+    "tools/serving_cancel_phase.py": "c1a04c343cc4c07ef215d1f7f3c5fde7e84fffb5d44a6e578587339b086dda68",
+    "tools/serving_cancel.py": "605460c9bf83815cde88f3d2f5c12dac24e36ada4c28af4c3280b140b3e4570d",
+    "tools/test_serving_cancel.py": "c2950ee1e2e4fc63c2d70a1bf4960a9eb2e8b6b5cd3bd04f90b8c5f16371d25d",
+    "tools/serving_manifest.py": "12b7f252fb9b40670d53bd751e83992f46b79237cb1e12bf361444fdd5551b6f",
+    "tools/test_serving_cancel_phase.py": "0cdbd44ede3eee175da23964b1c7c639a246f208e9ed96864d2dca6e3f884554",
+    "tools/test_serving_trace.py": "e4e4f60d9ef58515ee76ffad2f29590a54e16aac01210943a18533b70f1a8564",
+    "tools/serving-release.cells.json": "90c03281164603802e5af9db87062f6be5c4696f16aa24f40e8af13d814796f6",
+    "tools/fixtures/phase-cancel-capture.json": "e5b48644d1ab22cf64450fa35d3b737570547d43cd3ed8f536030f0e6bdea9e4"
+  },
+  "exact_diff_sha256": "351ba90c0ac4f8cc3eb3dc33af59c807f84d4d20e97b2e0fbc38e57368d776fa",
+  "artifacts": {
+    "test_serving_trace.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/test_serving_trace.py",
+      "sha256": "e4e4f60d9ef58515ee76ffad2f29590a54e16aac01210943a18533b70f1a8564"
+    },
+    "source-manifest.json": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/source-manifest.json",
+      "sha256": "6cd64532f1bc66aa0e063e2c1f0d8bbbcd261ffef3524f812a1a708350e70af1"
+    },
+    "optimized-boundary.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/optimized-boundary.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "serving_cancel.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/serving_cancel.py",
+      "sha256": "605460c9bf83815cde88f3d2f5c12dac24e36ada4c28af4c3280b140b3e4570d"
+    },
+    "serving_cancel_evidence.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/serving_cancel_evidence.py",
+      "sha256": "9c6a3e193d1f1f29bb6ef48c703ca15bacd2398f2aca15f4099cfa60d613b6af"
+    },
+    "serving-release.cells.json": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/serving-release.cells.json",
+      "sha256": "90c03281164603802e5af9db87062f6be5c4696f16aa24f40e8af13d814796f6"
+    },
+    "optimized-cleanup_repro.py.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/optimized-cleanup_repro.py.stdout",
+      "sha256": "67f2377f16315e1c73f8a5563f0197b6e8656947d1fe6d49543f2848402475bd"
+    },
+    "optimized-event_interval_repro.py.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/optimized-event_interval_repro.py.stdout",
+      "sha256": "9e2366500f3d0d84b707ba69fc1e7497869386ccdae8555f800b43632d3b674d"
+    },
+    "serving_trace.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/serving_trace.py",
+      "sha256": "986eefdee5bc30cb0c8f56b1618554128c69fa9002440bae6d705de118e90db4"
+    },
+    "normal-cleanup_repro.py.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/normal-cleanup_repro.py.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "normal-cleanup_repro.py.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/normal-cleanup_repro.py.stdout",
+      "sha256": "7938a2145f7a4b7c50cdb53bbeb7841c0884acfe19a4c6d144e6f5a5c148cf4b"
+    },
+    "serving_policy.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/serving_policy.py",
+      "sha256": "d7cb92568dbd45b4433159ee98d216405d76b12cc42a579062298c741b2243c7"
+    },
+    "independent-collector-runs.json": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/independent-collector-runs.json",
+      "sha256": "ba7bc8bfd7f47b7536c32f8b7f0a5c5f2c16dbcce5f59cce6170794a262d0636"
+    },
+    "serving_release.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/serving_release.py",
+      "sha256": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c"
+    },
+    "cleanup_repro.py.adaptation.diff": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/cleanup_repro.py.adaptation.diff",
+      "sha256": "122379dfac6302d229eed8d616f89f40eab49836ed539db4c15babc8d6b2ac49"
+    },
+    "optimized-event_interval_repro.py.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/optimized-event_interval_repro.py.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "optimized-cleanup_repro.py.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/optimized-cleanup_repro.py.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "boundary-results.json": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/boundary-results.json",
+      "sha256": "c3a15a6f9b7ddb24fc061185fe6d813e0016ebeffa0c3c46eb9075232f271cc0"
+    },
+    "serving_evidence.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/serving_evidence.py",
+      "sha256": "b5896f13f2b37f0b64719d2f86d663f99e1d28cc05714b32962362d2a4250970"
+    },
+    "test_serving_cancel_evidence.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/test_serving_cancel_evidence.py",
+      "sha256": "a090e7b2ebc2fbe0b3da74cfc890691f7a12f8e53041292009134af8a016a237"
+    },
+    "optimized-boundary.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/optimized-boundary.stdout",
+      "sha256": "2f72154ab656a8152c3cad54f0dc9e0e47b25e0aa37934f974429f6fb7b74ad5"
+    },
+    "before_serving_cancel.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/before_serving_cancel.py",
+      "sha256": "870d6cddcf02f90801f10b093cda816b62aa8c86cfd555c0a91bbd5d6ba81ac2"
+    },
+    "serving_listener.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/serving_listener.py",
+      "sha256": "e71bf54a25ed91f2549ff690ee2a96cbd9db902c8c3af1651f4958f7e196f58e"
+    },
+    "serving_cancel_phase.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/serving_cancel_phase.py",
+      "sha256": "c1a04c343cc4c07ef215d1f7f3c5fde7e84fffb5d44a6e578587339b086dda68"
+    },
+    "exact.patch": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/exact.patch",
+      "sha256": "351ba90c0ac4f8cc3eb3dc33af59c807f84d4d20e97b2e0fbc38e57368d776fa"
+    },
+    "normal-boundary.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/normal-boundary.stdout",
+      "sha256": "5780398a58a840afe8be0dd67430df80c736cd9439848c3f64adb13b44f108f4"
+    },
+    "normal-event_interval_repro.py.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/normal-event_interval_repro.py.stdout",
+      "sha256": "b0bb8d6c308bd721db4d32ac1a298eb7962018f5d4112a4b40d47fc4c05a6cac"
+    },
+    "before_serving_cancel_phase.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/before_serving_cancel_phase.py",
+      "sha256": "363ce92faac2bcc3d5caa7f5e36f52dec395de2ac6e9a775e96073539046db1e"
+    },
+    "optimized-owned-tests.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/optimized-owned-tests.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "normal-owned-tests.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/normal-owned-tests.stderr",
+      "sha256": "3d2dc7e55de31fed7a4bf58a7f7d371ab279e86ec1ec330b69a7073d28d05363"
+    },
+    "serving_http.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/serving_http.py",
+      "sha256": "287e493db1678b503106c3ce662601d553229062670244c716369a2b619569d8"
+    },
+    "serving_manifest.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/serving_manifest.py",
+      "sha256": "12b7f252fb9b40670d53bd751e83992f46b79237cb1e12bf361444fdd5551b6f"
+    },
+    "optimized-owned-tests.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/optimized-owned-tests.stderr",
+      "sha256": "5bc55770764a9fe73fee792c76e943b22c44c7cd0b742bdb0bea2a35f830596a"
+    },
+    "serving_lifecycle.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/serving_lifecycle.py",
+      "sha256": "36ed3c2f9403a05ec064569f7c34558298226f1473fa154b892fc671fc2dbeb3"
+    },
+    "normal-owned-tests.stdout": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/normal-owned-tests.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "serving_completion.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/serving_completion.py",
+      "sha256": "bf0d4dd9c569884133d0516e128bfa625cd83d993d62bdda41cb4f1dea3aa1fa"
+    },
+    "owner-raw-verification.json": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/owner-raw-verification.json",
+      "sha256": "ae255a1797d46b72ddf63701faf01772c704094f5fdaa6cafba38c71201bb547"
+    },
+    "test_serving_cancel.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/test_serving_cancel.py",
+      "sha256": "c2950ee1e2e4fc63c2d70a1bf4960a9eb2e8b6b5cd3bd04f90b8c5f16371d25d"
+    },
+    "normal-event_interval_repro.py.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/normal-event_interval_repro.py.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "serving_process.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/serving_process.py",
+      "sha256": "22dca5e161a926fa8c9382c762223af0b8029ae2cf0c13f16bef7f5066df984a"
+    },
+    "test_serving_cancel_phase.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/test_serving_cancel_phase.py",
+      "sha256": "0cdbd44ede3eee175da23964b1c7c639a246f208e9ed96864d2dca6e3f884554"
+    },
+    "event_interval_repro.py.adaptation.diff": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/event_interval_repro.py.adaptation.diff",
+      "sha256": "1511e8e271f7dc9a11aa386c5721cf88db087aea62bb77138a133f330a22a041"
+    },
+    "boundary_controls.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/boundary_controls.py",
+      "sha256": "0bf6938a65bbed546e6717297b124f038e77ab648313be5af4b9acbe06301f9d"
+    },
+    "normal-boundary.stderr": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/normal-boundary.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "serving_capture.py": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/serving_capture.py",
+      "sha256": "4fc3434999a5490a077386a8f235166ed0e87cd997a889eb8e8da8e807aca163"
+    },
+    "normal-event-interval-results.json": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/finder-normal/event-interval-results.json",
+      "sha256": "b0bb8d6c308bd721db4d32ac1a298eb7962018f5d4112a4b40d47fc4c05a6cac"
+    },
+    "normal-cleanup-long-poll/result.json": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/finder-normal/cleanup-long-poll/result.json",
+      "sha256": "7938a2145f7a4b7c50cdb53bbeb7841c0884acfe19a4c6d144e6f5a5c148cf4b"
+    },
+    "optimized-event-interval-results.json": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/finder-optimized/event-interval-results.json",
+      "sha256": "9e2366500f3d0d84b707ba69fc1e7497869386ccdae8555f800b43632d3b674d"
+    },
+    "optimized-cleanup-long-poll/result.json": {
+      "path": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/reviews/architecture-devops/issue-526-phase-repair-38b8f0e-evidence/finder-optimized/cleanup-long-poll/result.json",
+      "sha256": "67f2377f16315e1c73f8a5563f0197b6e8656947d1fe6d49543f2848402475bd"
+    }
+  },
+  "recorded_utc": "2026-09-21T23:35:02.843269+00:00",
+  "limits": [
+    "No owner edits, remote/GPU job, rental, broadCargo build, public post or merge.",
+    "Own small snapshots/artifacts outside the case-sensitive image; prior source/reports/raw failures preserved.",
+    "Collector source GO only; no compatibility-test substitution for the new reader review."
+  ]
+}

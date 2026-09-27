@@ -179,14 +179,17 @@ def build(args):
     print("BUILT (not GPU-qualified):", args.out / "build.json")
 
 
-def live_lease():
+def live_lease(*, generic=True, observations=None):
     q.require(sys.platform == "linux", "native capture requires Linux physical-card leases")
+    observation_start = time.monotonic_ns()
     path = Path(os.environ.get("MEMRA_GPU_LEASE_FILE", ""))
     q.require(path.is_file(), "invoke capture through the coordinator's memra-gpu-run wrapper")
     lease = q.json_bytes(path.read_bytes())
     ids = lease["requested_uuids"]
-    q.require(len(ids) == 1 and isinstance(ids[0], str) and q.GPU_UUID.fullmatch(ids[0])
-              and lease["lock_order"] == sorted(ids), "capture requires exactly one physical card")
+    q.require(type(ids) is list and ids and len(set(ids)) == len(ids)
+              and all(isinstance(x, str) and q.GPU_UUID.fullmatch(x) for x in ids)
+              and lease["lock_order"] == sorted(ids) and (not generic or len(ids) == 1),
+              "capture physical-card set differs from its selected profile")
     q.require(os.environ.get("CUDA_VISIBLE_DEVICES") == ",".join(ids), "visible GPU differs from lease")
     ancestors, pid = set(), os.getpid()
     while pid and pid not in ancestors:
@@ -196,7 +199,8 @@ def live_lease():
     q.require(lease["wrapper_pid"] in ancestors and lease["child_pid"] in ancestors
               and lease["wrapper_pid"] != lease["child_pid"], "lease owner is not the live process ancestry")
     locks = Path("/proc/locks").read_text().splitlines()
-    for uuid in ids:
+    selected_locks = []
+    for uuid in sorted(ids):
         lock = Path(f"/tmp/memra-gpu-locks/{uuid}.lock")
         q.require(lease["lock_files"].get(uuid) == str(lock), "noncanonical physical-card lock")
         st = lock.stat()
@@ -209,10 +213,31 @@ def live_lease():
             found |= (int(fields[4]) == lease["wrapper_pid"] and int(major, 16) == os.major(st.st_dev)
                       and int(minor, 16) == os.minor(st.st_dev) and int(inode) == st.st_ino)
         q.require(found, "physical-card exclusive FLOCK not held by wrapper")
+        if observations is not None:
+            matches = [line for line in locks if len(line.split()) >= 8
+                and line.split()[1:4] == ["FLOCK", "ADVISORY", "WRITE"]
+                and int(line.split()[4]) == lease["wrapper_pid"]
+                and tuple([int(x, 16) for x in line.split()[5].split(":")[:2]] + [int(line.split()[5].split(":")[2])])
+                    == (os.major(st.st_dev), os.minor(st.st_dev), st.st_ino)]
+            q.require(len(matches) == 1, "ambiguous physical lock observation")
+            selected_locks.append({"uuid": uuid, "path": str(lock), "device_major": os.major(st.st_dev),
+                "device_minor": os.minor(st.st_dev), "inode": st.st_ino, "raw": matches[0]})
+    if observations is not None:
+        from dataclasses import asdict
+        from serving_process import process_identity
+        chain, pid = [], os.getpid()
+        while pid:
+            value = process_identity(pid)
+            q.require(value is not None and value.pid not in {p["pid"] for p in chain}, "lease ancestry disappeared")
+            chain.append(asdict(value)); pid = value.ppid
+        unix_ns = time.time_ns()
+        observations.append({"started_ns": observation_start, "finished_ns": time.monotonic_ns(),
+            "unix_ns": unix_ns, "boot_id": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
+            "controller": chain[0], "ancestors": chain, "locks": selected_locks})
     return lease
 
 
-def observe_hardware(ids):
+def observe_hardware(ids, *, generic=True):
     raw = subprocess.check_output(["nvidia-smi", "-i", ",".join(ids),
         "--query-gpu=index,uuid,name,compute_cap,driver_version,pci.bus_id,memory.total", "--format=csv,noheader,nounits"], text=True)
     rows = list(csv.reader(io.StringIO(raw), skipinitialspace=True))
@@ -221,15 +246,17 @@ def observe_hardware(ids):
     q.require(set(by_uuid) == set(ids), "cannot observe every leased GPU")
     # release-battery.sh currently queries physical NVML index 0 for headroom.
     # Refuse another CUDA-visible card; do not reinterpret CUDA ordinals as NVML indices.
-    headroom_uuid = subprocess.check_output(["nvidia-smi", "-i", "0", "--query-gpu=uuid",
-                                            "--format=csv,noheader,nounits"], text=True).strip()
-    q.require(ids == [headroom_uuid] and by_uuid[headroom_uuid]["index"] == "0",
-              "battery headroom queries NVML GPU0; leased CUDA UUID differs")
-    q.require(all("RTX PRO 6000 Blackwell" in d["name"] and d["compute_cap"] == "12.0"
-                  for d in devices), "capture requires the designated PRO 6000 Blackwell hardware class")
+    headroom_uuid = None
+    if generic:
+        headroom_uuid = subprocess.check_output(["nvidia-smi", "-i", "0", "--query-gpu=uuid",
+                                                "--format=csv,noheader,nounits"], text=True).strip()
+        q.require(ids == [headroom_uuid] and by_uuid[headroom_uuid]["index"] == "0",
+                  "battery headroom queries NVML GPU0; leased CUDA UUID differs")
+        q.require(all("RTX PRO 6000 Blackwell" in d["name"] and d["compute_cap"] == "12.0"
+                      for d in devices), "capture requires the designated PRO 6000 Blackwell hardware class")
     topology = subprocess.check_output(["nvidia-smi", "topo", "-m"])
     return {"devices": [by_uuid[x] for x in ids], "topology_sha256": q.digest(topology),
-            "headroom_query": {"nvml_index": 0, "uuid": headroom_uuid},
+            "headroom_query": ({"nvml_index": 0, "uuid": headroom_uuid} if generic else None),
             "runtime_platform": platform_identity()}, topology
 
 
@@ -293,10 +320,10 @@ def capture(args):
            "lease_owner": {k: lease[k] for k in ("wrapper_pid", "child_pid", "requested_uuids")},
            "roster": reference(args.out, "roster.tsv"), "manifests": manifests,
            "topology": reference(args.out, "topology.txt"),
-           "command": ["bash", "tools/release-battery.sh", "--evidence-dir", "cells"],
+           "command": ["bash", "tools/release-battery.sh", "--generic-only", "--evidence-dir", "cells"],
            "started_unix": time.time()}
     write(args.out / "run.pending.json", run)
-    command = ["bash", "tools/release-battery.sh", "--evidence-dir", str(args.out / "cells")]
+    command = ["bash", "tools/release-battery.sh", "--generic-only", "--evidence-dir", str(args.out / "cells")]
     with (args.out / "battery.log").open("w") as log, (args.out / "telemetry.csv").open("w") as samples:
         telemetry = subprocess.Popen(["nvidia-smi", "-i", ids[0],
             "--query-gpu=timestamp,uuid,memory.used,memory.free,utilization.gpu,power.draw,temperature.gpu",
@@ -327,12 +354,20 @@ def capture(args):
     run["finished_unix"] = time.time()
     write(args.out / "run.json", run)
     q.require(result.returncode == 0, "battery failed; all captured evidence retained")
-    print("EXECUTED, NOT SEALED: wait for wrapper cleanup, then seal", args.out)
+    print("GENERIC ONLY, NOT RELEASE QUALIFIED: wait for wrapper cleanup and required serving stage, then seal", args.out)
 
 
 def seal(args):
     q.require(not (args.out / "record.json").exists(), "record already exists; do not overwrite evidence")
-    shutil.copy2(args.lease, args.out / "lease.json")
+    q.require(not (args.out / "generic-record.json").exists(),
+              "v2 seal already attempted here; preserve it and use a fresh copy of the capture")
+    lease_bytes = args.lease.read_bytes()
+    lease_path = args.out / "lease.json"
+    if lease_path.exists():
+        q.require(lease_path.read_bytes() == lease_bytes, "different lease would overwrite retained evidence")
+    else:
+        with lease_path.open("xb") as output:
+            output.write(lease_bytes)
     evidence = q.Evidence(args.out)
     record = {"schema": "memra-release-qualification-v1", "status": "qualified"}
     for key in ("source", "build", "run", "lease"):
@@ -346,10 +381,25 @@ def seal(args):
     record["payloads"] = {str(path.relative_to(args.out)): q.sha256_file(path)
                           for path in sorted(args.out.rglob("*")) if path.is_file()
                           and not path.name.endswith(".pending.json") and path.name != "record.json"}
-    q.validate_record(record, evidence, args.repo, "HEAD", binaries=args.repo / "target/release",
+    q.validate_historical_record(record, evidence, args.repo, "HEAD", binaries=args.repo / "target/release",
                       models=model_inventory(args.repo, args.oracles))
-    write(args.out / "record.json", record)
-    print("SEALED native evidence:", args.out / "record.json")
+    write(args.out / "generic-record.json", record)
+    from serving_run import import_stage, validate_stage_directory
+    stage = validate_stage_directory(args.serving, args.repo, "HEAD")
+    q.require(stage["source"] == source and stage["build"] == evidence.obj(record["build"]),
+              "serving stage belongs to another source/build")
+    serving_ref = import_stage(args.serving, args.out)
+    verdicts = {"generic": record["verdicts"], "serving": stage["verdicts"]}
+    full = {"schema": "memra-release-qualification-v2", "status": "qualified",
+            "source": record["source"], "build": record["build"], "generic": reference(args.out, "generic-record.json"),
+            "serving": serving_ref, "verdicts": verdicts}
+    full["payloads"] = {str(p.relative_to(args.out)): q.sha256_file(p) for p in sorted(args.out.rglob("*"))
+                        if p.is_file() and not p.name.endswith(".pending.json") and p.name != "record.json"}
+    full["identity_sha256"] = q.object_digest({"source": source["inputs_sha256"], "build": full["build"]["sha256"],
+        "generic": full["generic"]["sha256"], "serving": full["serving"]["sha256"], "verdicts": verdicts})
+    q.validate_record(full, q.Evidence(args.out), args.repo, "HEAD", binaries=args.repo / "target/release")
+    write(args.out / "record.json", full)
+    print("SEALED v2 generic + required serving evidence:", args.out / "record.json")
 
 
 def bank(args):
@@ -395,6 +445,7 @@ def main():
     parser.add_argument("--jobs", type=int, default=8)
     parser.add_argument("--oracles", type=Path)
     parser.add_argument("--lease", type=Path)
+    parser.add_argument("--serving", type=Path, help="sealed required serving stage directory (mandatory for full seal)")
     parser.add_argument("--name")
     parser.add_argument("--append", action="store_true", help="bank an additional qualified build profile")
     args = parser.parse_args()
@@ -404,7 +455,7 @@ def main():
     try:
         q.require(args.jobs > 0, "jobs must be positive")
         for mode, required in {"build": ("nvcc", "expected_head"), "capture": ("build", "oracles", "expected_head"),
-                               "seal": ("lease", "oracles"), "bank": ("name",)}.items():
+                               "seal": ("lease", "oracles", "serving"), "bank": ("name",)}.items():
             if args.mode == mode:
                 q.require(all(getattr(args, key) is not None for key in required), f"{mode} requires {required}")
         if args.expected_head is not None:

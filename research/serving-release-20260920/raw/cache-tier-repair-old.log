@@ -1,0 +1,19 @@
+test_continuation_hit_does_not_fabricate_prefix_probe_counters (test_serving_cache.CacheCellsTests.test_continuation_hit_does_not_fabricate_prefix_probe_counters) ... ERROR
+
+======================================================================
+ERROR: test_continuation_hit_does_not_fabricate_prefix_probe_counters (test_serving_cache.CacheCellsTests.test_continuation_hit_does_not_fabricate_prefix_probe_counters)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/issue-526-cache-policy-repair/old/test_serving_cache.py", line 126, in test_continuation_hit_does_not_fabricate_prefix_probe_counters
+    result = evaluate_cache_cell(**bundle)
+  File "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/issue-526-cache-policy-repair/old/serving_cache.py", line 119, in evaluate_cache_cell
+    require(delta == expected, "cache metrics differ from the full request denominator")
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/issue-526-cache-policy-repair/old/serving_release.py", line 16, in require
+    raise ServingGateError(message, code)
+serving_release.ServingGateError: cache metrics differ from the full request denominator
+
+----------------------------------------------------------------------
+Ran 1 test in 0.002s
+
+FAILED (errors=1)

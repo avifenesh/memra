@@ -1,0 +1,28 @@
+{
+  "command": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    ".",
+    "-p",
+    "test_serving_process.py",
+    "-v"
+  ],
+  "platform": "Linux-6.8.0-139-generic-x86_64-with-glibc2.39",
+  "python": "3.12.3",
+  "cpu_only": true,
+  "cuda_visible_devices": "",
+  "exit_code": 0,
+  "wall_s": 5.571291459000349,
+  "source_before": {
+    "serving_process.py": "117fef5fe7bd74c51f696236a4a2bce982da3917ba8c5dcd5988338c18e2d16a",
+    "test_serving_process.py": "b4f4c122e9ee5e54c7ec0ae37b2853505d3ba10dfb8b731c43eefe2cc3b91ee4"
+  },
+  "source_after": {
+    "serving_process.py": "117fef5fe7bd74c51f696236a4a2bce982da3917ba8c5dcd5988338c18e2d16a",
+    "test_serving_process.py": "b4f4c122e9ee5e54c7ec0ae37b2853505d3ba10dfb8b731c43eefe2cc3b91ee4"
+  },
+  "log_sha256": "a0ee681520429fb6a00f6dc1f3f23783a6bf5f27fedd279fbb3dceebc9771d2e"
+}

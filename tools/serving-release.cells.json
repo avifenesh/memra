@@ -1,0 +1,18 @@
+{
+  "schema": "memra-required-serving-cells-v1",
+  "profiles": {
+    "text-generation-v1": [
+      {"id": "short_prompt", "requirements": {"prompt_tokens_min": 1, "prompt_tokens_max": 32, "temperature": 0, "exact_answer_oracle": true}},
+      {"id": "long_prompt", "requirements": {"prompt_tokens_min": 512, "nonempty_output": true}},
+      {"id": "wire_completion", "requirements": {"wires": ["chat_json", "chat_sse", "native_json", "native_sse"], "terminal_usage": true}},
+      {"id": "cache_restore", "requirements": {"cold_cached_tokens": 0, "restore_cache_hit": true, "same_program_exact_output": true}},
+      {"id": "concurrent_completion", "requirements": {"minimum_requests": 3, "observed_overlap": true, "all_attempts_accounted": true}},
+      {"id": "overload_recovery", "requirements": {"typed_refusal": true, "retry_headers": true, "peer_completion": true, "recovery_completion": true}},
+      {"id": "cancel_queued", "requirements": {"observed_phase": "queued", "server_cleanup": true, "peer_completion": true, "recovery_completion": true}},
+      {"id": "cancel_prime", "requirements": {"observed_phase": "prime", "server_cleanup": true, "bounded_by_prime_chunk": true, "recovery_completion": true}},
+      {"id": "cancel_decode", "requirements": {"observed_phase": "decode", "server_cleanup": true, "peer_completion": true, "recovery_completion": true}},
+      {"id": "drain", "requirements": {"health_draining": 200, "ready_unavailable": 503, "new_request_refused": 503, "retry_headers": true, "inflight_completion": true, "owned_exit_code": 0, "no_escalation": true}},
+      {"id": "worker_failure_recovery", "requirements": {"injected_fault_observed": true, "typed_failure": true, "all_attempts_accounted": true, "generation_change_observed": true, "recovery_completion": true}}
+    ]
+  }
+}

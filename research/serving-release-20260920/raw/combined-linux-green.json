@@ -1,0 +1,37 @@
+{
+  "command": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    ".",
+    "-p",
+    "test_serving_*.py",
+    "-v"
+  ],
+  "exit_code": 0,
+  "cpu_only": true,
+  "python": "3.12.3",
+  "source_before": {
+    "serving_release.py": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c",
+    "test_serving_release.py": "749eac9fdfca15a88600b57e6dc65e361cb16281fbcf2f670821884dd9860aa8",
+    "serving_lifecycle.py": "36ed3c2f9403a05ec064569f7c34558298226f1473fa154b892fc671fc2dbeb3",
+    "test_serving_lifecycle.py": "37006bd0e7ccc4cbb1626e35a8b9f033528820585394bc0a4a6d2e094ce9a2a1",
+    "serving_http.py": "287e493db1678b503106c3ce662601d553229062670244c716369a2b619569d8",
+    "test_serving_http.py": "4fd7dd2a6600a83aff8548386f542097e4cec7884632280ccb81be5a7cad8037",
+    "serving_process.py": "117fef5fe7bd74c51f696236a4a2bce982da3917ba8c5dcd5988338c18e2d16a",
+    "test_serving_process.py": "cfef98de245d0ac4d160fae5dd2930605227b2332d6c8343f8cae787a47ebc67"
+  },
+  "source_after": {
+    "serving_release.py": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c",
+    "test_serving_release.py": "749eac9fdfca15a88600b57e6dc65e361cb16281fbcf2f670821884dd9860aa8",
+    "serving_lifecycle.py": "36ed3c2f9403a05ec064569f7c34558298226f1473fa154b892fc671fc2dbeb3",
+    "test_serving_lifecycle.py": "37006bd0e7ccc4cbb1626e35a8b9f033528820585394bc0a4a6d2e094ce9a2a1",
+    "serving_http.py": "287e493db1678b503106c3ce662601d553229062670244c716369a2b619569d8",
+    "test_serving_http.py": "4fd7dd2a6600a83aff8548386f542097e4cec7884632280ccb81be5a7cad8037",
+    "serving_process.py": "117fef5fe7bd74c51f696236a4a2bce982da3917ba8c5dcd5988338c18e2d16a",
+    "test_serving_process.py": "cfef98de245d0ac4d160fae5dd2930605227b2332d6c8343f8cae787a47ebc67"
+  },
+  "log_sha256": "3631ebb597e75ca23d6ff07234fa8cb79a41cc330bd3f05190a3963d141a3040"
+}

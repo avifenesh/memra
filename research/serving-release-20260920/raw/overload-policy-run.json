@@ -1,0 +1,70 @@
+{
+  "command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "-B",
+    "-m",
+    "unittest",
+    "-v",
+    "test_serving_recovery",
+    "test_serving_completion",
+    "test_serving_lifecycle",
+    "test_serving_release",
+    "test_serving_manifest"
+  ],
+  "cwd": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/issue-526/tools",
+  "head": "14f75c67a383a89e3901789c81d839294676237c",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "python": "3.14.7 (main, Aug  5 2026, 10:29:49) [Clang 21.0.0 (clang-2100.1.1.101)]",
+  "exit_code": 0,
+  "hashes_before": {
+    "tools/serving_recovery.py": "ddb271f43d6a36e4f8fc4d26f9ac83b37d8ff2525d6f48c50a651d5a4760152e",
+    "tools/test_serving_recovery.py": "7936e089166953e0a9efc9f08c35c5c8b9e9c3710aadd8f73a09ba144310507f",
+    "tools/serving_completion.py": "bf0d4dd9c569884133d0516e128bfa625cd83d993d62bdda41cb4f1dea3aa1fa",
+    "tools/test_serving_completion.py": "43e2f9b5eb92a303538766834569a14a6425b5936c7d3f939ecba5f429f03ece",
+    "tools/serving_lifecycle.py": "36ed3c2f9403a05ec064569f7c34558298226f1473fa154b892fc671fc2dbeb3",
+    "tools/test_serving_lifecycle.py": "37006bd0e7ccc4cbb1626e35a8b9f033528820585394bc0a4a6d2e094ce9a2a1",
+    "tools/serving_policy.py": "d7cb92568dbd45b4433159ee98d216405d76b12cc42a579062298c741b2243c7",
+    "tools/serving_release.py": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c",
+    "tools/test_serving_release.py": "749eac9fdfca15a88600b57e6dc65e361cb16281fbcf2f670821884dd9860aa8",
+    "tools/serving_manifest.py": "12b7f252fb9b40670d53bd751e83992f46b79237cb1e12bf361444fdd5551b6f",
+    "tools/test_serving_manifest.py": "db189ad35082ce1fb40c91e8cecd8d8638be5531d16c763932341e8cf403fe6d",
+    "tools/serving-release.cells.json": "90c03281164603802e5af9db87062f6be5c4696f16aa24f40e8af13d814796f6",
+    "crates/memra-server/src/lib.rs": "dd613fde9c4ddb1a28effe4cc37c2c95da2e6fe9f7e3ffb32119b5da303127f3"
+  },
+  "hashes_after": {
+    "tools/serving_recovery.py": "ddb271f43d6a36e4f8fc4d26f9ac83b37d8ff2525d6f48c50a651d5a4760152e",
+    "tools/test_serving_recovery.py": "7936e089166953e0a9efc9f08c35c5c8b9e9c3710aadd8f73a09ba144310507f",
+    "tools/serving_completion.py": "bf0d4dd9c569884133d0516e128bfa625cd83d993d62bdda41cb4f1dea3aa1fa",
+    "tools/test_serving_completion.py": "43e2f9b5eb92a303538766834569a14a6425b5936c7d3f939ecba5f429f03ece",
+    "tools/serving_lifecycle.py": "36ed3c2f9403a05ec064569f7c34558298226f1473fa154b892fc671fc2dbeb3",
+    "tools/test_serving_lifecycle.py": "37006bd0e7ccc4cbb1626e35a8b9f033528820585394bc0a4a6d2e094ce9a2a1",
+    "tools/serving_policy.py": "d7cb92568dbd45b4433159ee98d216405d76b12cc42a579062298c741b2243c7",
+    "tools/serving_release.py": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c",
+    "tools/test_serving_release.py": "749eac9fdfca15a88600b57e6dc65e361cb16281fbcf2f670821884dd9860aa8",
+    "tools/serving_manifest.py": "12b7f252fb9b40670d53bd751e83992f46b79237cb1e12bf361444fdd5551b6f",
+    "tools/test_serving_manifest.py": "db189ad35082ce1fb40c91e8cecd8d8638be5531d16c763932341e8cf403fe6d",
+    "tools/serving-release.cells.json": "90c03281164603802e5af9db87062f6be5c4696f16aa24f40e8af13d814796f6",
+    "crates/memra-server/src/lib.rs": "dd613fde9c4ddb1a28effe4cc37c2c95da2e6fe9f7e3ffb32119b5da303127f3"
+  },
+  "checks": {
+    "diff_check": {
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "status": {
+      "exit_code": 0,
+      "stdout": "?? tools/serving_recovery.py\n?? tools/test_serving_recovery.py\n",
+      "stderr": ""
+    },
+    "staged_paths": {
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "new_file_whitespace": {
+      "tools/serving_recovery.py": [],
+      "tools/test_serving_recovery.py": []
+    }
+  }
+}

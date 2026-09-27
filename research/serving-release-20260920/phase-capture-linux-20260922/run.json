@@ -1,0 +1,85 @@
+{
+  "source": "96ec779a26bf75ae780df9a19334c04eb39bfd45",
+  "driver_pid": 4077932,
+  "started_utc": "2026-09-22T00:24:08.038764+00:00",
+  "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+  "GPU_work": false,
+  "native_models": false,
+  "runs": [
+    {
+      "mode": "normal",
+      "kind": "tests",
+      "command": [
+        "/usr/bin/python3",
+        "-m",
+        "unittest",
+        "test_serving_cancel_phase",
+        "test_serving_cancel",
+        "test_serving_cancel_evidence",
+        "test_serving_trace",
+        "test_serving_release"
+      ],
+      "exit_code": 0,
+      "elapsed_s": 30.059040506006568,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "77dedc8bf945eb3ffe4240d6bf168a2569c445979641958b653433baa434af0c",
+      "test_count": 123,
+      "skipped": 0
+    },
+    {
+      "mode": "normal",
+      "kind": "three-phase-replay",
+      "command": [
+        "/usr/bin/python3",
+        "/home/memra-five/owners/issue-526/phase-linux-96ec-001/source/probe.py",
+        "/data/receipts/issue-526-phase-linux-96ec-001/normal-real-replay"
+      ],
+      "exit_code": 0,
+      "elapsed_s": 2.409398075003992,
+      "stdout_sha256": "fe192fba262261212dce01b2ee840048d8a26d5cf7e73a6fd809620e8e5921fd",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "mode": "optimized",
+      "kind": "tests",
+      "command": [
+        "/usr/bin/python3",
+        "-O",
+        "-m",
+        "unittest",
+        "test_serving_cancel_phase",
+        "test_serving_cancel",
+        "test_serving_cancel_evidence",
+        "test_serving_trace",
+        "test_serving_release"
+      ],
+      "exit_code": 0,
+      "elapsed_s": 28.54213232800248,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "1765936d8705690712d9cf58472cf57a787acfdc5c5d0d388554adad57a22c18",
+      "test_count": 123,
+      "skipped": 0
+    },
+    {
+      "mode": "optimized",
+      "kind": "three-phase-replay",
+      "command": [
+        "/usr/bin/python3",
+        "-O",
+        "/home/memra-five/owners/issue-526/phase-linux-96ec-001/source/probe.py",
+        "/data/receipts/issue-526-phase-linux-96ec-001/optimized-real-replay"
+      ],
+      "exit_code": 0,
+      "elapsed_s": 2.581485269998666,
+      "stdout_sha256": "570483312c7121d65a48a503ecce693dbeef39e346daefcd1b563e0d85a20a86",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "namespace_cleanup": {
+    "initial_remaining": [],
+    "final_remaining": []
+  },
+  "source_before_after_equal": true,
+  "ended_utc": "2026-09-22T00:25:11.646997+00:00",
+  "status": "passed"
+}

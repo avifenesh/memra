@@ -1,0 +1,27 @@
+{
+  "command": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    ".",
+    "-p",
+    "test_serving_http.py",
+    "-v"
+  ],
+  "exit_code": 0,
+  "cpu_only": true,
+  "python": "3.12.3",
+  "source_before": {
+    "serving_http.py": "287e493db1678b503106c3ce662601d553229062670244c716369a2b619569d8",
+    "test_serving_http.py": "4fd7dd2a6600a83aff8548386f542097e4cec7884632280ccb81be5a7cad8037",
+    "serving_release.py": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c"
+  },
+  "source_after": {
+    "serving_http.py": "287e493db1678b503106c3ce662601d553229062670244c716369a2b619569d8",
+    "test_serving_http.py": "4fd7dd2a6600a83aff8548386f542097e4cec7884632280ccb81be5a7cad8037",
+    "serving_release.py": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c"
+  },
+  "log_sha256": "1e214774eaed5cbfe21b116b4fafc1357051f0f2e09cb71b70e33e61f8eac1b1"
+}

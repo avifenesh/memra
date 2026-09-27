@@ -1,0 +1,55 @@
+{
+  "files": {
+    "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/issue-526/tools/serving_process.py": {
+      "bytes": 33732,
+      "sha256": "22dca5e161a926fa8c9382c762223af0b8029ae2cf0c13f16bef7f5066df984a"
+    },
+    "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/issue-526/tools/test_serving_process.py": {
+      "bytes": 25358,
+      "sha256": "eac3ef971cb7639a676207e0400e05f3c4f70c261f7634bcf3996feb14b4a4ad"
+    },
+    "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/issue-526/tools/serving_policy.py": {
+      "bytes": 34337,
+      "sha256": "d7cb92568dbd45b4433159ee98d216405d76b12cc42a579062298c741b2243c7"
+    },
+    "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/issue-526/tools/test_serving_policy.py": {
+      "bytes": 36494,
+      "sha256": "662af13d2d36f2d0fe011c3920d3e54977671d729b5fbce0fcbf9b602fc2d527"
+    }
+  },
+  "repairs": {
+    "526-POL-01": "post-successful-syscall sent_monotonic plus finished_monotonic; policy consumes begin/send interval",
+    "526-POL-02": "timed ownership census covered exactly by server/descendant reaps or verified identity disappearance; absent wait status remains unknown",
+    "526-POL-03": "direct cleanup.finished_monotonic bounds reaps, retirements and completed actions, cross-checked with elapsed and unchanged deadline"
+  },
+  "tests": {
+    "command": "python3 -m unittest -v test_serving_process test_serving_policy test_serving_release test_serving_lifecycle (cwd tools)",
+    "test_functions": 68,
+    "passed": 66,
+    "linux_only_skipped": 2,
+    "process_passed": 16,
+    "policy_passed": 28,
+    "existing_accounting_passed": 22,
+    "log": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/performance-scratch/serving-policy-060c-repairs/tests-final.log",
+    "log_sha256": "e04862b22ef08bdbec6d107b2436185e169a437afe84d4133785085e93c3b86d"
+  },
+  "actual_cpu_process_controls": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/performance-scratch/serving-policy-060c-repairs/actual-process-controls.json",
+  "preserved_old_policy_red_green": "/Users/avifen/Documents/Codex/2026-09-19/w/work/continuous/performance-scratch/serving-policy-060c-repairs/policy-red-green.json",
+  "historical_proof_unchanged": true,
+  "protected_modules_changed_concurrently": [],
+  "new_receipt_fields": [
+    "signals[].sent_monotonic (only successful sends)",
+    "signals[].finished_monotonic",
+    "ownership_observations[]",
+    "descendant_retirements[]",
+    "cleanup.finished_monotonic",
+    "cleanup.descendants_retired"
+  ],
+  "limits": [
+    "New Linux orphan/subreaper and producer-to-policy tests still need Linux CPU execution by parent; no remote/GPU work was run.",
+    "Identity disappearance is explicit retirement evidence, not an invented successful exit or assertion of who reaped the child.",
+    "Old receipts lacking new interval/census/finish observations cannot satisfy repaired drain policy.",
+    "Buffered reads and unknown generation tails are preserved; completed_group remains strict.",
+    "Collector hashes/leases/provenance and additional serving scenarios remain parent-owned."
+  ]
+}

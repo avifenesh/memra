@@ -1,0 +1,34 @@
+{
+  "base": "c5cc1c32044a55c82a72919033c3ca7d2f02940d",
+  "files_sha256": {
+    "serving_cache.py": "1ea80ef82085ad015ce328a1d1a01ef419b9eb0637cbf9c6ba6f758b044ab1d4",
+    "test_serving_cache.py": "419f91f24654f89d9ea0964caddd3fe78b805a36023907e6128279f4a3ccb0fb",
+    "serving_completion.py": "bf0d4dd9c569884133d0516e128bfa625cd83d993d62bdda41cb4f1dea3aa1fa",
+    "test_serving_completion.py": "43e2f9b5eb92a303538766834569a14a6425b5936c7d3f939ecba5f429f03ece",
+    "serving_manifest.py": "12b7f252fb9b40670d53bd751e83992f46b79237cb1e12bf361444fdd5551b6f",
+    "test_serving_manifest.py": "db189ad35082ce1fb40c91e8cecd8d8638be5531d16c763932341e8cf403fe6d",
+    "serving-release.cells.json": "90c03281164603802e5af9db87062f6be5c4696f16aa24f40e8af13d814796f6",
+    "serving_policy.py": "dca3934b872c9db9b57e9fb993114e82715cb02c101082b18175c098c3076b80",
+    "test_serving_policy.py": "1ee49e72b138eba26490ba9bb5f76c46ee6a1f61a31752fc94e2515ad6592c2f",
+    "serving_release.py": "751417dd5141273d133d14f7902fccb84f61a4d0dbb27ff71e107ce4552e521c",
+    "test_serving_release.py": "749eac9fdfca15a88600b57e6dc65e361cb16281fbcf2f670821884dd9860aa8",
+    "serving_lifecycle.py": "36ed3c2f9403a05ec064569f7c34558298226f1473fa154b892fc671fc2dbeb3",
+    "test_serving_lifecycle.py": "37006bd0e7ccc4cbb1626e35a8b9f033528820585394bc0a4a6d2e094ce9a2a1"
+  },
+  "command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "-m",
+    "unittest",
+    "test_serving_cache",
+    "test_serving_completion",
+    "test_serving_manifest",
+    "test_serving_policy",
+    "test_serving_release",
+    "test_serving_lifecycle",
+    "-v"
+  ],
+  "exit_code": 0,
+  "test_log_sha256": "96a2dfc9423ca816315b32a1dc1ae137aa42995320ba11dddb95388aef15c183",
+  "scope": "pure CPU fixture checks with committed dependency sources; no actual cache/model/native/release claim",
+  "utc": "2026-09-21T00:10:39.830795+00:00"
+}

@@ -1,0 +1,27 @@
+{
+  "command": [
+    "python3",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    ".",
+    "-p",
+    "test_serving_listener.py",
+    "-v"
+  ],
+  "exit_code": 0,
+  "cpu_only": true,
+  "python": "3.12.3",
+  "source_before": {
+    "serving_listener.py": "e71bf54a25ed91f2549ff690ee2a96cbd9db902c8c3af1651f4958f7e196f58e",
+    "test_serving_listener.py": "e2ed68bb8b8319a4470cd71beb4aa5df259318d54bce1b0866b0ecbfa9c399b3",
+    "serving_process.py": "117fef5fe7bd74c51f696236a4a2bce982da3917ba8c5dcd5988338c18e2d16a"
+  },
+  "source_after": {
+    "serving_listener.py": "e71bf54a25ed91f2549ff690ee2a96cbd9db902c8c3af1651f4958f7e196f58e",
+    "test_serving_listener.py": "e2ed68bb8b8319a4470cd71beb4aa5df259318d54bce1b0866b0ecbfa9c399b3",
+    "serving_process.py": "117fef5fe7bd74c51f696236a4a2bce982da3917ba8c5dcd5988338c18e2d16a"
+  },
+  "log_sha256": "86fe8bd7a7cf814bfcc4e2af897e7b6536b1530a9d513966955048f1bdd8e7b8"
+}

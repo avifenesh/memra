@@ -1,0 +1,22 @@
+{
+  "old_source_sha256": "dca3934b872c9db9b57e9fb993114e82715cb02c101082b18175c098c3076b80",
+  "new_source_sha256": "d7cb92568dbd45b4433159ee98d216405d76b12cc42a579062298c741b2243c7",
+  "mode": "fresh pure CPU controls against preserved old bytes and repaired source; not historical-run relabeling",
+  "results": [
+    {
+      "finding": "526-POL-01",
+      "preserved_old_accepted": true,
+      "repaired_refused": "inflight capture did not span TERM"
+    },
+    {
+      "finding": "526-POL-02",
+      "preserved_old_accepted": true,
+      "repaired_refused": "known owned descendant lacks exit or identity retirement"
+    },
+    {
+      "finding": "526-POL-03",
+      "preserved_old_accepted": true,
+      "repaired_refused": "descendant reap is before last observation or after actual cleanup finish"
+    }
+  ]
+}

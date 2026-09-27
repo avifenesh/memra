@@ -22,6 +22,14 @@ pub struct PrimeChunk {
 pub trait PrimeWalker {
     type Output;
 
+    /// Inspect the next frozen operation without advancing or changing its shape.
+    /// Implementations that expose this must describe the same phase/rows their
+    /// next successful advance returns. None means unavailable or exhausted;
+    /// observers must not infer a chunk from a queued prompt or a cache lookup.
+    fn next_chunk(&self) -> Option<PrimeChunk> {
+        None
+    }
+
     fn advance_chunk(&mut self) -> Result<PrimeChunk, PrimeError>;
     fn remaining_chunks(&self) -> usize;
     fn finish(self) -> Result<Self::Output, PrimeError>;

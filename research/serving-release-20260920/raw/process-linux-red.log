@@ -1,0 +1,22 @@
+test_graceful_drain_keeps_needed_worker_alive (test_serving_process.OwnedServerTests.test_graceful_drain_keeps_needed_worker_alive) ... FAIL
+
+======================================================================
+FAIL: test_graceful_drain_keeps_needed_worker_alive (test_serving_process.OwnedServerTests.test_graceful_drain_keeps_needed_worker_alive)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/memra-five/owners/issue-526/process-cpu-01/baseline/test_serving_process.py", line 209, in test_graceful_drain_keeps_needed_worker_alive
+    self.assertEqual(receipt["server_exit"]["returncode"], 0, raw)
+AssertionError: 43 != 0 : DESCENDANT 137404
+STDERR
+CWD /tmp/serving-process-xmlaofzr
+AMBIENT None
+READY
+DRAIN
+WORKER_RESULT PREMATURE_TERM exit=41
+INFLIGHT_LOST
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.170s
+
+FAILED (failures=1)

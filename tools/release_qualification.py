@@ -245,32 +245,63 @@ def coverage_module():
     return module
 
 
-def validate_lease(lease, run):
+def validate_physical_lease(lease, run):
+    """Validate a closed physical-card lease without selecting a model's rig.
+
+    This is receipt validation, not proof that a lock is currently held. Capture
+    must verify live wrapper ancestry and FLOCK ownership; callers must also bind
+    the source, binary, numerical environment and model-specific hardware scope.
+    Requested device order defines CUDA ordinals; locks use sorted UUID order.
+    """
+    import math
+
     ids = lease["requested_uuids"]
-    require(ids and len(set(ids)) == len(ids) and all(isinstance(x, str) and GPU_UUID.fullmatch(x) for x in ids),
+    require(type(ids) is list and ids
+            and all(isinstance(x, str) and GPU_UUID.fullmatch(x) for x in ids)
+            and len(set(ids)) == len(ids),
             "invalid physical GPU set")
+    require(all(type(lease[k]) is int and lease[k] > 1 for k in ("wrapper_pid", "child_pid"))
+            and lease["wrapper_pid"] != lease["child_pid"], "invalid lease process identities")
     require(lease["lock_order"] == sorted(ids) and lease["lock_files"] ==
             {x: f"/tmp/memra-gpu-locks/{x}.lock" for x in ids}, "lease physical locks mismatch")
-    require(lease["state"] == "finished" and lease["exit_code"] == 0 and lease["child_exit_code"] == 0
+    require(lease["state"] == "finished"
+            and all(type(lease[k]) is int and lease[k] == 0 for k in ("exit_code", "child_exit_code"))
             and lease["timed_out"] is False and lease["interrupted_signal"] is None
             and lease["lingering_compute"] == [], "native lease did not finish cleanly")
-    require(run["lease_owner"] == {k: lease[k] for k in ("wrapper_pid", "child_pid", "requested_uuids")},
+    require(all(type(run["lease_owner"].get(k)) is int for k in ("wrapper_pid", "child_pid"))
+            and run["lease_owner"] == {k: lease[k] for k in ("wrapper_pid", "child_pid", "requested_uuids")},
             "run and completed lease identities differ")
+    times = (lease["started_unix"], run["started_unix"], run["finished_unix"], lease["finished_unix"])
+    require(all(type(t) in (int, float) and t >= 0
+                and (type(t) is int or math.isfinite(t)) for t in times),
+            "invalid lease/run timestamps")
     require(lease["started_unix"] <= run["started_unix"] < run["finished_unix"] <= lease["finished_unix"],
             "run is outside the completed lease interval")
     devices = run["hardware"]["devices"]
     require([d["uuid"] for d in devices] == ids, "hardware differs from leased GPU set")
+    require([d["uuid"] for d in lease["devices"]] == ids and
+            [d["name"] for d in lease["devices"]] == [d["name"] for d in devices],
+            "hardware observation and lease differ")
+    indices = [d["index"] for d in lease["devices"]]
+    require(all(type(index) is int and index >= 0 for index in indices)
+            and len(set(indices)) == len(indices)
+            and [d["index"] for d in devices] == [str(index) for index in indices],
+            "physical GPU indices differ or are duplicated")
+    require(run["numeric_environment"].get("CUDA_VISIBLE_DEVICES") == digest(",".join(ids).encode()),
+            "CUDA visibility does not bind the leased physical UUIDs in order")
+
+
+def validate_lease(lease, run):
+    """The generic battery's existing single-card GPU0 / PRO6000 profile."""
+    validate_physical_lease(lease, run)
+    ids = lease["requested_uuids"]
+    devices = run["hardware"]["devices"]
     require(len(ids) == 1, "generic release battery currently qualifies one physical card; use a separate Step gate for topology claims")
     require(run["hardware"]["headroom_query"] == {"nvml_index": 0, "uuid": ids[0]}
             and devices[0]["index"] == "0" and lease["devices"][0]["index"] == 0,
             "CUDA UUID and battery NVML GPU0 headroom selection differ")
-    require(run["numeric_environment"].get("CUDA_VISIBLE_DEVICES") == digest(ids[0].encode()),
-            "CUDA visibility does not bind the leased physical UUID")
     require(all("RTX PRO 6000 Blackwell" in d["name"] and d["compute_cap"] == "12.0"
                 and d["driver_version"] for d in devices), "wrong release rig/architecture")
-    require([d["uuid"] for d in lease["devices"]] == ids and
-            [d["name"] for d in lease["devices"]] == [d["name"] for d in devices],
-            "hardware observation and lease differ")
 
 
 def validate_build(build, source, source_reference, evidence):
@@ -312,7 +343,7 @@ def validate_build(build, source, source_reference, evidence):
         require(value.get("format") == "ELF-x86_64", f"non-native binary: {name}")
 
 
-def validate_record(record, evidence, repo, head, binaries=None, models=None, hardware=None):
+def validate_historical_record(record, evidence, repo, head, binaries=None, models=None, hardware=None):
     require(isinstance(record, dict), "record must be a JSON object")
     require(record.get("schema") == "memra-release-qualification-v1" and record.get("status") == "qualified",
             "UNQUALIFIED: absent, failed or unsupported qualification record")
@@ -344,7 +375,8 @@ def validate_record(record, evidence, repo, head, binaries=None, models=None, ha
     topology = evidence.bound(run["topology"])
     require(topology.strip(), "missing topology observation")
     require(run["hardware"]["topology_sha256"] == digest(topology), "topology hash mismatch")
-    require(run["command"] == ["bash", "tools/release-battery.sh", "--evidence-dir", "cells"],
+    require(run["command"] in (["bash", "tools/release-battery.sh", "--evidence-dir", "cells"],
+                               ["bash", "tools/release-battery.sh", "--generic-only", "--evidence-dir", "cells"]),
             "noncanonical battery command")
     evidence.bound(run["battery_log"])
     samples = evidence.bound(run["telemetry"]).decode().splitlines()
@@ -369,7 +401,47 @@ def validate_record(record, evidence, repo, head, binaries=None, models=None, ha
         require(hardware == run["hardware"], "stale rig/topology")
     return {**proof, "identity_sha256": record["identity_sha256"], "verdicts": verdicts,
             "binaries": build["binaries"], "build_profile": build["platform"]["profile"],
-            "qualification": "native-evidence-validated"}
+            "qualification": "historical-generic-only"}
+
+
+def validate_record(record, evidence, repo, head, binaries=None, models=None, hardware=None):
+    """Full release v2. A valid historical generic v1 is never a release waiver."""
+    import copy
+    from serving_run import validate_serving_run, tracked, MANIFEST
+    require(isinstance(record, dict) and record.get("schema") == "memra-release-qualification-v2"
+            and record.get("status") == "qualified", "UNQUALIFIED: full release requires sealed v2 serving evidence; v1 is generic-only")
+    require(set(record) == {"schema", "status", "source", "build", "generic", "serving", "payloads", "verdicts", "identity_sha256"},
+            "unknown or missing v2 release fields")
+    require(isinstance(record["payloads"], dict) and record["payloads"], "missing v2 evidence manifest")
+    evidence.payloads = record["payloads"]
+    for path, expected in record["payloads"].items():
+        require(isinstance(expected, str) and SHA.fullmatch(expected) and digest(evidence.read(path)) == expected,
+                "v2 evidence changed: " + path)
+    generic = evidence.obj(record["generic"])
+    require(generic.get("source") == record["source"] and generic.get("build") == record["build"], "generic and serving build/source differ")
+    proof = validate_historical_record(generic, copy.copy(evidence), repo, head, binaries, models, hardware)
+    source, build = evidence.obj(record["source"]), evidence.obj(record["build"])
+    serving = validate_serving_run(evidence.obj(record["serving"]), evidence, tracked(repo, head, MANIFEST),
+        {"repo": repo, "head": head, "source": source, "source_reference": record["source"],
+         "build": build, "build_reference": record["build"]})
+    generic_models = evidence.obj(generic["run"])["models_before"]
+    require(all(path not in generic_models or generic_models[path] == identity for path, identity in serving["models"].items()),
+            "generic and serving model artifacts differ")
+    verdicts = {"generic": proof["verdicts"], "serving": serving}
+    require(record["verdicts"] == verdicts, "v2 verdicts differ from raw required evidence")
+    identity = {"source": source["inputs_sha256"], "build": record["build"]["sha256"],
+                "generic": record["generic"]["sha256"], "serving": record["serving"]["sha256"], "verdicts": verdicts}
+    require(record["identity_sha256"] == object_digest(identity), "v2 release identity changed")
+    return {**proof, "identity_sha256": record["identity_sha256"], "verdicts": verdicts,
+            "qualification": "native-required-release-evidence-validated"}
+
+
+def verify_historical_published(repo, head):
+    """Read old raw records explicitly; never called by push, tag or release gates."""
+    results = [validate_historical_record(record, evidence, repo, resolved)
+               for record, evidence, resolved in published_records(repo, head)]
+    require(results, "missing historical generic evidence")
+    return results[0]
 
 
 def cell_verdicts(run, evidence, repo, head):

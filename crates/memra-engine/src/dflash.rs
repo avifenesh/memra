@@ -5102,6 +5102,16 @@ impl DsparkPrimeWalker<'_> {
 impl crate::prime_walker::PrimeWalker for DsparkPrimeWalker<'_> {
     type Output = DsparkSpecSession;
 
+    fn next_chunk(&self) -> Option<crate::prime_walker::PrimeChunk> {
+        let taps = &self.state.as_ref()?.taps;
+        taps.ranges
+            .get(taps.cursor)
+            .map(|(start, end)| crate::prime_walker::PrimeChunk {
+                phase: "dflash-trunk-ingest",
+                rows: end - start,
+            })
+    }
+
     fn remaining_chunks(&self) -> usize {
         self.state
             .as_ref()
@@ -5228,6 +5238,16 @@ struct DflashTapWalker<'a> {
 
 impl crate::prime_walker::PrimeWalker for DflashTapWalker<'_> {
     type Output = Vec<f32>;
+
+    fn next_chunk(&self) -> Option<crate::prime_walker::PrimeChunk> {
+        self.state
+            .ranges
+            .get(self.state.cursor)
+            .map(|(start, end)| crate::prime_walker::PrimeChunk {
+                phase: "dflash-trunk-ingest",
+                rows: end - start,
+            })
+    }
 
     fn remaining_chunks(&self) -> usize {
         self.state.ranges.len() - self.state.cursor

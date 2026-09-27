@@ -93,15 +93,18 @@ echo '  PASS: fixture calibrated margin gate'
 
     def run_battery(self, expected=0, diagnostic=None, **env):
         result = subprocess.run(
-            ["bash", str(self.tools / "release-battery.sh"), "--roster", str(self.roster)],
+            ["bash", str(self.tools / "release-battery.sh"), "--generic-only",
+             "--roster", str(self.roster)],
             cwd=self.root, env={**self.env, **env}, text=True,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60,
         )
         if expected == 0:
             self.assertEqual(result.returncode, 0, result.stdout)
-            self.assertIn("RELEASE BATTERY PASS", result.stdout)
+            self.assertIn("GENERIC BATTERY PASS", result.stdout)
+            self.assertNotIn("RELEASE BATTERY PASS", result.stdout)
         else:
             self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertNotIn("GENERIC BATTERY PASS", result.stdout)
             self.assertNotIn("RELEASE BATTERY PASS", result.stdout)
         if diagnostic:
             self.assertIn(diagnostic, result.stdout)
@@ -110,12 +113,24 @@ echo '  PASS: fixture calibrated margin gate'
     def test_complete(self):
         self.run_battery()
 
+    def test_full_release_without_serving_record_refuses_before_producers(self):
+        result = subprocess.run(
+            ["bash", str(self.tools / "release-battery.sh"), "--roster", str(self.roster)],
+            cwd=self.root, env=self.env, text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, timeout=60,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("required --serving-record is missing", result.stdout)
+        self.assertNotIn("BATTERY PASS", result.stdout)
+        self.assertFalse((self.root / "kernel.args").exists())
+
     def test_evidence_records_each_actual_producer_before_parsing(self):
         for code in ("0", "1"):
             with self.subTest(kernel_exit=code):
                 destination = self.root / f"evidence-{code}"
                 result = subprocess.run(
-                    ["bash", str(self.tools / "release-battery.sh"), "--roster", str(self.roster),
+                    ["bash", str(self.tools / "release-battery.sh"), "--generic-only",
+                     "--roster", str(self.roster),
                      "--evidence-dir", str(destination)], cwd=self.root,
                     env={**self.env, "FIXTURE_KC_RC": code}, text=True,
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60)

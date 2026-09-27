@@ -176,7 +176,7 @@ cleanup record, seal the evidence (CPU/file checks only):
 
 ```sh
 python3 tools/qualify-release.py seal --out "$RUN" --lease "$LEASE/lease.json" \
-  --oracles /data/models/kernel-oracles
+  --oracles /data/models/kernel-oracles --serving "$SERVING_STAGE"
 python3 tools/qualify-release.py bank --out "$RUN" --name candidate-pro-ubuntu-24-04
 # For another independently qualified build profile at identical inputs, use --append.
 git add research/release-qualification
@@ -192,5 +192,88 @@ the tested executable archive off the ephemeral rig; its six digests remain in t
 These records are auditable native-run evidence, not signed third-party attestations. A
 reviewer must verify provenance; hashing cannot turn invented observations into execution.
 CPU fixtures in `tools/test_release_qualification.py` are temporary fabricated records for
-checker tests only. They do not qualify a model, binary, driver, GPU or release. Full HTTP,
-model support, performance and other-hardware claims require their own applicable gates.
+checker tests only. They do not qualify a model, binary, driver, GPU or release. The required serving stage below covers only its reviewed model/route programs.
+Performance, additional model support and other hardware still require their applicable gates.
+
+
+## Required serving stage and full release v2
+
+Full publication requires `memra-release-qualification-v2`: the unchanged generic
+kernel/argmax/K=1..8 evidence **and** every required serving cell. A generic v1 raw
+record remains historical generic-only evidence. It is not rewritten or promoted;
+`validate_historical_record` can inspect it, while push/tag/release verification
+accepts only full v2. Topic development push remains explicitly UNQUALIFIED as
+shown above. There is no protected-ref or missing-serving waiver.
+
+The source-owned input is `tools/serving-release.programs.json`, schema
+`memra-serving-policy-v1`. It must be reviewed and committed before building.
+There is deliberately no generated default policy: absence refuses qualification.
+Each scope names a roster ID, `{id,model,route,profile}`, all consumed model/draft/
+metadata artifact paths and byte/SHA-256 identities, the ordered physical device
+classes `{name,compute_cap}`, and all eleven cells. Every roster model must appear;
+a run cannot select fewer models, routes, requests or scenarios. Policy changes are
+build-input changes. The source-owned scenario manifest remains
+`tools/serving-release.cells.json`.
+
+Each cell contains `scenario`, its exact adapter `program`, and a `server` object
+with explicit `env`, `timeouts` (`startup,overall,drain,kill`) and `http` limits.
+The program fixes payloads, ordering, token bounds and independent answer oracles.
+It omits only `server_identity`, `endpoint`, `identities` and `client_trace_key`:
+these are supplied by the owned process and fixed collector rules. The policy's
+`MEMRA_MODELS` must map its sole served alias to the roster artifact. The collector
+supplies the loopback address and ordered leased UUIDs; no ambient environment is
+merged into the server. Additional artifacts and numerical environment values
+must be explicit in the reviewed policy. This does not declare an otherwise
+unsupported model, topology or execution route supported.
+
+Use the already validated v3 build. On each reviewed physical set, the coordinator
+runs one **complete** scope through the existing per-card wrapper:
+
+```sh
+memra-gpu-run --gpus "$SCOPE_UUIDS" --receipt "$SCOPE_LEASE" -- \
+  python3 -B tools/serving-run.py capture --expected-head "$COMMIT" \
+  --build "$BUILD" --scope "$SCOPE_ID" --out "$SCOPE_RUN"
+```
+
+The runner does not build, rent, acquire GPU locks or evict processes. It verifies
+live wrapper ancestry and selected exclusive FLOCK rows, source/controller files,
+ELFs and artifact bytes before/after. It uses the existing group, overload,
+phase-driven cancellation, owned drain and worker-respawn collectors. Failed
+captures and unattempted cells remain in the output; inference is never retried
+until a desired result appears. Startup probes and all raw capture bytes are kept.
+A completed serving scope does not seal itself while its lease is still running.
+
+After **every** scope's wrapper has closed, repeat paired `--scope-run` and
+`--lease` options for the full required set:
+
+```sh
+python3 -B tools/serving-run.py seal --expected-head "$COMMIT" --build "$BUILD" \
+  --scope-run "$SCOPE_RUN_A" --lease "$SCOPE_LEASE_A/lease.json" \
+  --scope-run "$SCOPE_RUN_B" --lease "$SCOPE_LEASE_B/lease.json" --out "$SERVING_STAGE"
+python3 -B tools/serving-run.py verify --expected-head "$COMMIT" --out "$SERVING_STAGE"
+```
+
+The serving stage's physical-card validation uses the route's reviewed set;
+it does **not** apply the generic battery's GPU0 rule to every model. Topology,
+actual UUID order, worker/process birth and completed lease identities stay bound.
+Generic numerical capture remains a separate component on its existing GPU0/PRO
+profile. Direct full battery invocation now requires
+`tools/release-battery.sh --serving-record "$SERVING_STAGE"`; `--generic-only`
+prints its restricted scope and cannot authorize publication. The controlled
+`qualify-release.py capture` invokes those generic components; full `seal` requires
+`--serving "$SERVING_STAGE"` and binds both into v2. Existing tag workflows and
+pre-push hooks use that same strict verifier.
+
+Raw replay validates the complete capture and policy denominators, exact sent
+payloads and launch, controller/build/model identities, lifecycle and physical
+lease receipts. It reruns each existing scenario predicate instead of trusting
+stored `passed` booleans. Full v2 also rejects different generic/serving bytes for
+the same model path. All artifact hashing occurs at capture/verification
+boundaries; no server/token path is changed.
+
+These are source and evidence checks, not signed attestations or a latency/SLO
+claim. Before native qualification, the actual Linux collector must pass on the
+selected source and the complete policy must execute under fresh leases.
+Component CPU fixtures, synthetic epochs and compiler-only checks remain their
+recorded scope. A host-return event or retirement site does not prove GPU
+quiescence, and unobserved generation intervals are not described as unchanged.

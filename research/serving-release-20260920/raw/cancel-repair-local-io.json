@@ -1,0 +1,121 @@
+{
+  "source_hashes": {
+    "tools/serving_cancel.py": "59a377d507d725730fa6f127127e5156191ea5304f42fd832374b24b43e036eb",
+    "tools/test_serving_cancel.py": "147ba1aa801a5327ecddefc3a695d6f40453c2b75c6cd2296af8016c420a6dc7"
+  },
+  "log_sha256": "6eaf97c78d41559fa15b502ceba748bac559a737d586c45bc7feaea917a656e8",
+  "tests_discovered": 49,
+  "passed": 48,
+  "skipped": 1,
+  "skip": "Linux procfs listener ownership unavailable on macOS",
+  "actual_process_fixtures": 10,
+  "fixture_summaries": [
+    {
+      "name": "bad_metrics-f5cdnktp",
+      "receipt_sha256": "632a674dffaf64f31acadcccd407c19651c838a3e33d8e0b1677121635f38efd",
+      "server_exit": 0,
+      "cleanup_complete": true
+    },
+    {
+      "name": "cancel_before_eof-122srlua",
+      "receipt_sha256": "727ea0869a95d96cb11d88f63ec4231322e7fbae62193a35b1f111a2c2004577",
+      "server_exit": 0,
+      "cleanup_complete": true,
+      "ordering": {
+        "order": "cancel_first",
+        "errors": [],
+        "timer_waiting_ns": 600884498415125,
+        "release_read_entered_ns": 600884563774166,
+        "release_read_index": 2,
+        "delivered_before_release_bytes": 7,
+        "delivered_before_release_sha256": "595e9c4315f8fa0dbe29a29dafa6fd94ab4da341ad87b86198f4029592246aa5",
+        "timer_released_ns": 600884563799958,
+        "event_set_before_ns": 600884579575208,
+        "event_set_after_ns": 600884579580375,
+        "capture_finished_ns": 600884586951166,
+        "capture_returned_ns": 600884586984458
+      }
+    },
+    {
+      "name": "finish_first-dsx5ka_i",
+      "receipt_sha256": "e6f262f249a1425f68fdca3fa6cd6a21cd803793cf2e20c23ec3320ed4365bef",
+      "server_exit": 0,
+      "cleanup_complete": true,
+      "ordering": {
+        "order": "eof_first",
+        "errors": [],
+        "timer_waiting_ns": 600890885381708,
+        "capture_finished_ns": 600890933233041,
+        "capture_returned_ns": 600890933257375,
+        "timer_released_ns": 600890933271250
+      }
+    },
+    {
+      "name": "leaked_target-hco19cvi",
+      "receipt_sha256": "6d3e47ac7393953c9ae885e9a775166da209843ffb08a42059ecdf2d22d55187",
+      "server_exit": 0,
+      "cleanup_complete": true
+    },
+    {
+      "name": "normal-491rau74",
+      "receipt_sha256": "06bb09fef2ca2ae41f7bd7a889eeebf44154ca85f66c81afc0f5a7e4d65c80b9",
+      "server_exit": 0,
+      "cleanup_complete": true
+    },
+    {
+      "name": "normal-ggmhkpfp",
+      "receipt_sha256": "893abe36faca19f9df6aefb9bad363b07022e9be4bb41eb89b9416bc32085efd",
+      "server_exit": 0,
+      "cleanup_complete": true
+    },
+    {
+      "name": "normal-m0zwbzjj",
+      "receipt_sha256": "bf1e4224234d76e177d43bff11b661199e600c81c6156fd577b1fea8eca36add",
+      "server_exit": 0,
+      "cleanup_complete": true
+    },
+    {
+      "name": "truncated_recovery-1h5coch7",
+      "receipt_sha256": "cd11122169b97c49aa3d8f3acffe2b908cb1d17020d8df8bfbef961da257a6bb",
+      "server_exit": 0,
+      "cleanup_complete": true
+    },
+    {
+      "name": "truncated_target-okvjeohp",
+      "receipt_sha256": "2ebb241f60761b0e985c4682b24d63b2835f60f084e3c280f1eff3d36eeba1c8",
+      "server_exit": 0,
+      "cleanup_complete": true,
+      "ordering": {
+        "order": "eof_first",
+        "errors": [],
+        "timer_waiting_ns": 600891974223166,
+        "capture_finished_ns": 600892027968291,
+        "capture_returned_ns": 600892027976625,
+        "timer_released_ns": 600892027986625
+      }
+    },
+    {
+      "name": "typed_error-h76m0cuy",
+      "receipt_sha256": "5feaf58a775a5b97ff0367be7bb4eba899091b9b357ce5579aa5ac2df4741be3",
+      "server_exit": 0,
+      "cleanup_complete": true,
+      "ordering": {
+        "order": "cancel_first",
+        "errors": [],
+        "timer_waiting_ns": 600893089439250,
+        "release_read_entered_ns": 600893143124791,
+        "release_read_index": 2,
+        "delivered_before_release_bytes": 141,
+        "delivered_before_release_sha256": "35077a572f52741e9241046a2926c84a641f22abafc947652ae70ca522702745",
+        "timer_released_ns": 600893143145250,
+        "event_set_before_ns": 600893170008125,
+        "event_set_after_ns": 600893170012708,
+        "capture_finished_ns": 600893174035166,
+        "capture_returned_ns": 600893174048625
+      }
+    }
+  ],
+  "qualification": false,
+  "limits": "diagnostic collector remains unqualified for native request phase/retirement; controlled Mac listener/boot fixtures labelled",
+  "execution_environment": "macOS, actual localhost HTTP/process fixtures; fixture-only listener/boot substitutions retained"
+}

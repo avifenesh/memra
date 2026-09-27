@@ -1,0 +1,14 @@
+test_interruption_inside_thread_start_still_joins_native_worker (test_serving_capture.CaptureInputTests.test_interruption_inside_thread_start_still_joins_native_worker) ... FAIL
+
+======================================================================
+FAIL: test_interruption_inside_thread_start_still_joins_native_worker (test_serving_capture.CaptureInputTests.test_interruption_inside_thread_start_still_joins_native_worker)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/memra-five/owners/issue-526/launch-cpu-01/baseline/test_serving_capture.py", line 146, in test_interruption_inside_thread_start_still_joins_native_worker
+    self.assertEqual(len(saved), 1)
+AssertionError: 0 != 1
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (failures=1)

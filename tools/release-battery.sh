@@ -8,7 +8,8 @@
 # "affected" absorbed both facts. The roster is now a FILE and a missing `own` model is a
 # REFUSAL, because a gate you satisfy by not having the file is not a gate.
 #
-#   tools/release-battery.sh [--roster FILE] [--allow-missing-vendor]
+#   tools/release-battery.sh --serving-record DIR [--evidence-dir DIR]
+#   --generic-only runs numerical components only; it cannot authorize a release.
 #
 # Exit 0 only when every required arm PASSED. Prints a receipt block for the tag message.
 set -u
@@ -19,8 +20,12 @@ ROSTER=$HERE/release-roster.tsv
 EVIDENCE_DIR=""
 EVIDENCE_SEQ=0
 ALLOW_MISSING_VENDOR=0
+GENERIC_ONLY=0
+SERVING_RECORD=""
 while [ $# -gt 0 ]; do
   case "$1" in
+    --generic-only) GENERIC_ONLY=1; shift ;;
+    --serving-record) SERVING_RECORD=${2:?}; shift 2 ;;
     --roster) ROSTER=${2:?}; shift 2 ;;
     --evidence-dir) EVIDENCE_DIR=${2:?}; shift 2 ;;
     --allow-missing-vendor) ALLOW_MISSING_VENDOR=1; shift ;;
@@ -28,6 +33,17 @@ while [ $# -gt 0 ]; do
     *) echo "unknown arg: $1" >&2; exit 64 ;;
   esac
 done
+
+# Required serving is a separately captured stage because different reviewed
+# model/routes may use different physical card sets. Replay it before GPU work.
+if [ "$GENERIC_ONLY" = 1 ]; then
+  [ -z "$SERVING_RECORD" ] || { echo "REFUSED: choose generic-only or full release" >&2; exit 1; }
+  echo "GENERIC COMPONENTS ONLY — no full release qualification"
+else
+  [ -n "$SERVING_RECORD" ] || { echo "REFUSED: required --serving-record is missing (generic v1 is not full release evidence)" >&2; exit 1; }
+  [ "$ROSTER" = "$HERE/release-roster.tsv" ] && [ "$ALLOW_MISSING_VENDOR" = 0 ] || { echo "REFUSED: full release scope is source-owned" >&2; exit 1; }
+  python3 -B "$HERE/serving-run.py" verify --repo "$ROOT" --expected-head "$(git -C "$ROOT" rev-parse HEAD)" --out "$SERVING_RECORD" || exit 1
+fi
 
 # Raw outputs are captured before parsing. A failed evidence write refuses the run.
 # The optional mode changes evidence storage only; it does not change any acceptance predicate.
@@ -249,7 +265,11 @@ done < "$ROSTER"
 
 echo
 if [ "$FAILED" = 0 ]; then
-  echo "=== RELEASE BATTERY PASS — paste into the tag message ==="
+  if [ "$GENERIC_ONLY" = 1 ]; then
+    echo "=== GENERIC BATTERY PASS — REQUIRED SERVING AND SEALED V2 STILL NEEDED ==="
+  else
+    echo "=== RELEASE BATTERY PASS — seal v2 before publication ==="
+  fi
   echo "  roster: $ROSTER ($OWN_ROWS own)"
   printf '%s' "$LINES" | sed 's/^/  /'
   exit 0

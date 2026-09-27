@@ -1,0 +1,89 @@
+[
+  {
+    "actual_call_stamps": {
+      "lookup_finished": 551658.917501916,
+      "syscall_returned": 551659.007709375,
+      "syscall_started": 551659.007683
+    },
+    "cpu_control": "delayed_real_signal",
+    "server_exit": {
+      "before_cleanup": true,
+      "exit_code": 0,
+      "identity": {
+        "identity_source": "ps_lstart_seconds",
+        "pgid": 12038,
+        "pid": 12038,
+        "ppid": 12035,
+        "start_time": "Mon Sep 21 01:37:17 2026",
+        "state": "Z"
+      },
+      "observed_monotonic": 551659.054181541,
+      "pid": 12038,
+      "returncode": 0,
+      "signal": null,
+      "wait_status": 0
+    },
+    "signal": {
+      "finished_monotonic": 551659.00771925,
+      "method": "start_time_checked_pid",
+      "monotonic": 551658.790396708,
+      "pid": 12038,
+      "result": "sent",
+      "sent_monotonic": 551659.007713458,
+      "signal": 30,
+      "start_time": "Mon Sep 21 01:37:17 2026"
+    }
+  },
+  {
+    "cleanup": {
+      "complete": true,
+      "descendants_reaped": 0,
+      "descendants_retired": 1,
+      "elapsed_s": 0.4429819999495521,
+      "escalated": false,
+      "finished_monotonic": 551661.847682375,
+      "raw_final": true,
+      "reaping_scope": "direct_children_only",
+      "remaining": []
+    },
+    "cpu_control": "primary_reaped_child",
+    "descendant_retirements": [
+      {
+        "exit_status": null,
+        "finished_monotonic": 551661.84644375,
+        "identity": {
+          "identity_source": "ps_lstart_seconds",
+          "pgid": 12102,
+          "pid": 12105,
+          "ppid": 12102,
+          "start_time": "Mon Sep 21 01:37:20 2026",
+          "state": "S"
+        },
+        "kind": "identity_disappeared",
+        "last_seen_monotonic": 551661.730564041,
+        "observation": "absent",
+        "pid": 12105,
+        "replacement_start_time": null,
+        "source": "ps_inventory",
+        "started_monotonic": 551661.804658791
+      }
+    ],
+    "server_exit": {
+      "before_cleanup": false,
+      "exit_code": 0,
+      "identity": {
+        "identity_source": "ps_lstart_seconds",
+        "pgid": 12102,
+        "pid": 12102,
+        "ppid": 12099,
+        "start_time": "Mon Sep 21 01:37:20 2026",
+        "state": "Z"
+      },
+      "observed_monotonic": 551661.803832625,
+      "pid": 12102,
+      "returncode": 0,
+      "signal": null,
+      "wait_status": 0
+    }
+  }
+]
