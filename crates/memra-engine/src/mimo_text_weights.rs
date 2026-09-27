@@ -159,6 +159,10 @@ fn skip_modal_tensor(id: &TensorId) -> bool {
 }
 
 impl MiMoTextWeights {
+    pub(crate) fn shares_source(&self, source: &Arc<SafetensorsSource>) -> bool {
+        Arc::ptr_eq(&self.source, source)
+    }
+
     /// Bind the full pinned source before uploading any text tensor, then
     /// settle every text-trunk read. Modality and draft tensors keep their
     /// own future load/audit owners.
