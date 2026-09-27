@@ -17,6 +17,9 @@ use memra_engine::mimo_vision_load::MiMoVisionWeights;
 use memra_gguf::model_packs::mimo_v2::bind_pinned_text_source;
 use memra_gguf::model_packs::mimo_v2::vision::MiMoVisionGrid;
 use memra_gguf::source::SafetensorsSource;
+use memra_reference::mimo_audio_codec_frontend::output_frames;
+use memra_reference::mimo_audio_pcm_mel::{MEL_BINS, MiMoPcmMelFrontend, SAMPLE_RATE};
+use memra_reference::mimo_audio_pcm_mel_mkl::OneMklFft960;
 use memra_reference::mimo_modal_overlay::{AUDIO_TOKEN_ID, IMAGE_TOKEN_ID, VIDEO_TOKEN_ID};
 use memra_reference::mimo_pixel_prepare::prepare_mimo_rgb8_frames;
 use memra_reference::mimo_vision_patchify::patchify_prepared_frames;
@@ -74,14 +77,29 @@ fn run() -> Result<(), Fail> {
     let mut args = std::env::args().skip(1);
     let dir = args
         .next()
-        .ok_or("usage: mimo_combined_modal_source_probe <source_dir> [--rgb8]")?;
-    let rgb8 = match args.next().as_deref() {
-        None => false,
-        Some("--rgb8") => true,
-        _ => return Err("usage: mimo_combined_modal_source_probe <source_dir> [--rgb8]".into()),
+        .ok_or("usage: mimo_combined_modal_source_probe <source_dir> [--rgb8 | --raw-modal <absolute-mkl-path>]")?;
+    let (rgb8, raw_modal, mkl_path) = match args.next().as_deref() {
+        None => (false, false, None),
+        Some("--rgb8") => (true, false, None),
+        Some("--raw-modal") => (
+            true,
+            true,
+            Some(args.next().ok_or(
+                "usage: mimo_combined_modal_source_probe <source_dir> --raw-modal <absolute-mkl-path>",
+            )?),
+        ),
+        _ => {
+            return Err(
+                "usage: mimo_combined_modal_source_probe <source_dir> [--rgb8 | --raw-modal <absolute-mkl-path>]"
+                    .into(),
+            );
+        }
     };
     if args.next().is_some() {
-        return Err("usage: mimo_combined_modal_source_probe <source_dir> [--rgb8]".into());
+        return Err(
+            "usage: mimo_combined_modal_source_probe <source_dir> [--rgb8 | --raw-modal <absolute-mkl-path>]"
+                .into(),
+        );
     }
     let source = Arc::new(SafetensorsSource::open(Path::new(&dir))?);
     let (config, _, binding) = bind_pinned_text_source(&source)?;
@@ -92,7 +110,9 @@ fn run() -> Result<(), Fail> {
     }
     println!(
         "format\t{}",
-        if rgb8 {
+        if raw_modal {
+            "memra-mimo-combined-modal-source-raw-modal-v1"
+        } else if rgb8 {
             "memra-mimo-combined-modal-source-rgb8-v1"
         } else {
             "memra-mimo-combined-modal-source-v1"
@@ -202,32 +222,76 @@ fn run() -> Result<(), Fail> {
     }
     record(engines, "vision_forward", true)?;
 
-    let mel = (0..4 * 128)
-        .map(|index| ((index * 19 % 53) as f32 - 26.0) / 64.0)
-        .collect::<Vec<_>>();
-    let conv = codec.encode_prepared_mel_conv(&cards[0], &cards[0].htod(&mel)?, 4)?;
-    let stack = codec.encode_transformer_stack(&cards[0], &conv, 2)?;
-    let downsample = codec.downsample_post_stack(&cards[0], &stack, 2)?;
-    let rvq = codec.encode_20_rvq(&cards[0], &downsample, 1)?;
+    let (mel, mel_frames) = if raw_modal {
+        const PCM_SAMPLES: usize = 2_048;
+        let pcm = (0..PCM_SAMPLES)
+            .map(|index| ((index * 37 % 257) as f32 - 128.0) / 256.0)
+            .collect::<Vec<_>>();
+        println!("raw_pcm_samples\t{}", pcm.len());
+        println!("raw_pcm_sha256\t{}", digest(&pcm));
+        let mut fft = OneMklFft960::open(Path::new(
+            mkl_path
+                .as_deref()
+                .ok_or("MiMo raw modal source requires an explicit oneMKL path")?,
+        ))?;
+        let features = MiMoPcmMelFrontend::new().compute_with_mkl(&pcm, SAMPLE_RATE, &mut fft)?;
+        if features.shape.len() != 2
+            || features.shape[0] != MEL_BINS
+            || features.data.len() != MEL_BINS * features.shape[1]
+        {
+            return Err("MiMo raw PCM mel tensor has wrong channel or frame extent".into());
+        }
+        let frames = features.shape[1];
+        println!("raw_mel_frames\t{frames}");
+        println!("raw_mel_sha256\t{}", digest(&features.data));
+        let mut frame_major = Vec::with_capacity(features.data.len());
+        for frame in 0..frames {
+            for mel in 0..MEL_BINS {
+                frame_major.push(features.data[mel * frames + frame]);
+            }
+        }
+        (frame_major, frames)
+    } else {
+        (
+            (0..4 * 128)
+                .map(|index| ((index * 19 % 53) as f32 - 26.0) / 64.0)
+                .collect::<Vec<_>>(),
+            4,
+        )
+    };
+    let conv_frames = output_frames(mel_frames, 2)?;
+    let rvq_frames = output_frames(conv_frames, 2)?;
+    let conv = codec.encode_prepared_mel_conv(&cards[0], &cards[0].htod(&mel)?, mel_frames)?;
+    let stack = codec.encode_transformer_stack(&cards[0], &conv, conv_frames)?;
+    let downsample = codec.downsample_post_stack(&cards[0], &stack, conv_frames)?;
+    let rvq = codec.encode_20_rvq(&cards[0], &downsample, rvq_frames)?;
     let grouped = rvq.grouped_patch_codes()?;
-    if grouped.groups != 1 || grouped.codes.len() != 4 * 20 {
+    if grouped.groups != rvq_frames.div_ceil(4) || grouped.codes.len() != grouped.groups * 4 * 20 {
         return Err("MiMo combined source grouped audio codes are incomplete".into());
     }
     let audio_output =
         audio_patch.forward_grouped_codes(&cards[1], &grouped.codes, grouped.groups)?;
-    let audio_row = cards[1].dtoh(&audio_output)?;
-    if audio_row.len() != HIDDEN {
+    let audio_flat = cards[1].dtoh(&audio_output)?;
+    if audio_flat.len() != grouped.groups * HIDDEN {
         return Err("MiMo combined source audio row is incomplete".into());
     }
-    let audio_rows = vec![audio_row];
+    let audio_rows = audio_flat
+        .chunks_exact(HIDDEN)
+        .map(<[f32]>::to_vec)
+        .collect::<Vec<_>>();
     println!("audio_row_sha256\t{}", digest(&audio_rows[0]));
+    if raw_modal {
+        println!("raw_rvq_frames\t{rvq_frames}");
+        println!("raw_audio_tokens\t{}", audio_rows.len());
+        println!("raw_audio_rows_sha256\t{}", digest(&audio_flat));
+    }
     record(engines, "audio_forward", true)?;
 
     let tokens = if rgb8 {
         let mut tokens = vec![42];
         tokens.extend(std::iter::repeat_n(IMAGE_TOKEN_ID, image_tokens));
         tokens.extend(std::iter::repeat_n(VIDEO_TOKEN_ID, video_tokens));
-        tokens.push(AUDIO_TOKEN_ID);
+        tokens.extend(std::iter::repeat_n(AUDIO_TOKEN_ID, audio_rows.len()));
         tokens
     } else {
         vec![42, IMAGE_TOKEN_ID, VIDEO_TOKEN_ID, AUDIO_TOKEN_ID]
@@ -240,7 +304,7 @@ fn run() -> Result<(), Fail> {
     if rgb8
         && (prepared.modal_counts().image != image_tokens
             || prepared.modal_counts().video != video_tokens
-            || prepared.modal_counts().audio != 1)
+            || prepared.modal_counts().audio != audio_rows.len())
     {
         return Err("MiMo RGB8 source modal placeholder counts drifted".into());
     }
