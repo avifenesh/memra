@@ -901,6 +901,9 @@ pub enum ChargeState {
 struct ChargeRecord {
     state: ChargeState,
     pins: u64,
+    /// Day 89 (I23, `research/spill-c-20260919/DAY89.md`): the tenant the governor charged, set at issue and read
+    /// back at release; `None` for the other issuers' leases.
+    tenant: Option<Digest>,
 }
 /// Non-Clone, non-serializable governor capability. Dropping it does not credit quota.
 /// ```compile_fail
@@ -923,6 +926,11 @@ impl ChargedLease {
     }
     pub fn state(&self) -> Result<ChargeState> {
         Ok(self.record.lock().map_err(|_| Error::Quarantined)?.state)
+    }
+    /// Day 89 (I23): the tenant the governor charged (the governor's recount test only).
+    #[cfg(test)]
+    pub(crate) fn tenant(&self) -> Option<Digest> {
+        self.record.lock().ok()?.tenant
     }
     /// Retain a physical owner, not another charge. A dropped caller cannot revoke this pin.
     pub fn pin(&self) -> Result<LeasePin> {
@@ -954,45 +962,59 @@ fn issuer() -> u64 {
 }
 /// Capability issuance/accounting helper, NOT an allocator or a second admission policy.
 /// The ONE governor owns this registry and calls `issue` only after atomic admission.
+/// Day 89 (I23, `research/spill-c-20260919/DAY89.md`): no map of live charges. A lease's liveness is its own record's
+/// state: `release` sets `Released` on exactly the records the map dropped, so `ForeignLease` for another issuer's
+/// lease, then `AlreadyReleased` for a released one, answer as the map lookup did.
 #[derive(Debug)]
 pub struct LeaseIssuer {
     issuer: u64,
     next: u64,
-    records: HashMap<u64, Arc<Mutex<ChargeRecord>>>,
 }
 impl Default for LeaseIssuer {
     fn default() -> Self {
         Self {
             issuer: issuer(),
             next: 0,
-            records: HashMap::new(),
         }
     }
 }
 impl LeaseIssuer {
     pub fn issue(&mut self, bytes: TierBudget) -> Result<ChargedLease> {
+        self.issue_record(bytes, None)
+    }
+    /// Day 89 (I23): the governor's issue, the charged tenant kept in the charge's own record.
+    pub(crate) fn issue_for(&mut self, bytes: TierBudget, tenant: Digest) -> Result<ChargedLease> {
+        self.issue_record(bytes, Some(tenant))
+    }
+    fn issue_record(&mut self, bytes: TierBudget, tenant: Option<Digest>) -> Result<ChargedLease> {
         bytes.validate()?;
         self.next = self.next.checked_add(1).ok_or(Error::Overflow)?;
-        let record = Arc::new(Mutex::new(ChargeRecord {
-            state: ChargeState::Reserved,
-            pins: 0,
-        }));
-        self.records.insert(self.next, record.clone());
         Ok(ChargedLease {
             issuer: self.issuer,
             id: self.next,
             bytes,
-            record,
+            record: Arc::new(Mutex::new(ChargeRecord {
+                state: ChargeState::Reserved,
+                pins: 0,
+                tenant,
+            })),
         })
     }
-    fn record(&self, lease: &ChargedLease) -> Result<&Arc<Mutex<ChargeRecord>>> {
+    fn record<'a>(
+        &self,
+        lease: &'a ChargedLease,
+    ) -> Result<std::sync::MutexGuard<'a, ChargeRecord>> {
         if lease.issuer != self.issuer {
             return Err(Error::ForeignLease);
         }
-        self.records.get(&lease.id).ok_or(Error::AlreadyReleased)
+        let r = lease.record.lock().map_err(|_| Error::Quarantined)?;
+        if r.state == ChargeState::Released {
+            return Err(Error::AlreadyReleased);
+        }
+        Ok(r)
     }
     pub fn mark(&self, lease: &ChargedLease, state: ChargeState) -> Result<()> {
-        let mut r = self.record(lease)?.lock().map_err(|_| Error::Quarantined)?;
+        let mut r = self.record(lease)?;
         let allowed = matches!(
             (r.state, state),
             (
@@ -1011,15 +1033,16 @@ impl LeaseIssuer {
     }
     /// Require owner proof before marking Retired; reject Busy without consuming retry ownership.
     pub fn release(&mut self, lease: &ChargedLease) -> Result<()> {
-        {
-            let mut r = self.record(lease)?.lock().map_err(|_| Error::Quarantined)?;
-            if r.pins != 0 || !matches!(r.state, ChargeState::Reserved | ChargeState::Retired) {
-                return Err(Error::Busy);
-            }
-            r.state = ChargeState::Released;
+        self.release_for(lease).map(|_| ())
+    }
+    /// Day 89 (I23): `release`, returning the tenant the charge was issued for.
+    pub(crate) fn release_for(&mut self, lease: &ChargedLease) -> Result<Option<Digest>> {
+        let mut r = self.record(lease)?;
+        if r.pins != 0 || !matches!(r.state, ChargeState::Reserved | ChargeState::Retired) {
+            return Err(Error::Busy);
         }
-        self.records.remove(&lease.id);
-        Ok(())
+        r.state = ChargeState::Released;
+        Ok(r.tenant)
     }
 }
 /// Charge all WP residency/staging/replicas/loaders/slots atomically in ONE instance.
