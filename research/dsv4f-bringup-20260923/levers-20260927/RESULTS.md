@@ -310,3 +310,60 @@ Each CTA computes its row's x mirror before it streams, so halving the warps per
 mirrors and halves the warps that share each one. Nsight Compute on the committed pair
 (`raw/se-ncu-v6b/`) reads 18% of peak warps active, 27% of SM throughput and 22% of L2
 throughput. The committed setting stays.
+
+## What the fused pair's mirrors cost, and two refuted ways to recover it
+
+**Probe** (second SE pair, `raw/se2-mirror-probe-s2s/`). These are box-local builds of main that skip
+the mirrors, using `mirror_hack.py` with the variant diffs kept. The outputs are wrong by design,
+so only the long gate's replay ms per token is read. Order M X1 X2 X2 X1 M:
+
+| build | replay ms/token |
+|---|---|
+| main | 11.10 .. 11.18 |
+| X1, no x mirror in the gate/up launch | 11.02 .. 11.14 |
+| X2, no x mirror and no h mirror in the down launch | 10.76 .. 10.86 |
+
+Every down CTA of a slot rebuilds the same h mirror from the f32 row, and that costs about
+0.3 ms per step.
+
+**Refuted: the h mirror published once per slot** (`raw/se2-hmirror-s2t/`, code in
+`h-mirror.patch`).
+- Design: the last gate/up CTA of each slot to finish its h columns builds the mirror once,
+  from the row through L2. It writes the swizzled halves and the row scale to global. Down CTAs
+  load them instead of rebuilding.
+- The bits are the same by construction: `PROGRAM_SHA256 fbce1a0492d69635`. The fused-pair
+  component tests pass, with a standalone publish kernel for the fixtures that edit h between
+  launches. The TP/EP rows gate passes, and so does the DSpark TP/EP gate with the pair's
+  proposal shas.
+- Speed: it is slower. Long gate, order M H H M M H: main 10.87 .. 11.00 ms/token against
+  10.94 .. 11.03.
+- Served cells-pdl, same order, N=3:
+  - greedy c1: 88.32 .. 88.77 tok/s on main against 87.83 .. 87.95, -0.7%;
+  - sampled c1: 88.53 .. 88.98 against 87.88 .. 88.29;
+  - c2 and c4 flat within row noise.
+- Why: the publish is a serial tail at the end of the gate/up launch that nothing overlaps. It
+  costs more than the parallel rebuild it replaces, whose loads overlap each down CTA's first
+  weight stage.
+
+**Refuted: register-held mirror groups with exact reciprocal divides**
+(`raw/se2-mirror-regs-s2v/`, `m2-mirror-regs.patch` on main, `h2-on-h.patch` on the published
+form).
+- Design: each warp keeps its groups' float4 values in registers across the mirror's two passes,
+  with every load in flight at once. The divisions by the power-of-two group and row scales
+  become multiplies by their exact reciprocals. `x * (1 / 2^k)` is the same correctly rounded
+  value as `x / 2^k`.
+- The bits are the same: `fbce1a0492d69635` on every build.
+- Long gate, order M M2 H H2 H2 H M2 M:
+
+| build | replay ms/token |
+|---|---|
+| M, main | 10.86 .. 10.95 |
+| M2, main with the held groups | 11.05 .. 11.15, +1.8% |
+| H, the published mirror | 10.91 .. 11.01 |
+| H2, the published mirror with the held groups | 10.95 .. 11.02 |
+
+The held groups push the gate/up kernel from 47 registers to 57 (55 in H2): `cuobjdump
+-res-usage` on the gate binaries. That takes its 256-thread CTAs from five per SM to four, which
+costs more than the saved loads. The down kernel stays at 48. Neither form is merged. Recovering
+the probe's 0.3 ms needs a mirror that adds no work to the gate/up launch's critical path and
+no registers to it.
