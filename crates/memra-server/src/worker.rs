@@ -15840,17 +15840,56 @@ fn reclaim_offtick_pass(
     removed + reclaim_queue_drain(engine, px, hpx, queue, &req.request_id)
 }
 
-/// Submit the worker queue's next demote while the tier's slot is free (DAY42 addendum E): the
-/// admission pass calls it, and so does the tick top after its settle calls, so the whole demote
-/// set reaches the host whether or not the arrival that queued it is still waiting. A queued entry
-/// that is no longer evictable (leased, hit or evicted meanwhile) is skipped; a refused submission
-/// dropped its entry (its bytes free now) and the next is tried. Returns the entries removed.
-/// MEMRA_BATCH_OOM_RECOVER (default unset, WP-B day 49, OWED O14): `1` retries a batched decode
-/// chunk once after one reclaim rung when its quoted CUDA OOM came before any session-state write
-/// (`memra_engine::step_guard`). Unset reads nothing.
+/// MEMRA_BATCH_OOM_RECOVER (WP-B day 49, OWED O14; the default per card, DAY49 addendum F): the
+/// batched decode chunk's OOM recovery retries the chunk once after one reclaim rung when its
+/// quoted CUDA OOM came before any session-state write (`memra_engine::step_guard`). Resolved once
+/// at worker boot from the device name (`batch_oom_recover_init`); read before that, it resolves
+/// with no card default.
+static BATCH_OOM_RECOVER: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
 fn batch_oom_recover_on() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMRA_BATCH_OOM_RECOVER").as_deref() == Ok("1"))
+    *BATCH_OOM_RECOVER.get_or_init(|| {
+        batch_oom_recover_decision(std::env::var("MEMRA_BATCH_OOM_RECOVER").ok().as_deref(), "").0
+    })
+}
+
+/// The recovery's arm for a door value and a device name, and the boot line's `source=`. Unset:
+/// ON on the RTX PRO 6000 Blackwell class (the target card read in full, DAY49 2.3 and 2.4; the
+/// owner's ruling 2026-09-27), OFF on every other card (the RTX 5090's flip waits for its serving
+/// boots). `0` is OFF and `1` is ON on any card; `0` is the rollback seam (decide-by 2026-10-11).
+/// Any other value keeps the card's default and names the value it ignored.
+fn batch_oom_recover_decision(value: Option<&str>, device_name: &str) -> (bool, String) {
+    let class_default = matches!(
+        memra_engine::parallel::hardware_target_of(device_name),
+        Some(memra_engine::parallel::HardwareTarget::RtxPro6000Blackwell)
+    );
+    let default_source = if class_default {
+        "pro6000-class-default"
+    } else {
+        "no default on this card"
+    };
+    match value.map(str::trim) {
+        None | Some("") => (class_default, default_source.to_string()),
+        Some("0") => (false, "MEMRA_BATCH_OOM_RECOVER=0".to_string()),
+        Some("1") => (true, "MEMRA_BATCH_OOM_RECOVER=1".to_string()),
+        Some(other) => (
+            class_default,
+            format!("{default_source} (MEMRA_BATCH_OOM_RECOVER={other:?} is not 0 or 1; ignored)"),
+        ),
+    }
+}
+
+/// Resolves the recovery's arm for this worker's device, once, and returns its boot line.
+fn batch_oom_recover_init(device_name: &str) -> String {
+    let (on, source) = batch_oom_recover_decision(
+        std::env::var("MEMRA_BATCH_OOM_RECOVER").ok().as_deref(),
+        device_name,
+    );
+    let armed = *BATCH_OOM_RECOVER.get_or_init(|| on);
+    format!(
+        "[batch-oom] recover={} source={source}",
+        if armed { "ON" } else { "OFF" }
+    )
 }
 
 /// The batch OOM's reclaim rung (DAY49 1.5): the parked sessions of the three pools are dropped,
@@ -16210,6 +16249,11 @@ fn exact_settle_spec(
     Ok(Some((from, to)))
 }
 
+/// Submit the worker queue's next demote while the tier's slot is free (DAY42 addendum E): the
+/// admission pass calls it, and so does the tick top after its settle calls, so the whole demote
+/// set reaches the host whether or not the arrival that queued it is still waiting. A queued entry
+/// that is no longer evictable (leased, hit or evicted meanwhile) is skipped; a refused submission
+/// dropped its entry (its bytes free now) and the next is tried. Returns the entries removed.
 fn reclaim_queue_drain(
     engine: &Engine,
     px: &mut PrefixCache,
@@ -25854,10 +25898,35 @@ pub(crate) fn validate_admit_predict_enforce_deployment(
     Ok(())
 }
 
+/// The physical verify-graph pool debt line for one admission, or `None` when none prints: a
+/// debt of 0 prints nothing; with the predictive debt door off the line prints under
+/// `log_estimate` only (the request-cost line's dedup); with it on (DAY48 addendum E) it prints on
+/// every admission and ends in ` id=<request id>`.
+fn vg_debt_physical_line(
+    vg_debt: usize,
+    log_estimate: bool,
+    door_on: bool,
+    request_id: &str,
+) -> Option<String> {
+    if vg_debt == 0 || !(log_estimate || door_on) {
+        return None;
+    }
+    let mut line = format!(
+        "[admission] dspark verify-graph pool debt: +{:.0}MB reserved (projected remaining pool \
+         growth; MEMRA_DSPARK_VG_MAX is the valve)",
+        vg_debt as f64 / 1e6,
+    );
+    if door_on {
+        line.push_str(&format!(" id={request_id}"));
+    }
+    Some(line)
+}
+
 /// MEMRA_ADMIT_PREDICT_VG_DEBT (default unset, WP-B day 48, OWED O8): `1` makes the predictive
 /// verdict subtract the verify-graph pool debt the physical side reserves at the same admission
 /// (`dspark_vg_admission_debt`) from its budget, and prints it as `vg_debt=` on the
-/// `[admit-predict]` line. Unset reads nothing: the verdict and the line are today's.
+/// `[admit-predict]` line. With it on, the physical debt line also prints on every admission
+/// (DAY48 addendum E). Unset reads nothing: the verdict and the lines are today's.
 fn admit_predict_vg_debt_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("MEMRA_ADMIT_PREDICT_VG_DEBT").as_deref() == Ok("1"))
@@ -27431,6 +27500,11 @@ pub fn run(
         memra_engine::cache::vmm_set_faults(kv_vmm_cfg.faults.clone());
     }
     eprintln!("{}", kv_vmm_cfg.boot_line(kv_vmm_granularity));
+    // The batched decode chunk's OOM recovery: its per-card default (DAY49 addendum F).
+    eprintln!(
+        "{}",
+        batch_oom_recover_init(&engine.ctx().name().unwrap_or_default())
+    );
     if let Err(why) = crate::kv_vmm::install(kv_vmm_cfg) {
         let _ = ready_tx.send(Err(why));
         return;
@@ -28445,13 +28519,16 @@ pub fn run(
                 // `dspark_drafts.contains_key` gate; the debt fn self-gates on its
                 // doors and returns 0 when no pool can engage.
                 let vg_debt = loaded[&model_key].model.dspark_vg_admission_debt(&engine);
-                if vg_debt > 0 && log_estimate {
-                    eprintln!(
-                        "[admission] dspark verify-graph pool debt: +{:.0}MB reserved \
-                         (projected remaining pool growth; MEMRA_DSPARK_VG_MAX is the \
-                         valve)",
-                        vg_debt as f64 / 1e6,
-                    );
+                // WP-B DAY48 addendum E: with the predictive debt door on, the physical line
+                // prints on EVERY admission and names its request, so each predictive
+                // `vg_debt` pairs with its physical debt; off, it is today's deduplicated line.
+                if let Some(line) = vg_debt_physical_line(
+                    vg_debt,
+                    log_estimate,
+                    admit_predict_vg_debt_on(),
+                    &req.request_id,
+                ) {
+                    eprintln!("{line}");
                 }
                 let reserve = reserve.saturating_add(vg_debt);
                 let request_state = match loaded[&model_key]
@@ -41834,6 +41911,7 @@ mod tests {
     }
 
     use super::SpecTelemetryWindow;
+    use super::batch_oom_recover_decision;
     use super::context_cache_bytes;
     use super::dead_prime_kill_switch_refusal;
     use super::plain_chat_render_path;
@@ -59664,6 +59742,54 @@ mod tests {
         assert!(live.contains("match lm.model.spec_rewind_to_checkpoint(engine, &mut sess) {"));
     }
 
+    /// DAY49 addendum F: the recovery is the naked default on the RTX PRO 6000 Blackwell class
+    /// (every variant), off elsewhere until the card's own flip; `0` and `1` decide on any card.
+    #[test]
+    fn batch_oom_recover_defaults_per_card_class() {
+        let pro = [
+            "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition",
+            "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+        ];
+        let other = [
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            "NVIDIA GeForce RTX 5090",
+            "NVIDIA H100 80GB HBM3",
+            "",
+        ];
+        for name in pro {
+            assert_eq!(
+                batch_oom_recover_decision(None, name),
+                (true, "pro6000-class-default".to_string()),
+                "{name}"
+            );
+            assert!(batch_oom_recover_decision(Some(""), name).0, "{name}");
+            assert_eq!(
+                batch_oom_recover_decision(Some("0"), name),
+                (false, "MEMRA_BATCH_OOM_RECOVER=0".to_string()),
+                "the rollback seam: {name}"
+            );
+            let (on, source) = batch_oom_recover_decision(Some("off"), name);
+            assert!(
+                on && source.contains("\"off\" is not 0 or 1; ignored"),
+                "{source}"
+            );
+        }
+        for name in other {
+            assert_eq!(
+                batch_oom_recover_decision(None, name),
+                (false, "no default on this card".to_string()),
+                "{name}"
+            );
+            assert_eq!(
+                batch_oom_recover_decision(Some("1"), name),
+                (true, "MEMRA_BATCH_OOM_RECOVER=1".to_string()),
+                "{name}"
+            );
+            assert!(!batch_oom_recover_decision(Some("yes"), name).0, "{name}");
+        }
+    }
+
     /// WP-B day 49 (DAY49 1.5): the batch-OOM door is read at the batched chunk only; the retry is
     /// bounded to one and gated on a quoted CUDA OOM and the step guard's recoverable states.
     #[test]
@@ -59693,17 +59819,19 @@ mod tests {
     }
 
     /// WP-B day 48 (DAY48 addendum A, OWED O8): the verify-graph debt door is read at the predictive
-    /// seam only, and its debt reaches the verdict's budget and the line; the budget helper saturates.
+    /// seam, where its debt reaches the verdict's budget and the line, and (addendum E) at the
+    /// physical debt line, which it only makes print on every admission; the budget helper
+    /// saturates.
     #[test]
-    fn vg_debt_door_reaches_the_predictive_seam_only() {
+    fn vg_debt_door_reaches_the_predictive_seam_and_the_physical_line_only() {
         let squash = |src: &str| -> String { src.split_whitespace().collect::<Vec<_>>().join(" ") };
         let worker = squash(include_str!("worker.rs"));
         let live = &worker[..worker.find("mod tests").expect("the test module exists")];
         let call = format!("admit_predict_vg_debt_on{}", "()");
         assert_eq!(
             live.matches(call.as_str()).count(),
-            2,
-            "definition and the predictive seam"
+            3,
+            "definition, the predictive seam, the physical debt line"
         );
         assert!(live.contains("let vg_debt = admit_predict_vg_debt_on().then(|| { loaded[&model_key] .model .dspark_vg_admission_debt_peek(&engine) as u64 });"));
         // The physical gate keeps the recording read (the door-off program).
@@ -59722,6 +59850,28 @@ mod tests {
             super::predictive_budget_less_vg_debt(Some(100), Some(30)),
             Some(70)
         );
+        // DAY48 addendum E: the physical line on every admission with the door on, naming its
+        // request; off, only under the request-cost line's dedup, and byte for byte today's.
+        let today = "[admission] dspark verify-graph pool debt: +34MB reserved (projected \
+                     remaining pool growth; MEMRA_DSPARK_VG_MAX is the valve)";
+        assert_eq!(
+            super::vg_debt_physical_line(33_554_432, true, false, "cmpl-a").as_deref(),
+            Some(today)
+        );
+        assert_eq!(
+            super::vg_debt_physical_line(33_554_432, false, false, "cmpl-a"),
+            None
+        );
+        assert_eq!(
+            super::vg_debt_physical_line(33_554_432, false, true, "cmpl-a"),
+            Some(format!("{today} id=cmpl-a"))
+        );
+        assert_eq!(
+            super::vg_debt_physical_line(33_554_432, true, true, "cmpl-b"),
+            Some(format!("{today} id=cmpl-b"))
+        );
+        assert_eq!(super::vg_debt_physical_line(0, true, true, "cmpl-a"), None);
+        assert!(live.contains("if let Some(line) = vg_debt_physical_line( vg_debt, log_estimate, admit_predict_vg_debt_on(), &req.request_id, ) {"));
         assert_eq!(
             super::predictive_budget_less_vg_debt(Some(100), Some(300)),
             Some(0)

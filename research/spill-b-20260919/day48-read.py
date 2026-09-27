@@ -36,6 +36,8 @@ PRED = re.compile(r"\[admit-predict\] id=(\S+) tenant=\"([^\"]*)\" model=\S+ ver
                   r"predicted_completion=\S+ kv_hat=(\S+) booked_bytes=(\d+) booked_real=(\d+) .*?budget_bytes=(\S+) "
                   r"retry_after_s=\S+ exempt=\d enforce=(\d)(?: live_free_bytes=\S+)?(?: vg_debt=(\d+))?")
 PHYS = re.compile(r"\[admission\] dspark verify-graph pool debt: \+(\d+)MB")
+PHYS_ID = re.compile(r"\[admission\] dspark verify-graph pool debt: \+(\d+)MB reserved .*? id=(\S+)")
+PRED_ADMIT = re.compile(r"\[admit-predict\] id=(\S+) .*?verdict=(\S+) .*?vg_debt=(\d+)")
 
 
 def pct(xs, p):
@@ -119,6 +121,16 @@ for n in names:
             pending = None
     say(f"DAY48 V5 card={card} boot={n} paired={pairs} apart={apart[:4]} predictive_without_physical={unpaired} -> "
         f"{'PASS' if pairs and not apart else 'FAIL'}")
+    # Addendum E: V5 by request id. Every admitted predictive line with vg_debt above 0 must have the physical line of
+    # the same id (printed on every admission with the door on), with equal MB.
+    phys_by_id = {m.group(2): int(m.group(1)) for m in PHYS_ID.finditer(t)}
+    admitted = [(m.group(1), int(m.group(3))) for m in PRED_ADMIT.finditer(t) if m.group(2) == "admit"
+                and int(m.group(3)) > 0]
+    unobserved = [i for i, _ in admitted if i not in phys_by_id]
+    apart_id = [(i, v, phys_by_id[i]) for i, v in admitted if i in phys_by_id and round(v / 1e6) != phys_by_id[i]]
+    ok5e = bool(admitted) and not unobserved and not apart_id
+    say(f"DAY48 V5E card={card} boot={n} admitted_vg={len(admitted)} paired_by_id={len(admitted) - len(unobserved)} "
+        f"unobserved={unobserved[:4]} apart={apart_id[:4]} -> {'PASS' if ok5e else 'FAIL'}")
 for order in ("O1", "O2"):
     a, b = f"{order}-enforce", f"{order}-enforce-vg"
     if a in by and b in by:

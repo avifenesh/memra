@@ -1,0 +1,24 @@
+DAY44 E5 card=pro6000 boot=rw-plain-O1-exact oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rw-plain-O1-keep oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rw-spec-O1-exact oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 E5 card=pro6000 boot=rw-spec-O1-keep oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY44 R1 card=pro6000 boot=rw-plain-O1-exact rw_later_turns=20 affinity_rewinds=10 exact_resumes=10 cold_later_turns=0 -> PASS
+DAY44 R1-C READING (addendum C's wording, superseded 2026-09-27) card=pro6000 boot=rw-plain-O1-exact rw_later_turns=20 affinity_rewinds=10 affinity_declined=0 -> not met
+DAY44 R1a READING card=pro6000 boot=rw-plain-O1-exact affinity_rewinds=10 G=32:later=10 G=256:later=10
+DAY44 R2 card=pro6000 boot=rw-plain-O1-exact rw_later_turns=20 differ_vs_cold=[] -> PASS
+DAY44 R3 READING card=pro6000 boot=rw-plain-O1-exact settles=56 settle_waits=0
+DAY44 R1 card=pro6000 boot=rw-plain-O1-keep rw_later_turns=20 affinity_rewinds=20 exact_resumes=0 cold_later_turns=0 -> PASS
+DAY44 R1-C READING (addendum C's wording, superseded 2026-09-27) card=pro6000 boot=rw-plain-O1-keep rw_later_turns=20 affinity_rewinds=20 affinity_declined=0 -> met
+DAY44 R1a READING card=pro6000 boot=rw-plain-O1-keep affinity_rewinds=20 G=32:later=10 G=256:later=10
+DAY44 R2 card=pro6000 boot=rw-plain-O1-keep rw_later_turns=20 differ_vs_cold=[] -> PASS
+DAY44 R3 READING card=pro6000 boot=rw-plain-O1-keep settles=0 settle_waits=0
+DAY44 R1 card=pro6000 boot=rw-spec-O1-exact rw_later_turns=20 affinity_rewinds=10 exact_resumes=10 cold_later_turns=0 -> PASS
+DAY44 R1-C READING (addendum C's wording, superseded 2026-09-27) card=pro6000 boot=rw-spec-O1-exact rw_later_turns=20 affinity_rewinds=10 affinity_declined=0 -> not met
+DAY44 R1a READING card=pro6000 boot=rw-spec-O1-exact affinity_rewinds=10 G=32:later=10 G=256:later=10
+DAY44 R2 card=pro6000 boot=rw-spec-O1-exact rw_later_turns=20 differ_vs_cold=[] -> PASS
+DAY44 R3 READING card=pro6000 boot=rw-spec-O1-exact settles=60 settle_waits=0
+DAY44 R1 card=pro6000 boot=rw-spec-O1-keep rw_later_turns=20 affinity_rewinds=20 exact_resumes=0 cold_later_turns=0 -> PASS
+DAY44 R1-C READING (addendum C's wording, superseded 2026-09-27) card=pro6000 boot=rw-spec-O1-keep rw_later_turns=20 affinity_rewinds=20 affinity_declined=0 -> met
+DAY44 R1a READING card=pro6000 boot=rw-spec-O1-keep affinity_rewinds=20 G=32:later=10 G=256:later=10
+DAY44 R2 card=pro6000 boot=rw-spec-O1-keep rw_later_turns=20 differ_vs_cold=[] -> PASS
+DAY44 R3 READING card=pro6000 boot=rw-spec-O1-keep settles=0 settle_waits=0

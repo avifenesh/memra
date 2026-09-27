@@ -200,14 +200,15 @@ for n in names:
     # extends), and none primes cold.
     exact_resumes = len([m for m in RESUME.findall(t) if m[4] == "settled" or m[4] == "checkpoint"])
     cold = [tg for tg in rw if (r[tg].get("cached_tokens") or 0) == 0]
-    # The registered R1 (addendum C) stays the gate: every later turn resumes through affinity.
-    say(f"DAY44 R1 card={card} boot={n} rw_later_turns={len(rw)} affinity_rewinds={len(aff)} "
-        f"affinity_declined={declined} -> {'PASS' if len(aff) >= len(rw) else 'FAIL'}")
-    # Addendum D's proposed R1 (pending the owner, not adopted): affinity or the exact path, and none cold.
+    # R1 is addendum D's clause, accepted by the owner 2026-09-27: every later turn resumes through affinity or the
+    # exact path, and none primes cold.
     ok1 = len(aff) + exact_resumes >= len(rw) and not cold
-    say(f"DAY44 R1-D (proposed, pending the owner) card={card} boot={n} rw_later_turns={len(rw)} "
-        f"affinity_rewinds={len(aff)} exact_resumes={exact_resumes} cold_later_turns={len(cold)} -> "
-        f"{'PASS' if ok1 else 'FAIL'}")
+    say(f"DAY44 R1 card={card} boot={n} rw_later_turns={len(rw)} affinity_rewinds={len(aff)} "
+        f"exact_resumes={exact_resumes} cold_later_turns={len(cold)} -> {'PASS' if ok1 else 'FAIL'}")
+    # Addendum C's wording (affinity rewinds only), superseded by the owner's acceptance of addendum D: a reading.
+    say(f"DAY44 R1-C READING (addendum C's wording, superseded 2026-09-27) card={card} boot={n} "
+        f"rw_later_turns={len(rw)} affinity_rewinds={len(aff)} affinity_declined={declined} -> "
+        f"{'met' if len(aff) >= len(rw) else 'not met'}")
     gs = sorted({r[tg]["G"] for tg in rw})
     say(f"DAY44 R1a READING card={card} boot={n} affinity_rewinds={len(aff)} "
         + " ".join(f"G={g}:later={sum(1 for tg in rw if r[tg]['G'] == g)}" for g in gs))

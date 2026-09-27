@@ -164,7 +164,9 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   admissions with no physical line under the estimate-log dedup, plus 60 rejects per boot outside the physical gate),
   recorded as it reads; V6 the pool held at 34 MB, so the growing-pool case is the engine test's alone. Open: a physical
   debt line on every admission and a sitting to observe V5's coverage as registered (its own addendum, after integ72
-  merges); a clause revision is the owner's. Before: target card `read` (DAY48 2.1, the eighteenth sitting): V1 to V4 PASS on all four boots; the pool's remaining
+  merges); a clause revision is the owner's. The owner kept the clause as written (2026-09-27): addendum E, the
+  per-admission line with the door on (`15a7fbcc8`) and the V5E reader line; NEED TARGET CARD, the twentieth sitting
+  (`pro-single-b-sitting20.sh`, receipts `b-day48c`). Before: target card `read` (DAY48 2.1, the eighteenth sitting): V1 to V4 PASS on all four boots; the pool's remaining
   debt is at most 34 MB, so both arms admit the same (35 of 64, 1 of 32). The owner's input; the 5090 half runs. Before:
   `running`. DAY46 read, so DAY48 left text only: addendum A (the door and the cell as built); code `5a6f1898f`
   (`MEMRA_ADMIT_PREDICT_VG_DEBT`, default off, decide-by 2026-10-11; memra-server lib 987 passed, clippy clean); the
@@ -185,7 +187,10 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   device work, or a torn-state check), or split it, keeping one numeric program per request (a retried chunk is the
   same batched step); sessions that never emitted park as today. Design, the torn-state argument and the cells are
   pre-registered before code (DAY49).
-- Status: `running`. Pre-registered (DAY49), addendum A (the marker check replaced by the engine step guard),
+- Status (2026-09-27): the owner's ruling: `MEMRA_BATCH_OOM_RECOVER` is ON by default on the RTX PRO 6000 Blackwell
+  class (DAY49 addendum F, `be4d7f92c`, `docs/decisions/BATCH-OOM-RECOVER-DEFAULT.md`; `=0` the seam, decide-by
+  2026-10-11). The RTX 5090's flip waits for queue-n's serving boots (decide-by 2026-10-10). Earlier:
+  Status: `running`. Pre-registered (DAY49), addendum A (the marker check replaced by the engine step guard),
   addendum B (the cells). Code `6102fb63a` and `02dbdfa40` (`MEMRA_BATCH_OOM_RECOVER`, decide-by 2026-10-10; engine
   and server suites pass, clippy clean). The gate's arm i with its red twin and the serving shape run locally
   (`rtx5090-day49/run.sh`, waiting for the card) and in the twelfth sitting (`pro-single-b-sitting12.sh`, queued on
@@ -233,7 +238,9 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
 - What: `MEMRA_RESUME_GRID_REWIND` (default unset) makes a plain or spec pool exact-extension resume rewind to the
   entry's grid checkpoint and re-prime from there, so the resumed turn is cold-identical by the grid law; the cells
   price it against keeping the decoded rows (re-primed rows, TTFT, throughput, memory, fanout reach), both cards.
-- Status: `running`, revised on the owner's direction ("resume vs rewind - i think its not or or question, but more
+- Status (2026-09-27, the owner's rulings): DAY44 addendum D accepted by the owner, so R1 is its clause and reads
+  PASS on all four RW boots (DAY44 2.3). `MEMRA_RESUME_EXACT` stays default off: E2 still fails, and DAY50 arm O is its
+  fix. Earlier: `running`, revised on the owner's direction ("resume vs rewind - i think its not or or question, but more
   of we didnt make it right yet"): the exact AND fast resume, DAY44 (`MEMRA_RESUME_EXACT`, decide-by 2026-10-10). Code:
   the in-call grid capture (`35ece04e7`), the door, exact hits and settle queue (`9fa281cff`, `138790651`), the
   prime-only spec settle (`7a4abb4c9`). GPU on the 5090: the capture equals a split prime's state bitwise; a resume

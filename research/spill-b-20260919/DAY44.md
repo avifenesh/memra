@@ -231,25 +231,28 @@ second.
   - Arms `keep` and `exact` on both routes, at 6,144 on both cards.
 - **Cells to rerun:** the integ battery's DAY44 mini cell (the E lines), and the RW cell on both routes.
 
-### 1.13 Addendum D (2026-09-27, after 2.2, the RW cell's R1 reading): PENDING THE OWNER, NOT ADOPTED
+### 1.13 Addendum D (2026-09-27, after 2.2, the RW cell's R1 reading): ACCEPTED BY THE OWNER 2026-09-27
 
-**Status (the lead, 2026-09-27):** this addendum rewrites R1 after its result, so under the standing rule that no gate
-is relaxed after a result it goes to the owner, as T-H' did. R1 stays FAIL as registered, beside E2, as a blocker on
-flipping `MEMRA_RESUME_EXACT` until the owner rules. The reader prints the registered R1 line and, beside it, this
-addendum's proposed line (`DAY44 R1-D (proposed, pending the owner)`).
+**Status:** accepted by the owner 2026-09-27 (relayed by the lead with the owner's rulings of that day). R1-D below is
+R1, the registered clause. Before the ruling, the lead held it pending: it rewrites R1 after its result, so under the
+standing rule that no gate is relaxed after a result it went to the owner, as T-H' did, and R1 stayed FAIL as
+registered until then. The reader now prints `DAY44 R1` with this clause, and addendum C's wording beside it as
+`DAY44 R1-C READING (addendum C's wording, superseded 2026-09-27)`. `MEMRA_RESUME_EXACT` stays default off: E2 still
+fails (2.1), and its fix is DAY50's overlap revision (arm O).
 
 
 2.2 places R1's FAIL on its wording, not on the server. R1 as registered counted only affinity rewinds. On `exact`, a
 later RW turn at G = 32 resumes through the exact-extension path instead. The settle point `S` is the grid point at the
 prompt end (6,144 and then 6,240), and the rewrite diverges at that same row, so the rewritten prompt extends the
 settled rows exactly. That resume starts later (6,144 against affinity's 6,112), and it is exact (R2).
-- **R1 as proposed (R1-D):** on every boot, every RW turn 2 and 3 resumes, either through affinity (its `rewound to` line) or
+- **R1 (R1-D as proposed; accepted by the owner 2026-09-27):** on every boot, every RW turn 2 and 3 resumes, either through affinity (its `rewound to` line) or
   through the exact path (its `exact: ... resume ... settled` line), and none primes cold (`cached_tokens > 0` on the
   row). Per boot the counts must add up to the later turns: `affinity_rewinds + exact_resumes >= rw_later_turns`, and
   `cold_later_turns = 0`.
 - **R1a (a reading):** the affinity rewinds alone, by G. The G = 256 turns, whose settle point lies past the rewrite's
   divergence, are the ones that exercise affinity after a settle.
-- R2 and R3 are unchanged. A rerun of the RW cell reads both R1 lines; the registered one stays the gate.
+- R2 and R3 are unchanged. A rerun of the RW cell reads both R1 lines. Since the owner's acceptance, R1 (this clause)
+  is the gate and addendum C's wording is a reading.
 
 ## 2. Results
 
@@ -359,3 +362,20 @@ DAY44 R2 card=pro6000 boot=rw-spec-O1-keep rw_later_turns=20 differ_vs_cold=[] -
   ran on the copy (`integ71-c13-rw/read-lane.log`): the registered R1 reads FAIL on both exact boots, as the lead's
   run printed, and R1-D (proposed) reads PASS on all four boots (exact boots: 10 affinity rewinds, 10 exact resumes,
   0 cold).
+
+### 2.3 R1 after the owner's ruling (2026-09-27)
+
+The owner accepted addendum D on 2026-09-27, so R1 is R1-D's clause. `day44-read.py` now prints it as `DAY44 R1`, with
+addendum C's wording as a reading. It was rerun on a scratch copy of `integ71-c13-rw/` (the reader writes a
+SUMMARY.txt into its root; the mirrored receipts stay as mirrored), output `integ71-c13-rw/read-lane-r1-accepted.log`:
+
+```
+DAY44 R1 card=pro6000 boot=rw-plain-O1-exact rw_later_turns=20 affinity_rewinds=10 exact_resumes=10 cold_later_turns=0 -> PASS
+DAY44 R1 card=pro6000 boot=rw-plain-O1-keep rw_later_turns=20 affinity_rewinds=20 exact_resumes=0 cold_later_turns=0 -> PASS
+DAY44 R1 card=pro6000 boot=rw-spec-O1-exact rw_later_turns=20 affinity_rewinds=10 exact_resumes=10 cold_later_turns=0 -> PASS
+DAY44 R1 card=pro6000 boot=rw-spec-O1-keep rw_later_turns=20 affinity_rewinds=20 exact_resumes=0 cold_later_turns=0 -> PASS
+```
+
+- **R1 PASS on all four boots.** R2 PASS as in 2.2. The RW history-rewrite path is no longer a blocker.
+- **`MEMRA_RESUME_EXACT` stays default off.** E2 still FAILs at 8 of 24 cells (2.1, TTFT only), and E2 is the owner's
+  gate. The fix is DAY50's overlap revision (arm O, settles on a second stream).

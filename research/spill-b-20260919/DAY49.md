@@ -144,6 +144,27 @@ default list that local-ci and the integ batteries run. `tools/health-fault-gate
 `a,b,c,d,e,f,g,h,j`. Arm i stays runnable by name, and its receipts stay as they read. Arm j (addendum D) is the aimed
 form of the same check and passed four times on the target card (2.3). No clause changes.
 
+### 1.10 Addendum F (2026-09-27, the default on the RTX PRO 6000 Blackwell class, the owner's ruling, before its code)
+
+The owner's rulings of 2026-09-27, relayed by the lead: `MEMRA_BATCH_OOM_RECOVER` becomes the naked default on the RTX
+PRO 6000 Blackwell class now, since the target card is read in full (2.3 and 2.4). It is keyed on the device class under
+the per-hardware rule, with `=0` as its seam and a decide-by. The RTX 5090 gets its own flip once its serving boots
+(queue-n, 2.6's five unrun boots) read.
+
+- **The program:** unset on a card whose name `HardwareTarget::from_device_name` reads as the RTX PRO 6000 Blackwell
+  class (every variant: the receipts are the Workstation Edition at 600 W, and the lead ruled the class) runs the
+  recovery (1.2 and addenda A to D). `=0` turns it off on any card, the rollback seam, with `decide-by: 2026-10-11`
+  for deleting the seam. `=1` turns it on on any card, which is how the 5090 runs it until its flip. Any other value
+  keeps the card's default and says so on the boot line. Unset on every other card stays today's error arm.
+- **The boot line:** `[batch-oom] recover=<ON|OFF> source=<pro6000-class-default|MEMRA_BATCH_OOM_RECOVER=<v>|no
+  default on this card>`, once, where the worker reads the device name.
+- **Why no new cell:** the default changes which arm runs, not the arm. Arm j and its red twin, j-vmm and the serving
+  shape read on the target card with the door set (2.3 and 2.4), and the gate's arm j sets
+  `MEMRA_BATCH_OOM_RECOVER=1` explicitly, so it reads the same under the new default. A unit test pins the decision
+  per device name and value.
+- **Records:** `docs/decisions/BATCH-OOM-RECOVER-DEFAULT.md` (what was chosen, the receipts, the 5090's pending
+  flip), the FLAGS.md row, and the decisions index.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
