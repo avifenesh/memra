@@ -168,3 +168,41 @@ test covers both branches: the charge dropped, and the charge kept.
 - **The bank tests** read their stand-in governor's `used` field. I24's fixture (`tests/bank/day90.rs`) records it
   and is re-recorded at I26 by design, with its I25 transcript banked beside it, as registered. I26's fixture reads
   it only with no demand open.
+
+## 4. I26 landed, CPU-gated (2026-09-27)
+
+- **The fault seam and the fixture, first** (`bd4c72223`, at I25, before any I26 line): `inject_finish_failure` and
+  `tests/bank/day93.rs` re-recorded, 6293 lines. Each seed ends with the scripted hit case of section 3 (on a fresh
+  bank, so its SLRU state is its own), and on every seed it reads:
+  - the held group of three host hits, evicted while open: owned 8 against cached 5;
+  - the injected finish refuses `NotReady` and changes nothing: owned 8;
+  - the retry succeeds, and `collect_evicted` releases the three: owned 5;
+  - a second finish refuses `UnknownTicket`.
+- **I26** (`963270775`):
+  - `BankService::stage_hit_at` and `finish_hit`, as sections 1 and 3 write them.
+  - The ticket limits count `pending` plus `hits`; `can_release` reads the use counts; `tickets()` lists the open
+    hits.
+  - `hit_charge_bound`, with `HitChargeBound::inert`.
+  - The adapter tries the hit path first for `demand` and `demand_many`.
+  - The door's install prints `[experts-via-tier] hit queue charge dropped|kept: ...` with every term named, the
+    evicted leases' term as `evicted_leases_held_by_open_tickets_or_hits`.
+  - The stage clock counts a stage when the hit path takes or refuses a demand. An attempt that finds a record not
+    held keeps its time in `stage_ns`, and the `stage_at` after it counts the stage.
+- **The gates** (`day93-cpu/gates.log`):
+  - memra-tier's tests: day 93's fixture reproduces exactly, so does I24's day-90 proxy fixture (the generic bank
+    keeps the queue charge by default, so its tickets and charges read as before), and day 85's twin-bank
+    equivalence of the positioned adapter against the hashed ticket path holds;
+  - the bound's both-branch test `the_hit_charge_bound_names_hits_and_both_branches_hold`: kept charges a held hit
+    in flight 1 plus pageable metadata, dropped charges nothing, both return to the same charge, and dropping is
+    refused `Busy` with a demand open;
+  - memra-engine's `banked_native` tests, memra-kv's lib tests, clippy on memra-tier and memra-engine, fmt.
+  - `moe_cache.rs` is untouched.
+- **I24's proxy fixture needs no re-record.** DAY93 section 2 expected one; it reproduces unchanged, so nothing was
+  re-recorded.
+- **The local binary** `run-gen-i26` is `6c584cd3...`. Queue v23 (`rtx5090-queue-v23-20260927.sh`, dry-checked)
+  waits behind queue v22, which took the card at 23:44Z:
+  - its check: p88 against I26 traced, and I26 untraced for the tape;
+  - its split: p88s, i24s, i25s, i25t, i26s and i26t in one window, read by `day93-cpu/split-read.py`.
+
+  `DAY91.md` section 3 retired DAY89's rule as the 285K predictor, so v23 sizes the local cut and decides no card;
+  the 285K decision is `DAY94.md`'s cell.
