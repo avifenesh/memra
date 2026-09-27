@@ -1,4 +1,4 @@
-# WP-A resumable state (2026-09-27: T-H' NEED TARGET CARD (the lead rents a clean PRO 6000 WS; lane/spill-a-th2-20260927 67af1b71e); the second DAY68 5090 chain queued; integ70 carries P2 and the records)
+# WP-A resumable state (2026-09-27: T-H' ADOPTED (DAY65 section 10); the next integ takes `lane/spill-a-integ73-20260927` (`20bf78b42`, on main 21ce97836); the second DAY68 5090 chain running)
 
 - Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ67 takes B1 (`e522a9417`, adopted on both cards) and the
   grid refusal (`231fba087`, cherry-picked as 95f275859).
@@ -52,3 +52,8 @@
 - **T-H' (DAY65 sections 7 and 8):** sitting ready on `lane/spill-a-th2-20260927` (`67af1b71e`, base `80f734c77`):
   `build.sh 67af1b71e 80f734c77` then `driver.sh`, last line `TH2 VERDICT -> ..`; the lead rents a clean PRO 6000 WS
   (not BOX43's machine) and sends the box on acceptance.
+
+- **T-H' ADOPTED** on BOX44 (DAY65 section 10). For the integ: `lane/spill-a-integ73-20260927` at `20bf78b42` on main
+  `21ce97836`: `43a956340` (T-H', the sitting's diff line for line) and `20bf78b42` (this directory at `3a2e2886f`).
+  Not built here (R1's repeat holds the 5090 in a timed cell). T-H' adds no GPU cell (its cells are CPU); its 5090 half
+  ((b') and (d)) is owed after the DAY68 chain, beside P2's. Delete `lane/spill-a-th2-20260927` once it merges.
