@@ -2754,13 +2754,14 @@ pub fn moe_vrows_pair_overlap() -> (u64, u64) {
 // (`MEMRA_MOE_VROWS_DOWN_TMAJ`, below) is unaffected: it needs no order plane of its own.
 
 /// `MEMRA_MOE_VROWS_DOWN_TMAJ=1` (lane/glm5-dedup door E-down, default OFF): the verify-rows down
-/// launch takes the `_tmaj` twin — grid transposed to `(t, out_f)` so the t verify rows at one
+/// launch takes the `_tmaj` twin, grid transposed to `(t, out_f)` so the t verify rows at one
 /// output row are adjacent blocks and a repeated expert's down row is read once for every token
 /// sharing it. The down chain's slot-ordered `__fmaf_rn` accumulation is INSIDE the block and is
-/// untouched (it keeps its original slot order — the vrest gate-4 bit bar); only the grid moves.
-/// Needs no table plane of its own (the down chain cannot be permuted). Refused by name, falling
-/// closed to the shipped schedule: door M (`MEMRA_MOE_VROWS_PACK`, the refuted 4-warp pack) takes
-/// precedence, and `out_f > 65535` falls closed (a grid.y bound, not a serving shape).
+/// untouched (it keeps its original slot order, the vrest gate-4 bit bar); only the grid moves.
+/// Needs no table plane of its own (the down chain cannot be permuted). Door M
+/// (`MEMRA_MOE_VROWS_PACK`) was removed 2026-09-28 (memra#886, door hygiene) along with its
+/// precedence over this door; the only refusal left is `out_f > 65535` (a grid.y bound, not a
+/// serving shape), falling closed to the shipped schedule.
 fn moe_vrows_down_tmaj_on() -> bool {
     std::env::var("MEMRA_MOE_VROWS_DOWN_TMAJ").as_deref() == Ok("1")
 }
