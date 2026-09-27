@@ -8,6 +8,9 @@ Inputs are local files from revision 3b38d063180c3e4aed9691fdc735f3d10b266ee4:
 
 The mel input is little-endian F32 [frames, 128] without a file header. The
 checked-in mimo-pcm-mel-voiced-2048.logmel.f32 is one deterministic example.
+--stages-dir includes conv1_pre_gelu.bf16 as frame-major BF16 [frames, 1024]
+([9, 1024] for the checked-in mel) alongside the existing post-GELU conv1
+and later source stages.
 
   python crates/memra-reference/src/fixtures/mimo-v26-audio-publisher-oracle.py \
     SOURCE_ROOT --mel-f32 crates/memra-reference/src/fixtures/mimo-pcm-mel-voiced-2048.logmel.f32 \
@@ -266,6 +269,13 @@ def run_publisher(source, encoder, mel, frames, codec, torch, device, capture_st
     stage_snapshots = {}
     handles = []
     if capture_stages:
+        def after_conv1(_module, _args, output):
+            if list(output.shape) != [1, codec["d_model"], frames] or output.dtype != torch.bfloat16:
+                raise ValueError("publisher conv1 pre-GELU output shape or dtype changed")
+            stage_snapshots["conv1_pre_gelu"] = output.detach().transpose(1, 2).reshape(
+                frames, codec["d_model"]
+            ).clone()
+
         def before_conv2(_module, args):
             stage_snapshots["conv1"] = args[0].detach().transpose(1, 2).reshape(
                 frames, codec["d_model"]
@@ -278,6 +288,7 @@ def run_publisher(source, encoder, mel, frames, codec, torch, device, capture_st
             stage_snapshots["stack"] = output.detach().clone()
 
         handles = [
+            encoder.conv1.register_forward_hook(after_conv1),
             encoder.conv2.register_forward_pre_hook(before_conv2),
             encoder.layers[0].register_forward_pre_hook(before_frontend_layer),
             encoder.layer_norm.register_forward_hook(after_stack_norm),
@@ -343,12 +354,17 @@ def run_publisher(source, encoder, mel, frames, codec, torch, device, capture_st
     stage_bytes = {}
     if capture_stages:
         stage_snapshots["pre_rvq"] = pre_rvq.detach().clone()
-        expected = {"conv1": frames, "frontend": (frames + 1) // 2,
-                    "stack": (frames + 1) // 2, "pre_rvq": tokens}
+        expected = {
+            "conv1_pre_gelu": [frames, codec["d_model"]],
+            "conv1": [frames, codec["d_model"]],
+            "frontend": [(frames + 1) // 2, codec["d_model"]],
+            "stack": [(frames + 1) // 2, codec["d_model"]],
+            "pre_rvq": [tokens, codec["d_model"]],
+        }
         if stage_snapshots.keys() != expected.keys():
             raise ValueError("publisher stage hooks omitted a source stage")
         for name, tensor in stage_snapshots.items():
-            if list(tensor.shape) != [expected[name], codec["d_model"]] or tensor.dtype != torch.bfloat16:
+            if list(tensor.shape) != expected[name] or tensor.dtype != torch.bfloat16:
                 raise ValueError(f"publisher {name} stage shape or dtype changed")
             signed = tensor.to("cpu").contiguous().view(torch.int16).reshape(-1).tolist()
             values = [int(value) & 0xffff for value in signed]
