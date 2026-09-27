@@ -1,3 +1,5 @@
+# WP-B checkpoint 2026-09-27 13:xxZ (NEED TARGET CARD, the nineteenth sitting): revuto's DAY48 finding fixed (the peek,
+521fdbbbc; lane tip 02b45bb48); DAY48 2.1 unaffected; sitting 19 reruns the DAY48 cell with V5.
 # WP-B checkpoint 2026-09-27 12:xxZ: integ71 merged (#844, main 9852e3b12); main merged into the lane for integ72 at
 3848bc338 (one add/add conflict in the lane's .gitattributes, main's superset taken; suites green). Trees: commits go
 from wt-b-integ72 (branch merge/spill-b-integ72). wt-b-integ71 stays while queue-n and the DAY48 local runner read it;

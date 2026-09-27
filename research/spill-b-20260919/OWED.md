@@ -155,7 +155,10 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   as `vg_debt`; the predictive book does not carry it; not measurable on the dense 9B and 27B).
 - Needs a MoE plus linear-attention model: a 35B-A3B NVFP4 artifact of that family is on the local disk (20 GB, a
   tight fit on the 24 GB card) and must be staged on the target card.
-- Status: target card `read` (DAY48 2.1, the eighteenth sitting): V1 to V4 PASS on all four boots; the pool's remaining
+- Status: revuto on integ72 found the door's debt read recording the pool observation the physical gate then reads
+  (DAY48 addendum B); fixed with a non-recording peek (`521fdbbbc`, a growing-pool test); the eighteenth sitting's
+  reading is unaffected (every debt 34 MB on both arms); the nineteenth sitting reruns the cell with V5 (one debt per
+  admission). Before: target card `read` (DAY48 2.1, the eighteenth sitting): V1 to V4 PASS on all four boots; the pool's remaining
   debt is at most 34 MB, so both arms admit the same (35 of 64, 1 of 32). The owner's input; the 5090 half runs. Before:
   `running`. DAY46 read, so DAY48 left text only: addendum A (the door and the cell as built); code `5a6f1898f`
   (`MEMRA_ADMIT_PREDICT_VG_DEBT`, default off, decide-by 2026-10-11; memra-server lib 987 passed, clippy clean); the

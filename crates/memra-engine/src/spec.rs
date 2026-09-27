@@ -507,6 +507,25 @@ pub fn dspark_vg_debt_projection(
             .min(reserved_bytes),
     }
 }
+/// The pool debt read that records its observation: the projection from the last recorded
+/// `(captures, reserved)`, then that observation moves to this one when captures have grown past it.
+/// `dspark_vg_debt_projection` with the same arguments is the non-recording read (the peek).
+pub(crate) fn vg_debt_observe(
+    obs: &mut Option<(usize, usize)>,
+    captures: usize,
+    cap: usize,
+    reserved_bytes: usize,
+) -> usize {
+    let debt = dspark_vg_debt_projection(captures, cap, reserved_bytes, *obs);
+    if captures > 0 {
+        match *obs {
+            Some((c0, _)) if captures <= c0 => {}
+            _ => *obs = Some((captures, reserved_bytes)),
+        }
+    }
+    debt
+}
+
 /// PRE-CAPTURE VRAM RESERVE CHECK door (lane/step37-vram-admission-20260830), DEFAULT ON.
 /// A draft-graph capture attempt on a tight card used to be try-and-fail: the 2 warmup
 /// forwards + instantiate grew the pool to the edge BEFORE the OOM surfaced, and the
@@ -2848,15 +2867,24 @@ impl DsparkVerifyGraphs {
     /// Called under the pool mutex by `HybridModel::dspark_vg_admission_debt`.
     pub(crate) fn admission_debt(&mut self, reserved_bytes: usize) -> usize {
         let captures = self.captures();
-        let debt =
-            dspark_vg_debt_projection(captures, dspark_vg_cap(), reserved_bytes, self.debt_obs);
-        if captures > 0 {
-            match self.debt_obs {
-                Some((c0, _)) if captures <= c0 => {}
-                _ => self.debt_obs = Some((captures, reserved_bytes)),
-            }
-        }
-        debt
+        vg_debt_observe(
+            &mut self.debt_obs,
+            captures,
+            dspark_vg_cap(),
+            reserved_bytes,
+        )
+    }
+
+    /// What `admission_debt` returns now, without recording the observation (WP-B day 48
+    /// addendum B, revuto on integ72): the predictive seam reads this before the physical gate's
+    /// own call in the same admission, so both see one debt and the physical reserve is unchanged.
+    pub(crate) fn admission_debt_peek(&self, reserved_bytes: usize) -> usize {
+        dspark_vg_debt_projection(
+            self.captures(),
+            dspark_vg_cap(),
+            reserved_bytes,
+            self.debt_obs,
+        )
     }
 
     /// Build for this cache's shape. None when there are no linear layers, sizes are
@@ -15113,6 +15141,49 @@ impl HybridModel {
 #[cfg(test)]
 mod vg_debt_tests {
     use super::dspark_vg_debt_projection;
+
+    /// WP-B day 48 addendum B (revuto on integ72): the predictive seam's peek records nothing, so the
+    /// physical gate's recording read returns the same debt with the door on as with it off, and the
+    /// peek equals it, across admissions where the pool gains captures between them.
+    #[test]
+    fn the_peek_leaves_the_physical_debt_unchanged_across_a_growing_pool() {
+        let cap = 64usize;
+        // (captures, reserved bytes) at each admission: growth, a pause, growth again, growth by one.
+        let pool = [
+            (1usize, 100usize),
+            (1, 100),
+            (3, 104),
+            (3, 104),
+            (4, 104),
+            (7, 110),
+            (8, 400),
+        ];
+        let mut off = None; // the door off: the physical read alone
+        let mut on = None; // the door on: the peek, then the physical read
+        for &(captures, reserved) in &pool {
+            let physical_off = super::vg_debt_observe(&mut off, captures, cap, reserved);
+            let peek = dspark_vg_debt_projection(captures, cap, reserved, on);
+            let physical_on = super::vg_debt_observe(&mut on, captures, cap, reserved);
+            assert_eq!(
+                physical_on, physical_off,
+                "the physical reserve moved at {captures} captures"
+            );
+            assert_eq!(
+                peek, physical_on,
+                "the two logged debts differ at {captures} captures"
+            );
+            assert_eq!(on, off, "the observation diverged at {captures} captures");
+        }
+        // The recording read twice in one admission (the defect) gives the second read the bootstrap
+        // branch where the first had the marginal one.
+        let mut obs = Some((1usize, 100usize));
+        let first = super::vg_debt_observe(&mut obs, 3, cap, 104);
+        let second = super::vg_debt_observe(&mut obs, 3, cap, 104);
+        assert_ne!(
+            first, second,
+            "the double read is the defect the peek removes"
+        );
+    }
 
     /// TOOTH for the verify-graph admission accounting: the pool's projected remaining
     /// growth must be charged (pre-fix, admission charged 0 for a pool measured at

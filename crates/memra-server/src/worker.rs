@@ -28223,8 +28223,13 @@ pub fn run(
                 // WP-B day 48 (O8): the verify-graph pool debt the physical side reserves later in this
                 // same admission, read here only with the door on (no device work runs between the two
                 // seams, so both read the same pool).
-                let vg_debt = admit_predict_vg_debt_on()
-                    .then(|| loaded[&model_key].model.dspark_vg_admission_debt(&engine) as u64);
+                // Day 48 addendum B: the non-recording peek, so the physical gate's own read below
+                // returns the same debt and its reserve is the door-off one.
+                let vg_debt = admit_predict_vg_debt_on().then(|| {
+                    loaded[&model_key]
+                        .model
+                        .dspark_vg_admission_debt_peek(&engine) as u64
+                });
                 let verdict = evaluate_predictive_admission_verdict(
                     request_kv_hat,
                     booked,
@@ -59557,7 +59562,13 @@ mod tests {
             2,
             "definition and the predictive seam"
         );
-        assert!(live.contains("let vg_debt = admit_predict_vg_debt_on() .then(|| loaded[&model_key].model.dspark_vg_admission_debt(&engine) as u64);"));
+        assert!(live.contains("let vg_debt = admit_predict_vg_debt_on().then(|| { loaded[&model_key] .model .dspark_vg_admission_debt_peek(&engine) as u64 });"));
+        // The physical gate keeps the recording read (the door-off program).
+        assert!(
+            live.contains(
+                "let vg_debt = loaded[&model_key].model.dspark_vg_admission_debt(&engine);"
+            )
+        );
         assert!(
             live.contains(
                 "predictive_budget_less_vg_debt(admit_predict_cfg.budget_bytes, vg_debt),"
