@@ -1,8 +1,41 @@
 # Testing: the tiered gate structure
 
-Two regimes, one rule: **the full battery gates every merge and tag, unchanged; fast-gate
-accelerates the dev loop between battery points.** Nothing in this document weakens the
-merge/tag bar: a fast-gate green is a *keep going* signal, never a *ship* signal.
+**The full GPU battery gates native execution changes and tags.** Fast-gate
+accelerates development between those checkpoints. A fast-gate green is a
+*keep going* signal, never model or serving qualification.
+
+CPU-only tooling can merge on relevant CPU contract, failure-injection and
+integration checks. Tools that transport native artifacts also need real build
+and artifact-integrity evidence. This class must leave native math, generated
+native programs, compiler/build defaults, model artifacts/defaults, qualification
+tolerances and required native-gate coverage unchanged. File location alone does
+not establish that scope. Unknown impact expands to the native battery.
+
+Changing runtime code or adopting a narrower GPU gate set still requires the
+original model/hardware-specific battery. CPU tooling admission cannot promote
+GPU selection out of shadow mode or qualify a model or serving binary.
+
+## Plan and reuse development feedback
+
+Start with `tools/fast-gate/fast-gate.sh --plan --diff origin/main`. The plan names
+matching legacy probes, transitive dependencies, missing model coverage and
+conservative expansion. Native selection remains in shadow mode. An expanded
+plan stops before compilation unless `--probes` explicitly requests named
+diagnostics. The tier descriptions below describe those individual diagnostics.
+
+The two admitted CPU contract suites use isolated source/runtime views and
+input-bound receipts:
+
+```sh
+tools/fast-gate/fast-gate.sh --component qualification-contracts --cache "$HOME/.cache/memra/components"
+tools/fast-gate/fast-gate.sh --component release-inputs --cache "$HOME/.cache/memra/components"
+```
+
+See [development feedback](../tools/fast-gate/README.md) for admission and shadow
+controls, and [controlled build reuse](../tools/fast-gate/BUILD-REUSE.md) for
+immutable build-only or GPU capsules. Reuse can avoid repeating a completed build
+at the same exact candidate. It does not replace a changed candidate's build,
+model gates or the required native/publication battery.
 
 ## DSV4 norm-fusion gates, REMOVED 2026-09-11
 
@@ -57,7 +90,7 @@ MEMRA_CUDA_ARCH=100a cargo test --release -p memra-engine \
 These gates compile the production translation units, inspect static-archive ABI/SASS, run the
 exact host-constexpr operand/scale layout contract, and prove the release installer still refuses
 an unpublished B200 prebuilt. They never open the CUDA driver. They are CI-wired in the `100a`
-release-arch mirror. A green dry gate alone is not `NativeQualified` and does not replace the sealed
+release-arch mirror. A green dry gate alone is not `NativeQualified` <!-- support: none; not NativeQualified --> and does not replace the sealed
 B200 `kernel-check`, model parity, sampled serving, concurrency, context, rollback, or performance
 battery under `research/b200-kernel-twins-dry-20260901/receipts/`.
 
@@ -84,7 +117,7 @@ or nonempty receipt namespace before launching the synthetic NVFP4/FP8/kernel-ch
 |---|---|---|---|
 | 0 | seconds (~2 s kernel-check scoped + build) | workspace compile + kernel-check scoped to the touched sections | every edit-compile loop |
 | 1 | ~1–2 min | tier 0 + golden-token argmax probe on ONE model per affected kernel class (+ one single-K spec probe when the diff touches the spec pipeline) | before every dev-loop commit |
-| 2 | tens of minutes | the full battery, `tools/local-ci.sh`: kernel-check ALL GREEN (~4.5 min), prime-gate, run-gen argmax per model, VERIFY-GATE, `run-spec` K=1..8 self-consistency on the Qwen 35B target + external MTP draft (`MEMRA_CI_RUNSPEC=0` skips), Gemma-4 31B stream agreement 64/64, decode-batch-gate (config + Q8_0 strict, the serving tick's exactness, wired in 2026-08-05), prime exactness on the 9B (`tools/prime-batch-exact-gate.sh` and `tools/prime-tick-exact-gate.sh`, each with its canary, memra#641, wired 2026-09-23; `MEMRA_CI_PRIME_EXACT=0` skips), graph-warmup stress (`tools/graph-warmup-stress-gate.sh`, pool-growth adversarial bit-identity behind the `MEMRA_GRAPH_WARMUPS=1` default, wired 2026-08-05), serve-smoke, health-fault-gate (`tools/health-fault-gate.sh`, readiness, panic-respawn, gpu-watch latch and drain arms on the real server, wired 2026-09-22; `MEMRA_CI_HEALTH_FAULT=0` skips), serve-stress (`tools/serve-stress-gate.sh`, the c=64 concurrency contract behind the admission spec-headroom fix, wired 2026-08-06; `MEMRA_CI_STRESS=0` skips), spec-ctx-edge (`tools/spec-ctx-edge-gate.sh`, open requests at their cap under default spec, wired 2026-09-23; `MEMRA_CI_SPEC_CTX_EDGE=0` skips), admit-mem-burst (`tools/admit-mem-burst-gate.sh`, the memory-admission door under a 64-request open burst, wired 2026-09-23; `MEMRA_CI_ADMIT_MEM_BURST=0` skips), accept-gate (`tools/accept-gate.sh`, exact served-spec acceptance counts + a 128-token text sha at the production drafter/K, wired 2026-08-06; smoke cell by default, `--full` for the 6-cell matrix, `MEMRA_CI_ACCEPT=0` skips) | **every merge, every tag** (unchanged) |
+| 2 | tens of minutes | the full battery, `tools/local-ci.sh`: kernel-check ALL GREEN (~4.5 min), prime-gate, run-gen argmax per model, VERIFY-GATE, `run-spec` K=1..8 self-consistency on the Qwen 35B target + external MTP draft (`MEMRA_CI_RUNSPEC=0` skips), Gemma-4 31B stream agreement 64/64, decode-batch-gate (config + Q8_0 strict, the serving tick's exactness, wired in 2026-08-05), prime exactness on the 9B (`tools/prime-batch-exact-gate.sh` and `tools/prime-tick-exact-gate.sh`, each with its canary, memra#641, wired 2026-09-23; `MEMRA_CI_PRIME_EXACT=0` skips), graph-warmup stress (`tools/graph-warmup-stress-gate.sh`, pool-growth adversarial bit-identity behind the `MEMRA_GRAPH_WARMUPS=1` default, wired 2026-08-05), serve-smoke, health-fault-gate (`tools/health-fault-gate.sh`, readiness, panic-respawn, gpu-watch latch and drain arms on the real server, wired 2026-09-22; `MEMRA_CI_HEALTH_FAULT=0` skips), serve-stress (`tools/serve-stress-gate.sh`, the c=64 concurrency contract behind the admission spec-headroom fix, wired 2026-08-06; `MEMRA_CI_STRESS=0` skips), spec-ctx-edge (`tools/spec-ctx-edge-gate.sh`, open requests at their cap under default spec, wired 2026-09-23; `MEMRA_CI_SPEC_CTX_EDGE=0` skips), admit-mem-burst (`tools/admit-mem-burst-gate.sh`, the memory-admission door under a 64-request open burst, wired 2026-09-23; `MEMRA_CI_ADMIT_MEM_BURST=0` skips), accept-gate (`tools/accept-gate.sh`, exact served-spec acceptance counts + a 128-token text sha at the production drafter/K, wired 2026-08-06; smoke cell by default, `--full` for the 6-cell matrix, `MEMRA_CI_ACCEPT=0` skips) | **native execution changes and every tag** |
 
 The battery's last correctness stage runs every memra-engine `#[ignore]` GPU test serially
 (`--test-threads=1`): the tests flip process-global gate doors and share one device, so
@@ -752,36 +785,68 @@ Two mechanical rules that follow:
 if !ckpt.exists() { eprintln!("SKIP: ckpt/twin absent"); return; }   // the test PASSES
 ```
 
-Twelve `#[test]` fns in memra-gguf are written like this, and a hosted runner has no checkpoints,
-so `cargo test -p memra-gguf --lib` reports `90 passed` whether or not one model-backed assertion
-ran, including `nv27b_twin_parity`, where the `n_rot` rotary-width geometry check lands. It is
-`ALL GREEN (N cells, M skipped)` in Rust, and it stayed invisible until the suite acquired a
-caller.
+Model-backed `#[test]` fns in memra-gguf were written like this, and a hosted runner has no
+checkpoints, so `cargo test -p memra-gguf --lib` reported `90 passed` whether or not one
+model-backed assertion ran, including `nv27b_twin_parity`, where the `n_rot` rotary-width
+geometry check lands. It is `ALL GREEN (N cells, M skipped)` in Rust, and it stayed invisible
+until the suite acquired a caller.
+
+**The skip protocol (memra #484).** A test that skips prints exactly one form, one line per
+missing case:
+
+```rust
+eprintln!("SKIP[{path}]: pretokenizer resolution case not run");   // SKIP[<artifact>]: <reason>
+```
+
+`<artifact>` names what was missing (a path, `CUDA device`, `2 CUDA devices`, an env var);
+`<reason>` says what the test would have proven with it. A loop over staged cases that
+`continue`s past a missing one prints a line per missing case, so zero of three cases executed
+counts three skips, not one green test. Any other skip-shaped print in test code (the word skip
+in any case, anywhere in the literal, including a literal on the line after `eprintln!(`) fails
+the census as unstructured. Before #484 the census matched only a capital `SKIP` on the same
+line as the macro, and eight skips in the CUDA-free crates went uncounted: `skipping:` in the
+RNNT archive census and the Whisper tests, `skip: {path} not staged` per case in the staged
+tokenizer test, and a multi-line `SKIP {fixture}` in the upstream vision fixture test.
 
 The mechanism is `tools/skip-census.py` plus the `tools/skip-census.tsv` manifest, and it is
 deliberately harness-level (the same place `tools/validate-h100.sh` used to gate kernel-check's
 skip count, before the Hopper battery was retired) rather than in the tests:
 
-- `verify`: the STATIC census (every `#[test]` in the crate that prints SKIP and returns) is
-  compared with the manifest in BOTH directions. An undeclared test fails (it would be born
-  invisible); a stale row fails (it inflates the budget and silently permits a different skip).
-- `run -- cargo test …`: asserts the suite's own verdict FIRST (exit status, every
-  `test result: ok.`, nothing filtered, not vacuous), then counts the SKIPs against a NAMED
-  budget, **default 0**. Uses `--test-threads=1 --nocapture`, which is load-bearing: parallel
-  libtest interleaves un-attributed output, so a SKIP cannot be tied to the test that emitted it.
+- `static`: prints the census the source implies, in manifest form. Regenerate rows from it.
+- `verify`: the STATIC census over every crate under `crates/` (`src/` and `tests/`) is compared
+  with the manifest in BOTH directions. An undeclared skip fails (it would be born invisible); a
+  stale row fails (it inflates the budget and silently permits a different skip); a row whose
+  file no longer holds the test fails; an unstructured skip print fails; a skip print in a test
+  helper fails unless the helper is registered in `SKIP_HELPERS`, in which case every `#[test]`
+  that calls it is a row. Rows carry the FILE only: a `file:line` anchor is refused, because by
+  2026-09-19 every line anchor had drifted and the drift NOTE fired on every row.
+- `run -- cargo test ...`: asserts the suite's own verdict FIRST (exit status, every
+  `test result: ok.`, nothing filtered, not vacuous), then counts the protocol lines against a
+  NAMED budget, **default 0**. Each line must match a manifest row for its test in full (format
+  placeholders match any text, the rest is literal), and a line that starts with the skip word
+  but is not in the protocol form fails. Uses `--test-threads=1 --nocapture`, which is
+  load-bearing: parallel libtest interleaves un-attributed output, so a SKIP cannot be tied to
+  the test that emitted it.
 - `report <file> --expect N`: the same census for shell gates, which append to
   `$MEMRA_SKIP_CENSUS`. A **missing** file fails: absent is ambiguous between "nothing skipped"
   and "the census was never wired", and the second reads as the first.
 
+The negative controls are `tools/test_skip_census.py` (CI step "Skip census negative controls"):
+a lowercase `skipping:`, a per-case `skip:`, a multi-line literal, an undeclared protocol skip,
+a stale row, a line anchor, a wrong file and an unregistered helper must each red `verify`; an
+unstructured run line, an undeclared run line, a prefix-only template match and three skipped
+cases over a budget of two must each red `run`.
+
 Where the budgets live and why they differ: `tools/local-ci.sh` runs the memra-gguf census
 WITH artifacts present at budget 10 (rehomed 2026-09-02 from the deleted Hopper battery;
-measured on the rig: 212 passed, 10 skipped — ckpt/twin, Hy3-repack and iq3s artifacts not
+measured on the rig: 212 passed, 10 skipped, the ckpt/twin, Hy3-repack and iq3s artifacts not
 staged there) and enforces kernel-check's skipped cells against a budget of 11 (missing-model
 cells plus the sigrouter env capture). `local-ci.sh` keeps the same discipline by
 requiring kernel-check's full verdict shape.
-`.github/workflows/ci.yml` uses **12** because a hosted runner has no `/data` at all: twelve is
-the number of model-backed assertions CI is blind to, stated out loud instead of hidden inside a
-green `90 passed`. If it grows, CI reds.
+`.github/workflows/ci.yml` uses **20** because a hosted runner has no `/data` at all: twenty is
+the number of model-backed assertions CI is blind to across memra-gguf, memra-tokenizer and
+memra-reference, stated out loud instead of hidden inside a green pass count. If it grows, CI
+reds.
 
 A developer without artifacts is not blocked: raise the budget, or set
 `MEMRA_ARCH_GATE_ALLOW_SKIP=1` for the generated serving gates. The escape hatch is explicit and
@@ -1459,7 +1524,7 @@ skips, now declared in `tools/skip-census.tsv`). The raw cargo output is banked 
 `target/portable-suites.log`. Its teeth are `tools/test_portable_suites.sh`, run by the same CI
 job: a copy of the tree with a planted failing retirement/ownership test in `tests/contracts`,
 a planted KV test and a planted onboarding-receipt test must red the wrapper with all three
-targets named (arm 1); a planted `#[test]` that prints `SKIP` and returns, as a new file under
+targets named (arm 1); a planted `#[test]` that prints `SKIP[planted artifact]: ...` and returns, as a new file under
 `crates/memra-cli/tests/` (arm 2a) and inside `src/` (arm 2b), must red the static census before
 cargo runs; the wiring is asserted (arm 3). The copy builds into `target/portable-suites-teeth`, never the
 tree's own target dir: cargo's metadata hash for a workspace member excludes its path and

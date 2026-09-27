@@ -1735,7 +1735,7 @@ mod tests {
             let err = refused.expect_err("ext4/xfs must refuse an unaligned O_DIRECT offset");
             assert_eq!(err.raw_os_error(), Some(libc::EINVAL), "{err}");
         } else {
-            eprintln!("red control skipped: test filesystem does not enforce O_DIRECT alignment");
+            eprintln!("SKIP[O_DIRECT-enforcing filesystem]: unaligned-offset red control not run");
         }
         assert_eq!(
             window_read(&direct, 1824, 4096).unwrap(),

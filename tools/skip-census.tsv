@@ -1,60 +1,98 @@
-# SKIP CENSUS MANIFEST — the tests that are allowed to skip, and what they need.
+# SKIP CENSUS MANIFEST: the tests that are allowed to skip, and what each one lacked.
 #
-# GATE-INTEGRITY-20260819 section 10. `nv27b_twin_parity` prints "SKIP: ckpt/twin absent" and
-# PASSES, and round 2 gave it a caller (.github/workflows/ci.yml), so CI reports it green in
-# perpetuity on every executor without checkpoints. The count of such tests is now a NUMBER this
-# repo states out loud rather than a property nobody measures.
+# GATE-INTEGRITY-20260819 section 10. `nv27b_twin_parity` skipped when its checkpoint was absent
+# and PASSED, and CI ran it on every hosted runner without checkpoints, green in perpetuity. The
+# count of such tests is a NUMBER this repo states out loud rather than a property nobody measures.
 #
-# Columns: crate <TAB> test path (as libtest prints it) <TAB> file:line <TAB> the SKIP message
-# exactly as written in the source (format placeholders included — tools/skip-census.py matches
-# the literal prefix at run time and the full string against the source).
+# Columns: crate <TAB> test path (as libtest prints it) <TAB> the source FILE (no line number)
+# <TAB> the skip message exactly as written in the source, format placeholders included.
 #
-# tools/skip-census.py verify compares this file with a static scan of the crate in BOTH
-# directions. An undeclared skipping test FAILS (it would otherwise be born invisible); a stale
-# row FAILS (it inflates the budget and silently permits a different skip). A moved line number
-# is a NOTE, not a failure.
+# THE PROTOCOL (memra #484). A skipping test prints `SKIP[<artifact>]: <reason>`: what was
+# missing, then what the test would have proven with it. A per-case test prints one line per
+# missing case. Any other skip-shaped print in test code FAILS the census as unstructured.
 #
-# tools/skip-census.py run compares the number that ACTUALLY skipped against a named budget,
-# default 0. Where the budgets live and why:
-#   tools/local-ci.sh           gguf budget 10, rig-side with artifacts present (rehomed
-#                                        2026-09-02 from tools/validate-h100.sh, deleted with
-#                                        the Hopper lane). Measured 2026-09-02: 212 passed,
-#                                        10 skipped (ckpt/twin, Hy3-repack, iq3s artifacts not
-#                                        staged). local-ci's kernel-check additionally enforces
-#                                        11 skipped cells against MEMRA_CI_KC_SKIP_BUDGET.
-#   .github/workflows/ci.yml budget 12 — a hosted runner has no /data at all, so all twelve
-#                                        skip. Twelve is therefore the count of model-backed
-#                                        assertions CI is blind to, stated rather than hidden.
-#                                        If it grows, CI reds and someone looks.
-#   tools/portable-suites.sh    budget 0 for memra-tier, memra-kv and memra-cli (ci.yml job
-#                                        portable-suites and tools/local-ci.sh, memra #545): none
-#                                        of the three crates has an artifact-gated test, and the
-#                                        wrapper's `verify` over them keeps it that way; a new one
-#                                        must be declared here and budgeted there, out loud.
+# Regenerate the rows with `python3 tools/skip-census.py static` and review the diff. Rows carry
+# no line anchor: a `file:line` third column is refused, a file that no longer holds the test is
+# a failure, and a row is matched by crate + test path + message (memra #484: every line anchor
+# had drifted and the drift NOTE fired on every row, so nobody read it).
 #
-# The static census scans crates/<crate>/src AND crates/<crate>/tests (integration-test binaries;
-# libtest prints their paths relative to the binary, so `tests/parity.rs` and `tests/x/mod.rs`
-# tests carry no prefix and `tests/x/y.rs` prints `y::`). Extended 2026-09-21 (memra #545 review):
-# the src-only scan let a skip born under tests/** go undeclared. The four memra-tokenizer rows
-# below are what the extension found: `tests/llama_parity.rs` skips without a GGUF model
-# (MEMRA_TEST_MODEL) or a llama-tokenize binary (MEMRA_LLAMA_TOKENIZE). ci.yml runs that crate
-# `--lib`, so these never execute there; they are declared so the census is complete in both
-# directions and so the run that does execute them (a rig with the artifacts) counts them.
-memra-gguf	config::minimax_tests::parse_minimax_m3_vl	crates/memra-gguf/src/config.rs:2570	SKIP parse_minimax_m3_vl: no model at {MINIMAX_DIR}
-memra-gguf	config::minimax_tests::minimax_name_mapping_against_index	crates/memra-gguf/src/config.rs:2609	SKIP minimax_name_mapping_against_index: no model at {MINIMAX_DIR}
-memra-gguf	dequant::tests::iq3s_vs_ggml_oracle	crates/memra-gguf/src/dequant.rs:711	SKIP: /tmp/iq3s_raw.bin missing
-memra-gguf	safetensors::tests::real_qwen3_17b_header	crates/memra-gguf/src/safetensors.rs:572	SKIP real_qwen3_17b_header: no model at {dir}
-memra-gguf	safetensors::tests::real_qwen3_17b_config	crates/memra-gguf/src/safetensors.rs:622	SKIP real_qwen3_17b_config: no config at {cfgp:?}
-memra-gguf	source::hy3_repack_probe::hy3_manifest_offset_roundtrip	crates/memra-gguf/src/source.rs:1820	SKIP: Hy3 repack absent
-memra-gguf	source::hy3_repack_probe::hy3_inventory_dtype_shape_assertions	crates/memra-gguf/src/source.rs:1858	SKIP: Hy3 repack absent
-memra-gguf	source::hy3_repack_probe::hy3_load_plan_dry_run_no_cuda	crates/memra-gguf/src/source.rs:1935	SKIP: Hy3 repack absent
-memra-gguf	source::nv27b_probe::nvidia_27b_dtype_routing	crates/memra-gguf/src/source.rs:2004	SKIP: ckpt absent
-memra-gguf	source::nv27b_probe::nvidia_27b_mtp_mapping	crates/memra-gguf/src/source.rs:2040	SKIP: ckpt absent
-memra-gguf	source::m3_probe::minimax_m3_lm_head_q8	crates/memra-gguf/src/source.rs:2098	SKIP: ckpt absent
-memra-gguf	source::nv27b_twin_parity::nvidia_27b_vs_gguf_twin_f32_parity	crates/memra-gguf/src/source.rs:2133	SKIP: ckpt/twin absent
-memra-gguf	model_packs::qwen4_exp::tests::expected_census_matches_the_banked_artifact_and_the_contract_binds_it	crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:1084	SKIP qwen4exp census gate: no fixture at {path}
-memra-gguf	model_packs::qwen4_exp::tests::nvfp4_census_matches_the_banked_mint_and_the_dialect_contract_binds_it	crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs:1264	SKIP qwen4exp nvfp4 census gate: no fixture at {path}
-memra-tokenizer	parity_with_llama_tokenize	crates/memra-tokenizer/tests/llama_parity.rs:81	SKIP: model not found at {model} (set MEMRA_TEST_MODEL)
-memra-tokenizer	parity_with_llama_tokenize	crates/memra-tokenizer/tests/llama_parity.rs:85	SKIP: llama-tokenize not found at {bin} (set MEMRA_LLAMA_TOKENIZE)
-memra-tokenizer	round_trip	crates/memra-tokenizer/tests/llama_parity.rs:129	SKIP: model not found at {model}
-memra-tokenizer	golden_pairs	crates/memra-tokenizer/tests/llama_parity.rs:149	SKIP: model not found at {model}
+# tools/skip-census.py verify compares this file with a static scan of EVERY crate under crates/
+# (src/ and tests/) in BOTH directions. An undeclared skip FAILS (it would otherwise be born
+# invisible); a stale row FAILS (it inflates the budget and silently permits a different skip).
+#
+# tools/skip-census.py run counts the protocol lines a run ACTUALLY printed against a named
+# budget, default 0, and every line must match a row for its test in full. Where the budgets live:
+#   .github/workflows/ci.yml  MEMRA_GGUF_SKIP_BUDGET for the CUDA-free --lib run over memra-gguf,
+#                             memra-reference, memra-tokenizer, memra-validate, memra-sampling.
+#                             A hosted runner has no /data and no model checkpoints, so every
+#                             artifact-gated row of those crates skips; the budget is the count
+#                             of model-backed assertions CI is blind to, stated rather than hidden.
+#   .github/workflows/ci.yml  MEMRA_ENGINE_SKIP_BUDGET 0 for engine-tests (the GPU-test rows
+#                             below are integration binaries and the pair-only tests are
+#                             #[ignore], so none of them runs there).
+#   tools/local-ci.sh         MEMRA_GGUF_SKIP_BUDGET for memra-gguf --lib on the rig, where the
+#                             checkpoints under /data are staged and only the rest skip.
+#   tools/portable-suites.sh  budget 0 for memra-tier, memra-kv and memra-cli: none of the three
+#                             crates has an artifact-gated test, and a new one must be declared
+#                             here and budgeted there, out loud.
+memra-engine	all_reduce_matches_the_host_sum_bitwise	crates/memra-engine/tests/tp_ar_gpu.rs	SKIP[2 CUDA devices]: multi-GPU test not run
+memra-engine	all_reduce_without_the_peer_push_diverges	crates/memra-engine/tests/tp_ar_gpu.rs	SKIP[2 CUDA devices]: multi-GPU test not run
+memra-engine	batched_drafter_gather_matches_per_draft_bitwise	crates/memra-engine/tests/spec_batched_gather_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	bf16_absorb_planes_match_the_f32_wp_kernels_bitwise	crates/memra-engine/tests/mla_absorb_bf16_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	broadcast_and_all_gather_move_bytes_exactly	crates/memra-engine/tests/tp_ar_gpu.rs	SKIP[2 CUDA devices]: multi-GPU test not run
+memra-engine	dsv4_graph::tests::replay_rust_partial_submission_and_capture_cleanup	crates/memra-engine/src/dsv4_graph.rs	SKIP[2 CUDA devices]: pair-only test {test} not run, found {found}
+memra-engine	e4m3_fused_six_is_bit_identical_to_six_separate_launches	crates/memra-engine/tests/kda_fused6_e4m3_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	engine_tower_matches_banked_upstream_fixture	crates/memra-engine/tests/glm5_vision_gpu.rs	SKIP[fixture {fixture}]: regenerable fixture not present; run gen_upstream_fixture.py
+memra-engine	fused_epilogue_is_bitwise_the_two_launch_pair	crates/memra-engine/tests/hc_pre_norm_fuse_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	fused_router_is_bitwise_the_two_launch_pair	crates/memra-engine/tests/router_fused_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	gemv_f32_rows_matches_cublas_deterministic_and_m_identical	crates/memra-engine/tests/f32_gemv_rows_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	gpu_kda_gate_beta_matches_gate_then_sigmoid_bitwise	crates/memra-engine/tests/kda_small_folds_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	gpu_l2_norm_pair_matches_two_launches_bitwise	crates/memra-engine/tests/kda_small_folds_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	gpu_model_boundary_capture_is_the_live_state	crates/memra-engine/tests/grid_capture_gpu.rs	SKIP[MEMRA_TEST_QWEN_GGUF]: model-backed capture test not run
+memra-engine	gpu_model_capture_equals_split_and_resumes_cold_exact	crates/memra-engine/tests/grid_capture_gpu.rs	SKIP[MEMRA_TEST_QWEN_GGUF]: model-backed capture test not run
+memra-engine	gpu_model_settle_then_resume_is_cold_exact	crates/memra-engine/tests/grid_capture_gpu.rs	SKIP[MEMRA_TEST_QWEN_GGUF]: model-backed capture test not run
+memra-engine	gpu_swiglu_q8_1_matches_swiglu_then_quantize_bitwise	crates/memra-engine/tests/swiglu_zq8_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	hc_mixes_gemv_matches_cublas_within_tolerance_and_is_deterministic	crates/memra-engine/tests/hc_mixes_gemv_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	hc_pre_v4_is_bit_identical_to_v3	crates/memra-engine/tests/hc_pre_v4_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	kda_onorm_zq8_matches_norm_then_quantize_bitwise	crates/memra-engine/tests/kda_onorm_zq8_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	kpool_live_count_twins_match_scalar_launches_bitwise	crates/memra-engine/tests/mla_kpool_live_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	kpool_live_twins_match_scalar_launches_at_t_rows	crates/memra-engine/tests/mla_kpool_live_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	lane_major_refuses_interleaved_experts	crates/memra-engine/tests/moe_rows_lanemajor_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	lane_major_rows_are_bitwise_the_served_pair	crates/memra-engine/tests/moe_rows_lanemajor_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	launched_words_land_exact_bits	crates/memra-engine/tests/spec_batched_gather_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	mla_live_len_twins_match_scalar_launches_bitwise	crates/memra-engine/tests/mla_live_len_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	model_memory::native_tests::glm_indexed_mla_kda_state_materialization	crates/memra-engine/src/model_memory.rs	SKIP[2 CUDA devices]: pair-only test {test} not run, found {found}
+memra-engine	model_memory::native_tests::glm_peer_admission_materialization_trim_and_refill	crates/memra-engine/src/model_memory.rs	SKIP[2 CUDA devices]: pair-only test {test} not run, found {found}
+memra-engine	one_shot_all_reduce_matches_the_host_sum_bitwise	crates/memra-engine/tests/tp_ar_gpu.rs	SKIP[2 CUDA devices]: multi-GPU test not run
+memra-engine	one_shot_into_matches_the_in_place_form_bitwise	crates/memra-engine/tests/tp_ar_gpu.rs	SKIP[2 CUDA devices]: multi-GPU test not run
+memra-engine	perturbing_the_bias_moves_the_selection	crates/memra-engine/tests/router_fused_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	perturbing_the_norm_weight_moves_the_fused_output	crates/memra-engine/tests/hc_pre_norm_fuse_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	q8_narrow_f32in_matches_quantize_then_mmvq_bitwise	crates/memra-engine/tests/q8_narrow_f32in_gpu.rs	SKIP[CUDA device]: GPU test not run
+memra-engine	spill_pread::tests::unaligned_direct_read_without_window_is_refused	crates/memra-engine/src/spill_pread.rs	SKIP[O_DIRECT-enforcing filesystem]: unaligned-offset red control not run
+memra-gguf	config::minimax_tests::minimax_name_mapping_against_index	crates/memra-gguf/src/config.rs	SKIP[{MINIMAX_DIR}]: MiniMax name mapping against the index not run
+memra-gguf	config::minimax_tests::parse_minimax_m3_vl	crates/memra-gguf/src/config.rs	SKIP[{MINIMAX_DIR}]: MiniMax-M3-VL config parse not run
+memra-gguf	dequant::tests::iq3s_vs_ggml_oracle	crates/memra-gguf/src/dequant.rs	SKIP[/tmp/iq3s_raw.bin]: iq3s dequant vs the ggml oracle not run
+memra-gguf	model_packs::nemotron_rnnt::tests::the_real_archive_census_matches_the_fixture_when_the_artifact_is_present	crates/memra-gguf/src/model_packs/nemotron_rnnt/tests.rs	SKIP[{HEBREW_ARCHIVE}]: real archive census vs the fixture not run
+memra-gguf	model_packs::qwen4_exp::tests::expected_census_matches_the_banked_artifact_and_the_contract_binds_it	crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs	SKIP[{path}]: qwen4exp census gate not run
+memra-gguf	model_packs::qwen4_exp::tests::nvfp4_census_matches_the_banked_mint_and_the_dialect_contract_binds_it	crates/memra-gguf/src/model_packs/qwen4_exp/mod.rs	SKIP[{path}]: qwen4exp nvfp4 census gate not run
+memra-gguf	safetensors::tests::real_qwen3_17b_config	crates/memra-gguf/src/safetensors.rs	SKIP[{cfgp:?}]: real Qwen3-1.7B config not parsed
+memra-gguf	safetensors::tests::real_qwen3_17b_header	crates/memra-gguf/src/safetensors.rs	SKIP[{dir}]: real Qwen3-1.7B safetensors header not read
+memra-gguf	source::hy3_repack_probe::hy3_inventory_dtype_shape_assertions	crates/memra-gguf/src/source.rs	SKIP[/data/ai-ml/hf-models/hy3-reap50-q4k-memra]: Hy3 repack assertions not run
+memra-gguf	source::hy3_repack_probe::hy3_load_plan_dry_run_no_cuda	crates/memra-gguf/src/source.rs	SKIP[/data/ai-ml/hf-models/hy3-reap50-q4k-memra]: Hy3 repack assertions not run
+memra-gguf	source::hy3_repack_probe::hy3_manifest_offset_roundtrip	crates/memra-gguf/src/source.rs	SKIP[/data/ai-ml/hf-models/hy3-reap50-q4k-memra]: Hy3 repack assertions not run
+memra-gguf	source::m3_probe::minimax_m3_lm_head_q8	crates/memra-gguf/src/source.rs	SKIP[{}]: checkpoint assertions not run
+memra-gguf	source::nv27b_probe::nvidia_27b_dtype_routing	crates/memra-gguf/src/source.rs	SKIP[{}]: checkpoint assertions not run
+memra-gguf	source::nv27b_probe::nvidia_27b_mtp_mapping	crates/memra-gguf/src/source.rs	SKIP[{}]: checkpoint assertions not run
+memra-gguf	source::nv27b_twin_parity::nvidia_27b_vs_gguf_twin_f32_parity	crates/memra-gguf/src/source.rs	SKIP[{} or its GGUF twin]: safetensors vs GGUF twin parity not run
+memra-reference	reference_matches_upstream_tower_on_banked_fixture	crates/memra-reference/tests/glm5_vision_upstream.rs	SKIP[fixture {fixture}]: regenerable fixture not present; run gen_upstream_fixture.py
+memra-reference	speech::text::tests::a_window_of_pinned_oracle_ids_reads_as_hebrew	crates/memra-reference/src/speech/text/tests.rs	SKIP[{CHECKPOINT}]: Whisper transcript assembly on the real vocabulary not run
+memra-reference	speech::text::tests::timestamps_and_the_terminator_never_reach_the_transcript	crates/memra-reference/src/speech/text/tests.rs	SKIP[{CHECKPOINT}]: Whisper transcript assembly on the real vocabulary not run
+memra-server	handoff_io::tests::both_writers_produce_identical_bytes_and_both_readers_read_both	crates/memra-server/src/handoff_io.rs	SKIP[O_DIRECT filesystem]: direct writer and reader parity not run
+memra-server	worker::host_handoff_tests::host_handoff_file_arms_are_byte_identical_and_cross_readable	crates/memra-server/src/worker.rs	SKIP[O_DIRECT filesystem]: direct handoff arm not run: {e}
+memra-tokenizer	detokenize::tests::the_real_sentencepiece_model_decodes_the_pinned_hebrew_tokens	crates/memra-tokenizer/src/detokenize/tests.rs	SKIP[{NEMO}]: real SentencePiece decode not run
+memra-tokenizer	detokenize::tests::the_real_whisper_vocabulary_decodes_hebrew_when_the_checkpoint_is_present	crates/memra-tokenizer/src/detokenize/tests.rs	SKIP[{}]: real Whisper vocabulary decode not run
+memra-tokenizer	golden_pairs	crates/memra-tokenizer/tests/llama_parity.rs	SKIP[{model}]: tokenizer assertions on the real GGUF not run
+memra-tokenizer	hf_tests::staged_checkpoints_resolve_their_own_pretokenizer	crates/memra-tokenizer/src/lib.rs	SKIP[{path}/tokenizer.json]: pretokenizer resolution case not run
+memra-tokenizer	parity_with_llama_tokenize	crates/memra-tokenizer/tests/llama_parity.rs	SKIP[{bin}]: llama-tokenize parity not run (set MEMRA_LLAMA_TOKENIZE)
+memra-tokenizer	parity_with_llama_tokenize	crates/memra-tokenizer/tests/llama_parity.rs	SKIP[{model}]: llama-tokenize parity not run (set MEMRA_TEST_MODEL)
+memra-tokenizer	round_trip	crates/memra-tokenizer/tests/llama_parity.rs	SKIP[{model}]: tokenizer assertions on the real GGUF not run

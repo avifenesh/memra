@@ -737,7 +737,7 @@ mod tests {
         let raw = match std::fs::read("/tmp/iq3s_raw.bin") {
             Ok(r) => r,
             Err(_) => {
-                eprintln!("SKIP: /tmp/iq3s_raw.bin missing");
+                eprintln!("SKIP[/tmp/iq3s_raw.bin]: iq3s dequant vs the ggml oracle not run");
                 return;
             }
         };

@@ -1517,7 +1517,7 @@ mod tests {
         });
         let dirp = std::path::Path::new(&dir);
         if !dirp.join("model.safetensors.index.json").exists() {
-            eprintln!("SKIP real_qwen3_17b_header: no model at {dir}");
+            eprintln!("SKIP[{dir}]: real Qwen3-1.7B safetensors header not read");
             return;
         }
         let m = StModel::open(dirp).expect("open multi-shard model");
@@ -1567,7 +1567,7 @@ mod tests {
         });
         let cfgp = std::path::Path::new(&dir).join("config.json");
         if !cfgp.exists() {
-            eprintln!("SKIP real_qwen3_17b_config: no config at {cfgp:?}");
+            eprintln!("SKIP[{cfgp:?}]: real Qwen3-1.7B config not parsed");
             return;
         }
         let mc = crate::config::ModelConfig::from_config_json(&cfgp).expect("parse config.json");

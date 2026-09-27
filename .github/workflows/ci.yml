@@ -108,8 +108,18 @@ jobs:
         run: |
           python3 tools/test_release_input_view.py
 
+      - name: Local development selection and immutable reuse controls (CPU-only)
+        run: |
+          tools/unittest-floor.sh tools test_local_build_cache.py 48
+          tools/unittest-floor.sh tools test_build_measurement.py 2
+          tools/unittest-floor.sh tools/fast-gate test_plan.py 33
+          tools/unittest-floor.sh tools/fast-gate test_component.py 4
+
       - name: Cache qualification harness regressions (unittest floor 15; 16 measured 2026-09-21)
         run: tools/unittest-floor.sh tools test_cache_qualification.py 15
+
+      - name: Q35 cold-mixed gate grid law and banked replay (unittest floor 13; 13 measured 2026-09-27, memra#777)
+        run: tools/unittest-floor.sh tools test_q35_cold_mixed_gate.py 13
 
       - name: CPU-only artifact path safety tests
         run: python3 tools/test_nvme_builder_safety.py
@@ -123,7 +133,9 @@ jobs:
       # The flags census is a gate, so its own coverage needs a gate. v0.94.0 found
       # MEMRA_ALLOW_UNKNOWN_PRETOKENIZER invisible to check-flags on two independent counts
       # (crate outside runtime_dirs, const-indirected read); nothing ran the fix's tests, so
-      # nothing would notice the hole reopening.
+      # nothing would notice the hole reopening. check-flags.sh also runs the row-shape
+      # census (tools/flags-row-shape.py, memra#127: row length, default cell, one decide-by,
+      # FLAGS-HISTORY.md links), and this self-test carries one red arm per rule.
       - name: Flags census self-test
         run: |
           command -v rg >/dev/null || sudo apt-get install -y -q ripgrep
@@ -144,6 +156,16 @@ jobs:
         run: |
           command -v rg >/dev/null || sudo apt-get install -y -q ripgrep
           tools/docs-registry-census.sh
+
+      # Support-state census (memra#551): every pack declares exactly the highest state its
+      # own family's records in docs/support-records.toml prove, each passed gate is backed
+      # by a tracked same-family gates.txt or the verify-tiny test below, and every state token
+      # in the docs names the record behind it. The second command is the red fixture: each
+      # arm plants one overclaim in a scratch copy and requires the census to fail on it.
+      - name: Support-state census
+        run: |
+          python3 tools/check-support-states.py
+          python3 tools/test_check_support_states.py
 
       # Teeth for the PRE-PUSH flags-census arm (2026-08-23): drives a real `git push`
       # through the real hook into a bare local origin, so the wiring is exercised rather
@@ -209,25 +231,30 @@ jobs:
       # UNIT SUITES with no CUDA dependency at all. These crates declare no cudarc
       # dependency (checked, not assumed: grep cudarc crates/*/Cargo.toml). --lib and no
       # filter, deliberately: a filtered suite prints a green "0 passed; N filtered out" the
-      # day the name moves. Through the SKIP CENSUS (GATE-INTEGRITY-20260819 section 10):
-      # twelve #[test] fns in memra-gguf guard on an artifact and `eprintln!("SKIP..."); return;`
-      # and PASS; a hosted runner has no /data at all, so they all skip. `verify` first, so a
-      # NEW artifact-gated test must be declared in tools/skip-census.tsv or it is born
-      # invisible; then `run` counts what actually skipped against the NAMED budget. 12 is
-      # the number of model-backed assertions this executor is blind to, stated out loud.
+      # day the name moves. Through the SKIP CENSUS (GATE-INTEGRITY-20260819 section 10,
+      # memra #484): a test whose artifact is absent prints `SKIP[<artifact>]: <reason>` and
+      # PASSES, one line per missing case. `verify` first, over every crate, so a NEW
+      # artifact-gated test must be declared in tools/skip-census.tsv or it is born invisible,
+      # and any other skip-shaped print fails as unstructured; then `run` counts the protocol
+      # lines that actually printed against the NAMED budget. A hosted runner has no /data and
+      # no model checkpoints, so 20 is the number of model-backed assertions this executor is
+      # blind to, stated out loud: 13 memra-gguf rows (the two qwen4exp census fixtures are
+      # committed and run), 2 detokenize rows and 3 staged-tokenizer cases in memra-tokenizer,
+      # and 2 Whisper transcript rows in memra-reference. Before #484 the census counted only
+      # capital `SKIP` prints and this number read 12 while 8 skips went uncounted.
       # --min-passed is the non-vacuity floor for the whole suite and it has to move when the
       # suite does: adding memra-reference took the pass count to 417, so a floor left at 130
       # would have let all ~68 of that crate's speech tests disappear behind a green check.
       # 400 leaves slack for the declared skips and for honest single-test removals only.
+      - name: Skip census negative controls (memra #484)
+        run: tools/unittest-floor.sh tools test_skip_census.py 14
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: ci-gates
       - name: Unit suites (CUDA-free crates) + skip census
         run: |
-          python3 tools/skip-census.py verify \
-            --crate memra-tokenizer --crate memra-validate --crate memra-sampling \
-            --crate memra-reference
-          MEMRA_GGUF_SKIP_BUDGET=12 python3 tools/skip-census.py run \
+          python3 tools/skip-census.py verify
+          MEMRA_GGUF_SKIP_BUDGET=20 python3 tools/skip-census.py run \
             --budget-var MEMRA_GGUF_SKIP_BUDGET --min-passed 400 \
             -- cargo test -p memra-gguf -p memra-reference -p memra-tokenizer -p memra-validate -p memra-sampling --lib
       - name: Canonical config and shared JSON feature-unification contracts

@@ -521,7 +521,7 @@ mod probe {
     #[test]
     fn a_brand_new_artifact_gated_test() {
         if !std::path::Path::new("/nope").exists() {
-            eprintln!("SKIP: brand new blind spot");
+            eprintln!("SKIP[/nope]: brand new blind spot");
             return;
         }
     }
@@ -549,8 +549,8 @@ RS
 case "${FIXTURE_CARGO_MODE:-skips}" in
   skips)
     printf 'running 4 tests\n'
-    printf 'test source::nv27b_twin_parity::nvidia_27b_vs_gguf_twin_f32_parity ... SKIP: ckpt/twin absent\nok\n'
-    printf 'test source::m3_probe::minimax_m3_lm_head_q8 ... SKIP: ckpt absent\nok\n'
+    printf 'test source::nv27b_twin_parity::nvidia_27b_vs_gguf_twin_f32_parity ... SKIP[/data/ai-ml/hf-models/nvidia-qwen36-27b-nvfp4 or its GGUF twin]: safetensors vs GGUF twin parity not run\nok\n'
+    printf 'test source::m3_probe::minimax_m3_lm_head_q8 ... SKIP[/data/ai-ml/hf-models/minimax-m3-nvfp4-reap50]: checkpoint assertions not run\nok\n'
     printf 'test a::b ... ok\n'
     printf 'test c::d ... ok\n'
     printf 'test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n' ;;
@@ -561,7 +561,7 @@ case "${FIXTURE_CARGO_MODE:-skips}" in
   filtered)
     printf 'test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s\n' ;;
   undeclared)
-    printf 'test source::probe::brand_new ... SKIP: something nobody declared\nok\n'
+    printf 'test source::probe::brand_new ... SKIP[/nope]: something nobody declared\nok\n'
     printf 'test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n' ;;
 esac
 SH

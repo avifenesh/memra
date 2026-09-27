@@ -82,7 +82,7 @@ fn both(
 #[test]
 fn fused_router_is_bitwise_the_two_launch_pair() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     for &(n_expert, n_used, t, ties) in &[
@@ -116,7 +116,7 @@ fn fused_router_is_bitwise_the_two_launch_pair() {
 #[test]
 fn perturbing_the_bias_moves_the_selection() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     let (_, (_, base, _)) = both(&e, 4096, 288, 8, 1, None, false);

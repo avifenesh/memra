@@ -343,6 +343,8 @@ fn hc_fused_pre_arm() -> HcFusedPreArm {
 /// `0` = the unfused chain; UNSET follows the build arch: V2 on `100a` (the served posture on
 /// the 2x B200 pair since 2026-09-02, receipts in darklanes research/glm5-b200-20260902/LANE.md
 /// and the FLAGS row), the unfused chain on every other build until it has its own receipt.
+/// Any other set value (a typo, `3`) falls through to the same arch default: V2 on `100a`,
+/// the unfused chain elsewhere.
 pub fn hc_fused_pre_arm_from(v: Option<&str>, built_arch: &str) -> HcFusedPreArm {
     match v.map(str::trim) {
         Some("1") => HcFusedPreArm::V1,

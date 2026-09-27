@@ -39,6 +39,10 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+from cache_qualification import capture_len  # noqa: E402  the memra#602 capture law
 
 SYS_P = ("You are the routing desk agent for a logistics marketplace. Follow house "
          "style: answer in at most two short sentences, never speculate about customs "
@@ -127,7 +131,7 @@ def main():
     row("acme-k1-seed-P", st == 200 and c1 == 0, prompt=p1, cached=c1)
     st, r2, _ = post(args.base, args.model, args.key_a2, SYS_P, Q_P)
     p2, c2 = usage(r2)
-    row("acme-k2-HIT-P-same-tenant", st == 200 and c2 == p2 and c2 > 0,
+    row("acme-k2-HIT-P-same-tenant", st == 200 and c2 == capture_len(p2) and c2 > 0,
         prompt=p2, cached=c2)
     st, r3, _ = post(args.base, args.model, args.key_b, SYS_P, Q_P)
     p3, c3 = usage(r3)
@@ -137,7 +141,7 @@ def main():
     row("blue-seed-Q", st == 200 and c4 == 0, prompt=p4, cached=c4)
     st, r5, _ = post(args.base, args.model, args.key_b, SYS_Q, Q_Q)
     p5, c5 = usage(r5)
-    row("blue-HIT-own-Q-cache-alive", st == 200 and c5 == p5 and c5 > 0,
+    row("blue-HIT-own-Q-cache-alive", st == 200 and c5 == capture_len(p5) and c5 > 0,
         prompt=p5, cached=c5)
     st, r6, _ = post(args.base, args.model, args.key_a1, SYS_Q, Q_Q)
     p6, c6 = usage(r6)
@@ -150,7 +154,7 @@ def main():
     row("acme-salted-MISS-vs-unsalted", st == 200 and c7 == 0, prompt=p7, cached=c7)
     st, r8, _ = post(args.base, args.model, args.key_a1, SYS_P, Q_P, salt="proj-x")
     p8, c8 = usage(r8)
-    row("acme-salted-HIT-itself", st == 200 and c8 == p8 and c8 > 0,
+    row("acme-salted-HIT-itself", st == 200 and c8 == capture_len(p8) and c8 > 0,
         prompt=p8, cached=c8)
 
     # (5) per-tenant rate-limit headers (key-bulk carries rate_limit=2 in the ring)

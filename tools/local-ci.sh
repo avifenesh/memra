@@ -153,7 +153,10 @@ cpu_chain() {
     # design). Budget 10 is MEASURED on this rig (2026-09-02: 212 passed, 10 skipped —
     # ckpt/twin, Hy3-repack and /tmp/iq3s_raw.bin artifacts not staged here), stated out
     # loud per the ci.yml precedent, and every skip still prints and still counts. An 11th
-    # skip means an artifact regressed further: refuse it. MEMRA_CI_GGUF=0 skips.
+    # skip means an artifact regressed further: refuse it. MEMRA_CI_GGUF=0 skips. memra #484
+    # added the RNNT archive-census row (it used to print `skipping:` and was counted by
+    # nothing); its archive is staged on this rig, so it runs here and the budget holds at 10.
+    # Rebaseline from the run's own skip list if the rig's staged set changes.
     if [ "${MEMRA_CI_GGUF:-1}" = "1" ]; then
         echo "== local-ci: memra-gguf artifact-present skip census =="
         if ! MEMRA_CI_GGUF_SKIP_BUDGET=10 python3 tools/skip-census.py run \
@@ -907,7 +910,8 @@ fi
 # names that condition in its own ignore reason). Serial runs have CPU_PID empty; join is a no-op.
 join_cpu_chain
 echo "== local-ci: memra-engine lib suite (GPU-only #[ignore] tests) =="
-# Pair-only tests (the exclusively locked development pair) print `SKIP-PAIR <test> ...` and
+# Pair-only tests (the exclusively locked development pair) print
+# `SKIP[2 CUDA devices]: pair-only test <test> ...` (the skip protocol, memra #484) and
 # return on a rig with one CUDA device; `--show-output` surfaces those lines from passing
 # tests so the skip is counted here, never silent (#484: account for every skip).
 LIB_LOG=$(mktemp -t memra-lib-gpu.XXXXXX)
@@ -925,10 +929,10 @@ set +e
 cargo test --release -p memra-engine --lib -j8 -- --ignored --test-threads=1 --show-output 2>&1 | tee "$LIB_LOG"
 LIB_RC=${PIPESTATUS[0]}
 set -e
-PAIR_SKIPS=$(grep -c '^SKIP-PAIR ' "$LIB_LOG" || true)
+PAIR_SKIPS=$(grep -c '^SKIP\[2 CUDA devices\]: pair-only test ' "$LIB_LOG" || true)
 if [ "$PAIR_SKIPS" -gt 0 ]; then
     echo "local-ci: SKIP $PAIR_SKIPS pair-only GPU test(s) on this rig (need 2 CUDA devices):"
-    grep '^SKIP-PAIR ' "$LIB_LOG" | sed 's/^/    /'
+    grep '^SKIP\[2 CUDA devices\]: pair-only test ' "$LIB_LOG" | sed 's/^/    /'
 fi
 rm -f "$LIB_LOG"
 if [ "$LIB_RC" -ne 0 ]; then

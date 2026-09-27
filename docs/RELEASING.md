@@ -143,9 +143,10 @@ What this list does **not** claim, stated so nobody reads more into it:
   compiled out under `cfg!(memra_hopper_mma)`). The 2026-09-01 hardware closure at
   `69a2eb3684e1` passed the sealed synthetic battery on one NVIDIA B200, then pinned-checkpoint
   model, K=1..8, sampled serving, concurrency, admission, and rollback gates. `detect_arch()` now
-  maps compute capability 10.0 to `100a`. Default NVFP4 W4A8 is `NativeQualified` on the pinned
-  Qwen3.5-9B artifact. Raw-layout W4A4 is correct but remains explicit because it measured 0.521x
-  raw W4A8 prefill. Block-FP8 is `NativeReference` only: its explicit B200 twin is correct and
+  maps compute capability 10.0 to `100a`. Default NVFP4 W4A8 is `NativeReference` on the pinned <!-- support: qwen35-9b-nvfp4-b200-w4a8 -->
+  Qwen3.5-9B artifact; checkpoint parity is pending, so it is not qualified. Raw-layout W4A4 is
+  correct but remains explicit because it measured 0.521x
+  raw W4A8 prefill. Block-FP8 is `NativeReference` only: its explicit B200 twin is correct and <!-- support: qwen38-27b-fp8-b200 -->
   serves the pinned official Qwen3.8-27B-FP8 checkpoint, but measured 0.173x the established
   fallback with worse teacher-forced NLL. It does not default on. The release installer still
   refuses B200 before network access because the release manifest publishes no sm_100a binary.

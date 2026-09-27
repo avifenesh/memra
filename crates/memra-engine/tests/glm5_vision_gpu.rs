@@ -104,7 +104,7 @@ fn engine_tower_matches_banked_upstream_fixture() {
                 "committed fixture {fixture} is missing its binaries"
             );
             eprintln!(
-                "SKIP {fixture} (regenerable fixture not present; run gen_upstream_fixture.py)"
+                "SKIP[fixture {fixture}]: regenerable fixture not present; run gen_upstream_fixture.py"
             );
             continue;
         }

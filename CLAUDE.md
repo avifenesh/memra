@@ -53,10 +53,13 @@ The model-onboarding structure is authoritative:
 - `crates/memra-cli/` owns `memra model inspect`, `scaffold`, and `verify`; onboarding evidence and
   immutable receipts live under a dated `research/modelplan-onboarding-*` namespace.
 
-There are exactly three positive support states: `NativeReference`, `NativeQualified`, and
-`NativeTuned`. `NativeReference` means the plan compiles and runs in Memra's reference executor;
-`NativeQualified` means the required checkpoint and serving gates pass; `NativeTuned` additionally
-means the selected optimized rewrites have current receipts. "Loads", "shares an architecture
+There are exactly three positive support states: `NativeReference`, `NativeQualified`, and <!-- support: none; not NativeQualified NativeReference -->
+`NativeTuned`. `NativeReference` means the plan compiles and runs in Memra's reference executor; <!-- support: none; not NativeReference NativeTuned -->
+`NativeQualified` means the required checkpoint and serving gates pass; `NativeTuned` additionally <!-- support: none; not NativeQualified NativeTuned -->
+means the selected optimized rewrites have current receipts. A pack's `support` field and every
+state named in the docs must match a record in `docs/support-records.toml`
+(`tools/check-support-states.py`, CI gates job); a new state lands with its record and its
+tracked gate receipts in the same PR. "Loads", "shares an architecture
 name", and "works through another engine" are not support states.
 
 ### Bring up a model from now on
@@ -559,12 +562,21 @@ parallel; version numbers are a shared resource. Before tagging vX.Y.Z:
 ## CI is compile-only; the exactness battery is the real gate
 
 GitHub runners have no GPU. `.github/workflows/ci.yml` catches build breaks (nvcc compiles fine
-GPU-less). The local 5090 carries the development-iteration battery. Before any merge or tag,
-re-run it on a designated non-serving 2x RTX PRO 6000 pair — `box1` is the pair that has
+GPU-less). Before merging native execution changes, and before any tag,
+re-run the full battery on a designated non-serving 2x RTX PRO 6000 pair. `box1` is the pair that has
 actually carried it (`research/coldfix-20260812/PROGRESS.md` records the stopped run
 and the green retry): `kernel-check` ALL GREEN, `run-gen` argmax MATCH on affected models, and
 `run-spec` K=1..8 self-consistency PASS. The battery never runs on a serving box (which box
 serves, and where, is a deployment fact that lives outside this repo).
+
+CPU-only development, admission and artifact-transport tooling uses its relevant
+CPU contract, failure-injection and integration checks. Artifact tooling also
+needs real native build/restore integrity evidence. This merge scope must leave
+native math, emitted native programs, compiler/build defaults, model artifacts or
+defaults, qualification tolerances and required native-gate coverage unchanged.
+Unknown impact expands to the full GPU battery. A tooling merge does not qualify
+a model, runtime or serving binary, and does not admit narrower GPU selection.
+`docs/TESTING.md` and `tools/fast-gate/README.md` define the development boundary.
 
 ## Flags doctrine
 

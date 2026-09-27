@@ -36,7 +36,10 @@ pub static PACK: ModelPack = ModelPack {
     config_layout: ConfigLayout::FlatOrTextConfig,
     tokenizer_sources: &[TokenizerSource::TokenizerJson],
     template: TemplateContract::ArtifactRequired,
-    // Loader lane: inspection/census only, native plan execution unsupported.
+    // Inspect-only: no support state. The tiny plan does execute in the reference executor
+    // (memra-reference `qwen4exp_tiny_plan_executes_gated_residual_qsa_ple_moe_and_mtp`), but
+    // no record in docs/support-records.toml claims a state for this family yet, so
+    // `memra model verify tiny` refuses it. Promotion is a record plus this line, together.
     support: None,
     gates: &[
         Gate::Config,
@@ -1096,7 +1099,7 @@ mod tests {
             "/../../research/qwen4exp-bringup-20260829/raw/census-names.tsv"
         );
         let Ok(text) = std::fs::read_to_string(path) else {
-            eprintln!("SKIP qwen4exp census gate: no fixture at {path}");
+            eprintln!("SKIP[{path}]: qwen4exp census gate not run");
             return;
         };
         let mut artifact: BTreeMap<String, (String, Vec<u64>)> = BTreeMap::new();
@@ -1276,7 +1279,7 @@ mod tests {
             "/../../research/qwen4exp-bringup-20260829/raw/nvfp4-census-names.tsv"
         );
         let Ok(text) = std::fs::read_to_string(path) else {
-            eprintln!("SKIP qwen4exp nvfp4 census gate: no fixture at {path}");
+            eprintln!("SKIP[{path}]: qwen4exp nvfp4 census gate not run");
             return;
         };
         let mut artifact: BTreeMap<String, (String, Vec<u64>)> = BTreeMap::new();

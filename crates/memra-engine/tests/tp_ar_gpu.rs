@@ -39,7 +39,7 @@ fn pair() -> Option<(Engine, Engine)> {
 #[test]
 fn all_reduce_matches_the_host_sum_bitwise() {
     let Some((ea, eb)) = pair() else {
-        eprintln!("needs two CUDA devices; skipping");
+        eprintln!("SKIP[2 CUDA devices]: multi-GPU test not run");
         return;
     };
     let engines = [&ea, &eb];
@@ -78,7 +78,7 @@ fn all_reduce_matches_the_host_sum_bitwise() {
 #[test]
 fn all_reduce_without_the_peer_push_diverges() {
     let Some((ea, eb)) = pair() else {
-        eprintln!("needs two CUDA devices; skipping");
+        eprintln!("SKIP[2 CUDA devices]: multi-GPU test not run");
         return;
     };
     let engines = [&ea, &eb];
@@ -115,7 +115,7 @@ fn all_reduce_without_the_peer_push_diverges() {
 #[test]
 fn broadcast_and_all_gather_move_bytes_exactly() {
     let Some((ea, eb)) = pair() else {
-        eprintln!("needs two CUDA devices; skipping");
+        eprintln!("SKIP[2 CUDA devices]: multi-GPU test not run");
         return;
     };
     let engines = [&ea, &eb];
@@ -181,7 +181,7 @@ fn broadcast_and_all_gather_move_bytes_exactly() {
 #[test]
 fn one_shot_all_reduce_matches_the_host_sum_bitwise() {
     let Some((ea, eb)) = pair() else {
-        eprintln!("needs two CUDA devices; skipping");
+        eprintln!("SKIP[2 CUDA devices]: multi-GPU test not run");
         return;
     };
     let engines = [&ea, &eb];
@@ -233,7 +233,7 @@ fn one_shot_all_reduce_matches_the_host_sum_bitwise() {
 #[test]
 fn one_shot_into_matches_the_in_place_form_bitwise() {
     let Some((ea, eb)) = pair() else {
-        eprintln!("needs two CUDA devices; skipping");
+        eprintln!("SKIP[2 CUDA devices]: multi-GPU test not run");
         return;
     };
     let engines = [&ea, &eb];

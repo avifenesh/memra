@@ -13,7 +13,7 @@ content, only addresses; read the target before acting. Paths are relative to th
 ## Models
 
 - Is model X supported, which path/quant/drafter -> docs/MODELS.md (support matrix; support = model+quant+drafter, never a format) plus docs/models/ (one card per model)
-- Support states -> CLAUDE.md, "Model onboarding" section: NativeReference (plan runs in the reference executor, bring-up evidence only), NativeQualified (required checkpoint and serving gates pass, minimum production-admission state), NativeTuned (qualified plus current binary-bound rewrite receipts)
+- Support states -> CLAUDE.md, "Model onboarding" section: NativeReference (plan runs in the reference executor, bring-up evidence only), NativeQualified (required checkpoint and serving gates pass, minimum production-admission state), NativeTuned (qualified plus current binary-bound rewrite receipts); per-pack records -> docs/support-records.toml <!-- support: none; not NativeQualified NativeReference NativeTuned -->
 - Bringing up a new model, artifact to gates green -> docs/ONBOARDING.md (ordered phase checklist, fail-closed contracts)
 
 ## Speculative decode

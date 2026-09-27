@@ -27,7 +27,7 @@ fn lcg(seed: u64, n: usize, amp: f32) -> Vec<f32> {
 #[ignore]
 fn gpu_swiglu_q8_1_matches_swiglu_then_quantize_bitwise() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     let limit = 7.0f32;

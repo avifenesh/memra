@@ -1,9 +1,12 @@
 # Hy3
 
-Support state: **NativeReference** for the canonical plan and official BF16 safetensors;
-**NativeQualified** for the exact all-expert ModelOpt W4A16 artifact described below. The NVFP4
-qualification binds the artifact manifest, serialized plan, Memra runtime binary, and four-card
-RTX PRO 6000 Blackwell receipts. `NativeTuned` remains pending: the faster PP-4 wavefront stayed
+Support state: **NativeReference** for the canonical plan and official BF16 safetensors, <!-- support: hy3-bf16-reference -->
+and **NativeReference** for the exact all-expert ModelOpt W4A16 profile `hy3_nvfp4` described below. <!-- support: hy3_nvfp4-modelopt-w4a16 -->
+The 2026-08-30 four-card RTX PRO 6000 Blackwell run reported the outcome below, but its oracle and
+serve receipts are not tracked in this repository, and the tracked inspect record of the minted
+artifact lists checkpoint parity and serve pending. Qualification is pending until those gates are
+re-run and their receipts land with a record in `docs/support-records.toml` (memra#551).
+`NativeTuned` also remains pending: the faster PP-4 wavefront stayed <!-- support: none; not NativeTuned -->
 off after failing its serial-vs-wave logit-identity gate.
 
 ## Artifact contract

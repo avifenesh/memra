@@ -165,7 +165,7 @@ fn unfused(e: &Engine, s: &Site) -> (Vec<f32>, Vec<i8>, Vec<f32>, Vec<f32>) {
 #[test]
 fn fused_epilogue_is_bitwise_the_two_launch_pair() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     // SAFETY: single-threaded test setup, before any engine call that reads the value.
@@ -192,7 +192,7 @@ fn fused_epilogue_is_bitwise_the_two_launch_pair() {
 #[test]
 fn perturbing_the_norm_weight_moves_the_fused_output() {
     let Ok(e) = Engine::new(0) else {
-        eprintln!("no CUDA device; skipping");
+        eprintln!("SKIP[CUDA device]: GPU test not run");
         return;
     };
     // SAFETY: as above.
