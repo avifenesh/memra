@@ -888,8 +888,43 @@ pub struct LandedH2dSpan {
 /// staging and landed destination, by `take_h2d_spans`, only behind the owner stream's wait on the
 /// span's completion event.
 pub struct H2dSpan {
-    pub source: PinnedHostBuf,
+    pub source: H2dSource,
     pub destination: CudaSlice<f32>,
+}
+/// WP-A day 71 (`DAY71.md` design F2.2): an H2D span's pinned source. A `Staged` buffer is the
+/// engine's for the copy (written before the attach, or by the fill task ahead of the copy); a
+/// `Resident` one is the host entry's own recurrent payload, shared with the entry that keeps it,
+/// read in place by the copy and never written (only the unfilled attach takes one).
+pub enum H2dSource {
+    Staged(PinnedHostBuf),
+    Resident(std::rc::Rc<PinnedHostBuf>),
+}
+impl H2dSource {
+    /// The pinned buffer the copy reads.
+    pub fn buf(&self) -> &PinnedHostBuf {
+        match self {
+            Self::Staged(b) => b,
+            Self::Resident(b) => b,
+        }
+    }
+    pub fn len(&self) -> usize {
+        self.buf().len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.buf().is_empty()
+    }
+    /// The staging buffer back (for its set); `None` for a resident source.
+    pub fn into_staged(self) -> Option<PinnedHostBuf> {
+        match self {
+            Self::Staged(b) => Some(b),
+            Self::Resident(_) => None,
+        }
+    }
+}
+impl From<PinnedHostBuf> for H2dSource {
+    fn from(b: PinnedHostBuf) -> Self {
+        Self::Staged(b)
+    }
 }
 impl std::fmt::Debug for H2dSpan {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -3186,7 +3221,12 @@ impl CudaTransfers {
             }
             for (k, s) in spans.iter().enumerate() {
                 let bytes = s.destination.len().checked_mul(4).ok_or(Error::Overflow)?;
-                if bytes == 0 || s.source.len() != bytes || !(filled || s.source.is_written()) {
+                if bytes == 0 || s.source.len() != bytes || !(filled || s.source.buf().is_written())
+                {
+                    return Err(Error::InvalidLayout);
+                }
+                // WP-A day 71 (F2.2): a resident source is never a fill target.
+                if filled && matches!(s.source, H2dSource::Resident(_)) {
                     return Err(Error::InvalidLayout);
                 }
                 // Day 33: each fill is exactly its source's length (the host function's copy).
@@ -3231,7 +3271,10 @@ impl CudaTransfers {
                     .into_iter()
                     .zip(spans.iter_mut())
                     .map(|(plane, span)| {
-                        let dst = span.source.fill_target();
+                        let dst = match &mut span.source {
+                            H2dSource::Staged(b) => b.fill_target(),
+                            H2dSource::Resident(_) => unreachable!("refused at the admission"),
+                        };
                         (plane, dst)
                     })
                     .collect(),
@@ -3279,9 +3322,11 @@ impl CudaTransfers {
                         // Day 33: the source is written by the host function ahead of this copy
                         // in stream order, not yet on the host's side.
                         span.source
+                            .buf()
                             .enqueue_to_device_f32_after_fill(&mut span.destination, &copy)
                     } else {
                         span.source
+                            .buf()
                             .enqueue_to_device_f32(&mut span.destination, &copy)
                     }
                 };
@@ -3512,7 +3557,9 @@ impl CudaTransfers {
                 // SAFETY: `progress` observed this span's event complete, recorded after its copy,
                 // which stream order puts after its fill (day 33) when it had one: the source's bytes
                 // are written (and, without a fill, were already).
-                unsafe { span.source.mark_landed() };
+                if let H2dSource::Staged(b) = &mut span.source {
+                    unsafe { b.mark_landed() };
+                }
                 let n = (span.destination.len() * 4) as u64;
                 LandedH2dSpan {
                     destination_digest: lanes
@@ -6121,6 +6168,33 @@ mod tests {
         drop(b);
     }
 
+    /// WP-A day 71 (`DAY71.md` design F2.2, CPU census): an H2D span's source is a staging buffer
+    /// or a resident payload shared with its host entry; the filled attach refuses a resident source
+    /// at the admission (a resident is never a fill target), the copy reads either through `buf()`,
+    /// and only a staging source is marked landed.
+    #[test]
+    fn day71_a_resident_source_is_read_in_place_and_never_filled() {
+        let src = include_str!("tier_transfer.rs");
+        let body = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        let attach = &body[body.find("    fn attach_h2d_spans(").unwrap()..];
+        let attach = &attach[..attach.find("\n    }\n").unwrap()];
+        let refuse = attach
+            .find("if filled && matches!(s.source, H2dSource::Resident(_)) {")
+            .expect("the filled attach refuses a resident source");
+        assert!(refuse < attach.find("launch_host_function(").unwrap());
+        assert!(
+            attach
+                .contains("H2dSource::Resident(_) => unreachable!(\"refused at the admission\"),")
+        );
+        assert_eq!(
+            attach.matches(".buf()\n").count() + attach.matches(".buf().").count(),
+            3
+        );
+        let take = &body[body.find("    pub fn take_h2d_spans(").unwrap()..];
+        let take = &take[..take.find("\n    }\n").unwrap()];
+        assert!(take.contains("if let H2dSource::Staged(b) = &mut span.source {"));
+    }
+
     /// WP-A day 69 (`DAY69.md` design P, cell (d), on a card): a pooled lease that carried a
     /// tenant's bytes is never the next same-class lease once the pool drains; the next one is
     /// fresh and reads zeros, and the ledger holds the leases alone.
@@ -7285,7 +7359,7 @@ mod tests {
             at(submit, "Err(error) => return Err((error, spans, fills)),")
                 < at(submit, "for mut span in spans {")
         );
-        assert!(submit.contains("!(filled || s.source.is_written())"));
+        assert!(submit.contains("!(filled || s.source.buf().is_written())"));
         assert!(submit.contains("fills[k].len().checked_mul(4) != Some(bytes)"));
         assert!(submit.contains("e.unknown = true;"));
         assert!(!submit.contains("synchronize("), "no host wait at attach");
@@ -7304,7 +7378,7 @@ mod tests {
             at(
                 take,
                 "if !b.landed || !e.completion.producer_done || !b.fenced {"
-            ) < at(take, "span.source.mark_landed()")
+            ) < at(take, "unsafe { b.mark_landed() }")
         );
         let install = fn_body("pub fn install_consumer_wait(");
         assert!(at(install, "if let Some(b) = &mut e.h2d_spans") < at(install, "b.fenced = true;"));
@@ -7409,7 +7483,7 @@ mod tests {
                         p.len()
                     };
                     H2dSpan {
-                        source,
+                        source: source.into(),
                         destination: clock
                             .time("device-alloc", || stream.alloc_zeros::<f32>(n).unwrap()),
                     }
@@ -7461,7 +7535,7 @@ mod tests {
         for (l, p) in landed.iter().zip(&patterns) {
             let span = &l.span;
             assert_eq!(
-                span.source.as_slice(),
+                span.source.buf().as_slice(),
                 f32_bytes(p),
                 "the staging comes back whole"
             );
@@ -7589,9 +7663,11 @@ mod tests {
             planes
                 .iter()
                 .map(|p| H2dSpan {
-                    source: clock.time("pinned-alloc", || {
-                        PinnedHostBuf::new_unwritten(p.len() * 4).unwrap()
-                    }),
+                    source: clock
+                        .time("pinned-alloc", || {
+                            PinnedHostBuf::new_unwritten(p.len() * 4).unwrap()
+                        })
+                        .into(),
                     destination: clock.time("device-alloc", || {
                         stream.alloc_zeros::<f32>(p.len()).unwrap()
                     }),
@@ -7651,7 +7727,7 @@ mod tests {
         for (l, p) in landed.iter().zip(&planes) {
             let span = &l.span;
             assert_eq!(
-                span.source.as_slice(),
+                span.source.buf().as_slice(),
                 f32_bytes(p),
                 "the fill wrote the staging with the plane's bytes"
             );

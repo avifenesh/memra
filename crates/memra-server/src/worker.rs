@@ -5224,6 +5224,12 @@ fn host_tier_governor(
     let dimensions = device
         .checked_add(1)
         .ok_or("host tier governor: device ordinal overflow")?;
+    let twice = |bytes: usize| {
+        u64::try_from(bytes)
+            .ok()
+            .and_then(|b| b.checked_mul(2))
+            .ok_or("host tier governor: capacity overflow")
+    };
     // Option C (day 16): a promote's residency charge (`tier_charge`, device=true, taken before
     // the copy) and the registration of its fresh destination planes (`register_device`, released
     // at `take_plane`) are both on this dimension while the H2D runs, over the promoted residents'
@@ -5239,9 +5245,7 @@ fn host_tier_governor(
     // pool's idle backings (capped at one budget), so a lease's charge taken while its pooled
     // backing's charge is still held never refuses.
     capacity.pinned = thrice(host_budget)?;
-    // WP-A day 51 (design P): a third pageable term, the hash helper's payload reserve (at most
-    // one budget, `HostPayloadReserve::cap`), so its charge is never what refuses a demote.
-    capacity.pageable = thrice(host_budget)?;
+    capacity.pageable = twice(host_budget)?;
     capacity.device[device] = thrice(device_budget)?;
     // Option B: the transfer engine charges one in-flight op per K or V plane of the batch
     // (`submit_batch`); the day-13 ledger left this dimension at zero, which would have refused
@@ -5397,9 +5401,6 @@ fn host_tier_context(
         .and_then(|n| n.checked_mul(3))
         .ok_or("MEMRA_KV_HOST_CONTRACTS=1: in-flight bound overflow")?;
     let governor = host_tier_governor(device, hpx.budget, prefix_cache_budget_bytes(), inflight)?;
-    // WP-A day 51 (design P): the hash helper's payload reserve, capped at one host budget (the
-    // ledger's third pageable term).
-    let reserve = HostPayloadReserve::new(governor.clone(), hpx.budget as u64);
     let ledger: std::rc::Rc<std::cell::RefCell<dyn memra_engine::cache::tiered::BudgetGovernor>> =
         std::rc::Rc::new(std::cell::RefCell::new(HostTierLedger(governor.clone())));
     // WP-A day 17 (memra#536 Move 1): the engine carries a second stream of the same context for
@@ -5431,8 +5432,8 @@ fn host_tier_context(
         transfers: Some(std::cell::RefCell::new(transfers)),
         inflight,
         fault: std::cell::Cell::new(HostContractFault::from_door(kv_host_fault())),
-        hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()), reserve)?,
-        staging: std::cell::RefCell::new(HostStaging::default()),
+        hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()))?,
+        staging: std::rc::Rc::new(std::cell::RefCell::new(HostStaging::default())),
         lease_pool,
     };
     // WP-A day 63 (L2.2, L2.3): the staging set allocated at boot, charged as today; a refusal
@@ -9483,6 +9484,47 @@ impl HostPlaneBytes {
 enum HostF32 {
     Heap(HostHeapF32),
     Pinned(memra_engine::PinnedHostBuf),
+    /// WP-A day 71 (`DAY71.md` design F2.1): a landed f32 span kept as the entry's own payload,
+    /// in pinned memory on loan from the context's span staging set.
+    Resident(HostResidentF32),
+}
+/// WP-A day 71 (`DAY71.md` design F2.1): one resident recurrent payload in pinned memory: the
+/// demote's landed span buffer, never copied to the heap. It is shared read-only (the promote's
+/// H2D span reads it in place, `H2dSource::Resident`) and on loan from the span staging set, whose
+/// charge on the pinned ledger it keeps: when the last holder drops it, it goes back to the set
+/// (freed there once the set is latched), and a buffer still shared at that moment (a promote's
+/// span in flight) is handed back by that span's own return.
+struct HostResidentF32 {
+    buf: Option<std::rc::Rc<memra_engine::PinnedHostBuf>>,
+    set: std::rc::Weak<std::cell::RefCell<HostStaging>>,
+}
+impl HostResidentF32 {
+    fn lend(buf: memra_engine::PinnedHostBuf, tier: &HostTierContext) -> Self {
+        Self {
+            buf: Some(std::rc::Rc::new(buf)),
+            set: std::rc::Rc::downgrade(&tier.staging),
+        }
+    }
+    fn shared(&self) -> &std::rc::Rc<memra_engine::PinnedHostBuf> {
+        self.buf
+            .as_ref()
+            .expect("a resident payload holds its buffer until it drops")
+    }
+    fn as_f32_slice(&self) -> &[f32] {
+        self.shared().as_f32_slice()
+    }
+}
+impl Drop for HostResidentF32 {
+    fn drop(&mut self) {
+        if let Some(rc) = self.buf.take()
+            && let Ok(buf) = std::rc::Rc::try_unwrap(rc)
+        {
+            match self.set.upgrade() {
+                Some(set) => set.borrow_mut().put(buf),
+                None => drop(buf),
+            }
+        }
+    }
 }
 /// WP-A day 32: the resident heap form of one f32 payload. `Arc<Vec<f32>>`, not `Arc<[f32]>`:
 /// `Arc<[f32]>::from(Vec<f32>)` copies the bytes into a fresh allocation (the header must sit in
@@ -9512,6 +9554,7 @@ impl HostF32 {
         match self {
             Self::Heap(p) => p,
             Self::Pinned(p) => p.as_f32_slice(),
+            Self::Resident(p) => p.as_f32_slice(),
         }
     }
 }
@@ -10581,7 +10624,7 @@ struct HostTierContext {
     /// hash helper's reply. About one image's recurrent bytes per context. Since day 31 every
     /// buffer is charged to the governor's pinned ledger when it is allocated (`HostStaging`);
     /// the set and its charges free at the tier's latch.
-    staging: std::cell::RefCell<HostStaging>,
+    staging: std::rc::Rc<std::cell::RefCell<HostStaging>>,
     /// WP-A day 63 (`DAY63.md` design L1.6): the transfer engine's lease pool, closed at the latch.
     lease_pool: Option<std::rc::Rc<memra_engine::tier_transfer::LeasePool>>,
 }
@@ -10616,6 +10659,13 @@ impl HostStaging {
         self.idle.clear();
         self.charges.clear();
         self.charged = 0;
+    }
+    /// A buffer back into the set (idle), or freed once the set is latched. Day 71 (F2.1): also
+    /// where a resident payload's buffer comes home when its entry drops it.
+    fn put(&mut self, buf: memra_engine::PinnedHostBuf) {
+        if !self.latched {
+            self.idle.push(buf);
+        }
     }
     /// WP-A day 69 (`DAY69.md` design P.4): every idle buffer zeroed in place (an idle buffer holds
     /// the last span that used it); the set keeps its buffers and their charges. Returns (buffers,
@@ -10677,10 +10727,7 @@ impl HostTierContext {
     /// span that takes it overwrites the whole range before its landing makes it readable). Day
     /// 31: after the latch the buffer frees here instead (its charge released at `clear`).
     fn staging_put(&self, buf: memra_engine::PinnedHostBuf) {
-        let mut set = self.staging.borrow_mut();
-        if !set.latched {
-            set.idle.push(buf);
-        }
+        self.staging.borrow_mut().put(buf);
     }
     /// The program identity of one pool key and entry class: the model's base identity for that
     /// class with `tenant_salt` derived by the ONE memra-kv helper (lead ruling 13) from the pool
@@ -11707,9 +11754,6 @@ struct HostHashSplit {
     copy_bytes: u64,
     copy_minflt: i64,
     hash_ms: f64,
-    /// Day 51 (design P, log only): the staged payloads and how many took a reserve buffer.
-    staged: u32,
-    reserve_hits: u32,
     /// WP-A day 65 (`DAY65.md` design T-H, log only): the scoped threads the job ran on; the
     /// copy and hash terms above are summed over them (thread time), `helper_ms` stays the wall.
     threads: usize,
@@ -11920,7 +11964,11 @@ fn host_hash_take_payloads(e: &mut HostPrefixEntry) -> Vec<HostHashPayload> {
 
 /// Put one payload back into the slot it left; the slot must be the emptied heap `Vec` the
 /// take left there, or the reply does not describe this image.
-fn host_hash_restore_payload(e: &mut HostPrefixEntry, p: HostHashPayload) -> Result<(), String> {
+fn host_hash_restore_payload(
+    e: &mut HostPrefixEntry,
+    p: HostHashPayload,
+    resident: Option<HostResidentF32>,
+) -> Result<(), String> {
     let target = match p.slot {
         HostHashSlot::Conv(i) => e.conv.get_mut(i).and_then(Option::as_mut),
         HostHashSlot::Ssm(i) => e.ssm.get_mut(i).and_then(Option::as_mut),
@@ -11928,7 +11976,19 @@ fn host_hash_restore_payload(e: &mut HostPrefixEntry, p: HostHashPayload) -> Res
         HostHashSlot::Hidden => Some(&mut e.last_h),
     };
     match target {
-        Some(HostF32::Heap(v)) if v.is_empty() => {
+        // WP-A day 71 (`DAY71.md` design F2.1): a landed span's staging becomes the slot's
+        // resident pinned payload; its heap `data` stayed empty.
+        Some(slot @ HostF32::Heap(_)) if resident.is_some() && p.data.is_empty() => {
+            if matches!(slot, HostF32::Heap(v) if !v.is_empty()) {
+                return Err(format!(
+                    "the reply's {:?} payload has no emptied heap slot in the image",
+                    p.slot
+                ));
+            }
+            *slot = HostF32::Resident(resident.expect("checked above"));
+            Ok(())
+        }
+        Some(HostF32::Heap(v)) if v.is_empty() && resident.is_none() => {
             *v = p.data;
             Ok(())
         }
@@ -11976,213 +12036,6 @@ impl HostHashFault {
 /// and an idle 2 ms poll early).
 const HOST_HASH_DEADLINE: Duration = Duration::from_secs(10);
 
-/// WP-A day 51 (`DAY51.md` design P, OWED item 17): the hash helper's reserve of heap payload
-/// buffers whose every page is already written, keyed by exact length. DAY49 placed the helper's
-/// copy into a fresh `Vec` at one minor fault per 4 KiB page (16 ms of a 157 MB job, one tick-top
-/// poll of every publication) while no host entry frees; the reserve moves those faults into the
-/// helper's idle time. Its target is the staged lengths of the last `Hash` job, clamped to `cap`
-/// bytes. It is charged on the governor's pageable ledger for the whole target BEFORE its first
-/// buffer is allocated (a refused charge allocates nothing), and the charge is released at the
-/// retarget and when the helper exits. A hit is written with `copy_from_slice` from the staged
-/// bytes and a miss allocates as before, so the payload's bytes are the same either way.
-struct HostPayloadReserve {
-    governor: memra_engine::cache::tiered::hostprefix::SharedGovernor,
-    cap: u64,
-    /// The lengths (floats) of the current target still to allocate.
-    owed: Vec<usize>,
-    /// Allocated buffers, every element written.
-    ready: Vec<Vec<f32>>,
-    charge: Option<memra_engine::cache::tiered::hostprefix::ResidentCharge>,
-    /// The current target's bytes (the charge's size).
-    target_bytes: u64,
-    /// The governor refused this target's charge: no refill until the next retarget.
-    refused: bool,
-    /// The current target's refill figures, printed when it completes (log only).
-    refill_ms: f64,
-    refill_minflt: i64,
-    yields: u32,
-    /// WP-A day 52 (`DAY52.md` design P2): the arming state. Armed, the last job's staged lengths
-    /// are the target; disarmed, the target is empty (nothing held, no charge).
-    armed: bool,
-}
-
-/// The payload reserve's ledger tenant: it belongs to the context's helper and serves every
-/// request's demote, so its charge names its own digest, disjoint from every `tenant_salt`.
-fn host_payload_reserve_tenant() -> [u8; 32] {
-    memra_engine::cache::record::digest("host-tier-payload-reserve", b"hash helper payload reserve")
-}
-
-impl HostPayloadReserve {
-    fn new(governor: memra_engine::cache::tiered::hostprefix::SharedGovernor, cap: u64) -> Self {
-        Self {
-            governor,
-            cap,
-            owed: Vec::new(),
-            ready: Vec::new(),
-            charge: None,
-            target_bytes: 0,
-            refused: false,
-            refill_ms: 0.0,
-            refill_minflt: 0,
-            yields: 0,
-            armed: true,
-        }
-    }
-    /// WP-A day 52 (`DAY52.md` design P2, the arming rule): after a `Hash` job's copies, the job's
-    /// fresh pages are its copy's minor faults (a miss faults where its memory is new, a hit does
-    /// not) plus, when the job took any reserve buffer, the minor faults of the refill that wrote
-    /// them. Armed when the fresh pages are at least half the job's staged pages: the reserve
-    /// refills to the job's shape (`retarget(lengths)`); disarmed otherwise: it holds nothing
-    /// (`retarget(&[])`), and the next copies are today's, which reuse freed memory. A job with no
-    /// staged payload decides nothing. The one line prints on a change of state.
-    fn after_job(&mut self, lengths: &[usize], copy_minflt: i64, hits: u32) {
-        if lengths.is_empty() {
-            self.retarget(&[]);
-            return;
-        }
-        let pages = lengths
-            .iter()
-            .map(|&l| (l as u64).saturating_mul(4))
-            .sum::<u64>()
-            / 4096;
-        let fresh = copy_minflt.max(0) as u64
-            + if hits > 0 {
-                self.refill_minflt.max(0) as u64
-            } else {
-                0
-            };
-        let armed = fresh.saturating_mul(2) >= pages;
-        if armed != self.armed {
-            eprintln!(
-                "[prefix-host] payload reserve {}: the job took {fresh} fresh pages of {pages} \
-                 (rule >= {pages}/2)",
-                if armed { "armed" } else { "disarmed" }
-            );
-            self.armed = armed;
-        }
-        if armed {
-            self.retarget(lengths);
-        } else {
-            self.retarget(&[]);
-        }
-    }
-    /// A written buffer of exactly `len` floats, if the reserve holds one.
-    fn take(&mut self, len: usize) -> Option<Vec<f32>> {
-        let i = self.ready.iter().position(|v| v.len() == len)?;
-        Some(self.ready.swap_remove(i))
-    }
-    /// After a `Hash` job's copies: the buffers it did not take free, the charge releases (the
-    /// image's own pageable charge covers what the job took), and `lengths` (the job's staged
-    /// payloads, in floats) become the target, clamped to `cap` bytes in the job's order.
-    fn retarget(&mut self, lengths: &[usize]) {
-        self.ready.clear();
-        self.charge = None;
-        self.owed.clear();
-        self.target_bytes = 0;
-        for &len in lengths {
-            let bytes = (len as u64).saturating_mul(4);
-            if self.target_bytes.saturating_add(bytes) > self.cap {
-                break;
-            }
-            self.target_bytes += bytes;
-            self.owed.push(len);
-        }
-        // Allocated from the end of `owed`: reverse so the job's first payload is written first.
-        self.owed.reverse();
-        self.refused = false;
-        self.refill_ms = 0.0;
-        self.refill_minflt = 0;
-        self.yields = 0;
-    }
-    /// One refill step: the charge first (once per target), then one buffer, every element
-    /// written with a value the compiler cannot see is zero (a zeroed allocation would map its
-    /// pages lazily and move the faults back onto the copy). `false` when there is nothing to do.
-    fn refill_step(&mut self) -> bool {
-        use memra_engine::cache::tiered::*;
-        if self.refused || self.owed.is_empty() {
-            return false;
-        }
-        if self.charge.is_none() {
-            let dimensions = self
-                .governor
-                .lock()
-                .map(|g| g.used().device.len())
-                .map_err(|_| "the governor is poisoned".to_string());
-            let charge = dimensions.and_then(|dimensions| {
-                let mut request = BudgetRequest {
-                    bytes: TierBudget::zero(dimensions),
-                    priority: Priority::Backup,
-                    deadline: Deadline(u64::MAX),
-                    tenant: host_payload_reserve_tenant(),
-                };
-                request.bytes.pageable = self.target_bytes;
-                hostprefix::ResidentCharge::reserve(self.governor.clone(), &request)
-                    .map_err(|e| format!("{e:?}"))
-            });
-            match charge {
-                Ok(charge) => self.charge = Some(charge),
-                Err(why) => {
-                    self.refuse(why);
-                    return false;
-                }
-            }
-        }
-        let Some(len) = self.owed.pop() else {
-            return false;
-        };
-        let (t0, f0) = (Instant::now(), thread_minflt());
-        let mut v = Vec::with_capacity(len);
-        v.resize(len, std::hint::black_box(0.0f32));
-        self.ready.push(v);
-        self.refill_minflt += thread_minflt() - f0;
-        self.refill_ms += t0.elapsed().as_secs_f64() * 1e3;
-        if self.owed.is_empty() {
-            eprintln!(
-                "[prefix-host] payload reserve ready: {} buffers, {:.1} MB in {:.2} ms (minflt +{}, \
-                 yielded {} time(s)), charged to the governor's pageable ledger",
-                self.ready.len(),
-                self.target_bytes as f64 / 1e6,
-                self.refill_ms,
-                self.refill_minflt,
-                self.yields,
-            );
-        }
-        true
-    }
-    fn refuse(&mut self, why: String) {
-        self.refused = true;
-        self.owed.clear();
-        eprintln!(
-            "[prefix-host] payload reserve refused ({} bytes): {why}; the next copies allocate",
-            self.target_bytes
-        );
-    }
-    /// The helper's idle time: refill one buffer at a time, checking the job channel before each.
-    /// `Ok(Some(job))` is a job that is waiting (served before the refill resumes), `Ok(None)` the
-    /// reserve complete (or refused, or nothing to do), `Err(())` the channel closed.
-    fn refill_until_job(
-        &mut self,
-        jobs: &std::sync::mpsc::Receiver<HostHelperJob>,
-    ) -> Result<Option<HostHelperJob>, ()> {
-        loop {
-            match jobs.try_recv() {
-                Ok(job) => {
-                    if !self.owed.is_empty() && !self.ready.is_empty() {
-                        self.yields += 1;
-                    }
-                    return Ok(Some(job));
-                }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => return Err(()),
-                Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    if !self.refill_step() {
-                        return Ok(None);
-                    }
-                }
-            }
-        }
-    }
-}
-
 /// One long-lived hash helper per `HostTierContext` (never a thread per demote): a job channel in,
 /// a reply channel out, the thread handle for the join. Between jobs the helper blocks only on its
 /// job channel; inside a job it is busy for as long as the hash takes, which is unbounded when the
@@ -12200,7 +12053,7 @@ struct HostHashWorker {
 /// inside a job is the deadline's cause, and the owner thread must not wait for that job.
 const HOST_HASH_LATCH_JOIN: Duration = Duration::from_millis(50);
 impl HostHashWorker {
-    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve) -> Result<Self, String> {
+    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {
         let (jobs_tx, jobs_rx) = std::sync::mpsc::channel::<HostHelperJob>();
         let (reply_tx, reply_rx) = std::sync::mpsc::channel::<HostHashReply>();
         let (sources_tx, sources_rx) = std::sync::mpsc::channel::<HostSourcesReply>();
@@ -12211,20 +12064,7 @@ impl HostHashWorker {
                 // WP-A day 65 (T-H): the helper's shares, read once.
                 let threads =
                     host_hash_threads(std::thread::available_parallelism().map_or(1, |n| n.get()));
-                // WP-A day 51 (design P): the reserve lives and dies with this thread; its charge
-                // releases when the thread exits by any path.
-                let mut reserve = reserve;
-                loop {
-                    // Design P: the idle time before the next job refills the reserve, one buffer
-                    // at a time; a job that is waiting is served first.
-                    let job = match reserve.refill_until_job(&jobs_rx) {
-                        Ok(Some(job)) => job,
-                        Ok(None) => match jobs_rx.recv() {
-                            Ok(job) => job,
-                            Err(_) => return,
-                        },
-                        Err(()) => return,
-                    };
+                for job in jobs_rx {
                     if fault == Some(HostHashFault::HelperGone) {
                         // The red arm: the helper is gone; the job drops with it and the owner
                         // thread finds the reply channel closed.
@@ -12303,53 +12143,22 @@ impl HostHashWorker {
                         threads,
                         ..HostHashSplit::default()
                     };
-                    // WP-A day 67 (`DAY67.md` section 2: design P2 re-applied on T-H's shares). The
-                    // reserve belongs to this thread, so its buffers are handed out here, in the
-                    // job's order, before the shares run (P2's assignment, unchanged); each share
-                    // then copies into its payload's buffer, or allocates, and hashes (T-H).
-                    let mut staged_lengths = Vec::new();
-                    let assigned: Vec<_> = job
-                        .payloads
-                        .into_iter()
-                        .map(|p| {
-                            let buf = p.staged.as_ref().and_then(|staged| {
-                                let len = staged.as_f32_slice().len();
-                                staged_lengths.push(len);
-                                split.staged += 1;
-                                let got = reserve.take(len);
-                                if got.is_some() {
-                                    split.reserve_hits += 1;
-                                }
-                                got
-                            });
-                            (p, buf)
-                        })
-                        .collect();
                     // WP-A day 65 (`DAY65.md` design T-H): the payloads in contiguous shares on
-                    // scoped threads, each payload whole on one (its copy, then its digest), the
-                    // reply in the job's order; each share times its own copy and hash.
-                    let per = host_scoped_map(assigned, threads, |(mut p, buf)| {
+                    // scoped threads, each payload whole on one, the reply in the job's order; each
+                    // share times its own hash. WP-A day 71 (`DAY71.md` design F2.1): a landed span
+                    // is no longer copied to the heap, and P2's payload reserve, whose only subject
+                    // that copy was, is deleted with it (F2.4).
+                    let per = host_scoped_map(job.payloads, threads, |p| {
                         let mut part = HostHashSplit::default();
-                        // WP-A day 30: a landed f32 span becomes the payload's heap `Vec`.
-                        // Day 49 (log only): the copy and the hash timed apart, in order.
-                        // Day 51 (design P): the `Vec` is the reserve's when it held one of this
-                        // length (every element written from the staged bytes), else allocated.
-                        if let Some(staged) = &p.staged {
-                            let (c0, f0) = (Instant::now(), thread_minflt());
-                            let src = staged.as_f32_slice();
-                            p.data = Arc::new(match buf {
-                                Some(mut v) => {
-                                    v.copy_from_slice(src);
-                                    v
-                                }
-                                None => src.to_vec(),
-                            });
-                            part.copy_minflt += thread_minflt() - f0;
-                            part.copy_ms += c0.elapsed().as_secs_f64() * 1e3;
-                            part.copy_bytes += staged.len() as u64;
-                        }
+                        // WP-A day 71 (`DAY71.md` design F2.1): a landed f32 span is hashed in
+                        // place, the same program over the same bytes, and stays the payload (the
+                        // entry keeps the staging buffer as its resident pinned payload); nothing
+                        // is copied to the heap. A heap payload hashes as before.
                         let h0 = Instant::now();
-                        let (n, d) = host_hash_payload_digest(&p.data);
+                        let (n, d) = match &p.staged {
+                            Some(staged) => host_hash_payload_digest(staged.as_f32_slice()),
+                            None => host_hash_payload_digest(&p.data),
+                        };
                         part.hash_ms += h0.elapsed().as_secs_f64() * 1e3;
                         (p, n, d, part)
                     });
@@ -12363,9 +12172,6 @@ impl HostHashWorker {
                             (p, n, d)
                         })
                         .collect();
-                    // Design P2 (day 52): the job's staged shape is the reserve's next target
-                    // while the job's copies took fresh pages; otherwise the reserve disarms.
-                    reserve.after_job(&staged_lengths, split.copy_minflt, split.reserve_hits);
                     // WP-A day 35 (design M'): the bind's KV re-hash, the same program over the
                     // same lease bytes; the views end here, before the reply is sent. Day 65: in
                     // shares too, order kept.
@@ -12701,6 +12507,30 @@ impl Drop for HostStagingBack<'_> {
             }
         }
     }
+}
+impl HostStagingBack<'_> {
+    /// WP-A day 71 (`DAY71.md` design F2.2): an H2D span's source back. A staging buffer goes to
+    /// the set; a resident source drops its share of the entry's payload, and comes home to the
+    /// set here when its entry already dropped the payload while the span was in flight.
+    fn push_source(&mut self, slot: HostHashSlot, source: memra_engine::tier_transfer::H2dSource) {
+        use memra_engine::tier_transfer::H2dSource;
+        match source {
+            H2dSource::Staged(buf) => self.bufs.push((slot, buf)),
+            H2dSource::Resident(rc) => {
+                if let Ok(buf) = std::rc::Rc::try_unwrap(rc) {
+                    self.bufs.push((slot, buf));
+                }
+            }
+        }
+    }
+}
+
+/// WP-A day 71 (`DAY71.md` design F2.2): what a promote's recurrent spans read. `Staged`: heap
+/// payloads (an entry an on-tick route demoted), staging taken for the copy stream's fill, as
+/// before. `Resident`: the entry's resident pinned payloads, read in place (no fill, no staging).
+enum HostPromoteSpans {
+    Staged(Vec<(HostHashSlot, HostHeapF32, memra_engine::PinnedHostBuf)>),
+    Resident(Vec<(HostHashSlot, std::rc::Rc<memra_engine::PinnedHostBuf>)>),
 }
 
 /// What one settle step of the `Promoting` entry produced (the CPU-testable half).
@@ -14149,7 +13979,7 @@ fn host_h2d_spans_submit(
         match engine.alloc_f32_uninit(len) {
             Ok(destination) => {
                 spans.push(H2dSpan {
-                    source,
+                    source: source.into(),
                     destination,
                 });
                 let kept = kept.iter().find(|(s, _)| *s == slot).map(|(_, d)| *d);
@@ -14213,7 +14043,124 @@ fn host_h2d_spans_submit(
     };
     let n = back.len();
     for (&(slot, _, _), span) in slots.iter().zip(back) {
-        staged.bufs.push((slot, span.source));
+        staged.push_source(slot, span.source);
+    }
+    Err(host_promote_contract_abort(
+        &mut t,
+        pending.registered,
+        Some(pending.ticket),
+        Some(pending.producer),
+        &pending.sources,
+        &format!("tier H2D spans refused: {why} ({n} f32 spans handed back)"),
+    ))
+}
+
+/// WP-A day 71 (`DAY71.md` design F2.2): the promote's recurrent spans read the entry's resident
+/// pinned payloads in place. One span per plane into a fresh uninitialized owner-stream destination
+/// of the plane's length, attached UNFILLED (`submit_h2d_spans`): no staging, no fill. The
+/// `span-flip-resident` red arm copies the first plane into a staging buffer with one byte flipped,
+/// so the resident payload stays intact and the promote's span receipt must refuse. A refusal
+/// before any enqueue hands every span back (each resident share drops, the red arm's staging goes
+/// to the set through `staged`) and unwinds the KV ticket as the filled attach does; an enqueue
+/// error after the first span is the engine's quarantine: `Ok` here, the settle latches.
+fn host_h2d_spans_submit_resident(
+    engine: &Engine,
+    tier: &HostTierContext,
+    mut pending: PendingContractPromote,
+    staged: &mut HostStagingBack<'_>,
+    resident: Vec<(HostHashSlot, std::rc::Rc<memra_engine::PinnedHostBuf>)>,
+    kept: &[(HostHashSlot, memra_engine::cache::tiered::Digest)],
+) -> Result<PendingContractPromote, HostPromoteFailure> {
+    use memra_engine::tier_transfer::{H2dSource, H2dSpan};
+    let Some(transfers) = &tier.transfers else {
+        // Unreachable: the submission that issued `pending` required the engine.
+        return Err(HostPromoteFailure::Latched(
+            "tier H2D transfer engine missing at the span attach".into(),
+        ));
+    };
+    let mut t = transfers.borrow_mut();
+    let mut refused = None;
+    let mut slots: Vec<(
+        HostHashSlot,
+        usize,
+        Option<memra_engine::cache::tiered::Digest>,
+    )> = Vec::with_capacity(resident.len());
+    let mut spans: Vec<H2dSpan> = Vec::with_capacity(resident.len());
+    let flip = pending.fault == Some(HostContractFault::SpanFlipResident);
+    for (k, (slot, shared)) in resident.into_iter().enumerate() {
+        if refused.is_some() {
+            break;
+        }
+        let len = shared.len() / 4;
+        let source = if flip && k == 0 {
+            match tier.staging_take(shared.len()) {
+                Ok((mut buf, _)) => {
+                    let mut bytes = shared.as_slice().to_vec();
+                    if let Some(b) = bytes.first_mut() {
+                        *b ^= 0x40;
+                    }
+                    if let Err(e) = buf.copy_from_slice(&bytes) {
+                        tier.staging_put(buf);
+                        refused = Some(format!("the red arm's staging copy: {e}"));
+                        continue;
+                    }
+                    eprintln!(
+                        "[prefix-host] promote fault armed (MEMRA_KV_HOST_FAULT=span-flip-resident): \
+                         the first span reads a staging copy of its resident plane with one byte \
+                         flipped; the promote must refuse"
+                    );
+                    H2dSource::Staged(buf)
+                }
+                Err(e) => {
+                    refused = Some(format!("a {}-byte staging buffer: {e}", shared.len()));
+                    continue;
+                }
+            }
+        } else {
+            H2dSource::Resident(shared)
+        };
+        match engine.alloc_f32_uninit(len) {
+            Ok(destination) => {
+                spans.push(H2dSpan {
+                    source,
+                    destination,
+                });
+                let kept = kept.iter().find(|(s, _)| *s == slot).map(|(_, d)| *d);
+                slots.push((slot, len, kept));
+            }
+            Err(e) => {
+                refused = Some(format!(
+                    "device alloc of {} B for the {slot:?} span failed: {e}",
+                    len * 4
+                ));
+                staged.push_source(slot, source);
+            }
+        }
+    }
+    // `MEMRA_KV_HOST_FAULT=contract-promote-spans` refuses the attach after every span was built,
+    // so the unwind below hands the whole set back.
+    if refused.is_none()
+        && !spans.is_empty()
+        && pending.fault == Some(HostContractFault::PromoteSpanAttach)
+    {
+        refused = Some("injected failure (MEMRA_KV_HOST_FAULT=contract-promote-spans)".into());
+    }
+    let attached = match refused {
+        Some(why) => Err((why, spans)),
+        None => t
+            .submit_h2d_spans(&pending.ticket, spans)
+            .map_err(|(e, back)| (format!("{e:?}"), back)),
+    };
+    let (why, back) = match attached {
+        Ok(()) => {
+            pending.spans = slots;
+            return Ok(pending);
+        }
+        Err(refusal) => refusal,
+    };
+    let n = back.len();
+    for (&(slot, _, _), span) in slots.iter().zip(back) {
+        staged.push_source(slot, span.source);
     }
     Err(host_promote_contract_abort(
         &mut t,
@@ -14853,7 +14800,7 @@ fn host_kv_planes_settle_promote(
             {
                 differs = Some(slot);
             }
-            staged.bufs.push((slot, source));
+            staged.push_source(slot, source);
             recur.push((slot, destination));
         }
         // The KV planes' receipt mismatch's path (the host bytes no longer match what the demote
@@ -15594,6 +15541,9 @@ fn flip_first_f32_byte(row: &mut HostF32) -> bool {
             };
             *first ^= 0xff;
         }
+        // WP-A day 71 (F2.1): a resident payload is shared and never written; the flip faults
+        // name the hidden and logits rows, which stay heap payloads.
+        HostF32::Resident(_) => return false,
     }
     true
 }
@@ -16486,7 +16436,21 @@ fn host_demote_prefix_ref(
             let Some(pinned) = pinned else {
                 return HostDemoteOutcome::Failed;
             };
-            let Some(pageable) = host_bytes.checked_sub(pinned) else {
+            // WP-A day 71 (`DAY71.md` design F2.3): on the off-tick route the recurrent f32 planes
+            // ride the ticket as spans and stay resident in their staging buffers, which the span
+            // staging set charges on the pinned dimension; so this residency charge takes them
+            // off the pageable remainder (the same total, charged once).
+            let spanned: usize = match route {
+                ContractD2h::OffTick => (dead.conv.iter().chain(dead.ssm.iter()))
+                    .flatten()
+                    .map(|p| p.len() * 4)
+                    .sum(),
+                ContractD2h::OnTick => 0,
+            };
+            let Some(pageable) = host_bytes
+                .checked_sub(pinned)
+                .and_then(|n| n.checked_sub(spanned))
+            else {
                 return HostDemoteOutcome::Failed;
             };
             match host.tier_charge(&dead.pool_key, class, 0, pageable as u64, false) {
@@ -17566,15 +17530,29 @@ fn host_demote_settle_hashing(
     };
     for (mut payload, hashed_bytes, digest) in reply.hashed {
         digests.by_slot.push((payload.slot, hashed_bytes, digest));
-        // WP-A day 30: a span's staging goes back to the context's set; the heap copy stays. Day
-        // 42 (design S2): only through its guard, quiet since the receipt was observed above.
-        if let (Some(buf), Some(tier)) = (
-            payload.staged.take().and_then(HostStagingHeld::into_quiet),
-            host.tier.as_ref(),
-        ) {
-            tier.staging_put(buf);
-        }
-        if let Err(what) = host_hash_restore_payload(&mut e, payload) {
+        // WP-A day 71 (`DAY71.md` design F2.1): a span's landed staging stays with the entry as
+        // its resident pinned payload, on loan from the set (it comes back when the entry drops
+        // it). Day 42 (design S2): only through its guard, quiet since the receipt was observed
+        // above; a span whose staging is not quiet has no payload, so the image is not whole.
+        let resident = match payload.staged.take().map(HostStagingHeld::into_quiet) {
+            None => None,
+            Some(None) => {
+                return latch(
+                    host,
+                    format!(
+                        "tier hash reply mismatch: the {:?} span's staging came back with a device \
+                         read pending (ticket seq={seq}, {mode})",
+                        payload.slot
+                    ),
+                    "hash reply mismatch",
+                );
+            }
+            Some(Some(buf)) => host
+                .tier
+                .as_ref()
+                .map(|tier| HostResidentF32::lend(buf, tier)),
+        };
+        if let Err(what) = host_hash_restore_payload(&mut e, payload, resident) {
             return latch(
                 host,
                 format!("tier hash reply mismatch: {what} (ticket seq={seq}, {mode})"),
@@ -17623,14 +17601,12 @@ fn host_demote_settle_hashing(
         let sp = reply.split;
         eprintln!(
             "[prefix-host] demote helper split: ticket seq={seq} copy {:.2} ms over {:.1} MB (minflt \
-             +{}), hash {:.2} ms (helper {:.1} ms); reserve {} of {} staged; {} threads",
+             +{}), hash {:.2} ms (helper {:.1} ms); {} threads",
             sp.copy_ms,
             sp.copy_bytes as f64 / 1e6,
             sp.copy_minflt,
             sp.hash_ms,
             reply.helper_ms,
-            sp.reserve_hits,
-            sp.staged,
             sp.threads,
         );
         // WP-A day 52 (`DAY52.md` step 1, log only): the publication segment's parts.
@@ -17905,7 +17881,7 @@ fn device_entry_from_host_parts(
     src: &HostPrefixEntry,
     tier: Option<(&HostTierContext, HostTierEntryClass)>,
     route: ContractH2d,
-    staging: Option<Vec<(HostHashSlot, HostHeapF32, memra_engine::PinnedHostBuf)>>,
+    staging: Option<HostPromoteSpans>,
 ) -> Result<(PrefixEntry, Option<PendingContractPromote>), HostPromoteFailure> {
     // WP-A day 33: each staging buffer with the resident plane the copy stream fills it from.
     let mut fills: Vec<HostHeapF32> = Vec::new();
@@ -17913,9 +17889,17 @@ fn device_entry_from_host_parts(
         tier: tier.map(|(t, _)| t),
         bufs: Vec::new(),
     };
-    for (slot, plane, buf) in staging.unwrap_or_default() {
-        fills.push(plane);
-        staged.bufs.push((slot, buf));
+    // WP-A day 71 (`DAY71.md` design F2.2): or the entry's resident pinned payloads, read in place.
+    let mut resident: Vec<(HostHashSlot, std::rc::Rc<memra_engine::PinnedHostBuf>)> = Vec::new();
+    match staging {
+        Some(HostPromoteSpans::Staged(planes)) => {
+            for (slot, plane, buf) in planes {
+                fills.push(plane);
+                staged.bufs.push((slot, buf));
+            }
+        }
+        Some(HostPromoteSpans::Resident(planes)) => resident = planes,
+        None => {}
     }
     if src.layout_version != PREFIX_ENTRY_LAYOUT_VERSION {
         return Err(format!(
@@ -17975,7 +17959,16 @@ fn device_entry_from_host_parts(
                 }
                 ContractH2d::OffTick => {
                     let pending = host_kv_planes_submit_promote(engine, tier, src, class)?;
-                    let pending = if staged.bufs.is_empty() {
+                    let pending = if !resident.is_empty() {
+                        host_h2d_spans_submit_resident(
+                            engine,
+                            tier,
+                            pending,
+                            &mut staged,
+                            std::mem::take(&mut resident),
+                            &src.span_digests,
+                        )?
+                    } else if staged.bufs.is_empty() {
                         pending
                     } else {
                         host_h2d_spans_submit(
@@ -18803,8 +18796,7 @@ fn host_promote_stage(
     pool_key: &PoolKey,
     hi: usize,
     class: Option<HostTierEntryClass>,
-) -> Result<Option<Vec<(HostHashSlot, HostHeapF32, memra_engine::PinnedHostBuf)>>, HostPromoteFailure>
-{
+) -> Result<Option<HostPromoteSpans>, HostPromoteFailure> {
     let (Some(tier), Some(_)) = (&host.tier, class) else {
         return Ok(None);
     };
@@ -18818,6 +18810,19 @@ fn host_promote_stage(
     if transfers.borrow().copy_stream().is_none() {
         return Ok(None);
     }
+    // WP-A day 71 (`DAY71.md` design F2.2): an entry the off-tick demote published keeps its
+    // recurrent planes resident in pinned memory: its spans read them in place, with no staging and
+    // no fill. An entry with heap planes (an on-tick route's) keeps the staged fill below; an entry
+    // with both is refused by name.
+    let resident: Vec<(HostHashSlot, std::rc::Rc<memra_engine::PinnedHostBuf>)> =
+        (src.conv.iter().enumerate())
+            .map(|(i, p)| (HostHashSlot::Conv(i), p))
+            .chain((src.ssm.iter().enumerate()).map(|(i, p)| (HostHashSlot::Ssm(i), p)))
+            .filter_map(|(slot, p)| match p {
+                Some(HostF32::Resident(r)) => Some((slot, r.shared().clone())),
+                _ => None,
+            })
+            .collect();
     let planes: Vec<(HostHashSlot, HostHeapF32)> = (src.conv.iter().enumerate())
         .map(|(i, p)| (HostHashSlot::Conv(i), p))
         .chain((src.ssm.iter().enumerate()).map(|(i, p)| (HostHashSlot::Ssm(i), p)))
@@ -18826,8 +18831,24 @@ fn host_promote_stage(
             _ => None,
         })
         .collect();
-    if planes.is_empty() {
-        return Ok(None);
+    match (resident.is_empty(), planes.is_empty()) {
+        (true, true) => return Ok(None),
+        (false, true) => {
+            if let Err(e) = transfers.borrow().owner_stream().context().bind_to_thread() {
+                return Err(HostPromoteFailure::Refused(format!(
+                    "tier H2D spans refused: the owner context did not bind ({e})"
+                )));
+            }
+            return Ok(Some(HostPromoteSpans::Resident(resident)));
+        }
+        (false, false) => {
+            return Err(HostPromoteFailure::Refused(format!(
+                "tier H2D spans refused: the entry holds {} resident and {} heap recurrent planes",
+                resident.len(),
+                planes.len()
+            )));
+        }
+        (true, false) => {}
     }
     if let Err(e) = transfers.borrow().owner_stream().context().bind_to_thread() {
         return Err(HostPromoteFailure::Refused(format!(
@@ -18870,7 +18891,7 @@ fn host_promote_stage(
             "tier H2D spans refused: {why} ({n} staging buffer(s) back)"
         )));
     }
-    Ok(Some(staged))
+    Ok(Some(HostPromoteSpans::Staged(staged)))
 }
 
 /// WP-A day 18: one settle step of the `Promoting` entry, the contract half. `Poll` at the tick top;
@@ -41821,16 +41842,6 @@ mod tests {
         assert_eq!(super::dspark_draft_without_spec(Some("0"), None), None);
         assert_eq!(super::dspark_draft_without_spec(None, Some("")), None);
     }
-
-    /// WP-A day 51 (design P): a payload reserve on its own governor, for the cells that spawn a
-    /// hash helper and do not read the reserve.
-    fn test_payload_reserve() -> super::HostPayloadReserve {
-        super::HostPayloadReserve::new(
-            super::host_tier_governor(0, 1 << 30, 1 << 30, 4).unwrap(),
-            1 << 30,
-        )
-    }
-
     #[test]
     fn dspark_partial_restore_door_admits_only_strict_prefixes_when_armed() {
         use super::dspark_hit_is_restorable_with as r;
@@ -49961,9 +49972,8 @@ mod tests {
             transfers: None,
             inflight: 4,
             fault: std::cell::Cell::new(None),
-            hasher: super::HostHashWorker::spawn(None, super::tests::test_payload_reserve())
-                .unwrap(),
-            staging: std::cell::RefCell::new(super::HostStaging::default()),
+            hasher: super::HostHashWorker::spawn(None).unwrap(),
+            staging: std::rc::Rc::new(std::cell::RefCell::new(super::HostStaging::default())),
             lease_pool: None,
         }
     }
@@ -52167,7 +52177,7 @@ mod tests {
         let mut digests = super::HostHashDigests::default();
         for (p, n, d) in reply.hashed {
             digests.by_slot.push((p.slot, n, d));
-            super::host_hash_restore_payload(&mut e, p).unwrap();
+            super::host_hash_restore_payload(&mut e, p, None).unwrap();
         }
         for (slot, n, d, _) in &expected {
             assert_eq!(digests.get(*slot), Some((*n, *d)));
@@ -52187,13 +52197,13 @@ mod tests {
             data: Arc::new(vec![1.0]),
             staged: None,
         };
-        assert!(super::host_hash_restore_payload(&mut e, stray).is_err());
+        assert!(super::host_hash_restore_payload(&mut e, stray, None).is_err());
         let out_of_range = super::HostHashPayload {
             slot: super::HostHashSlot::Ssm(7),
             data: Default::default(),
             staged: None,
         };
-        assert!(super::host_hash_restore_payload(&mut e, out_of_range).is_err());
+        assert!(super::host_hash_restore_payload(&mut e, out_of_range, None).is_err());
         // The close is idempotent and the second call is a no-op; an idle helper joins well
         // inside the bound.
         worker.close("the cell", super::HOST_HASH_DEADLINE);
@@ -52545,11 +52555,8 @@ mod tests {
     fn hash_helper_gone_is_a_typed_refusal_that_latches_under_poll_and_under_block() {
         for wait in [super::ContractWait::Poll, super::ContractWait::Block] {
             let (mut host, key) = cpu_door_host();
-            host.tier.as_mut().unwrap().hasher = super::HostHashWorker::spawn(
-                Some(super::HostHashFault::HelperGone),
-                super::tests::test_payload_reserve(),
-            )
-            .unwrap();
+            host.tier.as_mut().unwrap().hasher =
+                super::HostHashWorker::spawn(Some(super::HostHashFault::HelperGone)).unwrap();
             cpu_pending_hashing(&mut host, &key, 5);
             // The helper exits on its first job; under `Poll` the closed channel is observed at
             // the first poll that runs after the exit (bounded here), under `Block` at once.
@@ -52580,11 +52587,8 @@ mod tests {
     fn hash_digests_never_landing_latch_at_the_deadline_under_poll_and_under_block() {
         // Poll: before the deadline the state is kept; at the first poll past it, the latch.
         let (mut host, key) = cpu_door_host();
-        host.tier.as_mut().unwrap().hasher = super::HostHashWorker::spawn(
-            Some(super::HostHashFault::NeverLands),
-            super::tests::test_payload_reserve(),
-        )
-        .unwrap();
+        host.tier.as_mut().unwrap().hasher =
+            super::HostHashWorker::spawn(Some(super::HostHashFault::NeverLands)).unwrap();
         cpu_pending_hashing(&mut host, &key, 6);
         let short = std::time::Duration::from_millis(60);
         let outcome = super::host_demote_settle_with_deadline(
@@ -52611,11 +52615,8 @@ mod tests {
         // Block: the wait is bounded by the deadline, then the same latch; the helper is alive
         // (it discarded one reply) and the latch joined it.
         let (mut host, key) = cpu_door_host();
-        host.tier.as_mut().unwrap().hasher = super::HostHashWorker::spawn(
-            Some(super::HostHashFault::NeverLands),
-            super::tests::test_payload_reserve(),
-        )
-        .unwrap();
+        host.tier.as_mut().unwrap().hasher =
+            super::HostHashWorker::spawn(Some(super::HostHashFault::NeverLands)).unwrap();
         cpu_pending_hashing(&mut host, &key, 7);
         let t = std::time::Instant::now();
         let outcome = super::host_demote_settle_with_deadline(
@@ -52822,7 +52823,8 @@ mod tests {
         );
         assert!(hashing_fn.contains("tier hash helper gone:"));
         assert!(hashing_fn.contains("tier hash digests never landed:"));
-        assert_eq!(hashing_fn.matches("tier hash reply mismatch:").count(), 2);
+        // (Day 71, F2.1: the third, a span whose staging came back with a device read pending.)
+        assert_eq!(hashing_fn.matches("tier hash reply mismatch:").count(), 3);
         assert!(hashing_fn.contains("host.disable(&err);"));
         assert!(hashing_fn.contains("Some(&digests),"));
         assert!(hashing_fn.contains("owner \\\n             in-completion {:.2}ms"));
@@ -52909,12 +52911,10 @@ mod tests {
         // One helper per context, spawned once in production, from the existing fault door read.
         assert_eq!(code.matches("HostHashWorker::spawn(").count(), 1);
         assert!(code.contains(
-            "hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()), reserve)?,"
+            "hasher: HostHashWorker::spawn(HostHashFault::from_door(kv_host_fault()))?,"
         ));
         assert_eq!(code.matches("HostHashFault::from_door(").count(), 1);
-        let spawn_fn = body(
-            "    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve) -> Result<Self, String> {",
-        );
+        let spawn_fn = body("    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {");
         assert!(
             spawn_fn.contains(".name(\"memra-host-hash\".into())"),
             "the helper is one named thread, spawned inside HostHashWorker::spawn"
@@ -52925,9 +52925,7 @@ mod tests {
         // The helper's program is the bind's: `checksum` over the payload's bytes.
         let digest = body("fn host_hash_payload_digest(");
         assert!(digest.contains("memra_engine::cache::tiered::checksum(bytes)"));
-        let spawn = body(
-            "    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve) -> Result<Self, String> {",
-        );
+        let spawn = body("    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {");
         assert!(spawn.contains("host_hash_payload_digest(&p.data)"));
         // The bind consumes a handed-in digest only after the byte count check.
         let bind = body("    fn bind_tier_image(");
@@ -52993,9 +52991,10 @@ mod tests {
             .collect();
         assert_eq!(
             code.join("\n").matches("ContractD2h::OffTick").count(),
-            4,
-            "the sink, the route selector in host_entry_from_device and (WP-A day 47, design V) the \
-             pause sweep's two shapes, nobody else"
+            5,
+            "the sink, the route selector in host_entry_from_device, (WP-A day 47, design V) the \
+             pause sweep's two shapes and (day 71, F2.3) the residency charge's spanned bytes, \
+             nobody else"
         );
         // The settle-with driver is the only place that publishes a Demoting image, and it does
         // so through the shared publication function after `Done`.
@@ -53096,16 +53095,21 @@ mod tests {
         );
         let helper = body("impl HostHashWorker {");
         assert!(
-            // (Day 67: P2's reserve buffer, handed out before T-H's shares, is filled here.)
-            at(helper, "p.data = Arc::new(match buf {")
-                < at(helper, "host_hash_payload_digest(&p.data)")
+            // (Day 71, F2.1: a landed span is hashed in place; nothing is copied to the heap.)
+            at(
+                helper,
+                "Some(staged) => host_hash_payload_digest(staged.as_f32_slice()),"
+            ) < at(helper, "host_hash_payload_digest(&p.data)")
         );
         let hashing = body("fn host_demote_settle_hashing(");
         assert!(
             at(
                 hashing,
-                "payload.staged.take().and_then(HostStagingHeld::into_quiet),"
-            ) < at(hashing, "host_hash_restore_payload(&mut e, payload)")
+                "payload.staged.take().map(HostStagingHeld::into_quiet)"
+            ) < at(
+                hashing,
+                "host_hash_restore_payload(&mut e, payload, resident)"
+            )
         );
         let disable = body("    fn disable(&mut self, why: &str) {");
         assert!(disable.contains("tier.staging.borrow_mut().clear();"));
@@ -53123,22 +53127,27 @@ mod tests {
             |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
         assert_eq!(
             production.matches("thread_minflt()").count(),
-            7,
-            "the definition, two reads around each of the two copies, and (day 51, design P) two \
-             around the reserve's refill of one buffer"
+            3,
+            "the definition and the two reads around the pre-submit's leases (day 71, F2.1: the \
+             helper's staging copy is gone)"
         );
-        // (WP-A day 65, design T-H: the split starts with the job's thread count; each payload
-        // keeps its copy then its hash, inside its share; day 67: the copy fills P2's reserve buffer or
-        // allocates.)
+        // (WP-A day 65, design T-H: the split starts with the job's thread count. Day 71, F2.1: a
+        // landed span is hashed in place, so the job has no copy left to time.)
         let job = &production[at(
             production,
             "let mut split = HostHashSplit {\n                        threads,",
         )..];
-        let copy = at(job, "p.data = Arc::new(match buf {");
-        let hash = at(job, "let (n, d) = host_hash_payload_digest(&p.data);");
+        let hash = at(
+            job,
+            "Some(staged) => host_hash_payload_digest(staged.as_f32_slice()),",
+        );
         assert!(
-            copy < hash,
-            "the copy then the hash, per payload, as before"
+            hash < at(job, "None => host_hash_payload_digest(&p.data),"),
+            "a landed span's bytes are hashed where they landed"
+        );
+        assert!(
+            !job[..hash].contains("p.data = Arc::new("),
+            "no copy to the heap"
         );
         for field in [
             "split.copy_ms",
@@ -53530,17 +53539,18 @@ mod tests {
         let worker = include_str!("worker.rs");
         let production = &worker[..worker.find("\nmod tests {").unwrap()];
         let spawn = &production[production
-            .find("    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve)")
+            .find("    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {")
             .unwrap()..];
         let spawn = &spawn[..spawn.find("\n    }\n").unwrap()];
         assert_eq!(spawn.matches("host_hash_threads(").count(), 1);
         assert_eq!(spawn.matches("host_scoped_map(").count(), 3);
         assert!(spawn.contains("host_scoped_map(job.views, threads, |v| {"));
-        // (Day 67: the payloads reach the shares with P2's reserve buffers assigned.)
-        assert!(spawn.contains("host_scoped_map(assigned, threads, |(mut p, buf)| {"));
+        // (Day 71, F2.1: the payloads reach the shares as they came; P2's reserve is gone, and a
+        // landed span is hashed in place with no heap copy.)
+        assert!(spawn.contains("host_scoped_map(job.payloads, threads, |p| {"));
         assert!(spawn.contains("host_scoped_map(job.leases, threads, |(slot, v)| {"));
-        assert!(spawn.contains("let (n, d) = host_hash_payload_digest(&p.data);"));
-        assert!(spawn.contains("None => src.to_vec(),"));
+        assert!(spawn.contains("None => host_hash_payload_digest(&p.data),"));
+        assert!(!spawn.contains("src.to_vec()"));
     }
 
     /// WP-A day 64 (`DAY64.md` section 4 step 1; CPU census): the span receipt's phase timing is
@@ -53954,315 +53964,6 @@ mod tests {
         );
     }
 
-    /// WP-A day 51 (`DAY51.md` design P, section 1 (a); CPU census): the payload reserve is the
-    /// copy program. A reserve buffer is written only by `copy_from_slice` of the staged slice and
-    /// a miss allocates with `to_vec`, as before; the refill runs only at the top of the helper's
-    /// loop, before the job is read, and checks the job channel before every buffer; the charge
-    /// is reserved before the first allocation and dropped at the retarget; the ledger's pageable
-    /// capacity carries the reserve's term; nothing decides on the new figures.
-    #[test]
-    fn day51_the_payload_reserve_is_the_copy_program() {
-        let worker = include_str!("worker.rs");
-        let production = &worker[..worker.find("\nmod tests {").unwrap()];
-        let at =
-            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
-        let body = |start: &str| {
-            let a = at(production, start);
-            &production[a..a + production[a..].find("\n    }\n").unwrap()]
-        };
-        // The copy: one take, a hit written from the staged slice, a miss as before.
-        assert_eq!(production.matches("reserve.take(").count(), 1);
-        // (Day 67, `DAY67.md` section 2: the take runs in the job's order before T-H's shares, the
-        // hit's copy inside its share.)
-        let job = &production[at(
-            production,
-            "let mut split = HostHashSplit {\n                        threads,",
-        )..];
-        let take = at(job, "let got = reserve.take(len);");
-        let hit = at(job, "v.copy_from_slice(src);");
-        let miss = at(job, "None => src.to_vec(),");
-        let hash = at(job, "let (n, d) = host_hash_payload_digest(&p.data);");
-        assert!(take < hit && hit < miss && miss < hash);
-        assert_eq!(production.matches("copy_from_slice(src)").count(), 1);
-        // The retarget: after the payload map, before the reply is built.
-        let retarget = at(
-            job,
-            "reserve.after_job(&staged_lengths, split.copy_minflt, split.reserve_hits);",
-        );
-        let reply = at(job, "let reply = HostHashReply {");
-        assert!(hash < retarget && retarget < reply);
-        // The refill: once, at the loop's top, before any job is looked at.
-        assert_eq!(
-            production
-                .matches("reserve.refill_until_job(&jobs_rx)")
-                .count(),
-            1
-        );
-        let spawn = body("    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve)");
-        let refill = at(
-            spawn,
-            "let job = match reserve.refill_until_job(&jobs_rx) {",
-        );
-        let gone = at(spawn, "if fault == Some(HostHashFault::HelperGone) {");
-        assert!(refill < gone);
-        assert!(!spawn.contains("for job in jobs_rx"));
-        let until = body("    fn refill_until_job(");
-        assert!(at(until, "jobs.try_recv()") < at(until, "self.refill_step()"));
-        // The charge before the first allocation; every element written, not a zeroed map.
-        let step = body("    fn refill_step(&mut self) -> bool {");
-        assert!(
-            at(
-                step,
-                "hostprefix::ResidentCharge::reserve(self.governor.clone(), &request)"
-            ) < at(step, "let mut v = Vec::with_capacity(len);")
-        );
-        assert!(step.contains("request.bytes.pageable = self.target_bytes;"));
-        assert!(step.contains("tenant: host_payload_reserve_tenant(),"));
-        assert!(step.contains("v.resize(len, std::hint::black_box(0.0f32));"));
-        assert!(!step.contains("vec![0"));
-        let re = body("    fn retarget(&mut self, lengths: &[usize]) {");
-        assert!(re.contains("self.ready.clear();") && re.contains("self.charge = None;"));
-        assert!(re.contains("if self.target_bytes.saturating_add(bytes) > self.cap {"));
-        // The ledger's third pageable term, and the one production reserve capped at one budget.
-        assert!(production.contains("capacity.pageable = thrice(host_budget)?;"));
-        assert_eq!(production.matches("HostPayloadReserve::new(").count(), 1);
-        assert!(
-            production.contains("HostPayloadReserve::new(governor.clone(), hpx.budget as u64)")
-        );
-        // Log only.
-        for field in [
-            "reserve_hits",
-            "refill_ms",
-            "refill_minflt",
-            "yields",
-            "split.staged",
-        ] {
-            assert!(
-                !production.contains(&format!("if {field}")),
-                "{field} decides nothing"
-            );
-            assert!(
-                !production.contains(&format!("if self.{field}")),
-                "{field} decides nothing"
-            );
-            assert!(
-                !production.contains(&format!("if sp.{field}")),
-                "{field} decides nothing"
-            );
-        }
-        assert!(production.contains("[prefix-host] payload reserve ready: {} buffers"));
-        assert!(production.contains("; reserve {} of {} staged"));
-    }
-
-    /// WP-A day 52 (`DAY52.md` design P2, (a); CPU census): the arming rule reads only the job's
-    /// fresh pages (its copy's faults, and the faults of the refill that wrote the buffers it
-    /// took) against half its staged pages; the state decides only which target the retarget
-    /// takes; the helper passes the job's own split figures.
-    #[test]
-    fn day52_the_arming_rule_reads_only_the_jobs_fresh_pages() {
-        let worker = include_str!("worker.rs");
-        let production = &worker[..worker.find("\nmod tests {").unwrap()];
-        let at =
-            |b: &str, needle: &str| b.find(needle).unwrap_or_else(|| panic!("{needle} missing"));
-        let body = &production[at(production, "    fn after_job(")..];
-        let body = &body[..at(body, "\n    }\n")];
-        assert!(body.contains("let armed = fresh.saturating_mul(2) >= pages;"));
-        assert!(body.contains("if hits > 0 {"));
-        assert!(body.contains("self.refill_minflt"));
-        assert!(body.contains("self.retarget(lengths);") && body.contains("self.retarget(&[]);"));
-        assert_eq!(production.matches("reserve.after_job(").count(), 1);
-        assert!(production.contains(
-            "reserve.after_job(&staged_lengths, split.copy_minflt, split.reserve_hits);"
-        ));
-        // `armed` is read in the rule only: inside the reserve's impl, the rule's two uses.
-        let imp = &production[at(production, "impl HostPayloadReserve {")..];
-        let imp = &imp[..at(imp, "\n}\n")];
-        assert_eq!(imp.matches("self.armed").count(), 2);
-        assert_eq!(imp.matches(".armed").count(), 2);
-        assert!(!imp.contains("if self.armed"));
-        let helper = &production[at(
-            production,
-            "    fn spawn(fault: Option<HostHashFault>, reserve",
-        )..];
-        let helper = &helper[..at(helper, "\n    }\n")];
-        assert!(
-            !helper.contains(".armed"),
-            "the helper loop never reads the state"
-        );
-        assert!(
-            production
-                .contains("[prefix-host] payload reserve {}: the job took {fresh} fresh pages")
-        );
-    }
-
-    /// Day 52 (design P2, (a)): a job whose misses take fresh pages arms (the reserve refills to
-    /// its shape); a job whose hits came from a refill that reused memory disarms (nothing held,
-    /// no charge); a disarmed reserve re-arms on a faulting miss; the boundary is half the pages;
-    /// a job with no staged payload decides nothing.
-    #[test]
-    fn day52_the_reserve_arms_while_copies_fault_and_disarms_on_recycled_memory() {
-        let gov = super::host_tier_governor(0, 1 << 30, 1 << 30, 4).unwrap();
-        let used = || gov.lock().unwrap().used().pageable;
-        let mut r = super::HostPayloadReserve::new(gov.clone(), 1 << 30);
-        let lengths = [1024usize; 8]; // 8 x 4 KiB: 8 pages
-        let (_tx, rx) = std::sync::mpsc::channel::<super::HostHelperJob>();
-        // The first job's misses faulted every page: armed, the target is the job's shape.
-        r.after_job(&lengths, 8, 0);
-        assert!(r.armed && r.owed.len() == 8 && r.target_bytes == 8 * 4096);
-        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
-        assert_eq!((r.ready.len(), used()), (8, 8 * 4096));
-        // Hits whose refill took fresh pages (at least half): still armed.
-        r.refill_minflt = 4;
-        r.after_job(&lengths, 0, 8);
-        assert!(r.armed && r.owed.len() == 8 && r.ready.is_empty());
-        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
-        // Hits whose refill reused memory (3 of 8, under half): disarmed, nothing held.
-        r.refill_minflt = 3;
-        r.after_job(&lengths, 0, 8);
-        assert!(!r.armed && r.owed.is_empty() && r.ready.is_empty() && r.charge.is_none());
-        assert_eq!(used(), 0, "a disarmed reserve holds no charge");
-        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
-        assert!(r.ready.is_empty(), "nothing refills while disarmed");
-        // Misses that reuse memory keep it disarmed; the refill's figures do not count without a hit.
-        r.refill_minflt = 1000;
-        r.after_job(&lengths, 3, 0);
-        assert!(!r.armed && r.owed.is_empty());
-        // A faulting miss re-arms (the boundary: 4 of 8 is half).
-        r.after_job(&lengths, 4, 0);
-        assert!(r.armed && r.owed.len() == 8);
-        // A job with no staged payload decides nothing and leaves nothing held.
-        r.after_job(&[], 0, 0);
-        assert!(r.armed && r.owed.is_empty() && r.ready.is_empty());
-        assert_eq!(used(), 0);
-    }
-
-    /// Day 51 (design P, (a)): a reserve hit carries the staged bytes bitwise, special values
-    /// included, as the miss path's `to_vec` does.
-    #[test]
-    fn day51_a_reserve_hit_is_the_staged_bytes_bitwise() {
-        let mut r = test_payload_reserve();
-        r.retarget(&[5, 1030]);
-        let (_tx, rx) = std::sync::mpsc::channel::<super::HostHelperJob>();
-        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
-        let bits = [
-            0x8000_0000u32, // -0.0
-            0x7fc0_0001,    // a NaN with a payload
-            0xffff_ffff,    // a negative NaN, all payload bits set
-            0x0000_0001,    // the smallest denormal
-            0x7f80_0000,    // +inf
-            0x3f80_0000,    // 1.0
-        ];
-        let src: Vec<f32> = (0..1030)
-            .map(|i| f32::from_bits(bits[i % bits.len()]))
-            .collect();
-        let mut v = r.take(1030).expect("a buffer of the job's length");
-        assert!(
-            v.iter().all(|x| x.to_bits() == 0),
-            "every element written by the refill"
-        );
-        v.copy_from_slice(&src);
-        let miss = src.to_vec();
-        assert!(v.iter().zip(&miss).all(|(a, b)| a.to_bits() == b.to_bits()));
-        assert!(r.take(1030).is_none(), "one buffer per staged length");
-        assert_eq!(r.take(5).map(|v| v.len()), Some(5));
-    }
-
-    /// Day 51 (design P, (a)): the refill yields. A job already waiting is returned before any
-    /// buffer is allocated or any charge taken; a job sent mid-refill is returned before the
-    /// reserve completes, and the refill resumes after it.
-    #[test]
-    fn day51_the_refill_yields_to_a_waiting_job() {
-        let gov = super::host_tier_governor(0, 1 << 30, 1 << 30, 4).unwrap();
-        let mut r = super::HostPayloadReserve::new(gov.clone(), 1 << 30);
-        r.retarget(&[4096; 8]);
-        let (tx, rx) = std::sync::mpsc::channel::<super::HostHelperJob>();
-        let job = || {
-            super::HostHelperJob::Hash(super::HostHashJob {
-                seq: 1,
-                payloads: Vec::new(),
-                leases: Vec::new(),
-            })
-        };
-        tx.send(job()).unwrap();
-        assert!(matches!(r.refill_until_job(&rx), Ok(Some(_))));
-        assert!(r.ready.is_empty() && r.charge.is_none() && r.owed.len() == 8);
-        assert_eq!(gov.lock().unwrap().used().pageable, 0);
-        // One buffer, then a job arrives: it is served before the next buffer.
-        assert!(r.refill_step());
-        tx.send(job()).unwrap();
-        assert!(matches!(r.refill_until_job(&rx), Ok(Some(_))));
-        assert_eq!((r.ready.len(), r.owed.len(), r.yields), (1, 7, 1));
-        // The channel empty again: the refill completes.
-        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
-        assert_eq!((r.ready.len(), r.owed.len()), (8, 0));
-        drop(tx);
-        r.retarget(&[4096]);
-        assert!(
-            matches!(r.refill_until_job(&rx), Err(())),
-            "a closed channel ends the refill"
-        );
-        assert!(
-            r.ready.is_empty(),
-            "nothing allocated once the channel is closed"
-        );
-    }
-
-    /// Day 51 (design P, (a)): the reserve's charge is on the pageable ledger for the whole
-    /// target from its first buffer on, never before the first refill step, and gone after the
-    /// retarget and after the reserve drops (the helper's exit); a refusing governor leaves the
-    /// reserve empty; the reserve never holds more than its cap; a shape change frees the old
-    /// buffers.
-    #[test]
-    fn day51_the_reserve_charge_the_cap_and_the_shape_change() {
-        let gov = super::host_tier_governor(0, 1 << 30, 1 << 30, 4).unwrap();
-        let used = || gov.lock().unwrap().used().pageable;
-        let mut r = super::HostPayloadReserve::new(gov.clone(), 1 << 30);
-        r.retarget(&[1024, 2048]);
-        assert_eq!(used(), 0, "no charge before the first refill step");
-        assert!(r.refill_step());
-        assert_eq!(
-            used(),
-            (1024 + 2048) * 4,
-            "the whole target, from the first buffer on"
-        );
-        assert!(r.refill_step() && !r.refill_step());
-        assert_eq!(used(), (1024 + 2048) * 4);
-        r.retarget(&[3000]);
-        assert_eq!(used(), 0, "the retarget releases the charge");
-        assert!(
-            r.take(1024).is_none() && r.take(2048).is_none(),
-            "the old shape is freed"
-        );
-        let (_tx, rx) = std::sync::mpsc::channel::<super::HostHelperJob>();
-        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
-        assert_eq!(used(), 3000 * 4);
-        assert_eq!(r.take(3000).map(|v| v.len()), Some(3000));
-        drop(r);
-        assert_eq!(used(), 0, "the helper's exit releases the charge");
-        // The cap: the job's order, clamped.
-        let mut r = super::HostPayloadReserve::new(gov.clone(), 10_000);
-        r.retarget(&[1000, 1000, 1000]);
-        assert_eq!((r.owed.len(), r.target_bytes), (2, 8000));
-        assert!(matches!(r.refill_until_job(&rx), Ok(None)));
-        assert_eq!((r.ready.len(), used()), (2, 8000));
-        drop(r);
-        // A refusing governor: a 1000-byte budget has 3000 pageable bytes; 4000 are refused.
-        let small = super::host_tier_governor(0, 1000, 1 << 30, 4).unwrap();
-        let mut r = super::HostPayloadReserve::new(small.clone(), 1 << 20);
-        r.retarget(&[1000]);
-        assert!(!r.refill_step());
-        assert!(r.refused && r.ready.is_empty() && r.take(1000).is_none());
-        assert_eq!(small.lock().unwrap().used().pageable, 0);
-        assert!(
-            matches!(r.refill_until_job(&rx), Ok(None)),
-            "refused: nothing to do"
-        );
-        // The next retarget tries again.
-        r.retarget(&[500]);
-        assert!(r.refill_step());
-        assert_eq!(small.lock().unwrap().used().pageable, 2000);
-    }
-
     /// WP-A day 47 (`DAY47.md` design V, sections 1 and 1a; CPU census): the pause sweep's two shapes
     /// demote off the tick. No pause path takes the on-tick route or starts while a demote or a promote
     /// is in flight (a start would Block-settle it); shape 1 attaches its snapshot shell and the park's
@@ -54462,7 +54163,10 @@ mod tests {
         let armed = at(hashing, "if !host.armed() {");
         let pairs = at(hashing, ".find(|(_, (source, landed))| source != landed)");
         let first_return = at(hashing, "tier.staging_put(buf);");
-        let restore = at(hashing, "host_hash_restore_payload(&mut e, payload)");
+        let restore = at(
+            hashing,
+            "host_hash_restore_payload(&mut e, payload, resident)",
+        );
         assert!(reply < mismatch && mismatch < armed && armed < pairs);
         assert!(pairs < first_return && first_return < restore);
         assert_eq!(hashing.matches("r.quiet.set(true);").count(), 1);
@@ -54574,7 +54278,9 @@ mod tests {
         assert!(take_fn.contains("request.bytes.pinned = bytes as u64;"));
         assert!(take_fn.contains("tenant: host_staging_tenant(),"));
         let put_fn = body("    fn staging_put(&self, buf: memra_engine::PinnedHostBuf) {");
-        assert!(put_fn.contains("if !set.latched {\n            set.idle.push(buf);"));
+        assert!(put_fn.contains("self.staging.borrow_mut().put(buf);"));
+        let put = body("    fn put(&mut self, buf: memra_engine::PinnedHostBuf) {");
+        assert!(put.contains("if !self.latched {\n            self.idle.push(buf);"));
         let clear = body("impl HostStaging {");
         assert!(
             at(clear, "self.latched = true;") < at(clear, "self.idle.clear();")
@@ -54846,7 +54552,7 @@ mod tests {
         let src = include_str!("worker.rs");
         let production = &src[..src.find("\nmod tests {").unwrap()];
         let at = production
-            .find("    fn spawn(fault: Option<HostHashFault>, reserve: HostPayloadReserve)")
+            .find("    fn spawn(fault: Option<HostHashFault>)")
             .unwrap();
         let spawn = &production[at..at + production[at..].find("\n    }\n").unwrap()];
         let sources = spawn.find("HostHelperJob::Sources(job) => {").unwrap();
@@ -54865,9 +54571,7 @@ mod tests {
         assert!(cleared < gone);
         // Behaviour: under each Sources fault a Hash job runs clean (its reply lands).
         for f in [H::SourcesGone, H::SourcesNeverLand, H::SourcesForeignReply] {
-            let helper =
-                super::HostHashWorker::spawn(Some(f), super::tests::test_payload_reserve())
-                    .unwrap();
+            let helper = super::HostHashWorker::spawn(Some(f)).unwrap();
             helper
                 .submit(super::HostHashJob {
                     seq: 9,
@@ -55046,7 +54750,8 @@ mod tests {
                 ".submit_h2d_spans_filled(&pending.ticket, spans, fills)"
             ) < at(attach, "Err(host_promote_contract_abort(")
         );
-        assert!(attach.contains("staged.bufs.push((slot, span.source));"));
+        // (Day 71, F2.2: a span's source goes back through `push_source`, staging to the set.)
+        assert!(attach.contains("staged.push_source(slot, span.source);"));
         let fault = at(
             attach,
             "pending.fault == Some(HostContractFault::PromoteSpanAttach)",
@@ -55146,9 +54851,8 @@ mod tests {
             transfers: Some(std::cell::RefCell::new(transfers)),
             inflight,
             fault: std::cell::Cell::new(None),
-            hasher: super::HostHashWorker::spawn(None, super::tests::test_payload_reserve())
-                .unwrap(),
-            staging: std::cell::RefCell::new(super::HostStaging::default()),
+            hasher: super::HostHashWorker::spawn(None).unwrap(),
+            staging: std::rc::Rc::new(std::cell::RefCell::new(super::HostStaging::default())),
             lease_pool: None,
         }
     }
@@ -56801,7 +56505,8 @@ mod tests {
         };
         match plane {
             Some(super::HostF32::Heap(v)) => v,
-            _ => panic!("{slot:?}: no resident heap plane"),
+            Some(super::HostF32::Resident(r)) => r.as_f32_slice(),
+            _ => panic!("{slot:?}: no resident plane"),
         }
     }
 
@@ -56871,7 +56576,7 @@ mod tests {
             &image,
             Some((tier, super::HostTierEntryClass::MtpDraft)),
             super::ContractH2d::OffTick,
-            Some(staged),
+            Some(super::HostPromoteSpans::Staged(staged)),
         )
         .expect("the contract-routed promote with spans submits");
         let pending = pending.expect("the contract route");
@@ -56932,6 +56637,121 @@ mod tests {
         assert_eq!(gpu_used(&host), (gpu_lease_charge() + span_bytes, 0, 0));
         drop(image);
         host.disable("day-32 cell: the latch releases the staging charge");
+        assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
+    /// WP-A day 71 (`DAY71.md` design F2, cell (a), on a card): an entry whose recurrent planes are
+    /// resident in pinned memory (each a staging buffer lent by the set, as the off-tick demote
+    /// leaves them) promotes with its spans reading those buffers in place: no staging taken, no
+    /// fill. Every promoted plane is bitwise the resident bytes; the resident payloads keep their
+    /// bytes and come home to the set when the image drops; the set's charge is unchanged throughout.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_c_resident_spans_read_the_entry_in_place() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, want) = gpu_entry(&engine);
+        let recur = gpu_recurrent(&engine, &mut entry, None);
+        let mut image = gpu_contract_image(&engine, &mut host, &mut entry);
+        let tier = host.tier.as_ref().unwrap();
+        // The off-tick demote's result, built here: each heap plane moves into a lent staging buffer.
+        let mut resident = Vec::new();
+        for (slot, _) in &recur {
+            let row = match *slot {
+                super::HostHashSlot::Conv(i) => &mut image.conv[i],
+                super::HostHashSlot::Ssm(i) => &mut image.ssm[i],
+                _ => unreachable!(),
+            };
+            let words = match row.take() {
+                Some(super::HostF32::Heap(v)) => v,
+                _ => panic!("{slot:?}: a heap plane"),
+            };
+            let (mut buf, _) = tier.staging_take(words.len() * 4).unwrap();
+            buf.copy_from_slice(super::f32s_as_bytes(&words)).unwrap();
+            let lent = super::HostResidentF32::lend(buf, tier);
+            resident.push((*slot, lent.shared().clone()));
+            *row = Some(super::HostF32::Resident(lent));
+        }
+        let span_bytes: u64 = recur.iter().map(|(_, p)| p.len() as u64 * 4).sum();
+        {
+            let set = tier.staging.borrow();
+            assert_eq!(set.idle.len(), 0, "every buffer lent to the image");
+            assert_eq!(set.charged, span_bytes);
+        }
+        let (mut shell, pending) = super::device_entry_from_host_parts(
+            &engine,
+            &image,
+            Some((tier, super::HostTierEntryClass::MtpDraft)),
+            super::ContractH2d::OffTick,
+            Some(super::HostPromoteSpans::Resident(resident)),
+        )
+        .expect("the contract-routed promote with resident spans submits");
+        let pending = pending.expect("the contract route");
+        let slots: Vec<super::HostHashSlot> = recur.iter().map(|(s, _)| *s).collect();
+        assert_eq!(
+            pending.spans.iter().map(|(s, _, _)| *s).collect::<Vec<_>>(),
+            slots,
+            "every recurrent plane rides the ticket"
+        );
+        assert_eq!(tier.staging.borrow().idle.len(), 0, "no staging taken");
+        let (kv, draft, landed) =
+            match super::host_kv_planes_settle_promote(tier, pending, super::ContractWait::Block) {
+                Ok(super::PromoteSettle::Done(kv, draft, landed)) => (kv, draft, landed),
+                Ok(super::PromoteSettle::Pending(_)) => {
+                    panic!("a blocking settle came back pending")
+                }
+                Err(e) => panic!("the settle failed: {e:?}"),
+            };
+        for ((slot, destination), (_, pattern)) in landed.iter().zip(&recur) {
+            let promoted = engine.stream().clone_dtoh(destination).unwrap();
+            assert_eq!(
+                f32_bits(&promoted),
+                f32_bits(gpu_resident(&image, *slot)),
+                "{slot:?}: the promoted plane is the resident bytes, bit for bit"
+            );
+            assert_eq!(f32_bits(&promoted), f32_bits(pattern));
+            assert_eq!(
+                f32_bits(gpu_resident(&image, *slot)),
+                f32_bits(pattern),
+                "{slot:?}: the resident payload keeps its bytes"
+            );
+        }
+        shell.kv = kv;
+        shell.draft = draft;
+        assert!(
+            gpu_entry_whole(&engine, &shell, &want),
+            "every KV plane whole"
+        );
+        {
+            let set = tier.staging.borrow();
+            assert_eq!(
+                set.idle.len(),
+                0,
+                "the spans' shares went back to the image"
+            );
+            assert_eq!(set.charged, span_bytes, "the charge unchanged");
+        }
+        drop((shell, landed));
+        drop(image);
+        {
+            let set = tier.staging.borrow();
+            assert_eq!(
+                set.idle.len(),
+                recur.len(),
+                "every resident payload came home to the set"
+            );
+            assert_eq!(set.charged, span_bytes);
+        }
+        assert_eq!(
+            gpu_used(&host),
+            (span_bytes, 0, 0),
+            "the set's charge alone"
+        );
+        host.disable("day-71 cell: the latch releases the staging charge");
         assert_eq!(gpu_used(&host), (0, 0, 0));
     }
 
@@ -57007,6 +56827,73 @@ mod tests {
         drop(shell);
         drop(image);
         assert_eq!(gpu_used(&host), (0, 0, 0));
+    }
+
+    /// WP-A day 71 (`DAY71.md` design F2, cell (a), on a card): an off-tick demote with recurrent
+    /// planes through the production driver under `Poll` publishes an entry whose recurrent planes
+    /// are its landed staging buffers, resident and bitwise the device planes, with nothing copied
+    /// to the heap: the set lends every buffer (none idle) and keeps its charge, and when the
+    /// entry drops, every buffer comes home to the set.
+    #[test]
+    #[ignore = "requires one CUDA device; run on the target card under the rig lock"]
+    fn option_b_published_spans_stay_resident_in_their_staging() {
+        let engine = Engine::new(0).expect("device0");
+        let generation = Arc::new(());
+        let mut host = super::HostPrefixCache::new(1 << 30);
+        host.model_generations
+            .insert("m".into(), generation.clone());
+        host.tier = Some(gpu_contracts_context(&engine, "m", generation, 3));
+        let (mut entry, _want) = gpu_entry(&engine);
+        let recur = gpu_recurrent(&engine, &mut entry, None);
+        super::host_demote_prefix_entry(&engine, &mut host, entry);
+        let t0 = std::time::Instant::now();
+        let outcome = loop {
+            let outcome = super::host_demote_settle_with(
+                &mut host,
+                super::ContractWait::Poll,
+                "the day-71 cell",
+                super::host_kv_planes_settle_contract,
+            );
+            match outcome {
+                Some(super::HostDemoteOutcome::Demoting) => {
+                    assert!(t0.elapsed().as_secs() < 20, "the demote never settled");
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+                other => break other,
+            }
+        };
+        assert_eq!(outcome, Some(super::HostDemoteOutcome::Demoted));
+        let span_bytes: u64 = recur.iter().map(|(_, p)| p.len() as u64 * 4).sum();
+        {
+            let published: Vec<&super::HostPrefixEntry> = host.entries.values().flatten().collect();
+            assert_eq!(published.len(), 1);
+            for (slot, pattern) in &recur {
+                let row = match *slot {
+                    super::HostHashSlot::Conv(i) => published[0].conv[i].as_ref(),
+                    super::HostHashSlot::Ssm(i) => published[0].ssm[i].as_ref(),
+                    _ => unreachable!(),
+                };
+                let Some(super::HostF32::Resident(r)) = row else {
+                    panic!("{slot:?}: the landed span stays resident")
+                };
+                assert_eq!(
+                    f32_bits(r.as_f32_slice()),
+                    f32_bits(pattern),
+                    "{slot:?}: bit for bit"
+                );
+            }
+            let set = host.tier.as_ref().unwrap().staging.borrow();
+            assert_eq!(set.idle.len(), 0, "every buffer lent to the entry");
+            assert_eq!(set.charged, span_bytes, "the set keeps its charge");
+        }
+        host.entries.clear();
+        {
+            let set = host.tier.as_ref().unwrap().staging.borrow();
+            assert_eq!(set.idle.len(), recur.len(), "every buffer came home");
+            assert_eq!(set.charged, span_bytes);
+        }
+        host.disable("day-71 cell: the latch releases the staging charge");
+        assert_eq!(gpu_used(&host).0, 0);
     }
 
     /// WP-A day 35 (`DAY35.md` design M, acceptance (a) on a card): an off-tick demote through the
@@ -57148,7 +57035,7 @@ mod tests {
             &image,
             Some((tier, super::HostTierEntryClass::MtpDraft)),
             super::ContractH2d::OffTick,
-            Some(staged),
+            Some(super::HostPromoteSpans::Staged(staged)),
         ) {
             Err(super::HostPromoteFailure::Refused(why)) => assert_eq!(
                 why,
@@ -57180,7 +57067,7 @@ mod tests {
             &image,
             Some((tier, super::HostTierEntryClass::MtpDraft)),
             super::ContractH2d::OffTick,
-            Some(staged),
+            Some(super::HostPromoteSpans::Staged(staged)),
         )
         .expect("the next promote submits");
         let landed = match super::host_kv_planes_settle_promote(
@@ -57231,7 +57118,7 @@ mod tests {
             &image,
             Some((tier, super::HostTierEntryClass::MtpDraft)),
             super::ContractH2d::OffTick,
-            Some(staged),
+            Some(super::HostPromoteSpans::Staged(staged)),
         )
         .expect("submitted");
         match super::host_kv_planes_settle_promote(
@@ -57268,7 +57155,7 @@ mod tests {
             &image,
             Some((tier, super::HostTierEntryClass::MtpDraft)),
             super::ContractH2d::OffTick,
-            Some(staged),
+            Some(super::HostPromoteSpans::Staged(staged)),
         )
         .expect("submitted");
         let landed = match super::host_kv_planes_settle_promote(
@@ -58067,19 +57954,11 @@ mod tests {
             .unwrap()
             .reserve(&request(budget as u64, 500))
             .unwrap();
-        // A third whole-budget charge fits the ledger's third term on both host dimensions (the lease
-        // pool's on the pinned one, design L of WP-A day 63; the payload reserve's on the pageable
-        // one, design P2 re-applied on day 67); a fourth is what neither could make room for.
-        let third = governor
-            .lock()
-            .unwrap()
-            .reserve(&request(budget as u64, 0))
-            .unwrap();
+        // A third whole-budget charge is what the LRU could never have made room for.
         assert_eq!(
             governor.lock().unwrap().reserve(&request(1, 0)).err(),
             Some(Error::Capacity)
         );
-        governor.lock().unwrap().release(&third).unwrap();
         governor.lock().unwrap().release(&resident).unwrap();
         governor.lock().unwrap().release(&incoming).unwrap();
         assert_eq!(governor.lock().unwrap().used().pinned, 0);
@@ -58551,6 +58430,64 @@ mod tests {
         ));
         assert!(h.promoted_pin.is_some());
         assert_eq!(px.entries[&beta][0].pins, 1);
+    }
+
+    /// WP-A day 71 (`DAY71.md` design F2, cell (a), CPU census): under the door a landed span is
+    /// hashed in place and kept as the entry's resident pinned payload (never copied to the heap);
+    /// its buffer comes home to the span staging set when the entry drops it; the residency charge
+    /// takes the spanned bytes off the pageable remainder; and a promote of a resident entry reads
+    /// its payloads in place through the unfilled attach, taking no staging and running no fill.
+    #[test]
+    fn day71_a_landed_span_stays_resident_and_the_promote_reads_it_in_place() {
+        let src = include_str!("worker.rs");
+        let code = &src[..src.find("#[cfg(test)]\nmod tests").unwrap()];
+        let body = |sig: &str| {
+            let at = code.find(sig).unwrap_or_else(|| panic!("{sig}"));
+            &code[at..at + code[at..].find("\n}\n").unwrap()]
+        };
+        let helper = body("    fn spawn(fault: Option<HostHashFault>) -> Result<Self, String> {");
+        assert!(
+            helper.contains("Some(staged) => host_hash_payload_digest(staged.as_f32_slice()),")
+        );
+        assert!(
+            !helper.contains("src.to_vec()"),
+            "no landed span is copied to the heap"
+        );
+        let hashing = body("fn host_demote_settle_hashing(");
+        let lend = hashing
+            .find("HostResidentF32::lend(buf, tier)")
+            .expect("the span stays resident");
+        assert!(
+            lend < hashing
+                .find("host_hash_restore_payload(&mut e, payload, resident)")
+                .unwrap()
+        );
+        let restore = body("fn host_hash_restore_payload(");
+        assert!(restore.contains("*slot = HostF32::Resident(resident.expect(\"checked above\"));"));
+        let back = body("impl Drop for HostResidentF32 {");
+        assert!(back.contains("std::rc::Rc::try_unwrap(rc)"));
+        assert!(back.contains("Some(set) => set.borrow_mut().put(buf),"));
+        assert!(
+            code.contains(".and_then(|n| n.checked_sub(spanned))"),
+            "the spanned bytes"
+        );
+        let stage = body("fn host_promote_stage(");
+        let resident = stage
+            .find("return Ok(Some(HostPromoteSpans::Resident(resident)));")
+            .unwrap();
+        assert!(
+            resident < stage.find("tier.staging_take(n)").unwrap(),
+            "no staging taken"
+        );
+        let submit = body("fn host_h2d_spans_submit_resident(");
+        assert!(submit.contains(".submit_h2d_spans(&pending.ticket, spans)"));
+        assert!(!submit.contains("submit_h2d_spans_filled"), "no fill");
+        assert!(submit.contains("H2dSource::Resident(shared)"));
+        let parts = body("fn device_entry_from_host_parts(");
+        assert!(
+            parts.find("host_h2d_spans_submit_resident(").unwrap()
+                < parts.find("host_h2d_spans_submit(\n").unwrap()
+        );
     }
 
     /// WP-A day 69 (`DAY69.md` design P, cell (c), CPU census): the purge's last work is the scrub,
