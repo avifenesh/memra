@@ -215,6 +215,7 @@ fn run_conv(
     weight: &CudaSlice<u8>,
     bias: &CudaSlice<u8>,
     spec: ConvSpec,
+    force_direct: bool,
 ) -> Result<CudaSlice<f32>, Fail> {
     let rows = spec.validate(input.len(), weight.len(), bias.len())?;
     engine.gpu.ctx.bind_to_thread()?;
@@ -225,16 +226,20 @@ fn run_conv(
     ensure_finite(engine, input)?;
     // The safetensors weight row is `[out,in,3]`, exactly the contiguous
     // `[out,in*3]` matrix consumed by the existing BF16 GEMM.
-    let columns = im2col(engine, input, spec, rows)?;
-    let output = match engine.bf16_tc_gemm(
-        weight,
-        &columns,
-        rows,
-        spec.in_channels * 3,
-        spec.out_channels,
-    )? {
-        Some(projected) => epilogue(engine, &projected, bias, rows, spec.out_channels)?,
-        None => direct(engine, input, weight, bias, spec, rows)?,
+    let output = if force_direct {
+        direct(engine, input, weight, bias, spec, rows)?
+    } else {
+        let columns = im2col(engine, input, spec, rows)?;
+        match engine.bf16_tc_gemm(
+            weight,
+            &columns,
+            rows,
+            spec.in_channels * 3,
+            spec.out_channels,
+        )? {
+            Some(projected) => epilogue(engine, &projected, bias, rows, spec.out_channels)?,
+            None => direct(engine, input, weight, bias, spec, rows)?,
+        }
     };
     ensure_finite(engine, &output)?;
     Ok(output)
@@ -250,6 +255,26 @@ impl MiMoAudioCodecEncoderWeights {
         engine: &Engine,
         mel: &CudaSlice<f32>,
         mel_frames: usize,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        self.encode_prepared_mel_conv_mode(engine, mel, mel_frames, false)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn encode_prepared_mel_conv_direct(
+        &self,
+        engine: &Engine,
+        mel: &CudaSlice<f32>,
+        mel_frames: usize,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        self.encode_prepared_mel_conv_mode(engine, mel, mel_frames, true)
+    }
+
+    fn encode_prepared_mel_conv_mode(
+        &self,
+        engine: &Engine,
+        mel: &CudaSlice<f32>,
+        mel_frames: usize,
+        force_direct: bool,
     ) -> Result<CudaSlice<f32>, Fail> {
         if self.device_ordinal != engine.stream().context().ordinal() {
             return Err("MiMo codec encoder weight GPU changed".into());
@@ -267,6 +292,7 @@ impl MiMoAudioCodecEncoderWeights {
                 out_channels: HIDDEN,
                 stride: first.stride(),
             },
+            force_direct,
         )?;
         run_conv(
             engine,
@@ -279,6 +305,7 @@ impl MiMoAudioCodecEncoderWeights {
                 out_channels: HIDDEN,
                 stride: second.stride(),
             },
+            force_direct,
         )
     }
 }
@@ -369,6 +396,7 @@ mod tests {
                 out_channels: 3,
                 stride: 1,
             },
+            false,
         )?;
         let actual2 = run_conv(
             &engine,
@@ -381,6 +409,7 @@ mod tests {
                 out_channels: 2,
                 stride: 2,
             },
+            false,
         )?;
         let actual = engine.dtoh(&actual2)?;
         assert_eq!(actual.len(), expected2.len());
