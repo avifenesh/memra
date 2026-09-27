@@ -76,17 +76,50 @@ fn normalized_rows(
     Ok(output)
 }
 
+fn matmul_numeric_rows(
+    engine: &Engine,
+    weight: &GpuTensor,
+    input: &CudaSlice<f32>,
+    rows: usize,
+) -> Result<CudaSlice<f32>, Fail> {
+    const ROW_GROUP: usize = 8;
+    let input_width = weight.in_features();
+    let output_width = weight.out_features();
+    if rows == 0
+        || input.len() != rows * input_width
+        || input.ordinal() != engine.stream().context().ordinal()
+        || weight.ordinal() != input.ordinal()
+    {
+        return Err("MiMo numeric row group shape or GPU changed".into());
+    }
+    if rows <= ROW_GROUP {
+        return engine.matmul(weight, input, rows);
+    }
+    let mut result = engine.uninit(rows * output_width)?;
+    for start in (0..rows).step_by(ROW_GROUP) {
+        let count = (rows - start).min(ROW_GROUP);
+        let mut group = engine.uninit(count * input_width)?;
+        engine.dtod_copy_view(
+            &input.slice(start * input_width..(start + count) * input_width),
+            &mut group,
+        )?;
+        let projection = engine.matmul(weight, &group, count)?;
+        engine.dtod_copy_into(&projection, &mut result, start * output_width)?;
+    }
+    Ok(result)
+}
+
 fn dense_rows(
     engine: &Engine,
     input: &CudaSlice<f32>,
     weights: &MiMoDenseWeights,
     rows: usize,
 ) -> Result<CudaSlice<f32>, Fail> {
-    let gate = engine.matmul(&weights.gate, input, rows)?;
-    let up = engine.matmul(&weights.up, input, rows)?;
+    let gate = matmul_numeric_rows(engine, &weights.gate, input, rows)?;
+    let up = matmul_numeric_rows(engine, &weights.up, input, rows)?;
     let mut activated = engine.uninit(rows * 16_384)?;
     engine.silu_mul(&gate, &up, &mut activated, rows * 16_384)?;
-    engine.matmul(&weights.down, &activated, rows)
+    matmul_numeric_rows(engine, &weights.down, &activated, rows)
 }
 
 fn check_step(
@@ -338,7 +371,7 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 .attention
                 .qkv
                 .iter()
-                .map(|shard| engine.matmul(shard, &norm, tokens))
+                .map(|shard| matmul_numeric_rows(engine, shard, &norm, tokens))
                 .collect::<Result<Vec<_>, _>>()?;
             let mut qkv = engine.mimo_gather_qkv(
                 [
@@ -428,7 +461,8 @@ impl<'a> MiMoCompressedTextForward<'a> {
                 &context,
             )?;
             drop((qkv, projections, norm));
-            let attention_output = engine.matmul(&row.attention.output, &context, tokens)?;
+            let attention_output =
+                matmul_numeric_rows(engine, &row.attention.output, &context, tokens)?;
             #[cfg(test)]
             trace_stage(
                 &mut self.trace_stages,
@@ -1128,6 +1162,7 @@ mod tests {
     fn first_batch_128_packed_diagnostic() -> Result<(), Fail> {
         use std::path::Path;
         use std::sync::Arc;
+        use std::time::Instant;
 
         use memra_gguf::source::SafetensorsSource;
 
@@ -1140,21 +1175,38 @@ mod tests {
         let text = MiMoTextWeights::load(engines, source)?;
         let ids = (42..42 + TOKENS as u32).collect::<Vec<_>>();
         let prepared = text.modal_embedding_gpu_chunk(&cards[0], &ids, &[], &[], &[])?;
-        let (batched, batched_next, batched_rows, batched_stages) = {
+        let (batched, batched_next, batched_rows, batched_stages, batch_ms) = {
             let mut sequence = text.compressed_text_forward(engines, TOKENS + 1, [FOUR_GIB; 2])?;
             sequence.trace_position = Some(TOKENS - 1);
             sequence.batch_packed_attention = true;
+            let start = Instant::now();
             let step = sequence.consume_embedding_chunk_batched(&prepared)?;
+            let batch_ms = start.elapsed().as_secs_f64() * 1e3;
             let next = sequence.token(220)?;
-            (step, next, sequence.trace_rows, sequence.trace_stages)
+            (
+                step,
+                next,
+                sequence.trace_rows,
+                sequence.trace_stages,
+                batch_ms,
+            )
         };
-        let (serial, serial_next, serial_rows, serial_stages) = {
+        let (serial, serial_next, serial_rows, serial_stages, serial_ms) = {
             let mut sequence = text.compressed_text_forward(engines, TOKENS + 1, [FOUR_GIB; 2])?;
             sequence.trace_position = Some(TOKENS - 1);
+            let start = Instant::now();
             let step = sequence.consume_embedding_chunk(&prepared)?;
+            let serial_ms = start.elapsed().as_secs_f64() * 1e3;
             let next = sequence.token(220)?;
-            (step, next, sequence.trace_rows, sequence.trace_stages)
+            (
+                step,
+                next,
+                sequence.trace_rows,
+                sequence.trace_stages,
+                serial_ms,
+            )
         };
+        println!("mimo_packed_128\tbatch_ms={batch_ms:.6}\tserial_ms={serial_ms:.6}");
         let compare = |candidate: &[f32], control: &[f32]| {
             let (diff, base, matching) = candidate.iter().zip(control).fold(
                 (0.0f64, 0.0f64, 0usize),
