@@ -83,12 +83,29 @@ def check_shards(lock, shards):
         R.B.require(R.sha(path) == f["sha256"], f"{path}: sha256 != the pinned {f['sha256']}")
 
 
+def cgroup_limit():
+    """This process's cgroup v2 `memory.max` in bytes, or None when unlimited or unreadable."""
+    try:
+        rel = next(l.split(":", 2)[2] for l in Path("/proc/self/cgroup").read_text().splitlines()
+                   if l.startswith("0::"))
+        raw = (Path("/sys/fs/cgroup") / rel.lstrip("/") / "memory.max").read_text().strip()
+    except (OSError, StopIteration):
+        return None
+    return None if raw == "max" else int(raw)
+
+
 def check_ram(lock):
+    """Section H: the regime is storage-bound only if the page cache cannot hold the bank. The
+    ceiling is the smaller of MemTotal (a `mem=` boot shrinks it) and the cell's cgroup limit (a
+    container's own limit); the record names which one bound it."""
     total = int(next(l for l in Path("/proc/meminfo").read_text().splitlines()
                      if l.startswith("MemTotal:")).split()[1]) * 1024
+    limit = cgroup_limit()
+    ceiling, bound = (limit, "cgroup memory.max") if limit is not None and limit < total else (total, "MemTotal")
     bank = lock["artifact"]["expert_bank_bytes"]
-    R.B.require(total < bank, f"MemTotal {total} is not below the expert bank {bank}: not storage-bound")
-    return {"mem_total_bytes": total, "expert_bank_bytes": bank, "cache_ceiling_fraction": total / bank}
+    R.B.require(ceiling < bank, f"{bound} {ceiling} is not below the expert bank {bank}: not storage-bound")
+    return {"mem_total_bytes": total, "cgroup_memory_max_bytes": limit, "ceiling_bytes": ceiling,
+            "bound_by": bound, "expert_bank_bytes": bank, "cache_ceiling_fraction": ceiling / bank}
 
 
 def reference(a):

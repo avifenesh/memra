@@ -35,11 +35,13 @@ col() {  # col NAME TIMEOUT -- command...  (a collector cell on the proven scrat
     --storage-root "$S" --storage-proof "$R/m1-proof/PROOF.json" --out "$R/$name" --execute "$@"
 }
 
-# 0. The storage-bound precondition: host RAM below the expert bank (section H).
+# 0. The storage-bound precondition (section H and its market amendment): the page cache ceiling,
+#    the smaller of MemTotal (`mem=` on a box whose kernel is ours) and this cell's cgroup limit,
+#    must be below the expert bank.
 step ram python3 -c "
-import json;b=json.load(open('$L'))['artifact']['expert_bank_bytes']
-t=int([l for l in open('/proc/meminfo') if l.startswith('MemTotal:')][0].split()[1])*1024
-print(json.dumps({'mem_total_bytes':t,'expert_bank_bytes':b}));raise SystemExit(0 if t<b else 3)"
+import importlib.util,json
+s=importlib.util.spec_from_file_location('s','$F/owed20/m1-step-runner.py');m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+print(json.dumps(m.check_ram(json.load(open('$L')))))"
 
 # 1. Build and freeze the binaries (the OWED 26 fix build).
 git rev-parse HEAD > "$R/commit.txt"

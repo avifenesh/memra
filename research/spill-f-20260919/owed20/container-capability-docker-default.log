@@ -1,0 +1,24 @@
+Unable to find image 'ubuntu:24.04' locally
+24.04: Pulling from library/ubuntu
+edd1ed89f0d4: Pulling fs layer
+afc716ec57df: Download complete
+edd1ed89f0d4: Download complete
+edd1ed89f0d4: Pull complete
+Digest: sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
+Status: Downloaded newer image for ubuntu:24.04
+--- kernel cmdline (the host kernel, shared):
+BOOT_IMAGE=/boot/vmlinuz-7.0.0-34-generic root=UUID=d37aa275-1cb7-4d91-b65b-5813
+--- write vm.nr_hugepages:
+bash: line 3: /proc/sys/vm/nr_hugepages: Read-only file system
+rc=1
+--- /proc/sys mount:
+proc /proc/sys proc ro,nosuid,nodev,noexec,relatime 0 0
+--- cgroup v2 memory.max of this container:
+2147483648
+--- create a child cgroup:
+mkdir: cannot create directory '/sys/fs/cgroup/cell': Read-only file system
+rc=1
+--- /sys/fs/cgroup mount:
+cgroup /sys/fs/cgroup cgroup2 ro,nosuid,nodev,noexec,relatime,nsdelegate,memory_recursiveprot,memory_hugetlb_accounting 0 0
+--- MemTotal seen inside:
+MemTotal:       63857928 kB

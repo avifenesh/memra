@@ -698,3 +698,41 @@ binaries (the build ran in another directory and target dir; no build path strin
 binary, so the exact source of the difference is not established); the source commit is the same. Each pair
 compares buffered and direct inside one binary, so the 8 GiB verdict stands on its own; no cross-size
 statement assumes one binary.
+
+Section H, market amendment (2026-09-27 about 20:00Z, before any rental or run). Fact from the lead:
+every reachable 2x RTX PRO 6000 offer gives the container at least 184 GB of RAM (184, 189, 208,
+220, 249 GB and up), so no offer meets `MemTotal` below the 101,072,240,640-byte bank. Evidence
+gathered here (`owed20/container-capability-docker-default.log`, a default unprivileged Docker
+container on this rig): the container runs the host's kernel (`/proc/cmdline` is the host's), so
+`mem=` cannot apply; `/proc/sys` is mounted read-only, so `vm.nr_hugepages` refuses
+(`Read-only file system`); `/sys/fs/cgroup` is read-only, so no child cgroup with a lower limit;
+and `MemTotal` inside shows the host's RAM while the container's own limit is its cgroup
+`memory.max`. A marketplace box's "RAM" is therefore itself a cgroup limit on a larger host.
+
+The candidates, judged against the point (one real storage-bound regime, no balloon):
+
+1. A larger qualified artifact: none. The disk tier is GGUF-only; the other large models' cards
+   are experimental (DeepSeek-V4-Flash, safetensors-only), NativeReference (GLM-5.3-Flash) or
+   bring-up (Qwen3.8-Flash-Next); Hy3's qualified all-expert payload is 180,826,481,152 bytes
+   (below 184 GB, four cards, safetensors, the Hy3 lane's); Step's Q8_0 and BF16 GGUFs are not
+   qualified and do not fit two cards for the resident reference that gates the disk tier.
+2. `mem=` on a box whose kernel is ours (a VM, including a marketplace VM instance type, or bare
+   metal): the kernel boots with less memory, so `MemTotal` itself is below the bank. This is a
+   smaller machine, not a carve-out, and it is the only form this lane can defend as "no balloon".
+   Registered form: boot with `mem=64G` (page cache ceiling about 55 GB, about half the bank);
+   the sitting's existing check (`MemTotal` below the bank) then passes unchanged.
+3. A hugepage reservation (`vm.nr_hugepages`, or `hugepages=` at boot): memory the page cache
+   cannot use, with global reclaim unchanged. In effect it is the balloon (a carve-out of a larger
+   machine), cleaner to operate but not a different regime; it also needs a kernel of our own. Not
+   proposed as "not a balloon".
+4. A cgroup memory limit on the cell (the 5090 section D bounded mechanism): what a small
+   marketplace box would have been anyway, since marketplace RAM is a cgroup limit. It needs a
+   provider limit below the bank (none offered) or a writable cgroup delegation (not in a default
+   container); its reclaim is per-cgroup direct reclaim rather than a small machine's global
+   reclaim.
+
+Recommendation: 2, which needs a VM or bare-metal rental rather than a container, and changes what
+the pick assumed (a container box under about 128 GB); that is the owner's decision, with 4 as the
+form the pick implicitly assumed if the owner prefers containers and a provider can set the limit.
+The sitting's RAM check also records the cell's effective ceiling, the smaller of `MemTotal` and the
+cell cgroup's `memory.max`, and names which one bound it.
