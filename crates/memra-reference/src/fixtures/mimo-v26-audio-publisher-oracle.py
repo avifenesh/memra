@@ -10,8 +10,9 @@ The mel input is little-endian F32 [frames, 128] without a file header. The
 checked-in mimo-pcm-mel-voiced-2048.logmel.f32 is one deterministic example.
 --stages-dir includes conv1_pre_gelu.bf16 as frame-major BF16 [frames, 1024]
 ([9, 1024] for the checked-in mel) alongside the existing post-GELU conv1
-and later source stages. It also records layer0.bf16 after the first hybrid
-attention transformer layer.
+and later source stages. It records layer 0's attention norm, attention
+projection, MLP norm, fc2 projection, and final output around the first
+hybrid attention transformer layer.
 --conv-linear-control reruns that same pinned encoder and checkpoint with
 conv1 and conv2 computed by BF16 im2col plus F.linear. The receipt records
 both paths' code IDs and stage hashes. With --stages-dir, control tensors go
@@ -403,6 +404,18 @@ def run_publisher(source, encoder, mel, frames, codec, torch, device, capture_st
         def after_layer0(_module, _args, output):
             stage_snapshots["layer0"] = output.detach().clone()
 
+        def after_layer0_attn_norm(_module, _args, output):
+            stage_snapshots["layer0_attn_norm"] = output.detach().clone()
+
+        def after_layer0_attention(_module, _args, output):
+            stage_snapshots["layer0_attention"] = output.detach().clone()
+
+        def after_layer0_mlp_norm(_module, _args, output):
+            stage_snapshots["layer0_mlp_norm"] = output.detach().clone()
+
+        def after_layer0_fc2(_module, _args, output):
+            stage_snapshots["layer0_fc2"] = output.detach().clone()
+
         def after_stack_norm(_module, _args, output):
             stage_snapshots["stack"] = output.detach().clone()
 
@@ -411,6 +424,10 @@ def run_publisher(source, encoder, mel, frames, codec, torch, device, capture_st
             encoder.conv2.register_forward_pre_hook(before_conv2),
             encoder.conv2.register_forward_hook(after_conv2),
             encoder.layers[0].register_forward_pre_hook(before_frontend_layer),
+            encoder.layers[0].self_attn_layer_norm.register_forward_hook(after_layer0_attn_norm),
+            encoder.layers[0].self_attn.register_forward_hook(after_layer0_attention),
+            encoder.layers[0].final_layer_norm.register_forward_hook(after_layer0_mlp_norm),
+            encoder.layers[0].fc2.register_forward_hook(after_layer0_fc2),
             encoder.layers[0].register_forward_hook(after_layer0),
             encoder.layer_norm.register_forward_hook(after_stack_norm),
         ]
@@ -480,6 +497,10 @@ def run_publisher(source, encoder, mel, frames, codec, torch, device, capture_st
             "conv1": [frames, codec["d_model"]],
             "conv2_pre_gelu": [(frames + 1) // 2, codec["d_model"]],
             "frontend": [(frames + 1) // 2, codec["d_model"]],
+            "layer0_attn_norm": [(frames + 1) // 2, codec["d_model"]],
+            "layer0_attention": [(frames + 1) // 2, codec["d_model"]],
+            "layer0_mlp_norm": [(frames + 1) // 2, codec["d_model"]],
+            "layer0_fc2": [(frames + 1) // 2, codec["d_model"]],
             "layer0": [(frames + 1) // 2, codec["d_model"]],
             "stack": [(frames + 1) // 2, codec["d_model"]],
             "pre_rvq": [tokens, codec["d_model"]],
