@@ -118,3 +118,77 @@ GPU. Both registrations said "the 5090 half follows"; this file fixes how, befor
   - o2's first eight (22:27:14Z to 22:44Z), both arms interleaved.
 - Per the lead's W ruling (DAY61 section 4): if any R1 clause's verdict lands in those boots, the cell repeats once in
   a hold without builds. The reading names the verdict per order, so o2 is the order to check.
+
+## 8. The first chain, read as registered (19:42Z on 2026-09-26 to 14:41Z on 2026-09-27)
+
+- Chain log `rtx5090-r1/chain-day68.log`. Receipts, the executables recorded by hash only:
+  `rtx5090-r1/cell/`, `rtx5090-l2/cell/`, `rtx5090-day45/cell-20260927/`, and `rtx5090-{s4,v}/cell-not-run/`.
+- **L''s 5090 half: ADOPT.** Verbatim (`rtx5090-l2/cell/reading-l2.log`):
+
+      L READING cell=chain order=o1 twin kv base=13.98 l=0.05 ms (N=95) | long leases base=43.02 l=0.04 ms (N=95, pooled median 32) | stall base=178.70 l=141.57 | e2e base=264.1 l=228.2 | chain base=394.0 l=345.7 ms
+      L READING cell=chain order=o2 twin kv base=15.00 l=0.05 ms (N=95) | long leases base=44.14 l=0.04 ms (N=95, pooled median 32) | stall base=177.10 l=137.90 | e2e base=260.9 l=222.3 | chain base=379.5 l=331.6 ms
+      L (b) PASS [True, True]   L (c) PASS [True, True]   L (d) PASS [True, True, True, True]
+      L2 GATE RED ARM rc=1 staging-fill FAILs=2 of 2 marker=True -> caught (as required)
+      L2 VERDICT -> ADOPT (L' is the naked program; the gate change stands)
+
+  - L' is the naked program on both cards. On the 5090 the chain falls by 48 ms per order, and the twin's kv free
+    and the long leases fall from 14 to 15 and 43 to 44 ms to 0.05 ms.
+- **R1's 5090 half:** (a) passed; the reader's verdict line reads REVERT (b, c, d). Verbatim
+  (`rtx5090-r1/cell/reading-r1.log`): `R1 READING order=o1 mode=retire-seam-nosource | no-source settles base N=0
+  median=nan r1 N=0 skips r1=0 | ..`, the same N=0 in o2, and `R1 (b) FAIL [False, False]`, `R1 (c) FAIL [True, True,
+  True, True, False, True]`, `R1 (d) FAIL [True, True, False, True]`.
+  - Read:
+    - **The shape R1 changes never occurred on this card.** In `retire-seam-nosource`, base has no no-source settle
+      in either order (N=0), and r1 no skip. On the 5090 the seed capture settles at its source's own retire
+      (`source-retire` 45 = 45 in both arms), so no capture is pending when another session retires. R1's branch runs
+      only then, so it ran in neither arm, and both arms made the same settles with the same counts.
+    - (b) fails on that absence (its medians are nan), not on a measured hold.
+    - (c) and (d) fail in one cell, o2 `retire-seam`: the long request's e2e is +18.2 ms against +1.0, and the
+      source-retire hold is +1.91 ms against +1.0. Its per-boot e2e medians spread from 5.4 to 6.4 s in both arms
+      (base 5607, 6142, 6372, 5722, 5756; r1 5405, 5832, 6252, 5710, 5830 ms).
+    - That cell's first boot per arm (22:32Z and 22:34Z) lay inside DAY70's build window (section 7).
+  - **By the lead's W ruling (a clause landed in overlapped boots), the timed cell repeats once in a hold without
+    builds** (section 9). By section 2 a timing clause failed with (a) green is a per-card question, not a revert on the
+    target. So R1 stays on main while it is read.
+  - The repeat cannot read (b) either, because the shape does not occur on this card. That, and whether the 5090 half
+    closes as "R1 unexercised on the 5090" (the same settle program in both arms), is the lead's to rule. It is stated
+    now, before the repeat's numbers.
+- **Item 16 (DAY45): REGIME NOT REPRODUCED.**
+  - Every hump boot started at 80 to 82 C, against the registered 85 C or above. The SM clock medians read 1665 to
+    1792 MHz, under 2000 as required.
+  - Verbatim: `ITEM16 HUMPS {'xbase': (2, 0.639), 'xg3': (2, 1.299), 'xg4': (2, 0.598), 'xgpp': (2, 0.672)}`, then
+    `ITEM16 REGIME NOT REPRODUCED -> nothing is placed; the cell repeats once with the warm-up doubled`.
+  - Nothing is placed. Recorded as it read: every arm humps in this regime, base included (+0.639 ms).
+- **S4's and V's halves: NOT RUN.** Each hold's 180 x 120 s wait expired behind other lanes' holds (08:40:56Z and
+  14:41:25Z; `NOT RUN (hold A): the 5090 lock stayed busy`). Their builds stand.
+
+## 9. The second chain, registered before it runs
+
+- `rtx5090-chain-day68b.sh`, run as the frozen copy `spill-a-cells/chain-day68b.sh`, each part in its own bounded hold
+  (180 x 120 s, the idle rule):
+  1. **R1's timed cell once more** (`ab.sh seam retire-seam-nosource retire-seam prime 448`, 60 boots), with no build
+     of this lane running.
+     - Receipts in `r1/receipts-repeat/`; the binaries and the gates (which stand from the first run) are linked from
+       there.
+     - `r1-reading.py` reads it. The first run's reading stays on record beside it.
+  2. **Item 16 with the warm-up doubled,** as DAY45 section 1 registered: "the promote A/B of the same arms added, 40
+     boots".
+     - `rtx5090-day45/hot-hump-run-2x.sh` is `7b849a817`'s script verbatim, plus that promote A/B (o1 base g4 x5, o2
+       g4 base x5, `--mode promote --n 5`) after the demote warm-up. It runs from the frozen `7b849a817` tree.
+     - A second miss is recorded and goes to the lead with both holds' telemetry, as DAY45 registered.
+  3. **S4's and V's halves,** as section 4 registered them.
+- **Owed after it:** P2's 5090 half, registered next.
+
+## 10. The lead's ruling on R1's 5090 half (2026-09-27)
+
+- **Closed as "R1 unexercised on the 5090". That is not a PASS.**
+  - Zero no-source settles occurred in either arm and either order, so the branch R1 changes never ran. (b) can be
+    neither met nor failed on this card.
+  - R1 stays the naked program everywhere. On the 5090 it runs the same settles as base.
+- **The queued repeat still runs** (section 9, part 1: the whole timed cell, of which o2 `retire-seam` is the
+  question). An e2e of +18.2 ms with identical settles in both arms comes either from this lane's build window
+  (section 7) or from something R1-independent, and the repeat tells which.
+  - If o2 `retire-seam` reads inside the bound with no builds, the first run's failure is placed on the build window.
+  - If it repeats outside the bound with no builds, it is placed as its own finding, not R1's, and registered then.
+- Item 16's `REGIME NOT REPRODUCED` and S4's and V's `NOT RUN` stand as they read (section 8), and section 9's chain
+  runs as queued.

@@ -1,4 +1,4 @@
-# WP-A resumable state (2026-09-27: integ69 merged as b1fcf40aa with P and Q; integ70 takes `lane/spill-a-integ70-20260927` (P2 + the records); F REVERTED; the DAY68 5090 chain running)
+# WP-A resumable state (2026-09-27: T-H' NEED TARGET CARD (the lead rents a clean PRO 6000 WS; lane/spill-a-th2-20260927 67af1b71e); the second DAY68 5090 chain queued; integ70 carries P2 and the records)
 
 - Lane `lane/spill-a-20260919`; worktree `wt-spill-a`. integ67 takes B1 (`e522a9417`, adopted on both cards) and the
   grid refusal (`231fba087`, cherry-picked as 95f275859).
@@ -44,3 +44,11 @@
   lead's CPU battery is its first build. P2 adds no GPU cell (its `day51_`/`day52_` cells are CPU); its 5090 half is
   owed after the DAY68 chain, registered then. `lane/spill-a-p2-20260926` is superseded by it (delete once integ70
   merges).
+
+- **DAY68 first chain read (section 8):** L' ADOPT on the 5090; R1 closed by the lead as "unexercised on the 5090"
+  (not a PASS; section 10), its timed cell repeating once without builds to place o2 `retire-seam`'s +18.2 ms; item 16
+  regime not reproduced; S4 and V not run. **Second chain** (section 9) started 17:10Z from
+  `spill-a-cells/chain-day68b.sh`: R1's cell, item 16 with the warm-up doubled, S4, V. P2's 5090 half after it.
+- **T-H' (DAY65 sections 7 and 8):** sitting ready on `lane/spill-a-th2-20260927` (`67af1b71e`, base `80f734c77`):
+  `build.sh 67af1b71e 80f734c77` then `driver.sh`, last line `TH2 VERDICT -> ..`; the lead rents a clean PRO 6000 WS
+  (not BOX43's machine) and sends the box on acceptance.

@@ -1,0 +1,12 @@
+L (a) UNIT a1-green=0 a2-green=0 a1-red=101 (marker 1) a2-red=101 (marker 1) censuses=0
+L (a) gates {'contract-fault-plain': '0', 'contract-fault': '0', 'failure-off': '0', 'failure-on': '0', 'hitgate-off': '0', 'hitgate-on': '0', 'identity-default-off': '0', 'identity-default-on': '0', 'identity-plain-off': '0', 'identity-plain-on': '0', 'pause-demote': '0'}
+L READING cell=chain order=o1 twin kv base=13.98 l=0.05 ms (N=95) | long leases base=43.02 l=0.04 ms (N=95, pooled median 32) | stall base=178.70 l=141.57 | e2e base=264.1 l=228.2 | chain base=394.0 l=345.7 ms
+L READING cell=demote order=o1 first spans base=45.43 l=0.21 ms (N=5) | boot staging l=42.9 ms | stall base=128.84 l=125.86 | e2e base=349.3 l=344.9 ms
+L READING cell=chain order=o2 twin kv base=15.00 l=0.05 ms (N=95) | long leases base=44.14 l=0.04 ms (N=95, pooled median 32) | stall base=177.10 l=137.90 | e2e base=260.9 l=222.3 | chain base=379.5 l=331.6 ms
+L READING cell=demote order=o2 first spans base=46.27 l=0.20 ms (N=5) | boot staging l=42.7 ms | stall base=130.05 l=125.71 | e2e base=354.7 l=343.2 ms
+L (b) PASS [True, True]
+L (c) PASS [True, True]
+L (d) PASS [True, True, True, True]
+L VERDICT -> ADOPT (L is the naked program)
+L2 GATE RED ARM rc=1 staging-fill FAILs=2 of 2 marker=True -> caught (as required)
+L2 VERDICT -> ADOPT (L' is the naked program; the gate change stands)
