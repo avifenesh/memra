@@ -77,20 +77,22 @@ fn run() -> Result<(), Fail> {
     let mut args = std::env::args().skip(1);
     let dir = args
         .next()
-        .ok_or("usage: mimo_combined_modal_source_probe <source_dir> [--rgb8 | --raw-modal <absolute-mkl-path>]")?;
-    let (rgb8, raw_modal, mkl_path) = match args.next().as_deref() {
-        None => (false, false, None),
-        Some("--rgb8") => (true, false, None),
+        .ok_or("usage: mimo_combined_modal_source_probe <source_dir> [--s5-v | --rgb8 | --raw-modal <absolute-mkl-path>]")?;
+    let (rgb8, raw_modal, mkl_path, s5_v) = match args.next().as_deref() {
+        None => (false, false, None, false),
+        Some("--s5-v") => (false, false, None, true),
+        Some("--rgb8") => (true, false, None, false),
         Some("--raw-modal") => (
             true,
             true,
             Some(args.next().ok_or(
                 "usage: mimo_combined_modal_source_probe <source_dir> --raw-modal <absolute-mkl-path>",
             )?),
+            false,
         ),
         _ => {
             return Err(
-                "usage: mimo_combined_modal_source_probe <source_dir> [--rgb8 | --raw-modal <absolute-mkl-path>]"
+                "usage: mimo_combined_modal_source_probe <source_dir> [--s5-v | --rgb8 | --raw-modal <absolute-mkl-path>]"
                     .into(),
             );
         }
@@ -110,7 +112,7 @@ fn run() -> Result<(), Fail> {
     };
     if args.next().is_some() {
         return Err(
-            "usage: mimo_combined_modal_source_probe <source_dir> [--rgb8 | --raw-modal <absolute-mkl-path>] [--vision-f32le <absolute-output-path>]"
+            "usage: mimo_combined_modal_source_probe <source_dir> [--s5-v | --rgb8 | --raw-modal <absolute-mkl-path>] [--vision-f32le <absolute-output-path>]"
                 .into(),
         );
     }
@@ -123,7 +125,9 @@ fn run() -> Result<(), Fail> {
     }
     println!(
         "format\t{}",
-        if raw_modal {
+        if s5_v {
+            "memra-mimo-combined-modal-source-s5-g16-experiment-v1"
+        } else if raw_modal {
             "memra-mimo-combined-modal-source-raw-modal-v1"
         } else if rgb8 {
             "memra-mimo-combined-modal-source-rgb8-v1"
@@ -152,7 +156,11 @@ fn run() -> Result<(), Fail> {
     cards[1].gpu.ctx.bind_to_thread()?;
     let workspace1 = cards[1].alloc_u8_uninit(FOUR_GIB)?;
     record(engines, "workspace4g", false)?;
-    let mut text_sequence = text.compressed_text_forward(engines, FULL_CONTEXT, [FOUR_GIB; 2])?;
+    let mut text_sequence = if s5_v {
+        text.compressed_text_forward_s5_g16(engines, FULL_CONTEXT, [FOUR_GIB; 2])?
+    } else {
+        text.compressed_text_forward(engines, FULL_CONTEXT, [FOUR_GIB; 2])?
+    };
     record(engines, "kv1m", true)?;
 
     let (pixels, grids, image_tokens, video_tokens) = if rgb8 {
@@ -342,7 +350,11 @@ fn run() -> Result<(), Fail> {
 
     // MTP3 runs on a separate position-zero text sequence because its
     // per-depth prefix priming and speculative rollback are still missing.
-    let mut mtp_target = text.compressed_text_forward(engines, 1, [FOUR_GIB; 2])?;
+    let mut mtp_target = if s5_v {
+        text.compressed_text_forward_s5_g16(engines, 1, [FOUR_GIB; 2])?
+    } else {
+        text.compressed_text_forward(engines, 1, [FOUR_GIB; 2])?
+    };
     let target = mtp_target.token_with_hidden(42)?;
     let mut draft = mtp.draft_forward(&text, &cards[0], &cards[1])?;
     let mut token = 42u32;
