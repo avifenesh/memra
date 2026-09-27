@@ -21601,9 +21601,11 @@ impl Dsv4Gpu {
     }
 
     /// Whether a TP/EP B-row step over `states` can run a captured graph.
+    /// A captured B-row step takes 2 to 16 rows, the widths its multi-row launches cover (memra
+    /// #710 B-row); a wider batch walks eagerly.
     fn rows_graph_admits(&self, states: &[&mut DecodeState], rows: &VerifyState) -> bool {
         DSV4_ROWS_GRAPH.load(Ordering::Relaxed)
-            && (2..=8).contains(&states.len())
+            && (2..=ROWS_BATCH_MAX).contains(&states.len())
             && self.validate_full_token_program().is_ok()
             && !self.stages.iter().any(|st| st.gpu.ctx.is_event_tracking())
             && rows.ws.iter().all(|ws| !ws.is_prefill)
