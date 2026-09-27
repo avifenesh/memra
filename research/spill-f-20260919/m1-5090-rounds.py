@@ -99,6 +99,7 @@ def main():
     ap.add_argument("--host-mb", type=int)
     ap.add_argument("--tenant-pct", type=int)
     ap.add_argument("--arm", help="spec regime: the F lock arm to run run-spec with")
+    ap.add_argument("--mirror", help="copy each finished cell (and the waits log) here at once (after the 2026-09-27 scratch loss)")
     a = ap.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -193,6 +194,17 @@ def main():
                                       "seconds": YIELD_S}) + "\n")
                 log.flush()
                 time.sleep(YIELD_S)
+            if a.mirror:
+                import shutil
+                dest = Path(a.mirror)
+                dest.mkdir(parents=True, exist_ok=True)
+                for src in [target, out / f"round-{k:02d}.driver-attempt{attempt}.log"]:
+                    if src.is_dir():
+                        shutil.copytree(src, dest / src.name, dirs_exist_ok=True)
+                    elif src.exists():
+                        shutil.copy2(src, dest / src.name)
+                log.flush()
+                shutil.copy2(out / "waits.jsonl", dest / "waits.jsonl")
             log.write(json.dumps({"utc": now(), "event": "yield", "after_round": k, "seconds": YIELD_S,
                                   "why": "release the shared card between registered cells"}) + "\n")
             log.flush()

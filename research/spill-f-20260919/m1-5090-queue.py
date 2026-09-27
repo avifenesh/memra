@@ -46,6 +46,7 @@ def steps(rec, first_rounds="1-10", bounded_bytes=None, over=None):
         ("g2", lambda: rounds("g2", "g2", "--memory-max", CAP)),
         ("f17", lambda: rounds("f17", "f17", "--memory-max", CAP, "--rounds", over.get("f17", "1-10"))),
         ("handoff-8g", lambda: rounds("handoff", "handoff-8g", "--memory-max", CAP, "--rounds", over.get("handoff-8g", "1-10"),
+                                      "--mirror", str(HERE / "owed18/5090/handoff-8g"),
                                       "--size-bytes", str(8 << 30), "--host-mb", "12288", "--tenant-pct", "100")),
 
     ]
