@@ -1,3 +1,6 @@
+# WP-B checkpoint 2026-09-27 05:0xZ: DAY39 2.4 (the 5090 GREEN; O5 read on both classes) and DAY50 2.2 (the 5090 stage 0:
+arm O on this class too) read; DAY50 addendum C registered (arm O's census, the shadow, stage 1 next); the eighteenth
+sitting (DAY48) queued on BOX43 behind integ71's battery; local: DAY49D, DAY46C, DAY48, queue-m (DAY40), chain-r5 (gates).
 # WP-B checkpoint 2026-09-27 04:3xZ (NEED TARGET CARD, the eighteenth sitting, DAY48): DAY46 2.2 read (the W release
 admits 11 of 32 of the second wave against 1 of 32); DAY48 coded (`5a6f1898f`, after integ71's base 24bddc8cb, so it
 goes into the next integ); the DAY46C and DAY48 local runners run from wt-b-integ71; integ71's battery runs on BOX43.

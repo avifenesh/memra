@@ -238,7 +238,12 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   call is GPU-bound (94.9 to 98.3% busy; host outside the span 0.2 ms), so the rule selects arm O (settles on a second
   stream with its own scratch set). The NVFP4 GEMM's 128-row tile (56 ms for 32 or 64 rows) and the prefill attention at
   long context (127 ms at 122,880) make up the call; a small-M prime kernel that keeps the cold prime's numbers is a
-  recorded candidate. Arm O's design addendum and code are next. The door stays default off. The measurement arms' readings stay banked (DAY41 2.1 and 2.2); `MEMRA_RESUME_GRID_REWIND` stays a
+  recorded candidate. The 5090 class reads the same (DAY50 2.2: 98 to 99% busy). Addendum C records arm O's
+  precondition census: the per-device prime slabs, the Engine-held workspaces and `verify_exact` (a second Engine on the
+  same device, as PP does), the eager path for settles, explicit cross-stream events, and the shadow the settle must
+  write into. Stage 1 (the KV bytes per row, the prefix D2D copy time, whether the prefill attention takes two planes,
+  the decode TPOT beside a second-stream prime) comes before the design is final. Price revised to 4 to 6 agent-days.
+  The door stays default off. The measurement arms' readings stay banked (DAY41 2.1 and 2.2); `MEMRA_RESUME_GRID_REWIND` stays a
   measurement arm until DAY44 reads.
 
 ### O12. The admission reclaim flush off the tick (lead's ruling at integ62)
