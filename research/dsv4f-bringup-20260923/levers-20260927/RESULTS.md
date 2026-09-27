@@ -461,6 +461,33 @@ Long gate, second SE pair, order M P P M M P: main 10.85 .. 11.04 ms/token again
 That is flat. Few blocks are resident early enough to matter. Where they are, the predecessor's
 own stream already holds the bandwidth. Not merged.
 
+## The joined MoE tail in one launch (adopted)
+
+Lane `lane/dsv4-moe-tail-fuse-20260927`, measured against main `286c0c54c` on the second SE pair
+(`raw/se2-moe-tail-s2zf/`).
+- **What changed.** With the shared expert on the join, the tail was three launches per layer:
+  `combine_rows_m`, the add of the joined shared rows, and hc_post.
+  `dsv4_moe_tail_hc_post_kernel` runs all three: the slot sum, `y += shared`, then hc_post for
+  each copy. Each value is the same op in the same order.
+- **Census.** The replay graph census counts the kernel as the FFN site's hc_post. The first
+  build refused its capture (`incomplete full-token graph ... census[4] 43 != 86`), and the
+  second build adds the kernel to the count.
+- **Correctness.** The long gate hash is `fbce1a0492d69635`. The TP/EP rows gate, the KV split
+  gate and the DSpark TP/EP gate pass.
+- **Long gate,** M T T M M T: 10.17 .. 10.33 against 10.15 .. 10.27 ms/token, about -0.4%.
+- **Served,** cells-pdl M T T M, N=2, on the four-lane build of the time:
+
+| cell | main | lane |
+|---|---|---|
+| greedy c1 | 94.64 / 94.39 | 94.94 / 94.60 |
+| sampled c1 | 94.92 / 94.48 | 95.17 / 95.31 |
+| greedy c2 | 126.51 / 125.93 | 126.75 / 125.68 |
+| greedy c4 | 158.34 / 158.10 | 146.55 / 156.97 |
+
+The 146.55 is a phase-split cell of the old four-lane coalescer (`../lanes16/`), not the tail's.
+The tail saves two launches per layer, and it is kept for that. Its gain is at the edge of the
+row spread.
+
 ## The fused pair on one card: where its time goes, and a refuted wider CTA
 
 `tools/dsv4-moe-fused-bench.cu` times the pair on one card at the TP/EP partition shape: 128
