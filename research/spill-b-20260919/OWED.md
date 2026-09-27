@@ -155,7 +155,9 @@ for the owner or the lead), `closed` (with its closing pointer), `owner-only` (n
   as `vg_debt`; the predictive book does not carry it; not measurable on the dense 9B and 27B).
 - Needs a MoE plus linear-attention model: a 35B-A3B NVFP4 artifact of that family is on the local disk (20 GB, a
   tight fit on the 24 GB card) and must be staged on the target card.
-- Status: `running`. DAY46 read, so DAY48 left text only: addendum A (the door and the cell as built); code `5a6f1898f`
+- Status: target card `read` (DAY48 2.1, the eighteenth sitting): V1 to V4 PASS on all four boots; the pool's remaining
+  debt is at most 34 MB, so both arms admit the same (35 of 64, 1 of 32). The owner's input; the 5090 half runs. Before:
+  `running`. DAY46 read, so DAY48 left text only: addendum A (the door and the cell as built); code `5a6f1898f`
   (`MEMRA_ADMIT_PREDICT_VG_DEBT`, default off, decide-by 2026-10-11; memra-server lib 987 passed, clippy clean); the
   cells: the eighteenth sitting (`pro-single-b-sitting18.sh`, Ornith 35B-A3B staged on the box) and the 5090
   (`rtx5090-day48/run.sh`). Before: `pre-registered` (DAY48.md, text only until DAY46 reads): `MEMRA_ADMIT_PREDICT_VG_DEBT` makes the

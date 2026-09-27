@@ -72,3 +72,39 @@ DAY46 has read (2.2), so the day leaves text only. No clause or bound changes; t
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
+
+### 2.1 The target card (the eighteenth sitting, one RTX PRO 6000 Blackwell Workstation Edition at 600 W, 2026-09-27 05:41 to 05:52Z)
+
+Chain tree `5ceab1a68`; the binary built on the box from `5a6f1898f`, sha256 `dc3e6327...5a19ea367` (the lead mirrored it
+by hash). Ornith-1.5-35B-A3B-NVFP4-Q5K-mtp.gguf from the tiyuvta repository at `e058c9f5b`, sha256 `72ff9600...` checked
+on the box. Receipts at `pro-single-day48/box/` (the sitting's own `MANIFEST.sha256`, the lead's re-checked). Every boot
+`rc=0`. Verbatim (`read.log`; the readings of both orders alike, O1 shown):
+
+```
+DAY48 V1 card=pro6000 boot=O1-enforce pool_engaged_lines=1 physical_debt_lines=40 physical_debt_mb_max=34 vg_debt_lines=0 vg_debt_max=0 -> PASS
+DAY48 V2 card=pro6000 boot=O1-enforce oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY48 V3 card=pro6000 boot=O1-enforce r429=60 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY48 READING card=pro6000 boot=O1-enforce wave=burst n=64 ok200=35 r429=29 ttft_ms p50=107928.0 p95=107962.6 N=35
+DAY48 READING card=pro6000 boot=O1-enforce wave=wave2 n=32 ok200=1 r429=31 ttft_ms p50=4859.7 p95=4859.7 N=1
+DAY48 V1 card=pro6000 boot=O1-enforce-vg pool_engaged_lines=1 physical_debt_lines=41 physical_debt_mb_max=34 vg_debt_lines=107 vg_debt_max=33554432 -> PASS
+DAY48 V2 card=pro6000 boot=O1-enforce-vg oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY48 V3 card=pro6000 boot=O1-enforce-vg r429=60 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY48 READING card=pro6000 boot=O1-enforce-vg wave=burst n=64 ok200=35 r429=29 ttft_ms p50=108644.8 p95=109066.7 N=35
+DAY48 READING card=pro6000 boot=O1-enforce-vg wave=wave2 n=32 ok200=1 r429=31 ttft_ms p50=4867.7 p95=4867.7 N=1
+DAY48 V4 card=pro6000 order=O1 rows_200_both=45 status_mismatch=4 differ=[] -> PASS
+DAY48 V4 card=pro6000 order=O2 rows_200_both=43 status_mismatch=8 differ=[] -> PASS
+```
+
+- **V1 to V4 PASS on all four boots, both orders.**
+  - V1: the verify-graph pool engaged on every boot, and the physical side charged its debt on 40 to 43 admissions.
+    On `enforce-vg`, every predictive line carries `vg_debt=` (107 lines).
+  - V2: no OOM, parked OOM, 503 or crash.
+  - V3: all 60 refusals are typed, each with its own reject line.
+  - V4: every request that is `200` on both arms has an equal digest.
+- **What the door changes on this model and card: nothing measurable.** The pool's remaining debt is at most 34 MB
+  (33,554,432 bytes on the predictive line), against a budget of tens of GB. Both arms admit 35 of 64 of the burst and
+  1 of 32 of the second wave, 47 of 107 over the boot. The 4 and 8 requests whose status differs between the arms of
+  an order swap places inside the same counts (which burst requests win a concurrent release); neither arm admits
+  more. The DAY28 gap is real but small here: the pool reaches its high-water early in the boot.
+- The door stays default off; the decision is the owner's at its decide-by (2026-10-11). The 5090 half runs from
+  `rtx5090-day48/run.sh`.
