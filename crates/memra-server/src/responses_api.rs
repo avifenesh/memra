@@ -974,7 +974,10 @@ async fn handle_background_submit(
             None,
             Some(code),
         );
-        return rl.attach(crate::with_request_id(&env.id, resp));
+        // Same discipline as every other admission refusal (revuto caught this returning
+        // a bare response and letting the receipt drop unfinalized, which the metering
+        // seam's Drop then prices as an abandoned CLIENT rather than OUR refusal).
+        return rl.attach(crate::ledger_rejected(receipt, resp, code, &env.id));
     }
 
     let notify = std::sync::Arc::new(tokio::sync::Notify::new());
@@ -1101,12 +1104,42 @@ async fn run_background_job(
             _ = notify.notified() => {
                 drop(rx); // the cancel signal: the worker prunes the closed channel
                 let elapsed = started.elapsed().as_secs_f64();
-                if n_completion_tokens > 0 {
-                    if let Some(r) = receipt.as_mut() {
-                        let _ = r.complete_deadline_partial(usage, elapsed);
+                let ledger_ok = if n_completion_tokens > 0 {
+                    match receipt.as_mut() {
+                        Some(r) => match r.complete_deadline_partial(usage, elapsed) {
+                            Ok(()) => true,
+                            Err(err) => {
+                                eprintln!(
+                                    "[ledger] ERROR: background job {id} cancel-partial \
+                                     receipt failed: {err}"
+                                );
+                                // A pricing failure here leaves the receipt unfinalized;
+                                // settle it rejected (best effort) so Drop cannot bill OUR
+                                // bookkeeping failure as a client abandon.
+                                let _ = r.reject(500, "request_ledger_unavailable");
+                                false
+                            }
+                        },
+                        None => true,
                     }
-                } else if let Some(r) = receipt.as_mut() {
-                    let _ = r.settle_unbilled("cancelled", 409, "cancelled");
+                } else {
+                    if let Some(r) = receipt.as_mut() {
+                        let _ = r.settle_unbilled("cancelled", 409, "cancelled");
+                    }
+                    true
+                };
+                if !ledger_ok {
+                    finalize_terminal_job(
+                        &*st.job_store,
+                        &id,
+                        JobRecord {
+                            status: JobStatus::Failed,
+                            output: None,
+                            error: Some("request_ledger_unavailable".to_string()),
+                        },
+                    );
+                    drop(guard);
+                    return;
                 }
                 let output = build_output_array(&text, &reasoning, &calls);
                 let body = response_json(
@@ -1285,6 +1318,24 @@ async fn run_background_job(
                                 "[ledger] ERROR: background job {id} completion receipt \
                                  failed: {err}"
                             );
+                            // Same discipline as the cancel-partial and synchronous paths:
+                            // a pricing failure inside complete() leaves the receipt
+                            // unfinalized; settle it rejected (best effort) so Drop cannot
+                            // bill OUR bookkeeping failure as a client abandon, and answer
+                            // the job Failed rather than claim a completion that was never
+                            // actually billed.
+                            let _ = r.reject(500, "request_ledger_unavailable");
+                            finalize_terminal_job(
+                                &*st.job_store,
+                                &id,
+                                JobRecord {
+                                    status: JobStatus::Failed,
+                                    output: None,
+                                    error: Some("request_ledger_unavailable".to_string()),
+                                },
+                            );
+                            drop(guard);
+                            return;
                         }
                         let output = build_output_array(&text, &reasoning, &calls);
                         let (status_str, incomplete) = match incomplete_reason(&stop_reason) {
