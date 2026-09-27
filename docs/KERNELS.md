@@ -947,7 +947,7 @@ with identity, alongside the standalone cadence #508 and dense #507 receipts.
 
 ### Dense-fast exact-tree kernels and qualification (default ON, 2026-09-09)
 
-`cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_dense_fast_fp8_kernel<2>`
+`cu/dsv4_dense_m1_exact_tail.cuh` adds `dsv4_dense_fast_fp8_kernel<2>` (since 2026-09-28 its one-token-row body issues four iterations' weight, scale and activation loads per leaf before the first add, then the same decode and adds in the same order, since Nsight Compute had it waiting on those loads)
 and `dsv4_dense_fast_dots_kernel<1>`, selected in the existing raw exact-tail
 launchers by `MEMRA_DSV4_DENSE_FAST`. Since memra #710 the FP8 kernel takes a third template argument, `M` token rows
 (`dsv4_dense_fast_fp8_kernel<2, false, M>`, M = 2..16 since 2026-09-27, 2..8 before): `memra_dsv4_gemv_fp8_m` routes B-row

@@ -321,6 +321,43 @@ __device__ __forceinline__ void dsv4_dense_fast_fp8_body(const uint8_t* __restri
     // only, per-(t)-accumulation order verbatim, bit-identical.
     int stride = 128 * 8;
     int i0 = leaf * 8;
+    if constexpr (M == 1) {
+        // One token row (memra #710): four iterations' weight, scale and activation loads in
+        // flight per leaf before the first add, then the same decode and adds in the same order.
+        // The kernel waited on these loads; only their issue moves.
+        for (; i0 + 3 * stride < k; i0 += 4 * stride) {
+            uint2 wv4[4];
+            float s4[4];
+            uint4 xv4[4];
+#pragma unroll
+            for (int u = 0; u < 4; u++) {
+                wv4[u] = *(const uint2*)(wr + i0 + u * stride);
+                s4[u] = srow[(i0 + u * stride) >> 7];
+                xv4[u] = *(const uint4*)(x_group + i0 + u * stride);
+            }
+#pragma unroll
+            for (int u = 0; u < 4; u++) {
+                unsigned wb[2] = {wv4[u].x, wv4[u].y};
+                float wu[8];
+#pragma unroll
+                for (int j = 0; j < 4; j++) {
+                    wu[2 * j] = e4m3_tab[(wb[j >> 1] >> (((j & 1) * 2) * 8)) & 0xFFu] * s4[u];
+                    wu[2 * j + 1] =
+                        e4m3_tab[(wb[j >> 1] >> (((j & 1) * 2 + 1) * 8)) & 0xFFu] * s4[u];
+                }
+                unsigned xw[4] = {xv4[u].x, xv4[u].y, xv4[u].z, xv4[u].w};
+                float acc = part[0];
+#pragma unroll
+                for (int j = 0; j < 4; j++) {
+                    float x0 = __uint_as_float((xw[j] & 0xFFFFu) << 16);
+                    float x1 = __uint_as_float(xw[j] & 0xFFFF0000u);
+                    acc += wu[2 * j] * x0;
+                    acc += wu[2 * j + 1] * x1;
+                }
+                part[0] = acc;
+            }
+        }
+    }
     for (; i0 + stride < k; i0 += 2 * stride) {
         int i1 = i0 + stride;
         uint2 wva = *(const uint2*)(wr + i0);
