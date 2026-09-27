@@ -126,6 +126,13 @@ pub struct CodecEncoderBf16Layer<'a> {
     pub layer_index: usize,
 }
 
+/// The pinned biasless `[1024,1024,2]` Conv1D and BF16 affine LayerNorm.
+/// The two kernel taps are flattened into the projection's input dimension.
+pub struct CodecEncoderBf16Downsample<'a> {
+    pub projection: CodecEncoderBf16Linear<'a>,
+    pub norm: CodecEncoderBf16Norm<'a>,
+}
+
 impl CodecEncoderBf16Layer<'_> {
     /// The bundled hybrid plan alternates 128-window and full causal layers.
     pub fn attention_window(&self) -> Option<usize> {
@@ -400,6 +407,28 @@ impl MiMoAudioCodecEncoderWeights {
             return Err("MiMo codec encoder final LayerNorm plan changed".into());
         }
         self.layer_norm_bf16("encoder.layer_norm")
+    }
+
+    /// Bind the source post-stack stride-two Conv1D and its following norm.
+    /// `load` has already verified the pinned config, including avg_pooler=2.
+    pub fn encoder_downsample_bf16(&self) -> Result<CodecEncoderBf16Downsample<'_>, String> {
+        const STEM: &str = "encoder.down_sample_layer.0";
+        if self.contract.encoder_layers != 24 || self.contract.hidden_size != 1_024 {
+            return Err("MiMo codec encoder downsample plan changed".into());
+        }
+        let weight = self.layer_row(&format!("{STEM}.weight"), &[1_024, 1_024, 2])?;
+        if self.tensors.contains_key(&format!("{STEM}.bias")) {
+            return Err("MiMo codec encoder downsample gained an unsupported bias".into());
+        }
+        Ok(CodecEncoderBf16Downsample {
+            projection: CodecEncoderBf16Linear {
+                weight,
+                bias: None,
+                input: 1_024 * 2,
+                output: 1_024,
+            },
+            norm: self.layer_norm_bf16("encoder.down_sample_norm")?,
+        })
     }
 
     fn conv_bf16(
@@ -752,5 +781,46 @@ mod tests {
         .unwrap();
         assert_eq!(contract.encoder_layers, 24);
         assert_eq!(contract.hidden_size, 1_024);
+    }
+
+    #[test]
+    fn pinned_downsample_rows_are_biasless_bf16_with_exact_extents() {
+        let rows = fixture_rows();
+        let selected: BTreeSet<_> = rows
+            .keys()
+            .filter(|name| name.starts_with("encoder.down_sample"))
+            .cloned()
+            .collect();
+        assert_eq!(
+            selected,
+            BTreeSet::from([
+                "encoder.down_sample_layer.0.weight".to_string(),
+                "encoder.down_sample_norm.weight".to_string(),
+                "encoder.down_sample_norm.bias".to_string(),
+            ])
+        );
+        for (name, shape) in [
+            ("encoder.down_sample_layer.0.weight", vec![1_024, 1_024, 2]),
+            ("encoder.down_sample_norm.weight", vec![1_024]),
+            ("encoder.down_sample_norm.bias", vec![1_024]),
+        ] {
+            let row = &rows[name];
+            let bytes = row.data_offsets[1] - row.data_offsets[0];
+            check_conv_row(
+                name,
+                CodecEncoderDtype::from_header(name, &row.dtype).unwrap(),
+                &row.shape,
+                bytes,
+                &shape,
+            )
+            .unwrap();
+            assert!(
+                check_conv_row(name, CodecEncoderDtype::F32, &row.shape, bytes, &shape).is_err()
+            );
+            assert!(
+                check_conv_row(name, CodecEncoderDtype::Bf16, &row.shape, bytes - 2, &shape)
+                    .is_err()
+            );
+        }
     }
 }

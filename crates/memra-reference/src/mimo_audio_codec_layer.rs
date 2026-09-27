@@ -269,6 +269,60 @@ pub fn forward_encoder_stack(
     Ok(result)
 }
 
+/// Apply the pinned post-stack `avg_pooler=2` Conv1D, default erf GELU, and
+/// `encoder.down_sample_norm`. Input is one already-encoded BF16-valued
+/// `[tokens,width]` sequence. The Conv1D weight is BF16 `[width,width,2]`,
+/// channel-major with the two time taps innermost; it has no bias.
+pub fn post_stack_downsample(
+    input: &[f32],
+    tokens: usize,
+    width: usize,
+    weight: &[u16],
+    affine: &Norm<'_>,
+) -> Result<Vec<f32>, String> {
+    if !(1..=MAX_COMPONENT_TOKENS).contains(&tokens)
+        || !(1..=1_024).contains(&width)
+        || input.len() != tokens * width
+        || input
+            .iter()
+            .any(|value| !value.is_finite() || value.to_bits() & 0xffff != 0)
+        || weight.len() != width * width * 2
+        || weight
+            .iter()
+            .any(|&value| !f32::from_bits(u32::from(value) << 16).is_finite())
+        || !valid_norm(affine, width)
+    {
+        return Err("MiMo codec downsample input, BF16 rows, or geometry changed".into());
+    }
+    let output_tokens = tokens.div_ceil(2);
+    let weight = decode(weight);
+    let mut activated = vec![0.0; output_tokens * width];
+    for row in 0..output_tokens {
+        for out in 0..width {
+            let mut sum = 0.0f32;
+            for channel in 0..width {
+                for tap in 0..2 {
+                    let source = 2 * row + tap;
+                    if source < tokens {
+                        sum = input[source * width + channel]
+                            .mul_add(weight[(out * width + channel) * 2 + tap], sum);
+                    }
+                }
+            }
+            // BF16 convolution result is rounded before source nn.GELU().
+            activated[row * width + out] = bf16(gelu_erf(bf16(sum)));
+        }
+    }
+    if activated.iter().any(|value| !value.is_finite()) {
+        return Err("MiMo codec downsample GELU produced a non-finite value".into());
+    }
+    let result = norm(&activated, output_tokens, width, affine);
+    if result.iter().any(|value| !value.is_finite()) {
+        return Err("MiMo codec downsample LayerNorm produced a non-finite value".into());
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -532,5 +586,141 @@ mod tests {
             output: 2,
         };
         assert!(!valid_linear(&corrupted, 2, 2, false));
+    }
+
+    #[test]
+    fn downsample_odd_padding_channel_taps_and_affine_match_source_order() {
+        let input = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        // out0 = channel0 at tap0 + 2*channel1 at tap1;
+        // out1 = channel0 at tap1 + channel1 at tap0.
+        let weight = [
+            bits(1.0),
+            bits(0.0),
+            bits(0.0),
+            bits(2.0),
+            bits(0.0),
+            bits(1.0),
+            bits(1.0),
+            bits(0.0),
+        ];
+        let norm_weight = [bits(1.0), bits(0.5)];
+        let norm_bias = [bits(0.25), bits(-0.25)];
+        let affine = Norm {
+            weight: &norm_weight,
+            bias: &norm_bias,
+        };
+        let got = post_stack_downsample(&input, 3, 2, &weight, &affine).unwrap();
+        assert_eq!(got.len(), 4);
+        let raw_pairs = [[9.0, 5.0], [5.0, 6.0]];
+        let mut expected = Vec::new();
+        for pair in raw_pairs {
+            let activated = pair.map(|value| bf16(gelu_erf(bf16(value))));
+            let mean = (activated[0] + activated[1]) * 0.5;
+            let variance = ((activated[0] - mean).powi(2) + (activated[1] - mean).powi(2)) * 0.5;
+            for (col, value) in activated.iter().enumerate() {
+                expected.push(bf16(
+                    (*value - mean) * (variance + 1e-5).sqrt().recip() * decode(&norm_weight)[col]
+                        + decode(&norm_bias)[col],
+                ));
+            }
+        }
+        assert_eq!(got, expected);
+        assert!(got.iter().all(|value| value.to_bits() & 0xffff == 0));
+    }
+
+    #[test]
+    fn downsample_even_pair_uses_fourth_token_without_changing_first_pair() {
+        let weight = [
+            bits(1.0),
+            bits(0.0),
+            bits(0.0),
+            bits(2.0),
+            bits(0.0),
+            bits(1.0),
+            bits(1.0),
+            bits(0.0),
+        ];
+        let norm_weight = [bits(1.0); 2];
+        let norm_bias = [bits(0.0); 2];
+        let affine = Norm {
+            weight: &norm_weight,
+            bias: &norm_bias,
+        };
+        let odd =
+            post_stack_downsample(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 3, 2, &weight, &affine).unwrap();
+        let even = post_stack_downsample(
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            4,
+            2,
+            &weight,
+            &affine,
+        )
+        .unwrap();
+        assert_eq!(&odd[..2], &even[..2]);
+        assert_ne!(&odd[2..], &even[2..]);
+        assert_eq!(even.len(), 4);
+    }
+
+    #[test]
+    fn downsample_rounds_convolution_to_bf16_before_gelu() {
+        let mut weight = [bits(0.0); 3 * 3 * 2];
+        weight[0] = bits(0.6953125);
+        weight[(3 + 1) * 2] = bits(-0.5);
+        weight[(6 + 2) * 2] = bits(-0.34375);
+        let norm_weight = [bits(1.0); 3];
+        let norm_bias = [bits(0.0); 3];
+        let affine = Norm {
+            weight: &norm_weight,
+            bias: &norm_bias,
+        };
+        let output = post_stack_downsample(&[0.0234375, 1.0, 1.0], 1, 3, &weight, &affine).unwrap();
+        // Without the BF16 cast between Conv1D and GELU, column 1 rounds
+        // to -0.8984375 after LayerNorm.
+        assert_eq!(output, [1.390625, -0.89453125, -0.498_046_88]);
+    }
+
+    #[test]
+    fn downsample_refuses_geometry_nonfinite_and_non_bf16_values() {
+        let weight = [bits(1.0); 8];
+        let norm_weight = [bits(1.0); 2];
+        let norm_bias = [bits(0.0); 2];
+        let affine = Norm {
+            weight: &norm_weight,
+            bias: &norm_bias,
+        };
+        let run = post_stack_downsample;
+        assert!(run(&[1.0, 2.0], 1, 2, &weight, &affine).is_ok());
+        assert_eq!(
+            run(&vec![0.0; 256 * 2], 256, 2, &weight, &affine)
+                .unwrap()
+                .len(),
+            128 * 2
+        );
+        assert!(run(&[], 0, 2, &weight, &affine).is_err());
+        assert!(run(&vec![0.0; 257 * 2], 257, 2, &weight, &affine).is_err());
+        assert!(run(&[1.0, 2.0], 1, 0, &weight, &affine).is_err());
+        assert!(run(&[1.0], 1, 2, &weight, &affine).is_err());
+        assert!(run(&[1.001, 2.0], 1, 2, &weight, &affine).is_err());
+        assert!(run(&[f32::INFINITY, 2.0], 1, 2, &weight, &affine).is_err());
+        assert!(run(&[1.0, 2.0], 1, 2, &weight[..7], &affine).is_err());
+        let nonfinite = [0x7fc0; 8];
+        assert!(run(&[1.0, 2.0], 1, 2, &nonfinite, &affine).is_err());
+        let largest_bf16 = f32::from_bits(0x7f7f0000);
+        let overflowing_weight = [0x7f7f; 8];
+        assert!(
+            run(
+                &[largest_bf16, largest_bf16],
+                1,
+                2,
+                &overflowing_weight,
+                &affine
+            )
+            .is_err()
+        );
+        let bad_norm = Norm {
+            weight: &norm_weight[..1],
+            bias: &norm_bias,
+        };
+        assert!(run(&[1.0, 2.0], 1, 2, &weight, &bad_norm).is_err());
     }
 }

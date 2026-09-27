@@ -1,7 +1,7 @@
 //! Source-backed, bounded MiMo bundled audio-tokenizer transformer encoder.
 //!
 //! This consumes the resident BF16 rows after the convolutional frontend. It
-//! stops at the final encoder LayerNorm, before downsampling, RVQ, or PCM.
+//! includes the source post-stack downsample. RVQ and PCM remain separate.
 
 use core::ffi::c_void;
 use std::error::Error;
@@ -43,6 +43,12 @@ unsafe extern "C" {
         rows: i32,
         input_features: i32,
         output_features: i32,
+        stream: *mut c_void,
+    ) -> i32;
+    fn memra_mimo_codec_downsample_columns(
+        input: *const f32,
+        columns: *mut f32,
+        tokens: i32,
         stream: *mut c_void,
     ) -> i32;
     fn memra_mimo_codec_layer_epilogue(
@@ -295,6 +301,29 @@ fn projected(
     )
 }
 
+fn downsample_columns(
+    engine: &Engine,
+    input: &CudaSlice<f32>,
+    tokens: usize,
+) -> Result<CudaSlice<f32>, Fail> {
+    let output_tokens = tokens.div_ceil(2);
+    let mut columns = engine.uninit(output_tokens * HIDDEN * 2)?;
+    let stream = engine.stream();
+    let (input_ptr, input_guard) = input.device_ptr(&stream);
+    let (columns_ptr, columns_guard) = columns.device_ptr_mut(&stream);
+    let rc = unsafe {
+        memra_mimo_codec_downsample_columns(
+            input_ptr as *const f32,
+            columns_ptr as *mut f32,
+            tokens as i32,
+            stream.cu_stream() as *mut c_void,
+        )
+    };
+    drop((input_guard, columns_guard));
+    checked_rc("stride-two Conv1D columns", rc)?;
+    Ok(columns)
+}
+
 fn rotary(
     engine: &Engine,
     query: &mut CudaSlice<f32>,
@@ -457,6 +486,37 @@ impl MiMoAudioCodecEncoderWeights {
         check_result(engine, &output)?;
         Ok(output)
     }
+
+    /// Downsample one already-frontended and 24-layer-encoded BF16-valued
+    /// `[tokens,1024]` sequence after `encode_transformer_stack`. The source
+    /// pads an odd final token with zeros, applies its biasless BF16 Conv1D
+    /// `[1024,1024,2]` with stride two, erf GELU, then BF16 affine LayerNorm.
+    /// The output carries `ceil(tokens/2)` BF16-valued rows in f32 slots.
+    ///
+    /// This bounded component stops before RVQ and accepts 1..=256 tokens.
+    pub fn downsample_post_stack(
+        &self,
+        engine: &Engine,
+        input: &CudaSlice<f32>,
+        tokens: usize,
+    ) -> Result<CudaSlice<f32>, Fail> {
+        request(tokens, input.len(), 0)?;
+        stack_plan(&self.contract)?;
+        engine.gpu.ctx.bind_to_thread()?;
+        self.check_device(engine)?;
+        if input.ordinal() != self.device_ordinal {
+            return Err("MiMo codec input belongs to another GPU".into());
+        }
+        let downsample = self.encoder_downsample_bf16()?;
+        check_input(engine, input)?;
+        let output_tokens = tokens.div_ceil(2);
+        let columns = downsample_columns(engine, input, tokens)?;
+        let convolved = projected(engine, &columns, &downsample.projection, output_tokens)?;
+        let activated = epilogue(engine, &convolved, None, None, HIDDEN, Epilogue::Gelu)?;
+        let output = normalized(engine, &activated, &downsample.norm, output_tokens)?;
+        check_result(engine, &output)?;
+        Ok(output)
+    }
 }
 
 #[cfg(test)]
@@ -471,6 +531,9 @@ mod tests {
         assert!(request(257, 257 * HIDDEN, 0).is_err());
         assert!(request(1, HIDDEN - 1, 0).is_err());
         assert!(request(1, HIDDEN, 24).is_err());
+        assert_eq!(1usize.div_ceil(2), 1);
+        assert_eq!(255usize.div_ceil(2), 128);
+        assert_eq!(256usize.div_ceil(2), 128);
     }
 
     #[test]
@@ -668,6 +731,54 @@ mod tests {
                 (got - want).abs() <= 0.25,
                 "24-layer encoder element {index}: {got} != {want}"
             );
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires pinned bundled weights and a dedicated GPU for the post-stack source gate"]
+    fn pinned_post_stack_downsample_gpu_source_gate() -> Result<(), Fail> {
+        use memra_reference::mimo_audio_codec_layer::{Norm, bf16, post_stack_downsample};
+        use std::path::Path;
+
+        let root = std::env::var("MIMO_PINNED_SOURCE_ROOT")?;
+        let gpu: usize = std::env::var("MEMRA_MIMO_COMPONENT_GPU")
+            .unwrap_or_else(|_| "0".into())
+            .parse()?;
+        let engine = Engine::new(gpu)?;
+        let resident = MiMoAudioCodecEncoderWeights::load(&engine, Path::new(&root))?;
+        let fetch = |name: &str| -> Result<Vec<u16>, Fail> {
+            let tensor = resident
+                .tensor(name)
+                .ok_or_else(|| format!("missing {name}"))?;
+            let bytes = engine.dtoh_u8(&tensor.bytes)?;
+            Ok(bytes
+                .chunks_exact(2)
+                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+                .collect())
+        };
+        let weight = fetch("encoder.down_sample_layer.0.weight")?;
+        let norm_weight = fetch("encoder.down_sample_norm.weight")?;
+        let norm_bias = fetch("encoder.down_sample_norm.bias")?;
+        let norm = Norm {
+            weight: &norm_weight,
+            bias: &norm_bias,
+        };
+        for tokens in [3, 4] {
+            let input = (0..tokens * HIDDEN)
+                .map(|index| bf16((index as f32 % 37.0 - 18.0) * 0.015625))
+                .collect::<Vec<_>>();
+            let expected = post_stack_downsample(&input, tokens, HIDDEN, &weight, &norm)?;
+            let actual = resident.downsample_post_stack(&engine, &engine.htod(&input)?, tokens)?;
+            let actual = engine.dtoh(&actual)?;
+            assert_eq!(actual.len(), tokens.div_ceil(2) * HIDDEN);
+            for (index, (&got, &want)) in actual.iter().zip(&expected).enumerate() {
+                assert!(got.is_finite() && got.to_bits() & 0xffff == 0);
+                assert!(
+                    (got - want).abs() <= 0.0625,
+                    "{tokens} tokens, element {index}: {got} != {want}"
+                );
+            }
         }
         Ok(())
     }

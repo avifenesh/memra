@@ -64,6 +64,19 @@ __global__ void linear_direct(const float* input, const uint16_t* weight,
     output[index] = sum;
 }
 
+// Reorder `[tokens,1024]` to `[ceil(tokens/2),1024*2]` in Conv1D's
+// `[input_channel,kernel_tap]` weight order. Missing odd-tail taps are zero.
+__global__ void downsample_columns(const float* input, float* columns, int tokens) {
+    const int index = blockIdx.x * blockDim.x + threadIdx.x;
+    const int extent = ((tokens + 1) / 2) * 1024 * 2;
+    if (index >= extent) return;
+    const int tap = index % 2;
+    const int channel = (index / 2) % 1024;
+    const int row = index / (1024 * 2);
+    const int source = row * 2 + tap;
+    columns[index] = source < tokens ? input[source * 1024 + channel] : 0.0f;
+}
+
 __global__ void epilogue(const float* input, const uint16_t* bias,
                          const float* residual, float* output,
                          int elements, int width, int operation) {
@@ -176,6 +189,17 @@ extern "C" int memra_mimo_codec_layer_linear_direct(
     linear_direct<<<(elements + 255) / 256, 256, 0,
                     static_cast<cudaStream_t>(stream_v)>>>(
         input, weight, output, rows, in_features, out_features);
+    return launch_status();
+}
+
+extern "C" int memra_mimo_codec_downsample_columns(
+    const float* input, float* columns, int tokens, void* stream_v) {
+    if (!input || !columns || !stream_v || tokens < 1 || tokens > 256)
+        return 40001;
+    const int elements = ((tokens + 1) / 2) * 1024 * 2;
+    downsample_columns<<<(elements + 255) / 256, 256, 0,
+                          static_cast<cudaStream_t>(stream_v)>>>(
+        input, columns, tokens);
     return launch_status();
 }
 
