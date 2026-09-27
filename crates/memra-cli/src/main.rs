@@ -1,8 +1,8 @@
 use memra_cli::{
     InspectRequest, ScaffoldRequest, VerifyRequest, VerifyStage, inspect_model,
-    scaffold_model_pack, verify_model,
+    scaffold_model_pack, validate_qualification_record, verify_model,
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
     if let Err(error) = run() {
@@ -93,6 +93,30 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             println!("family={} verified={:?}", summary.family, summary.stage);
             Ok(())
         }
+        (Some("model"), Some("qualify")) => {
+            let record_path = args.next().ok_or(USAGE)?;
+            let mut evidence_dir = None;
+            while let Some(flag) = args.next() {
+                match flag.as_str() {
+                    "--evidence-dir" => evidence_dir = args.next().map(PathBuf::from),
+                    _ => return Err(format!("unknown argument {flag}\n{USAGE}").into()),
+                }
+            }
+            let record = std::fs::read_to_string(&record_path)
+                .map_err(|error| format!("cannot read {record_path}: {error}"))?;
+            let evidence_dir = evidence_dir.unwrap_or_else(|| {
+                Path::new(&record_path)
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_default()
+            });
+            validate_qualification_record(&record, &evidence_dir)?;
+            println!(
+                "qualification record {record_path} is internally consistent against evidence in {}",
+                evidence_dir.display()
+            );
+            Ok(())
+        }
         _ => Err(USAGE.into()),
     }
 }
@@ -101,4 +125,5 @@ const USAGE: &str = "usage:
   memra model inspect <local-path|hf-id@40-char-sha> --against <family> --out <dir>
   memra model scaffold <new-family> --out <dir>
   memra model verify <config|checkpoint|rewrite|serve> <source> --against <family> [--out <dir>] [--oracle <file>] [--native-runner <binary>]
-  memra model verify tiny --against <family> --out <dir>";
+  memra model verify tiny --against <family> --out <dir>
+  memra model qualify <memra-qualification-record-v1 file> [--evidence-dir <dir>]";
