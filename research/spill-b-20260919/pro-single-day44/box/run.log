@@ -1,0 +1,41 @@
+2026-09-26T12:19:47Z boot rx-plain-rx-O1-keep start arm=keep route=plain shape=RX bin=62e7f81caa2eff84 env=[MEMRA_TTFT_TRACE=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-26T13:07:51Z boot rx-plain-rx-O1-keep rc=0 DAY44 BOOT rows=180 ok=180 exact_resumes=0 settles=0 declined=0 door_line=0 oom=0
+2026-09-26T13:07:56Z boot rx-plain-rx-O1-exact start arm=exact route=plain shape=RX bin=62e7f81caa2eff84 env=[MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-26T13:56:05Z boot rx-plain-rx-O1-exact rc=0 DAY44 BOOT rows=180 ok=180 exact_resumes=60 settles=0 declined=0 door_line=1 oom=0
+2026-09-26T13:56:10Z boot rx-plain-rx-O2-exact start arm=exact route=plain shape=RX bin=62e7f81caa2eff84 env=[MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-26T14:44:20Z boot rx-plain-rx-O2-exact rc=0 DAY44 BOOT rows=180 ok=180 exact_resumes=60 settles=0 declined=0 door_line=1 oom=0
+2026-09-26T14:44:25Z boot rx-plain-rx-O2-keep start arm=keep route=plain shape=RX bin=62e7f81caa2eff84 env=[MEMRA_TTFT_TRACE=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-26T15:32:30Z boot rx-plain-rx-O2-keep rc=0 DAY44 BOOT rows=180 ok=180 exact_resumes=0 settles=0 declined=0 door_line=0 oom=0
+2026-09-26T15:32:35Z boots done: rx-plain-rx-O1-keep:keep:plain:RX rx-plain-rx-O1-exact:exact:plain:RX rx-plain-rx-O2-exact:exact:plain:RX rx-plain-rx-O2-keep:keep:plain:RX
+2026-09-26T15:32:35Z boot rx-plain-rxg-O1-keep start arm=keep route=plain shape=RXg bin=62e7f81caa2eff84 env=[MEMRA_TTFT_TRACE=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880 --turn-gap-ms 1000]
+2026-09-26T16:21:41Z boot rx-plain-rxg-O1-keep rc=0 DAY44 BOOT rows=180 ok=180 exact_resumes=0 settles=0 declined=0 door_line=0 oom=0
+2026-09-26T16:21:46Z boot rx-plain-rxg-O1-exact start arm=exact route=plain shape=RXg bin=62e7f81caa2eff84 env=[MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880 --turn-gap-ms 1000]
+2026-09-26T17:10:55Z boot rx-plain-rxg-O1-exact rc=0 DAY44 BOOT rows=180 ok=180 exact_resumes=60 settles=176 declined=0 door_line=1 oom=0
+2026-09-26T17:11:00Z boot rx-plain-rxg-O2-exact start arm=exact route=plain shape=RXg bin=62e7f81caa2eff84 env=[MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880 --turn-gap-ms 1000]
+2026-09-26T18:00:07Z boot rx-plain-rxg-O2-exact rc=0 DAY44 BOOT rows=180 ok=180 exact_resumes=60 settles=176 declined=0 door_line=1 oom=0
+2026-09-26T18:00:12Z boot rx-plain-rxg-O2-keep start arm=keep route=plain shape=RXg bin=62e7f81caa2eff84 env=[MEMRA_TTFT_TRACE=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880 --turn-gap-ms 1000]
+2026-09-26T18:49:18Z boot rx-plain-rxg-O2-keep rc=0 DAY44 BOOT rows=180 ok=180 exact_resumes=0 settles=0 declined=0 door_line=0 oom=0
+2026-09-26T18:49:23Z boots done: rx-plain-rxg-O1-keep:keep:plain:RXg rx-plain-rxg-O1-exact:exact:plain:RXg rx-plain-rxg-O2-exact:exact:plain:RXg rx-plain-rxg-O2-keep:keep:plain:RXg
+2026-09-26T18:49:23Z boot rx-spec-rx-O1-keep start arm=keep route=spec shape=RX bin=62e7f81caa2eff84 env=[MEMRA_TTFT_TRACE=1 MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-26T19:32:30Z boot rx-spec-rx-O1-keep rc=0 DAY44 BOOT rows=180 ok=180 exact_resumes=0 settles=0 declined=0 door_line=0 oom=0
+2026-09-26T19:32:35Z boot rx-spec-rx-O1-exact start arm=exact route=spec shape=RX bin=62e7f81caa2eff84 env=[MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-26T20:15:56Z boot rx-spec-rx-O1-exact rc=0 DAY44 BOOT rows=180 ok=180 exact_resumes=60 settles=180 declined=0 door_line=1 oom=0
+2026-09-26T20:16:01Z boot rx-spec-rx-O2-exact start arm=exact route=spec shape=RX bin=62e7f81caa2eff84 env=[MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-26T20:59:26Z boot rx-spec-rx-O2-exact rc=0 DAY44 BOOT rows=180 ok=180 exact_resumes=60 settles=180 declined=0 door_line=1 oom=0
+2026-09-26T20:59:31Z boot rx-spec-rx-O2-keep start arm=keep route=spec shape=RX bin=62e7f81caa2eff84 env=[MEMRA_TTFT_TRACE=1 MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880]
+2026-09-26T21:42:35Z boot rx-spec-rx-O2-keep rc=0 DAY44 BOOT rows=180 ok=180 exact_resumes=0 settles=0 declined=0 door_line=0 oom=0
+2026-09-26T21:42:40Z boots done: rx-spec-rx-O1-keep:keep:spec:RX rx-spec-rx-O1-exact:exact:spec:RX rx-spec-rx-O2-exact:exact:spec:RX rx-spec-rx-O2-keep:keep:spec:RX
+2026-09-26T21:42:40Z boot rx-spec-rxg-O1-keep start arm=keep route=spec shape=RXg bin=62e7f81caa2eff84 env=[MEMRA_TTFT_TRACE=1 MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880 --turn-gap-ms 1000]
+2026-09-26T22:26:45Z boot rx-spec-rxg-O1-keep rc=0 DAY44 BOOT rows=180 ok=180 exact_resumes=0 settles=0 declined=0 door_line=0 oom=0
+2026-09-26T22:26:50Z boot rx-spec-rxg-O1-exact start arm=exact route=spec shape=RXg bin=62e7f81caa2eff84 env=[MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880 --turn-gap-ms 1000]
+2026-09-26T23:11:01Z boot rx-spec-rxg-O1-exact rc=0 DAY44 BOOT rows=180 ok=180 exact_resumes=60 settles=180 declined=0 door_line=1 oom=0
+2026-09-26T23:11:06Z boot rx-spec-rxg-O2-exact start arm=exact route=spec shape=RXg bin=62e7f81caa2eff84 env=[MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880 --turn-gap-ms 1000]
+2026-09-26T23:55:22Z boot rx-spec-rxg-O2-exact rc=0 DAY44 BOOT rows=180 ok=180 exact_resumes=60 settles=180 declined=0 door_line=1 oom=0
+2026-09-26T23:55:27Z boot rx-spec-rxg-O2-keep start arm=keep route=spec shape=RXg bin=62e7f81caa2eff84 env=[MEMRA_TTFT_TRACE=1 MEMRA_SPEC_BUDGET_CLAMP=1 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144,30720,122880 --turn-gap-ms 1000]
+2026-09-27T00:39:29Z boot rx-spec-rxg-O2-keep rc=0 DAY44 BOOT rows=180 ok=180 exact_resumes=0 settles=0 declined=0 door_line=0 oom=0
+2026-09-27T00:39:34Z boots done: rx-spec-rxg-O1-keep:keep:spec:RXg rx-spec-rxg-O1-exact:exact:spec:RXg rx-spec-rxg-O2-exact:exact:spec:RXg rx-spec-rxg-O2-keep:keep:spec:RXg
+2026-09-27T00:39:34Z boot offprev start arm=offprev route=plain shape=RX6 bin=8adcfa8fec97f88e env=[MEMRA_TTFT_TRACE=1 MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144]
+2026-09-27T00:42:37Z boot offprev rc=0 DAY44 BOOT rows=60 ok=60 exact_resumes=0 settles=0 declined=0 door_line=0 oom=0
+2026-09-27T00:42:42Z boot fault-plain-rxg6 start arm=fault route=plain shape=RXg6 bin=62e7f81caa2eff84 env=[MEMRA_TTFT_TRACE=1 MEMRA_RESUME_EXACT=1 MEMRA_RESUME_EXACT_FAULT=settle-fail MEMRA_SERVE_SPEC=0 MEMRA_PREFIX_CACHE_MB=0] args=[--shapes RX --lengths 6144 --turn-gap-ms 1000]
+2026-09-27T00:46:37Z boot fault-plain-rxg6 rc=0 DAY44 BOOT rows=60 ok=60 exact_resumes=0 settles=0 declined=0 door_line=1 oom=0
+2026-09-27T00:46:42Z boots done: offprev:offprev:plain:RX6 fault-plain-rxg6:fault:plain:RXg6

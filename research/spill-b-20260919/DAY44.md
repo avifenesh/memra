@@ -192,3 +192,70 @@ and a G=256 settle was still running when the next turn arrived); RXg exact resu
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
+
+### 2.1 The target card (the ninth sitting, one RTX PRO 6000 Blackwell Workstation Edition at 600 W, 2026-09-26 12:19Z to 2026-09-27 00:46Z)
+
+Tree `3182da256`. Arm binaries built on the box: `tip` from the DAY44 source, sha256 `62e7f81c...dce334c19`; `offprev`
+(`day44-nodoor.patch`), `8adcfa8f...a6438843`. The lead mirrored them by hash only. The 27B. 18 boots, each `rc=0` in
+`run.log` (day44-run.sh's own capture; the chain's rc lines are date's). Receipts at `pro-single-day44/box/` (434
+files; box manifest OK). `read.log` is 105 lines, quoted whole in the receipt. Its clause lines, verbatim where short:
+
+- **E1 exactness PASS on all 8 `exact` boots:** `resumed=60 differ_vs_cold=[] exact_lines=60 -> PASS`, both routes,
+  both shapes, both orders, every L (6,144, 30,720, 122,880) and G (32, 256). The `keep` boots flip 24 of 60 resumed
+  turns against cold on every boot.
+- **E3 PASS** (`turns=60 resumed=60 frac=1.00` on every `exact` boot). **E4 PASS** (`settled=60 frac=1.00` on every RXg
+  `exact` boot, 176 settles plain and 180 spec); **E4-FAULT PASS** (`settle_failed_lines=56 later_turns=20
+  resumed_after_drop=[] cold_differ=[]`). **E5 PASS** on all 18 boots (no OOM, no crash, no 503). **E6 PASS**
+  (`keep` equals `offprev` on 60 of 60 rows, both orders).
+- **E2 speed FAIL at 8 of the 24 (route, shape, L, G) cells, the same cells in both orders.** Resumed-turn TTFT p50
+  (N=10 per cell and order; the 250 ms telemetry regime of the sitting):
+
+| route | shape | L | G | TTFT p50 keep / exact (ms), O1; O2 | ratio O1; O2 | E2E ratio O1; O2 | extra rows | prime phase keep / exact (ms) | E2 |
+|---|---|---|---|---|---|---|---|---|---|
+| plain | rx | 6144 | 32 | 68.6 / 72.7; 69.2 / 72.8 | 1.060; 1.052 | 1.011; 1.008 | 64 | 67.7 / 71.6 | FAIL |
+| plain | rx | 6144 | 256 | 69.4 / 116.2; 69.8 / 116.2 | 1.675; 1.664 | 1.016; 1.015 | 288 | 68.3 / 114.9 | FAIL |
+| plain | rx | 30720 | 32 | 96.0 / 99.9; 96.2 / 99.7 | 1.041; 1.037 | 1.008; 1.007 | 64 | 93.9 / 97.5 | PASS |
+| plain | rx | 30720 | 256 | 96.6 / 143.4; 96.6 / 143.1 | 1.484; 1.481 | 1.014; 1.014 | 288 | 94.3 / 140.6 | FAIL |
+| plain | rx | 122880 | 32 | 195.1 / 198.7; 195.2 / 198.7 | 1.019; 1.018 | 1.004; 1.004 | 64 | 188.2 / 191.8 | PASS |
+| plain | rx | 122880 | 256 | 195.4 / 242.8; 195.5 / 242.4 | 1.242; 1.240 | 1.009; 1.009 | 288 | 188.7 / 235.4 | FAIL |
+| plain | rxg | 6144 | 32 | 69.5 / 71.3; 69.4 / 71.3 | 1.026; 1.027 | 1.004; 1.004 | 32 | 68.1 / 70.0 | PASS |
+| plain | rxg | 6144 | 256 | 70.0 / 71.8; 70.0 / 71.7 | 1.026; 1.024 | 1.001; 1.001 | 32 | 68.6 / 70.4 | PASS |
+| plain | rxg | 30720 | 32 | 96.8 / 98.4; 96.6 / 98.4 | 1.016; 1.019 | 1.004; 1.003 | 32 | 93.7 / 95.5 | PASS |
+| plain | rxg | 30720 | 256 | 97.1 / 98.7; 96.8 / 98.8 | 1.017; 1.021 | 1.001; 1.001 | 32 | 94.0 / 95.8 | PASS |
+| plain | rxg | 122880 | 32 | 195.4 / 198.1; 195.2 / 197.3 | 1.014; 1.011 | 1.002; 1.002 | 32 | 187.9 / 190.0 | PASS |
+| plain | rxg | 122880 | 256 | 195.6 / 220.8; 195.6 / 220.9 | 1.129; 1.129 | 1.004; 1.004 | 32 | 188.1 / 190.2 | FAIL |
+| spec | rx | 6144 | 32 | 160.6 / 164.8; 160.6 / 164.7 | 1.026; 1.025 | 0.991; 0.990 | 32 | 148.3 / 84.0 | PASS |
+| spec | rx | 6144 | 256 | 161.4 / 190.0; 161.8 / 190.1 | 1.177; 1.175 | 1.038; 1.036 | 32 | 149.7 / 84.7 | FAIL |
+| spec | rx | 30720 | 32 | 215.7 / 220.1; 215.7 / 220.3 | 1.020; 1.021 | 0.989; 0.990 | 32 | 201.5 / 111.3 | PASS |
+| spec | rx | 30720 | 256 | 215.9 / 245.2; 215.8 / 245.0 | 1.136; 1.135 | 1.046; 1.045 | 32 | 202.3 / 111.7 | FAIL |
+| spec | rx | 122880 | 32 | 417.6 / 426.0; 417.5 / 425.6 | 1.020; 1.019 | 1.010; 1.010 | 32 | 396.8 / 212.5 | PASS |
+| spec | rx | 122880 | 256 | 417.4 / 450.5; 417.5 / 450.7 | 1.079; 1.080 | 1.010; 1.010 | 32 | 397.7 / 212.9 | FAIL |
+| spec | rxg | 6144 | 32 | 149.9 / 85.3; 149.7 / 85.4 | 0.569; 0.570 | 0.821; 0.820 | 32 | 148.5 / 84.1 | PASS |
+| spec | rxg | 6144 | 256 | 150.8 / 85.9; 150.8 / 86.0 | 0.570; 0.570 | 0.983; 0.984 | 32 | 149.5 / 84.7 | PASS |
+| spec | rxg | 30720 | 32 | 204.1 / 114.1; 204.1 / 114.2 | 0.559; 0.560 | 0.790; 0.791 | 32 | 201.2 / 111.3 | PASS |
+| spec | rxg | 30720 | 256 | 204.9 / 114.9; 204.6 / 114.5 | 0.561; 0.560 | 0.989; 0.990 | 32 | 202.0 / 111.7 | PASS |
+| spec | rxg | 122880 | 32 | 404.2 / 220.1; 403.6 / 219.8 | 0.545; 0.545 | 0.767; 0.767 | 32 | 396.7 / 212.5 | PASS |
+| spec | rxg | 122880 | 256 | 404.7 / 220.6; 404.8 / 220.7 | 0.545; 0.545 | 0.947; 0.947 | 32 | 397.0 / 212.7 | PASS |
+
+  E2E p50 stays within 1.05 x `keep` in every cell (at most 1.046). Every failure is a TTFT failure, and the failures
+  come from two mechanisms the receipts place:
+  - **Zero gap on the plain route (RX: the three G=256 cells, and 6,144 at G=32 at 1.060 and 1.052).** No settle
+    lands (`settles=0`). Each resume re-primes from the in-call checkpoint: 64 extra rows at G=32 and 288 at G=256. The
+    prime phase grows by exactly that work (68.3 to 114.9 ms at 6,144, G=256). This is 1.4's stated residual, as it
+    predicted.
+  - **An arrival waiting for a settle call (spec RX at G=256, all three L; plain RXg at 122,880 G=256).** The resume
+    itself is faster than `keep`'s: the spec prime phase is 84.7 against 149.7 ms at 6,144. But the turn arrives while
+    its entry's settle call runs (race case 2, the wait bounded by one call), and the TTFT excess over the prime phase
+    (about 105 ms at spec 6,144 G=256) matches the settle call's p50 (108 ms). At plain 122,880 G=256 the 1,000 ms gap
+    leaves a settle in flight for some arrivals: p50 +25 ms, p95 340 against 196 ms.
+- **Where it is fast:** spec RXg `exact` roughly halves resumed-turn TTFT (ratio 0.545 to 0.570 at every L and G) and
+  E2E (0.767 to 0.990), with 0 flips. Plain RXg is within 1.03 at every cell except 122,880 G=256. Tokens per second over
+  the boot are equal on both arms (9.01 against 9.01 plain RX; 10.02 against 10.05 spec RX).
+- **Readings:** idle driver-free memory is lower on `exact` because the parked checkpoints hold device state. Plain RX:
+  2.13 GB against 6.96 GB (the in-call snapshots, 4.83 GB for the parked set). Plain RXg: 5.95 GB (the settled
+  entries need no snapshot beyond their cache). Spec: 3.91 GB against 4.44 GB. Settle calls: plain p50 93 ms, max 212
+  ms; spec p50 108 ms, max 219 ms.
+- **The rule of 1.8 reads, for the target class: exact but slower where E2 fails.** E1, E3 to E6 pass everywhere; E2
+  fails at the 8 cells above. The door stays default off. The overlap revision of 1.4 is owed from these receipts:
+  DAY50, pre-registered before any code. `MEMRA_RESUME_GRID_REWIND` stays a measurement arm, since its deletion
+  follows a PROMOTE-ELIGIBLE reading. The 5090 half runs from queue-m (item 8).
