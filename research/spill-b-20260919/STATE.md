@@ -1,3 +1,14 @@
+# WP-B checkpoint 2026-09-27 13:2xZ: the nineteenth sitting read (DAY48 2.2; the hold runner took the box lock in 9 to
+12 s per boot). V1 to V4 PASS on all four boots; V5 by the reader PASS (38 and 41 pairs, none apart); V5 by its clause
+not met and recorded as it reads (60 rejects per boot never reach the physical gate; 7 and 4 admissions with no physical
+line under the estimate-log dedup, their debt unobserved); V6 distinct_mb=[34], the pool did not grow on the box. Receipts
+committed for integ72; nothing else goes to the lane until integ72 merges. Next: DAY50 arm O stage 1 (local), the V5
+coverage addendum after integ72, the local 5090 readings as they land.
+# WP-B checkpoint 2026-09-27 12:4xZ (NEED TARGET CARD, the nineteenth sitting's rerun): the nineteenth sitting did not
+run (its idle poll never saw the box lock free while another lane's load re-took it per run, 10:28 to 12:28Z; the lead
+banks the not-run receipts). DAY48 addendum D (b25a4b763) and its runner (a6ea7c49f): day48-run.sh holds the lock, checks
+idle under the hold, boots with LOCK=none (rig-hold.sh, test-rig-hold.sh all PASS). The lead reruns the same command on
+the lane tip after the other lane's load; integ72 waits for it.
 # WP-B checkpoint 2026-09-27 13:xxZ (NEED TARGET CARD, the nineteenth sitting): revuto's DAY48 finding fixed (the peek,
 521fdbbbc; lane tip 02b45bb48); DAY48 2.1 unaffected; sitting 19 reruns the DAY48 cell with V5.
 # WP-B checkpoint 2026-09-27 12:xxZ: integ71 merged (#844, main 9852e3b12); main merged into the lane for integ72 at

@@ -100,6 +100,26 @@ admission one debt:
 - The target card as the nineteenth sitting (`pro-single-b-sitting19.sh`, S48 = `521fdbbbc`, receipts `b-day48b`);
   V1 to V4 as registered.
 
+### 1.8 Addendum D (2026-09-27, the runner, after the nineteenth sitting did not run, before its rerun)
+
+The nineteenth sitting did not run. Its run.log reads `boot O1-enforce: waiting for an idle rig` at 10:28:26Z, then
+`boot O1-enforce: rig not idle after 7200 s; not run` and the chain's `boots stopped rc=3` at 12:28:27Z. Another lane's
+load took the box lock per run, back to back. day48-run.sh polled for an idle rig (`flock -n`, then no compute app) and
+never found the lock free, because the load re-took it at once. The not-run receipts are banked on the box as
+`b-day48b-notrun-idlewait-1229` and the lead mirrors them as a not-run record. The runner changes; the cell does not:
+- day48-run.sh takes the rig lock first, blocking, bounded by the boot's 7200 s deadline. Under the hold it checks the
+  rig idle on 1.2's conditions (no compute app, at least 24 GB host memory available), then boots through
+  run-day26-cell.sh with `LOCK=none` (the cell's "held by the collector" path). The cell runs with the hold's fd closed,
+  so the server never inherits the lock. The hold is released after the cell, before the yield.
+- A rig still busy under the hold after 120 s (a process that does not take the lock) releases the hold and retries
+  after 30 s, within the same deadline. Every hold, busy reading, release and not-run is a run.log line, and each
+  boot's `.arm.txt` records the hold.
+- The helper is a new file, `rig-hold.sh`. `test-rig-hold.sh` checks it against a fixture lock and a stub
+  `nvidia-smi`: a lock taker that re-takes the lock back to back (the hold gets in; the old poll's hits are a reading),
+  a compute app that clears under the hold, and one that does not (the hold is released and the deadline ends it).
+- The binary, the cell, the arms, the shapes and V1 to V6 are addendum C's. The rerun is the same command on the lane
+  tip. Closed runners keep the poll they ran with; their receipts record it.
+
 ## 2. Results
 
 Written after the runs. Section 1 is unchanged.
@@ -139,3 +159,59 @@ DAY48 V4 card=pro6000 order=O2 rows_200_both=43 status_mismatch=8 differ=[] -> P
   more. The DAY28 gap is real but small here: the pool reaches its high-water early in the boot.
 - The door stays default off; the decision is the owner's at its decide-by (2026-10-11). The 5090 half runs from
   `rtx5090-day48/run.sh`.
+
+### 2.2 The target card (the nineteenth sitting, addendum C on the fix, one RTX PRO 6000 Blackwell Workstation Edition at 600 W, 2026-09-27 12:44 to 12:56Z)
+
+Chain tree `b094f619d` (addendum D's runner); the binary built on the box from `521fdbbbc`, sha256 `a6e893d2...d63d88d477`
+(mirrored by hash). The artifact is 2.1's (sha256 `72ff9600...` checked on the box). Receipts at `pro-single-day48/box-b/`
+(the sitting's own `MANIFEST.sha256`, the lead's re-checked); the first attempt's not-run receipts at
+`pro-single-day48/box-b-notrun/` (addendum D). Every boot `rc=0`. The runner held the box lock after 9 to 12 s per boot
+while another lane's load ran between the boots, and found the card idle under each hold (`run.log`). Verbatim
+(`read.log`; the V1 to V3 lines and the readings of O2 read alike, O1 shown):
+
+```
+DAY48 V1 card=pro6000 boot=O1-enforce pool_engaged_lines=1 physical_debt_lines=40 physical_debt_mb_max=34 vg_debt_lines=0 vg_debt_max=0 -> PASS
+DAY48 V2 card=pro6000 boot=O1-enforce oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY48 V3 card=pro6000 boot=O1-enforce r429=60 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY48 READING card=pro6000 boot=O1-enforce wave=burst n=64 ok200=35 r429=29 ttft_ms p50=108272.8 p95=108306.2 N=35
+DAY48 READING card=pro6000 boot=O1-enforce wave=wave2 n=32 ok200=1 r429=31 ttft_ms p50=4864.7 p95=4864.7 N=1
+DAY48 V1 card=pro6000 boot=O1-enforce-vg pool_engaged_lines=1 physical_debt_lines=38 physical_debt_mb_max=34 vg_debt_lines=107 vg_debt_max=33554432 -> PASS
+DAY48 V2 card=pro6000 boot=O1-enforce-vg oom_lines=0 parked_oom_lines=0 crash_lines=0 r503=0 -> PASS
+DAY48 V3 card=pro6000 boot=O1-enforce-vg r429=60 without_reject_line=[] retry_after_out_of_1_60=[] other_non200=[] -> PASS
+DAY48 READING card=pro6000 boot=O1-enforce-vg wave=burst n=64 ok200=35 r429=29 ttft_ms p50=106902.5 p95=108624.5 N=35
+DAY48 READING card=pro6000 boot=O1-enforce-vg wave=wave2 n=32 ok200=1 r429=31 ttft_ms p50=5028.1 p95=5028.1 N=1
+DAY48 V6 READING card=pro6000 boot=O1-enforce physical_debt_lines=40 distinct_mb=[34]
+DAY48 V6 READING card=pro6000 boot=O1-enforce-vg physical_debt_lines=38 distinct_mb=[34]
+DAY48 V5 card=pro6000 boot=O1-enforce-vg paired=38 apart=[] predictive_without_physical=67 -> PASS
+DAY48 V6 READING card=pro6000 boot=O2-enforce physical_debt_lines=38 distinct_mb=[34]
+DAY48 V6 READING card=pro6000 boot=O2-enforce-vg physical_debt_lines=41 distinct_mb=[34]
+DAY48 V5 card=pro6000 boot=O2-enforce-vg paired=41 apart=[] predictive_without_physical=64 -> PASS
+DAY48 V4 card=pro6000 order=O1 rows_200_both=45 status_mismatch=4 differ=[] -> PASS
+DAY48 V4 card=pro6000 order=O2 rows_200_both=45 status_mismatch=4 differ=[] -> PASS
+```
+
+- **V1 to V4 PASS on all four boots, both orders**, as in 2.1: the pool engaged on every boot; no OOM, parked OOM, 503
+  or crash; all 60 refusals typed; every request `200` on both arms of an order has an equal digest (45 per order).
+- **V5 by the reader: PASS.** Every admission that shows both lines shows one debt: 38 and 41 pairs, none apart
+  (33,554,432 bytes on the predictive line, `+34MB` on the physical line).
+- **V5 by its clause (addendum C): not met, and recorded as it reads.** The clause says each `[admit-predict]` line with
+  `vg_debt` above 0 is followed, for the same admission, by the physical line. On 67 and 64 such lines it is not.
+  `day48-v5-place.py` (output `pro-single-day48/box-b-v5-place.log`) places them:
+  - 60 on each boot are `reject-kv` verdicts. A refused request never reaches the physical gate, so it has no
+    physical line.
+  - 7 and 4 are admissions with no physical line. The server prints the physical debt line only under `log_estimate`,
+    which is false when the admission's (cap, spec, cost) key equals the last logged one. None of the 11 has a
+    `request cost` line in its window either, the other line `log_estimate` gates.
+  - So those 11 admissions' physical debts are unobserved, not apart. The reader's PASS computes only the equality
+    part of the clause. The clause stays as registered: V5 FAILs on its coverage, beside the reader's PASS. A
+    revision of the clause after this result is the owner's.
+- **V6: the pool did not grow during the burst.** Every physical debt line on every boot is `+34MB`
+  (`distinct_mb=[34]`): the pool was at its projected high-water from the first measured admission, as in 2.1. So the
+  box did not exercise the case the defect needs (captures growing between the two reads). That case is covered only
+  by the engine test `the_peek_leaves_the_physical_debt_unchanged_across_a_growing_pool` (addendum B).
+- **Readings, as in 2.1:** both arms admit 35 of 64 of the burst and 1 of 32 of the second wave (47 of 107 over the
+  boot); the 4 requests per order whose status differs swap places inside the same counts. Burst TTFT p50 106.9 to
+  108.9 s (N = 35 per boot; one boot per arm per order, back to back on one card at 600 W). The door changes nothing
+  measurable on this model and card; 2.1 stands.
+- What V5's coverage needs to be observed as registered is a physical debt line on every admission, not only when the
+  cost key changes. That is a server log change and a sitting, registered as its own addendum before its code.
