@@ -1,3 +1,9 @@
+# WP-B checkpoint 2026-09-27 19:xxZ (NEED TARGET CARD, the twentieth sitting): integ72 merged (#857, main 21ce97836); the
+lane fast-forwarded to it. The owner's rulings of 2026-09-27, in order: (1) MEMRA_BATCH_OOM_RECOVER ON by default on the
+RTX PRO 6000 Blackwell class (DAY49 addendum F, be4d7f92c; the 5090 flip waits for queue-n); (2) DAY44 addendum D
+accepted, R1 PASS on all four RW boots (DAY44 2.3); (3) DAY48 addendum E, the per-admission physical line (15a7fbcc8),
+sitting 20 ready; (4) memra#476, next; (5) the money path, darklanes#1173 (lane/budget-carry-topup-20260927, f90ce107c
+plus the workflow's output fix 631f537c0; the lead runs its CI and merge). Then DAY50 arm O.
 # WP-B checkpoint 2026-09-27 13:2xZ: the nineteenth sitting read (DAY48 2.2; the hold runner took the box lock in 9 to
 12 s per boot). V1 to V4 PASS on all four boots; V5 by the reader PASS (38 and 41 pairs, none apart); V5 by its clause
 not met and recorded as it reads (60 rejects per boot never reach the physical gate; 7 and 4 admissions with no physical
