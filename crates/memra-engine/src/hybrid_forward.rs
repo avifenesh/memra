@@ -19151,21 +19151,17 @@ impl HybridModel {
         moe_out: &mut CudaSlice<f32>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let n_pairs = t * n_used;
-        // Door E (MEMRA_MOE_VROWS_DEDUP_ORDER, default OFF): the gate/up launch walks the pair
-        // union EXPERT-MAJOR, reading the visit order from a FOURTH plane appended to the pointer
-        // table (planes: gate | up | down | order). Carrying it in the existing table is what
-        // makes the door free on the host arm — the order plane rides the single `htod_u64_into`
-        // that was already uploading the pointers, so no new transfer and no new pool appear.
-        // Door M (`MEMRA_MOE_VROWS_PACK`) refuses it in the launcher, so do not build the plane
-        // when the refuted pack door is armed.
-        let order_on = crate::moe_vrows_dedup_order_on() && !crate::moe_vrows_pack_on();
-        let n_planes = if order_on { 4 } else { 3 };
+        // Door E (MEMRA_MOE_VROWS_DEDUP_ORDER, the gate/up expert-major order plane) and door M
+        // (MEMRA_MOE_VROWS_PACK) were removed 2026-09-28 (memra#886, door hygiene): superseded /
+        // neutral, neither armed in the served launcher. The pointer table is always the shipped
+        // three planes (gate | up | down) now. See docs/FLAGS.md "Removed doors".
+        //
         // Door W (MEMRA_GLM5_VERIFY_WS): the whole staging set — tables, token quantize,
         // act, pair quantize — draws from the verify workspace and recycles at the end of
         // the call (vws_* are alloc_uninit/plain-drop with the door off, so the OFF arm is
         // byte-for-byte the shipped program). Every buffer is fully overwritten before any
         // read by the SAME kernels (the sites' standing uninit contract).
-        let mut ptrs_d = e.vws_uninit_u64(n_planes * n_pairs)?;
+        let mut ptrs_d = e.vws_uninit_u64(3 * n_pairs)?;
         let mut scl_d = e.vws_uninit(3 * n_pairs)?;
         // ONE launch path, TWO table provenances (the fused-epilogue arm's own discipline):
         // only the plane-major (gate | up | down) pointer/scale tables are built differently,
@@ -19176,7 +19172,7 @@ impl HybridModel {
             VrowsSel::Host(sel_all, w_all) => {
                 debug_assert_eq!(sel_all.len(), n_pairs);
                 debug_assert_eq!(w_all.len(), n_pairs);
-                let mut ptrs = vec![0u64; n_planes * n_pairs];
+                let mut ptrs = vec![0u64; 3 * n_pairs];
                 let mut scl = vec![0f32; 3 * n_pairs];
                 for (p, (&ex, &w)) in sel_all.iter().zip(w_all).enumerate() {
                     let ex = ex as usize;
@@ -19188,15 +19184,6 @@ impl HybridModel {
                     // down-proj macro folds into the accumulate weight (1.0 for non-macro
                     // banks) — the axpy_into fold, verbatim.
                     scl[2 * n_pairs + p] = w * m.down_exps.macro_scale(ex);
-                }
-                if order_on {
-                    // The order plane rides the SAME upload — the door adds no HtoD on this arm.
-                    ptrs[3 * n_pairs..].copy_from_slice(&crate::vrows_expert_major_order(sel_all));
-                    // The box receipt: the slab reads whose repeat visit this schedule places
-                    // inside the reuse window (host arm only — see MOE_VROWS_SLAB_READS_AVOIDED).
-                    let (visits, distinct) = crate::vrows_overlap_counts(sel_all);
-                    crate::MOE_VROWS_SLAB_READS_AVOIDED
-                        .fetch_add(visits - distinct, std::sync::atomic::Ordering::Relaxed);
                 }
                 e.htod_u64_into(&ptrs, &mut ptrs_d)?;
                 e.htod_f32_into(&scl, &mut scl_d)?;
@@ -19242,12 +19229,6 @@ impl HybridModel {
                     &mut ptrs_d,
                     &mut scl_d,
                 )?;
-                if order_on {
-                    // Door E on the device arm: one extra launch (the host arm gets the plane for
-                    // free inside its existing upload). Bit-identical to the host's stable sort by
-                    // (expert id, pair index) — gated directly against it in glm5_dedup_sched_gpu.
-                    e.moe_vrows_order_from_sel(sel_d, n_pairs, &mut ptrs_d)?;
-                }
                 if crate::MOE_VROWS_DEV_TABLES_DISPATCHES
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
                     == 0
@@ -19341,15 +19322,13 @@ impl HybridModel {
             eprintln!(
                 "[glm5-vrows] verify MoE batched across rows: pairs={n_pairs} (t={t} x \
                  {n_used}), one gate/up+preclamp launch + one down/FMA launch per layer-call \
-                 (rides MEMRA_GLM5_VERIFY_BATCH); arm doors: pack={} dedup_order={} \
-                 b200_matvec={} dev_tables={} (env MEMRA_MOE_VROWS_DEV_TABLES={}) — the `_rows` \
-                 pair has several dispatch twins and only the plain one has ever run at t=1, so a \
-                 box log has to say which it took. `dev_tables` is THIS CALL's provenance, not the \
-                 env: the decode-graph door owns both halves and routes the tables through the \
-                 device build whatever `MEMRA_MOE_VROWS_DEV_TABLES` says (run 7B printed the env \
-                 and read false while the door was building on device, which cost a box window)",
-                crate::moe_vrows_pack_on(),
-                crate::moe_vrows_dedup_order_on(),
+                 (rides MEMRA_GLM5_VERIFY_BATCH); arm doors: b200_matvec={} dev_tables={} \
+                 (env MEMRA_MOE_VROWS_DEV_TABLES={}): the `_rows` pair has several dispatch \
+                 twins and only the plain one has ever run at t=1, so a box log has to say which \
+                 it took. `dev_tables` is THIS CALL's provenance, not the env: the decode-graph \
+                 door owns both halves and routes the tables through the device build whatever \
+                 `MEMRA_MOE_VROWS_DEV_TABLES` says (run 7B printed the env and read false while \
+                 the door was building on device, which cost a box window)",
                 crate::b200_matvec_arm_on(),
                 matches!(sel, VrowsSel::Dev(..)),
                 crate::moe_vrows_dev_tables_on(),
