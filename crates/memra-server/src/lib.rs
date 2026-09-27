@@ -22783,6 +22783,65 @@ temperature = 0.6
         );
     }
 
+    /// revuto's other finding on the first version of this lane: a cap that admits the tiny
+    /// `Queued`/`InProgress` placeholders but is too small for the real completed body must
+    /// not leave the job stuck `InProgress` forever (billed, unreachable by `GET`, never
+    /// TTL-evicted). `finalize_terminal_job`'s fallback must land a small `Failed` record
+    /// instead, so the job still reaches a terminal, pollable state.
+    #[tokio::test]
+    async fn a_terminal_write_the_byte_cap_refuses_falls_back_to_failed_not_stuck() {
+        let _l = drain_lock();
+        let _env_lock = background_env_lock();
+        unsafe { std::env::set_var(responses_api::BACKGROUND_RESPONSES_ENV, "1") };
+
+        let mut st = fake_worker_state_with_steps(50, std::time::Duration::from_millis(1));
+        // Fits the placeholders (well under 100 bytes each) but not a 50-token completed
+        // envelope.
+        st.job_store = Arc::new(job_store::InMemoryJobStore::new(
+            std::time::Duration::from_secs(60),
+            300,
+        ));
+        let resp = responses_api::responses(
+            State(st.clone()),
+            axum::http::HeaderMap::new(),
+            None,
+            axum::body::Bytes::from(
+                json!({"model": "m", "input": "hi", "background": true}).to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let id = body_value(resp).await["id"].as_str().unwrap().to_string();
+
+        let mut terminal_body = None;
+        for _ in 0..500 {
+            let poll = responses_api::poll_admitted(
+                State(st.clone()),
+                axum::http::HeaderMap::new(),
+                Path(id.clone()),
+            )
+            .await;
+            let b = body_value(poll).await;
+            if b["status"] != "queued" && b["status"] != "in_progress" {
+                terminal_body = Some(b);
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        let b = terminal_body.expect(
+            "a terminal write the byte cap refuses must still reach a terminal state, \
+             never stay in_progress forever",
+        );
+        assert_eq!(b["status"], "failed");
+        assert!(
+            b["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("could not be buffered"),
+            "the fallback record must say why the real output is missing: {b}"
+        );
+    }
+
     /// A job past its TTL is evicted lazily on the next store touch; polling it afterward is
     /// indistinguishable from an id that never existed: a 404, not a stale "completed".
     #[tokio::test]
