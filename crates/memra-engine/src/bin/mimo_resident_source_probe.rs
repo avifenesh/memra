@@ -33,17 +33,19 @@ fn record(engines: [&Engine; 2], phase: &str) -> Result<(), Fail> {
 
 fn run() -> Result<(), Fail> {
     let mut args = std::env::args().skip(1);
-    let source_dir = args
-        .next()
-        .ok_or("usage: mimo_resident_source_probe <source_dir> [--full-context-capacity]")?;
-    let capacity = args.next();
-    if capacity
-        .as_deref()
-        .is_some_and(|value| value != "--full-context-capacity")
-        || args.next().is_some()
+    let source_dir = args.next().ok_or(
+        "usage: mimo_resident_source_probe <source_dir> [--full-context-capacity] [--codec-gpu0]",
+    )?;
+    let options = args.collect::<Vec<_>>();
+    let capacity = options
+        .iter()
+        .any(|value| value == "--full-context-capacity");
+    let codec_gpu0 = options.iter().any(|value| value == "--codec-gpu0");
+    if options.len() != usize::from(capacity) + usize::from(codec_gpu0) || (codec_gpu0 && !capacity)
     {
         return Err(
-            "usage: mimo_resident_source_probe <source_dir> [--full-context-capacity]".into(),
+            "usage: mimo_resident_source_probe <source_dir> [--full-context-capacity] [--codec-gpu0]"
+                .into(),
         );
     }
     let source = Arc::new(SafetensorsSource::open(Path::new(&source_dir))?);
@@ -80,12 +82,21 @@ fn run() -> Result<(), Fail> {
     let mtp = Mtp3Weights::load(&cards[0], source)?;
     mtp.check_device(&cards[0])?;
     record(engines, "mtp3")?;
-    if capacity.is_some() {
-        let codec = MiMoAudioCodecEncoderWeights::load(&cards[1], Path::new(&source_dir))?;
+    if capacity {
+        let codec_card = usize::from(!codec_gpu0);
+        let codec = MiMoAudioCodecEncoderWeights::load(&cards[codec_card], Path::new(&source_dir))?;
         if codec.tensors().len() != 449 {
             return Err("MiMo audio codec encoder residency is incomplete".into());
         }
-        record(engines, "audio_codec_encoder")?;
+        eprintln!("MiMo audio codec encoder card: {codec_card}");
+        record(
+            engines,
+            if codec_gpu0 {
+                "audio_codec_encoder_gpu0"
+            } else {
+                "audio_codec_encoder_gpu1"
+            },
+        )?;
 
         cards[0].gpu.ctx.bind_to_thread()?;
         let workspace0 = cards[0].alloc_u8_uninit(FOUR_GIB)?;
