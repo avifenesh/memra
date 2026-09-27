@@ -17441,20 +17441,43 @@ impl Dsv4Gpu {
             }
             self.small_kernel_launches[1].fetch_add(2, Ordering::Relaxed);
         }
-        Self::gemv_m_dev(
-            st,
-            shard.map_or_else(
-                || dwsel(self.dense_fp8, &stream, &layer.wq_b, &layer.wq_b_fp8),
-                |(_, bank)| packed_dense(&bank.wq_b, &stream),
-            ),
-            vws.qr_b.device_ptr(&stream).0 as *const c_void,
-            vws.q.device_ptr_mut(&stream).0 as *mut f32,
-            t,
-            heads * hd,
-            q_lora,
-            0,
-            0,
-        )?;
+        let wq_b = shard.map_or_else(
+            || dwsel(self.dense_fp8, &stream, &layer.wq_b, &layer.wq_b_fp8),
+            |(_, bank)| packed_dense(&bank.wq_b, &stream),
+        );
+        // A ratio-4 layer's indexer q reads the same q-LoRA rows: wq_b and the indexer's wq_b in
+        // one launch (memra #710). Nothing before the indexer path below touches vws.qi.
+        let indexer_q = if layer.ratio != 0 {
+            layer.idx.as_ref()
+        } else {
+            None
+        };
+        if let Some(ix) = indexer_q {
+            Self::gemv_m_dev_pair(
+                st,
+                wq_b,
+                vws.q.device_ptr_mut(&stream).0 as *mut f32,
+                heads * hd,
+                dwsel(self.dense_fp8, &stream, &ix.wq_b, &ix.wq_b_fp8),
+                vws.qi.device_ptr_mut(&stream).0 as *mut f32,
+                ix.heads * ix.hd,
+                vws.qr_b.device_ptr(&stream).0 as *const c_void,
+                t,
+                q_lora,
+            )?;
+        } else {
+            Self::gemv_m_dev(
+                st,
+                wq_b,
+                vws.qr_b.device_ptr(&stream).0 as *const c_void,
+                vws.q.device_ptr_mut(&stream).0 as *mut f32,
+                t,
+                heads * hd,
+                q_lora,
+                0,
+                0,
+            )?;
+        }
         unsafe {
             ck(
                 "headrms batch",
@@ -17544,18 +17567,7 @@ impl Dsv4Gpu {
         if layer.ratio != 0
             && let Some(ix) = &layer.idx
         {
-            // indexer q, batched
-            Self::gemv_m_dev(
-                st,
-                dwsel(self.dense_fp8, &stream, &ix.wq_b, &ix.wq_b_fp8),
-                vws.qr_b.device_ptr(&stream).0 as *const c_void,
-                vws.qi.device_ptr_mut(&stream).0 as *mut f32,
-                t,
-                ix.heads * ix.hd,
-                q_lora,
-                0,
-                0,
-            )?;
+            // indexer q, batched: projected with wq_b above
             unsafe {
                 ck(
                     "rope qi batch",
