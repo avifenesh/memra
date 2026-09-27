@@ -78,3 +78,42 @@ the lead's GPU battery covers their GPU cells.
 `promo` sitting on both classes under `DAY88.md` section 5's rule, unchanged: `naked` neither regresses against the
 door as qualified nor loses to its rollback. `promo-res` follows section 6a. This registration claims no size for the
 cut; the split measures it.
+
+## 2. The owner's rulings (2026-09-27, via the lead), and the gates and split as they run, registered before any code
+
+**The rulings.**
+- On `DAY88.md` section 6b: "option 1 only. Close the 285K gap with the cuts, then rerun `promo` on both classes. The
+  prefetch default does not land early." I23 and I24 are built now as registered.
+- On process, verbatim: "we should stop overcomplicating our local CI, we are making all our progress too slow. we
+  should do deeper measurement where it is relevant."
+
+**The gates, narrowed by that ruling before any result.** Section 1's lists and `DAY90.md`'s are replaced by the
+following; GitHub CI runs the rest.
+- **The equivalence proofs stay**, because they are what makes each cut the same program:
+  - I23's trace fixture: governor and issuer, recorded at the pre-change tree (crates equal to `0155bc69f`) before any
+    I23 line;
+  - I24's fixture: proxy and bank, recorded at I23 before any I24 line, with its failure-retention case.
+- **The affected crates' tests and clippy**: `memra-tier` (tests, clippy `-D warnings`, all targets) and `memra-kv`'s
+  lib tests (its tiered tier builds the governor). I24 adds `memra-engine`'s `banked_residency` tests and its clippy,
+  for `TracedDispatch`. Plus fmt.
+- **Dropped:** the day-61 CPU profile, the full engine library, the day44 and day50 censuses beyond the
+  `banked_residency` tests, and `rc-scan.py` on scripts this work does not touch.
+
+**The measurement that sizes the cuts: one local queue (v21, `rtx5090-day89/`).**
+- **The check** (`check/`): `run-gen-p88` and `run-gen-i24` with the door and no clocks, in the order p88, i24, i24,
+  p88. `day85-cpu/gpu-check-read.py` reads it: `MATCH`, one tape, one host demand sequence.
+- **The split** (`split24/`):
+  - arms `p88s`, `i23s` and `i24s` run both clocks (`--moe-dispatch-clock --expert-bank-stages`);
+  - arms `p88d`, `i23d` and `i24d` run the dispatch clock alone (`pf_retire` without the stage clock's settle);
+  - order 1 is p88, i23, i24 for each clock pair, x 5; order 2 is reversed, x 5; 60 runs, the argv of queue v19;
+  - `p88` is the direct parent of I23 (I22's door plus phase 1; `DAY88.md` read `naked` against `q22` flat), so it
+    replaces section 1's `i22s`.
+  - `day83-read.py --check --change p88s,i23s` and `--change i23s,i24s` read the leaves, and the `d` arms'
+    `pf_retire` is read beside them.
+- **The sizing rule, registered now.** 6b sized the gap in the 285K class's door-only work: roughly 100 to 150 us per
+  generated token must go. This host's door-only work at I22 is about 1.55 times the 285K's (346 against 223 us per
+  token, `DAY85.md` sections 3 and 3b), so 100 us there is about 155 us here.
+  - The cuts are **short** if the door-only leaves (`day83-read.py`'s LEAVES), summed, fall by less than 155 us per
+    generated token from `p88s` to `i24s`. Then the next candidates register before any card (`DAY90.md`: the proxy's
+    registry entry, `validated`, the host cache).
+  - At 155 or more, NEED TARGET CARD for the one `promo` sitting on both classes.
